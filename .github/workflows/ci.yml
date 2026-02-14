@@ -23,3 +23,18 @@ jobs:
         with:
           python-version: "3.14"
       - uses: pre-commit/action@v3.0.1
+
+  pr-title:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check PR title starts with gitmoji
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          if echo "$PR_TITLE" | grep -Pq '^\p{So}|^\p{Emoji_Presentation}|^:[a-z0-9_+-]+:'; then
+            echo "✅ PR title starts with a gitmoji: $PR_TITLE"
+          else
+            echo "❌ PR title must start with a gitmoji (e.g. ✨ or :sparkles:)"
+            echo "   Got: $PR_TITLE"
+            exit 1
+          fi
