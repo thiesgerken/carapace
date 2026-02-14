@@ -93,7 +93,7 @@ Other differences: Carapace is Python (not Node), uses Pydantic AI (not a custom
 ### Installation
 
 ```bash
-git clone https://github.com/<your-org>/carapace.git
+git clone https://github.com/thiesgerken/carapace.git
 cd carapace
 uv sync
 ```
