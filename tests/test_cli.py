@@ -4,7 +4,7 @@ from typer.testing import CliRunner
 
 from carapace.cli import app
 
-runner = CliRunner()
+runner = CliRunner(color=False)
 
 
 def test_help():
