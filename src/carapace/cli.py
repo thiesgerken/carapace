@@ -1,15 +1,18 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Optional
 
 import typer
+from dotenv import load_dotenv
+from httpx import AsyncClient, HTTPStatusError
+from pydantic_ai import DeferredToolRequests, DeferredToolResults, ToolDenied
+from pydantic_ai.models.anthropic import AnthropicModel
+from pydantic_ai.providers.anthropic import AnthropicProvider
+from pydantic_ai.retries import AsyncTenacityTransport, RetryConfig, wait_retry_after
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.table import Table
-
-from httpx import AsyncClient, HTTPStatusError
 from tenacity import (
     RetryCallState,
     retry_if_exception_type,
@@ -17,18 +20,11 @@ from tenacity import (
     wait_exponential,
 )
 
-from pydantic_ai import DeferredToolRequests, DeferredToolResults, ToolDenied
-from pydantic_ai.models.anthropic import AnthropicModel
-from pydantic_ai.providers.anthropic import AnthropicProvider
-from pydantic_ai.retries import AsyncTenacityTransport, RetryConfig, wait_retry_after
-
 from carapace.agent import create_agent
 from carapace.config import get_data_dir, load_config, load_rules
 from carapace.models import Deps
 from carapace.session import SessionManager
 from carapace.skills import SkillRegistry
-
-from dotenv import load_dotenv
 
 load_dotenv()
 
@@ -41,10 +37,7 @@ def _create_anthropic_model(model_name: str) -> AnthropicModel:
 
     def _before_sleep(state: RetryCallState) -> None:
         wait = state.next_action.sleep if state.next_action else 0
-        console.print(
-            f"[yellow]Rate limited (attempt {state.attempt_number}). "
-            f"Retrying in {wait:.0f}s...[/yellow]"
-        )
+        console.print(f"[yellow]Rate limited (attempt {state.attempt_number}). Retrying in {wait:.0f}s...[/yellow]")
 
     transport = AsyncTenacityTransport(
         config=RetryConfig(
@@ -57,9 +50,7 @@ def _create_anthropic_model(model_name: str) -> AnthropicModel:
             before_sleep=_before_sleep,
             reraise=True,
         ),
-        validate_response=lambda r: (
-            r.raise_for_status() if r.status_code in (429, 502, 503, 504) else None
-        ),
+        validate_response=lambda r: (r.raise_for_status() if r.status_code in (429, 502, 503, 504) else None),
     )
     http_client = AsyncClient(transport=transport)
 
@@ -67,9 +58,7 @@ def _create_anthropic_model(model_name: str) -> AnthropicModel:
     return AnthropicModel(model_id, provider=AnthropicProvider(http_client=http_client))
 
 
-def _handle_slash_command(
-    command: str, deps: Deps, session_mgr: SessionManager
-) -> bool:
+def _handle_slash_command(command: str, deps: Deps, session_mgr: SessionManager) -> bool:
     """Handle slash commands. Returns True if the command was handled."""
     parts = command.strip().split(maxsplit=1)
     cmd = parts[0].lower()
@@ -218,9 +207,7 @@ async def _run_agent_loop(
                     f"(categories: {classification.get('categories', [])})"
                 )
             if triggered:
-                panel_lines.append(
-                    f"[bold]Triggered rules:[/bold] {', '.join(triggered)}"
-                )
+                panel_lines.append(f"[bold]Triggered rules:[/bold] {', '.join(triggered)}")
             if descriptions:
                 for desc in descriptions:
                     panel_lines.append(f"  {desc}")
@@ -237,9 +224,7 @@ async def _run_agent_loop(
             if choice in ("a", "approve", "y", "yes"):
                 deferred_results.approvals[call.tool_call_id] = True
             else:
-                deferred_results.approvals[call.tool_call_id] = ToolDenied(
-                    "User denied this operation."
-                )
+                deferred_results.approvals[call.tool_call_id] = ToolDenied("User denied this operation.")
 
         result = await agent.run(
             deps=deps,
@@ -259,18 +244,10 @@ async def _run_agent_loop(
 
 @app.command()
 def chat(
-    session: Optional[str] = typer.Option(
-        None, "--session", "-s", help="Resume a session by ID"
-    ),
-    data_dir: Optional[str] = typer.Option(
-        None, "--data-dir", "-d", help="Data directory path"
-    ),
-    list_sessions: bool = typer.Option(
-        False, "--list", "-l", help="List existing sessions"
-    ),
-    verbose: bool = typer.Option(
-        True, "--verbose/--quiet", "-v/-q", help="Show tool calls"
-    ),
+    session: str | None = typer.Option(None, "--session", "-s", help="Resume a session by ID"),
+    data_dir: str | None = typer.Option(None, "--data-dir", "-d", help="Data directory path"),
+    list_sessions: bool = typer.Option(False, "--list", "-l", help="List existing sessions"),
+    verbose: bool = typer.Option(True, "--verbose/--quiet", "-v/-q", help="Show tool calls"),
 ):
     """Start an interactive chat session with the Carapace agent."""
     from pathlib import Path
@@ -372,9 +349,7 @@ def chat(
             continue
 
         try:
-            message_history = asyncio.run(
-                _run_agent_loop(user_input, deps, session_mgr, message_history)
-            )
+            message_history = asyncio.run(_run_agent_loop(user_input, deps, session_mgr, message_history))
         except KeyboardInterrupt:
             console.print("\n[dim]Interrupted.[/dim]")
         except Exception as e:

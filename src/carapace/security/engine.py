@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Any
-
 from pydantic_ai import Agent
 
 from carapace.models import (
@@ -106,15 +104,12 @@ async def check_rules(
         # Check if trigger is met (always-rules are always triggered)
         trigger_met = await _check_trigger(model, rule, session_state, classification)
 
-        if trigger_met and rule.id not in session_state.activated_rules:
-            if not _trigger_is_always(rule.trigger):
-                result.newly_activated_rules.append(rule.id)
-                session_state.activated_rules.append(rule.id)
+        if trigger_met and rule.id not in session_state.activated_rules and not _trigger_is_always(rule.trigger):
+            result.newly_activated_rules.append(rule.id)
+            session_state.activated_rules.append(rule.id)
 
         # Only check effect if the rule is active
-        is_active = (
-            _trigger_is_always(rule.trigger) or rule.id in session_state.activated_rules
-        )
+        is_active = _trigger_is_always(rule.trigger) or rule.id in session_state.activated_rules
         if not is_active:
             continue
 

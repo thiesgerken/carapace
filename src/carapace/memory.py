@@ -35,11 +35,7 @@ class MemoryStore:
             if query_lower in text.lower():
                 relative = path.relative_to(self.memory_dir)
                 # Extract matching lines
-                lines = [
-                    line.strip()
-                    for line in text.splitlines()
-                    if query_lower in line.lower()
-                ]
+                lines = [line.strip() for line in text.splitlines() if query_lower in line.lower()]
                 results.append(
                     {
                         "file": str(relative),

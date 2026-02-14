@@ -16,9 +16,7 @@ class SessionManager:
         self.sessions_dir = data_dir / "sessions"
         self.sessions_dir.mkdir(parents=True, exist_ok=True)
 
-    def create_session(
-        self, channel_type: str = "cli", channel_ref: str = ""
-    ) -> SessionState:
+    def create_session(self, channel_type: str = "cli", channel_ref: str = "") -> SessionState:
         session_id = uuid.uuid4().hex[:12]
         state = SessionState(
             session_id=session_id,

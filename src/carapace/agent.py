@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import difflib
 import subprocess
+from pathlib import Path
 from typing import Any
 
 from pydantic_ai import Agent, ApprovalRequired, DeferredToolRequests, RunContext
@@ -21,9 +22,7 @@ async def _gate(
     context: str = "",
 ) -> tuple[OperationClassification, RuleCheckResult]:
     """Classify an operation and check rules. Raises ApprovalRequired if needed."""
-    classification = await classify_operation(
-        ctx.deps.classifier_model, tool_name, args, context
-    )
+    classification = await classify_operation(ctx.deps.classifier_model, tool_name, args, context)
     result = await check_rules(
         ctx.deps.classifier_model,
         ctx.deps.rules,
@@ -42,11 +41,7 @@ async def _gate(
             args_str = args_str[:197] + "..."
         cats = ", ".join(classification.categories) if classification.categories else ""
         rules_str = ", ".join(result.triggered_rules) if result.triggered_rules else ""
-        detail = (
-            f"[{classification.operation_type}]"
-            if classification.operation_type
-            else ""
-        )
+        detail = f"[{classification.operation_type}]" if classification.operation_type else ""
         if cats:
             detail += f" ({cats})"
         if rules_str:
@@ -68,9 +63,8 @@ async def _gate(
     return classification, result
 
 
-def _resolve_path(data_dir, path: str) -> tuple[str | None, "Path"]:
+def _resolve_path(data_dir, path: str) -> tuple[str | None, Path]:
     """Resolve a path within data_dir. Returns (error, resolved_path)."""
-    from pathlib import Path
 
     full_path = (data_dir / path).resolve()
     if not str(full_path).startswith(str(data_dir.resolve())):
@@ -98,9 +92,7 @@ def build_system_prompt(deps: Deps) -> str:
         for skill in deps.skill_catalog:
             catalog_lines.append(f"- **{skill.name}**: {skill.description.strip()}")
         catalog_lines.append("")
-        catalog_lines.append(
-            "Use `activate_skill` to load full instructions before using a skill."
-        )
+        catalog_lines.append("Use `activate_skill` to load full instructions before using a skill.")
         parts.append("\n".join(catalog_lines))
 
     parts.append(
@@ -236,7 +228,11 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
 
     @agent.tool
     async def apply_patch(ctx: RunContext[Deps], changes: list[dict[str, str]]) -> str:
-        """Apply structured edits across one or more files. Each change is a dict with 'path', 'old_string', and 'new_string'. If old_string is empty, the file is created with new_string as content."""
+        """Apply structured edits across one or more files.
+
+        Each change is a dict with 'path', 'old_string', and 'new_string'.
+        If old_string is empty, the file is created with new_string as content.
+        """
         paths_summary = [c.get("path", "?") for c in changes]
         if not ctx.tool_call_approved:
             await _gate(
@@ -276,9 +272,7 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
                 results.append(f"Change {i + 1} ({p}): old_string not found")
                 continue
             if count > 1:
-                results.append(
-                    f"Change {i + 1} ({p}): old_string appears {count} times (must be unique)"
-                )
+                results.append(f"Change {i + 1} ({p}): old_string appears {count} times (must be unique)")
                 continue
 
             full_path.write_text(original.replace(old, new, 1))
@@ -342,9 +336,7 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
     # --- Memory ---
 
     @agent.tool
-    async def read_memory(
-        ctx: RunContext[Deps], file_path: str = "", query: str = ""
-    ) -> str:
+    async def read_memory(ctx: RunContext[Deps], file_path: str = "", query: str = "") -> str:
         """Read memory files or search memory. Provide file_path to read a specific file, or query to search."""
         store = MemoryStore(ctx.deps.data_dir)
         if file_path:
@@ -367,9 +359,7 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
     async def write_memory(ctx: RunContext[Deps], file_path: str, content: str) -> str:
         """Write or update a memory file."""
         if not ctx.tool_call_approved:
-            await _gate(
-                ctx, "write_memory", {"file_path": file_path, "content": content[:200]}
-            )
+            await _gate(ctx, "write_memory", {"file_path": file_path, "content": content[:200]})
 
         store = MemoryStore(ctx.deps.data_dir)
         return store.write(file_path, content)
