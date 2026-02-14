@@ -82,6 +82,102 @@ Carapace is inspired by [OpenClaw](https://docs.openclaw.ai/) but differs fundam
 
 Other differences: Carapace is Python (not Node), uses Pydantic AI (not a custom agent loop), runs everything in Docker (not on the host), delegates credentials to a password manager (not built-in storage), and uses the open AgentSkills format (not a custom skill system).
 
+## Getting started
+
+### Prerequisites
+
+- **Python 3.12+** (3.14 recommended)
+- **[uv](https://docs.astral.sh/uv/)** for dependency management
+- An **Anthropic API key** (set `ANTHROPIC_API_KEY` in `.env` or your environment)
+
+### Installation
+
+```bash
+git clone https://github.com/<your-org>/carapace.git
+cd carapace
+uv sync
+```
+
+### Running
+
+Start the interactive CLI:
+
+```bash
+uv run python -m carapace
+```
+
+Or, if installed as a script:
+
+```bash
+uv run carapace
+```
+
+### Configuration
+
+1. Copy `.env.example` to `.env` and set your API key.
+2. Customise files under `data/` — see [Data directory](#data-directory) above.
+
+## Demo
+
+```
+$ carapace
+New session c72188b27225
+Model: anthropic:claude-sonnet-4-5 | Rules: 7 loaded | Skills: 1 available | Type /help for commands
+
+carapace> hi
+
+Hello! I'm Carapace, your personal AI assistant. How can I help you today?
+
+carapace> what can you do
+
+I can help you with a variety of tasks:
+
+File Management
+ • Read, write, and edit files
+ • Organize and manage documents
+
+Command Execution
+ • Run shell commands and scripts
+ • Execute code and tools
+
+Information & Research
+ • Search the web for information
+ • Look up facts and research topics
+
+Memory
+ • Remember important information about you and your preferences
+ • Maintain context across our conversations
+
+Task Planning
+ • Break down complex tasks into steps
+ • Help organize and execute multi-step projects
+
+carapace> find out about your environment
+  bash(command='ls -la')     [read_local] (shell)
+  bash(command='uname -a')   [read_local] (shell)
+  bash(command='pwd')        [read_local] (shell)
+
+Here's what I found about the environment:
+
+Location & System
+ • Working directory: /home/user/carapace/data
+ • OS: macOS (Darwin kernel, ARM64 - Apple Silicon)
+ • Shell: zsh
+
+Available Files & Directories
+ • AGENTS.md, SOUL.md, USER.md - configuration files
+ • config.yaml - system configuration
+ • rules.yaml - security/operational rules
+ • logs/, memory/, sessions/, skills/
+
+Programming Languages Available
+ • Python 3 (in virtual environment)
+ • Node.js
+
+carapace> ^D
+Goodbye.
+```
+
 ## Status
 
-Architecture design phase. No code yet.
+Early development — interactive CLI with rule-evaluated tool execution is functional.
