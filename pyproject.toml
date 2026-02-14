@@ -1,0 +1,24 @@
+[project]
+name = "carapace"
+version = "0.1.0"
+description = "Security-first personal AI agent with rule-based information flow control"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "pydantic-ai",
+    "typer",
+    "pyyaml",
+    "rich",
+    "python-dotenv>=1.2.1",
+    "tenacity",
+]
+
+[project.scripts]
+carapace = "carapace.cli:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/carapace"]

@@ -15,7 +15,7 @@ Carapace is a self-hosted AI agent gateway that connects to Matrix (and future c
 
 ## Architecture overview
 
-```
+```text
 Channels (Matrix, cron, webhook, ...)
         |
    Channel Router
