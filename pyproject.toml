@@ -26,4 +26,4 @@ packages = ["src/carapace"]
 [tool.semantic_release]
 version_toml = ["pyproject.toml:project.version"]
 commit_parser = "emoji"
-build_command = "uv build"
+build_command = "pip install uv && uv build"
