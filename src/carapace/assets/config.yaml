@@ -1,5 +1,6 @@
 carapace:
   log_level: info
+  # logfire_token: your-write-token
 
 channels:
   matrix:

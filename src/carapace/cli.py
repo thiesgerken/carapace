@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 
+import logfire
 import typer
 from dotenv import load_dotenv
 from httpx import AsyncClient, HTTPStatusError
@@ -290,6 +291,12 @@ def chat(
     if created:
         console.print(f"[dim]Initialised: {', '.join(created)}[/dim]")
     config = load_config(data_path)
+
+    if config.carapace.logfire_token:
+        logfire.configure(token=config.carapace.logfire_token, console=False)
+        logfire.instrument_pydantic_ai()
+        console.print("[dim]Logfire tracing enabled[/dim]")
+
     rules = load_rules(data_path)
     session_mgr = SessionManager(data_path)
 

@@ -137,6 +137,7 @@ class SessionsConfig(BaseModel):
 
 class CarapaceConfig(BaseModel):
     log_level: str = "info"
+    logfire_token: str = ""
 
 
 class Config(BaseModel):
