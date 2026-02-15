@@ -1,4 +1,4 @@
-from carapace.cli import app
+from carapace.server import main
 
 if __name__ == "__main__":
-    app()
+    main()

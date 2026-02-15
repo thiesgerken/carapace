@@ -8,7 +8,8 @@ Carapace is a security-first personal AI agent with rule-based information flow 
 
 - Install deps: `uv sync`
 - Install with dev deps: `uv sync --dev`
-- Run interactive CLI: `uv run python -m carapace`
+- Start server: `uv run python -m carapace` (or `uv run carapace-server`)
+- Start CLI client: `uv run python -m carapace.cli` (or `uv run carapace`)
 - Run tests: `uv run pytest`
 - Run single test: `uv run pytest tests/test_cli.py -k test_help`
 
@@ -27,8 +28,11 @@ Carapace is a security-first personal AI agent with rule-based information flow 
 
 ```
 src/carapace/          # main package
+  server.py            # FastAPI server (REST + WebSocket)
+  cli.py               # Thin CLI client (HTTP + WS)
   agent.py             # Pydantic AI agent definition and tools
-  cli.py               # Typer CLI
+  auth.py              # Bearer token generation and validation
+  ws_models.py         # WebSocket message protocol models
   config.py            # configuration loading
   models.py            # Pydantic models and dataclasses
   session.py           # session management

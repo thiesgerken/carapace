@@ -40,3 +40,25 @@ def test_import_credentials():
 
 def test_import_agent():
     from carapace.agent import build_system_prompt, create_agent  # noqa: F401
+
+
+def test_import_server():
+    from carapace.server import app, main  # noqa: F401
+
+
+def test_import_auth():
+    from carapace.auth import ensure_token  # noqa: F401
+
+
+def test_import_ws_models():
+    from carapace.ws_models import (  # noqa: F401
+        ApprovalRequest,
+        ApprovalResponse,
+        CommandResult,
+        Done,
+        ErrorMessage,
+        TokenChunk,
+        ToolCallInfo,
+        UserMessage,
+        parse_client_message,
+    )

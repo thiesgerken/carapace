@@ -135,6 +135,11 @@ class SessionsConfig(BaseModel):
     history_retention_days: int = 90
 
 
+class ServerConfig(BaseModel):
+    host: str = "127.0.0.1"
+    port: int = 8321
+
+
 class CarapaceConfig(BaseModel):
     log_level: str = "info"
     logfire_token: str = ""
@@ -142,6 +147,7 @@ class CarapaceConfig(BaseModel):
 
 class Config(BaseModel):
     carapace: CarapaceConfig = CarapaceConfig()
+    server: ServerConfig = ServerConfig()
     channels: ChannelsConfig = ChannelsConfig()
     agent: AgentConfig = AgentConfig()
     credentials: CredentialsConfig = CredentialsConfig()
