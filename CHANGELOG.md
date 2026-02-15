@@ -1,6 +1,26 @@
 # CHANGELOG
 
 
+## v0.2.0 (2026-02-15)
+
+### Other
+
+- 📝 Update README.md to include new security guideline for skills
+  ([`83d90b1`](https://github.com/thiesgerken/carapace/commit/83d90b1f343811cdb8ffb278470680e3d8da4225))
+
+- Added a section emphasizing the importance of reviewing skills before installation, highlighting
+  that skills are considered trusted code and the user's responsibility in managing them.
+
+### ✨
+
+- ✨ Integrate Logfire for enhanced logging and tracing
+  ([`7c1ddeb`](https://github.com/thiesgerken/carapace/commit/7c1ddeb0cb5787fa0ff3f6883c3a9b2a2c0c1008))
+
+- Added `logfire` dependency to `pyproject.toml` and `uv.lock`. - Configured Logfire in the CLI to
+  enable tracing based on user token. - Updated `CarapaceConfig` to include `logfire_token` field. -
+  Modified example `config.yaml` to indicate where to set the Logfire token.
+
+
 ## v0.1.0 (2026-02-15)
 
 ### Other
