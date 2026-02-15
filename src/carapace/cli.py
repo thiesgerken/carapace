@@ -6,6 +6,7 @@ import typer
 from dotenv import load_dotenv
 from httpx import AsyncClient, HTTPStatusError
 from pydantic_ai import DeferredToolRequests, DeferredToolResults, ToolDenied
+from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, UserPromptPart
 from pydantic_ai.models.anthropic import AnthropicModel
 from pydantic_ai.providers.anthropic import AnthropicProvider
 from pydantic_ai.retries import AsyncTenacityTransport, RetryConfig, wait_retry_after
@@ -51,12 +52,42 @@ def _create_anthropic_model(model_name: str) -> AnthropicModel:
             before_sleep=_before_sleep,
             reraise=True,
         ),
-        validate_response=lambda r: (r.raise_for_status() if r.status_code in (429, 502, 503, 504) else None),
+        validate_response=lambda r: r.raise_for_status() if r.status_code in (429, 502, 503, 504) else None,
     )
     http_client = AsyncClient(transport=transport)
 
     model_id = model_name.removeprefix("anthropic:")
     return AnthropicModel(model_id, provider=AnthropicProvider(http_client=http_client))
+
+
+def _replay_history(messages: list, n: int) -> None:
+    """Re-print previous conversation turns. *n=-1* means all."""
+    # Collect (user_text, assistant_text) pairs
+    pairs: list[tuple[str, str]] = []
+    user_text: str | None = None
+    for msg in messages:
+        if isinstance(msg, ModelRequest):
+            for part in msg.parts:
+                if isinstance(part, UserPromptPart) and isinstance(part.content, str):
+                    user_text = part.content
+        elif isinstance(msg, ModelResponse) and user_text is not None:
+            assistant_text = "".join(p.content for p in msg.parts if isinstance(p, TextPart))
+            if assistant_text:
+                pairs.append((user_text, assistant_text))
+            user_text = None
+
+    if not pairs:
+        console.print("[dim]No previous messages to show.[/dim]")
+        return
+
+    show = pairs if n < 0 else pairs[-n:]
+    for user_msg, ai_msg in show:
+        console.print(f"[bold cyan]carapace>[/bold cyan] {user_msg}")
+        console.print()
+        console.print(Markdown(ai_msg))
+        console.print()
+    console.print(f"[dim]({len(show)} previous turn{'s' if len(show) != 1 else ''} replayed)[/dim]")
+    console.print()
 
 
 def _handle_slash_command(command: str, deps: Deps, session_mgr: SessionManager) -> bool:
@@ -248,6 +279,7 @@ def chat(
     session: str | None = typer.Option(None, "--session", "-s", help="Resume a session by ID"),
     data_dir: str | None = typer.Option(None, "--data-dir", "-d", help="Data directory path"),
     list_sessions: bool = typer.Option(False, "--list", "-l", help="List existing sessions"),
+    prev: int = typer.Option(-1, "--prev", "-p", help="Replay N previous turns on resume (-1 = all, 0 = none)"),
     verbose: bool = typer.Option(True, "--verbose/--quiet", "-v/-q", help="Show tool calls"),
 ):
     """Start an interactive chat session with the Carapace agent."""
@@ -307,6 +339,9 @@ def chat(
 
     # Load existing history
     message_history = session_mgr.load_history(session_state.session_id)
+
+    if session and message_history and prev != 0:
+        _replay_history(message_history, prev)
 
     console.print(
         f"[dim]Model: {config.agent.model} | "
