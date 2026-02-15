@@ -1,0 +1,59 @@
+rules:
+  - id: no-write-after-web
+    trigger: "the agent has read content from the internet"
+    effect: "block all write operations (files, emails, APIs) without approval"
+    mode: approve
+    description: >
+      If the agent has consumed unsanitized external input, it could
+      be influenced by prompt injection. Write operations are gated
+      until the user explicitly approves each one.
+
+  - id: no-exfil-after-sensitive
+    trigger: "the agent has accessed sensitive personal data (finances, documents, health)"
+    effect: "block all outbound communication (email, API calls, messages) without approval"
+    mode: approve
+    description: >
+      Prevents data exfiltration. After seeing sensitive data, the agent
+      cannot send anything externally unless the user approves.
+
+  - id: skill-modification
+    trigger: "always"
+    effect: "creating, editing, or deleting files in the skills folder requires approval"
+    mode: approve
+    description: >
+      The agent can self-improve by writing skills, but every
+      modification must be approved by the user.
+
+  - id: memory-write
+    trigger: "always"
+    effect: "writing or modifying memory files requires approval"
+    mode: approve
+    description: >
+      Memory is persistent context -- modifications should be deliberate.
+
+  - id: shell-write
+    trigger: "always"
+    effect: "shell commands that write or execute (not read) require approval"
+    mode: approve
+    description: >
+      Read-only shell commands (ls, cat, grep, find) in the base
+      container are always allowed. Shell commands classified as
+      write or execute operations require approval.
+
+  - id: no-exfil-after-skill-read
+    trigger: "the agent has read skill instructions (activated a skill)"
+    effect: "block outbound communication (email, API calls) without approval"
+    mode: approve
+    description: >
+      Skill instructions reveal the user's personal setup -- services,
+      credential paths, workflow patterns. After reading these, outbound
+      communication is gated to prevent information leakage.
+
+  - id: credential-access
+    trigger: "always"
+    effect: "fetching any credential from the password manager requires approval on first use per session"
+    mode: approve
+    description: >
+      Credentials are fetched from the password manager on demand.
+      The user must approve each distinct credential the first time
+      it is requested in a session.

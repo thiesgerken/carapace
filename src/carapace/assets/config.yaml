@@ -1,0 +1,27 @@
+carapace:
+  log_level: info
+
+channels:
+  matrix:
+    enabled: false
+  cron:
+    enabled: false
+
+agent:
+  model: anthropic:claude-sonnet-4-5
+  classifier_model: anthropic:claude-haiku-4-5
+
+credentials:
+  backend: mock
+
+sandbox:
+  base_image: alpine:3.19
+  idle_timeout_minutes: 15
+  default_network: false
+
+memory:
+  search:
+    enabled: false
+
+sessions:
+  history_retention_days: 90
