@@ -1,0 +1,61 @@
+---
+description: Python coding style guide for carapace
+globs: **/*.py
+alwaysApply: false
+---
+
+# Python Style Guide
+
+## Philosophy
+
+Code is craft. Favor elegance, clarity, and expressiveness. Write code that reads like well-structured thought.
+
+## Type Everything
+
+- All function signatures must have full type annotations (params + return).
+- Use `from __future__ import annotations` for modern annotation syntax.
+- Prefer `str | None` over `Optional[str]`.
+- Use `dict`, `list`, `tuple` lowercase generics (not `Dict`, `List`, `Tuple`).
+- Leverage `TypeAlias`, `Literal`, `TypeVar`, `Protocol` where they add clarity.
+- Use Pydantic `BaseModel` / `@dataclass` for structured data — no raw dicts.
+
+## Async by Default
+
+- Prefer `async def` for I/O-bound functions.
+- Use `asyncio.gather` / `asyncio.TaskGroup` for concurrent work.
+- Never mix sync blocking calls into async code without `run_in_executor`.
+
+## Concise & Functional
+
+- Favor comprehensions, `map`, `filter`, generator expressions over verbose loops.
+- Use early returns to reduce nesting.
+- Decompose with small, pure helper functions over deep method chains.
+- Prefer expressions over statements where readable (ternary, walrus `:=`).
+- Avoid mutable default arguments; use `field(default_factory=...)`.
+
+## Modern Python (3.12+)
+
+- Use `match` / `case` for complex branching where it improves clarity.
+- Use f-strings (never `%` or `.format()`).
+- Use `pathlib.Path` over `os.path`.
+- Use `enum.StrEnum` / `enum.Enum` for fixed sets of values.
+
+## Structure
+
+- One concept per module. Keep files focused and short.
+- Imports: stdlib → third-party → local, separated by blank lines.
+- No wildcard imports.
+- Private helpers prefixed with `_`.
+
+## Error Handling
+
+- Raise specific exceptions, never bare `raise` or `except Exception`.
+- Use structured error models where downstream code needs to branch on failure type.
+- Let unexpected errors propagate — don't swallow them.
+
+## Naming
+
+- `snake_case` for functions, variables, modules.
+- `PascalCase` for classes and type aliases.
+- `UPPER_SNAKE` for module-level constants.
+- Names should be descriptive but not verbose. `cfg` > `configuration_object`, `ctx` > `context_variable`.
