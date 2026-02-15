@@ -21,6 +21,7 @@ from tenacity import (
 )
 
 from carapace.agent import create_agent
+from carapace.bootstrap import ensure_data_dir
 from carapace.config import get_data_dir, load_config, load_rules
 from carapace.models import Deps
 from carapace.session import SessionManager
@@ -253,6 +254,9 @@ def chat(
     from pathlib import Path
 
     data_path = Path(data_dir) if data_dir else get_data_dir()
+    created = ensure_data_dir(data_path)
+    if created:
+        console.print(f"[dim]Initialised: {', '.join(created)}[/dim]")
     config = load_config(data_path)
     rules = load_rules(data_path)
     session_mgr = SessionManager(data_path)
