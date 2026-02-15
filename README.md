@@ -1,11 +1,17 @@
 # Carapace
 
+> **Disclaimer:** This is a pet project, born out of curiosity to
+>
+> - find out what hurdles arise when trying to build a "safe" OpenClaw,
+> - see how far I can get by only assuming the reviewer / architect role, letting Cursor do the rest.
+
 A security-first personal AI agent with rule-based information flow control.
 
 Carapace is a self-hosted AI agent gateway that connects to Matrix (and future channels) and lets you interact with an AI assistant from anywhere. Unlike other agent frameworks that start with broad access and lock down after the fact, Carapace starts with **zero access** and grants capabilities through **plain-English security rules** evaluated by an LLM.
 
 ## Key ideas
 
+- **Escalating friction.** The more access the agent has requested during a session, the harder it becomes for it to do anything without human approval. Early actions may be auto-approved; later ones require explicit consent.
 - **Rules, not permissions.** Security is defined in plain English ("if the agent read something from the internet, it can't do any write ops without approval"). An LLM evaluates whether each rule applies to the current operation in context.
 - **Plan before act.** The agent always proposes a plan before executing multi-step tasks. Rules are pre-evaluated against the plan and the user gets one consolidated approval prompt instead of being asked at every step.
 - **Read-only by default.** The agent's base workspace is a read-only Docker container with no network. It can explore files, read skills, search memory freely. All actions (writes, network, API calls) go through skill containers with explicit sandboxing.
