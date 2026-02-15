@@ -30,3 +30,8 @@ packages = ["src/carapace"]
 version_toml = ["pyproject.toml:project.version"]
 commit_parser = "emoji"
 build_command = "pip install uv && uv build"
+
+[tool.semantic_release.commit_parser_options]
+major_tags = ["💥", ":boom:"]
+minor_tags = ["✨", ":sparkles:"]
+patch_tags = ["🐛", ":bug:", "🚑", ":ambulance:"]
