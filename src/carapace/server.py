@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -48,6 +49,12 @@ _rules: list[Rule]
 _session_mgr: SessionManager
 _skill_catalog: list
 _agent_model: Any
+_session_locks: dict[str, asyncio.Lock] = {}
+
+
+def _get_session_lock(session_id: str) -> asyncio.Lock:
+    """Return (or create) an asyncio.Lock for the given session, serialising agent turns."""
+    return _session_locks.setdefault(session_id, asyncio.Lock())
 
 
 def _create_anthropic_model(model_name: str) -> AnthropicModel:
@@ -300,7 +307,6 @@ async def chat_ws(
 
     await websocket.accept()
     deps = _build_deps(session_state)
-    message_history = _session_mgr.load_history(session_id)
     verbose = True
 
     try:
@@ -346,16 +352,21 @@ async def chat_ws(
                 await _send(websocket, ErrorMessage(detail=f"Unknown command: {user_input.split()[0]}"))
                 continue
 
-            # --- Agent loop ---
+            # --- Agent loop (serialised per session) ---
             try:
-                message_history = await _run_agent_turn(
-                    websocket,
-                    user_input,
-                    deps,
-                    message_history,
-                )
-                _session_mgr.save_history(session_id, message_history)
-                _session_mgr.save_state(deps.session_state)
+                async with _get_session_lock(session_id):
+                    fresh_state = _session_mgr.resume_session(session_id)
+                    if fresh_state:
+                        deps = _build_deps(fresh_state, verbose=verbose)
+                    message_history = _session_mgr.load_history(session_id)
+                    message_history = await _run_agent_turn(
+                        websocket,
+                        user_input,
+                        deps,
+                        message_history,
+                    )
+                    _session_mgr.save_history(session_id, message_history)
+                    _session_mgr.save_state(deps.session_state)
             except Exception as exc:
                 logger.exception("Agent error")
                 await _send(websocket, ErrorMessage(detail=str(exc)))
