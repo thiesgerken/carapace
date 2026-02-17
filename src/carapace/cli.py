@@ -26,10 +26,6 @@ console = Console()
 DEFAULT_SERVER = "http://127.0.0.1:8321"
 
 
-def _server_url() -> str:
-    return os.environ.get("CARAPACE_SERVER", DEFAULT_SERVER)
-
-
 def _get_token(data_dir: str | None, token: str | None) -> str:
     """Resolve bearer token from flag, env var, or data dir file."""
     if token:
