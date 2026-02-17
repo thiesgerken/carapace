@@ -13,4 +13,5 @@ def ensure_token(data_dir: Path) -> str:
         return token_path.read_text().strip()
     token = secrets.token_urlsafe(32)
     token_path.write_text(token + "\n")
+    token_path.chmod(0o600)
     return token

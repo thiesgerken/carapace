@@ -130,7 +130,7 @@ def _render_command_result(data: dict[str, Any]) -> None:
             console.print(f"[dim]{payload}[/dim]")
 
 
-def _render_approval_request(data: dict[str, Any]) -> bool:
+async def _render_approval_request(data: dict[str, Any]) -> bool:
     """Render an approval request and return True if approved."""
     panel_lines = [
         f"[bold]Tool:[/bold] {data.get('tool', '?')}",
@@ -156,7 +156,10 @@ def _render_approval_request(data: dict[str, Any]) -> bool:
             border_style="yellow",
         )
     )
-    choice = console.input("[bold][a]pprove / [d]eny?[/bold] ").strip().lower()
+    choice = await asyncio.get_event_loop().run_in_executor(
+        None,
+        lambda: console.input("[bold][a]pprove / [d]eny?[/bold] ").strip().lower(),
+    )
     return choice in ("a", "approve", "y", "yes")
 
 
@@ -228,7 +231,7 @@ async def _read_server_responses(ws) -> None:
 
             case "approval_request":
                 try:
-                    approved = _render_approval_request(msg)
+                    approved = await _render_approval_request(msg)
                 except (KeyboardInterrupt, EOFError):
                     approved = False
                     console.print("\n[dim]Denied (interrupted).[/dim]")
