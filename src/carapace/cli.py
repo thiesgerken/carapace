@@ -227,7 +227,11 @@ async def _read_server_responses(ws) -> None:
                 console.print(f"  [dim]{msg['tool']}({msg['args']}) {detail}[/dim]")
 
             case "approval_request":
-                approved = _render_approval_request(msg)
+                try:
+                    approved = _render_approval_request(msg)
+                except (KeyboardInterrupt, EOFError):
+                    approved = False
+                    console.print("\n[dim]Denied (interrupted).[/dim]")
                 await ws.send(
                     json.dumps(
                         {

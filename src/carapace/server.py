@@ -418,7 +418,10 @@ async def _run_agent_turn(
             except (ValueError, Exception):
                 continue
             if not isinstance(client_msg, ApprovalResponse):
-                continue
+                for tid in pending:
+                    deferred_results.approvals[tid] = ToolDenied("Approval interrupted.")
+                pending.clear()
+                break
             if client_msg.tool_call_id in pending:
                 if client_msg.approved:
                     deferred_results.approvals[client_msg.tool_call_id] = True
