@@ -353,7 +353,7 @@ async def chat_ws(
             if user_input.startswith("/"):
                 if user_input.lower() in ("/quit", "/exit"):
                     await websocket.close(code=1000)
-                    return
+                    break
 
                 if user_input.lower() == "/verbose":
                     verbose = not verbose
@@ -396,6 +396,7 @@ async def chat_ws(
 
     except WebSocketDisconnect:
         logger.info("Client disconnected from session %s", session_id)
+    finally:
         _session_locks.pop(session_id, None)
         for task in pending_sends:
             task.cancel()
@@ -464,6 +465,8 @@ async def _run_agent_turn(
 
     if isinstance(result.output, str):
         await _send(ws, Done(content=result.output))
+    else:
+        await _send(ws, ErrorMessage(detail=f"Unexpected agent output type: {type(result.output).__name__}"))
 
     return messages
 
