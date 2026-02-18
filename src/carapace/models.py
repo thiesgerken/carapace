@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
@@ -179,3 +180,4 @@ class Deps:
     classifier_model: str = "openai:gpt-4o-mini"
     agent_model: Any = None
     verbose: bool = True
+    tool_call_callback: Callable[[str, dict[str, Any], str], None] | None = None

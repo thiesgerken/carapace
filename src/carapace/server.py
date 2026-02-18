@@ -9,7 +9,7 @@ from typing import Annotated, Any
 import logfire
 import uvicorn
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect, status
+from fastapi import Depends, FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect, WebSocketException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from httpx import AsyncClient, HTTPStatusError
 from pydantic import BaseModel
@@ -34,6 +34,7 @@ from carapace.ws_models import (
     Done,
     ErrorMessage,
     ServerEnvelope,
+    ToolCallInfo,
     UserMessage,
     parse_client_message,
 )
@@ -125,7 +126,7 @@ async def _verify_ws_token(
     if auth.startswith("Bearer ") and auth.removeprefix("Bearer ") == expected:
         return expected
     await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
-    raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+    raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION)
 
 
 # --- REST: Sessions ---
@@ -189,7 +190,12 @@ async def get_session(session_id: str, _token: str = Depends(_verify_token)) -> 
 # --- WebSocket: Chat ---
 
 
-def _build_deps(session_state: SessionState, *, verbose: bool = True) -> Deps:
+def _build_deps(
+    session_state: SessionState,
+    *,
+    verbose: bool = True,
+    tool_call_callback: Any = None,
+) -> Deps:
     return Deps(
         config=_config,
         data_dir=_data_dir,
@@ -199,6 +205,7 @@ def _build_deps(session_state: SessionState, *, verbose: bool = True) -> Deps:
         classifier_model=_config.agent.classifier_model,
         agent_model=_agent_model,
         verbose=verbose,
+        tool_call_callback=tool_call_callback,
     )
 
 
@@ -306,8 +313,13 @@ async def chat_ws(
         return
 
     await websocket.accept()
-    deps = _build_deps(session_state)
     verbose = True
+    
+    def send_tool_call_info(tool: str, args: dict[str, Any], detail: str) -> None:
+        """Callback to send tool call info via WebSocket."""
+        asyncio.create_task(_send(websocket, ToolCallInfo(tool=tool, args=args, detail=detail)))
+    
+    deps = _build_deps(session_state, verbose=verbose, tool_call_callback=send_tool_call_info)
 
     try:
         while True:
@@ -357,7 +369,7 @@ async def chat_ws(
                 async with _get_session_lock(session_id):
                     fresh_state = _session_mgr.resume_session(session_id)
                     if fresh_state:
-                        deps = _build_deps(fresh_state, verbose=verbose)
+                        deps = _build_deps(fresh_state, verbose=verbose, tool_call_callback=send_tool_call_info)
                     message_history = _session_mgr.load_history(session_id)
                     message_history = await _run_agent_turn(
                         websocket,
@@ -373,6 +385,7 @@ async def chat_ws(
 
     except WebSocketDisconnect:
         logger.info("Client disconnected from session %s", session_id)
+        _session_locks.pop(session_id, None)
 
 
 async def _run_agent_turn(
