@@ -315,9 +315,10 @@ async def chat_ws(
     await websocket.accept()
     verbose = True
     pending_sends: set[asyncio.Task] = set()
-    
+
     def send_tool_call_info(tool: str, args: dict[str, Any], detail: str) -> None:
         """Callback to send tool call info via WebSocket."""
+
         async def _send_and_cleanup() -> None:
             try:
                 await _send(websocket, ToolCallInfo(tool=tool, args=args, detail=detail))
@@ -325,10 +326,10 @@ async def chat_ws(
                 logger.warning("WebSocket send failed for tool call info: %s", exc)
             finally:
                 pending_sends.discard(task)
-        
+
         task = asyncio.create_task(_send_and_cleanup())
         pending_sends.add(task)
-    
+
     deps = _build_deps(session_state, verbose=verbose, tool_call_callback=send_tool_call_info)
 
     try:
