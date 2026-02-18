@@ -397,7 +397,6 @@ async def chat_ws(
     except WebSocketDisconnect:
         logger.info("Client disconnected from session %s", session_id)
     finally:
-        _session_locks.pop(session_id, None)
         for task in pending_sends:
             task.cancel()
 
