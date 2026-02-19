@@ -48,7 +48,11 @@ async def _gate(
             detail += f" rules: {rules_str}"
         if result.needs_approval:
             detail += " -> approval required"
-        print(f"  \033[2m{tool_name}({args_str}) {detail}\033[0m")
+
+        if ctx.deps.tool_call_callback:
+            ctx.deps.tool_call_callback(tool_name, args, detail)
+        else:
+            print(f"  \033[2m{tool_name}({args_str}) {detail}\033[0m")
 
     if result.needs_approval:
         raise ApprovalRequired(

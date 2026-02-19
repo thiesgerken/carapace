@@ -26,4 +26,5 @@ def test_chat_help():
     assert result.exit_code == 0
     output = _strip_ansi(result.output)
     assert "--session" in output
-    assert "--data-dir" in output
+    assert "--server" in output
+    assert "--token" in output

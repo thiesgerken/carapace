@@ -12,10 +12,14 @@ dependencies = [
     "python-dotenv>=1.2.1",
     "tenacity",
     "logfire[httpx]",
+    "fastapi",
+    "uvicorn[standard]",
+    "websockets",
 ]
 
 [project.scripts]
 carapace = "carapace.cli:app"
+carapace-server = "carapace.server:main"
 
 [dependency-groups]
 dev = ["pytest"]

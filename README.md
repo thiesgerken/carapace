@@ -23,20 +23,24 @@ Carapace is a self-hosted AI agent gateway that connects to Matrix (and future c
 ## Architecture overview
 
 ```text
-Channels (Matrix, cron, webhook, ...)
+CLI Client (typer + rich)
         |
-   Channel Router
+   REST + WebSocket (bearer token auth)
+        |
+   FastAPI Server
         |
    Session Manager ---- Rule Engine (LLM-evaluated)
         |                     |
    Pydantic AI Agent --- Approval Gate
         |                     |
-   Skill Registry       Channel (sends approval requests)
+   Skill Registry       WebSocket (sends approval requests)
         |
   Docker Containers
    ├── Base Container (read-only, no network)
    └── Skill Containers (from Dockerfile, with credentials)
 ```
+
+The server runs the agent and all logic. The CLI is a thin client that connects via HTTP (sessions) and WebSocket (chat, slash commands, approval flow).
 
 See [docs/architecture.md](docs/architecture.md) for the full architecture with diagrams.
 
@@ -54,6 +58,7 @@ See [docs/architecture.md](docs/architecture.md) for the full architecture with 
 ## Technology stack
 
 - **Python 3.12+** with **Pydantic AI** (agents, tools, dependency injection)
+- **FastAPI** + **uvicorn** for the server, **WebSockets** for real-time chat
 - **matrix-nio** for Matrix E2EE
 - **Docker** for all tool execution (docker-py SDK)
 - **Pydantic v2** for config and models
@@ -68,6 +73,7 @@ All state lives under `$CARAPACE_DATA_DIR` (defaults to `./data`).
 $CARAPACE_DATA_DIR/
   config.yaml            # main configuration
   rules.yaml             # security rules (plain English)
+  server.token           # bearer token (auto-generated on first start)
   AGENTS.md              # agent behavioral guide
   SOUL.md                # agent personality
   USER.md                # about the human
@@ -107,17 +113,19 @@ uv sync
 
 ### Running
 
-Start the interactive CLI:
+Start the server:
 
 ```bash
-uv run python -m carapace
+uv run python -m carapace        # or: uv run carapace-server
 ```
 
-Or, if installed as a script:
+Connect the CLI client (in another terminal):
 
 ```bash
-uv run carapace
+uv run python -m carapace.cli    # or: uv run carapace
 ```
+
+On first server start a bearer token is generated in `data/server.token`. The CLI reads it automatically from the same data directory. For remote access, pass `--token` or set `CARAPACE_TOKEN`.
 
 ### Configuration
 
@@ -127,9 +135,12 @@ uv run carapace
 ## Demo
 
 ```
+$ carapace-server
+INFO:     Carapace server ready — model=anthropic:claude-sonnet-4-5, rules=7, skills=1, token=a1b2c3d4…
+
 $ carapace
 New session c72188b27225
-Model: anthropic:claude-sonnet-4-5 | Rules: 7 loaded | Skills: 1 available | Type /help for commands
+Server: http://127.0.0.1:8321 | Type /help for commands
 
 carapace> hi
 
@@ -187,4 +198,4 @@ Goodbye.
 
 ## Status
 
-Early development — interactive CLI with rule-evaluated tool execution is functional.
+Early development — client-server architecture with FastAPI + WebSocket, rule-evaluated tool execution, and interactive CLI.
