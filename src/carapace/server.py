@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import secrets
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated, Any
@@ -126,7 +127,7 @@ async def _verify_token(
     credentials: Annotated[HTTPAuthorizationCredentials, Depends(_bearer_scheme)],
 ) -> str:
     expected = ensure_token(_data_dir)
-    if credentials.credentials != expected:
+    if not secrets.compare_digest(credentials.credentials, expected):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
     return credentials.credentials
 
@@ -136,12 +137,12 @@ async def _verify_ws_token(
     token: Annotated[str | None, Query()] = None,
 ) -> str:
     expected = ensure_token(_data_dir)
-    if token and token == expected:
+    if token and secrets.compare_digest(token, expected):
         return token
     auth = websocket.headers.get("authorization", "")
-    if auth.startswith("Bearer ") and auth.removeprefix("Bearer ") == expected:
+    bearer_token = auth.removeprefix("Bearer ") if auth.startswith("Bearer ") else ""
+    if bearer_token and secrets.compare_digest(bearer_token, expected):
         return expected
-    await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
     raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION)
 
 
