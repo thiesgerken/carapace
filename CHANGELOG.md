@@ -1,6 +1,81 @@
 # CHANGELOG
 
 
+## v0.3.0 (2026-02-19)
+
+### Other
+
+- 💚 Update build command in pyproject.toml to include 'uv lock'
+  ([`5cedc87`](https://github.com/thiesgerken/carapace/commit/5cedc87e2c8a74a142eaab058013e8993fcbdc45))
+
+### ✨
+
+- ✨ Revamp Carapace architecture with server and CLI client integration
+  ([#30](https://github.com/thiesgerken/carapace/pull/30),
+  [`6644bfe`](https://github.com/thiesgerken/carapace/commit/6644bfe8bca5e79801320c76fed669e1775fa4f5))
+
+* ✨ Revamp Carapace architecture with server and CLI client integration
+
+- Introduced a FastAPI server for handling requests and WebSocket connections. - Updated CLI to
+  connect to the server, replacing the previous interactive model. - Enhanced documentation in
+  AGENTS.md and README.md to reflect new server and client structure. - Added bearer token
+  authentication for secure communication between CLI and server. - Updated project dependencies to
+  include FastAPI, Uvicorn, and WebSockets. - Version bump to 0.2.0 to signify major architectural
+  changes.
+
+* ✨ Implement session locking in WebSocket chat handler
+
+- Added asyncio locks to manage concurrent access to session data, ensuring serialized agent turns.
+  - Refactored chat_ws function to utilize session locks for loading and saving message history and
+  session state. - Improved error handling and logging during agent execution.
+
+* 🧹 Clean up unused server URL function in CLI
+
+- Removed the `_server_url` function as it was no longer needed in the updated architecture. -
+  Streamlined the code for better readability and maintenance.
+
+* ✨ Improve error handling for approval requests in CLI and server
+
+- Added exception handling for keyboard interruptions during approval requests in the CLI, ensuring
+  a graceful denial message is displayed. - Updated server logic to handle interrupted approvals by
+  marking them as denied and clearing pending requests, enhancing overall robustness.
+
+* Fix 5 bugs: WebSocket auth exception, token permissions, session lock cleanup, async input
+  blocking, and verbose output routing
+
+- Use WebSocketException instead of HTTPException for WebSocket auth failures - Set token file
+  permissions to 0600 for security - Clean up session locks on WebSocket disconnect to prevent
+  memory leak - Use run_in_executor for approval prompt input to avoid blocking event loop - Route
+  verbose tool call output via WebSocket instead of server stdout
+
+Applied via @cursor push command
+
+* Fix fire-and-forget WebSocket send by saving task references
+
+- Save created tasks in a set to prevent garbage collection - Add error handling to log WebSocket
+  send failures - Cancel pending tasks on client disconnect - This ensures the server detects
+  dropped clients and stops expensive LLM calls
+
+* pc
+
+* Refactor WebSocket chat handler for improved control flow and error handling
+
+- Changed return statement to break in command handling for better flow control. - Added a finally
+  block to ensure session locks are cleaned up on disconnect. - Enhanced error handling for
+  unexpected agent output types during message sending.
+
+* Enhance session management in WebSocket chat handler
+
+- Introduced an async context manager for session connections to manage locks more effectively. -
+  Updated chat_ws function to utilize the new session connection management, ensuring proper lock
+  handling during WebSocket interactions. - Improved error handling and cleanup on client disconnect
+  to prevent memory leaks and ensure session integrity.
+
+---------
+
+Co-authored-by: Cursor Agent <cursoragent@cursor.com>
+
+
 ## v0.2.0 (2026-02-15)
 
 ### Other
