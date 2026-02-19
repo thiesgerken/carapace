@@ -51,11 +51,27 @@ _session_mgr: SessionManager
 _skill_catalog: list
 _agent_model: Any
 _session_locks: dict[str, asyncio.Lock] = {}
+_session_lock_refs: dict[str, int] = {}
 
 
-def _get_session_lock(session_id: str) -> asyncio.Lock:
-    """Return (or create) an asyncio.Lock for the given session, serialising agent turns."""
-    return _session_locks.setdefault(session_id, asyncio.Lock())
+@asynccontextmanager
+async def _session_connection(session_id: str):
+    """Track one WebSocket connection for a session.
+
+    Ensures the per-session Lock exists for the lifetime of the connection and
+    is removed only when the last connection closes.
+    """
+    _session_lock_refs[session_id] = _session_lock_refs.get(session_id, 0) + 1
+    _session_locks.setdefault(session_id, asyncio.Lock())
+    try:
+        yield _session_locks[session_id]
+    finally:
+        count = _session_lock_refs[session_id] - 1
+        if count <= 0:
+            _session_locks.pop(session_id, None)
+            _session_lock_refs.pop(session_id, None)
+        else:
+            _session_lock_refs[session_id] = count
 
 
 def _create_anthropic_model(model_name: str) -> AnthropicModel:
@@ -332,74 +348,74 @@ async def chat_ws(
 
     deps = _build_deps(session_state, verbose=verbose, tool_call_callback=send_tool_call_info)
 
-    try:
-        while True:
-            raw = await websocket.receive_json()
-            try:
-                client_msg = parse_client_message(raw)
-            except (ValueError, Exception) as exc:
-                await _send(websocket, ErrorMessage(detail=str(exc)))
-                continue
-
-            if not isinstance(client_msg, UserMessage):
-                await _send(websocket, ErrorMessage(detail="Expected a message"))
-                continue
-
-            user_input = client_msg.content.strip()
-            if not user_input:
-                continue
-
-            # --- Slash commands ---
-            if user_input.startswith("/"):
-                if user_input.lower() in ("/quit", "/exit"):
-                    await websocket.close(code=1000)
-                    break
-
-                if user_input.lower() == "/verbose":
-                    verbose = not verbose
-                    deps.verbose = verbose
-                    state_str = "on" if verbose else "off"
-                    await _send(
-                        websocket,
-                        CommandResult(
-                            command="verbose", data={"verbose": verbose, "message": f"Verbose mode {state_str}"}
-                        ),
-                    )
+    async with _session_connection(session_id) as session_lock:
+        try:
+            while True:
+                raw = await websocket.receive_json()
+                try:
+                    client_msg = parse_client_message(raw)
+                except (ValueError, Exception) as exc:
+                    await _send(websocket, ErrorMessage(detail=str(exc)))
                     continue
 
-                result = _handle_slash_command(user_input, deps)
-                if result:
-                    await _send(websocket, result)
+                if not isinstance(client_msg, UserMessage):
+                    await _send(websocket, ErrorMessage(detail="Expected a message"))
                     continue
 
-                await _send(websocket, ErrorMessage(detail=f"Unknown command: {user_input.split()[0]}"))
-                continue
+                user_input = client_msg.content.strip()
+                if not user_input:
+                    continue
 
-            # --- Agent loop (serialised per session) ---
-            try:
-                async with _get_session_lock(session_id):
-                    fresh_state = _session_mgr.resume_session(session_id)
-                    if fresh_state:
-                        deps = _build_deps(fresh_state, verbose=verbose, tool_call_callback=send_tool_call_info)
-                    message_history = _session_mgr.load_history(session_id)
-                    message_history = await _run_agent_turn(
-                        websocket,
-                        user_input,
-                        deps,
-                        message_history,
-                    )
-                    _session_mgr.save_history(session_id, message_history)
-                    _session_mgr.save_state(deps.session_state)
-            except Exception as exc:
-                logger.exception("Agent error")
-                await _send(websocket, ErrorMessage(detail=str(exc)))
+                # --- Slash commands ---
+                if user_input.startswith("/"):
+                    if user_input.lower() in ("/quit", "/exit"):
+                        await websocket.close(code=1000)
+                        break
 
-    except WebSocketDisconnect:
-        logger.info("Client disconnected from session %s", session_id)
-    finally:
-        _session_locks.pop(session_id, None)
-        for task in pending_sends:
-            task.cancel()
+                    if user_input.lower() == "/verbose":
+                        verbose = not verbose
+                        deps.verbose = verbose
+                        state_str = "on" if verbose else "off"
+                        await _send(
+                            websocket,
+                            CommandResult(
+                                command="verbose", data={"verbose": verbose, "message": f"Verbose mode {state_str}"}
+                            ),
+                        )
+                        continue
+
+                    result = _handle_slash_command(user_input, deps)
+                    if result:
+                        await _send(websocket, result)
+                        continue
+
+                    await _send(websocket, ErrorMessage(detail=f"Unknown command: {user_input.split()[0]}"))
+                    continue
+
+                # --- Agent loop (serialised per session) ---
+                try:
+                    async with session_lock:
+                        fresh_state = _session_mgr.resume_session(session_id)
+                        if fresh_state:
+                            deps = _build_deps(fresh_state, verbose=verbose, tool_call_callback=send_tool_call_info)
+                        message_history = _session_mgr.load_history(session_id)
+                        message_history = await _run_agent_turn(
+                            websocket,
+                            user_input,
+                            deps,
+                            message_history,
+                        )
+                        _session_mgr.save_history(session_id, message_history)
+                        _session_mgr.save_state(deps.session_state)
+                except Exception as exc:
+                    logger.exception("Agent error")
+                    await _send(websocket, ErrorMessage(detail=str(exc)))
+
+        except WebSocketDisconnect:
+            logger.info("Client disconnected from session %s", session_id)
+        finally:
+            for task in pending_sends:
+                task.cancel()
 
 
 async def _run_agent_turn(
