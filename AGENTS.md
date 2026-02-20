@@ -10,6 +10,7 @@ Carapace is a security-first personal AI agent with rule-based information flow 
 - Install with dev deps: `uv sync --dev`
 - Start server: `uv run python -m carapace` (or `uv run carapace-server`)
 - Start CLI client: `uv run python -m carapace.cli` (or `uv run carapace`)
+- Start frontend: `cd frontend && npm install && npm run dev`
 - Run tests: `uv run pytest`
 - Run single test: `uv run pytest tests/test_cli.py -k test_help`
 
@@ -42,6 +43,10 @@ src/carapace/          # main package
   security/
     classifier.py      # LLM-based operation classifier
     engine.py          # rule evaluation engine
+frontend/              # Next.js web UI (React 19, Tailwind CSS 4)
+  src/app/             # Next.js app router pages and layout
+  src/components/      # React components (chat, sidebar, approval flow)
+  src/hooks/           # custom hooks (WebSocket connection)
 tests/                 # pytest tests
 data/                  # runtime data directory (config, rules, memory, sessions)
 ```
