@@ -23,24 +23,24 @@ Carapace is a self-hosted AI agent gateway that connects to Matrix (and future c
 ## Architecture overview
 
 ```text
-CLI Client (typer + rich)
-        |
-   REST + WebSocket (bearer token auth)
-        |
-   FastAPI Server
-        |
-   Session Manager ---- Rule Engine (LLM-evaluated)
-        |                     |
-   Pydantic AI Agent --- Approval Gate
-        |                     |
-   Skill Registry       WebSocket (sends approval requests)
-        |
-  Docker Containers
-   ├── Base Container (read-only, no network)
-   └── Skill Containers (from Dockerfile, with credentials)
+CLI Client (typer + rich)    Web UI (Next.js)
+        \                      /
+         REST + WebSocket (bearer token auth)
+                    |
+              FastAPI Server
+                    |
+         Session Manager ---- Rule Engine (LLM-evaluated)
+              |                     |
+         Pydantic AI Agent --- Approval Gate
+              |                     |
+         Skill Registry       WebSocket (sends approval requests)
+              |
+        Docker Containers
+         ├── Base Container (read-only, no network)
+         └── Skill Containers (from Dockerfile, with credentials)
 ```
 
-The server runs the agent and all logic. The CLI is a thin client that connects via HTTP (sessions) and WebSocket (chat, slash commands, approval flow).
+The server runs the agent and all logic. The CLI and web UI are thin clients that connect via HTTP (sessions) and WebSocket (chat, slash commands, approval flow).
 
 See [docs/architecture.md](docs/architecture.md) for the full architecture with diagrams.
 
@@ -59,6 +59,7 @@ See [docs/architecture.md](docs/architecture.md) for the full architecture with 
 
 - **Python 3.12+** with **Pydantic AI** (agents, tools, dependency injection)
 - **FastAPI** + **uvicorn** for the server, **WebSockets** for real-time chat
+- **Next.js 16** + **React 19** + **Tailwind CSS 4** for the web UI
 - **matrix-nio** for Matrix E2EE
 - **Docker** for all tool execution (docker-py SDK)
 - **Pydantic v2** for config and models
@@ -119,13 +120,21 @@ Start the server:
 uv run python -m carapace        # or: uv run carapace-server
 ```
 
-Connect the CLI client (in another terminal):
+Connect via the CLI client (in another terminal):
 
 ```bash
 uv run python -m carapace.cli    # or: uv run carapace
 ```
 
-On first server start a bearer token is generated in `data/server.token`. The CLI reads it automatically from the same data directory. For remote access, pass `--token` or set `CARAPACE_TOKEN`.
+Or start the web UI (in another terminal):
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+On first server start a bearer token is generated in `data/server.token`. The CLI reads it automatically from the same data directory. The web UI prompts for the server URL and token on first connect. For remote CLI access, pass `--token` or set `CARAPACE_TOKEN`.
 
 ### Configuration
 

@@ -10,6 +10,7 @@ import logfire
 import uvicorn
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect, WebSocketException, status
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from httpx import AsyncClient, HTTPStatusError
 from pydantic import BaseModel
@@ -119,6 +120,14 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Carapace", lifespan=lifespan)
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 _bearer_scheme = HTTPBearer()
 
 
@@ -189,7 +198,7 @@ async def create_session(
 async def list_sessions(_token: str = Depends(_verify_token)) -> list[SessionInfo]:
     results: list[SessionInfo] = []
     for sid in _session_mgr.list_sessions():
-        state = _session_mgr.resume_session(sid)
+        state = _session_mgr.load_state(sid)
         if state:
             results.append(SessionInfo.from_state(state))
     return results
@@ -197,10 +206,61 @@ async def list_sessions(_token: str = Depends(_verify_token)) -> list[SessionInf
 
 @app.get("/sessions/{session_id}", response_model=SessionInfo)
 async def get_session(session_id: str, _token: str = Depends(_verify_token)) -> SessionInfo:
-    state = _session_mgr.resume_session(session_id)
+    state = _session_mgr.load_state(session_id)
     if state is None:
         raise HTTPException(status_code=404, detail="Session not found")
     return SessionInfo.from_state(state)
+
+
+@app.delete("/sessions/{session_id}", status_code=204)
+async def delete_session(session_id: str, _token: str = Depends(_verify_token)) -> None:
+    if not _session_mgr.delete_session(session_id):
+        raise HTTPException(status_code=404, detail="Session not found")
+
+
+class HistoryMessage(BaseModel):
+    role: str  # "user" | "assistant" | "tool_call"
+    content: str
+    tool: str | None = None
+    args: dict[str, Any] | None = None
+
+
+@app.get("/sessions/{session_id}/history", response_model=list[HistoryMessage])
+async def get_session_history(
+    session_id: str,
+    limit: Annotated[int, Query()] = -1,
+    _token: str = Depends(_verify_token),
+) -> list[HistoryMessage]:
+    from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, ToolCallPart, UserPromptPart
+
+    if _session_mgr.load_state(session_id) is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    raw_messages = _session_mgr.load_history(session_id)
+    result: list[HistoryMessage] = []
+    for msg in raw_messages:
+        if isinstance(msg, ModelRequest):
+            for part in msg.parts:
+                if isinstance(part, UserPromptPart) and isinstance(part.content, str):
+                    result.append(HistoryMessage(role="user", content=part.content))
+        elif isinstance(msg, ModelResponse):
+            for part in msg.parts:
+                if isinstance(part, ToolCallPart):
+                    args = part.args if isinstance(part.args, dict) else {}
+                    result.append(
+                        HistoryMessage(
+                            role="tool_call",
+                            content="",
+                            tool=part.tool_name,
+                            args=args,
+                        )
+                    )
+                elif isinstance(part, TextPart):
+                    result.append(HistoryMessage(role="assistant", content=part.content))
+
+    if limit > 0:
+        result = result[-limit:]
+    return result
 
 
 # --- WebSocket: Chat ---

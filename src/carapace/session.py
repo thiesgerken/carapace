@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shutil
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -30,14 +31,19 @@ class SessionManager:
         self._save_state(state)
         return state
 
-    def resume_session(self, session_id: str) -> SessionState | None:
+    def load_state(self, session_id: str) -> SessionState | None:
+        """Load session state without mutating last_active."""
         state_path = self.sessions_dir / session_id / "state.yaml"
         if not state_path.exists():
             return None
         with open(state_path) as f:
             raw = yaml.safe_load(f)
-        state = SessionState.model_validate(raw)
-        state.last_active = datetime.now()
+        return SessionState.model_validate(raw)
+
+    def resume_session(self, session_id: str) -> SessionState | None:
+        state = self.load_state(session_id)
+        if state is not None:
+            state.last_active = datetime.now()
         return state
 
     def list_sessions(self) -> list[str]:
@@ -54,6 +60,13 @@ class SessionManager:
         if state_path.exists():
             return state_path.stat().st_mtime
         return 0.0
+
+    def delete_session(self, session_id: str) -> bool:
+        session_dir = self.sessions_dir / session_id
+        if session_dir.exists():
+            shutil.rmtree(session_dir)
+            return True
+        return False
 
     def save_state(self, state: SessionState) -> None:
         self._save_state(state)

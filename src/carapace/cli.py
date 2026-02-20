@@ -53,6 +53,32 @@ def _ws_url(server: str, session_id: str, bearer: str) -> str:
     return f"{base}/chat/{session_id}?token={bearer}"
 
 
+def _replay_history(server: str, session_id: str, headers: dict[str, str], limit: int) -> None:
+    """Fetch and display past conversation messages."""
+    params = {} if limit < 0 else {"limit": limit}
+    try:
+        resp = httpx.get(f"{server}/sessions/{session_id}/history", headers=headers, params=params)
+        resp.raise_for_status()
+    except httpx.HTTPStatusError:
+        return
+
+    messages = resp.json()
+    if not messages:
+        return
+
+    console.print("[dim]--- conversation history ---[/dim]")
+    for msg in messages:
+        if msg["role"] == "user":
+            console.print(f"[dim bold cyan]carapace>[/dim bold cyan] [dim]{msg['content']}[/dim]")
+        elif msg["role"] == "tool_call":
+            console.print(f"  [dim]{msg.get('tool', '?')}({msg.get('args', {})})[/dim]")
+        else:
+            console.print()
+            console.print(Markdown(msg["content"]))
+    console.print("[dim]--- end of history ---[/dim]")
+    console.print()
+
+
 # --- Rendering helpers for server responses ---
 
 
@@ -259,6 +285,9 @@ def chat(
     data_dir: str | None = typer.Option(None, "--data-dir", "-d", help="Data directory (for token lookup)"),
     token: str | None = typer.Option(None, "--token", envvar="CARAPACE_TOKEN", help="Bearer token"),
     list_sessions: bool = typer.Option(False, "--list", "-l", help="List existing sessions"),
+    history: int = typer.Option(
+        -1, "--history", "-H", help="Number of past messages to show on resume (-1 = all, 0 = none)"
+    ),
 ):
     """Start an interactive chat session with the Carapace server."""
     bearer = _get_token(data_dir, token)
@@ -303,6 +332,9 @@ def chat(
 
     console.print(f"[dim]Server: {server} | Type /help for commands[/dim]")
     console.print()
+
+    if session and history != 0:
+        _replay_history(server, session_id, headers, history)
 
     url = _ws_url(server, session_id, bearer)
     try:
