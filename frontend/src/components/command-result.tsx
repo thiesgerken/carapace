@@ -133,6 +133,7 @@ interface UsagePayload {
   categories: Record<string, UsageBucket>;
   total_input: number;
   total_output: number;
+  costs?: Record<string, string>;
 }
 
 function isUsageData(d: unknown): d is UsagePayload {
@@ -143,6 +144,17 @@ function fmt(n: number): string {
   return n.toLocaleString();
 }
 
+function costColor(val: number): string {
+  if (val >= 0.25) return "text-red-600 dark:text-red-400";
+  if (val >= 0.1) return "text-yellow-600 dark:text-yellow-400";
+  return "text-green-600 dark:text-green-400";
+}
+
+function fmtCost(val: string): string {
+  const n = parseFloat(val);
+  return n ? `$${n.toFixed(4)}` : "-";
+}
+
 function UsageView({ data }: { data: UsagePayload }) {
   const allBuckets = [
     ...Object.values(data.models),
@@ -150,6 +162,10 @@ function UsageView({ data }: { data: UsagePayload }) {
   ];
   const hasCache = allBuckets.some(
     (b) => b.cache_read_tokens || b.cache_write_tokens,
+  );
+  const costs = data.costs ?? {};
+  const hasCosts = Object.entries(costs).some(
+    ([k, v]) => k !== "total" && v !== "0",
   );
 
   const isEmpty =
@@ -163,7 +179,11 @@ function UsageView({ data }: { data: UsagePayload }) {
     );
   }
 
-  function renderTable(title: string, rows: Record<string, UsageBucket>) {
+  function renderTable(
+    title: string,
+    rows: Record<string, UsageBucket>,
+    showCost: boolean = false,
+  ) {
     return (
       <div className="my-2 text-sm">
         <p className="mb-1 text-xs font-medium text-muted-foreground">
@@ -183,7 +203,10 @@ function UsageView({ data }: { data: UsagePayload }) {
                   Cache Write
                 </th>
               )}
-              <th className="pb-1 font-medium text-right">Requests</th>
+              <th className="pb-1 pr-3 font-medium text-right">Requests</th>
+              {showCost && hasCosts && (
+                <th className="pb-1 font-medium text-right">Cost</th>
+              )}
             </tr>
           </thead>
           <tbody>
@@ -206,7 +229,14 @@ function UsageView({ data }: { data: UsagePayload }) {
                     {fmt(u.cache_write_tokens)}
                   </td>
                 )}
-                <td className="py-1 text-xs text-right">{u.requests}</td>
+                <td className="py-1 pr-3 text-xs text-right">{u.requests}</td>
+                {showCost && hasCosts && (
+                  <td
+                    className={`py-1 text-xs text-right ${costColor(parseFloat(costs[name] ?? "0"))}`}
+                  >
+                    {fmtCost(costs[name] ?? "0")}
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>
@@ -216,15 +246,23 @@ function UsageView({ data }: { data: UsagePayload }) {
   }
 
   const total = data.total_input + data.total_output;
+  const totalCost = costs.total ?? "0";
+  const costStr =
+    totalCost !== "0" ? (
+      <span className={costColor(parseFloat(totalCost))}>
+        {" "}
+        | {fmtCost(totalCost)}
+      </span>
+    ) : null;
   return (
     <div>
       {Object.keys(data.models).length > 0 &&
-        renderTable("By Model", data.models)}
+        renderTable("By Model", data.models, true)}
       {Object.keys(data.categories).length > 0 &&
         renderTable("By Category", data.categories)}
       <p className="mt-1 text-xs text-muted-foreground">
         Total: {fmt(total)} tokens ({fmt(data.total_input)} in +{" "}
-        {fmt(data.total_output)} out)
+        {fmt(data.total_output)} out){costStr}
       </p>
     </div>
   );

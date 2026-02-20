@@ -42,6 +42,12 @@ export function ChatView({ server, token, sessionId }: ChatViewProps) {
               args: h.args ?? {},
               detail: "",
             };
+          if (h.role === "command")
+            return {
+              kind: "command",
+              command: h.command ?? "",
+              data: h.data,
+            };
           return { kind: "assistant", content: h.content };
         });
         setMessages(msgs);
