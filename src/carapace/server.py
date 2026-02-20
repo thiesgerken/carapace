@@ -13,7 +13,7 @@ from fastapi import Depends, FastAPI, HTTPException, Query, WebSocket, WebSocket
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from httpx import AsyncClient, HTTPStatusError
 from pydantic import BaseModel
-from pydantic_ai import DeferredToolRequests, DeferredToolResults, ToolDenied
+from pydantic_ai import DeferredToolRequests, DeferredToolResults, ToolDenied, Usage
 from pydantic_ai.models.anthropic import AnthropicModel
 from pydantic_ai.providers.anthropic import AnthropicProvider
 from pydantic_ai.retries import AsyncTenacityTransport, RetryConfig, wait_retry_after
@@ -246,6 +246,7 @@ def _handle_slash_command(command: str, deps: Deps) -> CommandResult | None:
                     {"command": "/session", "description": "Show current session state"},
                     {"command": "/skills", "description": "List available skills"},
                     {"command": "/memory", "description": "List memory files"},
+                    {"command": "/usage", "description": "Show session cost and token usage"},
                     {"command": "/verbose", "description": "Toggle tool call display"},
                     {"command": "/quit", "description": "Disconnect"},
                     {"command": "/help", "description": "Show this help"},
@@ -313,6 +314,19 @@ def _handle_slash_command(command: str, deps: Deps) -> CommandResult | None:
         store = MemoryStore(deps.data_dir)
         files = store.list_files()
         return CommandResult(command="memory", data=files)
+
+    if cmd == "/usage":
+        state = deps.session_state
+        return CommandResult(
+            command="usage",
+            data={
+                "total_requests": state.total_requests,
+                "total_tokens": state.total_tokens,
+                "request_tokens": state.request_tokens,
+                "response_tokens": state.response_tokens,
+                "total_cost": state.total_cost,
+            },
+        )
 
     return None
 
@@ -405,6 +419,8 @@ async def chat_ws(
                             deps,
                             message_history,
                         )
+                        deps.session_state.total_tokens += deps.classifier_usage_tokens
+                        deps.session_state.total_cost += deps.classifier_usage_cost
                         _session_mgr.save_history(session_id, message_history)
                         _session_mgr.save_state(deps.session_state)
                 except Exception as exc:
@@ -416,6 +432,23 @@ async def chat_ws(
         finally:
             for task in pending_sends:
                 task.cancel()
+
+
+def _update_usage_from_result(session_state: SessionState, result: Any) -> None:
+    """Update session state with usage from an agent result."""
+    try:
+        usage = result.usage()
+        session_state.total_requests += 1
+        if usage.request_tokens:
+            session_state.request_tokens += usage.request_tokens
+        if usage.response_tokens:
+            session_state.response_tokens += usage.response_tokens
+        if usage.total_tokens:
+            session_state.total_tokens += usage.total_tokens
+        if hasattr(usage, "total_cost") and usage.total_cost:
+            session_state.total_cost += usage.total_cost
+    except Exception as exc:
+        logger.warning("Failed to track usage: %s", exc)
 
 
 async def _run_agent_turn(
@@ -433,6 +466,7 @@ async def _run_agent_turn(
         message_history=message_history or None,
     )
     messages = result.all_messages()
+    _update_usage_from_result(deps.session_state, result)
 
     while isinstance(result.output, DeferredToolRequests):
         requests = result.output
@@ -478,6 +512,7 @@ async def _run_agent_turn(
             deferred_tool_results=deferred_results,
         )
         messages = result.all_messages()
+        _update_usage_from_result(deps.session_state, result)
 
     if isinstance(result.output, str):
         await _send(ws, Done(content=result.output))

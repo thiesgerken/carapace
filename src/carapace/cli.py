@@ -126,6 +126,19 @@ def _render_command_result(data: dict[str, Any]) -> None:
         case "verbose":
             console.print(f"[dim]{payload['message']}[/dim]")
 
+        case "usage":
+            table = Table(title="Session Usage")
+            table.add_column("Metric", style="bold")
+            table.add_column("Value", justify="right")
+            table.add_row("Total requests", str(payload.get("total_requests", 0)))
+            table.add_row("Total tokens", f"{payload.get('total_tokens', 0):,}")
+            table.add_row("Request tokens", f"{payload.get('request_tokens', 0):,}")
+            table.add_row("Response tokens", f"{payload.get('response_tokens', 0):,}")
+            cost = payload.get("total_cost", 0.0)
+            cost_str = f"${cost:.4f}" if cost > 0 else "$0.00"
+            table.add_row("Total cost", cost_str)
+            console.print(table)
+
         case _:
             console.print(f"[dim]{payload}[/dim]")
 

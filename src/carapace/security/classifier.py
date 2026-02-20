@@ -46,11 +46,12 @@ async def classify_operation(
     tool_name: str,
     args: dict[str, Any],
     context: str = "",
-) -> OperationClassification:
+) -> tuple[OperationClassification, Any]:
+    """Classify an operation and return (classification, result with usage info)."""
     agent = _get_classifier_agent(model)
     prompt_parts = [f"Tool: {tool_name}", f"Arguments: {args}"]
     if context:
         prompt_parts.append(f"Context: {context}")
     prompt = "\n".join(prompt_parts)
     result = await agent.run(prompt)
-    return result.output
+    return result.output, result

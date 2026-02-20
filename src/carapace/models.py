@@ -76,6 +76,11 @@ class SessionState(BaseModel):
     approved_operations: list[str] = []
     created_at: datetime = datetime.now()
     last_active: datetime = datetime.now()
+    total_requests: int = 0
+    total_tokens: int = 0
+    request_tokens: int = 0
+    response_tokens: int = 0
+    total_cost: float = 0.0
 
 
 # --- Configuration ---
@@ -181,3 +186,5 @@ class Deps:
     agent_model: Any = None
     verbose: bool = True
     tool_call_callback: Callable[[str, dict[str, Any], str], None] | None = None
+    classifier_usage_tokens: int = 0
+    classifier_usage_cost: float = 0.0
