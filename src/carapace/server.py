@@ -25,7 +25,7 @@ from carapace.auth import ensure_token
 from carapace.bootstrap import ensure_data_dir
 from carapace.config import get_data_dir, load_config, load_rules
 from carapace.memory import MemoryStore
-from carapace.models import Config, Deps, Rule, SessionState
+from carapace.models import Config, Deps, Rule, SessionState, UsageTracker
 from carapace.session import SessionManager
 from carapace.skills import SkillRegistry
 from carapace.ws_models import (
@@ -108,6 +108,12 @@ async def lifespan(app: FastAPI):
     _agent_model = _create_anthropic_model(_config.agent.model)
 
     token = ensure_token(_data_dir)
+
+    from genai_prices import UpdatePrices
+
+    price_updater = UpdatePrices()
+    price_updater.start()
+
     logger.info(
         "Carapace server ready — model=%s, rules=%d, skills=%d, token=%s…",
         _config.agent.model,
@@ -116,6 +122,7 @@ async def lifespan(app: FastAPI):
         token[:8],
     )
     yield
+    price_updater.stop()
 
 
 app = FastAPI(title="Carapace", lifespan=lifespan)
@@ -219,10 +226,12 @@ async def delete_session(session_id: str, _token: str = Depends(_verify_token)) 
 
 
 class HistoryMessage(BaseModel):
-    role: str  # "user" | "assistant" | "tool_call"
-    content: str
+    role: str  # "user" | "assistant" | "tool_call" | "command"
+    content: str = ""
     tool: str | None = None
     args: dict[str, Any] | None = None
+    command: str | None = None
+    data: Any = None
 
 
 @app.get("/sessions/{session_id}/history", response_model=list[HistoryMessage])
@@ -231,10 +240,20 @@ async def get_session_history(
     limit: Annotated[int, Query()] = -1,
     _token: str = Depends(_verify_token),
 ) -> list[HistoryMessage]:
-    from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, ToolCallPart, UserPromptPart
-
     if _session_mgr.load_state(session_id) is None:
         raise HTTPException(status_code=404, detail="Session not found")
+
+    events = _session_mgr.load_events(session_id)
+    result = [HistoryMessage.model_validate(e) for e in events] if events else _history_from_messages(session_id)
+
+    if limit > 0:
+        result = result[-limit:]
+    return result
+
+
+def _history_from_messages(session_id: str) -> list[HistoryMessage]:
+    """Fallback: build history from Pydantic AI messages for sessions without events.json."""
+    from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, ToolCallPart, UserPromptPart
 
     raw_messages = _session_mgr.load_history(session_id)
     result: list[HistoryMessage] = []
@@ -247,19 +266,9 @@ async def get_session_history(
             for part in msg.parts:
                 if isinstance(part, ToolCallPart):
                     args = part.args if isinstance(part.args, dict) else {}
-                    result.append(
-                        HistoryMessage(
-                            role="tool_call",
-                            content="",
-                            tool=part.tool_name,
-                            args=args,
-                        )
-                    )
+                    result.append(HistoryMessage(role="tool_call", content="", tool=part.tool_name, args=args))
                 elif isinstance(part, TextPart):
                     result.append(HistoryMessage(role="assistant", content=part.content))
-
-    if limit > 0:
-        result = result[-limit:]
     return result
 
 
@@ -271,6 +280,7 @@ def _build_deps(
     *,
     verbose: bool = True,
     tool_call_callback: Any = None,
+    usage_tracker: UsageTracker | None = None,
 ) -> Deps:
     return Deps(
         config=_config,
@@ -282,6 +292,7 @@ def _build_deps(
         agent_model=_agent_model,
         verbose=verbose,
         tool_call_callback=tool_call_callback,
+        usage_tracker=usage_tracker or _session_mgr.load_usage(session_state.session_id),
     )
 
 
@@ -306,6 +317,7 @@ def _handle_slash_command(command: str, deps: Deps) -> CommandResult | None:
                     {"command": "/session", "description": "Show current session state"},
                     {"command": "/skills", "description": "List available skills"},
                     {"command": "/memory", "description": "List memory files"},
+                    {"command": "/usage", "description": "Show token usage for this session"},
                     {"command": "/verbose", "description": "Toggle tool call display"},
                     {"command": "/quit", "description": "Disconnect"},
                     {"command": "/help", "description": "Show this help"},
@@ -374,6 +386,20 @@ def _handle_slash_command(command: str, deps: Deps) -> CommandResult | None:
         files = store.list_files()
         return CommandResult(command="memory", data=files)
 
+    if cmd == "/usage":
+        tracker = deps.usage_tracker
+        costs = tracker.estimated_cost()
+        return CommandResult(
+            command="usage",
+            data={
+                "models": {k: v.model_dump() for k, v in tracker.models.items()},
+                "categories": {k: v.model_dump() for k, v in tracker.categories.items()},
+                "total_input": tracker.total_input,
+                "total_output": tracker.total_output,
+                "costs": {k: str(v) for k, v in costs.items()},
+            },
+        )
+
     return None
 
 
@@ -436,17 +462,30 @@ async def chat_ws(
                         verbose = not verbose
                         deps.verbose = verbose
                         state_str = "on" if verbose else "off"
-                        await _send(
-                            websocket,
-                            CommandResult(
-                                command="verbose", data={"verbose": verbose, "message": f"Verbose mode {state_str}"}
-                            ),
+                        result = CommandResult(
+                            command="verbose",
+                            data={"verbose": verbose, "message": f"Verbose mode {state_str}"},
+                        )
+                        await _send(websocket, result)
+                        _session_mgr.append_events(
+                            session_id,
+                            [
+                                {"role": "user", "content": user_input},
+                                {"role": "command", "command": result.command, "data": result.data},
+                            ],
                         )
                         continue
 
                     result = _handle_slash_command(user_input, deps)
                     if result:
                         await _send(websocket, result)
+                        _session_mgr.append_events(
+                            session_id,
+                            [
+                                {"role": "user", "content": user_input},
+                                {"role": "command", "command": result.command, "data": result.data},
+                            ],
+                        )
                         continue
 
                     await _send(websocket, ErrorMessage(detail=f"Unknown command: {user_input.split()[0]}"))
@@ -457,9 +496,15 @@ async def chat_ws(
                     async with session_lock:
                         fresh_state = _session_mgr.resume_session(session_id)
                         if fresh_state:
-                            deps = _build_deps(fresh_state, verbose=verbose, tool_call_callback=send_tool_call_info)
+                            tracker = deps.usage_tracker
+                            deps = _build_deps(
+                                fresh_state,
+                                verbose=verbose,
+                                tool_call_callback=send_tool_call_info,
+                                usage_tracker=tracker,
+                            )
                         message_history = _session_mgr.load_history(session_id)
-                        message_history = await _run_agent_turn(
+                        message_history, output = await _run_agent_turn(
                             websocket,
                             user_input,
                             deps,
@@ -467,6 +512,14 @@ async def chat_ws(
                         )
                         _session_mgr.save_history(session_id, message_history)
                         _session_mgr.save_state(deps.session_state)
+                        _session_mgr.save_usage(session_id, deps.usage_tracker)
+                        _session_mgr.append_events(
+                            session_id,
+                            [
+                                {"role": "user", "content": user_input},
+                                {"role": "assistant", "content": output},
+                            ],
+                        )
                 except Exception as exc:
                     logger.exception("Agent error")
                     await _send(websocket, ErrorMessage(detail=str(exc)))
@@ -483,15 +536,17 @@ async def _run_agent_turn(
     user_input: str,
     deps: Deps,
     message_history: list,
-) -> list:
+) -> tuple[list, str]:
     """Run one agent turn, handling approval loops over the WebSocket."""
     agent = create_agent(deps)
 
+    model_name = deps.config.agent.model
     result = await agent.run(
         user_input,
         deps=deps,
         message_history=message_history or None,
     )
+    deps.usage_tracker.record(model_name, "agent", result.usage())
     messages = result.all_messages()
 
     while isinstance(result.output, DeferredToolRequests):
@@ -537,14 +592,18 @@ async def _run_agent_turn(
             message_history=messages,
             deferred_tool_results=deferred_results,
         )
+        deps.usage_tracker.record(model_name, "agent", result.usage())
         messages = result.all_messages()
 
+    output: str
     if isinstance(result.output, str):
-        await _send(ws, Done(content=result.output))
+        output = result.output
+        await _send(ws, Done(content=output))
     else:
-        await _send(ws, ErrorMessage(detail=f"Unexpected agent output type: {type(result.output).__name__}"))
+        output = f"Unexpected agent output type: {type(result.output).__name__}"
+        await _send(ws, ErrorMessage(detail=output))
 
-    return messages
+    return messages, output
 
 
 def main() -> None:

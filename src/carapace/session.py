@@ -1,15 +1,17 @@
 from __future__ import annotations
 
+import json
 import shutil
 import uuid
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 import yaml
 from pydantic_ai import ModelMessage, ModelMessagesTypeAdapter
 from pydantic_core import to_json
 
-from carapace.models import SessionState
+from carapace.models import SessionState, UsageTracker
 
 
 class SessionManager:
@@ -90,3 +92,33 @@ class SessionManager:
         session_dir.mkdir(parents=True, exist_ok=True)
         history_path = session_dir / "history.json"
         history_path.write_bytes(to_json(messages))
+
+    # --- Usage tracking persistence ---
+
+    def load_usage(self, session_id: str) -> UsageTracker:
+        usage_path = self.sessions_dir / session_id / "usage.json"
+        if not usage_path.exists():
+            return UsageTracker()
+        return UsageTracker.model_validate_json(usage_path.read_bytes())
+
+    def save_usage(self, session_id: str, tracker: UsageTracker) -> None:
+        session_dir = self.sessions_dir / session_id
+        session_dir.mkdir(parents=True, exist_ok=True)
+        usage_path = session_dir / "usage.json"
+        usage_path.write_bytes(tracker.model_dump_json().encode())
+
+    # --- Event log (ordered display history including slash commands) ---
+
+    def load_events(self, session_id: str) -> list[dict[str, Any]]:
+        events_path = self.sessions_dir / session_id / "events.json"
+        if not events_path.exists():
+            return []
+        return json.loads(events_path.read_bytes())
+
+    def append_events(self, session_id: str, events: list[dict[str, Any]]) -> None:
+        session_dir = self.sessions_dir / session_id
+        session_dir.mkdir(parents=True, exist_ok=True)
+        events_path = session_dir / "events.json"
+        existing = json.loads(events_path.read_bytes()) if events_path.exists() else []
+        existing.extend(events)
+        events_path.write_text(json.dumps(existing))

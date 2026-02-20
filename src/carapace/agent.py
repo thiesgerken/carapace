@@ -22,12 +22,14 @@ async def _gate(
     context: str = "",
 ) -> tuple[OperationClassification, RuleCheckResult]:
     """Classify an operation and check rules. Raises ApprovalRequired if needed."""
-    classification = await classify_operation(ctx.deps.classifier_model, tool_name, args, context)
+    tracker = ctx.deps.usage_tracker
+    classification = await classify_operation(ctx.deps.classifier_model, tool_name, args, context, tracker)
     result = await check_rules(
         ctx.deps.classifier_model,
         ctx.deps.rules,
         ctx.deps.session_state,
         classification,
+        tracker,
     )
     if ctx.deps.verbose:
         args_parts = []

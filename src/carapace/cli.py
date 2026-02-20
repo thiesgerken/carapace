@@ -149,11 +149,74 @@ def _render_command_result(data: dict[str, Any]) -> None:
                 for f in payload:
                     console.print(f"  {f}")
 
+        case "usage":
+            _render_usage(payload)
+
         case "verbose":
             console.print(f"[dim]{payload['message']}[/dim]")
 
         case _:
             console.print(f"[dim]{payload}[/dim]")
+
+
+def _render_usage(payload: dict[str, Any]) -> None:
+    models: dict[str, dict[str, int]] = payload.get("models", {})
+    categories: dict[str, dict[str, int]] = payload.get("categories", {})
+    costs: dict[str, str] = payload.get("costs", {})
+
+    if not models and not categories:
+        console.print("[dim]No token usage recorded yet.[/dim]")
+        return
+
+    all_buckets = {**models, **categories}
+    has_cache = any(b.get("cache_read_tokens") or b.get("cache_write_tokens") for b in all_buckets.values())
+    has_costs = any(v != "0" for k, v in costs.items() if k != "total")
+
+    def _cost_style(val: float) -> str:
+        if val >= 0.25:
+            return "red"
+        if val >= 0.1:
+            return "yellow"
+        return "green"
+
+    def _styled_cost(raw: str) -> str:
+        n = float(raw)
+        if not n:
+            return "-"
+        return f"[{_cost_style(n)}]${n:.4f}[/{_cost_style(n)}]"
+
+    def _make_table(title: str, rows: dict[str, dict[str, int]], show_cost: bool = False) -> Table:
+        table = Table(title=title)
+        table.add_column("Source", style="bold")
+        table.add_column("Input", justify="right")
+        table.add_column("Output", justify="right")
+        if has_cache:
+            table.add_column("Cache Read", justify="right")
+            table.add_column("Cache Write", justify="right")
+        table.add_column("Requests", justify="right")
+        if show_cost and has_costs:
+            table.add_column("Cost", justify="right")
+        for name, usage in rows.items():
+            row = [name, f"{usage.get('input_tokens', 0):,}", f"{usage.get('output_tokens', 0):,}"]
+            if has_cache:
+                row += [f"{usage.get('cache_read_tokens', 0):,}", f"{usage.get('cache_write_tokens', 0):,}"]
+            row.append(str(usage.get("requests", 0)))
+            if show_cost and has_costs:
+                row.append(_styled_cost(costs.get(name, "0")))
+            table.add_row(*row)
+        return table
+
+    if models:
+        console.print(_make_table("Usage by Model", models, show_cost=True))
+    if categories:
+        console.print(_make_table("Usage by Category", categories))
+
+    total_in = payload.get("total_input", 0)
+    total_out = payload.get("total_output", 0)
+    total_cost = costs.get("total", "0")
+    cost_str = f" | {_styled_cost(total_cost)}" if total_cost != "0" else ""
+    tokens_str = f"{total_in + total_out:,} tokens ({total_in:,} in + {total_out:,} out)"
+    console.print(f"[bold]Total:[/bold] {tokens_str}{cost_str}")
 
 
 async def _render_approval_request(data: dict[str, Any]) -> bool:

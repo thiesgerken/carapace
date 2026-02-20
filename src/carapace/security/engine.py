@@ -8,6 +8,7 @@ from carapace.models import (
     RuleCheckResult,
     RuleMode,
     SessionState,
+    UsageTracker,
 )
 
 _evaluator_agent: Agent[None, bool] | None = None
@@ -45,6 +46,7 @@ async def _check_trigger(
     rule: Rule,
     session_state: SessionState,
     classification: OperationClassification,
+    usage_tracker: UsageTracker | None = None,
 ) -> bool:
     """Check if a rule's trigger condition is newly met."""
     if _trigger_is_always(rule.trigger):
@@ -66,6 +68,8 @@ async def _check_trigger(
         "Answer False otherwise."
     )
     result = await agent.run(prompt)
+    if usage_tracker:
+        usage_tracker.record(model, "rules", result.usage())
     return result.output
 
 
@@ -73,6 +77,7 @@ async def _check_effect(
     model: str,
     rule: Rule,
     classification: OperationClassification,
+    usage_tracker: UsageTracker | None = None,
 ) -> bool:
     """Check if a rule's effect applies to this specific operation."""
     agent = _get_evaluator_agent(model)
@@ -86,6 +91,8 @@ async def _check_effect(
         "Answer False if the operation is not restricted by this rule."
     )
     result = await agent.run(prompt)
+    if usage_tracker:
+        usage_tracker.record(model, "rules", result.usage())
     return result.output
 
 
@@ -94,6 +101,7 @@ async def check_rules(
     rules: list[Rule],
     session_state: SessionState,
     classification: OperationClassification,
+    usage_tracker: UsageTracker | None = None,
 ) -> RuleCheckResult:
     result = RuleCheckResult()
 
@@ -101,19 +109,17 @@ async def check_rules(
         if rule.id in session_state.disabled_rules:
             continue
 
-        # Check if trigger is met (always-rules are always triggered)
-        trigger_met = await _check_trigger(model, rule, session_state, classification)
+        trigger_met = await _check_trigger(model, rule, session_state, classification, usage_tracker)
 
         if trigger_met and rule.id not in session_state.activated_rules and not _trigger_is_always(rule.trigger):
             result.newly_activated_rules.append(rule.id)
             session_state.activated_rules.append(rule.id)
 
-        # Only check effect if the rule is active
         is_active = _trigger_is_always(rule.trigger) or rule.id in session_state.activated_rules
         if not is_active:
             continue
 
-        effect_applies = await _check_effect(model, rule, classification)
+        effect_applies = await _check_effect(model, rule, classification, usage_tracker)
         if effect_applies:
             result.triggered_rules.append(rule.id)
             result.descriptions.append(f"[{rule.id}] {rule.description.strip()}")
