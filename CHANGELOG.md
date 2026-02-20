@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v0.4.0 (2026-02-20)
+
+### ✨
+
+- ✨ Add a web frontend ([#31](https://github.com/thiesgerken/carapace/pull/31),
+  [`4d7e028`](https://github.com/thiesgerken/carapace/commit/4d7e0281acdb0fef1c252d0ce818fe6afc98ba6e))
+
+
 ## v0.3.0 (2026-02-19)
 
 ### Other
