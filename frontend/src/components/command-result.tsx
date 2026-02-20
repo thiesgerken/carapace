@@ -87,6 +87,10 @@ export function CommandResultView({ command, data }: CommandResultViewProps) {
     return <p className="my-1 text-sm text-muted-foreground">{data.message}</p>;
   }
 
+  if (command === "usage" && isUsageData(data)) {
+    return <UsageView data={data} />;
+  }
+
   return (
     <pre className="my-2 rounded-md bg-muted p-2 text-xs font-mono overflow-x-auto">
       {JSON.stringify(data, null, 2)}
@@ -111,4 +115,117 @@ function isVerboseData(d: unknown): d is { verbose: boolean; message: string } {
 
 function isMessageData(d: unknown): d is { message?: string; error?: string } {
   return !!d && typeof d === "object";
+}
+
+interface UsageBucket {
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_tokens: number;
+  cache_write_tokens: number;
+  input_audio_tokens: number;
+  output_audio_tokens: number;
+  cache_audio_read_tokens: number;
+  requests: number;
+}
+
+interface UsagePayload {
+  models: Record<string, UsageBucket>;
+  categories: Record<string, UsageBucket>;
+  total_input: number;
+  total_output: number;
+}
+
+function isUsageData(d: unknown): d is UsagePayload {
+  return !!d && typeof d === "object" && "models" in d && "categories" in d;
+}
+
+function fmt(n: number): string {
+  return n.toLocaleString();
+}
+
+function UsageView({ data }: { data: UsagePayload }) {
+  const allBuckets = [
+    ...Object.values(data.models),
+    ...Object.values(data.categories),
+  ];
+  const hasCache = allBuckets.some(
+    (b) => b.cache_read_tokens || b.cache_write_tokens,
+  );
+
+  const isEmpty =
+    Object.keys(data.models).length === 0 &&
+    Object.keys(data.categories).length === 0;
+  if (isEmpty) {
+    return (
+      <p className="my-1 text-sm text-muted-foreground">
+        No token usage recorded yet.
+      </p>
+    );
+  }
+
+  function renderTable(title: string, rows: Record<string, UsageBucket>) {
+    return (
+      <div className="my-2 text-sm">
+        <p className="mb-1 text-xs font-medium text-muted-foreground">
+          {title}
+        </p>
+        <table className="w-full">
+          <thead>
+            <tr className="border-b border-border text-left text-xs text-muted-foreground">
+              <th className="pb-1 pr-3 font-medium">Source</th>
+              <th className="pb-1 pr-3 font-medium text-right">Input</th>
+              <th className="pb-1 pr-3 font-medium text-right">Output</th>
+              {hasCache && (
+                <th className="pb-1 pr-3 font-medium text-right">Cache Read</th>
+              )}
+              {hasCache && (
+                <th className="pb-1 pr-3 font-medium text-right">
+                  Cache Write
+                </th>
+              )}
+              <th className="pb-1 font-medium text-right">Requests</th>
+            </tr>
+          </thead>
+          <tbody>
+            {Object.entries(rows).map(([name, u]) => (
+              <tr key={name} className="border-b border-border/50">
+                <td className="py-1 pr-3 font-mono text-xs">{name}</td>
+                <td className="py-1 pr-3 text-xs text-right">
+                  {fmt(u.input_tokens)}
+                </td>
+                <td className="py-1 pr-3 text-xs text-right">
+                  {fmt(u.output_tokens)}
+                </td>
+                {hasCache && (
+                  <td className="py-1 pr-3 text-xs text-right">
+                    {fmt(u.cache_read_tokens)}
+                  </td>
+                )}
+                {hasCache && (
+                  <td className="py-1 pr-3 text-xs text-right">
+                    {fmt(u.cache_write_tokens)}
+                  </td>
+                )}
+                <td className="py-1 text-xs text-right">{u.requests}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
+
+  const total = data.total_input + data.total_output;
+  return (
+    <div>
+      {Object.keys(data.models).length > 0 &&
+        renderTable("By Model", data.models)}
+      {Object.keys(data.categories).length > 0 &&
+        renderTable("By Category", data.categories)}
+      <p className="mt-1 text-xs text-muted-foreground">
+        Total: {fmt(total)} tokens ({fmt(data.total_input)} in +{" "}
+        {fmt(data.total_output)} out)
+      </p>
+    </div>
+  );
 }

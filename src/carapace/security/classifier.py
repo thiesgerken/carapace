@@ -4,7 +4,7 @@ from typing import Any
 
 from pydantic_ai import Agent
 
-from carapace.models import OperationClassification
+from carapace.models import OperationClassification, UsageTracker
 
 _classifier_agent: Agent[None, OperationClassification] | None = None
 
@@ -46,6 +46,7 @@ async def classify_operation(
     tool_name: str,
     args: dict[str, Any],
     context: str = "",
+    usage_tracker: UsageTracker | None = None,
 ) -> OperationClassification:
     agent = _get_classifier_agent(model)
     prompt_parts = [f"Tool: {tool_name}", f"Arguments: {args}"]
@@ -53,4 +54,6 @@ async def classify_operation(
         prompt_parts.append(f"Context: {context}")
     prompt = "\n".join(prompt_parts)
     result = await agent.run(prompt)
+    if usage_tracker:
+        usage_tracker.record(model, "classifier", result.usage())
     return result.output

@@ -306,6 +306,7 @@ def _handle_slash_command(command: str, deps: Deps) -> CommandResult | None:
                     {"command": "/session", "description": "Show current session state"},
                     {"command": "/skills", "description": "List available skills"},
                     {"command": "/memory", "description": "List memory files"},
+                    {"command": "/usage", "description": "Show token usage for this session"},
                     {"command": "/verbose", "description": "Toggle tool call display"},
                     {"command": "/quit", "description": "Disconnect"},
                     {"command": "/help", "description": "Show this help"},
@@ -373,6 +374,18 @@ def _handle_slash_command(command: str, deps: Deps) -> CommandResult | None:
         store = MemoryStore(deps.data_dir)
         files = store.list_files()
         return CommandResult(command="memory", data=files)
+
+    if cmd == "/usage":
+        tracker = deps.usage_tracker
+        return CommandResult(
+            command="usage",
+            data={
+                "models": {k: v.model_dump() for k, v in tracker.models.items()},
+                "categories": {k: v.model_dump() for k, v in tracker.categories.items()},
+                "total_input": tracker.total_input,
+                "total_output": tracker.total_output,
+            },
+        )
 
     return None
 
@@ -487,11 +500,13 @@ async def _run_agent_turn(
     """Run one agent turn, handling approval loops over the WebSocket."""
     agent = create_agent(deps)
 
+    model_name = deps.config.agent.model
     result = await agent.run(
         user_input,
         deps=deps,
         message_history=message_history or None,
     )
+    deps.usage_tracker.record(model_name, "agent", result.usage())
     messages = result.all_messages()
 
     while isinstance(result.output, DeferredToolRequests):
@@ -537,6 +552,7 @@ async def _run_agent_turn(
             message_history=messages,
             deferred_tool_results=deferred_results,
         )
+        deps.usage_tracker.record(model_name, "agent", result.usage())
         messages = result.all_messages()
 
     if isinstance(result.output, str):
