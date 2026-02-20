@@ -119,6 +119,37 @@ class SessionManager:
         session_dir = self.sessions_dir / session_id
         session_dir.mkdir(parents=True, exist_ok=True)
         events_path = session_dir / "events.json"
-        existing = json.loads(events_path.read_bytes()) if events_path.exists() else []
+        
+        if events_path.exists():
+            existing = json.loads(events_path.read_bytes())
+        else:
+            existing = self._migrate_history_to_events(session_id)
+        
         existing.extend(events)
         events_path.write_text(json.dumps(existing))
+    
+    def _migrate_history_to_events(self, session_id: str) -> list[dict[str, Any]]:
+        """Migrate old history.json to event format when creating events.json for the first time."""
+        from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, ToolCallPart, UserPromptPart
+        
+        history_path = self.sessions_dir / session_id / "history.json"
+        if not history_path.exists():
+            return []
+        
+        raw_messages = self.load_history(session_id)
+        events: list[dict[str, Any]] = []
+        
+        for msg in raw_messages:
+            if isinstance(msg, ModelRequest):
+                for part in msg.parts:
+                    if isinstance(part, UserPromptPart) and isinstance(part.content, str):
+                        events.append({"role": "user", "content": part.content})
+            elif isinstance(msg, ModelResponse):
+                for part in msg.parts:
+                    if isinstance(part, ToolCallPart):
+                        args = part.args if isinstance(part.args, dict) else {}
+                        events.append({"role": "tool_call", "content": "", "tool": part.tool_name, "args": args})
+                    elif isinstance(part, TextPart):
+                        events.append({"role": "assistant", "content": part.content})
+        
+        return events

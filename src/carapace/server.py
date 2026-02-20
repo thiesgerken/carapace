@@ -272,6 +272,28 @@ def _history_from_messages(session_id: str) -> list[HistoryMessage]:
     return result
 
 
+def _extract_tool_calls_from_new_messages(old_messages: list, new_messages: list) -> list[dict[str, Any]]:
+    """Extract tool call events from the new messages added during this turn."""
+    from pydantic_ai.messages import ModelResponse, ToolCallPart
+
+    tool_call_events: list[dict[str, Any]] = []
+    start_idx = len(old_messages)
+    
+    for msg in new_messages[start_idx:]:
+        if isinstance(msg, ModelResponse):
+            for part in msg.parts:
+                if isinstance(part, ToolCallPart):
+                    args = part.args if isinstance(part.args, dict) else {}
+                    tool_call_events.append({
+                        "role": "tool_call",
+                        "content": "",
+                        "tool": part.tool_name,
+                        "args": args,
+                    })
+    
+    return tool_call_events
+
+
 # --- WebSocket: Chat ---
 
 
@@ -504,7 +526,7 @@ async def chat_ws(
                                 usage_tracker=tracker,
                             )
                         message_history = _session_mgr.load_history(session_id)
-                        message_history, output = await _run_agent_turn(
+                        message_history, output, tool_call_events = await _run_agent_turn(
                             websocket,
                             user_input,
                             deps,
@@ -513,13 +535,12 @@ async def chat_ws(
                         _session_mgr.save_history(session_id, message_history)
                         _session_mgr.save_state(deps.session_state)
                         _session_mgr.save_usage(session_id, deps.usage_tracker)
-                        _session_mgr.append_events(
-                            session_id,
-                            [
-                                {"role": "user", "content": user_input},
-                                {"role": "assistant", "content": output},
-                            ],
-                        )
+                        
+                        events_to_append = [{"role": "user", "content": user_input}]
+                        events_to_append.extend(tool_call_events)
+                        events_to_append.append({"role": "assistant", "content": output})
+                        
+                        _session_mgr.append_events(session_id, events_to_append)
                 except Exception as exc:
                     logger.exception("Agent error")
                     await _send(websocket, ErrorMessage(detail=str(exc)))
@@ -536,8 +557,11 @@ async def _run_agent_turn(
     user_input: str,
     deps: Deps,
     message_history: list,
-) -> tuple[list, str]:
-    """Run one agent turn, handling approval loops over the WebSocket."""
+) -> tuple[list, str, list[dict[str, Any]]]:
+    """Run one agent turn, handling approval loops over the WebSocket.
+    
+    Returns: (updated_messages, output, tool_call_events)
+    """
     agent = create_agent(deps)
 
     model_name = deps.config.agent.model
@@ -603,7 +627,8 @@ async def _run_agent_turn(
         output = f"Unexpected agent output type: {type(result.output).__name__}"
         await _send(ws, ErrorMessage(detail=output))
 
-    return messages, output
+    tool_call_events = _extract_tool_calls_from_new_messages(message_history, messages)
+    return messages, output, tool_call_events
 
 
 def main() -> None:
