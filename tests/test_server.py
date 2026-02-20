@@ -172,6 +172,21 @@ def test_ws_verbose_command(client, auth_headers, bearer):
         assert msg["data"]["verbose"] is False
 
 
+def test_ws_usage_command(client, auth_headers, bearer):
+    create_resp = client.post("/sessions", headers=auth_headers)
+    sid = create_resp.json()["session_id"]
+
+    with client.websocket_connect(f"/chat/{sid}?token={bearer}") as ws:
+        ws.send_json({"type": "message", "content": "/usage"})
+        msg = ws.receive_json()
+        assert msg["type"] == "command_result"
+        assert msg["command"] == "usage"
+        assert "total_requests" in msg["data"]
+        assert "total_tokens" in msg["data"]
+        assert "total_cost" in msg["data"]
+        assert msg["data"]["total_requests"] == 0
+
+
 def test_ws_unknown_command(client, auth_headers, bearer):
     create_resp = client.post("/sessions", headers=auth_headers)
     sid = create_resp.json()["session_id"]
