@@ -1,6 +1,35 @@
 # CHANGELOG
 
 
+## v0.5.0 (2026-02-20)
+
+### ✨
+
+- ✨ Implement token usage tracking and reporting
+  ([#34](https://github.com/thiesgerken/carapace/pull/34),
+  [`00fbd8e`](https://github.com/thiesgerken/carapace/commit/00fbd8eab83a2906cb6902064ce06e1ab65a15f8))
+
+* ✨ Implement token usage tracking and reporting
+
+- Added a new `UsageTracker` class to monitor token usage across models and categories. - Introduced
+  a `/usage` command in the CLI to display token usage statistics. - Enhanced the
+  `classify_operation` and `check_rules` functions to record usage data. - Updated the frontend to
+  visualize usage data with a new `UsageView` component. - Bumped `carapace` version to 0.4.0 to
+  reflect these changes.
+
+* ✨ Enhance usage tracking and reporting features
+
+- Updated `pyproject.toml` to specify version constraints for dependencies. - Added new `costs`
+  field to `UsagePayload` for tracking costs associated with token usage. - Implemented cost
+  estimation in `UsageTracker` to calculate total costs based on token usage. - Enhanced frontend
+  components to display command results and usage costs. - Improved session management to persist
+  usage data and events for better tracking. - Updated CLI to include costs in the `/usage` command
+  output.
+
+This commit builds upon the previous implementation of token usage tracking, providing a more
+  comprehensive view of resource utilization.
+
+
 ## v0.4.0 (2026-02-20)
 
 ### ✨
