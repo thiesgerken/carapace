@@ -40,6 +40,13 @@ Code is craft. Favor elegance, clarity, and expressiveness. Write code that read
 - Use `pathlib.Path` over `os.path`.
 - Use `enum.StrEnum` / `enum.Enum` for fixed sets of values.
 
+## Logging
+
+- Use `loguru` exclusively — never stdlib `logging`.
+- Import: `from loguru import logger`.
+- Always use f-strings in log calls: `logger.info(f"Created {name}")`, never `%`-style or `.format()`.
+- No `logging.getLogger()` — loguru provides a single global `logger`.
+
 ## Structure
 
 - One concept per module. Keep files focused and short.

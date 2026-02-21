@@ -23,6 +23,7 @@ Carapace is a security-first personal AI agent with rule-based information flow 
 - Concise, functional style: comprehensions, early returns, small pure helpers
 - Pydantic `BaseModel` / `@dataclass` for structured data — no raw dicts
 - `pathlib.Path` over `os.path`
+- Logging: `loguru` (`from loguru import logger`) — never stdlib `logging`. Use f-strings in log calls.
 - Imports ordered: stdlib → third-party → local, separated by blank lines
 
 ## Project structure
