@@ -1,0 +1,34 @@
+services:
+  carapace:
+    build: .
+    ports:
+      - "8321:8321"
+    volumes:
+      - ./data:/data
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - CARAPACE_DATA_DIR=/data
+    networks:
+      - default
+      - carapace-sandbox
+
+  carapace-sandbox-image:
+    build:
+      context: ./containers/sandbox
+    image: carapace-sandbox:latest
+    entrypoint: ["true"]
+    profiles:
+      - build
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://carapace:8321
+    depends_on:
+      - carapace
+
+networks:
+  carapace-sandbox:
+    driver: bridge

@@ -69,6 +69,35 @@ async def _gate(
     return classification, result
 
 
+def _run_local(
+    command: str | list[str],
+    *,
+    shell: bool,
+    timeout: int,
+    cwd: Path,
+) -> str:
+    """Run a command locally via subprocess (fallback when sandbox is unavailable)."""
+    try:
+        result = subprocess.run(
+            command,
+            shell=shell,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            cwd=str(cwd),
+        )
+        output = result.stdout
+        if result.stderr:
+            output += f"\n[stderr] {result.stderr}"
+        if result.returncode != 0:
+            output += f"\n[exit code: {result.returncode}]"
+        return output or "(no output)"
+    except subprocess.TimeoutExpired:
+        return f"Error: command timed out ({timeout}s)"
+    except Exception as e:
+        return f"Error: {e}"
+
+
 def _resolve_path(data_dir, path: str) -> tuple[str | None, Path]:
     """Resolve a path within data_dir. Returns (error, resolved_path)."""
 
@@ -98,8 +127,20 @@ def build_system_prompt(deps: Deps) -> str:
         for skill in deps.skill_catalog:
             catalog_lines.append(f"- **{skill.name}**: {skill.description.strip()}")
         catalog_lines.append("")
-        catalog_lines.append("Use `activate_skill` to load full instructions before using a skill.")
+        catalog_lines.append("Use `use_skill` to activate a skill before using it.")
         parts.append("\n".join(catalog_lines))
+
+    if deps.sandbox:
+        parts.append(
+            "# Sandbox Environment\n"
+            "Commands run inside a Docker sandbox container.\n"
+            "- `/workspace/AGENTS.md`, `/workspace/SOUL.md`, `/workspace/USER.md` — read-only reference files\n"
+            "- `/workspace/memory/` — read-only memory files\n"
+            "- `/workspace/skills/` — activated skills (populated by `use_skill`)\n"
+            "- `/workspace/tmp/` — writable scratch space\n"
+            "Call `use_skill(skill_name)` to activate a skill before running its scripts.\n"
+            "Call `save_skill(skill_name)` to persist edits back to the master skill directory."
+        )
 
     parts.append(
         "# Session Info\n"
@@ -135,22 +176,56 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
         return "Available skills:\n" + "\n".join(lines)
 
     @agent.tool
-    async def activate_skill(ctx: RunContext[Deps], skill_name: str) -> str:
-        """Load the full instructions for a skill. Call this before using a skill."""
+    async def use_skill(ctx: RunContext[Deps], skill_name: str) -> str:
+        """Activate a skill: copies it to the sandbox, builds its venv, and loads instructions.
+
+        Call before using a skill.
+        """
         if not ctx.tool_call_approved:
             await _gate(
                 ctx,
-                "activate_skill",
+                "use_skill",
                 {"skill_name": skill_name},
-                context="Loading full skill instructions into agent context",
+                context="Activating skill for use in sandbox",
             )
 
         registry = SkillRegistry(ctx.deps.data_dir / "skills")
         instructions = registry.get_full_instructions(skill_name)
         if instructions is None:
             return f"Skill '{skill_name}' not found."
+
+        sandbox_msg = ""
+        if ctx.deps.sandbox:
+            sandbox_msg = await ctx.deps.sandbox.activate_skill(
+                ctx.deps.session_state.session_id,
+                skill_name,
+            )
+
         ctx.deps.activated_skills.append(skill_name)
-        return f"Skill '{skill_name}' activated. Instructions:\n\n{instructions}"
+        parts = [f"Skill '{skill_name}' activated."]
+        if sandbox_msg:
+            parts.append(sandbox_msg)
+        parts.append(f"Instructions:\n\n{instructions}")
+        return "\n".join(parts)
+
+    @agent.tool
+    async def save_skill(ctx: RunContext[Deps], skill_name: str) -> str:
+        """Save an activated skill back to the master skills directory. Persists edits made in the sandbox."""
+        if not ctx.tool_call_approved:
+            await _gate(
+                ctx,
+                "save_skill",
+                {"skill_name": skill_name},
+                context="Saving skill edits from sandbox back to master directory",
+            )
+
+        if not ctx.deps.sandbox:
+            return "Sandbox not available — skill files are already on the host."
+
+        return await ctx.deps.sandbox.save_skill(
+            ctx.deps.session_state.session_id,
+            skill_name,
+        )
 
     # --- Filesystem (group:fs) ---
 
@@ -290,29 +365,18 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
 
     @agent.tool
     async def exec(ctx: RunContext[Deps], command: str, timeout: int = 30) -> str:
-        """Run a shell command in the data directory and return its output."""
+        """Run a shell command and return its output. Runs in a Docker sandbox when available."""
         if not ctx.tool_call_approved:
             await _gate(ctx, "exec", {"command": command})
 
-        try:
-            result = subprocess.run(
+        if ctx.deps.sandbox:
+            return await ctx.deps.sandbox.exec_command(
+                ctx.deps.session_state.session_id,
                 command,
-                shell=True,
-                capture_output=True,
-                text=True,
                 timeout=timeout,
-                cwd=str(ctx.deps.data_dir),
             )
-            output = result.stdout
-            if result.stderr:
-                output += f"\n[stderr] {result.stderr}"
-            if result.returncode != 0:
-                output += f"\n[exit code: {result.returncode}]"
-            return output or "(no output)"
-        except subprocess.TimeoutExpired:
-            return f"Error: command timed out ({timeout}s)"
-        except Exception as e:
-            return f"Error: {e}"
+
+        return _run_local(command, shell=True, timeout=timeout, cwd=ctx.deps.data_dir)
 
     @agent.tool
     async def bash(ctx: RunContext[Deps], command: str, timeout: int = 30) -> str:
@@ -320,24 +384,14 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
         if not ctx.tool_call_approved:
             await _gate(ctx, "bash", {"command": command})
 
-        try:
-            result = subprocess.run(
-                ["bash", "-c", command],
-                capture_output=True,
-                text=True,
+        if ctx.deps.sandbox:
+            return await ctx.deps.sandbox.exec_command(
+                ctx.deps.session_state.session_id,
+                command,
                 timeout=timeout,
-                cwd=str(ctx.deps.data_dir),
             )
-            output = result.stdout
-            if result.stderr:
-                output += f"\n[stderr] {result.stderr}"
-            if result.returncode != 0:
-                output += f"\n[exit code: {result.returncode}]"
-            return output or "(no output)"
-        except subprocess.TimeoutExpired:
-            return f"Error: command timed out ({timeout}s)"
-        except Exception as e:
-            return f"Error: {e}"
+
+        return _run_local(["bash", "-c", command], shell=False, timeout=timeout, cwd=ctx.deps.data_dir)
 
     # --- Memory ---
 

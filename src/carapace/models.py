@@ -7,7 +7,10 @@ from datetime import datetime
 from decimal import Decimal
 from enum import Enum
 from pathlib import Path
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
+
+if TYPE_CHECKING:
+    from carapace.sandbox.manager import SandboxManager
 
 from pydantic import BaseModel
 from pydantic_ai.usage import RunUsage
@@ -120,9 +123,10 @@ class CredentialsConfig(BaseModel):
 
 
 class SandboxConfig(BaseModel):
-    base_image: str = "alpine:3.19"
+    enabled: bool = False
+    base_image: str = "carapace-sandbox:latest"
     idle_timeout_minutes: int = 15
-    default_network: bool = False
+    network_name: str = "carapace-sandbox"
 
 
 class MemorySearchConfig(BaseModel):
@@ -258,3 +262,4 @@ class Deps:
     verbose: bool = True
     tool_call_callback: Callable[[str, dict[str, Any], str], None] | None = None
     usage_tracker: UsageTracker = field(default_factory=UsageTracker)
+    sandbox: SandboxManager | None = None

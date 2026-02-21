@@ -15,6 +15,9 @@ _CRITICAL_FILES: list[tuple[str, str]] = [
 
 _SEED_SKILLS: list[tuple[str, str]] = [
     ("example-skill/SKILL.md", "skills/example/SKILL.md"),
+    ("example-skill/pyproject.toml", "skills/example/pyproject.toml"),
+    ("example-skill/uv.lock", "skills/example/uv.lock"),
+    ("example-skill/scripts/hello.py", "skills/example/scripts/hello.py"),
     ("create-skill/SKILL.md", "skills/create-skill/SKILL.md"),
 ]
 

@@ -1,0 +1,8 @@
+[project]
+name = "example-skill"
+version = "0.1.0"
+description = "A template skill showing the AgentSkills format with a Python script"
+requires-python = ">=3.12"
+dependencies = [
+    "httpx>=0.28,<1",
+]

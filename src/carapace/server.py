@@ -51,6 +51,7 @@ _rules: list[Rule]
 _session_mgr: SessionManager
 _skill_catalog: list
 _agent_model: Any
+_sandbox_mgr: Any = None
 _session_locks: dict[str, asyncio.Lock] = {}
 _session_lock_refs: dict[str, int] = {}
 
@@ -89,9 +90,20 @@ def _create_anthropic_model(model_name: str) -> AnthropicModel:
     return AnthropicModel(model_id, provider=AnthropicProvider(http_client=AsyncClient(transport=transport)))
 
 
+async def _idle_cleanup_loop() -> None:
+    """Periodically clean up idle sandbox containers."""
+    while True:
+        await asyncio.sleep(60)
+        if _sandbox_mgr:
+            try:
+                await _sandbox_mgr.cleanup_idle()
+            except Exception as exc:
+                logger.warning("Sandbox idle cleanup error: %s", exc)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _data_dir, _config, _rules, _session_mgr, _skill_catalog, _agent_model
+    global _data_dir, _config, _rules, _session_mgr, _skill_catalog, _agent_model, _sandbox_mgr
 
     _data_dir = get_data_dir()
     ensure_data_dir(_data_dir)
@@ -107,6 +119,26 @@ async def lifespan(app: FastAPI):
     _skill_catalog = registry.scan()
     _agent_model = _create_anthropic_model(_config.agent.model)
 
+    _sandbox_mgr = None
+    if _config.sandbox.enabled:
+        try:
+            from carapace.sandbox.docker import DockerRuntime
+            from carapace.sandbox.manager import SandboxManager
+
+            runtime = DockerRuntime()
+            _sandbox_mgr = SandboxManager(
+                runtime=runtime,
+                data_dir=_data_dir,
+                base_image=_config.sandbox.base_image,
+                network_name=_config.sandbox.network_name,
+                idle_timeout_minutes=_config.sandbox.idle_timeout_minutes,
+            )
+            logger.info(
+                "Sandbox enabled (image=%s, network=%s)", _config.sandbox.base_image, _config.sandbox.network_name
+            )
+        except Exception as exc:
+            logger.warning("Sandbox unavailable: %s", exc)
+
     token = ensure_token(_data_dir)
 
     from genai_prices import UpdatePrices
@@ -114,14 +146,21 @@ async def lifespan(app: FastAPI):
     price_updater = UpdatePrices()
     price_updater.start()
 
+    cleanup_task = asyncio.create_task(_idle_cleanup_loop()) if _sandbox_mgr else None
+
     logger.info(
-        "Carapace server ready — model=%s, rules=%d, skills=%d, token=%s…",
+        "Carapace server ready — model=%s, rules=%d, skills=%d, sandbox=%s, token=%s…",
         _config.agent.model,
         len(_rules),
         len(_skill_catalog),
+        "on" if _sandbox_mgr else "off",
         token[:8],
     )
     yield
+    if cleanup_task:
+        cleanup_task.cancel()
+    if _sandbox_mgr:
+        await _sandbox_mgr.cleanup_all()
     price_updater.stop()
 
 
@@ -221,6 +260,8 @@ async def get_session(session_id: str, _token: str = Depends(_verify_token)) -> 
 
 @app.delete("/sessions/{session_id}", status_code=204)
 async def delete_session(session_id: str, _token: str = Depends(_verify_token)) -> None:
+    if _sandbox_mgr:
+        await _sandbox_mgr.cleanup_session(session_id)
     if not _session_mgr.delete_session(session_id):
         raise HTTPException(status_code=404, detail="Session not found")
 
@@ -293,6 +334,7 @@ def _build_deps(
         verbose=verbose,
         tool_call_callback=tool_call_callback,
         usage_tracker=usage_tracker or _session_mgr.load_usage(session_state.session_id),
+        sandbox=_sandbox_mgr,
     )
 
 
@@ -554,6 +596,7 @@ async def _run_agent_turn(
         deferred_results = DeferredToolResults()
 
         for call in requests.approvals:
+            assert isinstance(call.args, dict)
             meta = requests.metadata.get(call.tool_call_id, {})
             await _send(
                 ws,
