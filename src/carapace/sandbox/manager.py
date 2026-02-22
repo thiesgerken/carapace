@@ -93,36 +93,44 @@ class SandboxManager:
         (session_workspace / "tmp").mkdir(parents=True, exist_ok=True)
 
         proxy_token = secrets.token_hex(16)
+        # Evict any orphaned token left by a previous failed attempt for this
+        # session (one that never reached _sessions so _cleanup_tracking was
+        # never called on retry).
+        old_token = self._session_tokens.get(session_id)
+        if old_token:
+            self._token_to_session.pop(old_token, None)
         self._token_to_session[proxy_token] = session_id
         self._session_tokens[session_id] = proxy_token
         self._approval_queues[session_id] = asyncio.Queue()
 
-        # Resolve our own IP on the sandbox network at container-creation time
-        # so the proxy URL always matches the network this container will join.
-        host_ip = await self._runtime.get_host_ip(self._network_name)
-        if not host_ip:
-            raise RuntimeError(
-                f"Cannot create sandbox for session {session_id}: "
-                f"no IP found on network '{self._network_name}'. "
-                "Is the proxy network configured correctly?"
+        try:
+            host_ip = await self._runtime.get_host_ip(self._network_name)
+            if not host_ip:
+                raise RuntimeError(
+                    f"Cannot create sandbox for session {session_id}: "
+                    f"no IP found on network '{self._network_name}'. "
+                    "Is the proxy network configured correctly?"
+                )
+            proxy_url = f"http://{host_ip}:{self._proxy_port}"
+            logger.info(f"Proxy URL for session {session_id}: {proxy_url}")
+
+            mounts = self._build_mounts(session_id)
+            env = self._build_proxy_env(proxy_token, proxy_url)
+            config = ContainerConfig(
+                image=self._base_image,
+                name=f"carapace-session-{session_id}",
+                labels={"carapace.session": session_id, "carapace.managed": "true"},
+                mounts=mounts,
+                network=self._network_name,
+                command=["sleep", "infinity"],
+                environment=env,
             )
-        proxy_url = f"http://{host_ip}:{self._proxy_port}"
-        logger.info(f"Proxy URL for session {session_id}: {proxy_url}")
 
-        mounts = self._build_mounts(session_id)
-        env = self._build_proxy_env(proxy_token, proxy_url)
-        config = ContainerConfig(
-            image=self._base_image,
-            name=f"carapace-session-{session_id}",
-            labels={"carapace.session": session_id, "carapace.managed": "true"},
-            mounts=mounts,
-            network=self._network_name,
-            command=["sleep", "infinity"],
-            environment=env,
-        )
-
-        container_id = await self._runtime.create(config)
-        ip = await self._runtime.get_ip(container_id, self._network_name)
+            container_id = await self._runtime.create(config)
+            ip = await self._runtime.get_ip(container_id, self._network_name)
+        except BaseException:
+            self._cleanup_tracking(session_id)
+            raise
 
         sc = SessionContainer(
             container_id=container_id,
