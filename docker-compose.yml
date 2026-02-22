@@ -1,14 +1,17 @@
 services:
   carapace:
     build: .
+    tty: true
     ports:
       - "8321:8321"
     volumes:
       - ./data:/data
       - /var/run/docker.sock:/var/run/docker.sock
+      - ./src/carapace:/usr/local/lib/python3.14/site-packages/carapace
     environment:
       - CARAPACE_DATA_DIR=/data
       - CARAPACE_HOST_DATA_DIR=${PWD}/data
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
     networks:
       - default
       - carapace-sandbox
@@ -16,7 +19,7 @@ services:
   frontend:
     build: ./frontend
     ports:
-      - "3000:80"
+      - "3001:80"
     depends_on:
       - carapace
 

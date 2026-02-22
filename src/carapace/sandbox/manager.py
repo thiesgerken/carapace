@@ -43,8 +43,7 @@ class SandboxManager:
         network_name: str = "carapace-sandbox",
         idle_timeout_minutes: int = 15,
         host_data_dir: Path | None = None,
-        proxy_url: str = "",
-        internal_network: bool = False,
+        proxy_port: int = 3128,
     ) -> None:
         self._runtime = runtime
         self._data_dir = data_dir
@@ -52,18 +51,15 @@ class SandboxManager:
         self._base_image = base_image
         self._network_name = network_name
         self._idle_timeout = idle_timeout_minutes * 60
-        self._proxy_url = proxy_url
-        self._internal_network = internal_network
+        self._proxy_port = proxy_port
         self._sessions: dict[str, SessionContainer] = {}
         self._token_to_session: dict[str, str] = {}
         self._session_tokens: dict[str, str] = {}
         self._allowed_domains: dict[str, set[str]] = {}
         logger.info(
             f"SandboxManager initialized (image={base_image}, "
-            + f"network={network_name}, idle_timeout={idle_timeout_minutes}m)"
+            + f"network={network_name}, proxy_port={proxy_port}, idle_timeout={idle_timeout_minutes}m)"
         )
-        if proxy_url:
-            logger.info(f"Proxy URL for sandbox containers: {proxy_url}")
         if host_data_dir:
             logger.info(f"Host data dir override: {host_data_dir} (container sees {data_dir})")
 
@@ -87,15 +83,26 @@ class SandboxManager:
         self._token_to_session[proxy_token] = session_id
         self._session_tokens[session_id] = proxy_token
 
+        # Resolve our own IP on the sandbox network at container-creation time
+        # so the proxy URL always matches the network this container will join.
+        host_ip = await self._runtime.get_host_ip(self._network_name)
+        if not host_ip:
+            raise RuntimeError(
+                f"Cannot create sandbox for session {session_id}: "
+                f"no IP found on network '{self._network_name}'. "
+                "Is the proxy network configured correctly?"
+            )
+        proxy_url = f"http://{host_ip}:{self._proxy_port}"
+        logger.info(f"Proxy URL for session {session_id}: {proxy_url}")
+
         mounts = self._build_mounts(session_id)
-        env = self._build_proxy_env(proxy_token)
+        env = self._build_proxy_env(proxy_token, proxy_url)
         config = ContainerConfig(
             image=self._base_image,
             name=f"carapace-session-{session_id}",
             labels={"carapace.session": session_id, "carapace.managed": "true"},
             mounts=mounts,
             network=self._network_name,
-            internal_network=self._internal_network,
             command=["sleep", "infinity"],
             environment=env,
         )
@@ -173,12 +180,12 @@ class SandboxManager:
 
         return mounts
 
-    def _build_proxy_env(self, proxy_token: str) -> dict[str, str]:
+    def _build_proxy_env(self, proxy_token: str, proxy_url: str) -> dict[str, str]:
         """Build HTTP_PROXY / NO_PROXY env vars for session containers."""
-        if not self._proxy_url:
+        if not proxy_url:
             return {}
         # Embed the per-session token as proxy auth: http://token@host:port
-        scheme, rest = self._proxy_url.split("://", 1)
+        scheme, rest = proxy_url.split("://", 1)
         authed_url = f"{scheme}://{proxy_token}@{rest}"
         # Extract host (without scheme/port/auth) for NO_PROXY
         no_proxy_host = rest.rsplit(":", 1)[0]
@@ -267,6 +274,7 @@ class SandboxManager:
             name=build_name,
             labels={"carapace.build": "true", "carapace.session": session_id},
             mounts=[Mount(source=self._host_path(skill_host_path), target="/build", read_only=False)],
+            network=None,  # needs internet access to fetch packages via uv sync
             command=["sleep", "infinity"],
         )
 

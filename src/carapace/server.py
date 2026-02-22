@@ -127,6 +127,13 @@ async def lifespan(app: FastAPI):
 
     runtime = DockerRuntime()
 
+    network_info = await runtime.get_self_network_info()
+    if network_info:
+        for net_name, ip in network_info.items():
+            logger.info(f"Network interface: {net_name} → {ip}")
+    else:
+        logger.warning("Could not determine any network addresses")
+
     base_image = _config.sandbox.base_image or _BUILTIN_SANDBOX_IMAGE
     if not _config.sandbox.base_image:
         runtime.build_image(get_sandbox_dockerfile(), _BUILTIN_SANDBOX_IMAGE)
@@ -134,37 +141,31 @@ async def lifespan(app: FastAPI):
     host_data_dir_env = os.environ.get("CARAPACE_HOST_DATA_DIR")
     host_data_dir = Path(host_data_dir_env) if host_data_dir_env else None
 
-    # Resolve backend IP on the sandbox network for proxy env vars.
-    # Two modes: in-Docker (backend is a container on the sandbox network)
-    # and host mode (backend runs on the host, containers reach it via gateway).
     proxy_port = _config.sandbox.proxy_port
-    backend_ip = await runtime.get_host_ip(_config.sandbox.network_name)
-    running_in_docker = backend_ip is not None
 
-    if running_in_docker:
-        proxy_url = f"http://{backend_ip}:{proxy_port}"
-    else:
-        # Host mode: create the network eagerly so we can read its gateway IP
-        await runtime.ensure_network(_config.sandbox.network_name)
-        gateway_ip = await runtime.get_network_gateway(_config.sandbox.network_name)
-        if gateway_ip:
-            proxy_url = f"http://{gateway_ip}:{proxy_port}"
-            logger.info(f"Host mode: using network gateway {gateway_ip} for proxy URL")
-        else:
-            proxy_url = ""
-            logger.warning("Could not determine proxy URL for sandbox network")
+    # Resolve the actual Docker network name once at startup.
+    # Docker Compose prefixes networks with the project name, so the logical
+    # name "carapace-sandbox" may be "carapace_carapace-sandbox" in Docker.
+    # Using the concrete name everywhere avoids ambiguous resolution when stale
+    # networks with the logical name exist from a previous run.
+    sandbox_network = await runtime.resolve_self_network_name(_config.sandbox.network_name)
+    if sandbox_network != _config.sandbox.network_name:
+        logger.info(f"Resolved sandbox network '{_config.sandbox.network_name}' → '{sandbox_network}'")
+
+    # Pre-create the network when not already managed by docker-compose,
+    # always as internal so sandbox containers have no direct internet egress.
+    await runtime.ensure_network(sandbox_network, internal=True)
 
     _sandbox_mgr = SandboxManager(
         runtime=runtime,
         data_dir=_data_dir,
         base_image=base_image,
-        network_name=_config.sandbox.network_name,
+        network_name=sandbox_network,
         idle_timeout_minutes=_config.sandbox.idle_timeout_minutes,
         host_data_dir=host_data_dir,
-        proxy_url=proxy_url,
-        internal_network=running_in_docker,
+        proxy_port=proxy_port,
     )
-    logger.info(f"Sandbox enabled (image={base_image}, network={_config.sandbox.network_name})")
+    logger.info(f"Sandbox enabled (image={base_image}, network={sandbox_network})")
 
     proxy = ProxyServer(
         get_session_by_token=_sandbox_mgr.get_session_by_token,
@@ -185,7 +186,7 @@ async def lifespan(app: FastAPI):
 
     logger.info(
         f"Carapace server ready — model={_config.agent.model}, rules={len(_rules)}, "
-        f"skills={len(_skill_catalog)}, sandbox=on, proxy={proxy_url}, token={token[:8]}…"
+        f"skills={len(_skill_catalog)}, sandbox=on, proxy_port={proxy_port}, token={token[:8]}…"
     )
     yield
     logger.info("Server shutting down…")
