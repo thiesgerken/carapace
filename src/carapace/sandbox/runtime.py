@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Protocol
+from typing import Annotated, Protocol
+
+from pydantic import BaseModel, Field
 
 
 class ContainerGoneError(Exception):
@@ -12,26 +13,23 @@ class SkillVenvError(Exception):
     """Raised when building a skill's virtualenv fails."""
 
 
-@dataclass
-class Mount:
+class Mount(BaseModel):
     source: str
     target: str
     read_only: bool = False
 
 
-@dataclass
-class ContainerConfig:
+class ContainerConfig(BaseModel):
     image: str
     name: str
-    labels: dict[str, str] = field(default_factory=dict)
-    mounts: list[Mount] = field(default_factory=list)
+    labels: Annotated[dict[str, str], Field(default_factory=dict)]
+    mounts: Annotated[list[Mount], Field(default_factory=list)]
     network: str = ""
     command: str | list[str] | None = None
-    environment: dict[str, str] = field(default_factory=dict)
+    environment: Annotated[dict[str, str], Field(default_factory=dict)]
 
 
-@dataclass
-class ExecResult:
+class ExecResult(BaseModel):
     exit_code: int
     output: str
 

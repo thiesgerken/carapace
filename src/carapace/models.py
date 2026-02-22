@@ -1,19 +1,17 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal
-
-if TYPE_CHECKING:
-    from carapace.sandbox.manager import SandboxManager
+from typing import Annotated, Any, Literal
 
 from loguru import logger
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 from pydantic_ai.usage import RunUsage
+
+from carapace.sandbox.manager import SandboxManager
 
 # --- Rules ---
 
@@ -248,17 +246,18 @@ class UsageTracker(BaseModel):
 # --- Deps for Pydantic AI RunContext ---
 
 
-@dataclass
-class Deps:
+class Deps(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     config: Config
     data_dir: Path
     session_state: SessionState
     rules: list[Rule]
-    skill_catalog: list[SkillInfo] = field(default_factory=list)
-    activated_skills: list[str] = field(default_factory=list)
+    sandbox: SandboxManager
+    skill_catalog: Annotated[list[SkillInfo], Field(default_factory=list)]
+    activated_skills: Annotated[list[str], Field(default_factory=list)]
     classifier_model: str = "openai:gpt-4o-mini"
     agent_model: Any = None
     verbose: bool = True
     tool_call_callback: Callable[[str, dict[str, Any], str], None] | None = None
-    usage_tracker: UsageTracker = field(default_factory=UsageTracker)
-    sandbox: SandboxManager | None = None
+    usage_tracker: Annotated[UsageTracker, Field(default_factory=UsageTracker)]

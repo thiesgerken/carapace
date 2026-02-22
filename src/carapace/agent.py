@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import difflib
-import subprocess
 from pathlib import Path
 from typing import Any
 
+from loguru import logger
 from pydantic_ai import Agent, ApprovalRequired, DeferredToolRequests, RunContext
 
 from carapace.config import load_workspace_file
@@ -70,35 +70,6 @@ async def _gate(
     return classification, result
 
 
-def _run_local(
-    command: str | list[str],
-    *,
-    shell: bool,
-    timeout: int,
-    cwd: Path,
-) -> str:
-    """Run a command locally via subprocess (fallback when sandbox is unavailable)."""
-    try:
-        result = subprocess.run(
-            command,
-            shell=shell,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            cwd=str(cwd),
-        )
-        output = result.stdout
-        if result.stderr:
-            output += f"\n[stderr] {result.stderr}"
-        if result.returncode != 0:
-            output += f"\n[exit code: {result.returncode}]"
-        return output or "(no output)"
-    except subprocess.TimeoutExpired:
-        return f"Error: command timed out ({timeout}s)"
-    except Exception as e:
-        return f"Error: {e}"
-
-
 def _resolve_path(data_dir, path: str) -> tuple[str | None, Path]:
     """Resolve a path within data_dir. Returns (error, resolved_path)."""
 
@@ -131,17 +102,16 @@ def build_system_prompt(deps: Deps) -> str:
         catalog_lines.append("Use `use_skill` to activate a skill before using it.")
         parts.append("\n".join(catalog_lines))
 
-    if deps.sandbox:
-        parts.append(
-            "# Sandbox Environment\n"
-            "Commands run inside a Docker sandbox container.\n"
-            "- `/workspace/AGENTS.md`, `/workspace/SOUL.md`, `/workspace/USER.md` — read-only reference files\n"
-            "- `/workspace/memory/` — read-only memory files\n"
-            "- `/workspace/skills/` — activated skills (populated by `use_skill`)\n"
-            "- `/workspace/tmp/` — writable scratch space\n"
-            "Call `use_skill(skill_name)` to activate a skill before running its scripts.\n"
-            "Call `save_skill(skill_name)` to persist edits back to the master skill directory."
-        )
+    parts.append(
+        "# Sandbox Environment\n"
+        "Commands run inside a Docker sandbox container.\n"
+        "- `/workspace/AGENTS.md`, `/workspace/SOUL.md`, `/workspace/USER.md` — read-only reference files\n"
+        "- `/workspace/memory/` — read-only memory files\n"
+        "- `/workspace/skills/` — activated skills (populated by `use_skill`)\n"
+        "- `/workspace/tmp/` — writable scratch space\n"
+        "Call `use_skill(skill_name)` to activate a skill before running its scripts.\n"
+        "Call `save_skill(skill_name)` to persist edits back to the master skill directory."
+    )
 
     parts.append(
         "# Session Info\n"
@@ -196,14 +166,14 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
             return f"Skill '{skill_name}' not found."
 
         sandbox_msg = ""
-        if ctx.deps.sandbox:
-            try:
-                sandbox_msg = await ctx.deps.sandbox.activate_skill(
-                    ctx.deps.session_state.session_id,
-                    skill_name,
-                )
-            except SkillVenvError as exc:
-                sandbox_msg = f"ERROR: {exc}"
+        try:
+            sandbox_msg = await ctx.deps.sandbox.activate_skill(
+                ctx.deps.session_state.session_id,
+                skill_name,
+            )
+        except SkillVenvError as exc:
+            logger.exception(f"Error activating skill {skill_name}: {exc}")
+            sandbox_msg = f"ERROR: {exc}"
 
         ctx.deps.activated_skills.append(skill_name)
         parts = [f"Skill '{skill_name}' activated."]
@@ -222,9 +192,6 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
                 {"skill_name": skill_name},
                 context="Saving skill edits from sandbox back to master directory",
             )
-
-        if not ctx.deps.sandbox:
-            return "Sandbox not available — skill files are already on the host."
 
         return await ctx.deps.sandbox.save_skill(
             ctx.deps.session_state.session_id,
@@ -369,18 +336,15 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
 
     @agent.tool
     async def exec(ctx: RunContext[Deps], command: str, timeout: int = 30) -> str:
-        """Run a shell command and return its output. Runs in a Docker sandbox when available."""
+        """Run a shell command and return its output. Runs in a Docker sandbox."""
         if not ctx.tool_call_approved:
             await _gate(ctx, "exec", {"command": command})
 
-        if ctx.deps.sandbox:
-            return await ctx.deps.sandbox.exec_command(
-                ctx.deps.session_state.session_id,
-                command,
-                timeout=timeout,
-            )
-
-        return _run_local(command, shell=True, timeout=timeout, cwd=ctx.deps.data_dir)
+        return await ctx.deps.sandbox.exec_command(
+            ctx.deps.session_state.session_id,
+            command,
+            timeout=timeout,
+        )
 
     @agent.tool
     async def bash(ctx: RunContext[Deps], command: str, timeout: int = 30) -> str:
@@ -388,14 +352,11 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
         if not ctx.tool_call_approved:
             await _gate(ctx, "bash", {"command": command})
 
-        if ctx.deps.sandbox:
-            return await ctx.deps.sandbox.exec_command(
-                ctx.deps.session_state.session_id,
-                command,
-                timeout=timeout,
-            )
-
-        return _run_local(["bash", "-c", command], shell=False, timeout=timeout, cwd=ctx.deps.data_dir)
+        return await ctx.deps.sandbox.exec_command(
+            ctx.deps.session_state.session_id,
+            command,
+            timeout=timeout,
+        )
 
     # --- Memory ---
 

@@ -55,7 +55,7 @@ _rules: list[Rule]
 _session_mgr: SessionManager
 _skill_catalog: list
 _agent_model: Any
-_sandbox_mgr: Any = None
+_sandbox_mgr: SandboxManager
 _session_locks: dict[str, asyncio.Lock] = {}
 _session_lock_refs: dict[str, int] = {}
 
@@ -98,11 +98,10 @@ async def _idle_cleanup_loop() -> None:
     """Periodically clean up idle sandbox containers."""
     while True:
         await asyncio.sleep(60)
-        if _sandbox_mgr:
-            try:
-                await _sandbox_mgr.cleanup_idle()
-            except Exception as exc:
-                logger.warning(f"Sandbox idle cleanup error: {exc}")
+        try:
+            await _sandbox_mgr.cleanup_idle()
+        except Exception as exc:
+            logger.warning(f"Sandbox idle cleanup error: {exc}")
 
 
 @asynccontextmanager
@@ -145,19 +144,16 @@ async def lifespan(app: FastAPI):
     price_updater = UpdatePrices()
     price_updater.start()
 
-    cleanup_task = asyncio.create_task(_idle_cleanup_loop()) if _sandbox_mgr else None
+    cleanup_task = asyncio.create_task(_idle_cleanup_loop())
 
-    sandbox_status = "on" if _sandbox_mgr else "off"
     logger.info(
         f"Carapace server ready — model={_config.agent.model}, rules={len(_rules)}, "
-        f"skills={len(_skill_catalog)}, sandbox={sandbox_status}, token={token[:8]}…"
+        f"skills={len(_skill_catalog)}, sandbox=on, token={token[:8]}…"
     )
     yield
     logger.info("Server shutting down…")
-    if cleanup_task:
-        cleanup_task.cancel()
-    if _sandbox_mgr:
-        await _sandbox_mgr.cleanup_all()
+    cleanup_task.cancel()
+    await _sandbox_mgr.cleanup_all()
     price_updater.stop()
     logger.info("Shutdown complete")
 
@@ -258,8 +254,7 @@ async def get_session(session_id: str, _token: str = Depends(_verify_token)) -> 
 
 @app.delete("/sessions/{session_id}", status_code=204)
 async def delete_session(session_id: str, _token: str = Depends(_verify_token)) -> None:
-    if _sandbox_mgr:
-        await _sandbox_mgr.cleanup_session(session_id)
+    await _sandbox_mgr.cleanup_session(session_id)
     if not _session_mgr.delete_session(session_id):
         raise HTTPException(status_code=404, detail="Session not found")
 

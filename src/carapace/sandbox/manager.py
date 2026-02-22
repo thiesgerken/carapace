@@ -2,22 +2,22 @@ from __future__ import annotations
 
 import shutil
 import time
-from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Annotated
 
 from loguru import logger
+from pydantic import BaseModel, Field
 
 from carapace.sandbox.runtime import ContainerConfig, ContainerGoneError, ContainerRuntime, Mount, SkillVenvError
 
 
-@dataclass
-class SessionContainer:
+class SessionContainer(BaseModel):
     container_id: str
     session_id: str
     ip_address: str | None = None
-    created_at: float = field(default_factory=time.time)
-    last_used: float = field(default_factory=time.time)
-    activated_skills: list[str] = field(default_factory=list)
+    created_at: Annotated[float, Field(default_factory=time.time)]
+    last_used: Annotated[float, Field(default_factory=time.time)]
+    activated_skills: Annotated[list[str], Field(default_factory=list)]
 
 
 class SandboxManager:

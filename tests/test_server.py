@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from unittest.mock import MagicMock
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -10,6 +12,7 @@ import carapace.server as srv
 from carapace.auth import ensure_token
 from carapace.bootstrap import ensure_data_dir
 from carapace.config import load_config, load_rules
+from carapace.sandbox.manager import SandboxManager
 from carapace.server import app
 from carapace.session import SessionManager
 from carapace.skills import SkillRegistry
@@ -26,6 +29,7 @@ def _setup_server(tmp_path):
     registry = SkillRegistry(tmp_path / "skills")
     srv._skill_catalog = registry.scan()
     srv._agent_model = None
+    srv._sandbox_mgr = MagicMock(spec=SandboxManager)
     ensure_token(tmp_path)
 
 
