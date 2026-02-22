@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v0.7.1 (2026-02-22)
+
+### 🐛
+
+- 🐛 bad gitignore
+  ([`36ada40`](https://github.com/thiesgerken/carapace/commit/36ada4061bc0fdc65a522999424f66d7dfd9d8e3))
+
+
 ## v0.7.0 (2026-02-22)
 
 ### ✨
