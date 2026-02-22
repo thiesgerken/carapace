@@ -675,8 +675,13 @@ def _setup_logging() -> None:
         log.handlers = [_InterceptHandler()]
         log.propagate = False
 
-    for name in ("httpcore", "httpx", "docker"):
+    for name in ("httpcore", "httpx", "docker", "anthropic", "websockets"):
         logging.getLogger(name).setLevel(logging.WARNING)
+
+    def _emoji_patcher(record: Any) -> None:
+        record["name"] = record["name"].replace("carapace.", "🦐.").replace("sandbox.", "🏝️.")
+
+    logger.configure(patcher=_emoji_patcher)
 
 
 def main() -> None:
