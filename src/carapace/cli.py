@@ -268,18 +268,16 @@ async def _render_proxy_approval_request(data: dict[str, Any]) -> str:
         None,
         lambda: console.input("[bold]Choice?[/bold] ").strip(),
     )
-    match choice.lower():
-        case "o" | "once":
-            return "allow_once"
-        case "t" | "timed":
-            return "allow_15min"
-        case _:
-            pass
     match choice:
         case "O":
             return "allow_all_once"
         case "T":
             return "allow_all_15min"
+    match choice.lower():
+        case "o" | "once":
+            return "allow_once"
+        case "t" | "timed":
+            return "allow_15min"
         case _:
             return "deny"
 
