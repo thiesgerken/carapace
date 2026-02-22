@@ -4,10 +4,9 @@ import re
 import shutil
 import time
 from pathlib import Path
-from typing import Annotated
 
 from loguru import logger
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from carapace.sandbox.runtime import ContainerConfig, ContainerGoneError, ContainerRuntime, Mount, SkillVenvError
 
@@ -18,8 +17,8 @@ class SessionContainer(BaseModel):
     container_id: str
     session_id: str
     ip_address: str | None = None
-    created_at: Annotated[float, Field(default_factory=time.time)]
-    last_used: Annotated[float, Field(default_factory=time.time)]
+    created_at: float
+    last_used: float
     activated_skills: list[str] = []
 
 
@@ -93,6 +92,8 @@ class SandboxManager:
             container_id=container_id,
             session_id=session_id,
             ip_address=ip,
+            created_at=time.time(),
+            last_used=time.time(),
         )
         self._sessions[session_id] = sc
         if ip:

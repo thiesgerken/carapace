@@ -4,7 +4,7 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 from carapace.agent import _resolve_path, build_system_prompt
-from carapace.models import Config, Deps, SessionState
+from carapace.models import Config, Deps, SessionState, UsageTracker
 from carapace.sandbox.manager import SandboxManager
 
 
@@ -28,6 +28,7 @@ def test_build_system_prompt_minimal(tmp_path: Path):
         session_state=state,
         rules=[],
         sandbox=MagicMock(spec=SandboxManager),
+        usage_tracker=UsageTracker(),
     )
     prompt = build_system_prompt(deps)
     assert "test-123" in prompt
@@ -42,6 +43,7 @@ def test_build_system_prompt_with_agents_md(tmp_path: Path):
         session_state=state,
         rules=[],
         sandbox=MagicMock(spec=SandboxManager),
+        usage_tracker=UsageTracker(),
     )
     prompt = build_system_prompt(deps)
     assert "Agent Instructions" in prompt
