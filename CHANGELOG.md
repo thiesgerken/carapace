@@ -1,6 +1,38 @@
 # CHANGELOG
 
 
+## v0.8.0 (2026-02-22)
+
+### Other
+
+- 💚 add docker builds to the ci ([#38](https://github.com/thiesgerken/carapace/pull/38),
+  [`fcb36f6`](https://github.com/thiesgerken/carapace/commit/fcb36f62ccc5cd0d22bf9d4bc6bf67bf92314fff))
+
+### ✨
+
+- ✨ Matrix as additional frontend ([#37](https://github.com/thiesgerken/carapace/pull/37),
+  [`bb92183`](https://github.com/thiesgerken/carapace/commit/bb92183d2d3711d76c462275ff7c742a48099c24))
+
+* ✨ Matrix as additional frontend
+
+* pass-through matrix pw
+
+* make it possible to auth using password instead of token
+
+* improve error handling in matrix code
+
+* Enhance Matrix channel command handling and logging
+
+- Updated approval command from `/approve` to `/allow` for clarity. - Improved session command
+  result formatting to include activated, disabled rules, approved credentials, and allowed domains.
+  - Refactored agent turn execution to run as a background task, allowing for immediate response to
+  new events. - Added a new method `_run_turn_locked` to manage room-specific locks during agent
+  turns. - Set logging levels for additional libraries to WARNING in server.py for better log
+  management.
+
+* fix tests
+
+
 ## v0.7.1 (2026-02-22)
 
 ### 🐛
