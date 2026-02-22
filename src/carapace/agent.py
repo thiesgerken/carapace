@@ -99,7 +99,10 @@ def build_system_prompt(deps: Deps) -> str:
         for skill in deps.skill_catalog:
             catalog_lines.append(f"- **{skill.name}**: {skill.description.strip()}")
         catalog_lines.append("")
-        catalog_lines.append("Use `use_skill` to activate a skill before using it.")
+        catalog_lines.append(
+            "Use `use_skill` to activate a skill before using it. "
+            + "That will copy the skill to your sandbox environment and if needed setup a virtual environment for it."
+        )
         parts.append("\n".join(catalog_lines))
 
     parts.append(
@@ -336,21 +339,9 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
 
     @agent.tool
     async def exec(ctx: RunContext[Deps], command: str, timeout: int = 30) -> str:
-        """Run a shell command and return its output. Runs in a Docker sandbox."""
+        """Run a shell command (typically bash) and return its output. Runs in a Docker sandbox."""
         if not ctx.tool_call_approved:
             await _gate(ctx, "exec", {"command": command})
-
-        return await ctx.deps.sandbox.exec_command(
-            ctx.deps.session_state.session_id,
-            command,
-            timeout=timeout,
-        )
-
-    @agent.tool
-    async def shell(ctx: RunContext[Deps], command: str, timeout: int = 30) -> str:
-        """Run a shell command (typically bash). Use for pipes, redirects, subshells, etc."""
-        if not ctx.tool_call_approved:
-            await _gate(ctx, "shell", {"command": command})
 
         return await ctx.deps.sandbox.exec_command(
             ctx.deps.session_state.session_id,
