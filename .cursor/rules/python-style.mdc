@@ -17,7 +17,9 @@ Code is craft. Favor elegance, clarity, and expressiveness. Write code that read
 - Prefer `str | None` over `Optional[str]`.
 - Use `dict`, `list`, `tuple` lowercase generics (not `Dict`, `List`, `Tuple`).
 - Leverage `TypeAlias`, `Literal`, `TypeVar`, `Protocol` where they add clarity.
-- Use Pydantic `BaseModel` / `@dataclass` for structured data — no raw dicts.
+- Use Pydantic `BaseModel` for structured data — no raw dicts, no stdlib `@dataclass`.
+- Use `Annotated[type, Field(...)]` for field metadata/defaults — never `x: type = Field(...)` or `= field(...)`.
+- Never assign `None` to a non-nullable field with `# type: ignore` — make the field genuinely required or genuinely optional.
 
 ## Async by Default
 
@@ -31,7 +33,7 @@ Code is craft. Favor elegance, clarity, and expressiveness. Write code that read
 - Use early returns to reduce nesting.
 - Decompose with small, pure helper functions over deep method chains.
 - Prefer expressions over statements where readable (ternary, walrus `:=`).
-- Avoid mutable default arguments; use `field(default_factory=...)`.
+- Avoid mutable default arguments; use `Annotated[type, Field(default_factory=...)]`.
 
 ## Modern Python (3.12+)
 
@@ -52,6 +54,7 @@ Code is craft. Favor elegance, clarity, and expressiveness. Write code that read
 - One concept per module. Keep files focused and short.
 - Imports: stdlib → third-party → local, separated by blank lines.
 - No wildcard imports.
+- No `if TYPE_CHECKING` import guards — fix the underlying circular import instead of hiding it.
 - Private helpers prefixed with `_`.
 
 ## Error Handling
