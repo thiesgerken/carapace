@@ -40,10 +40,22 @@ def _connect() -> docker.DockerClient:
 class DockerRuntime:
     def __init__(self) -> None:
         self._client = _connect()
+        self._ensured_networks: set[str] = set()
         logger.info("Docker runtime connected")
+
+    def _ensure_network(self, name: str) -> None:
+        if name in self._ensured_networks:
+            return
+        existing = self._client.networks.list(names=[name])
+        if not existing:
+            self._client.networks.create(name, driver="bridge")
+            logger.info(f"Created Docker network '{name}'")
+        self._ensured_networks.add(name)
 
     async def create(self, config: ContainerConfig) -> str:
         def _create() -> str:
+            if config.network:
+                self._ensure_network(config.network)
             self._remove_stale(config.name)
 
             mounts = [
