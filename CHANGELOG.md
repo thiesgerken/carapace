@@ -1,6 +1,84 @@
 # CHANGELOG
 
 
+## v0.7.0 (2026-02-22)
+
+### ✨
+
+- ✨ route sandbox http calls through the backend using a CONNECT proxy
+  ([#36](https://github.com/thiesgerken/carapace/pull/36),
+  [`58b96e8`](https://github.com/thiesgerken/carapace/commit/58b96e88329a7184a7cdf4263e96216eaa52336b))
+
+* ✨ route sandbox http calls through the backend using a CONNECT proxy
+
+* ✨ Enhance Docker configuration and logging for sandbox environment
+
+- Added `tty` support in `docker-compose.yml` for the carapace service. - Updated volume mappings to
+  include the source directory for carapace. - Introduced `ANTHROPIC_API_KEY` as an environment
+  variable in the Docker setup. - Changed frontend port mapping from 3000 to 3001. - Enhanced
+  logging in `server.py` to display network interface information and resolved sandbox network
+  names. - Improved `DockerRuntime` to manage network names and ensure correct network connections
+  for containers. - Updated `SandboxManager` to dynamically resolve and log proxy URLs based on the
+  container's network settings.
+
+* ✨ Implement proxy domain approval mechanism in sandbox
+
+- Added support for proxy domain approval requests in the chat view and message components. -
+  Introduced `handleProxyApproval` function to manage user decisions on proxy access. - Updated
+  `SandboxManager` to handle domain approval requests and decisions, integrating with the proxy
+  server. - Enhanced WebSocket communication to facilitate proxy approval responses. - Improved
+  session management to display allowed domains and their scopes in the CLI. - Refactored related
+  components to ensure seamless integration of the new approval workflow.
+
+* Fix content length in forbidden response for proxy policy
+
+* Enhance ProxyServer to filter hop-by-hop headers and enforce connection closure. Updated header
+  processing to drop existing Connection headers and append "Connection: close" to prevent HTTP/1.1
+  keep-alive issues.
+
+* Fix session token management and enhance error handling in SandboxManager
+
+- Evict orphaned tokens from previous failed attempts to ensure clean session initialization. -
+  Refactor IP resolution logic to include error handling, ensuring proper cleanup on failure. -
+  Maintain existing functionality for proxy URL generation and container configuration.
+
+* Refactor SandboxManager proxy configuration in tests
+
+- Simplified the instantiation of SandboxManager in test cases by removing the hardcoded proxy URL.
+  - Updated the `_build_proxy_env` method calls to include the proxy URL as a parameter, enhancing
+  flexibility in testing proxy configurations. - Ensured that the tests maintain their functionality
+  while improving code clarity and maintainability.
+
+* Refactor ProxyServer domain checking methods in tests
+
+- Renamed `_check_domain` method to `_is_allowed` for clarity in the ProxyServer class. - Updated
+  test cases to reflect the new method name while maintaining existing functionality. - Improved
+  code readability and consistency in domain approval checks.
+
+* Remove unused proxyApprovalState ref
+
+The proxyApprovalState ref was written to but never read. Proxy approval state is tracked directly
+  on message objects via the decision property, making this ref redundant.
+
+Applied via @cursor push command
+
+* Fix proxy approval allow-all CLI choices
+
+Co-authored-by: Thies Gerken <thiesgerken@users.noreply.github.com>
+
+* Enhance WebSocket error handling and improve test setup
+
+- Added contextlib suppression to handle unexpected WebSocket errors gracefully by closing the
+  connection with code 1011. - Updated the test server setup to return an empty list for domain info
+  in the SandboxManager, improving test reliability.
+
+* fix: preserve proxy approvals across container recreation
+
+---------
+
+Co-authored-by: Cursor Agent <cursoragent@cursor.com>
+
+
 ## v0.6.0 (2026-02-22)
 
 ### ✨
