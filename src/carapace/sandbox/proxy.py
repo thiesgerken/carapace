@@ -233,16 +233,21 @@ class ProxyServer:
             await writer.drain()
             return
 
-        # Filter out proxy-specific headers and find content-length
+        # Filter out proxy-specific and hop-by-hop headers, then find content-length.
+        # Drop any existing Connection header — we will inject "Connection: close"
+        # so the server closes the TCP connection after sending its response.
+        # Without this, HTTP/1.1 keep-alive causes remote_reader.read() to block
+        # until the server's idle timeout (potentially tens of seconds).
         headers: list[bytes] = []
         content_length = 0
         for hdr in raw_headers:
             lower = hdr.lower()
-            if lower.startswith(b"proxy-"):
+            if lower.startswith(b"proxy-") or lower.startswith(b"connection:"):
                 continue
             if lower.startswith(b"content-length:"):
                 content_length = int(hdr.split(b":", 1)[1].strip())
             headers.append(hdr)
+        headers.append(b"Connection: close\r\n")
 
         body = b""
         if content_length > 0:
