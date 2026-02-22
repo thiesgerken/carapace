@@ -172,6 +172,9 @@ class SandboxManager:
             self._cleanup_tracking(session_id)
             sc = await self.ensure_session(session_id)
             result = await self._runtime.exec(sc.container_id, command, timeout=timeout)
+        except Exception as e:
+            logger.error(f"Docker exec error in session {session_id}: {e}")
+            return f"Error: {e}"
 
         output = result.output
         if result.exit_code != 0 and f"[exit code: {result.exit_code}]" not in output:

@@ -7,9 +7,10 @@ COPY --from=uv /uv /usr/local/bin/uv
 WORKDIR /app
 
 COPY pyproject.toml uv.lock ./
-RUN uv sync --no-dev --frozen
+RUN uv sync --no-install-project --no-dev --frozen
 
 COPY src/ src/
+RUN uv sync --no-dev --frozen
 
 EXPOSE 8321
 
