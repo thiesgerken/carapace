@@ -3,8 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 
 import yaml
+from loguru import logger
 
-from carapace.models import SkillInfo
+from carapace.models import SkillCarapaceConfig, SkillInfo
 
 
 class SkillRegistry:
@@ -42,6 +43,20 @@ class SkillRegistry:
         if not skill_md.exists():
             return None
         return skill_md.read_text()
+
+    def get_carapace_config(self, skill_name: str) -> SkillCarapaceConfig | None:
+        """Parse ``carapace.yaml`` for *skill_name*.  Returns ``None`` if absent."""
+        cfg_path = self.skills_dir / skill_name / "carapace.yaml"
+        if not cfg_path.exists():
+            return None
+        try:
+            raw = yaml.safe_load(cfg_path.read_text())
+            if not isinstance(raw, dict):
+                return None
+            return SkillCarapaceConfig.model_validate(raw)
+        except Exception as exc:
+            logger.warning(f"Failed to parse carapace.yaml for skill '{skill_name}': {exc}")
+            return None
 
     def _parse_frontmatter(self, skill_md: Path, skill_dir: Path) -> SkillInfo | None:
         text = skill_md.read_text()

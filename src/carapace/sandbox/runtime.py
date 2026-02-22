@@ -23,6 +23,7 @@ class ContainerConfig(BaseModel):
     labels: dict[str, str] = {}
     mounts: list[Mount] = []
     network: str = ""
+    internal_network: bool = False
     command: str | list[str] | None = None
     environment: dict[str, str] = {}
 

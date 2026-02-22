@@ -1,15 +1,47 @@
-.git
-.cursor
-.venv
-__pycache__
-*.pyc
-node_modules
-frontend/node_modules
-frontend/.next
-data/sessions
-data/logs
-data/server.token
-*.egg-info
-dist
-build
-.pytest_cache
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.venv/
+
+# Tests
+tests/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Type checkers
+.mypy_cache/
+.pytype/
+.ruff_cache/
+
+# IDE / Editor
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+
+# Secrets / env
+.env
+.env.*
+
+# Docker
+frontend/
+Dockerfile
+.dockerignore
+
+# Git
+.git/
+.gitignore
+
+# Runtime data
+data/
+
+# Docs
+*.md
+!README.md

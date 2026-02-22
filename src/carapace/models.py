@@ -124,6 +124,7 @@ class SandboxConfig(BaseModel):
     base_image: str = ""
     idle_timeout_minutes: int = 15
     network_name: str = "carapace-sandbox"
+    proxy_port: int = 3128
 
 
 class MemorySearchConfig(BaseModel):
@@ -162,6 +163,18 @@ class Config(BaseModel):
 
 
 # --- Skill Catalog Entry ---
+
+
+class SkillNetworkConfig(BaseModel):
+    domains: list[str] = []
+
+
+class SkillCarapaceConfig(BaseModel):
+    """Parsed contents of a skill's ``carapace.yaml``."""
+
+    network: SkillNetworkConfig = SkillNetworkConfig()
+    credentials: list[dict[str, str]] = []
+    hints: dict[str, str] = {}
 
 
 class SkillInfo(BaseModel):

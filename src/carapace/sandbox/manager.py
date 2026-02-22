@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import secrets
 import shutil
 import time
 from pathlib import Path
@@ -42,6 +43,8 @@ class SandboxManager:
         network_name: str = "carapace-sandbox",
         idle_timeout_minutes: int = 15,
         host_data_dir: Path | None = None,
+        proxy_url: str = "",
+        internal_network: bool = False,
     ) -> None:
         self._runtime = runtime
         self._data_dir = data_dir
@@ -49,12 +52,18 @@ class SandboxManager:
         self._base_image = base_image
         self._network_name = network_name
         self._idle_timeout = idle_timeout_minutes * 60
+        self._proxy_url = proxy_url
+        self._internal_network = internal_network
         self._sessions: dict[str, SessionContainer] = {}
-        self._ip_to_session: dict[str, str] = {}
+        self._token_to_session: dict[str, str] = {}
+        self._session_tokens: dict[str, str] = {}
+        self._allowed_domains: dict[str, set[str]] = {}
         logger.info(
             f"SandboxManager initialized (image={base_image}, "
             + f"network={network_name}, idle_timeout={idle_timeout_minutes}m)"
         )
+        if proxy_url:
+            logger.info(f"Proxy URL for sandbox containers: {proxy_url}")
         if host_data_dir:
             logger.info(f"Host data dir override: {host_data_dir} (container sees {data_dir})")
 
@@ -74,14 +83,21 @@ class SandboxManager:
         (session_workspace / "skills").mkdir(parents=True, exist_ok=True)
         (session_workspace / "tmp").mkdir(parents=True, exist_ok=True)
 
+        proxy_token = secrets.token_hex(16)
+        self._token_to_session[proxy_token] = session_id
+        self._session_tokens[session_id] = proxy_token
+
         mounts = self._build_mounts(session_id)
+        env = self._build_proxy_env(proxy_token)
         config = ContainerConfig(
             image=self._base_image,
             name=f"carapace-session-{session_id}",
             labels={"carapace.session": session_id, "carapace.managed": "true"},
             mounts=mounts,
             network=self._network_name,
+            internal_network=self._internal_network,
             command=["sleep", "infinity"],
+            environment=env,
         )
 
         container_id = await self._runtime.create(config)
@@ -95,9 +111,6 @@ class SandboxManager:
             last_used=time.time(),
         )
         self._sessions[session_id] = sc
-        if ip:
-            self._ip_to_session[ip] = session_id
-
         logger.info(f"Created sandbox container {container_id[:12]} for session {session_id} (IP: {ip})")
         return sc
 
@@ -159,6 +172,24 @@ class SandboxManager:
         )
 
         return mounts
+
+    def _build_proxy_env(self, proxy_token: str) -> dict[str, str]:
+        """Build HTTP_PROXY / NO_PROXY env vars for session containers."""
+        if not self._proxy_url:
+            return {}
+        # Embed the per-session token as proxy auth: http://token@host:port
+        scheme, rest = self._proxy_url.split("://", 1)
+        authed_url = f"{scheme}://{proxy_token}@{rest}"
+        # Extract host (without scheme/port/auth) for NO_PROXY
+        no_proxy_host = rest.rsplit(":", 1)[0]
+        return {
+            "HTTP_PROXY": authed_url,
+            "HTTPS_PROXY": authed_url,
+            "http_proxy": authed_url,
+            "https_proxy": authed_url,
+            "NO_PROXY": no_proxy_host,
+            "no_proxy": no_proxy_host,
+        }
 
     async def exec_command(self, session_id: str, command: str, timeout: int = 30) -> str:
         sc = await self.ensure_session(session_id)
@@ -307,10 +338,21 @@ class SandboxManager:
         for sid in list(self._sessions):
             await self.cleanup_session(sid)
 
-    def get_session_by_ip(self, ip: str) -> str | None:
-        return self._ip_to_session.get(ip)
+    def get_session_by_token(self, token: str) -> str | None:
+        return self._token_to_session.get(token)
+
+    def allow_domains(self, session_id: str, domains: set[str]) -> None:
+        """Add *domains* to the proxy allowlist for *session_id*."""
+        existing = self._allowed_domains.setdefault(session_id, set())
+        existing.update(domains)
+        logger.info(f"Allowed domains for session {session_id}: {existing}")
+
+    def get_allowed_domains(self, session_id: str) -> set[str]:
+        return self._allowed_domains.get(session_id, set())
 
     def _cleanup_tracking(self, session_id: str) -> None:
-        sc = self._sessions.pop(session_id, None)
-        if sc and sc.ip_address:
-            self._ip_to_session.pop(sc.ip_address, None)
+        self._sessions.pop(session_id, None)
+        token = self._session_tokens.pop(session_id, None)
+        if token:
+            self._token_to_session.pop(token, None)
+        self._allowed_domains.pop(session_id, None)

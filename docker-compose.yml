@@ -16,12 +16,11 @@ services:
   frontend:
     build: ./frontend
     ports:
-      - "3000:3000"
-    environment:
-      - NEXT_PUBLIC_API_URL=http://carapace:8321
+      - "3000:80"
     depends_on:
       - carapace
 
 networks:
   carapace-sandbox:
     driver: bridge
+    internal: true

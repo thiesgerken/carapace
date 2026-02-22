@@ -55,19 +55,23 @@ class DockerRuntime:
                 logger.debug(f"[docker build] {line}")
         logger.info(f"Sandbox image '{tag}' built successfully")
 
-    def _ensure_network(self, name: str) -> None:
+    def _ensure_network(self, name: str, *, internal: bool = False) -> None:
         if name in self._ensured_networks:
             return
         existing = self._client.networks.list(names=[name])
         if not existing:
-            self._client.networks.create(name, driver="bridge")
-            logger.info(f"Created Docker network '{name}'")
+            self._client.networks.create(name, driver="bridge", internal=internal)
+            logger.info(f"Created Docker network '{name}' (internal={internal})")
         self._ensured_networks.add(name)
+
+    async def ensure_network(self, name: str, *, internal: bool = False) -> None:
+        """Public async wrapper — ensures the Docker network exists."""
+        await asyncio.to_thread(self._ensure_network, name, internal=internal)
 
     async def create(self, config: ContainerConfig) -> str:
         def _create() -> str:
             if config.network:
-                self._ensure_network(config.network)
+                self._ensure_network(config.network, internal=config.internal_network)
             self._remove_stale(config.name)
 
             mounts = [
@@ -191,6 +195,53 @@ class DockerRuntime:
                 return False
 
         return await asyncio.to_thread(_check)
+
+    async def get_host_ip(self, network: str) -> str | None:
+        """Get the IP of the current host container on *network*.
+
+        Tries to resolve via ``HOSTNAME`` env var (Docker sets this to the
+        container ID / short ID).  Returns ``None`` when not running inside
+        Docker or the network isn't found.
+        """
+        import os
+
+        hostname = os.environ.get("HOSTNAME", "")
+        if not hostname:
+            return None
+
+        def _resolve() -> str | None:
+            try:
+                container = self._client.containers.get(hostname)
+                container.reload()
+                nets = container.attrs.get("NetworkSettings", {}).get("Networks", {})
+                info = nets.get(network)
+                return info.get("IPAddress") if info else None
+            except NotFound:
+                return None
+
+        return await asyncio.to_thread(_resolve)
+
+    async def get_network_gateway(self, network: str) -> str | None:
+        """Return the gateway IP of a Docker bridge *network*.
+
+        This is the host's IP as seen from containers on that network.
+        Useful when the server runs on the host (not inside Docker).
+        """
+
+        def _resolve() -> str | None:
+            nets = self._client.networks.list(names=[network])
+            if not nets:
+                return None
+            net = nets[0]
+            net.reload()
+            ipam_configs = net.attrs.get("IPAM", {}).get("Config", [])
+            for cfg in ipam_configs:
+                gw = cfg.get("Gateway")
+                if gw:
+                    return gw
+            return None
+
+        return await asyncio.to_thread(_resolve)
 
     async def get_ip(self, container_id: str, network: str) -> str | None:
         def _get_ip() -> str | None:

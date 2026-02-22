@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Annotated, Any
 
 import logfire
+import loguru
 import uvicorn
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect, WebSocketException, status
@@ -30,6 +31,7 @@ from carapace.memory import MemoryStore
 from carapace.models import Config, Deps, Rule, SessionState, UsageTracker
 from carapace.sandbox.docker import DockerRuntime
 from carapace.sandbox.manager import SandboxManager
+from carapace.sandbox.proxy import ProxyServer
 from carapace.session import SessionManager
 from carapace.skills import SkillRegistry
 from carapace.ws_models import (
@@ -132,6 +134,26 @@ async def lifespan(app: FastAPI):
     host_data_dir_env = os.environ.get("CARAPACE_HOST_DATA_DIR")
     host_data_dir = Path(host_data_dir_env) if host_data_dir_env else None
 
+    # Resolve backend IP on the sandbox network for proxy env vars.
+    # Two modes: in-Docker (backend is a container on the sandbox network)
+    # and host mode (backend runs on the host, containers reach it via gateway).
+    proxy_port = _config.sandbox.proxy_port
+    backend_ip = await runtime.get_host_ip(_config.sandbox.network_name)
+    running_in_docker = backend_ip is not None
+
+    if running_in_docker:
+        proxy_url = f"http://{backend_ip}:{proxy_port}"
+    else:
+        # Host mode: create the network eagerly so we can read its gateway IP
+        await runtime.ensure_network(_config.sandbox.network_name)
+        gateway_ip = await runtime.get_network_gateway(_config.sandbox.network_name)
+        if gateway_ip:
+            proxy_url = f"http://{gateway_ip}:{proxy_port}"
+            logger.info(f"Host mode: using network gateway {gateway_ip} for proxy URL")
+        else:
+            proxy_url = ""
+            logger.warning("Could not determine proxy URL for sandbox network")
+
     _sandbox_mgr = SandboxManager(
         runtime=runtime,
         data_dir=_data_dir,
@@ -139,8 +161,18 @@ async def lifespan(app: FastAPI):
         network_name=_config.sandbox.network_name,
         idle_timeout_minutes=_config.sandbox.idle_timeout_minutes,
         host_data_dir=host_data_dir,
+        proxy_url=proxy_url,
+        internal_network=running_in_docker,
     )
     logger.info(f"Sandbox enabled (image={base_image}, network={_config.sandbox.network_name})")
+
+    proxy = ProxyServer(
+        get_session_by_token=_sandbox_mgr.get_session_by_token,
+        get_allowed_domains=_sandbox_mgr.get_allowed_domains,
+        host="0.0.0.0",
+        port=proxy_port,
+    )
+    await proxy.start()
 
     token = ensure_token(_data_dir)
 
@@ -153,11 +185,12 @@ async def lifespan(app: FastAPI):
 
     logger.info(
         f"Carapace server ready — model={_config.agent.model}, rules={len(_rules)}, "
-        f"skills={len(_skill_catalog)}, sandbox=on, token={token[:8]}…"
+        f"skills={len(_skill_catalog)}, sandbox=on, proxy={proxy_url}, token={token[:8]}…"
     )
     yield
     logger.info("Server shutting down…")
     cleanup_task.cancel()
+    await proxy.stop()
     await _sandbox_mgr.cleanup_all()
     price_updater.stop()
     logger.info("Shutdown complete")
@@ -676,13 +709,14 @@ def _setup_logging() -> None:
         log.handlers = [_InterceptHandler()]
         log.propagate = False
 
-    for name in ("httpcore", "httpx", "docker", "anthropic", "websockets"):
+    for name in ("httpcore", "httpx", "docker", "anthropic", "websockets", "websockets.server", "urllib3"):
         logging.getLogger(name).setLevel(logging.WARNING)
 
-    def _emoji_patcher(record: Any) -> None:
-        record["name"] = record["name"].replace("carapace.", "🦐.").replace("sandbox.", "🏝️.")
+    def _abbrev_patcher(record: loguru.Record) -> None:
+        if record["name"]:
+            record["name"] = record["name"].replace("carapace.", "cp.").replace("sandbox.", "sndbx.")
 
-    logger.configure(patcher=_emoji_patcher)
+    logger.configure(patcher=_abbrev_patcher)
 
 
 def main() -> None:
