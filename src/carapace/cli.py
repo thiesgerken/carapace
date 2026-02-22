@@ -247,7 +247,7 @@ async def _render_approval_request(data: dict[str, Any]) -> bool:
     )
     choice = await asyncio.get_event_loop().run_in_executor(
         None,
-        lambda: console.input("[bold][a]pprove / [d]eny?[/bold] ").strip().lower(),
+        lambda: console.input("[bold]\\[a]pprove / \\[d]eny?[/bold] ").strip().lower(),
     )
     return choice in ("a", "approve", "y", "yes")
 
