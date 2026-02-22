@@ -1,16 +1,15 @@
-FROM ghcr.io/astral-sh/uv:0.10.4-python3.14-trixie  AS uv
-
-FROM python:3.14-slim
-
-COPY --from=uv /uv /usr/local/bin/uv
+FROM ghcr.io/astral-sh/uv:python3.14-trixie-slim AS builder
 
 WORKDIR /app
-
-COPY pyproject.toml uv.lock ./
-RUN uv sync --no-dev --frozen
-
+COPY pyproject.toml uv.lock README.md ./
 COPY src/ src/
+RUN uv build --wheel --out-dir dist
+
+FROM python:3.14-slim-trixie AS runner
+
+WORKDIR /app
+COPY --from=builder /app/dist/*.whl ./
+RUN pip install --no-cache-dir *.whl && rm *.whl
 
 EXPOSE 8321
-
-CMD ["uv", "run", "carapace-server"]
+CMD ["carapace-server"]

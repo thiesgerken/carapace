@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import difflib
 from pathlib import Path
 from typing import Any
@@ -10,6 +12,7 @@ from pydantic_ai import Agent, ApprovalRequired, DeferredToolRequests, RunContex
 from carapace.config import load_workspace_file
 from carapace.memory import MemoryStore
 from carapace.models import Deps, OperationClassification, RuleCheckResult
+from carapace.sandbox.proxy import DomainDecision
 from carapace.sandbox.runtime import SkillVenvError
 from carapace.security.classifier import classify_operation
 from carapace.security.engine import check_rules
@@ -155,15 +158,20 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
 
         Call before using a skill.
         """
-        if not ctx.tool_call_approved:
-            await _gate(
-                ctx,
-                "use_skill",
-                {"skill_name": skill_name},
-                context="Activating skill for use in sandbox",
-            )
-
         registry = SkillRegistry(ctx.deps.data_dir / "skills")
+
+        # Parse carapace.yaml for network domain declarations
+        carapace_cfg = registry.get_carapace_config(skill_name)
+        requested_domains = carapace_cfg.network.domains if carapace_cfg else []
+
+        if not ctx.tool_call_approved:
+            gate_args: dict[str, Any] = {"skill_name": skill_name}
+            context = "Activating skill for use in sandbox"
+            if requested_domains:
+                gate_args["network_domains"] = requested_domains
+                context += f" (requests network access to: {', '.join(requested_domains)})"
+            await _gate(ctx, "use_skill", gate_args, context=context)
+
         instructions = registry.get_full_instructions(skill_name)
         if instructions is None:
             return f"Skill '{skill_name}' not found."
@@ -178,10 +186,19 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
             logger.exception(f"Error activating skill {skill_name}: {exc}")
             sandbox_msg = f"ERROR: {exc}"
 
+        # Register approved network domains for this session
+        if requested_domains:
+            ctx.deps.sandbox.allow_domains(
+                ctx.deps.session_state.session_id,
+                set(requested_domains),
+            )
+
         ctx.deps.activated_skills.append(skill_name)
         parts = [f"Skill '{skill_name}' activated."]
         if sandbox_msg:
             parts.append(sandbox_msg)
+        if requested_domains:
+            parts.append(f"Network access granted for: {', '.join(requested_domains)}")
         parts.append(f"Instructions:\n\n{instructions}")
         return "\n".join(parts)
 
@@ -343,11 +360,35 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
         if not ctx.tool_call_approved:
             await _gate(ctx, "exec", {"command": command})
 
-        return await ctx.deps.sandbox.exec_command(
-            ctx.deps.session_state.session_id,
-            command,
-            timeout=timeout,
-        )
+        session_id = ctx.deps.session_state.session_id
+
+        # Start the exec and concurrently route any proxy domain approval
+        # requests that arrive while the sandbox command is running.
+        exec_task = asyncio.create_task(ctx.deps.sandbox.exec_command(session_id, command, timeout))
+        try:
+            while not exec_task.done():
+                approval_task = asyncio.create_task(ctx.deps.sandbox.next_domain_approval(session_id))
+                done, _ = await asyncio.wait({exec_task, approval_task}, return_when=asyncio.FIRST_COMPLETED)
+                if exec_task in done:
+                    approval_task.cancel()
+                    with contextlib.suppress(asyncio.CancelledError):
+                        await approval_task
+                    break
+                # An approval request arrived while exec is still running.
+                pending_req = approval_task.result()
+                if ctx.deps.domain_approval_callback is not None:
+                    decision = await ctx.deps.domain_approval_callback(pending_req)
+                else:
+                    logger.warning(f"No domain_approval_callback configured, denying {pending_req.domain}")
+                    decision = DomainDecision.DENY
+                ctx.deps.sandbox.resolve_domain_approval(pending_req.request_id, decision)
+        except BaseException:
+            exec_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await exec_task
+            raise
+
+        return exec_task.result()
 
     # --- Memory ---
 

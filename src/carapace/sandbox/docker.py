@@ -41,7 +41,11 @@ def _connect() -> docker.DockerClient:
 class DockerRuntime:
     def __init__(self) -> None:
         self._client = _connect()
-        self._ensured_networks: set[str] = set()
+        # Maps logical network name → actual Docker network name.
+        # Docker Compose prefixes networks with the project name, so
+        # "carapace-sandbox" becomes "carapace_carapace-sandbox".  We resolve
+        # this once and reuse the actual name for all container operations.
+        self._network_name_cache: dict[str, str] = {}
         logger.info("Docker runtime connected")
 
     def build_image(self, dockerfile_content: str, tag: str) -> None:
@@ -55,19 +59,42 @@ class DockerRuntime:
                 logger.debug(f"[docker build] {line}")
         logger.info(f"Sandbox image '{tag}' built successfully")
 
-    def _ensure_network(self, name: str) -> None:
-        if name in self._ensured_networks:
-            return
+    def _ensure_network(self, name: str, *, internal: bool = False) -> str:
+        """Ensure the network exists and return its actual Docker name.
+
+        Docker Compose adds a project-name prefix (e.g. ``carapace_carapace-sandbox``).
+        We resolve that here so containers are always connected to the right network.
+        """
+        if name in self._network_name_cache:
+            return self._network_name_cache[name]
+
         existing = self._client.networks.list(names=[name])
-        if not existing:
-            self._client.networks.create(name, driver="bridge")
-            logger.info(f"Created Docker network '{name}'")
-        self._ensured_networks.add(name)
+        if existing:
+            # Pick the network whose name matches exactly or ends with _{name}.
+            # n.name is str | None in the SDK stubs, so guard against None.
+            actual: str = next(
+                (n.name for n in existing if n.name and (n.name == name or n.name.endswith(f"_{name}"))),
+                existing[0].name or name,
+            )
+            if actual != name:
+                logger.debug(f"Resolved network '{name}' → '{actual}' (docker-compose prefix)")
+        else:
+            self._client.networks.create(name, driver="bridge", internal=internal)
+            logger.info(f"Created Docker network '{name}' (internal={internal})")
+            actual = name
+
+        self._network_name_cache[name] = actual
+        return actual
+
+    async def ensure_network(self, name: str, *, internal: bool = False) -> None:
+        """Public async wrapper — ensures the Docker network exists."""
+        await asyncio.to_thread(self._ensure_network, name, internal=internal)
 
     async def create(self, config: ContainerConfig) -> str:
         def _create() -> str:
+            actual_network = ""
             if config.network:
-                self._ensure_network(config.network)
+                actual_network = self._ensure_network(config.network, internal=True)
             self._remove_stale(config.name)
 
             mounts = [
@@ -80,7 +107,10 @@ class DockerRuntime:
                 for m in config.mounts
             ]
 
-            container = self._create_container(config, mounts)
+            # Use the resolved (possibly prefixed) network name so the container
+            # joins the correct network rather than having Docker create a new one.
+            effective_config = config.model_copy(update={"network": actual_network}) if actual_network else config
+            container = self._create_container(effective_config, mounts)
             container.start()
 
             assert container.id is not None
@@ -108,7 +138,7 @@ class DockerRuntime:
             command=config.command or ["sleep", "infinity"],
             labels=config.labels,
             mounts=mounts,
-            network=config.network or None,
+            network=config.network,
             environment=config.environment or None,
             detach=True,
         )
@@ -148,8 +178,8 @@ class DockerRuntime:
             result = container.exec_run(cmd, environment=env, demux=True)
             exit_code = result.exit_code if result.exit_code is not None else -1
 
-            stdout = result.output[0].decode() if result.output[0] else ""
-            stderr = result.output[1].decode() if result.output[1] else ""
+            stdout = result.output[0].decode("utf-8", errors="replace") if result.output[0] else ""
+            stderr = result.output[1].decode("utf-8", errors="replace") if result.output[1] else ""
             output = stdout
             if stderr:
                 output += f"\n[stderr] {stderr}"
@@ -191,6 +221,139 @@ class DockerRuntime:
                 return False
 
         return await asyncio.to_thread(_check)
+
+    async def get_self_network_info(self) -> dict[str, str]:
+        """Return all network names → IP addresses visible to this process.
+
+        When running inside Docker (``HOSTNAME`` resolves to a container),
+        reads the container's ``NetworkSettings`` so every attached network is
+        reported with its logical name.  Outside Docker falls back to
+        enumerating local interfaces via the OS.
+        """
+        import os
+        import socket
+
+        hostname = os.environ.get("HOSTNAME", "")
+
+        if hostname:
+
+            def _from_docker() -> dict[str, str] | None:
+                try:
+                    container = self._client.containers.get(hostname)
+                    container.reload()
+                    nets = container.attrs.get("NetworkSettings", {}).get("Networks", {})
+                    return {name: info.get("IPAddress", "") for name, info in nets.items() if info.get("IPAddress")}
+                except NotFound:
+                    return None
+
+            result = await asyncio.to_thread(_from_docker)
+            if result is not None:
+                return result
+
+        # Host / fallback: use SIOCGIFADDR ioctl on Linux, getaddrinfo elsewhere
+        def _from_os() -> dict[str, str]:
+            try:
+                import fcntl
+                import struct
+
+                siocgifaddr = 0x8915
+                addrs: dict[str, str] = {}
+                for _, iface in socket.if_nameindex():
+                    try:
+                        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+                            ip = socket.inet_ntoa(
+                                fcntl.ioctl(s.fileno(), siocgifaddr, struct.pack("256s", iface[:15].encode()))[20:24]
+                            )
+                        addrs[iface] = ip
+                    except OSError:
+                        pass
+                return addrs
+            except Exception:
+                # Final fallback: just resolve our own hostname
+                try:
+                    return {"hostname": socket.gethostbyname(socket.gethostname())}
+                except Exception:
+                    return {}
+
+        return await asyncio.to_thread(_from_os)
+
+    async def resolve_self_network_name(self, logical_name: str) -> str:
+        """Return the actual Docker network name this container is attached to.
+
+        Docker Compose prefixes network names with the project name, so the
+        logical name ``carapace-sandbox`` becomes ``carapace_carapace-sandbox``.
+        This method inspects the current container's ``NetworkSettings`` to find
+        the real name, falling back to ``logical_name`` when not running inside
+        Docker or no match is found.
+        """
+        import os
+
+        hostname = os.environ.get("HOSTNAME", "")
+        if not hostname:
+            return logical_name
+
+        def _resolve() -> str:
+            try:
+                container = self._client.containers.get(hostname)
+                container.reload()
+                nets: dict[str, object] = container.attrs.get("NetworkSettings", {}).get("Networks", {})
+                if logical_name in nets:
+                    return logical_name
+                for key in nets:
+                    if key.endswith(f"_{logical_name}"):
+                        return key
+                return logical_name
+            except NotFound:
+                return logical_name
+
+        return await asyncio.to_thread(_resolve)
+
+    async def get_host_ip(self, network: str) -> str | None:
+        """Get the IP of the current host container on *network*.
+
+        ``network`` should be the actual Docker network name (as returned by
+        ``resolve_self_network_name``).  Returns ``None`` when not running
+        inside Docker or the network isn't found.
+        """
+        import os
+
+        hostname = os.environ.get("HOSTNAME", "")
+        if not hostname:
+            return None
+
+        def _resolve() -> str | None:
+            try:
+                container = self._client.containers.get(hostname)
+                container.reload()
+                nets = container.attrs.get("NetworkSettings", {}).get("Networks", {})
+                info = nets.get(network)
+                return info.get("IPAddress") if info else None
+            except NotFound:
+                return None
+
+        return await asyncio.to_thread(_resolve)
+
+    async def get_network_gateway(self, network: str) -> str | None:
+        """Return the gateway IP of a Docker bridge *network*.
+
+        This is the host's IP as seen from containers on that network.
+        Useful when the server runs on the host (not inside Docker).
+        """
+
+        def _resolve() -> str | None:
+            nets = self._client.networks.list(names=[network])
+            if not nets:
+                return None
+            net = nets[0]
+            net.reload()
+            ipam_configs = net.attrs.get("IPAM", {}).get("Config", [])
+            for cfg in ipam_configs:
+                gw = cfg.get("Gateway")
+                if gw:
+                    return gw
+            return None
+
+        return await asyncio.to_thread(_resolve)
 
     async def get_ip(self, container_id: str, network: str) -> str | None:
         def _get_ip() -> str | None:

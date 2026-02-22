@@ -1,0 +1,33 @@
+# Dependencies
+node_modules/
+
+# Next.js build output
+.next/
+out/
+
+# OS
+.DS_Store
+
+# Secrets / env
+.env*
+
+# IDE / Editor
+.vscode/
+.idea/
+
+# Git
+.git/
+.gitignore
+
+# Docker
+Dockerfile
+.dockerignore
+
+# Debug logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# TypeScript
+*.tsbuildinfo
+next-env.d.ts

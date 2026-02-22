@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+from datetime import datetime
 from typing import Any
 
 import httpx
@@ -24,6 +25,17 @@ app = typer.Typer(help="Carapace -- security-first personal AI agent")
 console = Console()
 
 DEFAULT_SERVER = "http://127.0.0.1:8321"
+
+
+def _fmt_dt(iso: str) -> str:
+    """Format an ISO 8601 timestamp as a concise human-readable string."""
+    if not iso:
+        return "-"
+    try:
+        dt = datetime.fromisoformat(iso)
+        return dt.strftime("%Y-%m-%d %H:%M")
+    except ValueError:
+        return iso
 
 
 def _get_token(data_dir: str | None, token: str | None) -> str:
@@ -124,13 +136,22 @@ def _render_command_result(data: dict[str, Any]) -> None:
                 console.print(f"[green]{payload['message']}[/green]")
 
         case "session":
+            domain_entries: list[dict[str, str]] = payload.get("allowed_domains") or []
+            if domain_entries:
+                domain_lines = "\n".join(
+                    f"  [cyan]{e['domain']}[/cyan]  [dim]{e['scope']}[/dim]" for e in domain_entries
+                )
+                domains_str = f"\n{domain_lines}"
+            else:
+                domains_str = " (none)"
             console.print(
                 Panel(
                     f"[bold]Session ID:[/bold] {payload['session_id']}\n"
                     f"[bold]Channel:[/bold] {payload['channel_type']}\n"
                     f"[bold]Activated rules:[/bold] {payload.get('activated_rules') or '(none)'}\n"
                     f"[bold]Disabled rules:[/bold] {payload.get('disabled_rules') or '(none)'}\n"
-                    f"[bold]Approved credentials:[/bold] {payload.get('approved_credentials') or '(none)'}",
+                    f"[bold]Approved credentials:[/bold] {payload.get('approved_credentials') or '(none)'}\n"
+                    f"[bold]Allowed domains:[/bold]{domains_str}",
                     title="Session State",
                 )
             )
@@ -217,6 +238,48 @@ def _render_usage(payload: dict[str, Any]) -> None:
     cost_str = f" | {_styled_cost(total_cost)}" if total_cost != "0" else ""
     tokens_str = f"{total_in + total_out:,} tokens ({total_in:,} in + {total_out:,} out)"
     console.print(f"[bold]Total:[/bold] {tokens_str}{cost_str}")
+
+
+async def _render_proxy_approval_request(data: dict[str, Any]) -> str:
+    """Render a proxy domain approval request and return the decision string."""
+    domain = data.get("domain", "?")
+    command = data.get("command", "")
+
+    panel_lines = [f"[bold]Domain:[/bold] {domain}"]
+    if command:
+        panel_lines.append(f"[bold]Triggered by:[/bold] [dim]{command}[/dim]")
+
+    console.print()
+    console.print(
+        Panel(
+            "\n".join(panel_lines),
+            title="[yellow]Proxy Access Request[/yellow]",
+            border_style="yellow",
+        )
+    )
+    console.print(
+        f"  [bold]\\[o][/bold] Allow [cyan]{domain}[/cyan] once (this tool call only)\n"
+        f"  [bold]\\[O][/bold] Allow [yellow]all[/yellow] internet once (this tool call only)\n"
+        f"  [bold]\\[t][/bold] Allow [cyan]{domain}[/cyan] for 15 minutes\n"
+        f"  [bold]\\[T][/bold] Allow [yellow]all[/yellow] internet for 15 minutes\n"
+        f"  [bold]\\[d][/bold] Deny"
+    )
+    choice = await asyncio.get_event_loop().run_in_executor(
+        None,
+        lambda: console.input("[bold]Choice?[/bold] ").strip(),
+    )
+    match choice:
+        case "O":
+            return "allow_all_once"
+        case "T":
+            return "allow_all_15min"
+    match choice.lower():
+        case "o" | "once":
+            return "allow_once"
+        case "t" | "timed":
+            return "allow_15min"
+        case _:
+            return "deny"
 
 
 async def _render_approval_request(data: dict[str, Any]) -> bool:
@@ -360,6 +423,22 @@ async def _read_server_responses(ws) -> None:
                     )
                 )
 
+            case "proxy_approval_request":
+                try:
+                    decision = await _render_proxy_approval_request(msg)
+                except (KeyboardInterrupt, EOFError):
+                    decision = "deny"
+                    console.print("\n[dim]Denied (interrupted).[/dim]")
+                await ws.send(
+                    json.dumps(
+                        {
+                            "type": "proxy_approval_response",
+                            "request_id": msg["request_id"],
+                            "decision": decision,
+                        }
+                    )
+                )
+
             case _:
                 console.print(f"[dim]Unknown server message: {msg_type}[/dim]")
 
@@ -389,13 +468,21 @@ def chat(
         if not sessions:
             console.print("No existing sessions.")
         else:
-            console.print("[bold]Existing sessions:[/bold]")
+            table = Table(title="Sessions", show_lines=False)
+            table.add_column("ID", style="bold cyan")
+            table.add_column("Created", style="dim")
+            table.add_column("Last active", style="dim")
+            table.add_column("Turns", justify="right")
+            table.add_column("Active rules", justify="right")
             for s in sessions:
-                console.print(
-                    f"  {s['session_id']}  "
-                    f"(created: {s['created_at']}, "
-                    f"rules: {len(s.get('activated_rules', []))} activated)"
+                table.add_row(
+                    s["session_id"],
+                    _fmt_dt(s.get("created_at", "")),
+                    _fmt_dt(s.get("last_active", "")),
+                    str(s.get("message_count", 0)),
+                    str(len(s.get("activated_rules", []))),
                 )
+            console.print(table)
         raise typer.Exit()
 
     # Create or resume session

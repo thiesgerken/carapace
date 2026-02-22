@@ -1,9 +1,10 @@
 "use client";
 
-import type { ChatMessage, ApprovalRequest } from "@/lib/types";
+import type { ChatMessage, ApprovalRequest, DomainDecision } from "@/lib/types";
 import { MarkdownContent } from "./markdown-content";
 import { ToolCallBadge } from "./tool-call-badge";
 import { ApprovalCard } from "./approval-card";
+import { ProxyApprovalCard } from "./proxy-approval-card";
 import { CommandResultView } from "./command-result";
 import { cn } from "@/lib/utils";
 
@@ -11,12 +12,14 @@ interface MessageProps {
   message: ChatMessage;
   onApproval?: (toolCallId: string, approved: boolean) => void;
   approvalResolved?: boolean;
+  onProxyApproval?: (requestId: string, decision: DomainDecision) => void;
 }
 
 export function Message({
   message,
   onApproval,
   approvalResolved,
+  onProxyApproval,
 }: MessageProps) {
   switch (message.kind) {
     case "user":
@@ -56,6 +59,17 @@ export function Message({
           resolved={approvalResolved}
           onRespond={(approved) =>
             onApproval?.(message.request.tool_call_id, approved)
+          }
+        />
+      );
+
+    case "proxy_approval":
+      return (
+        <ProxyApprovalCard
+          request={message.request}
+          decision={message.decision}
+          onRespond={(decision) =>
+            onProxyApproval?.(message.request.request_id, decision)
           }
         />
       );
