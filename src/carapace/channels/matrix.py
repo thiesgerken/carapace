@@ -239,29 +239,26 @@ class MatrixChannel:
         data_dir = self._session_mgr.sessions_dir.parent
         token_file = data_dir / "matrix_token.json"
 
-        if not await self._authenticate(token_file):
-            return
-
+        await self._authenticate(token_file)
         logger.info(f"Matrix channel logged in as {self._config.user_id} on {self._config.homeserver}")
 
         # Initial sync: warm up room → session mapping.
         # Done BEFORE registering callbacks so backlog events are not dispatched.
         self._started_at_ms = int(time.time() * 1000)
-        try:
-            resp = await self._client.sync(timeout=5000, full_state=True)
-            if isinstance(resp, nio.SyncError) and resp.status_code == "M_UNKNOWN_TOKEN":
+        resp = await self._client.sync(timeout=5000, full_state=True)
+        if isinstance(resp, nio.SyncError):
+            if resp.status_code == "M_UNKNOWN_TOKEN":
                 logger.warning("Matrix: stored token rejected (M_UNKNOWN_TOKEN), re-authenticating with password")
                 token_file.unlink(missing_ok=True)
-                if not await self._password_login(token_file):
-                    logger.error("Matrix: re-authentication failed — skipping channel")
-                    return
+                await self._password_login(token_file)
                 resp = await self._client.sync(timeout=5000, full_state=True)
-            if isinstance(resp, nio.SyncResponse):
-                for room_id in resp.rooms.join:
-                    self._get_or_create_session(room_id)
-                logger.info(f"Matrix: tracking {len(self._room_sessions)} room(s)")
-        except Exception as exc:
-            logger.warning(f"Matrix initial sync failed: {exc}")
+            if isinstance(resp, nio.SyncError):
+                raise RuntimeError(f"Matrix initial sync failed: {resp.status_code}: {resp.message}")
+
+        assert isinstance(resp, nio.SyncResponse)
+        for room_id in resp.rooms.join:
+            self._get_or_create_session(room_id)
+        logger.info(f"Matrix: tracking {len(self._room_sessions)} room(s)")
 
         # Register event callbacks AFTER the initial sync so backlog is not replayed.
         # type: ignore comments needed due to nio's non-generic callback type.
@@ -310,24 +307,21 @@ class MatrixChannel:
 
         return "", None
 
-    async def _password_login(self, token_file: Path) -> bool:
-        """Log in with CARAPACE_MATRIX_PASSWORD, persist the new token. Returns True on success."""
+    async def _password_login(self, token_file: Path) -> None:
+        """Log in with CARAPACE_MATRIX_PASSWORD and persist the new token. Raises on failure."""
         password = os.environ.get("CARAPACE_MATRIX_PASSWORD", "")
         if not password:
-            logger.error("Matrix channel: no valid token available and CARAPACE_MATRIX_PASSWORD is not set — skipping")
-            return False
+            raise RuntimeError("Matrix channel: no valid token available and CARAPACE_MATRIX_PASSWORD is not set")
 
         resp = await self._client.login(password, device_name=self._config.device_name)
         if isinstance(resp, nio.LoginError):
-            logger.error(f"Matrix password login failed: {resp.message}")
-            return False
+            raise RuntimeError(f"Matrix password login failed: {resp.message}")
 
         token_file.write_text(json.dumps({"access_token": resp.access_token, "device_id": resp.device_id}))
         logger.info(f"Matrix: password login successful, token persisted to {token_file}")
-        return True
 
-    async def _authenticate(self, token_file: Path) -> bool:
-        """Resolve credentials and configure the client. Returns True on success."""
+    async def _authenticate(self, token_file: Path) -> None:
+        """Resolve credentials and configure the client. Raises on failure."""
         token, device_id = self._load_token(token_file)
         if token:
             self._client.restore_login(
@@ -335,24 +329,38 @@ class MatrixChannel:
                 device_id=device_id or "",
                 access_token=token,
             )
-            return True
+            return
 
-        return await self._password_login(token_file)
+        await self._password_login(token_file)
 
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
 
     async def _sync_loop(self) -> None:
-        """Run nio sync_forever with reconnection on errors."""
+        """Run sync loop, inspecting each response and escalating errors appropriately."""
         while True:
             try:
-                await self._client.sync_forever(timeout=30000, loop_sleep_time=500)
+                resp = await self._client.sync(timeout=30000)
             except asyncio.CancelledError:
                 break
             except Exception as exc:
-                logger.warning(f"Matrix sync error (will retry in 5s): {exc}")
+                logger.warning(f"Matrix: sync exception (retrying in 5s): {exc}")
                 await asyncio.sleep(5)
+                continue
+
+            if isinstance(resp, nio.SyncError):
+                if resp.status_code == "M_UNKNOWN_TOKEN":
+                    logger.error(
+                        "Matrix: session token invalidated (M_UNKNOWN_TOKEN) — "
+                        "sync loop stopped; restart the service to re-authenticate"
+                    )
+                    break
+                logger.error(f"Matrix: sync error {resp.status_code!r}: {resp.message!r} — retrying in 5s")
+                await asyncio.sleep(5)
+                continue
+
+            await asyncio.sleep(0.5)
 
     def _get_or_create_session(self, room_id: str) -> str:
         """Return existing session_id for room, or create a new one."""
