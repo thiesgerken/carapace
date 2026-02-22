@@ -13,8 +13,6 @@ pip-log.txt
 pip-delete-this-directory.txt
 .Python
 develop-eggs/
-lib/
-lib64/
 sdist/
 var/
 wheels/
