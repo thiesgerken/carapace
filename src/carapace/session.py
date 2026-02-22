@@ -57,6 +57,17 @@ class SessionManager:
             reverse=True,
         )
 
+    def find_session(self, channel_type: str, channel_ref: str) -> str | None:
+        """Return the most recently active session ID for the given channel, or None."""
+        candidates: list[tuple[float, str]] = []
+        for session_id in self.list_sessions():
+            state = self.load_state(session_id)
+            if state and state.channel_type == channel_type and state.channel_ref == channel_ref:
+                candidates.append((self._get_mtime(session_id), session_id))
+        if not candidates:
+            return None
+        return max(candidates, key=lambda t: t[0])[1]
+
     def _get_mtime(self, session_id: str) -> float:
         state_path = self.sessions_dir / session_id / "state.yaml"
         if state_path.exists():
