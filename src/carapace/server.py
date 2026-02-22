@@ -675,6 +675,9 @@ def _setup_logging() -> None:
         log.handlers = [_InterceptHandler()]
         log.propagate = False
 
+    for name in ("httpcore", "httpx", "docker"):
+        logging.getLogger(name).setLevel(logging.WARNING)
+
 
 def main() -> None:
     """Entry point for `python -m carapace` / `carapace-server`."""
