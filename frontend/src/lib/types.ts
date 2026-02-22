@@ -1,0 +1,128 @@
+// Session
+
+export interface SessionInfo {
+  session_id: string;
+  channel_type: string;
+  channel_ref: string;
+  created_at: string;
+  last_active: string;
+  activated_rules: string[];
+  disabled_rules: string[];
+  message_count: number;
+}
+
+export interface HistoryMessage {
+  role: string;
+  content: string;
+  tool?: string;
+  args?: Record<string, unknown>;
+  command?: string;
+  data?: unknown;
+}
+
+// WebSocket protocol — Server → Client
+
+export interface TokenChunk {
+  type: "token";
+  content: string;
+}
+
+export interface ToolCallInfo {
+  type: "tool_call";
+  tool: string;
+  args: Record<string, unknown>;
+  detail: string;
+}
+
+export interface ApprovalRequest {
+  type: "approval_request";
+  tool_call_id: string;
+  tool: string;
+  args: Record<string, unknown>;
+  classification: Record<string, unknown>;
+  triggered_rules: string[];
+  descriptions: string[];
+}
+
+export interface ProxyApprovalRequest {
+  type: "proxy_approval_request";
+  request_id: string;
+  domain: string;
+  command: string;
+}
+
+export interface Done {
+  type: "done";
+  content: string;
+}
+
+export interface CommandResult {
+  type: "command_result";
+  command: string;
+  data: unknown;
+}
+
+export interface ErrorMessage {
+  type: "error";
+  detail: string;
+}
+
+export type ServerMessage =
+  | TokenChunk
+  | ToolCallInfo
+  | ApprovalRequest
+  | ProxyApprovalRequest
+  | Done
+  | CommandResult
+  | ErrorMessage;
+
+// WebSocket protocol — Client → Server
+
+export interface UserMessage {
+  type: "message";
+  content: string;
+}
+
+export interface ApprovalResponse {
+  type: "approval_response";
+  tool_call_id: string;
+  approved: boolean;
+}
+
+export type DomainDecision =
+  | "allow_once"
+  | "allow_all_once"
+  | "allow_15min"
+  | "allow_all_15min"
+  | "deny";
+
+export interface ProxyApprovalResponse {
+  type: "proxy_approval_response";
+  request_id: string;
+  decision: DomainDecision;
+}
+
+export type ClientMessage =
+  | UserMessage
+  | ApprovalResponse
+  | ProxyApprovalResponse;
+
+// Chat UI messages
+
+export type ChatMessage =
+  | { kind: "user"; content: string }
+  | { kind: "assistant"; content: string }
+  | {
+      kind: "tool_call";
+      tool: string;
+      args: Record<string, unknown>;
+      detail: string;
+    }
+  | { kind: "approval"; request: ApprovalRequest }
+  | {
+      kind: "proxy_approval";
+      request: ProxyApprovalRequest;
+      decision?: DomainDecision;
+    }
+  | { kind: "command"; command: string; data: unknown }
+  | { kind: "error"; detail: string };
