@@ -238,7 +238,7 @@ async def test_handle_command_help(tmp_path: Path):
     ch._client.room_send.assert_called_once()
     sent_body = ch._client.room_send.call_args[0][2]["body"]
     assert "/reset" in sent_body
-    assert "/approve" in sent_body
+    assert "/allow" in sent_body
 
 
 # ---------------------------------------------------------------------------
@@ -316,7 +316,7 @@ async def test_approve_command_resolves_room_pending(tmp_path: Path):
     pa = _PendingApproval("$approval", "call-1")
     ch._room_pending[room_id] = pa
 
-    await ch._handle_command(room_id, sid, "/approve", "@alice:example.com")
+    await ch._handle_command(room_id, sid, "/allow", "@alice:example.com")
 
     assert pa._future.done()
     assert pa._future.result() is True
@@ -345,7 +345,7 @@ async def test_approve_when_no_pending_sends_message(tmp_path: Path):
     sid = ch._get_or_create_session(room_id)
     ch._client.room_send = AsyncMock(return_value=MagicMock(event_id="$evt"))
 
-    await ch._handle_command(room_id, sid, "/approve", "@alice:example.com")
+    await ch._handle_command(room_id, sid, "/allow", "@alice:example.com")
 
     ch._client.room_send.assert_called_once()
     sent = ch._client.room_send.call_args[0][2]["body"]
@@ -374,7 +374,7 @@ def test_format_approval_request_includes_tool_name():
     text = _format_approval_request(req)
     assert "read_file" in text
     assert "no-sensitive-read" in text
-    assert "/approve" in text or "approve" in text.lower()
+    assert "/allow" in text or "allow" in text.lower()
 
 
 def test_format_command_result_help():
@@ -491,7 +491,7 @@ async def test_approve_command_resolves_domain_pending(tmp_path: Path):
     pd = _PendingDomainApproval("$domain_event")
     ch._room_pending[room_id] = pd
 
-    await ch._handle_command(room_id, sid, "/approve", "@alice:example.com")
+    await ch._handle_command(room_id, sid, "/allow", "@alice:example.com")
 
     assert pd._future.done()
     assert pd._future.result() == DomainDecision.ALLOW_15MIN
