@@ -143,7 +143,7 @@ class DockerRuntime:
                 container = self._client.containers.get(container_id)
             except NotFound as err:
                 raise ContainerGoneError(f"Container {container_id[:12]} no longer exists") from err
-            cmd = ["sh", "-c", command] if isinstance(command, str) else command
+            cmd = ["bash", "-c", command] if isinstance(command, str) else command
 
             result = container.exec_run(cmd, environment=env, demux=True)
             exit_code = result.exit_code if result.exit_code is not None else -1

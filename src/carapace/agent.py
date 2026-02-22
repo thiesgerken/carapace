@@ -347,10 +347,10 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
         )
 
     @agent.tool
-    async def bash(ctx: RunContext[Deps], command: str, timeout: int = 30) -> str:
-        """Run a command explicitly in bash. Use for bash-specific syntax (pipes, redirects, etc.)."""
+    async def shell(ctx: RunContext[Deps], command: str, timeout: int = 30) -> str:
+        """Run a shell command (typically bash). Use for pipes, redirects, subshells, etc."""
         if not ctx.tool_call_approved:
-            await _gate(ctx, "bash", {"command": command})
+            await _gate(ctx, "shell", {"command": command})
 
         return await ctx.deps.sandbox.exec_command(
             ctx.deps.session_state.session_id,
