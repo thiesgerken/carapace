@@ -1,11 +1,8 @@
-FROM ghcr.io/astral-sh/uv:latest AS uv
+FROM ghcr.io/astral-sh/uv:0.10.4-python3.14-trixie  AS uv
 
 FROM python:3.14-slim
 
 COPY --from=uv /uv /usr/local/bin/uv
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
