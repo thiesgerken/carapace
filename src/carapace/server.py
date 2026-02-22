@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated, Any
@@ -13,6 +12,7 @@ from fastapi import Depends, FastAPI, HTTPException, Query, WebSocket, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from httpx import AsyncClient, HTTPStatusError
+from loguru import logger
 from pydantic import BaseModel
 from pydantic_ai import DeferredToolRequests, DeferredToolResults, ToolDenied
 from pydantic_ai.models.anthropic import AnthropicModel
@@ -26,6 +26,8 @@ from carapace.bootstrap import ensure_data_dir
 from carapace.config import get_data_dir, load_config, load_rules
 from carapace.memory import MemoryStore
 from carapace.models import Config, Deps, Rule, SessionState, UsageTracker
+from carapace.sandbox.docker import DockerRuntime
+from carapace.sandbox.manager import SandboxManager
 from carapace.session import SessionManager
 from carapace.skills import SkillRegistry
 from carapace.ws_models import (
@@ -41,7 +43,6 @@ from carapace.ws_models import (
 )
 
 load_dotenv()
-logger = logging.getLogger("carapace.server")
 
 # --- Shared state populated in lifespan ---
 
@@ -98,7 +99,7 @@ async def _idle_cleanup_loop() -> None:
             try:
                 await _sandbox_mgr.cleanup_idle()
             except Exception as exc:
-                logger.warning("Sandbox idle cleanup error: %s", exc)
+                logger.warning(f"Sandbox idle cleanup error: {exc}")
 
 
 @asynccontextmanager
@@ -119,25 +120,15 @@ async def lifespan(app: FastAPI):
     _skill_catalog = registry.scan()
     _agent_model = _create_anthropic_model(_config.agent.model)
 
-    _sandbox_mgr = None
-    if _config.sandbox.enabled:
-        try:
-            from carapace.sandbox.docker import DockerRuntime
-            from carapace.sandbox.manager import SandboxManager
-
-            runtime = DockerRuntime()
-            _sandbox_mgr = SandboxManager(
-                runtime=runtime,
-                data_dir=_data_dir,
-                base_image=_config.sandbox.base_image,
-                network_name=_config.sandbox.network_name,
-                idle_timeout_minutes=_config.sandbox.idle_timeout_minutes,
-            )
-            logger.info(
-                "Sandbox enabled (image=%s, network=%s)", _config.sandbox.base_image, _config.sandbox.network_name
-            )
-        except Exception as exc:
-            logger.warning("Sandbox unavailable: %s", exc)
+    runtime = DockerRuntime()
+    _sandbox_mgr = SandboxManager(
+        runtime=runtime,
+        data_dir=_data_dir,
+        base_image=_config.sandbox.base_image,
+        network_name=_config.sandbox.network_name,
+        idle_timeout_minutes=_config.sandbox.idle_timeout_minutes,
+    )
+    logger.info(f"Sandbox enabled (image={_config.sandbox.base_image}, network={_config.sandbox.network_name})")
 
     token = ensure_token(_data_dir)
 
@@ -148,20 +139,19 @@ async def lifespan(app: FastAPI):
 
     cleanup_task = asyncio.create_task(_idle_cleanup_loop()) if _sandbox_mgr else None
 
+    sandbox_status = "on" if _sandbox_mgr else "off"
     logger.info(
-        "Carapace server ready — model=%s, rules=%d, skills=%d, sandbox=%s, token=%s…",
-        _config.agent.model,
-        len(_rules),
-        len(_skill_catalog),
-        "on" if _sandbox_mgr else "off",
-        token[:8],
+        f"Carapace server ready — model={_config.agent.model}, rules={len(_rules)}, "
+        f"skills={len(_skill_catalog)}, sandbox={sandbox_status}, token={token[:8]}…"
     )
     yield
+    logger.info("Server shutting down…")
     if cleanup_task:
         cleanup_task.cancel()
     if _sandbox_mgr:
         await _sandbox_mgr.cleanup_all()
     price_updater.stop()
+    logger.info("Shutdown complete")
 
 
 app = FastAPI(title="Carapace", lifespan=lifespan)
@@ -453,10 +443,12 @@ async def chat_ws(
 ) -> None:
     session_state = _session_mgr.resume_session(session_id)
     if session_state is None:
+        logger.warning(f"WebSocket rejected — session {session_id} not found")
         await websocket.close(code=4004, reason="Session not found")
         return
 
     await websocket.accept()
+    logger.info(f"WebSocket connected for session {session_id}")
     verbose = True
     pending_sends: set[asyncio.Task] = set()
 
@@ -467,7 +459,7 @@ async def chat_ws(
             try:
                 await _send(websocket, ToolCallInfo(tool=tool, args=args, detail=detail))
             except Exception as exc:
-                logger.warning("WebSocket send failed for tool call info: %s", exc)
+                logger.warning(f"WebSocket send failed for tool call info: {exc}")
             finally:
                 pending_sends.discard(task)
 
@@ -566,9 +558,12 @@ async def chat_ws(
                     logger.exception("Agent error")
                     await _send(websocket, ErrorMessage(detail=str(exc)))
 
-        except WebSocketDisconnect:
-            logger.info("Client disconnected from session %s", session_id)
+        except WebSocketDisconnect as exc:
+            logger.info(f"Client disconnected from session {session_id} (code={exc.code})")
+        except Exception as exc:
+            logger.exception(f"Unexpected WebSocket error in session {session_id}: {exc}")
         finally:
+            logger.debug(f"WebSocket cleanup for session {session_id}")
             for task in pending_sends:
                 task.cancel()
 
@@ -657,8 +652,8 @@ def main() -> None:
     config = load_config(data_dir)
     token = ensure_token(data_dir)
 
-    logger.info("Starting Carapace server on %s:%d", config.server.host, config.server.port)
-    logger.info("Bearer token: %s…  (full token in %s)", token[:8], data_dir / "server.token")
+    logger.info(f"Starting Carapace server on {config.server.host}:{config.server.port}")
+    logger.info(f"Bearer token: {token[:8]}…  (full token in {data_dir / 'server.token'})")
 
     uvicorn.run(
         "carapace.server:app",

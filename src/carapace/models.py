@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -12,6 +11,7 @@ from typing import TYPE_CHECKING, Any, Literal
 if TYPE_CHECKING:
     from carapace.sandbox.manager import SandboxManager
 
+from loguru import logger
 from pydantic import BaseModel
 from pydantic_ai.usage import RunUsage
 
@@ -123,7 +123,6 @@ class CredentialsConfig(BaseModel):
 
 
 class SandboxConfig(BaseModel):
-    enabled: bool = False
     base_image: str = "carapace-sandbox:latest"
     idle_timeout_minutes: int = 15
     network_name: str = "carapace-sandbox"
@@ -241,7 +240,7 @@ class UsageTracker(BaseModel):
                 costs[model_key] = price.total_price
                 total += price.total_price
             except LookupError:
-                logging.getLogger(__name__).debug("No pricing data for model %s", model_key)
+                logger.debug(f"No pricing data for model {model_key}")
         costs["total"] = total
         return costs
 

@@ -1,14 +1,13 @@
 from __future__ import annotations
 
-import logging
 import shutil
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from carapace.sandbox.runtime import ContainerConfig, ContainerRuntime, Mount
+from loguru import logger
 
-logger = logging.getLogger(__name__)
+from carapace.sandbox.runtime import ContainerConfig, ContainerRuntime, Mount
 
 
 @dataclass
@@ -37,13 +36,21 @@ class SandboxManager:
         self._idle_timeout = idle_timeout_minutes * 60
         self._sessions: dict[str, SessionContainer] = {}
         self._ip_to_session: dict[str, str] = {}
+        logger.info(
+            f"SandboxManager initialized (image={base_image}, "
+            + f"network={network_name}, idle_timeout={idle_timeout_minutes}m)"
+        )
 
     async def ensure_session(self, session_id: str) -> SessionContainer:
         if session_id in self._sessions:
             sc = self._sessions[session_id]
             if await self._runtime.is_running(sc.container_id):
+                logger.debug(f"Reusing existing container {sc.container_id[:12]} for session {session_id}")
                 sc.last_used = time.time()
                 return sc
+            logger.warning(
+                f"Container {sc.container_id[:12]} for session {session_id} is no longer running, recreating"
+            )
             self._cleanup_tracking(session_id)
 
         session_skills_dir = self._data_dir / "sessions" / session_id / "skills"
@@ -73,12 +80,7 @@ class SandboxManager:
         if ip:
             self._ip_to_session[ip] = session_id
 
-        logger.info(
-            "Created sandbox container %s for session %s (IP: %s)",
-            container_id[:12],
-            session_id,
-            ip,
-        )
+        logger.info(f"Created sandbox container {container_id[:12]} for session {session_id} (IP: {ip})")
         return sc
 
     def _build_mounts(self, session_id: str) -> list[Mount]:
@@ -128,9 +130,11 @@ class SandboxManager:
     async def exec_command(self, session_id: str, command: str, timeout: int = 30) -> str:
         sc = await self.ensure_session(session_id)
         sc.last_used = time.time()
+        logger.debug(f"Exec in session {session_id}: {command}")
         result = await self._runtime.exec(sc.container_id, command, timeout=timeout)
         output = result.output
         if result.exit_code != 0 and f"[exit code: {result.exit_code}]" not in output:
+            logger.debug(f"Command failed in session {session_id} (exit {result.exit_code}): {command}")
             output += f"\n[exit code: {result.exit_code}]"
         return output or "(no output)"
 
@@ -139,6 +143,7 @@ class SandboxManager:
 
         master_skill_dir = self._data_dir / "skills" / skill_name
         if not master_skill_dir.exists():
+            logger.warning(f"Skill '{skill_name}' not found for session {session_id}")
             return f"Skill '{skill_name}' not found."
 
         session_skill_dir = self._data_dir / "sessions" / session_id / "skills" / skill_name
@@ -155,6 +160,7 @@ class SandboxManager:
         sc.activated_skills.append(skill_name)
         sc.last_used = time.time()
 
+        logger.info(f"Activated skill '{skill_name}' in session {session_id}")
         result = f"Skill '{skill_name}' activated at /workspace/skills/{skill_name}/"
         if venv_msg:
             result += f"\n{venv_msg}"
@@ -165,6 +171,7 @@ class SandboxManager:
         skill_host_path = self._data_dir / "sessions" / session_id / "skills" / skill_name
         build_name = f"carapace-build-{session_id[:8]}-{skill_name}"
 
+        logger.info(f"Building venv for skill '{skill_name}' (session {session_id})")
         config = ContainerConfig(
             image=self._base_image,
             name=build_name,
@@ -182,10 +189,12 @@ class SandboxManager:
                 timeout=120,
             )
             if result.exit_code == 0:
+                logger.info(f"Venv built successfully for skill '{skill_name}'")
                 return "Venv built successfully."
+            logger.warning(f"Venv build exited {result.exit_code} for skill '{skill_name}': {result.output[:200]}")
             return f"Venv build warning (exit {result.exit_code}): {result.output[:500]}"
         except Exception as e:
-            logger.warning("Venv build failed for skill %s: %s", skill_name, e)
+            logger.warning(f"Venv build failed for skill {skill_name}: {e}")
             return f"Venv build failed: {e}"
         finally:
             if container_id:
@@ -194,6 +203,7 @@ class SandboxManager:
     async def save_skill(self, session_id: str, skill_name: str) -> str:
         session_skill_dir = self._data_dir / "sessions" / session_id / "skills" / skill_name
         if not session_skill_dir.exists():
+            logger.warning(f"Cannot save skill '{skill_name}' — not found in session {session_id}")
             return f"Skill '{skill_name}' not found in session."
 
         master_skill_dir = self._data_dir / "skills" / skill_name
@@ -208,6 +218,7 @@ class SandboxManager:
             ignore=shutil.ignore_patterns(".venv", "__pycache__"),
         )
 
+        logger.info(f"Saved skill '{skill_name}' from session {session_id} to {master_skill_dir}")
         return f"Skill '{skill_name}' saved to data/skills/{skill_name}/"
 
     async def cleanup_session(self, session_id: str) -> None:
@@ -215,15 +226,20 @@ class SandboxManager:
         if sc:
             await self._runtime.remove(sc.container_id)
             self._cleanup_tracking(session_id)
-            logger.info("Cleaned up sandbox for session %s", session_id)
+            logger.info(f"Cleaned up sandbox for session {session_id}")
 
     async def cleanup_idle(self) -> None:
         now = time.time()
         to_remove = [sid for sid, sc in self._sessions.items() if now - sc.last_used > self._idle_timeout]
+        if to_remove:
+            logger.info(f"Cleaning up {len(to_remove)} idle sandbox session(s)")
         for sid in to_remove:
             await self.cleanup_session(sid)
 
     async def cleanup_all(self) -> None:
+        count = len(self._sessions)
+        if count:
+            logger.info(f"Cleaning up all {count} sandbox session(s)")
         for sid in list(self._sessions):
             await self.cleanup_session(sid)
 

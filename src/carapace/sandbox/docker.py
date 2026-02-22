@@ -1,31 +1,50 @@
 from __future__ import annotations
 
 import asyncio
-import logging
+from pathlib import Path
 
 import docker
-from docker.errors import NotFound
+import docker.models.containers
+from docker.errors import APIError, DockerException, ImageNotFound, NotFound
 from docker.types import Mount as DockerMount
+from loguru import logger
 
 from carapace.sandbox.runtime import ContainerConfig, ExecResult
 
-logger = logging.getLogger(__name__)
+_FALLBACK_SOCKETS = (Path.home() / ".docker/run/docker.sock",)
+
+
+def _connect() -> docker.DockerClient:
+    """Connect to Docker, trying DOCKER_HOST / default socket first, then
+    well-known macOS socket paths."""
+    try:
+        client = docker.from_env()
+        client.ping()
+        return client
+    except DockerException:
+        pass
+
+    for sock in _FALLBACK_SOCKETS:
+        if sock.exists():
+            try:
+                client = docker.DockerClient(base_url=f"unix://{sock}")
+                client.ping()
+                logger.info(f"Connected to Docker via {sock}")
+                return client
+            except DockerException:
+                continue
+
+    raise DockerException("Cannot connect to Docker. Is Docker Desktop running?")
 
 
 class DockerRuntime:
     def __init__(self) -> None:
-        self._client: docker.DockerClient = docker.from_env()
-        self._client.ping()
+        self._client = _connect()
+        logger.info("Docker runtime connected")
 
     async def create(self, config: ContainerConfig) -> str:
         def _create() -> str:
-            # Remove stale container with same name if it exists
-            try:
-                stale = self._client.containers.get(config.name)
-                stale.remove(force=True)
-                logger.debug("Removed stale container %s", config.name)
-            except NotFound:
-                pass
+            self._remove_stale(config.name)
 
             mounts = [
                 DockerMount(
@@ -37,22 +56,56 @@ class DockerRuntime:
                 for m in config.mounts
             ]
 
-            container = self._client.containers.create(
-                image=config.image,
-                name=config.name,
-                command=config.command or ["sleep", "infinity"],
-                labels=config.labels,
-                mounts=mounts,
-                network=config.network or None,
-                environment=config.environment or None,
-                detach=True,
-            )
+            container = self._create_container(config, mounts)
             container.start()
 
             assert container.id is not None
+            logger.info(f"Created container {container.id[:12]} (image={config.image}, name={config.name})")
             return container.id
 
         return await asyncio.to_thread(_create)
+
+    def _remove_stale(self, name: str) -> None:
+        try:
+            stale = self._client.containers.get(name)
+            stale.remove(force=True)
+            logger.debug(f"Removed stale container {name}")
+        except NotFound:
+            pass
+
+    def _do_create(
+        self,
+        config: ContainerConfig,
+        mounts: list[DockerMount],
+    ) -> docker.models.containers.Container:
+        return self._client.containers.create(
+            image=config.image,
+            name=config.name,
+            command=config.command or ["sleep", "infinity"],
+            labels=config.labels,
+            mounts=mounts,
+            network=config.network or None,
+            environment=config.environment or None,
+            detach=True,
+        )
+
+    def _create_container(
+        self,
+        config: ContainerConfig,
+        mounts: list[DockerMount],
+    ) -> docker.models.containers.Container:
+        try:
+            return self._do_create(config, mounts)
+        except ImageNotFound:
+            logger.info(f"Image {config.image} not found locally, pulling…")
+            self._client.images.pull(config.image)
+        except APIError as exc:
+            if exc.status_code != 409:
+                raise
+            logger.warning(f"Name conflict for {config.name}, removing and retrying")
+            self._remove_stale(config.name)
+
+        return self._do_create(config, mounts)
 
     async def exec(
         self,
@@ -76,18 +129,27 @@ class DockerRuntime:
 
             return ExecResult(exit_code=exit_code, output=output)
 
+        cmd_preview = command if isinstance(command, str) else " ".join(command)
+        logger.debug(f"Exec in {container_id[:12]}: {cmd_preview} (timeout={timeout}s)")
+
         try:
-            return await asyncio.wait_for(asyncio.to_thread(_exec), timeout=timeout)
+            result = await asyncio.wait_for(asyncio.to_thread(_exec), timeout=timeout)
         except TimeoutError:
+            logger.warning(f"Command timed out in {container_id[:12]} after {timeout}s: {cmd_preview}")
             return ExecResult(exit_code=-1, output=f"Error: command timed out ({timeout}s)")
+
+        if result.exit_code != 0:
+            logger.debug(f"Command exited {result.exit_code} in {container_id[:12]}: {cmd_preview}")
+        return result
 
     async def remove(self, container_id: str) -> None:
         def _remove() -> None:
             try:
                 container = self._client.containers.get(container_id)
                 container.remove(force=True)
+                logger.info(f"Removed container {container_id[:12]}")
             except NotFound:
-                pass
+                logger.debug(f"Container {container_id[:12]} already gone, skip remove")
 
         await asyncio.to_thread(_remove)
 
