@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated, Any
@@ -651,9 +652,35 @@ async def _run_agent_turn(
     return messages, output
 
 
+class _InterceptHandler(logging.Handler):
+    """Route stdlib logging records to loguru."""
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            level = logger.level(record.levelname).name
+        except ValueError:
+            level = record.levelno
+        frame, depth = logging.currentframe(), 0
+        while frame and (depth == 0 or frame.f_code.co_filename == logging.__file__):
+            frame = frame.f_back
+            depth += 1
+        logger.opt(depth=depth, exception=record.exc_info).log(level, record.getMessage())
+
+
+def _setup_logging() -> None:
+    logging.root.handlers = [_InterceptHandler()]
+    logging.root.setLevel(logging.DEBUG)
+    for name in ("uvicorn", "uvicorn.error", "uvicorn.access", "fastapi"):
+        log = logging.getLogger(name)
+        log.handlers = [_InterceptHandler()]
+        log.propagate = False
+
+
 def main() -> None:
     """Entry point for `python -m carapace` / `carapace-server`."""
     load_dotenv()
+    _setup_logging()
+
     data_dir = get_data_dir()
     ensure_data_dir(data_dir)
     config = load_config(data_dir)
@@ -667,6 +694,7 @@ def main() -> None:
         host=config.server.host,
         port=config.server.port,
         log_level=config.carapace.log_level,
+        log_config=None,
     )
 
 

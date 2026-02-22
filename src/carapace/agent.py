@@ -10,6 +10,7 @@ from pydantic_ai import Agent, ApprovalRequired, DeferredToolRequests, RunContex
 from carapace.config import load_workspace_file
 from carapace.memory import MemoryStore
 from carapace.models import Deps, OperationClassification, RuleCheckResult
+from carapace.sandbox.runtime import SkillVenvError
 from carapace.security.classifier import classify_operation
 from carapace.security.engine import check_rules
 from carapace.skills import SkillRegistry
@@ -196,10 +197,13 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
 
         sandbox_msg = ""
         if ctx.deps.sandbox:
-            sandbox_msg = await ctx.deps.sandbox.activate_skill(
-                ctx.deps.session_state.session_id,
-                skill_name,
-            )
+            try:
+                sandbox_msg = await ctx.deps.sandbox.activate_skill(
+                    ctx.deps.session_state.session_id,
+                    skill_name,
+                )
+            except SkillVenvError as exc:
+                sandbox_msg = f"ERROR: {exc}"
 
         ctx.deps.activated_skills.append(skill_name)
         parts = [f"Skill '{skill_name}' activated."]

@@ -10,7 +10,7 @@ from docker.errors import APIError, DockerException, ImageNotFound, NotFound
 from docker.types import Mount as DockerMount
 from loguru import logger
 
-from carapace.sandbox.runtime import ContainerConfig, ExecResult
+from carapace.sandbox.runtime import ContainerConfig, ContainerGoneError, ExecResult
 
 _FALLBACK_SOCKETS = (Path.home() / ".docker/run/docker.sock",)
 
@@ -139,7 +139,10 @@ class DockerRuntime:
         env: dict[str, str] | None = None,
     ) -> ExecResult:
         def _exec() -> ExecResult:
-            container = self._client.containers.get(container_id)
+            try:
+                container = self._client.containers.get(container_id)
+            except NotFound as err:
+                raise ContainerGoneError(f"Container {container_id[:12]} no longer exists") from err
             cmd = ["sh", "-c", command] if isinstance(command, str) else command
 
             result = container.exec_run(cmd, environment=env, demux=True)
@@ -158,6 +161,8 @@ class DockerRuntime:
 
         try:
             result = await asyncio.wait_for(asyncio.to_thread(_exec), timeout=timeout)
+        except ContainerGoneError:
+            raise
         except TimeoutError:
             logger.warning(f"Command timed out in {container_id[:12]} after {timeout}s: {cmd_preview}")
             return ExecResult(exit_code=-1, output=f"Error: command timed out ({timeout}s)")

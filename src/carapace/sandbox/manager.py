@@ -7,7 +7,7 @@ from pathlib import Path
 
 from loguru import logger
 
-from carapace.sandbox.runtime import ContainerConfig, ContainerRuntime, Mount
+from carapace.sandbox.runtime import ContainerConfig, ContainerGoneError, ContainerRuntime, Mount, SkillVenvError
 
 
 @dataclass
@@ -131,7 +131,15 @@ class SandboxManager:
         sc = await self.ensure_session(session_id)
         sc.last_used = time.time()
         logger.debug(f"Exec in session {session_id}: {command}")
-        result = await self._runtime.exec(sc.container_id, command, timeout=timeout)
+
+        try:
+            result = await self._runtime.exec(sc.container_id, command, timeout=timeout)
+        except ContainerGoneError:
+            logger.warning(f"Container gone for session {session_id}, recreating sandbox")
+            self._cleanup_tracking(session_id)
+            sc = await self.ensure_session(session_id)
+            result = await self._runtime.exec(sc.container_id, command, timeout=timeout)
+
         output = result.output
         if result.exit_code != 0 and f"[exit code: {result.exit_code}]" not in output:
             logger.debug(f"Command failed in session {session_id} (exit {result.exit_code}): {command}")
@@ -155,7 +163,19 @@ class SandboxManager:
         has_pyproject = (session_skill_dir / "pyproject.toml").exists()
         venv_msg = ""
         if has_pyproject:
-            venv_msg = await self._build_skill_venv(session_id, skill_name)
+            try:
+                await self._build_skill_venv(session_id, skill_name)
+                venv_msg = "Venv built successfully."
+            except SkillVenvError as exc:
+                sc.activated_skills.append(skill_name)
+                sc.last_used = time.time()
+                logger.info(f"Activated skill '{skill_name}' in session {session_id} (with errors)")
+                raise SkillVenvError(
+                    f"Skill '{skill_name}' activated at /workspace/skills/{skill_name}/ but "
+                    f"dependency install failed: {exc}\n"
+                    "The skill was copied but its Python dependencies are NOT available. "
+                    "You may need to install them manually inside the sandbox."
+                ) from exc
 
         sc.activated_skills.append(skill_name)
         sc.last_used = time.time()
@@ -166,8 +186,8 @@ class SandboxManager:
             result += f"\n{venv_msg}"
         return result
 
-    async def _build_skill_venv(self, session_id: str, skill_name: str) -> str:
-        """Build a venv in an ephemeral build container using the same base image."""
+    async def _build_skill_venv(self, session_id: str, skill_name: str) -> None:
+        """Build a venv in an ephemeral build container. Raises SkillVenvError on failure."""
         skill_host_path = self._data_dir / "sessions" / session_id / "skills" / skill_name
         build_name = f"carapace-build-{session_id[:8]}-{skill_name}"
 
@@ -190,12 +210,14 @@ class SandboxManager:
             )
             if result.exit_code == 0:
                 logger.info(f"Venv built successfully for skill '{skill_name}'")
-                return "Venv built successfully."
-            logger.warning(f"Venv build exited {result.exit_code} for skill '{skill_name}': {result.output[:200]}")
-            return f"Venv build warning (exit {result.exit_code}): {result.output[:500]}"
-        except Exception as e:
-            logger.warning(f"Venv build failed for skill {skill_name}: {e}")
-            return f"Venv build failed: {e}"
+                return
+            logger.error(f"Venv build failed for skill '{skill_name}' (exit {result.exit_code}): {result.output[:300]}")
+            raise SkillVenvError(f"exit {result.exit_code}: {result.output[:500]}")
+        except SkillVenvError:
+            raise
+        except Exception as exc:
+            logger.error(f"Venv build crashed for skill '{skill_name}': {exc}")
+            raise SkillVenvError(str(exc)) from exc
         finally:
             if container_id:
                 await self._runtime.remove(container_id)

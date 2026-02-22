@@ -4,6 +4,14 @@ from dataclasses import dataclass, field
 from typing import Protocol
 
 
+class ContainerGoneError(Exception):
+    """Raised when a container no longer exists."""
+
+
+class SkillVenvError(Exception):
+    """Raised when building a skill's virtualenv fails."""
+
+
 @dataclass
 class Mount:
     source: str
