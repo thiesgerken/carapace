@@ -11,7 +11,7 @@ from loguru import logger
 
 _CONNECT_OK = b"HTTP/1.1 200 Connection Established\r\n\r\n"
 _FORBIDDEN_RESPONSE = (
-    b"HTTP/1.1 403 Forbidden\r\nContent-Length: 29\r\nConnection: close\r\n\r\nDomain blocked by proxy policy"
+    b"HTTP/1.1 403 Forbidden\r\nContent-Length: 30\r\nConnection: close\r\n\r\nDomain blocked by proxy policy"
 )
 _BAD_REQUEST = b"HTTP/1.1 400 Bad Request\r\nContent-Length: 11\r\nConnection: close\r\n\r\nBad Request"
 _RELAY_BUF = 32 * 1024
