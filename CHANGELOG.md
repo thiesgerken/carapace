@@ -1,6 +1,140 @@
 # CHANGELOG
 
 
+## v0.6.0 (2026-02-22)
+
+### ✨
+
+- ✨ Docker sandboxing for sessions ([#35](https://github.com/thiesgerken/carapace/pull/35),
+  [`ce5ca5b`](https://github.com/thiesgerken/carapace/commit/ce5ca5bcc4a7e94e89c5e09c01088e46dedc6e6c))
+
+* ✨ Docker sandboxing for sessions
+
+* ✨ Update logging guidelines in AGENTS.md and python-style.mdc
+
+- Added a section on logging best practices, specifying the exclusive use of `loguru` over stdlib
+  `logging`. - Included instructions for importing `loguru` and using f-strings in log calls for
+  improved readability and performance.
+
+* add loguru
+
+* Refactor logging to use loguru across the codebase
+
+- Replaced instances of the standard logging library with loguru for improved logging capabilities.
+  - Updated log messages to utilize f-strings for better readability and performance. - Removed the
+  `enabled` field from `SandboxConfig` as it is no longer needed. - Enhanced error handling and
+  logging in the Docker runtime and sandbox manager for better debugging and maintenance.
+
+* ✨ Enhance Docker runtime with network management
+
+- Added a method to ensure the existence of Docker networks before container creation. - Improved
+  the DockerRuntime class to manage and log network creation, enhancing the overall functionality of
+  the sandbox environment.
+
+* Fix input prompt formatting in approval request to escape brackets for proper display
+
+* Refactor sandbox configuration and Docker integration
+
+- Removed the carapace-sandbox-image service from docker-compose.yml and deleted its Dockerfile. -
+  Updated SandboxConfig to allow an empty base_image, enabling auto-building from a bundled
+  Dockerfile. - Introduced a method to read the bundled Dockerfile content in bootstrap.py. -
+  Enhanced DockerRuntime with a build_image method to build the sandbox image from the bundled
+  Dockerfile. - Adjusted server lifespan logic to build the sandbox image if no base_image is
+  specified in the configuration.
+
+* Enhance error handling and logging in sandbox and Docker runtime
+
+- Introduced custom exceptions `ContainerGoneError` and `SkillVenvError` for better error management
+  in the sandbox environment. - Updated the `DockerRuntime` and `SandboxManager` classes to handle
+  these exceptions, improving robustness during container execution and skill virtual environment
+  building. - Enhanced logging to provide clearer insights into errors and warnings related to
+  container management and skill activation.
+
+* Set logging levels for specific libraries to WARNING in server.py
+
+- Adjusted logging configuration to set the logging level to WARNING for the "httpcore", "httpx",
+  and "docker" libraries, improving log clarity and reducing verbosity.
+
+* Enhance logging configuration in server.py
+
+- Added "anthropic" and "websockets" to the list of libraries with WARNING logging level. -
+  Introduced a custom emoji patcher for log records to replace specific prefixes with emojis,
+  improving log readability.
+
+* Update Python style guidelines in python-style.mdc
+
+- Clarified the use of Pydantic `BaseModel` for structured data, removing references to stdlib
+  `@dataclass`. - Introduced the use of `Annotated[type, Field(...)]` for field metadata and
+  defaults, emphasizing correct usage. - Specified that non-nullable fields should not be assigned
+  `None` with `# type: ignore`, promoting better type safety. - Updated guidance on avoiding mutable
+  default arguments to use `Annotated` for consistency.
+
+* Refactor agent and sandbox management for improved structure and logging
+
+- Removed the local command execution fallback in favor of a more streamlined sandbox execution
+  approach. - Enhanced the `Deps` class to utilize Pydantic's `BaseModel` and `Annotated` for better
+  type safety and field management. - Updated the `SessionContainer` and `Mount` classes to inherit
+  from `BaseModel`, ensuring consistent data handling. - Improved error handling in the agent's
+  skill activation process with enhanced logging using `loguru`. - Adjusted server cleanup logic to
+  ensure proper management of sandbox resources.
+
+* Rename `bash` tool to `shell` in agent.py for clarity and update command execution in
+  DockerRuntime to use `bash` instead of `sh` for consistency in command handling.
+
+* Update Dockerfile to use specific version of uv and remove unnecessary apt-get commands
+
+* Update default server host in ServerConfig to allow external access
+
+* Improve WebSocket error handling in _chat_loop function
+
+- Added reconnection logic for both sending messages and reading server responses upon
+  ConnectionClosed exceptions. - Enhanced user feedback during reconnection attempts to improve user
+  experience.
+
+* Refactor WebSocket connection handling in cli.py
+
+- Updated the WebSocket connection logic to use the `websockets.asyncio.client` module directly for
+  improved clarity and consistency. - Enhanced type hinting for the `_connect_ws` function to
+  specify the return type as `ClientConnection`.
+
+* Refactor skill management in Deps class and server dependency building
+
+- Updated the `Deps` class to initialize `skill_catalog` and `activated_skills` with default empty
+  lists for improved clarity and consistency. - Modified the `_build_deps` function in `server.py`
+  to pass an empty list for `activated_skills`, ensuring proper initialization during dependency
+  construction.
+
+* Add CARAPACE_HOST_DATA_DIR environment variable and update SandboxManager for host path handling
+
+- Introduced the `CARAPACE_HOST_DATA_DIR` environment variable in `docker-compose.yml` to specify
+  the host data directory. - Updated `server.py` to retrieve and pass the host data directory to the
+  `SandboxManager`. - Enhanced `SandboxManager` to handle host paths for bind mounts, ensuring
+  correct path resolution when running in Docker. - Improved logging to provide feedback on host
+  data directory overrides during sandbox initialization.
+
+* Implement skill name validation in SandboxManager
+
+- Added a regex-based validation function for skill names to ensure they are non-empty, start with
+  an alphanumeric character, and contain only valid characters. - Integrated the validation function
+  into the `activate_skill`, `_build_skill_venv`, and `save_skill` methods to enforce skill name
+  rules and return appropriate error messages when invalid names are provided. - Refactored the
+  `SessionContainer` class to initialize `activated_skills` with an empty list for consistency.
+
+* fix lint issues
+
+* Enhance documentation in agent.py for skill activation and command execution
+
+- Updated the prompt for skill activation to clarify the setup of a virtual environment. - Improved
+  the docstring for the exec function to specify that it typically runs bash commands. - Removed the
+  unused shell function to streamline the code.
+
+* Refactor session directory structure in SandboxManager
+
+- Changed the session directory structure to use a single 'workspace' directory for skills and
+  temporary files. - Updated the relevant methods to reflect the new paths for skill and temporary
+  directories, ensuring consistent handling of session data.
+
+
 ## v0.5.0 (2026-02-20)
 
 ### ✨
