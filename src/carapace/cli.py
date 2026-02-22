@@ -7,12 +7,12 @@ from typing import Any
 
 import httpx
 import typer
+import websockets.asyncio.client
 from dotenv import load_dotenv
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.table import Table
-from websockets.asyncio.client import connect as ws_connect
 from websockets.exceptions import ConnectionClosed, InvalidHandshake
 
 from carapace.auth import TOKEN_FILE
@@ -255,12 +255,12 @@ async def _render_approval_request(data: dict[str, Any]) -> bool:
 # --- WebSocket chat loop ---
 
 
-async def _connect_ws(ws_url: str, *, max_backoff: float = 30.0) -> Any:
+async def _connect_ws(ws_url: str, *, max_backoff: float = 30.0) -> websockets.asyncio.client.ClientConnection:
     """Connect to the WebSocket, retrying with exponential backoff on failure."""
     delay = 1.0
     while True:
         try:
-            return await ws_connect(ws_url)
+            return await websockets.asyncio.client.connect(ws_url)
         except (OSError, ConnectionClosed, InvalidHandshake) as exc:
             console.print(f"[dim]Connection failed ({exc}), retrying in {delay:.0f}s…[/dim]")
             await asyncio.sleep(delay)
