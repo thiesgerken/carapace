@@ -296,10 +296,17 @@ async def _chat_loop(ws_url: str) -> None:
 
             try:
                 await ws.send(json.dumps({"type": "message", "content": user_input}))
-                await _read_server_responses(ws)
             except ConnectionClosed:
                 console.print("[dim]Server disconnected — reconnecting…[/dim]")
                 pending_message = user_input
+                ws = await _connect_ws(ws_url)
+                console.print("[green]Reconnected.[/green]")
+                continue
+
+            try:
+                await _read_server_responses(ws)
+            except ConnectionClosed:
+                console.print("[dim]Server disconnected while reading response — reconnecting…[/dim]")
                 ws = await _connect_ws(ws_url)
                 console.print("[green]Reconnected.[/green]")
             except KeyboardInterrupt:
