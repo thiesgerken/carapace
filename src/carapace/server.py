@@ -18,13 +18,13 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from httpx import AsyncClient, HTTPStatusError
 from loguru import logger
 from pydantic import BaseModel
-from pydantic_ai import DeferredToolRequests, DeferredToolResults, ToolDenied
+from pydantic_ai import ToolDenied
 from pydantic_ai.models.anthropic import AnthropicModel
 from pydantic_ai.providers.anthropic import AnthropicProvider
 from pydantic_ai.retries import AsyncTenacityTransport, RetryConfig, wait_retry_after
 from tenacity import retry_if_exception_type, stop_after_attempt, wait_exponential
 
-from carapace.agent import create_agent
+from carapace.agent_loop import run_agent_turn
 from carapace.auth import ensure_token
 from carapace.bootstrap import ensure_data_dir, get_sandbox_dockerfile
 from carapace.config import get_data_dir, load_config, load_rules
@@ -188,13 +188,31 @@ async def lifespan(app: FastAPI):
 
     cleanup_task = asyncio.create_task(_idle_cleanup_loop())
 
+    matrix_channel = None
+    if _config.channels.matrix.enabled:
+        from carapace.channels.matrix import MatrixChannel
+
+        matrix_channel = MatrixChannel(
+            config=_config.channels.matrix,
+            full_config=_config,
+            rules=_rules,
+            session_mgr=_session_mgr,
+            skill_catalog=_skill_catalog,
+            agent_model=_agent_model,
+            sandbox_mgr=_sandbox_mgr,
+        )
+        await matrix_channel.start()
+
     logger.info(
         f"Carapace server ready — model={_config.agent.model}, rules={len(_rules)}, "
         f"skills={len(_skill_catalog)}, sandbox=on, proxy_port={proxy_port}, token={token[:8]}…"
+        + (f", matrix=on ({_config.channels.matrix.homeserver})" if _config.channels.matrix.enabled else "")
     )
     yield
     logger.info("Server shutting down…")
     cleanup_task.cancel()
+    if matrix_channel:
+        await matrix_channel.stop()
     await proxy.stop()
     await _sandbox_mgr.cleanup_all()
     price_updater.stop()
@@ -659,72 +677,44 @@ async def _run_agent_turn(
     deps: Deps,
     message_history: list,
 ) -> tuple[list, str]:
-    """Run one agent turn, handling approval loops over the WebSocket."""
-    agent = create_agent(deps)
+    """Run one agent turn over a WebSocket, delegating to the channel-agnostic runner."""
 
-    model_name = deps.config.agent.model
-    result = await agent.run(
-        user_input,
-        deps=deps,
-        message_history=message_history or None,
-    )
-    deps.usage_tracker.record(model_name, "agent", result.usage())
-    messages = result.all_messages()
+    async def _send_approval(req: ApprovalRequest) -> None:
+        await _send(ws, req)
 
-    while isinstance(result.output, DeferredToolRequests):
-        requests = result.output
-        deferred_results = DeferredToolResults()
-
-        for call in requests.approvals:
-            assert isinstance(call.args, dict)
-            meta = requests.metadata.get(call.tool_call_id, {})
-            await _send(
-                ws,
-                ApprovalRequest(
-                    tool_call_id=call.tool_call_id,
-                    tool=meta.get("tool", call.tool_name),
-                    args=call.args,
-                    classification=meta.get("classification", {}),
-                    triggered_rules=meta.get("triggered_rules", []),
-                    descriptions=meta.get("descriptions", []),
-                ),
-            )
-
-        # Collect all approval responses
-        pending = {call.tool_call_id for call in requests.approvals}
-        while pending:
+    async def _collect_ws_approvals(pending: set[str]) -> dict[str, bool | ToolDenied]:
+        results: dict[str, bool | ToolDenied] = {}
+        remaining = set(pending)
+        while remaining:
             raw = await ws.receive_json()
             try:
                 client_msg = parse_client_message(raw)
             except (ValueError, Exception):
                 continue
             if not isinstance(client_msg, ApprovalResponse):
-                for tid in pending:
-                    deferred_results.approvals[tid] = ToolDenied("Approval interrupted.")
-                pending.clear()
+                for tid in remaining:
+                    results[tid] = ToolDenied("Approval interrupted.")
+                remaining.clear()
                 break
-            if client_msg.tool_call_id in pending:
-                if client_msg.approved:
-                    deferred_results.approvals[client_msg.tool_call_id] = True
-                else:
-                    deferred_results.approvals[client_msg.tool_call_id] = ToolDenied("User denied this operation.")
-                pending.discard(client_msg.tool_call_id)
+            if client_msg.tool_call_id in remaining:
+                results[client_msg.tool_call_id] = (
+                    True if client_msg.approved else ToolDenied("User denied this operation.")
+                )
+                remaining.discard(client_msg.tool_call_id)
+        return results
 
-        result = await agent.run(
-            deps=deps,
-            message_history=messages,
-            deferred_tool_results=deferred_results,
-        )
-        deps.usage_tracker.record(model_name, "agent", result.usage())
-        messages = result.all_messages()
+    messages, output = await run_agent_turn(
+        user_input,
+        deps,
+        message_history,
+        send_approval_request=_send_approval,
+        collect_approvals=_collect_ws_approvals,
+    )
 
-    output: str
-    if isinstance(result.output, str):
-        output = result.output
-        await _send(ws, Done(content=output))
-    else:
-        output = f"Unexpected agent output type: {type(result.output).__name__}"
+    if output.startswith("Unexpected agent output type:"):
         await _send(ws, ErrorMessage(detail=output))
+    else:
+        await _send(ws, Done(content=output))
 
     return messages, output
 
