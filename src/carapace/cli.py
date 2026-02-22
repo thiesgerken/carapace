@@ -7,13 +7,13 @@ from typing import Any
 
 import httpx
 import typer
+import websockets.asyncio.client
 from dotenv import load_dotenv
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.table import Table
-from websockets.asyncio.client import connect as ws_connect
-from websockets.exceptions import ConnectionClosed
+from websockets.exceptions import ConnectionClosed, InvalidHandshake
 
 from carapace.auth import TOKEN_FILE
 from carapace.config import get_data_dir
@@ -247,7 +247,7 @@ async def _render_approval_request(data: dict[str, Any]) -> bool:
     )
     choice = await asyncio.get_event_loop().run_in_executor(
         None,
-        lambda: console.input("[bold][a]pprove / [d]eny?[/bold] ").strip().lower(),
+        lambda: console.input("[bold]\\[a]pprove / \\[d]eny?[/bold] ").strip().lower(),
     )
     return choice in ("a", "approve", "y", "yes")
 
@@ -255,38 +255,64 @@ async def _render_approval_request(data: dict[str, Any]) -> bool:
 # --- WebSocket chat loop ---
 
 
+async def _connect_ws(ws_url: str, *, max_backoff: float = 30.0) -> websockets.asyncio.client.ClientConnection:
+    """Connect to the WebSocket, retrying with exponential backoff on failure."""
+    delay = 1.0
+    while True:
+        try:
+            return await websockets.asyncio.client.connect(ws_url)
+        except (OSError, ConnectionClosed, InvalidHandshake) as exc:
+            console.print(f"[dim]Connection failed ({exc}), retrying in {delay:.0f}s…[/dim]")
+            await asyncio.sleep(delay)
+            delay = min(delay * 2, max_backoff)
+
+
 async def _chat_loop(ws_url: str) -> None:
     """Connect to the server WebSocket and run the interactive REPL."""
-    async with ws_connect(ws_url) as ws:
+    ws = await _connect_ws(ws_url)
+    pending_message: str | None = None
+    try:
         while True:
-            try:
-                user_input = await asyncio.get_event_loop().run_in_executor(
-                    None,
-                    lambda: console.input("[bold cyan]carapace>[/bold cyan] ").strip(),
-                )
-            except (EOFError, KeyboardInterrupt):
-                console.print("\n[dim]Goodbye.[/dim]")
-                break
+            if pending_message is None:
+                try:
+                    user_input = await asyncio.get_event_loop().run_in_executor(
+                        None,
+                        lambda: console.input("[bold cyan]carapace>[/bold cyan] ").strip(),
+                    )
+                except (EOFError, KeyboardInterrupt):
+                    console.print("\n[dim]Goodbye.[/dim]")
+                    break
 
-            if not user_input:
+                if not user_input:
+                    continue
+
+                if user_input.lower() in ("/quit", "/exit"):
+                    await ws.send(json.dumps({"type": "message", "content": user_input}))
+                    console.print("[dim]Goodbye.[/dim]")
+                    break
+            else:
+                user_input = pending_message
+                pending_message = None
+
+            try:
+                await ws.send(json.dumps({"type": "message", "content": user_input}))
+            except ConnectionClosed:
+                console.print("[dim]Server disconnected — reconnecting…[/dim]")
+                pending_message = user_input
+                ws = await _connect_ws(ws_url)
+                console.print("[green]Reconnected.[/green]")
                 continue
 
-            # Client-side quit
-            if user_input.lower() in ("/quit", "/exit"):
-                await ws.send(json.dumps({"type": "message", "content": user_input}))
-                console.print("[dim]Goodbye.[/dim]")
-                break
-
-            await ws.send(json.dumps({"type": "message", "content": user_input}))
-
-            # Read server responses until we get a terminal message
             try:
                 await _read_server_responses(ws)
             except ConnectionClosed:
-                console.print("[dim]Server disconnected.[/dim]")
-                break
+                console.print("[dim]Server disconnected while reading response — reconnecting…[/dim]")
+                ws = await _connect_ws(ws_url)
+                console.print("[green]Reconnected.[/green]")
             except KeyboardInterrupt:
                 console.print("\n[dim]Interrupted.[/dim]")
+    finally:
+        await ws.close()
 
 
 async def _read_server_responses(ws) -> None:

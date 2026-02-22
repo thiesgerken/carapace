@@ -15,8 +15,18 @@ _CRITICAL_FILES: list[tuple[str, str]] = [
 
 _SEED_SKILLS: list[tuple[str, str]] = [
     ("example-skill/SKILL.md", "skills/example/SKILL.md"),
+    ("example-skill/pyproject.toml", "skills/example/pyproject.toml"),
+    ("example-skill/uv.lock", "skills/example/uv.lock"),
+    ("example-skill/scripts/hello.py", "skills/example/scripts/hello.py"),
     ("create-skill/SKILL.md", "skills/create-skill/SKILL.md"),
 ]
+
+
+def get_sandbox_dockerfile() -> str:
+    """Return the content of the bundled sandbox Dockerfile."""
+    source = _ASSETS.joinpath("Dockerfile")
+    with as_file(source) as path:
+        return path.read_text(encoding="utf-8")
 
 
 def _copy_asset(asset_path: str, target: Path) -> None:

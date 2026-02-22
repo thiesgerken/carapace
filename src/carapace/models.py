@@ -1,16 +1,17 @@
 from __future__ import annotations
 
-import logging
 from collections.abc import Callable
-from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
 from enum import Enum
 from pathlib import Path
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel
+from loguru import logger
+from pydantic import BaseModel, ConfigDict, Field
 from pydantic_ai.usage import RunUsage
+
+from carapace.sandbox.manager import SandboxManager
 
 # --- Rules ---
 
@@ -120,9 +121,9 @@ class CredentialsConfig(BaseModel):
 
 
 class SandboxConfig(BaseModel):
-    base_image: str = "alpine:3.19"
+    base_image: str = ""
     idle_timeout_minutes: int = 15
-    default_network: bool = False
+    network_name: str = "carapace-sandbox"
 
 
 class MemorySearchConfig(BaseModel):
@@ -140,7 +141,7 @@ class SessionsConfig(BaseModel):
 
 
 class ServerConfig(BaseModel):
-    host: str = "127.0.0.1"
+    host: str = "0.0.0.0"
     port: int = 8321
 
 
@@ -237,7 +238,7 @@ class UsageTracker(BaseModel):
                 costs[model_key] = price.total_price
                 total += price.total_price
             except LookupError:
-                logging.getLogger(__name__).debug("No pricing data for model %s", model_key)
+                logger.debug(f"No pricing data for model {model_key}")
         costs["total"] = total
         return costs
 
@@ -245,16 +246,18 @@ class UsageTracker(BaseModel):
 # --- Deps for Pydantic AI RunContext ---
 
 
-@dataclass
-class Deps:
+class Deps(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     config: Config
     data_dir: Path
     session_state: SessionState
     rules: list[Rule]
-    skill_catalog: list[SkillInfo] = field(default_factory=list)
-    activated_skills: list[str] = field(default_factory=list)
+    sandbox: SandboxManager
+    skill_catalog: list[SkillInfo] = []
+    activated_skills: list[str] = []
     classifier_model: str = "openai:gpt-4o-mini"
     agent_model: Any = None
     verbose: bool = True
     tool_call_callback: Callable[[str, dict[str, Any], str], None] | None = None
-    usage_tracker: UsageTracker = field(default_factory=UsageTracker)
+    usage_tracker: Annotated[UsageTracker, Field(default_factory=UsageTracker)]

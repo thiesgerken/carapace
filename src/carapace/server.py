@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated, Any
@@ -13,6 +14,7 @@ from fastapi import Depends, FastAPI, HTTPException, Query, WebSocket, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from httpx import AsyncClient, HTTPStatusError
+from loguru import logger
 from pydantic import BaseModel
 from pydantic_ai import DeferredToolRequests, DeferredToolResults, ToolDenied
 from pydantic_ai.models.anthropic import AnthropicModel
@@ -22,10 +24,12 @@ from tenacity import retry_if_exception_type, stop_after_attempt, wait_exponenti
 
 from carapace.agent import create_agent
 from carapace.auth import ensure_token
-from carapace.bootstrap import ensure_data_dir
+from carapace.bootstrap import ensure_data_dir, get_sandbox_dockerfile
 from carapace.config import get_data_dir, load_config, load_rules
 from carapace.memory import MemoryStore
 from carapace.models import Config, Deps, Rule, SessionState, UsageTracker
+from carapace.sandbox.docker import DockerRuntime
+from carapace.sandbox.manager import SandboxManager
 from carapace.session import SessionManager
 from carapace.skills import SkillRegistry
 from carapace.ws_models import (
@@ -41,7 +45,8 @@ from carapace.ws_models import (
 )
 
 load_dotenv()
-logger = logging.getLogger("carapace.server")
+
+_BUILTIN_SANDBOX_IMAGE = "carapace-sandbox:latest"
 
 # --- Shared state populated in lifespan ---
 
@@ -51,6 +56,7 @@ _rules: list[Rule]
 _session_mgr: SessionManager
 _skill_catalog: list
 _agent_model: Any
+_sandbox_mgr: SandboxManager
 _session_locks: dict[str, asyncio.Lock] = {}
 _session_lock_refs: dict[str, int] = {}
 
@@ -89,9 +95,19 @@ def _create_anthropic_model(model_name: str) -> AnthropicModel:
     return AnthropicModel(model_id, provider=AnthropicProvider(http_client=AsyncClient(transport=transport)))
 
 
+async def _idle_cleanup_loop() -> None:
+    """Periodically clean up idle sandbox containers."""
+    while True:
+        await asyncio.sleep(60)
+        try:
+            await _sandbox_mgr.cleanup_idle()
+        except Exception as exc:
+            logger.warning(f"Sandbox idle cleanup error: {exc}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _data_dir, _config, _rules, _session_mgr, _skill_catalog, _agent_model
+    global _data_dir, _config, _rules, _session_mgr, _skill_catalog, _agent_model, _sandbox_mgr
 
     _data_dir = get_data_dir()
     ensure_data_dir(_data_dir)
@@ -107,6 +123,25 @@ async def lifespan(app: FastAPI):
     _skill_catalog = registry.scan()
     _agent_model = _create_anthropic_model(_config.agent.model)
 
+    runtime = DockerRuntime()
+
+    base_image = _config.sandbox.base_image or _BUILTIN_SANDBOX_IMAGE
+    if not _config.sandbox.base_image:
+        runtime.build_image(get_sandbox_dockerfile(), _BUILTIN_SANDBOX_IMAGE)
+
+    host_data_dir_env = os.environ.get("CARAPACE_HOST_DATA_DIR")
+    host_data_dir = Path(host_data_dir_env) if host_data_dir_env else None
+
+    _sandbox_mgr = SandboxManager(
+        runtime=runtime,
+        data_dir=_data_dir,
+        base_image=base_image,
+        network_name=_config.sandbox.network_name,
+        idle_timeout_minutes=_config.sandbox.idle_timeout_minutes,
+        host_data_dir=host_data_dir,
+    )
+    logger.info(f"Sandbox enabled (image={base_image}, network={_config.sandbox.network_name})")
+
     token = ensure_token(_data_dir)
 
     from genai_prices import UpdatePrices
@@ -114,15 +149,18 @@ async def lifespan(app: FastAPI):
     price_updater = UpdatePrices()
     price_updater.start()
 
+    cleanup_task = asyncio.create_task(_idle_cleanup_loop())
+
     logger.info(
-        "Carapace server ready — model=%s, rules=%d, skills=%d, token=%s…",
-        _config.agent.model,
-        len(_rules),
-        len(_skill_catalog),
-        token[:8],
+        f"Carapace server ready — model={_config.agent.model}, rules={len(_rules)}, "
+        f"skills={len(_skill_catalog)}, sandbox=on, token={token[:8]}…"
     )
     yield
+    logger.info("Server shutting down…")
+    cleanup_task.cancel()
+    await _sandbox_mgr.cleanup_all()
     price_updater.stop()
+    logger.info("Shutdown complete")
 
 
 app = FastAPI(title="Carapace", lifespan=lifespan)
@@ -221,6 +259,7 @@ async def get_session(session_id: str, _token: str = Depends(_verify_token)) -> 
 
 @app.delete("/sessions/{session_id}", status_code=204)
 async def delete_session(session_id: str, _token: str = Depends(_verify_token)) -> None:
+    await _sandbox_mgr.cleanup_session(session_id)
     if not _session_mgr.delete_session(session_id):
         raise HTTPException(status_code=404, detail="Session not found")
 
@@ -293,6 +332,8 @@ def _build_deps(
         verbose=verbose,
         tool_call_callback=tool_call_callback,
         usage_tracker=usage_tracker or _session_mgr.load_usage(session_state.session_id),
+        sandbox=_sandbox_mgr,
+        activated_skills=[],
     )
 
 
@@ -411,10 +452,12 @@ async def chat_ws(
 ) -> None:
     session_state = _session_mgr.resume_session(session_id)
     if session_state is None:
+        logger.warning(f"WebSocket rejected — session {session_id} not found")
         await websocket.close(code=4004, reason="Session not found")
         return
 
     await websocket.accept()
+    logger.info(f"WebSocket connected for session {session_id}")
     verbose = True
     pending_sends: set[asyncio.Task] = set()
 
@@ -425,7 +468,7 @@ async def chat_ws(
             try:
                 await _send(websocket, ToolCallInfo(tool=tool, args=args, detail=detail))
             except Exception as exc:
-                logger.warning("WebSocket send failed for tool call info: %s", exc)
+                logger.warning(f"WebSocket send failed for tool call info: {exc}")
             finally:
                 pending_sends.discard(task)
 
@@ -524,9 +567,12 @@ async def chat_ws(
                     logger.exception("Agent error")
                     await _send(websocket, ErrorMessage(detail=str(exc)))
 
-        except WebSocketDisconnect:
-            logger.info("Client disconnected from session %s", session_id)
+        except WebSocketDisconnect as exc:
+            logger.info(f"Client disconnected from session {session_id} (code={exc.code})")
+        except Exception as exc:
+            logger.exception(f"Unexpected WebSocket error in session {session_id}: {exc}")
         finally:
+            logger.debug(f"WebSocket cleanup for session {session_id}")
             for task in pending_sends:
                 task.cancel()
 
@@ -554,6 +600,7 @@ async def _run_agent_turn(
         deferred_results = DeferredToolResults()
 
         for call in requests.approvals:
+            assert isinstance(call.args, dict)
             meta = requests.metadata.get(call.tool_call_id, {})
             await _send(
                 ws,
@@ -606,22 +653,57 @@ async def _run_agent_turn(
     return messages, output
 
 
+class _InterceptHandler(logging.Handler):
+    """Route stdlib logging records to loguru."""
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            level = logger.level(record.levelname).name
+        except ValueError:
+            level = record.levelno
+        frame, depth = logging.currentframe(), 0
+        while frame and (depth == 0 or frame.f_code.co_filename == logging.__file__):
+            frame = frame.f_back
+            depth += 1
+        logger.opt(depth=depth, exception=record.exc_info).log(level, record.getMessage())
+
+
+def _setup_logging() -> None:
+    logging.root.handlers = [_InterceptHandler()]
+    logging.root.setLevel(logging.DEBUG)
+    for name in ("uvicorn", "uvicorn.error", "uvicorn.access", "fastapi"):
+        log = logging.getLogger(name)
+        log.handlers = [_InterceptHandler()]
+        log.propagate = False
+
+    for name in ("httpcore", "httpx", "docker", "anthropic", "websockets"):
+        logging.getLogger(name).setLevel(logging.WARNING)
+
+    def _emoji_patcher(record: Any) -> None:
+        record["name"] = record["name"].replace("carapace.", "🦐.").replace("sandbox.", "🏝️.")
+
+    logger.configure(patcher=_emoji_patcher)
+
+
 def main() -> None:
     """Entry point for `python -m carapace` / `carapace-server`."""
     load_dotenv()
+    _setup_logging()
+
     data_dir = get_data_dir()
     ensure_data_dir(data_dir)
     config = load_config(data_dir)
     token = ensure_token(data_dir)
 
-    logger.info("Starting Carapace server on %s:%d", config.server.host, config.server.port)
-    logger.info("Bearer token: %s…  (full token in %s)", token[:8], data_dir / "server.token")
+    logger.info(f"Starting Carapace server on {config.server.host}:{config.server.port}")
+    logger.info(f"Bearer token: {token[:8]}…  (full token in {data_dir / 'server.token'})")
 
     uvicorn.run(
         "carapace.server:app",
         host=config.server.host,
         port=config.server.port,
         log_level=config.carapace.log_level,
+        log_config=None,
     )
 
 

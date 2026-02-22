@@ -88,3 +88,4 @@ build/
 *.js.map
 
 /data
+.cursor/plans/

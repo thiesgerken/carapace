@@ -26,7 +26,7 @@ def test_config_defaults():
     assert cfg.carapace.log_level == "info"
     assert cfg.agent.model == "openai:gpt-4o-mini"
     assert cfg.credentials.backend == "mock"
-    assert cfg.sandbox.default_network is False
+    assert cfg.sandbox.network_name == "carapace-sandbox"
     assert cfg.memory.search.enabled is False
     assert cfg.sessions.history_retention_days == 90
 
