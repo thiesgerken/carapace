@@ -86,7 +86,7 @@ class SandboxManager:
             logger.warning(
                 f"Container {sc.container_id[:12]} for session {session_id} is no longer running, recreating"
             )
-            self._cleanup_tracking(session_id)
+            self._prepare_session_recreate(session_id)
 
         session_workspace = self._data_dir / "sessions" / session_id / "workspace"
         (session_workspace / "skills").mkdir(parents=True, exist_ok=True)
@@ -101,7 +101,9 @@ class SandboxManager:
             self._token_to_session.pop(old_token, None)
         self._token_to_session[proxy_token] = session_id
         self._session_tokens[session_id] = proxy_token
-        self._approval_queues[session_id] = asyncio.Queue()
+        # Keep the same queue object across container recreations so any
+        # in-flight listener waiting on queue.get() is still connected.
+        self._approval_queues.setdefault(session_id, asyncio.Queue())
 
         try:
             host_ip = await self._runtime.get_host_ip(self._network_name)
@@ -232,7 +234,7 @@ class SandboxManager:
                 result = await self._runtime.exec(sc.container_id, command, timeout=timeout)
             except ContainerGoneError:
                 logger.warning(f"Container gone for session {session_id}, recreating sandbox")
-                self._cleanup_tracking(session_id)
+                self._prepare_session_recreate(session_id)
                 sc = await self.ensure_session(session_id)
                 result = await self._runtime.exec(sc.container_id, command, timeout=timeout)
         finally:
@@ -487,16 +489,35 @@ class SandboxManager:
         if req and not req.future.done():
             req.future.set_result(decision)
 
-    def _cleanup_tracking(self, session_id: str) -> None:
+    def _prepare_session_recreate(self, session_id: str) -> None:
+        """Drop container/token tracking while keeping approval and policy state."""
+        self._cleanup_tracking(
+            session_id,
+            clear_domain_state=False,
+            clear_exec_state=False,
+            clear_approval_queue=False,
+        )
+
+    def _cleanup_tracking(
+        self,
+        session_id: str,
+        *,
+        clear_domain_state: bool = True,
+        clear_exec_state: bool = True,
+        clear_approval_queue: bool = True,
+    ) -> None:
         self._sessions.pop(session_id, None)
         token = self._session_tokens.pop(session_id, None)
         if token:
             self._token_to_session.pop(token, None)
-        self._allowed_domains.pop(session_id, None)
-        self._timed_domains.pop(session_id, None)
-        self._exec_temp_domains.pop(session_id, None)
-        self._approval_queues.pop(session_id, None)
-        self._session_current_command.pop(session_id, None)
+        if clear_domain_state:
+            self._allowed_domains.pop(session_id, None)
+            self._timed_domains.pop(session_id, None)
+        if clear_exec_state:
+            self._exec_temp_domains.pop(session_id, None)
+            self._session_current_command.pop(session_id, None)
+        if clear_approval_queue:
+            self._approval_queues.pop(session_id, None)
         # Cancel any approvals still in-flight for this session
         for req_id, req in list(self._pending_approvals.items()):
             if req.session_id == session_id:

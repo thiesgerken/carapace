@@ -2,15 +2,16 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from carapace.models import SkillCarapaceConfig
-from carapace.sandbox.proxy import ProxyServer, domain_matches
-from carapace.sandbox.runtime import ContainerRuntime
+from carapace.sandbox.proxy import DomainApprovalPending, DomainDecision, ProxyServer, domain_matches
+from carapace.sandbox.runtime import ContainerGoneError, ContainerRuntime, ExecResult
 
 # ── domain_matches ──────────────────────────────────────────────────
 
@@ -155,6 +156,46 @@ class TestSandboxManagerAllowlists:
         mgr._session_tokens["sess-1"] = "tok"
         mgr._cleanup_tracking("sess-1")
         assert mgr.get_session_by_token("tok") is None
+
+
+@pytest.mark.anyio
+async def test_exec_recreate_preserves_queue_and_domains(tmp_path: Path):
+    from carapace.sandbox.manager import SandboxManager
+
+    runtime = MagicMock(spec=ContainerRuntime)
+    runtime.get_host_ip = AsyncMock(return_value="172.18.0.1")
+    runtime.create = AsyncMock(side_effect=["container-1", "container-2"])
+    runtime.get_ip = AsyncMock(return_value="172.18.0.22")
+    runtime.exec = AsyncMock(
+        side_effect=[
+            ContainerGoneError(),
+            ExecResult(exit_code=0, output="ok"),
+        ]
+    )
+
+    mgr = SandboxManager(runtime=runtime, data_dir=tmp_path)
+    session_id = "sess-1"
+    await mgr.ensure_session(session_id)
+    mgr.allow_domains(session_id, {"api.example.com"})
+
+    # Start listening before exec retries so next_domain_approval captures Q1.
+    approval_waiter = asyncio.create_task(mgr.next_domain_approval(session_id))
+    await asyncio.sleep(0)
+
+    output = await mgr.exec_command(session_id, "curl https://api.example.com")
+    assert output == "ok"
+    assert mgr.get_allowed_domains(session_id) == {"api.example.com"}
+
+    fut: asyncio.Future[DomainDecision] = asyncio.get_running_loop().create_future()
+    req = DomainApprovalPending(
+        request_id="req-1",
+        session_id=session_id,
+        domain="pypi.org",
+        command="curl https://pypi.org",
+        future=fut,
+    )
+    await mgr._approval_queues[session_id].put(req)
+    assert await asyncio.wait_for(approval_waiter, timeout=1) is req
 
 
 # ── carapace.yaml parsing ───────────────────────────────────────────
