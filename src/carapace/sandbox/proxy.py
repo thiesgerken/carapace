@@ -3,7 +3,9 @@ from __future__ import annotations
 import asyncio
 import base64
 import contextlib
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
+from enum import StrEnum
 
 from loguru import logger
 
@@ -13,6 +15,25 @@ _FORBIDDEN_RESPONSE = (
 )
 _BAD_REQUEST = b"HTTP/1.1 400 Bad Request\r\nContent-Length: 11\r\nConnection: close\r\n\r\nBad Request"
 _RELAY_BUF = 32 * 1024
+
+
+class DomainDecision(StrEnum):
+    ALLOW_ONCE = "allow_once"
+    ALLOW_ALL_ONCE = "allow_all_once"
+    ALLOW_15MIN = "allow_15min"
+    ALLOW_ALL_15MIN = "allow_all_15min"
+    DENY = "deny"
+
+
+@dataclass
+class DomainApprovalPending:
+    """Represents one in-flight proxy domain authorization request."""
+
+    request_id: str
+    session_id: str
+    domain: str
+    command: str  # the exec command that triggered the connection attempt
+    future: asyncio.Future[DomainDecision]
 
 
 def domain_matches(domain: str, pattern: str) -> bool:
@@ -39,11 +60,13 @@ class ProxyServer:
         self,
         get_session_by_token: Callable[[str], str | None],
         get_allowed_domains: Callable[[str], set[str]],
+        request_approval: Callable[[str, str], Awaitable[bool]] | None = None,
         host: str = "0.0.0.0",
         port: int = 3128,
     ) -> None:
         self._get_session_by_token = get_session_by_token
         self._get_domains = get_allowed_domains
+        self._request_approval = request_approval
         self._host = host
         self._port = port
         self._server: asyncio.Server | None = None
@@ -160,7 +183,7 @@ class ProxyServer:
         target: str,
     ) -> None:
         domain, port = self._parse_host_port(target, default_port=443)
-        if not self._check_domain(session_id, domain):
+        if not await self._authorize_domain(session_id, domain):
             logger.warning(f"Proxy CONNECT denied: {domain} (session={session_id}, ip={client_ip})")
             writer.write(_FORBIDDEN_RESPONSE)
             await writer.drain()
@@ -204,7 +227,7 @@ class ProxyServer:
             await writer.drain()
             return
 
-        if not self._check_domain(session_id, domain):
+        if not await self._authorize_domain(session_id, domain):
             logger.warning(f"Proxy HTTP denied: {method} {domain}{path} (session={session_id}, ip={client_ip})")
             writer.write(_FORBIDDEN_RESPONSE)
             await writer.drain()
@@ -298,11 +321,29 @@ class ProxyServer:
                     w.close()
 
     # ------------------------------------------------------------------
-    # Domain allowlist check
+    # Domain authorization (allowlist check + optional approval request)
     # ------------------------------------------------------------------
 
-    def _check_domain(self, session_id: str, domain: str) -> bool:
+    async def _authorize_domain(self, session_id: str, domain: str) -> bool:
+        """Return True if *domain* is allowed for *session_id*.
+
+        If the domain is not in the allowlist and a ``request_approval``
+        callback is configured, the connection is suspended until the user
+        makes a decision (the callback is responsible for updating the
+        allowlist on approval).  Without a callback, unknown domains are
+        denied immediately.
+        """
+        if self._is_allowed(session_id, domain):
+            return True
+        if self._request_approval is None:
+            return False
+        logger.info(f"Proxy: suspending connection to {domain} (session={session_id}), requesting approval")
+        return await self._request_approval(session_id, domain)
+
+    def _is_allowed(self, session_id: str, domain: str) -> bool:
         allowed = self._get_domains(session_id)
+        if "*" in allowed:
+            return True
         domain = domain.lower()
         return any(domain_matches(domain, p.lower()) for p in allowed)
 

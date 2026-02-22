@@ -18,7 +18,15 @@ class ApprovalResponse(BaseModel):
     approved: bool
 
 
-ClientEnvelope = UserMessage | ApprovalResponse
+class ProxyApprovalResponse(BaseModel):
+    """Client → Server: user's decision for a proxy domain approval request."""
+
+    type: Literal["proxy_approval_response"] = "proxy_approval_response"
+    request_id: str
+    decision: Literal["allow_once", "allow_all_once", "allow_15min", "allow_all_15min", "deny"]
+
+
+ClientEnvelope = UserMessage | ApprovalResponse | ProxyApprovalResponse
 
 
 def parse_client_message(raw: dict[str, Any]) -> ClientEnvelope:
@@ -27,6 +35,8 @@ def parse_client_message(raw: dict[str, Any]) -> ClientEnvelope:
             return UserMessage.model_validate(raw)
         case "approval_response":
             return ApprovalResponse.model_validate(raw)
+        case "proxy_approval_response":
+            return ProxyApprovalResponse.model_validate(raw)
         case other:
             msg = f"Unknown client message type: {other}"
             raise ValueError(msg)
@@ -57,6 +67,15 @@ class ApprovalRequest(BaseModel):
     descriptions: list[str]
 
 
+class ProxyApprovalRequest(BaseModel):
+    """Server → Client: proxy is waiting for a domain access decision."""
+
+    type: Literal["proxy_approval_request"] = "proxy_approval_request"
+    request_id: str
+    domain: str
+    command: str  # the exec command that triggered this connection attempt
+
+
 class Done(BaseModel):
     type: Literal["done"] = "done"
     content: str
@@ -73,4 +92,6 @@ class ErrorMessage(BaseModel):
     detail: str
 
 
-ServerEnvelope = TokenChunk | ToolCallInfo | ApprovalRequest | Done | CommandResult | ErrorMessage
+ServerEnvelope = (
+    TokenChunk | ToolCallInfo | ApprovalRequest | ProxyApprovalRequest | Done | CommandResult | ErrorMessage
+)

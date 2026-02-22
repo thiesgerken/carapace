@@ -178,8 +178,8 @@ class DockerRuntime:
             result = container.exec_run(cmd, environment=env, demux=True)
             exit_code = result.exit_code if result.exit_code is not None else -1
 
-            stdout = result.output[0].decode() if result.output[0] else ""
-            stderr = result.output[1].decode() if result.output[1] else ""
+            stdout = result.output[0].decode("utf-8", errors="replace") if result.output[0] else ""
+            stderr = result.output[1].decode("utf-8", errors="replace") if result.output[1] else ""
             output = stdout
             if stderr:
                 output += f"\n[stderr] {stderr}"

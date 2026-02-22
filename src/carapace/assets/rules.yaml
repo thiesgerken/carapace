@@ -15,15 +15,6 @@ rules:
     description: >
       Prevents data exfiltration. After seeing sensitive data, the agent
       cannot send anything externally unless the user approves.
-
-  - id: skill-modification
-    trigger: "always"
-    effect: "creating, editing, or deleting files in the skills folder requires approval"
-    mode: approve
-    description: >
-      The agent can self-improve by writing skills, but every
-      modification must be approved by the user.
-
   - id: memory-write
     trigger: "always"
     effect: "writing or modifying memory files requires approval"

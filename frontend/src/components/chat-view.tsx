@@ -19,6 +19,9 @@ export function ChatView({ server, token, sessionId }: ChatViewProps) {
   const [waiting, setWaiting] = useState(false);
   const [loadingHistory, setLoadingHistory] = useState(true);
   const approvalState = useRef<Map<string, boolean>>(new Map());
+  const proxyApprovalState = useRef<
+    Map<string, import("@/lib/types").DomainDecision>
+  >(new Map());
   const bottomRef = useRef<HTMLDivElement>(null);
   const messagesRef = useRef<ChatMessage[]>([]);
   messagesRef.current = messages;
@@ -29,6 +32,7 @@ export function ChatView({ server, token, sessionId }: ChatViewProps) {
     setMessages([]);
     setLoadingHistory(true);
     approvalState.current.clear();
+    proxyApprovalState.current.clear();
 
     fetchHistory(server, token, sessionId)
       .then((history) => {
@@ -87,6 +91,12 @@ export function ChatView({ server, token, sessionId }: ChatViewProps) {
       case "approval_request":
         setMessages((prev) => [...prev, { kind: "approval", request: msg }]);
         break;
+      case "proxy_approval_request":
+        setMessages((prev) => [
+          ...prev,
+          { kind: "proxy_approval", request: msg },
+        ]);
+        break;
       case "command_result":
         setMessages((prev) => [
           ...prev,
@@ -124,6 +134,21 @@ export function ChatView({ server, token, sessionId }: ChatViewProps) {
     send({ type: "approval_response", tool_call_id: toolCallId, approved });
     // Force re-render to show resolved state
     setMessages((prev) => [...prev]);
+  }
+
+  function handleProxyApproval(
+    requestId: string,
+    decision: import("@/lib/types").DomainDecision,
+  ) {
+    proxyApprovalState.current.set(requestId, decision);
+    send({ type: "proxy_approval_response", request_id: requestId, decision });
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.kind === "proxy_approval" && m.request.request_id === requestId
+          ? { ...m, decision }
+          : m,
+      ),
+    );
   }
 
   const connected = status === "connected";
@@ -168,6 +193,7 @@ export function ChatView({ server, token, sessionId }: ChatViewProps) {
                   ? approvalState.current.get(msg.request.tool_call_id)
                   : undefined
               }
+              onProxyApproval={handleProxyApproval}
             />
           ))}
           {waiting && (

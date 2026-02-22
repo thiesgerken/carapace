@@ -31,7 +31,7 @@ from carapace.memory import MemoryStore
 from carapace.models import Config, Deps, Rule, SessionState, UsageTracker
 from carapace.sandbox.docker import DockerRuntime
 from carapace.sandbox.manager import SandboxManager
-from carapace.sandbox.proxy import ProxyServer
+from carapace.sandbox.proxy import DomainApprovalPending, DomainDecision, ProxyServer
 from carapace.session import SessionManager
 from carapace.skills import SkillRegistry
 from carapace.ws_models import (
@@ -40,6 +40,8 @@ from carapace.ws_models import (
     CommandResult,
     Done,
     ErrorMessage,
+    ProxyApprovalRequest,
+    ProxyApprovalResponse,
     ServerEnvelope,
     ToolCallInfo,
     UserMessage,
@@ -169,7 +171,8 @@ async def lifespan(app: FastAPI):
 
     proxy = ProxyServer(
         get_session_by_token=_sandbox_mgr.get_session_by_token,
-        get_allowed_domains=_sandbox_mgr.get_allowed_domains,
+        get_allowed_domains=_sandbox_mgr.get_effective_domains,
+        request_approval=_sandbox_mgr.request_domain_approval,
         host="0.0.0.0",
         port=proxy_port,
     )
@@ -249,9 +252,10 @@ class SessionInfo(BaseModel):
     last_active: str
     activated_rules: list[str]
     disabled_rules: list[str]
+    message_count: int = 0
 
     @classmethod
-    def from_state(cls, state: SessionState) -> SessionInfo:
+    def from_state(cls, state: SessionState, *, message_count: int = 0) -> SessionInfo:
         return cls(
             session_id=state.session_id,
             channel_type=state.channel_type,
@@ -260,6 +264,7 @@ class SessionInfo(BaseModel):
             last_active=state.last_active.isoformat(),
             activated_rules=state.activated_rules,
             disabled_rules=state.disabled_rules,
+            message_count=message_count,
         )
 
 
@@ -279,7 +284,9 @@ async def list_sessions(_token: str = Depends(_verify_token)) -> list[SessionInf
     for sid in _session_mgr.list_sessions():
         state = _session_mgr.load_state(sid)
         if state:
-            results.append(SessionInfo.from_state(state))
+            events = _session_mgr.load_events(sid)
+            message_count = sum(1 for e in events if e.get("role") == "user")
+            results.append(SessionInfo.from_state(state, message_count=message_count))
     return results
 
 
@@ -353,6 +360,7 @@ def _build_deps(
     *,
     verbose: bool = True,
     tool_call_callback: Any = None,
+    domain_approval_callback: Any = None,
     usage_tracker: UsageTracker | None = None,
 ) -> Deps:
     return Deps(
@@ -365,6 +373,7 @@ def _build_deps(
         agent_model=_agent_model,
         verbose=verbose,
         tool_call_callback=tool_call_callback,
+        domain_approval_callback=domain_approval_callback,
         usage_tracker=usage_tracker or _session_mgr.load_usage(session_state.session_id),
         sandbox=_sandbox_mgr,
         activated_skills=[],
@@ -441,14 +450,16 @@ def _handle_slash_command(command: str, deps: Deps) -> CommandResult | None:
         return CommandResult(command="enable", data={"rule_id": arg, "message": f"Rule '{arg}' re-enabled"})
 
     if cmd == "/session":
+        session_id = deps.session_state.session_id
         return CommandResult(
             command="session",
             data={
-                "session_id": deps.session_state.session_id,
+                "session_id": session_id,
                 "channel_type": deps.session_state.channel_type,
                 "activated_rules": deps.session_state.activated_rules,
                 "disabled_rules": deps.session_state.disabled_rules,
                 "approved_credentials": deps.session_state.approved_credentials,
+                "allowed_domains": deps.sandbox.get_domain_info(session_id),
             },
         )
 
@@ -509,7 +520,34 @@ async def chat_ws(
         task = asyncio.create_task(_send_and_cleanup())
         pending_sends.add(task)
 
-    deps = _build_deps(session_state, verbose=verbose, tool_call_callback=send_tool_call_info)
+    async def request_domain_approval(pending: DomainApprovalPending) -> DomainDecision:
+        """Send a proxy domain approval request to the client and wait for the response."""
+        await _send(
+            websocket,
+            ProxyApprovalRequest(
+                request_id=pending.request_id,
+                domain=pending.domain,
+                command=pending.command,
+            ),
+        )
+        while True:
+            raw = await websocket.receive_json()
+            try:
+                msg = parse_client_message(raw)
+            except (ValueError, Exception):
+                continue
+            if isinstance(msg, ProxyApprovalResponse) and msg.request_id == pending.request_id:
+                return DomainDecision(msg.decision)
+            # Any other message while we're waiting for domain approval is unexpected;
+            # log it and keep waiting — the approval must be resolved first.
+            logger.warning(f"Unexpected WS message while waiting for proxy domain approval: {msg}")
+
+    deps = _build_deps(
+        session_state,
+        verbose=verbose,
+        tool_call_callback=send_tool_call_info,
+        domain_approval_callback=request_domain_approval,
+    )
 
     async with _session_connection(session_id) as session_lock:
         try:
@@ -578,6 +616,7 @@ async def chat_ws(
                                 fresh_state,
                                 verbose=verbose,
                                 tool_call_callback=send_tool_call_info,
+                                domain_approval_callback=request_domain_approval,
                                 usage_tracker=tracker,
                             )
                         message_history = _session_mgr.load_history(session_id)

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import difflib
 from pathlib import Path
 from typing import Any
@@ -10,6 +12,7 @@ from pydantic_ai import Agent, ApprovalRequired, DeferredToolRequests, RunContex
 from carapace.config import load_workspace_file
 from carapace.memory import MemoryStore
 from carapace.models import Deps, OperationClassification, RuleCheckResult
+from carapace.sandbox.proxy import DomainDecision
 from carapace.sandbox.runtime import SkillVenvError
 from carapace.security.classifier import classify_operation
 from carapace.security.engine import check_rules
@@ -357,11 +360,35 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
         if not ctx.tool_call_approved:
             await _gate(ctx, "exec", {"command": command})
 
-        return await ctx.deps.sandbox.exec_command(
-            ctx.deps.session_state.session_id,
-            command,
-            timeout=timeout,
-        )
+        session_id = ctx.deps.session_state.session_id
+
+        # Start the exec and concurrently route any proxy domain approval
+        # requests that arrive while the sandbox command is running.
+        exec_task = asyncio.create_task(ctx.deps.sandbox.exec_command(session_id, command, timeout))
+        try:
+            while not exec_task.done():
+                approval_task = asyncio.create_task(ctx.deps.sandbox.next_domain_approval(session_id))
+                done, _ = await asyncio.wait({exec_task, approval_task}, return_when=asyncio.FIRST_COMPLETED)
+                if exec_task in done:
+                    approval_task.cancel()
+                    with contextlib.suppress(asyncio.CancelledError):
+                        await approval_task
+                    break
+                # An approval request arrived while exec is still running.
+                pending_req = approval_task.result()
+                if ctx.deps.domain_approval_callback is not None:
+                    decision = await ctx.deps.domain_approval_callback(pending_req)
+                else:
+                    logger.warning(f"No domain_approval_callback configured, denying {pending_req.domain}")
+                    decision = DomainDecision.DENY
+                ctx.deps.sandbox.resolve_domain_approval(pending_req.request_id, decision)
+        except BaseException:
+            exec_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await exec_task
+            raise
+
+        return exec_task.result()
 
     # --- Memory ---
 

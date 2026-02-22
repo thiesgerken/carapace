@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from datetime import datetime
 from decimal import Decimal
 from enum import Enum
@@ -12,6 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from pydantic_ai.usage import RunUsage
 
 from carapace.sandbox.manager import SandboxManager
+from carapace.sandbox.proxy import DomainApprovalPending, DomainDecision
 
 # --- Rules ---
 
@@ -273,4 +274,5 @@ class Deps(BaseModel):
     agent_model: Any = None
     verbose: bool = True
     tool_call_callback: Callable[[str, dict[str, Any], str], None] | None = None
+    domain_approval_callback: Callable[[DomainApprovalPending], Awaitable[DomainDecision]] | None = None
     usage_tracker: Annotated[UsageTracker, Field(default_factory=UsageTracker)]
