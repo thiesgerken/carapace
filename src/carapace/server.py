@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -644,6 +645,8 @@ async def chat_ws(
             logger.info(f"Client disconnected from session {session_id} (code={exc.code})")
         except Exception as exc:
             logger.exception(f"Unexpected WebSocket error in session {session_id}: {exc}")
+            with contextlib.suppress(Exception):
+                await websocket.close(code=1011)
         finally:
             logger.debug(f"WebSocket cleanup for session {session_id}")
             for task in pending_sends:

@@ -30,6 +30,7 @@ def _setup_server(tmp_path):
     srv._skill_catalog = registry.scan()
     srv._agent_model = None
     srv._sandbox_mgr = MagicMock(spec=SandboxManager)
+    srv._sandbox_mgr.get_domain_info.return_value = []
     ensure_token(tmp_path)
 
 
