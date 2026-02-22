@@ -28,9 +28,11 @@ class SandboxManager:
         base_image: str = "carapace-sandbox:latest",
         network_name: str = "carapace-sandbox",
         idle_timeout_minutes: int = 15,
+        host_data_dir: Path | None = None,
     ) -> None:
         self._runtime = runtime
         self._data_dir = data_dir
+        self._host_data_dir = host_data_dir
         self._base_image = base_image
         self._network_name = network_name
         self._idle_timeout = idle_timeout_minutes * 60
@@ -40,6 +42,8 @@ class SandboxManager:
             f"SandboxManager initialized (image={base_image}, "
             + f"network={network_name}, idle_timeout={idle_timeout_minutes}m)"
         )
+        if host_data_dir:
+            logger.info(f"Host data dir override: {host_data_dir} (container sees {data_dir})")
 
     async def ensure_session(self, session_id: str) -> SessionContainer:
         if session_id in self._sessions:
@@ -83,6 +87,22 @@ class SandboxManager:
         logger.info(f"Created sandbox container {container_id[:12]} for session {session_id} (IP: {ip})")
         return sc
 
+    def _host_path(self, path: Path) -> str:
+        """Translate a container-local path to its host-side equivalent for bind mounts.
+
+        When running inside Docker (DooD), the Docker daemon needs host-absolute
+        paths but we only see the container-internal mount point.  If
+        ``_host_data_dir`` is set we rewrite the ``_data_dir`` prefix accordingly.
+        """
+        resolved = path.resolve()
+        if self._host_data_dir is None:
+            return str(resolved)
+        try:
+            rel = resolved.relative_to(self._data_dir.resolve())
+        except ValueError:
+            return str(resolved)
+        return str(self._host_data_dir / rel)
+
     def _build_mounts(self, session_id: str) -> list[Mount]:
         mounts: list[Mount] = []
 
@@ -91,7 +111,7 @@ class SandboxManager:
             if path.exists():
                 mounts.append(
                     Mount(
-                        source=str(path.resolve()),
+                        source=self._host_path(path),
                         target=f"/workspace/{filename}",
                         read_only=True,
                     )
@@ -101,7 +121,7 @@ class SandboxManager:
         if memory_dir.exists():
             mounts.append(
                 Mount(
-                    source=str(memory_dir.resolve()),
+                    source=self._host_path(memory_dir),
                     target="/workspace/memory",
                     read_only=True,
                 )
@@ -110,7 +130,7 @@ class SandboxManager:
         session_skills = self._data_dir / "sessions" / session_id / "skills"
         mounts.append(
             Mount(
-                source=str(session_skills.resolve()),
+                source=self._host_path(session_skills),
                 target="/workspace/skills",
                 read_only=False,
             )
@@ -119,7 +139,7 @@ class SandboxManager:
         session_tmp = self._data_dir / "sessions" / session_id / "tmp"
         mounts.append(
             Mount(
-                source=str(session_tmp.resolve()),
+                source=self._host_path(session_tmp),
                 target="/workspace/tmp",
                 read_only=False,
             )
@@ -196,7 +216,7 @@ class SandboxManager:
             image=self._base_image,
             name=build_name,
             labels={"carapace.build": "true", "carapace.session": session_id},
-            mounts=[Mount(source=str(skill_host_path.resolve()), target="/build", read_only=False)],
+            mounts=[Mount(source=self._host_path(skill_host_path), target="/build", read_only=False)],
             command=["sleep", "infinity"],
         )
 

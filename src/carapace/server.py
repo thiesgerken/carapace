@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated, Any
@@ -128,12 +129,16 @@ async def lifespan(app: FastAPI):
     if not _config.sandbox.base_image:
         runtime.build_image(get_sandbox_dockerfile(), _BUILTIN_SANDBOX_IMAGE)
 
+    host_data_dir_env = os.environ.get("CARAPACE_HOST_DATA_DIR")
+    host_data_dir = Path(host_data_dir_env) if host_data_dir_env else None
+
     _sandbox_mgr = SandboxManager(
         runtime=runtime,
         data_dir=_data_dir,
         base_image=base_image,
         network_name=_config.sandbox.network_name,
         idle_timeout_minutes=_config.sandbox.idle_timeout_minutes,
+        host_data_dir=host_data_dir,
     )
     logger.info(f"Sandbox enabled (image={base_image}, network={_config.sandbox.network_name})")
 
