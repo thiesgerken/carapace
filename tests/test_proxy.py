@@ -38,7 +38,7 @@ class TestDomainMatches:
         assert domain_matches("api.example.com", "*.example.com")
 
 
-# ── ProxyServer._check_domain ───────────────────────────────────────
+# ── ProxyServer._is_allowed ─────────────────────────────────────────
 
 
 class TestProxyCheckDomain:
@@ -50,23 +50,23 @@ class TestProxyCheckDomain:
 
     def test_allowed_exact(self):
         proxy = self._make_proxy({"pypi.org"})
-        assert proxy._check_domain("sess-1", "pypi.org")
+        assert proxy._is_allowed("sess-1", "pypi.org")
 
     def test_denied(self):
         proxy = self._make_proxy({"pypi.org"})
-        assert not proxy._check_domain("sess-1", "evil.com")
+        assert not proxy._is_allowed("sess-1", "evil.com")
 
     def test_allowed_wildcard(self):
         proxy = self._make_proxy({"*.googleapis.com"})
-        assert proxy._check_domain("sess-1", "storage.googleapis.com")
+        assert proxy._is_allowed("sess-1", "storage.googleapis.com")
 
     def test_empty_allowlist(self):
         proxy = self._make_proxy(set())
-        assert not proxy._check_domain("sess-1", "anything.com")
+        assert not proxy._is_allowed("sess-1", "anything.com")
 
     def test_case_insensitive(self):
         proxy = self._make_proxy({"PyPI.org"})
-        assert proxy._check_domain("sess-1", "pypi.org")
+        assert proxy._is_allowed("sess-1", "pypi.org")
 
 
 # ── ProxyServer URL parsing ─────────────────────────────────────────
