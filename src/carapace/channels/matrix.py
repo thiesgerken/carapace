@@ -30,7 +30,7 @@ _APPROVE_REACTIONS = {"✅", "👍", "✓", "✔", "✔️", "👍🏻", "👍�
 _DENY_REACTIONS = {"❌", "👎", "✗", "🚫", "👎🏻", "👎🏼", "👎🏽", "👎🏾", "👎🏿"}
 
 # Commands that mean "approve" or "deny"
-_APPROVE_COMMANDS = {"/approve", "/yes"}
+_APPROVE_COMMANDS = {"/allow", "/yes"}
 _DENY_COMMANDS = {"/deny", "/no"}
 
 # Typing notification interval in seconds
@@ -67,18 +67,22 @@ def _format_command_result_text(result: CommandResult) -> str:
             return data.get("message", "")
 
         case "session":
+            activated = data.get("activated_rules") or []
+            disabled = data.get("disabled_rules") or []
+            creds = data.get("approved_credentials") or []
+            domain_entries: list[dict[str, str]] = data.get("allowed_domains") or []
+            if domain_entries:
+                domains_str = "\n" + "\n".join(f"  - `{e['domain']}` ({e['scope']})" for e in domain_entries)
+            else:
+                domains_str = " (none)"
             lines = [
                 f"**Session:** `{data.get('session_id', '?')}`",
                 f"**Channel:** {data.get('channel_type', '?')}",
+                f"**Activated rules:** {', '.join(activated) if activated else '(none)'}",
+                f"**Disabled rules:** {', '.join(disabled) if disabled else '(none)'}",
+                f"**Approved credentials:** {', '.join(creds) if creds else '(none)'}",
+                f"**Allowed domains:**{domains_str}",
             ]
-            if activated := data.get("activated_rules"):
-                lines.append(f"**Activated rules:** {', '.join(activated)}")
-            if disabled := data.get("disabled_rules"):
-                lines.append(f"**Disabled rules:** {', '.join(disabled)}")
-            if creds := data.get("approved_credentials"):
-                lines.append(f"**Approved credentials:** {', '.join(creds)}")
-            if domains := data.get("allowed_domains"):
-                lines.append(f"**Allowed domains:** {json.dumps(domains, indent=2)}")
             return "\n".join(lines)
 
         case "skills":
@@ -149,7 +153,7 @@ def _format_approval_request(req: ApprovalRequest) -> str:
     parts += [
         f"**Arguments:**\n```json\n{args_text}\n```",
         "",
-        "React ✅ or type `/approve` / `/yes` to allow. React ❌ or type `/deny` / `/no` to deny.",
+        "React ✅ or type `/allow` / `/yes` to allow. React ❌ or type `/deny` / `/no` to deny.",
     ]
     return "\n".join(parts)
 
@@ -508,9 +512,12 @@ class MatrixChannel:
             await self._handle_command(room_id, session_id, body, event.sender)
             return
 
-        # Regular message — run agent turn (serialised per room)
-        async with self._room_lock(room_id):
-            await self._run_turn(room_id, session_id, body)
+        # Regular message — run agent turn as a background task so the sync
+        # loop callback returns immediately and keeps receiving new events
+        # (e.g. approval commands typed while the agent is waiting).
+        task = asyncio.create_task(self._run_turn_locked(room_id, session_id, body))
+        self._background_tasks.add(task)
+        task.add_done_callback(self._background_tasks.discard)
 
     # ------------------------------------------------------------------
     # Slash commands
@@ -581,7 +588,7 @@ class MatrixChannel:
                     "- `/memory` — List memory files\n"
                     "- `/usage` — Show token usage\n"
                     "- `/verbose` — Toggle tool call notifications\n"
-                    "- `/approve` / `/yes` — Approve tool call or allow domain (15 min)\n"
+                    "- `/allow` / `/yes` — Approve tool call or allow domain (15 min)\n"
                     "- `/deny` / `/no` — Deny tool call or block domain\n"
                     "- `/allow-once` — Allow domain access once (this call only)\n"
                     "- `/allow-all-once` — Allow all internet once (this call only)\n"
@@ -633,6 +640,11 @@ class MatrixChannel:
     # ------------------------------------------------------------------
     # Agent turn
     # ------------------------------------------------------------------
+
+    async def _run_turn_locked(self, room_id: str, session_id: str, body: str) -> None:
+        """Acquire the per-room lock and run one agent turn."""
+        async with self._room_lock(room_id):
+            await self._run_turn(room_id, session_id, body)
 
     async def _run_turn(self, room_id: str, session_id: str, user_input: str) -> None:
         """Run one agent turn for the given room/session."""

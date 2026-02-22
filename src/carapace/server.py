@@ -742,7 +742,17 @@ def _setup_logging() -> None:
         log.handlers = [_InterceptHandler()]
         log.propagate = False
 
-    for name in ("httpcore", "httpx", "docker", "anthropic", "websockets", "websockets.server", "urllib3"):
+    for name in (
+        "httpcore",
+        "httpx",
+        "docker",
+        "anthropic",
+        "websockets",
+        "websockets.server",
+        "urllib3",
+        "nio",
+        "markdown.core",
+    ):
         logging.getLogger(name).setLevel(logging.WARNING)
 
     def _abbrev_patcher(record: loguru.Record) -> None:
