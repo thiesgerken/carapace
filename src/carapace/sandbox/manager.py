@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import shutil
 import time
 from pathlib import Path
@@ -10,6 +11,8 @@ from pydantic import BaseModel, Field
 
 from carapace.sandbox.runtime import ContainerConfig, ContainerGoneError, ContainerRuntime, Mount, SkillVenvError
 
+_SKILL_NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]*$")
+
 
 class SessionContainer(BaseModel):
     container_id: str
@@ -17,7 +20,18 @@ class SessionContainer(BaseModel):
     ip_address: str | None = None
     created_at: Annotated[float, Field(default_factory=time.time)]
     last_used: Annotated[float, Field(default_factory=time.time)]
-    activated_skills: Annotated[list[str], Field(default_factory=list)]
+    activated_skills: list[str] = []
+
+
+def _validate_skill_name(skill_name: str) -> str | None:
+    """Return an error message if ``skill_name`` is not a safe directory name; ``None`` if valid.
+
+    Must be nonempty, start with an alphanumeric character, and contain only
+    alphanumerics, hyphens, underscores, or dots.
+    """
+    if not skill_name or not _SKILL_NAME_RE.match(skill_name):
+        return f"Invalid skill name: {skill_name!r}"
+    return None
 
 
 class SandboxManager:
@@ -167,6 +181,9 @@ class SandboxManager:
         return output or "(no output)"
 
     async def activate_skill(self, session_id: str, skill_name: str) -> str:
+        if err := _validate_skill_name(skill_name):
+            return err
+
         sc = await self.ensure_session(session_id)
 
         master_skill_dir = self._data_dir / "skills" / skill_name
@@ -208,6 +225,9 @@ class SandboxManager:
 
     async def _build_skill_venv(self, session_id: str, skill_name: str) -> None:
         """Build a venv in an ephemeral build container. Raises SkillVenvError on failure."""
+        if err := _validate_skill_name(skill_name):
+            raise SkillVenvError(err)
+
         skill_host_path = self._data_dir / "sessions" / session_id / "skills" / skill_name
         build_name = f"carapace-build-{session_id[:8]}-{skill_name}"
 
@@ -243,6 +263,9 @@ class SandboxManager:
                 await self._runtime.remove(container_id)
 
     async def save_skill(self, session_id: str, skill_name: str) -> str:
+        if err := _validate_skill_name(skill_name):
+            return err
+
         session_skill_dir = self._data_dir / "sessions" / session_id / "skills" / skill_name
         if not session_skill_dir.exists():
             logger.warning(f"Cannot save skill '{skill_name}' — not found in session {session_id}")

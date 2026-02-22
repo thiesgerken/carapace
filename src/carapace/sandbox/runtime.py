@@ -1,8 +1,6 @@
-from __future__ import annotations
+from typing import Protocol
 
-from typing import Annotated, Protocol
-
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 
 class ContainerGoneError(Exception):
@@ -22,11 +20,11 @@ class Mount(BaseModel):
 class ContainerConfig(BaseModel):
     image: str
     name: str
-    labels: Annotated[dict[str, str], Field(default_factory=dict)]
-    mounts: Annotated[list[Mount], Field(default_factory=list)]
+    labels: dict[str, str] = {}
+    mounts: list[Mount] = []
     network: str = ""
     command: str | list[str] | None = None
-    environment: Annotated[dict[str, str], Field(default_factory=dict)]
+    environment: dict[str, str] = {}
 
 
 class ExecResult(BaseModel):
