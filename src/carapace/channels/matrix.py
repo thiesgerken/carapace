@@ -9,6 +9,8 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import time
+from pathlib import Path
 from typing import Any
 
 import markdown as md
@@ -234,30 +236,26 @@ class MatrixChannel:
 
     async def start(self) -> None:
         """Authenticate and start the sync loop."""
-        token = os.environ.get("CARAPACE_MATRIX_TOKEN", "")
-        if not token:
-            logger.error("Matrix channel enabled but CARAPACE_MATRIX_TOKEN is not set — skipping")
+        data_dir = self._session_mgr.sessions_dir.parent
+        token_file = data_dir / "matrix_token.json"
+
+        if not await self._authenticate(token_file):
             return
 
-        # Extract device_id from token if stored as "token:device_id"
-        device_id: str | None = None
-        if ":" in token:
-            token, device_id = token.split(":", 1)
-
-        self._client.restore_login(
-            user_id=self._config.user_id,
-            device_id=device_id or "",
-            access_token=token,
-        )
         logger.info(f"Matrix channel logged in as {self._config.user_id} on {self._config.homeserver}")
 
         # Initial sync: warm up room → session mapping.
         # Done BEFORE registering callbacks so backlog events are not dispatched.
-        import time
-
         self._started_at_ms = int(time.time() * 1000)
         try:
             resp = await self._client.sync(timeout=5000, full_state=True)
+            if isinstance(resp, nio.SyncError) and resp.status_code == "M_UNKNOWN_TOKEN":
+                logger.warning("Matrix: stored token rejected (M_UNKNOWN_TOKEN), re-authenticating with password")
+                token_file.unlink(missing_ok=True)
+                if not await self._password_login(token_file):
+                    logger.error("Matrix: re-authentication failed — skipping channel")
+                    return
+                resp = await self._client.sync(timeout=5000, full_state=True)
             if isinstance(resp, nio.SyncResponse):
                 for room_id in resp.rooms.join:
                     self._get_or_create_session(room_id)
@@ -284,6 +282,62 @@ class MatrixChannel:
                 await asyncio.wait_for(asyncio.shield(self._sync_task), timeout=5)
         await self._client.close()
         logger.info("Matrix channel stopped")
+
+    # ------------------------------------------------------------------
+    # Authentication helpers
+    # ------------------------------------------------------------------
+
+    def _load_token(self, token_file: Path) -> tuple[str, str | None]:
+        """Return (access_token, device_id) from persisted file or env var, or ("", None)."""
+        if token_file.exists():
+            try:
+                stored = json.loads(token_file.read_text())
+                token = stored.get("access_token", "")
+                device_id: str | None = stored.get("device_id")
+                if token:
+                    logger.debug("Matrix: using persisted access token")
+                    return token, device_id
+            except Exception as exc:
+                logger.warning(f"Matrix: could not read persisted token file: {exc}")
+
+        raw = os.environ.get("CARAPACE_MATRIX_TOKEN", "")
+        if raw:
+            device_id = None
+            if ":" in raw:
+                raw, dev = raw.split(":", 1)
+                device_id = dev
+            return raw, device_id
+
+        return "", None
+
+    async def _password_login(self, token_file: Path) -> bool:
+        """Log in with CARAPACE_MATRIX_PASSWORD, persist the new token. Returns True on success."""
+        password = os.environ.get("CARAPACE_MATRIX_PASSWORD", "")
+        if not password:
+            logger.error("Matrix channel: no valid token available and CARAPACE_MATRIX_PASSWORD is not set — skipping")
+            return False
+
+        resp = await self._client.login(password, device_name=self._config.device_name)
+        if isinstance(resp, nio.LoginError):
+            logger.error(f"Matrix password login failed: {resp.message}")
+            return False
+
+        token_file.write_text(json.dumps({"access_token": resp.access_token, "device_id": resp.device_id}))
+        logger.info(f"Matrix: password login successful, token persisted to {token_file}")
+        return True
+
+    async def _authenticate(self, token_file: Path) -> bool:
+        """Resolve credentials and configure the client. Returns True on success."""
+        token, device_id = self._load_token(token_file)
+        if token:
+            self._client.restore_login(
+                user_id=self._config.user_id,
+                device_id=device_id or "",
+                access_token=token,
+            )
+            return True
+
+        return await self._password_login(token_file)
 
     # ------------------------------------------------------------------
     # Internal helpers
