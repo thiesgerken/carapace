@@ -109,11 +109,7 @@ class TestSandboxManagerAllowlists:
         from carapace.sandbox.manager import SandboxManager
 
         runtime = MagicMock(spec=ContainerRuntime)
-        return SandboxManager(
-            runtime=runtime,
-            data_dir=tmp_path,
-            proxy_url="http://172.18.0.2:3128",
-        )
+        return SandboxManager(runtime=runtime, data_dir=tmp_path)
 
     def test_empty_by_default(self, tmp_path: Path):
         mgr = self._make_manager(tmp_path)
@@ -138,17 +134,14 @@ class TestSandboxManagerAllowlists:
 
     def test_proxy_env_includes_token(self, tmp_path: Path):
         mgr = self._make_manager(tmp_path)
-        env = mgr._build_proxy_env("my-secret-token")
+        env = mgr._build_proxy_env("my-secret-token", "http://172.18.0.2:3128")
         assert env["HTTP_PROXY"] == "http://my-secret-token@172.18.0.2:3128"
         assert env["HTTPS_PROXY"] == "http://my-secret-token@172.18.0.2:3128"
         assert "172.18.0.2" in env["NO_PROXY"]
 
     def test_no_proxy_env_when_empty(self, tmp_path: Path):
-        from carapace.sandbox.manager import SandboxManager
-
-        runtime = MagicMock(spec=ContainerRuntime)
-        mgr = SandboxManager(runtime=runtime, data_dir=tmp_path)
-        assert mgr._build_proxy_env("tok") == {}
+        mgr = self._make_manager(tmp_path)
+        assert mgr._build_proxy_env("tok", "") == {}
 
     def test_token_lookup(self, tmp_path: Path):
         mgr = self._make_manager(tmp_path)
