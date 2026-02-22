@@ -70,10 +70,9 @@ class SandboxManager:
             )
             self._cleanup_tracking(session_id)
 
-        session_skills_dir = self._data_dir / "sessions" / session_id / "skills"
-        session_skills_dir.mkdir(parents=True, exist_ok=True)
-        session_tmp_dir = self._data_dir / "sessions" / session_id / "tmp"
-        session_tmp_dir.mkdir(parents=True, exist_ok=True)
+        session_workspace = self._data_dir / "sessions" / session_id / "workspace"
+        (session_workspace / "skills").mkdir(parents=True, exist_ok=True)
+        (session_workspace / "tmp").mkdir(parents=True, exist_ok=True)
 
         mounts = self._build_mounts(session_id)
         config = ContainerConfig(
@@ -142,19 +141,18 @@ class SandboxManager:
                 )
             )
 
-        session_skills = self._data_dir / "sessions" / session_id / "skills"
+        session_workspace = self._data_dir / "sessions" / session_id / "workspace"
         mounts.append(
             Mount(
-                source=self._host_path(session_skills),
+                source=self._host_path(session_workspace / "skills"),
                 target="/workspace/skills",
                 read_only=False,
             )
         )
 
-        session_tmp = self._data_dir / "sessions" / session_id / "tmp"
         mounts.append(
             Mount(
-                source=self._host_path(session_tmp),
+                source=self._host_path(session_workspace / "tmp"),
                 target="/workspace/tmp",
                 read_only=False,
             )
@@ -192,7 +190,7 @@ class SandboxManager:
             logger.warning(f"Skill '{skill_name}' not found for session {session_id}")
             return f"Skill '{skill_name}' not found."
 
-        session_skill_dir = self._data_dir / "sessions" / session_id / "skills" / skill_name
+        session_skill_dir = self._data_dir / "sessions" / session_id / "workspace" / "skills" / skill_name
 
         if session_skill_dir.exists():
             shutil.rmtree(session_skill_dir)
@@ -229,7 +227,7 @@ class SandboxManager:
         if err := _validate_skill_name(skill_name):
             raise SkillVenvError(err)
 
-        skill_host_path = self._data_dir / "sessions" / session_id / "skills" / skill_name
+        skill_host_path = self._data_dir / "sessions" / session_id / "workspace" / "skills" / skill_name
         build_name = f"carapace-build-{session_id[:8]}-{skill_name}"
 
         logger.info(f"Building venv for skill '{skill_name}' (session {session_id})")
@@ -267,7 +265,7 @@ class SandboxManager:
         if err := _validate_skill_name(skill_name):
             return err
 
-        session_skill_dir = self._data_dir / "sessions" / session_id / "skills" / skill_name
+        session_skill_dir = self._data_dir / "sessions" / session_id / "workspace" / "skills" / skill_name
         if not session_skill_dir.exists():
             logger.warning(f"Cannot save skill '{skill_name}' — not found in session {session_id}")
             return f"Skill '{skill_name}' not found in session."
