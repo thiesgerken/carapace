@@ -328,6 +328,7 @@ def _build_deps(
         tool_call_callback=tool_call_callback,
         usage_tracker=usage_tracker or _session_mgr.load_usage(session_state.session_id),
         sandbox=_sandbox_mgr,
+        activated_skills=[],
     )
 
 

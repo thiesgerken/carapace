@@ -254,8 +254,8 @@ class Deps(BaseModel):
     session_state: SessionState
     rules: list[Rule]
     sandbox: SandboxManager
-    skill_catalog: Annotated[list[SkillInfo], Field(default_factory=list)]
-    activated_skills: Annotated[list[str], Field(default_factory=list)]
+    skill_catalog: list[SkillInfo] = []
+    activated_skills: list[str] = []
     classifier_model: str = "openai:gpt-4o-mini"
     agent_model: Any = None
     verbose: bool = True
