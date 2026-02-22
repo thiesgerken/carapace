@@ -12,14 +12,6 @@ services:
       - default
       - carapace-sandbox
 
-  carapace-sandbox-image:
-    build:
-      context: ./containers/sandbox
-    image: carapace-sandbox:latest
-    entrypoint: ["true"]
-    profiles:
-      - build
-
   frontend:
     build: ./frontend
     ports:

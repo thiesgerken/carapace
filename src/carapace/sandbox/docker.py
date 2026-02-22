@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import io
 from pathlib import Path
 
 import docker
@@ -42,6 +43,17 @@ class DockerRuntime:
         self._client = _connect()
         self._ensured_networks: set[str] = set()
         logger.info("Docker runtime connected")
+
+    def build_image(self, dockerfile_content: str, tag: str) -> None:
+        """Build a Docker image from Dockerfile content and tag it."""
+        logger.info(f"Building sandbox image '{tag}' from bundled Dockerfile…")
+        fileobj = io.BytesIO(dockerfile_content.encode())
+        _, logs = self._client.images.build(fileobj=fileobj, tag=tag, rm=True)
+        for chunk in logs:  # type: ignore[union-attr]
+            msg = chunk.get("stream", "") if isinstance(chunk, dict) else ""
+            if line := str(msg).strip():
+                logger.debug(f"[docker build] {line}")
+        logger.info(f"Sandbox image '{tag}' built successfully")
 
     def _ensure_network(self, name: str) -> None:
         if name in self._ensured_networks:

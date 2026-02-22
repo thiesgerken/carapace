@@ -22,6 +22,13 @@ _SEED_SKILLS: list[tuple[str, str]] = [
 ]
 
 
+def get_sandbox_dockerfile() -> str:
+    """Return the content of the bundled sandbox Dockerfile."""
+    source = _ASSETS.joinpath("Dockerfile")
+    with as_file(source) as path:
+        return path.read_text(encoding="utf-8")
+
+
 def _copy_asset(asset_path: str, target: Path) -> None:
     source = _ASSETS.joinpath(*asset_path.split("/"))
     with as_file(source) as src:

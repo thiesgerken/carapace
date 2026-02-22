@@ -123,7 +123,7 @@ class CredentialsConfig(BaseModel):
 
 
 class SandboxConfig(BaseModel):
-    base_image: str = "carapace-sandbox:latest"
+    base_image: str = ""
     idle_timeout_minutes: int = 15
     network_name: str = "carapace-sandbox"
 

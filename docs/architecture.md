@@ -212,7 +212,7 @@ credentials:
     # auth token via CARAPACE_VAULT_TOKEN env var
 
 sandbox:
-  base_image: alpine:3.19
+  # base_image: ""  # leave empty to auto-build from bundled Dockerfile
   idle_timeout_minutes: 15
   default_network: false
 

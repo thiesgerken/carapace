@@ -22,7 +22,7 @@ from tenacity import retry_if_exception_type, stop_after_attempt, wait_exponenti
 
 from carapace.agent import create_agent
 from carapace.auth import ensure_token
-from carapace.bootstrap import ensure_data_dir
+from carapace.bootstrap import ensure_data_dir, get_sandbox_dockerfile
 from carapace.config import get_data_dir, load_config, load_rules
 from carapace.memory import MemoryStore
 from carapace.models import Config, Deps, Rule, SessionState, UsageTracker
@@ -43,6 +43,8 @@ from carapace.ws_models import (
 )
 
 load_dotenv()
+
+_BUILTIN_SANDBOX_IMAGE = "carapace-sandbox:latest"
 
 # --- Shared state populated in lifespan ---
 
@@ -121,14 +123,19 @@ async def lifespan(app: FastAPI):
     _agent_model = _create_anthropic_model(_config.agent.model)
 
     runtime = DockerRuntime()
+
+    base_image = _config.sandbox.base_image or _BUILTIN_SANDBOX_IMAGE
+    if not _config.sandbox.base_image:
+        runtime.build_image(get_sandbox_dockerfile(), _BUILTIN_SANDBOX_IMAGE)
+
     _sandbox_mgr = SandboxManager(
         runtime=runtime,
         data_dir=_data_dir,
-        base_image=_config.sandbox.base_image,
+        base_image=base_image,
         network_name=_config.sandbox.network_name,
         idle_timeout_minutes=_config.sandbox.idle_timeout_minutes,
     )
-    logger.info(f"Sandbox enabled (image={_config.sandbox.base_image}, network={_config.sandbox.network_name})")
+    logger.info(f"Sandbox enabled (image={base_image}, network={_config.sandbox.network_name})")
 
     token = ensure_token(_data_dir)
 
