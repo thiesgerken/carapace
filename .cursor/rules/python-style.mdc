@@ -10,6 +10,8 @@ alwaysApply: false
 
 Code is craft. Favor elegance, clarity, and expressiveness. Write code that reads like well-structured thought.
 
+Feel free to tell the user that a given request cannot easily be implemented without adding technical debt, and help him to find a solution that doesn't suck.
+
 ## Type Everything
 
 - All function signatures must have full type annotations (params + return).
