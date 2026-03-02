@@ -2,7 +2,7 @@
 
 ## Project overview
 
-Carapace is a security-first personal AI agent with rule-based information flow control. Python 3.12+, async, Pydantic AI.
+Carapace is a security-first personal AI agent with LLM-powered security gating. Python 3.12+, async, Pydantic AI.
 
 ## Setup commands
 
@@ -42,14 +42,15 @@ src/carapace/          # main package
   skills.py            # skill registry
   credentials.py       # password-manager-backed credentials
   security/
-    classifier.py      # LLM-based operation classifier
-    engine.py          # rule evaluation engine
+    __init__.py        # public API: evaluate(), evaluate_domain(), safe-list
+    bouncer.py         # LLM-powered security agent (shadow conversation)
+    context.py         # action log entries, bouncer verdict, session security state
 frontend/              # Next.js web UI (React 19, Tailwind CSS 4)
   src/app/             # Next.js app router pages and layout
   src/components/      # React components (chat, sidebar, approval flow)
   src/hooks/           # custom hooks (WebSocket connection)
 tests/                 # pytest tests
-data/                  # runtime data directory (config, rules, memory, sessions)
+data/                  # runtime data directory (config, security policy, memory, sessions)
 ```
 
 ## Testing
@@ -68,8 +69,10 @@ data/                  # runtime data directory (config, rules, memory, sessions
 
 ## Key conventions
 
-- Security rules are plain-English YAML evaluated by an LLM at runtime
-- Every tool call goes through a classification + rule-check gate (`_gate` in `agent.py`)
+- Security policy is a natural-language `SECURITY.md` that becomes the bouncer agent's system prompt
+- Every tool call goes through a safe-list check, then an LLM bouncer gate (`security.evaluate()`)
+- The bouncer maintains a persistent shadow conversation per session for contextual decisions
+- An append-only action log tracks all agent actions, user messages, and security decisions
 - Skills follow the open [AgentSkills](https://agentskills.io/) format
 - All runtime state lives under `$CARAPACE_DATA_DIR` (defaults to `./data`)
 - Secrets come from a password manager, never stored in the repo

@@ -37,11 +37,9 @@ def test_list_sessions(tmp_path: Path):
 def test_save_and_resume_state(tmp_path: Path):
     mgr = SessionManager(tmp_path)
     state = mgr.create_session()
-    state.activated_rules.append("rule-1")
-    state.disabled_rules.append("rule-2")
+    state.approved_credentials.append("test-cred")
     mgr.save_state(state)
 
     resumed = mgr.resume_session(state.session_id)
     assert resumed is not None
-    assert "rule-1" in resumed.activated_rules
-    assert "rule-2" in resumed.disabled_rules
+    assert "test-cred" in resumed.approved_credentials

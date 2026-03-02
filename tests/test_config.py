@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from carapace.config import load_config, load_rules
+from carapace.config import load_config, load_security_md
 
 
 def test_load_config_defaults(tmp_path: Path):
@@ -13,28 +13,19 @@ def test_load_config_defaults(tmp_path: Path):
 
 def test_load_config_from_yaml(tmp_path: Path):
     (tmp_path / "config.yaml").write_text(
-        "agent:\n  model: anthropic:claude-sonnet-4-5\n  classifier_model: anthropic:claude-haiku-4-5\n"
+        "agent:\n  model: anthropic:claude-sonnet-4-5\n  bouncer_model: anthropic:claude-haiku-4-5\n"
     )
     cfg = load_config(tmp_path)
     assert cfg.agent.model == "anthropic:claude-sonnet-4-5"
-    assert cfg.agent.classifier_model == "anthropic:claude-haiku-4-5"
+    assert cfg.agent.bouncer_model == "anthropic:claude-haiku-4-5"
 
 
-def test_load_rules_empty(tmp_path: Path):
-    rules = load_rules(tmp_path)
-    assert rules == []
+def test_load_security_md_missing(tmp_path: Path):
+    result = load_security_md(tmp_path)
+    assert result == ""
 
 
-def test_load_rules_from_yaml(tmp_path: Path):
-    (tmp_path / "rules.yaml").write_text(
-        "rules:\n"
-        "  - id: test-rule\n"
-        "    trigger: always\n"
-        "    effect: require approval for all writes\n"
-        "    mode: approve\n"
-        "    description: Test rule\n"
-    )
-    rules = load_rules(tmp_path)
-    assert len(rules) == 1
-    assert rules[0].id == "test-rule"
-    assert rules[0].trigger == "always"
+def test_load_security_md(tmp_path: Path):
+    (tmp_path / "SECURITY.md").write_text("# Test Policy\nBe safe.")
+    result = load_security_md(tmp_path)
+    assert "Test Policy" in result

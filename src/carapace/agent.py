@@ -1,81 +1,35 @@
 from __future__ import annotations
 
-import asyncio
-import contextlib
 import difflib
 from pathlib import Path
 from typing import Any
 
 from loguru import logger
-from pydantic_ai import Agent, ApprovalRequired, DeferredToolRequests, RunContext
+from pydantic_ai import Agent, DeferredToolRequests, RunContext
 
+import carapace.security as security
 from carapace.config import load_workspace_file
 from carapace.memory import MemoryStore
-from carapace.models import Deps, OperationClassification, RuleCheckResult
-from carapace.sandbox.proxy import DomainDecision
+from carapace.models import Deps
 from carapace.sandbox.runtime import SkillVenvError
-from carapace.security.classifier import classify_operation
-from carapace.security.engine import check_rules
+from carapace.security.context import SkillActivatedEntry, ToolResultEntry
 from carapace.skills import SkillRegistry
 
 
-async def _gate(
-    ctx: RunContext[Deps],
-    tool_name: str,
-    args: dict[str, Any],
-    context: str = "",
-) -> tuple[OperationClassification, RuleCheckResult]:
-    """Classify an operation and check rules. Raises ApprovalRequired if needed."""
-    tracker = ctx.deps.usage_tracker
-    classification = await classify_operation(ctx.deps.classifier_model, tool_name, args, context, tracker)
-    result = await check_rules(
-        ctx.deps.classifier_model,
-        ctx.deps.rules,
-        ctx.deps.session_state,
-        classification,
-        tracker,
+async def _gate(ctx: RunContext[Deps], tool_name: str, args: dict[str, Any]) -> None:
+    """Delegate to the security module for tool call evaluation."""
+    await security.evaluate(
+        ctx.deps.session_state.session_id,
+        tool_name,
+        args,
+        usage_tracker=ctx.deps.usage_tracker,
+        verbose=ctx.deps.verbose,
+        tool_call_callback=ctx.deps.tool_call_callback,
     )
-    if ctx.deps.verbose:
-        args_parts = []
-        for k, v in args.items():
-            v_str = repr(v) if isinstance(v, str) else str(v)
-            if len(v_str) > 60:
-                v_str = v_str[:57] + "..."
-            args_parts.append(f"{k}={v_str}")
-        args_str = ", ".join(args_parts)
-        if len(args_str) > 200:
-            args_str = args_str[:197] + "..."
-        cats = ", ".join(classification.categories) if classification.categories else ""
-        rules_str = ", ".join(result.triggered_rules) if result.triggered_rules else ""
-        detail = f"[{classification.operation_type}]" if classification.operation_type else ""
-        if cats:
-            detail += f" ({cats})"
-        if rules_str:
-            detail += f" rules: {rules_str}"
-        if result.needs_approval:
-            detail += " -> approval required"
-
-        if ctx.deps.tool_call_callback:
-            ctx.deps.tool_call_callback(tool_name, args, detail)
-        else:
-            print(f"  \033[2m{tool_name}({args_str}) {detail}\033[0m")
-
-    if result.needs_approval:
-        raise ApprovalRequired(
-            metadata={
-                "tool": tool_name,
-                "args": args,
-                "classification": classification.model_dump(),
-                "triggered_rules": result.triggered_rules,
-                "descriptions": result.descriptions,
-            }
-        )
-    return classification, result
 
 
-def _resolve_path(data_dir, path: str) -> tuple[str | None, Path]:
+def _resolve_path(data_dir: Path, path: str) -> tuple[str | None, Path]:
     """Resolve a path within data_dir. Returns (error, resolved_path)."""
-
     full_path = (data_dir / path).resolve()
     if not str(full_path).startswith(str(data_dir.resolve())):
         return "Error: path escapes data directory", full_path
@@ -119,12 +73,7 @@ def build_system_prompt(deps: Deps) -> str:
         "Call `save_skill(skill_name)` to persist edits back to the master skill directory."
     )
 
-    parts.append(
-        "# Session Info\n"
-        f"Session ID: {deps.session_state.session_id}\n"
-        f"Activated rules: {deps.session_state.activated_rules or '(none)'}\n"
-        f"Disabled rules: {deps.session_state.disabled_rules or '(none)'}"
-    )
+    parts.append(f"# Session Info\nSession ID: {deps.session_state.session_id}")
 
     return "\n\n---\n\n".join(parts)
 
@@ -160,17 +109,14 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
         """
         registry = SkillRegistry(ctx.deps.data_dir / "skills")
 
-        # Parse carapace.yaml for network domain declarations
         carapace_cfg = registry.get_carapace_config(skill_name)
         requested_domains = carapace_cfg.network.domains if carapace_cfg else []
 
         if not ctx.tool_call_approved:
             gate_args: dict[str, Any] = {"skill_name": skill_name}
-            context = "Activating skill for use in sandbox"
             if requested_domains:
                 gate_args["network_domains"] = requested_domains
-                context += f" (requests network access to: {', '.join(requested_domains)})"
-            await _gate(ctx, "use_skill", gate_args, context=context)
+            await _gate(ctx, "use_skill", gate_args)
 
         instructions = registry.get_full_instructions(skill_name)
         if instructions is None:
@@ -186,7 +132,6 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
             logger.exception(f"Error activating skill {skill_name}: {exc}")
             sandbox_msg = f"ERROR: {exc}"
 
-        # Register approved network domains for this session
         if requested_domains:
             ctx.deps.sandbox.allow_domains(
                 ctx.deps.session_state.session_id,
@@ -194,6 +139,17 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
             )
 
         ctx.deps.activated_skills.append(skill_name)
+
+        skill_info = next((s for s in ctx.deps.skill_catalog if s.name == skill_name), None)
+        security.append_log(
+            ctx.deps.session_state.session_id,
+            SkillActivatedEntry(
+                skill_name=skill_name,
+                description=skill_info.description if skill_info else "",
+                declared_domains=requested_domains,
+            ),
+        )
+
         parts = [f"Skill '{skill_name}' activated."]
         if sandbox_msg:
             parts.append(sandbox_msg)
@@ -206,19 +162,19 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
     async def save_skill(ctx: RunContext[Deps], skill_name: str) -> str:
         """Save an activated skill back to the master skills directory. Persists edits made in the sandbox."""
         if not ctx.tool_call_approved:
-            await _gate(
-                ctx,
-                "save_skill",
-                {"skill_name": skill_name},
-                context="Saving skill edits from sandbox back to master directory",
-            )
+            await _gate(ctx, "save_skill", {"skill_name": skill_name})
 
-        return await ctx.deps.sandbox.save_skill(
+        result = await ctx.deps.sandbox.save_skill(
             ctx.deps.session_state.session_id,
             skill_name,
         )
+        security.append_log(
+            ctx.deps.session_state.session_id,
+            ToolResultEntry(tool="save_skill", status="success"),
+        )
+        return result
 
-    # --- Filesystem (group:fs) ---
+    # --- Filesystem ---
 
     @agent.tool
     async def read(ctx: RunContext[Deps], path: str) -> str:
@@ -352,7 +308,7 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
 
         return "\n".join(results)
 
-    # --- Runtime (group:runtime) ---
+    # --- Runtime ---
 
     @agent.tool
     async def exec(ctx: RunContext[Deps], command: str, timeout: int = 30) -> str:
@@ -361,34 +317,14 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
             await _gate(ctx, "exec", {"command": command})
 
         session_id = ctx.deps.session_state.session_id
+        result = await ctx.deps.sandbox.exec_command(session_id, command, timeout)
 
-        # Start the exec and concurrently route any proxy domain approval
-        # requests that arrive while the sandbox command is running.
-        exec_task = asyncio.create_task(ctx.deps.sandbox.exec_command(session_id, command, timeout))
-        try:
-            while not exec_task.done():
-                approval_task = asyncio.create_task(ctx.deps.sandbox.next_domain_approval(session_id))
-                done, _ = await asyncio.wait({exec_task, approval_task}, return_when=asyncio.FIRST_COMPLETED)
-                if exec_task in done:
-                    approval_task.cancel()
-                    with contextlib.suppress(asyncio.CancelledError):
-                        await approval_task
-                    break
-                # An approval request arrived while exec is still running.
-                pending_req = approval_task.result()
-                if ctx.deps.domain_approval_callback is not None:
-                    decision = await ctx.deps.domain_approval_callback(pending_req)
-                else:
-                    logger.warning(f"No domain_approval_callback configured, denying {pending_req.domain}")
-                    decision = DomainDecision.DENY
-                ctx.deps.sandbox.resolve_domain_approval(pending_req.request_id, decision)
-        except BaseException:
-            exec_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await exec_task
-            raise
+        security.append_log(
+            session_id,
+            ToolResultEntry(tool="exec", status="error" if result.startswith("Error") else "success"),
+        )
 
-        return exec_task.result()
+        return result
 
     # --- Memory ---
 
@@ -419,6 +355,11 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
             await _gate(ctx, "write_memory", {"file_path": file_path, "content": content[:200]})
 
         store = MemoryStore(ctx.deps.data_dir)
-        return store.write(file_path, content)
+        result = store.write(file_path, content)
+        security.append_log(
+            ctx.deps.session_state.session_id,
+            ToolResultEntry(tool="write_memory", status="success"),
+        )
+        return result
 
     return agent

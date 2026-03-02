@@ -5,7 +5,7 @@ from pathlib import Path
 
 import yaml
 
-from carapace.models import Config, Rule, RulesConfig
+from carapace.models import Config
 
 
 def get_data_dir() -> Path:
@@ -22,19 +22,13 @@ def load_config(data_dir: Path | None = None) -> Config:
     return Config()
 
 
-def load_rules(data_dir: Path | None = None) -> list[Rule]:
-    data_dir = data_dir or get_data_dir()
-    rules_path = data_dir / "rules.yaml"
-    if rules_path.exists():
-        with open(rules_path) as f:
-            raw = yaml.safe_load(f) or {}
-        rc = RulesConfig.model_validate(raw)
-        return rc.rules
-    return []
-
-
 def load_workspace_file(data_dir: Path, name: str) -> str:
     path = data_dir / name
     if path.exists():
         return path.read_text()
     return ""
+
+
+def load_security_md(data_dir: Path | None = None) -> str:
+    data_dir = data_dir or get_data_dir()
+    return load_workspace_file(data_dir, "SECURITY.md")

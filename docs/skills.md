@@ -120,28 +120,21 @@ If no `Dockerfile` is present, scripts run in Carapace's default sandbox contain
 
 At startup, Carapace loads only `name` and `description` from each skill's frontmatter (~100 tokens per skill). These are injected into the agent's system prompt as a skill catalog. The agent sees what's available without the full instructions consuming context.
 
-The full `SKILL.md` body is loaded only when the agent decides a skill is relevant -- and that activation is itself a classified, rule-checked operation.
+The full `SKILL.md` body is loaded only when the agent decides a skill is relevant -- and that activation is itself recorded in the security action log.
 
 ## Skill activation as a security event
 
-When the agent activates a skill (loads its full `SKILL.md` into context), this goes through the Operation Classifier and Rule Engine like any other operation. Skill instructions reveal the user's personal infrastructure -- which services they use, credential paths, workflow patterns.
+When the agent activates a skill (loads its full `SKILL.md` into context), a `SkillActivatedEntry` is recorded in the action log. This gives the bouncer agent context about what the agent has learned -- skill instructions reveal the user's personal infrastructure (services, credential paths, workflow patterns).
 
-Rules can gate what happens after skill activation:
+The bouncer uses this context when evaluating subsequent actions. For example, after the agent reads skill instructions describing email credentials, the bouncer will be more cautious about outbound network requests -- it knows the agent now has knowledge that could be exfiltrated.
 
-```yaml
-- id: no-exfil-after-skill-read
-  trigger: "the agent has read skill instructions (activated a skill)"
-  effect: "block outbound communication (email, API calls) without approval"
-  mode: approve
-```
-
-This prevents a prompt injection attack from using the agent to read skill instructions (to learn about the user's setup) and then exfiltrate that information.
+The bouncer can also read skill files directly (via its `list_skill_files` and `read_skill_file` tools) to understand what a skill-related tool call will actually do.
 
 ## Self-improvement
 
-The agent can create new skills by writing files to the `skills/` directory (SKILL.md, carapace.yaml, scripts, Dockerfile). This triggers the `skill-modification` rule (always-on, `mode: approve`). The user sees a diff in their channel and approves or denies.
+The agent can create new skills by writing files to the `skills/` directory (SKILL.md, carapace.yaml, scripts, Dockerfile). The bouncer will escalate this for user approval per the `SECURITY.md` policy. The user sees the proposed files in their channel and approves or denies.
 
-There is no special "architect mode". Skill creation, editing, and deletion are governed by the same rule system as everything else. If the user wants a development session with fewer interruptions, they can `/disable skill-modification` and `/disable shell-write` temporarily, then `/reset` the session when done.
+There is no special "architect mode". Skill creation, editing, and deletion are governed by the same bouncer-based security system as everything else.
 
 The workflow for the agent to create a skill via chat:
 

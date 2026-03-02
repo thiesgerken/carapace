@@ -1,25 +1,18 @@
 from __future__ import annotations
 
-import asyncio
 import datetime
 import re
 import secrets
 import shutil
 import time
 from pathlib import Path
-from typing import Never, NoReturn
 
 from loguru import logger
 from pydantic import BaseModel
 
-from carapace.sandbox.proxy import DomainApprovalPending, DomainDecision
 from carapace.sandbox.runtime import ContainerConfig, ContainerGoneError, ContainerRuntime, Mount, SkillVenvError
 
 _SKILL_NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]*$")
-
-
-def never(value: Never) -> NoReturn:
-    raise ValueError(f"Unexpected value: {value!r}")
 
 
 class SessionContainer(BaseModel):
@@ -67,8 +60,6 @@ class SandboxManager:
         self._timed_domains: dict[str, dict[str, float]] = {}  # session_id -> {pattern: expires_at}
         self._exec_temp_domains: dict[str, set[str]] = {}  # session_id -> domains, cleared after each exec
         self._session_current_command: dict[str, str] = {}
-        self._approval_queues: dict[str, asyncio.Queue[DomainApprovalPending]] = {}
-        self._pending_approvals: dict[str, DomainApprovalPending] = {}
         logger.info(
             f"SandboxManager initialized (image={base_image}, "
             + f"network={network_name}, proxy_port={proxy_port}, idle_timeout={idle_timeout_minutes}m)"
@@ -101,10 +92,6 @@ class SandboxManager:
             self._token_to_session.pop(old_token, None)
         self._token_to_session[proxy_token] = session_id
         self._session_tokens[session_id] = proxy_token
-        # Keep the same queue object across container recreations so any
-        # in-flight listener waiting on queue.get() is still connected.
-        self._approval_queues.setdefault(session_id, asyncio.Queue())
-
         try:
             host_ip = await self._runtime.get_host_ip(self._network_name)
             if not host_ip:
@@ -423,79 +410,26 @@ class SandboxManager:
     async def request_domain_approval(self, session_id: str, domain: str) -> bool:
         """Called by the proxy when a domain is not in the allowlist.
 
-        Queues a ``DomainApprovalPending`` for the active exec tool to route
-        to the user, then waits for the decision (up to 120 s).  Applies the
-        decision to the allowlist and returns ``True`` (allow) or ``False``.
+        Delegates to the security module's bouncer for evaluation. If the
+        bouncer approves, the domain is temporarily allowed for the current exec.
         """
-        queue = self._approval_queues.get(session_id)
-        if queue is None:
-            logger.warning(f"No approval queue for session {session_id}, denying {domain}")
-            return False
+        import carapace.security as security
 
-        fut: asyncio.Future[DomainDecision] = asyncio.get_event_loop().create_future()
-        request_id = secrets.token_hex(8)
-        req = DomainApprovalPending(
-            request_id=request_id,
-            session_id=session_id,
-            domain=domain,
-            command=self._session_current_command.get(session_id, ""),
-            future=fut,
-        )
-        self._pending_approvals[request_id] = req
-        await queue.put(req)
-
-        try:
-            decision = await asyncio.wait_for(asyncio.shield(fut), timeout=120)
-        except TimeoutError:
-            logger.warning(f"Domain approval timed out for {domain} in session {session_id}, denying")
-            return False
-        finally:
-            self._pending_approvals.pop(request_id, None)
-
-        return self._apply_domain_decision(session_id, domain, decision)
-
-    def _apply_domain_decision(self, session_id: str, domain: str, decision: DomainDecision) -> bool:
-        match decision:
-            case DomainDecision.ALLOW_ONCE:
-                self._exec_temp_domains.setdefault(session_id, set()).add(domain)
-                logger.info(f"Temp-allowed {domain} for current exec (session={session_id})")
-                return True
-            case DomainDecision.ALLOW_ALL_ONCE:
-                self._exec_temp_domains.setdefault(session_id, set()).add("*")
-                logger.info(f"Temp-allowed all domains for current exec (session={session_id})")
-                return True
-            case DomainDecision.ALLOW_15MIN:
-                self._timed_domains.setdefault(session_id, {})[domain] = time.time() + 15 * 60
-                logger.info(f"Timed-allowed {domain} for 15 minutes (session={session_id})")
-                return True
-            case DomainDecision.ALLOW_ALL_15MIN:
-                self._timed_domains.setdefault(session_id, {})["*"] = time.time() + 15 * 60
-                logger.info(f"Timed-allowed all domains for 15 minutes (session={session_id})")
-                return True
-            case DomainDecision.DENY:
-                return False
-
-        never(decision)
-
-    async def next_domain_approval(self, session_id: str) -> DomainApprovalPending:
-        """Block until a domain approval request arrives for *session_id*."""
-        queue = self._approval_queues.get(session_id)
-        if queue is None:
-            await asyncio.Future()  # never resolves — will be cancelled externally
-        return await queue.get()  # type: ignore[return-value]
-
-    def resolve_domain_approval(self, request_id: str, decision: DomainDecision) -> None:
-        req = self._pending_approvals.get(request_id)
-        if req and not req.future.done():
-            req.future.set_result(decision)
+        command = self._session_current_command.get(session_id, "")
+        allowed = await security.evaluate_domain(session_id, domain, command)
+        if allowed:
+            self._exec_temp_domains.setdefault(session_id, set()).add(domain)
+            logger.info(f"Security approved {domain} for session {session_id}")
+        else:
+            logger.info(f"Security denied {domain} for session {session_id}")
+        return allowed
 
     def _prepare_session_recreate(self, session_id: str) -> None:
-        """Drop container/token tracking while keeping approval and policy state."""
+        """Drop container/token tracking while keeping policy state."""
         self._cleanup_tracking(
             session_id,
             clear_domain_state=False,
             clear_exec_state=False,
-            clear_approval_queue=False,
         )
 
     def _cleanup_tracking(
@@ -504,7 +438,6 @@ class SandboxManager:
         *,
         clear_domain_state: bool = True,
         clear_exec_state: bool = True,
-        clear_approval_queue: bool = True,
     ) -> None:
         self._sessions.pop(session_id, None)
         token = self._session_tokens.pop(session_id, None)
@@ -516,11 +449,3 @@ class SandboxManager:
         if clear_exec_state:
             self._exec_temp_domains.pop(session_id, None)
             self._session_current_command.pop(session_id, None)
-        if clear_approval_queue:
-            self._approval_queues.pop(session_id, None)
-        # Cancel any approvals still in-flight for this session
-        for req_id, req in list(self._pending_approvals.items()):
-            if req.session_id == session_id:
-                if not req.future.done():
-                    req.future.set_result(DomainDecision.DENY)
-                del self._pending_approvals[req_id]

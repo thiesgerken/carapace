@@ -66,7 +66,7 @@ All containers (base and skill) get the same set of mounts:
 | `$CARAPACE_DATA_DIR/` (workspace files) | `/workspace`   | read-only  |
 | `$CARAPACE_DATA_DIR/tmp/<session_id>`   | `/tmp/shared`  | read-write |
 
-The workspace mount (`/workspace`) exposes the top-level files: `AGENTS.md`, `SOUL.md`, `USER.md`, `TOOLS.md`, `HEARTBEAT.md`, `config.yaml`, `rules.yaml`.
+The workspace mount (`/workspace`) exposes the top-level files: `AGENTS.md`, `SOUL.md`, `USER.md`, `TOOLS.md`, `HEARTBEAT.md`, `config.yaml`, `SECURITY.md`.
 
 ## Shared temp directory
 

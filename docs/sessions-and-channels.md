@@ -1,6 +1,6 @@
 # Sessions and Channels
 
-Sessions are the core abstraction in Carapace. They are decoupled from any specific channel -- a session is a conversation context with its own rule state. Channels create and interact with sessions, but don't own them.
+Sessions are the core abstraction in Carapace. They are decoupled from any specific channel -- a session is a conversation context with its own security state. Channels create and interact with sessions, but don't own them.
 
 ## Session model
 
@@ -9,20 +9,19 @@ class Session(BaseModel):
     session_id: str
     channel_type: str          # "matrix" | "cron" | "webhook" | "web" | ...
     channel_ref: str           # channel-specific ID (room_id, cron job name, etc.)
-    activated_rules: list[str] # rule IDs that have been triggered
-    disabled_rules: list[str]  # rules the user disabled via /disable
     approved_credentials: list[str]  # credential names approved this session
-    approved_operations: list[str]   # operation hashes (for caching)
     history: Path              # path to history.jsonl
     created_at: datetime
     last_active: datetime
 ```
 
+Each session also has an associated `SessionSecurity` object (managed by the security module) that holds the action log, bouncer conversation state, and audit trail.
+
 ## Session lifecycle
 
 - Sessions are **persistent** -- they survive Carapace restarts. History and state are stored on disk.
 - `/reset` creates a **new session ID** and links the chat to it. The old session's history remains on disk for auditing.
-- **Activated rules and approved credentials** persist with the session state. They survive container restarts but are cleared on `/reset`.
+- **Approved credentials** persist with the session state. They survive container restarts but are cleared on `/reset`. The security action log and bouncer conversation are in-memory per session.
 - **Containers** are ephemeral: destroyed after an idle timeout (configurable, default 15 min). When the user sends a new message after containers expired, they are pre-warmed again.
 
 ## Session triggers
@@ -113,20 +112,19 @@ To avoid interference with that room's own conversational session, approval mess
 
 ## Slash commands
 
-Slash commands are the user's control interface for managing sessions and rules. They are channel-agnostic -- any channel that supports text input can process them.
+Slash commands are the user's control interface for managing sessions and security. They are channel-agnostic -- any channel that supports text input can process them.
 
-| Command              | Effect                                                               |
-| -------------------- | -------------------------------------------------------------------- |
-| `/rules`             | List all rules and their status (active/inactive/disabled)           |
-| `/disable <rule-id>` | Disable a rule for this session (with warning)                       |
-| `/enable <rule-id>`  | Re-enable a previously disabled rule                                 |
-| `/reset`             | Reset: create new session, clear activated rules, revoke credentials |
-| `/session`           | Show current session state (activated rules, approved creds)         |
-| `/skills`            | List available skills                                                |
-| `/memory`            | Show memory summary                                                  |
-| `/approve`           | Approve the pending operation (alternative to reaction)              |
-| `/deny`              | Deny the pending operation                                           |
-| `/help`              | Show available commands                                              |
+| Command            | Effect                                                               |
+| ------------------ | -------------------------------------------------------------------- |
+| `/security`        | Show the current security policy and action log summary              |
+| `/approve-context` | Vouch for the current context (records trust signal for the bouncer) |
+| `/reset`           | Reset: create new session, clear security state, revoke credentials  |
+| `/session`         | Show current session state                                           |
+| `/skills`          | List available skills                                                |
+| `/memory`          | Show memory summary                                                  |
+| `/approve`         | Approve the pending operation (alternative to reaction)              |
+| `/deny`            | Deny the pending operation                                           |
+| `/help`            | Show available commands                                              |
 
 ---
 
@@ -137,15 +135,17 @@ The Approval Gate sends approval requests through the session's channel and wait
 ### Approval UX (example via Matrix)
 
 ```
-Approval Required [rule: no-exfil-after-sensitive]
+Approval Required [risk: high]
 
-The agent wants to send an email (write_external).
-Active rule: "no-exfil-after-sensitive" -- the agent previously
-accessed your financial data in this session.
+The agent wants to send an email after accessing your financial data.
+
+Bouncer explanation: "The agent read sensitive financial data from the
+expense tracker skill and now wants to send an email externally. This
+is a potential data exfiltration vector."
 
 Operation: email_sender.send_email(to="accountant@...", subject="Q4 Summary")
 
 /approve or /deny
 ```
 
-For plan-based approval (consolidated), the prompt shows the full plan with all applicable rules. See [rules.md](rules.md) for details.
+The approval prompt includes the bouncer's explanation and risk assessment. See [security.md](security.md) for details on how the bouncer evaluates operations.

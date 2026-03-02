@@ -24,15 +24,17 @@ from pydantic_ai.providers.anthropic import AnthropicProvider
 from pydantic_ai.retries import AsyncTenacityTransport, RetryConfig, wait_retry_after
 from tenacity import retry_if_exception_type, stop_after_attempt, wait_exponential
 
+import carapace.security as security_mod
 from carapace.agent_loop import run_agent_turn
 from carapace.auth import ensure_token
 from carapace.bootstrap import ensure_data_dir, get_sandbox_dockerfile
-from carapace.config import get_data_dir, load_config, load_rules
+from carapace.config import get_data_dir, load_config, load_security_md
 from carapace.memory import MemoryStore
-from carapace.models import Config, Deps, Rule, SessionState, UsageTracker
+from carapace.models import Config, Deps, SessionState, UsageTracker
 from carapace.sandbox.docker import DockerRuntime
 from carapace.sandbox.manager import SandboxManager
-from carapace.sandbox.proxy import DomainApprovalPending, DomainDecision, ProxyServer
+from carapace.sandbox.proxy import ProxyServer
+from carapace.security.context import UserVouchedEntry
 from carapace.session import SessionManager
 from carapace.skills import SkillRegistry
 from carapace.ws_models import (
@@ -57,7 +59,7 @@ _BUILTIN_SANDBOX_IMAGE = "carapace-sandbox:latest"
 
 _data_dir: Path
 _config: Config
-_rules: list[Rule]
+_security_md: str
 _session_mgr: SessionManager
 _skill_catalog: list
 _agent_model: Any
@@ -112,7 +114,7 @@ async def _idle_cleanup_loop() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _data_dir, _config, _rules, _session_mgr, _skill_catalog, _agent_model, _sandbox_mgr
+    global _data_dir, _config, _security_md, _session_mgr, _skill_catalog, _agent_model, _sandbox_mgr
 
     _data_dir = get_data_dir()
     ensure_data_dir(_data_dir)
@@ -122,7 +124,7 @@ async def lifespan(app: FastAPI):
         logfire.configure(token=_config.carapace.logfire_token, console=False)
         logfire.instrument_pydantic_ai()
 
-    _rules = load_rules(_data_dir)
+    _security_md = load_security_md(_data_dir)
     _session_mgr = SessionManager(_data_dir)
     registry = SkillRegistry(_data_dir / "skills")
     _skill_catalog = registry.scan()
@@ -195,7 +197,7 @@ async def lifespan(app: FastAPI):
         matrix_channel = MatrixChannel(
             config=_config.channels.matrix,
             full_config=_config,
-            rules=_rules,
+            security_md=_security_md,
             session_mgr=_session_mgr,
             skill_catalog=_skill_catalog,
             agent_model=_agent_model,
@@ -204,7 +206,7 @@ async def lifespan(app: FastAPI):
         await matrix_channel.start()
 
     logger.info(
-        f"Carapace server ready — model={_config.agent.model}, rules={len(_rules)}, "
+        f"Carapace server ready — model={_config.agent.model}, "
         f"skills={len(_skill_catalog)}, sandbox=on, proxy_port={proxy_port}, token={token[:8]}…"
         + (f", matrix=on ({_config.channels.matrix.homeserver})" if _config.channels.matrix.enabled else "")
     )
@@ -269,8 +271,6 @@ class SessionInfo(BaseModel):
     channel_ref: str
     created_at: str
     last_active: str
-    activated_rules: list[str]
-    disabled_rules: list[str]
     message_count: int = 0
 
     @classmethod
@@ -281,8 +281,6 @@ class SessionInfo(BaseModel):
             channel_ref=state.channel_ref,
             created_at=state.created_at.isoformat(),
             last_active=state.last_active.isoformat(),
-            activated_rules=state.activated_rules,
-            disabled_rules=state.disabled_rules,
             message_count=message_count,
         )
 
@@ -379,20 +377,16 @@ def _build_deps(
     *,
     verbose: bool = True,
     tool_call_callback: Any = None,
-    domain_approval_callback: Any = None,
     usage_tracker: UsageTracker | None = None,
 ) -> Deps:
     return Deps(
         config=_config,
         data_dir=_data_dir,
         session_state=session_state,
-        rules=_rules,
         skill_catalog=_skill_catalog,
-        classifier_model=_config.agent.classifier_model,
         agent_model=_agent_model,
         verbose=verbose,
         tool_call_callback=tool_call_callback,
-        domain_approval_callback=domain_approval_callback,
         usage_tracker=usage_tracker or _session_mgr.load_usage(session_state.session_id),
         sandbox=_sandbox_mgr,
         activated_skills=[],
@@ -407,16 +401,17 @@ def _handle_slash_command(command: str, deps: Deps) -> CommandResult | None:
     """Handle a slash command and return structured data, or None if unrecognised."""
     parts = command.strip().split(maxsplit=1)
     cmd = parts[0].lower()
-    arg = parts[1] if len(parts) > 1 else ""
 
     if cmd == "/help":
         return CommandResult(
             command="help",
             data={
                 "commands": [
-                    {"command": "/rules", "description": "List all rules and their status"},
-                    {"command": "/disable <id>", "description": "Disable a rule for this session"},
-                    {"command": "/enable <id>", "description": "Re-enable a disabled rule"},
+                    {"command": "/security", "description": "Show security policy summary"},
+                    {
+                        "command": "/approve-context",
+                        "description": "Vouch for the current agent context as trustworthy",
+                    },
                     {"command": "/session", "description": "Show current session state"},
                     {"command": "/skills", "description": "List available skills"},
                     {"command": "/memory", "description": "List memory files"},
@@ -428,45 +423,32 @@ def _handle_slash_command(command: str, deps: Deps) -> CommandResult | None:
             },
         )
 
-    if cmd == "/rules":
-        rules_data = []
-        for rule in deps.rules:
-            if rule.id in deps.session_state.disabled_rules:
-                rule_status = "disabled"
-            elif rule.id in deps.session_state.activated_rules:
-                rule_status = "activated"
-            elif rule.trigger.strip().lower() == "always":
-                rule_status = "always-on"
-            else:
-                rule_status = "inactive"
-            rules_data.append(
-                {
-                    "id": rule.id,
-                    "trigger": rule.trigger[:50] + ("..." if len(rule.trigger) > 50 else ""),
-                    "mode": rule.mode.value,
-                    "status": rule_status,
-                }
-            )
-        return CommandResult(command="rules", data=rules_data)
+    if cmd == "/security":
+        policy = _security_md or "(no SECURITY.md loaded)"
+        session_id = deps.session_state.session_id
+        try:
+            session = security_mod.get_session(session_id)
+            log_count = len(session.action_log)
+            eval_count = session.bouncer_eval_count
+        except KeyError:
+            log_count = 0
+            eval_count = 0
+        return CommandResult(
+            command="security",
+            data={
+                "policy_preview": policy[:500] + ("..." if len(policy) > 500 else ""),
+                "action_log_entries": log_count,
+                "bouncer_evaluations": eval_count,
+            },
+        )
 
-    if cmd == "/disable":
-        if not arg:
-            return CommandResult(command="disable", data={"error": "Usage: /disable <rule-id>"})
-        rule_ids = [r.id for r in deps.rules]
-        if arg not in rule_ids:
-            return CommandResult(command="disable", data={"error": f"Unknown rule: {arg}"})
-        if arg not in deps.session_state.disabled_rules:
-            deps.session_state.disabled_rules.append(arg)
-            _session_mgr.save_state(deps.session_state)
-        return CommandResult(command="disable", data={"rule_id": arg, "message": f"Rule '{arg}' disabled"})
-
-    if cmd == "/enable":
-        if not arg:
-            return CommandResult(command="enable", data={"error": "Usage: /enable <rule-id>"})
-        if arg in deps.session_state.disabled_rules:
-            deps.session_state.disabled_rules.remove(arg)
-            _session_mgr.save_state(deps.session_state)
-        return CommandResult(command="enable", data={"rule_id": arg, "message": f"Rule '{arg}' re-enabled"})
+    if cmd == "/approve-context":
+        session_id = deps.session_state.session_id
+        security_mod.append_log(session_id, UserVouchedEntry())
+        return CommandResult(
+            command="approve-context",
+            data={"message": "Recorded: you vouch for the current agent context as trustworthy."},
+        )
 
     if cmd == "/session":
         session_id = deps.session_state.session_id
@@ -475,8 +457,6 @@ def _handle_slash_command(command: str, deps: Deps) -> CommandResult | None:
             data={
                 "session_id": session_id,
                 "channel_type": deps.session_state.channel_type,
-                "activated_rules": deps.session_state.activated_rules,
-                "disabled_rules": deps.session_state.disabled_rules,
                 "approved_credentials": deps.session_state.approved_credentials,
                 "allowed_domains": deps.sandbox.get_domain_info(session_id),
             },
@@ -539,14 +519,21 @@ async def chat_ws(
         task = asyncio.create_task(_send_and_cleanup())
         pending_sends.add(task)
 
-    async def request_domain_approval(pending: DomainApprovalPending) -> DomainDecision:
-        """Send a proxy domain approval request to the client and wait for the response."""
+    async def request_domain_escalation(
+        _session_id: str,
+        domain: str,
+        context: dict[str, Any],
+    ) -> bool:
+        """Send a proxy domain escalation to the client and wait for the response."""
+        import secrets as _secrets
+
+        request_id = _secrets.token_hex(8)
         await _send(
             websocket,
             ProxyApprovalRequest(
-                request_id=pending.request_id,
-                domain=pending.domain,
-                command=pending.command,
+                request_id=request_id,
+                domain=domain,
+                command=context.get("command", ""),
             ),
         )
         while True:
@@ -555,17 +542,25 @@ async def chat_ws(
                 msg = parse_client_message(raw)
             except (ValueError, Exception):
                 continue
-            if isinstance(msg, ProxyApprovalResponse) and msg.request_id == pending.request_id:
-                return DomainDecision(msg.decision)
-            # Any other message while we're waiting for domain approval is unexpected;
-            # log it and keep waiting — the approval must be resolved first.
-            logger.warning(f"Unexpected WS message while waiting for proxy domain approval: {msg}")
+            if isinstance(msg, ProxyApprovalResponse) and msg.request_id == request_id:
+                return msg.decision in ("allow_once", "allow_all_once", "allow_15min", "allow_all_15min")
+            logger.warning(f"Unexpected WS message while waiting for domain escalation: {msg}")
+
+    skills_dir = _data_dir / "skills"
+    audit_dir = _data_dir / "sessions" / session_id
+    sec_session = security_mod.init_session(
+        session_id,
+        bouncer_model=_config.agent.bouncer_model,
+        security_md=_security_md,
+        skills_dir=skills_dir,
+        audit_dir=audit_dir,
+    )
+    sec_session.set_user_escalation_callback(request_domain_escalation)
 
     deps = _build_deps(
         session_state,
         verbose=verbose,
         tool_call_callback=send_tool_call_info,
-        domain_approval_callback=request_domain_approval,
     )
 
     async with _session_connection(session_id) as session_lock:
@@ -635,7 +630,6 @@ async def chat_ws(
                                 fresh_state,
                                 verbose=verbose,
                                 tool_call_callback=send_tool_call_info,
-                                domain_approval_callback=request_domain_approval,
                                 usage_tracker=tracker,
                             )
                         message_history = _session_mgr.load_history(session_id)
@@ -667,6 +661,7 @@ async def chat_ws(
                 await websocket.close(code=1011)
         finally:
             logger.debug(f"WebSocket cleanup for session {session_id}")
+            security_mod.cleanup_session(session_id)
             for task in pending_sends:
                 task.cancel()
 

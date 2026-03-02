@@ -5,19 +5,19 @@
 > - find out what hurdles arise when trying to build a "safe" OpenClaw,
 > - see how far I can get by only assuming the reviewer / architect role, letting Cursor do the rest.
 
-A security-first personal AI agent with rule-based information flow control.
+A security-first personal AI agent with LLM-powered security gating.
 
-Carapace is a self-hosted AI agent gateway that connects to Matrix (and future channels) and lets you interact with an AI assistant from anywhere. Unlike other agent frameworks that start with broad access and lock down after the fact, Carapace starts with **zero access** and grants capabilities through **plain-English security rules** evaluated by an LLM.
+Carapace is a self-hosted AI agent gateway that connects to Matrix (and future channels) and lets you interact with an AI assistant from anywhere. Unlike other agent frameworks that start with broad access and lock down after the fact, Carapace starts with **zero access** and gates every capability through a dedicated **bouncer agent** -- an LLM that maintains a persistent security conversation, evaluating each action against a natural-language security policy (`SECURITY.md`).
 
 ## Key ideas
 
-- **Escalating friction.** The more access the agent has requested during a session, the harder it becomes for it to do anything without human approval. Early actions may be auto-approved; later ones require explicit consent.
-- **Rules, not permissions.** Security is defined in plain English ("if the agent read something from the internet, it can't do any write ops without approval"). An LLM evaluates whether each rule applies to the current operation in context.
-- **Plan before act.** The agent always proposes a plan before executing multi-step tasks. Rules are pre-evaluated against the plan and the user gets one consolidated approval prompt instead of being asked at every step.
+- **Bouncer agent, not permission matrices.** A dedicated LLM agent (the "bouncer") evaluates every non-trivial action against a human-readable `SECURITY.md` policy. It maintains a shadow conversation per session, building context over time for nuanced, intent-aware decisions.
+- **Graduated trust.** The bouncer factors in the full session history -- previous approvals, user intent, time since last interaction -- to make proportional decisions. Early in a session or right after user confirmation, actions flow smoothly; after consuming untrusted data, scrutiny increases.
+- **Strict veto semantics.** If any part of the security gate (safe-list bypass, bouncer, or user) flags an action for denial or approval, that decision is final. A compromised bouncer cannot override a deterministic denial.
 - **Read-only by default.** The agent's base workspace is a read-only Docker container with no network. It can explore files, read skills, search memory freely. All actions (writes, network, API calls) go through skill containers with explicit sandboxing.
 - **Skills are trusted code.** A personal agent has access to so much of your data and life that running completely untrusted skills through it would be reckless. The user (or an LLM acting on their behalf) is responsible for reviewing skills before installing them. The security model protects against the agent being _influenced by outside data_ to misuse skills, not against malicious skills themselves.
 - **Skills are portable.** Skills follow the open [AgentSkills](https://agentskills.io/) format (SKILL.md + scripts). They work in Claude Code, Cursor, Gemini CLI too. Carapace extends the format with `carapace.yaml` for credentials and security hints, and optional `Dockerfile` for dependency isolation.
-- **The agent improves itself.** Carapace can write new skills, update its memory, and evolve its personality -- all gated by the same rule system. No special "architect mode", just rules the user can temporarily relax.
+- **The agent improves itself.** Carapace can write new skills, update its memory, and evolve its personality -- all gated by the same security system. No special "architect mode", just a bouncer that understands context.
 - **Credentials stay in your vault.** Carapace doesn't store secrets. It fetches credentials from your password manager (Vaultwarden, 1Password, pass) on demand, with per-session approval.
 
 ## Architecture overview
@@ -29,18 +29,18 @@ CLI Client (typer + rich)    Web UI (Next.js)
                     |
               FastAPI Server
                     |
-         Session Manager ---- Rule Engine (LLM-evaluated)
-              |                     |
-         Pydantic AI Agent --- Approval Gate
-              |                     |
-         Skill Registry       WebSocket (sends approval requests)
+         Session Manager ---- Security Module
+              |                  ├── Safe-list (auto-allow)
+         Pydantic AI Agent       └── Bouncer Agent (LLM, shadow conversation)
+              |                         |
+         Skill Registry          Approval Gate → WebSocket
               |
-        Docker Containers
+        Docker Containers ── Proxy ── Bouncer (domain check)
          ├── Base Container (read-only, no network)
          └── Skill Containers (from Dockerfile, with credentials)
 ```
 
-The server runs the agent and all logic. The CLI and web UI are thin clients that connect via HTTP (sessions) and WebSocket (chat, slash commands, approval flow).
+The server runs the agent and all logic. The CLI and web UI are thin clients that connect via HTTP (sessions) and WebSocket (chat, slash commands, approval flow). Every tool call passes through the security module: safe operations (reads, memory) are auto-allowed; everything else is evaluated by the bouncer agent. Network requests from sandboxed containers are intercepted by a proxy and checked by the bouncer for domain plausibility.
 
 See [docs/architecture.md](docs/architecture.md) for the full architecture with diagrams.
 
@@ -48,7 +48,7 @@ See [docs/architecture.md](docs/architecture.md) for the full architecture with 
 
 | Concept             | Description                                              | Doc                                                            |
 | ------------------- | -------------------------------------------------------- | -------------------------------------------------------------- |
-| Rules               | Plain-English security policies evaluated by LLM         | [docs/rules.md](docs/rules.md)                                 |
+| Security            | Bouncer agent + SECURITY.md policy + action log          | [docs/security.md](docs/security.md)                           |
 | Skills              | AgentSkills-compatible, Dockerfile-isolated capabilities | [docs/skills.md](docs/skills.md)                               |
 | Sandbox             | Docker-first execution with read-only base container     | [docs/sandbox.md](docs/sandbox.md)                             |
 | Sessions & Channels | Channel-decoupled persistent sessions                    | [docs/sessions-and-channels.md](docs/sessions-and-channels.md) |
@@ -73,7 +73,7 @@ All state lives under `$CARAPACE_DATA_DIR` (defaults to `./data`).
 ```
 $CARAPACE_DATA_DIR/
   config.yaml            # main configuration
-  rules.yaml             # security rules (plain English)
+  SECURITY.md            # natural-language security policy (bouncer system prompt)
   server.token           # bearer token (auto-generated on first start)
   AGENTS.md              # agent behavioral guide
   SOUL.md                # agent personality
@@ -82,7 +82,7 @@ $CARAPACE_DATA_DIR/
   HEARTBEAT.md           # periodic task checklist
   skills/                # AgentSkills-format skill folders
   memory/                # Markdown-based persistent memory
-  sessions/              # per-session history and state
+  sessions/              # per-session history, state, and audit logs
   tmp/                   # shared writable volume for containers
   logs/
 ```
@@ -92,7 +92,7 @@ $CARAPACE_DATA_DIR/
 Carapace is inspired by [OpenClaw](https://docs.openclaw.ai/) but differs fundamentally in security philosophy:
 
 - **OpenClaw** is perimeter-based: control who can talk to the bot, then trust the bot broadly.
-- **Carapace** is flow-based: the bot starts untrusted and every capability is gated by rules that track what happened in the session so far.
+- **Carapace** is flow-based: the bot starts untrusted and every capability is gated by a bouncer agent that tracks the full session context.
 
 Other differences: Carapace is Python (not Node), uses Pydantic AI (not a custom agent loop), runs everything in Docker (not on the host), delegates credentials to a password manager (not built-in storage), and uses the open AgentSkills format (not a custom skill system).
 
@@ -145,7 +145,7 @@ On first server start a bearer token is generated in `data/server.token`. The CL
 
 ```
 $ carapace-server
-INFO:     Carapace server ready — model=anthropic:claude-sonnet-4-5, rules=7, skills=1, token=a1b2c3d4…
+INFO:     Carapace server ready — model=anthropic:claude-sonnet-4-5, skills=1, token=a1b2c3d4…
 
 $ carapace
 New session c72188b27225
@@ -194,7 +194,7 @@ Location & System
 Available Files & Directories
  • AGENTS.md, SOUL.md, USER.md - configuration files
  • config.yaml - system configuration
- • rules.yaml - security/operational rules
+ • SECURITY.md - security policy
  • logs/, memory/, sessions/, skills/
 
 Programming Languages Available
@@ -207,4 +207,4 @@ Goodbye.
 
 ## Status
 
-Early development — client-server architecture with FastAPI + WebSocket, rule-evaluated tool execution, and interactive CLI.
+Early development — client-server architecture with FastAPI + WebSocket, bouncer-gated tool execution, and interactive CLI.

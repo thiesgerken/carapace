@@ -2,23 +2,14 @@
 
 from carapace.models import (
     Config,
-    OperationClassification,
-    Rule,
-    RuleCheckResult,
-    RuleMode,
     SessionState,
 )
-
-
-def test_rule_defaults():
-    rule = Rule(id="r1", trigger="always", effect="require approval")
-    assert rule.mode == RuleMode.approve
-    assert rule.description == ""
-
-
-def test_rule_block_mode():
-    rule = Rule(id="r1", trigger="always", effect="block", mode=RuleMode.block)
-    assert rule.mode == RuleMode.block
+from carapace.security.context import (
+    AuditEntry,
+    BouncerVerdict,
+    ToolCallEntry,
+    UserMessageEntry,
+)
 
 
 def test_config_defaults():
@@ -34,24 +25,28 @@ def test_config_defaults():
 def test_session_state_defaults():
     state = SessionState(session_id="abc123")
     assert state.channel_type == "cli"
-    assert state.activated_rules == []
-    assert state.disabled_rules == []
     assert state.approved_credentials == []
 
 
-def test_operation_classification():
-    op = OperationClassification(
-        operation_type="read_local",
-        categories=["filesystem"],
-        description="reading a file",
-    )
-    assert op.operation_type == "read_local"
-    assert op.confidence == 1.0
+def test_bouncer_verdict():
+    v = BouncerVerdict(decision="allow", explanation="safe operation", risk_level="low")
+    assert v.decision == "allow"
+    assert v.risk_level == "low"
 
 
-def test_rule_check_result_defaults():
-    result = RuleCheckResult()
-    assert result.needs_approval is False
-    assert result.triggered_rules == []
-    assert result.newly_activated_rules == []
-    assert result.descriptions == []
+def test_tool_call_entry():
+    entry = ToolCallEntry(tool="exec", args={"command": "ls"}, decision="auto_allowed")
+    assert entry.type == "tool_call"
+    assert entry.tool == "exec"
+
+
+def test_user_message_entry():
+    entry = UserMessageEntry(content="hello")
+    assert entry.type == "user_message"
+    assert entry.content == "hello"
+
+
+def test_audit_entry():
+    entry = AuditEntry(kind="tool_call", tool="exec", final_decision="auto_allowed")
+    assert entry.kind == "tool_call"
+    assert entry.bouncer_verdict is None

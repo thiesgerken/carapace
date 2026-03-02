@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
@@ -12,13 +11,12 @@ from carapace.channels.matrix import (
     MatrixChannel,
     _format_approval_request,
     _format_command_result_text,
-    _format_domain_approval_request,
+    _format_domain_escalation,
     _md_to_html,
     _PendingApproval,
     _PendingDomainApproval,
 )
 from carapace.models import MatrixChannelConfig
-from carapace.sandbox.proxy import DomainApprovalPending, DomainDecision
 from carapace.session import SessionManager
 from carapace.ws_models import ApprovalRequest, CommandResult
 
@@ -56,7 +54,7 @@ def _make_channel(tmp_path: Path, **config_kwargs) -> MatrixChannel:
     channel = MatrixChannel(
         config=_make_config(**config_kwargs),
         full_config=full_config,
-        rules=[],
+        security_md="",
         session_mgr=session_mgr,
         skill_catalog=[],
         agent_model=None,
@@ -367,38 +365,32 @@ def test_format_approval_request_includes_tool_name():
         tool_call_id="call-1",
         tool="read_file",
         args={"path": "/etc/passwd"},
-        classification={"operation_type": "read_sensitive", "description": "Reads a file"},
-        triggered_rules=["no-sensitive-read"],
-        descriptions=["Sensitive file access detected"],
+        explanation="Sensitive file access detected by bouncer",
+        risk_level="high",
     )
     text = _format_approval_request(req)
     assert "read_file" in text
-    assert "no-sensitive-read" in text
+    assert "Sensitive file access" in text
     assert "/allow" in text or "allow" in text.lower()
 
 
 def test_format_command_result_help():
     result = CommandResult(
         command="help",
-        data={"commands": [{"command": "/rules", "description": "List rules"}]},
+        data={"commands": [{"command": "/security", "description": "Show security policy"}]},
     )
     text = _format_command_result_text(result)
-    assert "/rules" in text
+    assert "/security" in text
 
 
-def test_format_command_result_rules():
+def test_format_command_result_security():
     result = CommandResult(
-        command="rules",
-        data=[{"id": "rule-1", "trigger": "always", "mode": "approve", "status": "always-on"}],
+        command="security",
+        data={"policy_preview": "# Security Policy", "action_log_entries": 5, "bouncer_evaluations": 2},
     )
     text = _format_command_result_text(result)
-    assert "rule-1" in text
-
-
-def test_format_command_result_empty_rules():
-    result = CommandResult(command="rules", data=[])
-    text = _format_command_result_text(result)
-    assert "No rules" in text
+    assert "Security Policy" in text
+    assert "5" in text
 
 
 # ---------------------------------------------------------------------------
@@ -446,9 +438,9 @@ async def test_no_alias_denies(tmp_path: Path):
 @pytest.mark.anyio
 async def test_pending_domain_approval_resolves():
     pd = _PendingDomainApproval("$evt")
-    pd.resolve(DomainDecision.ALLOW_15MIN)
+    pd.resolve(True)
     result = await pd.wait()
-    assert result == DomainDecision.ALLOW_15MIN
+    assert result is True
 
 
 @pytest.mark.anyio
@@ -463,7 +455,7 @@ async def test_on_reaction_approves_domain(tmp_path: Path):
     await ch._on_reaction(room, reaction_event)
 
     assert pd._future.done()
-    assert pd._future.result() == DomainDecision.ALLOW_15MIN
+    assert pd._future.result() is True
 
 
 @pytest.mark.anyio
@@ -478,7 +470,7 @@ async def test_on_reaction_denies_domain(tmp_path: Path):
     await ch._on_reaction(room, reaction_event)
 
     assert pd._future.done()
-    assert pd._future.result() == DomainDecision.DENY
+    assert pd._future.result() is False
 
 
 @pytest.mark.anyio
@@ -494,23 +486,7 @@ async def test_approve_command_resolves_domain_pending(tmp_path: Path):
     await ch._handle_command(room_id, sid, "/allow", "@alice:example.com")
 
     assert pd._future.done()
-    assert pd._future.result() == DomainDecision.ALLOW_15MIN
-
-
-@pytest.mark.anyio
-async def test_yes_command_resolves_domain_pending(tmp_path: Path):
-    ch = _make_channel(tmp_path)
-    room_id = "!room:example.com"
-    sid = ch._get_or_create_session(room_id)
-    ch._client.room_send = AsyncMock(return_value=MagicMock(event_id="$evt"))
-
-    pd = _PendingDomainApproval("$domain_event")
-    ch._room_pending[room_id] = pd
-
-    await ch._handle_command(room_id, sid, "/yes", "@alice:example.com")
-
-    assert pd._future.done()
-    assert pd._future.result() == DomainDecision.ALLOW_15MIN
+    assert pd._future.result() is True
 
 
 @pytest.mark.anyio
@@ -526,85 +502,11 @@ async def test_deny_command_resolves_domain_pending(tmp_path: Path):
     await ch._handle_command(room_id, sid, "/deny", "@alice:example.com")
 
     assert pd._future.done()
-    assert pd._future.result() == DomainDecision.DENY
+    assert pd._future.result() is False
 
 
 @pytest.mark.anyio
-async def test_allow_once_command_resolves_domain_pending(tmp_path: Path):
-    ch = _make_channel(tmp_path)
-    room_id = "!room:example.com"
-    sid = ch._get_or_create_session(room_id)
-    ch._client.room_send = AsyncMock(return_value=MagicMock(event_id="$evt"))
-
-    pd = _PendingDomainApproval("$domain_event")
-    ch._room_pending[room_id] = pd
-
-    await ch._handle_command(room_id, sid, "/allow-once", "@alice:example.com")
-
-    assert pd._future.done()
-    assert pd._future.result() == DomainDecision.ALLOW_ONCE
-
-
-@pytest.mark.anyio
-async def test_allow_all_once_command_resolves_domain_pending(tmp_path: Path):
-    ch = _make_channel(tmp_path)
-    room_id = "!room:example.com"
-    sid = ch._get_or_create_session(room_id)
-    ch._client.room_send = AsyncMock(return_value=MagicMock(event_id="$evt"))
-
-    pd = _PendingDomainApproval("$domain_event")
-    ch._room_pending[room_id] = pd
-
-    await ch._handle_command(room_id, sid, "/allow-all-once", "@alice:example.com")
-
-    assert pd._future.done()
-    assert pd._future.result() == DomainDecision.ALLOW_ALL_ONCE
-
-
-@pytest.mark.anyio
-async def test_allow_all_command_resolves_domain_pending(tmp_path: Path):
-    ch = _make_channel(tmp_path)
-    room_id = "!room:example.com"
-    sid = ch._get_or_create_session(room_id)
-    ch._client.room_send = AsyncMock(return_value=MagicMock(event_id="$evt"))
-
-    pd = _PendingDomainApproval("$domain_event")
-    ch._room_pending[room_id] = pd
-
-    await ch._handle_command(room_id, sid, "/allow-all", "@alice:example.com")
-
-    assert pd._future.done()
-    assert pd._future.result() == DomainDecision.ALLOW_ALL_15MIN
-
-
-@pytest.mark.anyio
-async def test_domain_commands_ignored_for_tool_approval(tmp_path: Path):
-    """Domain-specific allow commands must not resolve a regular tool approval."""
-    ch = _make_channel(tmp_path)
-    room_id = "!room:example.com"
-    sid = ch._get_or_create_session(room_id)
-    ch._client.room_send = AsyncMock(return_value=MagicMock(event_id="$evt"))
-
-    pa = _PendingApproval("$approval_event", "call-1")
-    ch._room_pending[room_id] = pa
-
-    await ch._handle_command(room_id, sid, "/allow-once", "@alice:example.com")
-
-    assert not pa._future.done()
-
-
-@pytest.mark.anyio
-async def test_format_domain_approval_request():
-    pending = DomainApprovalPending(
-        request_id="req-1",
-        session_id="sess-1",
-        domain="api.example.com",
-        command="curl https://api.example.com",
-        future=asyncio.get_running_loop().create_future(),
-    )
-    text = _format_domain_approval_request(pending)
+async def test_format_domain_escalation():
+    text = _format_domain_escalation("api.example.com", "curl https://api.example.com", "unexpected domain")
     assert "api.example.com" in text
-    assert "/allow-once" in text
-    assert "/allow-all-once" in text
-    assert "/allow-all" in text
-    assert "/deny" in text
+    assert "unexpected domain" in text
