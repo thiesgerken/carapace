@@ -240,29 +240,13 @@ async def _render_proxy_approval_request(data: dict[str, Any]) -> str:
             border_style="yellow",
         )
     )
-    console.print(
-        f"  [bold]\\[o][/bold] Allow [cyan]{domain}[/cyan] once (this tool call only)\n"
-        f"  [bold]\\[O][/bold] Allow [yellow]all[/yellow] internet once (this tool call only)\n"
-        f"  [bold]\\[t][/bold] Allow [cyan]{domain}[/cyan] for 15 minutes\n"
-        f"  [bold]\\[T][/bold] Allow [yellow]all[/yellow] internet for 15 minutes\n"
-        f"  [bold]\\[d][/bold] Deny"
-    )
     choice = await asyncio.get_event_loop().run_in_executor(
         None,
-        lambda: console.input("[bold]Choice?[/bold] ").strip(),
+        lambda: console.input("[bold]\\[a]llow / \\[d]eny?[/bold] ").strip().lower(),
     )
-    match choice:
-        case "O":
-            return "allow_all_once"
-        case "T":
-            return "allow_all_15min"
-    match choice.lower():
-        case "o" | "once":
-            return "allow_once"
-        case "t" | "timed":
-            return "allow_15min"
-        case _:
-            return "deny"
+    if choice in ("a", "allow", "y", "yes"):
+        return "allow"
+    return "deny"
 
 
 async def _render_approval_request(data: dict[str, Any]) -> bool:

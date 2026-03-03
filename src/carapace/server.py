@@ -9,7 +9,6 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated, Any
 
-from genai_prices import UpdatePrices
 import logfire
 import loguru
 import uvicorn
@@ -17,6 +16,7 @@ from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect, WebSocketException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from genai_prices import UpdatePrices
 from httpx import AsyncClient, HTTPStatusError
 from loguru import logger
 from pydantic import BaseModel
@@ -541,7 +541,7 @@ async def chat_ws(
             except (ValueError, Exception):
                 continue
             if isinstance(msg, ProxyApprovalResponse) and msg.request_id == request_id:
-                return msg.decision in ("allow_once", "allow_all_once", "allow_15min", "allow_all_15min")
+                return msg.decision == "allow"
             logger.warning(f"Unexpected WS message while waiting for domain escalation: {msg}")
 
     skills_dir = _data_dir / "skills"

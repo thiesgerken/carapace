@@ -23,7 +23,7 @@ class ProxyApprovalResponse(BaseModel):
 
     type: Literal["proxy_approval_response"] = "proxy_approval_response"
     request_id: str
-    decision: Literal["allow_once", "allow_all_once", "allow_15min", "allow_all_15min", "deny"]
+    decision: Literal["allow", "deny"]
 
 
 ClientEnvelope = UserMessage | ApprovalResponse | ProxyApprovalResponse
