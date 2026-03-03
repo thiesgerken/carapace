@@ -207,7 +207,7 @@ async def lifespan(app: FastAPI):
 
     logger.info(
         f"Carapace server ready — model={_config.agent.model}, "
-        f"skills={len(_skill_catalog)}, sandbox=on, proxy_port={proxy_port}, token={token[:8]}…"
+        f"skills={len(_skill_catalog)}, proxy_port={proxy_port}, token={token[:8]}…"
         + (f", matrix=on ({_config.channels.matrix.homeserver})" if _config.channels.matrix.enabled else "")
     )
     yield
