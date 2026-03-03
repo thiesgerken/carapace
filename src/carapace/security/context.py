@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 from collections.abc import Awaitable, Callable
 from datetime import datetime
 from pathlib import Path
@@ -111,7 +110,6 @@ class SessionSecurity:
         self._last_synced_idx: int = 0
         self._audit_dir = audit_dir
         self._user_escalation_callback: Callable[[str, str, dict[str, Any]], Awaitable[bool]] | None = None
-        self._lock = asyncio.Lock()
 
     def append(self, entry: ActionLogEntry) -> None:
         self.action_log.append(entry)
