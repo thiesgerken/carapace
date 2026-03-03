@@ -106,7 +106,6 @@ class SessionSecurity:
             | SkillActivatedEntry
             | UserVouchedEntry
         ] = []
-        self.bouncer_messages: list[Any] = []
         self.bouncer_eval_count: int = 0
         self._last_synced_idx: int = 0
         self._audit_dir = audit_dir
@@ -162,6 +161,5 @@ class SessionSecurity:
         return await self._user_escalation_callback(self.session_id, domain, context)
 
     def reset_bouncer(self) -> None:
-        self.bouncer_messages.clear()
         self.bouncer_eval_count = 0
         self._last_synced_idx = 0
