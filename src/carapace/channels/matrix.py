@@ -680,13 +680,16 @@ class MatrixChannel:
         data_dir = self._session_mgr.sessions_dir.parent
         skills_dir = data_dir / "skills"
         audit_dir = data_dir / "sessions" / session_id
-        sec_session = security_mod.init_session(
-            session_id,
-            bouncer_model=self._full_config.agent.bouncer_model,
-            security_md=self._security_md,
-            skills_dir=skills_dir,
-            audit_dir=audit_dir,
-        )
+        try:
+            sec_session = security_mod.get_session(session_id)
+        except KeyError:
+            sec_session = security_mod.init_session(
+                session_id,
+                bouncer_model=self._full_config.agent.bouncer_model,
+                security_md=self._security_md,
+                skills_dir=skills_dir,
+                audit_dir=audit_dir,
+            )
         sec_session.set_user_escalation_callback(_domain_escalation)
 
         deps = self._build_deps(
