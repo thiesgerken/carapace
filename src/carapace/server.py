@@ -4,10 +4,12 @@ import asyncio
 import contextlib
 import logging
 import os
+import secrets
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated, Any
 
+from genai_prices import UpdatePrices
 import logfire
 import loguru
 import uvicorn
@@ -182,8 +184,6 @@ async def lifespan(app: FastAPI):
     await proxy.start()
 
     token = ensure_token(_data_dir)
-
-    from genai_prices import UpdatePrices
 
     price_updater = UpdatePrices()
     price_updater.start()
@@ -525,9 +525,7 @@ async def chat_ws(
         context: dict[str, Any],
     ) -> bool:
         """Send a proxy domain escalation to the client and wait for the response."""
-        import secrets as _secrets
-
-        request_id = _secrets.token_hex(8)
+        request_id = secrets.token_hex(8)
         await _send(
             websocket,
             ProxyApprovalRequest(
