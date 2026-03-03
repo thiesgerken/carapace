@@ -6,6 +6,8 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Annotated, Any
 
+from genai_prices import Usage as PriceUsage
+from genai_prices import calc_price
 from loguru import logger
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic_ai.usage import RunUsage
@@ -168,9 +170,6 @@ class UsageTracker(BaseModel):
 
     def estimated_cost(self) -> dict[str, Decimal]:
         """Return estimated USD cost per model and total. Keys: model names + 'total'."""
-        from genai_prices import Usage as PriceUsage
-        from genai_prices import calc_price
-
         costs: dict[str, Decimal] = {}
         total = Decimal(0)
         for model_key, u in self.models.items():
