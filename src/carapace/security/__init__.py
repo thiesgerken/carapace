@@ -30,6 +30,7 @@ SAFE_TOOLS: frozenset[str] = frozenset(
 
 _sessions: dict[str, SessionSecurity] = {}
 _bouncers: dict[str, Bouncer] = {}
+_session_refs: dict[str, int] = {}
 
 
 def get_session(session_id: str) -> SessionSecurity:
@@ -47,6 +48,17 @@ def init_session(
     audit_dir: Path | None = None,
     reset_threshold: int = 20,
 ) -> SessionSecurity:
+    """Create or reuse a security session (refcount-based).
+
+    If the session already exists the existing state is returned and the
+    reference count is incremented.  This keeps the bouncer conversation and
+    action log intact when multiple WebSocket clients share a session.
+    """
+    if session_id in _sessions:
+        _session_refs[session_id] = _session_refs.get(session_id, 1) + 1
+        logger.debug(f"Reusing existing security session {session_id} (refs={_session_refs[session_id]})")
+        return _sessions[session_id]
+
     session = SessionSecurity(session_id, audit_dir=audit_dir)
     _sessions[session_id] = session
     _bouncers[session_id] = Bouncer(
@@ -55,12 +67,20 @@ def init_session(
         skills_dir=skills_dir,
         reset_threshold=reset_threshold,
     )
+    _session_refs[session_id] = 1
     return session
 
 
 def cleanup_session(session_id: str) -> None:
+    """Decrement the reference count; only remove state when the last ref is released."""
+    refs = _session_refs.get(session_id, 0)
+    if refs > 1:
+        _session_refs[session_id] = refs - 1
+        logger.debug(f"Security session {session_id} ref decremented (refs={refs - 1})")
+        return
     _sessions.pop(session_id, None)
     _bouncers.pop(session_id, None)
+    _session_refs.pop(session_id, None)
 
 
 def append_log(session_id: str, entry: ActionLogEntry) -> None:
