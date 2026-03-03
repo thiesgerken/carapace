@@ -505,8 +505,7 @@ async def test_deny_command_resolves_domain_pending(tmp_path: Path):
     assert pd._future.result() is False
 
 
-@pytest.mark.anyio
-async def test_format_domain_escalation():
+def test_format_domain_escalation():
     text = _format_domain_escalation("api.example.com", "curl https://api.example.com", "unexpected domain")
     assert "api.example.com" in text
     assert "unexpected domain" in text
