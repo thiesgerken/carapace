@@ -7,6 +7,7 @@ Maps one session per room; supports slash commands including /reset.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import os
 import time
@@ -264,8 +265,6 @@ class MatrixChannel:
         """Stop the sync loop and close the connection."""
         if self._sync_task:
             self._sync_task.cancel()
-            import contextlib
-
             with contextlib.suppress(asyncio.CancelledError, TimeoutError):
                 await asyncio.wait_for(asyncio.shield(self._sync_task), timeout=5)
         await self._client.close()
