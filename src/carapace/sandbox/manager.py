@@ -151,7 +151,7 @@ class SandboxManager:
     def _build_mounts(self, session_id: str) -> list[Mount]:
         mounts: list[Mount] = []
 
-        for filename in ("AGENTS.md", "SOUL.md", "USER.md"):
+        for filename in ("AGENTS.md", "SOUL.md", "USER.md", "SECURITY.md"):
             path = self._data_dir / filename
             if path.exists():
                 mounts.append(
