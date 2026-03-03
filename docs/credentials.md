@@ -47,7 +47,7 @@ sequenceDiagram
 
     alt Not yet approved
         CredBroker->>Security: bouncer evaluates credential access
-        RuleEngine->>Gate: approval required
+        Security->>Gate: approval required
         Gate->>User: "Skill email-sender needs GMAIL_APP_PASSWORD. Approve?"
         User->>Gate: /approve
     end
