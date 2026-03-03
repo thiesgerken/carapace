@@ -20,7 +20,13 @@ from pydantic_ai import DeferredToolRequests, DeferredToolResults, ToolDenied
 import carapace.security as security
 from carapace.agent import create_agent
 from carapace.models import Deps
-from carapace.security.context import AgentResponseEntry, ApprovalEntry, UserMessageEntry
+from carapace.security.context import (
+    AgentResponseEntry,
+    ApprovalEntry,
+    AuditEntry,
+    BouncerVerdict,
+    UserMessageEntry,
+)
 from carapace.ws_models import ApprovalRequest
 
 
@@ -74,14 +80,31 @@ async def run_agent_turn(
             deferred_results.approvals[tool_call_id] = decision
 
             meta = requests.metadata.get(tool_call_id, {})
+            user_decision = "approved" if decision is True else "denied"
+
             security.append_log(
                 session_id,
                 ApprovalEntry(
                     tool=meta.get("tool", ""),
                     args_summary=str(meta.get("args", {}))[:200],
-                    decision="approved" if decision is True else "denied",
+                    decision=user_decision,
                 ),
             )
+
+            # Write the deferred audit entry now that the user has decided.
+            bouncer_verdict = meta.get("bouncer_verdict")
+            if isinstance(bouncer_verdict, BouncerVerdict):
+                security.write_audit(
+                    session_id,
+                    AuditEntry(
+                        kind="tool_call",
+                        tool=meta.get("tool", ""),
+                        args_summary=meta.get("args_summary", {}),
+                        bouncer_verdict=bouncer_verdict,
+                        final_decision="allowed" if decision is True else "denied",
+                        explanation=meta.get("explanation", ""),
+                    ),
+                )
 
         result = await agent.run(
             deps=deps,

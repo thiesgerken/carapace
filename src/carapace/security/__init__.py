@@ -69,6 +69,13 @@ def append_log(session_id: str, entry: ActionLogEntry) -> None:
         session.append(entry)
 
 
+def write_audit(session_id: str, entry: AuditEntry) -> None:
+    """Write an audit entry for the given session."""
+    session = _sessions.get(session_id)
+    if session:
+        session.write_audit(entry)
+
+
 async def evaluate(
     session_id: str,
     tool_name: str,
@@ -114,43 +121,59 @@ async def evaluate(
         usage_tracker=usage_tracker,
     )
 
+    decision_str = _verdict_to_decision(verdict)
+
     entry = ToolCallEntry(
         tool=tool_name,
         args=_truncate_args(args),
-        decision=_verdict_to_decision(verdict),
+        decision=decision_str,
         explanation=verdict.explanation,
     )
     session.append(entry)
-
-    session.write_audit(
-        AuditEntry(
-            kind="tool_call",
-            tool=tool_name,
-            args_summary=_truncate_args(args),
-            bouncer_verdict=verdict,
-            final_decision=_verdict_to_decision(verdict),
-            explanation=verdict.explanation,
-        )
-    )
 
     detail = f"[bouncer: {verdict.decision}] {verdict.explanation}"
     if verbose:
         _log_tool_call(tool_name, args, detail, tool_call_callback)
 
     if verdict.decision == "deny":
+        session.write_audit(
+            AuditEntry(
+                kind="tool_call",
+                tool=tool_name,
+                args_summary=_truncate_args(args),
+                bouncer_verdict=verdict,
+                final_decision="denied",
+                explanation=verdict.explanation,
+            )
+        )
         from pydantic_ai import ToolDenied
 
         raise ToolDenied(verdict.explanation)
 
     if verdict.decision == "escalate":
+        # Audit entry is deferred — written by agent_loop after user decision.
         raise ApprovalRequired(
             metadata={
                 "tool": tool_name,
                 "args": args,
                 "explanation": verdict.explanation,
                 "risk_level": verdict.risk_level,
+                "bouncer_verdict": verdict,
+                "args_summary": _truncate_args(args),
             }
         )
+
+    # allow
+    session.write_audit(
+        AuditEntry(
+            kind="tool_call",
+            tool=tool_name,
+            args_summary=_truncate_args(args),
+            bouncer_verdict=verdict,
+            final_decision="allowed",
+            explanation=verdict.explanation,
+        )
+    )
 
 
 async def evaluate_domain(
