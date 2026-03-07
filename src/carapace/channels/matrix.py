@@ -692,6 +692,16 @@ class MatrixChannel:
             )
         sec_session.set_user_escalation_callback(_domain_escalation)
 
+        def _domain_info(domain: str, detail: str) -> None:
+            logger.debug(f"Matrix [{room_id}] domain: {domain} {detail}")
+            if self._verbose.get(room_id, False):
+                notice = f"🌐 `{domain}` — {detail}"
+                task = asyncio.create_task(self._send_notice(room_id, notice))
+                self._background_tasks.add(task)
+                task.add_done_callback(self._background_tasks.discard)
+
+        sec_session.set_domain_info_callback(_domain_info)
+
         deps = self._build_deps(
             session_state,
             tool_call_callback=_tool_call_info,

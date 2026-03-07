@@ -9,7 +9,6 @@ from typing import Any
 
 import yaml
 from pydantic_ai import ModelMessage, ModelMessagesTypeAdapter
-from pydantic_core import to_json
 
 from carapace.models import SessionState, UsageTracker
 
@@ -92,44 +91,64 @@ class SessionManager:
             yaml.dump(state.model_dump(mode="json"), f, default_flow_style=False)
 
     def load_history(self, session_id: str) -> list[ModelMessage]:
-        history_path = self.sessions_dir / session_id / "history.json"
+        history_path = self.sessions_dir / session_id / "history.yaml"
         if not history_path.exists():
+            # fallback to legacy JSON
+            json_path = history_path.with_suffix(".json")
+            if json_path.exists():
+                return ModelMessagesTypeAdapter.validate_json(json_path.read_bytes())
             return []
-        raw = history_path.read_bytes()
-        return ModelMessagesTypeAdapter.validate_json(raw)
+        with open(history_path) as f:
+            raw = yaml.safe_load(f)
+        return ModelMessagesTypeAdapter.validate_python(raw or [])
 
     def save_history(self, session_id: str, messages: list[ModelMessage]) -> None:
         session_dir = self.sessions_dir / session_id
         session_dir.mkdir(parents=True, exist_ok=True)
-        history_path = session_dir / "history.json"
-        history_path.write_bytes(to_json(messages))
+        history_path = session_dir / "history.yaml"
+        data = ModelMessagesTypeAdapter.dump_python(messages, mode="json")
+        with open(history_path, "w") as f:
+            yaml.dump(data, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
 
     # --- Usage tracking persistence ---
 
     def load_usage(self, session_id: str) -> UsageTracker:
-        usage_path = self.sessions_dir / session_id / "usage.json"
+        usage_path = self.sessions_dir / session_id / "usage.yaml"
         if not usage_path.exists():
+            # fallback to legacy JSON
+            json_path = usage_path.with_suffix(".json")
+            if json_path.exists():
+                return UsageTracker.model_validate_json(json_path.read_bytes())
             return UsageTracker()
-        return UsageTracker.model_validate_json(usage_path.read_bytes())
+        with open(usage_path) as f:
+            raw = yaml.safe_load(f)
+        return UsageTracker.model_validate(raw or {})
 
     def save_usage(self, session_id: str, tracker: UsageTracker) -> None:
         session_dir = self.sessions_dir / session_id
         session_dir.mkdir(parents=True, exist_ok=True)
-        usage_path = session_dir / "usage.json"
-        usage_path.write_bytes(tracker.model_dump_json().encode())
+        usage_path = session_dir / "usage.yaml"
+        with open(usage_path, "w") as f:
+            yaml.dump(tracker.model_dump(mode="json"), f, default_flow_style=False, allow_unicode=True, sort_keys=False)
 
     # --- Event log (ordered display history including slash commands) ---
 
     def load_events(self, session_id: str) -> list[dict[str, Any]]:
-        events_path = self.sessions_dir / session_id / "events.json"
+        events_path = self.sessions_dir / session_id / "events.yaml"
         if not events_path.exists():
+            # fallback to legacy JSON
+            json_path = events_path.with_suffix(".json")
+            if json_path.exists():
+                return json.loads(json_path.read_bytes())
             return []
-        return json.loads(events_path.read_bytes())
+        with open(events_path) as f:
+            return yaml.safe_load(f) or []
 
     def append_events(self, session_id: str, events: list[dict[str, Any]]) -> None:
         session_dir = self.sessions_dir / session_id
         session_dir.mkdir(parents=True, exist_ok=True)
-        events_path = session_dir / "events.json"
-        existing = json.loads(events_path.read_bytes()) if events_path.exists() else []
+        events_path = session_dir / "events.yaml"
+        existing = self.load_events(session_id)
         existing.extend(events)
-        events_path.write_text(json.dumps(existing))
+        with open(events_path, "w") as f:
+            yaml.dump(existing, f, default_flow_style=False, allow_unicode=True, sort_keys=False)

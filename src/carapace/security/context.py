@@ -5,6 +5,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
+import yaml
 from loguru import logger
 from pydantic import BaseModel, Field
 
@@ -109,6 +110,7 @@ class SessionSecurity:
         self._last_synced_idx: int = 0
         self._audit_dir = audit_dir
         self._user_escalation_callback: Callable[[str, str, dict[str, Any]], Awaitable[bool]] | None = None
+        self._domain_info_callback: Callable[[str, str], None] | None = None
 
     def append(self, entry: ActionLogEntry) -> None:
         self.action_log.append(entry)
@@ -142,15 +144,34 @@ class SessionSecurity:
         if self._audit_dir is None:
             return
         self._audit_dir.mkdir(parents=True, exist_ok=True)
-        audit_path = self._audit_dir / "audit.jsonl"
-        with open(audit_path, "a") as f:
-            f.write(entry.model_dump_json() + "\n")
+        audit_path = self._audit_dir / "audit.yaml"
+        existing: list[dict[str, Any]] = []
+        if audit_path.exists():
+            with open(audit_path) as f:
+                existing = yaml.safe_load(f) or []
+        existing.append(entry.model_dump(mode="json"))
+        with open(audit_path, "w") as f:
+            yaml.dump(existing, f, default_flow_style=False, allow_unicode=True, sort_keys=False, default=str)
 
     def set_user_escalation_callback(
         self,
         callback: Callable[[str, str, dict[str, Any]], Awaitable[bool]] | None,
     ) -> None:
         self._user_escalation_callback = callback
+
+    def set_domain_info_callback(
+        self,
+        callback: Callable[[str, str], None] | None,
+    ) -> None:
+        """Set callback to notify the UI about domain access decisions.
+
+        Signature: ``callback(domain, detail)``.
+        """
+        self._domain_info_callback = callback
+
+    def notify_domain_decision(self, domain: str, detail: str) -> None:
+        if self._domain_info_callback is not None:
+            self._domain_info_callback(domain, detail)
 
     async def escalate_to_user(self, domain: str, context: dict[str, Any]) -> bool:
         if self._user_escalation_callback is None:

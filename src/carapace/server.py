@@ -349,7 +349,7 @@ async def get_session_history(
 
 
 def _history_from_messages(session_id: str) -> list[HistoryMessage]:
-    """Fallback: build history from Pydantic AI messages for sessions without events.json."""
+    """Fallback: build history from Pydantic AI messages for sessions without events."""
     from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, ToolCallPart, UserPromptPart
 
     raw_messages = _session_mgr.load_history(session_id)
@@ -554,6 +554,25 @@ async def chat_ws(
         audit_dir=audit_dir,
     )
     sec_session.set_user_escalation_callback(request_domain_escalation)
+
+    def send_domain_info(domain: str, detail: str) -> None:
+        """Callback to notify the UI about domain access decisions."""
+
+        async def _send_and_cleanup() -> None:
+            try:
+                await _send(
+                    websocket,
+                    ToolCallInfo(tool="proxy_domain", args={"domain": domain}, detail=detail),
+                )
+            except Exception as exc:
+                logger.warning(f"WebSocket send failed for domain info: {exc}")
+            finally:
+                pending_sends.discard(task)
+
+        task = asyncio.create_task(_send_and_cleanup())
+        pending_sends.add(task)
+
+    sec_session.set_domain_info_callback(send_domain_info)
 
     deps = _build_deps(
         session_state,

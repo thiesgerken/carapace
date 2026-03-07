@@ -230,15 +230,20 @@ async def evaluate_domain(
     if verdict.decision == "allow":
         allowed = True
         final_decision = "allowed"
+        detail = f"[bouncer: allow] {verdict.explanation}"
     elif verdict.decision == "deny":
         allowed = False
         final_decision = "denied"
+        detail = f"[bouncer: deny] {verdict.explanation}"
     else:
         allowed = await session.escalate_to_user(
             domain,
             {"command": command, "explanation": verdict.explanation},
         )
         final_decision = "allowed" if allowed else "denied"
+        detail = f"[bouncer: escalate \u2192 {final_decision}] {verdict.explanation}"
+
+    session.notify_domain_decision(domain, detail)
 
     session.write_audit(
         AuditEntry(
