@@ -151,7 +151,7 @@ class SessionSecurity:
                 existing = yaml.safe_load(f) or []
         existing.append(entry.model_dump(mode="json"))
         with open(audit_path, "w") as f:
-            yaml.dump(existing, f, default_flow_style=False, allow_unicode=True, sort_keys=False, default=str)
+            yaml.dump(existing, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
 
     def set_user_escalation_callback(
         self,
