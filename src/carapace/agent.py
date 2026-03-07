@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import difflib
 from pathlib import Path
 from typing import Any
 
@@ -174,40 +173,25 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
         )
         return result
 
-    # --- Filesystem ---
+    # --- Filesystem (sandboxed — runs inside the Docker container) ---
 
     @agent.tool
     async def read(ctx: RunContext[Deps], path: str) -> str:
-        """Read a file from the data directory. Returns the file content."""
+        """Read a file or list a directory inside the sandbox. Use container paths (e.g. /workspace/skills/foo.py)."""
         if not ctx.tool_call_approved:
             await _gate(ctx, "read", {"path": path})
 
-        err, full_path = _resolve_path(ctx.deps.data_dir, path)
-        if err:
-            return err
-        if not full_path.exists():
-            return f"File not found: {path}"
-        if full_path.is_dir():
-            entries = sorted(full_path.iterdir())
-            lines = []
-            for e in entries:
-                suffix = "/" if e.is_dir() else ""
-                lines.append(f"  {e.name}{suffix}")
-            return f"Directory listing of {path}/:\n" + "\n".join(lines)
-        return full_path.read_text()
+        session_id = ctx.deps.session_state.session_id
+        return await ctx.deps.sandbox.file_read(session_id, path)
 
     @agent.tool
     async def write(ctx: RunContext[Deps], path: str, content: str) -> str:
-        """Write content to a file in the data directory. Creates parent directories as needed."""
+        """Write content to a file in the sandbox. Creates parent directories as needed."""
         if not ctx.tool_call_approved:
             await _gate(ctx, "write", {"path": path, "content": content[:200]})
 
-        err, full_path = _resolve_path(ctx.deps.data_dir, path)
-        if err:
-            return err
-        full_path.parent.mkdir(parents=True, exist_ok=True)
-        full_path.write_text(content)
-        return f"Written to {path}"
+        session_id = ctx.deps.session_state.session_id
+        return await ctx.deps.sandbox.file_write(session_id, path, content)
 
     @agent.tool
     async def edit(
@@ -216,7 +200,8 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
         old_string: str,
         new_string: str,
     ) -> str:
-        """Edit a file by replacing old_string with new_string. The old_string must appear exactly once in the file."""
+        """Edit a file in the sandbox by replacing old_string with new_string.
+        The old_string must appear exactly once."""
         if not ctx.tool_call_approved:
             await _gate(
                 ctx,
@@ -228,35 +213,12 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
                 },
             )
 
-        err, full_path = _resolve_path(ctx.deps.data_dir, path)
-        if err:
-            return err
-        if not full_path.exists():
-            return f"File not found: {path}"
-
-        original = full_path.read_text()
-        count = original.count(old_string)
-        if count == 0:
-            return f"Error: old_string not found in {path}"
-        if count > 1:
-            return f"Error: old_string appears {count} times in {path} (must be unique)"
-
-        updated = original.replace(old_string, new_string, 1)
-        full_path.write_text(updated)
-
-        diff = difflib.unified_diff(
-            original.splitlines(keepends=True),
-            updated.splitlines(keepends=True),
-            fromfile=f"a/{path}",
-            tofile=f"b/{path}",
-            n=3,
-        )
-        diff_text = "".join(diff)
-        return f"Edited {path}:\n```diff\n{diff_text}```"
+        session_id = ctx.deps.session_state.session_id
+        return await ctx.deps.sandbox.file_edit(session_id, path, old_string, new_string)
 
     @agent.tool
     async def apply_patch(ctx: RunContext[Deps], changes: list[dict[str, str]]) -> str:
-        """Apply structured edits across one or more files.
+        """Apply structured edits across one or more files in the sandbox.
 
         Each change is a dict with 'path', 'old_string', and 'new_string'.
         If old_string is empty, the file is created with new_string as content.
@@ -269,44 +231,8 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
                 {"files": paths_summary, "num_changes": len(changes)},
             )
 
-        results: list[str] = []
-        for i, change in enumerate(changes):
-            p = change.get("path", "")
-            old = change.get("old_string", "")
-            new = change.get("new_string", "")
-
-            if not p:
-                results.append(f"Change {i + 1}: missing path")
-                continue
-
-            err, full_path = _resolve_path(ctx.deps.data_dir, p)
-            if err:
-                results.append(f"Change {i + 1} ({p}): {err}")
-                continue
-
-            if not old:
-                full_path.parent.mkdir(parents=True, exist_ok=True)
-                full_path.write_text(new)
-                results.append(f"Change {i + 1}: created {p}")
-                continue
-
-            if not full_path.exists():
-                results.append(f"Change {i + 1}: file not found: {p}")
-                continue
-
-            original = full_path.read_text()
-            count = original.count(old)
-            if count == 0:
-                results.append(f"Change {i + 1} ({p}): old_string not found")
-                continue
-            if count > 1:
-                results.append(f"Change {i + 1} ({p}): old_string appears {count} times (must be unique)")
-                continue
-
-            full_path.write_text(original.replace(old, new, 1))
-            results.append(f"Change {i + 1}: edited {p}")
-
-        return "\n".join(results)
+        session_id = ctx.deps.session_state.session_id
+        return await ctx.deps.sandbox.file_apply_patch(session_id, changes)
 
     # --- Runtime ---
 

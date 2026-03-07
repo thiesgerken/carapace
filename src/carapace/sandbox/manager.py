@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import base64
 import datetime
+import json
 import re
 import secrets
+import shlex
 import shutil
 import time
 from pathlib import Path
@@ -10,9 +13,93 @@ from pathlib import Path
 from loguru import logger
 from pydantic import BaseModel
 
-from carapace.sandbox.runtime import ContainerConfig, ContainerGoneError, ContainerRuntime, Mount, SkillVenvError
+from carapace.sandbox.runtime import (
+    ContainerConfig,
+    ContainerGoneError,
+    ContainerRuntime,
+    ExecResult,
+    Mount,
+    SkillVenvError,
+)
 
 _SKILL_NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]*$")
+
+# Inline Python scripts executed inside the sandbox container.
+# Data is passed as base64-encoded CLI args to avoid shell-escaping issues.
+# Scripts use only double quotes so that shlex.quote (single-quote wrapping)
+# works without any escaping.
+
+_EDIT_SCRIPT = """\
+import sys, base64, difflib
+p, o_b64, n_b64 = sys.argv[1], sys.argv[2], sys.argv[3]
+old = base64.b64decode(o_b64).decode()
+new = base64.b64decode(n_b64).decode()
+try:
+    text = open(p).read()
+except FileNotFoundError:
+    print(f"Error: file not found: {p}")
+    sys.exit(1)
+except PermissionError:
+    print(f"Error: permission denied: {p}")
+    sys.exit(1)
+count = text.count(old)
+if count == 0:
+    print("Error: old_string not found")
+    sys.exit(1)
+if count > 1:
+    print(f"Error: old_string appears {count} times (must be unique)")
+    sys.exit(1)
+updated = text.replace(old, new, 1)
+try:
+    open(p, "w").write(updated)
+except PermissionError:
+    print(f"Error: permission denied (read-only): {p}")
+    sys.exit(1)
+d = difflib.unified_diff(text.splitlines(keepends=True), updated.splitlines(keepends=True), f"a/{p}", f"b/{p}", n=3)
+print("".join(d))\
+"""
+
+_PATCH_SCRIPT = """\
+import sys, base64, json, os
+changes = json.loads(base64.b64decode(sys.argv[1]).decode())
+for i, c in enumerate(changes):
+    p = c.get("path", "")
+    old = base64.b64decode(c["old_b64"]).decode() if c.get("old_b64") else ""
+    new = base64.b64decode(c["new_b64"]).decode() if c.get("new_b64") else ""
+    if not p:
+        print(f"Change {i+1}: missing path")
+        continue
+    if not old:
+        d = os.path.dirname(p)
+        if d:
+            os.makedirs(d, exist_ok=True)
+        try:
+            open(p, "w").write(new)
+            print(f"Change {i+1}: created {p}")
+        except PermissionError:
+            print(f"Change {i+1} ({p}): permission denied")
+        continue
+    if not os.path.exists(p):
+        print(f"Change {i+1}: file not found: {p}")
+        continue
+    try:
+        t = open(p).read()
+    except PermissionError:
+        print(f"Change {i+1} ({p}): permission denied")
+        continue
+    cnt = t.count(old)
+    if cnt == 0:
+        print(f"Change {i+1} ({p}): old_string not found")
+        continue
+    if cnt > 1:
+        print(f"Change {i+1} ({p}): old_string appears {cnt} times (must be unique)")
+        continue
+    try:
+        open(p, "w").write(t.replace(old, new, 1))
+        print(f"Change {i+1}: edited {p}")
+    except PermissionError:
+        print(f"Change {i+1} ({p}): permission denied")\
+"""
 
 
 class SessionContainer(BaseModel):
@@ -209,7 +296,8 @@ class SandboxManager:
             "no_proxy": no_proxy_host,
         }
 
-    async def exec_command(self, session_id: str, command: str, timeout: int = 30) -> str:
+    async def _exec(self, session_id: str, command: str, timeout: int = 30) -> ExecResult:
+        """Run a command in the sandbox and return the raw ExecResult."""
         sc = await self.ensure_session(session_id)
         sc.last_used = time.time()
         logger.debug(f"Exec in session {session_id}: {command}")
@@ -218,21 +306,79 @@ class SandboxManager:
         self._exec_temp_domains[session_id] = set()
         try:
             try:
-                result = await self._runtime.exec(sc.container_id, command, timeout=timeout)
+                return await self._runtime.exec(sc.container_id, command, timeout=timeout)
             except ContainerGoneError:
                 logger.warning(f"Container gone for session {session_id}, recreating sandbox")
                 self._prepare_session_recreate(session_id)
                 sc = await self.ensure_session(session_id)
-                result = await self._runtime.exec(sc.container_id, command, timeout=timeout)
+                return await self._runtime.exec(sc.container_id, command, timeout=timeout)
         finally:
             self._session_current_command.pop(session_id, None)
             self._exec_temp_domains.pop(session_id, None)
 
+    async def exec_command(self, session_id: str, command: str, timeout: int = 30) -> str:
+        """Run a command in the sandbox and return formatted output."""
+        result = await self._exec(session_id, command, timeout=timeout)
         output = result.output
         if result.exit_code != 0 and f"[exit code: {result.exit_code}]" not in output:
             logger.debug(f"Command failed in session {session_id} (exit {result.exit_code}): {command}")
             output += f"\n[exit code: {result.exit_code}]"
         return output or "(no output)"
+
+    # ------------------------------------------------------------------
+    # File operations (executed inside the sandbox container via
+    # shell commands and small inline Python snippets).
+    # Data is passed as base64 CLI args to avoid shell-escaping issues.
+    # ------------------------------------------------------------------
+
+    async def file_read(self, session_id: str, path: str) -> str:
+        """Read a file or list a directory inside the sandbox."""
+        pq = shlex.quote(path)
+        cmd = f'if [ -d {pq} ]; then echo "::DIR::"; ls -1 {pq}; else cat {pq}; fi'
+        result = await self._exec(session_id, cmd, timeout=10)
+        if result.exit_code != 0:
+            return result.output or f"Error: cannot read {path}"
+        output = result.output
+        if output.startswith("::DIR::\n"):
+            return f"Directory listing of {path}/:\n" + output[len("::DIR::\n") :]
+        return output or "(empty file)"
+
+    async def file_write(self, session_id: str, path: str, content: str) -> str:
+        """Write content to a file inside the sandbox."""
+        pq = shlex.quote(path)
+        content_b64 = base64.b64encode(content.encode()).decode()
+        cmd = f'mkdir -p "$(dirname {pq})" && printf %s {content_b64} | base64 -d > {pq}'
+        result = await self._exec(session_id, cmd, timeout=10)
+        if result.exit_code != 0:
+            return result.output or f"Error: cannot write {path}"
+        return f"Written to {path}"
+
+    async def file_edit(self, session_id: str, path: str, old_string: str, new_string: str) -> str:
+        """Edit a file inside the sandbox (search-and-replace)."""
+        pq = shlex.quote(path)
+        old_b64 = base64.b64encode(old_string.encode()).decode()
+        new_b64 = base64.b64encode(new_string.encode()).decode()
+        cmd = f"python3 -c {shlex.quote(_EDIT_SCRIPT)} {pq} {old_b64} {new_b64}"
+        result = await self._exec(session_id, cmd, timeout=10)
+        if result.exit_code != 0:
+            return result.output or f"Error: cannot edit {path}"
+        return f"Edited {path}:\n```diff\n{result.output}```"
+
+    async def file_apply_patch(self, session_id: str, changes: list[dict[str, str]]) -> str:
+        """Apply structured edits across files inside the sandbox."""
+        encoded_changes: list[dict[str, str]] = []
+        for change in changes:
+            encoded: dict[str, str] = {"path": change.get("path", "")}
+            if change.get("old_string"):
+                encoded["old_b64"] = base64.b64encode(change["old_string"].encode()).decode()
+            if change.get("new_string"):
+                encoded["new_b64"] = base64.b64encode(change["new_string"].encode()).decode()
+            encoded_changes.append(encoded)
+
+        payload_b64 = base64.b64encode(json.dumps(encoded_changes).encode()).decode()
+        cmd = f"python3 -c {shlex.quote(_PATCH_SCRIPT)} {payload_b64}"
+        result = await self._exec(session_id, cmd, timeout=10)
+        return result.output or "(no output)"
 
     async def activate_skill(self, session_id: str, skill_name: str) -> str:
         if err := _validate_skill_name(skill_name):
