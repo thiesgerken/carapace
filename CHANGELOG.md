@@ -1,6 +1,83 @@
 # CHANGELOG
 
 
+## v0.9.0 (2026-03-08)
+
+### Other
+
+- Enhance Python style guidelines to encourage clarity in user requests. Added a note advising users
+  to avoid technical debt and seek better solutions.
+  ([`ab6b668`](https://github.com/thiesgerken/carapace/commit/ab6b66818b988ac93a06d98353616a111ef82386))
+
+### ✨
+
+- ✨ Tool/Proxy Approval via Shadow-Agent ([#39](https://github.com/thiesgerken/carapace/pull/39),
+  [`463f10e`](https://github.com/thiesgerken/carapace/commit/463f10ed7daf095c82ad34666f3862eccf8f77cb))
+
+* ✨ Security v2
+
+* 🛡️ Update SECURITY.md to enhance security guidelines and clarify agent behavior regarding prompt
+  injection and accidental rogue actions. Added detailed sections on command scrutiny, sandbox
+  operations, and user escalation protocols.
+
+* Update docs/credentials.md
+
+Co-authored-by: Copilot <175728472+Copilot@users.noreply.github.com>
+
+* Convert `test_format_domain_escalation` to plain `def` (#40)
+
+* Initial plan
+
+* Remove async from test_format_domain_escalation (no await expressions)
+
+Co-authored-by: thiesgerken <7550099+thiesgerken@users.noreply.github.com>
+
+---------
+
+Co-authored-by: copilot-swe-agent[bot] <198982749+Copilot@users.noreply.github.com>
+
+* Include SECURITY.md in sandbox workspace mounts (#42)
+
+* Fix _build_mounts to include SECURITY.md as readonly mount
+
+* Remove dead `bouncer_messages` field from `SessionSecurity` (#43)
+
+* Remove dead bouncer_messages field from SessionSecurity
+
+* Remove unused asyncio.Lock from SessionSecurity (#44)
+
+* Remove unused _lock (asyncio.Lock) and asyncio import from SessionSecurity
+
+* Move function-level imports to module level in server, models, and matrix (#41)
+
+* fix: move function-level imports to module level in server.py, models.py, matrix.py
+
+* remove sandbox=on
+
+* Handle session retrieval with fallback to initialization in MatrixChannel
+
+* Verbessere die Funktion get_host_ip, um die IP-Adresse des Hosts im Docker-Netzwerk zu ermitteln
+  und eine Fallback-Option für die Gateway-IP hinzuzufügen.
+
+* Füge Audit-Logging für Benutzerentscheidungen hinzu und verbessere die Protokollierung von
+  Toolaufrufen
+
+* Vereinfache die Entscheidungslogik für Proxygenehmigungen und aktualisiere das Modell zur
+  Unterstützung neuer Entscheidungen
+
+* Füge Referenzzählung für Sicherheitssitzungen hinzu und verbessere die Sitzungsbereinigung
+
+* make the read/write/patch ops work in the sandbox
+
+* Add domain info callbacks and switch history/usage/event storage to YAML format
+
+* fix yaml
+
+* Remove dash from detail display in ToolCallBadge component
+
+Co-authored-by: Copilot <198982749+Copilot@users.noreply.github.com>
+
+
 ## v0.8.0 (2026-02-22)
 
 ### Other
