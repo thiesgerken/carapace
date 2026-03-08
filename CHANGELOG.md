@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v0.11.0 (2026-03-08)
+
+### ✨
+
+- ✨ Rename Bouncer to Sentinel
+  ([`49819d8`](https://github.com/thiesgerken/carapace/commit/49819d828ccdd319188b13cef529d08557c97bc6))
+
+
 ## v0.10.0 (2026-03-08)
 
 ### Other
