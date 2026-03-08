@@ -3,46 +3,31 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowUp, Square } from "lucide-react";
 import { cn } from "@/lib/utils";
-
-const SLASH_COMMANDS = [
-  { command: "/help", description: "Show available commands" },
-  { command: "/security", description: "Show security policy summary" },
-  { command: "/approve-context", description: "Vouch for the current agent context as trustworthy" },
-  { command: "/session", description: "Show current session state" },
-  { command: "/skills", description: "List available skills" },
-  { command: "/memory", description: "List memory files" },
-  { command: "/usage", description: "Show token usage for this session" },
-  { command: "/verbose", description: "Toggle tool call display" },
-  { command: "/quit", description: "Disconnect" },
-];
+import type { SlashCommand } from "@/lib/api";
 
 interface ChatInputProps {
   onSend: (content: string) => void;
   onCancel?: () => void;
   disabled?: boolean;
   waiting?: boolean;
+  commands?: SlashCommand[];
 }
 
-export function ChatInput({ onSend, onCancel, disabled, waiting }: ChatInputProps) {
+export function ChatInput({ onSend, onCancel, disabled, waiting, commands = [] }: ChatInputProps) {
   const [value, setValue] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
   // Show autocomplete when input starts with "/" and is a single word, but not if it exactly matches a command
-  const exactMatch = SLASH_COMMANDS.some((c) => c.command === value.trim().toLowerCase());
+  const exactMatch = commands.some((c) => c.command === value.trim().toLowerCase());
   const showMenu = value.startsWith("/") && !value.includes(" ") && !exactMatch;
 
   const filtered = useMemo(() => {
     if (!showMenu) return [];
     const prefix = value.toLowerCase();
-    return SLASH_COMMANDS.filter((c) => c.command.startsWith(prefix));
-  }, [value, showMenu]);
-
-  // Reset selection when filtered list changes
-  useEffect(() => {
-    setSelectedIndex(0);
-  }, [filtered.length, value]);
+    return commands.filter((c) => c.command.startsWith(prefix));
+  }, [value, showMenu, commands]);
 
   // Scroll selected item into view
   useEffect(() => {
@@ -99,6 +84,7 @@ export function ChatInput({ onSend, onCancel, disabled, waiting }: ChatInputProp
 
   function handleInput(e: React.ChangeEvent<HTMLTextAreaElement>) {
     setValue(e.target.value);
+    setSelectedIndex(0);
     const el = e.target;
     el.style.height = "auto";
     el.style.height = Math.min(el.scrollHeight, 200) + "px";

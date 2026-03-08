@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { useWebSocket } from "@/hooks/use-websocket";
-import { fetchHistory, wsUrl } from "@/lib/api";
+import { fetchCommands, fetchHistory, wsUrl } from "@/lib/api";
+import type { SlashCommand } from "@/lib/api";
 import type { ChatMessage, ServerMessage } from "@/lib/types";
 import { Message } from "./message";
 import { ChatInput } from "./chat-input";
@@ -18,10 +19,16 @@ export function ChatView({ server, token, sessionId }: ChatViewProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [waiting, setWaiting] = useState(false);
   const [loadingHistory, setLoadingHistory] = useState(true);
+  const [commands, setCommands] = useState<SlashCommand[]>([]);
   const approvalState = useRef<Map<string, boolean>>(new Map());
   const bottomRef = useRef<HTMLDivElement>(null);
   const messagesRef = useRef<ChatMessage[]>([]);
   messagesRef.current = messages;
+
+  // Fetch available slash commands on mount
+  useEffect(() => {
+    fetchCommands(server, token).then(setCommands);
+  }, [server, token]);
 
   // Load history on mount / session change
   useEffect(() => {
@@ -286,6 +293,7 @@ export function ChatView({ server, token, sessionId }: ChatViewProps) {
         onCancel={handleCancel}
         disabled={!connected || waiting}
         waiting={waiting}
+        commands={commands}
       />
     </div>
   );

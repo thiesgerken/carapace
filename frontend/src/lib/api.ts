@@ -53,6 +53,20 @@ export async function fetchHistory(
   return res.json();
 }
 
+export interface SlashCommand {
+  command: string;
+  description: string;
+}
+
+export async function fetchCommands(
+  server: string,
+  token: string,
+): Promise<SlashCommand[]> {
+  const res = await fetch(`${server}/commands`, { headers: headers(token) });
+  if (!res.ok) return [];
+  return res.json();
+}
+
 export function wsUrl(
   server: string,
   sessionId: string,
