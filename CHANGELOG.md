@@ -1,7 +1,20 @@
 # CHANGELOG
 
 
+## v0.18.0 (2026-03-08)
+
+### Other
+
+- Merge remote-tracking branch 'refs/remotes/origin/main'
+  ([`85d8e88`](https://github.com/thiesgerken/carapace/commit/85d8e88413d85851663caab528af31a95f93b048))
+
+
 ## v0.17.1 (2026-03-08)
+
+### ✨
+
+- ✨ title generation
+  ([`52149c3`](https://github.com/thiesgerken/carapace/commit/52149c3245c982bffc43a655b6eb344ceabf167a))
 
 ### 🐛
 
