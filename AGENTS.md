@@ -69,6 +69,7 @@ data/                  # runtime data directory (config, security policy, memory
 
 ## Key conventions
 
+- Commit messages use [gitmoji](https://gitmoji.dev/) (e.g. `🐛 fix:`, `✨ feat:`, `♻️ refactor:`)
 - Security policy is a natural-language `SECURITY.md` that becomes the sentinel agent's system prompt
 - Every tool call goes through a safe-list check, then an LLM sentinel gate (`security.evaluate()`)
 - The sentinel maintains a persistent shadow conversation per session for contextual decisions
