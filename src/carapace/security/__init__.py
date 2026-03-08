@@ -118,6 +118,8 @@ async def evaluate(
     """Main security gate (global-dict lookup). Delegates to evaluate_with."""
     session = _sessions.get(session_id)
     sentinel = _sentinels.get(session_id)
+    if session is None or sentinel is None:
+        raise RuntimeError(f"No security session for {session_id}")
     await evaluate_with(
         session,
         sentinel,
@@ -130,8 +132,8 @@ async def evaluate(
 
 
 async def evaluate_with(
-    session: SessionSecurity | None,
-    sentinel: Sentinel | None,
+    session: SessionSecurity,
+    sentinel: Sentinel,
     tool_name: str,
     args: dict[str, Any],
     *,
@@ -143,10 +145,6 @@ async def evaluate_with(
 
     Raises ApprovalRequired if the sentinel escalates, or SecurityDeniedError if denied.
     """
-    if session is None:
-        logger.warning(f"No security session, auto-allowing {tool_name}")
-        return
-
     if tool_name in SAFE_TOOLS:
         entry = ToolCallEntry(tool=tool_name, args=_truncate_args(args), decision="auto_allowed")
         session.append(entry)
@@ -160,10 +158,6 @@ async def evaluate_with(
         )
         if verbose:
             _log_tool_call(tool_name, args, "[safe-list] auto-allowed", tool_call_callback)
-        return
-
-    if sentinel is None:
-        logger.warning(f"No sentinel, auto-allowing {tool_name}")
         return
 
     verdict = await sentinel.evaluate_tool_call(
@@ -235,6 +229,8 @@ async def evaluate_domain(
     """Evaluate a proxy domain request (global-dict lookup). Delegates to evaluate_domain_with."""
     session = _sessions.get(session_id)
     sentinel = _sentinels.get(session_id)
+    if session is None or sentinel is None:
+        raise RuntimeError(f"No security session for {session_id}")
     return await evaluate_domain_with(
         session,
         sentinel,
@@ -245,8 +241,8 @@ async def evaluate_domain(
 
 
 async def evaluate_domain_with(
-    session: SessionSecurity | None,
-    sentinel: Sentinel | None,
+    session: SessionSecurity,
+    sentinel: Sentinel,
     domain: str,
     command: str,
     *,
@@ -256,13 +252,6 @@ async def evaluate_domain_with(
 
     If the sentinel escalates, delegates to the session's user escalation callback.
     """
-    if session is None:
-        logger.warning(f"No security session, denying domain {domain}")
-        return False
-
-    if sentinel is None:
-        logger.warning(f"No sentinel, denying domain {domain}")
-        return False
 
     verdict = await sentinel.evaluate_domain(
         session,
