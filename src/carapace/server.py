@@ -4,7 +4,6 @@ import asyncio
 import contextlib
 import logging
 import os
-import secrets
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated, Any
@@ -20,26 +19,20 @@ from genai_prices import UpdatePrices
 from httpx import AsyncClient, HTTPStatusError
 from loguru import logger
 from pydantic import BaseModel
-from pydantic_ai import ToolDenied
 from pydantic_ai.models.anthropic import AnthropicModel
 from pydantic_ai.providers.anthropic import AnthropicProvider
 from pydantic_ai.retries import AsyncTenacityTransport, RetryConfig, wait_retry_after
 from tenacity import retry_if_exception_type, stop_after_attempt, wait_exponential
 
-import carapace.security as security_mod
-from carapace.agent_loop import run_agent_turn
 from carapace.auth import ensure_token
 from carapace.bootstrap import ensure_data_dir, get_sandbox_dockerfile
 from carapace.config import get_data_dir, load_config, load_security_md
-from carapace.memory import MemoryStore
-from carapace.models import Config, Deps, SessionState, UsageTracker
+from carapace.models import Config, SessionState
 from carapace.sandbox.docker import DockerRuntime
 from carapace.sandbox.manager import SandboxManager
 from carapace.sandbox.proxy import ProxyServer
-from carapace.security.context import UserVouchedEntry
-from carapace.session import SessionManager
+from carapace.session import SessionEngine, SessionManager
 from carapace.skills import SkillRegistry
-from carapace.titler import generate_title
 from carapace.ws_models import (
     ApprovalRequest,
     ApprovalResponse,
@@ -67,33 +60,7 @@ _BUILTIN_SANDBOX_IMAGE = "carapace-sandbox:latest"
 
 _data_dir: Path
 _config: Config
-_security_md: str
-_session_mgr: SessionManager
-_skill_catalog: list
-_agent_model: Any
-_sandbox_mgr: SandboxManager
-_session_locks: dict[str, asyncio.Lock] = {}
-_session_lock_refs: dict[str, int] = {}
-
-
-@asynccontextmanager
-async def _session_connection(session_id: str):
-    """Track one WebSocket connection for a session.
-
-    Ensures the per-session Lock exists for the lifetime of the connection and
-    is removed only when the last connection closes.
-    """
-    _session_lock_refs[session_id] = _session_lock_refs.get(session_id, 0) + 1
-    _session_locks.setdefault(session_id, asyncio.Lock())
-    try:
-        yield _session_locks[session_id]
-    finally:
-        count = _session_lock_refs[session_id] - 1
-        if count <= 0:
-            _session_locks.pop(session_id, None)
-            _session_lock_refs.pop(session_id, None)
-        else:
-            _session_lock_refs[session_id] = count
+_engine: SessionEngine
 
 
 def _create_anthropic_model(model_name: str) -> AnthropicModel:
@@ -110,19 +77,19 @@ def _create_anthropic_model(model_name: str) -> AnthropicModel:
     return AnthropicModel(model_id, provider=AnthropicProvider(http_client=AsyncClient(transport=transport)))
 
 
-async def _idle_cleanup_loop() -> None:
+async def _idle_cleanup_loop(sandbox_mgr: SandboxManager) -> None:
     """Periodically clean up idle sandbox containers."""
     while True:
         await asyncio.sleep(60)
         try:
-            await _sandbox_mgr.cleanup_idle()
+            await sandbox_mgr.cleanup_idle()
         except Exception as exc:
             logger.warning(f"Sandbox idle cleanup error: {exc}")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _data_dir, _config, _security_md, _session_mgr, _skill_catalog, _agent_model, _sandbox_mgr
+    global _data_dir, _config, _engine
 
     _data_dir = get_data_dir()
     ensure_data_dir(_data_dir)
@@ -132,11 +99,11 @@ async def lifespan(app: FastAPI):
         logfire.configure(token=_config.carapace.logfire_token, console=False)
         logfire.instrument_pydantic_ai()
 
-    _security_md = load_security_md(_data_dir)
-    _session_mgr = SessionManager(_data_dir)
+    security_md = load_security_md(_data_dir)
+    session_mgr = SessionManager(_data_dir)
     registry = SkillRegistry(_data_dir / "skills")
-    _skill_catalog = registry.scan()
-    _agent_model = _create_anthropic_model(_config.agent.model)
+    skill_catalog = registry.scan()
+    agent_model = _create_anthropic_model(_config.agent.model)
 
     runtime = DockerRuntime()
 
@@ -180,6 +147,16 @@ async def lifespan(app: FastAPI):
     )
     logger.info(f"Sandbox enabled (image={base_image}, network={sandbox_network})")
 
+    _engine = SessionEngine(
+        config=_config,
+        data_dir=_data_dir,
+        security_md=security_md,
+        session_mgr=session_mgr,
+        skill_catalog=skill_catalog,
+        agent_model=agent_model,
+        sandbox_mgr=_sandbox_mgr,
+    )
+
     proxy = ProxyServer(
         get_session_by_token=_sandbox_mgr.get_session_by_token,
         get_allowed_domains=_sandbox_mgr.get_effective_domains,
@@ -194,7 +171,7 @@ async def lifespan(app: FastAPI):
     price_updater = UpdatePrices()
     price_updater.start()
 
-    cleanup_task = asyncio.create_task(_idle_cleanup_loop())
+    cleanup_task = asyncio.create_task(_idle_cleanup_loop(_sandbox_mgr))
 
     matrix_channel = None
     if _config.channels.matrix.enabled:
@@ -203,17 +180,18 @@ async def lifespan(app: FastAPI):
         matrix_channel = MatrixChannel(
             config=_config.channels.matrix,
             full_config=_config,
-            security_md=_security_md,
-            session_mgr=_session_mgr,
-            skill_catalog=_skill_catalog,
-            agent_model=_agent_model,
+            security_md=security_md,
+            session_mgr=session_mgr,
+            skill_catalog=skill_catalog,
+            agent_model=agent_model,
             sandbox_mgr=_sandbox_mgr,
+            engine=_engine,
         )
         await matrix_channel.start()
 
     logger.info(
         f"Carapace server ready — model={_config.agent.model}, "
-        f"skills={len(_skill_catalog)}, proxy_port={proxy_port}, token={token[:8]}…"
+        f"skills={len(skill_catalog)}, proxy_port={proxy_port}, token={token[:8]}…"
         + (f", matrix=on ({_config.channels.matrix.homeserver})" if _config.channels.matrix.enabled else "")
     )
     yield
@@ -299,17 +277,17 @@ async def create_session(
     _token: str = Depends(_verify_token),
 ) -> SessionInfo:
     body = body or SessionCreateRequest()
-    state = _session_mgr.create_session(body.channel_type, body.channel_ref)
+    state = _engine.session_mgr.create_session(body.channel_type, body.channel_ref)
     return SessionInfo.from_state(state)
 
 
 @app.get("/sessions", response_model=list[SessionInfo])
 async def list_sessions(_token: str = Depends(_verify_token)) -> list[SessionInfo]:
     results: list[SessionInfo] = []
-    for sid in _session_mgr.list_sessions():
-        state = _session_mgr.load_state(sid)
+    for sid in _engine.session_mgr.list_sessions():
+        state = _engine.session_mgr.load_state(sid)
         if state:
-            events = _session_mgr.load_events(sid)
+            events = _engine.session_mgr.load_events(sid)
             message_count = sum(1 for e in events if e.get("role") == "user")
             results.append(SessionInfo.from_state(state, message_count=message_count))
     return results
@@ -317,7 +295,7 @@ async def list_sessions(_token: str = Depends(_verify_token)) -> list[SessionInf
 
 @app.get("/sessions/{session_id}", response_model=SessionInfo)
 async def get_session(session_id: str, _token: str = Depends(_verify_token)) -> SessionInfo:
-    state = _session_mgr.load_state(session_id)
+    state = _engine.session_mgr.load_state(session_id)
     if state is None:
         raise HTTPException(status_code=404, detail="Session not found")
     return SessionInfo.from_state(state)
@@ -325,8 +303,9 @@ async def get_session(session_id: str, _token: str = Depends(_verify_token)) -> 
 
 @app.delete("/sessions/{session_id}", status_code=204)
 async def delete_session(session_id: str, _token: str = Depends(_verify_token)) -> None:
-    await _sandbox_mgr.cleanup_session(session_id)
-    if not _session_mgr.delete_session(session_id):
+    _engine.deactivate(session_id)
+    await _engine.sandbox_mgr.cleanup_session(session_id)
+    if not _engine.session_mgr.delete_session(session_id):
         raise HTTPException(status_code=404, detail="Session not found")
 
 
@@ -353,10 +332,10 @@ async def get_session_history(
     limit: Annotated[int, Query()] = -1,
     _token: str = Depends(_verify_token),
 ) -> list[HistoryMessage]:
-    if _session_mgr.load_state(session_id) is None:
+    if _engine.session_mgr.load_state(session_id) is None:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    events = _session_mgr.load_events(session_id)
+    events = _engine.session_mgr.load_events(session_id)
     result = [HistoryMessage.model_validate(e) for e in events] if events else _history_from_messages(session_id)
 
     if limit > 0:
@@ -368,7 +347,7 @@ def _history_from_messages(session_id: str) -> list[HistoryMessage]:
     """Fallback: build history from Pydantic AI messages for sessions without events."""
     from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, ToolCallPart, UserPromptPart
 
-    raw_messages = _session_mgr.load_history(session_id)
+    raw_messages = _engine.session_mgr.load_history(session_id)
     result: list[HistoryMessage] = []
     for msg in raw_messages:
         if isinstance(msg, ModelRequest):
@@ -386,29 +365,6 @@ def _history_from_messages(session_id: str) -> list[HistoryMessage]:
 
 
 # --- WebSocket: Chat ---
-
-
-def _build_deps(
-    session_state: SessionState,
-    *,
-    verbose: bool = True,
-    tool_call_callback: Any = None,
-    tool_result_callback: Any = None,
-    usage_tracker: UsageTracker | None = None,
-) -> Deps:
-    return Deps(
-        config=_config,
-        data_dir=_data_dir,
-        session_state=session_state,
-        skill_catalog=_skill_catalog,
-        agent_model=_agent_model,
-        verbose=verbose,
-        tool_call_callback=tool_call_callback,
-        tool_result_callback=tool_result_callback,
-        usage_tracker=usage_tracker or _session_mgr.load_usage(session_state.session_id),
-        sandbox=_sandbox_mgr,
-        activated_skills=[],
-    )
 
 
 async def _send(ws: WebSocket, msg: ServerEnvelope) -> None:
@@ -433,80 +389,44 @@ async def list_commands(_token: str = Depends(_verify_token)) -> list[dict[str, 
     return _SLASH_COMMANDS
 
 
-def _handle_slash_command(command: str, deps: Deps) -> CommandResult | None:
-    """Handle a slash command and return structured data, or None if unrecognised."""
-    parts = command.strip().split(maxsplit=1)
-    cmd = parts[0].lower()
+class WebSocketSubscriber:
+    """Thin adapter: forwards ``SessionEngine`` events to a WebSocket."""
 
-    if cmd == "/help":
-        return CommandResult(
-            command="help",
-            data={"commands": _SLASH_COMMANDS},
-        )
+    def __init__(self, ws: WebSocket) -> None:
+        self._ws = ws
 
-    if cmd == "/security":
-        policy = _security_md or "(no SECURITY.md loaded)"
-        session_id = deps.session_state.session_id
+    async def _safe_send(self, msg: ServerEnvelope) -> None:
         try:
-            session = security_mod.get_session(session_id)
-            log_count = len(session.action_log)
-            eval_count = session.sentinel_eval_count
-        except KeyError:
-            log_count = 0
-            eval_count = 0
-        return CommandResult(
-            command="security",
-            data={
-                "policy_preview": policy[:500] + ("..." if len(policy) > 500 else ""),
-                "action_log_entries": log_count,
-                "sentinel_evaluations": eval_count,
-            },
-        )
+            await _send(self._ws, msg)
+        except Exception as exc:
+            logger.warning(f"WebSocket send failed: {exc}")
 
-    if cmd == "/approve-context":
-        session_id = deps.session_state.session_id
-        security_mod.append_log(session_id, UserVouchedEntry())
-        return CommandResult(
-            command="approve-context",
-            data={"message": "Recorded: you vouch for the current agent context as trustworthy."},
-        )
+    async def on_tool_call(self, tool: str, args: dict[str, Any], detail: str) -> None:
+        await self._safe_send(ToolCallInfo(tool=tool, args=args, detail=detail))
 
-    if cmd == "/session":
-        session_id = deps.session_state.session_id
-        return CommandResult(
-            command="session",
-            data={
-                "session_id": session_id,
-                "channel_type": deps.session_state.channel_type,
-                "approved_credentials": deps.session_state.approved_credentials,
-                "allowed_domains": deps.sandbox.get_domain_info(session_id),
-            },
-        )
+    async def on_tool_result(self, tool: str, result: str) -> None:
+        await self._safe_send(ToolResultInfo(tool=tool, result=result))
 
-    if cmd == "/skills":
-        skills = [{"name": s.name, "description": s.description.strip()} for s in deps.skill_catalog]
-        return CommandResult(command="skills", data=skills)
+    async def on_done(self, content: str, usage: TurnUsage) -> None:
+        await self._safe_send(Done(content=content, usage=usage))
 
-    if cmd == "/memory":
-        store = MemoryStore(deps.data_dir)
-        files = store.list_files()
-        return CommandResult(command="memory", data=files)
+    async def on_error(self, detail: str) -> None:
+        await self._safe_send(ErrorMessage(detail=detail))
 
-    if cmd == "/usage":
-        tracker = deps.usage_tracker
-        costs = tracker.estimated_cost()
-        return CommandResult(
-            command="usage",
-            data={
-                "models": {k: v.model_dump() for k, v in tracker.models.items()},
-                "categories": {k: v.model_dump() for k, v in tracker.categories.items()},
-                "total_input": tracker.total_input,
-                "total_output": tracker.total_output,
-                "costs": {k: str(v) for k, v in costs.items()},
-            },
-        )
+    async def on_cancelled(self) -> None:
+        await self._safe_send(Cancelled())
 
-    return None
+    async def on_approval_request(self, req: ApprovalRequest) -> None:
+        await self._safe_send(req)
+
+    async def on_proxy_approval_request(self, request_id: str, domain: str, command: str) -> None:
+        await self._safe_send(ProxyApprovalRequest(request_id=request_id, domain=domain, command=command))
+
+    async def on_title_update(self, title: str) -> None:
+        await self._safe_send(SessionTitleUpdate(title=title))
+
+    async def on_domain_info(self, domain: str, detail: str) -> None:
+        await self._safe_send(ToolCallInfo(tool="proxy_domain", args={"domain": domain}, detail=detail))
 
 
 @app.websocket("/chat/{session_id}")
@@ -515,369 +435,124 @@ async def chat_ws(
     session_id: str,
     _token: Annotated[str, Depends(_verify_ws_token)],
 ) -> None:
-    session_state = _session_mgr.resume_session(session_id)
-    if session_state is None:
+    if _engine.session_mgr.load_state(session_id) is None:
         logger.warning(f"WebSocket rejected — session {session_id} not found")
         await websocket.close(code=4004, reason="Session not found")
         return
 
     await websocket.accept()
     logger.info(f"WebSocket connected for session {session_id}")
-    verbose = True
-    pending_sends: set[asyncio.Task] = set()
-    client_queue: asyncio.Queue[ApprovalResponse | ProxyApprovalResponse | None] = asyncio.Queue()
-    agent_task: asyncio.Task | None = None
 
-    def send_tool_call_info(tool: str, args: dict[str, Any], detail: str) -> None:
-        """Callback to send tool call info via WebSocket and persist to events."""
-        _session_mgr.append_events(session_id, [{"role": "tool_call", "tool": tool, "args": args, "detail": detail}])
+    sub = WebSocketSubscriber(websocket)
+    active = _engine.subscribe(session_id, sub)
 
-        async def _send_and_cleanup() -> None:
-            try:
-                await _send(websocket, ToolCallInfo(tool=tool, args=args, detail=detail))
-            except Exception as exc:
-                logger.warning(f"WebSocket send failed for tool call info: {exc}")
-            finally:
-                pending_sends.discard(task)
+    # If agent is already running (e.g. reconnect), the subscriber will
+    # start receiving events immediately.  If there are pending approvals,
+    # re-send them so the client can respond.
+    for pa in list(active.pending_approval_requests):
+        with contextlib.suppress(Exception):
+            await _send(
+                websocket,
+                ApprovalRequest(
+                    tool_call_id=pa["tool_call_id"],
+                    tool=pa.get("tool", ""),
+                    args=pa.get("args", {}),
+                    explanation=pa.get("explanation", ""),
+                    risk_level=pa.get("risk_level", ""),
+                ),
+            )
+    for pp in list(active.pending_proxy_approvals):
+        with contextlib.suppress(Exception):
+            await _send(
+                websocket,
+                ProxyApprovalRequest(
+                    request_id=pp["request_id"],
+                    domain=pp.get("domain", ""),
+                    command=pp.get("command", ""),
+                ),
+            )
 
-        task = asyncio.create_task(_send_and_cleanup())
-        pending_sends.add(task)
-
-    async def request_domain_escalation(
-        _session_id: str,
-        domain: str,
-        context: dict[str, Any],
-    ) -> bool:
-        """Send a proxy domain escalation to the client and wait for the response."""
-        request_id = secrets.token_hex(8)
-        cmd = context.get("command", "")
-        _session_mgr.append_events(
-            session_id,
-            [
-                {
-                    "role": "proxy_approval",
-                    "request_id": request_id,
-                    "domain": domain,
-                    "command": cmd,
-                }
-            ],
-        )
-        await _send(
-            websocket,
-            ProxyApprovalRequest(
-                request_id=request_id,
-                domain=domain,
-                command=cmd,
-            ),
-        )
+    try:
         while True:
-            client_msg = await client_queue.get()
-            if client_msg is None:
-                return False
-            if isinstance(client_msg, ProxyApprovalResponse) and client_msg.request_id == request_id:
-                decision = client_msg.decision
-                _session_mgr.append_events(
-                    session_id,
-                    [
-                        {
-                            "role": "proxy_approval",
-                            "request_id": request_id,
-                            "domain": domain,
-                            "command": cmd,
-                            "decision": decision,
-                        }
-                    ],
-                )
-                return decision != "deny"
-            logger.warning(f"Unexpected message while waiting for domain escalation: {client_msg}")
-
-    skills_dir = _data_dir / "skills"
-    audit_dir = _data_dir / "sessions" / session_id
-    sec_session = security_mod.init_session(
-        session_id,
-        sentinel_model=_config.agent.sentinel_model,
-        security_md=_security_md,
-        skills_dir=skills_dir,
-        audit_dir=audit_dir,
-    )
-    sec_session.set_user_escalation_callback(request_domain_escalation)
-
-    def send_domain_info(domain: str, detail: str) -> None:
-        """Callback to notify the UI about domain access decisions."""
-
-        async def _send_and_cleanup() -> None:
+            raw = await websocket.receive_json()
             try:
-                await _send(
-                    websocket,
-                    ToolCallInfo(tool="proxy_domain", args={"domain": domain}, detail=detail),
-                )
-            except Exception as exc:
-                logger.warning(f"WebSocket send failed for domain info: {exc}")
-            finally:
-                pending_sends.discard(task)
-
-        task = asyncio.create_task(_send_and_cleanup())
-        pending_sends.add(task)
-
-    sec_session.set_domain_info_callback(send_domain_info)
-
-    def send_tool_result_info(tool: str, result: str) -> None:
-        """Callback to send tool result info via WebSocket and persist to events."""
-        _session_mgr.append_events(session_id, [{"role": "tool_result", "tool": tool, "result": result}])
-
-        async def _send_and_cleanup() -> None:
-            try:
-                await _send(websocket, ToolResultInfo(tool=tool, result=result))
-            except Exception as exc:
-                logger.warning(f"WebSocket send failed for tool result info: {exc}")
-            finally:
-                pending_sends.discard(task)
-
-        task = asyncio.create_task(_send_and_cleanup())
-        pending_sends.add(task)
-
-    deps = _build_deps(
-        session_state,
-        verbose=verbose,
-        tool_call_callback=send_tool_call_info,
-        tool_result_callback=send_tool_result_info,
-    )
-
-    async def _do_agent_turn(user_input: str) -> None:
-        nonlocal deps
-        try:
-            async with session_lock:
-                fresh_state = _session_mgr.resume_session(session_id)
-                if fresh_state:
-                    tracker = deps.usage_tracker
-                    deps = _build_deps(
-                        fresh_state,
-                        verbose=verbose,
-                        tool_call_callback=send_tool_call_info,
-                        tool_result_callback=send_tool_result_info,
-                        usage_tracker=tracker,
-                    )
-                _session_mgr.append_events(session_id, [{"role": "user", "content": user_input}])
-                message_history = _session_mgr.load_history(session_id)
-                message_history, output = await _run_agent_turn(
-                    websocket,
-                    user_input,
-                    deps,
-                    message_history,
-                    client_queue,
-                )
-                _session_mgr.save_history(session_id, message_history)
-                _session_mgr.save_state(deps.session_state)
-                _session_mgr.save_usage(session_id, deps.usage_tracker)
-                _session_mgr.append_events(
-                    session_id,
-                    [{"role": "assistant", "content": output}],
-                )
-
-                # Generate a title after the 1st and 3rd user message.
-                events = _session_mgr.load_events(session_id)
-                user_msg_count = sum(1 for e in events if e.get("role") == "user")
-                if user_msg_count in (1, 3):
-
-                    async def _generate_and_send_title(
-                        sid: str = session_id,
-                        evts: list = events,
-                    ) -> None:
-                        title = await generate_title(
-                            evts,
-                            model=_config.agent.title_model,
-                            usage_tracker=deps.usage_tracker,
-                        )
-                        if title:
-                            state = _session_mgr.load_state(sid)
-                            if state:
-                                state.title = title
-                                _session_mgr.save_state(state)
-                            with contextlib.suppress(Exception):
-                                await _send(websocket, SessionTitleUpdate(title=title))
-
-                    task = asyncio.create_task(_generate_and_send_title())
-                    pending_sends.add(task)
-                    task.add_done_callback(pending_sends.discard)
-        except asyncio.CancelledError:
-            logger.info(f"Agent turn cancelled for session {session_id}")
-            _session_mgr.save_usage(session_id, deps.usage_tracker)
-            with contextlib.suppress(Exception):
-                await _send(websocket, Cancelled())
-        except Exception as exc:
-            logger.exception("Agent error")
-            with contextlib.suppress(Exception):
+                client_msg = parse_client_message(raw)
+            except (ValueError, Exception) as exc:
                 await _send(websocket, ErrorMessage(detail=str(exc)))
-
-    async with _session_connection(session_id) as session_lock:
-        try:
-            while True:
-                raw = await websocket.receive_json()
-                try:
-                    client_msg = parse_client_message(raw)
-                except (ValueError, Exception) as exc:
-                    await _send(websocket, ErrorMessage(detail=str(exc)))
-                    continue
-
-                # --- Cancel in-flight agent turn ---
-                if isinstance(client_msg, CancelRequest):
-                    if agent_task and not agent_task.done():
-                        agent_task.cancel()
-                        client_queue.put_nowait(None)
-                        with contextlib.suppress(asyncio.CancelledError, Exception):
-                            await agent_task
-                        agent_task = None
-                    continue
-
-                # --- Approval responses — forward to agent turn ---
-                if isinstance(client_msg, ApprovalResponse | ProxyApprovalResponse):
-                    client_queue.put_nowait(client_msg)
-                    continue
-
-                if not isinstance(client_msg, UserMessage):
-                    await _send(websocket, ErrorMessage(detail="Expected a message"))
-                    continue
-
-                user_input = client_msg.content.strip()
-                if not user_input:
-                    continue
-
-                # --- Slash commands ---
-                if user_input.startswith("/"):
-                    if user_input.lower() in ("/quit", "/exit"):
-                        await websocket.close(code=1000)
-                        break
-
-                    if user_input.lower() == "/verbose":
-                        verbose = not verbose
-                        deps.verbose = verbose
-                        state_str = "on" if verbose else "off"
-                        result = CommandResult(
-                            command="verbose",
-                            data={"verbose": verbose, "message": f"Verbose mode {state_str}"},
-                        )
-                        await _send(websocket, result)
-                        _session_mgr.append_events(
-                            session_id,
-                            [
-                                {"role": "user", "content": user_input},
-                                {"role": "command", "command": result.command, "data": result.data},
-                            ],
-                        )
-                        continue
-
-                    result = _handle_slash_command(user_input, deps)
-                    if result:
-                        await _send(websocket, result)
-                        _session_mgr.append_events(
-                            session_id,
-                            [
-                                {"role": "user", "content": user_input},
-                                {"role": "command", "command": result.command, "data": result.data},
-                            ],
-                        )
-                        continue
-
-                    await _send(websocket, ErrorMessage(detail=f"Unknown command: {user_input.split()[0]}"))
-                    continue
-
-                # --- Agent turn (run as task to allow concurrent cancel) ---
-                if agent_task and not agent_task.done():
-                    await _send(websocket, ErrorMessage(detail="Agent is busy — cancel first"))
-                    continue
-
-                # Collect result from previous task
-                if agent_task:
-                    with contextlib.suppress(Exception):
-                        agent_task.result()
-                    agent_task = None
-
-                # Clear stale queue messages
-                while not client_queue.empty():
-                    client_queue.get_nowait()
-
-                agent_task = asyncio.create_task(_do_agent_turn(user_input))
-
-        except WebSocketDisconnect as exc:
-            logger.info(f"Client disconnected from session {session_id} (code={exc.code})")
-        except Exception as exc:
-            logger.exception(f"Unexpected WebSocket error in session {session_id}: {exc}")
-            with contextlib.suppress(Exception):
-                await websocket.close(code=1011)
-        finally:
-            if agent_task and not agent_task.done():
-                agent_task.cancel()
-                with contextlib.suppress(asyncio.CancelledError, Exception):
-                    await agent_task
-            logger.debug(f"WebSocket cleanup for session {session_id}")
-            security_mod.cleanup_session(session_id)
-            for task in pending_sends:
-                task.cancel()
-
-
-async def _run_agent_turn(
-    ws: WebSocket,
-    user_input: str,
-    deps: Deps,
-    message_history: list,
-    client_queue: asyncio.Queue[ApprovalResponse | ProxyApprovalResponse | None],
-) -> tuple[list, str]:
-    """Run one agent turn over a WebSocket, delegating to the channel-agnostic runner."""
-    session_id = deps.session_state.session_id
-
-    async def _send_approval(req: ApprovalRequest) -> None:
-        _session_mgr.append_events(
-            session_id,
-            [
-                {
-                    "role": "approval_request",
-                    "tool_call_id": req.tool_call_id,
-                    "tool": req.tool,
-                    "args": req.args,
-                    "explanation": req.explanation,
-                    "risk_level": req.risk_level,
-                }
-            ],
-        )
-        try:
-            await _send(ws, req)
-        except Exception:
-            logger.warning(f"Failed to send approval request {req.tool_call_id} via WebSocket")
-
-    async def _collect_ws_approvals(pending: set[str]) -> dict[str, bool | ToolDenied]:
-        results: dict[str, bool | ToolDenied] = {}
-        remaining = set(pending)
-        while remaining:
-            client_msg = await client_queue.get()
-            if client_msg is None:
-                for tid in remaining:
-                    results[tid] = ToolDenied("Agent cancelled.")
-                remaining.clear()
-                break
-            if not isinstance(client_msg, ApprovalResponse):
                 continue
-            if client_msg.tool_call_id in remaining:
-                results[client_msg.tool_call_id] = (
-                    True if client_msg.approved else ToolDenied("User denied this operation.")
-                )
-                remaining.discard(client_msg.tool_call_id)
-        return results
 
-    messages, output, (inp_tok, out_tok) = await run_agent_turn(
-        user_input,
-        deps,
-        message_history,
-        send_approval_request=_send_approval,
-        collect_approvals=_collect_ws_approvals,
-    )
+            # --- Cancel in-flight agent turn ---
+            if isinstance(client_msg, CancelRequest):
+                await _engine.submit_cancel(session_id)
+                continue
 
-    with contextlib.suppress(Exception):
-        if output.startswith("Unexpected agent output type:"):
-            await _send(ws, ErrorMessage(detail=output))
-        else:
-            await _send(ws, Done(content=output, usage=TurnUsage(input_tokens=inp_tok, output_tokens=out_tok)))
+            # --- Approval responses — forward to engine ---
+            if isinstance(client_msg, ApprovalResponse | ProxyApprovalResponse):
+                await _engine.submit_approval(session_id, client_msg)
+                continue
 
-    return messages, output
+            if not isinstance(client_msg, UserMessage):
+                await _send(websocket, ErrorMessage(detail="Expected a message"))
+                continue
+
+            user_input = client_msg.content.strip()
+            if not user_input:
+                continue
+
+            # --- Slash commands ---
+            if user_input.startswith("/"):
+                if user_input.lower() in ("/quit", "/exit"):
+                    await websocket.close(code=1000)
+                    break
+
+                if user_input.lower() == "/verbose":
+                    active.verbose = not active.verbose
+                    state_str = "on" if active.verbose else "off"
+                    result = CommandResult(
+                        command="verbose",
+                        data={"verbose": active.verbose, "message": f"Verbose mode {state_str}"},
+                    )
+                    await _send(websocket, result)
+                    _engine.session_mgr.append_events(
+                        session_id,
+                        [
+                            {"role": "user", "content": user_input},
+                            {"role": "command", "command": result.command, "data": result.data},
+                        ],
+                    )
+                    continue
+
+                cmd_result = _engine.handle_slash_command(session_id, user_input)
+                if cmd_result:
+                    result = CommandResult(
+                        command=cmd_result["command"],
+                        data=cmd_result["data"],
+                    )
+                    await _send(websocket, result)
+                    _engine.session_mgr.append_events(
+                        session_id,
+                        [
+                            {"role": "user", "content": user_input},
+                            {"role": "command", "command": result.command, "data": result.data},
+                        ],
+                    )
+                    continue
+
+                await _send(websocket, ErrorMessage(detail=f"Unknown command: {user_input.split()[0]}"))
+                continue
+
+            # --- Agent turn ---
+            await _engine.submit_message(session_id, user_input)
+
+    except WebSocketDisconnect as exc:
+        logger.info(f"Client disconnected from session {session_id} (code={exc.code})")
+    except Exception as exc:
+        logger.exception(f"Unexpected WebSocket error in session {session_id}: {exc}")
+        with contextlib.suppress(Exception):
+            await websocket.close(code=1011)
+    finally:
+        _engine.unsubscribe(session_id, sub)
+        logger.debug(f"WebSocket cleanup for session {session_id}")
 
 
 class _InterceptHandler(logging.Handler):

@@ -14,7 +14,7 @@ from carapace.bootstrap import ensure_data_dir
 from carapace.config import load_config, load_security_md
 from carapace.sandbox.manager import SandboxManager
 from carapace.server import app
-from carapace.session import SessionManager
+from carapace.session import SessionEngine, SessionManager
 from carapace.skills import SkillRegistry
 
 
@@ -22,15 +22,25 @@ from carapace.skills import SkillRegistry
 def _setup_server(tmp_path):
     """Initialise server globals with a temp data dir so tests don't need lifespan."""
     ensure_data_dir(tmp_path)
-    srv._data_dir = tmp_path
-    srv._config = load_config(tmp_path)
-    srv._security_md = load_security_md(tmp_path)
-    srv._session_mgr = SessionManager(tmp_path)
+    config = load_config(tmp_path)
+    security_md = load_security_md(tmp_path)
+    session_mgr = SessionManager(tmp_path)
     registry = SkillRegistry(tmp_path / "skills")
-    srv._skill_catalog = registry.scan()
-    srv._agent_model = None
-    srv._sandbox_mgr = MagicMock(spec=SandboxManager)
-    srv._sandbox_mgr.get_domain_info.return_value = []
+    skill_catalog = registry.scan()
+    sandbox_mgr = MagicMock(spec=SandboxManager)
+    sandbox_mgr.get_domain_info.return_value = []
+
+    srv._data_dir = tmp_path
+    srv._config = config
+    srv._engine = SessionEngine(
+        config=config,
+        data_dir=tmp_path,
+        security_md=security_md,
+        session_mgr=session_mgr,
+        skill_catalog=skill_catalog,
+        agent_model=None,
+        sandbox_mgr=sandbox_mgr,
+    )
     ensure_token(tmp_path)
 
 

@@ -29,6 +29,8 @@ SAFE_TOOLS: frozenset[str] = frozenset(
     }
 )
 
+# --- Legacy global dicts (kept for backward compatibility during transition) ---
+
 _sessions: dict[str, SessionSecurity] = {}
 _sentinels: dict[str, Sentinel] = {}
 _session_refs: dict[str, int] = {}
@@ -84,6 +86,13 @@ def cleanup_session(session_id: str) -> None:
     _session_refs.pop(session_id, None)
 
 
+def destroy_session(session_id: str) -> None:
+    """Unconditionally remove all security state for a session."""
+    _sessions.pop(session_id, None)
+    _sentinels.pop(session_id, None)
+    _session_refs.pop(session_id, None)
+
+
 def append_log(session_id: str, entry: ActionLogEntry) -> None:
     session = _sessions.get(session_id)
     if session:
@@ -106,13 +115,36 @@ async def evaluate(
     verbose: bool = True,
     tool_call_callback: Any = None,
 ) -> None:
+    """Main security gate (global-dict lookup). Delegates to evaluate_with."""
+    session = _sessions.get(session_id)
+    sentinel = _sentinels.get(session_id)
+    await evaluate_with(
+        session,
+        sentinel,
+        tool_name,
+        args,
+        usage_tracker=usage_tracker,
+        verbose=verbose,
+        tool_call_callback=tool_call_callback,
+    )
+
+
+async def evaluate_with(
+    session: SessionSecurity | None,
+    sentinel: Sentinel | None,
+    tool_name: str,
+    args: dict[str, Any],
+    *,
+    usage_tracker: UsageTracker | None = None,
+    verbose: bool = True,
+    tool_call_callback: Any = None,
+) -> None:
     """Main security gate. Auto-allows safe tools; asks the sentinel for everything else.
 
-    Raises ApprovalRequired if the sentinel escalates, or ToolDenied if denied.
+    Raises ApprovalRequired if the sentinel escalates, or SecurityDeniedError if denied.
     """
-    session = _sessions.get(session_id)
     if session is None:
-        logger.warning(f"No security session for {session_id}, auto-allowing {tool_name}")
+        logger.warning(f"No security session, auto-allowing {tool_name}")
         return
 
     if tool_name in SAFE_TOOLS:
@@ -130,9 +162,8 @@ async def evaluate(
             _log_tool_call(tool_name, args, "[safe-list] auto-allowed", tool_call_callback)
         return
 
-    sentinel = _sentinels.get(session_id)
     if sentinel is None:
-        logger.warning(f"No sentinel for session {session_id}, auto-allowing {tool_name}")
+        logger.warning(f"No sentinel, auto-allowing {tool_name}")
         return
 
     verdict = await sentinel.evaluate_tool_call(
@@ -170,7 +201,6 @@ async def evaluate(
         raise SecurityDeniedError(verdict.explanation)
 
     if verdict.decision == "escalate":
-        # Audit entry is deferred — written by agent_loop after user decision.
         raise ApprovalRequired(
             metadata={
                 "tool": tool_name,
@@ -202,18 +232,36 @@ async def evaluate_domain(
     *,
     usage_tracker: UsageTracker | None = None,
 ) -> bool:
+    """Evaluate a proxy domain request (global-dict lookup). Delegates to evaluate_domain_with."""
+    session = _sessions.get(session_id)
+    sentinel = _sentinels.get(session_id)
+    return await evaluate_domain_with(
+        session,
+        sentinel,
+        domain,
+        command,
+        usage_tracker=usage_tracker,
+    )
+
+
+async def evaluate_domain_with(
+    session: SessionSecurity | None,
+    sentinel: Sentinel | None,
+    domain: str,
+    command: str,
+    *,
+    usage_tracker: UsageTracker | None = None,
+) -> bool:
     """Evaluate a proxy domain request. Returns True to allow, False to deny.
 
     If the sentinel escalates, delegates to the session's user escalation callback.
     """
-    session = _sessions.get(session_id)
     if session is None:
-        logger.warning(f"No security session for {session_id}, denying domain {domain}")
+        logger.warning(f"No security session, denying domain {domain}")
         return False
 
-    sentinel = _sentinels.get(session_id)
     if sentinel is None:
-        logger.warning(f"No sentinel for session {session_id}, denying domain {domain}")
+        logger.warning(f"No sentinel, denying domain {domain}")
         return False
 
     verdict = await sentinel.evaluate_domain(
