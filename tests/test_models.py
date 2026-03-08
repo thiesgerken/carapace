@@ -15,7 +15,7 @@ from carapace.security.context import (
 def test_config_defaults():
     cfg = Config()
     assert cfg.carapace.log_level == "info"
-    assert cfg.agent.model == "openai:gpt-4o-mini"
+    assert cfg.agent.model == "anthropic:claude-sonnet-4-6"
     assert cfg.credentials.backend == "mock"
     assert cfg.sandbox.network_name == "carapace-sandbox"
     assert cfg.memory.search.enabled is False
