@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
@@ -79,7 +79,7 @@ class SentinelVerdict(BaseModel):
 
 
 class AuditEntry(BaseModel):
-    timestamp: Annotated[datetime, Field(default_factory=datetime.now)]
+    timestamp: Annotated[datetime, Field(default_factory=lambda: datetime.now(tz=UTC))]
     kind: Literal["tool_call", "proxy_domain"]
     tool: str = ""
     args_summary: dict[str, Any] = {}

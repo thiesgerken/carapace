@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import shutil
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -24,8 +24,8 @@ class SessionManager:
             session_id=session_id,
             channel_type=channel_type,
             channel_ref=channel_ref,
-            created_at=datetime.now(),
-            last_active=datetime.now(),
+            created_at=datetime.now(tz=UTC),
+            last_active=datetime.now(tz=UTC),
         )
         session_dir = self.sessions_dir / session_id
         session_dir.mkdir(parents=True, exist_ok=True)
@@ -44,7 +44,7 @@ class SessionManager:
     def resume_session(self, session_id: str) -> SessionState | None:
         state = self.load_state(session_id)
         if state is not None:
-            state.last_active = datetime.now()
+            state.last_active = datetime.now(tz=UTC)
         return state
 
     def list_sessions(self) -> list[str]:

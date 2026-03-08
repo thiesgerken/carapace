@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Annotated, Any
@@ -23,8 +23,8 @@ class SessionState(BaseModel):
     channel_ref: str = ""
     approved_credentials: list[str] = []
     approved_operations: list[str] = []
-    created_at: datetime = datetime.now()
-    last_active: datetime = datetime.now()
+    created_at: Annotated[datetime, Field(default_factory=lambda: datetime.now(tz=UTC))]
+    last_active: Annotated[datetime, Field(default_factory=lambda: datetime.now(tz=UTC))]
 
 
 # --- Configuration ---
