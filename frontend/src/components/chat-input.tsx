@@ -76,7 +76,7 @@ export function ChatInput({
     if (waiting && queuedMessage) return;
     onSend(trimmed);
     clearInput();
-  }, [value, connected, waiting, hasQueuedMessage, onSend, clearInput]);
+  }, [value, connected, waiting, queuedMessage, onSend, clearInput]);
 
   const interrupt = useCallback(() => {
     const trimmed = value.trim();
