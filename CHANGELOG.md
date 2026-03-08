@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v0.12.1 (2026-03-08)
+
+### Other
+
+- Merge remote-tracking branch 'refs/remotes/origin/main'
+  ([`bb722fc`](https://github.com/thiesgerken/carapace/commit/bb722fc9fef0269f5cd81d003e167988d1075928))
+
+
 ## v0.12.0 (2026-03-08)
 
 ### ✨
@@ -18,6 +26,9 @@
 
 - 🐛 persist proxy requests in events
   ([`c903f4f`](https://github.com/thiesgerken/carapace/commit/c903f4ff91ca2168c51c6540bb7e471099b25213))
+
+- 🐛 use short keys for formatting args summary in ToolCallBadge
+  ([`73c6ccd`](https://github.com/thiesgerken/carapace/commit/73c6ccd7e6bb65816e9896b70cfca5cb20792d29))
 
 
 ## v0.11.0 (2026-03-08)
