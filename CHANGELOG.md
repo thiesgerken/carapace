@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v0.18.3 (2026-03-08)
+
+### 🐛
+
+- 🐛 focus textarea on mount and add title attribute for session display
+  ([`e447382`](https://github.com/thiesgerken/carapace/commit/e4473822577c1e27dd01aa1f04452109627fd0ef))
+
+
 ## v0.18.2 (2026-03-08)
 
 ### Other
