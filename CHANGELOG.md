@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v0.17.1 (2026-03-08)
+
+### 🐛
+
+- 🐛 don't immediately append queued messages to history
+  ([`9d6b55a`](https://github.com/thiesgerken/carapace/commit/9d6b55a8a481618c24c52ba5b891e102bc63cfa9))
+
+
 ## v0.17.0 (2026-03-08)
 
 ### Other
