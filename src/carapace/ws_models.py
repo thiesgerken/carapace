@@ -92,9 +92,17 @@ class ProxyApprovalRequest(BaseModel):
     command: str  # the exec command that triggered this connection attempt
 
 
+class TurnUsage(BaseModel):
+    """Token counts from the last LLM request of a turn."""
+
+    input_tokens: int = 0
+    output_tokens: int = 0
+
+
 class Done(BaseModel):
     type: Literal["done"] = "done"
     content: str
+    usage: TurnUsage | None = None
 
 
 class CommandResult(BaseModel):

@@ -5,7 +5,7 @@ import { Loader2 } from "lucide-react";
 import { useWebSocket } from "@/hooks/use-websocket";
 import { fetchCommands, fetchHistory, wsUrl } from "@/lib/api";
 import type { SlashCommand } from "@/lib/api";
-import type { ChatMessage, ServerMessage } from "@/lib/types";
+import type { ChatMessage, ServerMessage, TurnUsage } from "@/lib/types";
 import { Message } from "./message";
 import { ChatInput } from "./chat-input";
 
@@ -18,6 +18,7 @@ interface ChatViewProps {
 export function ChatView({ server, token, sessionId }: ChatViewProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [waiting, setWaiting] = useState(false);
+  const [usage, setUsage] = useState<TurnUsage | null>(null);
   const [loadingHistory, setLoadingHistory] = useState(true);
   const [commands, setCommands] = useState<SlashCommand[]>([]);
   const approvalState = useRef<Map<string, boolean>>(new Map());
@@ -127,6 +128,7 @@ export function ChatView({ server, token, sessionId }: ChatViewProps) {
           ...prev,
           { kind: "assistant", content: msg.content },
         ]);
+        if (msg.usage) setUsage(msg.usage);
         setWaiting(false);
         break;
       case "tool_call": {
@@ -294,6 +296,7 @@ export function ChatView({ server, token, sessionId }: ChatViewProps) {
         disabled={!connected || waiting}
         waiting={waiting}
         commands={commands}
+        usage={usage}
       />
     </div>
   );

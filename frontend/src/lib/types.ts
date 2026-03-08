@@ -64,9 +64,15 @@ export interface ProxyApprovalRequest {
   command: string;
 }
 
+export interface TurnUsage {
+  input_tokens: number;
+  output_tokens: number;
+}
+
 export interface Done {
   type: "done";
   content: string;
+  usage?: TurnUsage;
 }
 
 export interface CommandResult {
