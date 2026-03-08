@@ -1,6 +1,20 @@
 # CHANGELOG
 
 
+## v0.15.0 (2026-03-08)
+
+### ✨
+
+- ✨ add slash command autocomplete feature to chat input
+  ([`03dc93d`](https://github.com/thiesgerken/carapace/commit/03dc93d7239a2886d3d38586748c396964d46dbb))
+
+- ✨ autocomplete for slash commands
+  ([`18893d2`](https://github.com/thiesgerken/carapace/commit/18893d2699419fe784abbf47e6b60cabfd8b3f8e))
+
+- ✨ hold session id in url param
+  ([`05437c3`](https://github.com/thiesgerken/carapace/commit/05437c3d5664a62cbdbcb8609320311ea9f92eb4))
+
+
 ## v0.14.0 (2026-03-08)
 
 ### ✨
