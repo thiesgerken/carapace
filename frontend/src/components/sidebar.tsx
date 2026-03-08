@@ -83,7 +83,7 @@ export function Sidebar({
               >
                 <MessageSquare className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
                 <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm font-mono">
+                  <div className="break-all text-sm font-mono">
                     {s.session_id}
                   </div>
                   <div className="text-xs text-muted-foreground">

@@ -8,7 +8,7 @@ from carapace.session import SessionManager
 def test_create_session(tmp_path: Path):
     mgr = SessionManager(tmp_path)
     state = mgr.create_session()
-    assert len(state.session_id) == 12
+    assert len(state.session_id) == 25  # 2026-03-08-10-22-abcd1234
     assert state.channel_type == "cli"
 
 

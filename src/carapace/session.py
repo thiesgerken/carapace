@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import json
+import secrets
 import shutil
-import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -19,13 +19,14 @@ class SessionManager:
         self.sessions_dir.mkdir(parents=True, exist_ok=True)
 
     def create_session(self, channel_type: str = "cli", channel_ref: str = "") -> SessionState:
-        session_id = uuid.uuid4().hex[:12]
+        now = datetime.now(tz=UTC)
+        session_id = f"{now:%Y-%m-%d-%H-%M}-{secrets.token_hex(4)}"
         state = SessionState(
             session_id=session_id,
             channel_type=channel_type,
             channel_ref=channel_ref,
-            created_at=datetime.now(tz=UTC),
-            last_active=datetime.now(tz=UTC),
+            created_at=now,
+            last_active=now,
         )
         session_dir = self.sessions_dir / session_id
         session_dir.mkdir(parents=True, exist_ok=True)
