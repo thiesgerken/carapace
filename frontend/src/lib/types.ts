@@ -16,6 +16,8 @@ export interface HistoryMessage {
   content: string;
   tool?: string;
   args?: Record<string, unknown>;
+  detail?: string;
+  result?: string;
   command?: string;
   data?: unknown;
 }

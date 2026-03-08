@@ -33,23 +33,37 @@ export function ChatView({ server, token, sessionId }: ChatViewProps) {
     fetchHistory(server, token, sessionId)
       .then((history) => {
         if (cancelled) return;
-        const msgs: ChatMessage[] = history.map((h) => {
-          if (h.role === "user") return { kind: "user", content: h.content };
-          if (h.role === "tool_call")
-            return {
+        const msgs: ChatMessage[] = [];
+        for (let i = 0; i < history.length; i++) {
+          const h = history[i];
+          if (h.role === "user") {
+            msgs.push({ kind: "user", content: h.content });
+          } else if (h.role === "tool_call") {
+            // Look ahead for a matching tool_result
+            const next = history[i + 1];
+            const result =
+              next?.role === "tool_result" && next.tool === h.tool
+                ? next.result
+                : undefined;
+            msgs.push({
               kind: "tool_call",
               tool: h.tool ?? "",
               args: h.args ?? {},
-              detail: "",
-            };
-          if (h.role === "command")
-            return {
+              detail: h.detail ?? "",
+              result: result ?? undefined,
+            });
+          } else if (h.role === "tool_result") {
+            // Skip — already consumed by the tool_call above
+          } else if (h.role === "command") {
+            msgs.push({
               kind: "command",
               command: h.command ?? "",
               data: h.data,
-            };
-          return { kind: "assistant", content: h.content };
-        });
+            });
+          } else {
+            msgs.push({ kind: "assistant", content: h.content });
+          }
+        }
         setMessages(msgs);
       })
       .catch(() => {
