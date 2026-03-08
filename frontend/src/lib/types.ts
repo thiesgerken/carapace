@@ -34,14 +34,19 @@ export interface ToolCallInfo {
   detail: string;
 }
 
+export interface ToolResultInfo {
+  type: "tool_result";
+  tool: string;
+  result: string;
+}
+
 export interface ApprovalRequest {
   type: "approval_request";
   tool_call_id: string;
   tool: string;
   args: Record<string, unknown>;
-  classification: Record<string, unknown>;
-  triggered_rules: string[];
-  descriptions: string[];
+  explanation: string;
+  risk_level: string;
 }
 
 export interface ProxyApprovalRequest {
@@ -70,6 +75,7 @@ export interface ErrorMessage {
 export type ServerMessage =
   | TokenChunk
   | ToolCallInfo
+  | ToolResultInfo
   | ApprovalRequest
   | ProxyApprovalRequest
   | Done
@@ -117,6 +123,8 @@ export type ChatMessage =
       tool: string;
       args: Record<string, unknown>;
       detail: string;
+      result?: string;
+      loading?: boolean;
     }
   | { kind: "approval"; request: ApprovalRequest }
   | {

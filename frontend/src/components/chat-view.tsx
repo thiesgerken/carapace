@@ -73,7 +73,10 @@ export function ChatView({ server, token, sessionId }: ChatViewProps) {
         ]);
         setWaiting(false);
         break;
-      case "tool_call":
+      case "tool_call": {
+        const isLoading =
+          !msg.detail.includes("deny]") &&
+          !msg.detail.includes("escalate]");
         setMessages((prev) => [
           ...prev,
           {
@@ -81,8 +84,23 @@ export function ChatView({ server, token, sessionId }: ChatViewProps) {
             tool: msg.tool,
             args: msg.args,
             detail: msg.detail,
+            loading: isLoading,
           },
         ]);
+        break;
+      }
+      case "tool_result":
+        setMessages((prev) => {
+          const updated = [...prev];
+          for (let i = updated.length - 1; i >= 0; i--) {
+            const m = updated[i];
+            if (m.kind === "tool_call" && m.loading) {
+              updated[i] = { ...m, result: msg.result, loading: false };
+              break;
+            }
+          }
+          return updated;
+        });
         break;
       case "approval_request":
         setMessages((prev) => [...prev, { kind: "approval", request: msg }]);

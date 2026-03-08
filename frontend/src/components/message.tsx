@@ -49,6 +49,8 @@ export function Message({
           tool={message.tool}
           args={message.args}
           detail={message.detail}
+          result={message.result}
+          loading={message.loading}
         />
       );
 

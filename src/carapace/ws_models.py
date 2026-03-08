@@ -57,6 +57,12 @@ class ToolCallInfo(BaseModel):
     detail: str
 
 
+class ToolResultInfo(BaseModel):
+    type: Literal["tool_result"] = "tool_result"
+    tool: str
+    result: str
+
+
 class ApprovalRequest(BaseModel):
     type: Literal["approval_request"] = "approval_request"
     tool_call_id: str
@@ -92,5 +98,12 @@ class ErrorMessage(BaseModel):
 
 
 ServerEnvelope = (
-    TokenChunk | ToolCallInfo | ApprovalRequest | ProxyApprovalRequest | Done | CommandResult | ErrorMessage
+    TokenChunk
+    | ToolCallInfo
+    | ToolResultInfo
+    | ApprovalRequest
+    | ProxyApprovalRequest
+    | Done
+    | CommandResult
+    | ErrorMessage
 )

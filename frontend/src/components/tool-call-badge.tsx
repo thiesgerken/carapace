@@ -1,16 +1,24 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface ToolCallBadgeProps {
   tool: string;
   args: Record<string, unknown>;
   detail: string;
+  result?: string;
+  loading?: boolean;
 }
 
-export function ToolCallBadge({ tool, args, detail }: ToolCallBadgeProps) {
+export function ToolCallBadge({
+  tool,
+  args,
+  detail,
+  result,
+  loading,
+}: ToolCallBadgeProps) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -28,11 +36,21 @@ export function ToolCallBadge({ tool, args, detail }: ToolCallBadgeProps) {
         />
         <span className="font-mono">{tool}</span>
         {detail && <span className="opacity-60">{detail}</span>}
+        {loading && (
+          <Loader2 className="ml-1 h-3 w-3 animate-spin text-muted-foreground" />
+        )}
       </button>
       {open && (
-        <pre className="mt-1 ml-4 rounded-md bg-muted p-2 text-xs font-mono overflow-x-auto">
-          {JSON.stringify(args, null, 2)}
-        </pre>
+        <div className="ml-4 mt-1 space-y-1">
+          <pre className="rounded-md bg-muted p-2 text-xs font-mono overflow-x-auto">
+            {JSON.stringify(args, null, 2)}
+          </pre>
+          {result != null && (
+            <pre className="rounded-md bg-muted p-2 text-xs font-mono overflow-x-auto max-h-48 overflow-y-auto whitespace-pre-wrap">
+              {result}
+            </pre>
+          )}
+        </div>
       )}
     </div>
   );

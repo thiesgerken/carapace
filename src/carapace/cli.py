@@ -370,6 +370,14 @@ async def _read_server_responses(ws) -> None:
                 detail = msg.get("detail", "")
                 console.print(f"  [dim]{msg['tool']}({msg['args']}) {detail}[/dim]")
 
+            case "tool_result":
+                result_text = msg.get("result", "")
+                if result_text:
+                    truncated = result_text[:500]
+                    if len(result_text) > 500:
+                        truncated += "…"
+                    console.print(f"  [dim]→ {truncated}[/dim]")
+
             case "approval_request":
                 try:
                     approved = await _render_approval_request(msg)

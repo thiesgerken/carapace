@@ -27,6 +27,17 @@ async def _gate(ctx: RunContext[Deps], tool_name: str, args: dict[str, Any]) -> 
     )
 
 
+def _notify_approved_start(ctx: RunContext[Deps], tool_name: str, args: dict[str, Any]) -> None:
+    """For previously-escalated tools, send a ToolCallInfo before execution."""
+    if ctx.deps.tool_call_callback:
+        ctx.deps.tool_call_callback(tool_name, args, "[user approved]")
+
+
+def _notify_result(ctx: RunContext[Deps], tool_name: str, result: str) -> None:
+    if ctx.deps.tool_result_callback:
+        ctx.deps.tool_result_callback(tool_name, result[:2000])
+
+
 def _resolve_path(data_dir: Path, path: str) -> tuple[str | None, Path]:
     """Resolve a path within data_dir. Returns (error, resolved_path)."""
     full_path = (data_dir / path).resolve()
@@ -98,7 +109,9 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
         if not catalog:
             return "No skills available."
         lines = [f"- {s.name}: {s.description.strip()}" for s in catalog]
-        return "Available skills:\n" + "\n".join(lines)
+        result = "Available skills:\n" + "\n".join(lines)
+        _notify_result(ctx, "list_skills", result)
+        return result
 
     @agent.tool
     async def use_skill(ctx: RunContext[Deps], skill_name: str) -> str:
@@ -116,6 +129,8 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
             if requested_domains:
                 gate_args["network_domains"] = requested_domains
             await _gate(ctx, "use_skill", gate_args)
+        else:
+            _notify_approved_start(ctx, "use_skill", {"skill_name": skill_name})
 
         instructions = registry.get_full_instructions(skill_name)
         if instructions is None:
@@ -155,13 +170,17 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
         if requested_domains:
             parts.append(f"Network access granted for: {', '.join(requested_domains)}")
         parts.append(f"Instructions:\n\n{instructions}")
-        return "\n".join(parts)
+        result = "\n".join(parts)
+        _notify_result(ctx, "use_skill", result)
+        return result
 
     @agent.tool
     async def save_skill(ctx: RunContext[Deps], skill_name: str) -> str:
         """Save an activated skill back to the master skills directory. Persists edits made in the sandbox."""
         if not ctx.tool_call_approved:
             await _gate(ctx, "save_skill", {"skill_name": skill_name})
+        else:
+            _notify_approved_start(ctx, "save_skill", {"skill_name": skill_name})
 
         result = await ctx.deps.sandbox.save_skill(
             ctx.deps.session_state.session_id,
@@ -171,6 +190,7 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
             ctx.deps.session_state.session_id,
             ToolResultEntry(tool="save_skill", status="success"),
         )
+        _notify_result(ctx, "save_skill", result)
         return result
 
     # --- Filesystem (sandboxed — runs inside the Docker container) ---
@@ -182,7 +202,9 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
             await _gate(ctx, "read", {"path": path})
 
         session_id = ctx.deps.session_state.session_id
-        return await ctx.deps.sandbox.file_read(session_id, path)
+        result = await ctx.deps.sandbox.file_read(session_id, path)
+        _notify_result(ctx, "read", result)
+        return result
 
     @agent.tool
     async def write(ctx: RunContext[Deps], path: str, content: str) -> str:
@@ -191,7 +213,9 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
             await _gate(ctx, "write", {"path": path, "content": content[:200]})
 
         session_id = ctx.deps.session_state.session_id
-        return await ctx.deps.sandbox.file_write(session_id, path, content)
+        result = await ctx.deps.sandbox.file_write(session_id, path, content)
+        _notify_result(ctx, "write", result)
+        return result
 
     @agent.tool
     async def edit(
@@ -214,7 +238,9 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
             )
 
         session_id = ctx.deps.session_state.session_id
-        return await ctx.deps.sandbox.file_edit(session_id, path, old_string, new_string)
+        result = await ctx.deps.sandbox.file_edit(session_id, path, old_string, new_string)
+        _notify_result(ctx, "edit", result)
+        return result
 
     @agent.tool
     async def apply_patch(ctx: RunContext[Deps], changes: list[dict[str, str]]) -> str:
@@ -232,7 +258,9 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
             )
 
         session_id = ctx.deps.session_state.session_id
-        return await ctx.deps.sandbox.file_apply_patch(session_id, changes)
+        result = await ctx.deps.sandbox.file_apply_patch(session_id, changes)
+        _notify_result(ctx, "apply_patch", result)
+        return result
 
     # --- Runtime ---
 
@@ -241,6 +269,8 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
         """Run a shell command (typically bash) and return its output. Runs in a Docker sandbox."""
         if not ctx.tool_call_approved:
             await _gate(ctx, "exec", {"command": command})
+        else:
+            _notify_approved_start(ctx, "exec", {"command": command})
 
         session_id = ctx.deps.session_state.session_id
         result = await ctx.deps.sandbox.exec_command(session_id, command, timeout)
@@ -250,6 +280,7 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
             ToolResultEntry(tool="exec", status="error" if result.startswith("Error") else "success"),
         )
 
+        _notify_result(ctx, "exec", result)
         return result
 
     # --- Memory ---
@@ -261,24 +292,37 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
         if file_path:
             content = store.read(file_path)
             if content is None:
-                return f"Memory file not found: {file_path}"
+                result = f"Memory file not found: {file_path}"
+                _notify_result(ctx, "read_memory", result)
+                return result
+            _notify_result(ctx, "read_memory", content)
             return content
         if query:
             results = store.search(query)
             if not results:
-                return f"No memory matches for '{query}'"
+                result = f"No memory matches for '{query}'"
+                _notify_result(ctx, "read_memory", result)
+                return result
             lines = [f"- {r['file']}: {r['matches']}" for r in results]
-            return "Memory search results:\n" + "\n".join(lines)
+            result = "Memory search results:\n" + "\n".join(lines)
+            _notify_result(ctx, "read_memory", result)
+            return result
         files = store.list_files()
         if not files:
-            return "No memory files."
-        return "Memory files:\n" + "\n".join(f"- {f}" for f in files)
+            result = "No memory files."
+            _notify_result(ctx, "read_memory", result)
+            return result
+        result = "Memory files:\n" + "\n".join(f"- {f}" for f in files)
+        _notify_result(ctx, "read_memory", result)
+        return result
 
     @agent.tool
     async def write_memory(ctx: RunContext[Deps], file_path: str, content: str) -> str:
         """Write or update a memory file."""
         if not ctx.tool_call_approved:
             await _gate(ctx, "write_memory", {"file_path": file_path, "content": content[:200]})
+        else:
+            _notify_approved_start(ctx, "write_memory", {"file_path": file_path})
 
         store = MemoryStore(ctx.deps.data_dir)
         result = store.write(file_path, content)
@@ -286,6 +330,7 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
             ctx.deps.session_state.session_id,
             ToolResultEntry(tool="write_memory", status="success"),
         )
+        _notify_result(ctx, "write_memory", result)
         return result
 
     return agent

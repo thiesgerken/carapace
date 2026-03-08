@@ -213,4 +213,5 @@ class Deps(BaseModel):
     agent_model: Any = None
     verbose: bool = True
     tool_call_callback: Callable[[str, dict[str, Any], str], None] | None = None
+    tool_result_callback: Callable[[str, str], None] | None = None
     usage_tracker: Annotated[UsageTracker, Field(default_factory=UsageTracker)]

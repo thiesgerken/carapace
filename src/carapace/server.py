@@ -49,6 +49,7 @@ from carapace.ws_models import (
     ProxyApprovalResponse,
     ServerEnvelope,
     ToolCallInfo,
+    ToolResultInfo,
     UserMessage,
     parse_client_message,
 )
@@ -323,10 +324,12 @@ async def delete_session(session_id: str, _token: str = Depends(_verify_token)) 
 
 
 class HistoryMessage(BaseModel):
-    role: str  # "user" | "assistant" | "tool_call" | "command"
+    role: str  # "user" | "assistant" | "tool_call" | "tool_result" | "command"
     content: str = ""
     tool: str | None = None
     args: dict[str, Any] | None = None
+    detail: str | None = None
+    result: str | None = None
     command: str | None = None
     data: Any = None
 
@@ -377,6 +380,7 @@ def _build_deps(
     *,
     verbose: bool = True,
     tool_call_callback: Any = None,
+    tool_result_callback: Any = None,
     usage_tracker: UsageTracker | None = None,
 ) -> Deps:
     return Deps(
@@ -387,6 +391,7 @@ def _build_deps(
         agent_model=_agent_model,
         verbose=verbose,
         tool_call_callback=tool_call_callback,
+        tool_result_callback=tool_result_callback,
         usage_tracker=usage_tracker or _session_mgr.load_usage(session_state.session_id),
         sandbox=_sandbox_mgr,
         activated_skills=[],
@@ -506,7 +511,8 @@ async def chat_ws(
     pending_sends: set[asyncio.Task] = set()
 
     def send_tool_call_info(tool: str, args: dict[str, Any], detail: str) -> None:
-        """Callback to send tool call info via WebSocket."""
+        """Callback to send tool call info via WebSocket and persist to events."""
+        _session_mgr.append_events(session_id, [{"role": "tool_call", "tool": tool, "args": args, "detail": detail}])
 
         async def _send_and_cleanup() -> None:
             try:
@@ -574,10 +580,26 @@ async def chat_ws(
 
     sec_session.set_domain_info_callback(send_domain_info)
 
+    def send_tool_result_info(tool: str, result: str) -> None:
+        """Callback to send tool result info via WebSocket and persist to events."""
+        _session_mgr.append_events(session_id, [{"role": "tool_result", "tool": tool, "result": result}])
+
+        async def _send_and_cleanup() -> None:
+            try:
+                await _send(websocket, ToolResultInfo(tool=tool, result=result))
+            except Exception as exc:
+                logger.warning(f"WebSocket send failed for tool result info: {exc}")
+            finally:
+                pending_sends.discard(task)
+
+        task = asyncio.create_task(_send_and_cleanup())
+        pending_sends.add(task)
+
     deps = _build_deps(
         session_state,
         verbose=verbose,
         tool_call_callback=send_tool_call_info,
+        tool_result_callback=send_tool_result_info,
     )
 
     async with _session_connection(session_id) as session_lock:
@@ -647,8 +669,10 @@ async def chat_ws(
                                 fresh_state,
                                 verbose=verbose,
                                 tool_call_callback=send_tool_call_info,
+                                tool_result_callback=send_tool_result_info,
                                 usage_tracker=tracker,
                             )
+                        _session_mgr.append_events(session_id, [{"role": "user", "content": user_input}])
                         message_history = _session_mgr.load_history(session_id)
                         message_history, output = await _run_agent_turn(
                             websocket,
@@ -661,10 +685,7 @@ async def chat_ws(
                         _session_mgr.save_usage(session_id, deps.usage_tracker)
                         _session_mgr.append_events(
                             session_id,
-                            [
-                                {"role": "user", "content": user_input},
-                                {"role": "assistant", "content": output},
-                            ],
+                            [{"role": "assistant", "content": output}],
                         )
                 except Exception as exc:
                     logger.exception("Agent error")

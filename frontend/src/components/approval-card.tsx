@@ -14,8 +14,6 @@ export function ApprovalCard({
   onRespond,
   resolved,
 }: ApprovalCardProps) {
-  const classification = request.classification;
-
   return (
     <div
       className={cn(
@@ -47,30 +45,27 @@ export function ApprovalCard({
           <span className="text-muted-foreground">Tool: </span>
           <span className="font-mono font-medium">{request.tool}</span>
         </div>
-        {"operation_type" in classification && (
+        {request.explanation && (
           <div>
-            <span className="text-muted-foreground">Type: </span>
-            <span>{String(classification.operation_type)}</span>
-            {Array.isArray(classification.categories) &&
-              classification.categories.length > 0 && (
-                <span className="text-muted-foreground">
-                  {" "}
-                  ({(classification.categories as string[]).join(", ")})
-                </span>
+            <span className="text-muted-foreground">Reason: </span>
+            <span>{request.explanation}</span>
+          </div>
+        )}
+        {request.risk_level && (
+          <div>
+            <span className="text-muted-foreground">Risk: </span>
+            <span
+              className={cn(
+                "font-medium",
+                request.risk_level === "high" && "text-destructive",
+                request.risk_level === "medium" && "text-warning-foreground",
+                request.risk_level === "low" && "text-green-600 dark:text-green-400",
               )}
+            >
+              {request.risk_level}
+            </span>
           </div>
         )}
-        {request.triggered_rules.length > 0 && (
-          <div>
-            <span className="text-muted-foreground">Rules: </span>
-            <span>{request.triggered_rules.join(", ")}</span>
-          </div>
-        )}
-        {request.descriptions.map((desc, i) => (
-          <div key={i} className="text-muted-foreground text-xs pl-2">
-            {desc}
-          </div>
-        ))}
         <details className="text-xs">
           <summary className="cursor-pointer text-muted-foreground hover:text-foreground transition-colors">
             Arguments

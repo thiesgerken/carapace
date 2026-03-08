@@ -650,7 +650,7 @@ class MatrixChannel:
             logger.debug(f"Matrix [{room_id}] tool call: {tool}({args}) — {detail}")
             if self._verbose.get(room_id, False):
                 args_brief = json.dumps(args, default=str)
-                notice = f"🔧 `{tool}({args_brief})`" + (f" — {detail}" if detail else "")
+                notice = f"🔧 `{tool}({args_brief})`" + (f" {detail}" if detail else "")
                 task = asyncio.create_task(self._send_notice(room_id, notice))
                 self._background_tasks.add(task)
                 task.add_done_callback(self._background_tasks.discard)
@@ -695,7 +695,7 @@ class MatrixChannel:
         def _domain_info(domain: str, detail: str) -> None:
             logger.debug(f"Matrix [{room_id}] domain: {domain} {detail}")
             if self._verbose.get(room_id, False):
-                notice = f"🌐 `{domain}` — {detail}"
+                notice = f"🌐 `{domain}` {detail}"
                 task = asyncio.create_task(self._send_notice(room_id, notice))
                 self._background_tasks.add(task)
                 task.add_done_callback(self._background_tasks.discard)
