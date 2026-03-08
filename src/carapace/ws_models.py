@@ -18,12 +18,15 @@ class ApprovalResponse(BaseModel):
     approved: bool
 
 
+DomainDecision = Literal["allow", "deny"]
+
+
 class ProxyApprovalResponse(BaseModel):
     """Client → Server: user's decision for a proxy domain approval request."""
 
     type: Literal["proxy_approval_response"] = "proxy_approval_response"
     request_id: str
-    decision: Literal["allow", "deny"]
+    decision: DomainDecision
 
 
 ClientEnvelope = UserMessage | ApprovalResponse | ProxyApprovalResponse

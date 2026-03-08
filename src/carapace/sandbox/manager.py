@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import base64
-import datetime
 import json
 import re
 import secrets
@@ -144,7 +143,6 @@ class SandboxManager:
         self._token_to_session: dict[str, str] = {}
         self._session_tokens: dict[str, str] = {}
         self._allowed_domains: dict[str, set[str]] = {}
-        self._timed_domains: dict[str, dict[str, float]] = {}  # session_id -> {pattern: expires_at}
         self._exec_temp_domains: dict[str, set[str]] = {}  # session_id -> domains, cleared after each exec
         self._session_current_command: dict[str, str] = {}
         logger.info(
@@ -525,27 +523,18 @@ class SandboxManager:
         """Return a list of allowed domain entries with their scope/expiry for display.
 
         Each entry has ``domain`` and ``scope``, where scope is one of:
-        ``"permanent"``, ``"exec"`` (current tool call only), or an ISO timestamp
-        string for timed entries.
+        ``"permanent"`` or ``"exec"`` (current tool call only).
         """
         entries: list[dict[str, str]] = []
         for d in sorted(self._allowed_domains.get(session_id, set())):
             entries.append({"domain": d, "scope": "permanent"})
-        now = time.time()
-        for d, exp in sorted(self._timed_domains.get(session_id, {}).items()):
-            if exp > now:
-                entries.append(
-                    {"domain": d, "scope": f"until {datetime.datetime.fromtimestamp(exp).strftime('%H:%M:%S')}"}
-                )
         for d in sorted(self._exec_temp_domains.get(session_id, set())):
             entries.append({"domain": d, "scope": "this exec only"})
         return entries
 
     def get_effective_domains(self, session_id: str) -> set[str]:
-        """Return the union of permanent, unexpired timed, and current exec-scoped temp domains."""
+        """Return the union of permanent and current exec-scoped temp domains."""
         domains = set(self._allowed_domains.get(session_id, set()))
-        now = time.time()
-        domains.update(p for p, exp in self._timed_domains.get(session_id, {}).items() if exp > now)
         domains.update(self._exec_temp_domains.get(session_id, set()))
         return domains
 
@@ -591,7 +580,6 @@ class SandboxManager:
             self._token_to_session.pop(token, None)
         if clear_domain_state:
             self._allowed_domains.pop(session_id, None)
-            self._timed_domains.pop(session_id, None)
         if clear_exec_state:
             self._exec_temp_domains.pop(session_id, None)
             self._session_current_command.pop(session_id, None)

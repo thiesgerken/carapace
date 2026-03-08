@@ -103,12 +103,7 @@ export interface ApprovalResponse {
   approved: boolean;
 }
 
-export type DomainDecision =
-  | "allow_once"
-  | "allow_all_once"
-  | "allow_15min"
-  | "allow_all_15min"
-  | "deny";
+export type DomainDecision = "allow" | "deny";
 
 export interface ProxyApprovalResponse {
   type: "proxy_approval_response";

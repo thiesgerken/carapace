@@ -10,10 +10,7 @@ interface ProxyApprovalCardProps {
 }
 
 const DECISION_LABELS: Record<DomainDecision, string> = {
-  allow_once: "Allowed once",
-  allow_all_once: "Allowed all (once)",
-  allow_15min: "Allowed for 15 min",
-  allow_all_15min: "Allowed all for 15 min",
+  allow: "Allowed",
   deny: "Denied",
 };
 
@@ -71,58 +68,25 @@ export function ProxyApprovalCard({
       </div>
 
       {!resolved && (
-        <div className="mt-3 space-y-2">
-          <div className="flex flex-wrap gap-2">
-            <button
-              onClick={() => onRespond("allow_once")}
-              className={cn(
-                "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-                "bg-foreground text-background hover:bg-foreground/90",
-              )}
-            >
-              Allow {request.domain} once
-            </button>
-            <button
-              onClick={() => onRespond("allow_all_once")}
-              className={cn(
-                "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-                "border border-border hover:bg-muted",
-              )}
-            >
-              Allow all internet once
-            </button>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <button
-              onClick={() => onRespond("allow_15min")}
-              className={cn(
-                "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-                "bg-foreground text-background hover:bg-foreground/90",
-              )}
-            >
-              Allow {request.domain} for 15 min
-            </button>
-            <button
-              onClick={() => onRespond("allow_all_15min")}
-              className={cn(
-                "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-                "border border-border hover:bg-muted",
-              )}
-            >
-              Allow all internet for 15 min
-            </button>
-          </div>
-          <div>
-            <button
-              onClick={() => onRespond("deny")}
-              className={cn(
-                "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-                "border border-destructive/50 text-destructive hover:bg-destructive/10",
-              )}
-            >
-              Deny
-            </button>
-          </div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button
+            onClick={() => onRespond("allow")}
+            className={cn(
+              "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+              "bg-foreground text-background hover:bg-foreground/90",
+            )}
+          >
+            Allow {request.domain}
+          </button>
+          <button
+            onClick={() => onRespond("deny")}
+            className={cn(
+              "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+              "border border-destructive/50 text-destructive hover:bg-destructive/10",
+            )}
+          >
+            Deny
+          </button>
         </div>
       )}
     </div>
