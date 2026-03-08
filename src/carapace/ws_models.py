@@ -29,7 +29,13 @@ class ProxyApprovalResponse(BaseModel):
     decision: DomainDecision
 
 
-ClientEnvelope = UserMessage | ApprovalResponse | ProxyApprovalResponse
+class CancelRequest(BaseModel):
+    """Client → Server: cancel the in-flight agent turn."""
+
+    type: Literal["cancel"] = "cancel"
+
+
+ClientEnvelope = UserMessage | ApprovalResponse | ProxyApprovalResponse | CancelRequest
 
 
 def parse_client_message(raw: dict[str, Any]) -> ClientEnvelope:
@@ -40,6 +46,8 @@ def parse_client_message(raw: dict[str, Any]) -> ClientEnvelope:
             return ApprovalResponse.model_validate(raw)
         case "proxy_approval_response":
             return ProxyApprovalResponse.model_validate(raw)
+        case "cancel":
+            return CancelRequest.model_validate(raw)
         case other:
             msg = f"Unknown client message type: {other}"
             raise ValueError(msg)
@@ -100,6 +108,13 @@ class ErrorMessage(BaseModel):
     detail: str
 
 
+class Cancelled(BaseModel):
+    """Server → Client: confirms that the agent turn was cancelled."""
+
+    type: Literal["cancelled"] = "cancelled"
+    detail: str = "Agent cancelled."
+
+
 ServerEnvelope = (
     TokenChunk
     | ToolCallInfo
@@ -109,4 +124,5 @@ ServerEnvelope = (
     | Done
     | CommandResult
     | ErrorMessage
+    | Cancelled
 )

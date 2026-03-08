@@ -215,6 +215,8 @@ class MatrixChannel:
         self._room_pending: dict[str, _PendingApproval | _PendingDomainApproval] = {}
         # verbose mode per room (room_id -> bool); controls tool call notifications
         self._verbose: dict[str, bool] = {}
+        # room_id -> currently running agent turn task (for cancellation)
+        self._room_tasks: dict[str, asyncio.Task] = {}
 
         self._sync_task: asyncio.Task | None = None
         # Server timestamp (ms) at startup — used to ignore backlog messages
@@ -500,8 +502,10 @@ class MatrixChannel:
         # loop callback returns immediately and keeps receiving new events
         # (e.g. approval commands typed while the agent is waiting).
         task = asyncio.create_task(self._run_turn_locked(room_id, session_id, body))
+        self._room_tasks[room_id] = task
         self._background_tasks.add(task)
         task.add_done_callback(self._background_tasks.discard)
+        task.add_done_callback(lambda _t, rid=room_id: self._room_tasks.pop(rid, None))
 
     # ------------------------------------------------------------------
     # Slash commands
@@ -544,10 +548,23 @@ class MatrixChannel:
                 state = "on" if verbose else "off"
                 await self._send_text(room_id, f"Tool call display {state}.")
                 return
+            case "/stop" | "/cancel":
+                task = self._room_tasks.get(room_id)
+                if task and not task.done():
+                    task.cancel()
+                    # Resolve any pending approval futures so the task unblocks
+                    pending = self._room_pending.pop(room_id, None)
+                    if pending is not None:
+                        pending.resolve(False)
+                    await self._send_text(room_id, "⛔ Agent cancelled.")
+                else:
+                    await self._send_text(room_id, "No agent turn in progress.")
+                return
             case "/help":
                 reply = (
                     "**Available commands:**\n\n"
                     "- `/reset` — Start a new session (clears history and credentials)\n"
+                    "- `/stop` — Cancel the running agent turn\n"
                     "- `/security` — Show security policy summary\n"
                     "- `/approve-context` — Vouch for the current agent context as trustworthy\n"
                     "- `/session` — Show current session state\n"
@@ -730,6 +747,10 @@ class MatrixChannel:
                     {"role": "assistant", "content": output},
                 ],
             )
+        except asyncio.CancelledError:
+            logger.info(f"Matrix agent turn cancelled in {room_id}")
+            self._session_mgr.save_usage(session_id, deps.usage_tracker)
+            output = None
         except Exception as exc:
             logger.exception(f"Matrix agent error in {room_id}: {exc}")
             output = f"Error: {exc}"
@@ -737,7 +758,8 @@ class MatrixChannel:
             typing_task.cancel()
             await self._send_typing(room_id, False)
 
-        await self._send_text(room_id, output)
+        if output is not None:
+            await self._send_text(room_id, output)
 
     async def _keep_typing(self, room_id: str) -> None:
         """Repeatedly renew the typing indicator while the agent is thinking."""

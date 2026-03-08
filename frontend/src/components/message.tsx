@@ -1,6 +1,6 @@
 "use client";
 
-import type { ChatMessage, ApprovalRequest, DomainDecision } from "@/lib/types";
+import type { ChatMessage, DomainDecision } from "@/lib/types";
 import { MarkdownContent } from "./markdown-content";
 import { ToolCallBadge } from "./tool-call-badge";
 import { ApprovalCard } from "./approval-card";

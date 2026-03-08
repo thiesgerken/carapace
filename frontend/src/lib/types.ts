@@ -80,6 +80,11 @@ export interface ErrorMessage {
   detail: string;
 }
 
+export interface Cancelled {
+  type: "cancelled";
+  detail: string;
+}
+
 export type ServerMessage =
   | TokenChunk
   | ToolCallInfo
@@ -88,7 +93,8 @@ export type ServerMessage =
   | ProxyApprovalRequest
   | Done
   | CommandResult
-  | ErrorMessage;
+  | ErrorMessage
+  | Cancelled;
 
 // WebSocket protocol — Client → Server
 
@@ -111,10 +117,15 @@ export interface ProxyApprovalResponse {
   decision: DomainDecision;
 }
 
+export interface CancelRequest {
+  type: "cancel";
+}
+
 export type ClientMessage =
   | UserMessage
   | ApprovalResponse
-  | ProxyApprovalResponse;
+  | ProxyApprovalResponse
+  | CancelRequest;
 
 // Chat UI messages
 

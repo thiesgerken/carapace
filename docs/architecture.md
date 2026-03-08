@@ -230,7 +230,7 @@ sessions:
 
 ## Filesystem layout
 
-```
+```text
 $CARAPACE_DATA_DIR/
   config.yaml               # main configuration
   SECURITY.md               # natural-language security policy (sentinel system prompt)

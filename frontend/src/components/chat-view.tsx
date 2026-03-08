@@ -172,6 +172,13 @@ export function ChatView({ server, token, sessionId }: ChatViewProps) {
         setMessages((prev) => [...prev, { kind: "error", detail: msg.detail }]);
         setWaiting(false);
         break;
+      case "cancelled":
+        setMessages((prev) => [
+          ...prev,
+          { kind: "error", detail: msg.detail },
+        ]);
+        setWaiting(false);
+        break;
       case "token":
         // future streaming support
         break;
@@ -212,6 +219,10 @@ export function ChatView({ server, token, sessionId }: ChatViewProps) {
           : m,
       ),
     );
+  }
+
+  function handleCancel() {
+    send({ type: "cancel" });
   }
 
   const connected = status === "connected";
@@ -270,7 +281,12 @@ export function ChatView({ server, token, sessionId }: ChatViewProps) {
       </div>
 
       {/* Input */}
-      <ChatInput onSend={handleSend} disabled={!connected || waiting} />
+      <ChatInput
+        onSend={handleSend}
+        onCancel={handleCancel}
+        disabled={!connected || waiting}
+        waiting={waiting}
+      />
     </div>
   );
 }

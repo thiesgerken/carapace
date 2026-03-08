@@ -70,7 +70,7 @@ See [docs/architecture.md](docs/architecture.md) for the full architecture with 
 
 All state lives under `$CARAPACE_DATA_DIR` (defaults to `./data`).
 
-```
+```text
 $CARAPACE_DATA_DIR/
   config.yaml            # main configuration
   SECURITY.md            # natural-language security policy (sentinel system prompt)
@@ -143,7 +143,7 @@ On first server start a bearer token is generated in `data/server.token`. The CL
 
 ## Demo
 
-```
+```text
 $ carapace-server
 INFO:     Carapace server ready — model=anthropic:claude-sonnet-4-5, skills=1, token=a1b2c3d4…
 

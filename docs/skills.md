@@ -11,7 +11,7 @@ Carapace extends the format with two optional files:
 - **`carapace.yaml`** -- security metadata: credential declarations, classification hints, sandbox config
 - **`Dockerfile`** -- custom runtime environment for script execution
 
-```
+```text
 skills/
   web-search/
     SKILL.md             # required: AgentSkills standard

@@ -29,7 +29,7 @@ Carapace is a security-first personal AI agent with LLM-powered security gating.
 
 ## Project structure
 
-```
+```text
 src/carapace/          # main package
   server.py            # FastAPI server (REST + WebSocket)
   cli.py               # Thin CLI client (HTTP + WS)

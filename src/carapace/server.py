@@ -42,6 +42,8 @@ from carapace.skills import SkillRegistry
 from carapace.ws_models import (
     ApprovalRequest,
     ApprovalResponse,
+    Cancelled,
+    CancelRequest,
     CommandResult,
     Done,
     ErrorMessage,
@@ -515,6 +517,8 @@ async def chat_ws(
     logger.info(f"WebSocket connected for session {session_id}")
     verbose = True
     pending_sends: set[asyncio.Task] = set()
+    client_queue: asyncio.Queue[ApprovalResponse | ProxyApprovalResponse | None] = asyncio.Queue()
+    agent_task: asyncio.Task | None = None
 
     def send_tool_call_info(tool: str, args: dict[str, Any], detail: str) -> None:
         """Callback to send tool call info via WebSocket and persist to events."""
@@ -559,13 +563,11 @@ async def chat_ws(
             ),
         )
         while True:
-            raw = await websocket.receive_json()
-            try:
-                msg = parse_client_message(raw)
-            except (ValueError, Exception):
-                continue
-            if isinstance(msg, ProxyApprovalResponse) and msg.request_id == request_id:
-                decision = msg.decision
+            client_msg = await client_queue.get()
+            if client_msg is None:
+                return False
+            if isinstance(client_msg, ProxyApprovalResponse) and client_msg.request_id == request_id:
+                decision = client_msg.decision
                 _session_mgr.append_events(
                     session_id,
                     [
@@ -579,7 +581,7 @@ async def chat_ws(
                     ],
                 )
                 return decision != "deny"
-            logger.warning(f"Unexpected WS message while waiting for domain escalation: {msg}")
+            logger.warning(f"Unexpected message while waiting for domain escalation: {client_msg}")
 
     skills_dir = _data_dir / "skills"
     audit_dir = _data_dir / "sessions" / session_id
@@ -633,6 +635,46 @@ async def chat_ws(
         tool_result_callback=send_tool_result_info,
     )
 
+    async def _do_agent_turn(user_input: str) -> None:
+        nonlocal deps
+        try:
+            async with session_lock:
+                fresh_state = _session_mgr.resume_session(session_id)
+                if fresh_state:
+                    tracker = deps.usage_tracker
+                    deps = _build_deps(
+                        fresh_state,
+                        verbose=verbose,
+                        tool_call_callback=send_tool_call_info,
+                        tool_result_callback=send_tool_result_info,
+                        usage_tracker=tracker,
+                    )
+                _session_mgr.append_events(session_id, [{"role": "user", "content": user_input}])
+                message_history = _session_mgr.load_history(session_id)
+                message_history, output = await _run_agent_turn(
+                    websocket,
+                    user_input,
+                    deps,
+                    message_history,
+                    client_queue,
+                )
+                _session_mgr.save_history(session_id, message_history)
+                _session_mgr.save_state(deps.session_state)
+                _session_mgr.save_usage(session_id, deps.usage_tracker)
+                _session_mgr.append_events(
+                    session_id,
+                    [{"role": "assistant", "content": output}],
+                )
+        except asyncio.CancelledError:
+            logger.info(f"Agent turn cancelled for session {session_id}")
+            _session_mgr.save_usage(session_id, deps.usage_tracker)
+            with contextlib.suppress(Exception):
+                await _send(websocket, Cancelled())
+        except Exception as exc:
+            logger.exception("Agent error")
+            with contextlib.suppress(Exception):
+                await _send(websocket, ErrorMessage(detail=str(exc)))
+
     async with _session_connection(session_id) as session_lock:
         try:
             while True:
@@ -641,6 +683,21 @@ async def chat_ws(
                     client_msg = parse_client_message(raw)
                 except (ValueError, Exception) as exc:
                     await _send(websocket, ErrorMessage(detail=str(exc)))
+                    continue
+
+                # --- Cancel in-flight agent turn ---
+                if isinstance(client_msg, CancelRequest):
+                    if agent_task and not agent_task.done():
+                        agent_task.cancel()
+                        client_queue.put_nowait(None)
+                        with contextlib.suppress(asyncio.CancelledError, Exception):
+                            await agent_task
+                        agent_task = None
+                    continue
+
+                # --- Approval responses — forward to agent turn ---
+                if isinstance(client_msg, ApprovalResponse | ProxyApprovalResponse):
+                    client_queue.put_nowait(client_msg)
                     continue
 
                 if not isinstance(client_msg, UserMessage):
@@ -690,37 +747,22 @@ async def chat_ws(
                     await _send(websocket, ErrorMessage(detail=f"Unknown command: {user_input.split()[0]}"))
                     continue
 
-                # --- Agent loop (serialised per session) ---
-                try:
-                    async with session_lock:
-                        fresh_state = _session_mgr.resume_session(session_id)
-                        if fresh_state:
-                            tracker = deps.usage_tracker
-                            deps = _build_deps(
-                                fresh_state,
-                                verbose=verbose,
-                                tool_call_callback=send_tool_call_info,
-                                tool_result_callback=send_tool_result_info,
-                                usage_tracker=tracker,
-                            )
-                        _session_mgr.append_events(session_id, [{"role": "user", "content": user_input}])
-                        message_history = _session_mgr.load_history(session_id)
-                        message_history, output = await _run_agent_turn(
-                            websocket,
-                            user_input,
-                            deps,
-                            message_history,
-                        )
-                        _session_mgr.save_history(session_id, message_history)
-                        _session_mgr.save_state(deps.session_state)
-                        _session_mgr.save_usage(session_id, deps.usage_tracker)
-                        _session_mgr.append_events(
-                            session_id,
-                            [{"role": "assistant", "content": output}],
-                        )
-                except Exception as exc:
-                    logger.exception("Agent error")
-                    await _send(websocket, ErrorMessage(detail=str(exc)))
+                # --- Agent turn (run as task to allow concurrent cancel) ---
+                if agent_task and not agent_task.done():
+                    await _send(websocket, ErrorMessage(detail="Agent is busy — cancel first"))
+                    continue
+
+                # Collect result from previous task
+                if agent_task:
+                    with contextlib.suppress(Exception):
+                        agent_task.result()
+                    agent_task = None
+
+                # Clear stale queue messages
+                while not client_queue.empty():
+                    client_queue.get_nowait()
+
+                agent_task = asyncio.create_task(_do_agent_turn(user_input))
 
         except WebSocketDisconnect as exc:
             logger.info(f"Client disconnected from session {session_id} (code={exc.code})")
@@ -729,6 +771,10 @@ async def chat_ws(
             with contextlib.suppress(Exception):
                 await websocket.close(code=1011)
         finally:
+            if agent_task and not agent_task.done():
+                agent_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError, Exception):
+                    await agent_task
             logger.debug(f"WebSocket cleanup for session {session_id}")
             security_mod.cleanup_session(session_id)
             for task in pending_sends:
@@ -740,6 +786,7 @@ async def _run_agent_turn(
     user_input: str,
     deps: Deps,
     message_history: list,
+    client_queue: asyncio.Queue[ApprovalResponse | ProxyApprovalResponse | None],
 ) -> tuple[list, str]:
     """Run one agent turn over a WebSocket, delegating to the channel-agnostic runner."""
     session_id = deps.session_state.session_id
@@ -767,23 +814,14 @@ async def _run_agent_turn(
         results: dict[str, bool | ToolDenied] = {}
         remaining = set(pending)
         while remaining:
-            try:
-                raw = await ws.receive_json()
-            except (WebSocketDisconnect, Exception):
-                logger.info(f"WebSocket disconnected while waiting for approvals in session {session_id}")
+            client_msg = await client_queue.get()
+            if client_msg is None:
                 for tid in remaining:
-                    results[tid] = ToolDenied("Client disconnected.")
+                    results[tid] = ToolDenied("Agent cancelled.")
                 remaining.clear()
                 break
-            try:
-                client_msg = parse_client_message(raw)
-            except (ValueError, Exception):
-                continue
             if not isinstance(client_msg, ApprovalResponse):
-                for tid in remaining:
-                    results[tid] = ToolDenied("Approval interrupted.")
-                remaining.clear()
-                break
+                continue
             if client_msg.tool_call_id in remaining:
                 results[client_msg.tool_call_id] = (
                     True if client_msg.approved else ToolDenied("User denied this operation.")

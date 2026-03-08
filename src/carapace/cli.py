@@ -281,6 +281,23 @@ async def _render_approval_request(data: dict[str, Any]) -> bool:
 # --- WebSocket chat loop ---
 
 
+async def _read_until_done(ws) -> None:
+    """Drain server messages until a terminal response (done/cancelled/error) arrives."""
+    while True:
+        raw = await ws.recv()
+        msg = json.loads(raw)
+        msg_type = msg.get("type")
+        if msg_type in ("done", "cancelled", "error"):
+            if msg_type == "cancelled":
+                console.print(f"[yellow]{msg.get('detail', 'Agent cancelled.')}[/yellow]")
+            elif msg_type == "done":
+                console.print()
+                console.print(Markdown(msg["content"]))
+            elif msg_type == "error":
+                console.print(f"[red]Error: {msg['detail']}[/red]")
+            return
+
+
 async def _connect_ws(ws_url: str, *, max_backoff: float = 30.0) -> websockets.asyncio.client.ClientConnection:
     """Connect to the WebSocket, retrying with exponential backoff on failure."""
     delay = 1.0
@@ -336,7 +353,12 @@ async def _chat_loop(ws_url: str) -> None:
                 ws = await _connect_ws(ws_url)
                 console.print("[green]Reconnected.[/green]")
             except KeyboardInterrupt:
-                console.print("\n[dim]Interrupted.[/dim]")
+                console.print("\n[yellow]Cancelling…[/yellow]")
+                try:
+                    await ws.send(json.dumps({"type": "cancel"}))
+                    await _read_until_done(ws)
+                except (ConnectionClosed, KeyboardInterrupt):
+                    console.print("[dim]Interrupted.[/dim]")
     finally:
         await ws.close()
 
@@ -352,6 +374,10 @@ async def _read_server_responses(ws) -> None:
             case "done":
                 console.print()
                 console.print(Markdown(msg["content"]))
+                return
+
+            case "cancelled":
+                console.print(f"\n[yellow]{msg.get('detail', 'Agent cancelled.')}[/yellow]")
                 return
 
             case "token":

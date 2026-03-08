@@ -134,7 +134,7 @@ The Approval Gate sends approval requests through the session's channel and wait
 
 ### Approval UX (example via Matrix)
 
-```
+```text
 Approval Required [risk: high]
 
 The agent wants to send an email after accessing your financial data.

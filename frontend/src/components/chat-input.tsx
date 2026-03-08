@@ -1,15 +1,17 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
-import { ArrowUp } from "lucide-react";
+import { ArrowUp, Square } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface ChatInputProps {
   onSend: (content: string) => void;
+  onCancel?: () => void;
   disabled?: boolean;
+  waiting?: boolean;
 }
 
-export function ChatInput({ onSend, disabled }: ChatInputProps) {
+export function ChatInput({ onSend, onCancel, disabled, waiting }: ChatInputProps) {
   const [value, setValue] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -62,16 +64,21 @@ export function ChatInput({ onSend, disabled }: ChatInputProps) {
           )}
         />
         <button
-          onClick={submit}
-          disabled={disabled || !value.trim()}
+          onClick={waiting ? onCancel : submit}
+          disabled={waiting ? false : disabled || !value.trim()}
           className={cn(
             "shrink-0 rounded-lg p-1.5 transition-colors",
-            "bg-foreground text-background",
-            "hover:bg-foreground/90",
+            waiting
+              ? "bg-destructive/60 text-destructive-foreground hover:bg-destructive/75"
+              : "bg-foreground text-background hover:bg-foreground/90",
             "disabled:opacity-30 disabled:cursor-not-allowed",
           )}
         >
-          <ArrowUp className="h-4 w-4" />
+          {waiting ? (
+            <Square className="h-4 w-4" />
+          ) : (
+            <ArrowUp className="h-4 w-4" />
+          )}
         </button>
       </div>
     </div>
