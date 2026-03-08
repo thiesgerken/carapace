@@ -25,6 +25,7 @@ Carapace is a security-first personal AI agent with LLM-powered security gating.
 - `pathlib.Path` over `os.path`
 - Logging: `loguru` (`from loguru import logger`) — never stdlib `logging`. Use f-strings in log calls.
 - Imports ordered: stdlib → third-party → local, separated by blank lines
+- Linting: `uvx ruff check src/` — fix all warnings before committing
 
 ## Project structure
 
