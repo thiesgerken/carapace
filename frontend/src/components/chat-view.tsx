@@ -5,7 +5,7 @@ import { Loader2 } from "lucide-react";
 import { useWebSocket } from "@/hooks/use-websocket";
 import { fetchCommands, fetchHistory, wsUrl } from "@/lib/api";
 import type { SlashCommand } from "@/lib/api";
-import type { ChatMessage, ServerMessage, TurnUsage } from "@/lib/types";
+import type { ChatMessage, ClientMessage, DomainDecision, ServerMessage, TurnUsage } from "@/lib/types";
 import { Message } from "./message";
 import { ChatInput } from "./chat-input";
 
@@ -23,10 +23,10 @@ export function ChatView({ server, token, sessionId, onTitleUpdate }: ChatViewPr
   const [usage, setUsage] = useState<TurnUsage | null>(null);
   const [loadingHistory, setLoadingHistory] = useState(true);
   const [commands, setCommands] = useState<SlashCommand[]>([]);
-  const approvalState = useRef<Map<string, boolean>>(new Map());
+  const [approvalState, setApprovalState] = useState<Map<string, boolean>>(new Map());
   const bottomRef = useRef<HTMLDivElement>(null);
-  const messagesRef = useRef<ChatMessage[]>([]);
-  messagesRef.current = messages;
+  const queueRef = useRef<string | null>(null);
+  const sendRef = useRef<(msg: ClientMessage) => void>(() => {});
 
   // Fetch available slash commands on mount
   useEffect(() => {
@@ -39,12 +39,13 @@ export function ChatView({ server, token, sessionId, onTitleUpdate }: ChatViewPr
     setMessages([]);
     setLoadingHistory(true);
     setQueuedMessage(null);
-    approvalState.current.clear();
+    setApprovalState(new Map());
 
     fetchHistory(server, token, sessionId)
       .then((history) => {
         if (cancelled) return;
         const msgs: ChatMessage[] = [];
+        const approvals = new Map<string, boolean>();
         for (let i = 0; i < history.length; i++) {
           const h = history[i];
           if (h.role === "user") {
@@ -66,7 +67,7 @@ export function ChatView({ server, token, sessionId, onTitleUpdate }: ChatViewPr
           } else if (h.role === "tool_result") {
             // Skip — already consumed by the tool_call above
           } else if (h.role === "approval_request" && h.tool_call_id) {
-            approvalState.current.set(h.tool_call_id, true);
+            approvals.set(h.tool_call_id, true);
             msgs.push({
               kind: "approval",
               request: {
@@ -86,7 +87,7 @@ export function ChatView({ server, token, sessionId, onTitleUpdate }: ChatViewPr
               const decision =
                 next?.role === "proxy_approval" &&
                 next.request_id === h.request_id
-                  ? (next.decision as import("@/lib/types").DomainDecision)
+                  ? (next.decision as DomainDecision)
                   : undefined;
               msgs.push({
                 kind: "proxy_approval",
@@ -111,6 +112,7 @@ export function ChatView({ server, token, sessionId, onTitleUpdate }: ChatViewPr
           }
         }
         setMessages(msgs);
+        setApprovalState(approvals);
       })
       .catch(() => {
         // history fetch can fail for new sessions - that's fine
@@ -124,6 +126,20 @@ export function ChatView({ server, token, sessionId, onTitleUpdate }: ChatViewPr
     };
   }, [server, token, sessionId]);
 
+  // Flush a queued message if present, otherwise mark as not-waiting
+  function finishWaiting() {
+    const queued = queueRef.current;
+    if (queued) {
+      queueRef.current = null;
+      setQueuedMessage(null);
+      setMessages((prev) => [...prev, { kind: "user", content: queued }]);
+      sendRef.current({ type: "message", content: queued });
+      // stay in waiting state
+    } else {
+      setWaiting(false);
+    }
+  }
+
   const onMessage = useCallback((msg: ServerMessage) => {
     switch (msg.type) {
       case "done":
@@ -132,7 +148,7 @@ export function ChatView({ server, token, sessionId, onTitleUpdate }: ChatViewPr
           { kind: "assistant", content: msg.content },
         ]);
         if (msg.usage) setUsage(msg.usage);
-        setWaiting(false);
+        finishWaiting();
         break;
       case "tool_call": {
         const isLoading =
@@ -178,18 +194,18 @@ export function ChatView({ server, token, sessionId, onTitleUpdate }: ChatViewPr
           ...prev,
           { kind: "command", command: msg.command, data: msg.data },
         ]);
-        setWaiting(false);
+        finishWaiting();
         break;
       case "error":
         setMessages((prev) => [...prev, { kind: "error", detail: msg.detail }]);
-        setWaiting(false);
+        finishWaiting();
         break;
       case "cancelled":
         setMessages((prev) => [
           ...prev,
           { kind: "error", detail: msg.detail },
         ]);
-        setWaiting(false);
+        finishWaiting();
         break;
       case "session_title":
         onTitleUpdate?.(msg.title);
@@ -200,35 +216,23 @@ export function ChatView({ server, token, sessionId, onTitleUpdate }: ChatViewPr
     }
   }, [onTitleUpdate]);
 
-  const onWsDisconnect = useCallback(() => setWaiting(false), []);
+  const onWsDisconnect = useCallback(() => {
+    queueRef.current = null;
+    setQueuedMessage(null);
+    setWaiting(false);
+  }, []);
   const url = wsUrl(server, sessionId, token);
   const { status, send } = useWebSocket(url, onMessage, onWsDisconnect);
+  useEffect(() => { sendRef.current = send; }, [send]);
 
   // Auto-scroll
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // Flush queued message when agent finishes and connection is up
-  useEffect(() => {
-    if (!waiting && queuedMessage && status === "connected") {
-      const msg = queuedMessage;
-      setQueuedMessage(null);
-      setMessages((prev) => [...prev, { kind: "user", content: msg }]);
-      send({ type: "message", content: msg });
-      setWaiting(true);
-    }
-  }, [waiting, queuedMessage, status, send]);
-
-  // Clear queue on disconnect
-  useEffect(() => {
-    if (status !== "connected") {
-      setQueuedMessage(null);
-    }
-  }, [status]);
-
   function handleSend(content: string) {
     if (waiting) {
+      queueRef.current = content;
       setQueuedMessage(content);
     } else {
       setMessages((prev) => [...prev, { kind: "user", content }]);
@@ -238,12 +242,13 @@ export function ChatView({ server, token, sessionId, onTitleUpdate }: ChatViewPr
   }
 
   function handleInterrupt(content: string) {
+    queueRef.current = content;
     setQueuedMessage(content);
     send({ type: "cancel" });
   }
 
   function handleApproval(toolCallId: string, approved: boolean) {
-    approvalState.current.set(toolCallId, approved);
+    setApprovalState((prev) => new Map(prev).set(toolCallId, approved));
     send({ type: "approval_response", tool_call_id: toolCallId, approved });
     // Force re-render to show resolved state
     setMessages((prev) => [...prev]);
@@ -251,7 +256,7 @@ export function ChatView({ server, token, sessionId, onTitleUpdate }: ChatViewPr
 
   function handleProxyApproval(
     requestId: string,
-    decision: import("@/lib/types").DomainDecision,
+    decision: DomainDecision,
   ) {
     send({ type: "proxy_approval_response", request_id: requestId, decision });
     setMessages((prev) =>
@@ -306,7 +311,7 @@ export function ChatView({ server, token, sessionId, onTitleUpdate }: ChatViewPr
               onApproval={handleApproval}
               approvalResolved={
                 msg.kind === "approval"
-                  ? approvalState.current.get(msg.request.tool_call_id)
+                  ? approvalState.get(msg.request.tool_call_id)
                   : undefined
               }
               onProxyApproval={handleProxyApproval}
