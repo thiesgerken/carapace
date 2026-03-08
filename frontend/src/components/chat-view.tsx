@@ -54,6 +54,28 @@ export function ChatView({ server, token, sessionId }: ChatViewProps) {
             });
           } else if (h.role === "tool_result") {
             // Skip — already consumed by the tool_call above
+          } else if (h.role === "proxy_approval" && h.request_id) {
+            // Proxy approval: first event is the request, second has the decision
+            if (!h.decision) {
+              // Look ahead for the matching decision event
+              const next = history[i + 1];
+              const decision =
+                next?.role === "proxy_approval" &&
+                next.request_id === h.request_id
+                  ? (next.decision as import("@/lib/types").DomainDecision)
+                  : undefined;
+              msgs.push({
+                kind: "proxy_approval",
+                request: {
+                  type: "proxy_approval_request",
+                  request_id: h.request_id,
+                  domain: h.domain ?? "",
+                  command: h.command ?? "",
+                },
+                decision,
+              });
+            }
+            // Skip decision-only events (consumed above)
           } else if (h.role === "command") {
             msgs.push({
               kind: "command",

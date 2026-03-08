@@ -324,7 +324,7 @@ async def delete_session(session_id: str, _token: str = Depends(_verify_token)) 
 
 
 class HistoryMessage(BaseModel):
-    role: str  # "user" | "assistant" | "tool_call" | "tool_result" | "command"
+    role: str  # "user" | "assistant" | "tool_call" | "tool_result" | "command" | "proxy_approval"
     content: str = ""
     tool: str | None = None
     args: dict[str, Any] | None = None
@@ -332,6 +332,9 @@ class HistoryMessage(BaseModel):
     result: str | None = None
     command: str | None = None
     data: Any = None
+    request_id: str | None = None
+    domain: str | None = None
+    decision: str | None = None
 
 
 @app.get("/sessions/{session_id}/history", response_model=list[HistoryMessage])
@@ -532,12 +535,24 @@ async def chat_ws(
     ) -> bool:
         """Send a proxy domain escalation to the client and wait for the response."""
         request_id = secrets.token_hex(8)
+        cmd = context.get("command", "")
+        _session_mgr.append_events(
+            session_id,
+            [
+                {
+                    "role": "proxy_approval",
+                    "request_id": request_id,
+                    "domain": domain,
+                    "command": cmd,
+                }
+            ],
+        )
         await _send(
             websocket,
             ProxyApprovalRequest(
                 request_id=request_id,
                 domain=domain,
-                command=context.get("command", ""),
+                command=cmd,
             ),
         )
         while True:
@@ -547,7 +562,20 @@ async def chat_ws(
             except (ValueError, Exception):
                 continue
             if isinstance(msg, ProxyApprovalResponse) and msg.request_id == request_id:
-                return msg.decision == "allow"
+                decision = msg.decision
+                _session_mgr.append_events(
+                    session_id,
+                    [
+                        {
+                            "role": "proxy_approval",
+                            "request_id": request_id,
+                            "domain": domain,
+                            "command": cmd,
+                            "decision": decision,
+                        }
+                    ],
+                )
+                return decision != "deny"
             logger.warning(f"Unexpected WS message while waiting for domain escalation: {msg}")
 
     skills_dir = _data_dir / "skills"

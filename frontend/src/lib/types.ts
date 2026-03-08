@@ -20,6 +20,9 @@ export interface HistoryMessage {
   result?: string;
   command?: string;
   data?: unknown;
+  request_id?: string;
+  domain?: string;
+  decision?: string;
 }
 
 // WebSocket protocol — Server → Client
