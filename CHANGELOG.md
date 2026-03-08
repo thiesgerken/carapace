@@ -1,6 +1,22 @@
 # CHANGELOG
 
 
+## v0.10.0 (2026-03-08)
+
+### Other
+
+- Relock
+  ([`362fd15`](https://github.com/thiesgerken/carapace/commit/362fd1555d37d26d116fb4575ed2a875589c9b98))
+
+### ✨
+
+- ✨ Add tool result handling and notifications across components
+  ([`080c21a`](https://github.com/thiesgerken/carapace/commit/080c21a2f1ecc523735962bf00683b4d00a774f8))
+
+- ✨ Enhance message handling in ChatView to support tool results and additional message details
+  ([`1600386`](https://github.com/thiesgerken/carapace/commit/1600386480da69d0f935493642307ea3e1dd579a))
+
+
 ## v0.9.0 (2026-03-08)
 
 ### Other
