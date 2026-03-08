@@ -1,19 +1,29 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowUp, Square } from "lucide-react";
+import { ArrowUp, Clock, Square } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { SlashCommand } from "@/lib/api";
 
 interface ChatInputProps {
   onSend: (content: string) => void;
   onCancel?: () => void;
-  disabled?: boolean;
+  onInterrupt?: (content: string) => void;
+  connected: boolean;
   waiting?: boolean;
+  hasQueuedMessage?: boolean;
   commands?: SlashCommand[];
 }
 
-export function ChatInput({ onSend, onCancel, disabled, waiting, commands = [] }: ChatInputProps) {
+export function ChatInput({
+  onSend,
+  onCancel,
+  onInterrupt,
+  connected,
+  waiting,
+  hasQueuedMessage,
+  commands = [],
+}: ChatInputProps) {
   const [value, setValue] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -44,15 +54,27 @@ export function ChatInput({ onSend, onCancel, disabled, waiting, commands = [] }
     [],
   );
 
-  const submit = useCallback(() => {
-    const trimmed = value.trim();
-    if (!trimmed || disabled) return;
-    onSend(trimmed);
+  const clearInput = useCallback(() => {
     setValue("");
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
     }
-  }, [value, disabled, onSend]);
+  }, []);
+
+  const submit = useCallback(() => {
+    const trimmed = value.trim();
+    if (!trimmed || !connected) return;
+    if (waiting && hasQueuedMessage) return;
+    onSend(trimmed);
+    clearInput();
+  }, [value, connected, waiting, hasQueuedMessage, onSend, clearInput]);
+
+  const interrupt = useCallback(() => {
+    const trimmed = value.trim();
+    if (!trimmed || !connected || !waiting || hasQueuedMessage) return;
+    onInterrupt?.(trimmed);
+    clearInput();
+  }, [value, connected, waiting, hasQueuedMessage, onInterrupt, clearInput]);
 
   function handleKeyDown(e: React.KeyboardEvent) {
     if (showMenu && filtered.length > 0) {
@@ -76,9 +98,12 @@ export function ChatInput({ onSend, onCancel, disabled, waiting, commands = [] }
         setValue("");
         return;
       }
-    } else if (e.key === "Enter" && !e.shiftKey) {
+    } else if (e.key === "Enter" && !e.shiftKey && !e.altKey) {
       e.preventDefault();
       submit();
+    } else if (e.key === "Enter" && e.altKey && !e.shiftKey) {
+      e.preventDefault();
+      interrupt();
     }
   }
 
@@ -90,8 +115,25 @@ export function ChatInput({ onSend, onCancel, disabled, waiting, commands = [] }
     el.style.height = Math.min(el.scrollHeight, 200) + "px";
   }
 
+  const hasText = value.trim().length > 0;
+
+  let tooltip: string;
+  if (!waiting) {
+    tooltip = "Send message (Enter)";
+  } else if (hasText) {
+    tooltip = "Enter to queue · ⌥Enter to interrupt · Click to stop";
+  } else {
+    tooltip = "Stop generation";
+  }
+
   return (
     <div className="border-t border-border bg-background px-4 py-3">
+      {hasQueuedMessage && (
+        <div className="mx-auto max-w-3xl mb-2 flex items-center gap-1.5 text-xs text-muted-foreground">
+          <Clock className="h-3 w-3" />
+          <span>Message queued — will be sent when the agent finishes</span>
+        </div>
+      )}
       <div className="relative mx-auto max-w-3xl">
         {/* Slash command autocomplete menu */}
         {showMenu && filtered.length > 0 && (
@@ -145,7 +187,7 @@ export function ChatInput({ onSend, onCancel, disabled, waiting, commands = [] }
             onChange={handleInput}
             onKeyDown={handleKeyDown}
             placeholder="Message Carapace…"
-            disabled={disabled}
+            disabled={!connected}
             rows={1}
             className={cn(
               "flex-1 resize-none bg-transparent text-sm outline-none",
@@ -155,7 +197,8 @@ export function ChatInput({ onSend, onCancel, disabled, waiting, commands = [] }
           />
           <button
             onClick={waiting ? onCancel : submit}
-            disabled={waiting ? false : disabled || !value.trim()}
+            disabled={waiting ? false : !connected || !hasText}
+            title={tooltip}
             className={cn(
               "shrink-0 rounded-lg p-1.5 transition-colors",
               waiting

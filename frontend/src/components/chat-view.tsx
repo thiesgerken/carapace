@@ -18,6 +18,7 @@ interface ChatViewProps {
 export function ChatView({ server, token, sessionId }: ChatViewProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [waiting, setWaiting] = useState(false);
+  const [queuedMessage, setQueuedMessage] = useState<string | null>(null);
   const [loadingHistory, setLoadingHistory] = useState(true);
   const [commands, setCommands] = useState<SlashCommand[]>([]);
   const approvalState = useRef<Map<string, boolean>>(new Map());
@@ -35,6 +36,7 @@ export function ChatView({ server, token, sessionId }: ChatViewProps) {
     let cancelled = false;
     setMessages([]);
     setLoadingHistory(true);
+    setQueuedMessage(null);
     approvalState.current.clear();
 
     fetchHistory(server, token, sessionId)
@@ -201,10 +203,37 @@ export function ChatView({ server, token, sessionId }: ChatViewProps) {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  // Flush queued message when agent finishes and connection is up
+  useEffect(() => {
+    if (!waiting && queuedMessage && status === "connected") {
+      const msg = queuedMessage;
+      setQueuedMessage(null);
+      send({ type: "message", content: msg });
+      setWaiting(true);
+    }
+  }, [waiting, queuedMessage, status, send]);
+
+  // Clear queue on disconnect
+  useEffect(() => {
+    if (status !== "connected") {
+      setQueuedMessage(null);
+    }
+  }, [status]);
+
   function handleSend(content: string) {
     setMessages((prev) => [...prev, { kind: "user", content }]);
-    send({ type: "message", content });
-    setWaiting(true);
+    if (waiting) {
+      setQueuedMessage(content);
+    } else {
+      send({ type: "message", content });
+      setWaiting(true);
+    }
+  }
+
+  function handleInterrupt(content: string) {
+    setQueuedMessage(content);
+    setMessages((prev) => [...prev, { kind: "user", content }]);
+    send({ type: "cancel" });
   }
 
   function handleApproval(toolCallId: string, approved: boolean) {
@@ -291,8 +320,10 @@ export function ChatView({ server, token, sessionId }: ChatViewProps) {
       <ChatInput
         onSend={handleSend}
         onCancel={handleCancel}
-        disabled={!connected || waiting}
+        onInterrupt={handleInterrupt}
+        connected={connected}
         waiting={waiting}
+        hasQueuedMessage={queuedMessage !== null}
         commands={commands}
       />
     </div>
