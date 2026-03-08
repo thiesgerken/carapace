@@ -365,7 +365,7 @@ def test_format_approval_request_includes_tool_name():
         tool_call_id="call-1",
         tool="read_file",
         args={"path": "/etc/passwd"},
-        explanation="Sensitive file access detected by bouncer",
+        explanation="Sensitive file access detected by sentinel",
         risk_level="high",
     )
     text = _format_approval_request(req)
@@ -386,7 +386,7 @@ def test_format_command_result_help():
 def test_format_command_result_security():
     result = CommandResult(
         command="security",
-        data={"policy_preview": "# Security Policy", "action_log_entries": 5, "bouncer_evaluations": 2},
+        data={"policy_preview": "# Security Policy", "action_log_entries": 5, "sentinel_evaluations": 2},
     )
     text = _format_command_result_text(result)
     assert "Security Policy" in text

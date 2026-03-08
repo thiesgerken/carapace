@@ -17,7 +17,7 @@ flowchart TB
         ChannelRouter[Channel Router]
         SessionMgr[Session Manager]
         SecurityMod["Security Module"]
-        Bouncer["Bouncer Agent (LLM)"]
+        Sentinel["Sentinel Agent (LLM)"]
         ApprovalGate[Approval Gate]
         Agent[Pydantic AI Agent]
         SkillRegistry[Skill Registry]
@@ -50,10 +50,10 @@ flowchart TB
     Agent <--> MemoryStore
     Agent --> SecurityMod
     SecurityMod -->|safe-list bypass| Agent
-    SecurityMod --> Bouncer
-    Bouncer --> ApprovalGate
+    SecurityMod --> Sentinel
+    Sentinel --> ApprovalGate
     ApprovalGate -.->|approval request| ChannelRouter
-    Bouncer -.->|reads skill docs| Skills
+    Sentinel -.->|reads skill docs| Skills
     CredentialBroker <--> Vault
     CredentialBroker --> BaseContainer
     CredentialBroker --> SkillContainer
@@ -76,7 +76,7 @@ Receives inbound messages from all channel adapters and routes them to the Sessi
 
 ### Session Manager
 
-Creates, resumes, and manages sessions. Each session has an associated `SessionSecurity` object that holds the action log, bouncer conversation state, and audit log. The session is the core abstraction -- it is decoupled from any specific channel. See [sessions-and-channels.md](sessions-and-channels.md).
+Creates, resumes, and manages sessions. Each session has an associated `SessionSecurity` object that holds the action log, sentinel conversation state, and audit log. The session is the core abstraction -- it is decoupled from any specific channel. See [sessions-and-channels.md](sessions-and-channels.md).
 
 ### Pydantic AI Agent
 
@@ -84,15 +84,15 @@ The main agent loop, built on [Pydantic AI](https://ai.pydantic.dev/). It receiv
 
 ### Security Module
 
-The central security gate. Every tool call passes through `security.evaluate()`. A hardcoded safe-list auto-allows known-harmless operations (reads, memory reads, skill listing). Everything else is forwarded to the bouncer agent. See [security.md](security.md).
+The central security gate. Every tool call passes through `security.evaluate()`. A hardcoded safe-list auto-allows known-harmless operations (reads, memory reads, skill listing). Everything else is forwarded to the sentinel agent. See [security.md](security.md).
 
-### Bouncer Agent
+### Sentinel Agent
 
 An LLM-powered agent that evaluates actions against the natural-language `SECURITY.md` policy. Maintains a persistent "shadow conversation" per session, giving it full context of the session history. Has restricted tool access (can read skill directories but not the agent's workspace) and returns structured verdicts (allow / escalate / deny). See [security.md](security.md).
 
 ### Approval Gate
 
-When the bouncer escalates an operation, the Approval Gate sends a structured approval request through the session's channel and waits for a response (approve/deny). The request includes the bouncer's explanation and risk assessment. For non-interactive sessions (cron, webhook), approvals are routed to a configured interactive channel. See [sessions-and-channels.md](sessions-and-channels.md).
+When the sentinel escalates an operation, the Approval Gate sends a structured approval request through the session's channel and waits for a response (approve/deny). The request includes the sentinel's explanation and risk assessment. For non-interactive sessions (cron, webhook), approvals are routed to a configured interactive channel. See [sessions-and-channels.md](sessions-and-channels.md).
 
 ### Skill Registry
 
@@ -116,7 +116,7 @@ sequenceDiagram
     participant Channel as Channel Adapter
     participant Agent
     participant Security as Security Module
-    participant Bouncer as Bouncer Agent
+    participant Sentinel as Sentinel Agent
     participant Gate as Approval Gate
     participant CredBroker as Credential Broker
     participant Vault as Vaultwarden
@@ -128,10 +128,10 @@ sequenceDiagram
     Note over Agent: Agent plans: read expenses, then email summary
 
     Agent->>Security: evaluate(finance_reader.get_expenses)
-    Security->>Bouncer: evaluate tool call
-    Bouncer-->>Security: verdict: escalate (credential access)
+    Security->>Sentinel: evaluate tool call
+    Sentinel-->>Security: verdict: escalate (credential access)
 
-    Gate->>Channel: Approval request (bouncer explanation + risk level)
+    Gate->>Channel: Approval request (sentinel explanation + risk level)
     User->>Channel: approve
 
     CredBroker->>Vault: fetch carapace/finance-api
@@ -142,8 +142,8 @@ sequenceDiagram
     Note over Agent: Agent proceeds to email step
 
     Agent->>Security: evaluate(email_sender.send_email)
-    Security->>Bouncer: evaluate tool call (context: user approved finance read)
-    Bouncer-->>Security: verdict: escalate (outbound after sensitive data)
+    Security->>Sentinel: evaluate tool call (context: user approved finance read)
+    Sentinel-->>Security: verdict: escalate (outbound after sensitive data)
 
     Gate->>Channel: Approval request
     User->>Channel: approve
@@ -205,7 +205,7 @@ channels:
 
 agent:
   model: anthropic:claude-sonnet-4-5
-  bouncer_model: anthropic:claude-haiku
+  sentinel_model: anthropic:claude-haiku
 
 credentials:
   backend: vaultwarden
@@ -233,7 +233,7 @@ sessions:
 ```
 $CARAPACE_DATA_DIR/
   config.yaml               # main configuration
-  SECURITY.md               # natural-language security policy (bouncer system prompt)
+  SECURITY.md               # natural-language security policy (sentinel system prompt)
   AGENTS.md                 # master behavioral guide (loaded every session)
   SOUL.md                   # agent personality (evolvable)
   USER.md                   # about the human (learned over time)
@@ -243,7 +243,7 @@ $CARAPACE_DATA_DIR/
     <session_id>/
       history.jsonl          # conversation log
       state.yaml             # session state
-      audit.jsonl            # security audit log (bouncer decisions)
+      audit.jsonl            # security audit log (sentinel decisions)
   skills/
     <skill_name>/
       SKILL.md               # AgentSkills standard

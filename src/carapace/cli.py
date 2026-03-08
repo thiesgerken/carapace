@@ -112,7 +112,7 @@ def _render_command_result(data: dict[str, Any]) -> None:
                 Panel(
                     f"[bold]Policy:[/bold]\n{payload.get('policy_preview', '(none)')}\n\n"
                     f"[bold]Action log entries:[/bold] {payload.get('action_log_entries', 0)}\n"
-                    f"[bold]Bouncer evaluations:[/bold] {payload.get('bouncer_evaluations', 0)}",
+                    f"[bold]Sentinel evaluations:[/bold] {payload.get('sentinel_evaluations', 0)}",
                     title="Security Policy",
                 )
             )

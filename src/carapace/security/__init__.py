@@ -7,14 +7,14 @@ from loguru import logger
 from pydantic_ai import ApprovalRequired
 
 from carapace.models import UsageTracker
-from carapace.security.bouncer import Bouncer
 from carapace.security.context import (
     ActionLogEntry,
     AuditEntry,
-    BouncerVerdict,
+    SentinelVerdict,
     SessionSecurity,
     ToolCallEntry,
 )
+from carapace.security.sentinel import Sentinel
 
 SAFE_TOOLS: frozenset[str] = frozenset(
     {
@@ -29,7 +29,7 @@ SAFE_TOOLS: frozenset[str] = frozenset(
 )
 
 _sessions: dict[str, SessionSecurity] = {}
-_bouncers: dict[str, Bouncer] = {}
+_sentinels: dict[str, Sentinel] = {}
 _session_refs: dict[str, int] = {}
 
 
@@ -42,7 +42,7 @@ def get_session(session_id: str) -> SessionSecurity:
 def init_session(
     session_id: str,
     *,
-    bouncer_model: str,
+    sentinel_model: str,
     security_md: str,
     skills_dir: Path,
     audit_dir: Path | None = None,
@@ -51,7 +51,7 @@ def init_session(
     """Create or reuse a security session (refcount-based).
 
     If the session already exists the existing state is returned and the
-    reference count is incremented.  This keeps the bouncer conversation and
+    reference count is incremented.  This keeps the sentinel conversation and
     action log intact when multiple WebSocket clients share a session.
     """
     if session_id in _sessions:
@@ -61,8 +61,8 @@ def init_session(
 
     session = SessionSecurity(session_id, audit_dir=audit_dir)
     _sessions[session_id] = session
-    _bouncers[session_id] = Bouncer(
-        model=bouncer_model,
+    _sentinels[session_id] = Sentinel(
+        model=sentinel_model,
         security_md=security_md,
         skills_dir=skills_dir,
         reset_threshold=reset_threshold,
@@ -79,7 +79,7 @@ def cleanup_session(session_id: str) -> None:
         logger.debug(f"Security session {session_id} ref decremented (refs={refs - 1})")
         return
     _sessions.pop(session_id, None)
-    _bouncers.pop(session_id, None)
+    _sentinels.pop(session_id, None)
     _session_refs.pop(session_id, None)
 
 
@@ -105,9 +105,9 @@ async def evaluate(
     verbose: bool = True,
     tool_call_callback: Any = None,
 ) -> None:
-    """Main security gate. Auto-allows safe tools; asks the bouncer for everything else.
+    """Main security gate. Auto-allows safe tools; asks the sentinel for everything else.
 
-    Raises ApprovalRequired if the bouncer escalates, or ToolDenied if denied.
+    Raises ApprovalRequired if the sentinel escalates, or ToolDenied if denied.
     """
     session = _sessions.get(session_id)
     if session is None:
@@ -129,12 +129,12 @@ async def evaluate(
             _log_tool_call(tool_name, args, "[safe-list] auto-allowed", tool_call_callback)
         return
 
-    bouncer = _bouncers.get(session_id)
-    if bouncer is None:
-        logger.warning(f"No bouncer for session {session_id}, auto-allowing {tool_name}")
+    sentinel = _sentinels.get(session_id)
+    if sentinel is None:
+        logger.warning(f"No sentinel for session {session_id}, auto-allowing {tool_name}")
         return
 
-    verdict = await bouncer.evaluate_tool_call(
+    verdict = await sentinel.evaluate_tool_call(
         session,
         tool_name,
         args,
@@ -151,7 +151,7 @@ async def evaluate(
     )
     session.append(entry)
 
-    detail = f"[bouncer: {verdict.decision}] {verdict.explanation}"
+    detail = f"[sentinel: {verdict.decision}] {verdict.explanation}"
     if verbose:
         _log_tool_call(tool_name, args, detail, tool_call_callback)
 
@@ -161,7 +161,7 @@ async def evaluate(
                 kind="tool_call",
                 tool=tool_name,
                 args_summary=_truncate_args(args),
-                bouncer_verdict=verdict,
+                sentinel_verdict=verdict,
                 final_decision="denied",
                 explanation=verdict.explanation,
             )
@@ -178,7 +178,7 @@ async def evaluate(
                 "args": args,
                 "explanation": verdict.explanation,
                 "risk_level": verdict.risk_level,
-                "bouncer_verdict": verdict,
+                "sentinel_verdict": verdict,
                 "args_summary": _truncate_args(args),
             }
         )
@@ -189,7 +189,7 @@ async def evaluate(
             kind="tool_call",
             tool=tool_name,
             args_summary=_truncate_args(args),
-            bouncer_verdict=verdict,
+            sentinel_verdict=verdict,
             final_decision="allowed",
             explanation=verdict.explanation,
         )
@@ -205,19 +205,19 @@ async def evaluate_domain(
 ) -> bool:
     """Evaluate a proxy domain request. Returns True to allow, False to deny.
 
-    If the bouncer escalates, delegates to the session's user escalation callback.
+    If the sentinel escalates, delegates to the session's user escalation callback.
     """
     session = _sessions.get(session_id)
     if session is None:
         logger.warning(f"No security session for {session_id}, denying domain {domain}")
         return False
 
-    bouncer = _bouncers.get(session_id)
-    if bouncer is None:
-        logger.warning(f"No bouncer for session {session_id}, denying domain {domain}")
+    sentinel = _sentinels.get(session_id)
+    if sentinel is None:
+        logger.warning(f"No sentinel for session {session_id}, denying domain {domain}")
         return False
 
-    verdict = await bouncer.evaluate_domain(
+    verdict = await sentinel.evaluate_domain(
         session,
         domain,
         command,
@@ -230,18 +230,18 @@ async def evaluate_domain(
     if verdict.decision == "allow":
         allowed = True
         final_decision = "allowed"
-        detail = f"[bouncer: allow] {verdict.explanation}"
+        detail = f"[sentinel: allow] {verdict.explanation}"
     elif verdict.decision == "deny":
         allowed = False
         final_decision = "denied"
-        detail = f"[bouncer: deny] {verdict.explanation}"
+        detail = f"[sentinel: deny] {verdict.explanation}"
     else:
         allowed = await session.escalate_to_user(
             domain,
             {"command": command, "explanation": verdict.explanation},
         )
         final_decision = "allowed" if allowed else "denied"
-        detail = f"[bouncer: escalate \u2192 {final_decision}] {verdict.explanation}"
+        detail = f"[sentinel: escalate \u2192 {final_decision}] {verdict.explanation}"
 
     session.notify_domain_decision(domain, detail)
 
@@ -249,7 +249,7 @@ async def evaluate_domain(
         AuditEntry(
             kind="proxy_domain",
             domain=domain,
-            bouncer_verdict=verdict,
+            sentinel_verdict=verdict,
             final_decision=final_decision,
             explanation=verdict.explanation,
         )
@@ -258,7 +258,7 @@ async def evaluate_domain(
     return allowed
 
 
-def _verdict_to_decision(verdict: BouncerVerdict) -> str:
+def _verdict_to_decision(verdict: SentinelVerdict) -> str:
     match verdict.decision:
         case "allow":
             return "allowed"

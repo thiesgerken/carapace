@@ -66,10 +66,10 @@ ActionLogEntry = Annotated[
 ]
 
 
-# --- Bouncer Verdict ---
+# --- Sentinel Verdict ---
 
 
-class BouncerVerdict(BaseModel):
+class SentinelVerdict(BaseModel):
     decision: Literal["allow", "escalate", "deny"]
     explanation: str = ""
     risk_level: Literal["low", "medium", "high"] = "medium"
@@ -84,7 +84,7 @@ class AuditEntry(BaseModel):
     tool: str = ""
     args_summary: dict[str, Any] = {}
     domain: str = ""
-    bouncer_verdict: BouncerVerdict | None = None
+    sentinel_verdict: SentinelVerdict | None = None
     final_decision: Literal["auto_allowed", "allowed", "escalated", "denied"]
     explanation: str = ""
 
@@ -106,7 +106,7 @@ class SessionSecurity:
             | SkillActivatedEntry
             | UserVouchedEntry
         ] = []
-        self.bouncer_eval_count: int = 0
+        self.sentinel_eval_count: int = 0
         self._last_synced_idx: int = 0
         self._audit_dir = audit_dir
         self._user_escalation_callback: Callable[[str, str, dict[str, Any]], Awaitable[bool]] | None = None
@@ -126,7 +126,7 @@ class SessionSecurity:
         | SkillActivatedEntry
         | UserVouchedEntry
     ]:
-        """Return action log entries added since the last bouncer sync."""
+        """Return action log entries added since the last sentinel sync."""
         entries = self.action_log[self._last_synced_idx :]
         self._last_synced_idx = len(self.action_log)
         return entries
@@ -179,6 +179,6 @@ class SessionSecurity:
             return False
         return await self._user_escalation_callback(self.session_id, domain, context)
 
-    def reset_bouncer(self) -> None:
-        self.bouncer_eval_count = 0
+    def reset_sentinel(self) -> None:
+        self.sentinel_eval_count = 0
         self._last_synced_idx = 0

@@ -58,7 +58,7 @@ class ChannelsConfig(BaseModel):
 
 class AgentConfig(BaseModel):
     model: str = "openai:gpt-4o-mini"
-    bouncer_model: str = "openai:gpt-4o-mini"
+    sentinel_model: str = "openai:gpt-4o-mini"
 
 
 class CredentialsConfig(BaseModel):

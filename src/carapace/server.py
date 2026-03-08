@@ -434,7 +434,7 @@ def _handle_slash_command(command: str, deps: Deps) -> CommandResult | None:
         try:
             session = security_mod.get_session(session_id)
             log_count = len(session.action_log)
-            eval_count = session.bouncer_eval_count
+            eval_count = session.sentinel_eval_count
         except KeyError:
             log_count = 0
             eval_count = 0
@@ -443,7 +443,7 @@ def _handle_slash_command(command: str, deps: Deps) -> CommandResult | None:
             data={
                 "policy_preview": policy[:500] + ("..." if len(policy) > 500 else ""),
                 "action_log_entries": log_count,
-                "bouncer_evaluations": eval_count,
+                "sentinel_evaluations": eval_count,
             },
         )
 
@@ -554,7 +554,7 @@ async def chat_ws(
     audit_dir = _data_dir / "sessions" / session_id
     sec_session = security_mod.init_session(
         session_id,
-        bouncer_model=_config.agent.bouncer_model,
+        sentinel_model=_config.agent.sentinel_model,
         security_md=_security_md,
         skills_dir=skills_dir,
         audit_dir=audit_dir,

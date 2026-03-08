@@ -59,7 +59,7 @@ def _format_command_result_text(result: CommandResult) -> str:
                 "**Security Policy:**\n",
                 data.get("policy_preview", "(none)"),
                 f"\nAction log entries: {data.get('action_log_entries', 0)}",
-                f"Bouncer evaluations: {data.get('bouncer_evaluations', 0)}",
+                f"Sentinel evaluations: {data.get('sentinel_evaluations', 0)}",
             ]
             return "\n".join(lines)
 
@@ -112,7 +112,7 @@ def _format_command_result_text(result: CommandResult) -> str:
 
 
 def _format_domain_escalation(domain: str, command: str, explanation: str) -> str:
-    """Format a bouncer-escalated domain request as a Matrix message."""
+    """Format a sentinel-escalated domain request as a Matrix message."""
     parts = [
         f"**🌐 Network Access Request** — domain: `{domain}`",
         f"**Command:** `{command}`",
@@ -120,7 +120,7 @@ def _format_domain_escalation(domain: str, command: str, explanation: str) -> st
     if explanation:
         parts.append(f"**Reason:** {explanation}")
     parts.append(
-        "\nThe security bouncer escalated this domain request.\n"
+        "\nThe security sentinel escalated this domain request.\n"
         "React ✅ or type `/allow` / `/yes` to allow.\n"
         "React ❌ or type `/deny` / `/no` to deny."
     )
@@ -685,7 +685,7 @@ class MatrixChannel:
         except KeyError:
             sec_session = security_mod.init_session(
                 session_id,
-                bouncer_model=self._full_config.agent.bouncer_model,
+                sentinel_model=self._full_config.agent.sentinel_model,
                 security_md=self._security_md,
                 skills_dir=skills_dir,
                 audit_dir=audit_dir,

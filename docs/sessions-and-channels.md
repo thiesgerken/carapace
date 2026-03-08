@@ -15,13 +15,13 @@ class Session(BaseModel):
     last_active: datetime
 ```
 
-Each session also has an associated `SessionSecurity` object (managed by the security module) that holds the action log, bouncer conversation state, and audit trail.
+Each session also has an associated `SessionSecurity` object (managed by the security module) that holds the action log, sentinel conversation state, and audit trail.
 
 ## Session lifecycle
 
 - Sessions are **persistent** -- they survive Carapace restarts. History and state are stored on disk.
 - `/reset` creates a **new session ID** and links the chat to it. The old session's history remains on disk for auditing.
-- **Approved credentials** persist with the session state. They survive container restarts but are cleared on `/reset`. The security action log and bouncer conversation are in-memory per session.
+- **Approved credentials** persist with the session state. They survive container restarts but are cleared on `/reset`. The security action log and sentinel conversation are in-memory per session.
 - **Containers** are ephemeral: destroyed after an idle timeout (configurable, default 15 min). When the user sends a new message after containers expired, they are pre-warmed again.
 
 ## Session triggers
@@ -114,17 +114,17 @@ To avoid interference with that room's own conversational session, approval mess
 
 Slash commands are the user's control interface for managing sessions and security. They are channel-agnostic -- any channel that supports text input can process them.
 
-| Command            | Effect                                                               |
-| ------------------ | -------------------------------------------------------------------- |
-| `/security`        | Show the current security policy and action log summary              |
-| `/approve-context` | Vouch for the current context (records trust signal for the bouncer) |
-| `/reset`           | Reset: create new session, clear security state, revoke credentials  |
-| `/session`         | Show current session state                                           |
-| `/skills`          | List available skills                                                |
-| `/memory`          | Show memory summary                                                  |
-| `/approve`         | Approve the pending operation (alternative to reaction)              |
-| `/deny`            | Deny the pending operation                                           |
-| `/help`            | Show available commands                                              |
+| Command            | Effect                                                                |
+| ------------------ | --------------------------------------------------------------------- |
+| `/security`        | Show the current security policy and action log summary               |
+| `/approve-context` | Vouch for the current context (records trust signal for the sentinel) |
+| `/reset`           | Reset: create new session, clear security state, revoke credentials   |
+| `/session`         | Show current session state                                            |
+| `/skills`          | List available skills                                                 |
+| `/memory`          | Show memory summary                                                   |
+| `/approve`         | Approve the pending operation (alternative to reaction)               |
+| `/deny`            | Deny the pending operation                                            |
+| `/help`            | Show available commands                                               |
 
 ---
 
@@ -139,7 +139,7 @@ Approval Required [risk: high]
 
 The agent wants to send an email after accessing your financial data.
 
-Bouncer explanation: "The agent read sensitive financial data from the
+Sentinel explanation: "The agent read sensitive financial data from the
 expense tracker skill and now wants to send an email externally. This
 is a potential data exfiltration vector."
 
@@ -148,4 +148,4 @@ Operation: email_sender.send_email(to="accountant@...", subject="Q4 Summary")
 /approve or /deny
 ```
 
-The approval prompt includes the bouncer's explanation and risk assessment. See [security.md](security.md) for details on how the bouncer evaluates operations.
+The approval prompt includes the sentinel's explanation and risk assessment. See [security.md](security.md) for details on how the sentinel evaluates operations.

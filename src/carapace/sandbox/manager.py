@@ -556,8 +556,8 @@ class SandboxManager:
     async def request_domain_approval(self, session_id: str, domain: str) -> bool:
         """Called by the proxy when a domain is not in the allowlist.
 
-        Delegates to the security module's bouncer for evaluation. If the
-        bouncer approves, the domain is temporarily allowed for the current exec.
+        Delegates to the security module's sentinel for evaluation. If the
+        sentinel approves, the domain is temporarily allowed for the current exec.
         """
         import carapace.security as security
 

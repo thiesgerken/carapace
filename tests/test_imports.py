@@ -62,10 +62,10 @@ def test_import_ws_models():
 
 def test_import_security():
     from carapace.security import evaluate, evaluate_domain, init_session  # noqa: F401
-    from carapace.security.bouncer import Bouncer  # noqa: F401
     from carapace.security.context import (  # noqa: F401
         ActionLogEntry,
         AuditEntry,
-        BouncerVerdict,
+        SentinelVerdict,
         SessionSecurity,
     )
+    from carapace.security.sentinel import Sentinel  # noqa: F401

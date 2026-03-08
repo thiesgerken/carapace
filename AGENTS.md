@@ -43,8 +43,8 @@ src/carapace/          # main package
   credentials.py       # password-manager-backed credentials
   security/
     __init__.py        # public API: evaluate(), evaluate_domain(), safe-list
-    bouncer.py         # LLM-powered security agent (shadow conversation)
-    context.py         # action log entries, bouncer verdict, session security state
+    sentinel.py         # LLM-powered security agent (shadow conversation)
+    context.py         # action log entries, sentinel verdict, session security state
 frontend/              # Next.js web UI (React 19, Tailwind CSS 4)
   src/app/             # Next.js app router pages and layout
   src/components/      # React components (chat, sidebar, approval flow)
@@ -69,9 +69,9 @@ data/                  # runtime data directory (config, security policy, memory
 
 ## Key conventions
 
-- Security policy is a natural-language `SECURITY.md` that becomes the bouncer agent's system prompt
-- Every tool call goes through a safe-list check, then an LLM bouncer gate (`security.evaluate()`)
-- The bouncer maintains a persistent shadow conversation per session for contextual decisions
+- Security policy is a natural-language `SECURITY.md` that becomes the sentinel agent's system prompt
+- Every tool call goes through a safe-list check, then an LLM sentinel gate (`security.evaluate()`)
+- The sentinel maintains a persistent shadow conversation per session for contextual decisions
 - An append-only action log tracks all agent actions, user messages, and security decisions
 - Skills follow the open [AgentSkills](https://agentskills.io/) format
 - All runtime state lives under `$CARAPACE_DATA_DIR` (defaults to `./data`)

@@ -11,7 +11,7 @@ from carapace.security.context import (
     ActionLogEntry,
     AgentResponseEntry,
     ApprovalEntry,
-    BouncerVerdict,
+    SentinelVerdict,
     SessionSecurity,
     SkillActivatedEntry,
     ToolCallEntry,
@@ -20,7 +20,7 @@ from carapace.security.context import (
     UserVouchedEntry,
 )
 
-_BOUNCER_SYSTEM_PREFIX = """\
+_SENTINEL_SYSTEM_PREFIX = """\
 You are the security gate for an AI agent system called Carapace.
 You evaluate tool calls and proxy domain requests to decide whether
 they should be allowed, escalated to the user for approval, or denied.
@@ -34,7 +34,7 @@ You have tools to read skill source code and documentation.
 Skills are trusted user-authored content. Use them to understand
 what a script does when you see the agent running skill commands.
 
-Always respond with a BouncerVerdict (structured output).
+Always respond with a SentinelVerdict (structured output).
 
 """
 
@@ -42,7 +42,7 @@ _RESET_THRESHOLD_DEFAULT = 20
 
 
 def _build_system_prompt(security_md: str) -> str:
-    return _BOUNCER_SYSTEM_PREFIX + security_md
+    return _SENTINEL_SYSTEM_PREFIX + security_md
 
 
 def _format_entry(entry: ActionLogEntry) -> str:
@@ -85,8 +85,8 @@ def _format_action_log(entries: list[Any]) -> str:
     return "\n".join(_format_entry(e) for e in entries)
 
 
-class Bouncer:
-    """Persistent shadow bouncer agent for a session."""
+class Sentinel:
+    """Persistent shadow sentinel agent for a session."""
 
     def __init__(
         self,
@@ -103,11 +103,11 @@ class Bouncer:
         self._agent = self._create_agent()
         self._message_history: list[Any] = []
 
-    def _create_agent(self) -> Agent[Path, BouncerVerdict]:
-        agent: Agent[Path, BouncerVerdict] = Agent(
+    def _create_agent(self) -> Agent[Path, SentinelVerdict]:
+        agent: Agent[Path, SentinelVerdict] = Agent(
             self._model,
             deps_type=Path,
-            output_type=BouncerVerdict,
+            output_type=SentinelVerdict,
             instructions=self._system_prompt,
         )
 
@@ -144,7 +144,7 @@ class Bouncer:
         args: dict[str, Any],
         *,
         usage_tracker: UsageTracker | None = None,
-    ) -> BouncerVerdict:
+    ) -> SentinelVerdict:
         if self._should_reset(session):
             self._reset(session)
 
@@ -170,10 +170,10 @@ class Bouncer:
             message_history=self._message_history or None,
         )
         self._message_history = result.all_messages()
-        session.bouncer_eval_count += 1
+        session.sentinel_eval_count += 1
 
         if usage_tracker:
-            usage_tracker.record(self._model, "bouncer", result.usage())
+            usage_tracker.record(self._model, "sentinel", result.usage())
 
         return result.output
 
@@ -184,7 +184,7 @@ class Bouncer:
         command: str,
         *,
         usage_tracker: UsageTracker | None = None,
-    ) -> BouncerVerdict:
+    ) -> SentinelVerdict:
         if self._should_reset(session):
             self._reset(session)
 
@@ -207,20 +207,20 @@ class Bouncer:
             message_history=self._message_history or None,
         )
         self._message_history = result.all_messages()
-        session.bouncer_eval_count += 1
+        session.sentinel_eval_count += 1
 
         if usage_tracker:
-            usage_tracker.record(self._model, "bouncer", result.usage())
+            usage_tracker.record(self._model, "sentinel", result.usage())
 
         return result.output
 
     def _should_reset(self, session: SessionSecurity) -> bool:
-        return self._reset_threshold > 0 and session.bouncer_eval_count >= self._reset_threshold
+        return self._reset_threshold > 0 and session.sentinel_eval_count >= self._reset_threshold
 
     def _reset(self, session: SessionSecurity) -> None:
         logger.info(
-            f"Resetting bouncer conversation for session {session.session_id} "
-            + f"after {session.bouncer_eval_count} evaluations"
+            f"Resetting sentinel conversation for session {session.session_id} "
+            + f"after {session.sentinel_eval_count} evaluations"
         )
         self._message_history.clear()
-        session.reset_bouncer()
+        session.reset_sentinel()

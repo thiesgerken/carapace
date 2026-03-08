@@ -124,17 +124,17 @@ The full `SKILL.md` body is loaded only when the agent decides a skill is releva
 
 ## Skill activation as a security event
 
-When the agent activates a skill (loads its full `SKILL.md` into context), a `SkillActivatedEntry` is recorded in the action log. This gives the bouncer agent context about what the agent has learned -- skill instructions reveal the user's personal infrastructure (services, credential paths, workflow patterns).
+When the agent activates a skill (loads its full `SKILL.md` into context), a `SkillActivatedEntry` is recorded in the action log. This gives the sentinel agent context about what the agent has learned -- skill instructions reveal the user's personal infrastructure (services, credential paths, workflow patterns).
 
-The bouncer uses this context when evaluating subsequent actions. For example, after the agent reads skill instructions describing email credentials, the bouncer will be more cautious about outbound network requests -- it knows the agent now has knowledge that could be exfiltrated.
+The sentinel uses this context when evaluating subsequent actions. For example, after the agent reads skill instructions describing email credentials, the sentinel will be more cautious about outbound network requests -- it knows the agent now has knowledge that could be exfiltrated.
 
-The bouncer can also read skill files directly (via its `list_skill_files` and `read_skill_file` tools) to understand what a skill-related tool call will actually do.
+The sentinel can also read skill files directly (via its `list_skill_files` and `read_skill_file` tools) to understand what a skill-related tool call will actually do.
 
 ## Self-improvement
 
-The agent can create new skills by writing files to the `skills/` directory (SKILL.md, carapace.yaml, scripts, Dockerfile). The bouncer will escalate this for user approval per the `SECURITY.md` policy. The user sees the proposed files in their channel and approves or denies.
+The agent can create new skills by writing files to the `skills/` directory (SKILL.md, carapace.yaml, scripts, Dockerfile). The sentinel will escalate this for user approval per the `SECURITY.md` policy. The user sees the proposed files in their channel and approves or denies.
 
-There is no special "architect mode". Skill creation, editing, and deletion are governed by the same bouncer-based security system as everything else.
+There is no special "architect mode". Skill creation, editing, and deletion are governed by the same sentinel-based security system as everything else.
 
 The workflow for the agent to create a skill via chat:
 

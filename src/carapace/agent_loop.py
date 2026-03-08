@@ -24,7 +24,7 @@ from carapace.security.context import (
     AgentResponseEntry,
     ApprovalEntry,
     AuditEntry,
-    BouncerVerdict,
+    SentinelVerdict,
     UserMessageEntry,
 )
 from carapace.ws_models import ApprovalRequest
@@ -92,15 +92,15 @@ async def run_agent_turn(
             )
 
             # Write the deferred audit entry now that the user has decided.
-            bouncer_verdict = meta.get("bouncer_verdict")
-            if isinstance(bouncer_verdict, BouncerVerdict):
+            sentinel_verdict = meta.get("sentinel_verdict")
+            if isinstance(sentinel_verdict, SentinelVerdict):
                 security.write_audit(
                     session_id,
                     AuditEntry(
                         kind="tool_call",
                         tool=meta.get("tool", ""),
                         args_summary=meta.get("args_summary", {}),
-                        bouncer_verdict=bouncer_verdict,
+                        sentinel_verdict=sentinel_verdict,
                         final_decision="allowed" if decision is True else "denied",
                         explanation=meta.get("explanation", ""),
                     ),
