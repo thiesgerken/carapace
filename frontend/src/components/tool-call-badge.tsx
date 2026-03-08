@@ -27,7 +27,7 @@ export function ToolCallBadge({ tool, args, detail }: ToolCallBadgeProps) {
           className={cn("h-3 w-3 transition-transform", open && "rotate-90")}
         />
         <span className="font-mono">{tool}</span>
-        {detail && <span className="opacity-60">— {detail}</span>}
+        {detail && <span className="opacity-60">{detail}</span>}
       </button>
       {open && (
         <pre className="mt-1 ml-4 rounded-md bg-muted p-2 text-xs font-mono overflow-x-auto">

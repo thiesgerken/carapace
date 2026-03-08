@@ -1,25 +1,105 @@
 from __future__ import annotations
 
-import asyncio
+import base64
 import datetime
+import json
 import re
 import secrets
+import shlex
 import shutil
 import time
 from pathlib import Path
-from typing import Never, NoReturn
 
 from loguru import logger
 from pydantic import BaseModel
 
-from carapace.sandbox.proxy import DomainApprovalPending, DomainDecision
-from carapace.sandbox.runtime import ContainerConfig, ContainerGoneError, ContainerRuntime, Mount, SkillVenvError
+from carapace.sandbox.runtime import (
+    ContainerConfig,
+    ContainerGoneError,
+    ContainerRuntime,
+    ExecResult,
+    Mount,
+    SkillVenvError,
+)
 
 _SKILL_NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]*$")
 
+# Inline Python scripts executed inside the sandbox container.
+# Data is passed as base64-encoded CLI args to avoid shell-escaping issues.
+# Scripts use only double quotes so that shlex.quote (single-quote wrapping)
+# works without any escaping.
 
-def never(value: Never) -> NoReturn:
-    raise ValueError(f"Unexpected value: {value!r}")
+_EDIT_SCRIPT = """\
+import sys, base64, difflib
+p, o_b64, n_b64 = sys.argv[1], sys.argv[2], sys.argv[3]
+old = base64.b64decode(o_b64).decode()
+new = base64.b64decode(n_b64).decode()
+try:
+    text = open(p).read()
+except FileNotFoundError:
+    print(f"Error: file not found: {p}")
+    sys.exit(1)
+except PermissionError:
+    print(f"Error: permission denied: {p}")
+    sys.exit(1)
+count = text.count(old)
+if count == 0:
+    print("Error: old_string not found")
+    sys.exit(1)
+if count > 1:
+    print(f"Error: old_string appears {count} times (must be unique)")
+    sys.exit(1)
+updated = text.replace(old, new, 1)
+try:
+    open(p, "w").write(updated)
+except PermissionError:
+    print(f"Error: permission denied (read-only): {p}")
+    sys.exit(1)
+d = difflib.unified_diff(text.splitlines(keepends=True), updated.splitlines(keepends=True), f"a/{p}", f"b/{p}", n=3)
+print("".join(d))\
+"""
+
+_PATCH_SCRIPT = """\
+import sys, base64, json, os
+changes = json.loads(base64.b64decode(sys.argv[1]).decode())
+for i, c in enumerate(changes):
+    p = c.get("path", "")
+    old = base64.b64decode(c["old_b64"]).decode() if c.get("old_b64") else ""
+    new = base64.b64decode(c["new_b64"]).decode() if c.get("new_b64") else ""
+    if not p:
+        print(f"Change {i+1}: missing path")
+        continue
+    if not old:
+        d = os.path.dirname(p)
+        if d:
+            os.makedirs(d, exist_ok=True)
+        try:
+            open(p, "w").write(new)
+            print(f"Change {i+1}: created {p}")
+        except PermissionError:
+            print(f"Change {i+1} ({p}): permission denied")
+        continue
+    if not os.path.exists(p):
+        print(f"Change {i+1}: file not found: {p}")
+        continue
+    try:
+        t = open(p).read()
+    except PermissionError:
+        print(f"Change {i+1} ({p}): permission denied")
+        continue
+    cnt = t.count(old)
+    if cnt == 0:
+        print(f"Change {i+1} ({p}): old_string not found")
+        continue
+    if cnt > 1:
+        print(f"Change {i+1} ({p}): old_string appears {cnt} times (must be unique)")
+        continue
+    try:
+        open(p, "w").write(t.replace(old, new, 1))
+        print(f"Change {i+1}: edited {p}")
+    except PermissionError:
+        print(f"Change {i+1} ({p}): permission denied")\
+"""
 
 
 class SessionContainer(BaseModel):
@@ -67,8 +147,6 @@ class SandboxManager:
         self._timed_domains: dict[str, dict[str, float]] = {}  # session_id -> {pattern: expires_at}
         self._exec_temp_domains: dict[str, set[str]] = {}  # session_id -> domains, cleared after each exec
         self._session_current_command: dict[str, str] = {}
-        self._approval_queues: dict[str, asyncio.Queue[DomainApprovalPending]] = {}
-        self._pending_approvals: dict[str, DomainApprovalPending] = {}
         logger.info(
             f"SandboxManager initialized (image={base_image}, "
             + f"network={network_name}, proxy_port={proxy_port}, idle_timeout={idle_timeout_minutes}m)"
@@ -101,10 +179,6 @@ class SandboxManager:
             self._token_to_session.pop(old_token, None)
         self._token_to_session[proxy_token] = session_id
         self._session_tokens[session_id] = proxy_token
-        # Keep the same queue object across container recreations so any
-        # in-flight listener waiting on queue.get() is still connected.
-        self._approval_queues.setdefault(session_id, asyncio.Queue())
-
         try:
             host_ip = await self._runtime.get_host_ip(self._network_name)
             if not host_ip:
@@ -164,7 +238,7 @@ class SandboxManager:
     def _build_mounts(self, session_id: str) -> list[Mount]:
         mounts: list[Mount] = []
 
-        for filename in ("AGENTS.md", "SOUL.md", "USER.md"):
+        for filename in ("AGENTS.md", "SOUL.md", "USER.md", "SECURITY.md"):
             path = self._data_dir / filename
             if path.exists():
                 mounts.append(
@@ -222,7 +296,8 @@ class SandboxManager:
             "no_proxy": no_proxy_host,
         }
 
-    async def exec_command(self, session_id: str, command: str, timeout: int = 30) -> str:
+    async def _exec(self, session_id: str, command: str, timeout: int = 30) -> ExecResult:
+        """Run a command in the sandbox and return the raw ExecResult."""
         sc = await self.ensure_session(session_id)
         sc.last_used = time.time()
         logger.debug(f"Exec in session {session_id}: {command}")
@@ -231,21 +306,79 @@ class SandboxManager:
         self._exec_temp_domains[session_id] = set()
         try:
             try:
-                result = await self._runtime.exec(sc.container_id, command, timeout=timeout)
+                return await self._runtime.exec(sc.container_id, command, timeout=timeout)
             except ContainerGoneError:
                 logger.warning(f"Container gone for session {session_id}, recreating sandbox")
                 self._prepare_session_recreate(session_id)
                 sc = await self.ensure_session(session_id)
-                result = await self._runtime.exec(sc.container_id, command, timeout=timeout)
+                return await self._runtime.exec(sc.container_id, command, timeout=timeout)
         finally:
             self._session_current_command.pop(session_id, None)
             self._exec_temp_domains.pop(session_id, None)
 
+    async def exec_command(self, session_id: str, command: str, timeout: int = 30) -> str:
+        """Run a command in the sandbox and return formatted output."""
+        result = await self._exec(session_id, command, timeout=timeout)
         output = result.output
         if result.exit_code != 0 and f"[exit code: {result.exit_code}]" not in output:
             logger.debug(f"Command failed in session {session_id} (exit {result.exit_code}): {command}")
             output += f"\n[exit code: {result.exit_code}]"
         return output or "(no output)"
+
+    # ------------------------------------------------------------------
+    # File operations (executed inside the sandbox container via
+    # shell commands and small inline Python snippets).
+    # Data is passed as base64 CLI args to avoid shell-escaping issues.
+    # ------------------------------------------------------------------
+
+    async def file_read(self, session_id: str, path: str) -> str:
+        """Read a file or list a directory inside the sandbox."""
+        pq = shlex.quote(path)
+        cmd = f'if [ -d {pq} ]; then echo "::DIR::"; ls -1 {pq}; else cat {pq}; fi'
+        result = await self._exec(session_id, cmd, timeout=10)
+        if result.exit_code != 0:
+            return result.output or f"Error: cannot read {path}"
+        output = result.output
+        if output.startswith("::DIR::\n"):
+            return f"Directory listing of {path}/:\n" + output[len("::DIR::\n") :]
+        return output or "(empty file)"
+
+    async def file_write(self, session_id: str, path: str, content: str) -> str:
+        """Write content to a file inside the sandbox."""
+        pq = shlex.quote(path)
+        content_b64 = base64.b64encode(content.encode()).decode()
+        cmd = f'mkdir -p "$(dirname {pq})" && printf %s {content_b64} | base64 -d > {pq}'
+        result = await self._exec(session_id, cmd, timeout=10)
+        if result.exit_code != 0:
+            return result.output or f"Error: cannot write {path}"
+        return f"Written to {path}"
+
+    async def file_edit(self, session_id: str, path: str, old_string: str, new_string: str) -> str:
+        """Edit a file inside the sandbox (search-and-replace)."""
+        pq = shlex.quote(path)
+        old_b64 = base64.b64encode(old_string.encode()).decode()
+        new_b64 = base64.b64encode(new_string.encode()).decode()
+        cmd = f"python3 -c {shlex.quote(_EDIT_SCRIPT)} {pq} {old_b64} {new_b64}"
+        result = await self._exec(session_id, cmd, timeout=10)
+        if result.exit_code != 0:
+            return result.output or f"Error: cannot edit {path}"
+        return f"Edited {path}:\n```diff\n{result.output}```"
+
+    async def file_apply_patch(self, session_id: str, changes: list[dict[str, str]]) -> str:
+        """Apply structured edits across files inside the sandbox."""
+        encoded_changes: list[dict[str, str]] = []
+        for change in changes:
+            encoded: dict[str, str] = {"path": change.get("path", "")}
+            if change.get("old_string"):
+                encoded["old_b64"] = base64.b64encode(change["old_string"].encode()).decode()
+            if change.get("new_string"):
+                encoded["new_b64"] = base64.b64encode(change["new_string"].encode()).decode()
+            encoded_changes.append(encoded)
+
+        payload_b64 = base64.b64encode(json.dumps(encoded_changes).encode()).decode()
+        cmd = f"python3 -c {shlex.quote(_PATCH_SCRIPT)} {payload_b64}"
+        result = await self._exec(session_id, cmd, timeout=10)
+        return result.output or "(no output)"
 
     async def activate_skill(self, session_id: str, skill_name: str) -> str:
         if err := _validate_skill_name(skill_name):
@@ -423,79 +556,26 @@ class SandboxManager:
     async def request_domain_approval(self, session_id: str, domain: str) -> bool:
         """Called by the proxy when a domain is not in the allowlist.
 
-        Queues a ``DomainApprovalPending`` for the active exec tool to route
-        to the user, then waits for the decision (up to 120 s).  Applies the
-        decision to the allowlist and returns ``True`` (allow) or ``False``.
+        Delegates to the security module's bouncer for evaluation. If the
+        bouncer approves, the domain is temporarily allowed for the current exec.
         """
-        queue = self._approval_queues.get(session_id)
-        if queue is None:
-            logger.warning(f"No approval queue for session {session_id}, denying {domain}")
-            return False
+        import carapace.security as security
 
-        fut: asyncio.Future[DomainDecision] = asyncio.get_event_loop().create_future()
-        request_id = secrets.token_hex(8)
-        req = DomainApprovalPending(
-            request_id=request_id,
-            session_id=session_id,
-            domain=domain,
-            command=self._session_current_command.get(session_id, ""),
-            future=fut,
-        )
-        self._pending_approvals[request_id] = req
-        await queue.put(req)
-
-        try:
-            decision = await asyncio.wait_for(asyncio.shield(fut), timeout=120)
-        except TimeoutError:
-            logger.warning(f"Domain approval timed out for {domain} in session {session_id}, denying")
-            return False
-        finally:
-            self._pending_approvals.pop(request_id, None)
-
-        return self._apply_domain_decision(session_id, domain, decision)
-
-    def _apply_domain_decision(self, session_id: str, domain: str, decision: DomainDecision) -> bool:
-        match decision:
-            case DomainDecision.ALLOW_ONCE:
-                self._exec_temp_domains.setdefault(session_id, set()).add(domain)
-                logger.info(f"Temp-allowed {domain} for current exec (session={session_id})")
-                return True
-            case DomainDecision.ALLOW_ALL_ONCE:
-                self._exec_temp_domains.setdefault(session_id, set()).add("*")
-                logger.info(f"Temp-allowed all domains for current exec (session={session_id})")
-                return True
-            case DomainDecision.ALLOW_15MIN:
-                self._timed_domains.setdefault(session_id, {})[domain] = time.time() + 15 * 60
-                logger.info(f"Timed-allowed {domain} for 15 minutes (session={session_id})")
-                return True
-            case DomainDecision.ALLOW_ALL_15MIN:
-                self._timed_domains.setdefault(session_id, {})["*"] = time.time() + 15 * 60
-                logger.info(f"Timed-allowed all domains for 15 minutes (session={session_id})")
-                return True
-            case DomainDecision.DENY:
-                return False
-
-        never(decision)
-
-    async def next_domain_approval(self, session_id: str) -> DomainApprovalPending:
-        """Block until a domain approval request arrives for *session_id*."""
-        queue = self._approval_queues.get(session_id)
-        if queue is None:
-            await asyncio.Future()  # never resolves — will be cancelled externally
-        return await queue.get()  # type: ignore[return-value]
-
-    def resolve_domain_approval(self, request_id: str, decision: DomainDecision) -> None:
-        req = self._pending_approvals.get(request_id)
-        if req and not req.future.done():
-            req.future.set_result(decision)
+        command = self._session_current_command.get(session_id, "")
+        allowed = await security.evaluate_domain(session_id, domain, command)
+        if allowed:
+            self._exec_temp_domains.setdefault(session_id, set()).add(domain)
+            logger.info(f"Security approved {domain} for session {session_id}")
+        else:
+            logger.info(f"Security denied {domain} for session {session_id}")
+        return allowed
 
     def _prepare_session_recreate(self, session_id: str) -> None:
-        """Drop container/token tracking while keeping approval and policy state."""
+        """Drop container/token tracking while keeping policy state."""
         self._cleanup_tracking(
             session_id,
             clear_domain_state=False,
             clear_exec_state=False,
-            clear_approval_queue=False,
         )
 
     def _cleanup_tracking(
@@ -504,7 +584,6 @@ class SandboxManager:
         *,
         clear_domain_state: bool = True,
         clear_exec_state: bool = True,
-        clear_approval_queue: bool = True,
     ) -> None:
         self._sessions.pop(session_id, None)
         token = self._session_tokens.pop(session_id, None)
@@ -516,11 +595,3 @@ class SandboxManager:
         if clear_exec_state:
             self._exec_temp_domains.pop(session_id, None)
             self._session_current_command.pop(session_id, None)
-        if clear_approval_queue:
-            self._approval_queues.pop(session_id, None)
-        # Cancel any approvals still in-flight for this session
-        for req_id, req in list(self._pending_approvals.items()):
-            if req.session_id == session_id:
-                if not req.future.done():
-                    req.future.set_result(DomainDecision.DENY)
-                del self._pending_approvals[req_id]

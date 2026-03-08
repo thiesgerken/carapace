@@ -4,8 +4,6 @@ import asyncio
 import base64
 import contextlib
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
-from enum import StrEnum
 
 from loguru import logger
 
@@ -15,25 +13,6 @@ _FORBIDDEN_RESPONSE = (
 )
 _BAD_REQUEST = b"HTTP/1.1 400 Bad Request\r\nContent-Length: 11\r\nConnection: close\r\n\r\nBad Request"
 _RELAY_BUF = 32 * 1024
-
-
-class DomainDecision(StrEnum):
-    ALLOW_ONCE = "allow_once"
-    ALLOW_ALL_ONCE = "allow_all_once"
-    ALLOW_15MIN = "allow_15min"
-    ALLOW_ALL_15MIN = "allow_all_15min"
-    DENY = "deny"
-
-
-@dataclass
-class DomainApprovalPending:
-    """Represents one in-flight proxy domain authorization request."""
-
-    request_id: str
-    session_id: str
-    domain: str
-    command: str  # the exec command that triggered the connection attempt
-    future: asyncio.Future[DomainDecision]
 
 
 def domain_matches(domain: str, pattern: str) -> bool:

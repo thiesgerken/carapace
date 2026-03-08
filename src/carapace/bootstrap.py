@@ -9,7 +9,7 @@ _CRITICAL_FILES: list[tuple[str, str]] = [
     ("SOUL.md", "SOUL.md"),
     ("USER.md", "USER.md"),
     ("config.yaml", "config.yaml"),
-    ("rules.yaml", "rules.yaml"),
+    ("SECURITY.md", "SECURITY.md"),
     ("CORE.md", "memory/CORE.md"),
 ]
 

@@ -9,17 +9,13 @@ def test_import_models():
     from carapace.models import (  # noqa: F401
         Config,
         Deps,
-        OperationClassification,
-        Rule,
-        RuleCheckResult,
-        RuleMode,
         SessionState,
         SkillInfo,
     )
 
 
 def test_import_config():
-    from carapace.config import get_data_dir, load_config, load_rules  # noqa: F401
+    from carapace.config import get_data_dir, load_config, load_security_md  # noqa: F401
 
 
 def test_import_memory():
@@ -61,4 +57,15 @@ def test_import_ws_models():
         ToolCallInfo,
         UserMessage,
         parse_client_message,
+    )
+
+
+def test_import_security():
+    from carapace.security import evaluate, evaluate_domain, init_session  # noqa: F401
+    from carapace.security.bouncer import Bouncer  # noqa: F401
+    from carapace.security.context import (  # noqa: F401
+        ActionLogEntry,
+        AuditEntry,
+        BouncerVerdict,
+        SessionSecurity,
     )

@@ -23,7 +23,7 @@ class ProxyApprovalResponse(BaseModel):
 
     type: Literal["proxy_approval_response"] = "proxy_approval_response"
     request_id: str
-    decision: Literal["allow_once", "allow_all_once", "allow_15min", "allow_all_15min", "deny"]
+    decision: Literal["allow", "deny"]
 
 
 ClientEnvelope = UserMessage | ApprovalResponse | ProxyApprovalResponse
@@ -62,9 +62,8 @@ class ApprovalRequest(BaseModel):
     tool_call_id: str
     tool: str
     args: dict[str, Any]
-    classification: dict[str, Any]
-    triggered_rules: list[str]
-    descriptions: list[str]
+    explanation: str = ""
+    risk_level: str = ""
 
 
 class ProxyApprovalRequest(BaseModel):

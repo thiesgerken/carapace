@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 import carapace.server as srv
 from carapace.auth import ensure_token
 from carapace.bootstrap import ensure_data_dir
-from carapace.config import load_config, load_rules
+from carapace.config import load_config, load_security_md
 from carapace.sandbox.manager import SandboxManager
 from carapace.server import app
 from carapace.session import SessionManager
@@ -24,7 +24,7 @@ def _setup_server(tmp_path):
     ensure_data_dir(tmp_path)
     srv._data_dir = tmp_path
     srv._config = load_config(tmp_path)
-    srv._rules = load_rules(tmp_path)
+    srv._security_md = load_security_md(tmp_path)
     srv._session_mgr = SessionManager(tmp_path)
     registry = SkillRegistry(tmp_path / "skills")
     srv._skill_catalog = registry.scan()
@@ -120,15 +120,15 @@ def test_ws_help_command(client, auth_headers, bearer):
         assert "commands" in msg["data"]
 
 
-def test_ws_rules_command(client, auth_headers, bearer):
+def test_ws_security_command(client, auth_headers, bearer):
     create_resp = client.post("/sessions", headers=auth_headers)
     sid = create_resp.json()["session_id"]
 
     with client.websocket_connect(f"/chat/{sid}?token={bearer}") as ws:
-        ws.send_json({"type": "message", "content": "/rules"})
+        ws.send_json({"type": "message", "content": "/security"})
         msg = ws.receive_json()
         assert msg["type"] == "command_result"
-        assert msg["command"] == "rules"
+        assert msg["command"] == "security"
 
 
 def test_ws_session_command(client, auth_headers, bearer):

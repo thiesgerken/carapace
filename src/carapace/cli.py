@@ -107,33 +107,18 @@ def _render_command_result(data: dict[str, Any]) -> None:
                 table.add_row(item["command"], item["description"])
             console.print(table)
 
-        case "rules":
-            table = Table(title="Security Rules")
-            table.add_column("ID", style="bold")
-            table.add_column("Trigger")
-            table.add_column("Mode")
-            table.add_column("Status")
-            status_styles = {
-                "disabled": "[red]disabled[/red]",
-                "activated": "[yellow]activated[/yellow]",
-                "always-on": "[green]always-on[/green]",
-            }
-            for rule in payload:
-                styled = status_styles.get(rule["status"], rule["status"])
-                table.add_row(rule["id"], rule["trigger"], rule["mode"], styled)
-            console.print(table)
+        case "security":
+            console.print(
+                Panel(
+                    f"[bold]Policy:[/bold]\n{payload.get('policy_preview', '(none)')}\n\n"
+                    f"[bold]Action log entries:[/bold] {payload.get('action_log_entries', 0)}\n"
+                    f"[bold]Bouncer evaluations:[/bold] {payload.get('bouncer_evaluations', 0)}",
+                    title="Security Policy",
+                )
+            )
 
-        case "disable":
-            if "error" in payload:
-                console.print(f"[red]{payload['error']}[/red]")
-            else:
-                console.print(f"[yellow]{payload['message']}[/yellow]")
-
-        case "enable":
-            if "error" in payload:
-                console.print(f"[red]{payload['error']}[/red]")
-            else:
-                console.print(f"[green]{payload['message']}[/green]")
+        case "approve-context":
+            console.print(f"[green]{payload.get('message', 'Context approved.')}[/green]")
 
         case "session":
             domain_entries: list[dict[str, str]] = payload.get("allowed_domains") or []
@@ -148,8 +133,6 @@ def _render_command_result(data: dict[str, Any]) -> None:
                 Panel(
                     f"[bold]Session ID:[/bold] {payload['session_id']}\n"
                     f"[bold]Channel:[/bold] {payload['channel_type']}\n"
-                    f"[bold]Activated rules:[/bold] {payload.get('activated_rules') or '(none)'}\n"
-                    f"[bold]Disabled rules:[/bold] {payload.get('disabled_rules') or '(none)'}\n"
                     f"[bold]Approved credentials:[/bold] {payload.get('approved_credentials') or '(none)'}\n"
                     f"[bold]Allowed domains:[/bold]{domains_str}",
                     title="Session State",
@@ -257,29 +240,13 @@ async def _render_proxy_approval_request(data: dict[str, Any]) -> str:
             border_style="yellow",
         )
     )
-    console.print(
-        f"  [bold]\\[o][/bold] Allow [cyan]{domain}[/cyan] once (this tool call only)\n"
-        f"  [bold]\\[O][/bold] Allow [yellow]all[/yellow] internet once (this tool call only)\n"
-        f"  [bold]\\[t][/bold] Allow [cyan]{domain}[/cyan] for 15 minutes\n"
-        f"  [bold]\\[T][/bold] Allow [yellow]all[/yellow] internet for 15 minutes\n"
-        f"  [bold]\\[d][/bold] Deny"
-    )
     choice = await asyncio.get_event_loop().run_in_executor(
         None,
-        lambda: console.input("[bold]Choice?[/bold] ").strip(),
+        lambda: console.input("[bold]\\[a]llow / \\[d]eny?[/bold] ").strip().lower(),
     )
-    match choice:
-        case "O":
-            return "allow_all_once"
-        case "T":
-            return "allow_all_15min"
-    match choice.lower():
-        case "o" | "once":
-            return "allow_once"
-        case "t" | "timed":
-            return "allow_15min"
-        case _:
-            return "deny"
+    if choice in ("a", "allow", "y", "yes"):
+        return "allow"
+    return "deny"
 
 
 async def _render_approval_request(data: dict[str, Any]) -> bool:
@@ -288,17 +255,13 @@ async def _render_approval_request(data: dict[str, Any]) -> bool:
         f"[bold]Tool:[/bold] {data.get('tool', '?')}",
         f"[bold]Args:[/bold] {data.get('args', {})}",
     ]
-    classification = data.get("classification", {})
-    if classification:
-        panel_lines.append(
-            f"[bold]Classified as:[/bold] {classification.get('operation_type', '?')} "
-            f"(categories: {classification.get('categories', [])})"
-        )
-    triggered = data.get("triggered_rules", [])
-    if triggered:
-        panel_lines.append(f"[bold]Triggered rules:[/bold] {', '.join(triggered)}")
-    for desc in data.get("descriptions", []):
-        panel_lines.append(f"  {desc}")
+    explanation = data.get("explanation", "")
+    if explanation:
+        panel_lines.append(f"[bold]Reason:[/bold] {explanation}")
+    risk_level = data.get("risk_level", "")
+    if risk_level:
+        risk_style = {"high": "red", "medium": "yellow", "low": "green"}.get(risk_level, "dim")
+        panel_lines.append(f"[bold]Risk level:[/bold] [{risk_style}]{risk_level}[/{risk_style}]")
 
     console.print()
     console.print(
@@ -473,14 +436,12 @@ def chat(
             table.add_column("Created", style="dim")
             table.add_column("Last active", style="dim")
             table.add_column("Turns", justify="right")
-            table.add_column("Active rules", justify="right")
             for s in sessions:
                 table.add_row(
                     s["session_id"],
                     _fmt_dt(s.get("created_at", "")),
                     _fmt_dt(s.get("last_active", "")),
                     str(s.get("message_count", 0)),
-                    str(len(s.get("activated_rules", []))),
                 )
             console.print(table)
         raise typer.Exit()

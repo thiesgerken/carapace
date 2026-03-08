@@ -1,72 +1,18 @@
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
+from collections.abc import Callable
 from datetime import datetime
 from decimal import Decimal
-from enum import Enum
 from pathlib import Path
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any
 
+from genai_prices import Usage as PriceUsage
+from genai_prices import calc_price
 from loguru import logger
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic_ai.usage import RunUsage
 
 from carapace.sandbox.manager import SandboxManager
-from carapace.sandbox.proxy import DomainApprovalPending, DomainDecision
-
-# --- Rules ---
-
-
-class RuleMode(str, Enum):
-    approve = "approve"
-    block = "block"
-
-
-class Rule(BaseModel):
-    id: str
-    trigger: str
-    effect: str
-    mode: RuleMode = RuleMode.approve
-    description: str = ""
-
-
-class RulesConfig(BaseModel):
-    rules: list[Rule] = []
-
-
-# --- Operation Classification ---
-
-OperationType = Literal[
-    "read_local",
-    "write_local",
-    "read_external",
-    "write_external",
-    "read_sensitive",
-    "write_sensitive",
-    "execute",
-    "credential_access",
-    "memory_read",
-    "memory_write",
-    "skill_modify",
-]
-
-
-class OperationClassification(BaseModel):
-    operation_type: OperationType
-    categories: list[str] = []
-    description: str = ""
-    confidence: float = 1.0
-
-
-# --- Rule Engine Results ---
-
-
-class RuleCheckResult(BaseModel):
-    needs_approval: bool = False
-    triggered_rules: list[str] = []
-    newly_activated_rules: list[str] = []
-    descriptions: list[str] = []
-
 
 # --- Session State ---
 
@@ -75,8 +21,6 @@ class SessionState(BaseModel):
     session_id: str
     channel_type: str = "cli"
     channel_ref: str = ""
-    activated_rules: list[str] = []
-    disabled_rules: list[str] = []
     approved_credentials: list[str] = []
     approved_operations: list[str] = []
     created_at: datetime = datetime.now()
@@ -114,7 +58,7 @@ class ChannelsConfig(BaseModel):
 
 class AgentConfig(BaseModel):
     model: str = "openai:gpt-4o-mini"
-    classifier_model: str = "openai:gpt-4o-mini"
+    bouncer_model: str = "openai:gpt-4o-mini"
 
 
 class CredentialsConfig(BaseModel):
@@ -226,9 +170,6 @@ class UsageTracker(BaseModel):
 
     def estimated_cost(self) -> dict[str, Decimal]:
         """Return estimated USD cost per model and total. Keys: model names + 'total'."""
-        from genai_prices import Usage as PriceUsage
-        from genai_prices import calc_price
-
         costs: dict[str, Decimal] = {}
         total = Decimal(0)
         for model_key, u in self.models.items():
@@ -266,13 +207,10 @@ class Deps(BaseModel):
     config: Config
     data_dir: Path
     session_state: SessionState
-    rules: list[Rule]
     sandbox: SandboxManager
     skill_catalog: list[SkillInfo] = []
     activated_skills: list[str] = []
-    classifier_model: str = "openai:gpt-4o-mini"
     agent_model: Any = None
     verbose: bool = True
     tool_call_callback: Callable[[str, dict[str, Any], str], None] | None = None
-    domain_approval_callback: Callable[[DomainApprovalPending], Awaitable[DomainDecision]] | None = None
     usage_tracker: Annotated[UsageTracker, Field(default_factory=UsageTracker)]

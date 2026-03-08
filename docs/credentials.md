@@ -6,7 +6,7 @@ Carapace does not store credentials itself. It uses an external password manager
 
 Only two credentials are needed by Carapace itself (stored as environment variables, not in the data directory):
 
-- **LLM API token** (`CARAPACE_LLM_API_KEY`) -- for the agent and classifier models
+- **LLM API token** (`CARAPACE_LLM_API_KEY`) -- for the agent and bouncer models
 - **Password manager auth** (`CARAPACE_VAULT_TOKEN`) -- for accessing the password manager API
 
 ## Skill credentials
@@ -36,7 +36,7 @@ Each credential entry has:
 sequenceDiagram
     participant Agent
     participant CredBroker as Credential Broker
-    participant RuleEngine as Rule Engine
+    participant Security as Security Module
     participant Gate as Approval Gate
     participant User
     participant Vault as Password Manager
@@ -46,8 +46,8 @@ sequenceDiagram
     CredBroker->>CredBroker: check session: already approved?
 
     alt Not yet approved
-        CredBroker->>RuleEngine: credential-access rule check
-        RuleEngine->>Gate: approval required
+        CredBroker->>Security: bouncer evaluates credential access
+        Security->>Gate: approval required
         Gate->>User: "Skill email-sender needs GMAIL_APP_PASSWORD. Approve?"
         User->>Gate: /approve
     end

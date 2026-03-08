@@ -36,13 +36,11 @@ def test_chat_help():
 @pytest.mark.parametrize(
     ("choice", "expected"),
     [
-        ("o", "allow_once"),
-        ("O", "allow_all_once"),
-        ("once", "allow_once"),
-        ("t", "allow_15min"),
-        ("T", "allow_all_15min"),
-        ("timed", "allow_15min"),
+        ("a", "allow"),
+        ("allow", "allow"),
         ("d", "deny"),
+        ("deny", "deny"),
+        ("x", "deny"),
     ],
 )
 def test_proxy_approval_choice_mapping(choice: str, expected: str):

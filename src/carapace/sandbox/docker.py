@@ -309,29 +309,36 @@ class DockerRuntime:
         return await asyncio.to_thread(_resolve)
 
     async def get_host_ip(self, network: str) -> str | None:
-        """Get the IP of the current host container on *network*.
+        """Get the IP reachable by containers on *network* to reach this process.
 
-        ``network`` should be the actual Docker network name (as returned by
-        ``resolve_self_network_name``).  Returns ``None`` when not running
-        inside Docker or the network isn't found.
+        When running inside Docker, returns the container's IP on *network*.
+        When running on the host, falls back to the network's gateway IP
+        (the host's address as seen from containers on that bridge).
         """
         import os
 
         hostname = os.environ.get("HOSTNAME", "")
-        if not hostname:
-            return None
+        if hostname:
 
-        def _resolve() -> str | None:
-            try:
-                container = self._client.containers.get(hostname)
-                container.reload()
-                nets = container.attrs.get("NetworkSettings", {}).get("Networks", {})
-                info = nets.get(network)
-                return info.get("IPAddress") if info else None
-            except NotFound:
-                return None
+            def _resolve() -> str | None:
+                try:
+                    container = self._client.containers.get(hostname)
+                    container.reload()
+                    nets = container.attrs.get("NetworkSettings", {}).get("Networks", {})
+                    info = nets.get(network)
+                    return info.get("IPAddress") if info else None
+                except NotFound:
+                    return None
 
-        return await asyncio.to_thread(_resolve)
+            ip = await asyncio.to_thread(_resolve)
+            if ip:
+                return ip
+
+        # Fallback for host execution: use the bridge gateway IP
+        gw = await self.get_network_gateway(network)
+        if gw:
+            logger.debug(f"Using network gateway {gw} as host IP for '{network}' (not running in Docker)")
+        return gw
 
     async def get_network_gateway(self, network: str) -> str | None:
         """Return the gateway IP of a Docker bridge *network*.

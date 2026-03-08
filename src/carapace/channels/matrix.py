@@ -7,6 +7,7 @@ Maps one session per room; supports slash commands including /reset.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import os
 import time
@@ -18,10 +19,10 @@ import nio
 from loguru import logger
 from pydantic_ai import ToolDenied
 
+import carapace.security as security_mod
 from carapace.agent_loop import run_agent_turn
-from carapace.models import Config, Deps, MatrixChannelConfig, Rule, SessionState, SkillInfo, UsageTracker
+from carapace.models import Config, Deps, MatrixChannelConfig, SessionState, SkillInfo, UsageTracker
 from carapace.sandbox.manager import SandboxManager
-from carapace.sandbox.proxy import DomainApprovalPending, DomainDecision
 from carapace.session import SessionManager
 from carapace.ws_models import ApprovalRequest, CommandResult
 
@@ -53,22 +54,19 @@ def _format_command_result_text(result: CommandResult) -> str:
                 lines.append(f"- `{entry['command']}` — {entry['description']}")
             return "\n".join(lines)
 
-        case "rules":
-            if not data:
-                return "No rules configured."
-            lines = ["**Rules:**\n"]
-            for r in data:
-                lines.append(f"- `{r['id']}` [{r['mode']}] **{r['status']}** — {r['trigger']}")
+        case "security":
+            lines = [
+                "**Security Policy:**\n",
+                data.get("policy_preview", "(none)"),
+                f"\nAction log entries: {data.get('action_log_entries', 0)}",
+                f"Bouncer evaluations: {data.get('bouncer_evaluations', 0)}",
+            ]
             return "\n".join(lines)
 
-        case "disable" | "enable":
-            if "error" in data:
-                return f"Error: {data['error']}"
-            return data.get("message", "")
+        case "approve-context":
+            return data.get("message", "Context approved.")
 
         case "session":
-            activated = data.get("activated_rules") or []
-            disabled = data.get("disabled_rules") or []
             creds = data.get("approved_credentials") or []
             domain_entries: list[dict[str, str]] = data.get("allowed_domains") or []
             if domain_entries:
@@ -78,8 +76,6 @@ def _format_command_result_text(result: CommandResult) -> str:
             lines = [
                 f"**Session:** `{data.get('session_id', '?')}`",
                 f"**Channel:** {data.get('channel_type', '?')}",
-                f"**Activated rules:** {', '.join(activated) if activated else '(none)'}",
-                f"**Disabled rules:** {', '.join(disabled) if disabled else '(none)'}",
                 f"**Approved credentials:** {', '.join(creds) if creds else '(none)'}",
                 f"**Allowed domains:**{domains_str}",
             ]
@@ -115,41 +111,33 @@ def _format_command_result_text(result: CommandResult) -> str:
             return f"Command result: {json.dumps(data, indent=2, default=str)}"
 
 
-def _format_domain_approval_request(pending: DomainApprovalPending) -> str:
-    """Format a proxy domain approval request as a Matrix message."""
-    return (
-        f"**🌐 Network Access Request** — domain: `{pending.domain}`\n\n"
-        f"**Command:** `{pending.command}`\n\n"
-        "The sandbox wants to connect to this domain. Choose:\n\n"
-        f"- `/allow-once` — allow `{pending.domain}` once (this call only)\n"
-        "- `/allow-all-once` — allow **all** internet once (this call only)\n"
-        f"- `/allow` / `/yes` — allow `{pending.domain}` for 15 min\n"
-        "- `/allow-all` — allow **all** internet for 15 min\n"
-        "- `/deny` / `/no` — block\n\n"
-        "Or react ✅ (= allow 15 min) / ❌ (= deny)."
+def _format_domain_escalation(domain: str, command: str, explanation: str) -> str:
+    """Format a bouncer-escalated domain request as a Matrix message."""
+    parts = [
+        f"**🌐 Network Access Request** — domain: `{domain}`",
+        f"**Command:** `{command}`",
+    ]
+    if explanation:
+        parts.append(f"**Reason:** {explanation}")
+    parts.append(
+        "\nThe security bouncer escalated this domain request.\n"
+        "React ✅ or type `/allow` / `/yes` to allow.\n"
+        "React ❌ or type `/deny` / `/no` to deny."
     )
+    return "\n".join(parts)
 
 
 def _format_approval_request(req: ApprovalRequest) -> str:
     """Format an approval request as a Matrix message."""
-    classification = req.classification
-    op_type = classification.get("operation_type", "unknown")
-    description = classification.get("description", "")
-    rules_text = "\n".join(f"- {r}" for r in req.triggered_rules) if req.triggered_rules else "- (none)"
-    descriptions_text = "\n".join(f"- {d}" for d in req.descriptions) if req.descriptions else ""
     args_text = json.dumps(req.args, indent=2, default=str)
 
     parts = [
         f"**⚠️ Approval Required** — tool: `{req.tool}`",
-        f"**Operation type:** {op_type}",
     ]
-    if description:
-        parts.append(f"**Description:** {description}")
-    parts += [
-        f"**Triggered rules:**\n{rules_text}",
-    ]
-    if descriptions_text:
-        parts.append(f"**Rule notes:**\n{descriptions_text}")
+    if req.explanation:
+        parts.append(f"**Reason:** {req.explanation}")
+    if req.risk_level:
+        parts.append(f"**Risk level:** {req.risk_level}")
     parts += [
         f"**Arguments:**\n```json\n{args_text}\n```",
         "",
@@ -179,13 +167,13 @@ class _PendingDomainApproval:
 
     def __init__(self, event_id: str) -> None:
         self.event_id = event_id
-        self._future: asyncio.Future[DomainDecision] = asyncio.get_running_loop().create_future()
+        self._future: asyncio.Future[bool] = asyncio.get_running_loop().create_future()
 
-    def resolve(self, decision: DomainDecision) -> None:
+    def resolve(self, approved: bool) -> None:
         if not self._future.done():
-            self._future.set_result(decision)
+            self._future.set_result(approved)
 
-    async def wait(self) -> DomainDecision:
+    async def wait(self) -> bool:
         return await self._future
 
 
@@ -199,7 +187,7 @@ class MatrixChannel:
         self,
         config: MatrixChannelConfig,
         full_config: Config,
-        rules: list[Rule],
+        security_md: str,
         session_mgr: SessionManager,
         skill_catalog: list[SkillInfo],
         agent_model: Any,
@@ -207,7 +195,7 @@ class MatrixChannel:
     ) -> None:
         self._config = config
         self._full_config = full_config
-        self._rules = rules
+        self._security_md = security_md
         self._session_mgr = session_mgr
         self._skill_catalog = skill_catalog
         self._agent_model = agent_model
@@ -277,8 +265,6 @@ class MatrixChannel:
         """Stop the sync loop and close the connection."""
         if self._sync_task:
             self._sync_task.cancel()
-            import contextlib
-
             with contextlib.suppress(asyncio.CancelledError, TimeoutError):
                 await asyncio.wait_for(asyncio.shield(self._sync_task), timeout=5)
         await self._client.close()
@@ -430,7 +416,6 @@ class MatrixChannel:
         self,
         session_state: SessionState,
         tool_call_callback: Any = None,
-        domain_approval_callback: Any = None,
         usage_tracker: UsageTracker | None = None,
         verbose: bool = False,
     ) -> Deps:
@@ -438,13 +423,10 @@ class MatrixChannel:
             config=self._full_config,
             data_dir=self._session_mgr.sessions_dir.parent,
             session_state=session_state,
-            rules=self._rules,
             skill_catalog=self._skill_catalog,
-            classifier_model=self._full_config.agent.classifier_model,
             agent_model=self._agent_model,
             verbose=verbose,
             tool_call_callback=tool_call_callback,
-            domain_approval_callback=domain_approval_callback,
             usage_tracker=usage_tracker or self._session_mgr.load_usage(session_state.session_id),
             sandbox=self._sandbox_mgr,
             activated_skills=[],
@@ -484,9 +466,11 @@ class MatrixChannel:
 
         # Domain approval
         if (domain_pending := self._pending_domain_approvals.get(event.reacts_to)) is not None:
-            decision = DomainDecision.ALLOW_15MIN if approved else DomainDecision.DENY
-            logger.info(f"Matrix: domain decision={decision} via reaction from {event.sender} in {room.room_id}")
-            domain_pending.resolve(decision)
+            logger.info(
+                f"Matrix: domain decision={'allow' if approved else 'deny'} "
+                + f"via reaction from {event.sender} in {room.room_id}"
+            )
+            domain_pending.resolve(approved)
 
     async def _on_message(self, room: nio.MatrixRoom, event: nio.RoomMessageText) -> None:
         """Handle a text message from a room."""
@@ -537,8 +521,8 @@ class MatrixChannel:
                 if pending is None:
                     await self._send_text(room_id, "No pending approval request.")
                 elif isinstance(pending, _PendingDomainApproval):
-                    pending.resolve(DomainDecision.ALLOW_15MIN)
-                    await self._send_text(room_id, "✅ Domain access allowed (15 min).")
+                    pending.resolve(True)
+                    await self._send_text(room_id, "✅ Domain access allowed.")
                 else:
                     pending.resolve(True)
                     await self._send_text(room_id, "✅ Operation approved.")
@@ -548,27 +532,11 @@ class MatrixChannel:
                 if pending is None:
                     await self._send_text(room_id, "No pending approval request.")
                 elif isinstance(pending, _PendingDomainApproval):
-                    pending.resolve(DomainDecision.DENY)
+                    pending.resolve(False)
                     await self._send_text(room_id, "❌ Domain access denied.")
                 else:
                     pending.resolve(False)
                     await self._send_text(room_id, "❌ Operation denied.")
-                return
-            case "/allow-once" | "/allow-all-once" | "/allow-all":
-                pending = self._room_pending.get(room_id)
-                if pending is None or not isinstance(pending, _PendingDomainApproval):
-                    await self._send_text(room_id, "No pending domain approval request.")
-                else:
-                    match cmd:
-                        case "/allow-once":
-                            pending.resolve(DomainDecision.ALLOW_ONCE)
-                            await self._send_text(room_id, "✅ Domain access allowed (once).")
-                        case "/allow-all-once":
-                            pending.resolve(DomainDecision.ALLOW_ALL_ONCE)
-                            await self._send_text(room_id, "✅ All internet access allowed (once).")
-                        case "/allow-all":
-                            pending.resolve(DomainDecision.ALLOW_ALL_15MIN)
-                            await self._send_text(room_id, "✅ All internet access allowed (15 min).")
                 return
             case "/verbose":
                 verbose = not self._verbose.get(room_id, False)
@@ -579,20 +547,16 @@ class MatrixChannel:
             case "/help":
                 reply = (
                     "**Available commands:**\n\n"
-                    "- `/reset` — Start a new session (clears history, rules, credentials)\n"
-                    "- `/rules` — List rules and their status\n"
-                    "- `/disable <id>` — Disable a rule for this session\n"
-                    "- `/enable <id>` — Re-enable a disabled rule\n"
+                    "- `/reset` — Start a new session (clears history and credentials)\n"
+                    "- `/security` — Show security policy summary\n"
+                    "- `/approve-context` — Vouch for the current agent context as trustworthy\n"
                     "- `/session` — Show current session state\n"
                     "- `/skills` — List available skills\n"
                     "- `/memory` — List memory files\n"
                     "- `/usage` — Show token usage\n"
                     "- `/verbose` — Toggle tool call notifications\n"
-                    "- `/allow` / `/yes` — Approve tool call or allow domain (15 min)\n"
+                    "- `/allow` / `/yes` — Approve tool call or allow domain\n"
                     "- `/deny` / `/no` — Deny tool call or block domain\n"
-                    "- `/allow-once` — Allow domain access once (this call only)\n"
-                    "- `/allow-all-once` — Allow all internet once (this call only)\n"
-                    "- `/allow-all` — Allow all internet for 15 min\n"
                     "- `/help` — Show this help"
                 )
                 await self._send_text(room_id, reply)
@@ -631,10 +595,11 @@ class MatrixChannel:
         # Clear any stale room-level pending approval
         self._room_pending.pop(room_id, None)
         logger.info(f"Matrix: reset session for {room_id} → {new_state.session_id}")
+        security_mod.cleanup_session(old_session_id)
         await self._send_text(
             room_id,
             f"🔄 Session reset. New session: `{new_state.session_id}`\n"
-            "History, activated rules, and approved credentials have been cleared.",
+            "History and approved credentials have been cleared.",
         )
 
     # ------------------------------------------------------------------
@@ -690,25 +655,56 @@ class MatrixChannel:
                 self._background_tasks.add(task)
                 task.add_done_callback(self._background_tasks.discard)
 
-        async def _request_domain_approval(pending_req: DomainApprovalPending) -> DomainDecision:
-            text = _format_domain_approval_request(pending_req)
+        async def _domain_escalation(
+            _session_id: str,
+            domain: str,
+            context: dict[str, Any],
+        ) -> bool:
+            text = _format_domain_escalation(
+                domain,
+                context.get("command", ""),
+                context.get("explanation", ""),
+            )
             event_id = await self._send_text(room_id, text)
             domain_pending = _PendingDomainApproval(event_id or "")
             if event_id:
                 self._pending_domain_approvals[event_id] = domain_pending
             self._room_pending[room_id] = domain_pending
             try:
-                decision = await domain_pending.wait()
+                return await domain_pending.wait()
             finally:
                 if event_id:
                     self._pending_domain_approvals.pop(event_id, None)
                 self._room_pending.pop(room_id, None)
-            return decision
+
+        data_dir = self._session_mgr.sessions_dir.parent
+        skills_dir = data_dir / "skills"
+        audit_dir = data_dir / "sessions" / session_id
+        try:
+            sec_session = security_mod.get_session(session_id)
+        except KeyError:
+            sec_session = security_mod.init_session(
+                session_id,
+                bouncer_model=self._full_config.agent.bouncer_model,
+                security_md=self._security_md,
+                skills_dir=skills_dir,
+                audit_dir=audit_dir,
+            )
+        sec_session.set_user_escalation_callback(_domain_escalation)
+
+        def _domain_info(domain: str, detail: str) -> None:
+            logger.debug(f"Matrix [{room_id}] domain: {domain} {detail}")
+            if self._verbose.get(room_id, False):
+                notice = f"🌐 `{domain}` — {detail}"
+                task = asyncio.create_task(self._send_notice(room_id, notice))
+                self._background_tasks.add(task)
+                task.add_done_callback(self._background_tasks.discard)
+
+        sec_session.set_domain_info_callback(_domain_info)
 
         deps = self._build_deps(
             session_state,
             tool_call_callback=_tool_call_info,
-            domain_approval_callback=_request_domain_approval,
             verbose=self._verbose.get(room_id, False),
         )
 
