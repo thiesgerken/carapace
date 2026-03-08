@@ -33,13 +33,9 @@ export function ChatView({ server, token, sessionId, onTitleUpdate }: ChatViewPr
     fetchCommands(server, token).then(setCommands);
   }, [server, token]);
 
-  // Load history on mount / session change
+  // Load history on mount
   useEffect(() => {
     let cancelled = false;
-    setMessages([]);
-    setLoadingHistory(true);
-    setQueuedMessage(null);
-    setApprovalState(new Map());
 
     fetchHistory(server, token, sessionId)
       .then((history) => {
@@ -124,7 +120,9 @@ export function ChatView({ server, token, sessionId, onTitleUpdate }: ChatViewPr
     return () => {
       cancelled = true;
     };
-  }, [server, token, sessionId]);
+    // sessionId excluded: component remounts (via key) on session change
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [server, token]);
 
   // Flush a queued message if present, otherwise mark as not-waiting
   function finishWaiting() {
