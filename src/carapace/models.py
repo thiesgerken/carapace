@@ -21,6 +21,7 @@ class SessionState(BaseModel):
     session_id: str
     channel_type: str = "cli"
     channel_ref: str = ""
+    title: str = ""
     approved_credentials: list[str] = []
     approved_operations: list[str] = []
     created_at: Annotated[datetime, Field(default_factory=lambda: datetime.now(tz=UTC))]
@@ -57,8 +58,9 @@ class ChannelsConfig(BaseModel):
 
 
 class AgentConfig(BaseModel):
-    model: str = "openai:gpt-4o-mini"
-    sentinel_model: str = "openai:gpt-4o-mini"
+    model: str = "anthropic:claude-sonnet-4-6"
+    sentinel_model: str = "anthropic:claude-haiku-4-5"
+    title_model: str = "anthropic:claude-haiku-4-5"
 
 
 class CredentialsConfig(BaseModel):

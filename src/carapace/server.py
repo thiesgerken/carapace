@@ -39,6 +39,7 @@ from carapace.sandbox.proxy import ProxyServer
 from carapace.security.context import UserVouchedEntry
 from carapace.session import SessionManager
 from carapace.skills import SkillRegistry
+from carapace.titler import generate_title
 from carapace.ws_models import (
     ApprovalRequest,
     ApprovalResponse,
@@ -50,6 +51,7 @@ from carapace.ws_models import (
     ProxyApprovalRequest,
     ProxyApprovalResponse,
     ServerEnvelope,
+    SessionTitleUpdate,
     ToolCallInfo,
     ToolResultInfo,
     TurnUsage,
@@ -275,6 +277,7 @@ class SessionInfo(BaseModel):
     channel_ref: str
     created_at: str
     last_active: str
+    title: str = ""
     message_count: int = 0
 
     @classmethod
@@ -285,6 +288,7 @@ class SessionInfo(BaseModel):
             channel_ref=state.channel_ref,
             created_at=state.created_at.isoformat(),
             last_active=state.last_active.isoformat(),
+            title=state.title,
             message_count=message_count,
         )
 
@@ -669,6 +673,32 @@ async def chat_ws(
                     session_id,
                     [{"role": "assistant", "content": output}],
                 )
+
+                # Generate a title after the 1st and 3rd user message.
+                events = _session_mgr.load_events(session_id)
+                user_msg_count = sum(1 for e in events if e.get("role") == "user")
+                if user_msg_count in (1, 3):
+
+                    async def _generate_and_send_title(
+                        sid: str = session_id,
+                        evts: list = events,
+                    ) -> None:
+                        title = await generate_title(
+                            evts,
+                            model=_config.agent.title_model,
+                            usage_tracker=deps.usage_tracker,
+                        )
+                        if title:
+                            state = _session_mgr.load_state(sid)
+                            if state:
+                                state.title = title
+                                _session_mgr.save_state(state)
+                            with contextlib.suppress(Exception):
+                                await _send(websocket, SessionTitleUpdate(title=title))
+
+                    task = asyncio.create_task(_generate_and_send_title())
+                    pending_sends.add(task)
+                    task.add_done_callback(pending_sends.discard)
         except asyncio.CancelledError:
             logger.info(f"Agent turn cancelled for session {session_id}")
             _session_mgr.save_usage(session_id, deps.usage_tracker)

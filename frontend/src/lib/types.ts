@@ -6,6 +6,7 @@ export interface SessionInfo {
   channel_ref: string;
   created_at: string;
   last_active: string;
+  title?: string;
   activated_rules: string[];
   disabled_rules: string[];
   message_count: number;
@@ -91,6 +92,11 @@ export interface Cancelled {
   detail: string;
 }
 
+export interface SessionTitleUpdate {
+  type: "session_title";
+  title: string;
+}
+
 export type ServerMessage =
   | TokenChunk
   | ToolCallInfo
@@ -100,7 +106,8 @@ export type ServerMessage =
   | Done
   | CommandResult
   | ErrorMessage
-  | Cancelled;
+  | Cancelled
+  | SessionTitleUpdate;
 
 // WebSocket protocol — Client → Server
 

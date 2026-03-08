@@ -13,9 +13,10 @@ interface ChatViewProps {
   server: string;
   token: string;
   sessionId: string;
+  onTitleUpdate?: (title: string) => void;
 }
 
-export function ChatView({ server, token, sessionId }: ChatViewProps) {
+export function ChatView({ server, token, sessionId, onTitleUpdate }: ChatViewProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [waiting, setWaiting] = useState(false);
   const [queuedMessage, setQueuedMessage] = useState<string | null>(null);
@@ -190,11 +191,14 @@ export function ChatView({ server, token, sessionId }: ChatViewProps) {
         ]);
         setWaiting(false);
         break;
+      case "session_title":
+        onTitleUpdate?.(msg.title);
+        break;
       case "token":
         // future streaming support
         break;
     }
-  }, []);
+  }, [onTitleUpdate]);
 
   const onWsDisconnect = useCallback(() => setWaiting(false), []);
   const url = wsUrl(server, sessionId, token);

@@ -24,6 +24,7 @@ from carapace.agent_loop import run_agent_turn
 from carapace.models import Config, Deps, MatrixChannelConfig, SessionState, SkillInfo, UsageTracker
 from carapace.sandbox.manager import SandboxManager
 from carapace.session import SessionManager
+from carapace.titler import generate_title
 from carapace.ws_models import ApprovalRequest, CommandResult
 
 # Reactions used for approval decisions
@@ -747,6 +748,30 @@ class MatrixChannel:
                     {"role": "assistant", "content": output},
                 ],
             )
+
+            # Generate a title after the 1st and 3rd user message.
+            events = self._session_mgr.load_events(session_id)
+            user_msg_count = sum(1 for e in events if e.get("role") == "user")
+            if user_msg_count in (1, 3):
+
+                async def _gen_title(
+                    sid: str = session_id,
+                    evts: list = events,
+                ) -> None:
+                    title = await generate_title(
+                        evts,
+                        model=self._full_config.agent.title_model,
+                        usage_tracker=deps.usage_tracker,
+                    )
+                    if title:
+                        state = self._session_mgr.load_state(sid)
+                        if state:
+                            state.title = title
+                            self._session_mgr.save_state(state)
+
+                task = asyncio.create_task(_gen_title())
+                self._background_tasks.add(task)
+                task.add_done_callback(self._background_tasks.discard)
         except asyncio.CancelledError:
             logger.info(f"Matrix agent turn cancelled in {room_id}")
             self._session_mgr.save_usage(session_id, deps.usage_tracker)

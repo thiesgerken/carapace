@@ -121,6 +121,12 @@ function HomeContent() {
     setSidebarOpen(false);
   }
 
+  function handleTitleUpdate(sessionId: string, title: string) {
+    setSessions((prev) =>
+      prev.map((s) => (s.session_id === sessionId ? { ...s, title } : s)),
+    );
+  }
+
   if (!connected) {
     return <ConnectForm onConnect={handleConnect} />;
   }
@@ -177,6 +183,7 @@ function HomeContent() {
             server={server}
             token={token}
             sessionId={activeSessionId}
+            onTitleUpdate={(title) => handleTitleUpdate(activeSessionId, title)}
           />
         ) : (
           <div className="flex flex-1 items-center justify-center">

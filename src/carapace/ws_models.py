@@ -123,6 +123,13 @@ class Cancelled(BaseModel):
     detail: str = "Agent cancelled."
 
 
+class SessionTitleUpdate(BaseModel):
+    """Server → Client: updated session title."""
+
+    type: Literal["session_title"] = "session_title"
+    title: str
+
+
 ServerEnvelope = (
     TokenChunk
     | ToolCallInfo
@@ -133,4 +140,5 @@ ServerEnvelope = (
     | CommandResult
     | ErrorMessage
     | Cancelled
+    | SessionTitleUpdate
 )

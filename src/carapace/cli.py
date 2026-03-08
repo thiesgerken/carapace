@@ -467,12 +467,14 @@ def chat(
         else:
             table = Table(title="Sessions", show_lines=False)
             table.add_column("ID", style="bold cyan")
+            table.add_column("Title")
             table.add_column("Created", style="dim")
             table.add_column("Last active", style="dim")
             table.add_column("Turns", justify="right")
             for s in sessions:
                 table.add_row(
                     s["session_id"],
+                    s.get("title", ""),
                     _fmt_dt(s.get("created_at", "")),
                     _fmt_dt(s.get("last_active", "")),
                     str(s.get("message_count", 0)),
