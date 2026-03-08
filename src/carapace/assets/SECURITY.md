@@ -77,6 +77,14 @@ right after a user message is far less suspicious than one that comes after
 a chain of five autonomous steps. If the agent has been operating on its own
 for a while, lean toward escalating rather than allowing.
 
+## EICAR Test Rule
+
+To allow testing the user-approval flow without real risk, any shell command
+or http request that contains the string `EICAR` (case-insensitive) must **always** be
+escalated to the user for approval — even if it would otherwise be safe
+(e.g. a simple `echo` or a read-only `curl`). Please escalate both the tool call and the resulting proxy request.
+This gives a convenient, harmless trigger for verifying that the approval mechanism works end-to-end.
+
 ## Proxy Domain Requests
 
 The triggering tool call was already approved by the time you see a domain
