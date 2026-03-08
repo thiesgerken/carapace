@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v0.17.0 (2026-03-08)
+
+### Other
+
+- Merge remote-tracking branch 'refs/remotes/origin/main'
+  ([`06df22e`](https://github.com/thiesgerken/carapace/commit/06df22ef29d1443374f9d5f870f47a078a2fc920))
+
+
 ## v0.16.0 (2026-03-08)
 
 ### Other
@@ -12,6 +20,9 @@
 ## v0.15.0 (2026-03-08)
 
 ### ✨
+
+- ✨ add queued message handling and interrupt functionality to chat view
+  ([`4093130`](https://github.com/thiesgerken/carapace/commit/40931308f2225d7a9b4f0289552bf51b8cb1b84c))
 
 - ✨ add slash command autocomplete feature to chat input
   ([`03dc93d`](https://github.com/thiesgerken/carapace/commit/03dc93d7239a2886d3d38586748c396964d46dbb))
