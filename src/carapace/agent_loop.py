@@ -36,11 +36,13 @@ async def run_agent_turn(
     message_history: list[Any],
     send_approval_request: Callable[[ApprovalRequest], Awaitable[None]],
     collect_approvals: Callable[[set[str]], Awaitable[dict[str, bool | ToolDenied]]],
-) -> tuple[list[Any], str]:
+) -> tuple[list[Any], str, tuple[int, int]]:
     """Run one full agent turn, handling approval loops.
 
-    Returns ``(updated_message_history, output_text)``.  The caller is
-    responsible for persisting history and delivering the output to the user.
+    Returns ``(updated_message_history, output_text, (input_tokens, output_tokens))``.
+    The token counts are from the last LLM request of the turn.
+    The caller is responsible for persisting history and delivering the output
+    to the user.
     """
     session_id = deps.session_state.session_id
 
@@ -115,9 +117,10 @@ async def run_agent_turn(
         messages = result.all_messages()
 
     if isinstance(result.output, str):
-        token_count = (result.usage().output_tokens or 0) + (result.usage().input_tokens or 0)
+        last_usage = result.usage()
+        token_count = (last_usage.output_tokens or 0) + (last_usage.input_tokens or 0)
         security.append_log(session_id, AgentResponseEntry(token_count=token_count))
-        return messages, result.output
+        return messages, result.output, (last_usage.input_tokens or 0, last_usage.output_tokens or 0)
 
     output = f"Unexpected agent output type: {type(result.output).__name__}"
-    return messages, output
+    return messages, output, (0, 0)

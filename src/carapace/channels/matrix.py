@@ -730,7 +730,7 @@ class MatrixChannel:
 
         try:
             message_history = self._session_mgr.load_history(session_id)
-            message_history, output = await run_agent_turn(
+            message_history, output, _usage = await run_agent_turn(
                 user_input,
                 deps,
                 message_history,

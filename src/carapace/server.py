@@ -52,6 +52,7 @@ from carapace.ws_models import (
     ServerEnvelope,
     ToolCallInfo,
     ToolResultInfo,
+    TurnUsage,
     UserMessage,
     parse_client_message,
 )
@@ -832,7 +833,7 @@ async def _run_agent_turn(
                 remaining.discard(client_msg.tool_call_id)
         return results
 
-    messages, output = await run_agent_turn(
+    messages, output, (inp_tok, out_tok) = await run_agent_turn(
         user_input,
         deps,
         message_history,
@@ -844,7 +845,7 @@ async def _run_agent_turn(
         if output.startswith("Unexpected agent output type:"):
             await _send(ws, ErrorMessage(detail=output))
         else:
-            await _send(ws, Done(content=output))
+            await _send(ws, Done(content=output, usage=TurnUsage(input_tokens=inp_tok, output_tokens=out_tok)))
 
     return messages, output
 

@@ -4,6 +4,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowUp, Clock, Square } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { SlashCommand } from "@/lib/api";
+import type { TurnUsage } from "@/lib/types";
+
+function formatTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+  return String(n);
+}
 
 interface ChatInputProps {
   onSend: (content: string) => void;
@@ -13,6 +20,7 @@ interface ChatInputProps {
   waiting?: boolean;
   hasQueuedMessage?: boolean;
   commands?: SlashCommand[];
+  usage?: TurnUsage | null;
 }
 
 export function ChatInput({
@@ -23,6 +31,7 @@ export function ChatInput({
   waiting,
   hasQueuedMessage,
   commands = [],
+  usage,
 }: ChatInputProps) {
   const [value, setValue] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -214,7 +223,54 @@ export function ChatInput({
             )}
           </button>
         </div>
+
+        {/* Token usage gauge */}
+        {usage && (usage.input_tokens > 0 || usage.output_tokens > 0) && (
+          <TokenGauge usage={usage} onClickUsage={connected && !waiting ? () => onSend("/usage") : undefined} />
+        )}
       </div>
+    </div>
+  );
+}
+
+/** Compact context-window gauge rendered below the input box. */
+function TokenGauge({ usage, onClickUsage }: { usage: TurnUsage; onClickUsage?: () => void }) {
+  const total = usage.input_tokens + usage.output_tokens;
+  // Context window limits for common models; 200k is a safe default
+  const cap = 200_000;
+  const pct = Math.min((usage.input_tokens / cap) * 100, 100);
+
+  // Color shifts from muted → yellow → red as context fills up
+  const barColor =
+    pct > 75
+      ? "bg-destructive/70"
+      : pct > 50
+        ? "bg-warning/70"
+        : "bg-muted-foreground/30";
+
+  const tooltip = `${formatTokens(total)} / 200k context window tokens used\nClick for detailed usage breakdown`;
+
+  return (
+    <div className="mt-1.5 flex items-center gap-2 px-1">
+      <div className="h-1 flex-1 rounded-full bg-muted overflow-hidden">
+        <div
+          className={cn("h-full rounded-full transition-all", barColor)}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+      <button
+        type="button"
+        onClick={onClickUsage}
+        disabled={!onClickUsage}
+        title={tooltip}
+        className={cn(
+          "shrink-0 text-[10px] tabular-nums text-muted-foreground",
+          onClickUsage && "hover:text-foreground cursor-pointer transition-colors",
+          !onClickUsage && "cursor-default",
+        )}
+      >
+        {formatTokens(total)} tokens
+      </button>
     </div>
   );
 }
