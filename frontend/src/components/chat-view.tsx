@@ -89,6 +89,7 @@ export function ChatView({ server, token, sessionId }: ChatViewProps) {
         break;
       case "tool_call": {
         const isLoading =
+          msg.tool !== "proxy_domain" &&
           !msg.detail.includes("deny]") &&
           !msg.detail.includes("escalate]");
         setMessages((prev) => [
@@ -108,7 +109,7 @@ export function ChatView({ server, token, sessionId }: ChatViewProps) {
           const updated = [...prev];
           for (let i = updated.length - 1; i >= 0; i--) {
             const m = updated[i];
-            if (m.kind === "tool_call" && m.loading) {
+            if (m.kind === "tool_call" && m.loading && m.tool === msg.tool) {
               updated[i] = { ...m, result: msg.result, loading: false };
               break;
             }
