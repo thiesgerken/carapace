@@ -1,6 +1,25 @@
 # CHANGELOG
 
 
+## v0.12.0 (2026-03-08)
+
+### ✨
+
+- ✨ docs: add commit message convention using gitmoji
+  ([`3ebe25b`](https://github.com/thiesgerken/carapace/commit/3ebe25b5cefaa22cd845e5214f258f681380191a))
+
+- ✨ Update datetime handling to use UTC in models and session management
+  ([`004c8db`](https://github.com/thiesgerken/carapace/commit/004c8db338f18a315a7d6df8bd6c3a7aef2799ab))
+
+### 🐛
+
+- 🐛 fix(frontend): tool call spinner not clearing when proxy_domain intercepts result
+  ([`fd1f897`](https://github.com/thiesgerken/carapace/commit/fd1f8977e84c7f48558e028770ca0aded19c74e4))
+
+- 🐛 persist proxy requests in events
+  ([`c903f4f`](https://github.com/thiesgerken/carapace/commit/c903f4ff91ca2168c51c6540bb7e471099b25213))
+
+
 ## v0.11.0 (2026-03-08)
 
 ### ✨
