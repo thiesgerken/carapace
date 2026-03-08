@@ -39,12 +39,19 @@ function parseDetail(detail: string): {
   return { source: "unknown", verdict: "allow", explanation: detail, summary: detail };
 }
 
+const SHORT_KEYS: Record<string, string> = {
+  command: "cmd",
+  filename: "file",
+  directory: "dir",
+};
+
 function formatArgsSummary(args: Record<string, unknown>): string {
   const parts: string[] = [];
   for (const [k, v] of Object.entries(args)) {
     let vStr = typeof v === "string" ? v : JSON.stringify(v);
     if (vStr.length > 50) vStr = vStr.slice(0, 47) + "…";
-    parts.push(`${k}=${vStr}`);
+    const shortKey = SHORT_KEYS[k] ?? k;
+    parts.push(`${shortKey}=${vStr}`);
   }
   const joined = parts.join(", ");
   return joined.length > 120 ? joined.slice(0, 117) + "…" : joined;
