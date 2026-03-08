@@ -9,6 +9,11 @@ import yaml
 from loguru import logger
 from pydantic import BaseModel, Field
 
+
+class SecurityDeniedError(Exception):
+    """Raised when the sentinel denies a tool call."""
+
+
 # --- Action Log Entry Types ---
 
 

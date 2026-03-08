@@ -4,27 +4,35 @@ from pathlib import Path
 from typing import Any
 
 from loguru import logger
-from pydantic_ai import Agent, DeferredToolRequests, RunContext
+from pydantic_ai import Agent, DeferredToolRequests, RunContext, ToolDenied
 
 import carapace.security as security
 from carapace.config import load_workspace_file
 from carapace.memory import MemoryStore
 from carapace.models import Deps
 from carapace.sandbox.runtime import SkillVenvError
-from carapace.security.context import SkillActivatedEntry, ToolResultEntry
+from carapace.security.context import SecurityDeniedError, SkillActivatedEntry, ToolResultEntry
 from carapace.skills import SkillRegistry
 
 
-async def _gate(ctx: RunContext[Deps], tool_name: str, args: dict[str, Any]) -> None:
-    """Delegate to the security module for tool call evaluation."""
-    await security.evaluate(
-        ctx.deps.session_state.session_id,
-        tool_name,
-        args,
-        usage_tracker=ctx.deps.usage_tracker,
-        verbose=ctx.deps.verbose,
-        tool_call_callback=ctx.deps.tool_call_callback,
-    )
+async def _gate(ctx: RunContext[Deps], tool_name: str, args: dict[str, Any]) -> ToolDenied | None:
+    """Delegate to the security module for tool call evaluation.
+
+    Returns ``ToolDenied`` when the sentinel denies the call (the caller must
+    return it to pydantic-ai), or ``None`` when the call is allowed.
+    """
+    try:
+        await security.evaluate(
+            ctx.deps.session_state.session_id,
+            tool_name,
+            args,
+            usage_tracker=ctx.deps.usage_tracker,
+            verbose=ctx.deps.verbose,
+            tool_call_callback=ctx.deps.tool_call_callback,
+        )
+    except SecurityDeniedError as exc:
+        return ToolDenied(str(exc))
+    return None
 
 
 def _notify_approved_start(ctx: RunContext[Deps], tool_name: str, args: dict[str, Any]) -> None:
@@ -114,7 +122,7 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
         return result
 
     @agent.tool
-    async def use_skill(ctx: RunContext[Deps], skill_name: str) -> str:
+    async def use_skill(ctx: RunContext[Deps], skill_name: str) -> str | ToolDenied:
         """Activate a skill: copies it to the sandbox, builds its venv, and loads instructions.
 
         Call before using a skill.
@@ -128,7 +136,8 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
             gate_args: dict[str, Any] = {"skill_name": skill_name}
             if requested_domains:
                 gate_args["network_domains"] = requested_domains
-            await _gate(ctx, "use_skill", gate_args)
+            if denied := await _gate(ctx, "use_skill", gate_args):
+                return denied
         else:
             _notify_approved_start(ctx, "use_skill", {"skill_name": skill_name})
 
@@ -175,10 +184,11 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
         return result
 
     @agent.tool
-    async def save_skill(ctx: RunContext[Deps], skill_name: str) -> str:
+    async def save_skill(ctx: RunContext[Deps], skill_name: str) -> str | ToolDenied:
         """Save an activated skill back to the master skills directory. Persists edits made in the sandbox."""
         if not ctx.tool_call_approved:
-            await _gate(ctx, "save_skill", {"skill_name": skill_name})
+            if denied := await _gate(ctx, "save_skill", {"skill_name": skill_name}):
+                return denied
         else:
             _notify_approved_start(ctx, "save_skill", {"skill_name": skill_name})
 
@@ -196,10 +206,10 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
     # --- Filesystem (sandboxed — runs inside the Docker container) ---
 
     @agent.tool
-    async def read(ctx: RunContext[Deps], path: str) -> str:
+    async def read(ctx: RunContext[Deps], path: str) -> str | ToolDenied:
         """Read a file or list a directory inside the sandbox. Use container paths (e.g. /workspace/skills/foo.py)."""
-        if not ctx.tool_call_approved:
-            await _gate(ctx, "read", {"path": path})
+        if not ctx.tool_call_approved and (denied := await _gate(ctx, "read", {"path": path})):
+            return denied
 
         session_id = ctx.deps.session_state.session_id
         result = await ctx.deps.sandbox.file_read(session_id, path)
@@ -207,10 +217,12 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
         return result
 
     @agent.tool
-    async def write(ctx: RunContext[Deps], path: str, content: str) -> str:
+    async def write(ctx: RunContext[Deps], path: str, content: str) -> str | ToolDenied:
         """Write content to a file in the sandbox. Creates parent directories as needed."""
-        if not ctx.tool_call_approved:
-            await _gate(ctx, "write", {"path": path, "content": content[:200]})
+        if not ctx.tool_call_approved and (
+            denied := await _gate(ctx, "write", {"path": path, "content": content[:200]})
+        ):
+            return denied
 
         session_id = ctx.deps.session_state.session_id
         result = await ctx.deps.sandbox.file_write(session_id, path, content)
@@ -223,11 +235,11 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
         path: str,
         old_string: str,
         new_string: str,
-    ) -> str:
+    ) -> str | ToolDenied:
         """Edit a file in the sandbox by replacing old_string with new_string.
         The old_string must appear exactly once."""
-        if not ctx.tool_call_approved:
-            await _gate(
+        if not ctx.tool_call_approved and (
+            denied := await _gate(
                 ctx,
                 "edit",
                 {
@@ -236,6 +248,8 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
                     "new_string": new_string[:100],
                 },
             )
+        ):
+            return denied
 
         session_id = ctx.deps.session_state.session_id
         result = await ctx.deps.sandbox.file_edit(session_id, path, old_string, new_string)
@@ -243,19 +257,21 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
         return result
 
     @agent.tool
-    async def apply_patch(ctx: RunContext[Deps], changes: list[dict[str, str]]) -> str:
+    async def apply_patch(ctx: RunContext[Deps], changes: list[dict[str, str]]) -> str | ToolDenied:
         """Apply structured edits across one or more files in the sandbox.
 
         Each change is a dict with 'path', 'old_string', and 'new_string'.
         If old_string is empty, the file is created with new_string as content.
         """
         paths_summary = [c.get("path", "?") for c in changes]
-        if not ctx.tool_call_approved:
-            await _gate(
+        if not ctx.tool_call_approved and (
+            denied := await _gate(
                 ctx,
                 "apply_patch",
                 {"files": paths_summary, "num_changes": len(changes)},
             )
+        ):
+            return denied
 
         session_id = ctx.deps.session_state.session_id
         result = await ctx.deps.sandbox.file_apply_patch(session_id, changes)
@@ -265,10 +281,11 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
     # --- Runtime ---
 
     @agent.tool
-    async def exec(ctx: RunContext[Deps], command: str, timeout: int = 30) -> str:
+    async def exec(ctx: RunContext[Deps], command: str, timeout: int = 30) -> str | ToolDenied:
         """Run a shell command (typically bash) and return its output. Runs in a Docker sandbox."""
         if not ctx.tool_call_approved:
-            await _gate(ctx, "exec", {"command": command})
+            if denied := await _gate(ctx, "exec", {"command": command}):
+                return denied
         else:
             _notify_approved_start(ctx, "exec", {"command": command})
 
@@ -317,10 +334,11 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
         return result
 
     @agent.tool
-    async def write_memory(ctx: RunContext[Deps], file_path: str, content: str) -> str:
+    async def write_memory(ctx: RunContext[Deps], file_path: str, content: str) -> str | ToolDenied:
         """Write or update a memory file."""
         if not ctx.tool_call_approved:
-            await _gate(ctx, "write_memory", {"file_path": file_path, "content": content[:200]})
+            if denied := await _gate(ctx, "write_memory", {"file_path": file_path, "content": content[:200]}):
+                return denied
         else:
             _notify_approved_start(ctx, "write_memory", {"file_path": file_path})
 

@@ -10,6 +10,7 @@ from carapace.models import UsageTracker
 from carapace.security.context import (
     ActionLogEntry,
     AuditEntry,
+    SecurityDeniedError,
     SentinelVerdict,
     SessionSecurity,
     ToolCallEntry,
@@ -166,9 +167,7 @@ async def evaluate(
                 explanation=verdict.explanation,
             )
         )
-        from pydantic_ai import ToolDenied
-
-        raise ToolDenied(verdict.explanation)
+        raise SecurityDeniedError(verdict.explanation)
 
     if verdict.decision == "escalate":
         # Audit entry is deferred — written by agent_loop after user decision.

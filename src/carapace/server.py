@@ -324,7 +324,7 @@ async def delete_session(session_id: str, _token: str = Depends(_verify_token)) 
 
 
 class HistoryMessage(BaseModel):
-    role: str  # "user" | "assistant" | "tool_call" | "tool_result" | "command" | "proxy_approval"
+    role: str  # "user" | "assistant" | "tool_call" | "tool_result" | "command" | "proxy_approval" | "approval_request"
     content: str = ""
     tool: str | None = None
     args: dict[str, Any] | None = None
@@ -335,6 +335,9 @@ class HistoryMessage(BaseModel):
     request_id: str | None = None
     domain: str | None = None
     decision: str | None = None
+    tool_call_id: str | None = None
+    explanation: str | None = None
+    risk_level: str | None = None
 
 
 @app.get("/sessions/{session_id}/history", response_model=list[HistoryMessage])
@@ -739,15 +742,39 @@ async def _run_agent_turn(
     message_history: list,
 ) -> tuple[list, str]:
     """Run one agent turn over a WebSocket, delegating to the channel-agnostic runner."""
+    session_id = deps.session_state.session_id
 
     async def _send_approval(req: ApprovalRequest) -> None:
-        await _send(ws, req)
+        _session_mgr.append_events(
+            session_id,
+            [
+                {
+                    "role": "approval_request",
+                    "tool_call_id": req.tool_call_id,
+                    "tool": req.tool,
+                    "args": req.args,
+                    "explanation": req.explanation,
+                    "risk_level": req.risk_level,
+                }
+            ],
+        )
+        try:
+            await _send(ws, req)
+        except Exception:
+            logger.warning(f"Failed to send approval request {req.tool_call_id} via WebSocket")
 
     async def _collect_ws_approvals(pending: set[str]) -> dict[str, bool | ToolDenied]:
         results: dict[str, bool | ToolDenied] = {}
         remaining = set(pending)
         while remaining:
-            raw = await ws.receive_json()
+            try:
+                raw = await ws.receive_json()
+            except (WebSocketDisconnect, Exception):
+                logger.info(f"WebSocket disconnected while waiting for approvals in session {session_id}")
+                for tid in remaining:
+                    results[tid] = ToolDenied("Client disconnected.")
+                remaining.clear()
+                break
             try:
                 client_msg = parse_client_message(raw)
             except (ValueError, Exception):
@@ -772,10 +799,11 @@ async def _run_agent_turn(
         collect_approvals=_collect_ws_approvals,
     )
 
-    if output.startswith("Unexpected agent output type:"):
-        await _send(ws, ErrorMessage(detail=output))
-    else:
-        await _send(ws, Done(content=output))
+    with contextlib.suppress(Exception):
+        if output.startswith("Unexpected agent output type:"):
+            await _send(ws, ErrorMessage(detail=output))
+        else:
+            await _send(ws, Done(content=output))
 
     return messages, output
 
