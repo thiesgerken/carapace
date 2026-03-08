@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v0.18.4 (2026-03-08)
+
+### 🐛
+
+- 🐛 fix tests
+  ([`e2c059b`](https://github.com/thiesgerken/carapace/commit/e2c059b919274089c7b06e9fce229fab0b0241a2))
+
+
 ## v0.18.3 (2026-03-08)
 
 ### 🐛
