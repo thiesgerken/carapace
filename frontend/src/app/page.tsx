@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Menu, X } from "lucide-react";
 import { ConnectForm } from "@/components/connect-form";
 import { Sidebar } from "@/components/sidebar";
@@ -17,13 +18,36 @@ import type { SessionInfo } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 export default function Home() {
+  return (
+    <Suspense>
+      <HomeContent />
+    </Suspense>
+  );
+}
+
+function HomeContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [connected, setConnected] = useState(false);
   const [server, setServer] = useState("");
   const [token, setToken] = useState("");
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
-  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(
+    searchParams.get("session"),
+  );
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  // Sync activeSessionId → URL query param
+  useEffect(() => {
+    if (activeSessionId) {
+      router.replace(`?session=${encodeURIComponent(activeSessionId)}`, {
+        scroll: false,
+      });
+    } else {
+      router.replace("/", { scroll: false });
+    }
+  }, [activeSessionId, router]);
 
   // Restore connection on mount
   useEffect(() => {
