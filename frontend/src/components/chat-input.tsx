@@ -38,6 +38,11 @@ export function ChatInput({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
+  // Focus textarea on mount (e.g. when a new session is created)
+  useEffect(() => {
+    textareaRef.current?.focus();
+  }, []);
+
   // Show autocomplete when input starts with "/" and is a single word, but not if it exactly matches a command
   const exactMatch = commands.some((c) => c.command === value.trim().toLowerCase());
   const showMenu = value.startsWith("/") && !value.includes(" ") && !exactMatch;
@@ -196,12 +201,10 @@ export function ChatInput({
             onChange={handleInput}
             onKeyDown={handleKeyDown}
             placeholder="Message Carapace…"
-            disabled={!connected}
             rows={1}
             className={cn(
               "flex-1 resize-none bg-transparent text-sm outline-none",
               "placeholder:text-muted-foreground/50",
-              "disabled:opacity-50",
             )}
           />
           <button
