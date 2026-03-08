@@ -82,7 +82,7 @@ for a while, lean toward escalating rather than allowing.
 To allow testing the user-approval flow without real risk, any shell command
 or http request that contains the string `EICAR` (case-insensitive) must **always** be
 escalated to the user for approval — even if it would otherwise be safe
-(e.g. a simple `echo` or a read-only `curl`). Please escalate both the tool call and the resulting proxy request.
+(e.g. a simple `echo` or a read-only `curl`). Please escalate both the tool call and the resulting proxy request to the user, no matter the conversation history.
 This gives a convenient, harmless trigger for verifying that the approval mechanism works end-to-end.
 
 ## Proxy Domain Requests
@@ -101,4 +101,4 @@ A `curl` to `api.github.com` when working with repos — expected. A
 connection to an unrelated domain nobody mentioned — suspicious. When
 in doubt, escalate.
 
-Requests to any domain that has "eicar" in its name should always be escalated to the user for approval.
+Requests to any domain that has "eicar" in its name should always be escalated to the user for approval, independent of previous user approvals.
