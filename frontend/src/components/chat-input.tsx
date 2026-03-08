@@ -18,7 +18,7 @@ interface ChatInputProps {
   onInterrupt?: (content: string) => void;
   connected: boolean;
   waiting?: boolean;
-  hasQueuedMessage?: boolean;
+  queuedMessage?: string | null;
   commands?: SlashCommand[];
   usage?: TurnUsage | null;
 }
@@ -29,7 +29,7 @@ export function ChatInput({
   onInterrupt,
   connected,
   waiting,
-  hasQueuedMessage,
+  queuedMessage,
   commands = [],
   usage,
 }: ChatInputProps) {
@@ -73,17 +73,17 @@ export function ChatInput({
   const submit = useCallback(() => {
     const trimmed = value.trim();
     if (!trimmed || !connected) return;
-    if (waiting && hasQueuedMessage) return;
+    if (waiting && queuedMessage) return;
     onSend(trimmed);
     clearInput();
   }, [value, connected, waiting, hasQueuedMessage, onSend, clearInput]);
 
   const interrupt = useCallback(() => {
     const trimmed = value.trim();
-    if (!trimmed || !connected || !waiting || hasQueuedMessage) return;
+    if (!trimmed || !connected || !waiting || !!queuedMessage) return;
     onInterrupt?.(trimmed);
     clearInput();
-  }, [value, connected, waiting, hasQueuedMessage, onInterrupt, clearInput]);
+  }, [value, connected, waiting, queuedMessage, onInterrupt, clearInput]);
 
   function handleKeyDown(e: React.KeyboardEvent) {
     if (showMenu && filtered.length > 0) {
@@ -137,10 +137,10 @@ export function ChatInput({
 
   return (
     <div className="border-t border-border bg-background px-4 py-3">
-      {hasQueuedMessage && (
+      {queuedMessage && (
         <div className="mx-auto max-w-3xl mb-2 flex items-center gap-1.5 text-xs text-muted-foreground">
           <Clock className="h-3 w-3" />
-          <span>Message queued — will be sent when the agent finishes</span>
+          <span className="truncate">Queued: {queuedMessage}</span>
         </div>
       )}
       <div className="relative mx-auto max-w-3xl">

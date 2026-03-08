@@ -210,6 +210,7 @@ export function ChatView({ server, token, sessionId }: ChatViewProps) {
     if (!waiting && queuedMessage && status === "connected") {
       const msg = queuedMessage;
       setQueuedMessage(null);
+      setMessages((prev) => [...prev, { kind: "user", content: msg }]);
       send({ type: "message", content: msg });
       setWaiting(true);
     }
@@ -223,10 +224,10 @@ export function ChatView({ server, token, sessionId }: ChatViewProps) {
   }, [status]);
 
   function handleSend(content: string) {
-    setMessages((prev) => [...prev, { kind: "user", content }]);
     if (waiting) {
       setQueuedMessage(content);
     } else {
+      setMessages((prev) => [...prev, { kind: "user", content }]);
       send({ type: "message", content });
       setWaiting(true);
     }
@@ -234,7 +235,6 @@ export function ChatView({ server, token, sessionId }: ChatViewProps) {
 
   function handleInterrupt(content: string) {
     setQueuedMessage(content);
-    setMessages((prev) => [...prev, { kind: "user", content }]);
     send({ type: "cancel" });
   }
 
@@ -325,7 +325,7 @@ export function ChatView({ server, token, sessionId }: ChatViewProps) {
         onInterrupt={handleInterrupt}
         connected={connected}
         waiting={waiting}
-        hasQueuedMessage={queuedMessage !== null}
+        queuedMessage={queuedMessage}
         commands={commands}
         usage={usage}
       />
