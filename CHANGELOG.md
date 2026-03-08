@@ -1,12 +1,50 @@
 # CHANGELOG
 
 
-## v0.12.1 (2026-03-08)
+## v0.13.0 (2026-03-08)
 
 ### Other
 
 - Merge remote-tracking branch 'refs/remotes/origin/main'
+  ([`f3de4df`](https://github.com/thiesgerken/carapace/commit/f3de4dfdb42d697f7b32ca7086466b30df040d52))
+
+### 🐛
+
+- 🐛 escalation for eicar.com did not work
+  ([`8704fd6`](https://github.com/thiesgerken/carapace/commit/8704fd6ffad52611e7f008cecc2e035eacd6c711))
+
+- 🐛 escalation for eicar.com did not work
+  ([`364125f`](https://github.com/thiesgerken/carapace/commit/364125f84b1ee4ddfcaf43c588213a716a2ed57f))
+
+
+## v0.12.1 (2026-03-08)
+
+### Other
+
+- Document linting in agents.md
+  ([`4c40804`](https://github.com/thiesgerken/carapace/commit/4c4080413d5ecf963c7a15edcd917adf5c0c2388))
+
+- Merge remote-tracking branch 'refs/remotes/origin/main'
   ([`bb722fc`](https://github.com/thiesgerken/carapace/commit/bb722fc9fef0269f5cd81d003e167988d1075928))
+
+### ✨
+
+- ✨ add a test command to test sentinel escalation
+  ([`09026f5`](https://github.com/thiesgerken/carapace/commit/09026f5469b4583df1cfaf007fb2aff89dd5cb20))
+
+- ✨ better readable session ids
+  ([`89df1f1`](https://github.com/thiesgerken/carapace/commit/89df1f159c681a80eadb8a49a7cc2ab93d23cec1))
+
+### 🐛
+
+- 🐛 fix tool call approval
+  ([`125c850`](https://github.com/thiesgerken/carapace/commit/125c8506f3e7e204dbaee993c2273c455898937d))
+
+- 🐛 make the sidebar slightly wider for the new ids
+  ([`d70615c`](https://github.com/thiesgerken/carapace/commit/d70615cfbf99933b8ff5fe937e810b2ee4d438cd))
+
+- 🐛 restore approvals on UI reload
+  ([`143e850`](https://github.com/thiesgerken/carapace/commit/143e8507ae7212fb801c87c1cd696c2d1299f74c))
 
 
 ## v0.12.0 (2026-03-08)
