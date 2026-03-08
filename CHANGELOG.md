@@ -1,12 +1,23 @@
 # CHANGELOG
 
 
+## v0.18.2 (2026-03-08)
+
+### Other
+
+- Merge remote-tracking branch 'refs/remotes/origin/main'
+  ([`16346e8`](https://github.com/thiesgerken/carapace/commit/16346e8139abf3a787bdf4ab742d1f122bcf7b3e))
+
+
 ## v0.18.1 (2026-03-08)
 
 ### 🐛
 
 - 🐛 fix dependency in submit callback to use queuedMessage instead of hasQueuedMessage
   ([`d95d9ef`](https://github.com/thiesgerken/carapace/commit/d95d9ef0b6766286b9d48d1359435adcbf784123))
+
+- 🐛 fix linter issues
+  ([`d21115c`](https://github.com/thiesgerken/carapace/commit/d21115cf5d080f401de4d93539c1307a25c2f89b))
 
 - 🐛 fix react lints
   ([`e9f3c69`](https://github.com/thiesgerken/carapace/commit/e9f3c69048bb89e0a1dd61a669c9c75d1a6b83a0))
