@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.14.0 (2026-03-08)
+
+### ✨
+
+- ✨ stop button to cancel agent
+  ([`675d133`](https://github.com/thiesgerken/carapace/commit/675d1334c7950704321873a65f4f8ee4829871f7))
+
+### 🐛
+
+- 🐛 play around with approval options
+  ([`3122dfc`](https://github.com/thiesgerken/carapace/commit/3122dfc796c4b1c365a1109a9e01b269286fa044))
+
+
 ## v0.13.0 (2026-03-08)
 
 ### Other
