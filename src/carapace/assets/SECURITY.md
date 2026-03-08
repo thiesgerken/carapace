@@ -100,3 +100,5 @@ beyond the domain, you need to rely on your understanding of the command:
 A `curl` to `api.github.com` when working with repos — expected. A
 connection to an unrelated domain nobody mentioned — suspicious. When
 in doubt, escalate.
+
+Requests to any domain that has "eicar" in its name should always be escalated to the user for approval.
