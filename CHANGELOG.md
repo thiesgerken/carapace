@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v0.16.0 (2026-03-08)
+
+### Other
+
+- Merge remote-tracking branch 'refs/remotes/origin/main'
+  ([`abfab2e`](https://github.com/thiesgerken/carapace/commit/abfab2e299d3004fad5a211a4b89295e04f11e7c))
+
+
 ## v0.15.0 (2026-03-08)
 
 ### ✨
@@ -13,6 +21,9 @@
 
 - ✨ hold session id in url param
   ([`05437c3`](https://github.com/thiesgerken/carapace/commit/05437c3d5664a62cbdbcb8609320311ea9f92eb4))
+
+- ✨ show a gauge with current session size
+  ([`472e730`](https://github.com/thiesgerken/carapace/commit/472e73027f3848cad6aafa88fae5048764b68551))
 
 
 ## v0.14.0 (2026-03-08)
