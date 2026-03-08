@@ -54,6 +54,19 @@ export function ChatView({ server, token, sessionId }: ChatViewProps) {
             });
           } else if (h.role === "tool_result") {
             // Skip — already consumed by the tool_call above
+          } else if (h.role === "approval_request" && h.tool_call_id) {
+            approvalState.current.set(h.tool_call_id, true);
+            msgs.push({
+              kind: "approval",
+              request: {
+                type: "approval_request",
+                tool_call_id: h.tool_call_id,
+                tool: h.tool ?? "",
+                args: (h.args ?? {}) as Record<string, unknown>,
+                explanation: h.explanation ?? "",
+                risk_level: h.risk_level ?? "",
+              },
+            });
           } else if (h.role === "proxy_approval" && h.request_id) {
             // Proxy approval: first event is the request, second has the decision
             if (!h.decision) {

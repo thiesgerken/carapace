@@ -23,6 +23,9 @@ export interface HistoryMessage {
   request_id?: string;
   domain?: string;
   decision?: string;
+  tool_call_id?: string;
+  explanation?: string;
+  risk_level?: string;
 }
 
 // WebSocket protocol — Server → Client
