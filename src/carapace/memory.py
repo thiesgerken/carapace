@@ -12,7 +12,7 @@ class MemoryStore:
         path = (self.memory_dir / relative_path).resolve()
         if not str(path).startswith(str(self.memory_dir.resolve())):
             return None
-        if not path.exists():
+        if not path.is_file():
             return None
         return path.read_text()
 
