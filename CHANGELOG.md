@@ -1,6 +1,22 @@
 # CHANGELOG
 
 
+## v0.25.2 (2026-03-14)
+
+### Other
+
+- No sandbox versioning automatically
+  ([`fcc65ef`](https://github.com/thiesgerken/carapace/commit/fcc65efcd318cc7d1085f37cd57f0b8bf8ced15f))
+
+- Runtime stuff
+  ([`332a43d`](https://github.com/thiesgerken/carapace/commit/332a43d14aca93c2636fe0a01c1e02cd918876aa))
+
+### 🐛
+
+- 🐛 fix linter issues due to missing stuff in the protocol
+  ([`1e8c1eb`](https://github.com/thiesgerken/carapace/commit/1e8c1eba6c2dabb7917df9524eaa33aa6d979d1c))
+
+
 ## v0.25.1 (2026-03-14)
 
 ### Other
