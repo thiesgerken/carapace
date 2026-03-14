@@ -1,365 +1,43 @@
-"""Matrix channel adapter for Carapace.
-
-Connects to a Matrix homeserver via matrix-nio (plain-text, no E2EE for now).
-Maps one session per room; supports slash commands including /reset.
-"""
+"""MatrixChannel — main channel adapter class."""
 
 from __future__ import annotations
 
 import asyncio
 import contextlib
 import json
-import math
 import os
 import time
 from pathlib import Path
 from typing import Any
 
-import markdown as md
 import nio
 from loguru import logger
 from pydantic_ai import ToolDenied
 
 import carapace.security as security_mod
 from carapace.agent_loop import run_agent_turn
+from carapace.channels.matrix.approval import (
+    APPROVE_COMMANDS,
+    APPROVE_REACTIONS,
+    DENY_COMMANDS,
+    DENY_REACTIONS,
+    TYPING_INTERVAL,
+    PendingApproval,
+    PendingDomainApproval,
+)
+from carapace.channels.matrix.commands import handle_matrix_slash_command
+from carapace.channels.matrix.formatting import (
+    format_approval_request,
+    format_command_result_text,
+    format_domain_escalation,
+    md_to_html,
+)
+from carapace.channels.matrix.subscriber import MatrixSubscriber
 from carapace.models import Config, Deps, MatrixChannelConfig, SessionState, SkillInfo, UsageTracker
 from carapace.sandbox.manager import SandboxManager
 from carapace.session import SessionEngine, SessionManager
 from carapace.titler import generate_title
-from carapace.ws_models import ApprovalRequest, ApprovalResponse, CommandResult, ProxyApprovalResponse, TurnUsage
-
-# Reactions used for approval decisions
-_APPROVE_REACTIONS = {"✅", "👍", "✓", "✔", "✔️", "👍🏻", "👍🏼", "👍🏽", "👍🏾", "👍🏿"}
-_DENY_REACTIONS = {"❌", "👎", "✗", "🚫", "👎🏻", "👎🏼", "👎🏽", "👎🏾", "👎🏿"}
-
-# Commands that mean "approve" or "deny"
-_APPROVE_COMMANDS = {"/allow", "/yes"}
-_DENY_COMMANDS = {"/deny", "/no"}
-
-# Typing notification interval in seconds
-_TYPING_INTERVAL = 10.0
-
-
-def _md_to_html(text: str) -> str:
-    """Convert markdown text to HTML for Matrix rich-text messages."""
-    return md.markdown(text, extensions=["fenced_code", "tables"])
-
-
-def _format_command_result_text(result: CommandResult) -> str:
-    """Render a CommandResult as plain text suitable for a Matrix message."""
-    data = result.data
-
-    match result.command:
-        case "help":
-            lines = ["**Available commands:**\n"]
-            for entry in data.get("commands", []):
-                lines.append(f"- `{entry['command']}` — {entry['description']}")
-            return "\n".join(lines)
-
-        case "security":
-            lines = [
-                "**Security Policy:**\n",
-                data.get("policy_preview", "(none)"),
-                f"\nAction log entries: {data.get('action_log_entries', 0)}",
-                f"Sentinel evaluations: {data.get('sentinel_evaluations', 0)}",
-            ]
-            return "\n".join(lines)
-
-        case "approve-context":
-            return data.get("message", "Context approved.")
-
-        case "session":
-            creds = data.get("approved_credentials") or []
-            domain_entries: list[dict[str, str]] = data.get("allowed_domains") or []
-            if domain_entries:
-                domains_str = "\n" + "\n".join(f"  - `{e['domain']}` ({e['scope']})" for e in domain_entries)
-            else:
-                domains_str = " (none)"
-            lines = [
-                f"**Session:** `{data.get('session_id', '?')}`",
-                f"**Channel:** {data.get('channel_type', '?')}",
-                f"**Approved credentials:** {', '.join(creds) if creds else '(none)'}",
-                f"**Allowed domains:**{domains_str}",
-            ]
-            return "\n".join(lines)
-
-        case "skills":
-            if not data:
-                return "No skills available."
-            lines = ["**Skills:**\n"]
-            for s in data:
-                lines.append(f"- **{s['name']}** — {s['description']}")
-            return "\n".join(lines)
-
-        case "memory":
-            if not data:
-                return "No memory files."
-            lines = ["**Memory files:**\n"]
-            for f in data:
-                lines.append(f"- {f}")
-            return "\n".join(lines)
-
-        case "usage":
-            costs = data.get("costs", {})
-            total = costs.get("total", math.nan)
-            lines = [f"**Token usage** (est. total: {total:0.2f}$)\n"]
-            for model, usage in data.get("models", {}).items():
-                inp = usage.get("input_tokens", 0)
-                out = usage.get("output_tokens", 0)
-                lines.append(f"- `{model}`: {inp} in / {out} out")
-            return "\n".join(lines)
-
-        case _:
-            return f"Command result: {json.dumps(data, indent=2, default=str)}"
-
-
-def _format_domain_escalation(domain: str, command: str, explanation: str) -> str:
-    """Format a sentinel-escalated domain request as a Matrix message."""
-    parts = [
-        f"**🌐 Network Access Request** — domain: `{domain}`",
-        f"**Command:** `{command}`",
-    ]
-    if explanation:
-        parts.append(f"**Reason:** {explanation}")
-    parts.append(
-        "\nThe security sentinel escalated this domain request.\n"
-        "React ✅ or type `/allow` / `/yes` to allow.\n"
-        "React ❌ or type `/deny` / `/no` to deny."
-    )
-    return "\n".join(parts)
-
-
-def _format_approval_request(req: ApprovalRequest) -> str:
-    """Format an approval request as a Matrix message."""
-    args_text = json.dumps(req.args, indent=2, default=str)
-
-    parts = [
-        f"**⚠️ Approval Required** — tool: `{req.tool}`",
-    ]
-    if req.explanation:
-        parts.append(f"**Reason:** {req.explanation}")
-    if req.risk_level:
-        parts.append(f"**Risk level:** {req.risk_level}")
-    parts += [
-        f"**Arguments:**\n```json\n{args_text}\n```",
-        "",
-        "React ✅ or type `/allow` / `/yes` to allow. React ❌ or type `/deny` / `/no` to deny.",
-    ]
-    return "\n".join(parts)
-
-
-def _handle_matrix_slash_command(
-    command: str,
-    deps: Deps,
-    security_md: str,
-    slash_commands: list[dict[str, str]],
-) -> CommandResult | None:
-    """Process a slash command inline for the Matrix channel.
-
-    This mirrors the logic that used to live in ``server._handle_slash_command``
-    but works without depending on server-module globals.
-    """
-    from carapace.memory import MemoryStore
-
-    parts = command.strip().split(maxsplit=1)
-    cmd = parts[0].lower()
-
-    if cmd == "/help":
-        return CommandResult(command="help", data={"commands": slash_commands})
-
-    if cmd == "/security":
-        policy = security_md or "(no SECURITY.md loaded)"
-        session_id = deps.session_state.session_id
-        try:
-            session = security_mod.get_session(session_id)
-            log_count = len(session.action_log)
-            eval_count = session.sentinel_eval_count
-        except KeyError:
-            log_count = 0
-            eval_count = 0
-        return CommandResult(
-            command="security",
-            data={
-                "policy_preview": policy[:500] + ("..." if len(policy) > 500 else ""),
-                "action_log_entries": log_count,
-                "sentinel_evaluations": eval_count,
-            },
-        )
-
-    if cmd == "/approve-context":
-        from carapace.security.context import UserVouchedEntry
-
-        session_id = deps.session_state.session_id
-        security_mod.append_log(session_id, UserVouchedEntry())
-        return CommandResult(
-            command="approve-context",
-            data={"message": "Recorded: you vouch for the current agent context as trustworthy."},
-        )
-
-    if cmd == "/session":
-        session_id = deps.session_state.session_id
-        return CommandResult(
-            command="session",
-            data={
-                "session_id": session_id,
-                "channel_type": deps.session_state.channel_type,
-                "approved_credentials": deps.session_state.approved_credentials,
-                "allowed_domains": deps.sandbox.get_domain_info(session_id),
-            },
-        )
-
-    if cmd == "/skills":
-        skills = [{"name": s.name, "description": s.description.strip()} for s in deps.skill_catalog]
-        return CommandResult(command="skills", data=skills)
-
-    if cmd == "/memory":
-        store = MemoryStore(deps.data_dir)
-        files = store.list_files()
-        return CommandResult(command="memory", data=files)
-
-    if cmd == "/usage":
-        tracker = deps.usage_tracker
-        costs = tracker.estimated_cost()
-        return CommandResult(
-            command="usage",
-            data={
-                "models": {k: v.model_dump() for k, v in tracker.models.items()},
-                "categories": {k: v.model_dump() for k, v in tracker.categories.items()},
-                "total_input": tracker.total_input,
-                "total_output": tracker.total_output,
-                "costs": {k: str(v) for k, v in costs.items()},
-            },
-        )
-
-    return None
-
-
-class _PendingApproval:
-    """Tracks a single pending approval message in a room."""
-
-    def __init__(self, event_id: str, tool_call_id: str) -> None:
-        self.event_id = event_id
-        self.tool_call_id = tool_call_id
-        self._future: asyncio.Future[bool] = asyncio.get_running_loop().create_future()
-
-    def resolve(self, approved: bool) -> None:
-        if not self._future.done():
-            self._future.set_result(approved)
-
-    async def wait(self) -> bool:
-        return await self._future
-
-
-class _PendingDomainApproval:
-    """Tracks a pending proxy domain approval message in a room."""
-
-    def __init__(self, event_id: str) -> None:
-        self.event_id = event_id
-        self._future: asyncio.Future[bool] = asyncio.get_running_loop().create_future()
-
-    def resolve(self, approved: bool) -> None:
-        if not self._future.done():
-            self._future.set_result(approved)
-
-    async def wait(self) -> bool:
-        return await self._future
-
-
-class _MatrixSubscriber:
-    """Bridges ``SessionEngine`` events to Matrix messages for a room."""
-
-    def __init__(self, channel: MatrixChannel, room_id: str) -> None:
-        self._channel = channel
-        self._room_id = room_id
-        self._typing_task: asyncio.Task[None] | None = None
-        # event_id → tool_call_id (for reaction-based approval)
-        self._approval_events: dict[str, str] = {}
-        # event_id → request_id (for reaction-based domain approval)
-        self._domain_events: dict[str, str] = {}
-
-    def _start_typing(self) -> None:
-        if self._typing_task is None or self._typing_task.done():
-            self._typing_task = asyncio.create_task(self._typing_loop())
-            self._channel._background_tasks.add(self._typing_task)
-            self._typing_task.add_done_callback(self._channel._background_tasks.discard)
-
-    def _stop_typing(self) -> None:
-        if self._typing_task and not self._typing_task.done():
-            self._typing_task.cancel()
-            self._typing_task = None
-        t = asyncio.ensure_future(self._channel._send_typing(self._room_id, False))
-        self._channel._background_tasks.add(t)
-        t.add_done_callback(self._channel._background_tasks.discard)
-
-    async def _typing_loop(self) -> None:
-        try:
-            await self._channel._send_typing(self._room_id, True)
-            while True:
-                await asyncio.sleep(_TYPING_INTERVAL - 1)
-                await self._channel._send_typing(self._room_id, True)
-        except asyncio.CancelledError:
-            pass
-
-    async def on_user_message(self, content: str, *, from_self: bool) -> None:
-        if from_self:
-            return  # Matrix client already shows the sender's own message
-        # Cross-channel message (e.g. from web UI) — forward to the room
-        await self._channel._send_text(self._room_id, f"💬 {content}")
-
-    async def on_tool_call(self, tool: str, args: dict[str, Any], detail: str) -> None:
-        logger.debug(f"Matrix [{self._room_id}] tool call: {tool}({args}) — {detail}")
-        if self._channel._verbose.get(self._room_id, True):
-            args_brief = json.dumps(args, default=str)
-            notice = f"🔧 `{tool}({args_brief})`" + (f" {detail}" if detail else "")
-            await self._channel._send_notice(self._room_id, notice)
-
-    async def on_tool_result(self, tool: str, result: str) -> None:
-        if self._channel._verbose.get(self._room_id, True):
-            # Truncate long results to keep Matrix messages manageable
-            preview = result[:500] + ("…" if len(result) > 500 else "")
-            notice = f"📎 `{tool}` result:\n```\n{preview}\n```"
-            await self._channel._send_notice(self._room_id, notice)
-
-    async def on_done(self, content: str, usage: TurnUsage) -> None:
-        self._stop_typing()
-        await self._channel._send_text(self._room_id, content)
-
-    async def on_error(self, detail: str) -> None:
-        self._stop_typing()
-        await self._channel._send_text(self._room_id, f"Error: {detail}")
-
-    async def on_cancelled(self) -> None:
-        self._stop_typing()
-        # no message needed — handled by the /stop command
-
-    async def on_approval_request(self, req: ApprovalRequest) -> None:
-        text = _format_approval_request(req)
-        event_id = await self._channel._send_text(self._room_id, text)
-        if event_id:
-            self._approval_events[event_id] = req.tool_call_id
-            # Also register in the channel-level pending maps for reaction handling
-            pending = _PendingApproval(event_id, req.tool_call_id)
-            self._channel._pending_approvals[event_id] = pending
-            self._channel._room_pending[self._room_id] = pending
-
-    async def on_proxy_approval_request(self, request_id: str, domain: str, command: str) -> None:
-        explanation = ""  # not available at this level
-        text = _format_domain_escalation(domain, command, explanation)
-        event_id = await self._channel._send_text(self._room_id, text)
-        if event_id:
-            self._domain_events[event_id] = request_id
-            pending = _PendingDomainApproval(event_id)
-            self._channel._pending_domain_approvals[event_id] = pending
-            self._channel._room_pending[self._room_id] = pending
-
-    async def on_title_update(self, title: str) -> None:
-        pass  # Matrix rooms have their own titles
-
-    async def on_domain_info(self, domain: str, detail: str) -> None:
-        logger.debug(f"Matrix [{self._room_id}] domain: {domain} {detail}")
-        if self._channel._verbose.get(self._room_id, True):
-            notice = f"🌐 `{domain}` {detail}"
-            await self._channel._send_notice(self._room_id, notice)
+from carapace.ws_models import ApprovalRequest, ApprovalResponse, CommandResult, ProxyApprovalResponse
 
 
 class MatrixChannel:
@@ -394,18 +72,18 @@ class MatrixChannel:
         self._room_sessions: dict[str, str] = {}
         # room_id -> asyncio.Lock (serialises one agent turn per room)
         self._room_locks: dict[str, asyncio.Lock] = {}
-        # event_id of pending tool-approval message -> _PendingApproval
-        self._pending_approvals: dict[str, _PendingApproval] = {}
-        # event_id of pending domain-approval message -> _PendingDomainApproval
-        self._pending_domain_approvals: dict[str, _PendingDomainApproval] = {}
+        # event_id of pending tool-approval message -> PendingApproval
+        self._pending_approvals: dict[str, PendingApproval] = {}
+        # event_id of pending domain-approval message -> PendingDomainApproval
+        self._pending_domain_approvals: dict[str, PendingDomainApproval] = {}
         # room_id -> most recent pending approval of either kind (for command resolution)
-        self._room_pending: dict[str, _PendingApproval | _PendingDomainApproval] = {}
+        self._room_pending: dict[str, PendingApproval | PendingDomainApproval] = {}
         # verbose mode per room (room_id -> bool); defaults to True (show tool calls)
         self._verbose: dict[str, bool] = {}
         # room_id -> currently running agent turn task (for cancellation)
         self._room_tasks: dict[str, asyncio.Task] = {}
-        # room_id -> _MatrixSubscriber (persistent per room for engine mode)
-        self._room_subscribers: dict[str, _MatrixSubscriber] = {}
+        # room_id -> MatrixSubscriber (persistent per room for engine mode)
+        self._room_subscribers: dict[str, MatrixSubscriber] = {}
 
         self._sync_task: asyncio.Task | None = None
         # Server timestamp (ms) at startup — used to ignore backlog messages
@@ -580,7 +258,7 @@ class MatrixChannel:
             "msgtype": "m.text",
             "body": text,
             "format": "org.matrix.custom.html",
-            "formatted_body": _md_to_html(text),
+            "formatted_body": md_to_html(text),
         }
         resp = await self._client.room_send(room_id, "m.room.message", content)
         if isinstance(resp, nio.RoomSendResponse):
@@ -594,14 +272,14 @@ class MatrixChannel:
             "msgtype": "m.notice",
             "body": text,
             "format": "org.matrix.custom.html",
-            "formatted_body": _md_to_html(text),
+            "formatted_body": md_to_html(text),
         }
         resp = await self._client.room_send(room_id, "m.room.message", content)
         if not isinstance(resp, nio.RoomSendResponse):
             logger.warning(f"Matrix notice send error in {room_id}: {resp}")
 
     async def _send_typing(self, room_id: str, typing: bool = True) -> None:
-        await self._client.room_typing(room_id, typing_state=typing, timeout=int(_TYPING_INTERVAL * 1000))
+        await self._client.room_typing(room_id, typing_state=typing, timeout=int(TYPING_INTERVAL * 1000))
 
     def _build_deps(
         self,
@@ -643,8 +321,8 @@ class MatrixChannel:
             return
 
         key = event.key.strip()
-        approved = key in _APPROVE_REACTIONS
-        denied = key in _DENY_REACTIONS
+        approved = key in APPROVE_REACTIONS
+        denied = key in DENY_REACTIONS
 
         if not (approved or denied):
             return
@@ -720,7 +398,7 @@ class MatrixChannel:
             # Engine mode: delegate to SessionEngine
             sub = self._room_subscribers.get(room_id)
             if sub is None:
-                sub = _MatrixSubscriber(self, room_id)
+                sub = MatrixSubscriber(self, room_id)
                 self._room_subscribers[room_id] = sub
             self._engine.subscribe(session_id, sub)
             sub._start_typing()
@@ -746,7 +424,7 @@ class MatrixChannel:
             case "/reset":
                 await self._handle_reset(room_id, session_id)
                 return
-            case _ if cmd in _APPROVE_COMMANDS:
+            case _ if cmd in APPROVE_COMMANDS:
                 if self._engine:
                     sub = self._room_subscribers.get(room_id)
                     if sub is None:
@@ -782,14 +460,14 @@ class MatrixChannel:
                     pending = self._room_pending.get(room_id)
                     if pending is None:
                         await self._send_text(room_id, "No pending approval request.")
-                    elif isinstance(pending, _PendingDomainApproval):
+                    elif isinstance(pending, PendingDomainApproval):
                         pending.resolve(True)
                         await self._send_text(room_id, "✅ Domain access allowed.")
                     else:
                         pending.resolve(True)
                         await self._send_text(room_id, "✅ Operation approved.")
                 return
-            case _ if cmd in _DENY_COMMANDS:
+            case _ if cmd in DENY_COMMANDS:
                 if self._engine:
                     sub = self._room_subscribers.get(room_id)
                     if sub is None:
@@ -823,7 +501,7 @@ class MatrixChannel:
                     pending = self._room_pending.get(room_id)
                     if pending is None:
                         await self._send_text(room_id, "No pending approval request.")
-                    elif isinstance(pending, _PendingDomainApproval):
+                    elif isinstance(pending, PendingDomainApproval):
                         pending.resolve(False)
                         await self._send_text(room_id, "❌ Domain access denied.")
                     else:
@@ -880,7 +558,7 @@ class MatrixChannel:
             result_data = self._engine.handle_slash_command(session_id, text)
             if result_data:
                 result = CommandResult(command=result_data["command"], data=result_data["data"])
-                reply = _format_command_result_text(result)
+                reply = format_command_result_text(result)
                 await self._send_text(room_id, reply)
             else:
                 await self._send_text(room_id, f"Unknown command: `{cmd}`. Type `/help` for a list.")
@@ -894,7 +572,7 @@ class MatrixChannel:
 
             from carapace.server import _SLASH_COMMANDS  # avoid circular at module level
 
-            result = _handle_matrix_slash_command(text, deps, self._security_md, _SLASH_COMMANDS)
+            result = handle_matrix_slash_command(text, deps, self._security_md, _SLASH_COMMANDS)
             if result:
                 self._session_mgr.save_state(deps.session_state)
                 self._session_mgr.append_events(
@@ -904,7 +582,7 @@ class MatrixChannel:
                         {"role": "command", "command": result.command, "data": result.data},
                     ],
                 )
-                reply = _format_command_result_text(result)
+                reply = format_command_result_text(result)
                 await self._send_text(room_id, reply)
             else:
                 await self._send_text(room_id, f"Unknown command: `{cmd}`. Type `/help` for a list.")
@@ -947,14 +625,14 @@ class MatrixChannel:
             await self._send_text(room_id, "Error: session not found — try `/reset`.")
             return
 
-        # Track pending approval futures indexed by tool_call_id → _PendingApproval
-        # We also need to map event_id → _PendingApproval for reaction handling.
-        approval_futures: dict[str, _PendingApproval] = {}
+        # Track pending approval futures indexed by tool_call_id → PendingApproval
+        # We also need to map event_id → PendingApproval for reaction handling.
+        approval_futures: dict[str, PendingApproval] = {}
 
         async def _send_approval(req: ApprovalRequest) -> None:
-            text = _format_approval_request(req)
+            text = format_approval_request(req)
             event_id = await self._send_text(room_id, text)
-            pending = _PendingApproval(event_id or "", req.tool_call_id)
+            pending = PendingApproval(event_id or "", req.tool_call_id)
             approval_futures[req.tool_call_id] = pending
             if event_id:
                 self._pending_approvals[event_id] = pending
@@ -989,13 +667,13 @@ class MatrixChannel:
             domain: str,
             context: dict[str, Any],
         ) -> bool:
-            text = _format_domain_escalation(
+            text = format_domain_escalation(
                 domain,
                 context.get("command", ""),
                 context.get("explanation", ""),
             )
             event_id = await self._send_text(room_id, text)
-            domain_pending = _PendingDomainApproval(event_id or "")
+            domain_pending = PendingDomainApproval(event_id or "")
             if event_id:
                 self._pending_domain_approvals[event_id] = domain_pending
             self._room_pending[room_id] = domain_pending
@@ -1101,7 +779,7 @@ class MatrixChannel:
         """Repeatedly renew the typing indicator while the agent is thinking."""
         try:
             while True:
-                await asyncio.sleep(_TYPING_INTERVAL - 1)
+                await asyncio.sleep(TYPING_INTERVAL - 1)
                 await self._send_typing(room_id, True)
         except asyncio.CancelledError:
             pass
