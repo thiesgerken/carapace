@@ -101,7 +101,7 @@ def _format_command_result_text(result: CommandResult) -> str:
         case "usage":
             costs = data.get("costs", {})
             total = costs.get("total", "?")
-            lines = [f"**Token usage** (est. total: {total} USD)\n"]
+            lines = [f"**Token usage** (est. total: {total:0.2f}$)\n"]
             for model, usage in data.get("models", {}).items():
                 inp = usage.get("input_tokens", 0)
                 out = usage.get("output_tokens", 0)
@@ -298,6 +298,12 @@ class _MatrixSubscriber:
                 await self._channel._send_typing(self._room_id, True)
         except asyncio.CancelledError:
             pass
+
+    async def on_user_message(self, content: str, *, from_self: bool) -> None:
+        if from_self:
+            return  # Matrix client already shows the sender's own message
+        # Cross-channel message (e.g. from web UI) — forward to the room
+        await self._channel._send_text(self._room_id, f"💬 {content}")
 
     async def on_tool_call(self, tool: str, args: dict[str, Any], detail: str) -> None:
         logger.debug(f"Matrix [{self._room_id}] tool call: {tool}({args}) — {detail}")
@@ -713,7 +719,7 @@ class MatrixChannel:
                 self._room_subscribers[room_id] = sub
             self._engine.subscribe(session_id, sub)
             sub._start_typing()
-            await self._engine.submit_message(session_id, body)
+            await self._engine.submit_message(session_id, body, origin=sub)
         else:
             # Legacy mode: run agent turn directly
             task = asyncio.create_task(self._run_turn_locked(room_id, session_id, body))

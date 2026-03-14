@@ -45,10 +45,12 @@ from carapace.ws_models import (
     ProxyApprovalResponse,
     ServerEnvelope,
     SessionTitleUpdate,
+    StatusUpdate,
     ToolCallInfo,
     ToolResultInfo,
     TurnUsage,
     UserMessage,
+    UserMessageNotification,
     parse_client_message,
 )
 
@@ -401,6 +403,9 @@ class WebSocketSubscriber:
         except Exception as exc:
             logger.warning(f"WebSocket send failed: {exc}")
 
+    async def on_user_message(self, content: str, *, from_self: bool) -> None:
+        await self._safe_send(UserMessageNotification(content=content))
+
     async def on_tool_call(self, tool: str, args: dict[str, Any], detail: str) -> None:
         await self._safe_send(ToolCallInfo(tool=tool, args=args, detail=detail))
 
@@ -445,6 +450,11 @@ async def chat_ws(
 
     sub = WebSocketSubscriber(websocket)
     active = _engine.subscribe(session_id, sub)
+
+    # Tell the client whether an agent turn is in progress.
+    agent_running = active.agent_task is not None and not active.agent_task.done()
+    with contextlib.suppress(Exception):
+        await _send(websocket, StatusUpdate(agent_running=agent_running))
 
     # If agent is already running (e.g. reconnect), the subscriber will
     # start receiving events immediately.  If there are pending approvals,
@@ -542,7 +552,7 @@ async def chat_ws(
                 continue
 
             # --- Agent turn ---
-            await _engine.submit_message(session_id, user_input)
+            await _engine.submit_message(session_id, user_input, origin=sub)
 
     except WebSocketDisconnect as exc:
         logger.info(f"Client disconnected from session {session_id} (code={exc.code})")

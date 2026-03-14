@@ -15,6 +15,7 @@ import yaml
 from loguru import logger
 from pydantic_ai import ModelMessage, ModelMessagesTypeAdapter, ToolDenied
 
+import carapace.security as security_mod
 from carapace.models import Config, Deps, SessionState, SkillInfo, UsageTracker
 from carapace.sandbox.manager import SandboxManager
 from carapace.security.context import SessionSecurity, UserVouchedEntry
@@ -28,6 +29,7 @@ from carapace.ws_models import ApprovalRequest, ApprovalResponse, ProxyApprovalR
 
 @runtime_checkable
 class SessionSubscriber(Protocol):
+    async def on_user_message(self, content: str, *, from_self: bool) -> None: ...
     async def on_tool_call(self, tool: str, args: dict[str, Any], detail: str) -> None: ...
     async def on_tool_result(self, tool: str, result: str) -> None: ...
     async def on_done(self, content: str, usage: TurnUsage) -> None: ...
@@ -292,6 +294,13 @@ class SessionEngine:
             usage_tracker=usage_tracker,
         )
         self._active[session_id] = active
+
+        # Register in the global dicts so agent.py / agent_loop.py can
+        # look up the session via security.evaluate / append_log / write_audit.
+        security_mod._sessions[session_id] = security
+        security_mod._sentinels[session_id] = sentinel
+        security_mod._session_refs[session_id] = 1
+
         return active
 
     def get_active(self, session_id: str) -> ActiveSession | None:
@@ -307,6 +316,7 @@ class SessionEngine:
         active = self._active.pop(session_id, None)
         if active and active.agent_task and not active.agent_task.done():
             active.agent_task.cancel()
+        security_mod.destroy_session(session_id)
 
     # -- subscribers --
 
@@ -366,7 +376,13 @@ class SessionEngine:
             activated_skills=[],
         )
 
-    async def submit_message(self, session_id: str, content: str) -> None:
+    async def submit_message(
+        self,
+        session_id: str,
+        content: str,
+        *,
+        origin: SessionSubscriber | None = None,
+    ) -> None:
         """Start an agent turn.  Safe to call from any channel."""
         active = self._ensure_active(session_id)
 
@@ -379,7 +395,7 @@ class SessionEngine:
             active.approval_queue.get_nowait()
 
         active.agent_task = asyncio.create_task(
-            self._run_turn(active, content),
+            self._run_turn(active, content, origin=origin),
             name=f"agent-turn-{session_id}",
         )
 
@@ -482,7 +498,13 @@ class SessionEngine:
 
     # -- internal turn runner --
 
-    async def _run_turn(self, active: ActiveSession, user_input: str) -> None:
+    async def _run_turn(
+        self,
+        active: ActiveSession,
+        user_input: str,
+        *,
+        origin: SessionSubscriber | None = None,
+    ) -> None:
         """Execute a single agent turn with semaphore-bounded LLM access."""
         from carapace.agent_loop import run_agent_turn
 
@@ -525,6 +547,11 @@ class SessionEngine:
                 )
 
                 self._session_mgr.append_events(session_id, [{"role": "user", "content": user_input}])
+                for sub in list(active.subscribers):
+                    try:
+                        await sub.on_user_message(user_input, from_self=(sub is origin))
+                    except Exception as exc:
+                        logger.warning(f"Subscriber on_user_message failed: {exc}")
                 message_history = self._session_mgr.load_history(session_id)
 
                 async def _send_approval(req: ApprovalRequest) -> None:
