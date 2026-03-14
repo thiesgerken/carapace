@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.25.3 (2026-03-14)
+
+### Other
+
+- 📝 docs: clarify that the agent has internet access (security-gated)
+  ([`e4b550b`](https://github.com/thiesgerken/carapace/commit/e4b550b0456d14e2e51d9c82663a2f403cfe22a0))
+
+### 🐛
+
+- 🐛 no need to add that to soul.md
+  ([`7fc25bb`](https://github.com/thiesgerken/carapace/commit/7fc25bb429442db6ba64b3fbd71ec5916b91e66c))
+
+
 ## v0.25.2 (2026-03-14)
 
 ### Other
