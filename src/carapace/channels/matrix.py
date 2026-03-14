@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import math
 import os
 import time
 from pathlib import Path
@@ -100,7 +101,7 @@ def _format_command_result_text(result: CommandResult) -> str:
 
         case "usage":
             costs = data.get("costs", {})
-            total = costs.get("total", "?")
+            total = costs.get("total", math.nan)
             lines = [f"**Token usage** (est. total: {total:0.2f}$)\n"]
             for model, usage in data.get("models", {}).items():
                 inp = usage.get("input_tokens", 0)
