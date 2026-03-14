@@ -53,14 +53,24 @@ sys.modules["kubernetes.client.rest"] = MagicMock()
 
 
 # Provide real exception class on the mocked module
-class _ApiError(Exception):
-    def __init__(self, status: int = 500, reason: str = "") -> None:
-        super().__init__(reason)
-        self.status = status
-        self.reason = reason
+def _make_api_exception(status: int = 500, reason: str = "") -> Exception:
+    exc = Exception(reason)
+    exc.status = status  # type: ignore[attr-defined]
+    exc.reason = reason  # type: ignore[attr-defined]
+    return exc
 
 
-_mock_k8s_client.ApiException = _ApiError
+_ApiException = type("ApiException", (Exception,), {})
+
+
+def _api_exc_init(self: Exception, status: int = 500, reason: str = "") -> None:
+    super(_ApiException, self).__init__(reason)
+    self.status = status  # type: ignore[attr-defined]
+    self.reason = reason  # type: ignore[attr-defined]
+
+
+_ApiException.__init__ = _api_exc_init  # type: ignore[assignment]
+_mock_k8s_client.ApiException = _ApiException
 
 # Force reimport so the module picks up our stub constructors
 sys.modules.pop("carapace.sandbox.kubernetes", None)
