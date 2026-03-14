@@ -125,6 +125,14 @@ async def lifespan(app: FastAPI):
 
     base_image = _config.sandbox.base_image
 
+    if not runtime.image_exists(base_image):
+        logger.error(
+            f"Sandbox image '{base_image}' not found. "
+            f"Build it with: docker compose build sandbox\n"
+            f"Or pull it with: docker pull {base_image}"
+        )
+        raise SystemExit(1)
+
     host_data_dir_env = os.environ.get("CARAPACE_HOST_DATA_DIR")
     host_data_dir = Path(host_data_dir_env) if host_data_dir_env else None
 

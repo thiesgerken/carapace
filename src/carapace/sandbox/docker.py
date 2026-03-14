@@ -59,6 +59,14 @@ class DockerRuntime(ContainerRuntime):
                 logger.debug(f"[docker build] {line}")
         logger.info(f"Sandbox image '{tag}' built successfully")
 
+    def image_exists(self, tag: str) -> bool:
+        """Check if a Docker image exists locally."""
+        try:
+            self._client.images.get(tag)
+            return True
+        except ImageNotFound:
+            return False
+
     def _ensure_network(self, name: str, *, internal: bool = False) -> str:
         """Ensure the network exists and return its actual Docker name.
 

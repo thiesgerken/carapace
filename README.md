@@ -100,46 +100,60 @@ Other differences: Carapace is Python (not Node), uses Pydantic AI (not a custom
 
 ### Prerequisites
 
-- **Python 3.12+** (3.14 recommended)
-- **[uv](https://docs.astral.sh/uv/)** for dependency management
+- **Docker** (required for sandbox execution in all setups)
 - An **Anthropic API key** (set `ANTHROPIC_API_KEY` in `.env` or your environment)
-
-### Installation
-
-```bash
-git clone https://github.com/thiesgerken/carapace.git
-cd carapace
-uv sync
-```
-
-### Running
-
-Start the server:
-
-```bash
-uv run python -m carapace        # or: uv run carapace-server
-```
-
-Connect via the CLI client (in another terminal):
-
-```bash
-uv run python -m carapace.cli    # or: uv run carapace
-```
-
-Or start the web UI (in another terminal):
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-On first server start a bearer token is generated in `data/server.token`. The CLI reads it automatically from the same data directory. The web UI prompts for the server URL and token on first connect. For remote CLI access, pass `--token` or set `CARAPACE_TOKEN`.
 
 ### Configuration
 
 1. Copy `.env.example` to `.env` and set your API key.
 2. Customise files under `data/` — see [Data directory](#data-directory) above.
+
+On first server start a bearer token is generated in `data/server.token`. The CLI reads it automatically from the same data directory. The web UI prompts for the server URL and token on first connect.
+
+### Deployment with Docker Compose
+
+Run the backend and frontend as containers:
+
+```bash
+# Build all images (server, frontend, sandbox)
+docker compose build
+
+# Start the server and frontend
+docker compose up -d
+```
+
+The server is available at `http://localhost:8321`, the frontend at `http://localhost:3001`.
+
+To connect via the CLI from the host:
+
+```bash
+uv run carapace --token "$(cat data/server.token)"
+```
+
+### Development setup
+
+For local development, run the backend and frontend directly:
+
+```bash
+# Install Python dependencies
+uv sync
+
+# Build the sandbox image (required)
+docker compose build sandbox
+
+# Start the backend
+uv run carapace-server
+
+# In another terminal — start the frontend (dev mode with hot reload)
+cd frontend && npm install && npm run dev
+
+# In another terminal — connect via CLI
+uv run carapace
+```
+
+Additional prerequisites for development: **Python 3.12+** (3.14 recommended), **[uv](https://docs.astral.sh/uv/)**, and **Node.js 22+** for the frontend.
+
+The server will refuse to start if the sandbox image is not available — the error message tells you exactly how to build or pull it.
 
 ## Demo
 
