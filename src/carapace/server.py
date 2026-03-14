@@ -25,7 +25,7 @@ from pydantic_ai.retries import AsyncTenacityTransport, RetryConfig, wait_retry_
 from tenacity import retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from carapace.auth import ensure_token
-from carapace.bootstrap import ensure_data_dir, get_sandbox_dockerfile
+from carapace.bootstrap import ensure_data_dir
 from carapace.config import get_data_dir, load_config, load_security_md
 from carapace.models import Config, SessionState
 from carapace.sandbox.docker import DockerRuntime
@@ -56,8 +56,6 @@ from carapace.ws_models import (
 )
 
 load_dotenv()
-
-_BUILTIN_SANDBOX_IMAGE = "carapace-sandbox:latest"
 
 # --- Shared state populated in lifespan ---
 
@@ -125,9 +123,7 @@ async def lifespan(app: FastAPI):
     else:
         logger.warning("Could not determine any network addresses")
 
-    base_image = _config.sandbox.base_image or _BUILTIN_SANDBOX_IMAGE
-    if not _config.sandbox.base_image:
-        runtime.build_image(get_sandbox_dockerfile(), _BUILTIN_SANDBOX_IMAGE)
+    base_image = _config.sandbox.base_image
 
     host_data_dir_env = os.environ.get("CARAPACE_HOST_DATA_DIR")
     host_data_dir = Path(host_data_dir_env) if host_data_dir_env else None

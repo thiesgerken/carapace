@@ -93,7 +93,7 @@ class CredentialsConfig(BaseModel):
 
 
 class SandboxConfig(BaseModel):
-    base_image: str = ""
+    base_image: str = "carapace-sandbox:latest"
     idle_timeout_minutes: int = 15
     network_name: str = "carapace-sandbox"
     proxy_port: int = 3128

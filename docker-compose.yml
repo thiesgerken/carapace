@@ -24,6 +24,11 @@ services:
     depends_on:
       - carapace
 
+  sandbox:
+    build: ./sandbox
+    image: carapace-sandbox:latest
+    profiles: ["build"]
+
 networks:
   carapace-sandbox:
     driver: bridge
