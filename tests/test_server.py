@@ -19,8 +19,11 @@ from carapace.skills import SkillRegistry
 
 
 @pytest.fixture(autouse=True)
-def _setup_server(tmp_path):
+def _setup_server(tmp_path, monkeypatch):
     """Initialise server globals with a temp data dir so tests don't need lifespan."""
+    # Bogus key — the sentinel Agent validates the env var at construction
+    # time, but these tests never call the LLM.
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-fake-for-tests")
     ensure_data_dir(tmp_path)
     config = load_config(tmp_path)
     security_md = load_security_md(tmp_path)
