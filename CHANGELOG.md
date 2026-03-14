@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v0.22.0 (2026-03-14)
+
+### Other
+
+- Merge remote-tracking branch 'refs/remotes/origin/main'
+  ([`2966b0d`](https://github.com/thiesgerken/carapace/commit/2966b0de7d9cb61aae9e0622a1c555ebb2581ecc))
+
+
 ## v0.21.0 (2026-03-14)
 
 ### Other
@@ -31,6 +39,13 @@
   ([`95ee976`](https://github.com/thiesgerken/carapace/commit/95ee976dc79f39a0b7286895309499046d3133ad))
 
 ### ✨
+
+- ✨ feat: add OCI labels, sandbox version tracking, and docker pull commands in release notes
+  ([`cf6d200`](https://github.com/thiesgerken/carapace/commit/cf6d2001332efc6b44b1760f4c72a766bdecaec0))
+
+- Add docker/metadata-action to all image builds for proper GHCR linking - Add update-release job to
+  append docker pull commands to release notes - Add _SANDBOX_IMAGE_VERSION to models.py, managed by
+  semantic-release - Default sandbox base_image now includes version tag instead of :latest
 
 - ✨move sandbox Dockerfile out of backend assets, remove on-demand build
   ([`a72d34e`](https://github.com/thiesgerken/carapace/commit/a72d34e601898acb07b6be3ab8f8772a4c963d1b))
