@@ -1,6 +1,38 @@
 # CHANGELOG
 
 
+## v0.23.0 (2026-03-14)
+
+### Other
+
+- Fix CI
+  ([`5e26f54`](https://github.com/thiesgerken/carapace/commit/5e26f5438773957df27ff34023060ef479933b6d))
+
+- 📝 docs: add commit-before-asking convention to AGENTS.md
+  ([`3ce548e`](https://github.com/thiesgerken/carapace/commit/3ce548e0d3122781961961a17ecf11f0592ebc0c))
+
+- 📝 docs: reorder README — demo first, dev setup last
+  ([`908ce2f`](https://github.com/thiesgerken/carapace/commit/908ce2f979c0593b5235545e12b0bbb9668d7c13))
+
+### ✨
+
+- ✨ feat: validate sandbox image at startup, restructure README quickstart
+  ([`29cf9eb`](https://github.com/thiesgerken/carapace/commit/29cf9ebf7744e4aa0533a8d77e19b5bb1eeb8f74))
+
+- Add image_exists() to DockerRuntime - Server exits with clear error if sandbox image is missing -
+  Split Getting Started into Docker Compose deployment and development setup - Add Docker to
+  prerequisites, document 'docker compose build sandbox'
+
+### 🐛
+
+- 🐛💚 restructure release workflow to build images before creating release
+  ([`f746f04`](https://github.com/thiesgerken/carapace/commit/f746f044b91e2a6fc432de3eecc13e95f038db1c))
+
+- Split into: version → docker builds (parallel) → publish - Version step uses --no-vcs-release to
+  defer GitHub Release creation - Publish step creates release with wheels + docker pull commands in
+  one shot - No more patching release notes after the fact
+
+
 ## v0.22.0 (2026-03-14)
 
 ### Other
