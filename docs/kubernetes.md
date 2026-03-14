@@ -56,8 +56,8 @@ Set `sandbox.runtime` to `kubernetes` in your `data/config.yaml`:
 sandbox:
   runtime: kubernetes
   base_image: ghcr.io/thiesgerken/carapace-sandbox:latest
-  k8s_namespace: carapace        # namespace for sandbox pods
-  k8s_pvc_claim: carapace-data   # shared PVC claim name
+  k8s_namespace: carapace # namespace for sandbox pods
+  k8s_pvc_claim: carapace-data # shared PVC claim name
   # k8s_service_account: null    # optional SA for sandbox pods
 ```
 
@@ -69,28 +69,28 @@ When the server runs inside Kubernetes (the `KUBERNETES_SERVICE_HOST` env var is
 
 ### Config reference
 
-| Field | Default | Description |
-|-------|---------|-------------|
-| `sandbox.runtime` | `docker` | `docker` or `kubernetes` |
-| `sandbox.base_image` | `carapace-sandbox:<version>` | Sandbox container image |
-| `sandbox.idle_timeout_minutes` | `15` | Idle sandbox cleanup interval |
-| `sandbox.proxy_port` | `3128` | HTTP proxy port for domain filtering |
-| `sandbox.k8s_namespace` | `carapace` | Namespace for sandbox pods |
-| `sandbox.k8s_pvc_claim` | `carapace-data` | Shared PVC claim name |
-| `sandbox.k8s_service_account` | `null` | ServiceAccount for sandbox pods |
+| Field                          | Default                      | Description                          |
+| ------------------------------ | ---------------------------- | ------------------------------------ |
+| `sandbox.runtime`              | `docker`                     | `docker` or `kubernetes`             |
+| `sandbox.base_image`           | `carapace-sandbox:<version>` | Sandbox container image              |
+| `sandbox.idle_timeout_minutes` | `15`                         | Idle sandbox cleanup interval        |
+| `sandbox.proxy_port`           | `3128`                       | HTTP proxy port for domain filtering |
+| `sandbox.k8s_namespace`        | `carapace`                   | Namespace for sandbox pods           |
+| `sandbox.k8s_pvc_claim`        | `carapace-data`              | Shared PVC claim name                |
+| `sandbox.k8s_service_account`  | `null`                       | ServiceAccount for sandbox pods      |
 
 ## Storage
 
 A single RWX PVC (`carapace-data`) is shared between the server and all sandbox pods:
 
-| Consumer | Mount path | subPath | Mode |
-|----------|-----------|---------|------|
-| Server | `/data` | (root) | RW |
-| Sandbox pod | `/workspace/AGENTS.md` | `AGENTS.md` | RO |
-| Sandbox pod | `/workspace/SOUL.md` | `SOUL.md` | RO |
-| Sandbox pod | `/workspace/memory` | `memory/` | RO |
-| Sandbox pod | `/workspace/skills` | `sessions/{sid}/workspace/skills` | RW |
-| Sandbox pod | `/workspace/tmp` | `sessions/{sid}/workspace/tmp` | RW |
+| Consumer    | Mount path             | subPath                           | Mode |
+| ----------- | ---------------------- | --------------------------------- | ---- |
+| Server      | `/data`                | (root)                            | RW   |
+| Sandbox pod | `/workspace/AGENTS.md` | `AGENTS.md`                       | RO   |
+| Sandbox pod | `/workspace/SOUL.md`   | `SOUL.md`                         | RO   |
+| Sandbox pod | `/workspace/memory`    | `memory/`                         | RO   |
+| Sandbox pod | `/workspace/skills`    | `sessions/{sid}/workspace/skills` | RW   |
+| Sandbox pod | `/workspace/tmp`       | `sessions/{sid}/workspace/tmp`    | RW   |
 
 The `KubernetesRuntime` automatically translates the `SandboxManager`'s host-path mounts into PVC subPath references — no configuration needed.
 
@@ -120,7 +120,7 @@ rules:
     verbs: ["create", "get", "list", "delete"]
   - apiGroups: ["apps"]
     resources: ["deployments"]
-    verbs: ["get"]  # for ownerReference lookup
+    verbs: ["get"] # for ownerReference lookup
 ```
 
 ## ArgoCD
@@ -145,18 +145,18 @@ No special ArgoCD configuration is needed — the standard annotation-based trac
 
 All manifests live in `k8s/` and are wired together via `kustomization.yaml`:
 
-| File | Purpose |
-|------|---------|
-| `namespace.yaml` | `carapace` namespace |
-| `pvc.yaml` | Shared RWX PVC |
-| `rbac.yaml` | ServiceAccount + Role + RoleBinding |
-| `deployment-server.yaml` | Server + proxy |
-| `service-server.yaml` | ClusterIP for API (8321) and proxy (3128) |
-| `deployment-frontend.yaml` | Next.js frontend |
-| `service-frontend.yaml` | ClusterIP for frontend (80) |
-| `ingress.yaml` | Traefik IngressRoute |
-| `networkpolicy.yaml` | Sandbox pod isolation |
-| `secret.yaml.example` | Secret template (don't commit real values) |
+| File                       | Purpose                                    |
+| -------------------------- | ------------------------------------------ |
+| `namespace.yaml`           | `carapace` namespace                       |
+| `pvc.yaml`                 | Shared RWX PVC                             |
+| `rbac.yaml`                | ServiceAccount + Role + RoleBinding        |
+| `deployment-server.yaml`   | Server + proxy                             |
+| `service-server.yaml`      | ClusterIP for API (8321) and proxy (3128)  |
+| `deployment-frontend.yaml` | Next.js frontend                           |
+| `service-frontend.yaml`    | ClusterIP for frontend (80)                |
+| `ingress.yaml`             | Traefik IngressRoute                       |
+| `networkpolicy.yaml`       | Sandbox pod isolation                      |
+| `secret.yaml.example`      | Secret template (don't commit real values) |
 
 ## Customization
 

@@ -16,7 +16,7 @@ rules:
     verbs: ["create", "get", "list", "delete"]
   - apiGroups: ["apps"]
     resources: ["deployments"]
-    verbs: ["get"]  # look up own Deployment UID for ownerReferences
+    verbs: ["get"] # look up own Deployment UID for ownerReferences
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding

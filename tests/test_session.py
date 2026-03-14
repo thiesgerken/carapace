@@ -7,8 +7,11 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from carapace.bootstrap import ensure_data_dir
 from carapace.config import load_config, load_security_md
+from carapace.models import ModelUsage
 from carapace.sandbox.manager import SandboxManager
 from carapace.session import SessionEngine, SessionManager
 from carapace.skills import SkillRegistry
@@ -218,10 +221,8 @@ def test_get_or_activate_loads_session(tmp_path: Path):
 
 def test_get_or_activate_unknown_session_raises(tmp_path: Path):
     """get_or_activate raises KeyError for a nonexistent session."""
-    import pytest as _pytest
-
     engine = _make_engine(tmp_path)
-    with _pytest.raises(KeyError):
+    with pytest.raises(KeyError):
         engine.get_or_activate("nonexistent")
 
 
@@ -284,8 +285,6 @@ def test_unsubscribe_saves_usage_when_last(tmp_path: Path):
 
         # Modify usage so we can detect whether it was saved
         active = engine.get_active(sid)
-        from carapace.models import ModelUsage
-
         active.usage_tracker.models["test-model"] = ModelUsage(input_tokens=42)
 
         engine.unsubscribe(sid, sub)

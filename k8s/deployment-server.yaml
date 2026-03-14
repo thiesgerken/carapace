@@ -9,7 +9,7 @@ metadata:
 spec:
   replicas: 1
   strategy:
-    type: Recreate  # single replica with PVC — avoid RWO conflicts
+    type: Recreate # single replica with PVC — avoid RWO conflicts
   selector:
     matchLabels:
       app.kubernetes.io/name: carapace
@@ -23,7 +23,7 @@ spec:
       serviceAccountName: carapace-server
       containers:
         - name: server
-          image: ghcr.io/thiesgerken/carapace:latest  # pin to a version tag
+          image: ghcr.io/thiesgerken/carapace:latest # pin to a version tag
           ports:
             - name: api
               containerPort: 8321

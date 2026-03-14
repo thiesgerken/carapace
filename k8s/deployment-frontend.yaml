@@ -20,7 +20,7 @@ spec:
     spec:
       containers:
         - name: frontend
-          image: ghcr.io/thiesgerken/carapace-frontend:latest  # pin to a version tag
+          image: ghcr.io/thiesgerken/carapace-frontend:latest # pin to a version tag
           ports:
             - name: http
               containerPort: 80

@@ -20,4 +20,4 @@ spec:
         - name: frontend
           port: 80
   tls:
-    certResolver: letsencrypt  # adjust to your cert-manager / Traefik config
+    certResolver: letsencrypt # adjust to your cert-manager / Traefik config

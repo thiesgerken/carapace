@@ -9,8 +9,10 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from carapace.models import SkillCarapaceConfig
+from carapace.sandbox.manager import SandboxManager
 from carapace.sandbox.proxy import ProxyServer, domain_matches
 from carapace.sandbox.runtime import ContainerGoneError, ContainerRuntime, ExecResult
+from carapace.skills import SkillRegistry
 
 # ── domain_matches ──────────────────────────────────────────────────
 
@@ -106,8 +108,6 @@ class TestProxyParsing:
 
 class TestSandboxManagerAllowlists:
     def _make_manager(self, tmp_path: Path):
-        from carapace.sandbox.manager import SandboxManager
-
         runtime = MagicMock(spec=ContainerRuntime)
         return SandboxManager(runtime=runtime, data_dir=tmp_path)
 
@@ -159,8 +159,6 @@ class TestSandboxManagerAllowlists:
 
 @pytest.mark.anyio
 async def test_exec_recreate_preserves_domains(tmp_path: Path):
-    from carapace.sandbox.manager import SandboxManager
-
     runtime = MagicMock(spec=ContainerRuntime)
     runtime.get_host_ip = AsyncMock(return_value="172.18.0.1")
     runtime.create = AsyncMock(side_effect=["container-1", "container-2"])
@@ -187,8 +185,6 @@ async def test_exec_recreate_preserves_domains(tmp_path: Path):
 
 class TestCarapaceYamlParsing:
     def test_parse_network_domains(self, tmp_path: Path):
-        from carapace.skills import SkillRegistry
-
         skill_dir = tmp_path / "web-search"
         skill_dir.mkdir()
         (skill_dir / "SKILL.md").write_text("---\nname: web-search\n---\nBody.\n")
@@ -202,8 +198,6 @@ class TestCarapaceYamlParsing:
         assert cfg.network.domains == ["api.example.com", "*.cdn.example.com"]
 
     def test_no_carapace_yaml(self, tmp_path: Path):
-        from carapace.skills import SkillRegistry
-
         skill_dir = tmp_path / "plain"
         skill_dir.mkdir()
         (skill_dir / "SKILL.md").write_text("Body.\n")
@@ -212,8 +206,6 @@ class TestCarapaceYamlParsing:
         assert registry.get_carapace_config("plain") is None
 
     def test_invalid_carapace_yaml(self, tmp_path: Path):
-        from carapace.skills import SkillRegistry
-
         skill_dir = tmp_path / "bad"
         skill_dir.mkdir()
         (skill_dir / "SKILL.md").write_text("Body.\n")
@@ -223,8 +215,6 @@ class TestCarapaceYamlParsing:
         assert registry.get_carapace_config("bad") is None
 
     def test_empty_network_section(self, tmp_path: Path):
-        from carapace.skills import SkillRegistry
-
         skill_dir = tmp_path / "minimal"
         skill_dir.mkdir()
         (skill_dir / "SKILL.md").write_text("Body.\n")

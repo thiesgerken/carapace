@@ -6,7 +6,7 @@ metadata:
 spec:
   accessModes:
     - ReadWriteMany
-  storageClassName: cephfs  # adjust to your cluster's RWX-capable StorageClass
+  storageClassName: cephfs # adjust to your cluster's RWX-capable StorageClass
   resources:
     requests:
       storage: 10Gi

@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
+import nio
 import pytest
 
+from carapace.bootstrap import ensure_data_dir
 from carapace.channels.matrix import (
     MatrixChannel,
     _format_approval_request,
@@ -16,7 +19,10 @@ from carapace.channels.matrix import (
     _PendingApproval,
     _PendingDomainApproval,
 )
+from carapace.channels.matrix.subscriber import MatrixSubscriber
+from carapace.config import load_config
 from carapace.models import MatrixChannelConfig
+from carapace.sandbox.manager import SandboxManager
 from carapace.session import SessionEngine, SessionManager
 from carapace.ws_models import ApprovalRequest, CommandResult
 
@@ -25,8 +31,8 @@ from carapace.ws_models import ApprovalRequest, CommandResult
 # ---------------------------------------------------------------------------
 
 
-def _make_config(**kwargs) -> MatrixChannelConfig:
-    defaults = {
+def _make_config(**kwargs: Any) -> MatrixChannelConfig:
+    defaults: dict[str, Any] = {
         "enabled": True,
         "homeserver": "https://matrix.example.com",
         "user_id": "@carapace:example.com",
@@ -49,14 +55,8 @@ def _make_engine_mock() -> MagicMock:
     return engine
 
 
-def _make_channel(tmp_path: Path, **config_kwargs) -> MatrixChannel:
+def _make_channel(tmp_path: Path, **config_kwargs: Any) -> Any:
     """Build a MatrixChannel with mocked internals."""
-    import nio
-
-    from carapace.bootstrap import ensure_data_dir
-    from carapace.config import load_config
-    from carapace.sandbox.manager import SandboxManager
-
     ensure_data_dir(tmp_path)
     full_config = load_config(tmp_path)
     session_mgr = SessionManager(tmp_path)
@@ -87,8 +87,6 @@ def _make_room(room_id: str = "!room:example.com", sender: str | None = None) ->
 
 
 def _make_text_event(body: str, sender: str = "@alice:example.com") -> MagicMock:
-    import nio
-
     event = MagicMock(spec=nio.RoomMessageText)
     event.body = body
     event.sender = sender
@@ -98,8 +96,6 @@ def _make_text_event(body: str, sender: str = "@alice:example.com") -> MagicMock
 
 
 def _make_reaction_event(reacts_to: str, key: str, sender: str = "@alice:example.com") -> MagicMock:
-    import nio
-
     event = MagicMock(spec=nio.ReactionEvent)
     event.reacts_to = reacts_to
     event.key = key
@@ -278,8 +274,6 @@ async def test_pending_approval_resolves_deny():
 
 @pytest.mark.anyio
 async def test_on_reaction_approves_pending(tmp_path: Path):
-    from carapace.channels.matrix.subscriber import MatrixSubscriber
-
     ch = _make_channel(tmp_path)
     room_id = "!room:example.com"
     session_id = ch._get_or_create_session(room_id)
@@ -303,8 +297,6 @@ async def test_on_reaction_approves_pending(tmp_path: Path):
 
 @pytest.mark.anyio
 async def test_on_reaction_denies_pending(tmp_path: Path):
-    from carapace.channels.matrix.subscriber import MatrixSubscriber
-
     ch = _make_channel(tmp_path)
     room_id = "!room:example.com"
     session_id = ch._get_or_create_session(room_id)
@@ -342,8 +334,6 @@ async def test_on_reaction_ignores_unrelated_event(tmp_path: Path):
 
 @pytest.mark.anyio
 async def test_approve_command_resolves_via_engine(tmp_path: Path):
-    from carapace.channels.matrix.subscriber import MatrixSubscriber
-
     ch = _make_channel(tmp_path)
     room_id = "!room:example.com"
     sid = ch._get_or_create_session(room_id)
@@ -363,8 +353,6 @@ async def test_approve_command_resolves_via_engine(tmp_path: Path):
 
 @pytest.mark.anyio
 async def test_deny_command_resolves_via_engine(tmp_path: Path):
-    from carapace.channels.matrix.subscriber import MatrixSubscriber
-
     ch = _make_channel(tmp_path)
     room_id = "!room:example.com"
     sid = ch._get_or_create_session(room_id)
@@ -384,8 +372,6 @@ async def test_deny_command_resolves_via_engine(tmp_path: Path):
 
 @pytest.mark.anyio
 async def test_approve_when_no_pending_sends_message(tmp_path: Path):
-    from carapace.channels.matrix.subscriber import MatrixSubscriber
-
     ch = _make_channel(tmp_path)
     room_id = "!room:example.com"
     sid = ch._get_or_create_session(room_id)
@@ -452,8 +438,6 @@ def test_format_command_result_security():
 
 @pytest.mark.anyio
 async def test_yes_alias_approves(tmp_path: Path):
-    from carapace.channels.matrix.subscriber import MatrixSubscriber
-
     ch = _make_channel(tmp_path)
     room_id = "!room:example.com"
     sid = ch._get_or_create_session(room_id)
@@ -473,8 +457,6 @@ async def test_yes_alias_approves(tmp_path: Path):
 
 @pytest.mark.anyio
 async def test_no_alias_denies(tmp_path: Path):
-    from carapace.channels.matrix.subscriber import MatrixSubscriber
-
     ch = _make_channel(tmp_path)
     room_id = "!room:example.com"
     sid = ch._get_or_create_session(room_id)
@@ -507,8 +489,6 @@ async def test_pending_domain_approval_resolves():
 
 @pytest.mark.anyio
 async def test_on_reaction_approves_domain(tmp_path: Path):
-    from carapace.channels.matrix.subscriber import MatrixSubscriber
-
     ch = _make_channel(tmp_path)
     room_id = "!room:example.com"
     ch._get_or_create_session(room_id)
@@ -531,8 +511,6 @@ async def test_on_reaction_approves_domain(tmp_path: Path):
 
 @pytest.mark.anyio
 async def test_on_reaction_denies_domain(tmp_path: Path):
-    from carapace.channels.matrix.subscriber import MatrixSubscriber
-
     ch = _make_channel(tmp_path)
     room_id = "!room:example.com"
     ch._get_or_create_session(room_id)
@@ -555,8 +533,6 @@ async def test_on_reaction_denies_domain(tmp_path: Path):
 
 @pytest.mark.anyio
 async def test_approve_command_resolves_domain_pending(tmp_path: Path):
-    from carapace.channels.matrix.subscriber import MatrixSubscriber
-
     ch = _make_channel(tmp_path)
     room_id = "!room:example.com"
     sid = ch._get_or_create_session(room_id)
@@ -576,8 +552,6 @@ async def test_approve_command_resolves_domain_pending(tmp_path: Path):
 
 @pytest.mark.anyio
 async def test_deny_command_resolves_domain_pending(tmp_path: Path):
-    from carapace.channels.matrix.subscriber import MatrixSubscriber
-
     ch = _make_channel(tmp_path)
     room_id = "!room:example.com"
     sid = ch._get_or_create_session(room_id)
