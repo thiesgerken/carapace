@@ -10,7 +10,7 @@ from docker.errors import APIError, DockerException, ImageNotFound, NotFound
 from docker.types import Mount as DockerMount
 from loguru import logger
 
-from carapace.sandbox.runtime import ContainerConfig, ContainerGoneError, ExecResult
+from carapace.sandbox.runtime import ContainerConfig, ContainerGoneError, ContainerRuntime, ExecResult
 
 _FALLBACK_SOCKETS = (Path.home() / ".docker/run/docker.sock",)
 
@@ -38,7 +38,7 @@ def _connect() -> docker.DockerClient:
     raise DockerException("Cannot connect to Docker. Is Docker Desktop running?")
 
 
-class DockerRuntime:
+class DockerRuntime(ContainerRuntime):
     def __init__(self) -> None:
         self._client = _connect()
         # Maps logical network name → actual Docker network name.
