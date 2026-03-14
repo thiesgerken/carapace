@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import math
 
 import markdown as md
 
@@ -70,14 +69,55 @@ def format_command_result_text(result: CommandResult) -> str:
             return "\n".join(lines)
 
         case "usage":
-            costs = data.get("costs", {})
-            total = float(costs.get("total", math.nan))
-            lines = [f"**Token usage** (est. total: {total:0.2f}$)\n"]
-            for model, usage in data.get("models", {}).items():
-                inp = usage.get("input_tokens", 0)
-                out = usage.get("output_tokens", 0)
-                lines.append(f"- `{model}`: {inp} in / {out} out")
-            return "\n".join(lines)
+            models: dict[str, dict] = data.get("models", {})
+            categories: dict[str, dict] = data.get("categories", {})
+            costs: dict[str, str] = data.get("costs", {})
+            total_input = data.get("total_input", 0)
+            total_output = data.get("total_output", 0)
+            total_cost = float(costs.get("total", 0))
+
+            if not models and not categories:
+                return "No token usage recorded yet."
+
+            has_cache = any(
+                b.get("cache_read_tokens") or b.get("cache_write_tokens")
+                for b in [*models.values(), *categories.values()]
+            )
+
+            def _table(title: str, rows: dict[str, dict], *, show_cost: bool = False) -> str:
+                hdr = "| | Input | Output |"
+                sep = "|---|---:|---:|"
+                if has_cache:
+                    hdr += " Cache R | Cache W |"
+                    sep += "---:|---:|"
+                hdr += " Req |"
+                sep += "---:|"
+                if show_cost:
+                    hdr += " Cost |"
+                    sep += "---:|"
+
+                lines = [f"**{title}**\n", hdr, sep]
+                for name, b in rows.items():
+                    row = f"| {name} | {b.get('input_tokens', 0):,} | {b.get('output_tokens', 0):,} |"
+                    if has_cache:
+                        row += f" {b.get('cache_read_tokens', 0):,} | {b.get('cache_write_tokens', 0):,} |"
+                    row += f" {b.get('requests', 0)} |"
+                    if show_cost:
+                        c = costs.get(name, "0")
+                        row += f" ${float(c):.4f} |" if c != "0" else " - |"
+                    lines.append(row)
+                return "\n".join(lines)
+
+            parts: list[str] = []
+            if models:
+                parts.append(_table("By Model", models, show_cost=True))
+            if categories:
+                parts.append(_table("By Category", categories))
+
+            total_tokens = total_input + total_output
+            cost_str = f" | ${total_cost:.4f}" if total_cost else ""
+            parts.append(f"**Total:** {total_tokens:,} tokens ({total_input:,} in + {total_output:,} out){cost_str}")
+            return "\n\n".join(parts)
 
         case _:
             return f"Command result: {json.dumps(data, indent=2, default=str)}"
