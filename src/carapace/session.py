@@ -16,11 +16,13 @@ from loguru import logger
 from pydantic_ai import ModelMessage, ModelMessagesTypeAdapter, ToolDenied
 
 import carapace.security as security_mod
+from carapace.agent_loop import run_agent_turn
+from carapace.memory import MemoryStore
 from carapace.models import Config, Deps, SessionState, SkillInfo, UsageTracker
 from carapace.sandbox.manager import SandboxManager
 from carapace.security.context import SessionSecurity, UserVouchedEntry
 from carapace.security.sentinel import Sentinel
-from carapace.ws_models import ApprovalRequest, ApprovalResponse, ProxyApprovalResponse, TurnUsage
+from carapace.ws_models import SLASH_COMMANDS, ApprovalRequest, ApprovalResponse, ProxyApprovalResponse, TurnUsage
 
 # ---------------------------------------------------------------------------
 # Subscriber protocol — channels (WebSocket, Matrix, …) implement this
@@ -429,15 +431,11 @@ class SessionEngine:
         if not active:
             return None
 
-        from carapace.memory import MemoryStore
-
         parts = command.strip().split(maxsplit=1)
         cmd = parts[0].lower()
 
         if cmd == "/help":
-            from carapace.server import _SLASH_COMMANDS
-
-            return {"command": "help", "data": {"commands": _SLASH_COMMANDS}}
+            return {"command": "help", "data": {"commands": SLASH_COMMANDS}}
 
         if cmd == "/security":
             policy = self._security_md or "(no SECURITY.md loaded)"
@@ -506,8 +504,6 @@ class SessionEngine:
         origin: SessionSubscriber | None = None,
     ) -> None:
         """Execute a single agent turn with semaphore-bounded LLM access."""
-        from carapace.agent_loop import run_agent_turn
-
         session_id = active.state.session_id
 
         def _tool_call_cb(tool: str, args: dict[str, Any], detail: str) -> None:

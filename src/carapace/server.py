@@ -34,6 +34,7 @@ from carapace.sandbox.proxy import ProxyServer
 from carapace.session import SessionEngine, SessionManager
 from carapace.skills import SkillRegistry
 from carapace.ws_models import (
+    SLASH_COMMANDS,
     ApprovalRequest,
     ApprovalResponse,
     Cancelled,
@@ -373,22 +374,9 @@ async def _send(ws: WebSocket, msg: ServerEnvelope) -> None:
     await ws.send_json(msg.model_dump())
 
 
-_SLASH_COMMANDS = [
-    {"command": "/security", "description": "Show security policy summary"},
-    {"command": "/approve-context", "description": "Vouch for the current agent context as trustworthy"},
-    {"command": "/session", "description": "Show current session state"},
-    {"command": "/skills", "description": "List available skills"},
-    {"command": "/memory", "description": "List memory files"},
-    {"command": "/usage", "description": "Show token usage for this session"},
-    {"command": "/verbose", "description": "Toggle tool call display"},
-    {"command": "/quit", "description": "Disconnect"},
-    {"command": "/help", "description": "Show this help"},
-]
-
-
 @app.get("/commands")
 async def list_commands(_token: str = Depends(_verify_token)) -> list[dict[str, str]]:
-    return _SLASH_COMMANDS
+    return SLASH_COMMANDS
 
 
 class WebSocketSubscriber:

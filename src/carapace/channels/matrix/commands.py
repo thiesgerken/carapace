@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import carapace.security as security_mod
+from carapace.memory import MemoryStore
 from carapace.models import Deps
+from carapace.security.context import UserVouchedEntry
 from carapace.ws_models import CommandResult
 
 
@@ -18,8 +20,6 @@ def handle_matrix_slash_command(
     This mirrors the logic that used to live in ``server._handle_slash_command``
     but works without depending on server-module globals.
     """
-    from carapace.memory import MemoryStore
-
     parts = command.strip().split(maxsplit=1)
     cmd = parts[0].lower()
 
@@ -46,8 +46,6 @@ def handle_matrix_slash_command(
         )
 
     if cmd == "/approve-context":
-        from carapace.security.context import UserVouchedEntry
-
         session_id = deps.session_state.session_id
         security_mod.append_log(session_id, UserVouchedEntry())
         return CommandResult(
