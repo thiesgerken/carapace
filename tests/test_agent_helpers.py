@@ -3,21 +3,9 @@
 from pathlib import Path
 from unittest.mock import MagicMock
 
-from carapace.agent import _resolve_path, build_system_prompt
+from carapace.agent import build_system_prompt
 from carapace.models import Config, Deps, SessionState, UsageTracker
 from carapace.sandbox.manager import SandboxManager
-
-
-def test_resolve_path_normal(tmp_path: Path):
-    err, resolved = _resolve_path(tmp_path, "notes/todo.md")
-    assert err is None
-    assert str(resolved).startswith(str(tmp_path))
-
-
-def test_resolve_path_traversal(tmp_path: Path):
-    err, _ = _resolve_path(tmp_path, "../../etc/passwd")
-    assert err is not None
-    assert "escapes" in err
 
 
 def test_build_system_prompt_minimal(tmp_path: Path):

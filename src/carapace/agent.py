@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 from loguru import logger
@@ -44,14 +43,6 @@ def _notify_approved_start(ctx: RunContext[Deps], tool_name: str, args: dict[str
 def _notify_result(ctx: RunContext[Deps], tool_name: str, result: str) -> None:
     if ctx.deps.tool_result_callback:
         ctx.deps.tool_result_callback(tool_name, result[:2000])
-
-
-def _resolve_path(data_dir: Path, path: str) -> tuple[str | None, Path]:
-    """Resolve a path within data_dir. Returns (error, resolved_path)."""
-    full_path = (data_dir / path).resolve()
-    if not str(full_path).startswith(str(data_dir.resolve())):
-        return "Error: path escapes data directory", full_path
-    return None, full_path
 
 
 def build_system_prompt(deps: Deps) -> str:
