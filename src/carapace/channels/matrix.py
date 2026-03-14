@@ -659,7 +659,7 @@ class MatrixChannel:
                 # Engine mode: bridge via submit_approval
                 sub = self._room_subscribers.get(room_id)
                 tool_call_id = sub._approval_events.get(event.reacts_to) if sub else None
-                if tool_call_id:
+                if sub and tool_call_id:
                     await self._engine.submit_approval(
                         session_id,
                         ApprovalResponse(tool_call_id=tool_call_id, approved=approved),
@@ -680,7 +680,7 @@ class MatrixChannel:
             if self._engine and session_id:
                 sub = self._room_subscribers.get(room_id)
                 request_id = sub._domain_events.get(event.reacts_to) if sub else None
-                if request_id:
+                if sub and request_id:
                     decision = "allow" if approved else "deny"
                     await self._engine.submit_approval(
                         session_id,
