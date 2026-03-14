@@ -4,12 +4,12 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Any
 
 from genai_prices import Usage as PriceUsage
 from genai_prices import calc_price
 from loguru import logger
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 from pydantic_ai.usage import RunUsage
 
 from carapace.sandbox.manager import SandboxManager
@@ -20,12 +20,35 @@ from carapace.sandbox.manager import SandboxManager
 class SessionState(BaseModel):
     session_id: str
     channel_type: str = "cli"
-    channel_ref: str = ""
-    title: str = ""
+    channel_ref: str | None = None
+    title: str | None = None
     approved_credentials: list[str] = []
     approved_operations: list[str] = []
-    created_at: Annotated[datetime, Field(default_factory=lambda: datetime.now(tz=UTC))]
-    last_active: Annotated[datetime, Field(default_factory=lambda: datetime.now(tz=UTC))]
+    created_at: datetime
+    last_active: datetime
+
+    @classmethod
+    def now(
+        cls,
+        *,
+        session_id: str,
+        channel_type: str = "cli",
+        channel_ref: str | None = None,
+        title: str | None = None,
+        approved_credentials: list[str] | None = None,
+        approved_operations: list[str] | None = None,
+    ) -> SessionState:
+        ts = datetime.now(tz=UTC)
+        return cls(
+            session_id=session_id,
+            channel_type=channel_type,
+            channel_ref=channel_ref,
+            title=title,
+            approved_credentials=approved_credentials or [],
+            approved_operations=approved_operations or [],
+            created_at=ts,
+            last_active=ts,
+        )
 
 
 # --- Configuration ---
@@ -61,6 +84,7 @@ class AgentConfig(BaseModel):
     model: str = "anthropic:claude-sonnet-4-6"
     sentinel_model: str = "anthropic:claude-haiku-4-5"
     title_model: str = "anthropic:claude-haiku-4-5"
+    max_parallel_llm: int = 2
 
 
 class CredentialsConfig(BaseModel):
@@ -216,4 +240,4 @@ class Deps(BaseModel):
     verbose: bool = True
     tool_call_callback: Callable[[str, dict[str, Any], str], None] | None = None
     tool_result_callback: Callable[[str, str], None] | None = None
-    usage_tracker: Annotated[UsageTracker, Field(default_factory=UsageTracker)]
+    usage_tracker: UsageTracker

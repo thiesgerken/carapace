@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from loguru import logger
 from pydantic_ai import ApprovalRequired
@@ -28,6 +28,8 @@ SAFE_TOOLS: frozenset[str] = frozenset(
         "use_skill",
     }
 )
+
+# --- Legacy global dicts (kept for backward compatibility during transition) ---
 
 _sessions: dict[str, SessionSecurity] = {}
 _sentinels: dict[str, Sentinel] = {}
@@ -84,6 +86,13 @@ def cleanup_session(session_id: str) -> None:
     _session_refs.pop(session_id, None)
 
 
+def destroy_session(session_id: str) -> None:
+    """Unconditionally remove all security state for a session."""
+    _sessions.pop(session_id, None)
+    _sentinels.pop(session_id, None)
+    _session_refs.pop(session_id, None)
+
+
 def append_log(session_id: str, entry: ActionLogEntry) -> None:
     session = _sessions.get(session_id)
     if session:
@@ -106,20 +115,41 @@ async def evaluate(
     verbose: bool = True,
     tool_call_callback: Any = None,
 ) -> None:
+    """Main security gate (global-dict lookup). Delegates to evaluate_with."""
+    session = _sessions.get(session_id)
+    sentinel = _sentinels.get(session_id)
+    if session is None or sentinel is None:
+        raise RuntimeError(f"No security session for {session_id}")
+    await evaluate_with(
+        session,
+        sentinel,
+        tool_name,
+        args,
+        usage_tracker=usage_tracker,
+        verbose=verbose,
+        tool_call_callback=tool_call_callback,
+    )
+
+
+async def evaluate_with(
+    session: SessionSecurity,
+    sentinel: Sentinel,
+    tool_name: str,
+    args: dict[str, Any],
+    *,
+    usage_tracker: UsageTracker | None = None,
+    verbose: bool = True,
+    tool_call_callback: Any = None,
+) -> None:
     """Main security gate. Auto-allows safe tools; asks the sentinel for everything else.
 
-    Raises ApprovalRequired if the sentinel escalates, or ToolDenied if denied.
+    Raises ApprovalRequired if the sentinel escalates, or SecurityDeniedError if denied.
     """
-    session = _sessions.get(session_id)
-    if session is None:
-        logger.warning(f"No security session for {session_id}, auto-allowing {tool_name}")
-        return
-
     if tool_name in SAFE_TOOLS:
         entry = ToolCallEntry(tool=tool_name, args=_truncate_args(args), decision="auto_allowed")
         session.append(entry)
         session.write_audit(
-            AuditEntry(
+            AuditEntry.now(
                 kind="tool_call",
                 tool=tool_name,
                 args_summary=_truncate_args(args),
@@ -128,11 +158,6 @@ async def evaluate(
         )
         if verbose:
             _log_tool_call(tool_name, args, "[safe-list] auto-allowed", tool_call_callback)
-        return
-
-    sentinel = _sentinels.get(session_id)
-    if sentinel is None:
-        logger.warning(f"No sentinel for session {session_id}, auto-allowing {tool_name}")
         return
 
     verdict = await sentinel.evaluate_tool_call(
@@ -158,7 +183,7 @@ async def evaluate(
 
     if verdict.decision == "deny":
         session.write_audit(
-            AuditEntry(
+            AuditEntry.now(
                 kind="tool_call",
                 tool=tool_name,
                 args_summary=_truncate_args(args),
@@ -170,7 +195,6 @@ async def evaluate(
         raise SecurityDeniedError(verdict.explanation)
 
     if verdict.decision == "escalate":
-        # Audit entry is deferred — written by agent_loop after user decision.
         raise ApprovalRequired(
             metadata={
                 "tool": tool_name,
@@ -184,7 +208,7 @@ async def evaluate(
 
     # allow
     session.write_audit(
-        AuditEntry(
+        AuditEntry.now(
             kind="tool_call",
             tool=tool_name,
             args_summary=_truncate_args(args),
@@ -202,19 +226,32 @@ async def evaluate_domain(
     *,
     usage_tracker: UsageTracker | None = None,
 ) -> bool:
+    """Evaluate a proxy domain request (global-dict lookup). Delegates to evaluate_domain_with."""
+    session = _sessions.get(session_id)
+    sentinel = _sentinels.get(session_id)
+    if session is None or sentinel is None:
+        raise RuntimeError(f"No security session for {session_id}")
+    return await evaluate_domain_with(
+        session,
+        sentinel,
+        domain,
+        command,
+        usage_tracker=usage_tracker,
+    )
+
+
+async def evaluate_domain_with(
+    session: SessionSecurity,
+    sentinel: Sentinel,
+    domain: str,
+    command: str,
+    *,
+    usage_tracker: UsageTracker | None = None,
+) -> bool:
     """Evaluate a proxy domain request. Returns True to allow, False to deny.
 
     If the sentinel escalates, delegates to the session's user escalation callback.
     """
-    session = _sessions.get(session_id)
-    if session is None:
-        logger.warning(f"No security session for {session_id}, denying domain {domain}")
-        return False
-
-    sentinel = _sentinels.get(session_id)
-    if sentinel is None:
-        logger.warning(f"No sentinel for session {session_id}, denying domain {domain}")
-        return False
 
     verdict = await sentinel.evaluate_domain(
         session,
@@ -245,7 +282,7 @@ async def evaluate_domain(
     session.notify_domain_decision(domain, detail)
 
     session.write_audit(
-        AuditEntry(
+        AuditEntry.now(
             kind="proxy_domain",
             domain=domain,
             sentinel_verdict=verdict,
@@ -257,7 +294,7 @@ async def evaluate_domain(
     return allowed
 
 
-def _verdict_to_decision(verdict: SentinelVerdict) -> str:
+def _verdict_to_decision(verdict: SentinelVerdict) -> Literal["allowed", "escalated", "denied"]:
     match verdict.decision:
         case "allow":
             return "allowed"

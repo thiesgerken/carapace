@@ -98,13 +98,13 @@ async def run_agent_turn(
             if isinstance(sentinel_verdict, SentinelVerdict):
                 security.write_audit(
                     session_id,
-                    AuditEntry(
+                    AuditEntry.now(
                         kind="tool_call",
-                        tool=meta.get("tool", ""),
+                        tool=meta.get("tool"),
                         args_summary=meta.get("args_summary", {}),
                         sentinel_verdict=sentinel_verdict,
                         final_decision="allowed" if decision is True else "denied",
-                        explanation=meta.get("explanation", ""),
+                        explanation=meta.get("explanation"),
                     ),
                 )
 

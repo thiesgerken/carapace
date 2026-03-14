@@ -130,7 +130,6 @@ export function ChatView({ server, token, sessionId, onTitleUpdate }: ChatViewPr
     if (queued) {
       queueRef.current = null;
       setQueuedMessage(null);
-      setMessages((prev) => [...prev, { kind: "user", content: queued }]);
       sendRef.current({ type: "message", content: queued });
       // stay in waiting state
     } else {
@@ -149,6 +148,7 @@ export function ChatView({ server, token, sessionId, onTitleUpdate }: ChatViewPr
         finishWaiting();
         break;
       case "tool_call": {
+        setWaiting(true); // agent is active (may restore after reconnect)
         const isLoading =
           msg.tool !== "proxy_domain" &&
           !msg.detail.includes("deny]") &&
@@ -166,6 +166,7 @@ export function ChatView({ server, token, sessionId, onTitleUpdate }: ChatViewPr
         break;
       }
       case "tool_result":
+        setWaiting(true);
         setMessages((prev) => {
           const updated = [...prev];
           for (let i = updated.length - 1; i >= 0; i--) {
@@ -179,9 +180,11 @@ export function ChatView({ server, token, sessionId, onTitleUpdate }: ChatViewPr
         });
         break;
       case "approval_request":
+        setWaiting(true);
         setMessages((prev) => [...prev, { kind: "approval", request: msg }]);
         break;
       case "proxy_approval_request":
+        setWaiting(true);
         setMessages((prev) => [
           ...prev,
           { kind: "proxy_approval", request: msg },
@@ -208,6 +211,16 @@ export function ChatView({ server, token, sessionId, onTitleUpdate }: ChatViewPr
       case "session_title":
         onTitleUpdate?.(msg.title);
         break;
+      case "status":
+        if (msg.agent_running) setWaiting(true);
+        break;
+      case "user_message":
+        setWaiting(true);
+        setMessages((prev) => [
+          ...prev,
+          { kind: "user", content: msg.content },
+        ]);
+        break;
       case "token":
         // future streaming support
         break;
@@ -233,7 +246,6 @@ export function ChatView({ server, token, sessionId, onTitleUpdate }: ChatViewPr
       queueRef.current = content;
       setQueuedMessage(content);
     } else {
-      setMessages((prev) => [...prev, { kind: "user", content }]);
       send({ type: "message", content });
       setWaiting(true);
     }

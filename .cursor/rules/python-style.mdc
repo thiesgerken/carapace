@@ -20,7 +20,8 @@ Feel free to tell the user that a given request cannot easily be implemented wit
 - Use `dict`, `list`, `tuple` lowercase generics (not `Dict`, `List`, `Tuple`).
 - Leverage `TypeAlias`, `Literal`, `TypeVar`, `Protocol` where they add clarity.
 - Use Pydantic `BaseModel` for structured data — no raw dicts, no stdlib `@dataclass`.
-- Use `Annotated[type, Field(...)]` for field metadata/defaults — never `x: type = Field(...)` or `= field(...)`.
+- Use `Annotated[type, Field(...)]` for field metadata/constraints — never `x: type = Field(...)` or `= field(...)`.
+- For fields with mutable or computed defaults (e.g. `datetime.now()`), prefer a `@classmethod` factory (e.g. `MyModel.now(...)`) over `default_factory`; Pyright doesn't see `Annotated[type, Field(default_factory=...)]` as providing a default.
 - Never assign `None` to a non-nullable field with `# type: ignore` — make the field genuinely required or genuinely optional.
 
 ## Async by Default
@@ -35,7 +36,7 @@ Feel free to tell the user that a given request cannot easily be implemented wit
 - Use early returns to reduce nesting.
 - Decompose with small, pure helper functions over deep method chains.
 - Prefer expressions over statements where readable (ternary, walrus `:=`).
-- Avoid mutable default arguments; use `Annotated[type, Field(default_factory=...)]`.
+- Avoid mutable default arguments; use `@classmethod` factories or `Annotated[type, Field(default_factory=...)]` (note: `default_factory` inside `Annotated` is invisible to Pyright — prefer factory classmethods when the field should be omittable).
 
 ## Modern Python (3.12+)
 

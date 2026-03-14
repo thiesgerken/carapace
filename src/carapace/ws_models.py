@@ -130,6 +130,20 @@ class SessionTitleUpdate(BaseModel):
     title: str
 
 
+class StatusUpdate(BaseModel):
+    """Server → Client: session status on connect."""
+
+    type: Literal["status"] = "status"
+    agent_running: bool
+
+
+class UserMessageNotification(BaseModel):
+    """Server → Client: a user message arrived (from another channel)."""
+
+    type: Literal["user_message"] = "user_message"
+    content: str
+
+
 ServerEnvelope = (
     TokenChunk
     | ToolCallInfo
@@ -141,4 +155,6 @@ ServerEnvelope = (
     | ErrorMessage
     | Cancelled
     | SessionTitleUpdate
+    | StatusUpdate
+    | UserMessageNotification
 )

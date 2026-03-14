@@ -97,6 +97,16 @@ export interface SessionTitleUpdate {
   title: string;
 }
 
+export interface StatusUpdate {
+  type: "status";
+  agent_running: boolean;
+}
+
+export interface UserMessageNotification {
+  type: "user_message";
+  content: string;
+}
+
 export type ServerMessage =
   | TokenChunk
   | ToolCallInfo
@@ -107,7 +117,9 @@ export type ServerMessage =
   | CommandResult
   | ErrorMessage
   | Cancelled
-  | SessionTitleUpdate;
+  | SessionTitleUpdate
+  | StatusUpdate
+  | UserMessageNotification;
 
 // WebSocket protocol — Client → Server
 

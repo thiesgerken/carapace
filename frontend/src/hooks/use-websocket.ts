@@ -20,20 +20,37 @@ export function useWebSocket(
   onDisconnectRef.current = onDisconnect;
   const retriesRef = useRef(0);
   const unmountedRef = useRef(false);
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const connect = useCallback(() => {
     if (!url || unmountedRef.current) return;
+
+    // Close any existing connection before opening a new one
+    if (wsRef.current) {
+      wsRef.current.onclose = null; // prevent stale onclose from firing
+      wsRef.current.close();
+      wsRef.current = null;
+    }
+
+    // Clear any pending reconnect timer
+    if (reconnectTimerRef.current !== null) {
+      clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
 
     setStatus("connecting");
     const ws = new WebSocket(url);
     wsRef.current = ws;
 
     ws.onopen = () => {
+      if (wsRef.current !== ws) return; // stale
       setStatus("connected");
       retriesRef.current = 0;
     };
 
     ws.onclose = () => {
+      // Ignore if a newer connection already replaced this one
+      if (wsRef.current !== ws) return;
       wsRef.current = null;
       setStatus("disconnected");
       onDisconnectRef.current?.();
@@ -44,7 +61,8 @@ export function useWebSocket(
           Math.min(retriesRef.current, RECONNECT_DELAYS.length - 1)
         ];
       retriesRef.current++;
-      setTimeout(() => {
+      reconnectTimerRef.current = setTimeout(() => {
+        reconnectTimerRef.current = null;
         if (!unmountedRef.current) connect();
       }, delay);
     };
@@ -54,6 +72,7 @@ export function useWebSocket(
     };
 
     ws.onmessage = (event) => {
+      if (wsRef.current !== ws) return; // stale
       try {
         const msg = JSON.parse(event.data) as ServerMessage;
         onMessageRef.current(msg);
@@ -70,8 +89,15 @@ export function useWebSocket(
 
     return () => {
       unmountedRef.current = true;
-      wsRef.current?.close();
-      wsRef.current = null;
+      if (reconnectTimerRef.current !== null) {
+        clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
+      }
+      if (wsRef.current) {
+        wsRef.current.onclose = null; // prevent stale onclose
+        wsRef.current.close();
+        wsRef.current = null;
+      }
     };
   }, [connect]);
 
