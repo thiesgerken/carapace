@@ -154,6 +154,11 @@ class SessionEngine:
         )
         self._active[session_id] = active
 
+        # Wire security callbacks so domain escalation / info works
+        # even outside an agent turn (e.g. during sandbox setup).
+        security.set_user_escalation_callback(self._make_domain_escalation_cb(active))
+        security.set_domain_info_callback(self._make_domain_info_cb(active))
+
         # Register a domain-approval callback so the sandbox proxy can
         # evaluate domain requests through the per-session sentinel.
         self._sandbox_mgr.set_domain_approval_callback(
@@ -384,11 +389,6 @@ class SessionEngine:
             task = asyncio.ensure_future(self._broadcast(active, "on_tool_result", tool, result))
             active._pending_sends.add(task)
             task.add_done_callback(active._pending_sends.discard)
-
-        # Wire up security callbacks for domain escalation / info
-        if active.security:
-            active.security.set_user_escalation_callback(self._make_domain_escalation_cb(active))
-            active.security.set_domain_info_callback(self._make_domain_info_cb(active))
 
         try:
             async with active.lock:
