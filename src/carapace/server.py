@@ -98,6 +98,14 @@ async def lifespan(app: FastAPI):
     ensure_data_dir(_data_dir)
     _config = load_config(_data_dir)
 
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_config.server.cors_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
     if _config.carapace.logfire_token:
         logfire.configure(token=_config.carapace.logfire_token, console=False)
         logfire.instrument_pydantic_ai()
@@ -209,14 +217,6 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Carapace", lifespan=lifespan)
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
 _bearer_scheme = HTTPBearer()
 
