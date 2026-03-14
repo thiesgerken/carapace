@@ -154,6 +154,8 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
             )
 
         ctx.deps.activated_skills.append(skill_name)
+        if skill_name not in ctx.deps.session_state.activated_skills:
+            ctx.deps.session_state.activated_skills.append(skill_name)
 
         skill_info = next((s for s in ctx.deps.skill_catalog if s.name == skill_name), None)
         ctx.deps.security.append(

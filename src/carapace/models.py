@@ -25,6 +25,7 @@ class SessionState(BaseModel):
     title: str | None = None
     approved_credentials: list[str] = []
     approved_operations: list[str] = []
+    activated_skills: list[str] = []
     created_at: datetime
     last_active: datetime
 
@@ -92,7 +93,7 @@ class CredentialsConfig(BaseModel):
     backend: str = "mock"
 
 
-_SANDBOX_IMAGE_VERSION = "0.22.0"
+_SANDBOX_IMAGE_VERSION = "0.23.0"
 
 
 class SandboxConfig(BaseModel):

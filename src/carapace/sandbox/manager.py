@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import re
@@ -108,7 +109,6 @@ class SessionContainer(BaseModel):
     ip_address: str | None = None
     created_at: float
     last_used: float
-    activated_skills: list[str] = []
 
 
 def _validate_skill_name(skill_name: str) -> str | None:
@@ -147,6 +147,9 @@ class SandboxManager:
         self._exec_temp_domains: dict[str, set[str]] = {}  # session_id -> domains, cleared after each exec
         self._session_current_command: dict[str, str] = {}
         self._domain_approval_cbs: dict[str, Callable[[str, str], Awaitable[bool]]] = {}
+        self._exec_locks: dict[str, asyncio.Lock] = {}
+        self._proxy_bypass_sessions: set[str] = set()
+        self._get_activated_skills_cb: Callable[[str], list[str]] | None = None
         logger.info(
             f"SandboxManager initialized (image={base_image}, "
             + f"network={network_name}, proxy_port={proxy_port}, idle_timeout={idle_timeout_minutes}m)"
@@ -154,13 +157,23 @@ class SandboxManager:
         if host_data_dir:
             logger.info(f"Host data dir override: {host_data_dir} (container sees {data_dir})")
 
-    async def ensure_session(self, session_id: str) -> SessionContainer:
+    def set_activated_skills_callback(self, cb: Callable[[str], list[str]]) -> None:
+        """Register a callback to retrieve activated skills for a session (from persisted state)."""
+        self._get_activated_skills_cb = cb
+
+    def _get_exec_lock(self, session_id: str) -> asyncio.Lock:
+        if session_id not in self._exec_locks:
+            self._exec_locks[session_id] = asyncio.Lock()
+        return self._exec_locks[session_id]
+
+    async def ensure_session(self, session_id: str) -> tuple[SessionContainer, bool]:
+        """Return ``(container, was_created)`` — *was_created* is True when a new container was spun up."""
         if session_id in self._sessions:
             sc = self._sessions[session_id]
             if await self._runtime.is_running(sc.container_id):
                 logger.debug(f"Reusing existing container {sc.container_id[:12]} for session {session_id}")
                 sc.last_used = time.time()
-                return sc
+                return sc, False
             logger.warning(
                 f"Container {sc.container_id[:12]} for session {session_id} is no longer running, recreating"
             )
@@ -217,7 +230,7 @@ class SandboxManager:
         )
         self._sessions[session_id] = sc
         logger.info(f"Created sandbox container {container_id[:12]} for session {session_id} (IP: {ip})")
-        return sc
+        return sc, True
 
     def _host_path(self, path: Path) -> str:
         """Translate a container-local path to its host-side equivalent for bind mounts.
@@ -296,25 +309,43 @@ class SandboxManager:
             "no_proxy": no_proxy_host,
         }
 
-    async def _exec(self, session_id: str, command: str, timeout: int = 30) -> ExecResult:
-        """Run a command in the sandbox and return the raw ExecResult."""
-        sc = await self.ensure_session(session_id)
-        sc.last_used = time.time()
-        logger.debug(f"Exec in session {session_id}: {command}")
+    async def _exec(
+        self, session_id: str, command: str, timeout: int = 30, *, bypass_proxy: bool = False
+    ) -> ExecResult:
+        """Run a command in the sandbox and return the raw ExecResult.
 
-        self._session_current_command[session_id] = command
-        self._exec_temp_domains[session_id] = set()
-        try:
+        When *bypass_proxy* is True, all proxy domains are temporarily allowed
+        for the duration of this exec (used during venv builds).  The bypass
+        flag is set/cleared **under the exec lock** so no concurrent command
+        can exploit the open window.
+        """
+        async with self._get_exec_lock(session_id):
+            if bypass_proxy:
+                self._proxy_bypass_sessions.add(session_id)
+                logger.info(f"Proxy bypass ENABLED for session {session_id}")
             try:
-                return await self._runtime.exec(sc.container_id, command, timeout=timeout)
-            except ContainerGoneError:
-                logger.warning(f"Container gone for session {session_id}, recreating sandbox")
-                self._prepare_session_recreate(session_id)
-                sc = await self.ensure_session(session_id)
-                return await self._runtime.exec(sc.container_id, command, timeout=timeout)
-        finally:
-            self._session_current_command.pop(session_id, None)
-            self._exec_temp_domains.pop(session_id, None)
+                sc, was_created = await self.ensure_session(session_id)
+                if was_created:
+                    await self._rebuild_skill_venvs(session_id)
+                sc.last_used = time.time()
+                logger.debug(f"Exec in session {session_id}: {command}")
+
+                self._session_current_command[session_id] = command
+                self._exec_temp_domains[session_id] = set()
+                try:
+                    return await self._runtime.exec(sc.container_id, command, timeout=timeout)
+                except ContainerGoneError:
+                    logger.warning(f"Container gone for session {session_id}, recreating sandbox")
+                    self._prepare_session_recreate(session_id)
+                    sc, _ = await self.ensure_session(session_id)
+                    await self._rebuild_skill_venvs(session_id)
+                    return await self._runtime.exec(sc.container_id, command, timeout=timeout)
+            finally:
+                if bypass_proxy:
+                    self._proxy_bypass_sessions.discard(session_id)
+                    logger.info(f"Proxy bypass DISABLED for session {session_id}")
+                self._session_current_command.pop(session_id, None)
+                self._exec_temp_domains.pop(session_id, None)
 
     async def exec_command(self, session_id: str, command: str, timeout: int = 30) -> str:
         """Run a command in the sandbox and return formatted output."""
@@ -384,7 +415,7 @@ class SandboxManager:
         if err := _validate_skill_name(skill_name):
             return err
 
-        sc = await self.ensure_session(session_id)
+        await self.ensure_session(session_id)
 
         master_skill_dir = self._data_dir / "skills" / skill_name
         if not master_skill_dir.exists():
@@ -404,8 +435,6 @@ class SandboxManager:
                 await self._build_skill_venv(session_id, skill_name)
                 venv_msg = "Venv built successfully."
             except SkillVenvError as exc:
-                sc.activated_skills.append(skill_name)
-                sc.last_used = time.time()
                 logger.info(f"Activated skill '{skill_name}' in session {session_id} (with errors)")
                 raise SkillVenvError(
                     f"Skill '{skill_name}' activated at /workspace/skills/{skill_name}/ but "
@@ -414,9 +443,6 @@ class SandboxManager:
                     "You may need to install them manually inside the sandbox."
                 ) from exc
 
-        sc.activated_skills.append(skill_name)
-        sc.last_used = time.time()
-
         logger.info(f"Activated skill '{skill_name}' in session {session_id}")
         result = f"Skill '{skill_name}' activated at /workspace/skills/{skill_name}/"
         if venv_msg:
@@ -424,44 +450,64 @@ class SandboxManager:
         return result
 
     async def _build_skill_venv(self, session_id: str, skill_name: str) -> None:
-        """Build a venv in an ephemeral build container. Raises SkillVenvError on failure."""
+        """Build a skill venv inside the session container with proxy bypass.
+
+        Runs ``uv sync`` inside the session container.  The proxy is temporarily
+        bypassed (all domains allowed) for the duration of the install.
+        """
         if err := _validate_skill_name(skill_name):
             raise SkillVenvError(err)
 
-        skill_host_path = self._data_dir / "sessions" / session_id / "workspace" / "skills" / skill_name
-        build_name = f"carapace-build-{session_id[:8]}-{skill_name}"
-
         logger.info(f"Building venv for skill '{skill_name}' (session {session_id})")
-        config = ContainerConfig(
-            image=self._base_image,
-            name=build_name,
-            labels={"carapace.build": "true", "carapace.session": session_id},
-            mounts=[Mount(source=self._host_path(skill_host_path), target="/build", read_only=False)],
-            network=None,  # needs internet access to fetch packages via uv sync
-            command=["sleep", "infinity"],
+        skill_dir = f"/workspace/skills/{shlex.quote(skill_name)}"
+        result = await self._exec(
+            session_id,
+            f"uv sync --directory {skill_dir}",
+            timeout=120,
+            bypass_proxy=True,
         )
-
-        container_id: str | None = None
-        try:
-            container_id = await self._runtime.create(config)
-            result = await self._runtime.exec(
-                container_id,
-                ["uv", "sync", "--directory", "/build"],
-                timeout=120,
-            )
-            if result.exit_code == 0:
-                logger.info(f"Venv built successfully for skill '{skill_name}'")
-                return
+        if result.exit_code != 0:
             logger.error(f"Venv build failed for skill '{skill_name}' (exit {result.exit_code}): {result.output[:300]}")
             raise SkillVenvError(f"exit {result.exit_code}: {result.output[:500]}")
-        except SkillVenvError:
-            raise
-        except Exception as exc:
-            logger.error(f"Venv build crashed for skill '{skill_name}': {exc}")
-            raise SkillVenvError(str(exc)) from exc
-        finally:
-            if container_id:
-                await self._runtime.remove(container_id)
+        logger.info(f"Venv built successfully for skill '{skill_name}'")
+
+    async def _sync_skill_venv(self, session_id: str, skill_name: str) -> str:
+        """Re-copy pyproject.toml + uv.lock from the trusted master, then rebuild venv."""
+        master = self._data_dir / "skills" / skill_name
+        session = self._data_dir / "sessions" / session_id / "workspace" / "skills" / skill_name
+
+        for filename in ("pyproject.toml", "uv.lock"):
+            src = master / filename
+            dst = session / filename
+            if src.exists():
+                shutil.copy2(src, dst)
+            elif dst.exists():
+                dst.unlink()
+
+        if not (session / "pyproject.toml").exists():
+            return ""
+
+        await self._build_skill_venv(session_id, skill_name)
+        return "Venv rebuilt successfully."
+
+    async def rebuild_skill_venvs(self, session_id: str, activated_skills: list[str]) -> None:
+        """Rebuild venvs for all activated skills.  Called by SessionEngine after container recreation."""
+        for skill_name in activated_skills:
+            skill_dir = self._data_dir / "sessions" / session_id / "workspace" / "skills" / skill_name
+            if (skill_dir / "pyproject.toml").exists():
+                logger.info(f"Rebuilding venv for skill '{skill_name}' after container recreation")
+                try:
+                    await self._sync_skill_venv(session_id, skill_name)
+                except SkillVenvError as exc:
+                    logger.error(f"Failed to rebuild venv for '{skill_name}': {exc}")
+
+    async def _rebuild_skill_venvs(self, session_id: str) -> None:
+        """Internal: rebuild venvs using the activated_skills callback (for _exec recreation)."""
+        if not self._get_activated_skills_cb:
+            return
+        activated = self._get_activated_skills_cb(session_id)
+        if activated:
+            await self.rebuild_skill_venvs(session_id, activated)
 
     async def save_skill(self, session_id: str, skill_name: str) -> str:
         if err := _validate_skill_name(skill_name):
@@ -485,7 +531,19 @@ class SandboxManager:
         )
 
         logger.info(f"Saved skill '{skill_name}' from session {session_id} to {master_skill_dir}")
-        return f"Skill '{skill_name}' saved to data/skills/{skill_name}/"
+
+        venv_msg = ""
+        if (master_skill_dir / "pyproject.toml").exists():
+            try:
+                venv_msg = await self._sync_skill_venv(session_id, skill_name)
+            except SkillVenvError as exc:
+                venv_msg = f"WARNING: venv rebuild failed after save: {exc}"
+                logger.error(venv_msg)
+
+        result = f"Skill '{skill_name}' saved to data/skills/{skill_name}/"
+        if venv_msg:
+            result += f"\n{venv_msg}"
+        return result
 
     async def cleanup_session(self, session_id: str) -> None:
         sc = self._sessions.get(session_id)
@@ -536,6 +594,8 @@ class SandboxManager:
 
     def get_effective_domains(self, session_id: str) -> set[str]:
         """Return the union of permanent and current exec-scoped temp domains."""
+        if session_id in self._proxy_bypass_sessions:
+            return {"*"}
         domains = set(self._allowed_domains.get(session_id, set()))
         domains.update(self._exec_temp_domains.get(session_id, set()))
         return domains
@@ -594,5 +654,7 @@ class SandboxManager:
         if clear_exec_state:
             self._exec_temp_domains.pop(session_id, None)
             self._session_current_command.pop(session_id, None)
+            self._proxy_bypass_sessions.discard(session_id)
+            self._exec_locks.pop(session_id, None)
         if clear_domain_state:
             self._domain_approval_cbs.pop(session_id, None)

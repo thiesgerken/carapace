@@ -99,6 +99,9 @@ class SessionEngine:
         self._active: dict[str, ActiveSession] = {}
         self._llm_semaphore = asyncio.Semaphore(config.agent.max_parallel_llm)
 
+        # Let SandboxManager retrieve activated skills for venv rebuild on container recreation
+        sandbox_mgr.set_activated_skills_callback(self._get_activated_skills)
+
     # -- public access to file I/O manager --
 
     @property
@@ -166,6 +169,16 @@ class SessionEngine:
         )
 
         return active
+
+    def _get_activated_skills(self, session_id: str) -> list[str]:
+        """Return activated skills for a session (from in-memory state or disk)."""
+        active = self._active.get(session_id)
+        if active:
+            return list(active.state.activated_skills)
+        state = self._session_mgr.load_state(session_id)
+        if state:
+            return list(state.activated_skills)
+        return []
 
     def get_active(self, session_id: str) -> ActiveSession | None:
         """Return the ``ActiveSession`` if loaded, else ``None``."""
