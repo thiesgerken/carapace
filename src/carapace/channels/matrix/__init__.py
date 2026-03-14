@@ -9,7 +9,6 @@ from __future__ import annotations
 from carapace.channels.matrix.approval import PendingApproval as _PendingApproval
 from carapace.channels.matrix.approval import PendingDomainApproval as _PendingDomainApproval
 from carapace.channels.matrix.channel import MatrixChannel
-from carapace.channels.matrix.commands import handle_matrix_slash_command as _handle_matrix_slash_command
 from carapace.channels.matrix.formatting import (
     format_approval_request as _format_approval_request,
 )
@@ -30,6 +29,5 @@ __all__ = [
     "_format_approval_request",
     "_format_command_result_text",
     "_format_domain_escalation",
-    "_handle_matrix_slash_command",
     "_md_to_html",
 ]

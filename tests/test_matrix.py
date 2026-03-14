@@ -17,7 +17,7 @@ from carapace.channels.matrix import (
     _PendingDomainApproval,
 )
 from carapace.models import MatrixChannelConfig
-from carapace.session import SessionManager
+from carapace.session import SessionEngine, SessionManager
 from carapace.ws_models import ApprovalRequest, CommandResult
 
 # ---------------------------------------------------------------------------
@@ -34,6 +34,19 @@ def _make_config(**kwargs) -> MatrixChannelConfig:
         "allowed_rooms": [],
     }
     return MatrixChannelConfig(**(defaults | kwargs))
+
+
+def _make_engine_mock() -> MagicMock:
+    """Build a mock SessionEngine with commonly used async methods."""
+    engine = MagicMock(spec=SessionEngine)
+    engine.submit_approval = AsyncMock()
+    engine.submit_cancel = AsyncMock()
+    engine.submit_message = AsyncMock()
+    engine.handle_slash_command = MagicMock(return_value=None)
+    engine.subscribe = MagicMock()
+    engine.unsubscribe = MagicMock()
+    engine.deactivate = MagicMock()
+    return engine
 
 
 def _make_channel(tmp_path: Path, **config_kwargs) -> MatrixChannel:
@@ -59,6 +72,7 @@ def _make_channel(tmp_path: Path, **config_kwargs) -> MatrixChannel:
         skill_catalog=[],
         agent_model=None,
         sandbox_mgr=sandbox_mgr,
+        engine=_make_engine_mock(),
     )
     # Replace the nio client with a mock
     channel._client = AsyncMock(spec=nio.AsyncClient)
@@ -215,6 +229,8 @@ async def test_handle_command_unknown(tmp_path: Path):
     room_id = "!room:example.com"
     ch._get_or_create_session(room_id)
     ch._client.room_send = AsyncMock(return_value=MagicMock(event_id="$evt1"))
+    # Engine returns None for unknown commands
+    ch._engine.handle_slash_command.return_value = None
 
     await ch._handle_command(room_id, ch._room_sessions[room_id], "/foobar", "@alice:example.com")
 
@@ -262,32 +278,52 @@ async def test_pending_approval_resolves_deny():
 
 @pytest.mark.anyio
 async def test_on_reaction_approves_pending(tmp_path: Path):
+    from carapace.channels.matrix.subscriber import MatrixSubscriber
+
     ch = _make_channel(tmp_path)
+    room_id = "!room:example.com"
+    session_id = ch._get_or_create_session(room_id)
+
+    sub = MatrixSubscriber(ch, room_id)
+    sub._approval_events["$approval_event"] = "call-1"
+    ch._room_subscribers[room_id] = sub
 
     pa = _PendingApproval("$approval_event", "call-1")
     ch._pending_approvals["$approval_event"] = pa
 
     reaction_event = _make_reaction_event(reacts_to="$approval_event", key="✅")
-    room = _make_room()
+    room = _make_room(room_id=room_id)
     await ch._on_reaction(room, reaction_event)
 
-    assert pa._future.done()
-    assert pa._future.result() is True
+    ch._engine.submit_approval.assert_called_once()
+    call_args = ch._engine.submit_approval.call_args
+    assert call_args[0][0] == session_id
+    assert call_args[0][1].approved is True
 
 
 @pytest.mark.anyio
 async def test_on_reaction_denies_pending(tmp_path: Path):
+    from carapace.channels.matrix.subscriber import MatrixSubscriber
+
     ch = _make_channel(tmp_path)
+    room_id = "!room:example.com"
+    session_id = ch._get_or_create_session(room_id)
+
+    sub = MatrixSubscriber(ch, room_id)
+    sub._approval_events["$approval_event"] = "call-1"
+    ch._room_subscribers[room_id] = sub
 
     pa = _PendingApproval("$approval_event", "call-1")
     ch._pending_approvals["$approval_event"] = pa
 
     reaction_event = _make_reaction_event(reacts_to="$approval_event", key="❌")
-    room = _make_room()
+    room = _make_room(room_id=room_id)
     await ch._on_reaction(room, reaction_event)
 
-    assert pa._future.done()
-    assert pa._future.result() is False
+    ch._engine.submit_approval.assert_called_once()
+    call_args = ch._engine.submit_approval.call_args
+    assert call_args[0][0] == session_id
+    assert call_args[0][1].approved is False
 
 
 @pytest.mark.anyio
@@ -301,47 +337,63 @@ async def test_on_reaction_ignores_unrelated_event(tmp_path: Path):
     room = _make_room()
     await ch._on_reaction(room, reaction_event)
 
-    assert not pa._future.done()
+    ch._engine.submit_approval.assert_not_called()
 
 
 @pytest.mark.anyio
-async def test_approve_command_resolves_room_pending(tmp_path: Path):
+async def test_approve_command_resolves_via_engine(tmp_path: Path):
+    from carapace.channels.matrix.subscriber import MatrixSubscriber
+
     ch = _make_channel(tmp_path)
     room_id = "!room:example.com"
     sid = ch._get_or_create_session(room_id)
     ch._client.room_send = AsyncMock(return_value=MagicMock(event_id="$evt"))
 
-    pa = _PendingApproval("$approval", "call-1")
-    ch._room_pending[room_id] = pa
+    sub = MatrixSubscriber(ch, room_id)
+    sub._approval_events["$approval"] = "call-1"
+    ch._room_subscribers[room_id] = sub
+    ch._pending_approvals["$approval"] = _PendingApproval("$approval", "call-1")
 
     await ch._handle_command(room_id, sid, "/allow", "@alice:example.com")
 
-    assert pa._future.done()
-    assert pa._future.result() is True
+    ch._engine.submit_approval.assert_called_once()
+    call_args = ch._engine.submit_approval.call_args
+    assert call_args[0][1].approved is True
 
 
 @pytest.mark.anyio
-async def test_deny_command_resolves_room_pending(tmp_path: Path):
+async def test_deny_command_resolves_via_engine(tmp_path: Path):
+    from carapace.channels.matrix.subscriber import MatrixSubscriber
+
     ch = _make_channel(tmp_path)
     room_id = "!room:example.com"
     sid = ch._get_or_create_session(room_id)
     ch._client.room_send = AsyncMock(return_value=MagicMock(event_id="$evt"))
 
-    pa = _PendingApproval("$approval", "call-1")
-    ch._room_pending[room_id] = pa
+    sub = MatrixSubscriber(ch, room_id)
+    sub._approval_events["$approval"] = "call-1"
+    ch._room_subscribers[room_id] = sub
+    ch._pending_approvals["$approval"] = _PendingApproval("$approval", "call-1")
 
     await ch._handle_command(room_id, sid, "/deny", "@alice:example.com")
 
-    assert pa._future.done()
-    assert pa._future.result() is False
+    ch._engine.submit_approval.assert_called_once()
+    call_args = ch._engine.submit_approval.call_args
+    assert call_args[0][1].approved is False
 
 
 @pytest.mark.anyio
 async def test_approve_when_no_pending_sends_message(tmp_path: Path):
+    from carapace.channels.matrix.subscriber import MatrixSubscriber
+
     ch = _make_channel(tmp_path)
     room_id = "!room:example.com"
     sid = ch._get_or_create_session(room_id)
     ch._client.room_send = AsyncMock(return_value=MagicMock(event_id="$evt"))
+
+    # With a subscriber but no pending approvals
+    sub = MatrixSubscriber(ch, room_id)
+    ch._room_subscribers[room_id] = sub
 
     await ch._handle_command(room_id, sid, "/allow", "@alice:example.com")
 
@@ -400,34 +452,44 @@ def test_format_command_result_security():
 
 @pytest.mark.anyio
 async def test_yes_alias_approves(tmp_path: Path):
+    from carapace.channels.matrix.subscriber import MatrixSubscriber
+
     ch = _make_channel(tmp_path)
     room_id = "!room:example.com"
     sid = ch._get_or_create_session(room_id)
     ch._client.room_send = AsyncMock(return_value=MagicMock(event_id="$evt"))
 
-    pa = _PendingApproval("$approval", "call-1")
-    ch._room_pending[room_id] = pa
+    sub = MatrixSubscriber(ch, room_id)
+    sub._approval_events["$approval"] = "call-1"
+    ch._room_subscribers[room_id] = sub
+    ch._pending_approvals["$approval"] = _PendingApproval("$approval", "call-1")
 
     await ch._handle_command(room_id, sid, "/yes", "@alice:example.com")
 
-    assert pa._future.done()
-    assert pa._future.result() is True
+    ch._engine.submit_approval.assert_called_once()
+    call_args = ch._engine.submit_approval.call_args
+    assert call_args[0][1].approved is True
 
 
 @pytest.mark.anyio
 async def test_no_alias_denies(tmp_path: Path):
+    from carapace.channels.matrix.subscriber import MatrixSubscriber
+
     ch = _make_channel(tmp_path)
     room_id = "!room:example.com"
     sid = ch._get_or_create_session(room_id)
     ch._client.room_send = AsyncMock(return_value=MagicMock(event_id="$evt"))
 
-    pa = _PendingApproval("$approval", "call-1")
-    ch._room_pending[room_id] = pa
+    sub = MatrixSubscriber(ch, room_id)
+    sub._approval_events["$approval"] = "call-1"
+    ch._room_subscribers[room_id] = sub
+    ch._pending_approvals["$approval"] = _PendingApproval("$approval", "call-1")
 
     await ch._handle_command(room_id, sid, "/no", "@alice:example.com")
 
-    assert pa._future.done()
-    assert pa._future.result() is False
+    ch._engine.submit_approval.assert_called_once()
+    call_args = ch._engine.submit_approval.call_args
+    assert call_args[0][1].approved is False
 
 
 # ---------------------------------------------------------------------------
@@ -445,64 +507,92 @@ async def test_pending_domain_approval_resolves():
 
 @pytest.mark.anyio
 async def test_on_reaction_approves_domain(tmp_path: Path):
+    from carapace.channels.matrix.subscriber import MatrixSubscriber
+
     ch = _make_channel(tmp_path)
+    room_id = "!room:example.com"
+    ch._get_or_create_session(room_id)
+
+    sub = MatrixSubscriber(ch, room_id)
+    sub._domain_events["$domain_event"] = "req-1"
+    ch._room_subscribers[room_id] = sub
 
     pd = _PendingDomainApproval("$domain_event")
     ch._pending_domain_approvals["$domain_event"] = pd
 
     reaction_event = _make_reaction_event(reacts_to="$domain_event", key="✅")
-    room = _make_room()
+    room = _make_room(room_id=room_id)
     await ch._on_reaction(room, reaction_event)
 
-    assert pd._future.done()
-    assert pd._future.result() is True
+    ch._engine.submit_approval.assert_called_once()
+    call_args = ch._engine.submit_approval.call_args
+    assert call_args[0][1].decision == "allow"
 
 
 @pytest.mark.anyio
 async def test_on_reaction_denies_domain(tmp_path: Path):
+    from carapace.channels.matrix.subscriber import MatrixSubscriber
+
     ch = _make_channel(tmp_path)
+    room_id = "!room:example.com"
+    ch._get_or_create_session(room_id)
+
+    sub = MatrixSubscriber(ch, room_id)
+    sub._domain_events["$domain_event"] = "req-1"
+    ch._room_subscribers[room_id] = sub
 
     pd = _PendingDomainApproval("$domain_event")
     ch._pending_domain_approvals["$domain_event"] = pd
 
     reaction_event = _make_reaction_event(reacts_to="$domain_event", key="❌")
-    room = _make_room()
+    room = _make_room(room_id=room_id)
     await ch._on_reaction(room, reaction_event)
 
-    assert pd._future.done()
-    assert pd._future.result() is False
+    ch._engine.submit_approval.assert_called_once()
+    call_args = ch._engine.submit_approval.call_args
+    assert call_args[0][1].decision == "deny"
 
 
 @pytest.mark.anyio
 async def test_approve_command_resolves_domain_pending(tmp_path: Path):
+    from carapace.channels.matrix.subscriber import MatrixSubscriber
+
     ch = _make_channel(tmp_path)
     room_id = "!room:example.com"
     sid = ch._get_or_create_session(room_id)
     ch._client.room_send = AsyncMock(return_value=MagicMock(event_id="$evt"))
 
-    pd = _PendingDomainApproval("$domain_event")
-    ch._room_pending[room_id] = pd
+    sub = MatrixSubscriber(ch, room_id)
+    sub._domain_events["$domain_event"] = "req-1"
+    ch._room_subscribers[room_id] = sub
+    ch._pending_domain_approvals["$domain_event"] = _PendingDomainApproval("$domain_event")
 
     await ch._handle_command(room_id, sid, "/allow", "@alice:example.com")
 
-    assert pd._future.done()
-    assert pd._future.result() is True
+    ch._engine.submit_approval.assert_called_once()
+    call_args = ch._engine.submit_approval.call_args
+    assert call_args[0][1].decision == "allow"
 
 
 @pytest.mark.anyio
 async def test_deny_command_resolves_domain_pending(tmp_path: Path):
+    from carapace.channels.matrix.subscriber import MatrixSubscriber
+
     ch = _make_channel(tmp_path)
     room_id = "!room:example.com"
     sid = ch._get_or_create_session(room_id)
     ch._client.room_send = AsyncMock(return_value=MagicMock(event_id="$evt"))
 
-    pd = _PendingDomainApproval("$domain_event")
-    ch._room_pending[room_id] = pd
+    sub = MatrixSubscriber(ch, room_id)
+    sub._domain_events["$domain_event"] = "req-1"
+    ch._room_subscribers[room_id] = sub
+    ch._pending_domain_approvals["$domain_event"] = _PendingDomainApproval("$domain_event")
 
     await ch._handle_command(room_id, sid, "/deny", "@alice:example.com")
 
-    assert pd._future.done()
-    assert pd._future.result() is False
+    ch._engine.submit_approval.assert_called_once()
+    call_args = ch._engine.submit_approval.call_args
+    assert call_args[0][1].decision == "deny"
 
 
 def test_format_domain_escalation():
