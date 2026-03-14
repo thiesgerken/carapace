@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v0.19.1 (2026-03-14)
+
+### 🐛
+
+- 🐛 fix: echo slash commands as user_message so they appear in the UI
+  ([`f29a715`](https://github.com/thiesgerken/carapace/commit/f29a7157c7c3d8c27a8108eb6e6511e5106123cf))
+
+
 ## v0.19.0 (2026-03-14)
 
 ### ✨
