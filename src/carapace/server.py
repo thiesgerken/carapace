@@ -6,7 +6,7 @@ import logging
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 import logfire
 import loguru
@@ -312,7 +312,7 @@ async def delete_session(session_id: str, _token: str = Depends(_verify_token)) 
 
 
 class HistoryMessage(BaseModel):
-    role: str  # "user" | "assistant" | "tool_call" | "tool_result" | "command" | "proxy_approval" | "approval_request"
+    role: Literal["user", "assistant", "tool_call", "tool_result", "command", "proxy_approval", "approval_request"]
     content: str = ""
     tool: str | None = None
     args: dict[str, Any] | None = None
