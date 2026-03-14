@@ -1,6 +1,42 @@
 # CHANGELOG
 
 
+## v0.19.0 (2026-03-14)
+
+### ✨
+
+- ✨ refactor session handling ([#45](https://github.com/thiesgerken/carapace/pull/45),
+  [`d07cd03`](https://github.com/thiesgerken/carapace/commit/d07cd0370f0567e4aec2164e09070a5cd2bb3fcf))
+
+* ✨ refactor session handling
+
+* 🐛 remove bad session / security fallbacks
+
+* avoid double websocket subs
+
+* 🐛 fix read method to check for file existence correctly
+
+* ca certs in sandbox
+
+* fix bugs due to refactor
+
+* more tests
+
+* play with matrix verbosity
+
+* fix valueerror
+
+* fix typing
+
+* fix tests without anthropic key
+
+* ♻️ refactor matrix.py into multiple files
+
+* adjust style guide
+
+* fix typing issues
+
+
 ## v0.18.4 (2026-03-08)
 
 ### 🐛
