@@ -71,7 +71,7 @@ def format_command_result_text(result: CommandResult) -> str:
 
         case "usage":
             costs = data.get("costs", {})
-            total = costs.get("total", math.nan)
+            total = float(costs.get("total", math.nan))
             lines = [f"**Token usage** (est. total: {total:0.2f}$)\n"]
             for model, usage in data.get("models", {}).items():
                 inp = usage.get("input_tokens", 0)
