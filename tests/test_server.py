@@ -135,6 +135,9 @@ def test_ws_help_command(client, auth_headers, bearer):
     with client.websocket_connect(f"/chat/{sid}?token={bearer}") as ws:
         _consume_status(ws)
         ws.send_json({"type": "message", "content": "/help"})
+        echo = ws.receive_json()
+        assert echo["type"] == "user_message"
+        assert echo["content"] == "/help"
         msg = ws.receive_json()
         assert msg["type"] == "command_result"
         assert msg["command"] == "help"
@@ -148,6 +151,8 @@ def test_ws_security_command(client, auth_headers, bearer):
     with client.websocket_connect(f"/chat/{sid}?token={bearer}") as ws:
         _consume_status(ws)
         ws.send_json({"type": "message", "content": "/security"})
+        echo = ws.receive_json()
+        assert echo["type"] == "user_message"
         msg = ws.receive_json()
         assert msg["type"] == "command_result"
         assert msg["command"] == "security"
@@ -160,6 +165,8 @@ def test_ws_session_command(client, auth_headers, bearer):
     with client.websocket_connect(f"/chat/{sid}?token={bearer}") as ws:
         _consume_status(ws)
         ws.send_json({"type": "message", "content": "/session"})
+        echo = ws.receive_json()
+        assert echo["type"] == "user_message"
         msg = ws.receive_json()
         assert msg["type"] == "command_result"
         assert msg["command"] == "session"
@@ -173,6 +180,8 @@ def test_ws_skills_command(client, auth_headers, bearer):
     with client.websocket_connect(f"/chat/{sid}?token={bearer}") as ws:
         _consume_status(ws)
         ws.send_json({"type": "message", "content": "/skills"})
+        echo = ws.receive_json()
+        assert echo["type"] == "user_message"
         msg = ws.receive_json()
         assert msg["type"] == "command_result"
         assert msg["command"] == "skills"
@@ -185,6 +194,8 @@ def test_ws_memory_command(client, auth_headers, bearer):
     with client.websocket_connect(f"/chat/{sid}?token={bearer}") as ws:
         _consume_status(ws)
         ws.send_json({"type": "message", "content": "/memory"})
+        echo = ws.receive_json()
+        assert echo["type"] == "user_message"
         msg = ws.receive_json()
         assert msg["type"] == "command_result"
         assert msg["command"] == "memory"
@@ -197,6 +208,8 @@ def test_ws_verbose_command(client, auth_headers, bearer):
     with client.websocket_connect(f"/chat/{sid}?token={bearer}") as ws:
         _consume_status(ws)
         ws.send_json({"type": "message", "content": "/verbose"})
+        echo = ws.receive_json()
+        assert echo["type"] == "user_message"
         msg = ws.receive_json()
         assert msg["type"] == "command_result"
         assert msg["command"] == "verbose"

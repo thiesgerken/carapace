@@ -522,6 +522,7 @@ async def chat_ws(
                         command="verbose",
                         data={"verbose": active.verbose, "message": f"Verbose mode {state_str}"},
                     )
+                    await _send(websocket, UserMessageNotification(content=user_input))
                     await _send(websocket, result)
                     _engine.session_mgr.append_events(
                         session_id,
@@ -538,6 +539,7 @@ async def chat_ws(
                         command=cmd_result["command"],
                         data=cmd_result["data"],
                     )
+                    await _send(websocket, UserMessageNotification(content=user_input))
                     await _send(websocket, result)
                     _engine.session_mgr.append_events(
                         session_id,
