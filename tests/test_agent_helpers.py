@@ -21,7 +21,7 @@ def test_resolve_path_traversal(tmp_path: Path):
 
 
 def test_build_system_prompt_minimal(tmp_path: Path):
-    state = SessionState(session_id="test-123")
+    state = SessionState.now(session_id="test-123")
     deps = Deps(
         config=Config(),
         data_dir=tmp_path,
@@ -36,7 +36,7 @@ def test_build_system_prompt_minimal(tmp_path: Path):
 
 def test_build_system_prompt_with_agents_md(tmp_path: Path):
     (tmp_path / "AGENTS.md").write_text("# Agent Instructions\nBe helpful.")
-    state = SessionState(session_id="s1")
+    state = SessionState.now(session_id="s1")
     deps = Deps(
         config=Config(),
         data_dir=tmp_path,

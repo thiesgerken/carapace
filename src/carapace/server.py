@@ -254,10 +254,10 @@ class SessionCreateRequest(BaseModel):
 class SessionInfo(BaseModel):
     session_id: str
     channel_type: str
-    channel_ref: str
+    channel_ref: str | None = None
     created_at: str
     last_active: str
-    title: str = ""
+    title: str | None = None
     message_count: int = 0
 
     @classmethod

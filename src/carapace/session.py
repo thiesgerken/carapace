@@ -75,7 +75,7 @@ class SessionManager:
         state = SessionState(
             session_id=session_id,
             channel_type=channel_type,
-            channel_ref=channel_ref,
+            channel_ref=channel_ref or None,
             created_at=now,
             last_active=now,
         )

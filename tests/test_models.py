@@ -23,7 +23,7 @@ def test_config_defaults():
 
 
 def test_session_state_defaults():
-    state = SessionState(session_id="abc123")
+    state = SessionState.now(session_id="abc123")
     assert state.channel_type == "cli"
     assert state.approved_credentials == []
 
@@ -47,6 +47,6 @@ def test_user_message_entry():
 
 
 def test_audit_entry():
-    entry = AuditEntry(kind="tool_call", tool="exec", final_decision="auto_allowed")
+    entry = AuditEntry.now(kind="tool_call", tool="exec", final_decision="auto_allowed")
     assert entry.kind == "tool_call"
     assert entry.sentinel_verdict is None

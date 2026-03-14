@@ -84,14 +84,37 @@ class SentinelVerdict(BaseModel):
 
 
 class AuditEntry(BaseModel):
-    timestamp: Annotated[datetime, Field(default_factory=lambda: datetime.now(tz=UTC))]
+    timestamp: datetime
     kind: Literal["tool_call", "proxy_domain"]
-    tool: str = ""
+    tool: str | None = None
     args_summary: dict[str, Any] = {}
-    domain: str = ""
+    domain: str | None = None
     sentinel_verdict: SentinelVerdict | None = None
     final_decision: Literal["auto_allowed", "allowed", "escalated", "denied"]
-    explanation: str = ""
+    explanation: str | None = None
+
+    @classmethod
+    def now(
+        cls,
+        *,
+        kind: Literal["tool_call", "proxy_domain"],
+        final_decision: Literal["auto_allowed", "allowed", "escalated", "denied"],
+        tool: str | None = None,
+        args_summary: dict[str, Any] | None = None,
+        domain: str | None = None,
+        sentinel_verdict: SentinelVerdict | None = None,
+        explanation: str | None = None,
+    ) -> AuditEntry:
+        return cls(
+            timestamp=datetime.now(tz=UTC),
+            kind=kind,
+            tool=tool,
+            args_summary=args_summary or {},
+            domain=domain,
+            sentinel_verdict=sentinel_verdict,
+            final_decision=final_decision,
+            explanation=explanation,
+        )
 
 
 # --- Per-Session Security State ---

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from loguru import logger
 from pydantic_ai import ApprovalRequired
@@ -149,7 +149,7 @@ async def evaluate_with(
         entry = ToolCallEntry(tool=tool_name, args=_truncate_args(args), decision="auto_allowed")
         session.append(entry)
         session.write_audit(
-            AuditEntry(
+            AuditEntry.now(
                 kind="tool_call",
                 tool=tool_name,
                 args_summary=_truncate_args(args),
@@ -183,7 +183,7 @@ async def evaluate_with(
 
     if verdict.decision == "deny":
         session.write_audit(
-            AuditEntry(
+            AuditEntry.now(
                 kind="tool_call",
                 tool=tool_name,
                 args_summary=_truncate_args(args),
@@ -208,7 +208,7 @@ async def evaluate_with(
 
     # allow
     session.write_audit(
-        AuditEntry(
+        AuditEntry.now(
             kind="tool_call",
             tool=tool_name,
             args_summary=_truncate_args(args),
@@ -282,7 +282,7 @@ async def evaluate_domain_with(
     session.notify_domain_decision(domain, detail)
 
     session.write_audit(
-        AuditEntry(
+        AuditEntry.now(
             kind="proxy_domain",
             domain=domain,
             sentinel_verdict=verdict,
@@ -294,7 +294,7 @@ async def evaluate_domain_with(
     return allowed
 
 
-def _verdict_to_decision(verdict: SentinelVerdict) -> str:
+def _verdict_to_decision(verdict: SentinelVerdict) -> Literal["allowed", "escalated", "denied"]:
     match verdict.decision:
         case "allow":
             return "allowed"
