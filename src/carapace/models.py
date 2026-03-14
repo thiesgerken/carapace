@@ -4,7 +4,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from genai_prices import Usage as PriceUsage
 from genai_prices import calc_price
@@ -97,10 +97,14 @@ _SANDBOX_IMAGE_VERSION = "0.24.0"
 
 
 class SandboxConfig(BaseModel):
+    runtime: Literal["docker", "kubernetes"] = "docker"
     base_image: str = f"carapace-sandbox:{_SANDBOX_IMAGE_VERSION}"
     idle_timeout_minutes: int = 15
     network_name: str = "carapace-sandbox"
     proxy_port: int = 3128
+    k8s_namespace: str = "carapace"
+    k8s_pvc_claim: str = "carapace-data"
+    k8s_service_account: str | None = None
 
 
 class MemorySearchConfig(BaseModel):

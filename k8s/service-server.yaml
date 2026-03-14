@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: carapace
+  namespace: carapace
+spec:
+  selector:
+    app.kubernetes.io/name: carapace
+    app.kubernetes.io/component: server
+  ports:
+    - name: api
+      port: 8321
+      targetPort: api
+    - name: proxy
+      port: 3128
+      targetPort: proxy

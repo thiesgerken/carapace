@@ -28,9 +28,9 @@ from carapace.auth import ensure_token
 from carapace.bootstrap import ensure_data_dir
 from carapace.config import get_data_dir, load_config, load_security_md
 from carapace.models import Config, SessionState
-from carapace.sandbox.docker import DockerRuntime
 from carapace.sandbox.manager import SandboxManager
 from carapace.sandbox.proxy import ProxyServer
+from carapace.sandbox.runtime import ContainerRuntime
 from carapace.session import SessionEngine, SessionManager
 from carapace.skills import SkillRegistry
 from carapace.ws_models import (
@@ -78,6 +78,23 @@ def _create_anthropic_model(model_name: str) -> AnthropicModel:
     return AnthropicModel(model_id, provider=AnthropicProvider(http_client=AsyncClient(transport=transport)))
 
 
+def _create_sandbox_runtime(config: Config, data_dir: Path) -> ContainerRuntime:
+    """Instantiate the sandbox container runtime based on config."""
+    if config.sandbox.runtime == "kubernetes":
+        from carapace.sandbox.kubernetes import KubernetesRuntime
+
+        return KubernetesRuntime(
+            namespace=config.sandbox.k8s_namespace,
+            pvc_claim=config.sandbox.k8s_pvc_claim,
+            data_dir=data_dir,
+            service_account=config.sandbox.k8s_service_account,
+        )
+
+    from carapace.sandbox.docker import DockerRuntime
+
+    return DockerRuntime()
+
+
 async def _idle_cleanup_loop(sandbox_mgr: SandboxManager) -> None:
     """Periodically clean up idle sandbox containers."""
     while True:
@@ -114,7 +131,7 @@ async def lifespan(app: FastAPI):
     skill_catalog = registry.scan()
     agent_model = _create_anthropic_model(_config.agent.model)
 
-    runtime = DockerRuntime()
+    runtime = _create_sandbox_runtime(_config, _data_dir)
 
     network_info = await runtime.get_self_network_info()
     if network_info:
@@ -133,23 +150,24 @@ async def lifespan(app: FastAPI):
         )
         raise SystemExit(1)
 
-    host_data_dir_env = os.environ.get("CARAPACE_HOST_DATA_DIR")
-    host_data_dir = Path(host_data_dir_env) if host_data_dir_env else None
+    host_data_dir: Path | None = None
+    sandbox_network = _config.sandbox.network_name
+    if _config.sandbox.runtime == "docker":
+        host_data_dir_env = os.environ.get("CARAPACE_HOST_DATA_DIR")
+        host_data_dir = Path(host_data_dir_env) if host_data_dir_env else None
+
+        # Resolve the actual Docker network name once at startup.
+        # Docker Compose prefixes networks with the project name, so the logical
+        # name "carapace-sandbox" may be "carapace_carapace-sandbox" in Docker.
+        sandbox_network = await runtime.resolve_self_network_name(sandbox_network)
+        if sandbox_network != _config.sandbox.network_name:
+            logger.info(f"Resolved sandbox network '{_config.sandbox.network_name}' → '{sandbox_network}'")
+
+        # Pre-create the network when not already managed by docker-compose,
+        # always as internal so sandbox containers have no direct internet egress.
+        await runtime.ensure_network(sandbox_network, internal=True)
 
     proxy_port = _config.sandbox.proxy_port
-
-    # Resolve the actual Docker network name once at startup.
-    # Docker Compose prefixes networks with the project name, so the logical
-    # name "carapace-sandbox" may be "carapace_carapace-sandbox" in Docker.
-    # Using the concrete name everywhere avoids ambiguous resolution when stale
-    # networks with the logical name exist from a previous run.
-    sandbox_network = await runtime.resolve_self_network_name(_config.sandbox.network_name)
-    if sandbox_network != _config.sandbox.network_name:
-        logger.info(f"Resolved sandbox network '{_config.sandbox.network_name}' → '{sandbox_network}'")
-
-    # Pre-create the network when not already managed by docker-compose,
-    # always as internal so sandbox containers have no direct internet egress.
-    await runtime.ensure_network(sandbox_network, internal=True)
 
     _sandbox_mgr = SandboxManager(
         runtime=runtime,
