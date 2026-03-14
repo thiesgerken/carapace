@@ -1,12 +1,26 @@
 # CHANGELOG
 
 
+## v0.24.0 (2026-03-14)
+
+### Other
+
+- Merge remote-tracking branch 'refs/remotes/origin/main'
+  ([`d733ba2`](https://github.com/thiesgerken/carapace/commit/d733ba2f6206245e4a457ca2d6d39693bab36956))
+
+- Merge remote-tracking branch 'refs/remotes/origin/main'
+  ([`7959a5e`](https://github.com/thiesgerken/carapace/commit/7959a5e710c1839a01b4af71a11f29297127460b))
+
+
 ## v0.23.0 (2026-03-14)
 
 ### Other
 
 - Fix CI
   ([`5e26f54`](https://github.com/thiesgerken/carapace/commit/5e26f5438773957df27ff34023060ef479933b6d))
+
+- 📋 update skills.md, remove mentions of skill dockerfiles
+  ([`af9923a`](https://github.com/thiesgerken/carapace/commit/af9923a2ff71f1f9e307a44ff178f816f277fbf3))
 
 - 📝 docs: add commit-before-asking convention to AGENTS.md
   ([`3ce548e`](https://github.com/thiesgerken/carapace/commit/3ce548e0d3122781961961a17ecf11f0592ebc0c))
@@ -15,6 +29,20 @@
   ([`908ce2f`](https://github.com/thiesgerken/carapace/commit/908ce2f979c0593b5235545e12b0bbb9668d7c13))
 
 ### ✨
+
+- ✨ feat: build skill venvs inside session container
+  ([`b6cab4f`](https://github.com/thiesgerken/carapace/commit/b6cab4f2a76f8b35c5d2fcb38de98cd01eaf22f8))
+
+Replace the ephemeral build container (_build_skill_venv with network=None) with uv sync executed
+  inside the session's own sandbox container. A per-session exec lock serializes all container
+  commands; the proxy bypass flag is set/cleared atomically under that lock so no concurrent command
+  can exploit the window.
+
+- Add per-session asyncio.Lock for exec serialization - Proxy bypass (wildcard "*") scoped to locked
+  _exec calls only - _sync_skill_venv copies trusted pyproject.toml/uv.lock from master before
+  building, closing TOCTOU tampering - Persist activated_skills in SessionState (survives restarts)
+  - Rebuild venvs automatically on container recreation - Re-sync venv after save_skill using
+  trusted master deps - Remove ephemeral build container code (K8s-incompatible)
 
 - ✨ feat: validate sandbox image at startup, restructure README quickstart
   ([`29cf9eb`](https://github.com/thiesgerken/carapace/commit/29cf9ebf7744e4aa0533a8d77e19b5bb1eeb8f74))
