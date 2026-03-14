@@ -1,6 +1,55 @@
 # CHANGELOG
 
 
+## v0.20.0 (2026-03-14)
+
+### Other
+
+- ♻️ refactor: DockerRuntime explicitly inherits ContainerRuntime Protocol
+  ([`ff0f471`](https://github.com/thiesgerken/carapace/commit/ff0f4718163d1c66385ca8db14035287133c39d7))
+
+- ♻️ refactor: move SLASH_COMMANDS to ws_models, eliminate all deferred imports
+  ([`8ad0990`](https://github.com/thiesgerken/carapace/commit/8ad09900515d03b798e0b57474910b28c890ed95))
+
+- Move _SLASH_COMMANDS from server.py to ws_models.py as SLASH_COMMANDS - Hoist deferred imports to
+  module level in session.py (MemoryStore, run_agent_turn, SLASH_COMMANDS) - Hoist deferred imports
+  to module level in commands.py (MemoryStore, UserVouchedEntry) - No circular dependencies existed
+  — the deferred imports were unnecessary
+
+- ♻️ refactor: remove legacy Matrix mode, extract _resolve_pending helper
+  ([`c7fbed2`](https://github.com/thiesgerken/carapace/commit/c7fbed20302f656ba8a15c703d87329def1ba57c))
+
+- Remove dual code paths (engine vs standalone) from MatrixChannel - Make engine parameter required
+  - Delete legacy-only methods: _run_turn, _run_turn_locked, _keep_typing, _build_deps, _room_lock -
+  Extract _resolve_pending() to deduplicate approve/deny slash commands - Update all Matrix tests to
+  use mock SessionEngine - Net: -220 lines
+
+- 🏷️ types: HistoryMessage.role as Literal instead of plain str
+  ([`31ea104`](https://github.com/thiesgerken/carapace/commit/31ea104433a0f07a0c24580a43f5cb6d0774c8a5))
+
+- 📝 docs: add deferred-import ban to coding guidelines
+  ([`6c5d7be`](https://github.com/thiesgerken/carapace/commit/6c5d7be834c3ffec61a4ac115ba259477b03fcda))
+
+- 📝 docs: clarify stdlib logging import in server.py
+  ([`d0a4140`](https://github.com/thiesgerken/carapace/commit/d0a4140c7b229d05babce9377c817d42e41280c7))
+
+- 🔥 cleanup: delete dead _resolve_path and its tests
+  ([`a52ac7a`](https://github.com/thiesgerken/carapace/commit/a52ac7a44eb1c26dd2c420bce2d88507065f27af))
+
+- 🔧 style: add missing future annotations to runtime.py
+  ([`9b41830`](https://github.com/thiesgerken/carapace/commit/9b41830b84ff7e42d77b4ad27d1c28beb1dc4890))
+
+### ✨
+
+- ✨ feat: render Matrix /usage report as Markdown tables
+  ([`815fc9f`](https://github.com/thiesgerken/carapace/commit/815fc9fc366899124b1317b04333cd1b8a0f34f8))
+
+### 🐛
+
+- 🐛 fix: convert cost string to float before formatting in Matrix /usage command
+  ([`011e68e`](https://github.com/thiesgerken/carapace/commit/011e68e09fa3706ce5d0a0d0ae07b5a7d2fb6c1d))
+
+
 ## v0.19.1 (2026-03-14)
 
 ### 🐛
