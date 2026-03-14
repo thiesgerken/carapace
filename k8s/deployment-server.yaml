@@ -32,6 +32,14 @@ spec:
           env:
             - name: CARAPACE_DATA_DIR
               value: /data
+            - name: CARAPACE_SANDBOX_RUNTIME
+              value: kubernetes
+            - name: CARAPACE_SANDBOX_BASE_IMAGE
+              value: ghcr.io/thiesgerken/carapace-sandbox:latest # pin to a version tag
+            - name: CARAPACE_SANDBOX_K8S_NAMESPACE
+              value: carapace
+            - name: CARAPACE_SANDBOX_K8S_PVC_CLAIM
+              value: carapace-data
           envFrom:
             - secretRef:
                 name: carapace-secrets

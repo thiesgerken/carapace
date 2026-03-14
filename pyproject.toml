@@ -15,6 +15,7 @@ dependencies = [
     "fastapi>=0.115,<1",
     "uvicorn[standard]>=0.40,<1",
     "websockets>=15,<16",
+    "pydantic-settings>=2,<3",
     "genai-prices>=0.0.53",
     "docker>=7,<8",
     "loguru>=0.7.3",

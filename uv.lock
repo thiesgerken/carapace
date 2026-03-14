@@ -304,7 +304,7 @@ wheels = [
 
 [[package]]
 name = "carapace"
-version = "0.24.0"
+version = "0.25.1"
 source = { editable = "." }
 dependencies = [
     { name = "docker" },
@@ -315,6 +315,7 @@ dependencies = [
     { name = "markdown" },
     { name = "matrix-nio" },
     { name = "pydantic-ai" },
+    { name = "pydantic-settings" },
     { name = "python-dotenv" },
     { name = "pyyaml" },
     { name = "rich" },
@@ -346,6 +347,7 @@ requires-dist = [
     { name = "markdown", specifier = ">=3,<4" },
     { name = "matrix-nio", specifier = ">=0.25,<1" },
     { name = "pydantic-ai", specifier = ">=1.59,<2" },
+    { name = "pydantic-settings", specifier = ">=2,<3" },
     { name = "python-dotenv", specifier = ">=1.2,<2" },
     { name = "pyyaml", specifier = ">=6,<7" },
     { name = "rich", specifier = ">=14,<15" },

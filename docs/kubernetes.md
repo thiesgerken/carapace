@@ -50,34 +50,44 @@ The server pod manages sandbox pods directly via the Kubernetes API. Each sessio
 
 ## Configuration
 
-Set `sandbox.runtime` to `kubernetes` in your `data/config.yaml`:
+Sandbox settings are configured via environment variables (prefix `CARAPACE_SANDBOX_`), not through `data/config.yaml`. This keeps deployment-specific settings separate from runtime data on the shared volume.
+
+Set the following env vars on the server pod:
 
 ```yaml
-sandbox:
-  runtime: kubernetes
-  base_image: ghcr.io/thiesgerken/carapace-sandbox:latest
-  k8s_namespace: carapace # namespace for sandbox pods
-  k8s_pvc_claim: carapace-data # shared PVC claim name
-  # k8s_service_account: null    # optional SA for sandbox pods
+env:
+  - name: CARAPACE_SANDBOX_RUNTIME
+    value: kubernetes
+  - name: CARAPACE_SANDBOX_BASE_IMAGE
+    value: ghcr.io/thiesgerken/carapace-sandbox:latest # pin this to a specific version!
+  - name: CARAPACE_SANDBOX_K8S_NAMESPACE
+    value: carapace
+  - name: CARAPACE_SANDBOX_K8S_PVC_CLAIM
+    value: carapace-data
+  # - name: CARAPACE_SANDBOX_K8S_SERVICE_ACCOUNT
+  #   value: ""  # optional SA for sandbox pods
 ```
 
-When `runtime` is `docker` (the default), nothing changes — the server uses the Docker socket as before.
+When `CARAPACE_SANDBOX_RUNTIME` is unset or `docker` (the default), nothing changes — the server uses the Docker socket as before.
+
+> **Important:** Always pin the sandbox image to a specific version tag (e.g. `:0.25.1`). Using `:latest` in production can lead to version mismatches between the server and sandbox image.
 
 ### Auto-detection
 
 When the server runs inside Kubernetes (the `KUBERNETES_SERVICE_HOST` env var is set), it loads in-cluster credentials automatically. No kubeconfig needed.
 
-### Config reference
+### Environment variable reference
 
-| Field                          | Default                      | Description                          |
-| ------------------------------ | ---------------------------- | ------------------------------------ |
-| `sandbox.runtime`              | `docker`                     | `docker` or `kubernetes`             |
-| `sandbox.base_image`           | `carapace-sandbox:<version>` | Sandbox container image              |
-| `sandbox.idle_timeout_minutes` | `15`                         | Idle sandbox cleanup interval        |
-| `sandbox.proxy_port`           | `3128`                       | HTTP proxy port for domain filtering |
-| `sandbox.k8s_namespace`        | `carapace`                   | Namespace for sandbox pods           |
-| `sandbox.k8s_pvc_claim`        | `carapace-data`              | Shared PVC claim name                |
-| `sandbox.k8s_service_account`  | `null`                       | ServiceAccount for sandbox pods      |
+| Env var                                 | Default                   | Description                           |
+| --------------------------------------- | ------------------------- | ------------------------------------- |
+| `CARAPACE_SANDBOX_RUNTIME`              | `docker`                  | `docker` or `kubernetes`              |
+| `CARAPACE_SANDBOX_BASE_IMAGE`           | `carapace-sandbox:latest` | Sandbox container image (pin version) |
+| `CARAPACE_SANDBOX_IDLE_TIMEOUT_MINUTES` | `15`                      | Idle sandbox cleanup interval         |
+| `CARAPACE_SANDBOX_PROXY_PORT`           | `3128`                    | HTTP proxy port for domain filtering  |
+| `CARAPACE_SANDBOX_K8S_NAMESPACE`        | `carapace`                | Namespace for sandbox pods            |
+| `CARAPACE_SANDBOX_K8S_PVC_CLAIM`        | `carapace-data`           | Shared PVC claim name                 |
+| `CARAPACE_SANDBOX_K8S_SERVICE_ACCOUNT`  | `null`                    | ServiceAccount for sandbox pods       |
+| `CARAPACE_SANDBOX_NETWORK_NAME`         | `carapace-sandbox`        | Docker network name (Docker only)     |
 
 ## Storage
 

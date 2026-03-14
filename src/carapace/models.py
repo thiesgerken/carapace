@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from carapace.sandbox.manager import SandboxManager
 from carapace.security.context import SessionSecurity
@@ -89,7 +90,9 @@ class CredentialsConfig(BaseModel):
     backend: str = "mock"
 
 
-class SandboxConfig(BaseModel):
+class SandboxConfig(BaseSettings):
+    model_config = SettingsConfigDict(env_prefix="CARAPACE_SANDBOX_")
+
     runtime: Literal["docker", "kubernetes"] = "docker"
     base_image: str = "carapace-sandbox:latest"
     idle_timeout_minutes: int = 15
