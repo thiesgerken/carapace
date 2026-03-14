@@ -307,13 +307,17 @@ class _MatrixSubscriber:
 
     async def on_tool_call(self, tool: str, args: dict[str, Any], detail: str) -> None:
         logger.debug(f"Matrix [{self._room_id}] tool call: {tool}({args}) — {detail}")
-        if self._channel._verbose.get(self._room_id, False):
+        if self._channel._verbose.get(self._room_id, True):
             args_brief = json.dumps(args, default=str)
             notice = f"🔧 `{tool}({args_brief})`" + (f" {detail}" if detail else "")
             await self._channel._send_notice(self._room_id, notice)
 
     async def on_tool_result(self, tool: str, result: str) -> None:
-        pass  # Matrix doesn't show tool results inline
+        if self._channel._verbose.get(self._room_id, True):
+            # Truncate long results to keep Matrix messages manageable
+            preview = result[:500] + ("…" if len(result) > 500 else "")
+            notice = f"📎 `{tool}` result:\n```\n{preview}\n```"
+            await self._channel._send_notice(self._room_id, notice)
 
     async def on_done(self, content: str, usage: TurnUsage) -> None:
         self._stop_typing()
@@ -352,7 +356,7 @@ class _MatrixSubscriber:
 
     async def on_domain_info(self, domain: str, detail: str) -> None:
         logger.debug(f"Matrix [{self._room_id}] domain: {domain} {detail}")
-        if self._channel._verbose.get(self._room_id, False):
+        if self._channel._verbose.get(self._room_id, True):
             notice = f"🌐 `{domain}` {detail}"
             await self._channel._send_notice(self._room_id, notice)
 
@@ -395,7 +399,7 @@ class MatrixChannel:
         self._pending_domain_approvals: dict[str, _PendingDomainApproval] = {}
         # room_id -> most recent pending approval of either kind (for command resolution)
         self._room_pending: dict[str, _PendingApproval | _PendingDomainApproval] = {}
-        # verbose mode per room (room_id -> bool); controls tool call notifications
+        # verbose mode per room (room_id -> bool); defaults to True (show tool calls)
         self._verbose: dict[str, bool] = {}
         # room_id -> currently running agent turn task (for cancellation)
         self._room_tasks: dict[str, asyncio.Task] = {}
