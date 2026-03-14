@@ -142,14 +142,20 @@ class SessionManager:
             if json_path.exists():
                 return json.loads(json_path.read_bytes())
             return []
+        result: list[dict[str, Any]] = []
         with open(events_path) as f:
-            return yaml.safe_load(f) or []
+            for doc in yaml.safe_load_all(f):
+                if isinstance(doc, list):
+                    result.extend(doc)
+                elif isinstance(doc, dict):
+                    result.append(doc)
+        return result
 
     def append_events(self, session_id: str, events: list[dict[str, Any]]) -> None:
         session_dir = self.sessions_dir / session_id
         session_dir.mkdir(parents=True, exist_ok=True)
         events_path = session_dir / "events.yaml"
-        existing = self.load_events(session_id)
-        existing.extend(events)
-        with open(events_path, "w") as f:
-            yaml.dump(existing, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+        with open(events_path, "a") as f:
+            for event in events:
+                f.write("---\n")
+                yaml.dump(event, f, default_flow_style=False, allow_unicode=True, sort_keys=False)

@@ -173,13 +173,9 @@ class SessionSecurity:
             return
         self._audit_dir.mkdir(parents=True, exist_ok=True)
         audit_path = self._audit_dir / "audit.yaml"
-        existing: list[dict[str, Any]] = []
-        if audit_path.exists():
-            with open(audit_path) as f:
-                existing = yaml.safe_load(f) or []
-        existing.append(entry.model_dump(mode="json"))
-        with open(audit_path, "w") as f:
-            yaml.dump(existing, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+        with open(audit_path, "a") as f:
+            f.write("---\n")
+            yaml.dump(entry.model_dump(mode="json"), f, default_flow_style=False, allow_unicode=True, sort_keys=False)
 
     def set_user_escalation_callback(
         self,
