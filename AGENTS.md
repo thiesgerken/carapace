@@ -25,7 +25,7 @@ Carapace is a security-first personal AI agent with LLM-powered security gating.
 - `pathlib.Path` over `os.path`
 - Logging: `loguru` (`from loguru import logger`) — never stdlib `logging`. Use f-strings in log calls.
 - Imports ordered: stdlib → third-party → local, separated by blank lines
-- No deferred (in-function) imports — restructure modules to break circular dependencies instead
+- No deferred (in-function) imports or `TYPE_CHECKING` guards — restructure modules to break circular dependencies instead
 - Linting: `uvx ruff check src/` — fix all warnings before committing
 
 ## Project structure
@@ -39,6 +39,7 @@ src/carapace/          # main package
   ws_models.py         # WebSocket message protocol models
   config.py            # configuration loading
   models.py            # Pydantic models and dataclasses
+  usage.py             # token usage tracking (ModelUsage, UsageTracker)
   session.py           # session management
   memory.py            # markdown-based persistent memory
   skills.py            # skill registry

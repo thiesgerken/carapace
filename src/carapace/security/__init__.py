@@ -4,7 +4,6 @@ from typing import Any, Literal
 
 from pydantic_ai import ApprovalRequired
 
-from carapace.models import UsageTracker
 from carapace.security.context import (
     ActionLogEntry as ActionLogEntry,
 )
@@ -16,6 +15,7 @@ from carapace.security.context import (
     ToolCallEntry,
 )
 from carapace.security.sentinel import Sentinel
+from carapace.usage import UsageTracker
 
 SAFE_TOOLS: frozenset[str] = frozenset(
     {

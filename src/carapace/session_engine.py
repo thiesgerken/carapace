@@ -14,11 +14,12 @@ from pydantic_ai import ToolDenied
 import carapace.security as security_mod
 from carapace.agent_loop import run_agent_turn
 from carapace.memory import MemoryStore
-from carapace.models import Config, Deps, SessionState, SkillInfo, UsageTracker
+from carapace.models import Config, Deps, SessionState, SkillInfo
 from carapace.sandbox.manager import SandboxManager
 from carapace.security.context import SessionSecurity, UserVouchedEntry
 from carapace.security.sentinel import Sentinel
 from carapace.session_manager import SessionManager
+from carapace.usage import UsageTracker
 from carapace.ws_models import SLASH_COMMANDS, ApprovalRequest, ApprovalResponse, ProxyApprovalResponse, TurnUsage
 
 # security_mod is still imported for evaluate_domain_with (used in domain approval callback)

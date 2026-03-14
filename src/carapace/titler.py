@@ -7,7 +7,7 @@ from typing import Any
 from loguru import logger
 from pydantic_ai import Agent
 
-from carapace.models import UsageTracker
+from carapace.usage import UsageTracker
 
 _SYSTEM_PROMPT = """\
 Generate a very short title (3-8 words) for a chat conversation.

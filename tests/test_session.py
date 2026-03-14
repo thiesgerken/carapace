@@ -11,10 +11,10 @@ import pytest
 
 from carapace.bootstrap import ensure_data_dir
 from carapace.config import load_config, load_security_md
-from carapace.models import ModelUsage
 from carapace.sandbox.manager import SandboxManager
 from carapace.session import SessionEngine, SessionManager
 from carapace.skills import SkillRegistry
+from carapace.usage import ModelUsage
 from carapace.ws_models import ApprovalRequest, TurnUsage
 
 

@@ -4,9 +4,10 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 from carapace.agent import build_system_prompt
-from carapace.models import Config, Deps, SessionState, UsageTracker
+from carapace.models import Config, Deps, SessionState
 from carapace.sandbox.manager import SandboxManager
 from carapace.security.context import SessionSecurity
+from carapace.usage import UsageTracker
 
 
 def test_build_system_prompt_minimal(tmp_path: Path):
