@@ -55,9 +55,8 @@ class ActiveSession:
     sentinel: Sentinel | None = None
     agent_task: asyncio.Task[None] | None = None
     subscribers: list[SessionSubscriber] = field(default_factory=list)
-    approval_queue: asyncio.Queue[ApprovalResponse | ProxyApprovalResponse | None] = field(
-        default_factory=asyncio.Queue
-    )
+    tool_approval_queue: asyncio.Queue[ApprovalResponse | None] = field(default_factory=asyncio.Queue)
+    proxy_approval_queue: asyncio.Queue[ProxyApprovalResponse | None] = field(default_factory=asyncio.Queue)
     usage_tracker: UsageTracker = field(default_factory=UsageTracker)
     verbose: bool = True
     pending_approval_requests: list[dict[str, Any]] = field(default_factory=list)
@@ -259,8 +258,10 @@ class SessionEngine:
             return
 
         # Drain leftover approval responses
-        while not active.approval_queue.empty():
-            active.approval_queue.get_nowait()
+        while not active.tool_approval_queue.empty():
+            active.tool_approval_queue.get_nowait()
+        while not active.proxy_approval_queue.empty():
+            active.proxy_approval_queue.get_nowait()
 
         active.agent_task = asyncio.create_task(
             self._run_turn(active, content, origin=origin),
@@ -274,7 +275,8 @@ class SessionEngine:
             return
         if active.agent_task and not active.agent_task.done():
             active.agent_task.cancel()
-            active.approval_queue.put_nowait(None)
+            active.tool_approval_queue.put_nowait(None)
+            active.proxy_approval_queue.put_nowait(None)
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await active.agent_task
             active.agent_task = None
@@ -287,7 +289,10 @@ class SessionEngine:
         """Forward an approval / proxy-approval response to the running turn."""
         active = self._active.get(session_id)
         if active:
-            active.approval_queue.put_nowait(response)
+            if isinstance(response, ApprovalResponse):
+                active.tool_approval_queue.put_nowait(response)
+            else:
+                active.proxy_approval_queue.put_nowait(response)
 
     # -- slash commands --
 
@@ -434,13 +439,11 @@ class SessionEngine:
                     results: dict[str, bool | ToolDenied] = {}
                     remaining = set(pending)
                     while remaining:
-                        msg = await active.approval_queue.get()
+                        msg = await active.tool_approval_queue.get()
                         if msg is None:
                             for tid in remaining:
                                 results[tid] = ToolDenied("Agent cancelled.")
                             break
-                        if not isinstance(msg, ApprovalResponse):
-                            continue
                         if msg.tool_call_id in remaining:
                             results[msg.tool_call_id] = (
                                 True if msg.approved else ToolDenied("User denied this operation.")
@@ -531,11 +534,11 @@ class SessionEngine:
             await self._broadcast(active, "on_proxy_approval_request", request_id, domain, cmd)
             # Block until a subscriber responds
             while True:
-                msg = await active.approval_queue.get()
+                msg = await active.proxy_approval_queue.get()
                 if msg is None:
                     active.pending_proxy_approvals.clear()
                     return False
-                if isinstance(msg, ProxyApprovalResponse) and msg.request_id == request_id:
+                if msg.request_id == request_id:
                     decision = msg.decision
                     self._session_mgr.append_events(
                         session_id,
