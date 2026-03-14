@@ -51,13 +51,19 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/metadata-action@v5
+        id: meta
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=semver,pattern={{version}},value=${{ needs.release.outputs.version }}
+            type=raw,value=latest
       - uses: docker/build-push-action@v6
         with:
           context: .
           push: true
-          tags: |
-            ghcr.io/${{ github.repository }}:${{ needs.release.outputs.version }}
-            ghcr.io/${{ github.repository }}:latest
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -73,13 +79,19 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/metadata-action@v5
+        id: meta
+        with:
+          images: ghcr.io/${{ github.repository }}-frontend
+          tags: |
+            type=semver,pattern={{version}},value=${{ needs.release.outputs.version }}
+            type=raw,value=latest
       - uses: docker/build-push-action@v6
         with:
           context: frontend
           push: true
-          tags: |
-            ghcr.io/${{ github.repository }}-frontend:${{ needs.release.outputs.version }}
-            ghcr.io/${{ github.repository }}-frontend:latest
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -95,12 +107,43 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/metadata-action@v5
+        id: meta
+        with:
+          images: ghcr.io/${{ github.repository }}-sandbox
+          tags: |
+            type=semver,pattern={{version}},value=${{ needs.release.outputs.version }}
+            type=raw,value=latest
       - uses: docker/build-push-action@v6
         with:
           context: sandbox
           push: true
-          tags: |
-            ghcr.io/${{ github.repository }}-sandbox:${{ needs.release.outputs.version }}
-            ghcr.io/${{ github.repository }}-sandbox:latest
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  update-release:
+    needs: [release, docker-backend, docker-frontend, docker-sandbox]
+    if: needs.release.outputs.released == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Append Docker images to release notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          version="${{ needs.release.outputs.version }}"
+          repo="${{ github.repository }}"
+          images="## Docker Images
+
+          \`\`\`
+          docker pull ghcr.io/${repo}:${version}
+          docker pull ghcr.io/${repo}-frontend:${version}
+          docker pull ghcr.io/${repo}-sandbox:${version}
+          \`\`\`"
+
+          existing=$(gh release view "v${version}" --repo "${repo}" --json body -q .body)
+          gh release edit "v${version}" --repo "${repo}" \
+            --notes "${existing}
+
+          ${images}"

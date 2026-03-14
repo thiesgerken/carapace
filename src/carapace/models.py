@@ -92,8 +92,11 @@ class CredentialsConfig(BaseModel):
     backend: str = "mock"
 
 
+_SANDBOX_IMAGE_VERSION = "0.20.0"
+
+
 class SandboxConfig(BaseModel):
-    base_image: str = "carapace-sandbox:latest"
+    base_image: str = f"carapace-sandbox:{_SANDBOX_IMAGE_VERSION}"
     idle_timeout_minutes: int = 15
     network_name: str = "carapace-sandbox"
     proxy_port: int = 3128
