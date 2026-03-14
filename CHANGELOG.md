@@ -1,9 +1,31 @@
 # CHANGELOG
 
 
+## v0.25.1 (2026-03-14)
+
+### Other
+
+- Lint
+  ([`f4262a9`](https://github.com/thiesgerken/carapace/commit/f4262a91c59261825fffa6e2a53c8e046ec6c9d7))
+
+- Merge remote-tracking branch 'refs/remotes/origin/main'
+  ([`49694a9`](https://github.com/thiesgerken/carapace/commit/49694a98a7e5ced9e60f15f5d4ab8738e5e64f2c))
+
+### 🐛
+
+- 🐛 fix cors mounting
+  ([`18af792`](https://github.com/thiesgerken/carapace/commit/18af792ec2d3f57fa5142283ce370c687cab55c5))
+
+- 🐛 fix usagetracker import issues
+  ([`07979a6`](https://github.com/thiesgerken/carapace/commit/07979a685d099106470fc1704b696f261afcfe90))
+
+
 ## v0.25.0 (2026-03-14)
 
 ### Other
+
+- 💄 lint issues
+  ([`c3673b5`](https://github.com/thiesgerken/carapace/commit/c3673b5f7b76405b1664659be549757725513a0e))
 
 - 📋 update TODO.md: refine Sandbox/Docker and Channels sections, remove outdated tasks
   ([`932c985`](https://github.com/thiesgerken/carapace/commit/932c9851c97bad80c7a22c2e7abdf8073417fe15))

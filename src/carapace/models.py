@@ -89,7 +89,7 @@ class CredentialsConfig(BaseModel):
     backend: str = "mock"
 
 
-_SANDBOX_IMAGE_VERSION = "0.24.0"
+_SANDBOX_IMAGE_VERSION = "0.25.1"
 
 
 class SandboxConfig(BaseModel):
