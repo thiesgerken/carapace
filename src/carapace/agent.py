@@ -80,7 +80,12 @@ def build_system_prompt(deps: Deps) -> str:
         "- `/workspace/skills/` — activated skills (populated by `use_skill`)\n"
         "- `/workspace/tmp/` — writable scratch space\n"
         "Call `use_skill(skill_name)` to activate a skill before running its scripts.\n"
-        "Call `save_skill(skill_name)` to persist edits back to the master skill directory."
+        "Call `save_skill(skill_name)` to persist edits back to the master skill directory.\n\n"
+        "## Network Access\n"
+        "The sandbox has internet access. Outgoing requests are allowed but subject to "
+        "security review by the sentinel — like all tool calls, network activity is evaluated "
+        "and may be denied if it violates the security policy. "
+        "Skills can declare specific domains they need; those are granted when the skill is activated."
     )
 
     parts.append(f"# Session Info\nSession ID: {deps.session_state.session_id}")
