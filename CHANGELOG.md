@@ -1,6 +1,47 @@
 # CHANGELOG
 
 
+## v0.21.0 (2026-03-14)
+
+### Other
+
+- Igns plans
+  ([`d0c8b30`](https://github.com/thiesgerken/carapace/commit/d0c8b307ab8b9d3f4e3e312b0efbd2a07f311e58))
+
+- Merge remote-tracking branch 'refs/remotes/origin/main'
+  ([`7ece752`](https://github.com/thiesgerken/carapace/commit/7ece752ec76ef05a1a248b2dc0da4351359001d3))
+
+- ♻️ refactor: replace global security dicts with dependency injection
+  ([`74c5c90`](https://github.com/thiesgerken/carapace/commit/74c5c90547f87d2d086f33f22e3116d875f8cd9b))
+
+- ♻️ refactor: split session.py into session_manager.py and session_engine.py
+  ([`6c6a604`](https://github.com/thiesgerken/carapace/commit/6c6a604dbb09cae74c589b09d6a780e82b16319e))
+
+- session_manager.py: SessionManager (pure file I/O, no async) - session_engine.py:
+  SessionSubscriber, ActiveSession, SessionEngine (lifecycle, orchestration) - session.py:
+  backward-compatible re-export shim - Update test mock targets to carapace.session_engine.Sentinel
+
+- ♻️ refactor: split shared approval queue into typed tool/proxy queues
+  ([`f928781`](https://github.com/thiesgerken/carapace/commit/f92878180d551c8ca73991fe4e4f11e116897c45))
+
+- ♻️ refactor: wire security callbacks at session activation, not per-turn
+  ([`8523ce3`](https://github.com/thiesgerken/carapace/commit/8523ce39ce62ab553829d19ce7aff75a2e2aea2f))
+
+- ⚡ perf: switch append_events and write_audit to append-only YAML
+  ([`95ee976`](https://github.com/thiesgerken/carapace/commit/95ee976dc79f39a0b7286895309499046d3133ad))
+
+### ✨
+
+- ✨move sandbox Dockerfile out of backend assets, remove on-demand build
+  ([`a72d34e`](https://github.com/thiesgerken/carapace/commit/a72d34e601898acb07b6be3ab8f8772a4c963d1b))
+
+- Move src/carapace/assets/Dockerfile → sandbox/Dockerfile - Remove get_sandbox_dockerfile() from
+  bootstrap.py - Remove build_image() call and _BUILTIN_SANDBOX_IMAGE from server.py - Change
+  SandboxConfig.base_image default to 'carapace-sandbox:latest' - Add build-only sandbox service to
+  docker-compose.yml (profiles: build) - Add docker-sandbox CI/release jobs to build and push the
+  image
+
+
 ## v0.20.0 (2026-03-14)
 
 ### Other
@@ -32,6 +73,12 @@
 
 - 📝 docs: clarify stdlib logging import in server.py
   ([`d0a4140`](https://github.com/thiesgerken/carapace/commit/d0a4140c7b229d05babce9377c817d42e41280c7))
+
+- 🔒 security: make CORS origins configurable, default to localhost:3000
+  ([`23d5247`](https://github.com/thiesgerken/carapace/commit/23d5247e0007d3ecb9bc4137b20211c21fc8664f))
+
+- Add cors_origins field to ServerConfig (default: ["http://localhost:3000"]) - Move CORS middleware
+  setup into lifespan so it reads from config - Replaces previous allow_origins=["*"]
 
 - 🔥 cleanup: delete dead _resolve_path and its tests
   ([`a52ac7a`](https://github.com/thiesgerken/carapace/commit/a52ac7a44eb1c26dd2c420bce2d88507065f27af))
