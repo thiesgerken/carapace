@@ -20,6 +20,104 @@ Carapace is a self-hosted AI agent gateway that connects to Matrix (and future c
 - **The agent improves itself.** Carapace can write new skills, update its memory, and evolve its personality -- all gated by the same security system. No special "architect mode", just a sentinel that understands context.
 - **Credentials stay in your vault.** Carapace doesn't store secrets. It fetches credentials from your password manager (Vaultwarden, 1Password, pass) on demand, with per-session approval.
 
+## Demo
+
+```text
+$ carapace-server
+INFO:     Carapace server ready — model=anthropic:claude-sonnet-4-5, skills=1, token=a1b2c3d4…
+
+$ carapace
+New session c72188b27225
+Server: http://127.0.0.1:8321 | Type /help for commands
+
+carapace> hi
+
+Hello! I'm Carapace, your personal AI assistant. How can I help you today?
+
+carapace> what can you do
+
+I can help you with a variety of tasks:
+
+File Management
+ • Read, write, and edit files
+ • Organize and manage documents
+
+Command Execution
+ • Run shell commands and scripts
+ • Execute code and tools
+
+Information & Research
+ • Search the web for information
+ • Look up facts and research topics
+
+Memory
+ • Remember important information about you and your preferences
+ • Maintain context across our conversations
+
+Task Planning
+ • Break down complex tasks into steps
+ • Help organize and execute multi-step projects
+
+carapace> find out about your environment
+  bash(command='ls -la')     [read_local] (shell)
+  bash(command='uname -a')   [read_local] (shell)
+  bash(command='pwd')        [read_local] (shell)
+
+Here's what I found about the environment:
+
+Location & System
+ • Working directory: /home/user/carapace/data
+ • OS: macOS (Darwin kernel, ARM64 - Apple Silicon)
+ • Shell: zsh
+
+Available Files & Directories
+ • AGENTS.md, SOUL.md, USER.md - configuration files
+ • config.yaml - system configuration
+ • SECURITY.md - security policy
+ • logs/, memory/, sessions/, skills/
+
+Programming Languages Available
+ • Python 3 (in virtual environment)
+ • Node.js
+
+carapace> ^D
+Goodbye.
+```
+
+## Getting started
+
+### Prerequisites
+
+- **Docker** (required for sandbox execution in all setups)
+- An **Anthropic API key** (set `ANTHROPIC_API_KEY` in `.env` or your environment)
+
+### Configuration
+
+1. Copy `.env.example` to `.env` and set your API key.
+2. Customise files under `data/` — see [Data directory](#data-directory) below.
+
+On first server start a bearer token is generated in `data/server.token`. The CLI reads it automatically from the same data directory. The web UI prompts for the server URL and token on first connect.
+
+### Deployment with Docker Compose
+
+Run the backend and frontend as containers:
+
+```bash
+# Build all images (server, frontend, sandbox)
+docker compose build
+
+# Start the server and frontend
+docker compose up -d
+```
+
+The server is available at `http://localhost:8321`, the frontend at `http://localhost:3001`.
+
+To connect via the CLI from the host:
+
+```bash
+uv run carapace --token "$(cat data/server.token)"
+```
+
 ## Architecture overview
 
 ```text
@@ -96,49 +194,15 @@ Carapace is inspired by [OpenClaw](https://docs.openclaw.ai/) but differs fundam
 
 Other differences: Carapace is Python (not Node), uses Pydantic AI (not a custom agent loop), runs everything in Docker (not on the host), delegates credentials to a password manager (not built-in storage), and uses the open AgentSkills format (not a custom skill system).
 
-## Getting started
+## Development setup
 
-### Prerequisites
-
-- **Docker** (required for sandbox execution in all setups)
-- An **Anthropic API key** (set `ANTHROPIC_API_KEY` in `.env` or your environment)
-
-### Configuration
-
-1. Copy `.env.example` to `.env` and set your API key.
-2. Customise files under `data/` — see [Data directory](#data-directory) above.
-
-On first server start a bearer token is generated in `data/server.token`. The CLI reads it automatically from the same data directory. The web UI prompts for the server URL and token on first connect.
-
-### Deployment with Docker Compose
-
-Run the backend and frontend as containers:
-
-```bash
-# Build all images (server, frontend, sandbox)
-docker compose build
-
-# Start the server and frontend
-docker compose up -d
-```
-
-The server is available at `http://localhost:8321`, the frontend at `http://localhost:3001`.
-
-To connect via the CLI from the host:
-
-```bash
-uv run carapace --token "$(cat data/server.token)"
-```
-
-### Development setup
-
-For local development, run the backend and frontend directly:
+For local development, run the backend and frontend directly instead of using Docker Compose:
 
 ```bash
 # Install Python dependencies
 uv sync
 
-# Build the sandbox image (required)
+# Build the sandbox image (required — the server won't start without it)
 docker compose build sandbox
 
 # Start the backend
@@ -151,73 +215,7 @@ cd frontend && npm install && npm run dev
 uv run carapace
 ```
 
-Additional prerequisites for development: **Python 3.12+** (3.14 recommended), **[uv](https://docs.astral.sh/uv/)**, and **Node.js 22+** for the frontend.
-
-The server will refuse to start if the sandbox image is not available — the error message tells you exactly how to build or pull it.
-
-## Demo
-
-```text
-$ carapace-server
-INFO:     Carapace server ready — model=anthropic:claude-sonnet-4-5, skills=1, token=a1b2c3d4…
-
-$ carapace
-New session c72188b27225
-Server: http://127.0.0.1:8321 | Type /help for commands
-
-carapace> hi
-
-Hello! I'm Carapace, your personal AI assistant. How can I help you today?
-
-carapace> what can you do
-
-I can help you with a variety of tasks:
-
-File Management
- • Read, write, and edit files
- • Organize and manage documents
-
-Command Execution
- • Run shell commands and scripts
- • Execute code and tools
-
-Information & Research
- • Search the web for information
- • Look up facts and research topics
-
-Memory
- • Remember important information about you and your preferences
- • Maintain context across our conversations
-
-Task Planning
- • Break down complex tasks into steps
- • Help organize and execute multi-step projects
-
-carapace> find out about your environment
-  bash(command='ls -la')     [read_local] (shell)
-  bash(command='uname -a')   [read_local] (shell)
-  bash(command='pwd')        [read_local] (shell)
-
-Here's what I found about the environment:
-
-Location & System
- • Working directory: /home/user/carapace/data
- • OS: macOS (Darwin kernel, ARM64 - Apple Silicon)
- • Shell: zsh
-
-Available Files & Directories
- • AGENTS.md, SOUL.md, USER.md - configuration files
- • config.yaml - system configuration
- • SECURITY.md - security policy
- • logs/, memory/, sessions/, skills/
-
-Programming Languages Available
- • Python 3 (in virtual environment)
- • Node.js
-
-carapace> ^D
-Goodbye.
-```
+Additional prerequisites: **Python 3.12+** (3.14 recommended), **[uv](https://docs.astral.sh/uv/)**, and **Node.js 22+** for the frontend.
 
 ## Status
 
