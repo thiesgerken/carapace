@@ -32,7 +32,8 @@ jobs:
         uses: python-semantic-release/python-semantic-release@v9
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          root_options: "--strict --no-vcs-release"
+          root_options: "--strict"
+          vcs_release: false
 
   docker-backend:
     needs: version
