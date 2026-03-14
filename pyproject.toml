@@ -41,7 +41,6 @@ packages = ["src/carapace"]
 
 [tool.semantic_release]
 version_toml = ["pyproject.toml:project.version"]
-version_variables = ["src/carapace/models.py:_SANDBOX_IMAGE_VERSION"]
 commit_parser = "emoji"
 build_command = "pip install uv && uv lock && uv build"
 

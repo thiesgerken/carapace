@@ -89,12 +89,9 @@ class CredentialsConfig(BaseModel):
     backend: str = "mock"
 
 
-_SANDBOX_IMAGE_VERSION = "0.25.1"
-
-
 class SandboxConfig(BaseModel):
     runtime: Literal["docker", "kubernetes"] = "docker"
-    base_image: str = f"carapace-sandbox:{_SANDBOX_IMAGE_VERSION}"
+    base_image: str = "carapace-sandbox:latest"
     idle_timeout_minutes: int = 15
     network_name: str = "carapace-sandbox"
     proxy_port: int = 3128
