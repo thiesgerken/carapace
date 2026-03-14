@@ -1,6 +1,25 @@
 # CHANGELOG
 
 
+## v0.25.0 (2026-03-14)
+
+### Other
+
+- 📋 update TODO.md: refine Sandbox/Docker and Channels sections, remove outdated tasks
+  ([`932c985`](https://github.com/thiesgerken/carapace/commit/932c9851c97bad80c7a22c2e7abdf8073417fe15))
+
+### ✨
+
+- ✨ feat: add Kubernetes sandbox runtime and deployment manifests
+  ([`547855b`](https://github.com/thiesgerken/carapace/commit/547855b50044745f98def3af38666d53be9a8983))
+
+- KubernetesRuntime implements ContainerRuntime protocol using k8s API - Sandbox pods use PVC
+  subPaths, ownerReferences, NetworkPolicy isolation - Runtime selection via config.sandbox.runtime
+  (docker|kubernetes) - Kustomize manifests in k8s/ (namespace, PVC, RBAC, deployments, ingress) -
+  Full deployment guide at docs/kubernetes.md - 19 unit tests with mocked k8s API - Add
+  pytest-asyncio with asyncio_mode=auto
+
+
 ## v0.24.0 (2026-03-14)
 
 ### Other
