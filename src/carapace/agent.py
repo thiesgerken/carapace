@@ -10,7 +10,7 @@ from carapace.config import load_workspace_file
 from carapace.memory import MemoryStore
 from carapace.models import Deps
 from carapace.sandbox.runtime import SkillVenvError
-from carapace.security.context import SecurityDeniedError, SkillActivatedEntry, ToolResultEntry
+from carapace.security.context import SkillActivatedEntry, ToolResultEntry
 from carapace.skills import SkillRegistry
 
 
@@ -21,15 +21,16 @@ async def _gate(ctx: RunContext[Deps], tool_name: str, args: dict[str, Any]) -> 
     return it to pydantic-ai), or ``None`` when the call is allowed.
     """
     try:
-        await security.evaluate(
-            ctx.deps.session_state.session_id,
+        await security.evaluate_with(
+            ctx.deps.security,
+            ctx.deps.sentinel,
             tool_name,
             args,
             usage_tracker=ctx.deps.usage_tracker,
             verbose=ctx.deps.verbose,
             tool_call_callback=ctx.deps.tool_call_callback,
         )
-    except SecurityDeniedError as exc:
+    except security.SecurityDeniedError as exc:
         return ToolDenied(str(exc))
     return None
 
@@ -155,8 +156,7 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
         ctx.deps.activated_skills.append(skill_name)
 
         skill_info = next((s for s in ctx.deps.skill_catalog if s.name == skill_name), None)
-        security.append_log(
-            ctx.deps.session_state.session_id,
+        ctx.deps.security.append(
             SkillActivatedEntry(
                 skill_name=skill_name,
                 description=skill_info.description if skill_info else "",
@@ -187,8 +187,7 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
             ctx.deps.session_state.session_id,
             skill_name,
         )
-        security.append_log(
-            ctx.deps.session_state.session_id,
+        ctx.deps.security.append(
             ToolResultEntry(tool="save_skill", status="success"),
         )
         _notify_result(ctx, "save_skill", result)
@@ -283,8 +282,7 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
         session_id = ctx.deps.session_state.session_id
         result = await ctx.deps.sandbox.exec_command(session_id, command, timeout)
 
-        security.append_log(
-            session_id,
+        ctx.deps.security.append(
             ToolResultEntry(tool="exec", status="error" if result.startswith("Error") else "success"),
         )
 
@@ -335,8 +333,7 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
 
         store = MemoryStore(ctx.deps.data_dir)
         result = store.write(file_path, content)
-        security.append_log(
-            ctx.deps.session_state.session_id,
+        ctx.deps.security.append(
             ToolResultEntry(tool="write_memory", status="success"),
         )
         _notify_result(ctx, "write_memory", result)

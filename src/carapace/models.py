@@ -13,6 +13,7 @@ from pydantic import BaseModel, ConfigDict
 from pydantic_ai.usage import RunUsage
 
 from carapace.sandbox.manager import SandboxManager
+from carapace.security.context import SessionSecurity
 
 # --- Session State ---
 
@@ -235,6 +236,8 @@ class Deps(BaseModel):
     data_dir: Path
     session_state: SessionState
     sandbox: SandboxManager
+    security: SessionSecurity
+    sentinel: Any  # Sentinel (can't import here — circular dep via UsageTracker)
     skill_catalog: list[SkillInfo] = []
     activated_skills: list[str] = []
     agent_model: Any = None

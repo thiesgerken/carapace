@@ -21,6 +21,8 @@ from carapace.security.sentinel import Sentinel
 from carapace.session_manager import SessionManager
 from carapace.ws_models import SLASH_COMMANDS, ApprovalRequest, ApprovalResponse, ProxyApprovalResponse, TurnUsage
 
+# security_mod is still imported for evaluate_domain_with (used in domain approval callback)
+
 # ---------------------------------------------------------------------------
 # Subscriber protocol — channels (WebSocket, Matrix, …) implement this
 # ---------------------------------------------------------------------------
@@ -152,11 +154,12 @@ class SessionEngine:
         )
         self._active[session_id] = active
 
-        # Register in the global dicts so agent.py / agent_loop.py can
-        # look up the session via security.evaluate / append_log / write_audit.
-        security_mod._sessions[session_id] = security
-        security_mod._sentinels[session_id] = sentinel
-        security_mod._session_refs[session_id] = 1
+        # Register a domain-approval callback so the sandbox proxy can
+        # evaluate domain requests through the per-session sentinel.
+        self._sandbox_mgr.set_domain_approval_callback(
+            session_id,
+            self._make_domain_eval_cb(security, sentinel, active),
+        )
 
         return active
 
@@ -173,7 +176,7 @@ class SessionEngine:
         active = self._active.pop(session_id, None)
         if active and active.agent_task and not active.agent_task.done():
             active.agent_task.cancel()
-        security_mod.destroy_session(session_id)
+        self._sandbox_mgr.set_domain_approval_callback(session_id, None)
 
     # -- subscribers --
 
@@ -219,10 +222,13 @@ class SessionEngine:
         tool_call_callback: Callable[[str, dict[str, Any], str], None] | None = None,
         tool_result_callback: Callable[[str, str], None] | None = None,
     ) -> Deps:
+        assert active.security is not None and active.sentinel is not None
         return Deps(
             config=self._config,
             data_dir=self._data_dir,
             session_state=active.state,
+            security=active.security,
+            sentinel=active.sentinel,
             skill_catalog=self._skill_catalog,
             agent_model=self._agent_model,
             verbose=active.verbose,
@@ -559,3 +565,22 @@ class SessionEngine:
             task.add_done_callback(active._pending_sends.discard)
 
         return _notify
+
+    def _make_domain_eval_cb(
+        self,
+        security: SessionSecurity,
+        sentinel: Sentinel,
+        active: ActiveSession,
+    ) -> Callable[[str, str], Awaitable[bool]]:
+        """Build a callback for SandboxManager.request_domain_approval."""
+
+        async def _eval(domain: str, command: str) -> bool:
+            return await security_mod.evaluate_domain_with(
+                security,
+                sentinel,
+                domain,
+                command,
+                usage_tracker=active.usage_tracker,
+            )
+
+        return _eval

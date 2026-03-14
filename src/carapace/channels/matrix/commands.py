@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import carapace.security as security_mod
 from carapace.memory import MemoryStore
 from carapace.models import Deps
 from carapace.security.context import UserVouchedEntry
@@ -28,14 +27,8 @@ def handle_matrix_slash_command(
 
     if cmd == "/security":
         policy = security_md or "(no SECURITY.md loaded)"
-        session_id = deps.session_state.session_id
-        try:
-            session = security_mod.get_session(session_id)
-            log_count = len(session.action_log)
-            eval_count = session.sentinel_eval_count
-        except KeyError:
-            log_count = 0
-            eval_count = 0
+        log_count = len(deps.security.action_log)
+        eval_count = deps.security.sentinel_eval_count
         return CommandResult(
             command="security",
             data={
@@ -46,8 +39,7 @@ def handle_matrix_slash_command(
         )
 
     if cmd == "/approve-context":
-        session_id = deps.session_state.session_id
-        security_mod.append_log(session_id, UserVouchedEntry())
+        deps.security.append(UserVouchedEntry())
         return CommandResult(
             command="approve-context",
             data={"message": "Recorded: you vouch for the current agent context as trustworthy."},

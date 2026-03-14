@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any, Literal
 
-from loguru import logger
 from pydantic_ai import ApprovalRequired
 
 from carapace.models import UsageTracker
 from carapace.security.context import (
-    ActionLogEntry,
+    ActionLogEntry as ActionLogEntry,
+)
+from carapace.security.context import (
     AuditEntry,
     SecurityDeniedError,
     SentinelVerdict,
@@ -28,107 +28,6 @@ SAFE_TOOLS: frozenset[str] = frozenset(
         "use_skill",
     }
 )
-
-# --- Legacy global dicts (kept for backward compatibility during transition) ---
-
-_sessions: dict[str, SessionSecurity] = {}
-_sentinels: dict[str, Sentinel] = {}
-_session_refs: dict[str, int] = {}
-
-
-def get_session(session_id: str) -> SessionSecurity:
-    if session_id not in _sessions:
-        raise KeyError(f"No security session for {session_id}")
-    return _sessions[session_id]
-
-
-def init_session(
-    session_id: str,
-    *,
-    sentinel_model: str,
-    security_md: str,
-    skills_dir: Path,
-    audit_dir: Path | None = None,
-    reset_threshold: int = 20,
-) -> SessionSecurity:
-    """Create or reuse a security session (refcount-based).
-
-    If the session already exists the existing state is returned and the
-    reference count is incremented.  This keeps the sentinel conversation and
-    action log intact when multiple WebSocket clients share a session.
-    """
-    if session_id in _sessions:
-        _session_refs[session_id] = _session_refs.get(session_id, 1) + 1
-        logger.debug(f"Reusing existing security session {session_id} (refs={_session_refs[session_id]})")
-        return _sessions[session_id]
-
-    session = SessionSecurity(session_id, audit_dir=audit_dir)
-    _sessions[session_id] = session
-    _sentinels[session_id] = Sentinel(
-        model=sentinel_model,
-        security_md=security_md,
-        skills_dir=skills_dir,
-        reset_threshold=reset_threshold,
-    )
-    _session_refs[session_id] = 1
-    return session
-
-
-def cleanup_session(session_id: str) -> None:
-    """Decrement the reference count; only remove state when the last ref is released."""
-    refs = _session_refs.get(session_id, 0)
-    if refs > 1:
-        _session_refs[session_id] = refs - 1
-        logger.debug(f"Security session {session_id} ref decremented (refs={refs - 1})")
-        return
-    _sessions.pop(session_id, None)
-    _sentinels.pop(session_id, None)
-    _session_refs.pop(session_id, None)
-
-
-def destroy_session(session_id: str) -> None:
-    """Unconditionally remove all security state for a session."""
-    _sessions.pop(session_id, None)
-    _sentinels.pop(session_id, None)
-    _session_refs.pop(session_id, None)
-
-
-def append_log(session_id: str, entry: ActionLogEntry) -> None:
-    session = _sessions.get(session_id)
-    if session:
-        session.append(entry)
-
-
-def write_audit(session_id: str, entry: AuditEntry) -> None:
-    """Write an audit entry for the given session."""
-    session = _sessions.get(session_id)
-    if session:
-        session.write_audit(entry)
-
-
-async def evaluate(
-    session_id: str,
-    tool_name: str,
-    args: dict[str, Any],
-    *,
-    usage_tracker: UsageTracker | None = None,
-    verbose: bool = True,
-    tool_call_callback: Any = None,
-) -> None:
-    """Main security gate (global-dict lookup). Delegates to evaluate_with."""
-    session = _sessions.get(session_id)
-    sentinel = _sentinels.get(session_id)
-    if session is None or sentinel is None:
-        raise RuntimeError(f"No security session for {session_id}")
-    await evaluate_with(
-        session,
-        sentinel,
-        tool_name,
-        args,
-        usage_tracker=usage_tracker,
-        verbose=verbose,
-        tool_call_callback=tool_call_callback,
-    )
 
 
 async def evaluate_with(
@@ -216,27 +115,6 @@ async def evaluate_with(
             final_decision="allowed",
             explanation=verdict.explanation,
         )
-    )
-
-
-async def evaluate_domain(
-    session_id: str,
-    domain: str,
-    command: str,
-    *,
-    usage_tracker: UsageTracker | None = None,
-) -> bool:
-    """Evaluate a proxy domain request (global-dict lookup). Delegates to evaluate_domain_with."""
-    session = _sessions.get(session_id)
-    sentinel = _sentinels.get(session_id)
-    if session is None or sentinel is None:
-        raise RuntimeError(f"No security session for {session_id}")
-    return await evaluate_domain_with(
-        session,
-        sentinel,
-        domain,
-        command,
-        usage_tracker=usage_tracker,
     )
 
 

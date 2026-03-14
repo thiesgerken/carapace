@@ -17,7 +17,6 @@ from typing import Any
 
 from pydantic_ai import DeferredToolRequests, DeferredToolResults, ToolDenied
 
-import carapace.security as security
 from carapace.agent import create_agent
 from carapace.models import Deps
 from carapace.security.context import (
@@ -44,9 +43,7 @@ async def run_agent_turn(
     The caller is responsible for persisting history and delivering the output
     to the user.
     """
-    session_id = deps.session_state.session_id
-
-    security.append_log(session_id, UserMessageEntry(content=user_input))
+    deps.security.append(UserMessageEntry(content=user_input))
 
     agent = create_agent(deps)
     model_name = deps.config.agent.model
@@ -84,8 +81,7 @@ async def run_agent_turn(
             meta = requests.metadata.get(tool_call_id, {})
             user_decision = "approved" if decision is True else "denied"
 
-            security.append_log(
-                session_id,
+            deps.security.append(
                 ApprovalEntry(
                     tool=meta.get("tool", ""),
                     args_summary=str(meta.get("args", {}))[:200],
@@ -96,8 +92,7 @@ async def run_agent_turn(
             # Write the deferred audit entry now that the user has decided.
             sentinel_verdict = meta.get("sentinel_verdict")
             if isinstance(sentinel_verdict, SentinelVerdict):
-                security.write_audit(
-                    session_id,
+                deps.security.write_audit(
                     AuditEntry.now(
                         kind="tool_call",
                         tool=meta.get("tool"),
@@ -119,7 +114,7 @@ async def run_agent_turn(
     if isinstance(result.output, str):
         last_usage = result.usage()
         token_count = (last_usage.output_tokens or 0) + (last_usage.input_tokens or 0)
-        security.append_log(session_id, AgentResponseEntry(token_count=token_count))
+        deps.security.append(AgentResponseEntry(token_count=token_count))
         return messages, result.output, (last_usage.input_tokens or 0, last_usage.output_tokens or 0)
 
     output = f"Unexpected agent output type: {type(result.output).__name__}"

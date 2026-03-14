@@ -6,6 +6,7 @@ from unittest.mock import MagicMock
 from carapace.agent import build_system_prompt
 from carapace.models import Config, Deps, SessionState, UsageTracker
 from carapace.sandbox.manager import SandboxManager
+from carapace.security.context import SessionSecurity
 
 
 def test_build_system_prompt_minimal(tmp_path: Path):
@@ -16,6 +17,8 @@ def test_build_system_prompt_minimal(tmp_path: Path):
         session_state=state,
         rules=[],
         sandbox=MagicMock(spec=SandboxManager),
+        security=SessionSecurity("test-123"),
+        sentinel=MagicMock(),
         usage_tracker=UsageTracker(),
     )
     prompt = build_system_prompt(deps)
@@ -31,6 +34,8 @@ def test_build_system_prompt_with_agents_md(tmp_path: Path):
         session_state=state,
         rules=[],
         sandbox=MagicMock(spec=SandboxManager),
+        security=SessionSecurity("s1"),
+        sentinel=MagicMock(),
         usage_tracker=UsageTracker(),
     )
     prompt = build_system_prompt(deps)

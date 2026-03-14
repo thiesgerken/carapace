@@ -7,6 +7,7 @@ import secrets
 import shlex
 import shutil
 import time
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 
 from loguru import logger
@@ -145,6 +146,7 @@ class SandboxManager:
         self._allowed_domains: dict[str, set[str]] = {}
         self._exec_temp_domains: dict[str, set[str]] = {}  # session_id -> domains, cleared after each exec
         self._session_current_command: dict[str, str] = {}
+        self._domain_approval_cbs: dict[str, Callable[[str, str], Awaitable[bool]]] = {}
         logger.info(
             f"SandboxManager initialized (image={base_image}, "
             + f"network={network_name}, proxy_port={proxy_port}, idle_timeout={idle_timeout_minutes}m)"
@@ -542,16 +544,25 @@ class SandboxManager:
     # Proxy domain approval
     # ------------------------------------------------------------------
 
+    def set_domain_approval_callback(self, session_id: str, cb: Callable[[str, str], Awaitable[bool]] | None) -> None:
+        """Register or remove a per-session callback for proxy domain approval."""
+        if cb is None:
+            self._domain_approval_cbs.pop(session_id, None)
+        else:
+            self._domain_approval_cbs[session_id] = cb
+
     async def request_domain_approval(self, session_id: str, domain: str) -> bool:
         """Called by the proxy when a domain is not in the allowlist.
 
-        Delegates to the security module's sentinel for evaluation. If the
-        sentinel approves, the domain is temporarily allowed for the current exec.
+        Delegates to the per-session callback registered by SessionEngine.
         """
-        import carapace.security as security
+        cb = self._domain_approval_cbs.get(session_id)
+        if cb is None:
+            logger.warning(f"No domain approval callback for session {session_id}, denying {domain}")
+            return False
 
         command = self._session_current_command.get(session_id, "")
-        allowed = await security.evaluate_domain(session_id, domain, command)
+        allowed = await cb(domain, command)
         if allowed:
             self._exec_temp_domains.setdefault(session_id, set()).add(domain)
             logger.info(f"Security approved {domain} for session {session_id}")
@@ -583,3 +594,5 @@ class SandboxManager:
         if clear_exec_state:
             self._exec_temp_domains.pop(session_id, None)
             self._session_current_command.pop(session_id, None)
+        if clear_domain_state:
+            self._domain_approval_cbs.pop(session_id, None)
