@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import logging
+import logging  # stdlib logging used only for _InterceptHandler → loguru bridge
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
