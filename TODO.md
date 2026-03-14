@@ -10,36 +10,23 @@
 
 ## Sandbox / Docker
 
-- [ ] Docker-first execution: move all tool execution into containers (currently runs in-process)
-- [ ] Base container: read-only Alpine+Python, no network, pre-warmed at session start
-- [ ] Skill containers: build from skill `Dockerfile`, cache images, inject credentials as env vars
-- [ ] Shared mount setup: `/skills` (ro), `/memory` (ro), `/workspace` (ro), `/tmp/shared` (rw per session)
-- [ ] Proposed writes via `/tmp/shared/pending/` -- orchestrator applies after approval
-- [ ] Container lifecycle: idle timeout, destroy on expire, pre-warm on next message
-- [ ] Network policy enforcement per container (no network for base, per-skill for skill containers)
-- [ ] Shell commands via `docker exec` into base container
+- [ ] Credential injection into skill containers (env var, file, or stdin)
+- [ ] Health check / readiness probe
 
 ## Channels
 
-- [ ] Abstract channel interface (`Channel` ABC with `start`, `send_message`, `send_approval_request`, `wait_for_approval`)
-- [ ] Matrix channel: matrix-nio with E2EE, reactions for approvals, threads for long output
-- [ ] Decouple REPL logic from CLI -- the CLI becomes just another channel adapter
+- [ ] Matrix E2EE support (currently plain-text only)
 - [ ] Cron channel: scheduled jobs, approval routing to Matrix
 - [ ] Webhook channel: inbound HTTP/email triggers
 - [ ] Cross-channel approval routing (tagged system messages to avoid session interference)
-- [ ] Web UI channel (future)
 
 ## Credentials
 
 - [ ] Real credential broker: fetch from Vaultwarden/Bitwarden via CLI or API (just this one backend for now, but make it possible to add more in the future)
-- [ ] Credential injection into skill containers (env var, file, or stdin)
 - [ ] Per-session in-memory caching (never persist to disk)
 
 ## Skills
 
-- [ ] `carapace.yaml` parsing: credential declarations, classification hints, sandbox config
-- [ ] Dockerfile-based skill execution: build, cache, mount, run
-- [ ] Default sandbox image for skills without a Dockerfile
 - [ ] Skill self-improvement flow: agent writes to `/tmp/shared/pending/skills/`, user sees diff, orchestrator applies
 - [ ] Skill image rebuild detection (Dockerfile or requirements change)
 
@@ -64,16 +51,8 @@
 
 ## Observability
 
-- [ ] Pydantic Logfire integration: trace agent runs, tool calls, classifier invocations, rule evaluations
 - [ ] Container lifecycle tracing
 - [ ] Structured logging to `$CARAPACE_DATA_DIR/logs/`
-
-## Deployment
-
-- [ ] Dockerfile for Carapace itself
-- [ ] Docker Compose with socket mount, env vars, data volume
-- [ ] Base container image definition (Alpine + Python + common tools)
-- [ ] Health check / readiness probe
 
 ## Sessions / Multi-Agent
 
@@ -83,8 +62,4 @@
 
 ## Misc
 
-- [ ] Error handling refinement: agent-decided retries per AGENTS.md guidance
 - [ ] Streaming output in CLI (currently waits for full response)
-- [ ] Config validation on startup with clear error messages
-- [ ] `.gitignore` for data directory secrets / session state
-- [ ] Tests: unit tests for classifier, rule engine, session manager, skill registry
