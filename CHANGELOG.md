@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v0.31.0 (2026-03-15)
+
+### ✨
+
+- ✨ better url guessing in ui
+  ([`2bece2e`](https://github.com/thiesgerken/carapace/commit/2bece2e77749251d18309ed167b7a459ec3fdb2a))
+
+
 ## v0.30.2 (2026-03-15)
 
 ### Other
