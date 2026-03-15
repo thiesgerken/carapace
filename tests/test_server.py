@@ -66,12 +66,12 @@ def auth_headers(bearer) -> dict[str, str]:
 
 
 def test_no_auth_returns_401(client):
-    resp = client.get("/sessions")
+    resp = client.get("/api/sessions")
     assert resp.status_code in (401, 403)
 
 
 def test_bad_token_returns_401(client):
-    resp = client.get("/sessions", headers={"Authorization": "Bearer wrong"})
+    resp = client.get("/api/sessions", headers={"Authorization": "Bearer wrong"})
     assert resp.status_code == 401
 
 
@@ -79,7 +79,7 @@ def test_bad_token_returns_401(client):
 
 
 def test_create_session(client, auth_headers):
-    resp = client.post("/sessions", headers=auth_headers)
+    resp = client.post("/api/sessions", headers=auth_headers)
     assert resp.status_code == 200
     data = resp.json()
     assert "session_id" in data
@@ -87,24 +87,24 @@ def test_create_session(client, auth_headers):
 
 
 def test_list_sessions(client, auth_headers):
-    client.post("/sessions", headers=auth_headers)
-    client.post("/sessions", headers=auth_headers)
-    resp = client.get("/sessions", headers=auth_headers)
+    client.post("/api/sessions", headers=auth_headers)
+    client.post("/api/sessions", headers=auth_headers)
+    resp = client.get("/api/sessions", headers=auth_headers)
     assert resp.status_code == 200
     sessions = resp.json()
     assert len(sessions) >= 2
 
 
 def test_get_session(client, auth_headers):
-    create_resp = client.post("/sessions", headers=auth_headers)
+    create_resp = client.post("/api/sessions", headers=auth_headers)
     sid = create_resp.json()["session_id"]
-    resp = client.get(f"/sessions/{sid}", headers=auth_headers)
+    resp = client.get(f"/api/sessions/{sid}", headers=auth_headers)
     assert resp.status_code == 200
     assert resp.json()["session_id"] == sid
 
 
 def test_get_nonexistent_session(client, auth_headers):
-    resp = client.get("/sessions/doesnotexist", headers=auth_headers)
+    resp = client.get("/api/sessions/doesnotexist", headers=auth_headers)
     assert resp.status_code == 404
 
 
@@ -112,12 +112,12 @@ def test_get_nonexistent_session(client, auth_headers):
 
 
 def test_ws_auth_required(client):
-    with pytest.raises(Exception), client.websocket_connect("/chat/fake"):  # noqa: B017
+    with pytest.raises(Exception), client.websocket_connect("/api/chat/fake"):  # noqa: B017
         pass
 
 
 def test_ws_session_not_found(client, bearer):
-    with pytest.raises(Exception), client.websocket_connect(f"/chat/doesnotexist?token={bearer}"):  # noqa: B017
+    with pytest.raises(Exception), client.websocket_connect(f"/api/chat/doesnotexist?token={bearer}"):  # noqa: B017
         pass
 
 
@@ -129,10 +129,10 @@ def _consume_status(ws):
 
 
 def test_ws_help_command(client, auth_headers, bearer):
-    create_resp = client.post("/sessions", headers=auth_headers)
+    create_resp = client.post("/api/sessions", headers=auth_headers)
     sid = create_resp.json()["session_id"]
 
-    with client.websocket_connect(f"/chat/{sid}?token={bearer}") as ws:
+    with client.websocket_connect(f"/api/chat/{sid}?token={bearer}") as ws:
         _consume_status(ws)
         ws.send_json({"type": "message", "content": "/help"})
         echo = ws.receive_json()
@@ -145,10 +145,10 @@ def test_ws_help_command(client, auth_headers, bearer):
 
 
 def test_ws_security_command(client, auth_headers, bearer):
-    create_resp = client.post("/sessions", headers=auth_headers)
+    create_resp = client.post("/api/sessions", headers=auth_headers)
     sid = create_resp.json()["session_id"]
 
-    with client.websocket_connect(f"/chat/{sid}?token={bearer}") as ws:
+    with client.websocket_connect(f"/api/chat/{sid}?token={bearer}") as ws:
         _consume_status(ws)
         ws.send_json({"type": "message", "content": "/security"})
         echo = ws.receive_json()
@@ -159,10 +159,10 @@ def test_ws_security_command(client, auth_headers, bearer):
 
 
 def test_ws_session_command(client, auth_headers, bearer):
-    create_resp = client.post("/sessions", headers=auth_headers)
+    create_resp = client.post("/api/sessions", headers=auth_headers)
     sid = create_resp.json()["session_id"]
 
-    with client.websocket_connect(f"/chat/{sid}?token={bearer}") as ws:
+    with client.websocket_connect(f"/api/chat/{sid}?token={bearer}") as ws:
         _consume_status(ws)
         ws.send_json({"type": "message", "content": "/session"})
         echo = ws.receive_json()
@@ -174,10 +174,10 @@ def test_ws_session_command(client, auth_headers, bearer):
 
 
 def test_ws_skills_command(client, auth_headers, bearer):
-    create_resp = client.post("/sessions", headers=auth_headers)
+    create_resp = client.post("/api/sessions", headers=auth_headers)
     sid = create_resp.json()["session_id"]
 
-    with client.websocket_connect(f"/chat/{sid}?token={bearer}") as ws:
+    with client.websocket_connect(f"/api/chat/{sid}?token={bearer}") as ws:
         _consume_status(ws)
         ws.send_json({"type": "message", "content": "/skills"})
         echo = ws.receive_json()
@@ -188,10 +188,10 @@ def test_ws_skills_command(client, auth_headers, bearer):
 
 
 def test_ws_memory_command(client, auth_headers, bearer):
-    create_resp = client.post("/sessions", headers=auth_headers)
+    create_resp = client.post("/api/sessions", headers=auth_headers)
     sid = create_resp.json()["session_id"]
 
-    with client.websocket_connect(f"/chat/{sid}?token={bearer}") as ws:
+    with client.websocket_connect(f"/api/chat/{sid}?token={bearer}") as ws:
         _consume_status(ws)
         ws.send_json({"type": "message", "content": "/memory"})
         echo = ws.receive_json()
@@ -202,10 +202,10 @@ def test_ws_memory_command(client, auth_headers, bearer):
 
 
 def test_ws_verbose_command(client, auth_headers, bearer):
-    create_resp = client.post("/sessions", headers=auth_headers)
+    create_resp = client.post("/api/sessions", headers=auth_headers)
     sid = create_resp.json()["session_id"]
 
-    with client.websocket_connect(f"/chat/{sid}?token={bearer}") as ws:
+    with client.websocket_connect(f"/api/chat/{sid}?token={bearer}") as ws:
         _consume_status(ws)
         ws.send_json({"type": "message", "content": "/verbose"})
         echo = ws.receive_json()
@@ -217,10 +217,10 @@ def test_ws_verbose_command(client, auth_headers, bearer):
 
 
 def test_ws_unknown_command(client, auth_headers, bearer):
-    create_resp = client.post("/sessions", headers=auth_headers)
+    create_resp = client.post("/api/sessions", headers=auth_headers)
     sid = create_resp.json()["session_id"]
 
-    with client.websocket_connect(f"/chat/{sid}?token={bearer}") as ws:
+    with client.websocket_connect(f"/api/chat/{sid}?token={bearer}") as ws:
         _consume_status(ws)
         ws.send_json({"type": "message", "content": "/foobar"})
         msg = ws.receive_json()

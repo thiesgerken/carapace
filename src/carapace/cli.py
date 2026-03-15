@@ -62,14 +62,14 @@ def _auth_headers(bearer: str) -> dict[str, str]:
 def _ws_url(server: str, session_id: str, bearer: str) -> str:
     """Build WebSocket URL with token query param."""
     base = server.replace("http://", "ws://").replace("https://", "wss://")
-    return f"{base}/chat/{session_id}?token={bearer}"
+    return f"{base}/api/chat/{session_id}?token={bearer}"
 
 
 def _replay_history(server: str, session_id: str, headers: dict[str, str], limit: int) -> None:
     """Fetch and display past conversation messages."""
     params = {} if limit < 0 else {"limit": limit}
     try:
-        resp = httpx.get(f"{server}/sessions/{session_id}/history", headers=headers, params=params)
+        resp = httpx.get(f"{server}/api/sessions/{session_id}/history", headers=headers, params=params)
         resp.raise_for_status()
     except httpx.HTTPStatusError:
         return
@@ -459,7 +459,7 @@ def chat(
     headers = _auth_headers(bearer)
 
     if list_sessions:
-        resp = httpx.get(f"{server}/sessions", headers=headers)
+        resp = httpx.get(f"{server}/api/sessions", headers=headers)
         resp.raise_for_status()
         sessions = resp.json()
         if not sessions:
@@ -485,7 +485,7 @@ def chat(
     # Create or resume session
     if session:
         try:
-            resp = httpx.get(f"{server}/sessions/{session}", headers=headers)
+            resp = httpx.get(f"{server}/api/sessions/{session}", headers=headers)
             resp.raise_for_status()
             session_data = resp.json()
             session_id = session_data["session_id"]
@@ -497,7 +497,7 @@ def chat(
                 console.print(f"[red]Server error: {exc.response.status_code}[/red]")
             raise typer.Exit(1) from None
     else:
-        resp = httpx.post(f"{server}/sessions", headers=headers)
+        resp = httpx.post(f"{server}/api/sessions", headers=headers)
         resp.raise_for_status()
         session_data = resp.json()
         session_id = session_data["session_id"]

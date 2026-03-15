@@ -11,7 +11,7 @@ export async function listSessions(
   server: string,
   token: string,
 ): Promise<SessionInfo[]> {
-  const res = await fetch(`${server}/sessions`, { headers: headers(token) });
+  const res = await fetch(`${server}/api/sessions`, { headers: headers(token) });
   if (!res.ok) throw new Error(`Failed to list sessions: ${res.status}`);
   return res.json();
 }
@@ -20,7 +20,7 @@ export async function createSession(
   server: string,
   token: string,
 ): Promise<SessionInfo> {
-  const res = await fetch(`${server}/sessions`, {
+  const res = await fetch(`${server}/api/sessions`, {
     method: "POST",
     headers: headers(token),
     body: JSON.stringify({ channel_type: "web" }),
@@ -34,7 +34,7 @@ export async function deleteSession(
   token: string,
   sessionId: string,
 ): Promise<void> {
-  const res = await fetch(`${server}/sessions/${sessionId}`, {
+  const res = await fetch(`${server}/api/sessions/${sessionId}`, {
     method: "DELETE",
     headers: headers(token),
   });
@@ -46,7 +46,7 @@ export async function fetchHistory(
   token: string,
   sessionId: string,
 ): Promise<HistoryMessage[]> {
-  const res = await fetch(`${server}/sessions/${sessionId}/history`, {
+  const res = await fetch(`${server}/api/sessions/${sessionId}/history`, {
     headers: headers(token),
   });
   if (!res.ok) throw new Error(`Failed to fetch history: ${res.status}`);
@@ -62,7 +62,7 @@ export async function fetchCommands(
   server: string,
   token: string,
 ): Promise<SlashCommand[]> {
-  const res = await fetch(`${server}/commands`, { headers: headers(token) });
+  const res = await fetch(`${server}/api/commands`, { headers: headers(token) });
   if (!res.ok) return [];
   return res.json();
 }
@@ -73,5 +73,5 @@ export function wsUrl(
   token: string,
 ): string {
   const base = server.replace("http://", "ws://").replace("https://", "wss://");
-  return `${base}/chat/${sessionId}?token=${token}`;
+  return `${base}/api/chat/${sessionId}?token=${token}`;
 }

@@ -9,13 +9,13 @@ spec:
   entryPoints:
     {{- toYaml .Values.ingress.entryPoints | nindent 4 }}
   routes:
-    - match: Host(`{{ .Values.ingress.hostname }}`)
+    - match: Host(`{{ .Values.ingress.hostname }}`) && PathPrefix(`/api`)
       kind: Rule
       services:
         - name: {{ .Release.Name }}
           port: 8321
-    {{- if and .Values.frontend.enabled .Values.ingress.frontendPrefixes }}
-    - match: Host(`{{ .Values.ingress.hostname }}`) && PathPrefix({{ range $i, $p := .Values.ingress.frontendPrefixes }}{{ if $i }}, {{ end }}`{{ $p }}`{{ end }})
+    {{- if .Values.frontend.enabled }}
+    - match: Host(`{{ .Values.ingress.hostname }}`)
       kind: Rule
       services:
         - name: {{ .Release.Name }}-frontend

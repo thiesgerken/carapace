@@ -29,10 +29,6 @@ ingress:
     - websecure
   tls:
     certResolver: letsencrypt
-  # -- Additional frontend path prefixes to route to the frontend service
-  frontendPrefixes:
-    - /_next
-    - /favicon
 
 # -- Persistence (RWX PVC shared between server and sandbox pods)
 persistence:

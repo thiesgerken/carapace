@@ -19,7 +19,7 @@ export function ConnectForm({ onConnect }: ConnectFormProps) {
     setLoading(true);
 
     try {
-      const res = await fetch(`${server.replace(/\/$/, "")}/sessions`, {
+      const res = await fetch(`${server.replace(/\/$/, "")}/api/sessions`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok)

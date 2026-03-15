@@ -12,7 +12,17 @@ import logfire
 import loguru
 import uvicorn
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect, WebSocketException, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    FastAPI,
+    HTTPException,
+    Query,
+    WebSocket,
+    WebSocketDisconnect,
+    WebSocketException,
+    status,
+)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from genai_prices import UpdatePrices
@@ -233,6 +243,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Carapace", lifespan=lifespan)
 
+router = APIRouter(prefix="/api")
+
 # CORS must be added before the app starts (Starlette forbids it in lifespan).
 # Load config early so we know the allowed origins.
 _cors_config = load_config(get_data_dir())
@@ -300,7 +312,7 @@ class SessionInfo(BaseModel):
         )
 
 
-@app.post("/sessions", response_model=SessionInfo)
+@router.post("/sessions", response_model=SessionInfo)
 async def create_session(
     body: SessionCreateRequest | None = None,
     _token: str = Depends(_verify_token),
@@ -310,7 +322,7 @@ async def create_session(
     return SessionInfo.from_state(state)
 
 
-@app.get("/sessions", response_model=list[SessionInfo])
+@router.get("/sessions", response_model=list[SessionInfo])
 async def list_sessions(_token: str = Depends(_verify_token)) -> list[SessionInfo]:
     results: list[SessionInfo] = []
     for sid in _engine.session_mgr.list_sessions():
@@ -322,7 +334,7 @@ async def list_sessions(_token: str = Depends(_verify_token)) -> list[SessionInf
     return results
 
 
-@app.get("/sessions/{session_id}", response_model=SessionInfo)
+@router.get("/sessions/{session_id}", response_model=SessionInfo)
 async def get_session(session_id: str, _token: str = Depends(_verify_token)) -> SessionInfo:
     state = _engine.session_mgr.load_state(session_id)
     if state is None:
@@ -330,7 +342,7 @@ async def get_session(session_id: str, _token: str = Depends(_verify_token)) -> 
     return SessionInfo.from_state(state)
 
 
-@app.delete("/sessions/{session_id}", status_code=204)
+@router.delete("/sessions/{session_id}", status_code=204)
 async def delete_session(session_id: str, _token: str = Depends(_verify_token)) -> None:
     _engine.deactivate(session_id)
     await _engine.sandbox_mgr.cleanup_session(session_id)
@@ -355,7 +367,7 @@ class HistoryMessage(BaseModel):
     risk_level: str | None = None
 
 
-@app.get("/sessions/{session_id}/history", response_model=list[HistoryMessage])
+@router.get("/sessions/{session_id}/history", response_model=list[HistoryMessage])
 async def get_session_history(
     session_id: str,
     limit: Annotated[int, Query()] = -1,
@@ -400,7 +412,7 @@ async def _send(ws: WebSocket, msg: ServerEnvelope) -> None:
     await ws.send_json(msg.model_dump())
 
 
-@app.get("/commands")
+@router.get("/commands")
 async def list_commands(_token: str = Depends(_verify_token)) -> list[dict[str, str]]:
     return SLASH_COMMANDS
 
@@ -448,7 +460,7 @@ class WebSocketSubscriber:
         await self._safe_send(ToolCallInfo(tool="proxy_domain", args={"domain": domain}, detail=detail))
 
 
-@app.websocket("/chat/{session_id}")
+@router.websocket("/chat/{session_id}")
 async def chat_ws(
     websocket: WebSocket,
     session_id: str,
@@ -644,6 +656,9 @@ def main() -> None:
         log_level=config.carapace.log_level,
         log_config=None,
     )
+
+
+app.include_router(router)
 
 
 if __name__ == "__main__":
