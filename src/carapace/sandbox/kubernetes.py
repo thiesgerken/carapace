@@ -120,30 +120,6 @@ class KubernetesRuntime(ContainerRuntime):
             ),
         )
 
-        # InitContainer to fix ownership on writable PVC directories.
-        # The server creates these directories as root; the sandbox container
-        # runs as UID 1000 and needs write access.  fsGroup does not apply
-        # to subPath mounts, so we chown explicitly in an init phase.
-        writable_subpaths = [self._mount_to_subpath(m) for m in config.mounts if not m.read_only]
-        init_containers: list[k8s_client.V1Container] | None = None
-        if writable_subpaths:
-            chown_cmds = " && ".join(f"mkdir -p /pvc/{sp} && chown 1000:1000 /pvc/{sp}" for sp in writable_subpaths)
-            init_containers = [
-                k8s_client.V1Container(
-                    name="fix-permissions",
-                    image=config.image,
-                    command=["sh", "-c", chown_cmds],
-                    volume_mounts=[
-                        k8s_client.V1VolumeMount(name="data", mount_path="/pvc"),
-                    ],
-                    security_context=k8s_client.V1SecurityContext(
-                        run_as_user=0,
-                        allow_privilege_escalation=False,
-                        capabilities=k8s_client.V1Capabilities(drop=["ALL"]),
-                    ),
-                ),
-            ]
-
         # Standard labels for NetworkPolicy and ArgoCD
         labels = {
             "app.kubernetes.io/instance": self._app_instance,
@@ -172,7 +148,6 @@ class KubernetesRuntime(ContainerRuntime):
             kind="Pod",
             metadata=metadata,
             spec=k8s_client.V1PodSpec(
-                init_containers=init_containers,
                 containers=[container],
                 volumes=[
                     k8s_client.V1Volume(

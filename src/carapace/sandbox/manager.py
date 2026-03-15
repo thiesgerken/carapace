@@ -180,8 +180,12 @@ class SandboxManager:
             self._prepare_session_recreate(session_id)
 
         session_workspace = self._data_dir / "sessions" / session_id / "workspace"
-        (session_workspace / "skills").mkdir(parents=True, exist_ok=True)
-        (session_workspace / "tmp").mkdir(parents=True, exist_ok=True)
+        for subdir in ("skills", "tmp"):
+            d = session_workspace / subdir
+            d.mkdir(parents=True, exist_ok=True)
+            # Make world-writable so sandbox containers running as UID 1000
+            # can write to PVC subPath mounts (chown may not be available).
+            d.chmod(0o777)
 
         proxy_token = secrets.token_hex(16)
         # Evict any orphaned token left by a previous failed attempt for this
