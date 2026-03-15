@@ -140,10 +140,16 @@ export function ChatView({ server, token, sessionId, onTitleUpdate }: ChatViewPr
   const onMessage = useCallback((msg: ServerMessage) => {
     switch (msg.type) {
       case "done":
-        setMessages((prev) => [
-          ...prev,
-          { kind: "assistant", content: msg.content },
-        ]);
+        setMessages((prev) => {
+          // Replace trailing streaming message with the final content
+          if (prev.length > 0 && prev[prev.length - 1].kind === "streaming") {
+            return [
+              ...prev.slice(0, -1),
+              { kind: "assistant", content: msg.content },
+            ];
+          }
+          return [...prev, { kind: "assistant", content: msg.content }];
+        });
         if (msg.usage) setUsage(msg.usage);
         finishWaiting();
         break;
@@ -222,7 +228,17 @@ export function ChatView({ server, token, sessionId, onTitleUpdate }: ChatViewPr
         ]);
         break;
       case "token":
-        // future streaming support
+        setWaiting(true);
+        setMessages((prev) => {
+          if (prev.length > 0 && prev[prev.length - 1].kind === "streaming") {
+            const last = prev[prev.length - 1] as { kind: "streaming"; content: string };
+            return [
+              ...prev.slice(0, -1),
+              { kind: "streaming", content: last.content + msg.content },
+            ];
+          }
+          return [...prev, { kind: "streaming", content: msg.content }];
+        });
         break;
     }
   }, [onTitleUpdate]);

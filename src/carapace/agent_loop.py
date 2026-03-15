@@ -16,6 +16,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from pydantic_ai import DeferredToolRequests, DeferredToolResults, ToolDenied
+from pydantic_ai.messages import PartDeltaEvent, PartStartEvent, TextPart, TextPartDelta
 
 from carapace.agent import create_agent
 from carapace.models import Deps
@@ -35,6 +36,7 @@ async def run_agent_turn(
     message_history: list[Any],
     send_approval_request: Callable[[ApprovalRequest], Awaitable[None]],
     collect_approvals: Callable[[set[str]], Awaitable[dict[str, bool | ToolDenied]]],
+    on_token: Callable[[str], Awaitable[None]] | None = None,
 ) -> tuple[list[Any], str, tuple[int, int]]:
     """Run one full agent turn, handling approval loops.
 
@@ -48,10 +50,20 @@ async def run_agent_turn(
     agent = create_agent(deps)
     model_name = deps.config.agent.model
 
+    async def _stream_handler(_ctx: Any, events: Any) -> None:
+        async for event in events:
+            if on_token is None:
+                continue
+            if isinstance(event, PartStartEvent) and isinstance(event.part, TextPart) and event.part.content:
+                await on_token(event.part.content)
+            elif isinstance(event, PartDeltaEvent) and isinstance(event.delta, TextPartDelta):
+                await on_token(event.delta.content_delta)
+
     result = await agent.run(
         user_input,
         deps=deps,
         message_history=message_history or None,
+        event_stream_handler=_stream_handler,
     )
     deps.usage_tracker.record(model_name, "agent", result.usage())
     messages = result.all_messages()
@@ -107,6 +119,7 @@ async def run_agent_turn(
             deps=deps,
             message_history=messages,
             deferred_tool_results=deferred_results,
+            event_stream_handler=_stream_handler,
         )
         deps.usage_tracker.record(model_name, "agent", result.usage())
         messages = result.all_messages()

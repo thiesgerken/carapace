@@ -57,6 +57,7 @@ from carapace.ws_models import (
     ServerEnvelope,
     SessionTitleUpdate,
     StatusUpdate,
+    TokenChunk,
     ToolCallInfo,
     ToolResultInfo,
     TurnUsage,
@@ -439,6 +440,9 @@ class WebSocketSubscriber:
 
     async def on_tool_result(self, tool: str, result: str) -> None:
         await self._safe_send(ToolResultInfo(tool=tool, result=result))
+
+    async def on_token(self, content: str) -> None:
+        await self._safe_send(TokenChunk(content=content))
 
     async def on_done(self, content: str, usage: TurnUsage) -> None:
         await self._safe_send(Done(content=content, usage=usage))

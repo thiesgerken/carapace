@@ -271,8 +271,8 @@ class MatrixChannel:
         logger.warning(f"Matrix send error in {room_id}: {resp}")
         return None
 
-    async def _send_notice(self, room_id: str, text: str) -> None:
-        """Send an m.notice (visually subdued) message to the room."""
+    async def _send_notice(self, room_id: str, text: str) -> str | None:
+        """Send an m.notice (visually subdued) message; returns event_id or None."""
         content = {
             "msgtype": "m.notice",
             "body": text,
@@ -280,8 +280,38 @@ class MatrixChannel:
             "formatted_body": md_to_html(text),
         }
         resp = await self._client.room_send(room_id, "m.room.message", content)
+        if isinstance(resp, nio.RoomSendResponse):
+            return resp.event_id
+        logger.warning(f"Matrix notice send error in {room_id}: {resp}")
+        return None
+
+    async def _edit_message(self, room_id: str, event_id: str, text: str, *, msgtype: str = "m.notice") -> None:
+        """Edit a previously sent message using m.replace."""
+        content = {
+            "msgtype": msgtype,
+            "body": f"* {text}",
+            "format": "org.matrix.custom.html",
+            "formatted_body": md_to_html(text),
+            "m.new_content": {
+                "msgtype": msgtype,
+                "body": text,
+                "format": "org.matrix.custom.html",
+                "formatted_body": md_to_html(text),
+            },
+            "m.relates_to": {
+                "rel_type": "m.replace",
+                "event_id": event_id,
+            },
+        }
+        resp = await self._client.room_send(room_id, "m.room.message", content)
         if not isinstance(resp, nio.RoomSendResponse):
-            logger.warning(f"Matrix notice send error in {room_id}: {resp}")
+            logger.warning(f"Matrix edit error in {room_id}: {resp}")
+
+    async def _redact(self, room_id: str, event_id: str) -> None:
+        """Redact (delete) a previously sent message."""
+        resp = await self._client.room_redact(room_id, event_id)
+        if not isinstance(resp, nio.RoomRedactResponse):
+            logger.warning(f"Matrix redact error in {room_id}: {resp}")
 
     async def _send_typing(self, room_id: str, typing: bool = True) -> None:
         await self._client.room_typing(room_id, typing_state=typing, timeout=int(TYPING_INTERVAL * 1000))

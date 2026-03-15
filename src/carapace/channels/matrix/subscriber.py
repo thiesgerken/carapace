@@ -23,6 +23,9 @@ class MatrixSubscriber:
         self._channel = channel
         self._room_id = room_id
         self._typing_task: asyncio.Task[None] | None = None
+        self._stream_buffer = ""
+        self._stream_event_id: str | None = None
+        self._stream_last_len = 0
         # event_id → tool_call_id (for reaction-based approval)
         self._approval_events: dict[str, str] = {}
         # event_id → request_id (for reaction-based domain approval)
@@ -71,15 +74,47 @@ class MatrixSubscriber:
             notice = f"📎 `{tool}` result:\n```\n{preview}\n```"
             await self._channel._send_notice(self._room_id, notice)
 
+    _STREAM_EDIT_THRESHOLD = 200  # min chars between edits
+
+    async def on_token(self, content: str) -> None:
+        self._stream_buffer += content
+        if len(self._stream_buffer) - self._stream_last_len < self._STREAM_EDIT_THRESHOLD:
+            return
+        text = self._stream_buffer.rstrip()
+        if not text:
+            return
+        self._stream_last_len = len(self._stream_buffer)
+        if self._stream_event_id is None:
+            self._stream_event_id = await self._channel._send_notice(self._room_id, text)
+        else:
+            await self._channel._edit_message(self._room_id, self._stream_event_id, text)
+
     async def on_done(self, content: str, usage: TurnUsage) -> None:
+        if self._stream_event_id is not None:
+            await self._channel._edit_message(
+                self._room_id,
+                self._stream_event_id,
+                content,
+                msgtype="m.text",
+            )
+            self._stream_event_id = None
+        else:
+            await self._channel._send_text(self._room_id, content)
+        self._stream_buffer = ""
+        self._stream_last_len = 0
         self._stop_typing()
-        await self._channel._send_text(self._room_id, content)
 
     async def on_error(self, detail: str) -> None:
+        self._stream_buffer = ""
+        self._stream_last_len = 0
+        self._stream_event_id = None
         self._stop_typing()
         await self._channel._send_text(self._room_id, f"Error: {detail}")
 
     async def on_cancelled(self) -> None:
+        self._stream_buffer = ""
+        self._stream_last_len = 0
+        self._stream_event_id = None
         self._stop_typing()
         # no message needed — handled by the /stop command
 

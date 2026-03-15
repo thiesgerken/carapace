@@ -157,6 +157,7 @@ export type ClientMessage =
 export type ChatMessage =
   | { kind: "user"; content: string }
   | { kind: "assistant"; content: string }
+  | { kind: "streaming"; content: string }
   | {
       kind: "tool_call";
       tool: string;

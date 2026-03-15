@@ -11,6 +11,7 @@ import typer
 import websockets.asyncio.client
 from dotenv import load_dotenv
 from rich.console import Console
+from rich.live import Live
 from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.table import Table
@@ -356,79 +357,105 @@ async def _chat_loop(ws_url: str) -> None:
 
 async def _read_server_responses(ws) -> None:
     """Read and render server messages until a terminal response (done/command_result/error)."""
-    while True:
-        raw = await ws.recv()
-        msg = json.loads(raw)
-        msg_type = msg.get("type")
+    streamed = ""
+    live: Live | None = None
 
-        match msg_type:
-            case "done":
-                console.print()
-                console.print(Markdown(msg["content"]))
-                return
+    def _stop_live() -> None:
+        nonlocal live, streamed
+        if live is not None:
+            live.stop()
+            live = None
+        streamed = ""
 
-            case "cancelled":
-                console.print(f"\n[yellow]{msg.get('detail', 'Agent cancelled.')}[/yellow]")
-                return
+    try:
+        while True:
+            raw = await ws.recv()
+            msg = json.loads(raw)
+            msg_type = msg.get("type")
 
-            case "token":
-                # Future: incremental streaming display
-                pass
+            match msg_type:
+                case "done":
+                    _stop_live()
+                    console.print()
+                    console.print(Markdown(msg["content"]))
+                    return
 
-            case "command_result":
-                _render_command_result(msg)
-                return
+                case "cancelled":
+                    _stop_live()
+                    console.print(f"\n[yellow]{msg.get('detail', 'Agent cancelled.')}[/yellow]")
+                    return
 
-            case "error":
-                console.print(f"[red]Error: {msg['detail']}[/red]")
-                return
+                case "token":
+                    streamed += msg["content"]
+                    if live is None:
+                        console.print()
+                        live = Live(Markdown(streamed), console=console, refresh_per_second=8)
+                        live.start()
+                    else:
+                        live.update(Markdown(streamed))
 
-            case "tool_call":
-                detail = msg.get("detail", "")
-                console.print(f"  [dim]{msg['tool']}({msg['args']}) {detail}[/dim]")
+                case "command_result":
+                    _stop_live()
+                    _render_command_result(msg)
+                    return
 
-            case "tool_result":
-                result_text = msg.get("result", "")
-                if result_text:
-                    truncated = result_text[:500]
-                    if len(result_text) > 500:
-                        truncated += "…"
-                    console.print(f"  [dim]→ {truncated}[/dim]")
+                case "error":
+                    _stop_live()
+                    console.print(f"[red]Error: {msg['detail']}[/red]")
+                    return
 
-            case "approval_request":
-                try:
-                    approved = await _render_approval_request(msg)
-                except (KeyboardInterrupt, EOFError):
-                    approved = False
-                    console.print("\n[dim]Denied (interrupted).[/dim]")
-                await ws.send(
-                    json.dumps(
-                        {
-                            "type": "approval_response",
-                            "tool_call_id": msg["tool_call_id"],
-                            "approved": approved,
-                        }
+                case "tool_call":
+                    _stop_live()
+                    detail = msg.get("detail", "")
+                    console.print(f"  [dim]{msg['tool']}({msg['args']}) {detail}[/dim]")
+
+                case "tool_result":
+                    _stop_live()
+                    result_text = msg.get("result", "")
+                    if result_text:
+                        truncated = result_text[:500]
+                        if len(result_text) > 500:
+                            truncated += "…"
+                        console.print(f"  [dim]→ {truncated}[/dim]")
+
+                case "approval_request":
+                    _stop_live()
+                    try:
+                        approved = await _render_approval_request(msg)
+                    except (KeyboardInterrupt, EOFError):
+                        approved = False
+                        console.print("\n[dim]Denied (interrupted).[/dim]")
+                    await ws.send(
+                        json.dumps(
+                            {
+                                "type": "approval_response",
+                                "tool_call_id": msg["tool_call_id"],
+                                "approved": approved,
+                            }
+                        )
                     )
-                )
 
-            case "proxy_approval_request":
-                try:
-                    decision = await _render_proxy_approval_request(msg)
-                except (KeyboardInterrupt, EOFError):
-                    decision = "deny"
-                    console.print("\n[dim]Denied (interrupted).[/dim]")
-                await ws.send(
-                    json.dumps(
-                        {
-                            "type": "proxy_approval_response",
-                            "request_id": msg["request_id"],
-                            "decision": decision,
-                        }
+                case "proxy_approval_request":
+                    _stop_live()
+                    try:
+                        decision = await _render_proxy_approval_request(msg)
+                    except (KeyboardInterrupt, EOFError):
+                        decision = "deny"
+                        console.print("\n[dim]Denied (interrupted).[/dim]")
+                    await ws.send(
+                        json.dumps(
+                            {
+                                "type": "proxy_approval_response",
+                                "request_id": msg["request_id"],
+                                "decision": decision,
+                            }
+                        )
                     )
-                )
 
-            case _:
-                console.print(f"[dim]Unknown server message: {msg_type}[/dim]")
+                case _:
+                    pass
+    finally:
+        _stop_live()
 
 
 # --- CLI commands ---

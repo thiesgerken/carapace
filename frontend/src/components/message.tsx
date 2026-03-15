@@ -43,6 +43,13 @@ export function Message({
         </div>
       );
 
+    case "streaming":
+      return (
+        <div className="max-w-[85%] text-sm">
+          <MarkdownContent content={message.content} />
+        </div>
+      );
+
     case "tool_call":
       return (
         <ToolCallBadge

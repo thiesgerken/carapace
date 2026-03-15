@@ -34,6 +34,7 @@ class SessionSubscriber(Protocol):
     async def on_user_message(self, content: str, *, from_self: bool) -> None: ...
     async def on_tool_call(self, tool: str, args: dict[str, Any], detail: str) -> None: ...
     async def on_tool_result(self, tool: str, result: str) -> None: ...
+    async def on_token(self, content: str) -> None: ...
     async def on_done(self, content: str, usage: TurnUsage) -> None: ...
     async def on_error(self, detail: str) -> None: ...
     async def on_cancelled(self) -> None: ...
@@ -466,6 +467,9 @@ class SessionEngine:
                     active.pending_approval_requests.clear()
                     return results
 
+                async def _on_token(chunk: str) -> None:
+                    await self._broadcast(active, "on_token", chunk)
+
                 async with self._llm_semaphore:
                     messages, output, (inp_tok, out_tok) = await run_agent_turn(
                         user_input,
@@ -473,6 +477,7 @@ class SessionEngine:
                         message_history,
                         send_approval_request=_send_approval,
                         collect_approvals=_collect_approvals,
+                        on_token=_on_token,
                     )
 
                 self._session_mgr.save_history(session_id, messages)
