@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v0.35.1 (2026-03-15)
+
+### 🐛
+
+- 🐛remove dead code
+  ([`53543fe`](https://github.com/thiesgerken/carapace/commit/53543fe8be48ecf8567c3c1d3356c0d23c161f1a))
+
+
 ## v0.35.0 (2026-03-15)
 
 ### ✨
