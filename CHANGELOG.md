@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v0.33.4 (2026-03-15)
+
+### 🐛
+
+- 🐛 fix: chmod writable sandbox dirs instead of chown (K8s storage compat)
+  ([`bf924de`](https://github.com/thiesgerken/carapace/commit/bf924deec7a6a25c08eaf4daa072e63849bcdb8e))
+
+
 ## v0.33.3 (2026-03-15)
 
 ### Other
