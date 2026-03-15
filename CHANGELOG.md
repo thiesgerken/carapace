@@ -1,6 +1,22 @@
 # CHANGELOG
 
 
+## v0.35.0 (2026-03-15)
+
+### ✨
+
+- ✨ feat: stream LLM responses to CLI, web UI, and Matrix
+  ([`e00f979`](https://github.com/thiesgerken/carapace/commit/e00f979afe6bb4f286f3353ca254cd2b916d823e))
+
+Use Pydantic AI's event_stream_handler to emit token chunks during agent.run() without changing the
+  existing approval/deferred-tools loop. Chunks are broadcast via the subscriber protocol and
+  replaced by the authoritative Done message on completion.
+
+- CLI: progressive Markdown rendering via rich.Live - Web UI: streaming message kind replaced
+  atomically on done - Matrix: single notice edited in-place every 200 chars, then replaced with
+  final m.text on done
+
+
 ## v0.34.1 (2026-03-15)
 
 ### Other
