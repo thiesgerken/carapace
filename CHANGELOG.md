@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v0.33.0 (2026-03-15)
+
+### ✨
+
+- ✨ feat: log startup message in sandbox containers before sleep
+  ([`3059171`](https://github.com/thiesgerken/carapace/commit/30591715528dff44b126a9a8a35399f7efb47110))
+
+
 ## v0.32.3 (2026-03-15)
 
 ### 🐛
