@@ -211,7 +211,7 @@ class SandboxManager:
                 labels={"carapace.session": session_id, "carapace.managed": "true"},
                 mounts=mounts,
                 network=self._network_name,
-                command=["sleep", "infinity"],
+                command=["sh", "-c", "echo 'carapace sandbox ready' && exec sleep infinity"],
                 environment=env,
             )
 

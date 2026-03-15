@@ -201,7 +201,7 @@ def test_build_pod_spec_no_command():
         network=None,
     )
     pod = rt._build_pod_spec(config)
-    assert pod.spec.containers[0].command == ["sleep", "infinity"]
+    assert pod.spec.containers[0].command == ["sh", "-c", "echo 'carapace sandbox ready' && exec sleep infinity"]
 
 
 def test_build_pod_spec_security_context():

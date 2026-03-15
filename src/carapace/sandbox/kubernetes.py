@@ -104,7 +104,7 @@ class KubernetesRuntime(ContainerRuntime):
         if isinstance(command, str):
             command = ["bash", "-c", command]
         elif command is None:
-            command = ["sleep", "infinity"]
+            command = ["sh", "-c", "echo 'carapace sandbox ready' && exec sleep infinity"]
 
         container = k8s_client.V1Container(
             name="sandbox",

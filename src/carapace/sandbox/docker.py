@@ -143,7 +143,7 @@ class DockerRuntime(ContainerRuntime):
         return self._client.containers.create(
             image=config.image,
             name=config.name,
-            command=config.command or ["sleep", "infinity"],
+            command=config.command or ["sh", "-c", "echo 'carapace sandbox ready' && exec sleep infinity"],
             labels=config.labels,
             mounts=mounts,
             network=config.network,
