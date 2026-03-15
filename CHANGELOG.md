@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v0.28.0 (2026-03-15)
+
+### ✨
+
+- ✨ feat: Gateway API HTTPRoute, OCI chart publishing, PVC finalizers, default resources
+  ([`7b4dba6`](https://github.com/thiesgerken/carapace/commit/7b4dba6f3a5984dfc6cba3a43dc7953f79472d1b))
+
+
 ## v0.27.0 (2026-03-15)
 
 ### Other
