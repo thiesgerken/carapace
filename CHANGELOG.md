@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v0.29.0 (2026-03-15)
+
+### ✨
+
+- ✨ feat: replace auto-generated token with CARAPACE_TOKEN env var
+  ([`0f45c40`](https://github.com/thiesgerken/carapace/commit/0f45c40b5af2346a6b90a2f845e227a3b79fa7cd))
+
+
 ## v0.28.1 (2026-03-15)
 
 ### Other
