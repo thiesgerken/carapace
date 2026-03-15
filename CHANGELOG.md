@@ -1,12 +1,23 @@
 # CHANGELOG
 
 
+## v0.32.0 (2026-03-15)
+
+### Other
+
+- Merge remote-tracking branch 'refs/remotes/origin/main'
+  ([`0249cb0`](https://github.com/thiesgerken/carapace/commit/0249cb007d705636301b3cf1e858af6816936692))
+
+
 ## v0.31.0 (2026-03-15)
 
 ### ✨
 
 - ✨ better url guessing in ui
   ([`2bece2e`](https://github.com/thiesgerken/carapace/commit/2bece2e77749251d18309ed167b7a459ec3fdb2a))
+
+- ✨ feat: make sandbox pod ownerReference configurable (default off)
+  ([`7219c8f`](https://github.com/thiesgerken/carapace/commit/7219c8f5f2885d1e6e60917b9bb2f1eb8efeda8f))
 
 
 ## v0.30.2 (2026-03-15)
