@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v0.33.1 (2026-03-15)
+
+### 🐛
+
+- 🐛 make sure to refetch matrix token if user_id changes + accept pending invites at startup
+  ([`eb553c9`](https://github.com/thiesgerken/carapace/commit/eb553c979c02f94ac70e15a85f48950f19ca0e7e))
+
+
 ## v0.33.0 (2026-03-15)
 
 ### ✨
