@@ -7,8 +7,16 @@ interface ConnectFormProps {
   onConnect: (server: string, token: string) => void;
 }
 
+function defaultServer(): string {
+  if (typeof window === "undefined") return "http://127.0.0.1:8321";
+  const origin = window.location.origin;
+  if (origin.includes("localhost") || origin.includes("127.0.0.1"))
+    return "http://127.0.0.1:8321";
+  return origin;
+}
+
 export function ConnectForm({ onConnect }: ConnectFormProps) {
-  const [server, setServer] = useState("http://127.0.0.1:8321");
+  const [server, setServer] = useState(defaultServer);
   const [token, setToken] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
