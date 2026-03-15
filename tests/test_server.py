@@ -9,13 +9,14 @@ from fastapi.testclient import TestClient
 
 # We patch the server module globals directly for testing
 import carapace.server as srv
-from carapace.auth import ensure_token
 from carapace.bootstrap import ensure_data_dir
 from carapace.config import load_config, load_security_md
 from carapace.sandbox.manager import SandboxManager
 from carapace.server import app
 from carapace.session import SessionEngine, SessionManager
 from carapace.skills import SkillRegistry
+
+_TEST_TOKEN = "test-bearer-token-for-server-tests"
 
 
 @pytest.fixture(autouse=True)
@@ -24,6 +25,7 @@ def _setup_server(tmp_path, monkeypatch):
     # Bogus key — the sentinel Agent validates the env var at construction
     # time, but these tests never call the LLM.
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-fake-for-tests")
+    monkeypatch.setenv("CARAPACE_TOKEN", _TEST_TOKEN)
     ensure_data_dir(tmp_path)
     config = load_config(tmp_path)
     security_md = load_security_md(tmp_path)
@@ -44,12 +46,11 @@ def _setup_server(tmp_path, monkeypatch):
         agent_model=None,
         sandbox_mgr=sandbox_mgr,
     )
-    ensure_token(tmp_path)
 
 
 @pytest.fixture()
-def bearer(tmp_path) -> str:
-    return ensure_token(tmp_path)
+def bearer() -> str:
+    return _TEST_TOKEN
 
 
 @pytest.fixture()

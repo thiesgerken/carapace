@@ -34,7 +34,7 @@ from pydantic_ai.providers.anthropic import AnthropicProvider
 from pydantic_ai.retries import AsyncTenacityTransport, RetryConfig, wait_retry_after
 from tenacity import retry_if_exception_type, stop_after_attempt, wait_exponential
 
-from carapace.auth import ensure_token
+from carapace.auth import get_token
 from carapace.bootstrap import ensure_data_dir
 from carapace.config import get_data_dir, load_config, load_security_md
 from carapace.models import Config, SessionState
@@ -202,7 +202,7 @@ async def lifespan(app: FastAPI):
     )
     await proxy.start()
 
-    token = ensure_token(_data_dir)
+    token = get_token()
 
     price_updater = UpdatePrices()
     price_updater.start()
@@ -262,7 +262,7 @@ _bearer_scheme = HTTPBearer()
 async def _verify_token(
     credentials: Annotated[HTTPAuthorizationCredentials, Depends(_bearer_scheme)],
 ) -> str:
-    expected = ensure_token(_data_dir)
+    expected = get_token()
     if credentials.credentials != expected:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
     return credentials.credentials
@@ -272,7 +272,7 @@ async def _verify_ws_token(
     websocket: WebSocket,
     token: Annotated[str | None, Query()] = None,
 ) -> str:
-    expected = ensure_token(_data_dir)
+    expected = get_token()
     if token and token == expected:
         return token
     auth = websocket.headers.get("authorization", "")
@@ -644,10 +644,10 @@ def main() -> None:
     data_dir = get_data_dir()
     ensure_data_dir(data_dir)
     config = load_config(data_dir)
-    token = ensure_token(data_dir)
+    token = get_token()
 
     logger.info(f"Starting Carapace server on {config.server.host}:{config.server.port}")
-    logger.info(f"Bearer token: {token[:8]}…  (full token in {data_dir / 'server.token'})")
+    logger.info(f"Bearer token: {token[:8]}…")
 
     uvicorn.run(
         "carapace.server:app",

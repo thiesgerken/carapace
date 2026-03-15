@@ -2,24 +2,28 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+import pytest
 
-from carapace.auth import TOKEN_FILE, ensure_token
-
-
-def test_ensure_token_creates_file(tmp_path: Path):
-    token = ensure_token(tmp_path)
-    assert len(token) > 20
-    assert (tmp_path / TOKEN_FILE).exists()
+from carapace.auth import get_token
 
 
-def test_ensure_token_is_idempotent(tmp_path: Path):
-    t1 = ensure_token(tmp_path)
-    t2 = ensure_token(tmp_path)
-    assert t1 == t2
+def test_get_token_from_env(monkeypatch):
+    monkeypatch.setenv("CARAPACE_TOKEN", "test-token-123")
+    assert get_token() == "test-token-123"
 
 
-def test_ensure_token_reads_existing(tmp_path: Path):
-    token_path = tmp_path / TOKEN_FILE
-    token_path.write_text("my-custom-token\n")
-    assert ensure_token(tmp_path) == "my-custom-token"
+def test_get_token_strips_whitespace(monkeypatch):
+    monkeypatch.setenv("CARAPACE_TOKEN", "  my-token  ")
+    assert get_token() == "my-token"
+
+
+def test_get_token_raises_when_missing(monkeypatch):
+    monkeypatch.delenv("CARAPACE_TOKEN", raising=False)
+    with pytest.raises(RuntimeError, match="CARAPACE_TOKEN"):
+        get_token()
+
+
+def test_get_token_raises_when_empty(monkeypatch):
+    monkeypatch.setenv("CARAPACE_TOKEN", "")
+    with pytest.raises(RuntimeError, match="CARAPACE_TOKEN"):
+        get_token()

@@ -94,9 +94,10 @@ Goodbye.
 ### Configuration
 
 1. Copy `.env.example` to `.env` and set your API key.
-2. Customise files under `data/` — see [Data directory](#data-directory) below.
+2. Set `CARAPACE_TOKEN` in `.env` — this is the bearer token used to authenticate CLI/frontend connections.
+3. Customise files under `data/` — see [Data directory](#data-directory) below.
 
-On first server start a bearer token is generated in `data/server.token`. The CLI reads it automatically from the same data directory. The web UI prompts for the server URL and token on first connect.
+The web UI prompts for the server URL and token on first connect.
 
 ### Deployment with Docker Compose
 
@@ -115,7 +116,7 @@ The server is available at `http://localhost:8321`, the frontend at `http://loca
 To connect via the CLI from the host:
 
 ```bash
-uv run carapace --token "$(cat data/server.token)"
+uv run carapace --token "$CARAPACE_TOKEN"
 ```
 
 ## Architecture overview
@@ -172,7 +173,6 @@ All state lives under `$CARAPACE_DATA_DIR` (defaults to `./data`).
 $CARAPACE_DATA_DIR/
   config.yaml            # main configuration
   SECURITY.md            # natural-language security policy (sentinel system prompt)
-  server.token           # bearer token (auto-generated on first start)
   AGENTS.md              # agent behavioral guide
   SOUL.md                # agent personality
   USER.md                # about the human

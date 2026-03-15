@@ -43,7 +43,7 @@ def test_import_server():
 
 
 def test_import_auth():
-    from carapace.auth import ensure_token  # noqa: F401
+    from carapace.auth import get_token  # noqa: F401
 
 
 def test_import_ws_models():

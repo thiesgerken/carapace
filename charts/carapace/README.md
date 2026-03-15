@@ -14,10 +14,11 @@ Helm chart for deploying [Carapace](https://github.com/thiesgerken/carapace) on 
 The chart is published to GHCR as an OCI artifact on every release:
 
 ```bash
-# Create the namespace and an API-key secret
+# Create the namespace and a secret with your API key and bearer token
 kubectl create namespace carapace
 kubectl create secret generic carapace-secrets -n carapace \
-  --from-literal=ANTHROPIC_API_KEY=sk-ant-...
+  --from-literal=ANTHROPIC_API_KEY=sk-ant-... \
+  --from-literal=CARAPACE_TOKEN=my-secret-token
 
 # Install from OCI registry
 helm install carapace oci://ghcr.io/thiesgerken/charts/carapace \
@@ -67,7 +68,8 @@ All images default to the chart's `appVersion` tag, which is kept in sync with t
 
 | What | How |
 |------|-----|
-| **Anthropic API key** | Create a Secret containing `ANTHROPIC_API_KEY` and reference it via `envFrom` (see above). Works with any secret management solution (kubectl, ExternalSecrets, SealedSecrets, …). |
+| **API bearer token** | Set `CARAPACE_TOKEN` in the Secret referenced via `envFrom`. Both the server and CLI/frontend clients must use the same token. |
+| **Anthropic API key** | Set `ANTHROPIC_API_KEY` in the same Secret. |
 | **Ingress hostname** | `--set ingress.hostname=carapace.example.com` |
 | **Gateway parent ref** | `--set ingress.parentRefs[0].name=my-gateway` (defaults to `default-gateway`) |
 

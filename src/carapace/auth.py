@@ -1,17 +1,11 @@
 from __future__ import annotations
 
-import secrets
-from pathlib import Path
-
-TOKEN_FILE = "server.token"
+import os
 
 
-def ensure_token(data_dir: Path) -> str:
-    """Return the bearer token, generating one on first call."""
-    token_path = data_dir / TOKEN_FILE
-    if token_path.exists():
-        return token_path.read_text().strip()
-    token = secrets.token_urlsafe(32)
-    token_path.write_text(token + "\n")
-    token_path.chmod(0o600)
+def get_token() -> str:
+    """Return the bearer token from the CARAPACE_TOKEN environment variable."""
+    token = os.environ.get("CARAPACE_TOKEN", "").strip()
+    if not token:
+        raise RuntimeError("CARAPACE_TOKEN environment variable is required but not set")
     return token

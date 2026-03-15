@@ -16,9 +16,6 @@ from rich.panel import Panel
 from rich.table import Table
 from websockets.exceptions import ConnectionClosed, InvalidHandshake
 
-from carapace.auth import TOKEN_FILE
-from carapace.config import get_data_dir
-
 load_dotenv()
 
 app = typer.Typer(help="Carapace -- security-first personal AI agent")
@@ -39,19 +36,13 @@ def _fmt_dt(iso: str) -> str:
 
 
 def _get_token(data_dir: str | None, token: str | None) -> str:
-    """Resolve bearer token from flag, env var, or data dir file."""
+    """Resolve bearer token from flag or env var."""
     if token:
         return token
     env_token = os.environ.get("CARAPACE_TOKEN")
     if env_token:
         return env_token
-    from pathlib import Path
-
-    data_path = Path(data_dir) if data_dir else get_data_dir()
-    token_path = data_path / TOKEN_FILE
-    if token_path.exists():
-        return token_path.read_text().strip()
-    console.print("[red]No auth token found. Set --token, CARAPACE_TOKEN, or run the server locally first.[/red]")
+    console.print("[red]No auth token found. Set --token or CARAPACE_TOKEN.[/red]")
     raise typer.Exit(1)
 
 
