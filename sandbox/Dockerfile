@@ -1,11 +1,12 @@
-FROM alpine:3.23
+FROM python:3.14-slim-trixie
 
-RUN apk add --no-cache \
-    python3 py3-pip bash \
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
     curl jq git grep \
-    findutils coreutils uv \
-    ca-certificates \
- && update-ca-certificates
+    findutils coreutils \
+ && rm -rf /var/lib/apt/lists/*
+
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
 RUN mkdir -p /workspace
 
