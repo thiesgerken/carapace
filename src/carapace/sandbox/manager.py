@@ -207,7 +207,7 @@ class SandboxManager:
             env = self._build_proxy_env(proxy_token, proxy_url)
             config = ContainerConfig(
                 image=self._base_image,
-                name=f"carapace-session-{session_id}",
+                name=f"carapace-sandbox-{session_id}",
                 labels={"carapace.session": session_id, "carapace.managed": "true"},
                 mounts=mounts,
                 network=self._network_name,

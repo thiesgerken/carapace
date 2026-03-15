@@ -144,7 +144,7 @@ def test_build_pod_spec_basic():
     rt = _make_runtime()
     config = ContainerConfig(
         image="sandbox:latest",
-        name="carapace-session-test123",
+        name="carapace-sandbox-test123",
         labels={"carapace.session": "test123"},
         mounts=[
             Mount(source="/data/memory", target="/workspace/memory", read_only=True),
@@ -155,11 +155,11 @@ def test_build_pod_spec_basic():
         environment={"HTTP_PROXY": "http://proxy:3128"},
     )
     pod = rt._build_pod_spec(config)
-    assert pod.metadata.name == "carapace-session-test123"
+    assert pod.metadata.name == "carapace-sandbox-test123"
     assert pod.metadata.namespace == "carapace"
     assert pod.spec.containers[0].image == "sandbox:latest"
     assert pod.spec.containers[0].command == ["sleep", "infinity"]
-    assert pod.spec.restart_policy == "Never"
+    assert pod.spec.restart_policy == "Always"
     assert pod.spec.automount_service_account_token is False
 
     # Standard labels should be merged with config labels
@@ -222,12 +222,12 @@ async def test_create_calls_api():
 
     config = ContainerConfig(
         image="sandbox:latest",
-        name="carapace-session-abc",
+        name="carapace-sandbox-abc",
         network="carapace-sandbox",
         command=["sleep", "infinity"],
     )
     container_id = await rt.create(config)
-    assert container_id == "carapace-session-abc"
+    assert container_id == "carapace-sandbox-abc"
     rt._core.create_namespaced_pod.assert_called_once()
 
 

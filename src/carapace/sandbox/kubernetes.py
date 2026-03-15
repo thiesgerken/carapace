@@ -147,7 +147,7 @@ class KubernetesRuntime(ContainerRuntime):
                         ),
                     ),
                 ],
-                restart_policy="Never",
+                restart_policy="Always",
                 service_account_name=self._service_account,
                 automount_service_account_token=False,
                 priority_class_name=self._priority_class,
