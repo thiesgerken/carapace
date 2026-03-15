@@ -161,7 +161,7 @@ jobs:
           # Extract latest changelog section
           notes=$(awk '/^## v'"${version}"'/{found=1; next} /^## v[0-9]/{if(found) exit} found' CHANGELOG.md)
 
-          # Append docker pull commands
+          # Append install commands
           notes="${notes}
 
           ## Docker Images
@@ -170,6 +170,12 @@ jobs:
           docker pull ghcr.io/${repo}:${version}
           docker pull ghcr.io/${repo}-frontend:${version}
           docker pull ghcr.io/${repo}-sandbox:${version}
+          \`\`\`
+
+          ## Helm Chart
+
+          \`\`\`
+          helm install carapace oci://ghcr.io/${repo%/*}/charts/carapace --version ${version}
           \`\`\`"
 
           gh release create "v${version}" dist/* \
