@@ -93,15 +93,28 @@ class CredentialsConfig(BaseModel):
 class SandboxConfig(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="CARAPACE_SANDBOX_")
 
+    # Container backend: "docker" for local development, "kubernetes" for cluster deployments.
     runtime: Literal["docker", "kubernetes"] = "docker"
+    # Container image used for sandbox pods/containers.
     base_image: str = "carapace-sandbox:latest"
-    idle_timeout_minutes: int = 15
+    # Minutes of inactivity before a sandbox is automatically cleaned up.
+    idle_timeout_minutes: int = 60
+    # Docker network to attach sandbox containers to (docker runtime only).
     network_name: str = "carapace-sandbox"
+    # Port of the HTTP proxy sidecar that sandbox traffic is routed through.
     proxy_port: int = 3128
+    # Kubernetes namespace where sandbox pods are created.
     k8s_namespace: str = "carapace"
+    # PVC claim name for the shared data volume mounted into sandbox pods.
     k8s_pvc_claim: str = "carapace-data"
+    # ServiceAccount assigned to sandbox pods (None = namespace default).
     k8s_service_account: str | None = None
+    # PriorityClass for sandbox pods (None = cluster default).
     k8s_priority_class: str | None = None
+    # Set an ownerReference on sandbox pods pointing to the carapace Deployment.
+    # When True, deleting the Deployment garbage-collects all sandboxes.
+    # When False, sandbox pods appear as standalone resources under the ArgoCD app.
+    k8s_owner_ref: bool = False
 
 
 class MemorySearchConfig(BaseModel):

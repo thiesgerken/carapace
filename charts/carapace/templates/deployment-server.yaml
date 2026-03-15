@@ -49,6 +49,10 @@ spec:
             - name: CARAPACE_SANDBOX_K8S_PRIORITY_CLASS
               value: {{ .Values.priorityClassName }}
           {{- end }}
+          {{- if hasKey .Values.sandbox "ownerRef" }}
+            - name: CARAPACE_SANDBOX_K8S_OWNER_REF
+              value: {{ .Values.sandbox.ownerRef | quote }}
+          {{- end }}
           {{- with .Values.extraEnv }}
           {{- toYaml . | nindent 12 }}
           {{- end }}

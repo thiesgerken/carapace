@@ -32,6 +32,7 @@ class KubernetesRuntime(ContainerRuntime):
         data_dir: Path = Path("/data"),
         service_account: str | None = None,
         priority_class: str | None = None,
+        owner_ref: bool = True,
     ) -> None:
         if os.environ.get("KUBERNETES_SERVICE_HOST"):
             k8s_config.load_incluster_config()
@@ -46,21 +47,22 @@ class KubernetesRuntime(ContainerRuntime):
         self._service_account = service_account
         self._priority_class = priority_class
 
-        # Look up the owner Deployment UID for ownerReferences on sandbox pods
+        # Optionally look up the owner Deployment UID for ownerReferences on sandbox pods
         self._owner_ref: k8s_client.V1OwnerReference | None = None
-        try:
-            deployment = self._apps.read_namespaced_deployment("carapace", namespace)
-            self._owner_ref = k8s_client.V1OwnerReference(
-                api_version="apps/v1",
-                kind="Deployment",
-                name="carapace",
-                uid=deployment.metadata.uid,
-                controller=False,
-                block_owner_deletion=False,
-            )
-            logger.info(f"KubernetesRuntime: owner Deployment UID = {deployment.metadata.uid}")
-        except ApiException as exc:
-            logger.warning(f"Could not look up owner Deployment: {exc.reason} — sandbox pods will lack ownerRef")
+        if owner_ref:
+            try:
+                deployment = self._apps.read_namespaced_deployment("carapace", namespace)
+                self._owner_ref = k8s_client.V1OwnerReference(
+                    api_version="apps/v1",
+                    kind="Deployment",
+                    name="carapace",
+                    uid=deployment.metadata.uid,
+                    controller=False,
+                    block_owner_deletion=False,
+                )
+                logger.info(f"KubernetesRuntime: owner Deployment UID = {deployment.metadata.uid}")
+            except ApiException as exc:
+                logger.warning(f"Could not look up owner Deployment: {exc.reason} — sandbox pods will lack ownerRef")
 
         logger.info(f"KubernetesRuntime initialized (namespace={namespace}, pvc={pvc_claim}, data_dir={data_dir})")
 
