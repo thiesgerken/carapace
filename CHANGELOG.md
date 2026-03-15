@@ -1,12 +1,23 @@
 # CHANGELOG
 
 
+## v0.27.0 (2026-03-15)
+
+### Other
+
+- Merge remote-tracking branch 'refs/remotes/origin/main'
+  ([`9c3e094`](https://github.com/thiesgerken/carapace/commit/9c3e0941f6915cee642ea52c47ca953d3f22f42b))
+
+
 ## v0.26.0 (2026-03-15)
 
 ### ✨
 
 - ✨ feat: add Helm chart for Kubernetes deployment
   ([`b9ef7cd`](https://github.com/thiesgerken/carapace/commit/b9ef7cdc5bb146ba63bab2c34932673c24b0700f))
+
+- ✨ feat: mount all API endpoints under /api prefix
+  ([`d660c9b`](https://github.com/thiesgerken/carapace/commit/d660c9b71b4376355ceadf5b612e7562a6df00c7))
 
 
 ## v0.25.3 (2026-03-14)
