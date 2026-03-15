@@ -19,7 +19,6 @@ def test_config_defaults():
     assert cfg.credentials.backend == "mock"
     assert cfg.sandbox.network_name == "carapace-sandbox"
     assert cfg.memory.search.enabled is False
-    assert cfg.sessions.history_retention_days == 90
 
 
 def test_session_state_defaults():

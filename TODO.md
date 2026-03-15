@@ -39,7 +39,6 @@
 
 ## Session Management
 
-- [ ] History retention cleanup (delete sessions older than `history_retention_days`)
 - [ ] Session history summarization for long conversations (context window management)
 - [ ] History processor integration (Pydantic AI's `history_processors` for token budgeting)
 

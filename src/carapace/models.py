@@ -139,10 +139,6 @@ class MemoryConfig(BaseModel):
     search: MemorySearchConfig = MemorySearchConfig()
 
 
-class SessionsConfig(BaseModel):
-    history_retention_days: int = 90
-
-
 class ServerConfig(BaseModel):
     host: str = "0.0.0.0"
     port: int = 8321
@@ -162,7 +158,6 @@ class Config(BaseModel):
     credentials: CredentialsConfig = CredentialsConfig()
     sandbox: SandboxConfig = SandboxConfig()
     memory: MemoryConfig = MemoryConfig()
-    sessions: SessionsConfig = SessionsConfig()
 
 
 # --- Skill Catalog Entry ---

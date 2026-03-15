@@ -223,9 +223,6 @@ memory:
     enabled: true
     provider: local
     local_model: all-MiniLM-L6-v2
-
-sessions:
-  history_retention_days: 90
 ```
 
 ## Filesystem layout
