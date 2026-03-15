@@ -1,6 +1,18 @@
 # CHANGELOG
 
 
+## v0.34.0 (2026-03-15)
+
+### ✨
+
+- ✨ feat: switch sandbox image to python:3.14-slim-trixie
+  ([`031837a`](https://github.com/thiesgerken/carapace/commit/031837aed52d59504c41a5cec5d469e60cf3c641))
+
+Share the base image with the server container so layers are deduplicated on disk. Replace apk with
+  apt-get, copy uv binary from the official image, and drop redundant python3/py3-pip/
+  ca-certificates packages.
+
+
 ## v0.33.4 (2026-03-15)
 
 ### 🐛
