@@ -115,6 +115,10 @@ class SandboxConfig(BaseSettings):
     # When True, deleting the Deployment garbage-collects all sandboxes.
     # When False, sandbox pods appear as standalone resources under the ArgoCD app.
     k8s_owner_ref: bool = False
+    # ArgoCD application / Helm release name. Used for the app.kubernetes.io/instance
+    # label and the argocd.argoproj.io/tracking-id annotation so that sandbox pods
+    # appear in the ArgoCD resource tree even without an ownerReference.
+    k8s_app_instance: str = "carapace"
 
 
 class MemorySearchConfig(BaseModel):

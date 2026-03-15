@@ -100,6 +100,7 @@ def _create_sandbox_runtime(config: Config, data_dir: Path) -> ContainerRuntime:
             service_account=config.sandbox.k8s_service_account,
             priority_class=config.sandbox.k8s_priority_class,
             owner_ref=config.sandbox.k8s_owner_ref,
+            app_instance=config.sandbox.k8s_app_instance,
         )
 
     from carapace.sandbox.docker import DockerRuntime

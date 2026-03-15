@@ -93,6 +93,7 @@ def _make_runtime(*, namespace: str = "carapace", data_dir: str = "/data") -> Ku
     rt._service_account = None
     rt._priority_class = None
     rt._owner_ref = None
+    rt._app_instance = "carapace"
     return rt
 
 

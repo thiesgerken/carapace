@@ -33,6 +33,7 @@ class KubernetesRuntime(ContainerRuntime):
         service_account: str | None = None,
         priority_class: str | None = None,
         owner_ref: bool = True,
+        app_instance: str = "carapace",
     ) -> None:
         if os.environ.get("KUBERNETES_SERVICE_HOST"):
             k8s_config.load_incluster_config()
@@ -46,6 +47,7 @@ class KubernetesRuntime(ContainerRuntime):
         self._data_dir = data_dir
         self._service_account = service_account
         self._priority_class = priority_class
+        self._app_instance = app_instance
 
         # Optionally look up the owner Deployment UID for ownerReferences on sandbox pods
         self._owner_ref: k8s_client.V1OwnerReference | None = None
@@ -120,7 +122,7 @@ class KubernetesRuntime(ContainerRuntime):
 
         # Standard labels for NetworkPolicy and ArgoCD
         labels = {
-            "app.kubernetes.io/instance": "carapace",
+            "app.kubernetes.io/instance": self._app_instance,
             "app.kubernetes.io/part-of": "carapace",
             "app.kubernetes.io/component": "sandbox",
             "app.kubernetes.io/managed-by": "carapace-server",
@@ -128,10 +130,16 @@ class KubernetesRuntime(ContainerRuntime):
         }
         labels.update(config.labels)
 
+        # ArgoCD tracking annotation so sandbox pods appear in the app resource tree
+        annotations = {
+            "argocd.argoproj.io/tracking-id": f"{self._app_instance}:/Pod:{self._namespace}/{pod_name}",
+        }
+
         metadata = k8s_client.V1ObjectMeta(
             name=pod_name,
             namespace=self._namespace,
             labels=labels,
+            annotations=annotations,
             owner_references=[self._owner_ref] if self._owner_ref else None,
         )
 
