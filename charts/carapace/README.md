@@ -8,6 +8,18 @@ Helm chart for deploying [Carapace](https://github.com/thiesgerken/carapace) on 
 - Helm 3
 - A **ReadWriteMany** (RWX) StorageClass (e.g. CephFS, NFS)
 - Container images pushed to a registry (GHCR by default)
+- A CNI plugin that enforces **NetworkPolicy** (e.g. Calico, Cilium, k3s built-in)
+
+> **⚠️ SECURITY WARNING — NetworkPolicy is critical**
+>
+> Carapace's security model relies on sandbox pods having **no direct internet access**. All outbound traffic is forced through the server's HTTP proxy, which enforces per-session domain allowlisting and the human-in-the-loop approval flow.
+>
+> The chart installs a `NetworkPolicy` that restricts sandbox pod egress to the proxy port + DNS only. **If you add broader egress rules to the namespace, or your CNI does not enforce NetworkPolicy, sandbox pods can bypass the proxy entirely — defeating the approval system and all domain-level security controls.**
+>
+> Before deploying, verify that:
+> 1. Your CNI plugin enforces NetworkPolicy. k3s and distributions using Calico or Cilium support this out of the box. Standalone Flannel does **not** — it silently ignores NetworkPolicy.
+> 2. No other NetworkPolicy in the namespace grants sandbox pods wider egress (Kubernetes NetworkPolicy is additive — a permissive policy cannot be overridden by a restrictive one).
+> 3. No namespace-level network rules (e.g. Cilium `CiliumNetworkPolicy`, Calico `GlobalNetworkPolicy`) override the chart's restrictions.
 
 ## Install
 

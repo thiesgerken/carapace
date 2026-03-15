@@ -125,6 +125,23 @@ The included `networkpolicy.yaml` restricts sandbox pods:
 
 This mirrors the Docker setup where sandbox containers are on an internal network with no direct internet access.
 
+> **⚠️ SECURITY WARNING — NetworkPolicy is critical to Carapace's security model**
+>
+> Sandbox pods must **never** have direct internet access. All outbound traffic is forced through the server's HTTP proxy, which enforces per-session domain allowlisting and the human-in-the-loop approval flow. If a sandbox pod can reach the internet without going through the proxy, an agent can exfiltrate data or interact with external services without any approval.
+>
+> **The NetworkPolicy is the only thing preventing this.** If any of the following are true, the approval system can be trivially defeated:
+>
+> - Your CNI plugin does **not** enforce NetworkPolicy. k3s and distributions using Calico or Cilium support this out of the box. Standalone Flannel (the default in many vanilla clusters) silently ignores NetworkPolicy.
+> - Another NetworkPolicy in the same namespace grants sandbox pods broader egress (Kubernetes NetworkPolicy is **additive** — a permissive policy cannot be overridden by a restrictive one).
+> - Namespace-level or cluster-level network rules (e.g. Cilium `CiliumNetworkPolicy`, Calico `GlobalNetworkPolicy`) open additional egress paths for sandbox pods.
+>
+> **Before deploying to production**, verify your setup:
+> ```bash
+> # After deploying, exec into a sandbox pod and confirm it cannot reach the internet directly
+> kubectl exec -it <sandbox-pod> -- curl -m 5 https://example.com
+> # This MUST fail (timeout / connection refused). If it succeeds, your NetworkPolicy is not being enforced.
+> ```
+
 ## RBAC
 
 The server needs a ServiceAccount with permissions to manage pods in its namespace:
