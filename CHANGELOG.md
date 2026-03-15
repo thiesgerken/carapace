@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v0.32.2 (2026-03-15)
+
+### 🐛
+
+- 🐛 fix: add ArgoCD tracking annotation to sandbox pods for app discovery
+  ([`b158fd2`](https://github.com/thiesgerken/carapace/commit/b158fd2b9c560c4615fc1811f90f12b046688cc0))
+
+
 ## v0.32.1 (2026-03-15)
 
 ### 🐛
