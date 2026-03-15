@@ -285,7 +285,7 @@ export function ChatView({ server, token, sessionId, onTitleUpdate }: ChatViewPr
   const connected = status === "connected";
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex flex-1 min-h-0 flex-col">
       {/* Status bar */}
       {status !== "connected" && (
         <div className="flex items-center gap-2 border-b border-border px-4 py-2 text-xs text-muted-foreground">
