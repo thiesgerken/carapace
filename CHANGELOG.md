@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v0.32.1 (2026-03-15)
+
+### 🐛
+
+- 🐛💚 update pre-commit and actions
+  ([`fd4a265`](https://github.com/thiesgerken/carapace/commit/fd4a2656728fd77106d437bfe44bbe4b954731ca))
+
+
 ## v0.32.0 (2026-03-15)
 
 ### Other
