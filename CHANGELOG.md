@@ -1,12 +1,27 @@
 # CHANGELOG
 
 
+## v0.33.3 (2026-03-15)
+
+### Other
+
+- Merge remote-tracking branch 'refs/remotes/origin/main'
+  ([`bfff432`](https://github.com/thiesgerken/carapace/commit/bfff432f5533d710c021b11870f41d447f011daf))
+
+
 ## v0.33.2 (2026-03-15)
 
 ### 🐛
 
 - 🐛 fix: add initContainer to chown writable PVC dirs in K8s sandbox pods
   ([`2452b4a`](https://github.com/thiesgerken/carapace/commit/2452b4a42cfc5e6b0b378eee649e0f5dc018df3c))
+
+- 🐛 fix: prevent mobile header from scrolling away in long conversations
+  ([`71e155d`](https://github.com/thiesgerken/carapace/commit/71e155d12e062844f9b8e2770c0d594ae6e34583))
+
+Replace h-full with flex-1 min-h-0 on ChatView root so the messages area properly constrains to
+  remaining viewport height after the mobile header, enabling overflow-y-auto instead of growing
+  past the screen.
 
 
 ## v0.33.1 (2026-03-15)
