@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.28.1 (2026-03-15)
+
+### Other
+
+- 📝 docs: add Helm chart install command to release notes
+  ([`2cf0c30`](https://github.com/thiesgerken/carapace/commit/2cf0c304278727c437c3293c4d701f0c62efb967))
+
+### 🐛
+
+- 🐛 fix: use version_pattern for Chart.yaml version bumping and override helm package version
+  ([`df66025`](https://github.com/thiesgerken/carapace/commit/df6602514ae6578b81d846fe1e1efb95d1f29287))
+
+
 ## v0.28.0 (2026-03-15)
 
 ### ✨
