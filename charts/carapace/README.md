@@ -90,6 +90,25 @@ extraEnv:
     value: debug
 ```
 
+### Application configuration
+
+Inline your `config.yaml` under the `config` key — the chart creates a ConfigMap and mounts it at `/data/config.yaml`:
+
+```yaml
+# values.yaml
+config:
+  agent:
+    model: anthropic:claude-sonnet-4-6
+    sentinel_model: anthropic:claude-haiku-4-5
+  channels:
+    matrix:
+      enabled: true
+      homeserver: https://matrix.example.com
+      user_id: "@carapace:example.com"
+```
+
+Leave `config` empty (`{}`) to skip the ConfigMap entirely and manage the file on the PVC instead.
+
 ### Key values
 
 | Value | Default | Description |
@@ -107,6 +126,7 @@ extraEnv:
 | `persistence.storageClassName` | `""` (cluster default) | StorageClass for the RWX PVC |
 | `persistence.size` | `10Gi` | PVC size |
 | `persistence.finalizers` | `[]` | PVC finalizers (e.g. `kubernetes.io/pvc-protection`) |
+| `config` | `{}` | Application config (mounted as `/data/config.yaml` via ConfigMap) |
 | `priorityClassName` | `""` | PriorityClass for all pods (server, frontend, sandbox) |
 | `envFrom` | `[]` | Secret/ConfigMap refs injected into the server |
 | `extraEnv` | `[]` | Extra env vars for the server container |

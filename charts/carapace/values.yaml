@@ -56,6 +56,18 @@ resources:
   limits:
     memory: 1Gi
 
+# -- Application configuration (written to config.yaml and mounted into /data).
+# When non-empty a ConfigMap is created and mounted at /data/config.yaml.
+# Example:
+#   config:
+#     agent:
+#       model: anthropic:claude-sonnet-4-6
+#       sentinel_model: anthropic:claude-haiku-4-5
+#     channels:
+#       matrix:
+#         enabled: true
+config: {}
+
 # -- Extra environment variables injected into the server container
 # Example:
 #   extraEnv:

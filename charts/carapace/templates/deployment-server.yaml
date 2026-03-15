@@ -59,6 +59,12 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /data
+          {{- if .Values.config }}
+            - name: config
+              mountPath: /data/config.yaml
+              subPath: config.yaml
+              readOnly: true
+          {{- end }}
           {{- with .Values.resources }}
           resources:
             {{- toYaml . | nindent 12 }}
@@ -77,3 +83,8 @@ spec:
         - name: data
           persistentVolumeClaim:
             claimName: {{ .Release.Name }}-data
+      {{- if .Values.config }}
+        - name: config
+          configMap:
+            name: {{ .Release.Name }}-config
+      {{- end }}
