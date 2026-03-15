@@ -147,9 +147,10 @@ jobs:
 
       - name: Push Helm chart to GHCR
         run: |
+          version="${{ needs.version.outputs.version }}"
           echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io --username ${{ github.actor }} --password-stdin
-          helm package charts/carapace
-          helm push carapace-${{ needs.version.outputs.version }}.tgz oci://ghcr.io/${{ github.repository_owner }}/charts
+          helm package charts/carapace --version "$version" --app-version "$version"
+          helm push "carapace-${version}.tgz" oci://ghcr.io/${{ github.repository_owner }}/charts
 
       - name: Create GitHub Release
         env:
