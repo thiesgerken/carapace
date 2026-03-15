@@ -156,6 +156,8 @@ def test_build_pod_spec_basic():
         environment={"HTTP_PROXY": "http://proxy:3128"},
     )
     pod = rt._build_pod_spec(config)
+    assert pod.metadata is not None
+    assert pod.spec is not None
     assert pod.metadata.name == "carapace-sandbox-test123"
     assert pod.metadata.namespace == "carapace"
     assert pod.spec.containers[0].image == "sandbox:latest"
@@ -190,6 +192,7 @@ def test_build_pod_spec_string_command():
         command="echo hello",
     )
     pod = rt._build_pod_spec(config)
+    assert pod.spec is not None
     assert pod.spec.containers[0].command == ["bash", "-c", "echo hello"]
 
 
@@ -201,6 +204,7 @@ def test_build_pod_spec_no_command():
         network=None,
     )
     pod = rt._build_pod_spec(config)
+    assert pod.spec is not None
     assert pod.spec.containers[0].command == ["sh", "-c", "echo 'carapace sandbox ready' && exec sleep infinity"]
 
 
@@ -208,6 +212,7 @@ def test_build_pod_spec_security_context():
     rt = _make_runtime()
     config = ContainerConfig(image="sandbox:latest", name="test", network=None)
     pod = rt._build_pod_spec(config)
+    assert pod.spec is not None
     sc = pod.spec.containers[0].security_context
     assert sc.run_as_non_root is True
     assert sc.run_as_user == 1000

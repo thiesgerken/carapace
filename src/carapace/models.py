@@ -53,6 +53,14 @@ class SessionState(BaseModel):
 # --- Configuration ---
 
 
+class MatrixTokenFile(BaseModel):
+    """Schema for the persisted ``matrix_token.json`` file."""
+
+    access_token: str
+    device_id: str | None = None
+    user_id: str | None = None
+
+
 class MatrixChannelConfig(BaseModel):
     enabled: bool = False
     homeserver: str = ""

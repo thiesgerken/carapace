@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import json
 import os
 import time
 from pathlib import Path
@@ -27,7 +26,7 @@ from carapace.channels.matrix.formatting import (
     md_to_html,
 )
 from carapace.channels.matrix.subscriber import MatrixSubscriber
-from carapace.models import Config, MatrixChannelConfig, SkillInfo
+from carapace.models import Config, MatrixChannelConfig, MatrixTokenFile, SkillInfo
 from carapace.sandbox.manager import SandboxManager
 from carapace.session import SessionEngine, SessionManager
 from carapace.ws_models import ApprovalResponse, CommandResult, ProxyApprovalResponse
@@ -106,6 +105,21 @@ class MatrixChannel:
                 raise RuntimeError(f"Matrix initial sync failed: {resp.status_code}: {resp.message}")
 
         assert isinstance(resp, nio.SyncResponse)
+
+        # Accept any invites that arrived while we were offline.
+        for room_id in resp.rooms.invite:
+            if self._config.allowed_rooms and room_id not in self._config.allowed_rooms:
+                logger.info(f"Matrix: ignoring offline invite to unlisted room {room_id}")
+                continue
+            logger.info(f"Matrix: accepting offline invite to room {room_id}")
+            await self._client.join(room_id)
+
+        # Re-sync after joining so newly joined rooms appear in rooms.join.
+        if resp.rooms.invite:
+            resp2 = await self._client.sync(timeout=5000, full_state=True)
+            if isinstance(resp2, nio.SyncResponse):
+                resp = resp2
+
         for room_id in resp.rooms.join:
             self._get_or_create_session(room_id)
         logger.info(f"Matrix: tracking {len(self._room_sessions)} room(s)")
@@ -136,12 +150,16 @@ class MatrixChannel:
         """Return (access_token, device_id) from persisted file or env var, or ("", None)."""
         if token_file.exists():
             try:
-                stored = json.loads(token_file.read_text())
-                token = stored.get("access_token", "")
-                device_id: str | None = stored.get("device_id")
-                if token:
+                stored = MatrixTokenFile.model_validate_json(token_file.read_text())
+                if stored.user_id != self._config.user_id:
+                    logger.warning(
+                        f"Matrix: persisted token belongs to {stored.user_id!r}, "
+                        f"but config has {self._config.user_id!r} — discarding stale token"
+                    )
+                    token_file.unlink(missing_ok=True)
+                else:
                     logger.debug("Matrix: using persisted access token")
-                    return token, device_id
+                    return stored.access_token, stored.device_id
             except Exception as exc:
                 logger.warning(f"Matrix: could not read persisted token file: {exc}")
 
@@ -165,7 +183,10 @@ class MatrixChannel:
         if isinstance(resp, nio.LoginError):
             raise RuntimeError(f"Matrix password login failed: {resp.message}")
 
-        token_file.write_text(json.dumps({"access_token": resp.access_token, "device_id": resp.device_id}))
+        persisted = MatrixTokenFile(
+            access_token=resp.access_token, device_id=resp.device_id, user_id=self._config.user_id
+        )
+        token_file.write_text(persisted.model_dump_json())
         logger.info(f"Matrix: password login successful, token persisted to {token_file}")
 
     async def _authenticate(self, token_file: Path) -> None:

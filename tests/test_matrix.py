@@ -21,7 +21,7 @@ from carapace.channels.matrix import (
 )
 from carapace.channels.matrix.subscriber import MatrixSubscriber
 from carapace.config import load_config
-from carapace.models import MatrixChannelConfig
+from carapace.models import MatrixChannelConfig, MatrixTokenFile
 from carapace.sandbox.manager import SandboxManager
 from carapace.session import SessionEngine, SessionManager
 from carapace.ws_models import ApprovalRequest, CommandResult
@@ -573,3 +573,64 @@ def test_format_domain_escalation():
     text = _format_domain_escalation("api.example.com", "curl https://api.example.com", "unexpected domain")
     assert "api.example.com" in text
     assert "unexpected domain" in text
+
+
+# ---------------------------------------------------------------------------
+# Token persistence — user_id binding
+# ---------------------------------------------------------------------------
+
+
+def test_load_token_returns_persisted_token(tmp_path: Path):
+    """Persisted token with matching user_id is accepted."""
+    ch = _make_channel(tmp_path)
+    token_file = tmp_path / "matrix_token.json"
+    persisted = MatrixTokenFile(access_token="tok_good", device_id="DEV1", user_id="@carapace:example.com")
+    token_file.write_text(persisted.model_dump_json())
+    token, device_id = ch._load_token(token_file)
+    assert token == "tok_good"
+    assert device_id == "DEV1"
+
+
+def test_load_token_discards_stale_user_id(tmp_path: Path):
+    """Persisted token for a different user_id is discarded and the file deleted."""
+    ch = _make_channel(tmp_path)
+    token_file = tmp_path / "matrix_token.json"
+    persisted = MatrixTokenFile(access_token="tok_old", device_id="DEV1", user_id="@other:example.com")
+    token_file.write_text(persisted.model_dump_json())
+    token, device_id = ch._load_token(token_file)
+    assert token == ""
+    assert device_id is None
+    assert not token_file.exists(), "stale token file should be deleted"
+
+
+def test_load_token_discards_legacy_file_without_user_id(tmp_path: Path):
+    """Legacy token files (no user_id field) are discarded so a fresh login stores the user_id."""
+    ch = _make_channel(tmp_path)
+    token_file = tmp_path / "matrix_token.json"
+    persisted = MatrixTokenFile(access_token="tok_legacy", device_id="DEV2")
+    token_file.write_text(persisted.model_dump_json())
+    token, device_id = ch._load_token(token_file)
+    assert token == ""
+    assert device_id is None
+    assert not token_file.exists(), "legacy token file should be deleted"
+
+
+@pytest.mark.anyio
+async def test_password_login_persists_user_id(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """After password login the persisted file includes the configured user_id."""
+    monkeypatch.setenv("CARAPACE_MATRIX_PASSWORD", "secret")
+
+    ch = _make_channel(tmp_path)
+    token_file = tmp_path / "matrix_token.json"
+
+    login_resp = MagicMock()
+    login_resp.access_token = "tok_new"
+    login_resp.device_id = "DEV_NEW"
+    ch._client.login = AsyncMock(return_value=login_resp)
+
+    await ch._password_login(token_file)
+
+    stored = MatrixTokenFile.model_validate_json(token_file.read_text())
+    assert stored.access_token == "tok_new"
+    assert stored.device_id == "DEV_NEW"
+    assert stored.user_id == "@carapace:example.com"
