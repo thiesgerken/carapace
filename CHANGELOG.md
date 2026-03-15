@@ -1,9 +1,20 @@
 # CHANGELOG
 
 
+## v0.30.0 (2026-03-15)
+
+### Other
+
+- Merge remote-tracking branch 'refs/remotes/origin/main'
+  ([`97d9cb6`](https://github.com/thiesgerken/carapace/commit/97d9cb6dbbf7779613362eaafee95f8b93b08182))
+
+
 ## v0.29.0 (2026-03-15)
 
 ### ✨
+
+- ✨ feat(chart): support config.yaml via ConfigMap
+  ([`6c19915`](https://github.com/thiesgerken/carapace/commit/6c19915f89ed9177dca024d41570af82f57fb574))
 
 - ✨ feat: replace auto-generated token with CARAPACE_TOKEN env var
   ([`0f45c40`](https://github.com/thiesgerken/carapace/commit/0f45c40b5af2346a6b90a2f845e227a3b79fa7cd))
