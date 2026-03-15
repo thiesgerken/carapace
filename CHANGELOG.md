@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v0.26.0 (2026-03-15)
+
+### ✨
+
+- ✨ feat: add Helm chart for Kubernetes deployment
+  ([`b9ef7cd`](https://github.com/thiesgerken/carapace/commit/b9ef7cdc5bb146ba63bab2c34932673c24b0700f))
+
+
 ## v0.25.3 (2026-03-14)
 
 ### Other
