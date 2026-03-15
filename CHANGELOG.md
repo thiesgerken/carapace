@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v0.32.3 (2026-03-15)
+
+### 🐛
+
+- 🐛 fix: update k8s_owner_ref to True for sandbox pods
+  ([`6c8c72d`](https://github.com/thiesgerken/carapace/commit/6c8c72dd84d0fe85aa39f9aee551c8fd9b0d42f6))
+
+
 ## v0.32.2 (2026-03-15)
 
 ### 🐛
