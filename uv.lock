@@ -304,12 +304,13 @@ wheels = [
 
 [[package]]
 name = "carapace"
-version = "0.28.1"
+version = "0.30.0"
 source = { editable = "." }
 dependencies = [
     { name = "docker" },
     { name = "fastapi" },
     { name = "genai-prices" },
+    { name = "kubernetes" },
     { name = "logfire", extra = ["httpx"] },
     { name = "loguru" },
     { name = "markdown" },
@@ -325,11 +326,6 @@ dependencies = [
     { name = "websockets" },
 ]
 
-[package.optional-dependencies]
-kubernetes = [
-    { name = "kubernetes" },
-]
-
 [package.dev-dependencies]
 dev = [
     { name = "pytest" },
@@ -341,7 +337,7 @@ requires-dist = [
     { name = "docker", specifier = ">=7,<8" },
     { name = "fastapi", specifier = ">=0.115,<1" },
     { name = "genai-prices", specifier = ">=0.0.53" },
-    { name = "kubernetes", marker = "extra == 'kubernetes'", specifier = ">=31.0" },
+    { name = "kubernetes", specifier = ">=31,<33" },
     { name = "logfire", extras = ["httpx"], specifier = ">=4,<5" },
     { name = "loguru", specifier = ">=0.7.3" },
     { name = "markdown", specifier = ">=3,<4" },
@@ -356,7 +352,6 @@ requires-dist = [
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.40,<1" },
     { name = "websockets", specifier = ">=15,<16" },
 ]
-provides-extras = ["kubernetes"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -1401,11 +1396,13 @@ wheels = [
 
 [[package]]
 name = "kubernetes"
-version = "35.0.0"
+version = "32.0.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "certifi" },
     { name = "durationpy" },
+    { name = "google-auth" },
+    { name = "oauthlib" },
     { name = "python-dateutil" },
     { name = "pyyaml" },
     { name = "requests" },
@@ -1414,9 +1411,9 @@ dependencies = [
     { name = "urllib3" },
     { name = "websocket-client" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/2c/8f/85bf51ad4150f64e8c665daf0d9dfe9787ae92005efb9a4d1cba592bd79d/kubernetes-35.0.0.tar.gz", hash = "sha256:3d00d344944239821458b9efd484d6df9f011da367ecb155dadf9513f05f09ee", size = 1094642, upload-time = "2026-01-16T01:05:27.76Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/b7/e8/0598f0e8b4af37cd9b10d8b87386cf3173cb8045d834ab5f6ec347a758b3/kubernetes-32.0.1.tar.gz", hash = "sha256:42f43d49abd437ada79a79a16bd48a604d3471a117a8347e87db693f2ba0ba28", size = 946691, upload-time = "2025-02-18T21:06:34.148Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/0c/70/05b685ea2dffcb2adbf3cdcea5d8865b7bc66f67249084cf845012a0ff13/kubernetes-35.0.0-py2.py3-none-any.whl", hash = "sha256:39e2b33b46e5834ef6c3985ebfe2047ab39135d41de51ce7641a7ca5b372a13d", size = 2017602, upload-time = "2026-01-16T01:05:25.991Z" },
+    { url = "https://files.pythonhosted.org/packages/08/10/9f8af3e6f569685ce3af7faab51c8dd9d93b9c38eba339ca31c746119447/kubernetes-32.0.1-py2.py3-none-any.whl", hash = "sha256:35282ab8493b938b08ab5526c7ce66588232df00ef5e1dbe88a419107dc10998", size = 1988070, upload-time = "2025-02-18T21:06:31.391Z" },
 ]
 
 [[package]]

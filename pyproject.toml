@@ -21,10 +21,8 @@ dependencies = [
     "loguru>=0.7.3",
     "matrix-nio>=0.25,<1",
     "markdown>=3,<4",
+    "kubernetes>=31,<33",
 ]
-
-[project.optional-dependencies]
-kubernetes = ["kubernetes>=31.0"]
 
 [project.scripts]
 carapace = "carapace.cli:app"

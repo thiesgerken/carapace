@@ -4,19 +4,13 @@ import asyncio
 import os
 from pathlib import Path
 
+from kubernetes import client as k8s_client
+from kubernetes import config as k8s_config
+from kubernetes.client import ApiException
+from kubernetes.stream import stream as k8s_stream
 from loguru import logger
 
 from carapace.sandbox.runtime import ContainerConfig, ContainerGoneError, ContainerRuntime, ExecResult, Mount
-
-try:
-    from kubernetes import client as k8s_client
-    from kubernetes import config as k8s_config
-    from kubernetes.client import ApiException
-    from kubernetes.stream import stream as k8s_stream
-except ImportError as exc:
-    raise ImportError(
-        "kubernetes package is required for KubernetesRuntime. Install it with: pip install 'carapace[kubernetes]'"
-    ) from exc
 
 
 def _sanitize_pod_name(name: str) -> str:
