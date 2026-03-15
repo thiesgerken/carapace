@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v0.34.1 (2026-03-15)
+
+### Other
+
+- Merge remote-tracking branch 'refs/remotes/origin/main'
+  ([`18ff1cf`](https://github.com/thiesgerken/carapace/commit/18ff1cf74ca91cad072cb9f5bf0d59fb76e84bd1))
+
+
 ## v0.34.0 (2026-03-15)
 
 ### ✨
@@ -11,6 +19,11 @@
 Share the base image with the server container so layers are deduplicated on disk. Replace apk with
   apt-get, copy uv binary from the official image, and drop redundant python3/py3-pip/
   ca-certificates packages.
+
+### 🐛
+
+- 🐛 fix: remove unnecessary packages from Dockerfile
+  ([`7ea00f3`](https://github.com/thiesgerken/carapace/commit/7ea00f33ac6cc849a69b32676c3417faa551cda1))
 
 
 ## v0.33.4 (2026-03-15)
