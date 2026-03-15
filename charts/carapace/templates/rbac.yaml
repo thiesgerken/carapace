@@ -1,33 +1,35 @@
-# ServiceAccount for the server — needs RBAC to manage sandbox pods
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: carapace-server
-  namespace: carapace
+  name: {{ .Release.Name }}-server
+  labels:
+    {{- include "carapace.labels" . | nindent 4 }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: carapace-server
-  namespace: carapace
+  name: {{ .Release.Name }}-server
+  labels:
+    {{- include "carapace.labels" . | nindent 4 }}
 rules:
   - apiGroups: [""]
     resources: ["pods", "pods/exec"]
     verbs: ["create", "get", "list", "delete"]
   - apiGroups: ["apps"]
     resources: ["deployments"]
-    verbs: ["get"] # look up own Deployment UID for ownerReferences
+    verbs: ["get"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: carapace-server
-  namespace: carapace
+  name: {{ .Release.Name }}-server
+  labels:
+    {{- include "carapace.labels" . | nindent 4 }}
 subjects:
   - kind: ServiceAccount
-    name: carapace-server
-    namespace: carapace
+    name: {{ .Release.Name }}-server
+    namespace: {{ .Release.Namespace }}
 roleRef:
   kind: Role
-  name: carapace-server
+  name: {{ .Release.Name }}-server
   apiGroup: rbac.authorization.k8s.io

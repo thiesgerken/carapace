@@ -88,6 +88,7 @@ def _create_sandbox_runtime(config: Config, data_dir: Path) -> ContainerRuntime:
             pvc_claim=config.sandbox.k8s_pvc_claim,
             data_dir=data_dir,
             service_account=config.sandbox.k8s_service_account,
+            priority_class=config.sandbox.k8s_priority_class,
         )
 
     from carapace.sandbox.docker import DockerRuntime

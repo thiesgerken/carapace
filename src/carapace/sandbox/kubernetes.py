@@ -37,6 +37,7 @@ class KubernetesRuntime(ContainerRuntime):
         pvc_claim: str = "carapace-data",
         data_dir: Path = Path("/data"),
         service_account: str | None = None,
+        priority_class: str | None = None,
     ) -> None:
         if os.environ.get("KUBERNETES_SERVICE_HOST"):
             k8s_config.load_incluster_config()
@@ -49,6 +50,7 @@ class KubernetesRuntime(ContainerRuntime):
         self._pvc_claim = pvc_claim
         self._data_dir = data_dir
         self._service_account = service_account
+        self._priority_class = priority_class
 
         # Look up the owner Deployment UID for ownerReferences on sandbox pods
         self._owner_ref: k8s_client.V1OwnerReference | None = None
@@ -154,6 +156,7 @@ class KubernetesRuntime(ContainerRuntime):
                 restart_policy="Never",
                 service_account_name=self._service_account,
                 automount_service_account_token=False,
+                priority_class_name=self._priority_class,
             ),
         )
         return pod

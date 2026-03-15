@@ -1,29 +1,34 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: carapace
-  namespace: carapace
+  name: {{ .Release.Name }}
   labels:
-    app.kubernetes.io/name: carapace
+    {{- include "carapace.labels" . | nindent 4 }}
     app.kubernetes.io/component: server
 spec:
   replicas: 1
   strategy:
-    type: Recreate # single replica with PVC — avoid RWO conflicts
+    type: Recreate
   selector:
     matchLabels:
       app.kubernetes.io/name: carapace
+      app.kubernetes.io/instance: {{ .Release.Name }}
       app.kubernetes.io/component: server
   template:
     metadata:
       labels:
         app.kubernetes.io/name: carapace
+        app.kubernetes.io/instance: {{ .Release.Name }}
         app.kubernetes.io/component: server
     spec:
-      serviceAccountName: carapace-server
+      serviceAccountName: {{ .Release.Name }}-server
+      {{- if .Values.priorityClassName }}
+      priorityClassName: {{ .Values.priorityClassName }}
+      {{- end }}
       containers:
         - name: server
-          image: ghcr.io/thiesgerken/carapace:latest # pin to a version tag
+          image: {{ include "carapace.serverImage" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:
             - name: api
               containerPort: 8321
@@ -35,17 +40,29 @@ spec:
             - name: CARAPACE_SANDBOX_RUNTIME
               value: kubernetes
             - name: CARAPACE_SANDBOX_BASE_IMAGE
-              value: ghcr.io/thiesgerken/carapace-sandbox:latest # pin to a version tag
+              value: {{ include "carapace.sandboxImage" . }}
             - name: CARAPACE_SANDBOX_K8S_NAMESPACE
-              value: carapace
+              value: {{ .Release.Namespace }}
             - name: CARAPACE_SANDBOX_K8S_PVC_CLAIM
-              value: carapace-data
+              value: {{ .Release.Name }}-data
+          {{- if .Values.priorityClassName }}
+            - name: CARAPACE_SANDBOX_K8S_PRIORITY_CLASS
+              value: {{ .Values.priorityClassName }}
+          {{- end }}
+          {{- with .Values.extraEnv }}
+          {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.envFrom }}
           envFrom:
-            - secretRef:
-                name: carapace-secrets
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           volumeMounts:
             - name: data
               mountPath: /data
+          {{- with .Values.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           livenessProbe:
             tcpSocket:
               port: api
@@ -59,4 +76,4 @@ spec:
       volumes:
         - name: data
           persistentVolumeClaim:
-            claimName: carapace-data
+            claimName: {{ .Release.Name }}-data

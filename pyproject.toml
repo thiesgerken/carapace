@@ -42,6 +42,10 @@ packages = ["src/carapace"]
 
 [tool.semantic_release]
 version_toml = ["pyproject.toml:project.version"]
+version_pattern = [
+    'charts/carapace/Chart.yaml:^version: (?P<version>.+)$',
+    'charts/carapace/Chart.yaml:^appVersion: "(?P<version>.+)"$',
+]
 commit_parser = "emoji"
 build_command = "pip install uv && uv lock && uv build"
 

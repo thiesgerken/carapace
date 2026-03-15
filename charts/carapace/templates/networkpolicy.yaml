@@ -1,9 +1,9 @@
-# Restrict sandbox pods: only allow traffic to/from the carapace server proxy.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: sandbox-isolation
-  namespace: carapace
+  name: {{ .Release.Name }}-sandbox-isolation
+  labels:
+    {{- include "carapace.labels" . | nindent 4 }}
 spec:
   podSelector:
     matchLabels:
@@ -12,23 +12,22 @@ spec:
     - Ingress
     - Egress
   ingress:
-    # Allow exec from the server pod
     - from:
         - podSelector:
             matchLabels:
               app.kubernetes.io/name: carapace
+              app.kubernetes.io/instance: {{ .Release.Name }}
               app.kubernetes.io/component: server
   egress:
-    # Allow traffic to the proxy port on the carapace service only
     - to:
         - podSelector:
             matchLabels:
               app.kubernetes.io/name: carapace
+              app.kubernetes.io/instance: {{ .Release.Name }}
               app.kubernetes.io/component: server
       ports:
         - protocol: TCP
           port: 3128
-    # Allow DNS resolution
     - to:
         - namespaceSelector: {}
           podSelector:

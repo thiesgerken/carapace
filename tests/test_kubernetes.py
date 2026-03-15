@@ -91,6 +91,7 @@ def _make_runtime(*, namespace: str = "carapace", data_dir: str = "/data") -> Ku
     rt._pvc_claim = "carapace-data"
     rt._data_dir = Path(data_dir)
     rt._service_account = None
+    rt._priority_class = None
     rt._owner_ref = None
     return rt
 

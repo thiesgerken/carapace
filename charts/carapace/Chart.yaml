@@ -1,0 +1,11 @@
+apiVersion: v2
+name: carapace
+description: Security-first personal AI agent with LLM-powered security gating
+type: application
+version: 0.25.3
+appVersion: "0.25.3"
+home: https://github.com/thiesgerken/carapace
+sources:
+  - https://github.com/thiesgerken/carapace
+maintainers:
+  - name: thiesgerken

@@ -101,6 +101,7 @@ class SandboxConfig(BaseSettings):
     k8s_namespace: str = "carapace"
     k8s_pvc_claim: str = "carapace-data"
     k8s_service_account: str | None = None
+    k8s_priority_class: str | None = None
 
 
 class MemorySearchConfig(BaseModel):

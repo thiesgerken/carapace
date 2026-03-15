@@ -7,24 +7,29 @@ Carapace supports Kubernetes as a sandbox runtime. Instead of Docker containers,
 - **Kubernetes cluster** — tested with k3s, works with any conformant cluster
 - **RWX StorageClass** — CephFS, NFS, or another ReadWriteMany-capable provisioner. The server pod and all sandbox pods mount the same PVC.
 - **Container images** pushed to a registry accessible by the cluster (GHCR by default)
-- **kubectl** configured for your cluster
+- **Helm 3** installed locally
 
 ## Quick start
 
 ```bash
-# 1. Create the secret with your API keys
+# 1. Create a secret with your API keys (or use an ExternalSecret / SealedSecret)
 kubectl create namespace carapace
 kubectl create secret generic carapace-secrets -n carapace \
-  --from-literal=ANTHROPIC_API_KEY=sk-...
+  --from-literal=ANTHROPIC_API_KEY=sk-ant-...
 
-# 2. Review and adjust manifests
-#    - k8s/pvc.yaml: set storageClassName for your cluster
-#    - k8s/ingress.yaml: set your hostname
-#    - k8s/deployment-server.yaml: pin image tags
+# 2. Install, referencing the secret
+helm install carapace charts/carapace \
+  --namespace carapace \
+  --set ingress.hostname=carapace.example.com \
+  --set envFrom[0].secretRef.name=carapace-secrets
 
-# 3. Apply
-kubectl apply -k k8s/
+# 3. Upgrade after pulling new changes
+helm upgrade carapace charts/carapace -n carapace
 ```
+
+Inject additional config via `extraEnv` (inline values) or `envFrom` (external Secrets / ConfigMaps). The PVC uses the cluster's default StorageClass unless overridden with `persistence.storageClassName`.
+
+See [charts/carapace/values.yaml](../charts/carapace/values.yaml) for the full list of configurable values.
 
 ## Architecture
 
@@ -151,26 +156,10 @@ Application: carapace
 
 No special ArgoCD configuration is needed — the standard annotation-based tracking handles it.
 
-## Manifests
-
-All manifests live in `k8s/` and are wired together via `kustomization.yaml`:
-
-| File                       | Purpose                                    |
-| -------------------------- | ------------------------------------------ |
-| `namespace.yaml`           | `carapace` namespace                       |
-| `pvc.yaml`                 | Shared RWX PVC                             |
-| `rbac.yaml`                | ServiceAccount + Role + RoleBinding        |
-| `deployment-server.yaml`   | Server + proxy                             |
-| `service-server.yaml`      | ClusterIP for API (8321) and proxy (3128)  |
-| `deployment-frontend.yaml` | Next.js frontend                           |
-| `service-frontend.yaml`    | ClusterIP for frontend (80)                |
-| `ingress.yaml`             | Traefik IngressRoute                       |
-| `networkpolicy.yaml`       | Sandbox pod isolation                      |
-| `secret.yaml.example`      | Secret template (don't commit real values) |
-
 ## Customization
 
-- **StorageClass**: edit `pvc.yaml` to match your cluster's RWX provisioner
-- **Ingress**: the included `ingress.yaml` uses Traefik `IngressRoute` (k3s default). Replace with a standard `Ingress` resource if using a different controller.
-- **Image tags**: pin to specific versions in the Deployment manifests rather than using `:latest`
-- **Resources**: add resource requests/limits to the Deployment specs for production use
+- **StorageClass**: set `persistence.storageClassName` in your values (defaults to the cluster default)
+- **Ingress**: the chart uses Traefik `IngressRoute` (k3s default). Replace with a standard `Ingress` resource if using a different controller.
+- **Image tags**: pinned to `appVersion` by default; override with `image.tag`, `frontend.image.tag`, `sandbox.image.tag`
+- **Resources**: set `resources` / `frontend.resources` in your values for production use
+- **Priority class**: set `priorityClassName` to apply to all pods (server, frontend, sandbox)

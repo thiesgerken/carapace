@@ -196,7 +196,7 @@ Other differences: Carapace is Python (not Node), uses Pydantic AI (not a custom
 
 ## Kubernetes deployment
 
-Carapace supports Kubernetes as a sandbox runtime — sandbox sessions run as pods instead of Docker containers, sharing a single RWX PVC for data. Tested with k3s and CephFS. See the [Kubernetes deployment guide](docs/kubernetes.md) for manifests, configuration, and ArgoCD integration.
+Carapace supports Kubernetes as a sandbox runtime — sandbox sessions run as pods instead of Docker containers, sharing a single RWX PVC for data. A [Helm chart](charts/carapace/) is included for deployment. See the [Kubernetes deployment guide](docs/kubernetes.md) for details and the [chart README](charts/carapace/README.md) for installation instructions.
 
 ## Development setup
 
