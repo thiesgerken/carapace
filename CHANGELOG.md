@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v0.30.1 (2026-03-15)
+
+### 🐛
+
+- 🐛 fix: move kubernetes from optional to regular dependency
+  ([`a0a8d94`](https://github.com/thiesgerken/carapace/commit/a0a8d942fbf8baf052ba13d6a0b770de04f58ecf))
+
+
 ## v0.30.0 (2026-03-15)
 
 ### Other
