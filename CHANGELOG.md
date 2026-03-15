@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.30.2 (2026-03-15)
+
+### Other
+
+- 📝 docs: add NetworkPolicy security warnings to Kubernetes docs
+  ([`373634b`](https://github.com/thiesgerken/carapace/commit/373634bab2010360efee5d4ce0c5bf1ba9025aac))
+
+### 🐛
+
+- 🐛 fix: use Always restart policy for sandbox pods and rename to carapace-sandbox-*
+  ([`d0c3335`](https://github.com/thiesgerken/carapace/commit/d0c33351ae5746ff6fecc2f9ba6a71d12468d88c))
+
+
 ## v0.30.1 (2026-03-15)
 
 ### 🐛
