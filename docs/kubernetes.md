@@ -17,19 +17,19 @@ kubectl create namespace carapace
 kubectl create secret generic carapace-secrets -n carapace \
   --from-literal=ANTHROPIC_API_KEY=sk-ant-...
 
-# 2. Install, referencing the secret
-helm install carapace charts/carapace \
+# 2. Install from OCI registry, referencing the secret
+helm install carapace oci://ghcr.io/thiesgerken/charts/carapace \
   --namespace carapace \
   --set ingress.hostname=carapace.example.com \
-  --set envFrom[0].secretRef.name=carapace-secrets
+  --set 'envFrom[0].secretRef.name=carapace-secrets'
 
-# 3. Upgrade after pulling new changes
-helm upgrade carapace charts/carapace -n carapace
+# 3. Upgrade to a new version
+helm upgrade carapace oci://ghcr.io/thiesgerken/charts/carapace -n carapace
 ```
 
 Inject additional config via `extraEnv` (inline values) or `envFrom` (external Secrets / ConfigMaps). The PVC uses the cluster's default StorageClass unless overridden with `persistence.storageClassName`.
 
-See [charts/carapace/values.yaml](../charts/carapace/values.yaml) for the full list of configurable values.
+See the [chart README](../charts/carapace/README.md) for installation details and the full values reference.
 
 ## Architecture
 
@@ -43,7 +43,7 @@ Namespace: carapace
 ├── Service/frontend (port 80)
 ├── PVC/carapace-data (RWX)
 ├── NetworkPolicy/sandbox-isolation
-├── IngressRoute (Traefik)
+├── HTTPRoute (Gateway API)
 └── RBAC (ServiceAccount + Role + RoleBinding)
 ```
 
@@ -159,7 +159,8 @@ No special ArgoCD configuration is needed — the standard annotation-based trac
 ## Customization
 
 - **StorageClass**: set `persistence.storageClassName` in your values (defaults to the cluster default)
-- **Ingress**: the chart uses Traefik `IngressRoute` (k3s default). Replace with a standard `Ingress` resource if using a different controller.
+- **Ingress**: the chart uses Gateway API `HTTPRoute`. Set `ingress.parentRefs` to match your Gateway.
 - **Image tags**: pinned to `appVersion` by default; override with `image.tag`, `frontend.image.tag`, `sandbox.image.tag`
-- **Resources**: set `resources` / `frontend.resources` in your values for production use
+- **Resources**: sensible defaults are included; override `resources` / `frontend.resources` as needed
 - **Priority class**: set `priorityClassName` to apply to all pods (server, frontend, sandbox)
+- **PVC protection**: set `persistence.finalizers` to `["kubernetes.io/pvc-protection"]` to guard against accidental deletion
