@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v0.33.2 (2026-03-15)
+
+### 🐛
+
+- 🐛 fix: add initContainer to chown writable PVC dirs in K8s sandbox pods
+  ([`2452b4a`](https://github.com/thiesgerken/carapace/commit/2452b4a42cfc5e6b0b378eee649e0f5dc018df3c))
+
+
 ## v0.33.1 (2026-03-15)
 
 ### 🐛
