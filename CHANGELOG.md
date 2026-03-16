@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.38.4 (2026-03-16)
+
+### Other
+
+- 💄 improve exception formatting in UI
+  ([`377fd85`](https://github.com/thiesgerken/carapace/commit/377fd85611d92a2197ef855a4640eecd1c2c2428))
+
+### 🐛
+
+- 🐛 update ignore patterns to exclude node_modules during skill save
+  ([`d5dd419`](https://github.com/thiesgerken/carapace/commit/d5dd41925eae71d8961c77f17abb4145615be638))
+
+
 ## v0.38.3 (2026-03-16)
 
 ### 🐛
