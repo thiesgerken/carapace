@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.36.0 (2026-03-16)
+
+### ✨
+
+- ✨ improve proxy setup
+  ([`dde455a`](https://github.com/thiesgerken/carapace/commit/dde455a701cba5a94fd464d6ef7237e44ce58a2c))
+
+### 🐛
+
+- 🐛 improve uv documentation for agent
+  ([`01a3fd1`](https://github.com/thiesgerken/carapace/commit/01a3fd17deb5f258a77f3e854964961c2295da59))
+
+
 ## v0.35.1 (2026-03-15)
 
 ### 🐛
