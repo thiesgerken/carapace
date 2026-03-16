@@ -92,23 +92,32 @@ class Sentinel:
         self,
         *,
         model: str,
-        security_md: str,
+        data_dir: Path,
         skills_dir: Path,
         reset_threshold: int = _RESET_THRESHOLD_DEFAULT,
     ) -> None:
         self._model = model
-        self._system_prompt = _build_system_prompt(security_md)
+        self._data_dir = data_dir
         self._skills_dir = skills_dir
         self._reset_threshold = reset_threshold
         self._agent = self._create_agent()
         self._message_history: list[Any] = []
+
+    def _load_system_prompt(self, _ctx: RunContext[Path]) -> str:
+        return _build_system_prompt(self._load_security_md())
+
+    def _load_security_md(self) -> str:
+        path = self._data_dir / "SECURITY.md"
+        if path.exists():
+            return path.read_text()
+        return ""
 
     def _create_agent(self) -> Agent[Path, SentinelVerdict]:
         agent: Agent[Path, SentinelVerdict] = Agent(
             self._model,
             deps_type=Path,
             output_type=SentinelVerdict,
-            instructions=self._system_prompt,
+            instructions=self._load_system_prompt,
         )
 
         @agent.tool
@@ -222,5 +231,6 @@ class Sentinel:
             f"Resetting sentinel conversation for session {session.session_id} "
             + f"after {session.sentinel_eval_count} evaluations"
         )
+        self._agent = self._create_agent()
         self._message_history.clear()
         session.reset_sentinel()

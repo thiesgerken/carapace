@@ -36,7 +36,7 @@ from tenacity import retry_if_exception_type, stop_after_attempt, wait_exponenti
 
 from carapace.auth import get_token
 from carapace.bootstrap import ensure_data_dir
-from carapace.config import get_data_dir, load_config, load_security_md
+from carapace.config import get_data_dir, load_config
 from carapace.models import Config, SessionState
 from carapace.sandbox.manager import SandboxManager
 from carapace.sandbox.proxy import ProxyServer
@@ -131,7 +131,6 @@ async def lifespan(app: FastAPI):
         logfire.configure(token=_config.carapace.logfire_token, console=False)
         logfire.instrument_pydantic_ai()
 
-    security_md = load_security_md(_data_dir)
     session_mgr = SessionManager(_data_dir)
     registry = SkillRegistry(_data_dir / "skills")
     skill_catalog = registry.scan()
@@ -189,7 +188,6 @@ async def lifespan(app: FastAPI):
     _engine = SessionEngine(
         config=_config,
         data_dir=_data_dir,
-        security_md=security_md,
         session_mgr=session_mgr,
         skill_catalog=skill_catalog,
         agent_model=agent_model,
@@ -219,7 +217,6 @@ async def lifespan(app: FastAPI):
         matrix_channel = MatrixChannel(
             config=_config.channels.matrix,
             full_config=_config,
-            security_md=security_md,
             session_mgr=session_mgr,
             skill_catalog=skill_catalog,
             agent_model=agent_model,
@@ -353,8 +350,20 @@ async def delete_session(session_id: str, _token: str = Depends(_verify_token)) 
         raise HTTPException(status_code=404, detail="Session not found")
 
 
+_HistoryRole = Literal[
+    "user",
+    "assistant",
+    "tool_call",
+    "tool_result",
+    "command",
+    "proxy_approval",
+    "approval_request",
+    "approval_response",
+]
+
+
 class HistoryMessage(BaseModel):
-    role: Literal["user", "assistant", "tool_call", "tool_result", "command", "proxy_approval", "approval_request"]
+    role: _HistoryRole
     content: str = ""
     tool: str | None = None
     args: dict[str, Any] | None = None

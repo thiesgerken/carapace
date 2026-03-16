@@ -15,7 +15,7 @@ def test_import_models():
 
 
 def test_import_config():
-    from carapace.config import get_data_dir, load_config, load_security_md  # noqa: F401
+    from carapace.config import get_data_dir, load_config, load_workspace_file  # noqa: F401
 
 
 def test_import_memory():

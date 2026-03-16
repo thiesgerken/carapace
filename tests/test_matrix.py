@@ -67,7 +67,6 @@ def _make_channel(tmp_path: Path, **config_kwargs: Any) -> Any:
     channel = MatrixChannel(
         config=_make_config(**config_kwargs),
         full_config=full_config,
-        security_md="",
         session_mgr=session_mgr,
         skill_catalog=[],
         agent_model=None,

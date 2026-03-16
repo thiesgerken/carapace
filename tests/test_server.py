@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 # We patch the server module globals directly for testing
 import carapace.server as srv
 from carapace.bootstrap import ensure_data_dir
-from carapace.config import load_config, load_security_md
+from carapace.config import load_config
 from carapace.sandbox.manager import SandboxManager
 from carapace.server import app
 from carapace.session import SessionEngine, SessionManager
@@ -28,7 +28,6 @@ def _setup_server(tmp_path, monkeypatch):
     monkeypatch.setenv("CARAPACE_TOKEN", _TEST_TOKEN)
     ensure_data_dir(tmp_path)
     config = load_config(tmp_path)
-    security_md = load_security_md(tmp_path)
     session_mgr = SessionManager(tmp_path)
     registry = SkillRegistry(tmp_path / "skills")
     skill_catalog = registry.scan()
@@ -40,7 +39,6 @@ def _setup_server(tmp_path, monkeypatch):
     srv._engine = SessionEngine(
         config=config,
         data_dir=tmp_path,
-        security_md=security_md,
         session_mgr=session_mgr,
         skill_catalog=skill_catalog,
         agent_model=None,

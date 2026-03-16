@@ -85,7 +85,6 @@ class SessionEngine:
         *,
         config: Config,
         data_dir: Path,
-        security_md: str,
         session_mgr: SessionManager,
         skill_catalog: list[SkillInfo],
         agent_model: Any,
@@ -93,7 +92,6 @@ class SessionEngine:
     ) -> None:
         self._config = config
         self._data_dir = data_dir
-        self._security_md = security_md
         self._session_mgr = session_mgr
         self._skill_catalog = skill_catalog
         self._agent_model = agent_model
@@ -145,7 +143,7 @@ class SessionEngine:
         security = SessionSecurity(session_id, audit_dir=audit_dir)
         sentinel = Sentinel(
             model=self._config.agent.sentinel_model,
-            security_md=self._security_md,
+            data_dir=self._data_dir,
             skills_dir=self._data_dir / "skills",
         )
         usage_tracker = self._session_mgr.load_usage(session_id)
@@ -324,7 +322,8 @@ class SessionEngine:
             return {"command": "help", "data": {"commands": SLASH_COMMANDS}}
 
         if cmd == "/security":
-            policy = self._security_md or "(no SECURITY.md loaded)"
+            security_path = self._data_dir / "SECURITY.md"
+            policy = security_path.read_text() if security_path.exists() else "(no SECURITY.md loaded)"
             log_count = len(active.security.action_log) if active.security else 0
             eval_count = active.security.sentinel_eval_count if active.security else 0
             return {
@@ -445,7 +444,7 @@ class SessionEngine:
                             }
                         ],
                     )
-                    active.pending_approval_requests.append({"tool_call_id": req.tool_call_id, "tool": req.tool})
+                    active.pending_approval_requests.append(req.model_dump())
                     await self._broadcast(active, "on_approval_request", req)
 
                 async def _collect_approvals(
@@ -464,6 +463,13 @@ class SessionEngine:
                                 True if msg.approved else ToolDenied("User denied this operation.")
                             )
                             remaining.discard(msg.tool_call_id)
+                    # Store approval decisions in events for history reconstruction
+                    for tool_call_id, decision in results.items():
+                        user_decision = "approved" if decision is True else "denied"
+                        self._session_mgr.append_events(
+                            session_id,
+                            [{"role": "approval_response", "tool_call_id": tool_call_id, "decision": user_decision}],
+                        )
                     active.pending_approval_requests.clear()
                     return results
 

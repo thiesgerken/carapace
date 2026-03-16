@@ -62,8 +62,16 @@ export function ChatView({ server, token, sessionId, onTitleUpdate }: ChatViewPr
             });
           } else if (h.role === "tool_result") {
             // Skip — already consumed by the tool_call above
+          } else if (h.role === "approval_response") {
+            // Skip — consumed by the approval_request above
           } else if (h.role === "approval_request" && h.tool_call_id) {
-            approvals.set(h.tool_call_id, true);
+            // Look ahead for a matching approval_response
+            const response = history.find(
+              (r) => r.role === "approval_response" && r.tool_call_id === h.tool_call_id,
+            );
+            if (response) {
+              approvals.set(h.tool_call_id, response.decision === "approved");
+            }
             msgs.push({
               kind: "approval",
               request: {

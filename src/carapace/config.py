@@ -27,8 +27,3 @@ def load_workspace_file(data_dir: Path, name: str) -> str:
     if path.exists():
         return path.read_text()
     return ""
-
-
-def load_security_md(data_dir: Path | None = None) -> str:
-    data_dir = data_dir or get_data_dir()
-    return load_workspace_file(data_dir, "SECURITY.md")
