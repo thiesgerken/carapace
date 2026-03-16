@@ -96,7 +96,34 @@ Credentials are fetched on demand via the Credential Broker with per-session use
 
 ## pyproject.toml-based dependencies
 
-A skill can include a `pyproject.toml` to declare its Python dependencies. When a skill with a `pyproject.toml` is activated, Carapace automatically runs `uv sync` inside the sandbox container to create a virtual environment with the declared dependencies. The venv is built per session and does not persist across container restarts.
+A skill can include a `pyproject.toml` to declare its Python dependencies. Dependency management uses **uv** exclusively — it is pre-installed in every sandbox container.
+
+### Lifecycle
+
+1. **Activation** (`use_skill`): Carapace copies the skill into the sandbox. If a `pyproject.toml` is present, it runs `uv sync --directory /workspace/skills/<name>` to create a `.venv` with all declared dependencies. The proxy is temporarily bypassed during install.
+2. **Runtime**: Scripts should be invoked with `uv run --directory /workspace/skills/<name> scripts/<script>.py` so they run inside the venv.
+3. **Save** (`save_skill`): Copies the skill back to the master directory (excluding `.venv` and `__pycache__`). If there is a `pyproject.toml`, the master venv is rebuilt.
+4. **Container restart**: Venvs are rebuilt for all activated skills automatically.
+
+### Managing dependencies
+
+Inside the sandbox, use standard `uv` commands:
+
+```bash
+# Add a dependency (updates pyproject.toml + uv.lock)
+uv add --directory /workspace/skills/my-skill httpx
+
+# Remove a dependency
+uv remove --directory /workspace/skills/my-skill httpx
+
+# Generate/update the lock file without adding packages
+uv lock --directory /workspace/skills/my-skill
+
+# Install from existing lock file
+uv sync --directory /workspace/skills/my-skill
+```
+
+Always commit a `uv.lock` alongside `pyproject.toml` to ensure reproducible installs.
 
 ## Discovery (progressive disclosure)
 

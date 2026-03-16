@@ -95,6 +95,56 @@ See [the API reference](references/api.md) for endpoint details.
 5. Optionally add `scripts/`, `references/`, or `assets/` directories
 6. Tell the user the skill will appear in `/skills` and be available in new sessions
 
+### Python dependencies
+
+Skills can declare Python dependencies via a standard `pyproject.toml`. Dependency management uses **uv** exclusively — it is pre-installed in every sandbox container.
+
+#### Adding dependencies to a new skill
+
+1. Create a `pyproject.toml` in the skill directory:
+   ```toml
+   [project]
+   name = "my-skill"
+   version = "0.1.0"
+   requires-python = ">=3.12"
+   dependencies = [
+       "httpx>=0.28,<1",
+   ]
+   ```
+2. Generate the lock file inside the sandbox:
+   ```
+   uv lock --directory /workspace/skills/my-skill
+   ```
+3. Save the skill so `pyproject.toml` and `uv.lock` are persisted:
+   ```
+   save_skill("my-skill")
+   ```
+
+#### Adding or removing dependencies later
+
+Use `uv add` / `uv remove` inside the sandbox — they update both `pyproject.toml` and `uv.lock` in one step:
+
+```
+uv add --directory /workspace/skills/my-skill beautifulsoup4
+uv remove --directory /workspace/skills/my-skill httpx
+```
+
+Then `save_skill("my-skill")` to persist changes.
+
+#### How it works at activation
+
+When `use_skill` copies a skill into the sandbox and finds a `pyproject.toml`, it automatically runs `uv sync` to create a `.venv` with all declared dependencies. Scripts should be run with `uv run` so they pick up the venv:
+
+```
+uv run --directory /workspace/skills/my-skill scripts/my_script.py
+```
+
+#### Key rules
+
+- Always include a `uv.lock` alongside `pyproject.toml` — it ensures reproducible installs
+- Never create or manage venvs manually; `uv sync` and `uv run` handle everything
+- The venv is ephemeral (per session) — it is rebuilt on each activation
+
 ### Editing an existing skill
 
 Use the `edit` tool on `skills/<name>/SKILL.md`. The same approval rule applies.
@@ -133,3 +183,5 @@ description: <What it does and when to use it.>
 
 <Things to watch out for.>
 ```
+
+If the skill needs Python dependencies, also create a `pyproject.toml` and generate `uv.lock` with `uv lock` in the sandbox.
