@@ -553,7 +553,7 @@ class SandboxManager:
         shutil.copytree(
             session_skill_dir,
             master_skill_dir,
-            ignore=shutil.ignore_patterns(".venv", "__pycache__"),
+            ignore=shutil.ignore_patterns(".venv", "__pycache__", "node_modules"),
         )
 
         logger.info(f"Saved skill '{skill_name}' from session {session_id} to {master_skill_dir}")
