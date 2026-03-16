@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import io
 from pathlib import Path
 
 import docker
@@ -47,17 +46,6 @@ class DockerRuntime(ContainerRuntime):
         # this once and reuse the actual name for all container operations.
         self._network_name_cache: dict[str, str] = {}
         logger.info("Docker runtime connected")
-
-    def build_image(self, dockerfile_content: str, tag: str) -> None:
-        """Build a Docker image from Dockerfile content and tag it."""
-        logger.info(f"Building sandbox image '{tag}' from bundled Dockerfile…")
-        fileobj = io.BytesIO(dockerfile_content.encode())
-        _, logs = self._client.images.build(fileobj=fileobj, tag=tag, rm=True)
-        for chunk in logs:  # type: ignore[union-attr]
-            msg = chunk.get("stream", "") if isinstance(chunk, dict) else ""
-            if line := str(msg).strip():
-                logger.debug(f"[docker build] {line}")
-        logger.info(f"Sandbox image '{tag}' built successfully")
 
     def image_exists(self, tag: str) -> bool:
         """Check if a Docker image exists locally."""
@@ -348,12 +336,12 @@ class DockerRuntime(ContainerRuntime):
                 return ip
 
         # Fallback for host execution: use the bridge gateway IP
-        gw = await self.get_network_gateway(network)
+        gw = await self._get_network_gateway(network)
         if gw:
             logger.debug(f"Using network gateway {gw} as host IP for '{network}' (not running in Docker)")
         return gw
 
-    async def get_network_gateway(self, network: str) -> str | None:
+    async def _get_network_gateway(self, network: str) -> str | None:
         """Return the gateway IP of a Docker bridge *network*.
 
         This is the host's IP as seen from containers on that network.
