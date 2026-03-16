@@ -12,6 +12,7 @@ Separates the core agent/approval loop from transport-specific code
 
 from __future__ import annotations
 
+import json
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -73,13 +74,13 @@ async def run_agent_turn(
         deferred_results = DeferredToolResults()
 
         for call in requests.approvals:
-            assert isinstance(call.args, dict)
+            args = call.args if isinstance(call.args, dict) else json.loads(call.args)
             meta = requests.metadata.get(call.tool_call_id, {})
             await send_approval_request(
                 ApprovalRequest(
                     tool_call_id=call.tool_call_id,
                     tool=meta.get("tool", call.tool_name),
-                    args=call.args,
+                    args=args,
                     explanation=meta.get("explanation", ""),
                     risk_level=meta.get("risk_level", ""),
                 )
