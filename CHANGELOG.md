@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v0.38.3 (2026-03-16)
+
+### 🐛
+
+- 🐛 fix tool call arg type assertion
+  ([`e6f2778`](https://github.com/thiesgerken/carapace/commit/e6f27789aa1859f1413afa60399ded003c83b57a))
+
+
 ## v0.38.2 (2026-03-16)
 
 ### Other
