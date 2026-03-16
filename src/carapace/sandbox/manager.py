@@ -215,7 +215,7 @@ class SandboxManager:
                 labels={"carapace.session": session_id, "carapace.managed": "true"},
                 mounts=mounts,
                 network=self._network_name,
-                command=["sh", "-c", "echo 'carapace sandbox ready' && exec sleep infinity"],
+                command=["sh", "-c", "setup-proxy.sh && echo 'carapace sandbox ready' && exec sleep infinity"],
                 environment=env,
             )
 
@@ -304,13 +304,20 @@ class SandboxManager:
         authed_url = f"{scheme}://{proxy_token}@{rest}"
         # Extract host (without scheme/port/auth) for NO_PROXY
         no_proxy_host = rest.rsplit(":", 1)[0]
+        no_proxy = ",".join([no_proxy_host, "localhost", "127.0.0.1"])
         return {
             "HTTP_PROXY": authed_url,
             "HTTPS_PROXY": authed_url,
             "http_proxy": authed_url,
             "https_proxy": authed_url,
-            "NO_PROXY": no_proxy_host,
-            "no_proxy": no_proxy_host,
+            "ALL_PROXY": authed_url,
+            "NO_PROXY": no_proxy,
+            "no_proxy": no_proxy,
+            # pip: explicit proxy (maps to pip --proxy)
+            "PIP_PROXY": authed_url,
+            # npm / node-based tools
+            "npm_config_proxy": authed_url,
+            "npm_config_https_proxy": authed_url,
         }
 
     async def _exec(

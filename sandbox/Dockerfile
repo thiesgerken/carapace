@@ -7,6 +7,11 @@ RUN apt-get update \
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
+# Proxy setup script — reads HTTP(S)_PROXY env vars and writes per-tool
+# config files so that apt, git, pip, npm etc. all route through the proxy.
+COPY setup-proxy.sh /usr/local/bin/setup-proxy.sh
+RUN chmod +x /usr/local/bin/setup-proxy.sh
+
 RUN mkdir -p /workspace
 
 WORKDIR /workspace
