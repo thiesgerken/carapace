@@ -1,6 +1,23 @@
 # CHANGELOG
 
 
+## v0.38.0 (2026-03-16)
+
+### ✨
+
+- ✨ feat: make workspace files editable copies with save_workspace_file tool
+  ([`267c021`](https://github.com/thiesgerken/carapace/commit/267c021d34f9f88c3794ab0c767afd14a1fcaba5))
+
+Replace read-only bind mounts of AGENTS.md, SOUL.md, USER.md, and SECURITY.md with writable copies
+  in the session workspace. The agent can now edit these files in the sandbox and persist changes
+  back to the main data directory via the new save_workspace_file tool.
+
+- Sentinel reads SECURITY.md from disk on every evaluation (dynamic instructions callable) so policy
+  changes take effect immediately - SessionEngine no longer threads security_md through the stack -
+  save_workspace_file is security-gated and restricted to the four known workspace files -
+  SECURITY.md updated to instruct sentinel to always escalate saves
+
+
 ## v0.37.0 (2026-03-16)
 
 ### ✨
