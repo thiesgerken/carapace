@@ -10,6 +10,7 @@ from typing import Any, Protocol, runtime_checkable
 
 from loguru import logger
 from pydantic_ai import ToolDenied
+from pydantic_ai.messages import ModelRequest, UserPromptPart
 
 import carapace.security as security_mod
 from carapace.agent_loop import run_agent_turn
@@ -518,12 +519,24 @@ class SessionEngine:
         except asyncio.CancelledError:
             logger.info(f"Agent turn cancelled for session {session_id}")
             self._session_mgr.save_usage(session_id, active.usage_tracker)
+            self._save_user_message_on_failure(session_id, user_input)
             await self._broadcast(active, "on_cancelled")
         except Exception as exc:
             logger.exception("Agent error")
+            self._save_user_message_on_failure(session_id, user_input)
             await self._broadcast(active, "on_error", str(exc))
         finally:
             active.agent_task = None
+
+    def _save_user_message_on_failure(self, session_id: str, user_input: str) -> None:
+        """Persist the user message to history even when the agent turn fails.
+
+        Without this the next turn would load stale history and the agent would
+        have no memory of what the user said before the error.
+        """
+        history = self._session_mgr.load_history(session_id)
+        history.append(ModelRequest(parts=[UserPromptPart(content=user_input)]))
+        self._session_mgr.save_history(session_id, history)
 
     async def _generate_title(self, active: ActiveSession, events: list[dict[str, Any]]) -> None:
         from carapace.titler import generate_title
