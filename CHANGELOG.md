@@ -1,6 +1,25 @@
 # CHANGELOG
 
 
+## v0.37.0 (2026-03-16)
+
+### ✨
+
+- ✨ feat: add CARAPACE_RESET_ASSETS flag to overwrite bundled assets on startup
+  ([`65adde5`](https://github.com/thiesgerken/carapace/commit/65adde5f7a234f68877daf0de89e2988f8fc4caf))
+
+When set to a truthy value (1/true/yes), ensure_data_dir() overwrites SECURITY.md, CORE.md, and
+  bundled skills with the versions shipped in the container image. User-owned files (SOUL.md,
+  USER.md, config.yaml) are never overwritten — only seeded when missing.
+
+- bootstrap.py: respect CARAPACE_RESET_ASSETS env var - docker-compose.yml: pass through the new env
+  var - Helm chart: new resetAssets value (default false)
+
+- ✨ improve handling of SECURITY.md (reload often) + add approvals to events + remove
+  load_security_md
+  ([`e94fd40`](https://github.com/thiesgerken/carapace/commit/e94fd4061aebacb5eff8dad34755189051e55344))
+
+
 ## v0.36.0 (2026-03-16)
 
 ### ✨
