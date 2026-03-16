@@ -59,6 +59,10 @@ to decide whether the invocation is legitimate.
 - **Reading** files, memory, skill docs — zero risk.
 - **Writing to the sandbox** (scratchpad/tmp workspace) — the agent's
   scratch space, isolated from real data.
+- **Editing workspace files** in the sandbox (SOUL.md, USER.md,
+  SECURITY.md, AGENTS.md) — these are working copies, not the live
+  versions. Edits stay local to the session until `save_workspace_file`
+  is called.
 - **Read-only shell commands** (ls, cat, grep, find, head, …).
 - **Activating / reading skills** — skills are user-installed and trusted.
 
@@ -69,6 +73,11 @@ to decide whether the invocation is legitimate.
 - **Persistent memory writes** — memory survives across sessions. Approve
   only when the user asked the agent to remember something.
 - **Skill modification / saving** — always requires approval.
+- **Saving workspace files** (`save_workspace_file`) — copies the
+  edited file from the session sandbox back to the main data directory,
+  making changes live immediately. These files (SOUL.md, USER.md,
+  SECURITY.md, AGENTS.md) define agent behaviour and security policy.
+  Always escalate to the user for approval.
 
 ## Autonomy Drift
 

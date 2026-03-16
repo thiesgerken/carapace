@@ -25,6 +25,10 @@ from carapace.sandbox.runtime import (
 
 _SKILL_NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]*$")
 
+# Workspace files that are copied (not mounted) into each session sandbox.
+# The agent can edit these copies and use save_workspace_file to persist them.
+_WORKSPACE_FILES = ("AGENTS.md", "SOUL.md", "USER.md", "SECURITY.md")
+
 # Inline Python scripts executed inside the sandbox container.
 # Data is passed as base64-encoded CLI args to avoid shell-escaping issues.
 # Scripts use only double quotes so that shlex.quote (single-quote wrapping)
@@ -187,6 +191,13 @@ class SandboxManager:
             # can write to PVC subPath mounts (chown may not be available).
             d.chmod(0o777)
 
+        # Copy workspace files into the session so the agent can edit them.
+        for filename in _WORKSPACE_FILES:
+            src = self._data_dir / filename
+            if src.exists():
+                dst = session_workspace / filename
+                shutil.copy2(src, dst)
+
         proxy_token = secrets.token_hex(16)
         # Evict any orphaned token left by a previous failed attempt for this
         # session (one that never reached _sessions so _cleanup_tracking was
@@ -255,14 +266,18 @@ class SandboxManager:
     def _build_mounts(self, session_id: str) -> list[Mount]:
         mounts: list[Mount] = []
 
-        for filename in ("AGENTS.md", "SOUL.md", "USER.md", "SECURITY.md"):
-            path = self._data_dir / filename
+        session_workspace = self._data_dir / "sessions" / session_id / "workspace"
+
+        # Workspace files are copies (not read-only mounts) so the agent can
+        # edit them and save back via save_workspace_file.
+        for filename in _WORKSPACE_FILES:
+            path = session_workspace / filename
             if path.exists():
                 mounts.append(
                     Mount(
                         source=self._host_path(path),
                         target=f"/workspace/{filename}",
-                        read_only=True,
+                        read_only=False,
                     )
                 )
 
@@ -555,6 +570,21 @@ class SandboxManager:
         if venv_msg:
             result += f"\n{venv_msg}"
         return result
+
+    async def save_workspace_file(self, session_id: str, filename: str) -> str:
+        """Copy a workspace file from the session sandbox back to the main data directory."""
+        if filename not in _WORKSPACE_FILES:
+            allowed = ", ".join(_WORKSPACE_FILES)
+            return f"Error: '{filename}' is not a saveable workspace file. Allowed: {allowed}"
+
+        session_file = self._data_dir / "sessions" / session_id / "workspace" / filename
+        if not session_file.exists():
+            return f"Error: '{filename}' not found in session workspace."
+
+        target = self._data_dir / filename
+        shutil.copy2(session_file, target)
+        logger.info(f"Saved workspace file '{filename}' from session {session_id} to {target}")
+        return f"Saved '{filename}' to data directory. Changes are now live."
 
     async def cleanup_session(self, session_id: str) -> None:
         sc = self._sessions.get(session_id)

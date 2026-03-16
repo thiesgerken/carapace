@@ -75,12 +75,15 @@ def build_system_prompt(deps: Deps) -> str:
     parts.append(
         "# Sandbox Environment\n"
         "Commands run inside a Docker sandbox container.\n"
-        "- `/workspace/AGENTS.md`, `/workspace/SOUL.md`, `/workspace/USER.md` — read-only reference files\n"
+        "- `/workspace/AGENTS.md`, `/workspace/SOUL.md`, `/workspace/USER.md`, `/workspace/SECURITY.md` "
+        "— editable working copies (NOT the live versions)\n"
         "- `/workspace/memory/` — read-only memory files\n"
         "- `/workspace/skills/` — activated skills (populated by `use_skill`)\n"
         "- `/workspace/tmp/` — writable scratch space\n"
         "Call `use_skill(skill_name)` to activate a skill before running its scripts.\n"
         "Call `save_skill(skill_name)` to persist edits back to the master skill directory.\n"
+        "Call `save_workspace_file(filename)` to persist edits to a workspace file "
+        "(AGENTS.md, SOUL.md, USER.md, SECURITY.md) back to the main data directory and make them live.\n"
         "`uv` is pre-installed; skill dependencies are managed via `pyproject.toml` + `uv.lock`.\n"
         "Run skill scripts with `uv run --directory /workspace/skills/<name> scripts/<script>.py`.\n\n"
         "## Network Access\n"
@@ -200,6 +203,29 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
             ToolResultEntry(tool="save_skill", status="success"),
         )
         _notify_result(ctx, "save_skill", result)
+        return result
+
+    @agent.tool
+    async def save_workspace_file(ctx: RunContext[Deps], filename: str) -> str | ToolDenied:
+        """Save a workspace file (AGENTS.md, SOUL.md, USER.md, SECURITY.md) back to the main data directory.
+
+        The copies in /workspace/ are working copies — use this tool after editing
+        to make changes live. Only the listed filenames are accepted.
+        """
+        if not ctx.tool_call_approved:
+            if denied := await _gate(ctx, "save_workspace_file", {"filename": filename}):
+                return denied
+        else:
+            _notify_approved_start(ctx, "save_workspace_file", {"filename": filename})
+
+        result = await ctx.deps.sandbox.save_workspace_file(
+            ctx.deps.session_state.session_id,
+            filename,
+        )
+        ctx.deps.security.append(
+            ToolResultEntry(tool="save_workspace_file", status="success"),
+        )
+        _notify_result(ctx, "save_workspace_file", result)
         return result
 
     # --- Filesystem (sandboxed — runs inside the Docker container) ---
