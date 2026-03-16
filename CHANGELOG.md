@@ -1,9 +1,32 @@
 # CHANGELOG
 
 
+## v0.38.2 (2026-03-16)
+
+### Other
+
+- Merge remote-tracking branch 'refs/remotes/origin/main'
+  ([`78ddea0`](https://github.com/thiesgerken/carapace/commit/78ddea0947bf8433748493f2434ecc721c052d66))
+
+
 ## v0.38.1 (2026-03-16)
 
+### Other
+
+- 📋 less asking for git commit
+  ([`0584fd2`](https://github.com/thiesgerken/carapace/commit/0584fd24e76c943f0213798de9aaca9274fab002))
+
 ### 🐛
+
+- 🐛 fix: persist user message to history on failed agent turns
+  ([`107abfe`](https://github.com/thiesgerken/carapace/commit/107abfefd6d7993721ee000b9e0e50c0354a21ab))
+
+When run_agent_turn raises an exception (e.g. failed tool call), the message history was never
+  saved. The next turn loaded stale history, losing both the user message and any context from the
+  failed turn.
+
+Add _save_user_message_on_failure() which appends the user's ModelRequest to the persisted history
+  in both CancelledError and Exception handlers so the agent retains context across failures.
 
 - 🐛 improve error handling for crashing sandbox
   ([`7e8bcf4`](https://github.com/thiesgerken/carapace/commit/7e8bcf456b7fd40ebf81cfc26b73e9122dfa8800))
