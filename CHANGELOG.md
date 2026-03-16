@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v0.38.1 (2026-03-16)
+
+### 🐛
+
+- 🐛 improve error handling for crashing sandbox
+  ([`7e8bcf4`](https://github.com/thiesgerken/carapace/commit/7e8bcf456b7fd40ebf81cfc26b73e9122dfa8800))
+
+
 ## v0.38.0 (2026-03-16)
 
 ### ✨
