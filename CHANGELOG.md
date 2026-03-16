@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v0.38.5 (2026-03-16)
+
+### Other
+
+- Merge remote-tracking branch 'refs/remotes/origin/main'
+  ([`8d2c3b7`](https://github.com/thiesgerken/carapace/commit/8d2c3b76a1c6efd360d3a7988894cfd7484631f4))
+
+
 ## v0.38.4 (2026-03-16)
 
 ### Other
@@ -9,6 +17,12 @@
   ([`377fd85`](https://github.com/thiesgerken/carapace/commit/377fd85611d92a2197ef855a4640eecd1c2c2428))
 
 ### 🐛
+
+- 🐛 fix: remove dead code in DockerRuntime
+  ([`bef59a2`](https://github.com/thiesgerken/carapace/commit/bef59a20768e2f340556644269979911a32f0dc9))
+
+- Remove unused build_image() method (never called) - Rename get_network_gateway →
+  _get_network_gateway (internal helper) - Remove unused 'import io'
 
 - 🐛 update ignore patterns to exclude node_modules during skill save
   ([`d5dd419`](https://github.com/thiesgerken/carapace/commit/d5dd41925eae71d8961c77f17abb4145615be638))

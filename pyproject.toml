@@ -1,6 +1,6 @@
 [project]
 name = "carapace"
-version = "0.38.4"
+version = "0.38.5"
 description = "Security-first personal AI agent with rule-based information flow control"
 readme = "README.md"
 requires-python = ">=3.12"
