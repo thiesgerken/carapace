@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import secrets
+import traceback
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -521,10 +522,10 @@ class SessionEngine:
             self._session_mgr.save_usage(session_id, active.usage_tracker)
             self._save_user_message_on_failure(session_id, user_input)
             await self._broadcast(active, "on_cancelled")
-        except Exception as exc:
+        except Exception:
             logger.exception("Agent error")
             self._save_user_message_on_failure(session_id, user_input)
-            await self._broadcast(active, "on_error", str(exc))
+            await self._broadcast(active, "on_error", traceback.format_exc())
         finally:
             active.agent_task = None
 

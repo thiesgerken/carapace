@@ -91,7 +91,9 @@ export function Message({
     case "error":
       return (
         <div className="my-1 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-          {message.detail}
+          <pre className="whitespace-pre-wrap font-mono text-xs">
+            {message.detail}
+          </pre>
         </div>
       );
   }
