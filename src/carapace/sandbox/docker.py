@@ -183,7 +183,12 @@ class DockerRuntime(ContainerRuntime):
                 raise ContainerGoneError(f"Container {container_id[:12]} no longer exists") from err
             cmd = ["bash", "-c", command] if isinstance(command, str) else command
 
-            result = container.exec_run(cmd, environment=env, demux=True)
+            try:
+                result = container.exec_run(cmd, environment=env, demux=True)
+            except APIError as err:
+                if err.status_code == 409:
+                    raise ContainerGoneError(f"Container {container_id[:12]} is not running") from err
+                raise
             exit_code = result.exit_code if result.exit_code is not None else -1
 
             stdout = result.output[0].decode("utf-8", errors="replace") if result.output[0] else ""
