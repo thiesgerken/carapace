@@ -45,12 +45,39 @@ version_pattern = [
     'charts/carapace/Chart.yaml:^appVersion: "(?P<version>.+)"$',
 ]
 commit_parser = "emoji"
-build_command = "pip install uv && uv lock && uv build"
+build_command = """
+    uv lock --upgrade-package "$PACKAGE_NAME"
+    git add uv.lock
+    uv build
+"""
 
 [tool.semantic_release.commit_parser_options]
 major_tags = ["💥", ":boom:"]
 minor_tags = ["✨", ":sparkles:"]
-patch_tags = ["🐛", ":bug:", "🚑", ":ambulance:"]
+patch_tags = [
+    "🐛",
+    ":bug:",
+    "🚑",
+    ":ambulance:",
+    "♻️",
+    ":recycle:",
+    "⚡",
+    ":zap:",
+    "🔒",
+    ":lock:",
+    "🩹",
+    ":adhesive_bandage:",
+    "⬆️",
+    ":arrow_up:",
+    "🔧",
+    ":wrench:",
+    "💄",
+    ":lipstick:",
+    "🗑️",
+    ":wastebasket:",
+    "👷",
+    ":construction_worker:",
+]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
