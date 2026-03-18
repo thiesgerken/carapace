@@ -16,6 +16,7 @@ import {
 } from "@/lib/storage";
 import type { SessionInfo } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { useSwipeDrawer } from "@/hooks/use-swipe-drawer";
 
 export default function Home() {
   return (
@@ -37,6 +38,8 @@ function HomeContent() {
   );
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  useSwipeDrawer(sidebarOpen, setSidebarOpen);
 
   // Sync activeSessionId → URL query param
   useEffect(() => {
