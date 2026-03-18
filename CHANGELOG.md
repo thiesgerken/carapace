@@ -1,6 +1,33 @@
 # CHANGELOG
 
 
+## v0.39.0 (2026-03-18)
+
+### ✨
+
+- ✨ feat: swipe to open/close sidebar drawer on mobile
+  ([`e6e00de`](https://github.com/thiesgerken/carapace/commit/e6e00de80738d0af0a8a98124901a150c33c8c47))
+
+- ✨ revamp Dockerfile for backend as non-root
+  ([`4fe876f`](https://github.com/thiesgerken/carapace/commit/4fe876f7335e1971ea054c5f0a2be2910164242f))
+
+### 🐛
+
+- 🐛 fix: ensure uv is installed in build command
+  ([`250f607`](https://github.com/thiesgerken/carapace/commit/250f60775d62fb62863d932a48399554e49d239e))
+
+- 🐛 fix: only auto-scroll chat when already at bottom
+  ([`fd73fa6`](https://github.com/thiesgerken/carapace/commit/fd73fa6da232db99608270ceb54a30e860b86170))
+
+- 🐛 fix: show usage bar immediately on session load
+  ([`67234c3`](https://github.com/thiesgerken/carapace/commit/67234c389f9fb99389c02ff603ad3a15cbfda167))
+
+### 👷
+
+- 👷 ci: sync uv.lock in build_command & expand patch_tags
+  ([`106308c`](https://github.com/thiesgerken/carapace/commit/106308ce061df8b18ef6bdb689f7149ccd01c637))
+
+
 ## v0.38.5 (2026-03-16)
 
 ### Other
@@ -10,11 +37,6 @@
 
 
 ## v0.38.4 (2026-03-16)
-
-### Other
-
-- 💄 improve exception formatting in UI
-  ([`377fd85`](https://github.com/thiesgerken/carapace/commit/377fd85611d92a2197ef855a4640eecd1c2c2428))
 
 ### 🐛
 
@@ -26,6 +48,11 @@
 
 - 🐛 update ignore patterns to exclude node_modules during skill save
   ([`d5dd419`](https://github.com/thiesgerken/carapace/commit/d5dd41925eae71d8961c77f17abb4145615be638))
+
+### 💄
+
+- 💄 improve exception formatting in UI
+  ([`377fd85`](https://github.com/thiesgerken/carapace/commit/377fd85611d92a2197ef855a4640eecd1c2c2428))
 
 
 ## v0.38.3 (2026-03-16)
@@ -387,9 +414,6 @@ Replace h-full with flex-1 min-h-0 on ChatView root so the messages area properl
 
 ### Other
 
-- 💄 lint issues
-  ([`c3673b5`](https://github.com/thiesgerken/carapace/commit/c3673b5f7b76405b1664659be549757725513a0e))
-
 - 📋 update TODO.md: refine Sandbox/Docker and Channels sections, remove outdated tasks
   ([`932c985`](https://github.com/thiesgerken/carapace/commit/932c9851c97bad80c7a22c2e7abdf8073417fe15))
 
@@ -403,6 +427,11 @@ Replace h-full with flex-1 min-h-0 on ChatView root so the messages area properl
   (docker|kubernetes) - Kustomize manifests in k8s/ (namespace, PVC, RBAC, deployments, ingress) -
   Full deployment guide at docs/kubernetes.md - 19 unit tests with mocked k8s API - Add
   pytest-asyncio with asyncio_mode=auto
+
+### 💄
+
+- 💄 lint issues
+  ([`c3673b5`](https://github.com/thiesgerken/carapace/commit/c3673b5f7b76405b1664659be549757725513a0e))
 
 
 ## v0.24.0 (2026-03-14)
@@ -483,6 +512,8 @@ Replace the ephemeral build container (_build_skill_venv with network=None) with
 - Merge remote-tracking branch 'refs/remotes/origin/main'
   ([`7ece752`](https://github.com/thiesgerken/carapace/commit/7ece752ec76ef05a1a248b2dc0da4351359001d3))
 
+### ♻️
+
 - ♻️ refactor: replace global security dicts with dependency injection
   ([`74c5c90`](https://github.com/thiesgerken/carapace/commit/74c5c90547f87d2d086f33f22e3116d875f8cd9b))
 
@@ -498,6 +529,8 @@ Replace the ephemeral build container (_build_skill_venv with network=None) with
 
 - ♻️ refactor: wire security callbacks at session activation, not per-turn
   ([`8523ce3`](https://github.com/thiesgerken/carapace/commit/8523ce39ce62ab553829d19ce7aff75a2e2aea2f))
+
+### ⚡
 
 - ⚡ perf: switch append_events and write_audit to append-only YAML
   ([`95ee976`](https://github.com/thiesgerken/carapace/commit/95ee976dc79f39a0b7286895309499046d3133ad))
@@ -525,6 +558,20 @@ Replace the ephemeral build container (_build_skill_venv with network=None) with
 
 ### Other
 
+- 🏷️ types: HistoryMessage.role as Literal instead of plain str
+  ([`31ea104`](https://github.com/thiesgerken/carapace/commit/31ea104433a0f07a0c24580a43f5cb6d0774c8a5))
+
+- 📝 docs: add deferred-import ban to coding guidelines
+  ([`6c5d7be`](https://github.com/thiesgerken/carapace/commit/6c5d7be834c3ffec61a4ac115ba259477b03fcda))
+
+- 📝 docs: clarify stdlib logging import in server.py
+  ([`d0a4140`](https://github.com/thiesgerken/carapace/commit/d0a4140c7b229d05babce9377c817d42e41280c7))
+
+- 🔥 cleanup: delete dead _resolve_path and its tests
+  ([`a52ac7a`](https://github.com/thiesgerken/carapace/commit/a52ac7a44eb1c26dd2c420bce2d88507065f27af))
+
+### ♻️
+
 - ♻️ refactor: DockerRuntime explicitly inherits ContainerRuntime Protocol
   ([`ff0f471`](https://github.com/thiesgerken/carapace/commit/ff0f4718163d1c66385ca8db14035287133c39d7))
 
@@ -544,27 +591,6 @@ Replace the ephemeral build container (_build_skill_venv with network=None) with
   Extract _resolve_pending() to deduplicate approve/deny slash commands - Update all Matrix tests to
   use mock SessionEngine - Net: -220 lines
 
-- 🏷️ types: HistoryMessage.role as Literal instead of plain str
-  ([`31ea104`](https://github.com/thiesgerken/carapace/commit/31ea104433a0f07a0c24580a43f5cb6d0774c8a5))
-
-- 📝 docs: add deferred-import ban to coding guidelines
-  ([`6c5d7be`](https://github.com/thiesgerken/carapace/commit/6c5d7be834c3ffec61a4ac115ba259477b03fcda))
-
-- 📝 docs: clarify stdlib logging import in server.py
-  ([`d0a4140`](https://github.com/thiesgerken/carapace/commit/d0a4140c7b229d05babce9377c817d42e41280c7))
-
-- 🔒 security: make CORS origins configurable, default to localhost:3000
-  ([`23d5247`](https://github.com/thiesgerken/carapace/commit/23d5247e0007d3ecb9bc4137b20211c21fc8664f))
-
-- Add cors_origins field to ServerConfig (default: ["http://localhost:3000"]) - Move CORS middleware
-  setup into lifespan so it reads from config - Replaces previous allow_origins=["*"]
-
-- 🔥 cleanup: delete dead _resolve_path and its tests
-  ([`a52ac7a`](https://github.com/thiesgerken/carapace/commit/a52ac7a44eb1c26dd2c420bce2d88507065f27af))
-
-- 🔧 style: add missing future annotations to runtime.py
-  ([`9b41830`](https://github.com/thiesgerken/carapace/commit/9b41830b84ff7e42d77b4ad27d1c28beb1dc4890))
-
 ### ✨
 
 - ✨ feat: render Matrix /usage report as Markdown tables
@@ -574,6 +600,19 @@ Replace the ephemeral build container (_build_skill_venv with network=None) with
 
 - 🐛 fix: convert cost string to float before formatting in Matrix /usage command
   ([`011e68e`](https://github.com/thiesgerken/carapace/commit/011e68e09fa3706ce5d0a0d0ae07b5a7d2fb6c1d))
+
+### 🔒
+
+- 🔒 security: make CORS origins configurable, default to localhost:3000
+  ([`23d5247`](https://github.com/thiesgerken/carapace/commit/23d5247e0007d3ecb9bc4137b20211c21fc8664f))
+
+- Add cors_origins field to ServerConfig (default: ["http://localhost:3000"]) - Move CORS middleware
+  setup into lifespan so it reads from config - Replaces previous allow_origins=["*"]
+
+### 🔧
+
+- 🔧 style: add missing future annotations to runtime.py
+  ([`9b41830`](https://github.com/thiesgerken/carapace/commit/9b41830b84ff7e42d77b4ad27d1c28beb1dc4890))
 
 
 ## v0.19.1 (2026-03-14)
