@@ -147,6 +147,7 @@ class StatusUpdate(BaseModel):
 
     type: Literal["status"] = "status"
     agent_running: bool
+    usage: TurnUsage | None = None
 
 
 class UserMessageNotification(BaseModel):

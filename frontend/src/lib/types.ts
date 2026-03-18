@@ -100,6 +100,7 @@ export interface SessionTitleUpdate {
 export interface StatusUpdate {
   type: "status";
   agent_running: boolean;
+  usage?: TurnUsage;
 }
 
 export interface UserMessageNotification {

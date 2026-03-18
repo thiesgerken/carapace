@@ -229,6 +229,7 @@ export function ChatView({ server, token, sessionId, onTitleUpdate }: ChatViewPr
         break;
       case "status":
         if (msg.agent_running) setWaiting(true);
+        if (msg.usage) setUsage(msg.usage);
         break;
       case "user_message":
         setWaiting(true);

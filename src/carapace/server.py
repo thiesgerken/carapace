@@ -494,8 +494,14 @@ async def chat_ws(
 
     # Tell the client whether an agent turn is in progress.
     agent_running = active.agent_task is not None and not active.agent_task.done()
+    tracker = active.usage_tracker
+    usage = (
+        TurnUsage(input_tokens=tracker.total_input, output_tokens=tracker.total_output)
+        if tracker.total_input or tracker.total_output
+        else None
+    )
     with contextlib.suppress(Exception):
-        await _send(websocket, StatusUpdate(agent_running=agent_running))
+        await _send(websocket, StatusUpdate(agent_running=agent_running, usage=usage))
 
     # If agent is already running (e.g. reconnect), the subscriber will
     # start receiving events immediately.  If there are pending approvals,
