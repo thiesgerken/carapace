@@ -25,6 +25,8 @@ export function ChatView({ server, token, sessionId, onTitleUpdate }: ChatViewPr
   const [commands, setCommands] = useState<SlashCommand[]>([]);
   const [approvalState, setApprovalState] = useState<Map<string, boolean>>(new Map());
   const bottomRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const isAtBottomRef = useRef(true);
   const queueRef = useRef<string | null>(null);
   const sendRef = useRef<(msg: ClientMessage) => void>(() => {});
 
@@ -260,10 +262,19 @@ export function ChatView({ server, token, sessionId, onTitleUpdate }: ChatViewPr
   const { status, send } = useWebSocket(url, onMessage, onWsDisconnect);
   useEffect(() => { sendRef.current = send; }, [send]);
 
-  // Auto-scroll
+  // Auto-scroll only when already at bottom
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (isAtBottomRef.current) {
+      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
   }, [messages]);
+
+  const handleScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const threshold = 64;
+    isAtBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < threshold;
+  }, []);
 
   function handleSend(content: string) {
     if (waiting) {
@@ -321,7 +332,7 @@ export function ChatView({ server, token, sessionId, onTitleUpdate }: ChatViewPr
       )}
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-4 py-4">
+      <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-4 py-4">
         <div className="mx-auto max-w-3xl space-y-3">
           {loadingHistory && (
             <div className="flex justify-center py-8">
