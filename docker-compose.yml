@@ -4,10 +4,12 @@ services:
     tty: true
     ports:
       - "8321:8321"
+    group_add:
+      - ${DOCKER_GID:-0}
     volumes:
       - ./data:/data
       - /var/run/docker.sock:/var/run/docker.sock
-      - ./src/carapace:/usr/local/lib/python3.14/site-packages/carapace
+      - ./src/carapace:/app/.venv/lib/python3.14/site-packages/carapace
     environment:
       - CARAPACE_DATA_DIR=/data
       - CARAPACE_HOST_DATA_DIR=${PWD}/data
