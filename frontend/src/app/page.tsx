@@ -168,7 +168,7 @@ function HomeContent() {
         <div className="flex items-center gap-3 border-b border-border px-4 py-2 md:hidden">
           <button
             onClick={() => setSidebarOpen(!sidebarOpen)}
-            className="rounded-md p-1.5 hover:bg-muted transition-colors"
+            className="rounded-md p-2.5 hover:bg-muted transition-colors"
           >
             {sidebarOpen ? (
               <X className="h-5 w-5" />

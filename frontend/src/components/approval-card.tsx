@@ -70,7 +70,7 @@ export function ApprovalCard({
           <summary className="cursor-pointer text-muted-foreground hover:text-foreground transition-colors">
             Arguments
           </summary>
-          <pre className="mt-1 rounded-md bg-muted p-2 font-mono overflow-x-auto">
+          <pre className="mt-1 rounded-md bg-muted p-2 font-mono overflow-x-auto whitespace-pre-wrap break-words">
             {JSON.stringify(request.args, null, 2)}
           </pre>
         </details>

@@ -203,7 +203,7 @@ export function ChatInput({
             placeholder="Message Carapace…"
             rows={1}
             className={cn(
-              "flex-1 resize-none bg-transparent text-sm outline-none",
+              "flex-1 resize-none bg-transparent text-base sm:text-sm outline-none",
               "placeholder:text-muted-foreground/50",
             )}
           />
@@ -212,7 +212,7 @@ export function ChatInput({
             disabled={waiting ? false : !connected || !hasText}
             title={tooltip}
             className={cn(
-              "shrink-0 rounded-lg p-1.5 transition-colors",
+              "shrink-0 rounded-lg p-2 transition-colors",
               waiting
                 ? "bg-destructive/60 text-destructive-foreground hover:bg-destructive/75"
                 : "bg-foreground text-background hover:bg-foreground/90",

@@ -68,7 +68,7 @@ export function ConnectForm({ onConnect }: ConnectFormProps) {
               placeholder="http://127.0.0.1:8321"
               required
               className={cn(
-                "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm",
+                "w-full rounded-lg border border-border bg-background px-3 py-2.5 text-base sm:text-sm",
                 "outline-none transition-colors",
                 "focus:ring-2 focus:ring-ring/30 focus:border-ring",
                 "placeholder:text-muted-foreground/50",
@@ -91,7 +91,7 @@ export function ConnectForm({ onConnect }: ConnectFormProps) {
               placeholder="Paste your token"
               required
               className={cn(
-                "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm font-mono",
+                "w-full rounded-lg border border-border bg-background px-3 py-2.5 text-base sm:text-sm font-mono",
                 "outline-none transition-colors",
                 "focus:ring-2 focus:ring-ring/30 focus:border-ring",
                 "placeholder:text-muted-foreground/50",

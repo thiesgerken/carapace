@@ -42,7 +42,7 @@ export function Sidebar({
         <button
           onClick={onDisconnect}
           title="Disconnect"
-          className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+          className="rounded-md p-2 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
         >
           <LogOut className="h-4 w-4" />
         </button>
