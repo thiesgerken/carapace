@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.39.1 (2026-03-18)
+
+### Other
+
+- Relock
+  ([`93855bd`](https://github.com/thiesgerken/carapace/commit/93855bd5a8061e4515ed7a08f950b83d159467b6))
+
+### 💄
+
+- 💄 fix: improve mobile UX (viewport, touch targets, safe areas, input zoom)
+  ([`5021676`](https://github.com/thiesgerken/carapace/commit/50216766b6afea81e8ce0e025df39bb056809dca))
+
+
 ## v0.39.0 (2026-03-18)
 
 ### ✨
