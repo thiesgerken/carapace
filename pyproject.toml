@@ -46,6 +46,7 @@ version_pattern = [
 ]
 commit_parser = "emoji"
 build_command = """
+    pip install uv
     uv lock --upgrade-package "$PACKAGE_NAME"
     git add uv.lock
     uv build
