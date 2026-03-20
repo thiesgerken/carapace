@@ -17,6 +17,7 @@ services:
       - CARAPACE_RESET_ASSETS=true
       - CARAPACE_MATRIX_PASSWORD=${CARAPACE_MATRIX_PASSWORD:-}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
     networks:
       - default
       - carapace-sandbox
