@@ -1,6 +1,22 @@
 # CHANGELOG
 
 
+## v0.40.0 (2026-03-20)
+
+### Other
+
+- 💚 hardcode package name
+  ([`87d6730`](https://github.com/thiesgerken/carapace/commit/87d67303bb3c05574a02e0f21145f540afb38b20))
+
+- 💚 skip release on main if not needed
+  ([`9b2e31a`](https://github.com/thiesgerken/carapace/commit/9b2e31ab71423abdd0209ac85fa432784c623a24))
+
+### ✨
+
+- ✨ support other model providers as well
+  ([`15a61ad`](https://github.com/thiesgerken/carapace/commit/15a61ad9e2f351bc8bd140dc716e06d2519af891))
+
+
 ## v0.39.1 (2026-03-18)
 
 ### Other
