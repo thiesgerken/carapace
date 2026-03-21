@@ -1,6 +1,22 @@
 # CHANGELOG
 
 
+## v0.40.1 (2026-03-21)
+
+### ⬆️
+
+- ⬆️ upgrade deps and fix a small linter issue
+  ([`075cee7`](https://github.com/thiesgerken/carapace/commit/075cee7685ba12d6dbbe48b3664421948ed11ac6))
+
+- ⬆️ upgrade ruff-pre-commit to v0.15.7
+  ([`e765c54`](https://github.com/thiesgerken/carapace/commit/e765c543ce87a6fcd18405516ce4759d9463fcb0))
+
+### 🐛
+
+- 🐛 fix: skip autofocus on mobile to prevent hidden input
+  ([`381766d`](https://github.com/thiesgerken/carapace/commit/381766de632ede1faed08da2602526874aae8654))
+
+
 ## v0.40.0 (2026-03-20)
 
 ### Other
