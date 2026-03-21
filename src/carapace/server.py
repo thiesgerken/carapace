@@ -211,6 +211,7 @@ async def lifespan(app: FastAPI):
         skill_catalog=skill_catalog,
         agent_model=agent_model,
         sandbox_mgr=_sandbox_mgr,
+        model_factory=_create_model,
     )
 
     proxy = ProxyServer(

@@ -119,6 +119,24 @@ def format_command_result_text(result: CommandResult) -> str:
             parts.append(f"**Total:** {total_tokens:,} tokens ({total_input:,} in + {total_output:,} out){cost_str}")
             return "\n\n".join(parts)
 
+        case "model":
+            if "error" in data:
+                return f"❌ {data['error']}"
+            if "message" in data:
+                return data["message"]
+            if "models" in data:
+                lines = []
+                for model_type, info in data["models"].items():
+                    line = f"**{model_type}:** `{info['current']}`"
+                    if info["current"] != info["default"]:
+                        line += f" (default: `{info['default']}`)"
+                    lines.append(line)
+                return "\n".join(lines)
+            reply = f"**Current model:** `{data['current']}`"
+            if data.get("default") and data["default"] != data["current"]:
+                reply += f"\n**Default:** `{data['default']}`"
+            return reply
+
         case _:
             return f"Command result: {json.dumps(data, indent=2, default=str)}"
 

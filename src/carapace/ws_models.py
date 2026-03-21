@@ -10,6 +10,10 @@ SLASH_COMMANDS: list[dict[str, str]] = [
     {"command": "/session", "description": "Show current session state"},
     {"command": "/skills", "description": "List available skills"},
     {"command": "/memory", "description": "List memory files"},
+    {
+        "command": "/model",
+        "description": "View or switch models (e.g. /model openai:gpt-4o, /model --type sentinel …)",
+    },
     {"command": "/usage", "description": "Show token usage for this session"},
     {"command": "/verbose", "description": "Toggle tool call display"},
     {"command": "/quit", "description": "Disconnect"},

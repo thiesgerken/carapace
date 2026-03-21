@@ -456,6 +456,7 @@ class MatrixChannel:
                     "- `/skills` — List available skills\n"
                     "- `/memory` — List memory files\n"
                     "- `/usage` — Show token usage\n"
+                    "- `/model` — View or switch the agent model\n"
                     "- `/verbose` — Toggle tool call notifications\n"
                     "- `/allow` / `/yes` — Approve tool call or allow domain\n"
                     "- `/deny` / `/no` — Deny tool call or block domain\n"

@@ -49,7 +49,7 @@ async def run_agent_turn(
     deps.security.append(UserMessageEntry(content=user_input))
 
     agent = create_agent(deps)
-    model_name = deps.config.agent.model
+    model_name = deps.agent_model.model_id if hasattr(deps.agent_model, "model_id") else deps.config.agent.model
 
     async def _stream_handler(_ctx: Any, events: Any) -> None:
         async for event in events:

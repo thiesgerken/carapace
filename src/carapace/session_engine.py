@@ -12,6 +12,7 @@ from typing import Any, Protocol, runtime_checkable
 from loguru import logger
 from pydantic_ai import ToolDenied
 from pydantic_ai.messages import ModelRequest, UserPromptPart
+from pydantic_ai.models import infer_model
 
 import carapace.security as security_mod
 from carapace.agent_loop import run_agent_turn
@@ -63,6 +64,10 @@ class ActiveSession:
     proxy_approval_queue: asyncio.Queue[ProxyApprovalResponse | None] = field(default_factory=asyncio.Queue)
     usage_tracker: UsageTracker = field(default_factory=UsageTracker)
     verbose: bool = True
+    agent_model: Any = None
+    agent_model_name: str | None = None
+    sentinel_model_name: str | None = None
+    title_model_name: str | None = None
     pending_approval_requests: list[dict[str, Any]] = field(default_factory=list)
     pending_proxy_approvals: list[dict[str, Any]] = field(default_factory=list)
     _pending_sends: set[asyncio.Task[Any]] = field(default_factory=set)
@@ -91,6 +96,7 @@ class SessionEngine:
         skill_catalog: list[SkillInfo],
         agent_model: Any,
         sandbox_mgr: SandboxManager,
+        model_factory: Callable[[str], Any] | None = None,
     ) -> None:
         self._config = config
         self._data_dir = data_dir
@@ -98,6 +104,7 @@ class SessionEngine:
         self._skill_catalog = skill_catalog
         self._agent_model = agent_model
         self._sandbox_mgr = sandbox_mgr
+        self._model_factory = model_factory
         self._active: dict[str, ActiveSession] = {}
         self._llm_semaphore = asyncio.Semaphore(config.agent.max_parallel_llm)
 
@@ -249,7 +256,7 @@ class SessionEngine:
             security=active.security,
             sentinel=active.sentinel,
             skill_catalog=self._skill_catalog,
-            agent_model=self._agent_model,
+            agent_model=active.agent_model or self._agent_model,
             verbose=active.verbose,
             tool_call_callback=tool_call_callback,
             tool_result_callback=tool_result_callback,
@@ -365,6 +372,9 @@ class SessionEngine:
             files = store.list_files()
             return {"command": "memory", "data": files}
 
+        if cmd == "/model":
+            return self._handle_model_command(active, parts[1].strip() if len(parts) > 1 else "")
+
         if cmd == "/usage":
             tracker = active.usage_tracker
             costs = tracker.estimated_cost()
@@ -380,6 +390,84 @@ class SessionEngine:
             }
 
         return None
+
+    # -- model switching --
+
+    _MODEL_TYPES = ("agent", "sentinel", "title")
+
+    def _handle_model_command(self, active: ActiveSession, raw_arg: str) -> dict[str, Any]:
+        """Process ``/model [--type TYPE] [MODEL | reset]``."""
+        tokens = raw_arg.split()
+        model_type = "agent"
+        arg = ""
+
+        # Parse --type flag
+        i = 0
+        while i < len(tokens):
+            if tokens[i] == "--type" and i + 1 < len(tokens):
+                model_type = tokens[i + 1].lower()
+                i += 2
+            else:
+                arg = " ".join(tokens[i:])
+                break
+            i += 1
+
+        if model_type not in self._MODEL_TYPES:
+            return {
+                "command": "model",
+                "data": {"error": f"Unknown model type '{model_type}'. Valid types: {', '.join(self._MODEL_TYPES)}"},
+            }
+
+        defaults = {
+            "agent": self._config.agent.model,
+            "sentinel": self._config.agent.sentinel_model,
+            "title": self._config.agent.title_model,
+        }
+        overrides = {
+            "agent": active.agent_model_name,
+            "sentinel": active.sentinel_model_name,
+            "title": active.title_model_name,
+        }
+
+        # No argument — show models
+        if not arg:
+            models = {t: {"current": overrides[t] or defaults[t], "default": defaults[t]} for t in self._MODEL_TYPES}
+            return {"command": "model", "data": {"models": models}}
+
+        default = defaults[model_type]
+        current = overrides[model_type] or default
+
+        # Reset
+        if arg == "reset":
+            self._apply_model_override(active, model_type, None, None)
+            msg = f"Reset {model_type} to default: {default}"
+            return {
+                "command": "model",
+                "data": {"current": default, "default": default, "message": msg},
+            }
+
+        # Switch
+        try:
+            new_model = self._model_factory(arg) if self._model_factory else infer_model(arg)
+        except Exception as exc:
+            return {"command": "model", "data": {"current": current, "default": default, "error": str(exc)}}
+
+        self._apply_model_override(active, model_type, arg, new_model if model_type == "agent" else None)
+        return {
+            "command": "model",
+            "data": {"current": arg, "default": default, "message": f"Switched {model_type} model to: {arg}"},
+        }
+
+    def _apply_model_override(self, active: ActiveSession, model_type: str, name: str | None, model_obj: Any) -> None:
+        if model_type == "agent":
+            active.agent_model = model_obj
+            active.agent_model_name = name
+        elif model_type == "sentinel":
+            active.sentinel_model_name = name
+            if active.sentinel:
+                active.sentinel.set_model(name or self._config.agent.sentinel_model)
+        elif model_type == "title":
+            active.title_model_name = name
 
     # -- internal turn runner --
 
@@ -546,7 +634,7 @@ class SessionEngine:
         try:
             title = await generate_title(
                 events,
-                model=self._config.agent.title_model,
+                model=active.title_model_name or self._config.agent.title_model,
                 usage_tracker=active.usage_tracker,
             )
             if title:
