@@ -27,7 +27,7 @@ from fastapi import (
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from genai_prices import UpdatePrices
-from httpx import AsyncClient, HTTPStatusError
+from httpx import AsyncClient, HTTPStatusError, Timeout
 from loguru import logger
 from pydantic import BaseModel
 from pydantic_ai.models import Model, infer_model
@@ -86,7 +86,7 @@ def _retry_http_client() -> AsyncClient:
         ),
         validate_response=lambda r: r.raise_for_status() if r.status_code in (429, 502, 503, 504) else None,
     )
-    return AsyncClient(transport=transport)
+    return AsyncClient(transport=transport, timeout=Timeout(60.0))
 
 
 def _create_model(model_name: str) -> Model:
