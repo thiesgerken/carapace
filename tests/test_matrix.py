@@ -48,7 +48,7 @@ def _make_engine_mock() -> MagicMock:
     engine.submit_approval = AsyncMock()
     engine.submit_cancel = AsyncMock()
     engine.submit_message = AsyncMock()
-    engine.handle_slash_command = MagicMock(return_value=None)
+    engine.handle_slash_command = AsyncMock(return_value=None)
     engine.subscribe = MagicMock()
     engine.unsubscribe = MagicMock()
     engine.deactivate = MagicMock()

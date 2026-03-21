@@ -12,7 +12,7 @@ function formatTokens(n: number): string {
   return String(n);
 }
 
-const MODEL_TYPES = ["agent", "sentinel", "title"];
+const MODEL_COMMANDS = ["/model", "/model-sentinel", "/model-title"];
 
 interface ChatInputProps {
   onSend: (content: string) => void;
@@ -62,50 +62,20 @@ export function ChatInput({
     return commands.filter((c) => c.command.startsWith(prefix));
   }, [value, showMenu, commands]);
 
-  // Model argument autocomplete for /model command
+  // Model argument autocomplete for /model, /model-sentinel, /model-title
   const modelSuggestions = useMemo((): { items: string[]; prefix: string } => {
     const lower = value.toLowerCase();
-    if (!lower.startsWith("/model ")) return { items: [], prefix: "" };
+    const match = MODEL_COMMANDS.find((c) => lower.startsWith(c + " "));
+    if (!match) return { items: [], prefix: "" };
 
-    const afterCmd = value.slice(7); // after "/model "
-    const tokens = afterCmd.trimEnd().split(/\s+/);
-    const partial = afterCmd.endsWith(" ") ? "" : (tokens.pop() ?? "");
-    const preceding = tokens.join(" ").toLowerCase();
+    const afterCmd = value.slice(match.length + 1);
+    const partial = afterCmd.trimStart().toLowerCase();
 
-    // After "--type": suggest type names
-    if (preceding === "--type" || (preceding === "" && partial === "--type")) {
-      return { items: [], prefix: "" };
-    }
-    if (lower.endsWith("--type ") || (preceding === "" && partial === "--typ")) {
-      // partial is after "--type "
-      return { items: [], prefix: "" };
-    }
-    // Check if we're completing the --type value
-    const endsWithTypeFlag = preceding.endsWith("--type") || preceding === "--type";
-    if (endsWithTypeFlag) {
-      const filtered = MODEL_TYPES.filter((t) => t.startsWith(partial.toLowerCase()));
-      return { items: filtered, prefix: partial };
-    }
+    // Don't show suggestions if there's already a complete argument with space after
+    if (afterCmd.trimEnd().includes(" ")) return { items: [], prefix: "" };
 
-    // Suggest "--type" as an option alongside models
-    const suggestions: string[] = [];
-    const p = partial.toLowerCase();
-
-    if (!preceding.includes("--type") && "--type".startsWith(p) && p.length > 0) {
-      suggestions.push("--type");
-    }
-
-    for (const m of availableModels) {
-      if (m.toLowerCase().startsWith(p)) suggestions.push(m);
-    }
-
-    if (p === "" && !preceding.includes("--type")) {
-      suggestions.unshift("--type");
-    } else if (p === "") {
-      for (const m of availableModels) suggestions.push(m);
-    }
-
-    return { items: suggestions, prefix: partial };
+    const suggestions = availableModels.filter((m) => m.toLowerCase().startsWith(partial));
+    return { items: suggestions, prefix: afterCmd };
   }, [value, availableModels]);
 
   const showModelMenu = modelSuggestions.items.length > 0;
@@ -113,8 +83,7 @@ export function ChatInput({
   const selectModelSuggestion = useCallback(
     (item: string) => {
       const prefix = value.slice(0, value.length - modelSuggestions.prefix.length);
-      const suffix = item === "--type" ? item + " " : item;
-      setValue(prefix + suffix);
+      setValue(prefix + item);
       textareaRef.current?.focus();
     },
     [value, modelSuggestions.prefix],

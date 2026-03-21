@@ -358,10 +358,13 @@ def test_handle_slash_command_session(tmp_path: Path):
         sid = state.session_id
         engine.get_or_activate(sid)
 
-        result = engine.handle_slash_command(sid, "/session")
-        assert result is not None
-        assert result["command"] == "session"
-        assert result["data"]["session_id"] == sid
+        async def _run() -> None:
+            result = await engine.handle_slash_command(sid, "/session")
+            assert result is not None
+            assert result["command"] == "session"
+            assert result["data"]["session_id"] == sid
+
+        asyncio.run(_run())
 
 
 def test_handle_slash_command_unknown(tmp_path: Path):
@@ -372,11 +375,18 @@ def test_handle_slash_command_unknown(tmp_path: Path):
         sid = state.session_id
         engine.get_or_activate(sid)
 
-        assert engine.handle_slash_command(sid, "/nonexistent") is None
+        async def _run() -> None:
+            assert await engine.handle_slash_command(sid, "/nonexistent") is None
+
+        asyncio.run(_run())
 
 
 def test_handle_slash_command_inactive_session(tmp_path: Path):
     """handle_slash_command returns None for a session that isn't active."""
     engine = _make_engine(tmp_path)
     state = engine.session_mgr.create_session()
-    assert engine.handle_slash_command(state.session_id, "/session") is None
+
+    async def _run() -> None:
+        assert await engine.handle_slash_command(state.session_id, "/session") is None
+
+    asyncio.run(_run())

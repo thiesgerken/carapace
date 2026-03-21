@@ -322,7 +322,7 @@ class SessionEngine:
 
     # -- slash commands --
 
-    def handle_slash_command(self, session_id: str, command: str) -> dict[str, Any] | None:
+    async def handle_slash_command(self, session_id: str, command: str) -> dict[str, Any] | None:
         """Process a slash command, return structured data or ``None``."""
         active = self._active.get(session_id)
         if not active:
@@ -376,8 +376,12 @@ class SessionEngine:
             files = store.list_files()
             return {"command": "memory", "data": files}
 
-        if cmd == "/model":
-            return self._handle_model_command(active, parts[1].strip() if len(parts) > 1 else "")
+        if cmd == "/models":
+            return self._handle_models_command(active)
+
+        if cmd in ("/model", "/model-sentinel", "/model-title"):
+            model_type = {"model": "agent", "/model-sentinel": "sentinel", "/model-title": "title"}.get(cmd, "agent")
+            return await self._handle_model_command(active, model_type, parts[1].strip() if len(parts) > 1 else "")
 
         if cmd == "/usage":
             tracker = active.usage_tracker
@@ -399,29 +403,8 @@ class SessionEngine:
 
     _MODEL_TYPES = ("agent", "sentinel", "title")
 
-    def _handle_model_command(self, active: ActiveSession, raw_arg: str) -> dict[str, Any]:
-        """Process ``/model [--type TYPE] [MODEL | reset]``."""
-        tokens = raw_arg.split()
-        model_type = "agent"
-        arg = ""
-
-        # Parse --type flag
-        i = 0
-        while i < len(tokens):
-            if tokens[i] == "--type" and i + 1 < len(tokens):
-                model_type = tokens[i + 1].lower()
-                i += 2
-                continue
-            else:
-                arg = " ".join(tokens[i:])
-                break
-
-        if model_type not in self._MODEL_TYPES:
-            return {
-                "command": "model",
-                "data": {"error": f"Unknown model type '{model_type}'. Valid types: {', '.join(self._MODEL_TYPES)}"},
-            }
-
+    def _handle_models_command(self, active: ActiveSession) -> dict[str, Any]:
+        """Show all model types with their current and default values."""
         defaults = {
             "agent": self._config.agent.model,
             "sentinel": self._config.agent.sentinel_model,
@@ -432,35 +415,52 @@ class SessionEngine:
             "sentinel": active.sentinel_model_name,
             "title": active.title_model_name,
         }
+        models = {t: {"current": overrides[t] or defaults[t], "default": defaults[t]} for t in self._MODEL_TYPES}
+        available = self._available_models()
+        return {"command": "models", "data": {"models": models, "available": available}}
 
-        # No argument — show models
-        if not arg:
-            models = {t: {"current": overrides[t] or defaults[t], "default": defaults[t]} for t in self._MODEL_TYPES}
-            available = self._available_models()
-            return {"command": "model", "data": {"models": models, "available": available}}
-
+    async def _handle_model_command(self, active: ActiveSession, model_type: str, arg: str) -> dict[str, Any]:
+        """Process ``/model[-(sentinel|title)] [MODEL | reset]``."""
+        cmd_name = {"agent": "model", "sentinel": "model-sentinel", "title": "model-title"}[model_type]
+        defaults = {
+            "agent": self._config.agent.model,
+            "sentinel": self._config.agent.sentinel_model,
+            "title": self._config.agent.title_model,
+        }
+        overrides = {
+            "agent": active.agent_model_name,
+            "sentinel": active.sentinel_model_name,
+            "title": active.title_model_name,
+        }
         default = defaults[model_type]
         current = overrides[model_type] or default
+
+        # No argument — show current
+        if not arg:
+            return {"command": cmd_name, "data": {"current": current, "default": default}}
 
         # Reset
         if arg == "reset":
             self._apply_model_override(active, model_type, None, None)
-            msg = f"Reset {model_type} to default: {default}"
+            if model_type == "title":
+                await self._regenerate_title(active)
             return {
-                "command": "model",
-                "data": {"current": default, "default": default, "message": msg},
+                "command": cmd_name,
+                "data": {"current": default, "default": default, "message": f"Reset to default: {default}"},
             }
 
         # Switch
         try:
             new_model = self._model_factory(arg) if self._model_factory else infer_model(arg)
         except Exception as exc:
-            return {"command": "model", "data": {"current": current, "default": default, "error": str(exc)}}
+            return {"command": cmd_name, "data": {"current": current, "default": default, "error": str(exc)}}
 
         self._apply_model_override(active, model_type, arg, new_model if model_type == "agent" else None)
+        if model_type == "title":
+            await self._regenerate_title(active)
         return {
-            "command": "model",
-            "data": {"current": arg, "default": default, "message": f"Switched {model_type} model to: {arg}"},
+            "command": cmd_name,
+            "data": {"current": arg, "default": default, "message": f"Switched to: {arg}"},
         }
 
     def _apply_model_override(self, active: ActiveSession, model_type: str, name: str | None, model_obj: Any) -> None:
@@ -473,6 +473,13 @@ class SessionEngine:
                 active.sentinel.set_model(name or self._config.agent.sentinel_model)
         elif model_type == "title":
             active.title_model_name = name
+
+    async def _regenerate_title(self, active: ActiveSession) -> None:
+        """Regenerate the session title using the current title model."""
+        session_id = active.state.session_id
+        events = self._session_mgr.load_events(session_id)
+        if events:
+            await self._generate_title(active, events)
 
     def _available_models(self) -> list[str]:
         """Return deduplicated sorted list of available models."""

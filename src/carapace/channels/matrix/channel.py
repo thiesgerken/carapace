@@ -457,6 +457,8 @@ class MatrixChannel:
                     "- `/memory` — List memory files\n"
                     "- `/usage` — Show token usage\n"
                     "- `/model` — View or switch the agent model\n"
+                    "- `/model-sentinel` — View or switch the sentinel model\n"
+                    "- `/model-title` — View or switch the title model\n"
                     "- `/verbose` — Toggle tool call notifications\n"
                     "- `/allow` / `/yes` — Approve tool call or allow domain\n"
                     "- `/deny` / `/no` — Deny tool call or block domain\n"
@@ -466,7 +468,7 @@ class MatrixChannel:
                 return
 
         # Delegate to engine slash-command handler
-        result_data = self._engine.handle_slash_command(session_id, text)
+        result_data = await self._engine.handle_slash_command(session_id, text)
         if result_data:
             result = CommandResult(command=result_data["command"], data=result_data["data"])
             reply = format_command_result_text(result)

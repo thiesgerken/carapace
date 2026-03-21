@@ -605,7 +605,7 @@ async def chat_ws(
                     )
                     continue
 
-                cmd_result = _engine.handle_slash_command(session_id, user_input)
+                cmd_result = await _engine.handle_slash_command(session_id, user_input)
                 if cmd_result:
                     result = CommandResult(
                         command=cmd_result["command"],
