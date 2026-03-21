@@ -103,6 +103,11 @@ class Sentinel:
         self._agent = self._create_agent()
         self._message_history: list[Any] = []
 
+    def set_model(self, model: str) -> None:
+        """Switch the sentinel model, recreating the internal agent."""
+        self._model = model
+        self._agent = self._create_agent()
+
     def _load_system_prompt(self, _ctx: RunContext[Path]) -> str:
         return _build_system_prompt(self._load_security_md())
 

@@ -11,7 +11,9 @@ export async function listSessions(
   server: string,
   token: string,
 ): Promise<SessionInfo[]> {
-  const res = await fetch(`${server}/api/sessions`, { headers: headers(token) });
+  const res = await fetch(`${server}/api/sessions`, {
+    headers: headers(token),
+  });
   if (!res.ok) throw new Error(`Failed to list sessions: ${res.status}`);
   return res.json();
 }
@@ -62,7 +64,18 @@ export async function fetchCommands(
   server: string,
   token: string,
 ): Promise<SlashCommand[]> {
-  const res = await fetch(`${server}/api/commands`, { headers: headers(token) });
+  const res = await fetch(`${server}/api/commands`, {
+    headers: headers(token),
+  });
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export async function fetchModels(
+  server: string,
+  token: string,
+): Promise<string[]> {
+  const res = await fetch(`${server}/api/models`, { headers: headers(token) });
   if (!res.ok) return [];
   return res.json();
 }

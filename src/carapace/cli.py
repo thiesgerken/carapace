@@ -148,6 +148,25 @@ def _render_command_result(data: dict[str, Any]) -> None:
         case "usage":
             _render_usage(payload)
 
+        case "models":
+            if "models" in payload:
+                for model_type, info in payload["models"].items():
+                    marker = " [dim](overridden)[/dim]" if info["current"] != info["default"] else ""
+                    console.print(f"  [bold]{model_type}:[/bold] {info['current']}{marker}")
+                if payload.get("available"):
+                    console.print()
+                    console.print("  [dim]Available:[/dim] " + ", ".join(payload["available"]))
+
+        case "model" | "model-sentinel" | "model-title":
+            if "error" in payload:
+                console.print(f"[red]Error: {payload['error']}[/red]")
+            elif "message" in payload:
+                console.print(f"[green]{payload['message']}[/green]")
+            else:
+                console.print(f"[bold]Current model:[/bold] {payload['current']}")
+                if payload.get("default") and payload["default"] != payload["current"]:
+                    console.print(f"[dim]Default: {payload['default']}[/dim]")
+
         case "verbose":
             console.print(f"[dim]{payload['message']}[/dim]")
 

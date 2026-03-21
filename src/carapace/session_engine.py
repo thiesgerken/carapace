@@ -12,6 +12,7 @@ from typing import Any, Protocol, runtime_checkable
 from loguru import logger
 from pydantic_ai import ToolDenied
 from pydantic_ai.messages import ModelRequest, UserPromptPart
+from pydantic_ai.models import infer_model
 
 import carapace.security as security_mod
 from carapace.agent_loop import run_agent_turn
@@ -63,6 +64,10 @@ class ActiveSession:
     proxy_approval_queue: asyncio.Queue[ProxyApprovalResponse | None] = field(default_factory=asyncio.Queue)
     usage_tracker: UsageTracker = field(default_factory=UsageTracker)
     verbose: bool = True
+    agent_model: Any = None
+    agent_model_name: str | None = None
+    sentinel_model_name: str | None = None
+    title_model_name: str | None = None
     pending_approval_requests: list[dict[str, Any]] = field(default_factory=list)
     pending_proxy_approvals: list[dict[str, Any]] = field(default_factory=list)
     _pending_sends: set[asyncio.Task[Any]] = field(default_factory=set)
@@ -91,6 +96,7 @@ class SessionEngine:
         skill_catalog: list[SkillInfo],
         agent_model: Any,
         sandbox_mgr: SandboxManager,
+        model_factory: Callable[[str], Any] | None = None,
     ) -> None:
         self._config = config
         self._data_dir = data_dir
@@ -98,6 +104,7 @@ class SessionEngine:
         self._skill_catalog = skill_catalog
         self._agent_model = agent_model
         self._sandbox_mgr = sandbox_mgr
+        self._model_factory = model_factory
         self._active: dict[str, ActiveSession] = {}
         self._llm_semaphore = asyncio.Semaphore(config.agent.max_parallel_llm)
 
@@ -129,6 +136,10 @@ class SessionEngine:
     @property
     def agent_model(self) -> Any:
         return self._agent_model
+
+    @property
+    def available_models(self) -> list[str]:
+        return self._available_models()
 
     # -- session lifecycle --
 
@@ -249,7 +260,7 @@ class SessionEngine:
             security=active.security,
             sentinel=active.sentinel,
             skill_catalog=self._skill_catalog,
-            agent_model=self._agent_model,
+            agent_model=active.agent_model or self._agent_model,
             verbose=active.verbose,
             tool_call_callback=tool_call_callback,
             tool_result_callback=tool_result_callback,
@@ -311,7 +322,7 @@ class SessionEngine:
 
     # -- slash commands --
 
-    def handle_slash_command(self, session_id: str, command: str) -> dict[str, Any] | None:
+    async def handle_slash_command(self, session_id: str, command: str) -> dict[str, Any] | None:
         """Process a slash command, return structured data or ``None``."""
         active = self._active.get(session_id)
         if not active:
@@ -365,6 +376,13 @@ class SessionEngine:
             files = store.list_files()
             return {"command": "memory", "data": files}
 
+        if cmd == "/models":
+            return self._handle_models_command(active)
+
+        if cmd in ("/model", "/model-sentinel", "/model-title"):
+            model_type = {"model": "agent", "/model-sentinel": "sentinel", "/model-title": "title"}.get(cmd, "agent")
+            return await self._handle_model_command(active, model_type, parts[1].strip() if len(parts) > 1 else "")
+
         if cmd == "/usage":
             tracker = active.usage_tracker
             costs = tracker.estimated_cost()
@@ -380,6 +398,99 @@ class SessionEngine:
             }
 
         return None
+
+    # -- model switching --
+
+    _MODEL_TYPES = ("agent", "sentinel", "title")
+
+    def _handle_models_command(self, active: ActiveSession) -> dict[str, Any]:
+        """Show all model types with their current and default values."""
+        defaults = {
+            "agent": self._config.agent.model,
+            "sentinel": self._config.agent.sentinel_model,
+            "title": self._config.agent.title_model,
+        }
+        overrides = {
+            "agent": active.agent_model_name,
+            "sentinel": active.sentinel_model_name,
+            "title": active.title_model_name,
+        }
+        models = {t: {"current": overrides[t] or defaults[t], "default": defaults[t]} for t in self._MODEL_TYPES}
+        available = self._available_models()
+        return {"command": "models", "data": {"models": models, "available": available}}
+
+    async def _handle_model_command(self, active: ActiveSession, model_type: str, arg: str) -> dict[str, Any]:
+        """Process ``/model[-(sentinel|title)] [MODEL | reset]``."""
+        cmd_name = {"agent": "model", "sentinel": "model-sentinel", "title": "model-title"}[model_type]
+        defaults = {
+            "agent": self._config.agent.model,
+            "sentinel": self._config.agent.sentinel_model,
+            "title": self._config.agent.title_model,
+        }
+        overrides = {
+            "agent": active.agent_model_name,
+            "sentinel": active.sentinel_model_name,
+            "title": active.title_model_name,
+        }
+        default = defaults[model_type]
+        current = overrides[model_type] or default
+
+        # No argument — show current
+        if not arg:
+            return {"command": cmd_name, "data": {"current": current, "default": default}}
+
+        # Reset
+        if arg == "reset":
+            self._apply_model_override(active, model_type, None, None)
+            if model_type == "title":
+                await self._regenerate_title(active)
+            return {
+                "command": cmd_name,
+                "data": {"current": default, "default": default, "message": f"Reset to default: {default}"},
+            }
+
+        # Switch
+        try:
+            new_model = self._model_factory(arg) if self._model_factory else infer_model(arg)
+        except Exception as exc:
+            return {"command": cmd_name, "data": {"current": current, "default": default, "error": str(exc)}}
+
+        self._apply_model_override(active, model_type, arg, new_model if model_type == "agent" else None)
+        if model_type == "title":
+            await self._regenerate_title(active)
+        return {
+            "command": cmd_name,
+            "data": {"current": arg, "default": default, "message": f"Switched to: {arg}"},
+        }
+
+    def _apply_model_override(self, active: ActiveSession, model_type: str, name: str | None, model_obj: Any) -> None:
+        if model_type == "agent":
+            active.agent_model = model_obj
+            active.agent_model_name = name
+        elif model_type == "sentinel":
+            active.sentinel_model_name = name
+            if active.sentinel:
+                active.sentinel.set_model(name or self._config.agent.sentinel_model)
+        elif model_type == "title":
+            active.title_model_name = name
+
+    async def _regenerate_title(self, active: ActiveSession) -> None:
+        """Regenerate the session title using the current title model."""
+        session_id = active.state.session_id
+        events = self._session_mgr.load_events(session_id)
+        if events:
+            await self._generate_title(active, events)
+
+    def _available_models(self) -> list[str]:
+        """Return deduplicated sorted list of available models."""
+        return sorted(
+            {
+                self._config.agent.model,
+                self._config.agent.sentinel_model,
+                self._config.agent.title_model,
+                *self._config.agent.available_models,
+            }
+        )
 
     # -- internal turn runner --
 
@@ -546,7 +657,7 @@ class SessionEngine:
         try:
             title = await generate_title(
                 events,
-                model=self._config.agent.title_model,
+                model=active.title_model_name or self._config.agent.title_model,
                 usage_tracker=active.usage_tracker,
             )
             if title:

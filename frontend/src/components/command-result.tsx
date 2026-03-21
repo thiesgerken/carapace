@@ -81,6 +81,66 @@ export function CommandResultView({ command, data }: CommandResultViewProps) {
     return <p className="my-1 text-sm text-muted-foreground">{data.message}</p>;
   }
 
+  if (command === "models" && isModelData(data) && data.models) {
+    const models = data.models as Record<string, { current: string; default: string }>;
+    const available = (data.available ?? []) as string[];
+    return (
+      <div className="my-2 text-sm">
+        <table className="w-full">
+          <thead>
+            <tr className="border-b border-border text-left text-xs text-muted-foreground">
+              <th className="pb-1 pr-4 font-medium">Type</th>
+              <th className="pb-1 pr-4 font-medium">Model</th>
+              <th className="pb-1 font-medium">Default</th>
+            </tr>
+          </thead>
+          <tbody>
+            {Object.entries(models).map(([type, info]) => (
+              <tr key={type} className="border-b border-border/50">
+                <td className="py-1 pr-4 text-xs font-medium">{type}</td>
+                <td className="py-1 pr-4 font-mono text-xs">{info.current}</td>
+                <td className="py-1 text-xs text-muted-foreground">
+                  {info.current !== info.default ? info.default : ""}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {available.length > 0 && (
+          <p className="mt-2 text-xs text-muted-foreground">
+            <span className="font-medium">Available: </span>
+            {available.map((m, i) => (
+              <span key={m}>
+                {i > 0 && ", "}
+                <code className="text-foreground">{m}</code>
+              </span>
+            ))}
+          </p>
+        )}
+      </div>
+    );
+  }
+
+  if ((command === "model" || command === "model-sentinel" || command === "model-title") && isModelData(data)) {
+    if (data.error)
+      return <p className="my-1 text-sm text-destructive">{data.error}</p>;
+    if (data.message)
+      return <p className="my-1 text-sm text-muted-foreground">{data.message}</p>;
+    return (
+      <div className="my-1 text-sm">
+        <p>
+          <span className="text-muted-foreground">Current model: </span>
+          <span className="font-mono">{data.current}</span>
+        </p>
+        {data.default && data.default !== data.current && (
+          <p className="text-xs text-muted-foreground">
+            Default: {data.default}
+          </p>
+        )}
+      </div>
+    );
+  }
+
   if ((command === "disable" || command === "enable") && isMessageData(data)) {
     if (data.error)
       return <p className="my-1 text-sm text-destructive">{data.error}</p>;
@@ -111,6 +171,19 @@ function isHelpData(
 
 function isVerboseData(d: unknown): d is { verbose: boolean; message: string } {
   return !!d && typeof d === "object" && "message" in d;
+}
+
+function isModelData(
+  d: unknown,
+): d is {
+  current?: string;
+  default?: string;
+  message?: string;
+  error?: string;
+  models?: Record<string, { current: string; default: string }>;
+  available?: string[];
+} {
+  return !!d && typeof d === "object";
 }
 
 function isMessageData(d: unknown): d is { message?: string; error?: string } {

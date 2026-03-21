@@ -27,7 +27,7 @@ from fastapi import (
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from genai_prices import UpdatePrices
-from httpx import AsyncClient, HTTPStatusError
+from httpx import AsyncClient, HTTPStatusError, Timeout
 from loguru import logger
 from pydantic import BaseModel
 from pydantic_ai.models import Model, infer_model
@@ -86,7 +86,7 @@ def _retry_http_client() -> AsyncClient:
         ),
         validate_response=lambda r: r.raise_for_status() if r.status_code in (429, 502, 503, 504) else None,
     )
-    return AsyncClient(transport=transport)
+    return AsyncClient(transport=transport, timeout=Timeout(60.0))
 
 
 def _create_model(model_name: str) -> Model:
@@ -211,6 +211,7 @@ async def lifespan(app: FastAPI):
         skill_catalog=skill_catalog,
         agent_model=agent_model,
         sandbox_mgr=_sandbox_mgr,
+        model_factory=_create_model,
     )
 
     proxy = ProxyServer(
@@ -448,6 +449,11 @@ async def list_commands(_token: str = Depends(_verify_token)) -> list[dict[str, 
     return SLASH_COMMANDS
 
 
+@router.get("/models")
+async def list_models(_token: str = Depends(_verify_token)) -> list[str]:
+    return _engine.available_models
+
+
 class WebSocketSubscriber:
     """Thin adapter: forwards ``SessionEngine`` events to a WebSocket."""
 
@@ -599,7 +605,7 @@ async def chat_ws(
                     )
                     continue
 
-                cmd_result = _engine.handle_slash_command(session_id, user_input)
+                cmd_result = await _engine.handle_slash_command(session_id, user_input)
                 if cmd_result:
                     result = CommandResult(
                         command=cmd_result["command"],
