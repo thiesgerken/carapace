@@ -121,21 +121,22 @@ uv run carapace --token "$CARAPACE_TOKEN"
 
 ## Architecture overview
 
-```text
-CLI Client (typer + rich)    Web UI (Next.js)    Matrix Channel
-        \                      |                    /
-         REST + WebSocket (bearer token auth) + nio
-                         |
-                   FastAPI Server
-                         |
-              Session Engine ---- Security Module
-                   |                  ├── Safe-list (auto-allow)
-              Pydantic AI Agent       └── Sentinel Agent (LLM, shadow conversation)
-                   |                         |
-              Skill Registry          Approval Gate → subscribers
-                   |
-             Sandbox Container ── HTTP Proxy ── Sentinel (domain check)
-              (Docker or K8s pod)
+```mermaid
+flowchart TD
+    CLI["CLI Client"] & WebUI["Web UI (Next.js)"] & Matrix["Matrix Channel"]
+    CLI & WebUI & Matrix -->|"REST + WebSocket / nio"| Server["FastAPI Server"]
+
+    Server --> Engine[Session Engine]
+    Engine --> Agent[Pydantic AI Agent]
+    Engine --> Security[Security Module]
+    Security --> SafeList["Safe-list (auto-allow)"]
+    Security --> Sentinel["Sentinel Agent (LLM)"]
+    Sentinel --> Gate["Approval Gate → subscribers"]
+
+    Agent --> Skills[Skill Registry]
+    Agent -->|"exec, file ops"| Sandbox["Sandbox Container\n(Docker or K8s pod)"]
+    Sandbox -->|"outbound traffic"| Proxy[HTTP Proxy]
+    Proxy --> Sentinel
 ```
 
 The server runs the agent and all logic. The CLI, web UI, and Matrix are thin clients that connect via HTTP (sessions) and WebSocket (chat, slash commands, approval flow). Every tool call passes through the security module: safe operations (reads, memory, skill activation) are auto-allowed; everything else is evaluated by the sentinel agent. Network requests from sandbox containers are intercepted by an HTTP proxy and checked by the sentinel for domain plausibility.
