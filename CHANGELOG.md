@@ -1,9 +1,61 @@
 # CHANGELOG
 
 
+## v0.41.0 (2026-03-21)
+
+### Other
+
+- Fix to model autocomplete
+  ([`5c80563`](https://github.com/thiesgerken/carapace/commit/5c805634e4f1224c76ef9feb3d749df302d47231))
+
+- Merge remote-tracking branch 'origin/main' into feature/model-switching
+  ([`796a358`](https://github.com/thiesgerken/carapace/commit/796a35887a1c7310d0e6ac31095aab99e5671294))
+
+- Merge remote-tracking branch 'refs/remotes/origin/main'
+  ([`a46cfa9`](https://github.com/thiesgerken/carapace/commit/a46cfa93cdadc3d74478096996f92d470ef11e24))
+
+### ♻️
+
+- ♻️ refactor: split /model into /models, /model, /model-sentinel, /model-title
+  ([`ccda12b`](https://github.com/thiesgerken/carapace/commit/ccda12b07ead82b903f9abe3638673630ace639b))
+
+- /models: overview table of all model types with available models - /model, /model-sentinel,
+  /model-title: view/set individual models - Changing title model triggers automatic title
+  regeneration - handle_slash_command is now async to support title regeneration - Simplified
+  frontend autocomplete (no more --type flag parsing)
+
+### ✨
+
+- ✨ feat: add /model slash command for per-session model switching
+  ([`1129d4f`](https://github.com/thiesgerken/carapace/commit/1129d4fd2d2125b4c4e828e1d131ac6dd2392877))
+
+Support switching agent, sentinel, and title models on the fly within a session via /model [--type
+  agent|sentinel|title] [model | reset]. No args shows all three models in a table. Usage tracking
+  correctly buckets tokens under the actual model used.
+
+- ✨ feat: add available models list
+  ([`39bf195`](https://github.com/thiesgerken/carapace/commit/39bf1958a963613aebdd0fc6da81e499cfcbc5ae))
+
+- ✨merge pull request #51 from thiesgerken/feature/model-switching
+  ([`8239715`](https://github.com/thiesgerken/carapace/commit/823971555ea1275e272953f62c2e1de588503afb))
+
+✨ feat: add /model slash command for per-session model switching
+
+### 🐛
+
+- 🐛 fix: add timeout to AsyncClient to make gemini work
+  ([`6c0a1c7`](https://github.com/thiesgerken/carapace/commit/6c0a1c77b1f6a8091c0560b5b23f44ee7c97fbb2))
+
+- 🐛 fix: prevent showing model suggestions if the argument matches an available model
+  ([`5e792bd`](https://github.com/thiesgerken/carapace/commit/5e792bd1e5b23452c937d96397520ff2aaab07f0))
+
+
 ## v0.40.2 (2026-03-21)
 
 ### Other
+
+- 📝 docs: convert README architecture diagram to mermaid
+  ([`911ad49`](https://github.com/thiesgerken/carapace/commit/911ad49551503ac015d32a4ad145385eb4e1344c))
 
 - 📝 docs: rewrite docs to match actual implementation
   ([`93938cf`](https://github.com/thiesgerken/carapace/commit/93938cf7f5b11d9d7507a0170c5f4f4f8f19f8a9))
