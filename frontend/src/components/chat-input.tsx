@@ -38,9 +38,14 @@ export function ChatInput({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  // Focus textarea on mount (e.g. when a new session is created)
+  // Focus textarea on mount (e.g. when a new session is created).
+  // Skip on touch devices — programmatic focus opens the keyboard but the
+  // browser won't scroll the input into view, leaving it hidden.
   useEffect(() => {
-    textareaRef.current?.focus();
+    const isTouch = window.matchMedia("(pointer: coarse)").matches;
+    if (!isTouch) {
+      textareaRef.current?.focus();
+    }
   }, []);
 
   // Show autocomplete when input starts with "/" and is a single word, but not if it exactly matches a command
