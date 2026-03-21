@@ -64,7 +64,7 @@ export function ChatInput({
 
   // Model argument autocomplete for /model command
   const modelSuggestions = useMemo((): { items: string[]; prefix: string } => {
-    const lower = value.toLowerCase().trimEnd();
+    const lower = value.toLowerCase();
     if (!lower.startsWith("/model ")) return { items: [], prefix: "" };
 
     const afterCmd = value.slice(7); // after "/model "
