@@ -14,7 +14,6 @@ services:
     environment:
       - CARAPACE_CONFIG=/var/lib/carapace/config.yaml
       - CARAPACE_HOST_DATA_DIR=${PWD}/data
-      - CARAPACE_HOST_KNOWLEDGE_DIR=${PWD}/knowledge
       - CARAPACE_TOKEN=${CARAPACE_TOKEN}
       - CARAPACE_RESET_ASSETS=true
       - CARAPACE_MATRIX_PASSWORD=${CARAPACE_MATRIX_PASSWORD:-}

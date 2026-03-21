@@ -209,14 +209,10 @@ async def lifespan(app: FastAPI):
         raise SystemExit(1)
 
     host_data_dir: Path | None = None
-    host_knowledge_dir: Path | None = None
     sandbox_network = _config.sandbox.network_name
     if _config.sandbox.runtime == "docker":
         host_data_dir_env = os.environ.get("CARAPACE_HOST_DATA_DIR")
         host_data_dir = Path(host_data_dir_env) if host_data_dir_env else None
-
-        host_knowledge_dir_env = os.environ.get("CARAPACE_HOST_KNOWLEDGE_DIR")
-        host_knowledge_dir = Path(host_knowledge_dir_env) if host_knowledge_dir_env else None
 
         # Resolve the actual Docker network name once at startup.
         # Docker Compose prefixes networks with the project name, so the logical
@@ -239,7 +235,6 @@ async def lifespan(app: FastAPI):
         network_name=sandbox_network,
         idle_timeout_minutes=_config.sandbox.idle_timeout_minutes,
         host_data_dir=host_data_dir,
-        host_knowledge_dir=host_knowledge_dir,
         proxy_port=proxy_port,
     )
     logger.info(f"Sandbox enabled (image={base_image}, network={sandbox_network})")

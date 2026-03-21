@@ -132,14 +132,12 @@ class SandboxManager:
         network_name: str = "carapace-sandbox",
         idle_timeout_minutes: int = 15,
         host_data_dir: Path | None = None,
-        host_knowledge_dir: Path | None = None,
         proxy_port: int = 3128,
     ) -> None:
         self._runtime = runtime
         self._data_dir = data_dir
         self._knowledge_dir = knowledge_dir
         self._host_data_dir = host_data_dir
-        self._host_knowledge_dir = host_knowledge_dir
         self._base_image = base_image
         self._network_name = network_name
         self._idle_timeout = idle_timeout_minutes * 60
@@ -160,8 +158,6 @@ class SandboxManager:
         )
         if host_data_dir:
             logger.info(f"Host data dir override: {host_data_dir} (container sees {data_dir})")
-        if host_knowledge_dir:
-            logger.info(f"Host knowledge dir override: {host_knowledge_dir} (container sees {knowledge_dir})")
 
     def set_activated_skills_callback(self, cb: Callable[[str], list[str]]) -> None:
         """Register a callback to retrieve activated skills for a session (from persisted state)."""
@@ -250,13 +246,6 @@ class SandboxManager:
         ``_host_data_dir`` is set we rewrite the ``_data_dir`` prefix accordingly.
         """
         resolved = path.resolve()
-        # Try knowledge_dir mapping first
-        if self._host_knowledge_dir is not None:
-            try:
-                rel = resolved.relative_to(self._knowledge_dir.resolve())
-                return str(self._host_knowledge_dir / rel)
-            except ValueError:
-                pass
         if self._host_data_dir is None:
             return str(resolved)
         try:
@@ -268,16 +257,7 @@ class SandboxManager:
     def _build_mounts(self, session_id: str) -> list[Mount]:
         mounts: list[Mount] = []
 
-        # Mount the knowledge repo (Git clone) as the workspace root
-        mounts.append(
-            Mount(
-                source=self._host_path(self._knowledge_dir),
-                target="/workspace",
-                read_only=False,
-            )
-        )
-
-        # Session-specific scratch and skill venvs
+        # Session-specific scratch space
         session_workspace = self._data_dir / "sessions" / session_id / "workspace"
 
         mounts.append(
@@ -425,7 +405,7 @@ class SandboxManager:
 
         await self.ensure_session(session_id)
 
-        master_skill_dir = self._data_dir / "skills" / skill_name
+        master_skill_dir = self._knowledge_dir / "skills" / skill_name
         if not master_skill_dir.exists():
             logger.warning(f"Skill '{skill_name}' not found for session {session_id}")
             return f"Skill '{skill_name}' not found."
@@ -481,7 +461,7 @@ class SandboxManager:
 
     async def _sync_skill_venv(self, session_id: str, skill_name: str) -> str:
         """Re-copy pyproject.toml + uv.lock from the trusted master, then rebuild venv."""
-        master = self._data_dir / "skills" / skill_name
+        master = self._knowledge_dir / "skills" / skill_name
         session = self._data_dir / "sessions" / session_id / "workspace" / "skills" / skill_name
 
         for filename in ("pyproject.toml", "uv.lock"):
