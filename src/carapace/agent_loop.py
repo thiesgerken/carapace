@@ -74,7 +74,7 @@ async def run_agent_turn(
         deferred_results = DeferredToolResults()
 
         for call in requests.approvals:
-            args = call.args if isinstance(call.args, dict) else json.loads(call.args)
+            args = call.args if isinstance(call.args, dict) else json.loads(call.args or "{}")
             meta = requests.metadata.get(call.tool_call_id, {})
             await send_approval_request(
                 ApprovalRequest(

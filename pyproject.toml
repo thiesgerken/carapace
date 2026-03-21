@@ -14,14 +14,14 @@ dependencies = [
     "logfire[httpx]>=4,<5",
     "fastapi>=0.115,<1",
     "uvicorn[standard]>=0.40,<1",
-    "websockets>=15,<16",
+    "websockets>=16,<17",
     "pydantic-settings>=2,<3",
     "genai-prices>=0.0.53",
     "docker>=7,<8",
     "loguru>=0.7.3",
     "matrix-nio>=0.25,<1",
     "markdown>=3,<4",
-    "kubernetes>=31,<33",
+    "kubernetes>=35,<36",
 ]
 
 [project.scripts]
