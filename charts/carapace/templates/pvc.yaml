@@ -17,23 +17,3 @@ spec:
   resources:
     requests:
       storage: {{ .Values.persistence.data.size }}
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: {{ .Release.Name }}-knowledge
-  labels:
-    {{- include "carapace.labels" . | nindent 4 }}
-  {{- with .Values.persistence.knowledge.finalizers }}
-  finalizers:
-    {{- toYaml . | nindent 4 }}
-  {{- end }}
-spec:
-  accessModes:
-    - ReadWriteOnce
-  {{- if .Values.persistence.knowledge.storageClassName }}
-  storageClassName: {{ .Values.persistence.knowledge.storageClassName }}
-  {{- end }}
-  resources:
-    requests:
-      storage: {{ .Values.persistence.knowledge.size }}

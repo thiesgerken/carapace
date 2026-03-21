@@ -69,8 +69,6 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /var/lib/carapace
-            - name: knowledge
-              mountPath: /knowledge
           {{- if .Values.config }}
             - name: config
               mountPath: /var/lib/carapace/config.yaml
@@ -95,9 +93,6 @@ spec:
         - name: data
           persistentVolumeClaim:
             claimName: {{ .Release.Name }}-data
-        - name: knowledge
-          persistentVolumeClaim:
-            claimName: {{ .Release.Name }}-knowledge
       {{- if .Values.config }}
         - name: config
           configMap:

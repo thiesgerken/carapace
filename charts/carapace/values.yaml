@@ -38,7 +38,7 @@ ingress:
 
 # -- Persistence
 persistence:
-  # Data PVC (config, sessions — RWX for sandbox pod access)
+  # Data PVC (config, sessions, knowledge — RWX for sandbox pod access)
   data:
     # -- Leave empty to use the cluster default StorageClass
     storageClassName: ""
@@ -46,11 +46,6 @@ persistence:
     # -- Finalizers to protect the PVC from accidental deletion (e.g. by ArgoCD pruning)
     finalizers: []
     # - kubernetes.io/pvc-protection
-  # Knowledge PVC (Git-backed repo — RWO, server-only)
-  knowledge:
-    storageClassName: ""
-    size: 5Gi
-    finalizers: []
 
 # -- Priority class name for all pods (server, frontend, sandbox)
 priorityClassName: ""
