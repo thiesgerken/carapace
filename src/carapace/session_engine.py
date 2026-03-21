@@ -22,6 +22,7 @@ from carapace.sandbox.manager import SandboxManager
 from carapace.security.context import SessionSecurity, UserVouchedEntry
 from carapace.security.sentinel import Sentinel
 from carapace.session_manager import SessionManager
+from carapace.skills import SkillRegistry
 from carapace.usage import UsageTracker
 from carapace.ws_models import SLASH_COMMANDS, ApprovalRequest, ApprovalResponse, ProxyApprovalResponse, TurnUsage
 
@@ -92,6 +93,8 @@ class SessionEngine:
         *,
         config: Config,
         data_dir: Path,
+        knowledge_dir: Path,
+        git_store: Any,
         session_mgr: SessionManager,
         skill_catalog: list[SkillInfo],
         agent_model: Any,
@@ -100,6 +103,8 @@ class SessionEngine:
     ) -> None:
         self._config = config
         self._data_dir = data_dir
+        self._knowledge_dir = knowledge_dir
+        self._git_store = git_store
         self._session_mgr = session_mgr
         self._skill_catalog = skill_catalog
         self._agent_model = agent_model
@@ -156,8 +161,8 @@ class SessionEngine:
         security = SessionSecurity(session_id, audit_dir=audit_dir)
         sentinel = Sentinel(
             model=self._config.agent.sentinel_model,
-            data_dir=self._data_dir,
-            skills_dir=self._data_dir / "skills",
+            knowledge_dir=self._knowledge_dir,
+            skills_dir=self._knowledge_dir / "skills",
         )
         usage_tracker = self._session_mgr.load_usage(session_id)
 
@@ -256,9 +261,11 @@ class SessionEngine:
         return Deps(
             config=self._config,
             data_dir=self._data_dir,
+            knowledge_dir=self._knowledge_dir,
             session_state=active.state,
             security=active.security,
             sentinel=active.sentinel,
+            git_store=self._git_store,
             skill_catalog=self._skill_catalog,
             agent_model=active.agent_model or self._agent_model,
             verbose=active.verbose,
@@ -335,7 +342,7 @@ class SessionEngine:
             return {"command": "help", "data": {"commands": SLASH_COMMANDS}}
 
         if cmd == "/security":
-            security_path = self._data_dir / "SECURITY.md"
+            security_path = self._knowledge_dir / "SECURITY.md"
             policy = security_path.read_text() if security_path.exists() else "(no SECURITY.md loaded)"
             log_count = len(active.security.action_log) if active.security else 0
             eval_count = active.security.sentinel_eval_count if active.security else 0
@@ -372,7 +379,7 @@ class SessionEngine:
             return {"command": "skills", "data": skills}
 
         if cmd == "/memory":
-            store = MemoryStore(self._data_dir)
+            store = MemoryStore(self._knowledge_dir)
             files = store.list_files()
             return {"command": "memory", "data": files}
 
@@ -397,7 +404,25 @@ class SessionEngine:
                 },
             }
 
+        if cmd == "/pull":
+            return await self._handle_pull_command()
+
         return None
+
+    # -- pull from remote --
+
+    async def _handle_pull_command(self) -> dict[str, Any]:
+        """Handle the ``/pull`` slash command — pull from external remote."""
+        if not self._config.git.remote:
+            return {"command": "pull", "data": {"message": "No external remote configured."}}
+        try:
+            summary = await self._git_store.pull_from_remote()
+            # Re-scan skills after pull
+            registry = SkillRegistry(self._knowledge_dir / "skills")
+            self._skill_catalog = registry.scan()
+            return {"command": "pull", "data": {"message": summary}}
+        except RuntimeError as exc:
+            return {"command": "pull", "data": {"message": f"Pull failed: {exc}"}}
 
     # -- model switching --
 

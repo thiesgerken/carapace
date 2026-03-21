@@ -25,10 +25,6 @@ from carapace.sandbox.runtime import (
 
 _SKILL_NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]*$")
 
-# Workspace files that are copied (not mounted) into each session sandbox.
-# The agent can edit these copies and use save_workspace_file to persist them.
-_WORKSPACE_FILES = ("AGENTS.md", "SOUL.md", "USER.md", "SECURITY.md")
-
 # Inline Python scripts executed inside the sandbox container.
 # Data is passed as base64-encoded CLI args to avoid shell-escaping issues.
 # Scripts use only double quotes so that shlex.quote (single-quote wrapping)
@@ -131,15 +127,19 @@ class SandboxManager:
         self,
         runtime: ContainerRuntime,
         data_dir: Path,
+        knowledge_dir: Path,
         base_image: str = "carapace-sandbox:latest",
         network_name: str = "carapace-sandbox",
         idle_timeout_minutes: int = 15,
         host_data_dir: Path | None = None,
+        host_knowledge_dir: Path | None = None,
         proxy_port: int = 3128,
     ) -> None:
         self._runtime = runtime
         self._data_dir = data_dir
+        self._knowledge_dir = knowledge_dir
         self._host_data_dir = host_data_dir
+        self._host_knowledge_dir = host_knowledge_dir
         self._base_image = base_image
         self._network_name = network_name
         self._idle_timeout = idle_timeout_minutes * 60
@@ -160,6 +160,8 @@ class SandboxManager:
         )
         if host_data_dir:
             logger.info(f"Host data dir override: {host_data_dir} (container sees {data_dir})")
+        if host_knowledge_dir:
+            logger.info(f"Host knowledge dir override: {host_knowledge_dir} (container sees {knowledge_dir})")
 
     def set_activated_skills_callback(self, cb: Callable[[str], list[str]]) -> None:
         """Register a callback to retrieve activated skills for a session (from persisted state)."""
@@ -184,19 +186,12 @@ class SandboxManager:
             self._prepare_session_recreate(session_id)
 
         session_workspace = self._data_dir / "sessions" / session_id / "workspace"
-        for subdir in ("skills", "tmp"):
+        for subdir in ("tmp",):
             d = session_workspace / subdir
             d.mkdir(parents=True, exist_ok=True)
             # Make world-writable so sandbox containers running as UID 1000
             # can write to PVC subPath mounts (chown may not be available).
             d.chmod(0o777)
-
-        # Copy workspace files into the session so the agent can edit them.
-        for filename in _WORKSPACE_FILES:
-            src = self._data_dir / filename
-            if src.exists():
-                dst = session_workspace / filename
-                shutil.copy2(src, dst)
 
         proxy_token = secrets.token_hex(16)
         # Evict any orphaned token left by a previous failed attempt for this
@@ -255,6 +250,13 @@ class SandboxManager:
         ``_host_data_dir`` is set we rewrite the ``_data_dir`` prefix accordingly.
         """
         resolved = path.resolve()
+        # Try knowledge_dir mapping first
+        if self._host_knowledge_dir is not None:
+            try:
+                rel = resolved.relative_to(self._knowledge_dir.resolve())
+                return str(self._host_knowledge_dir / rel)
+            except ValueError:
+                pass
         if self._host_data_dir is None:
             return str(resolved)
         try:
@@ -266,39 +268,17 @@ class SandboxManager:
     def _build_mounts(self, session_id: str) -> list[Mount]:
         mounts: list[Mount] = []
 
-        session_workspace = self._data_dir / "sessions" / session_id / "workspace"
-
-        # Workspace files are copies (not read-only mounts) so the agent can
-        # edit them and save back via save_workspace_file.
-        for filename in _WORKSPACE_FILES:
-            path = session_workspace / filename
-            if path.exists():
-                mounts.append(
-                    Mount(
-                        source=self._host_path(path),
-                        target=f"/workspace/{filename}",
-                        read_only=False,
-                    )
-                )
-
-        memory_dir = self._data_dir / "memory"
-        if memory_dir.exists():
-            mounts.append(
-                Mount(
-                    source=self._host_path(memory_dir),
-                    target="/workspace/memory",
-                    read_only=True,
-                )
-            )
-
-        session_workspace = self._data_dir / "sessions" / session_id / "workspace"
+        # Mount the knowledge repo (Git clone) as the workspace root
         mounts.append(
             Mount(
-                source=self._host_path(session_workspace / "skills"),
-                target="/workspace/skills",
+                source=self._host_path(self._knowledge_dir),
+                target="/workspace",
                 read_only=False,
             )
         )
+
+        # Session-specific scratch and skill venvs
+        session_workspace = self._data_dir / "sessions" / session_id / "workspace"
 
         mounts.append(
             Mount(
@@ -319,7 +299,9 @@ class SandboxManager:
         authed_url = f"{scheme}://{proxy_token}@{rest}"
         # Extract host (without scheme/port/auth) for NO_PROXY
         no_proxy_host = rest.rsplit(":", 1)[0]
-        no_proxy = ",".join([no_proxy_host, "localhost", "127.0.0.1"])
+        # Server hostname added to NO_PROXY so Git traffic bypasses the HTTP
+        # proxy (goes directly to port 3128 for the Git HTTP handler).
+        no_proxy = ",".join([no_proxy_host, "localhost", "127.0.0.1", "host.docker.internal"])
         return {
             "HTTP_PROXY": authed_url,
             "HTTPS_PROXY": authed_url,
@@ -534,57 +516,6 @@ class SandboxManager:
         activated = self._get_activated_skills_cb(session_id)
         if activated:
             await self.rebuild_skill_venvs(session_id, activated)
-
-    async def save_skill(self, session_id: str, skill_name: str) -> str:
-        if err := _validate_skill_name(skill_name):
-            return err
-
-        session_skill_dir = self._data_dir / "sessions" / session_id / "workspace" / "skills" / skill_name
-        if not session_skill_dir.exists():
-            logger.warning(f"Cannot save skill '{skill_name}' — not found in session {session_id}")
-            return f"Skill '{skill_name}' not found in session."
-
-        master_skill_dir = self._data_dir / "skills" / skill_name
-        master_skill_dir.parent.mkdir(parents=True, exist_ok=True)
-
-        if master_skill_dir.exists():
-            shutil.rmtree(master_skill_dir)
-
-        shutil.copytree(
-            session_skill_dir,
-            master_skill_dir,
-            ignore=shutil.ignore_patterns(".venv", "__pycache__", "node_modules"),
-        )
-
-        logger.info(f"Saved skill '{skill_name}' from session {session_id} to {master_skill_dir}")
-
-        venv_msg = ""
-        if (master_skill_dir / "pyproject.toml").exists():
-            try:
-                venv_msg = await self._sync_skill_venv(session_id, skill_name)
-            except SkillVenvError as exc:
-                venv_msg = f"WARNING: venv rebuild failed after save: {exc}"
-                logger.error(venv_msg)
-
-        result = f"Skill '{skill_name}' saved to data/skills/{skill_name}/"
-        if venv_msg:
-            result += f"\n{venv_msg}"
-        return result
-
-    async def save_workspace_file(self, session_id: str, filename: str) -> str:
-        """Copy a workspace file from the session sandbox back to the main data directory."""
-        if filename not in _WORKSPACE_FILES:
-            allowed = ", ".join(_WORKSPACE_FILES)
-            return f"Error: '{filename}' is not a saveable workspace file. Allowed: {allowed}"
-
-        session_file = self._data_dir / "sessions" / session_id / "workspace" / filename
-        if not session_file.exists():
-            return f"Error: '{filename}' not found in session workspace."
-
-        target = self._data_dir / filename
-        shutil.copy2(session_file, target)
-        logger.info(f"Saved workspace file '{filename}' from session {session_id} to {target}")
-        return f"Saved '{filename}' to data directory. Changes are now live."
 
     async def cleanup_session(self, session_id: str) -> None:
         sc = self._sessions.get(session_id)

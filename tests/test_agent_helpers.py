@@ -15,11 +15,13 @@ def test_build_system_prompt_minimal(tmp_path: Path):
     deps = Deps(
         config=Config(),
         data_dir=tmp_path,
+        knowledge_dir=tmp_path,
         session_state=state,
         rules=[],
         sandbox=MagicMock(spec=SandboxManager),
         security=SessionSecurity("test-123"),
         sentinel=MagicMock(),
+        git_store=MagicMock(),
         usage_tracker=UsageTracker(),
     )
     prompt = build_system_prompt(deps)
@@ -32,11 +34,13 @@ def test_build_system_prompt_with_agents_md(tmp_path: Path):
     deps = Deps(
         config=Config(),
         data_dir=tmp_path,
+        knowledge_dir=tmp_path,
         session_state=state,
         rules=[],
         sandbox=MagicMock(spec=SandboxManager),
         security=SessionSecurity("s1"),
         sentinel=MagicMock(),
+        git_store=MagicMock(),
         usage_tracker=UsageTracker(),
     )
     prompt = build_system_prompt(deps)

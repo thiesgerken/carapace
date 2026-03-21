@@ -109,7 +109,7 @@ class TestProxyParsing:
 class TestSandboxManagerAllowlists:
     def _make_manager(self, tmp_path: Path):
         runtime = MagicMock(spec=ContainerRuntime)
-        return SandboxManager(runtime=runtime, data_dir=tmp_path)
+        return SandboxManager(runtime=runtime, data_dir=tmp_path, knowledge_dir=tmp_path)
 
     def test_empty_by_default(self, tmp_path: Path):
         mgr = self._make_manager(tmp_path)
@@ -170,7 +170,7 @@ async def test_exec_recreate_preserves_domains(tmp_path: Path):
         ]
     )
 
-    mgr = SandboxManager(runtime=runtime, data_dir=tmp_path)
+    mgr = SandboxManager(runtime=runtime, data_dir=tmp_path, knowledge_dir=tmp_path)
     session_id = "sess-1"
     await mgr.ensure_session(session_id)
     mgr.allow_domains(session_id, {"api.example.com"})

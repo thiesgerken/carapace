@@ -36,14 +36,21 @@ ingress:
   # -- Extra annotations on the HTTPRoute
   annotations: {}
 
-# -- Persistence (RWX PVC shared between server and sandbox pods)
+# -- Persistence
 persistence:
-  # -- Leave empty to use the cluster default StorageClass
-  storageClassName: ""
-  size: 10Gi
-  # -- Finalizers to protect the PVC from accidental deletion (e.g. by ArgoCD pruning)
-  finalizers: []
-  # - kubernetes.io/pvc-protection
+  # Data PVC (config, sessions — RWX for sandbox pod access)
+  data:
+    # -- Leave empty to use the cluster default StorageClass
+    storageClassName: ""
+    size: 10Gi
+    # -- Finalizers to protect the PVC from accidental deletion (e.g. by ArgoCD pruning)
+    finalizers: []
+    # - kubernetes.io/pvc-protection
+  # Knowledge PVC (Git-backed repo — RWO, server-only)
+  knowledge:
+    storageClassName: ""
+    size: 5Gi
+    finalizers: []
 
 # -- Priority class name for all pods (server, frontend, sandbox)
 priorityClassName: ""

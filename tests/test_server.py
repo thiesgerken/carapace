@@ -39,6 +39,8 @@ def _setup_server(tmp_path, monkeypatch):
     srv._engine = SessionEngine(
         config=config,
         data_dir=tmp_path,
+        knowledge_dir=tmp_path,
+        git_store=MagicMock(),
         session_mgr=session_mgr,
         skill_catalog=skill_catalog,
         agent_model=None,

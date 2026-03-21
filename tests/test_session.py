@@ -113,6 +113,8 @@ def _make_engine(tmp_path: Path) -> SessionEngine:
     return SessionEngine(
         config=config,
         data_dir=tmp_path,
+        knowledge_dir=tmp_path,
+        git_store=MagicMock(),
         session_mgr=session_mgr,
         skill_catalog=skill_catalog,
         agent_model=None,

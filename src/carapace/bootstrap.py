@@ -6,15 +6,23 @@ from pathlib import Path
 
 _ASSETS = files("carapace.assets")
 
+# --- Data dir files (stay in data/) ---
+
 # Files that are never overwritten by CARAPACE_RESET_ASSETS (user-owned).
 _USER_FILES: list[tuple[str, str]] = [
-    ("SOUL.md", "SOUL.md"),
-    ("USER.md", "USER.md"),
     ("config.yaml", "config.yaml"),
 ]
 
-# Files that are overwritten when CARAPACE_RESET_ASSETS is set.
-_CRITICAL_FILES: list[tuple[str, str]] = [
+# --- Knowledge dir files (move to knowledge/) ---
+
+# User-owned knowledge files: seed once, never overwrite.
+_KNOWLEDGE_USER_FILES: list[tuple[str, str]] = [
+    ("SOUL.md", "SOUL.md"),
+    ("USER.md", "USER.md"),
+]
+
+# Critical knowledge files: overwrite when CARAPACE_RESET_ASSETS is set.
+_KNOWLEDGE_CRITICAL_FILES: list[tuple[str, str]] = [
     ("SECURITY.md", "SECURITY.md"),
     ("CORE.md", "memory/CORE.md"),
 ]
@@ -26,6 +34,33 @@ _SEED_SKILLS: list[tuple[str, str]] = [
     ("example-skill/scripts/hello.py", "skills/example/scripts/hello.py"),
     ("create-skill/SKILL.md", "skills/create-skill/SKILL.md"),
 ]
+
+_KNOWLEDGE_GITIGNORE = """\
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
+# Node
+node_modules/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+
+# Skill build artifacts
+skills/**/.venv/
+"""
 
 
 def _reset_assets() -> bool:
@@ -39,19 +74,13 @@ def _copy_asset(asset_path: str, target: Path) -> None:
 
 
 def ensure_data_dir(data_dir: Path) -> list[str]:
-    """Ensure data dir exists with all critical files.
+    """Ensure data dir exists with config and session directories.
 
-    When ``CARAPACE_RESET_ASSETS`` is set to a truthy value (``1``, ``true``,
-    ``yes``), existing files are overwritten with the bundled versions.
-
-    Returns the list of file paths (relative to *data_dir*) that were created
-    or overwritten.
+    Returns the list of file paths (relative to *data_dir*) that were created.
     """
-    reset = _reset_assets()
     created: list[str] = []
     data_dir.mkdir(parents=True, exist_ok=True)
 
-    # User-owned files: only seed, never overwrite on reset.
     for asset_name, target_rel in _USER_FILES:
         target = data_dir / target_rel
         if not target.exists():
@@ -59,18 +88,47 @@ def ensure_data_dir(data_dir: Path) -> list[str]:
             _copy_asset(asset_name, target)
             created.append(target_rel)
 
-    for asset_name, target_rel in _CRITICAL_FILES:
-        target = data_dir / target_rel
+    return created
+
+
+def ensure_knowledge_dir(knowledge_dir: Path) -> list[str]:
+    """Ensure knowledge dir has all required files.
+
+    Seeds user-owned files, critical files, skills, and ``.gitignore``.
+    Returns the list of file paths (relative to *knowledge_dir*) that were
+    created or overwritten.
+    """
+    reset = _reset_assets()
+    created: list[str] = []
+    knowledge_dir.mkdir(parents=True, exist_ok=True)
+
+    # .gitignore — seed once as user-owned
+    gitignore = knowledge_dir / ".gitignore"
+    if not gitignore.exists():
+        gitignore.write_text(_KNOWLEDGE_GITIGNORE, encoding="utf-8")
+        created.append(".gitignore")
+
+    # User-owned knowledge files: seed once, never overwrite
+    for asset_name, target_rel in _KNOWLEDGE_USER_FILES:
+        target = knowledge_dir / target_rel
+        if not target.exists():
+            target.parent.mkdir(parents=True, exist_ok=True)
+            _copy_asset(asset_name, target)
+            created.append(target_rel)
+
+    # Critical knowledge files: overwrite when reset is requested
+    for asset_name, target_rel in _KNOWLEDGE_CRITICAL_FILES:
+        target = knowledge_dir / target_rel
         if reset or not target.exists():
             target.parent.mkdir(parents=True, exist_ok=True)
             _copy_asset(asset_name, target)
             created.append(target_rel)
 
-    # Seed skills directory when it doesn't exist at all (or reset is requested)
-    skills_dir = data_dir / "skills"
+    # Seed skills directory
+    skills_dir = knowledge_dir / "skills"
     if reset or not skills_dir.exists():
         for asset_name, target_rel in _SEED_SKILLS:
-            target = data_dir / target_rel
+            target = knowledge_dir / target_rel
             target.parent.mkdir(parents=True, exist_ok=True)
             _copy_asset(asset_name, target)
             created.append(target_rel)

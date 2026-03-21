@@ -7,6 +7,8 @@ from collections.abc import Awaitable, Callable
 
 from loguru import logger
 
+from carapace.git_http import GitHttpHandler
+
 _CONNECT_OK = b"HTTP/1.1 200 Connection Established\r\n\r\n"
 _FORBIDDEN_RESPONSE = (
     b"HTTP/1.1 403 Forbidden\r\nContent-Length: 30\r\nConnection: close\r\n\r\nDomain blocked by proxy policy"
@@ -42,6 +44,7 @@ class ProxyServer:
         request_approval: Callable[[str, str], Awaitable[bool]] | None = None,
         host: str = "0.0.0.0",
         port: int = 3128,
+        git_handler: GitHttpHandler | None = None,
     ) -> None:
         self._get_session_by_token = get_session_by_token
         self._get_domains = get_allowed_domains
@@ -49,6 +52,7 @@ class ProxyServer:
         self._host = host
         self._port = port
         self._server: asyncio.Server | None = None
+        self._git_handler = git_handler
 
     async def start(self) -> None:
         self._server = await asyncio.start_server(
@@ -105,8 +109,33 @@ class ProxyServer:
                 return
 
             method = parts[0].upper()
+            url = parts[1]
+
+            # Git HTTP requests arrive as direct HTTP (not proxy-style)
+            # because the server hostname is in NO_PROXY.
+            if self._git_handler and url.startswith("/git/"):
+                path, _, query = url.partition("?")
+                # Read body if Content-Length present
+                content_length = 0
+                for hdr in raw_headers:
+                    if hdr.lower().startswith(b"content-length:"):
+                        content_length = int(hdr.split(b":", 1)[1].strip())
+                body = b""
+                if content_length > 0:
+                    body = await asyncio.wait_for(reader.readexactly(content_length), timeout=120)
+                await self._git_handler.handle(
+                    reader,
+                    writer,
+                    method,
+                    path,
+                    query,
+                    raw_headers,
+                    body,
+                )
+                return
+
             if method == "CONNECT":
-                await self._handle_connect(reader, writer, session_id, client_ip, parts[1])
+                await self._handle_connect(reader, writer, session_id, client_ip, url)
             else:
                 await self._handle_http(
                     reader,
@@ -114,7 +143,7 @@ class ProxyServer:
                     session_id,
                     client_ip,
                     method,
-                    parts[1],
+                    url,
                     parts[2],
                     raw_headers,
                 )

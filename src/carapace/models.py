@@ -143,6 +143,14 @@ class MemoryConfig(BaseModel):
     search: MemorySearchConfig = MemorySearchConfig()
 
 
+class GitConfig(BaseModel):
+    """Git-backed knowledge store configuration."""
+
+    remote: str = ""  # optional external remote URL
+    branch: str = "main"
+    author: str = "Carapace Agent <%s>"  # %s → session ID
+
+
 class ServerConfig(BaseModel):
     host: str = "0.0.0.0"
     port: int = 8321
@@ -162,6 +170,9 @@ class Config(BaseModel):
     credentials: CredentialsConfig = CredentialsConfig()
     sandbox: SandboxConfig = SandboxConfig()
     memory: MemoryConfig = MemoryConfig()
+    git: GitConfig = GitConfig()
+    data_dir: str = "."  # resolved relative to config file location
+    knowledge_dir: str = "./knowledge"  # resolved relative to CWD
 
 
 # --- Skill Catalog Entry ---
@@ -193,10 +204,12 @@ class Deps(BaseModel):
 
     config: Config
     data_dir: Path
+    knowledge_dir: Path
     session_state: SessionState
     sandbox: SandboxManager
     security: SessionSecurity
     sentinel: Any  # Sentinel (can't type strictly — tests use MagicMock)
+    git_store: Any  # GitStore (can't import here — circular)
     skill_catalog: list[SkillInfo] = []
     activated_skills: list[str] = []
     agent_model: Any = None

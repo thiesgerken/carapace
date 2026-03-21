@@ -36,8 +36,10 @@ from pydantic_ai.retries import AsyncTenacityTransport, RetryConfig, wait_retry_
 from tenacity import retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from carapace.auth import get_token
-from carapace.bootstrap import ensure_data_dir
-from carapace.config import get_data_dir, load_config
+from carapace.bootstrap import ensure_data_dir, ensure_knowledge_dir
+from carapace.config import _resolve_data_dir, _resolve_knowledge_dir, get_config_path, get_data_dir, load_config
+from carapace.git_http import GitHttpHandler
+from carapace.git_store import GitStore
 from carapace.models import Config, SessionState
 from carapace.sandbox.manager import SandboxManager
 from carapace.sandbox.proxy import ProxyServer
@@ -142,16 +144,48 @@ async def _idle_cleanup_loop(sandbox_mgr: SandboxManager) -> None:
 async def lifespan(app: FastAPI):
     global _data_dir, _config, _engine
 
-    _data_dir = get_data_dir()
+    # 1. Load config
+    config_path = get_config_path()
+    _config = load_config()
+    _data_dir = _resolve_data_dir(config_path, _config)
+    knowledge_dir = _resolve_knowledge_dir(_config)
+
+    # 2. Bootstrap directories
     ensure_data_dir(_data_dir)
-    _config = load_config(_data_dir)
+
+    # 3. Git-backed knowledge store
+    git_store = GitStore(
+        knowledge_dir,
+        branch=_config.git.branch,
+        author=_config.git.author,
+    )
+    await git_store.ensure_repo()
+
+    # Pull from external remote if configured
+    git_token = os.environ.get("CARAPACE_GIT_TOKEN")
+    if _config.git.remote:
+        await git_store.add_remote(_config.git.remote, git_token)
+        if await git_store.has_commits():
+            try:
+                summary = await git_store.pull_from_remote()
+                logger.info(f"Pulled from remote: {summary}")
+            except RuntimeError as exc:
+                logger.error(str(exc))
+                raise SystemExit(1) from exc
+
+    # Bootstrap knowledge files (after pull so we don't override remote content)
+    seeded = ensure_knowledge_dir(knowledge_dir)
+    if seeded:
+        await git_store.commit(seeded, "🔧 bootstrap: seed default files")
+        if _config.git.remote:
+            await git_store.push_to_remote()
 
     if _config.carapace.logfire_token:
         logfire.configure(token=_config.carapace.logfire_token, console=False)
         logfire.instrument_pydantic_ai()
 
     session_mgr = SessionManager(_data_dir)
-    registry = SkillRegistry(_data_dir / "skills")
+    registry = SkillRegistry(knowledge_dir / "skills")
     skill_catalog = registry.scan()
     agent_model = _create_model(_config.agent.model)
 
@@ -175,10 +209,14 @@ async def lifespan(app: FastAPI):
         raise SystemExit(1)
 
     host_data_dir: Path | None = None
+    host_knowledge_dir: Path | None = None
     sandbox_network = _config.sandbox.network_name
     if _config.sandbox.runtime == "docker":
         host_data_dir_env = os.environ.get("CARAPACE_HOST_DATA_DIR")
         host_data_dir = Path(host_data_dir_env) if host_data_dir_env else None
+
+        host_knowledge_dir_env = os.environ.get("CARAPACE_HOST_KNOWLEDGE_DIR")
+        host_knowledge_dir = Path(host_knowledge_dir_env) if host_knowledge_dir_env else None
 
         # Resolve the actual Docker network name once at startup.
         # Docker Compose prefixes networks with the project name, so the logical
@@ -196,10 +234,12 @@ async def lifespan(app: FastAPI):
     _sandbox_mgr = SandboxManager(
         runtime=runtime,
         data_dir=_data_dir,
+        knowledge_dir=knowledge_dir,
         base_image=base_image,
         network_name=sandbox_network,
         idle_timeout_minutes=_config.sandbox.idle_timeout_minutes,
         host_data_dir=host_data_dir,
+        host_knowledge_dir=host_knowledge_dir,
         proxy_port=proxy_port,
     )
     logger.info(f"Sandbox enabled (image={base_image}, network={sandbox_network})")
@@ -207,11 +247,21 @@ async def lifespan(app: FastAPI):
     _engine = SessionEngine(
         config=_config,
         data_dir=_data_dir,
+        knowledge_dir=knowledge_dir,
+        git_store=git_store,
         session_mgr=session_mgr,
         skill_catalog=skill_catalog,
         agent_model=agent_model,
         sandbox_mgr=_sandbox_mgr,
         model_factory=_create_model,
+    )
+
+    # Git HTTP handler for the proxy server — serves the knowledge repo
+    git_handler = GitHttpHandler(
+        knowledge_dir=knowledge_dir,
+        default_branch=_config.git.branch,
+        get_session_by_token=_sandbox_mgr.get_session_by_token,
+        api_port=_config.server.port,
     )
 
     proxy = ProxyServer(
@@ -220,6 +270,7 @@ async def lifespan(app: FastAPI):
         request_approval=_sandbox_mgr.request_domain_approval,
         host="0.0.0.0",
         port=proxy_port,
+        git_handler=git_handler,
     )
     await proxy.start()
 
@@ -702,6 +753,38 @@ def main() -> None:
         log_level=config.carapace.log_level,
         log_config=None,
     )
+
+
+# --- Internal endpoint for pre-receive hook sentinel evaluation ---
+# This runs on the API port (8321), unreachable from sandboxes.
+
+
+class PushEvalRequest(BaseModel):
+    session_id: str
+    ref: str
+    is_default_branch: bool
+    commits: str
+    diff: str
+
+
+@app.post("/internal/sentinel/evaluate-push")
+async def evaluate_push(req: PushEvalRequest) -> dict[str, str]:
+    """Evaluate a Git push via the sentinel. Called by the pre-receive hook."""
+    active = _engine.get_or_activate(req.session_id)
+    if active.security is None or active.sentinel is None:
+        return {"verdict": "deny", "reason": "Session not initialised"}
+
+    verdict = await active.sentinel.evaluate_push(
+        active.security,
+        req.ref,
+        req.is_default_branch,
+        req.commits,
+        req.diff,
+        usage_tracker=active.usage_tracker,
+    )
+    if verdict.decision == "allow":
+        return {"verdict": "allow"}
+    return {"verdict": "deny", "reason": verdict.explanation or "Denied by sentinel"}
 
 
 app.include_router(router)
