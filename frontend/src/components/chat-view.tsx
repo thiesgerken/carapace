@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { useWebSocket } from "@/hooks/use-websocket";
-import { fetchCommands, fetchHistory, wsUrl } from "@/lib/api";
+import { fetchCommands, fetchHistory, fetchModels, wsUrl } from "@/lib/api";
 import type { SlashCommand } from "@/lib/api";
 import type { ChatMessage, ClientMessage, DomainDecision, ServerMessage, TurnUsage } from "@/lib/types";
 import { Message } from "./message";
@@ -23,6 +23,7 @@ export function ChatView({ server, token, sessionId, onTitleUpdate }: ChatViewPr
   const [usage, setUsage] = useState<TurnUsage | null>(null);
   const [loadingHistory, setLoadingHistory] = useState(true);
   const [commands, setCommands] = useState<SlashCommand[]>([]);
+  const [availableModels, setAvailableModels] = useState<string[]>([]);
   const [approvalState, setApprovalState] = useState<Map<string, boolean>>(new Map());
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -30,9 +31,10 @@ export function ChatView({ server, token, sessionId, onTitleUpdate }: ChatViewPr
   const queueRef = useRef<string | null>(null);
   const sendRef = useRef<(msg: ClientMessage) => void>(() => {});
 
-  // Fetch available slash commands on mount
+  // Fetch available slash commands and models on mount
   useEffect(() => {
     fetchCommands(server, token).then(setCommands);
+    fetchModels(server, token).then(setAvailableModels);
   }, [server, token]);
 
   // Load history on mount
@@ -382,6 +384,7 @@ export function ChatView({ server, token, sessionId, onTitleUpdate }: ChatViewPr
         waiting={waiting}
         queuedMessage={queuedMessage}
         commands={commands}
+        availableModels={availableModels}
         usage={usage}
       />
     </div>

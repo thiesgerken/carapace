@@ -67,6 +67,15 @@ export async function fetchCommands(
   return res.json();
 }
 
+export async function fetchModels(
+  server: string,
+  token: string,
+): Promise<string[]> {
+  const res = await fetch(`${server}/api/models`, { headers: headers(token) });
+  if (!res.ok) return [];
+  return res.json();
+}
+
 export function wsUrl(
   server: string,
   sessionId: string,

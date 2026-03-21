@@ -137,6 +137,10 @@ class SessionEngine:
     def agent_model(self) -> Any:
         return self._agent_model
 
+    @property
+    def available_models(self) -> list[str]:
+        return self._available_models()
+
     # -- session lifecycle --
 
     def _ensure_active(self, session_id: str) -> ActiveSession:
@@ -407,10 +411,10 @@ class SessionEngine:
             if tokens[i] == "--type" and i + 1 < len(tokens):
                 model_type = tokens[i + 1].lower()
                 i += 2
+                continue
             else:
                 arg = " ".join(tokens[i:])
                 break
-            i += 1
 
         if model_type not in self._MODEL_TYPES:
             return {
@@ -432,7 +436,8 @@ class SessionEngine:
         # No argument — show models
         if not arg:
             models = {t: {"current": overrides[t] or defaults[t], "default": defaults[t]} for t in self._MODEL_TYPES}
-            return {"command": "model", "data": {"models": models}}
+            available = self._available_models()
+            return {"command": "model", "data": {"models": models, "available": available}}
 
         default = defaults[model_type]
         current = overrides[model_type] or default
@@ -468,6 +473,17 @@ class SessionEngine:
                 active.sentinel.set_model(name or self._config.agent.sentinel_model)
         elif model_type == "title":
             active.title_model_name = name
+
+    def _available_models(self) -> list[str]:
+        """Return deduplicated sorted list of available models."""
+        return sorted(
+            {
+                self._config.agent.model,
+                self._config.agent.sentinel_model,
+                self._config.agent.title_model,
+                *self._config.agent.available_models,
+            }
+        )
 
     # -- internal turn runner --
 

@@ -131,6 +131,9 @@ def format_command_result_text(result: CommandResult) -> str:
                     if info["current"] != info["default"]:
                         line += f" (default: `{info['default']}`)"
                     lines.append(line)
+                if data.get("available"):
+                    lines.append("")
+                    lines.append("**Available:** " + ", ".join(f"`{m}`" for m in data["available"]))
                 return "\n".join(lines)
             reply = f"**Current model:** `{data['current']}`"
             if data.get("default") and data["default"] != data["current"]:

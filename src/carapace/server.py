@@ -449,6 +449,11 @@ async def list_commands(_token: str = Depends(_verify_token)) -> list[dict[str, 
     return SLASH_COMMANDS
 
 
+@router.get("/models")
+async def list_models(_token: str = Depends(_verify_token)) -> list[str]:
+    return _engine.available_models
+
+
 class WebSocketSubscriber:
     """Thin adapter: forwards ``SessionEngine`` events to a WebSocket."""
 

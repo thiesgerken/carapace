@@ -91,6 +91,10 @@ class AgentConfig(BaseModel):
     model: str = "anthropic:claude-sonnet-4-6"
     sentinel_model: str = "anthropic:claude-haiku-4-5"
     title_model: str = "anthropic:claude-haiku-4-5"
+
+    # the default models are added automatically + this is only used for autocomplete, not enforced.
+    available_models: list[str] = []
+
     max_parallel_llm: int = 2
 
 

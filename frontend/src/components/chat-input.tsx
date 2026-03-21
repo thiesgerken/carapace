@@ -12,6 +12,8 @@ function formatTokens(n: number): string {
   return String(n);
 }
 
+const MODEL_TYPES = ["agent", "sentinel", "title"];
+
 interface ChatInputProps {
   onSend: (content: string) => void;
   onCancel?: () => void;
@@ -20,6 +22,7 @@ interface ChatInputProps {
   waiting?: boolean;
   queuedMessage?: string | null;
   commands?: SlashCommand[];
+  availableModels?: string[];
   usage?: TurnUsage | null;
 }
 
@@ -31,6 +34,7 @@ export function ChatInput({
   waiting,
   queuedMessage,
   commands = [],
+  availableModels = [],
   usage,
 }: ChatInputProps) {
   const [value, setValue] = useState("");
@@ -57,6 +61,64 @@ export function ChatInput({
     const prefix = value.toLowerCase();
     return commands.filter((c) => c.command.startsWith(prefix));
   }, [value, showMenu, commands]);
+
+  // Model argument autocomplete for /model command
+  const modelSuggestions = useMemo((): { items: string[]; prefix: string } => {
+    const lower = value.toLowerCase().trimEnd();
+    if (!lower.startsWith("/model ")) return { items: [], prefix: "" };
+
+    const afterCmd = value.slice(7); // after "/model "
+    const tokens = afterCmd.trimEnd().split(/\s+/);
+    const partial = afterCmd.endsWith(" ") ? "" : (tokens.pop() ?? "");
+    const preceding = tokens.join(" ").toLowerCase();
+
+    // After "--type": suggest type names
+    if (preceding === "--type" || (preceding === "" && partial === "--type")) {
+      return { items: [], prefix: "" };
+    }
+    if (lower.endsWith("--type ") || (preceding === "" && partial === "--typ")) {
+      // partial is after "--type "
+      return { items: [], prefix: "" };
+    }
+    // Check if we're completing the --type value
+    const endsWithTypeFlag = preceding.endsWith("--type") || preceding === "--type";
+    if (endsWithTypeFlag) {
+      const filtered = MODEL_TYPES.filter((t) => t.startsWith(partial.toLowerCase()));
+      return { items: filtered, prefix: partial };
+    }
+
+    // Suggest "--type" as an option alongside models
+    const suggestions: string[] = [];
+    const p = partial.toLowerCase();
+
+    if (!preceding.includes("--type") && "--type".startsWith(p) && p.length > 0) {
+      suggestions.push("--type");
+    }
+
+    for (const m of availableModels) {
+      if (m.toLowerCase().startsWith(p)) suggestions.push(m);
+    }
+
+    if (p === "" && !preceding.includes("--type")) {
+      suggestions.unshift("--type");
+    } else if (p === "") {
+      for (const m of availableModels) suggestions.push(m);
+    }
+
+    return { items: suggestions, prefix: partial };
+  }, [value, availableModels]);
+
+  const showModelMenu = modelSuggestions.items.length > 0;
+
+  const selectModelSuggestion = useCallback(
+    (item: string) => {
+      const prefix = value.slice(0, value.length - modelSuggestions.prefix.length);
+      const suffix = item === "--type" ? item + " " : item;
+      setValue(prefix + suffix);
+      textareaRef.current?.focus();
+    },
+    [value, modelSuggestions.prefix],
+  );
 
   // Scroll selected item into view
   useEffect(() => {
@@ -96,20 +158,27 @@ export function ChatInput({
   }, [value, connected, waiting, queuedMessage, onInterrupt, clearInput]);
 
   function handleKeyDown(e: React.KeyboardEvent) {
-    if (showMenu && filtered.length > 0) {
+    const activeMenu = showMenu ? "commands" : showModelMenu ? "models" : null;
+    const menuLength = activeMenu === "commands" ? filtered.length : activeMenu === "models" ? modelSuggestions.items.length : 0;
+
+    if (activeMenu && menuLength > 0) {
       if (e.key === "ArrowDown") {
         e.preventDefault();
-        setSelectedIndex((i) => (i + 1) % filtered.length);
+        setSelectedIndex((i) => (i + 1) % menuLength);
         return;
       }
       if (e.key === "ArrowUp") {
         e.preventDefault();
-        setSelectedIndex((i) => (i - 1 + filtered.length) % filtered.length);
+        setSelectedIndex((i) => (i - 1 + menuLength) % menuLength);
         return;
       }
       if (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey)) {
         e.preventDefault();
-        selectCommand(filtered[selectedIndex].command);
+        if (activeMenu === "commands") {
+          selectCommand(filtered[selectedIndex].command);
+        } else {
+          selectModelSuggestion(modelSuggestions.items[selectedIndex]);
+        }
         return;
       }
       if (e.key === "Escape") {
@@ -186,6 +255,41 @@ export function ChatInput({
                 </span>
                 <span className="text-xs text-muted-foreground truncate">
                   {cmd.description}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Model argument autocomplete menu */}
+        {showModelMenu && (
+          <div
+            ref={menuRef}
+            className={cn(
+              "absolute bottom-full left-0 right-0 z-50 mb-1 max-h-60 overflow-y-auto",
+              "rounded-xl border border-border bg-background shadow-lg",
+              "py-1",
+            )}
+          >
+            {modelSuggestions.items.map((item, i) => (
+              <button
+                key={item}
+                type="button"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  selectModelSuggestion(item);
+                }}
+                onMouseEnter={() => setSelectedIndex(i)}
+                className={cn(
+                  "flex w-full items-baseline gap-3 px-3 py-1.5 text-left text-sm",
+                  "transition-colors",
+                  i === selectedIndex
+                    ? "bg-accent text-accent-foreground"
+                    : "text-foreground hover:bg-accent/50",
+                )}
+              >
+                <span className="font-mono text-xs font-medium shrink-0">
+                  {item}
                 </span>
               </button>
             ))}

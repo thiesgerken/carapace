@@ -88,6 +88,7 @@ export function CommandResultView({ command, data }: CommandResultViewProps) {
       return <p className="my-1 text-sm text-muted-foreground">{data.message}</p>;
     if (data.models) {
       const models = data.models as Record<string, { current: string; default: string }>;
+      const available = (data.available ?? []) as string[];
       return (
         <div className="my-2 text-sm">
           <table className="w-full">
@@ -110,6 +111,17 @@ export function CommandResultView({ command, data }: CommandResultViewProps) {
               ))}
             </tbody>
           </table>
+          {available.length > 0 && (
+            <p className="mt-2 text-xs text-muted-foreground">
+              <span className="font-medium">Available: </span>
+              {available.map((m, i) => (
+                <span key={m}>
+                  {i > 0 && ", "}
+                  <code className="text-foreground">{m}</code>
+                </span>
+              ))}
+            </p>
+          )}
         </div>
       );
     }
@@ -168,6 +180,7 @@ function isModelData(
   message?: string;
   error?: string;
   models?: Record<string, { current: string; default: string }>;
+  available?: string[];
 } {
   return !!d && typeof d === "object";
 }

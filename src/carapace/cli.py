@@ -157,6 +157,9 @@ def _render_command_result(data: dict[str, Any]) -> None:
                 for model_type, info in payload["models"].items():
                     marker = " [dim](overridden)[/dim]" if info["current"] != info["default"] else ""
                     console.print(f"  [bold]{model_type}:[/bold] {info['current']}{marker}")
+                if payload.get("available"):
+                    console.print()
+                    console.print("  [dim]Available:[/dim] " + ", ".join(payload["available"]))
             else:
                 console.print(f"[bold]Current model:[/bold] {payload['current']}")
                 if payload.get("default") and payload["default"] != payload["current"]:
