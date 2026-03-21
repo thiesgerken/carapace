@@ -1,113 +1,100 @@
 # Sandbox Architecture
 
-All agent execution happens in Docker containers. Carapace itself (the orchestrator) runs on the host (or in its own container with the Docker socket mounted), but every tool invocation, script execution, and shell command runs inside containers.
+All agent tool invocations — script execution, shell commands, file operations — run inside a sandboxed container. Carapace itself (the server) runs on the host (or in its own container/pod), but every agent action runs inside an isolated container.
 
-## Two-tier execution model
+## Execution model
+
+Each session gets a single sandbox container. The container provides the agent with a workspace where it can read files, run commands, and interact with skills.
 
 ```mermaid
 flowchart LR
-    subgraph base ["Base Container (read-only, no network)"]
-        ReadOps["Read files
-        List skills
-        Search memory
-        Shell read commands
-        Explore workspace"]
+    subgraph carapace [Carapace Server]
+        Agent[Agent Tools]
+        Proxy[HTTP Forward Proxy]
     end
 
-    subgraph skills ["Skill Containers (action-oriented)"]
-        WriteOps["Run skill scripts
-        Network access
-        Write to /tmp/shared
-        API calls
-        Send emails"]
+    subgraph container ["Session Container (Alpine + Python + uv)"]
+        Workspace["/workspace/"]
+        Skills["/workspace/skills/"]
+        Memory["/workspace/memory/ (read-only)"]
+        Tmp["/workspace/tmp/"]
     end
 
-    subgraph orchestrator [Carapace Orchestrator]
-        Apply["Apply approved writes
-        from /tmp/shared to
-        skills/ and memory/"]
+    subgraph external [Internet]
+        APIs[Web / APIs]
     end
 
-    base -->|"agent reads, explores, plans"| skills
-    skills -->|"results via /tmp/shared"| base
-    skills -->|"proposed writes via /tmp/shared"| orchestrator
+    Agent <-->|exec, file ops| container
+    container -->|outbound traffic via HTTP_PROXY| Proxy
+    Proxy -->|allowed domains only| APIs
 ```
 
-### Base container
+### Container capabilities
 
-A pre-warmed, Alpine + Python container that serves as the agent's primary workspace:
+- **Shell access**: The agent runs commands via `exec` (equivalent to `docker exec` / `kubectl exec`)
+- **File operations**: `read`, `write`, `edit`, `apply_patch` work directly on the container filesystem
+- **Network access**: All outbound traffic goes through the HTTP forward proxy, which enforces per-session domain allowlisting
+- **Skills**: Activated skills are copied into the container with their venvs built via `uv sync`
+- **Workspace files**: `AGENTS.md`, `SOUL.md`, `USER.md`, and `SECURITY.md` are working copies the agent can edit. Changes are made permanent via `save_workspace_file`.
 
-- **Read-only mounts** for skills, memory, and workspace files
-- **No network access** -- ever
-- **Read-write access** only to `/tmp/shared` (session-scoped)
+## Mounts
 
-The agent can freely explore files, read skill catalogs, search memory, and run read-only shell commands (`ls`, `cat`, `grep`, `find`) here. Since it can't write to any persistent location or reach the network, there is minimal security risk -- the agent can look at everything without being able to act on it or leak it.
+When a session container is created, the following mounts are configured:
 
-Shell commands classified as write or execute operations trigger the `shell-write` rule and require approval before the command runs.
+| Host source | Container path | Mode | Purpose |
+| --- | --- | --- | --- |
+| `sessions/{sid}/workspace/AGENTS.md` | `/workspace/AGENTS.md` | read-write | Working copy of behavioral guide |
+| `sessions/{sid}/workspace/SOUL.md` | `/workspace/SOUL.md` | read-write | Working copy of personality |
+| `sessions/{sid}/workspace/USER.md` | `/workspace/USER.md` | read-write | Working copy of user context |
+| `sessions/{sid}/workspace/SECURITY.md` | `/workspace/SECURITY.md` | read-write | Working copy of security policy |
+| `memory/` | `/workspace/memory/` | **read-only** | Memory files (agent uses `write_memory` tool instead) |
+| `sessions/{sid}/workspace/skills/` | `/workspace/skills/` | read-write | Activated skills |
+| `sessions/{sid}/workspace/tmp/` | `/workspace/tmp/` | read-write | Scratch space |
 
-### Skill containers
-
-Where all _actions_ happen. Each skill with a `Dockerfile` gets its own container image, built and cached by Carapace. Skills without a `Dockerfile` use a default sandbox image (generic Python + common tools).
-
-Skill containers can have:
-
-- **Network access** -- per skill, declared in `carapace.yaml` (`sandbox.network: true`)
-- **Credentials** -- injected as environment variables by the Credential Broker
-- **Write access** to `/tmp/shared` -- for results and proposed writes
-
-## Shared mounts
-
-All containers (base and skill) get the same set of mounts:
-
-| Mount source                            | Container path | Mode       |
-| --------------------------------------- | -------------- | ---------- |
-| `$CARAPACE_DATA_DIR/skills/`            | `/skills`      | read-only  |
-| `$CARAPACE_DATA_DIR/memory/`            | `/memory`      | read-only  |
-| `$CARAPACE_DATA_DIR/` (workspace files) | `/workspace`   | read-only  |
-| `$CARAPACE_DATA_DIR/tmp/<session_id>`   | `/tmp/shared`  | read-write |
-
-The workspace mount (`/workspace`) exposes the top-level files: `AGENTS.md`, `SOUL.md`, `USER.md`, `TOOLS.md`, `HEARTBEAT.md`, `config.yaml`, `SECURITY.md`.
-
-## Shared temp directory
-
-`/tmp/shared` is the only writable mount, scoped per session. It serves three purposes:
-
-1. **Inter-container data exchange** -- a skill script writes `result.json`, the base container reads it
-2. **Proposed writes** -- the agent writes to `/tmp/shared/pending/{memory,skills}/...`, the orchestrator applies after approval
-3. **Scratch space** -- temporary files during computation
-
-## How writes work
-
-The base container and skill containers both mount `skills/` and `memory/` as read-only. When the agent wants to write (to memory, skills, or workspace files):
-
-1. Agent writes the proposed content to `/tmp/shared/pending/<target_path>`
-2. The write triggers the relevant rule (`memory-write`, `skill-modification`, etc.)
-3. Approval request is sent to the user showing exactly what will be written
-4. On approval, the **Carapace orchestrator** (running on the host) copies the files from the pending directory to the actual location
-5. The pending directory is cleaned up
-
-This keeps containers truly read-only while still allowing gated writes.
+Workspace files (`AGENTS.md`, `SOUL.md`, `USER.md`, `SECURITY.md`) are **copied** into the session workspace on container creation. The agent can freely edit these working copies. To apply changes permanently (to the master copy in `$CARAPACE_DATA_DIR/`), the agent uses the `save_workspace_file` tool, which is gated by the security sentinel.
 
 ## Network policy
 
-| Container                                       | Network         |
-| ----------------------------------------------- | --------------- |
-| Base container                                  | Blocked, always |
-| Skill containers (default)                      | Blocked         |
-| Skill containers (with `sandbox.network: true`) | Allowed         |
+All outbound traffic from sandbox containers is routed through the Carapace server's HTTP forward proxy:
 
-Network access for skill containers is declared per-skill in `carapace.yaml`. The default is no network.
+- Containers receive only `HTTP_PROXY` / `HTTPS_PROXY` environment variables pointing to the proxy
+- No direct internet access — enforced by Docker network isolation or Kubernetes NetworkPolicy
+- The proxy uses per-session token-based authentication (injected as `Proxy-Authorization` via environment setup script)
+
+### Domain allowlisting
+
+Each session maintains a domain allowlist. Domains are added when:
+
+1. **Skill activation**: Domains declared in a skill's `carapace.yaml` (`network.domains`) are automatically added when the skill is activated
+2. **Sentinel approval**: Unknown domains are evaluated by the sentinel. If allowed, they're added for the current exec call. If escalated, the user decides.
+3. **Proxy bypass**: During skill venv builds (`uv sync`), the proxy is temporarily bypassed to allow package downloads
+
+The proxy supports exact domain matching (`example.com`) and wildcard matching (`*.example.com`).
 
 ## Container lifecycle
 
-- **Base container**: Pre-warmed at session start (created when the session begins, kept running). Shell commands execute via `docker exec` into this running container. Destroyed after idle timeout.
-- **Skill containers**: Created on first invocation of that skill within a session. Kept running for reuse within the session. Destroyed after idle timeout.
-- **Idle timeout**: Configurable (default: 15 min). After timeout, all containers for a session are destroyed. Sessions themselves persist (history, state) -- only containers are ephemeral.
-- **Pre-warming**: When the user sends a new message after containers expired, a new base container is created immediately. This introduces some latency on the first message after idle, but subsequent operations are fast.
+- **Creation**: A container is created (or ensured running) when a session needs it — typically on the first tool call
+- **Reuse**: The container stays running for the session's duration. Multiple tool calls reuse the same container.
+- **Idle timeout**: Configurable (default: 15 min). After timeout, containers are destroyed. Sessions themselves persist (history, state) — only containers are ephemeral.
+- **Re-warming**: When the user sends a new message after containers expired, a new container is created with the same mounts. Activated skill venvs are rebuilt automatically.
+
+## Runtimes
+
+Carapace supports two sandbox runtimes, configured via `CARAPACE_SANDBOX_RUNTIME`:
+
+### Docker
+
+The default runtime. Uses the Docker socket (`/var/run/docker.sock`) to manage containers. Sandbox containers run on an internal Docker network (`carapace-sandbox`) with no direct internet access.
+
+### Kubernetes
+
+For cluster deployments. Sandbox sessions run as Kubernetes pods with commands executed via the Kubernetes exec API. See [kubernetes.md](kubernetes.md) for full details.
+
+Both runtimes implement the same `SandboxRuntime` interface, so the rest of Carapace doesn't need to know which backend is in use.
 
 ## Docker socket
 
-Carapace needs access to the Docker socket to orchestrate containers. In a Docker Compose deployment, this means mounting `/var/run/docker.sock`:
+In Docker mode, Carapace needs access to the Docker socket:
 
 ```yaml
 services:
@@ -116,4 +103,4 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
 ```
 
-The orchestrator uses the Docker SDK for Python (docker-py) to manage container lifecycle, image builds, and `docker exec` commands.
+The server uses the Docker SDK for Python to manage container lifecycle, and `docker exec` for command execution.

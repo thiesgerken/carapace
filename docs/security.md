@@ -47,7 +47,6 @@ The default policy covers:
 - **External communication** -- outbound actions require approval unless explicitly requested.
 - **Memory** -- writes to persistent memory require approval.
 - **Skills** -- activation is fine; modification requires approval.
-- **Credentials** -- first use per session requires approval.
 - **Autonomy and vigilance** -- more scrutiny when the agent has been running unattended or after consuming unsanitized external content.
 - **Proxy domain requests** -- plausibility checks for network requests from sandboxed containers.
 
@@ -60,9 +59,9 @@ The following tools are auto-allowed without consulting the sentinel:
 | Tool          | Reason                                         |
 | ------------- | ---------------------------------------------- |
 | `read`        | File reads are always safe                     |
-| `write`       | Writes to the agent's scratchpad/workspace     |
-| `edit`        | File edits in the agent's workspace            |
-| `apply_patch` | Patch application in the agent's workspace     |
+| `write`       | File writes in the sandbox                     |
+| `edit`        | File edits in the sandbox                      |
+| `apply_patch` | Batch edits across files in the sandbox        |
 | `read_memory` | Memory reads are non-destructive               |
 | `list_skills` | Listing available skills is informational      |
 | `use_skill`   | Activating a skill loads trusted documentation |
@@ -113,7 +112,7 @@ The action log serves as the sentinel's primary source of truth. Raw tool result
 
 ## Audit log
 
-Every security decision is written to a per-session audit log file at `$CARAPACE_DATA_DIR/sessions/<session_id>/audit.jsonl`. Each entry includes:
+Every security decision is written to a per-session audit log file at `$CARAPACE_DATA_DIR/sessions/<session_id>/audit.yaml`. Each entry includes:
 
 - Timestamp
 - Whether it was a tool call or proxy domain request
@@ -147,7 +146,7 @@ Users can interact with the security system through slash commands:
 
 | Command            | Description                                                                           |
 | ------------------ | ------------------------------------------------------------------------------------- |
-| `/security`        | Show the current security policy and a summary of the action log                      |
+| `/security`        | Show the current security policy and a summary of the action log |
 | `/approve-context` | Record a `UserVouchedEntry` in the action log, signaling trust in the current context |
 
 ## Prompt injection hardening

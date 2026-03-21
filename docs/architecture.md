@@ -7,160 +7,164 @@ This document describes Carapace's high-level architecture, component responsibi
 ```mermaid
 flowchart TB
     subgraph channels [Channels]
+        WebUI["Web Frontend (Next.js)"]
         MatrixCh[Matrix Channel]
-        CronCh[Cron Trigger]
-        WebhookCh[Webhook / Email Trigger]
-        WebUI["Web Frontend (future)"]
     end
 
     subgraph carapace [Carapace Core]
-        ChannelRouter[Channel Router]
+        SessionEngine[Session Engine]
         SessionMgr[Session Manager]
         SecurityMod["Security Module"]
         Sentinel["Sentinel Agent (LLM)"]
         ApprovalGate[Approval Gate]
-        Agent[Pydantic AI Agent]
+        AgentLoop[Agent Loop]
+        Agent["Pydantic AI Agent"]
         SkillRegistry[Skill Registry]
-        CredentialBroker[Credential Broker]
         MemoryStore[Memory Store]
+        Proxy[HTTP Forward Proxy]
     end
 
-    subgraph docker [Docker Containers]
-        BaseContainer["Base Container -- Alpine + Python -- read-only, no network"]
-        SkillContainer["Skill Container -- from skill Dockerfile -- with credentials"]
+    subgraph sandbox [Sandbox Container]
+        Container["Session Container<br/>(Alpine + Python + uv)"]
     end
 
     subgraph external [External Services]
-        Vault[Password Manager]
         Web[Web / APIs]
     end
 
     subgraph datadir ["$CARAPACE_DATA_DIR"]
         Config[config.yaml]
+        SecurityPolicy[SECURITY.md]
+        WorkspaceFiles["AGENTS.md · SOUL.md · USER.md"]
         Sessions[sessions/]
         Skills[skills/]
         Memory[memory/]
-        Tmp[tmp/]
     end
 
-    MatrixCh & CronCh & WebhookCh & WebUI --> ChannelRouter
-    ChannelRouter <--> SessionMgr
-    SessionMgr <--> Agent
+    WebUI & MatrixCh --> SessionEngine
+    SessionEngine <--> SessionMgr
+    SessionEngine --> AgentLoop
+    AgentLoop <--> Agent
     Agent <--> SkillRegistry
     Agent <--> MemoryStore
     Agent --> SecurityMod
     SecurityMod -->|safe-list bypass| Agent
     SecurityMod --> Sentinel
     Sentinel --> ApprovalGate
-    ApprovalGate -.->|approval request| ChannelRouter
-    Sentinel -.->|reads skill docs| Skills
-    CredentialBroker <--> Vault
-    CredentialBroker --> BaseContainer
-    CredentialBroker --> SkillContainer
-    Agent <--> BaseContainer
-    SkillRegistry --> SkillContainer
+    ApprovalGate -.->|approval request| SessionEngine
 
-    Skills -.-> BaseContainer
-    Skills -.-> SkillContainer
-    Memory -.-> BaseContainer
-    Memory -.-> SkillContainer
-    Tmp -.-> BaseContainer
-    Tmp -.-> SkillContainer
+    Agent <-->|exec, file ops| Container
+    Container -->|outbound traffic| Proxy
+    Proxy --> Web
+
+    Skills -.-> Container
+    Memory -.->|read-only| Container
+    WorkspaceFiles -.-> Container
 ```
 
 ## Component responsibilities
 
-### Channel Router
+### Session Engine
 
-Receives inbound messages from all channel adapters and routes them to the Session Manager. On the outbound side, routes agent messages and approval requests back to the correct channel.
+The central coordinator. Receives inbound messages from all channel subscribers (WebSocket, Matrix), manages session lifecycle, routes approval requests, runs agent turns, and broadcasts results back to subscribers. See [sessions-and-channels.md](sessions-and-channels.md).
 
 ### Session Manager
 
-Creates, resumes, and manages sessions. Each session has an associated `SessionSecurity` object that holds the action log, sentinel conversation state, and audit log. The session is the core abstraction -- it is decoupled from any specific channel. See [sessions-and-channels.md](sessions-and-channels.md).
+Handles session persistence — creating, loading, saving, listing, and deleting sessions on disk. Each session's state, history, events, usage, and audit trail are stored as YAML files under `$CARAPACE_DATA_DIR/sessions/<session_id>/`.
+
+### Agent Loop
+
+Orchestrates a single agent turn: streams tokens to subscribers, handles the deferred tool approval cycle (when the sentinel escalates), records usage, and returns the final response. Implements the retry loop for `DeferredToolRequests`.
 
 ### Pydantic AI Agent
 
-The main agent loop, built on [Pydantic AI](https://ai.pydantic.dev/). It receives messages from sessions, decides which tools/skills to invoke, generates plans, and produces responses. Tools are registered via Pydantic AI's tool and dependency injection system.
+The main agent, built on [Pydantic AI](https://ai.pydantic.dev/). It receives messages from sessions, decides which tools/skills to invoke, and produces responses. Registered tools:
+
+| Tool | Description |
+| --- | --- |
+| `list_skills` | List available skills (names + descriptions) |
+| `use_skill` | Activate a skill: copy to sandbox, build venv, load instructions |
+| `save_skill` | Persist edited skill back to master directory |
+| `save_workspace_file` | Save workspace file changes from sandbox to data directory |
+| `read` | Read a file or list a directory inside the sandbox |
+| `write` | Write content to a file in the sandbox |
+| `edit` | Search-and-replace edit of a file in the sandbox |
+| `apply_patch` | Batch edits across multiple files in the sandbox |
+| `exec` | Run a shell command in the sandbox (default timeout: 30s) |
+| `read_memory` | Read a memory file or search memory |
+| `write_memory` | Write/update a persistent memory file |
 
 ### Security Module
 
-The central security gate. Every tool call passes through `security.evaluate()`. A hardcoded safe-list auto-allows known-harmless operations (reads, memory reads, skill listing). Everything else is forwarded to the sentinel agent. See [security.md](security.md).
+The central security gate. Every tool call passes through `security.evaluate()`. A hardcoded safe-list auto-allows known-harmless operations. Everything else is forwarded to the sentinel agent. See [security.md](security.md).
 
 ### Sentinel Agent
 
-An LLM-powered agent that evaluates actions against the natural-language `SECURITY.md` policy. Maintains a persistent "shadow conversation" per session, giving it full context of the session history. Has restricted tool access (can read skill directories but not the agent's workspace) and returns structured verdicts (allow / escalate / deny). See [security.md](security.md).
+An LLM-powered agent that evaluates actions against the natural-language `SECURITY.md` policy. Maintains a persistent "shadow conversation" per session, giving it full context of the session history. Returns structured verdicts (allow / escalate / deny). See [security.md](security.md).
 
 ### Approval Gate
 
-When the sentinel escalates an operation, the Approval Gate sends a structured approval request through the session's channel and waits for a response (approve/deny). The request includes the sentinel's explanation and risk assessment. For non-interactive sessions (cron, webhook), approvals are routed to a configured interactive channel. See [sessions-and-channels.md](sessions-and-channels.md).
+When the sentinel escalates an operation, the agent loop sends a structured approval request to all session subscribers (WebSocket clients, Matrix rooms) and waits for a response (approve/deny). The request includes the sentinel's explanation and risk assessment.
 
 ### Skill Registry
 
-Loads skill metadata (name, description) from all skills at startup for the agent's catalog. Handles full skill activation (loading the complete SKILL.md body into context) when the agent decides a skill is relevant. Manages skill container lifecycle. See [skills.md](skills.md).
-
-### Credential Broker
-
-Fetches credentials from an external password manager on demand after per-session user approval. Credentials are injected into skill containers as environment variables and held in-memory only (never persisted to disk). See [credentials.md](credentials.md).
+Loads skill metadata (name, description) from each skill's `SKILL.md` frontmatter at startup. The full `SKILL.md` body is loaded only when the agent activates a skill. See [skills.md](skills.md).
 
 ### Memory Store
 
-Reads and writes Markdown-based memory files. Provides vector search over memory using local embeddings. Memory writes are rule-gated. See [memory.md](memory.md).
+Reads and writes Markdown-based memory files under `$CARAPACE_DATA_DIR/memory/`. Provides case-insensitive text search over all memory files. See [memory.md](memory.md).
+
+### HTTP Forward Proxy
+
+An async forward proxy (HTTP + HTTPS CONNECT) running inside the Carapace server process. All outbound traffic from sandbox containers is routed through this proxy. It enforces per-session domain allowlisting with token-based authentication and delegates unknown domain requests to the security module for sentinel evaluation or user approval. See [sandbox.md](sandbox.md).
 
 ## Data flow example
 
-This sequence shows what happens when a user asks: "Summarize Q4 expenses and email to accountant."
+This sequence shows what happens when a user asks: "Search the web for Python 3.14 release notes."
 
 ```mermaid
 sequenceDiagram
     participant User
-    participant Channel as Channel Adapter
-    participant Agent
+    participant Frontend as Web Frontend
+    participant Engine as Session Engine
+    participant Agent as Agent Loop
     participant Security as Security Module
     participant Sentinel as Sentinel Agent
-    participant Gate as Approval Gate
-    participant CredBroker as Credential Broker
-    participant Vault as Vaultwarden
-    participant SkillCtr as Skill Container
+    participant Sandbox as Sandbox Container
+    participant Proxy as HTTP Proxy
 
-    User->>Channel: "Summarize Q4 expenses and email to accountant"
-    Channel->>Agent: new message in session
+    User->>Frontend: "Search the web for Python 3.14 release notes"
+    Frontend->>Engine: WebSocket message
+    Engine->>Agent: run_agent_turn()
 
-    Note over Agent: Agent plans: read expenses, then email summary
+    Note over Agent: Agent decides to activate web-search skill
 
-    Agent->>Security: evaluate(finance_reader.get_expenses)
+    Agent->>Security: evaluate(use_skill, "web-search")
+    Security-->>Agent: auto-allowed (safe-list)
+
+    Note over Agent: Skill loaded, agent runs search script
+
+    Agent->>Security: evaluate(exec, "uv run scripts/search.py ...")
     Security->>Sentinel: evaluate tool call
-    Sentinel-->>Security: verdict: escalate (credential access)
+    Sentinel-->>Security: verdict: allow (read-only web search)
 
-    Gate->>Channel: Approval request (sentinel explanation + risk level)
-    User->>Channel: approve
+    Agent->>Sandbox: exec("uv run scripts/search.py ...")
+    Sandbox->>Proxy: CONNECT search.example.com:443
+    Proxy->>Proxy: domain in skill's declared domains → allowed
+    Proxy->>Sandbox: connection established
+    Sandbox-->>Agent: search results
 
-    CredBroker->>Vault: fetch carapace/finance-api
-    Vault-->>CredBroker: credential
-    CredBroker->>SkillCtr: inject env, run scripts/query.py
-    SkillCtr-->>Agent: expense data via /tmp/shared
-
-    Note over Agent: Agent proceeds to email step
-
-    Agent->>Security: evaluate(email_sender.send_email)
-    Security->>Sentinel: evaluate tool call (context: user approved finance read)
-    Sentinel-->>Security: verdict: escalate (outbound after sensitive data)
-
-    Gate->>Channel: Approval request
-    User->>Channel: approve
-
-    CredBroker->>Vault: fetch carapace/gmail
-    CredBroker->>SkillCtr: inject env, run scripts/send.py
-    SkillCtr-->>Agent: email sent
-
-    Agent->>Channel: "Done! Sent Q4 expense summary to your accountant."
+    Agent->>Engine: streamed response with search summary
+    Engine->>Frontend: TokenChunk messages
+    Frontend->>User: "Here are the Python 3.14 release notes..."
 ```
 
 ## Deployment
 
-Carapace runs as a Docker container with the Docker socket mounted (to orchestrate child containers for tools and skills).
+Carapace runs as a Docker container with the Docker socket mounted (to orchestrate sandbox containers), alongside a Next.js web frontend.
 
 ```yaml
-# docker-compose.yaml
+# docker-compose.yaml (simplified)
 services:
   carapace:
     build: .
@@ -169,110 +173,56 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
       - CARAPACE_DATA_DIR=/data
-      - CARAPACE_LLM_API_KEY=${CARAPACE_LLM_API_KEY}
-      - CARAPACE_VAULT_TOKEN=${CARAPACE_VAULT_TOKEN}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+    ports:
+      - "8321:8321"
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "3001:3000"
 ```
 
-The `$CARAPACE_DATA_DIR` environment variable (defaults to `./data`) points to the data directory. All persistent state -- config, security policy, skills, memory, sessions, logs -- lives there.
+For Kubernetes deployments, the Docker socket is replaced by in-cluster Kubernetes API access — see [kubernetes.md](kubernetes.md).
+
+The `$CARAPACE_DATA_DIR` environment variable (defaults to `./data`) points to the data directory. All persistent state — config, security policy, workspace files, skills, memory, sessions — lives there.
 
 ## Configuration
 
-All configuration lives in `$CARAPACE_DATA_DIR/config.yaml`.
+Configuration lives in `$CARAPACE_DATA_DIR/config.yaml`. The default configuration (seeded on first run) sets only the LLM models:
+
+```yaml
+agent:
+  model: "anthropic:claude-sonnet-4-6"
+  sentinel_model: "anthropic:claude-haiku-4-5"
+  title_model: "anthropic:claude-haiku-4-5"
+  max_parallel_llm: 2
+```
+
+Additional configuration sections:
 
 ```yaml
 carapace:
   log_level: info
 
+server:
+  host: "0.0.0.0"
+  port: 8321
+  cors_origins: []
+
 channels:
   matrix:
-    enabled: true
+    enabled: false
     homeserver: https://matrix.example.com
     user_id: "@carapace:example.com"
-    device_name: carapace
-    allowed_rooms: []
     allowed_users:
       - "@me:example.com"
 
-  cron:
-    enabled: false
-    jobs:
-      - id: daily-email-check
-        schedule: "0 9 * * *"
-        instructions: "Check my inbox for urgent emails and summarize."
-        approval_target:
-          channel: matrix
-          dm: "@me:example.com"
-
-agent:
-  model: anthropic:claude-sonnet-4-5
-  sentinel_model: anthropic:claude-haiku
-
-credentials:
-  backend: vaultwarden
-  vaultwarden:
-    url: https://vault.example.com
-    # auth token via CARAPACE_VAULT_TOKEN env var
-
 sandbox:
-  # base_image: ""  # leave empty to auto-build from bundled Dockerfile
+  runtime: docker           # "docker" or "kubernetes"
+  base_image: carapace-sandbox:latest
   idle_timeout_minutes: 15
-  default_network: false
-
-memory:
-  search:
-    enabled: true
-    provider: local
-    local_model: all-MiniLM-L6-v2
+  proxy_port: 3128
 ```
 
-## Filesystem layout
-
-```text
-$CARAPACE_DATA_DIR/
-  config.yaml               # main configuration
-  SECURITY.md               # natural-language security policy (sentinel system prompt)
-  AGENTS.md                 # master behavioral guide (loaded every session)
-  SOUL.md                   # agent personality (evolvable)
-  USER.md                   # about the human (learned over time)
-  TOOLS.md                  # local environment notes
-  HEARTBEAT.md              # periodic task checklist
-  sessions/
-    <session_id>/
-      history.jsonl          # conversation log
-      state.yaml             # session state
-      audit.jsonl            # security audit log (sentinel decisions)
-  skills/
-    <skill_name>/
-      SKILL.md               # AgentSkills standard
-      carapace.yaml          # optional: Carapace extensions
-      Dockerfile             # optional: custom runtime
-      scripts/
-      references/
-      assets/
-  memory/
-    CORE.md                  # curated long-term memory
-    daily/
-      YYYY-MM-DD.md
-    topics/
-      *.md
-    .index/                  # vector search index (SQLite)
-  tmp/                       # shared writable volume for containers
-  logs/
-    carapace.log
-```
-
-## Technology stack
-
-| Component               | Technology                                      |
-| ----------------------- | ----------------------------------------------- |
-| Language                | Python 3.12+                                    |
-| Agent framework         | Pydantic AI                                     |
-| Matrix client           | matrix-nio (async, E2EE)                        |
-| Config/models           | Pydantic v2                                     |
-| Async runtime           | asyncio + uvloop                                |
-| Container orchestration | Docker SDK for Python (docker-py)               |
-| Password manager        | Bitwarden CLI / Vaultwarden API (pluggable)     |
-| Vector search           | sentence-transformers (local), SQLite for index |
-| Observability           | Pydantic Logfire (OpenTelemetry)                |
-| Packaging               | pyproject.toml + uv                             |
-| Deployment              | Docker Compose                                  |
+LLM API keys are provided as standard environment variables (`ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`, etc.) — not through the config file.

@@ -8,8 +8,8 @@ A skill is a directory with a `SKILL.md` file (Markdown instructions with YAML f
 
 Carapace extends the format with optional files:
 
-- **`carapace.yaml`** -- security metadata: credential declarations, classification hints, sandbox config
-- **`pyproject.toml`** -- Python project with dependencies; Carapace automatically creates a venv via `uv sync` on activation
+- **`carapace.yaml`** — security metadata: network domain declarations, credential needs
+- **`pyproject.toml`** — Python project with dependencies; Carapace automatically creates a venv via `uv sync` on activation
 
 ```text
 skills/
@@ -61,38 +61,33 @@ Summarize the top results for the user.
 
 ## carapace.yaml (Carapace extension)
 
-Optional file that declares credentials the skill needs, hints for the Classifier, and sandbox requirements.
+Optional file that declares network domains the skill needs and credentials it uses.
 
 ```yaml
+network:
+  domains:
+    - "api.searxng.example.com"
+    - "*.search.example.com"
+
 credentials:
   - name: SEARXNG_URL
     vault_path: "carapace/searxng"
     inject_as: env
     env_var: SEARXNG_URL
-
-hints:
-  likely_classification: read_external
-
-sandbox:
-  network: true
 ```
 
 ### Fields
 
-**`credentials`** -- list of credentials the skill needs. Each entry has:
+**`network.domains`** — list of domains the skill needs to access. These are automatically added to the session's proxy allowlist when the skill is activated. Supports wildcard matching (`*.example.com`).
 
-- `name` -- identifier for the credential
-- `vault_path` -- path in the password manager
-- `inject_as` -- how to inject: `env` (environment variable), `file`, or `stdin`
-- `env_var` -- environment variable name (when `inject_as: env`)
+**`credentials`** — list of credentials the skill needs. Each entry has:
 
-Credentials are fetched on demand via the Credential Broker with per-session user approval. See [credentials.md](credentials.md).
+- `name` — identifier for the credential
+- `vault_path` — path in the password manager
+- `inject_as` — how to inject: `env` (environment variable), `file`, or `stdin`
+- `env_var` — environment variable name (when `inject_as: env`)
 
-**`hints`** -- optional hints for the Operation Classifier to speed up classification. Not security-critical (the Classifier can override them).
-
-**`sandbox`** -- per-skill sandbox configuration:
-
-- `network` -- whether the skill container gets network access (default: `false`)
+> **Note**: The credential broker is not yet implemented — credential declarations are parsed but not functional. See [plans/credentials.md](plans/credentials.md).
 
 ## pyproject.toml-based dependencies
 
@@ -100,10 +95,10 @@ A skill can include a `pyproject.toml` to declare its Python dependencies. Depen
 
 ### Lifecycle
 
-1. **Activation** (`use_skill`): Carapace copies the skill into the sandbox. If a `pyproject.toml` is present, it runs `uv sync --directory /workspace/skills/<name>` to create a `.venv` with all declared dependencies. The proxy is temporarily bypassed during install.
+1. **Activation** (`use_skill`): Carapace copies the skill into the sandbox at `/workspace/skills/<name>/`. If a `pyproject.toml` is present, it runs `uv sync --directory /workspace/skills/<name>` to create a `.venv` with all declared dependencies. The proxy is temporarily bypassed during install.
 2. **Runtime**: Scripts should be invoked with `uv run --directory /workspace/skills/<name> scripts/<script>.py` so they run inside the venv.
 3. **Save** (`save_skill`): Copies the skill back to the master directory (excluding `.venv` and `__pycache__`). If there is a `pyproject.toml`, the master venv is rebuilt.
-4. **Container restart**: Venvs are rebuilt for all activated skills automatically.
+4. **Container restart**: Venvs are rebuilt for all activated skills automatically when a container is recreated after idle timeout.
 
 ### Managing dependencies
 
@@ -116,9 +111,6 @@ uv add --directory /workspace/skills/my-skill httpx
 # Remove a dependency
 uv remove --directory /workspace/skills/my-skill httpx
 
-# Generate/update the lock file without adding packages
-uv lock --directory /workspace/skills/my-skill
-
 # Install from existing lock file
 uv sync --directory /workspace/skills/my-skill
 ```
@@ -129,27 +121,27 @@ Always commit a `uv.lock` alongside `pyproject.toml` to ensure reproducible inst
 
 At startup, Carapace loads only `name` and `description` from each skill's frontmatter (~100 tokens per skill). These are injected into the agent's system prompt as a skill catalog. The agent sees what's available without the full instructions consuming context.
 
-The full `SKILL.md` body is loaded only when the agent decides a skill is relevant -- and that activation is itself recorded in the security action log.
+The full `SKILL.md` body is loaded only when the agent decides a skill is relevant — via the `use_skill` tool.
 
 ## Skill activation as a security event
 
-When the agent activates a skill (loads its full `SKILL.md` into context), a `SkillActivatedEntry` is recorded in the action log. This gives the sentinel agent context about what the agent has learned -- skill instructions reveal the user's personal infrastructure (services, credential paths, workflow patterns).
+When the agent activates a skill (loads its full `SKILL.md` into context), a `SkillActivatedEntry` is recorded in the action log. This gives the sentinel agent context about what the agent has learned — skill instructions may reveal the user's personal infrastructure (services, credential paths, workflow patterns).
 
-The sentinel uses this context when evaluating subsequent actions. For example, after the agent reads skill instructions describing email credentials, the sentinel will be more cautious about outbound network requests -- it knows the agent now has knowledge that could be exfiltrated.
+The sentinel uses this context when evaluating subsequent actions. For example, after the agent reads skill instructions describing email credentials, the sentinel will be more cautious about outbound network requests — it knows the agent now has knowledge that could be exfiltrated.
 
 The sentinel can also read skill files directly (via its `list_skill_files` and `read_skill_file` tools) to understand what a skill-related tool call will actually do.
 
 ## Self-improvement
 
-The agent can create new skills by writing files to the `skills/` directory (SKILL.md, carapace.yaml, scripts, pyproject.toml). The sentinel will escalate this for user approval per the `SECURITY.md` policy. The user sees the proposed files in their channel and approves or denies.
-
-There is no special "architect mode". Skill creation, editing, and deletion are governed by the same sentinel-based security system as everything else.
+The agent can create new skills by writing files to `/workspace/skills/` in the sandbox (SKILL.md, scripts, optional pyproject.toml, optional carapace.yaml) and then using `save_skill` to persist them. The sentinel evaluates the `save_skill` call per the `SECURITY.md` policy.
 
 The workflow for the agent to create a skill via chat:
 
 1. User asks for a new skill (or the agent proposes one)
 2. Agent plans the skill (SKILL.md, scripts, optional pyproject.toml, optional carapace.yaml)
-3. Agent proposes writes to `/tmp/shared/pending/skills/<skill-name>/`
-4. `skill-modification` rule fires -- user sees the proposed files
-5. On approval, Carapace orchestrator copies the files to `skills/`
-6. Agent can test the skill in the same session
+3. Agent writes the files in the sandbox at `/workspace/skills/<skill-name>/`
+4. Agent tests the skill in the sandbox
+5. Agent calls `save_skill` to persist — sentinel evaluates and may escalate for approval
+6. On approval, the skill is copied to the master `skills/` directory and becomes available in future sessions
+
+A built-in `create-skill` skill is seeded on first run to guide the agent through this process.
