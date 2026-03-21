@@ -74,6 +74,9 @@ export function ChatInput({
     // Don't show suggestions if there's already a complete argument with space after
     if (afterCmd.trimEnd().includes(" ")) return { items: [], prefix: "" };
 
+    // Don't show if the argument already exactly matches a model
+    if (availableModels.some((m) => m.toLowerCase() === partial)) return { items: [], prefix: "" };
+
     const suggestions = availableModels.filter((m) => m.toLowerCase().startsWith(partial));
     return { items: suggestions, prefix: afterCmd };
   }, [value, availableModels]);
