@@ -251,6 +251,7 @@ class SandboxManager:
         try:
             rel = resolved.relative_to(self._data_dir.resolve())
         except ValueError:
+            # Path is not under data_dir — use it as-is (no rewriting needed).
             return str(resolved)
         return str(self._host_data_dir / rel)
 
