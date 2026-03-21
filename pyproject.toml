@@ -80,5 +80,8 @@ patch_tags = [
     ":construction_worker:",
 ]
 
+[tool.semantic_release.changelog]
+template_dir = "templates"
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

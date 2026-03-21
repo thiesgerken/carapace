@@ -1,0 +1,34 @@
+{# Emoji to descriptive section headings #}
+{%- set LABELS = {
+    "💥": "💥 Breaking Changes",
+    "✨": "✨ Features",
+    "🐛": "🐛 Bug Fixes",
+    "🚑": "🚑 Critical Fixes",
+    "♻️": "♻️ Refactoring",
+    "⚡": "⚡ Performance",
+    "🔒": "🔒 Security",
+    "🩹": "🩹 Patches",
+    "⬆️": "⬆️ Dependencies",
+    "🔧": "🔧 Configuration",
+    "💄": "💄 UI/UX",
+    "🗑️": "🗑️ Deprecations",
+    "👷": "👷 CI/Build",
+} -%}
+# CHANGELOG
+{% for version, release in ctx.history.released.items() %}
+
+## {{ version.as_tag() }} ({{ release.tagged_date.strftime("%Y-%m-%d") }})
+{% for type_, commits in release["elements"].items() %}
+
+### {{ LABELS.get(type_, type_) }}
+{% for commit in commits %}
+
+- {{ commit.descriptions[0] }}
+  ([`{{ commit.hexsha[:7] }}`]({{ commit.hexsha | commit_hash_url }}))
+{%- for paragraph in commit.descriptions[1:] %}
+
+{{ paragraph | indent(2, first=true) }}
+{%- endfor %}
+{%- endfor %}
+{%- endfor %}
+{%- endfor %}
