@@ -1,6 +1,27 @@
 # CHANGELOG
 
 
+## v0.40.2 (2026-03-21)
+
+### Other
+
+- 📝 docs: rewrite docs to match actual implementation
+  ([`93938cf`](https://github.com/thiesgerken/carapace/commit/93938cf7f5b11d9d7507a0170c5f4f4f8f19f8a9))
+
+- Rewrite architecture.md, sandbox.md, memory.md, sessions-and-channels.md, skills.md to reflect
+  current codebase - Move credentials.md to docs/plans/ (credential broker is mock-only) - Create
+  docs/plans/ for future features: memory (vector search, daily logs), channels (cron/heartbeat,
+  E2EE), kubernetes (per-session PVCs, StatefulSets, git-backed storage) - Update security.md (audit
+  format JSONL→YAML, fix descriptions) - Update kubernetes.md (ASCII→mermaid diagram, add plans
+  link) - Update README.md: fix architecture description, remove aspirational features, update
+  status and tech stack
+
+### 🐛
+
+- 🐛 fix: resolve ESLint errors in use-websocket hook
+  ([`762a216`](https://github.com/thiesgerken/carapace/commit/762a21670d6ac2f6fe407363d53f388a613fb7a5))
+
+
 ## v0.40.1 (2026-03-21)
 
 ### ⬆️

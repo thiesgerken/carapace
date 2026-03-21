@@ -15,12 +15,13 @@ export function useWebSocket(
   const [status, setStatus] = useState<Status>("disconnected");
   const wsRef = useRef<WebSocket | null>(null);
   const onMessageRef = useRef(onMessage);
-  onMessageRef.current = onMessage;
   const onDisconnectRef = useRef(onDisconnect);
-  onDisconnectRef.current = onDisconnect;
+  useEffect(() => { onMessageRef.current = onMessage; }, [onMessage]);
+  useEffect(() => { onDisconnectRef.current = onDisconnect; }, [onDisconnect]);
   const retriesRef = useRef(0);
   const unmountedRef = useRef(false);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const connectRef = useRef<() => void>(() => {});
 
   const connect = useCallback(() => {
     if (!url || unmountedRef.current) return;
@@ -63,7 +64,7 @@ export function useWebSocket(
       retriesRef.current++;
       reconnectTimerRef.current = setTimeout(() => {
         reconnectTimerRef.current = null;
-        if (!unmountedRef.current) connect();
+        if (!unmountedRef.current) connectRef.current();
       }, delay);
     };
 
@@ -81,13 +82,16 @@ export function useWebSocket(
       }
     };
   }, [url]);
+  useEffect(() => { connectRef.current = connect; }, [connect]);
 
   useEffect(() => {
     unmountedRef.current = false;
     retriesRef.current = 0;
-    connect();
+    // Defer to avoid synchronous setState in effect body
+    const timer = setTimeout(() => connect(), 0);
 
     return () => {
+      clearTimeout(timer);
       unmountedRef.current = true;
       if (reconnectTimerRef.current !== null) {
         clearTimeout(reconnectTimerRef.current);

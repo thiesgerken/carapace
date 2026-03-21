@@ -1,72 +1,106 @@
 # Sessions and Channels
 
-Sessions are the core abstraction in Carapace. They are decoupled from any specific channel -- a session is a conversation context with its own security state. Channels create and interact with sessions, but don't own them.
+Sessions are the core abstraction in Carapace. They are decoupled from any specific channel — a session is a conversation context with its own security state. Channels create and interact with sessions, but don't own them.
 
 ## Session model
 
+Each session has a `SessionState` stored on disk:
+
 ```python
-class Session(BaseModel):
+class SessionState(BaseModel):
     session_id: str
-    channel_type: str          # "matrix" | "cron" | "webhook" | "web" | ...
-    channel_ref: str           # channel-specific ID (room_id, cron job name, etc.)
-    approved_credentials: list[str]  # credential names approved this session
-    history: Path              # path to history.jsonl
+    channel_type: str           # "cli" | "matrix" | "web" | ...
+    channel_ref: str | None     # channel-specific ID (room_id, etc.)
+    title: str | None           # auto-generated after first messages
+    approved_credentials: list[str]
+    approved_operations: list[str]
+    activated_skills: list[str]
     created_at: datetime
     last_active: datetime
 ```
 
-Each session also has an associated `SessionSecurity` object (managed by the security module) that holds the action log, sentinel conversation state, and audit trail.
+Each session also has an `ActiveSession` in-memory object (when loaded) that holds:
+
+- `SessionSecurity` — action log, audit trail, sentinel evaluation count
+- `Sentinel` — LLM sentinel agent with shadow conversation
+- `UsageTracker` — token usage with cost tracking
+- Subscriber list — connected WebSocket/Matrix clients
+- Approval queues — for tool and proxy domain approvals
+
+## Session persistence
+
+Sessions are stored on disk at `$CARAPACE_DATA_DIR/sessions/<session_id>/`:
+
+| File | Contents |
+| --- | --- |
+| `state.yaml` | Session metadata (SessionState) |
+| `history.yaml` | Full message history (agent + user messages) |
+| `events.yaml` | Event stream (tool calls, results, etc.) |
+| `usage.yaml` | Token usage breakdown by model |
+| `audit.yaml` | Security audit trail (sentinel verdicts, decisions) |
+
+Sessions persist across server restarts. In-memory state (action log, sentinel conversation) is rebuilt when a session is reactivated.
 
 ## Session lifecycle
 
-- Sessions are **persistent** -- they survive Carapace restarts. History and state are stored on disk.
-- `/reset` creates a **new session ID** and links the chat to it. The old session's history remains on disk for auditing.
-- **Approved credentials** persist with the session state. They survive container restarts but are cleared on `/reset`. The security action log and sentinel conversation are in-memory per session.
-- **Containers** are ephemeral: destroyed after an idle timeout (configurable, default 15 min). When the user sends a new message after containers expired, they are pre-warmed again.
-
-## Session triggers
-
-| Channel               | Session behavior                                                          |
-| --------------------- | ------------------------------------------------------------------------- |
-| Matrix                | One session per room by default. DMs get a persistent session.            |
-| Cron                  | A scheduled job creates a session, runs agent instructions, session ends. |
-| Webhook / Email       | An inbound event triggers a session with the event payload as context.    |
-| Web frontend (future) | A browser UI for creating, inspecting, and interacting with sessions.     |
-
-Each channel adapter decides how to map its concept of "conversation" to sessions. The Session Manager doesn't care about the channel -- it just manages lifecycle and state.
-
-## Error handling
-
-The agent decides how to handle errors (retries, alternatives, reporting to the user) based on its `AGENTS.md` instructions. Carapace surfaces errors to the agent as tool return values, not as crashes.
+- Sessions are **persistent** — they survive Carapace restarts
+- **Containers** are ephemeral: destroyed after an idle timeout (configurable, default 15 min). When the user sends a new message after containers expire, they are recreated. See [sandbox.md](sandbox.md).
+- **Title generation**: After the 1st and 3rd user messages, a title is auto-generated using a lightweight LLM model
+- **Deletion**: Sessions can be deleted via the REST API (`DELETE /api/sessions/{id}`), which also cleans up any running sandbox container
 
 ---
 
 ## Channel system
 
-Channels are pluggable adapters that connect external systems to Carapace sessions.
+Channels are adapters that connect external systems to Carapace sessions. They implement the `SessionSubscriber` protocol, which defines callbacks for receiving streamed tokens, tool call info, approval requests, and other events.
 
-### Channel interface
+### Web Frontend (WebSocket)
 
-```python
-class Channel(ABC):
-    async def start(self) -> None: ...
-    async def send_message(self, session_id: str, content: str) -> None: ...
-    async def send_approval_request(self, session_id: str, request: ApprovalRequest) -> None: ...
-    async def wait_for_approval(self, session_id: str, request_id: str) -> ApprovalResult: ...
-```
+The primary interactive channel. A Next.js web app connects to the Carapace server via WebSocket.
 
-### Matrix channel
+**REST API:**
 
-The initial (and primary) channel, using [matrix-nio](https://github.com/matrix-nio/matrix-nio) with E2EE support.
+| Endpoint | Method | Description |
+| --- | --- | --- |
+| `/api/sessions` | `POST` | Create a new session |
+| `/api/sessions` | `GET` | List all sessions |
+| `/api/sessions/{id}` | `GET` | Get session details |
+| `/api/sessions/{id}` | `DELETE` | Delete session + cleanup sandbox |
+| `/api/sessions/{id}/history` | `GET` | Get chat history (optional `limit` param) |
+
+**WebSocket protocol** (`/api/chat/{session_id}`):
+
+| Direction | Message type | Purpose |
+| --- | --- | --- |
+| Client → Server | `UserMessage` | Chat input |
+| Client → Server | `ApprovalResponse` | Approve/deny a tool call |
+| Client → Server | `ProxyApprovalResponse` | Allow/deny a domain request |
+| Client → Server | `CancelRequest` | Cancel running agent turn |
+| Server → Client | `TokenChunk` | Streamed response token |
+| Server → Client | `ToolCallInfo` | Tool being called (name, args) |
+| Server → Client | `ToolResultInfo` | Tool result |
+| Server → Client | `ApprovalRequest` | Tool needs user approval |
+| Server → Client | `ProxyApprovalRequest` | Domain access request |
+| Server → Client | `Done` | Turn complete (content, usage) |
+| Server → Client | `SessionTitleUpdate` | New auto-generated title |
+| Server → Client | `StatusUpdate` | Connection status (on connect) |
+
+On reconnect, the server re-sends any pending approval requests so the user can respond.
+
+Authentication uses a bearer token (`CARAPACE_TOKEN` env var) passed as a query parameter or header.
+
+### Matrix Channel
+
+Connects Carapace to Matrix rooms using [matrix-nio](https://github.com/matrix-nio/matrix-nio). One session per room.
 
 Features:
 
-- End-to-end encrypted messaging
-- Reactions for quick approvals
-- Threads for long outputs
-- Slash commands for session control
+- Reactions for quick approvals (✅ to approve, ❌ to deny)
+- Slash commands for session control (including `/reset`)
+- Per-room session mapping
+- Configurable allowed rooms and users
 
-Configuration:
+Configuration in `config.yaml`:
 
 ```yaml
 channels:
@@ -80,72 +114,64 @@ channels:
       - "@me:example.com"
 ```
 
-### Cron channel
+> **Note**: The Matrix channel currently uses plain-text messaging (no E2EE). See [plans/channels.md](plans/channels.md) for E2EE plans.
 
-Triggers sessions on a schedule. Since cron sessions are non-interactive, they need an approval target for rule-gated operations.
-
-```yaml
-channels:
-  cron:
-    enabled: false
-    jobs:
-      - id: daily-email-check
-        schedule: "0 9 * * *"
-        instructions: "Check my inbox for urgent emails and summarize."
-        approval_target:
-          channel: matrix
-          dm: "@me:example.com"
-```
-
-### Future channels
-
-- **Webhook / Email**: An inbound HTTP request or email triggers a session
-- **Web UI**: Browser-based interface for session management and interaction
-
-## Cross-channel approvals
-
-Non-interactive sessions (cron, webhook) need to route approval requests to an interactive channel. Each cron job or webhook config specifies an `approval_target` -- a Matrix DM or room where approvals are sent.
-
-To avoid interference with that room's own conversational session, approval messages are sent as **tagged system messages** with the originating session ID. The channel adapter recognizes these tags and routes approval responses back to the correct session, not the room's own session.
+> **Future plans**: Task scheduling via cron/heartbeat, with cross-channel approval routing for non-interactive sessions. See [plans/channels.md](plans/channels.md).
 
 ---
 
 ## Slash commands
 
-Slash commands are the user's control interface for managing sessions and security. They are channel-agnostic -- any channel that supports text input can process them.
+Slash commands are the user's control interface for managing sessions and security. Both the WebSocket and Matrix channels support them.
 
-| Command            | Effect                                                                |
-| ------------------ | --------------------------------------------------------------------- |
-| `/security`        | Show the current security policy and action log summary               |
+### Common commands (both channels)
+
+| Command | Effect |
+| --- | --- |
+| `/help` | Show available commands |
+| `/security` | Show security policy preview and action log summary |
 | `/approve-context` | Vouch for the current context (records trust signal for the sentinel) |
-| `/reset`           | Reset: create new session, clear security state, revoke credentials   |
-| `/session`         | Show current session state                                            |
-| `/skills`          | List available skills                                                 |
-| `/memory`          | Show memory summary                                                   |
-| `/approve`         | Approve the pending operation (alternative to reaction)               |
-| `/deny`            | Deny the pending operation                                            |
-| `/help`            | Show available commands                                               |
+| `/session` | Show session metadata and domain allowlist |
+| `/skills` | List available skills |
+| `/memory` | List memory files |
+| `/usage` | Show token usage breakdown with cost estimates |
+
+### WebSocket-only commands
+
+| Command | Effect |
+| --- | --- |
+| `/verbose` | Toggle tool call display |
+| `/quit` / `/exit` | Close WebSocket connection |
+
+### Matrix-only commands
+
+| Command | Effect |
+| --- | --- |
+| `/reset` | Create a new session for the room (clears history, credentials, security state) |
+| `/approve` | Approve the pending operation (alternative to ✅ reaction) |
+| `/deny` | Deny the pending operation (alternative to ❌ reaction) |
 
 ---
 
-## Approval Gate
+## Approval gate
 
-The Approval Gate sends approval requests through the session's channel and waits for a response.
+The approval gate handles security escalations. When the sentinel escalates a tool call, the flow is:
 
-### Approval UX (example via Matrix)
+1. Agent loop receives `DeferredToolRequests` (tools that need approval)
+2. `ApprovalRequest` is broadcast to all session subscribers (WebSocket clients, Matrix rooms)
+3. The request includes the sentinel's explanation, risk level, tool name, and arguments
+4. Agent loop blocks waiting on the approval queue
+5. User approves or denies via the frontend UI, reaction, or slash command
+6. `ApprovalResponse` is routed back through the approval queue
+7. Agent resumes with the approved tools (denied tools receive a `ToolDenied` message)
 
-```text
-Approval Required [risk: high]
+### Proxy domain approvals
 
-The agent wants to send an email after accessing your financial data.
+A separate approval flow handles domain requests from sandbox containers:
 
-Sentinel explanation: "The agent read sensitive financial data from the
-expense tracker skill and now wants to send an email externally. This
-is a potential data exfiltration vector."
-
-Operation: email_sender.send_email(to="accountant@...", subject="Q4 Summary")
-
-/approve or /deny
-```
-
-The approval prompt includes the sentinel's explanation and risk assessment. See [security.md](security.md) for details on how the sentinel evaluates operations.
+1. Sandbox container makes an outbound request through the proxy
+2. Proxy checks the domain against the session's allowlist
+3. If unknown, proxy calls the sentinel via the security module
+4. If sentinel escalates, a `ProxyApprovalRequest` is sent to subscribers
+5. User decides (allow/deny)
+6. Decision is applied and the proxy responds

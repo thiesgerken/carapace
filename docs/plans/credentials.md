@@ -1,6 +1,8 @@
-# Credential Management
+# Plan: Credential Management
 
-Carapace does not store credentials itself. It uses an external password manager as the single source of truth and fetches credentials on demand with per-session user approval.
+> Status: planned. Currently only a `MockCredentialBroker` exists that returns placeholder values. The credential system described below is the target design.
+
+Carapace does not store credentials itself. The plan is to use an external password manager as the single source of truth and fetch credentials on demand with per-session user approval.
 
 ## System credentials
 

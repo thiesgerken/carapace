@@ -7,18 +7,18 @@
 
 A security-first personal AI agent with LLM-powered security gating.
 
-Carapace is a self-hosted AI agent gateway that connects to Matrix (and future channels) and lets you interact with an AI assistant from anywhere. Unlike other agent frameworks that start with broad access and lock down after the fact, Carapace starts with **zero access** and gates every capability through a dedicated **sentinel agent** -- an LLM that maintains a persistent security conversation, evaluating each action against a natural-language security policy (`SECURITY.md`).
+Carapace is a self-hosted AI agent gateway with a web UI and Matrix integration that lets you interact with an AI assistant from anywhere. Unlike other agent frameworks that start with broad access and lock down after the fact, Carapace starts with **zero access** and gates every capability through a dedicated **sentinel agent** -- an LLM that maintains a persistent security conversation, evaluating each action against a natural-language security policy (`SECURITY.md`).
 
 ## Key ideas
 
 - **Sentinel agent, not permission matrices.** A dedicated LLM agent (the "sentinel") evaluates every non-trivial action against a human-readable `SECURITY.md` policy. It maintains a shadow conversation per session, building context over time for nuanced, intent-aware decisions.
 - **Graduated trust.** The sentinel factors in the full session history -- previous approvals, user intent, time since last interaction -- to make proportional decisions. Early in a session or right after user confirmation, actions flow smoothly; after consuming untrusted data, scrutiny increases.
 - **Strict veto semantics.** If any part of the security gate (safe-list bypass, sentinel, or user) flags an action for denial or approval, that decision is final. A compromised sentinel cannot override a deterministic denial.
-- **Read-only by default.** The agent's base workspace is a read-only Docker container with no network. It can explore files, read skills, search memory freely. All actions (writes, network, API calls) go through skill containers with explicit sandboxing.
+- **Sandboxed execution.** Every agent action runs inside a sandboxed container (Docker or Kubernetes pod). All outbound traffic goes through an HTTP proxy that enforces per-session domain allowlisting. The sentinel evaluates unknown domains for plausibility.
 - **Skills are trusted code.** A personal agent has access to so much of your data and life that running completely untrusted skills through it would be reckless. The user (or an LLM acting on their behalf) is responsible for reviewing skills before installing them. The security model protects against the agent being _influenced by outside data_ to misuse skills, not against malicious skills themselves.
-- **Skills are portable.** Skills follow the open [AgentSkills](https://agentskills.io/) format (SKILL.md + scripts). They work in Claude Code, Cursor, Gemini CLI too. Carapace extends the format with `carapace.yaml` for credentials and security hints, and optional `Dockerfile` for dependency isolation.
+- **Skills are portable.** Skills follow the open [AgentSkills](https://agentskills.io/) format (SKILL.md + scripts). They work in Claude Code, Cursor, Gemini CLI too. Carapace extends the format with `carapace.yaml` for network domain declarations and credential metadata, and optional `pyproject.toml` for Python dependencies (managed by uv).
 - **The agent improves itself.** Carapace can write new skills, update its memory, and evolve its personality -- all gated by the same security system. No special "architect mode", just a sentinel that understands context.
-- **Credentials stay in your vault.** Carapace doesn't store secrets. It fetches credentials from your password manager (Vaultwarden, 1Password, pass) on demand, with per-session approval.
+- **Credentials stay in your vault.** Carapace is designed to fetch credentials from your password manager on demand with per-session approval. (Credential broker is [planned](docs/plans/credentials.md) — currently mock-only.)
 
 ## Demo
 
@@ -122,45 +122,44 @@ uv run carapace --token "$CARAPACE_TOKEN"
 ## Architecture overview
 
 ```text
-CLI Client (typer + rich)    Web UI (Next.js)
-        \                      /
-         REST + WebSocket (bearer token auth)
-                    |
-              FastAPI Server
-                    |
-         Session Manager ---- Security Module
-              |                  ├── Safe-list (auto-allow)
-         Pydantic AI Agent       └── Sentinel Agent (LLM, shadow conversation)
-              |                         |
-         Skill Registry          Approval Gate → WebSocket
-              |
-        Docker Containers ── Proxy ── Sentinel (domain check)
-         ├── Base Container (read-only, no network)
-         └── Skill Containers (from Dockerfile, with credentials)
+CLI Client (typer + rich)    Web UI (Next.js)    Matrix Channel
+        \                      |                    /
+         REST + WebSocket (bearer token auth) + nio
+                         |
+                   FastAPI Server
+                         |
+              Session Engine ---- Security Module
+                   |                  ├── Safe-list (auto-allow)
+              Pydantic AI Agent       └── Sentinel Agent (LLM, shadow conversation)
+                   |                         |
+              Skill Registry          Approval Gate → subscribers
+                   |
+             Sandbox Container ── HTTP Proxy ── Sentinel (domain check)
+              (Docker or K8s pod)
 ```
 
-The server runs the agent and all logic. The CLI and web UI are thin clients that connect via HTTP (sessions) and WebSocket (chat, slash commands, approval flow). Every tool call passes through the security module: safe operations (reads, memory) are auto-allowed; everything else is evaluated by the sentinel agent. Network requests from sandboxed containers are intercepted by a proxy and checked by the sentinel for domain plausibility.
+The server runs the agent and all logic. The CLI, web UI, and Matrix are thin clients that connect via HTTP (sessions) and WebSocket (chat, slash commands, approval flow). Every tool call passes through the security module: safe operations (reads, memory, skill activation) are auto-allowed; everything else is evaluated by the sentinel agent. Network requests from sandbox containers are intercepted by an HTTP proxy and checked by the sentinel for domain plausibility.
 
-See [docs/architecture.md](docs/architecture.md) for the full architecture with diagrams.
+See [docs/architecture.md](docs/architecture.md) for the full architecture with Mermaid diagrams.
 
 ## Core concepts
 
-| Concept             | Description                                              | Doc                                                            |
-| ------------------- | -------------------------------------------------------- | -------------------------------------------------------------- |
-| Security            | Sentinel agent + SECURITY.md policy + action log         | [docs/security.md](docs/security.md)                           |
-| Skills              | AgentSkills-compatible, Dockerfile-isolated capabilities | [docs/skills.md](docs/skills.md)                               |
-| Sandbox             | Docker-first execution with read-only base container     | [docs/sandbox.md](docs/sandbox.md)                             |
-| Sessions & Channels | Channel-decoupled persistent sessions                    | [docs/sessions-and-channels.md](docs/sessions-and-channels.md) |
-| Memory              | Markdown-based memory with vector search                 | [docs/memory.md](docs/memory.md)                               |
-| Credentials         | Password-manager-backed, per-session approval            | [docs/credentials.md](docs/credentials.md)                     |
+| Concept             | Description                                                    | Doc                                                            |
+| ------------------- | -------------------------------------------------------------- | -------------------------------------------------------------- |
+| Security            | Sentinel agent + SECURITY.md policy + action log               | [docs/security.md](docs/security.md)                           |
+| Skills              | AgentSkills-compatible with uv-managed Python dependencies     | [docs/skills.md](docs/skills.md)                               |
+| Sandbox             | Docker / Kubernetes sandboxed execution with HTTP proxy         | [docs/sandbox.md](docs/sandbox.md)                             |
+| Sessions & Channels | Channel-decoupled persistent sessions (WebSocket, Matrix)      | [docs/sessions-and-channels.md](docs/sessions-and-channels.md) |
+| Memory              | Markdown-based persistent memory with text search              | [docs/memory.md](docs/memory.md)                               |
+| Kubernetes          | Helm chart, sandbox pods, NetworkPolicy, shared PVC            | [docs/kubernetes.md](docs/kubernetes.md)                       |
 
 ## Technology stack
 
 - **Python 3.12+** with **Pydantic AI** (agents, tools, dependency injection)
 - **FastAPI** + **uvicorn** for the server, **WebSockets** for real-time chat
 - **Next.js 16** + **React 19** + **Tailwind CSS 4** for the web UI
-- **matrix-nio** for Matrix E2EE
-- **Docker** for all tool execution (docker-py SDK)
+- **matrix-nio** for Matrix integration
+- **Docker** or **Kubernetes** for sandboxed tool execution
 - **Pydantic v2** for config and models
 - **Pydantic Logfire** for observability (OpenTelemetry)
 - **uv** for packaging, **Docker Compose** for deployment
@@ -173,16 +172,12 @@ All state lives under `$CARAPACE_DATA_DIR` (defaults to `./data`).
 $CARAPACE_DATA_DIR/
   config.yaml            # main configuration
   SECURITY.md            # natural-language security policy (sentinel system prompt)
-  AGENTS.md              # agent behavioral guide
+  AGENTS.md              # agent behavioral guide (seeded from built-in template)
   SOUL.md                # agent personality
   USER.md                # about the human
-  TOOLS.md               # local environment notes
-  HEARTBEAT.md           # periodic task checklist
   skills/                # AgentSkills-format skill folders
   memory/                # Markdown-based persistent memory
-  sessions/              # per-session history, state, and audit logs
-  tmp/                   # shared writable volume for containers
-  logs/
+  sessions/              # per-session history, state, audit logs, and workspace
 ```
 
 ## Comparison with OpenClaw
@@ -192,7 +187,7 @@ Carapace is inspired by [OpenClaw](https://docs.openclaw.ai/) but differs fundam
 - **OpenClaw** is perimeter-based: control who can talk to the bot, then trust the bot broadly.
 - **Carapace** is flow-based: the bot starts untrusted and every capability is gated by a sentinel agent that tracks the full session context.
 
-Other differences: Carapace is Python (not Node), uses Pydantic AI (not a custom agent loop), runs everything in Docker (not on the host), delegates credentials to a password manager (not built-in storage), and uses the open AgentSkills format (not a custom skill system).
+Other differences: Carapace is Python (not Node), uses Pydantic AI (not a custom agent loop), runs everything in sandboxed containers (not on the host), and uses the open AgentSkills format (not a custom skill system).
 
 ## Kubernetes deployment
 
@@ -223,4 +218,6 @@ Additional prerequisites: **Python 3.12+** (3.14 recommended), **[uv](https://do
 
 ## Status
 
-Early development — client-server architecture with FastAPI + WebSocket, sentinel-gated tool execution, and interactive CLI.
+In active development. Core features are working: client-server architecture with FastAPI + WebSocket, Next.js web frontend, Matrix channel, sentinel-gated tool execution, sandboxed containers (Docker + Kubernetes), HTTP proxy with domain allowlisting, skill system with uv-managed dependencies, and interactive CLI.
+
+Planned features: [credential broker](docs/plans/credentials.md), [vector search for memory](docs/plans/memory.md), [task scheduling](docs/plans/channels.md), [Kubernetes enhancements](docs/plans/kubernetes.md).

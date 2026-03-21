@@ -1,75 +1,63 @@
 # Memory and Workspace Files
 
-Carapace has two kinds of persistent agent context: **memory** (facts, logs, topics that grow over time) and **workspace files** (identity, behavioral guide, user context).
+Carapace has two kinds of persistent agent context: **memory** (facts, notes, and topics that grow over time) and **workspace files** (identity, behavioral guide, user context).
 
 ---
 
 ## Memory system
 
-Memory is persistent context that survives across sessions. It's Markdown-based with rule-gated writes and vector search.
-
-### Layout
-
-```
-memory/
-  CORE.md              # long-term facts, preferences, identity
-  daily/
-    2026-02-14.md      # daily log
-    2026-02-13.md
-  topics/
-    projects.md        # organized by topic
-    contacts.md
-    preferences.md
-  .index/              # vector search index (SQLite)
-```
+Memory is persistent context that survives across sessions. It's a Markdown-based file store under `$CARAPACE_DATA_DIR/memory/`.
 
 ### Operations
 
-**Read**: The agent can always read memory. At session startup, `CORE.md` and today/yesterday daily logs are loaded into context. Everything else is available via semantic search.
+| Tool | Description |
+| --- | --- |
+| `read_memory` | Read a specific file by path, or search all memory files by query |
+| `write_memory` | Write or update a memory file at a given path |
 
-**Write**: Governed by the `memory-write` rule (always-on, `mode: approve`). The agent proposes a write, the user sees exactly what will be added or changed, and approves or denies. Writes are staged to `/tmp/shared/pending/memory/` and applied by the orchestrator after approval. See [sandbox.md](sandbox.md) for the write mechanism.
+**Read**: The agent can always read memory files. Memory is mounted read-only into sandbox containers at `/workspace/memory/`, but the agent also has the `read_memory` tool which reads directly from the host.
 
-**Search**: Vector search over all memory files using local embeddings (sentence-transformers, `all-MiniLM-L6-v2` by default). Embeddings are stored in `memory/.index/` (a small SQLite database). The search index is updated when memory files change.
+**Write**: The `write_memory` tool writes directly to the memory directory. This operation goes through the security sentinel, which evaluates it per the `SECURITY.md` policy (persistent memory writes typically require user approval).
+
+**Search**: Case-insensitive text search over all `.md` files in the memory directory. Returns matching lines grouped by file.
+
+### Bootstrapped files
+
+On first run, `memory/CORE.md` is seeded from the built-in template. The agent and user can build up memory over time by writing additional files.
 
 ### Agent behavior
 
-The agent is instructed (via `AGENTS.md`) to proactively suggest memory writes when it learns durable facts about the user, their preferences, or their projects. The user decides what sticks. The agent should keep memory entries concise and well-organized.
+The agent is instructed (via `AGENTS.md`) to proactively suggest memory writes when it learns durable facts about the user, their preferences, or their projects. The user decides what persists through the security approval flow.
 
-### Context budget
-
-Memory is the main area where context management matters. The approach is:
-
-- `CORE.md` and recent daily logs are always loaded (user is responsible for keeping these concise)
-- Topic files and older daily logs are loaded on demand via vector search
-- The agent can reference specific memory files by path when it knows what it's looking for
+> **Future plans**: Structured memory layout (daily logs, topic files), vector search with local embeddings, and git-backed memory. See [plans/memory.md](plans/memory.md).
 
 ---
 
 ## Workspace files
 
-Inspired by OpenClaw's workspace templates, these are top-level Markdown files that define the agent's identity, knowledge of the user, and behavioral guidelines. They are mounted into every container (read-only) and loaded into context at session start.
+These are top-level Markdown files in `$CARAPACE_DATA_DIR/` that define the agent's identity, knowledge of the user, and behavioral guidelines. They are copied into each session's sandbox as working copies and loaded into the agent's system prompt at session start.
 
-| File           | Purpose                                                                                                                                  | Agent-writable?                    |
-| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
-| `AGENTS.md`    | Master behavioral guide: what to do every session, safety rules, memory management, group chat behavior. The agent's "operating manual." | Yes (gated by `memory-write` rule) |
-| `SOUL.md`      | Agent personality, tone, boundaries. "Who you are." The agent can evolve this over time.                                                 | Yes (gated)                        |
-| `USER.md`      | About the human: name, timezone, preferences, projects. Built up over time.                                                              | Yes (gated)                        |
-| `TOOLS.md`     | Local environment notes: SSH hosts, device names, API endpoints. Separate from skills so skills stay portable.                           | Yes (gated)                        |
-| `HEARTBEAT.md` | Checklist for cron/periodic sessions. The agent can edit to schedule its own periodic checks.                                            | Yes (gated)                        |
+| File | Purpose | Agent-writable? |
+| --- | --- | --- |
+| `AGENTS.md` | Master behavioral guide: what to do, safety rules, memory management. The agent's "operating manual." | Yes (via `save_workspace_file`, sentinel-gated) |
+| `SOUL.md` | Agent personality, tone, boundaries. "Who you are." | Yes (via `save_workspace_file`, sentinel-gated) |
+| `USER.md` | About the human: name, timezone, preferences, projects. Built up over time. | Yes (via `save_workspace_file`, sentinel-gated) |
+| `SECURITY.md` | Natural-language security policy for the sentinel agent. | Yes (via `save_workspace_file`, sentinel-gated) |
 
-All workspace files live at the root of `$CARAPACE_DATA_DIR/`. They are distinct from the system prompt that Carapace injects -- workspace files are for the agent's evolving self-knowledge.
+### How workspace file editing works
 
-Writes to workspace files go through the same gated mechanism as memory writes: staged to `/tmp/shared/pending/`, rule-checked, user-approved, applied by the orchestrator.
+1. On container creation, workspace files are **copied** from `$CARAPACE_DATA_DIR/` into the session's workspace directory
+2. The agent can freely edit these working copies inside the sandbox (via `read`, `write`, `edit`)
+3. To make changes permanent, the agent calls `save_workspace_file`, which copies the file back to `$CARAPACE_DATA_DIR/`
+4. The `save_workspace_file` tool is **always evaluated by the sentinel** and typically escalated for user approval
 
-### Session startup sequence
+### System prompt loading
 
-When a session starts or resumes, the following context is loaded (in order):
+When an agent turn starts, `build_system_prompt()` loads the following into the system prompt (in order):
 
-1. `AGENTS.md` -- behavioral guide
-2. `SOUL.md` -- personality
-3. `USER.md` -- context about the human
-4. `memory/daily/YYYY-MM-DD.md` -- today + yesterday
-5. `memory/CORE.md` -- long-term memory (for DM/main sessions)
-6. Skill catalog -- names and descriptions only
-
-All of these are reads from the agent's own workspace (not external/untrusted), so they don't activate flow rules like `no-write-after-web`. However, `TOOLS.md` contains infrastructure details, so a rule could optionally gate outbound communication after reading it (similar to skill activation).
+1. `AGENTS.md` — behavioral guide
+2. `SOUL.md` — personality
+3. `USER.md` — context about the human
+4. Skill catalog — names and descriptions only
+5. Sandbox environment info — explains container paths and available tools
+6. Session ID

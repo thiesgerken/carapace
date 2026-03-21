@@ -34,18 +34,28 @@ See the [chart README](../charts/carapace/README.md) for installation details an
 
 ## Architecture
 
-```text
-Namespace: carapace
-├── Deployment/carapace (server + proxy)
-│   └── mounts PVC at /data
-│   └── creates sandbox pods via K8s API
-├── Deployment/frontend
-├── Service/carapace (ports 8321 + 3128)
-├── Service/frontend (port 80)
-├── PVC/carapace-data (RWX)
-├── NetworkPolicy/sandbox-isolation
-├── HTTPRoute (Gateway API)
-└── RBAC (ServiceAccount + Role + RoleBinding)
+```mermaid
+graph TD
+    subgraph ns ["Namespace: carapace"]
+        Deploy["Deployment/carapace<br/>(server + proxy)"]
+        Frontend["Deployment/frontend"]
+        SvcServer["Service/carapace<br/>(ports 8321 + 3128)"]
+        SvcFront["Service/frontend<br/>(port 80)"]
+        PVC["PVC/carapace-data (RWX)"]
+        NetPol["NetworkPolicy/sandbox-isolation"]
+        Route["HTTPRoute (Gateway API)"]
+        RBAC["RBAC (SA + Role + RoleBinding)"]
+        SandboxA["Pod/carapace-session-aaa"]
+        SandboxB["Pod/carapace-session-bbb"]
+    end
+
+    Deploy -->|mounts| PVC
+    Deploy -->|creates via K8s API| SandboxA & SandboxB
+    SandboxA & SandboxB -->|mount subPaths| PVC
+    SvcServer --> Deploy
+    SvcFront --> Frontend
+    Route --> SvcServer & SvcFront
+    NetPol -.->|restricts| SandboxA & SandboxB
 ```
 
 The server pod manages sandbox pods directly via the Kubernetes API. Each session gets its own pod running `sleep infinity`, with commands executed via `kubectl exec`. Sandbox pods are owned by the server Deployment (via `ownerReferences`), so they:
@@ -182,3 +192,5 @@ No special ArgoCD configuration is needed — the standard annotation-based trac
 - **Resources**: sensible defaults are included; override `resources` / `frontend.resources` as needed
 - **Priority class**: set `priorityClassName` to apply to all pods (server, frontend, sandbox)
 - **PVC protection**: set `persistence.finalizers` to `["kubernetes.io/pvc-protection"]` to guard against accidental deletion
+
+> **Future plans**: Per-session PVCs, StatefulSets for sandbox pods (scale down on idle), and git-backed storage for memory and skills. See [plans/kubernetes.md](plans/kubernetes.md).
