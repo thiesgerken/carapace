@@ -138,12 +138,11 @@ class GitHttpHandler:
         # Parse CGI output into status, headers, body
         status_code, headers, response_body = self._parse_cgi_output(stdout)
 
-        # Post-push success handling
-        if is_push and proc.returncode == 0 and self._on_push_success:
-            try:
-                await self._on_push_success()
-            except Exception as exc:
-                logger.warning(f"Post-push callback failed: {exc}")
+        # Post-push success handling — only fire if the push was actually accepted (200 OK).
+        # The pre-receive hook communicates rejection through the git protocol, not the
+        # CGI exit code, so we must check the HTTP status instead.
+        if is_push and status_code == 200 and self._on_push_success:
+            await self._on_push_success()
 
         return status_code, headers, response_body
 

@@ -195,7 +195,7 @@ class SandboxManager:
             tail = await self._runtime.logs(container_id)
             if tail and tail.strip():
                 logger.info(f"Last logs from container {container_id[:12]} (session {session_id}):\n{tail}")
-        except Exception:
+        except (ContainerGoneError, RuntimeError):
             logger.debug(f"Could not retrieve logs from container {container_id[:12]}")
 
     def _get_exec_lock(self, session_id: str) -> asyncio.Lock:
@@ -605,16 +605,21 @@ class SandboxManager:
         if activated:
             await self.rebuild_skill_venvs(session_id, activated)
 
-    async def cleanup_session(self, session_id: str) -> None:
-        """Remove the sandbox container but keep session state (token, domains).
+    async def cleanup_session(self, session_id: str, *, permanent: bool = False) -> None:
+        """Remove the sandbox container and optionally all session state.
 
-        The session can be spun up again later via ``ensure_session``.
+        When *permanent* is False (default), only the container is removed
+        and the session can be spun up again later via ``ensure_session``.
+        When *permanent* is True, all tracking state is also cleaned up.
         """
         sc = self._sessions.get(session_id)
         if sc:
             await self._runtime.remove(sc.container_id)
             self._sessions.pop(session_id, None)
             logger.info(f"Cleaned up sandbox for session {session_id}")
+
+        if permanent:
+            self._cleanup_tracking(session_id)
 
     async def cleanup_idle(self) -> None:
         """Remove containers that have been idle longer than the timeout.
