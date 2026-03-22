@@ -173,6 +173,20 @@ class SandboxManager:
         except Exception:
             logger.debug(f"Could not retrieve logs from container {container_id[:12]}")
 
+    async def _wait_for_workspace_ready(self, container_id: str, timeout: int = 60) -> None:
+        """Wait for git clone to complete by polling for the ready marker in logs."""
+        start = time.time()
+        while time.time() - start < timeout:
+            try:
+                logs = await self._runtime.logs(container_id)
+                if "carapace sandbox ready" in logs:
+                    logger.debug(f"Workspace ready for container {container_id[:12]}")
+                    return
+            except Exception as exc:
+                logger.debug(f"Error checking workspace readiness: {exc}")
+            await asyncio.sleep(0.5)
+        raise RuntimeError(f"Workspace not ready after {timeout}s for container {container_id[:12]}")
+
     def _get_exec_lock(self, session_id: str) -> asyncio.Lock:
         if session_id not in self._exec_locks:
             self._exec_locks[session_id] = asyncio.Lock()
@@ -241,6 +255,9 @@ class SandboxManager:
 
             container_id = await self._runtime.create(config)
             ip = await self._runtime.get_ip(container_id, self._network_name)
+            
+            # Wait for git clone to complete before returning
+            await self._wait_for_workspace_ready(container_id)
         except BaseException:
             self._cleanup_tracking(session_id)
             raise
@@ -504,17 +521,22 @@ class SandboxManager:
 
         # Restore committed dependency manifests inside the sandbox,
         # preventing the sandbox from running modified dependencies.
+        # Use runtime.exec directly to avoid deadlock from nested _exec calls.
+        sc = self._sessions.get(session_id)
+        if not sc:
+            raise SkillVenvError(f"No container for session {session_id}")
+
         skill_path = f"skills/{shlex.quote(skill_name)}"
-        result = await self._exec(
-            session_id,
+        result = await self._runtime.exec(
+            sc.container_id,
             f"git checkout HEAD -- {skill_path}/pyproject.toml",
             timeout=10,
             workdir=self._KNOWLEDGE_WORKDIR,
         )
         if result.exit_code != 0:
             raise SkillVenvError(f"Failed to restore trusted pyproject.toml: {result.output}")
-        await self._exec(
-            session_id,
+        await self._runtime.exec(
+            sc.container_id,
             f"git checkout HEAD -- {skill_path}/uv.lock 2>/dev/null || true",
             timeout=10,
             workdir=self._KNOWLEDGE_WORKDIR,
