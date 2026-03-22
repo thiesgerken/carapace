@@ -420,9 +420,22 @@ class SessionEngine:
         if cmd == "/pull":
             return await self._handle_pull_command()
 
+        if cmd == "/push":
+            return await self._handle_push_command()
+
         return None
 
-    # -- pull from remote --
+    # -- pull / push from/to remote --
+
+    async def _handle_push_command(self) -> dict[str, Any]:
+        """Handle the ``/push`` slash command — push to external remote."""
+        if not self._config.git.remote:
+            return {"command": "push", "data": {"message": "No external remote configured."}}
+        try:
+            await self._git_store.push_to_remote()
+            return {"command": "push", "data": {"message": "Pushed to external remote."}}
+        except Exception as exc:
+            return {"command": "push", "data": {"message": f"Push failed: {exc}"}}
 
     async def _handle_pull_command(self) -> dict[str, Any]:
         """Handle the ``/pull`` slash command — pull from external remote."""

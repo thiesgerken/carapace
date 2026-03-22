@@ -262,6 +262,7 @@ async def lifespan(app: FastAPI):
         default_branch=_config.git.branch,
         api_port=_config.server.internal_port,
         verify_session_token=_sandbox_mgr.verify_session_token,
+        on_push_success=git_store.push_to_remote if _config.git.remote else None,
     )
 
     proxy = ProxyServer(

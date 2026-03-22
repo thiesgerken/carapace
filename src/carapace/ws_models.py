@@ -11,6 +11,7 @@ SLASH_COMMANDS: list[dict[str, str]] = [
     {"command": "/skills", "description": "List available skills"},
     {"command": "/memory", "description": "List memory files"},
     {"command": "/pull", "description": "Pull from external Git remote (if configured)"},
+    {"command": "/push", "description": "Push to external Git remote (if configured)"},
     {
         "command": "/models",
         "description": "View all models and available options",

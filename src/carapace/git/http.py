@@ -4,7 +4,7 @@ import asyncio
 import base64
 import contextlib
 import os
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 
 from loguru import logger
@@ -26,7 +26,7 @@ class GitHttpHandler:
         default_branch: str,
         api_port: int = 8320,
         verify_session_token: Callable[[str, str], bool] | None = None,
-        on_push_success: Callable[[], None] | None = None,
+        on_push_success: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
         self._knowledge_dir = knowledge_dir
         self._default_branch = default_branch
@@ -135,7 +135,7 @@ class GitHttpHandler:
         # Post-push success handling
         if is_push and proc.returncode == 0 and self._on_push_success:
             try:
-                self._on_push_success()
+                await self._on_push_success()
             except Exception as exc:
                 logger.warning(f"Post-push callback failed: {exc}")
 
