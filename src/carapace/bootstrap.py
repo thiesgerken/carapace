@@ -60,6 +60,10 @@ Thumbs.db
 
 # Skill build artifacts
 skills/**/.venv/
+
+# Session scratch space
+tmp/
+tmp/**
 """
 
 
