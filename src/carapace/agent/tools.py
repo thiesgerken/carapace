@@ -102,10 +102,8 @@ def build_system_prompt(deps: Deps) -> str:
 def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
     system_prompt = build_system_prompt(deps)
 
-    model = deps.agent_model or deps.config.agent.model
-
     agent: Agent[Deps, str | DeferredToolRequests] = Agent(
-        model,
+        deps.agent_model,
         deps_type=Deps,
         output_type=[str, DeferredToolRequests],  # type: ignore[arg-type]
         instructions=system_prompt,

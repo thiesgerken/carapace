@@ -7,7 +7,7 @@ import traceback
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Literal, Protocol, runtime_checkable
 
 from loguru import logger
 from pydantic_ai import ToolDenied
@@ -27,6 +27,8 @@ from carapace.session.titler import generate_title
 from carapace.skills import SkillRegistry
 from carapace.usage import UsageTracker
 from carapace.ws_models import SLASH_COMMANDS, ApprovalRequest, ApprovalResponse, ProxyApprovalResponse, TurnUsage
+
+ModelType = Literal["agent", "sentinel", "title"]
 
 # security_mod is still imported for evaluate_domain_with (used in domain approval callback)
 
@@ -147,6 +149,10 @@ class SessionEngine:
     @property
     def available_models(self) -> list[str]:
         return self._available_models()
+
+    def _resolve_model(self, name: str) -> Model:
+        """Create a Model from a name, using the model_factory if available."""
+        return self._model_factory(name) if self._model_factory else infer_model(name)
 
     # -- session lifecycle --
 
@@ -269,7 +275,7 @@ class SessionEngine:
             sentinel=active.sentinel,
             git_store=self._git_store,
             skill_catalog=self._skill_catalog,
-            agent_model=active.agent_model or self._agent_model,
+            agent_model=active.agent_model or self._agent_model or self._resolve_model(self._config.agent.model),
             verbose=active.verbose,
             tool_call_callback=tool_call_callback,
             tool_result_callback=tool_result_callback,
@@ -389,7 +395,12 @@ class SessionEngine:
             return self._handle_models_command(active)
 
         if cmd in ("/model", "/model-sentinel", "/model-title"):
-            model_type = {"model": "agent", "/model-sentinel": "sentinel", "/model-title": "title"}.get(cmd, "agent")
+            model_map: dict[str, ModelType] = {
+                "/model": "agent",
+                "/model-sentinel": "sentinel",
+                "/model-title": "title",
+            }
+            model_type = model_map[cmd]
             return await self._handle_model_command(active, model_type, parts[1].strip() if len(parts) > 1 else "")
 
         if cmd == "/usage":
@@ -428,7 +439,7 @@ class SessionEngine:
 
     # -- model switching --
 
-    _MODEL_TYPES = ("agent", "sentinel", "title")
+    _MODEL_TYPES: tuple[ModelType, ...] = ("agent", "sentinel", "title")
 
     def _handle_models_command(self, active: ActiveSession) -> dict[str, Any]:
         """Show all model types with their current and default values."""
@@ -446,7 +457,7 @@ class SessionEngine:
         available = self._available_models()
         return {"command": "models", "data": {"models": models, "available": available}}
 
-    async def _handle_model_command(self, active: ActiveSession, model_type: str, arg: str) -> dict[str, Any]:
+    async def _handle_model_command(self, active: ActiveSession, model_type: ModelType, arg: str) -> dict[str, Any]:
         """Process ``/model[-(sentinel|title)] [MODEL | reset]``."""
         cmd_name = {"agent": "model", "sentinel": "model-sentinel", "title": "model-title"}[model_type]
         defaults = {
@@ -490,7 +501,9 @@ class SessionEngine:
             "data": {"current": arg, "default": default, "message": f"Switched to: {arg}"},
         }
 
-    def _apply_model_override(self, active: ActiveSession, model_type: str, name: str | None, model_obj: Model) -> None:
+    def _apply_model_override(
+        self, active: ActiveSession, model_type: ModelType, name: str | None, model_obj: Model | None = None
+    ) -> None:
         if model_type == "agent":
             active.agent_model = model_obj
             active.agent_model_name = name

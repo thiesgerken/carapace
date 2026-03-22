@@ -219,7 +219,7 @@ class Deps(BaseModel):
     git_store: GitStore
     skill_catalog: list[SkillInfo] = []
     activated_skills: list[str] = []
-    agent_model: Model | None = None
+    agent_model: Model
     verbose: bool = True
     tool_call_callback: Callable[[str, dict[str, Any], str], None] | None = None
     tool_result_callback: Callable[[str, str], None] | None = None
