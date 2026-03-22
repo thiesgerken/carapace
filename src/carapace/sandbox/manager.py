@@ -6,7 +6,6 @@ import json
 import re
 import secrets
 import shlex
-import shutil
 import time
 from collections.abc import Awaitable, Callable
 from pathlib import Path
@@ -419,18 +418,14 @@ class SandboxManager:
 
         await self.ensure_session(session_id)
 
+        # Check that the skill exists in the server-side knowledge store.
+        # The sandbox already has it at /workspace/skills/{name} via git clone.
         master_skill_dir = self._knowledge_dir / "skills" / skill_name
         if not master_skill_dir.exists():
             logger.warning(f"Skill '{skill_name}' not found for session {session_id}")
             return f"Skill '{skill_name}' not found."
 
-        session_skill_dir = self._data_dir / "sessions" / session_id / "workspace" / "skills" / skill_name
-
-        if session_skill_dir.exists():
-            shutil.rmtree(session_skill_dir)
-        shutil.copytree(master_skill_dir, session_skill_dir)
-
-        has_pyproject = (session_skill_dir / "pyproject.toml").exists()
+        has_pyproject = (master_skill_dir / "pyproject.toml").exists()
         venv_msg = ""
         if has_pyproject:
             try:
@@ -441,7 +436,7 @@ class SandboxManager:
                 raise SkillVenvError(
                     f"Skill '{skill_name}' activated at /workspace/skills/{skill_name}/ but "
                     f"dependency install failed: {exc}\n"
-                    "The skill was copied but its Python dependencies are NOT available. "
+                    "The skill is available but its Python dependencies are NOT installed. "
                     "You may need to install them manually inside the sandbox."
                 ) from exc
 
@@ -474,20 +469,20 @@ class SandboxManager:
         logger.info(f"Venv built successfully for skill '{skill_name}'")
 
     async def _sync_skill_venv(self, session_id: str, skill_name: str) -> str:
-        """Re-copy pyproject.toml + uv.lock from the trusted master, then rebuild venv."""
+        """Restore trusted pyproject.toml + uv.lock from git, then rebuild venv."""
         master = self._knowledge_dir / "skills" / skill_name
-        session = self._data_dir / "sessions" / session_id / "workspace" / "skills" / skill_name
-
-        for filename in ("pyproject.toml", "uv.lock"):
-            src = master / filename
-            dst = session / filename
-            if src.exists():
-                shutil.copy2(src, dst)
-            elif dst.exists():
-                dst.unlink()
-
-        if not (session / "pyproject.toml").exists():
+        if not (master / "pyproject.toml").exists():
             return ""
+
+        # Restore committed dependency manifests inside the sandbox,
+        # preventing the sandbox from running modified dependencies.
+        skill_path = f"skills/{shlex.quote(skill_name)}"
+        await self._exec(
+            session_id,
+            f"cd /workspace && git checkout HEAD -- {skill_path}/pyproject.toml"
+            f" && git checkout HEAD -- {skill_path}/uv.lock 2>/dev/null || true",
+            timeout=10,
+        )
 
         await self._build_skill_venv(session_id, skill_name)
         return "Venv rebuilt successfully."
@@ -495,8 +490,8 @@ class SandboxManager:
     async def rebuild_skill_venvs(self, session_id: str, activated_skills: list[str]) -> None:
         """Rebuild venvs for all activated skills.  Called by SessionEngine after container recreation."""
         for skill_name in activated_skills:
-            skill_dir = self._data_dir / "sessions" / session_id / "workspace" / "skills" / skill_name
-            if (skill_dir / "pyproject.toml").exists():
+            master_skill_dir = self._knowledge_dir / "skills" / skill_name
+            if (master_skill_dir / "pyproject.toml").exists():
                 logger.info(f"Rebuilding venv for skill '{skill_name}' after container recreation")
                 try:
                     await self._sync_skill_venv(session_id, skill_name)
