@@ -128,9 +128,11 @@ class MatrixSubscriber:
             self._channel._pending_approvals[event_id] = pending
             self._channel._room_pending[self._room_id] = pending
 
-    async def on_proxy_approval_request(self, request_id: str, domain: str, command: str) -> None:
+    async def on_proxy_approval_request(
+        self, request_id: str, domain: str, command: str, kind: str = "proxy_domain"
+    ) -> None:
         explanation = ""  # not available at this level
-        text = format_domain_escalation(domain, command, explanation)
+        text = format_domain_escalation(domain, command, explanation, kind=kind)
         event_id = await self._channel._send_text(self._room_id, text)
         if event_id:
             self._domain_events[event_id] = request_id

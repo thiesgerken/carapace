@@ -41,7 +41,7 @@ class GitHttpHandler:
         """
 
         if not authorization:
-            logger.warning("Git auth failed: no Authorization header")
+            logger.debug("Git auth: no Authorization header (challenge-response expected)")
             return None
 
         if not self._verify_session_token:

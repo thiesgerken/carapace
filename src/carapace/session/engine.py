@@ -47,9 +47,12 @@ class SessionSubscriber(Protocol):
     async def on_error(self, detail: str) -> None: ...
     async def on_cancelled(self) -> None: ...
     async def on_approval_request(self, req: ApprovalRequest) -> None: ...
-    async def on_proxy_approval_request(self, request_id: str, domain: str, command: str) -> None: ...
+    async def on_proxy_approval_request(
+        self, request_id: str, domain: str, command: str, kind: str = "proxy_domain"
+    ) -> None: ...
     async def on_title_update(self, title: str) -> None: ...
     async def on_domain_info(self, domain: str, detail: str) -> None: ...
+    async def on_git_push_info(self, ref: str, decision: str, detail: str) -> None: ...
 
 
 # ---------------------------------------------------------------------------
@@ -186,6 +189,7 @@ class SessionEngine:
         # even outside an agent turn (e.g. during sandbox setup).
         security.set_user_escalation_callback(self._make_domain_escalation_cb(active))
         security.set_domain_info_callback(self._make_domain_info_cb(active))
+        security.set_push_info_callback(self._make_push_info_cb(active))
 
         # Register a domain-approval callback so the sandbox proxy can
         # evaluate domain requests through the per-session sentinel.
@@ -727,12 +731,15 @@ class SessionEngine:
         async def _escalate(session_id: str, domain: str, context: dict[str, Any]) -> bool:
             request_id = secrets.token_hex(8)
             cmd = context.get("command", "")
+            kind = context.get("kind", "proxy_domain")
             self._session_mgr.append_events(
                 session_id,
-                [{"role": "proxy_approval", "request_id": request_id, "domain": domain, "command": cmd}],
+                [{"role": "proxy_approval", "request_id": request_id, "domain": domain, "command": cmd, "kind": kind}],
             )
-            active.pending_proxy_approvals.append({"request_id": request_id, "domain": domain})
-            await self._broadcast(active, "on_proxy_approval_request", request_id, domain, cmd)
+            active.pending_proxy_approvals.append(
+                {"request_id": request_id, "domain": domain, "command": cmd, "kind": kind}
+            )
+            await self._broadcast(active, "on_proxy_approval_request", request_id, domain, cmd, kind)
             # Block until a subscriber responds
             while True:
                 msg = await active.proxy_approval_queue.get()
@@ -767,6 +774,17 @@ class SessionEngine:
             task = asyncio.ensure_future(self._broadcast(active, "on_domain_info", domain, detail))
             active._pending_sends.add(task)
             task.add_done_callback(active._pending_sends.discard)
+
+        return _notify
+
+    def _make_push_info_cb(
+        self,
+        active: ActiveSession,
+    ) -> Callable[[str, str, str], Awaitable[None]]:
+        """Build a callback that broadcasts git push decisions to subscribers."""
+
+        async def _notify(ref: str, decision: str, detail: str) -> None:
+            await self._broadcast(active, "on_git_push_info", ref, decision, detail)
 
         return _notify
 

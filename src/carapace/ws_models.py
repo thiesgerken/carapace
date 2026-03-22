@@ -111,6 +111,7 @@ class ProxyApprovalRequest(BaseModel):
     request_id: str
     domain: str
     command: str  # the exec command that triggered this connection attempt
+    kind: Literal["proxy_domain", "git_push"] = "proxy_domain"
 
 
 class TurnUsage(BaseModel):

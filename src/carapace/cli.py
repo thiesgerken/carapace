@@ -239,7 +239,11 @@ async def _render_proxy_approval_request(data: dict[str, Any]) -> str:
     domain = data.get("domain", "?")
     command = data.get("command", "")
 
-    panel_lines = [f"[bold]Domain:[/bold] {domain}"]
+    is_git_push = data.get("kind") == "git_push"
+    title_text = "Git Push Request" if is_git_push else "Proxy Access Request"
+    label = "Ref" if is_git_push else "Domain"
+
+    panel_lines = [f"[bold]{label}:[/bold] {domain}"]
     if command:
         panel_lines.append(f"[bold]Triggered by:[/bold] [dim]{command}[/dim]")
 
@@ -247,7 +251,7 @@ async def _render_proxy_approval_request(data: dict[str, Any]) -> str:
     console.print(
         Panel(
             "\n".join(panel_lines),
-            title="[yellow]Proxy Access Request[/yellow]",
+            title=f"[yellow]{title_text}[/yellow]",
             border_style="yellow",
         )
     )

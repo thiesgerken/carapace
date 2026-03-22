@@ -575,14 +575,19 @@ class WebSocketSubscriber:
     async def on_approval_request(self, req: ApprovalRequest) -> None:
         await self._safe_send(req)
 
-    async def on_proxy_approval_request(self, request_id: str, domain: str, command: str) -> None:
-        await self._safe_send(ProxyApprovalRequest(request_id=request_id, domain=domain, command=command))
+    async def on_proxy_approval_request(
+        self, request_id: str, domain: str, command: str, kind: str = "proxy_domain"
+    ) -> None:
+        await self._safe_send(ProxyApprovalRequest(request_id=request_id, domain=domain, command=command, kind=kind))
 
     async def on_title_update(self, title: str) -> None:
         await self._safe_send(SessionTitleUpdate(title=title))
 
     async def on_domain_info(self, domain: str, detail: str) -> None:
         await self._safe_send(ToolCallInfo(tool="proxy_domain", args={"domain": domain}, detail=detail))
+
+    async def on_git_push_info(self, ref: str, decision: str, detail: str) -> None:
+        await self._safe_send(ToolCallInfo(tool="git_push", args={"ref": ref, "decision": decision}, detail=detail))
 
 
 @router.websocket("/chat/{session_id}")
@@ -636,6 +641,7 @@ async def chat_ws(
                     request_id=pp["request_id"],
                     domain=pp.get("domain", ""),
                     command=pp.get("command", ""),
+                    kind=pp.get("kind", "proxy_domain"),
                 ),
             )
 
@@ -812,17 +818,20 @@ async def evaluate_push(req: PushEvalRequest) -> dict[str, str]:
     if active.security is None or active.sentinel is None:
         return {"verdict": "deny", "reason": "Session not initialised"}
 
-    verdict = await active.sentinel.evaluate_push(
+    from carapace.security import evaluate_push_with
+
+    allowed = await evaluate_push_with(
         active.security,
+        active.sentinel,
         req.ref,
         req.is_default_branch,
         req.commits,
         req.diff,
         usage_tracker=active.usage_tracker,
     )
-    if verdict.decision == "allow":
+    if allowed:
         return {"verdict": "allow"}
-    return {"verdict": "deny", "reason": verdict.explanation or "Denied by sentinel"}
+    return {"verdict": "deny", "reason": "Denied by sentinel"}
 
 
 app.include_router(router)

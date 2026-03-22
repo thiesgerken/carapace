@@ -63,6 +63,7 @@ export interface ProxyApprovalRequest {
   request_id: string;
   domain: string;
   command: string;
+  kind?: "proxy_domain" | "git_push";
 }
 
 export interface TurnUsage {

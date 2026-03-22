@@ -44,12 +44,12 @@ export function ProxyApprovalCard({
             d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z M9 10l2 2 4-4"
           />
         </svg>
-        Proxy Access Request
+        {request.kind === "git_push" ? "Git Push Request" : "Proxy Access Request"}
       </div>
 
       <div className="space-y-1.5">
         <div>
-          <span className="text-muted-foreground">Domain: </span>
+          <span className="text-muted-foreground">{request.kind === "git_push" ? "Ref: " : "Domain: "}</span>
           <span className="font-mono font-medium">{request.domain}</span>
         </div>
         {request.command && (

@@ -135,12 +135,18 @@ Slash commands are the user's control interface for managing sessions and securi
 | `/skills` | List available skills |
 | `/memory` | List memory files |
 | `/usage` | Show token usage breakdown with cost estimates |
+| `/pull` | Pull from external Git remote (if configured) |
+| `/push` | Push to external Git remote (if configured) |
 
 ### WebSocket-only commands
 
 | Command | Effect |
 | --- | --- |
 | `/verbose` | Toggle tool call display |
+| `/models` | View all models (agent, sentinel, title) and available options |
+| `/model [NAME\|reset]` | View or switch the agent model |
+| `/model-sentinel [NAME\|reset]` | View or switch the sentinel model |
+| `/model-title [NAME\|reset]` | View or switch the title model |
 | `/quit` / `/exit` | Close WebSocket connection |
 
 ### Matrix-only commands
