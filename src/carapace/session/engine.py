@@ -12,10 +12,11 @@ from typing import Any, Protocol, runtime_checkable
 from loguru import logger
 from pydantic_ai import ToolDenied
 from pydantic_ai.messages import ModelRequest, UserPromptPart
-from pydantic_ai.models import infer_model
+from pydantic_ai.models import Model, infer_model
 
 import carapace.security as security_mod
 from carapace.agent.loop import run_agent_turn
+from carapace.git.store import GitStore
 from carapace.memory import MemoryStore
 from carapace.models import Config, Deps, SessionState, SkillInfo
 from carapace.sandbox.manager import SandboxManager
@@ -66,7 +67,7 @@ class ActiveSession:
     proxy_approval_queue: asyncio.Queue[ProxyApprovalResponse | None] = field(default_factory=asyncio.Queue)
     usage_tracker: UsageTracker = field(default_factory=UsageTracker)
     verbose: bool = True
-    agent_model: Any = None
+    agent_model: Model | None = None
     agent_model_name: str | None = None
     sentinel_model_name: str | None = None
     title_model_name: str | None = None
@@ -95,12 +96,12 @@ class SessionEngine:
         config: Config,
         data_dir: Path,
         knowledge_dir: Path,
-        git_store: Any,
+        git_store: GitStore,
         session_mgr: SessionManager,
         skill_catalog: list[SkillInfo],
-        agent_model: Any,
+        agent_model: Model | None,
         sandbox_mgr: SandboxManager,
-        model_factory: Callable[[str], Any] | None = None,
+        model_factory: Callable[[str], Model] | None = None,
     ) -> None:
         self._config = config
         self._data_dir = data_dir
@@ -140,7 +141,7 @@ class SessionEngine:
         return self._sandbox_mgr
 
     @property
-    def agent_model(self) -> Any:
+    def agent_model(self) -> Model | None:
         return self._agent_model
 
     @property
@@ -489,7 +490,7 @@ class SessionEngine:
             "data": {"current": arg, "default": default, "message": f"Switched to: {arg}"},
         }
 
-    def _apply_model_override(self, active: ActiveSession, model_type: str, name: str | None, model_obj: Any) -> None:
+    def _apply_model_override(self, active: ActiveSession, model_type: str, name: str | None, model_obj: Model) -> None:
         if model_type == "agent":
             active.agent_model = model_obj
             active.agent_model_name = name

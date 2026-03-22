@@ -6,10 +6,13 @@ from pathlib import Path
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict
+from pydantic_ai.models import Model
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from carapace.git.store import GitStore
 from carapace.sandbox.manager import SandboxManager
 from carapace.security.context import SessionSecurity
+from carapace.security.sentinel import Sentinel
 from carapace.usage import UsageTracker
 
 # --- Session State ---
@@ -212,11 +215,11 @@ class Deps(BaseModel):
     session_state: SessionState
     sandbox: SandboxManager
     security: SessionSecurity
-    sentinel: Any  # Sentinel (can't type strictly — tests use MagicMock)
-    git_store: Any  # GitStore (can't import here — circular)
+    sentinel: Sentinel
+    git_store: GitStore
     skill_catalog: list[SkillInfo] = []
     activated_skills: list[str] = []
-    agent_model: Any = None
+    agent_model: Model | None = None
     verbose: bool = True
     tool_call_callback: Callable[[str, dict[str, Any], str], None] | None = None
     tool_result_callback: Callable[[str, str], None] | None = None

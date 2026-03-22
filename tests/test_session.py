@@ -11,11 +11,20 @@ import pytest
 
 from carapace.bootstrap import ensure_data_dir
 from carapace.config import load_config
+from carapace.git.store import GitStore
 from carapace.sandbox.manager import SandboxManager
+from carapace.security.sentinel import Sentinel
 from carapace.session import SessionEngine, SessionManager
 from carapace.skills import SkillRegistry
 from carapace.usage import ModelUsage
 from carapace.ws_models import ApprovalRequest, TurnUsage
+
+
+def _patch_sentinel():
+    """Patch Sentinel class so its instances pass isinstance checks."""
+    mock_cls = MagicMock()
+    mock_cls.return_value = MagicMock(spec=Sentinel)
+    return patch("carapace.session.engine.Sentinel", mock_cls)
 
 
 def test_create_session(tmp_path: Path):
@@ -114,7 +123,7 @@ def _make_engine(tmp_path: Path) -> SessionEngine:
         config=config,
         data_dir=tmp_path,
         knowledge_dir=tmp_path,
-        git_store=MagicMock(),
+        git_store=MagicMock(spec=GitStore),
         session_mgr=session_mgr,
         skill_catalog=skill_catalog,
         agent_model=None,
@@ -146,7 +155,7 @@ def test_user_message_from_self(tmp_path: Path):
         assert origin.user_messages == [("hello", True)]
         assert other.user_messages == [("hello", False)]
 
-    with patch("carapace.session.engine.Sentinel"):
+    with _patch_sentinel():
         asyncio.run(_run())
 
 
@@ -173,7 +182,7 @@ def test_user_message_no_origin(tmp_path: Path):
         assert sub_a.user_messages == [("hi", False)]
         assert sub_b.user_messages == [("hi", False)]
 
-    with patch("carapace.session.engine.Sentinel"):
+    with _patch_sentinel():
         asyncio.run(_run())
 
 
@@ -184,7 +193,7 @@ def test_user_message_no_origin(tmp_path: Path):
 
 def test_subscribe_duplicate_prevention(tmp_path: Path):
     """Subscribing the same subscriber twice does not duplicate it."""
-    with patch("carapace.session.engine.Sentinel"):
+    with _patch_sentinel():
         engine = _make_engine(tmp_path)
         state = engine.session_mgr.create_session()
         sid = state.session_id
@@ -207,7 +216,7 @@ def test_get_active_returns_none_before_activation(tmp_path: Path):
 
 def test_get_or_activate_loads_session(tmp_path: Path):
     """get_or_activate loads the session from disk and makes it active."""
-    with patch("carapace.session.engine.Sentinel"):
+    with _patch_sentinel():
         engine = _make_engine(tmp_path)
         state = engine.session_mgr.create_session()
         sid = state.session_id
@@ -228,7 +237,7 @@ def test_get_or_activate_unknown_session_raises(tmp_path: Path):
 
 def test_deactivate_removes_session(tmp_path: Path):
     """deactivate removes the session from active memory."""
-    with patch("carapace.session.engine.Sentinel"):
+    with _patch_sentinel():
         engine = _make_engine(tmp_path)
         state = engine.session_mgr.create_session()
         sid = state.session_id
@@ -248,7 +257,7 @@ def test_deactivate_idempotent(tmp_path: Path):
 
 def test_unsubscribe_removes_subscriber(tmp_path: Path):
     """unsubscribe removes the subscriber from the list."""
-    with patch("carapace.session.engine.Sentinel"):
+    with _patch_sentinel():
         engine = _make_engine(tmp_path)
         state = engine.session_mgr.create_session()
         sid = state.session_id
@@ -264,7 +273,7 @@ def test_unsubscribe_removes_subscriber(tmp_path: Path):
 
 def test_unsubscribe_nonexistent_is_safe(tmp_path: Path):
     """Unsubscribing a subscriber that was never added does not raise."""
-    with patch("carapace.session.engine.Sentinel"):
+    with _patch_sentinel():
         engine = _make_engine(tmp_path)
         state = engine.session_mgr.create_session()
         sid = state.session_id
@@ -275,7 +284,7 @@ def test_unsubscribe_nonexistent_is_safe(tmp_path: Path):
 
 def test_unsubscribe_saves_usage_when_last(tmp_path: Path):
     """Usage is persisted to disk when the last subscriber disconnects."""
-    with patch("carapace.session.engine.Sentinel"):
+    with _patch_sentinel():
         engine = _make_engine(tmp_path)
         state = engine.session_mgr.create_session()
         sid = state.session_id
@@ -317,7 +326,7 @@ def test_submit_message_busy_broadcasts_error(tmp_path: Path):
         with __import__("contextlib").suppress(asyncio.CancelledError):
             await active.agent_task
 
-    with patch("carapace.session.engine.Sentinel"):
+    with _patch_sentinel():
         asyncio.run(_run())
 
 
@@ -338,7 +347,7 @@ def test_submit_cancel_stops_task(tmp_path: Path):
         await engine.submit_cancel(sid)
         assert active.agent_task is None
 
-    with patch("carapace.session.engine.Sentinel"):
+    with _patch_sentinel():
         asyncio.run(_run())
 
 
@@ -354,7 +363,7 @@ def test_submit_cancel_noop_when_inactive(tmp_path: Path):
 
 def test_handle_slash_command_session(tmp_path: Path):
     """handle_slash_command /session returns session metadata."""
-    with patch("carapace.session.engine.Sentinel"):
+    with _patch_sentinel():
         engine = _make_engine(tmp_path)
         state = engine.session_mgr.create_session()
         sid = state.session_id
@@ -371,7 +380,7 @@ def test_handle_slash_command_session(tmp_path: Path):
 
 def test_handle_slash_command_unknown(tmp_path: Path):
     """handle_slash_command returns None for unknown commands."""
-    with patch("carapace.session.engine.Sentinel"):
+    with _patch_sentinel():
         engine = _make_engine(tmp_path)
         state = engine.session_mgr.create_session()
         sid = state.session_id

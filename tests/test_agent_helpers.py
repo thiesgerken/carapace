@@ -4,9 +4,11 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 from carapace.agent import build_system_prompt
+from carapace.git.store import GitStore
 from carapace.models import Config, Deps, SessionState
 from carapace.sandbox.manager import SandboxManager
 from carapace.security.context import SessionSecurity
+from carapace.security.sentinel import Sentinel
 from carapace.usage import UsageTracker
 
 
@@ -20,8 +22,8 @@ def test_build_system_prompt_minimal(tmp_path: Path):
         rules=[],
         sandbox=MagicMock(spec=SandboxManager),
         security=SessionSecurity("test-123"),
-        sentinel=MagicMock(),
-        git_store=MagicMock(),
+        sentinel=MagicMock(spec=Sentinel),
+        git_store=MagicMock(spec=GitStore),
         usage_tracker=UsageTracker(),
     )
     prompt = build_system_prompt(deps)
@@ -39,8 +41,8 @@ def test_build_system_prompt_with_agents_md(tmp_path: Path):
         rules=[],
         sandbox=MagicMock(spec=SandboxManager),
         security=SessionSecurity("s1"),
-        sentinel=MagicMock(),
-        git_store=MagicMock(),
+        sentinel=MagicMock(spec=Sentinel),
+        git_store=MagicMock(spec=GitStore),
         usage_tracker=UsageTracker(),
     )
     prompt = build_system_prompt(deps)
