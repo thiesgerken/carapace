@@ -49,15 +49,15 @@ def _notify_result(ctx: RunContext[Deps], tool_name: str, result: str) -> None:
 def build_system_prompt(deps: Deps) -> str:
     parts: list[str] = []
 
-    agents_md = load_workspace_file(deps.data_dir, "AGENTS.md")
+    agents_md = load_workspace_file(deps.knowledge_dir, "AGENTS.md")
     if agents_md:
         parts.append(agents_md)
 
-    soul_md = load_workspace_file(deps.data_dir, "SOUL.md")
+    soul_md = load_workspace_file(deps.knowledge_dir, "SOUL.md")
     if soul_md:
         parts.append(soul_md)
 
-    user_md = load_workspace_file(deps.data_dir, "USER.md")
+    user_md = load_workspace_file(deps.knowledge_dir, "USER.md")
     if user_md:
         parts.append(user_md)
 
