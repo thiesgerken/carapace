@@ -66,11 +66,16 @@ class GitHttpHandler:
         if path_info.startswith("/git"):
             path_info = path_info[4:]  # remove /git, keep leading /
 
-        # Validate PATH_INFO: must address only the intended repo to prevent
-        # git http-backend from serving arbitrary repos under the parent dir.
+        # Validate PATH_INFO using Path() to catch traversal segments and
+        # normalise double slashes before checking the allowed repo prefix.
+        path_obj = Path(path_info)
         repo_name = self._knowledge_dir.name
         allowed_prefixes = (f"/{repo_name}/", f"/{repo_name}.git/")
-        if not any(path_info.startswith(p) for p in allowed_prefixes):
+        if (
+            ".." in path_obj.parts
+            or "\\" in path_info
+            or not any(str(path_obj).startswith(p) for p in allowed_prefixes)
+        ):
             logger.warning(f"Rejected git request with unexpected PATH_INFO: {path_info}")
             return 403, {}, b""
 

@@ -306,3 +306,29 @@ class TestGitHttpHandlerHandle:
             body=b"",
         )
         assert status != 403
+
+    async def test_path_traversal_returns_403(self):
+        h = self._handler()
+
+        status, _headers, _body = await h.handle(
+            session_id="sess-1",
+            method="GET",
+            path="/git/knowledge/../otherrepo/info/refs",
+            query_string="",
+            content_type=None,
+            body=b"",
+        )
+        assert status == 403
+
+    async def test_backslash_in_path_returns_403(self):
+        h = self._handler()
+
+        status, _headers, _body = await h.handle(
+            session_id="sess-1",
+            method="GET",
+            path="/git/knowledge\\evil",
+            query_string="",
+            content_type=None,
+            body=b"",
+        )
+        assert status == 403
