@@ -310,6 +310,20 @@ class KubernetesRuntime(ContainerRuntime):
 
         return await asyncio.to_thread(_check)
 
+    async def logs(self, container_id: str, tail: int = 40) -> str:
+        def _logs() -> str:
+            try:
+                return self._core.read_namespaced_pod_log(
+                    name=container_id,
+                    namespace=self._namespace,
+                    tail_lines=tail,
+                    timestamps=True,
+                )
+            except ApiException:
+                return "(pod not found or logs unavailable)"
+
+        return await asyncio.to_thread(_logs)
+
     def image_exists(self, tag: str) -> bool:
         """In Kubernetes, image pulls are handled by the kubelet.
 

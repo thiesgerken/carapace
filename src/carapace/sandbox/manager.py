@@ -164,6 +164,15 @@ class SandboxManager:
         """Register a callback to retrieve activated skills for a session (from persisted state)."""
         self._get_activated_skills_cb = cb
 
+    async def _log_container_tail(self, container_id: str, session_id: str) -> None:
+        """Log the last lines of a dead/stopped container for troubleshooting."""
+        try:
+            tail = await self._runtime.logs(container_id)
+            if tail and tail.strip():
+                logger.info(f"Last logs from container {container_id[:12]} (session {session_id}):\n{tail}")
+        except Exception:
+            logger.debug(f"Could not retrieve logs from container {container_id[:12]}")
+
     def _get_exec_lock(self, session_id: str) -> asyncio.Lock:
         if session_id not in self._exec_locks:
             self._exec_locks[session_id] = asyncio.Lock()
@@ -180,6 +189,7 @@ class SandboxManager:
             logger.warning(
                 f"Container {sc.container_id[:12]} for session {session_id} is no longer running, recreating"
             )
+            await self._log_container_tail(sc.container_id, session_id)
             self._prepare_session_recreate(session_id)
 
         session_workspace = self._data_dir / "sessions" / session_id / "workspace"
@@ -222,7 +232,11 @@ class SandboxManager:
                     "sh",
                     "-c",
                     "setup-proxy.sh"
-                    " && git clone $GIT_REPO_URL /workspace"
+                    " && cd /workspace"
+                    " && git init"
+                    " && git remote add origin $GIT_REPO_URL"
+                    " && git fetch origin"
+                    " && git checkout main"
                     " && echo 'carapace sandbox ready'"
                     " && exec sleep infinity",
                 ],
@@ -337,6 +351,7 @@ class SandboxManager:
                     return await self._runtime.exec(sc.container_id, command, timeout=timeout)
                 except ContainerGoneError:
                     logger.warning(f"Container gone for session {session_id}, recreating sandbox")
+                    await self._log_container_tail(sc.container_id, session_id)
                     self._prepare_session_recreate(session_id)
                     sc, _ = await self.ensure_session(session_id)
                     await self._rebuild_skill_venvs(session_id)

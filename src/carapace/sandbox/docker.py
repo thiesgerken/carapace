@@ -223,6 +223,16 @@ class DockerRuntime(ContainerRuntime):
 
         return await asyncio.to_thread(_check)
 
+    async def logs(self, container_id: str, tail: int = 40) -> str:
+        def _logs() -> str:
+            try:
+                container = self._client.containers.get(container_id)
+                return container.logs(tail=tail, timestamps=True).decode("utf-8", errors="replace")
+            except NotFound:
+                return "(container not found)"
+
+        return await asyncio.to_thread(_logs)
+
     async def get_self_network_info(self) -> dict[str, str]:
         """Return all network names → IP addresses visible to this process.
 
