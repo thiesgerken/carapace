@@ -315,7 +315,13 @@ class SandboxManager:
         }
 
     async def _exec(
-        self, session_id: str, command: str, timeout: int = 30, *, bypass_proxy: bool = False
+        self,
+        session_id: str,
+        command: str,
+        timeout: int = 30,
+        *,
+        bypass_proxy: bool = False,
+        workdir: str | None = None,
     ) -> ExecResult:
         """Run a command in the sandbox and return the raw ExecResult.
 
@@ -338,14 +344,24 @@ class SandboxManager:
                 self._session_current_command[session_id] = command
                 self._exec_temp_domains[session_id] = set()
                 try:
-                    return await self._runtime.exec(sc.container_id, command, timeout=timeout)
+                    return await self._runtime.exec(
+                        sc.container_id,
+                        command,
+                        timeout=timeout,
+                        workdir=workdir,
+                    )
                 except ContainerGoneError:
                     logger.warning(f"Container gone for session {session_id}, recreating sandbox")
                     await self._log_container_tail(sc.container_id, session_id)
                     self._prepare_session_recreate(session_id)
                     sc, _ = await self.ensure_session(session_id)
                     await self._rebuild_skill_venvs(session_id)
-                    return await self._runtime.exec(sc.container_id, command, timeout=timeout)
+                    return await self._runtime.exec(
+                        sc.container_id,
+                        command,
+                        timeout=timeout,
+                        workdir=workdir,
+                    )
             finally:
                 if bypass_proxy:
                     self._proxy_bypass_sessions.discard(session_id)
@@ -353,9 +369,16 @@ class SandboxManager:
                 self._session_current_command.pop(session_id, None)
                 self._exec_temp_domains.pop(session_id, None)
 
+    _KNOWLEDGE_WORKDIR = "/workspace/knowledge"
+
     async def exec_command(self, session_id: str, command: str, timeout: int = 30) -> str:
         """Run a command in the sandbox and return formatted output."""
-        result = await self._exec(session_id, command, timeout=timeout)
+        result = await self._exec(
+            session_id,
+            command,
+            timeout=timeout,
+            workdir=self._KNOWLEDGE_WORKDIR,
+        )
         output = result.output
         if result.exit_code != 0 and f"[exit code: {result.exit_code}]" not in output:
             logger.debug(f"Command failed in session {session_id} (exit {result.exit_code}): {command}")
@@ -484,15 +507,17 @@ class SandboxManager:
         skill_path = f"skills/{shlex.quote(skill_name)}"
         result = await self._exec(
             session_id,
-            f"cd /workspace/knowledge && git checkout HEAD -- {skill_path}/pyproject.toml",
+            f"git checkout HEAD -- {skill_path}/pyproject.toml",
             timeout=10,
+            workdir=self._KNOWLEDGE_WORKDIR,
         )
         if result.exit_code != 0:
             raise SkillVenvError(f"Failed to restore trusted pyproject.toml: {result.output}")
         await self._exec(
             session_id,
-            f"cd /workspace/knowledge && git checkout HEAD -- {skill_path}/uv.lock 2>/dev/null || true",
+            f"git checkout HEAD -- {skill_path}/uv.lock 2>/dev/null || true",
             timeout=10,
+            workdir=self._KNOWLEDGE_WORKDIR,
         )
 
         await self._build_skill_venv(session_id, skill_name)

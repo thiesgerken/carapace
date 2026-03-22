@@ -163,6 +163,7 @@ class DockerRuntime(ContainerRuntime):
         command: str | list[str],
         timeout: int = 30,
         env: dict[str, str] | None = None,
+        workdir: str | None = None,
     ) -> ExecResult:
         def _exec() -> ExecResult:
             try:
@@ -172,7 +173,7 @@ class DockerRuntime(ContainerRuntime):
             cmd = ["bash", "-c", command] if isinstance(command, str) else command
 
             try:
-                result = container.exec_run(cmd, environment=env, demux=True)
+                result = container.exec_run(cmd, environment=env, workdir=workdir, demux=True)
             except APIError as err:
                 if err.status_code == 409:
                     raise ContainerGoneError(f"Container {container_id[:12]} is not running") from err

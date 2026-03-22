@@ -208,10 +208,14 @@ class KubernetesRuntime(ContainerRuntime):
         command: str | list[str],
         timeout: int = 30,
         env: dict[str, str] | None = None,
+        workdir: str | None = None,
     ) -> ExecResult:
         shell_cmd = command if isinstance(command, str) else " ".join(command)
 
-        # Kubernetes exec doesn't support env natively, so we prepend env vars
+        # Kubernetes exec doesn't support workdir or env natively,
+        # so we prepend cd and env vars to the shell command.
+        if workdir:
+            shell_cmd = f"cd {workdir} && {shell_cmd}"
         if env:
             env_prefix = " ".join(f"{k}={v}" for k, v in env.items())
             shell_cmd = f"env {env_prefix} {shell_cmd}"
