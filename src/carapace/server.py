@@ -814,7 +814,10 @@ class PushEvalRequest(BaseModel):
 @internal_app.post("/internal/sentinel/evaluate-push")
 async def evaluate_push(req: PushEvalRequest) -> dict[str, str]:
     """Evaluate a Git push via the sentinel. Called by the pre-receive hook."""
-    active = _engine.get_or_activate(req.session_id)
+    try:
+        active = _engine.get_or_activate(req.session_id)
+    except KeyError:
+        return {"verdict": "deny", "reason": f"Session {req.session_id} not found"}
     if active.security is None or active.sentinel is None:
         return {"verdict": "deny", "reason": "Session not initialised"}
 
