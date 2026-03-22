@@ -476,13 +476,24 @@ class SandboxManager:
 
         # Restore committed dependency manifests inside the sandbox,
         # preventing the sandbox from running modified dependencies.
+        # For each file: if tracked in HEAD restore it, otherwise delete it so
+        # a sandbox-created version cannot influence the venv build.
         skill_path = f"skills/{shlex.quote(skill_name)}"
-        await self._exec(
-            session_id,
-            f"cd /workspace && git checkout HEAD -- {skill_path}/pyproject.toml"
-            f" && git checkout HEAD -- {skill_path}/uv.lock 2>/dev/null || true",
-            timeout=10,
+        restore_cmd = (
+            f"cd /workspace"
+            f" && (if git cat-file -e HEAD:{skill_path}/pyproject.toml;"
+            f" then git checkout HEAD -- {skill_path}/pyproject.toml;"
+            f" else rm -f {skill_path}/pyproject.toml; fi)"
+            f" && (if git cat-file -e HEAD:{skill_path}/uv.lock;"
+            f" then git checkout HEAD -- {skill_path}/uv.lock;"
+            f" else rm -f {skill_path}/uv.lock; fi)"
         )
+        result = await self._exec(session_id, restore_cmd, timeout=10)
+        if result.exit_code != 0:
+            raise SkillVenvError(
+                f"Failed to restore trusted dependency files from git"
+                f" (exit {result.exit_code}): {result.output[:500]}"
+            )
 
         await self._build_skill_venv(session_id, skill_name)
         return "Venv rebuilt successfully."
