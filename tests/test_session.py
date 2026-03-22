@@ -8,6 +8,7 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
+from pydantic_ai.models.test import TestModel
 
 from carapace.bootstrap import ensure_data_dir
 from carapace.config import load_config
@@ -128,6 +129,7 @@ def _make_engine(tmp_path: Path) -> SessionEngine:
         skill_catalog=skill_catalog,
         agent_model=None,
         sandbox_mgr=sandbox_mgr,
+        model_factory=lambda _name: TestModel(),
     )
 
 
