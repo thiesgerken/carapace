@@ -13,6 +13,7 @@ from pathlib import Path
 from loguru import logger
 from pydantic import BaseModel
 
+from carapace.git.author import parse_author_template
 from carapace.sandbox.runtime import (
     ContainerConfig,
     ContainerGoneError,
@@ -371,12 +372,7 @@ class SandboxManager:
 
     def _git_identity_env(self, session_id: str) -> dict[str, str]:
         """Derive GIT_AUTHOR/COMMITTER env vars from the author template."""
-        filled = self._git_author.replace("%s", session_id)
-        if "<" in filled and filled.endswith(">"):
-            name, _, email = filled.rpartition("<")
-            name, email = name.strip(), email.rstrip(">").strip()
-        else:
-            name, email = filled, f"{session_id}@carapace"
+        name, email = parse_author_template(self._git_author, session_id)
         return {
             "GIT_AUTHOR_NAME": name,
             "GIT_COMMITTER_NAME": name,
@@ -717,7 +713,6 @@ class SandboxManager:
         token = self._session_tokens.pop(session_id, None)
         if token:
             self._token_to_session.pop(token, None)
-        if token or session_id in self._session_tokens:
             self._save_tokens()
         if clear_domain_state:
             self._allowed_domains.pop(session_id, None)

@@ -5,6 +5,8 @@ from pathlib import Path
 
 from loguru import logger
 
+from carapace.git.author import parse_author_template
+
 # Pre-receive hook script — gates every push through the sentinel.
 # CARAPACE_SESSION_ID, CARAPACE_DEFAULT_BRANCH, and CARAPACE_API_PORT
 # are set by the Git HTTP handler.
@@ -94,7 +96,7 @@ class GitStore:
             logger.info(f"Initialised knowledge repo at {self.repo_dir}")
 
             # Set default git config for server-side commits
-            author_name, author_email = self._parse_author("server")
+            author_name, author_email = parse_author_template(self.author_template, "server")
             await self._run("config", "user.name", author_name)
             await self._run("config", "user.email", author_email)
 
@@ -116,15 +118,6 @@ class GitStore:
         hook_path.chmod(0o755)
         logger.debug("Installed pre-receive hook")
 
-    def _parse_author(self, session_id: str) -> tuple[str, str]:
-        """Parse the author template into (name, email)."""
-        filled = self.author_template.replace("%s", session_id)
-        # Expected format: "Name <email>"
-        if "<" in filled and filled.endswith(">"):
-            name, _, email = filled.rpartition("<")
-            return name.strip(), email.rstrip(">").strip()
-        return filled, f"{session_id}@carapace"
-
     async def commit(self, paths: list[str], message: str, *, session_id: str = "server") -> bool:
         """Stage the given paths and commit. Returns True if a commit was made."""
         for p in paths:
@@ -136,7 +129,7 @@ class GitStore:
             # Nothing to commit
             return False
 
-        author_name, author_email = self._parse_author(session_id)
+        author_name, author_email = parse_author_template(self.author_template, session_id)
         code, out = await self._run(
             "commit",
             "-m",
