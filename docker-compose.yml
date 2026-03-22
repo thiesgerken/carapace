@@ -7,7 +7,6 @@ services:
     group_add:
       - ${DOCKER_GID:-0}
     volumes:
-      - ./knowledge:/knowledge
       - ./data:/var/lib/carapace
       - /var/run/docker.sock:/var/run/docker.sock
       - ./src/carapace:/app/.venv/lib/python3.14/site-packages/carapace
