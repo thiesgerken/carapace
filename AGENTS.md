@@ -27,6 +27,7 @@ Carapace is a security-first personal AI agent with LLM-powered security gating.
 - Imports ordered: stdlib → third-party → local, separated by blank lines
 - No deferred (in-function) imports or `TYPE_CHECKING` guards — restructure modules to break circular dependencies instead
 - Linting: `uvx ruff check src/` — fix all warnings before committing
+- Pre-commit hooks are installed (`pre-commit`). Stage your changes, then run `uvx pre-commit run` before committing to catch issues early — this avoids the commit being rejected and having to re-run the git command.
 
 ## Project structure
 
