@@ -251,18 +251,18 @@ class SandboxManager:
                 command=[
                     "sh",
                     "-c",
-                    "setup-proxy.sh"
-                    " && if [ ! -d /workspace/knowledge/.git ]; then"
-                    "   git clone $GIT_REPO_URL /workspace/knowledge;"
-                    " fi"
-                    " && echo 'carapace sandbox ready'"
-                    " && exec sleep infinity",
+                    "setup-proxy.sh && echo 'carapace sandbox ready' && exec sleep infinity",
                 ],
                 environment=env,
             )
 
             container_id = await self._runtime.create(config)
             ip = await self._runtime.get_ip(container_id, self._network_name)
+
+            # Wait for the container to finish setup (proxy config etc.)
+            # before running the git clone as a separate exec.
+            await self._wait_for_ready(container_id, session_id)
+            await self._clone_knowledge_repo(container_id, session_id)
         except BaseException:
             self._cleanup_tracking(session_id)
             raise
@@ -277,6 +277,35 @@ class SandboxManager:
         self._sessions[session_id] = sc
         logger.info(f"Created sandbox container {container_id[:12]} for session {session_id} (IP: {ip})")
         return sc, True
+
+    _READY_MARKER = "carapace sandbox ready"
+
+    async def _wait_for_ready(self, container_id: str, session_id: str) -> None:
+        """Poll container logs until the ready marker appears (up to 30s)."""
+        for _ in range(30):
+            log_output = await self._runtime.logs(container_id, tail=10)
+            if self._READY_MARKER in log_output:
+                return
+            await asyncio.sleep(1)
+        logger.warning(f"Sandbox for {session_id} did not become ready within 30s")
+
+    async def _clone_knowledge_repo(self, container_id: str, session_id: str) -> None:
+        """Clone the knowledge repo into the sandbox if not already present."""
+        probe = await self._runtime.exec(
+            container_id,
+            "test -d /workspace/knowledge/.git",
+            timeout=5,
+        )
+        if probe.exit_code == 0:
+            logger.debug(f"Knowledge repo already present in sandbox for {session_id}")
+            return
+        result = await self._runtime.exec(
+            container_id,
+            "git clone $GIT_REPO_URL /workspace/knowledge",
+            timeout=60,
+        )
+        if result.exit_code != 0:
+            logger.error(f"Git clone failed in sandbox for {session_id} (exit {result.exit_code}): {result.output}")
 
     def _host_path(self, path: Path) -> str:
         """Translate a container-local path to its host-side equivalent for bind mounts.

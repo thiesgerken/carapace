@@ -165,11 +165,14 @@ async def test_exec_recreate_preserves_domains(tmp_path: Path):
     runtime.get_host_ip = AsyncMock(return_value="172.18.0.1")
     runtime.create = AsyncMock(side_effect=["container-1", "container-2"])
     runtime.get_ip = AsyncMock(return_value="172.18.0.22")
-    runtime.logs = AsyncMock(return_value="")
+    runtime.logs = AsyncMock(return_value="carapace sandbox ready")
+    _git_exists = ExecResult(exit_code=0, output="")
     runtime.exec = AsyncMock(
         side_effect=[
-            ContainerGoneError(),
-            ExecResult(exit_code=0, output="ok"),
+            _git_exists,  # knowledge repo probe after first create
+            ContainerGoneError(),  # exec_command triggers recreate
+            _git_exists,  # knowledge repo probe after recreate
+            ExecResult(exit_code=0, output="ok"),  # actual command retry
         ]
     )
 
