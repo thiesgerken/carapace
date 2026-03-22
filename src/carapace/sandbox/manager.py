@@ -146,6 +146,8 @@ class SandboxManager:
         self._sessions: dict[str, SessionContainer] = {}
         self._token_to_session: dict[str, str] = {}
         self._session_tokens: dict[str, str] = {}
+        self._tokens_path = self._data_dir / "sandbox_tokens.json"
+        self._load_tokens()
         self._allowed_domains: dict[str, set[str]] = {}
         self._exec_temp_domains: dict[str, set[str]] = {}  # session_id -> domains, cleared after each exec
         self._session_current_command: dict[str, str] = {}
@@ -163,6 +165,25 @@ class SandboxManager:
     def set_activated_skills_callback(self, cb: Callable[[str], list[str]]) -> None:
         """Register a callback to retrieve activated skills for a session (from persisted state)."""
         self._get_activated_skills_cb = cb
+
+    def _load_tokens(self) -> None:
+        """Restore session tokens from disk so sandbox auth survives server restarts."""
+        if not self._tokens_path.exists():
+            return
+        try:
+            data = json.loads(self._tokens_path.read_text())
+            self._session_tokens = data
+            self._token_to_session = {t: s for s, t in data.items()}
+            logger.info(f"Restored {len(data)} session token(s) from {self._tokens_path.name}")
+        except Exception as exc:
+            logger.warning(f"Failed to load session tokens: {exc}")
+
+    def _save_tokens(self) -> None:
+        """Persist session tokens to disk."""
+        try:
+            self._tokens_path.write_text(json.dumps(self._session_tokens))
+        except Exception as exc:
+            logger.warning(f"Failed to save session tokens: {exc}")
 
     async def _log_container_tail(self, container_id: str, session_id: str) -> None:
         """Log the last lines of a dead/stopped container for troubleshooting."""
@@ -207,6 +228,7 @@ class SandboxManager:
             self._token_to_session.pop(old_token, None)
         self._token_to_session[proxy_token] = session_id
         self._session_tokens[session_id] = proxy_token
+        self._save_tokens()
         try:
             host_ip = await self._runtime.get_host_ip(self._network_name)
             if not host_ip:
@@ -647,6 +669,8 @@ class SandboxManager:
         token = self._session_tokens.pop(session_id, None)
         if token:
             self._token_to_session.pop(token, None)
+        if token or session_id in self._session_tokens:
+            self._save_tokens()
         if clear_domain_state:
             self._allowed_domains.pop(session_id, None)
         if clear_exec_state:
