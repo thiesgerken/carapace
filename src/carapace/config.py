@@ -33,11 +33,12 @@ def _resolve_data_dir(config_path: Path, config: Config | None = None) -> Path:
     return config_dir.resolve()
 
 
-def _resolve_knowledge_dir(config: Config) -> Path:
-    """Resolve ``knowledge_dir`` from config (relative to CWD)."""
+def _resolve_knowledge_dir(config_path: Path, config: Config) -> Path:
+    """Resolve ``knowledge_dir`` relative to the config file's directory."""
+    config_dir = config_path.parent
     if config.knowledge_dir:
-        return Path(config.knowledge_dir).resolve()
-    return Path("./knowledge").resolve()
+        return (config_dir / config.knowledge_dir).resolve()
+    return (config_dir / "knowledge").resolve()
 
 
 def load_config(data_dir: Path | None = None) -> Config:

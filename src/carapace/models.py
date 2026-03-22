@@ -172,7 +172,7 @@ class Config(BaseModel):
     memory: MemoryConfig = MemoryConfig()
     git: GitConfig = GitConfig()
     data_dir: str = "."  # resolved relative to config file location
-    knowledge_dir: str = "./knowledge"  # resolved relative to CWD
+    knowledge_dir: str = "./knowledge"  # resolved relative to config file location
 
 
 # --- Skill Catalog Entry ---

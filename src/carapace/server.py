@@ -148,7 +148,7 @@ async def lifespan(app: FastAPI):
     config_path = get_config_path()
     _config = load_config()
     _data_dir = _resolve_data_dir(config_path, _config)
-    knowledge_dir = _resolve_knowledge_dir(_config)
+    knowledge_dir = _resolve_knowledge_dir(config_path, _config)
 
     # 2. Bootstrap directories
     ensure_data_dir(_data_dir)
