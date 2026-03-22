@@ -12,9 +12,18 @@ _PRE_RECEIVE_HOOK = """\
 #!/bin/sh
 # Pre-receive hook — sentinel evaluation of incoming pushes
 
+NULL_SHA="0000000000000000000000000000000000000000"
+EMPTY_TREE=$(git hash-object -t tree /dev/null)
+
 while read old_sha new_sha ref; do
-    changes=$(git log --oneline "$old_sha..$new_sha" 2>/dev/null)
-    diff=$(git diff "$old_sha" "$new_sha" 2>/dev/null)
+    if [ "$old_sha" = "$NULL_SHA" ]; then
+        # New branch: show all commits and diff against empty tree
+        changes=$(git log --oneline "$new_sha" 2>/dev/null)
+        diff=$(git diff "$EMPTY_TREE" "$new_sha" 2>/dev/null)
+    else
+        changes=$(git log --oneline "$old_sha..$new_sha" 2>/dev/null)
+        diff=$(git diff "$old_sha" "$new_sha" 2>/dev/null)
+    fi
 
     branch=$(echo "$ref" | sed 's|refs/heads/||')
     is_default="false"
