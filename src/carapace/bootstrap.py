@@ -9,9 +9,7 @@ _ASSETS = files("carapace.assets")
 # --- Data dir files (stay in data/) ---
 
 # Files that are never overwritten by CARAPACE_RESET_ASSETS (user-owned).
-_USER_FILES: list[tuple[str, str]] = [
-    ("config.yaml", "config.yaml"),
-]
+_USER_FILES: list[tuple[str, str]] = []
 
 # --- Knowledge dir files (move to knowledge/) ---
 
