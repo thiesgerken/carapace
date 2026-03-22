@@ -9,8 +9,6 @@ from pathlib import Path
 
 from loguru import logger
 
-_push_lock = asyncio.Lock()
-
 
 class GitHttpHandler:
     """Handles Git HTTP requests via ``git http-backend`` CGI.
@@ -33,6 +31,7 @@ class GitHttpHandler:
         self._api_port = api_port
         self._verify_session_token = verify_session_token
         self._on_push_success = on_push_success
+        self._push_lock = asyncio.Lock()
 
     def authenticate(self, authorization: str | None) -> str | None:
         """Validate an ``Authorization: Basic ...`` header.
@@ -98,7 +97,7 @@ class GitHttpHandler:
             "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
         }
 
-        lock: contextlib.AbstractAsyncContextManager[object] = _push_lock if is_push else contextlib.nullcontext()
+        lock: contextlib.AbstractAsyncContextManager[object] = self._push_lock if is_push else contextlib.nullcontext()
         async with lock:
             try:
                 proc = await asyncio.create_subprocess_exec(

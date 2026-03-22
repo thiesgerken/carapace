@@ -15,7 +15,9 @@ _PRE_RECEIVE_HOOK = """\
 NULL_SHA="0000000000000000000000000000000000000000"
 EMPTY_TREE=$(git hash-object -t tree /dev/null)
 
+ref_count=0
 while read old_sha new_sha ref; do
+    ref_count=$((ref_count + 1))
     if [ "$old_sha" = "$NULL_SHA" ]; then
         # New branch: show all commits and diff against empty tree
         changes=$(git log --oneline "$new_sha" 2>/dev/null)
@@ -49,6 +51,11 @@ while read old_sha new_sha ref; do
         exit 1
     fi
 done
+
+if [ "$ref_count" -eq 0 ]; then
+    echo "ERROR: No refs received in push" >&2
+    exit 1
+fi
 """
 
 

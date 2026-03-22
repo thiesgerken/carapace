@@ -133,6 +133,7 @@ class SandboxManager:
         host_data_dir: Path | None = None,
         proxy_port: int = 3128,
         sandbox_port: int = 8322,
+        git_branch: str = "main",
     ) -> None:
         self._runtime = runtime
         self._data_dir = data_dir
@@ -143,6 +144,7 @@ class SandboxManager:
         self._idle_timeout = idle_timeout_minutes * 60
         self._proxy_port = proxy_port
         self._sandbox_port = sandbox_port
+        self._git_branch = git_branch
         self._sessions: dict[str, SessionContainer] = {}
         self._token_to_session: dict[str, str] = {}
         self._session_tokens: dict[str, str] = {}
@@ -236,7 +238,7 @@ class SandboxManager:
                     " && git init"
                     " && git remote add origin $GIT_REPO_URL"
                     " && git fetch origin"
-                    " && git checkout main"
+                    f" && git checkout {self._git_branch}"
                     " && echo 'carapace sandbox ready'"
                     " && exec sleep infinity",
                 ],
