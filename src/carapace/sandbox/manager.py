@@ -220,6 +220,7 @@ class SandboxManager:
 
             mounts = self._build_mounts(session_id)
             env = self._build_proxy_env(session_id, proxy_token, proxy_url)
+            knowledge_name = self._knowledge_dir.name
             config = ContainerConfig(
                 image=self._base_image,
                 name=f"carapace-sandbox-{session_id}",
@@ -230,8 +231,8 @@ class SandboxManager:
                     "sh",
                     "-c",
                     "setup-proxy.sh"
-                    " && if [ ! -d /workspace/knowledge/.git ]; then"
-                    "   git clone $GIT_REPO_URL /workspace/knowledge;"
+                    f" && if [ ! -d /workspace/{knowledge_name}/.git ]; then"
+                    f"   git clone $GIT_REPO_URL /workspace/{knowledge_name};"
                     " fi"
                     " && echo 'carapace sandbox ready'"
                     " && exec sleep infinity",
@@ -423,8 +424,7 @@ class SandboxManager:
 
         await self.ensure_session(session_id)
 
-        # Check that the skill exists in the server-side knowledge store.
-        # The sandbox already has it at /workspace/knowledge/skills/{name} via git clone.
+        knowledge_name = self._knowledge_dir.name
         master_skill_dir = self._knowledge_dir / "skills" / skill_name
         if not master_skill_dir.exists():
             logger.warning(f"Skill '{skill_name}' not found for session {session_id}")
@@ -439,14 +439,14 @@ class SandboxManager:
             except SkillVenvError as exc:
                 logger.info(f"Activated skill '{skill_name}' in session {session_id} (with errors)")
                 raise SkillVenvError(
-                    f"Skill '{skill_name}' activated at /workspace/knowledge/skills/{skill_name}/ but "
+                    f"Skill '{skill_name}' activated at /workspace/{knowledge_name}/skills/{skill_name}/ but "
                     f"dependency install failed: {exc}\n"
                     "The skill is available but its Python dependencies are NOT installed. "
                     "You may need to install them manually inside the sandbox."
                 ) from exc
 
         logger.info(f"Activated skill '{skill_name}' in session {session_id}")
-        result = f"Skill '{skill_name}' activated at /workspace/knowledge/skills/{skill_name}/"
+        result = f"Skill '{skill_name}' activated at /workspace/{knowledge_name}/skills/{skill_name}/"
         if venv_msg:
             result += f"\n{venv_msg}"
         return result
@@ -461,7 +461,8 @@ class SandboxManager:
             raise SkillVenvError(err)
 
         logger.info(f"Building venv for skill '{skill_name}' (session {session_id})")
-        skill_dir = f"/workspace/knowledge/skills/{shlex.quote(skill_name)}"
+        knowledge_name = self._knowledge_dir.name
+        skill_dir = f"/workspace/{knowledge_name}/skills/{shlex.quote(skill_name)}"
         result = await self._exec(
             session_id,
             f"uv sync --directory {skill_dir}",
@@ -479,19 +480,18 @@ class SandboxManager:
         if not (master / "pyproject.toml").exists():
             return ""
 
-        # Restore committed dependency manifests inside the sandbox,
-        # preventing the sandbox from running modified dependencies.
+        knowledge_name = self._knowledge_dir.name
         skill_path = f"skills/{shlex.quote(skill_name)}"
         result = await self._exec(
             session_id,
-            f"cd /workspace/knowledge && git checkout HEAD -- {skill_path}/pyproject.toml",
+            f"cd /workspace/{knowledge_name} && git checkout HEAD -- {skill_path}/pyproject.toml",
             timeout=10,
         )
         if result.exit_code != 0:
             raise SkillVenvError(f"Failed to restore trusted pyproject.toml: {result.output}")
         await self._exec(
             session_id,
-            f"cd /workspace/knowledge && git checkout HEAD -- {skill_path}/uv.lock 2>/dev/null || true",
+            f"cd /workspace/{knowledge_name} && git checkout HEAD -- {skill_path}/uv.lock 2>/dev/null || true",
             timeout=10,
         )
 

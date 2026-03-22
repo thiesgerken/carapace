@@ -72,21 +72,23 @@ def build_system_prompt(deps: Deps) -> str:
         )
         parts.append("\n".join(catalog_lines))
 
+    knowledge_name = deps.knowledge_dir.name
     parts.append(
         "# Sandbox Environment\n"
         "Commands run inside a Docker sandbox container.\n"
         "- `/workspace/` — persistent session workspace\n"
-        "- `/workspace/knowledge/` — the knowledge repo (Git clone from the server)\n"
-        "- `/workspace/knowledge/SOUL.md`, `/workspace/knowledge/USER.md`, `/workspace/knowledge/SECURITY.md` "
-        "— personality and security policy files\n"
-        "- `/workspace/knowledge/memory/` — memory files\n"
-        "- `/workspace/knowledge/skills/` — activated skills (populated by `use_skill`)\n"
+        f"- `/workspace/{knowledge_name}/` — the knowledge repo (Git clone from the server)\n"
+        f"- `/workspace/{knowledge_name}/SOUL.md`, `/workspace/{knowledge_name}/USER.md`, "
+        f"`/workspace/{knowledge_name}/SECURITY.md` — personality and security policy files\n"
+        f"- `/workspace/{knowledge_name}/memory/` — memory files\n"
+        f"- `/workspace/{knowledge_name}/skills/` — activated skills (populated by `use_skill`)\n"
         "Call `use_skill(skill_name)` to activate a skill before running its scripts.\n"
         "To persist changes to knowledge files (memory, skills, workspace files), "
-        "use `git add`, `git commit`, and `git push` inside `/workspace/knowledge/`. "
+        f"use `git add`, `git commit`, and `git push` inside `/workspace/{knowledge_name}/`. "
         "Every push is evaluated by the security sentinel via a pre-receive hook.\n"
         "`uv` is pre-installed; skill dependencies are managed via `pyproject.toml` + `uv.lock`.\n"
-        "Run skill scripts with `uv run --directory /workspace/knowledge/skills/<name> scripts/<script>.py`.\n\n"
+        f"Run skill scripts with `uv run --directory /workspace/{knowledge_name}/skills/<name> "
+        "scripts/<script>.py`.\n\n"
         "## Network Access\n"
         "The sandbox has internet access. Outgoing requests are allowed but subject to "
         "security review by the sentinel — like all tool calls, network activity is evaluated "

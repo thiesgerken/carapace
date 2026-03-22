@@ -182,6 +182,15 @@ class GitStore:
         if code != 0:
             raise RuntimeError(f"git fetch failed: {out}")
 
+        has_local_commits = await self.has_commits()
+        if not has_local_commits:
+            code, out = await self._run("reset", "--hard", f"origin/{self.branch}")
+            if code != 0:
+                raise RuntimeError(f"git reset failed: {out}")
+            logger.info("Synced empty local repo with remote")
+            code, summary = await self._run("log", "--oneline", "-n", "5")
+            return summary if summary else "Synced with remote."
+
         code, out = await self._run("merge", "--ff-only", f"origin/{self.branch}")
         if code != 0:
             raise RuntimeError(
