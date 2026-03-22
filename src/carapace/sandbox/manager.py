@@ -148,8 +148,6 @@ class SandboxManager:
         self._sessions: dict[str, SessionContainer] = {}
         self._token_to_session: dict[str, str] = {}
         self._session_tokens: dict[str, str] = {}
-        self._tokens_path = self._data_dir / "sandbox_tokens.json"
-        self._load_tokens()
         self._allowed_domains: dict[str, set[str]] = {}
         self._exec_temp_domains: dict[str, set[str]] = {}  # session_id -> domains, cleared after each exec
         self._session_current_command: dict[str, str] = {}
@@ -168,24 +166,28 @@ class SandboxManager:
         """Register a callback to retrieve activated skills for a session (from persisted state)."""
         self._get_activated_skills_cb = cb
 
-    def _load_tokens(self) -> None:
-        """Restore session tokens from disk so sandbox auth survives server restarts."""
-        if not self._tokens_path.exists():
-            return
-        try:
-            data = json.loads(self._tokens_path.read_text())
-            self._session_tokens = data
-            self._token_to_session = {t: s for s, t in data.items()}
-            logger.info(f"Restored {len(data)} session token(s) from {self._tokens_path.name}")
-        except Exception as exc:
-            logger.warning(f"Failed to load session tokens: {exc}")
+    def _get_or_create_token(self, session_id: str) -> str:
+        """Return the proxy token for *session_id*, loading or creating as needed.
 
-    def _save_tokens(self) -> None:
-        """Persist session tokens to disk."""
-        try:
-            self._tokens_path.write_text(json.dumps(self._session_tokens))
-        except Exception as exc:
-            logger.warning(f"Failed to save session tokens: {exc}")
+        Order: in-memory → on-disk file → generate new.
+        The result is always written back to memory and disk.
+        """
+        token = self._session_tokens.get(session_id)
+        if token:
+            return token
+
+        token_path = self._data_dir / "sessions" / session_id / "token"
+        if token_path.exists():
+            token = token_path.read_text().strip()
+            logger.debug(f"Restored token for session {session_id} from disk")
+        else:
+            token = secrets.token_hex(16)
+            token_path.parent.mkdir(parents=True, exist_ok=True)
+            token_path.write_text(token)
+
+        self._session_tokens[session_id] = token
+        self._token_to_session[token] = session_id
+        return token
 
     async def _log_container_tail(self, container_id: str, session_id: str) -> None:
         """Log the last lines of a dead/stopped container for troubleshooting."""
@@ -221,16 +223,7 @@ class SandboxManager:
         # can write to PVC subPath mounts (chown may not be available).
         session_workspace.chmod(0o777)
 
-        proxy_token = secrets.token_hex(16)
-        # Evict any orphaned token left by a previous failed attempt for this
-        # session (one that never reached _sessions so _cleanup_tracking was
-        # never called on retry).
-        old_token = self._session_tokens.get(session_id)
-        if old_token:
-            self._token_to_session.pop(old_token, None)
-        self._token_to_session[proxy_token] = session_id
-        self._session_tokens[session_id] = proxy_token
-        self._save_tokens()
+        proxy_token = self._get_or_create_token(session_id)
         try:
             host_ip = await self._runtime.get_host_ip(self._network_name)
             if not host_ip:
@@ -613,13 +606,23 @@ class SandboxManager:
             await self.rebuild_skill_venvs(session_id, activated)
 
     async def cleanup_session(self, session_id: str) -> None:
+        """Remove the sandbox container but keep session state (token, domains).
+
+        The session can be spun up again later via ``ensure_session``.
+        """
         sc = self._sessions.get(session_id)
         if sc:
             await self._runtime.remove(sc.container_id)
-            self._cleanup_tracking(session_id)
+            self._sessions.pop(session_id, None)
             logger.info(f"Cleaned up sandbox for session {session_id}")
 
     async def cleanup_idle(self) -> None:
+        """Remove containers that have been idle longer than the timeout.
+
+        Only the container is destroyed; session state (tokens, domains)
+        is preserved so the sandbox can be re-created on the next
+        ``ensure_session`` call.
+        """
         now = time.time()
         to_remove = [sid for sid, sc in self._sessions.items() if now - sc.last_used > self._idle_timeout]
         if to_remove:
@@ -628,6 +631,11 @@ class SandboxManager:
             await self.cleanup_session(sid)
 
     async def cleanup_all(self) -> None:
+        """Remove all sandbox containers (e.g. on server shutdown).
+
+        Session state is preserved so sandboxes can be re-created after
+        a restart.
+        """
         count = len(self._sessions)
         if count:
             logger.info(f"Cleaning up all {count} sandbox session(s)")
@@ -699,32 +707,34 @@ class SandboxManager:
         return allowed
 
     def _prepare_session_recreate(self, session_id: str) -> None:
-        """Drop container/token tracking while keeping policy state."""
-        self._cleanup_tracking(
-            session_id,
-            clear_domain_state=False,
-            clear_exec_state=False,
-        )
+        """Drop container reference while keeping all session state.
+
+        Called when a container is detected as stopped/gone and will be
+        replaced immediately.  Token and domain state survive because
+        ``ensure_session`` reuses the same credentials and the domain
+        allowlist is session-scoped.
+        """
+        self._sessions.pop(session_id, None)
 
     def _cleanup_tracking(
         self,
         session_id: str,
-        *,
-        clear_domain_state: bool = True,
-        clear_exec_state: bool = True,
     ) -> None:
+        """Roll back all in-memory tracking for a session.
+
+        Only called from the ``ensure_session`` error path when container
+        creation fails and we need to undo the partial setup.  The on-disk
+        token file is not removed — it lives in the session directory and
+        will be overwritten on the next attempt or deleted when the session
+        is permanently removed.
+        """
         self._sessions.pop(session_id, None)
         token = self._session_tokens.pop(session_id, None)
         if token:
             self._token_to_session.pop(token, None)
-        if token or session_id in self._session_tokens:
-            self._save_tokens()
-        if clear_domain_state:
-            self._allowed_domains.pop(session_id, None)
-        if clear_exec_state:
-            self._exec_temp_domains.pop(session_id, None)
-            self._session_current_command.pop(session_id, None)
-            self._proxy_bypass_sessions.discard(session_id)
-            self._exec_locks.pop(session_id, None)
-        if clear_domain_state:
-            self._domain_approval_cbs.pop(session_id, None)
+        self._allowed_domains.pop(session_id, None)
+        self._exec_temp_domains.pop(session_id, None)
+        self._session_current_command.pop(session_id, None)
+        self._proxy_bypass_sessions.discard(session_id)
+        self._exec_locks.pop(session_id, None)
+        self._domain_approval_cbs.pop(session_id, None)

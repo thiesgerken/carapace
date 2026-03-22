@@ -24,6 +24,7 @@ Carapace is a security-first personal AI agent with LLM-powered security gating.
 - Pydantic `BaseModel` / `@dataclass` for structured data — no raw dicts
 - `pathlib.Path` over `os.path`
 - Logging: `loguru` (`from loguru import logger`) — never stdlib `logging`. Use f-strings in log calls.
+- No silent failures: don't swallow exceptions with bare `except` or `except Exception` + `logger.warning`. Let errors propagate; catch only specific, expected exceptions. If something goes wrong, it should be loud.
 - Imports ordered: stdlib → third-party → local, separated by blank lines
 - No deferred (in-function) imports or `TYPE_CHECKING` guards — restructure modules to break circular dependencies instead
 - Linting: `uvx ruff check src/` — fix all warnings before committing
