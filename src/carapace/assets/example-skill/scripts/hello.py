@@ -1,6 +1,6 @@
 """Example skill script demonstrating the sandbox environment.
 
-Run with:  uv run --directory /workspace/skills/example scripts/hello.py
+Run with:  uv run --directory /workspace/knowledge/skills/example scripts/hello.py
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ from pathlib import Path
 
 import httpx
 
-WORKSPACE = Path("/workspace")
+WORKSPACE = Path("/workspace/knowledge")
 
 
 def main() -> None:
@@ -24,13 +24,13 @@ def main() -> None:
     for name in ("AGENTS.md", "SOUL.md", "USER.md"):
         path = WORKSPACE / name
         status = "present" if path.exists() else "not mounted"
-        print(f"  /workspace/{name}: {status}")
+        print(f"  /workspace/knowledge/{name}: {status}")
 
     # Read-only memory
     memory = WORKSPACE / "memory"
     if memory.exists():
         files = list(memory.rglob("*"))
-        print(f"  /workspace/memory/: {len(files)} file(s)")
+        print(f"  /workspace/knowledge/memory/: {len(files)} file(s)")
 
     # HTTP request (tests network access and httpx dependency)
     print("\nFetching https://httpbin.org/get ...")

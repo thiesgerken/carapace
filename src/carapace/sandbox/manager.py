@@ -193,12 +193,10 @@ class SandboxManager:
             self._prepare_session_recreate(session_id)
 
         session_workspace = self._data_dir / "sessions" / session_id / "workspace"
-        for subdir in ("tmp",):
-            d = session_workspace / subdir
-            d.mkdir(parents=True, exist_ok=True)
-            # Make world-writable so sandbox containers running as UID 1000
-            # can write to PVC subPath mounts (chown may not be available).
-            d.chmod(0o777)
+        session_workspace.mkdir(parents=True, exist_ok=True)
+        # Make world-writable so sandbox containers running as UID 1000
+        # can write to PVC subPath mounts (chown may not be available).
+        session_workspace.chmod(0o777)
 
         proxy_token = secrets.token_hex(16)
         # Evict any orphaned token left by a previous failed attempt for this
@@ -232,11 +230,9 @@ class SandboxManager:
                     "sh",
                     "-c",
                     "setup-proxy.sh"
-                    " && cd /workspace"
-                    " && git init"
-                    " && git remote add origin $GIT_REPO_URL"
-                    " && git fetch origin"
-                    " && git checkout main"
+                    " && if [ ! -d /workspace/knowledge/.git ]; then"
+                    "   git clone $GIT_REPO_URL /workspace/knowledge;"
+                    " fi"
                     " && echo 'carapace sandbox ready'"
                     " && exec sleep infinity",
                 ],
@@ -278,20 +274,14 @@ class SandboxManager:
         return str(self._host_data_dir / rel)
 
     def _build_mounts(self, session_id: str) -> list[Mount]:
-        mounts: list[Mount] = []
-
-        # Session-specific scratch space
         session_workspace = self._data_dir / "sessions" / session_id / "workspace"
-
-        mounts.append(
+        return [
             Mount(
-                source=self._host_path(session_workspace / "tmp"),
-                target="/workspace/tmp",
+                source=self._host_path(session_workspace),
+                target="/workspace",
                 read_only=False,
-            )
-        )
-
-        return mounts
+            ),
+        ]
 
     def _build_proxy_env(self, session_id: str, proxy_token: str, proxy_url: str) -> dict[str, str]:
         """Build HTTP_PROXY / NO_PROXY env vars for session containers."""
@@ -434,7 +424,7 @@ class SandboxManager:
         await self.ensure_session(session_id)
 
         # Check that the skill exists in the server-side knowledge store.
-        # The sandbox already has it at /workspace/skills/{name} via git clone.
+        # The sandbox already has it at /workspace/knowledge/skills/{name} via git clone.
         master_skill_dir = self._knowledge_dir / "skills" / skill_name
         if not master_skill_dir.exists():
             logger.warning(f"Skill '{skill_name}' not found for session {session_id}")
@@ -449,14 +439,14 @@ class SandboxManager:
             except SkillVenvError as exc:
                 logger.info(f"Activated skill '{skill_name}' in session {session_id} (with errors)")
                 raise SkillVenvError(
-                    f"Skill '{skill_name}' activated at /workspace/skills/{skill_name}/ but "
+                    f"Skill '{skill_name}' activated at /workspace/knowledge/skills/{skill_name}/ but "
                     f"dependency install failed: {exc}\n"
                     "The skill is available but its Python dependencies are NOT installed. "
                     "You may need to install them manually inside the sandbox."
                 ) from exc
 
         logger.info(f"Activated skill '{skill_name}' in session {session_id}")
-        result = f"Skill '{skill_name}' activated at /workspace/skills/{skill_name}/"
+        result = f"Skill '{skill_name}' activated at /workspace/knowledge/skills/{skill_name}/"
         if venv_msg:
             result += f"\n{venv_msg}"
         return result
@@ -471,7 +461,7 @@ class SandboxManager:
             raise SkillVenvError(err)
 
         logger.info(f"Building venv for skill '{skill_name}' (session {session_id})")
-        skill_dir = f"/workspace/skills/{shlex.quote(skill_name)}"
+        skill_dir = f"/workspace/knowledge/skills/{shlex.quote(skill_name)}"
         result = await self._exec(
             session_id,
             f"uv sync --directory {skill_dir}",
@@ -494,14 +484,14 @@ class SandboxManager:
         skill_path = f"skills/{shlex.quote(skill_name)}"
         result = await self._exec(
             session_id,
-            f"cd /workspace && git checkout HEAD -- {skill_path}/pyproject.toml",
+            f"cd /workspace/knowledge && git checkout HEAD -- {skill_path}/pyproject.toml",
             timeout=10,
         )
         if result.exit_code != 0:
             raise SkillVenvError(f"Failed to restore trusted pyproject.toml: {result.output}")
         await self._exec(
             session_id,
-            f"cd /workspace && git checkout HEAD -- {skill_path}/uv.lock 2>/dev/null || true",
+            f"cd /workspace/knowledge && git checkout HEAD -- {skill_path}/uv.lock 2>/dev/null || true",
             timeout=10,
         )
 

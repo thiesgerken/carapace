@@ -112,11 +112,7 @@ A single RWX PVC (`carapace-data`) is shared between the server and all sandbox 
 | Consumer    | Mount path             | subPath                           | Mode |
 | ----------- | ---------------------- | --------------------------------- | ---- |
 | Server      | `/data`                | (root)                            | RW   |
-| Sandbox pod | `/workspace/AGENTS.md` | `AGENTS.md`                       | RO   |
-| Sandbox pod | `/workspace/SOUL.md`   | `SOUL.md`                         | RO   |
-| Sandbox pod | `/workspace/memory`    | `memory/`                         | RO   |
-| Sandbox pod | `/workspace/skills`    | `sessions/{sid}/workspace/skills` | RW   |
-| Sandbox pod | `/workspace/tmp`       | `sessions/{sid}/workspace/tmp`    | RW   |
+| Sandbox pod | `/workspace`           | `sessions/{sid}/workspace`        | RW   |
 
 The `KubernetesRuntime` automatically translates the `SandboxManager`'s host-path mounts into PVC subPath references — no configuration needed.
 

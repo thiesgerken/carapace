@@ -14,10 +14,10 @@ flowchart LR
     end
 
     subgraph container ["Session Container (Alpine + Python + uv)"]
-        Workspace["/workspace/"]
-        Skills["/workspace/skills/"]
-        Memory["/workspace/memory/ (read-only)"]
-        Tmp["/workspace/tmp/"]
+        Workspace["/workspace/ (persistent mount)"]
+        Knowledge["/workspace/knowledge/ (git clone)"]
+        Skills["/workspace/knowledge/skills/"]
+        Memory["/workspace/knowledge/memory/"]
     end
 
     subgraph external [Internet]
@@ -34,8 +34,8 @@ flowchart LR
 - **Shell access**: The agent runs commands via `exec` (equivalent to `docker exec` / `kubectl exec`)
 - **File operations**: `read`, `write`, `edit`, `apply_patch` work directly on the container filesystem
 - **Network access**: All outbound traffic goes through the HTTP forward proxy, which enforces per-session domain allowlisting
-- **Skills**: Activated skills are copied into the container with their venvs built via `uv sync`
-- **Workspace files**: `AGENTS.md`, `SOUL.md`, `USER.md`, and `SECURITY.md` are working copies the agent can edit. Changes are made permanent via `save_workspace_file`.
+- **Skills**: Activated skills are available in the cloned knowledge repo; venvs are built via `uv sync`
+- **Workspace files**: `SOUL.md`, `USER.md`, `SECURITY.md` etc. live in the knowledge repo clone. Changes are persisted via `git commit` and `git push`.
 
 ## Mounts
 
@@ -43,15 +43,9 @@ When a session container is created, the following mounts are configured:
 
 | Host source | Container path | Mode | Purpose |
 | --- | --- | --- | --- |
-| `sessions/{sid}/workspace/AGENTS.md` | `/workspace/AGENTS.md` | read-write | Working copy of behavioral guide |
-| `sessions/{sid}/workspace/SOUL.md` | `/workspace/SOUL.md` | read-write | Working copy of personality |
-| `sessions/{sid}/workspace/USER.md` | `/workspace/USER.md` | read-write | Working copy of user context |
-| `sessions/{sid}/workspace/SECURITY.md` | `/workspace/SECURITY.md` | read-write | Working copy of security policy |
-| `memory/` | `/workspace/memory/` | **read-only** | Memory files (agent uses `write_memory` tool instead) |
-| `sessions/{sid}/workspace/skills/` | `/workspace/skills/` | read-write | Activated skills |
-| `sessions/{sid}/workspace/tmp/` | `/workspace/tmp/` | read-write | Scratch space |
+| `sessions/{sid}/workspace/` | `/workspace/` | read-write | Persistent session workspace |
 
-Workspace files (`AGENTS.md`, `SOUL.md`, `USER.md`, `SECURITY.md`) are **copied** into the session workspace on container creation. The agent can freely edit these working copies. To apply changes permanently (to the master copy in `$CARAPACE_DATA_DIR/`), the agent uses the `save_workspace_file` tool, which is gated by the security sentinel.
+The knowledge repo is cloned into `/workspace/knowledge/` on first start. On container restarts the existing working tree is reused. To persist changes back to the server, the agent uses `git commit` and `git push` inside `/workspace/knowledge/` — every push is evaluated by the security sentinel via a pre-receive hook.
 
 ## Network policy
 

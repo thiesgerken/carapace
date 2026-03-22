@@ -75,18 +75,18 @@ def build_system_prompt(deps: Deps) -> str:
     parts.append(
         "# Sandbox Environment\n"
         "Commands run inside a Docker sandbox container.\n"
-        "- `/workspace/` — the knowledge repo (Git clone from the server)\n"
-        "- `/workspace/SOUL.md`, `/workspace/USER.md`, `/workspace/SECURITY.md` "
+        "- `/workspace/` — persistent session workspace\n"
+        "- `/workspace/knowledge/` — the knowledge repo (Git clone from the server)\n"
+        "- `/workspace/knowledge/SOUL.md`, `/workspace/knowledge/USER.md`, `/workspace/knowledge/SECURITY.md` "
         "— personality and security policy files\n"
-        "- `/workspace/memory/` — memory files\n"
-        "- `/workspace/skills/` — activated skills (populated by `use_skill`)\n"
-        "- `/workspace/tmp/` — writable scratch space\n"
+        "- `/workspace/knowledge/memory/` — memory files\n"
+        "- `/workspace/knowledge/skills/` — activated skills (populated by `use_skill`)\n"
         "Call `use_skill(skill_name)` to activate a skill before running its scripts.\n"
         "To persist changes to knowledge files (memory, skills, workspace files), "
-        "use `git add`, `git commit`, and `git push` inside the sandbox. "
+        "use `git add`, `git commit`, and `git push` inside `/workspace/knowledge/`. "
         "Every push is evaluated by the security sentinel via a pre-receive hook.\n"
         "`uv` is pre-installed; skill dependencies are managed via `pyproject.toml` + `uv.lock`.\n"
-        "Run skill scripts with `uv run --directory /workspace/skills/<name> scripts/<script>.py`.\n\n"
+        "Run skill scripts with `uv run --directory /workspace/knowledge/skills/<name> scripts/<script>.py`.\n\n"
         "## Network Access\n"
         "The sandbox has internet access. Outgoing requests are allowed but subject to "
         "security review by the sentinel — like all tool calls, network activity is evaluated "
@@ -189,7 +189,10 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
 
     @agent.tool
     async def read(ctx: RunContext[Deps], path: str) -> str | ToolDenied:
-        """Read a file or list a directory inside the sandbox. Use container paths (e.g. /workspace/skills/foo.py)."""
+        """Read a file or list a directory inside the sandbox.
+
+        Use container paths (e.g. /workspace/knowledge/skills/foo.py).
+        """
         if not ctx.tool_call_approved and (denied := await _gate(ctx, "read", {"path": path})):
             return denied
 
