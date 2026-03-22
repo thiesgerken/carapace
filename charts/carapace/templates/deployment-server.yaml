@@ -39,6 +39,12 @@ spec:
           env:
             - name: CARAPACE_CONFIG
               value: /var/lib/carapace/config.yaml
+            - name: CARAPACE_SERVER_PORT
+              value: {{ .Values.server.apiPort | quote }}
+            - name: CARAPACE_SERVER_SANDBOX_PORT
+              value: {{ .Values.server.sandboxPort | quote }}
+            - name: CARAPACE_SANDBOX_PROXY_PORT
+              value: {{ .Values.server.proxyPort | quote }}
             - name: CARAPACE_SANDBOX_RUNTIME
               value: kubernetes
             - name: CARAPACE_SANDBOX_BASE_IMAGE

@@ -151,7 +151,9 @@ class GitConfig(BaseModel):
     author: str = "Carapace Agent <%s>"  # %s → session ID
 
 
-class ServerConfig(BaseModel):
+class ServerConfig(BaseSettings):
+    model_config = SettingsConfigDict(env_prefix="CARAPACE_SERVER_")
+
     host: str = "0.0.0.0"
     port: int = 8321
     sandbox_port: int = 8322
