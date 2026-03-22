@@ -45,7 +45,7 @@ When a session container is created, the following mounts are configured:
 | --- | --- | --- | --- |
 | `sessions/{sid}/workspace/` | `/workspace/` | read-write | Persistent session workspace |
 
-The knowledge repo is cloned into `/workspace/knowledge/` on first start. On container restarts the existing working tree is reused. To persist changes back to the server, the agent uses `git commit` and `git push` inside `/workspace/knowledge/` — every push is evaluated by the security sentinel via a pre-receive hook.
+The knowledge repo is cloned into `/workspace/knowledge/` on first start. On container restarts the existing working tree is reused. To persist changes back to the server, the agent uses `git commit` and `git push` inside `/workspace/knowledge/` — every push is evaluated by the security sentinel via a pre-receive hook. Push evaluation is synchronous and does not support escalation; pushes are either allowed or denied immediately.
 
 ## Network policy
 

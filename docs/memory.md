@@ -16,7 +16,7 @@ Memory is persistent context that survives across sessions. It's a Markdown-base
 
 **Read**: The agent can always read memory files. Memory is available inside the sandbox at `/workspace/memory/` (part of the Git-cloned knowledge repo), and the agent also has the `read_memory` tool which reads directly from the host.
 
-**Write**: The agent edits memory files inside the sandbox and persists changes via `git commit` + `git push`. Every push is evaluated by the security sentinel through a pre-receive hook, which gates persistent writes per the `SECURITY.md` policy.
+**Write**: The agent edits memory files inside the sandbox and persists changes via `git commit` + `git push`. Every push is evaluated by the security sentinel through a pre-receive hook, which gates persistent writes per the `SECURITY.md` policy. Push evaluation is synchronous and does not support escalation; pushes are either allowed or denied immediately.
 
 **Search**: Case-insensitive text search over all `.md` files in the memory directory. Returns matching lines grouped by file.
 

@@ -820,6 +820,12 @@ async def evaluate_push(req: PushEvalRequest) -> dict[str, str]:
     )
     if verdict.decision == "allow":
         return {"verdict": "allow"}
+    if verdict.decision == "escalate":
+        return {
+            "verdict": "deny",
+            "reason": "Push requires approval but escalation is not supported in pre-receive hooks. "
+            + (verdict.explanation or "Escalated by sentinel"),
+        }
     return {"verdict": "deny", "reason": verdict.explanation or "Denied by sentinel"}
 
 

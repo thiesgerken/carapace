@@ -306,6 +306,10 @@ class SandboxManager:
         )
         if result.exit_code != 0:
             logger.error(f"Git clone failed in sandbox for {session_id} (exit {result.exit_code}): {result.output}")
+            raise RuntimeError(
+                f"Failed to clone knowledge repo into sandbox for {session_id}: "
+                f"exit code {result.exit_code}"
+            )
 
     def _host_path(self, path: Path) -> str:
         """Translate a container-local path to its host-side equivalent for bind mounts.
