@@ -255,7 +255,6 @@ async def lifespan(app: FastAPI):
     git_handler = GitHttpHandler(
         knowledge_dir=knowledge_dir,
         default_branch=_config.git.branch,
-        get_session_by_token=_sandbox_mgr.get_session_by_token,
         api_port=_config.server.port,
     )
 

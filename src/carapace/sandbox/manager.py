@@ -210,14 +210,21 @@ class SandboxManager:
             logger.info(f"Proxy URL for session {session_id}: {proxy_url}")
 
             mounts = self._build_mounts(session_id)
-            env = self._build_proxy_env(proxy_token, proxy_url)
+            env = self._build_proxy_env(session_id, proxy_token, proxy_url)
             config = ContainerConfig(
                 image=self._base_image,
                 name=f"carapace-sandbox-{session_id}",
                 labels={"carapace.session": session_id, "carapace.managed": "true"},
                 mounts=mounts,
                 network=self._network_name,
-                command=["sh", "-c", "setup-proxy.sh && echo 'carapace sandbox ready' && exec sleep infinity"],
+                command=[
+                    "sh",
+                    "-c",
+                    "setup-proxy.sh"
+                    " && git clone $GIT_REPO_URL /workspace"
+                    " && echo 'carapace sandbox ready'"
+                    " && exec sleep infinity",
+                ],
                 environment=env,
             )
 
@@ -271,18 +278,18 @@ class SandboxManager:
 
         return mounts
 
-    def _build_proxy_env(self, proxy_token: str, proxy_url: str) -> dict[str, str]:
+    def _build_proxy_env(self, session_id: str, proxy_token: str, proxy_url: str) -> dict[str, str]:
         """Build HTTP_PROXY / NO_PROXY env vars for session containers."""
         if not proxy_url:
             return {}
-        # Embed the per-session token as proxy auth: http://token@host:port
+        # Embed credentials as session_id:token (standard Basic Auth)
         scheme, rest = proxy_url.split("://", 1)
-        authed_url = f"{scheme}://{proxy_token}@{rest}"
+        authed_url = f"{scheme}://{session_id}:{proxy_token}@{rest}"
         # Extract host (without scheme/port/auth) for NO_PROXY
         no_proxy_host = rest.rsplit(":", 1)[0]
-        # Server hostname added to NO_PROXY so Git traffic bypasses the HTTP
-        # proxy (goes directly to port 3128 for the Git HTTP handler).
-        no_proxy = ",".join([no_proxy_host, "localhost", "127.0.0.1", "host.docker.internal"])
+        no_proxy = ",".join([no_proxy_host, "localhost", "127.0.0.1"])
+        # Git clone URL — same host:port, routed through the proxy
+        git_url = f"{proxy_url}/git/{self._knowledge_dir.name}"
         return {
             "HTTP_PROXY": authed_url,
             "HTTPS_PROXY": authed_url,
@@ -296,6 +303,8 @@ class SandboxManager:
             # npm / node-based tools
             "npm_config_proxy": authed_url,
             "npm_config_https_proxy": authed_url,
+            # Git knowledge repo URL (cloned during sandbox setup)
+            "GIT_REPO_URL": git_url,
         }
 
     async def _exec(

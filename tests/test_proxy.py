@@ -134,14 +134,15 @@ class TestSandboxManagerAllowlists:
 
     def test_proxy_env_includes_token(self, tmp_path: Path):
         mgr = self._make_manager(tmp_path)
-        env = mgr._build_proxy_env("my-secret-token", "http://172.18.0.2:3128")
-        assert env["HTTP_PROXY"] == "http://my-secret-token@172.18.0.2:3128"
-        assert env["HTTPS_PROXY"] == "http://my-secret-token@172.18.0.2:3128"
+        env = mgr._build_proxy_env("sess-1", "my-secret-token", "http://172.18.0.2:3128")
+        assert env["HTTP_PROXY"] == "http://sess-1:my-secret-token@172.18.0.2:3128"
+        assert env["HTTPS_PROXY"] == "http://sess-1:my-secret-token@172.18.0.2:3128"
         assert "172.18.0.2" in env["NO_PROXY"]
+        assert "GIT_REPO_URL" in env
 
     def test_no_proxy_env_when_empty(self, tmp_path: Path):
         mgr = self._make_manager(tmp_path)
-        assert mgr._build_proxy_env("tok", "") == {}
+        assert mgr._build_proxy_env("sess-1", "tok", "") == {}
 
     def test_token_lookup(self, tmp_path: Path):
         mgr = self._make_manager(tmp_path)
@@ -241,14 +242,14 @@ class TestCarapaceYamlParsing:
 
 class TestProxyTokenExtraction:
     def test_basic_auth_token(self):
-        encoded = base64.b64encode(b"my-token:").decode()
+        encoded = base64.b64encode(b"sess-1:my-token").decode()
         header = f"Proxy-Authorization: Basic {encoded}\r\n".encode()
         assert ProxyServer._extract_proxy_token(header) == "my-token"
 
     def test_no_password(self):
-        encoded = base64.b64encode(b"tok123:").decode()
+        encoded = base64.b64encode(b"sess-1:").decode()
         header = f"Proxy-Authorization: Basic {encoded}\r\n".encode()
-        assert ProxyServer._extract_proxy_token(header) == "tok123"
+        assert ProxyServer._extract_proxy_token(header) is None
 
     def test_non_basic_scheme(self):
         header = b"Proxy-Authorization: Bearer abc\r\n"
@@ -260,7 +261,7 @@ class TestProxyTokenExtraction:
     def test_empty_username(self):
         encoded = base64.b64encode(b":password").decode()
         header = f"Proxy-Authorization: Basic {encoded}\r\n".encode()
-        assert ProxyServer._extract_proxy_token(header) is None
+        assert ProxyServer._extract_proxy_token(header) == "password"
 
 
 # ── ProxyServer start/stop ──────────────────────────────────────────

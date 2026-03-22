@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import base64
 import os
 import stat
 from pathlib import Path
@@ -172,57 +171,6 @@ class TestGitStoreRemote:
 # ── GitHttpHandler ───────────────────────────────────────────────────
 
 
-class TestGitHttpHandlerAuth:
-    """_extract_basic_auth parsing."""
-
-    def _handler(self) -> GitHttpHandler:
-        return GitHttpHandler(
-            knowledge_dir=Path("/tmp/knowledge"),
-            default_branch="main",
-            get_session_by_token=lambda t: "sess-1" if t == "valid-token" else None,
-        )
-
-    def test_valid_basic_auth(self):
-        h = self._handler()
-        creds = base64.b64encode(b"anything:valid-token").decode()
-        headers = [f"Authorization: Basic {creds}".encode()]
-        assert h._extract_basic_auth(headers) == "valid-token"
-
-    def test_no_auth_header(self):
-        h = self._handler()
-        assert h._extract_basic_auth([]) is None
-
-    def test_wrong_scheme(self):
-        h = self._handler()
-        headers = [b"Authorization: Bearer sometoken"]
-        assert h._extract_basic_auth(headers) is None
-
-    def test_empty_password(self):
-        h = self._handler()
-        creds = base64.b64encode(b"user:").decode()
-        headers = [f"Authorization: Basic {creds}".encode()]
-        assert h._extract_basic_auth(headers) is None
-
-    def test_no_colon_in_decoded(self):
-        h = self._handler()
-        # No colon → partition returns empty password
-        creds = base64.b64encode(b"justtoken").decode()
-        headers = [f"Authorization: Basic {creds}".encode()]
-        assert h._extract_basic_auth(headers) is None
-
-    def test_case_insensitive_header(self):
-        h = self._handler()
-        creds = base64.b64encode(b"x:mytoken").decode()
-        headers = [f"AUTHORIZATION: Basic {creds}".encode()]
-        assert h._extract_basic_auth(headers) == "mytoken"
-
-    def test_multiple_headers(self):
-        h = self._handler()
-        creds = base64.b64encode(b"x:tok").decode()
-        headers = [b"Content-Type: text/plain", f"Authorization: Basic {creds}".encode()]
-        assert h._extract_basic_auth(headers) == "tok"
-
-
 class TestGitHttpHandlerCgiConversion:
     """_cgi_to_http response parsing."""
 
@@ -230,7 +178,6 @@ class TestGitHttpHandlerCgiConversion:
         return GitHttpHandler(
             knowledge_dir=Path("/tmp/knowledge"),
             default_branch="main",
-            get_session_by_token=lambda t: None,
         )
 
     def test_simple_200(self):
@@ -278,69 +225,28 @@ class TestGitHttpHandlerGetHeader:
 class TestGitHttpHandlerHandle:
     """Integration-level tests for the handle() method using mock streams."""
 
-    def _handler(self, token_map: dict[str, str] | None = None) -> GitHttpHandler:
-        mapping = token_map or {"valid-tok": "sess-1"}
+    def _handler(self) -> GitHttpHandler:
         return GitHttpHandler(
             knowledge_dir=Path("/tmp/knowledge"),
             default_branch="main",
-            get_session_by_token=lambda t: mapping.get(t),
         )
 
     def _make_writer(self) -> asyncio.StreamWriter:
         writer = AsyncStreamWriter()
         return writer  # type: ignore[return-value]
 
-    async def test_unauthenticated_returns_401(self):
-        h = self._handler()
-        writer = self._make_writer()
-        reader = asyncio.StreamReader()
-
-        await h.handle(
-            reader,
-            writer,
-            method="GET",
-            path="/git/knowledge.git/info/refs",
-            query_string="service=git-upload-pack",
-            raw_headers=[],
-            body=b"",
-        )
-        assert b"401" in writer.data  # type: ignore[attr-defined]
-
-    async def test_invalid_token_returns_401(self):
-        h = self._handler()
-        writer = self._make_writer()
-        reader = asyncio.StreamReader()
-
-        creds = base64.b64encode(b"x:wrong-token").decode()
-        headers = [f"Authorization: Basic {creds}".encode()]
-
-        await h.handle(
-            reader,
-            writer,
-            method="GET",
-            path="/git/knowledge.git/info/refs",
-            query_string="",
-            raw_headers=headers,
-            body=b"",
-        )
-        assert b"401" in writer.data  # type: ignore[attr-defined]
-
     async def test_forbidden_path_returns_403(self):
         h = self._handler()
         writer = self._make_writer()
-        reader = asyncio.StreamReader()
-
-        creds = base64.b64encode(b"x:valid-tok").decode()
-        headers = [f"Authorization: Basic {creds}".encode()]
 
         # Try to access a different repo under the parent dir
         await h.handle(
-            reader,
             writer,
+            "sess-1",
             method="GET",
             path="/git/etc/passwd",
             query_string="",
-            raw_headers=headers,
+            raw_headers=[],
             body=b"",
         )
         assert b"403" in writer.data  # type: ignore[attr-defined]
@@ -348,20 +254,16 @@ class TestGitHttpHandlerHandle:
     async def test_allowed_path_without_dot_git(self):
         h = self._handler()
         writer = self._make_writer()
-        reader = asyncio.StreamReader()
-
-        creds = base64.b64encode(b"x:valid-tok").decode()
-        headers = [f"Authorization: Basic {creds}".encode()]
 
         # /git/knowledge/info/refs → PATH_INFO=/knowledge/info/refs → allowed
         # (will fail with 500 because no actual git repo, but should NOT be 403)
         await h.handle(
-            reader,
             writer,
+            "sess-1",
             method="GET",
             path="/git/knowledge/info/refs",
             query_string="service=git-upload-pack",
-            raw_headers=headers,
+            raw_headers=[],
             body=b"",
         )
         assert b"403" not in writer.data  # type: ignore[attr-defined]

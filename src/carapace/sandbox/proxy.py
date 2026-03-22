@@ -124,8 +124,8 @@ class ProxyServer:
                 if content_length > 0:
                     body = await asyncio.wait_for(reader.readexactly(content_length), timeout=120)
                 await self._git_handler.handle(
-                    reader,
                     writer,
+                    session_id,
                     method,
                     path,
                     query,
@@ -162,10 +162,9 @@ class ProxyServer:
 
     @staticmethod
     def _extract_proxy_token(header_line: bytes) -> str | None:
-        """Extract the username from a ``Proxy-Authorization: Basic ...`` header.
+        """Extract the token (password) from a ``Proxy-Authorization: Basic ...`` header.
 
-        The token is stored as the username with an empty password
-        (``base64(token:)``).
+        Credentials are ``session_id:token`` encoded as Basic Auth.
         """
         try:
             _, value = header_line.split(b":", 1)
@@ -173,8 +172,8 @@ class ProxyServer:
             if scheme.lower() != b"basic":
                 return None
             decoded = base64.b64decode(encoded).decode()
-            username, _, _ = decoded.partition(":")
-            return username or None
+            _, _, password = decoded.partition(":")
+            return password or None
         except Exception:
             return None
 

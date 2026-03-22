@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import base64
 import contextlib
 import os
 from collections.abc import Callable
@@ -15,8 +14,8 @@ _push_lock = asyncio.Lock()
 class GitHttpHandler:
     """Handles Git HTTP requests via ``git http-backend`` CGI.
 
-    Integrated into the proxy server (port 3128). Validates session tokens
-    and spawns ``git http-backend`` as a subprocess.
+    Integrated into the proxy server (port 3128).  Authentication is handled
+    by the proxy layer — the handler receives a pre-validated ``session_id``.
     """
 
     def __init__(
@@ -24,37 +23,18 @@ class GitHttpHandler:
         *,
         knowledge_dir: Path,
         default_branch: str,
-        get_session_by_token: Callable[[str], str | None],
         api_port: int = 8321,
         on_push_success: Callable[[], None] | None = None,
     ) -> None:
         self._knowledge_dir = knowledge_dir
         self._default_branch = default_branch
-        self._get_session_by_token = get_session_by_token
         self._api_port = api_port
         self._on_push_success = on_push_success
 
-    def _extract_basic_auth(self, raw_headers: list[bytes]) -> str | None:
-        """Extract password from ``Authorization: Basic ...`` header."""
-        for hdr in raw_headers:
-            lower = hdr.lower()
-            if lower.startswith(b"authorization:"):
-                try:
-                    _, value = hdr.split(b":", 1)
-                    scheme, _, encoded = value.strip().partition(b" ")
-                    if scheme.lower() != b"basic":
-                        continue
-                    decoded = base64.b64decode(encoded).decode()
-                    _, _, password = decoded.partition(":")
-                    return password or None
-                except Exception:
-                    continue
-        return None
-
     async def handle(
         self,
-        reader: asyncio.StreamReader,
         writer: asyncio.StreamWriter,
+        session_id: str,
         method: str,
         path: str,
         query_string: str,
@@ -62,13 +42,6 @@ class GitHttpHandler:
         body: bytes,
     ) -> None:
         """Handle a Git HTTP request by delegating to ``git http-backend``."""
-        # Authenticate via Basic Auth (password = proxy-token)
-        token = self._extract_basic_auth(raw_headers)
-        session_id = self._get_session_by_token(token) if token else None
-        if session_id is None:
-            writer.write(b'HTTP/1.1 401 Unauthorized\r\nWWW-Authenticate: Basic realm="git"\r\n\r\n')
-            await writer.drain()
-            return
 
         # Strip /git/ prefix to get the PATH_INFO for git-http-backend
         # e.g. /git/knowledge/info/refs -> /knowledge/info/refs
@@ -101,6 +74,7 @@ class GitHttpHandler:
             "SERVER_PROTOCOL": "HTTP/1.1",
             "CARAPACE_SESSION_ID": session_id,
             "CARAPACE_DEFAULT_BRANCH": self._default_branch,
+            "CARAPACE_API_PORT": str(self._api_port),
             "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
         }
 
