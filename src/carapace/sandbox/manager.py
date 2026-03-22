@@ -477,10 +477,16 @@ class SandboxManager:
         # Restore committed dependency manifests inside the sandbox,
         # preventing the sandbox from running modified dependencies.
         skill_path = f"skills/{shlex.quote(skill_name)}"
+        result = await self._exec(
+            session_id,
+            f"cd /workspace && git checkout HEAD -- {skill_path}/pyproject.toml",
+            timeout=10,
+        )
+        if result.exit_code != 0:
+            raise SkillVenvError(f"Failed to restore trusted pyproject.toml: {result.output}")
         await self._exec(
             session_id,
-            f"cd /workspace && git checkout HEAD -- {skill_path}/pyproject.toml"
-            f" && git checkout HEAD -- {skill_path}/uv.lock 2>/dev/null || true",
+            f"cd /workspace && git checkout HEAD -- {skill_path}/uv.lock 2>/dev/null || true",
             timeout=10,
         )
 

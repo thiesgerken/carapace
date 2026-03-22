@@ -24,7 +24,7 @@ class GitHttpHandler:
         *,
         knowledge_dir: Path,
         default_branch: str,
-        api_port: int = 8321,
+        api_port: int = 8320,
         verify_session_token: Callable[[str, str], bool] | None = None,
         on_push_success: Callable[[], None] | None = None,
     ) -> None:
