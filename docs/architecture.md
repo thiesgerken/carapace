@@ -21,6 +21,7 @@ flowchart TB
         Agent["Pydantic AI Agent"]
         SkillRegistry[Skill Registry]
         MemoryStore[Memory Store]
+        GitStore[Git Store]
         Proxy[HTTP Forward Proxy]
     end
 
@@ -34,9 +35,12 @@ flowchart TB
 
     subgraph datadir ["$CARAPACE_DATA_DIR"]
         Config[config.yaml]
+        Sessions[sessions/]
+    end
+
+    subgraph knowledgedir ["Knowledge Dir (Git repo)"]
         SecurityPolicy[SECURITY.md]
         WorkspaceFiles["AGENTS.md · SOUL.md · USER.md"]
-        Sessions[sessions/]
         Skills[skills/]
         Memory[memory/]
     end
@@ -56,9 +60,10 @@ flowchart TB
     Agent <-->|exec, file ops| Container
     Container -->|outbound traffic| Proxy
     Proxy --> Web
+    Container -->|git push| GitStore
+    GitStore --> Sentinel
 
-    Skills -.-> Container
-    Memory -.->|read-only| Container
+    knowledgedir -.->|git clone| Container
     WorkspaceFiles -.-> Container
 ```
 
@@ -70,7 +75,7 @@ The central coordinator. Receives inbound messages from all channel subscribers 
 
 ### Session Manager
 
-Handles session persistence — creating, loading, saving, listing, and deleting sessions on disk. Each session's state, history, events, usage, and audit trail are stored as YAML files under `$CARAPACE_DATA_DIR/sessions/<session_id>/`.
+Handles session persistence — creating, loading, saving, listing, and deleting sessions on disk. Each session's state, history, events, usage, and audit trail are stored as YAML files under `$CARAPACE_DATA_DIR/sessions/<session_id>/`. (Note: `$CARAPACE_DATA_DIR` holds config and sessions only; knowledge files live in a separate Git-backed knowledge directory.)
 
 ### Agent Loop
 
@@ -84,15 +89,14 @@ The main agent, built on [Pydantic AI](https://ai.pydantic.dev/). It receives me
 | --- | --- |
 | `list_skills` | List available skills (names + descriptions) |
 | `use_skill` | Activate a skill: copy to sandbox, build venv, load instructions |
-| `save_skill` | Persist edited skill back to master directory |
-| `save_workspace_file` | Save workspace file changes from sandbox to data directory |
 | `read` | Read a file or list a directory inside the sandbox |
 | `write` | Write content to a file in the sandbox |
 | `edit` | Search-and-replace edit of a file in the sandbox |
 | `apply_patch` | Batch edits across multiple files in the sandbox |
 | `exec` | Run a shell command in the sandbox (default timeout: 30s) |
 | `read_memory` | Read a memory file or search memory |
-| `write_memory` | Write/update a persistent memory file |
+
+Persistent writes (memory, skills, workspace files) happen via `git commit` + `git push` inside the sandbox. Each push is evaluated by the security sentinel through a pre-receive hook — there is no direct write tool.
 
 ### Security Module
 
@@ -112,7 +116,11 @@ Loads skill metadata (name, description) from each skill's `SKILL.md` frontmatte
 
 ### Memory Store
 
-Reads and writes Markdown-based memory files under `$CARAPACE_DATA_DIR/memory/`. Provides case-insensitive text search over all memory files. See [memory.md](memory.md).
+Reads Markdown-based memory files from the knowledge directory's `memory/` sub-folder. Provides case-insensitive text search over all memory files. The agent reads memory via the `read_memory` tool; writes happen through `git push` from the sandbox (see Git Store). See [memory.md](memory.md).
+
+### Git Store
+
+Manages the knowledge directory as a Git repository. Initialises the repo on startup, installs a pre-receive hook that gates every push through the sentinel, and optionally syncs with an external remote. Sandbox containers receive a Git clone of this repo as their `/workspace/`; the agent persists changes (memory, skills, workspace files) by committing and pushing back. See the "Server port architecture" table for the sandbox-facing Git HTTP backend on port 8322.
 
 ### HTTP Forward Proxy
 
