@@ -34,20 +34,40 @@ Carapace is a security-first personal AI agent with LLM-powered security gating.
 src/carapace/          # main package
   server.py            # FastAPI server (REST + WebSocket)
   cli.py               # Thin CLI client (HTTP + WS)
-  agent.py             # Pydantic AI agent definition and tools
   auth.py              # Bearer token generation and validation
-  ws_models.py         # WebSocket message protocol models
+  bootstrap.py         # first-run directory and file seeding
   config.py            # configuration loading
   models.py            # Pydantic models and dataclasses
+  ws_models.py         # WebSocket message protocol models
   usage.py             # token usage tracking (ModelUsage, UsageTracker)
-  session.py           # session management
   memory.py            # markdown-based persistent memory
   skills.py            # skill registry
   credentials.py       # password-manager-backed credentials
+  agent/
+    __init__.py        # re-exports (create_agent, build_system_prompt, run_agent_turn)
+    tools.py           # Pydantic AI agent definition and tools
+    loop.py            # channel-agnostic agent turn runner
+  session/
+    __init__.py        # re-exports (SessionEngine, SessionManager)
+    engine.py          # session lifecycle, slash commands, agent turn orchestration
+    manager.py         # session persistence (load, save, list, delete)
+    titler.py          # LLM-powered session title generation
+  git/
+    __init__.py        # re-exports (GitHttpHandler, GitStore)
+    http.py            # Git HTTP Smart Protocol handler (git http-backend CGI)
+    store.py           # Git CLI wrapper (init, commit, push, pull, hooks)
   security/
     __init__.py        # public API: evaluate(), evaluate_domain(), safe-list
-    sentinel.py         # LLM-powered security agent (shadow conversation)
+    sentinel.py        # LLM-powered security agent (shadow conversation)
     context.py         # action log entries, sentinel verdict, session security state
+  sandbox/
+    manager.py         # sandbox container lifecycle and auth
+    proxy.py           # HTTP forward proxy with domain allowlisting
+    runtime.py         # abstract container runtime interface
+    docker.py          # Docker runtime implementation
+    kubernetes.py      # Kubernetes runtime implementation
+  channels/
+    matrix/            # Matrix chat channel integration
 frontend/              # Next.js web UI (React 19, Tailwind CSS 4)
   src/app/             # Next.js app router pages and layout
   src/components/      # React components (chat, sidebar, approval flow)

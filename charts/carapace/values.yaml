@@ -24,7 +24,9 @@ frontend:
 server:
   # -- API port (FastAPI / REST + WebSocket)
   apiPort: 8321
-  # -- Proxy port (sandbox HTTP proxy + Git HTTP)
+  # -- Sandbox-facing API port (Basic Auth, Git HTTP backend)
+  sandboxPort: 8322
+  # -- Proxy port (sandbox HTTP proxy)
   proxyPort: 3128
 
 sandbox:

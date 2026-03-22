@@ -46,7 +46,7 @@ class TestDomainMatches:
 class TestProxyCheckDomain:
     def _make_proxy(self, domains: set[str]) -> ProxyServer:
         return ProxyServer(
-            get_session_by_token=lambda tok: "sess-1",
+            verify_session_token=lambda sid, tok: True,
             get_allowed_domains=lambda sid: domains,
         )
 
@@ -147,15 +147,16 @@ class TestSandboxManagerAllowlists:
     def test_token_lookup(self, tmp_path: Path):
         mgr = self._make_manager(tmp_path)
         mgr._token_to_session["abc123"] = "sess-1"
-        assert mgr.get_session_by_token("abc123") == "sess-1"
-        assert mgr.get_session_by_token("wrong") is None
+        assert mgr.verify_session_token("sess-1", "abc123") is True
+        assert mgr.verify_session_token("sess-1", "wrong") is False
+        assert mgr.verify_session_token("wrong-session", "abc123") is False
 
     def test_cleanup_clears_tokens(self, tmp_path: Path):
         mgr = self._make_manager(tmp_path)
         mgr._token_to_session["tok"] = "sess-1"
         mgr._session_tokens["sess-1"] = "tok"
         mgr._cleanup_tracking("sess-1")
-        assert mgr.get_session_by_token("tok") is None
+        assert mgr.verify_session_token("sess-1", "tok") is False
 
 
 @pytest.mark.anyio
@@ -240,28 +241,28 @@ class TestCarapaceYamlParsing:
 # ── Proxy token extraction ───────────────────────────────────────────
 
 
-class TestProxyTokenExtraction:
-    def test_basic_auth_token(self):
+class TestProxyCredentialExtraction:
+    def test_basic_auth_credentials(self):
         encoded = base64.b64encode(b"sess-1:my-token").decode()
         header = f"Proxy-Authorization: Basic {encoded}\r\n".encode()
-        assert ProxyServer._extract_proxy_token(header) == "my-token"
+        assert ProxyServer._extract_basic_credentials(header) == ("sess-1", "my-token")
 
     def test_no_password(self):
         encoded = base64.b64encode(b"sess-1:").decode()
         header = f"Proxy-Authorization: Basic {encoded}\r\n".encode()
-        assert ProxyServer._extract_proxy_token(header) is None
+        assert ProxyServer._extract_basic_credentials(header) is None
+
+    def test_no_username(self):
+        encoded = base64.b64encode(b":password").decode()
+        header = f"Proxy-Authorization: Basic {encoded}\r\n".encode()
+        assert ProxyServer._extract_basic_credentials(header) is None
 
     def test_non_basic_scheme(self):
         header = b"Proxy-Authorization: Bearer abc\r\n"
-        assert ProxyServer._extract_proxy_token(header) is None
+        assert ProxyServer._extract_basic_credentials(header) is None
 
     def test_garbage(self):
-        assert ProxyServer._extract_proxy_token(b"garbage\r\n") is None
-
-    def test_empty_username(self):
-        encoded = base64.b64encode(b":password").decode()
-        header = f"Proxy-Authorization: Basic {encoded}\r\n".encode()
-        assert ProxyServer._extract_proxy_token(header) == "password"
+        assert ProxyServer._extract_basic_credentials(b"garbage\r\n") is None
 
 
 # ── ProxyServer start/stop ──────────────────────────────────────────
@@ -270,7 +271,7 @@ class TestProxyTokenExtraction:
 @pytest.mark.anyio
 async def test_proxy_start_stop():
     proxy = ProxyServer(
-        get_session_by_token=lambda tok: None,
+        verify_session_token=lambda sid, tok: False,
         get_allowed_domains=lambda sid: set(),
         host="127.0.0.1",
         port=0,  # OS-assigned port

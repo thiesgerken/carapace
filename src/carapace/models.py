@@ -154,6 +154,8 @@ class GitConfig(BaseModel):
 class ServerConfig(BaseModel):
     host: str = "0.0.0.0"
     port: int = 8321
+    sandbox_port: int = 8322
+    internal_port: int = 8320
     cors_origins: list[str] = ["http://localhost:3000"]
 
 

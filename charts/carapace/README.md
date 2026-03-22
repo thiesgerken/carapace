@@ -14,7 +14,7 @@ Helm chart for deploying [Carapace](https://github.com/thiesgerken/carapace) on 
 >
 > Carapace's security model relies on sandbox pods having **no direct internet access**. All outbound traffic is forced through the server's HTTP proxy, which enforces per-session domain allowlisting and the human-in-the-loop approval flow.
 >
-> The chart installs a `NetworkPolicy` that restricts sandbox pod egress to the proxy port + DNS only. **If you add broader egress rules to the namespace, or your CNI does not enforce NetworkPolicy, sandbox pods can bypass the proxy entirely — defeating the approval system and all domain-level security controls.**
+> The chart installs a `NetworkPolicy` that restricts sandbox pod egress to the proxy port (3128), the sandbox API port (8322), and DNS only. **If you add broader egress rules to the namespace, or your CNI does not enforce NetworkPolicy, sandbox pods can bypass the proxy entirely — defeating the approval system and all domain-level security controls.**
 >
 > Before deploying, verify that:
 > 1. Your CNI plugin enforces NetworkPolicy. k3s and distributions using Calico or Cilium support this out of the box. Standalone Flannel does **not** — it silently ignores NetworkPolicy.

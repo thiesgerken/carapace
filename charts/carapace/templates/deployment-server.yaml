@@ -32,6 +32,8 @@ spec:
           ports:
             - name: api
               containerPort: {{ .Values.server.apiPort }}
+            - name: sandbox-api
+              containerPort: {{ .Values.server.sandboxPort }}
             - name: proxy
               containerPort: {{ .Values.server.proxyPort }}
           env:

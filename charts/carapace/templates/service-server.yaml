@@ -14,6 +14,9 @@ spec:
     - name: api
       port: {{ .Values.server.apiPort }}
       targetPort: api
+    - name: sandbox-api
+      port: {{ .Values.server.sandboxPort }}
+      targetPort: sandbox-api
     - name: proxy
       port: {{ .Values.server.proxyPort }}
       targetPort: proxy

@@ -19,6 +19,8 @@ from fastapi import (
     FastAPI,
     HTTPException,
     Query,
+    Request,
+    Response,
     WebSocket,
     WebSocketDisconnect,
     WebSocketException,
@@ -38,8 +40,8 @@ from tenacity import retry_if_exception_type, stop_after_attempt, wait_exponenti
 from carapace.auth import get_token
 from carapace.bootstrap import ensure_data_dir, ensure_knowledge_dir
 from carapace.config import _resolve_data_dir, _resolve_knowledge_dir, get_config_path, get_data_dir, load_config
-from carapace.git_http import GitHttpHandler
-from carapace.git_store import GitStore
+from carapace.git.http import GitHttpHandler
+from carapace.git.store import GitStore
 from carapace.models import Config, SessionState
 from carapace.sandbox.manager import SandboxManager
 from carapace.sandbox.proxy import ProxyServer
@@ -76,6 +78,7 @@ load_dotenv()
 _data_dir: Path
 _config: Config
 _engine: SessionEngine
+_git_handler: GitHttpHandler
 
 
 def _retry_http_client() -> AsyncClient:
@@ -142,7 +145,7 @@ async def _idle_cleanup_loop(sandbox_mgr: SandboxManager) -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _data_dir, _config, _engine
+    global _data_dir, _config, _engine, _git_handler
 
     # 1. Load config
     config_path = get_config_path()
@@ -236,6 +239,7 @@ async def lifespan(app: FastAPI):
         idle_timeout_minutes=_config.sandbox.idle_timeout_minutes,
         host_data_dir=host_data_dir,
         proxy_port=proxy_port,
+        sandbox_port=_config.server.sandbox_port,
     )
     logger.info(f"Sandbox enabled (image={base_image}, network={sandbox_network})")
 
@@ -251,22 +255,48 @@ async def lifespan(app: FastAPI):
         model_factory=_create_model,
     )
 
-    # Git HTTP handler for the proxy server — serves the knowledge repo
-    git_handler = GitHttpHandler(
+    # Git HTTP handler — serves the knowledge repo on the sandbox API
+    _git_handler = GitHttpHandler(
         knowledge_dir=knowledge_dir,
         default_branch=_config.git.branch,
-        api_port=_config.server.port,
+        api_port=_config.server.internal_port,
+        verify_session_token=_sandbox_mgr.verify_session_token,
     )
 
     proxy = ProxyServer(
-        get_session_by_token=_sandbox_mgr.get_session_by_token,
+        verify_session_token=_sandbox_mgr.verify_session_token,
         get_allowed_domains=_sandbox_mgr.get_effective_domains,
         request_approval=_sandbox_mgr.request_domain_approval,
         host="0.0.0.0",
         port=proxy_port,
-        git_handler=git_handler,
     )
     await proxy.start()
+
+    # Start sandbox-facing API server (Basic Auth, accessible by containers)
+    sandbox_server = uvicorn.Server(
+        uvicorn.Config(
+            sandbox_app,
+            host="0.0.0.0",
+            port=_config.server.sandbox_port,
+            log_level=_config.carapace.log_level,
+            log_config=None,
+        )
+    )
+    sandbox_task = asyncio.create_task(sandbox_server.serve())
+    logger.info(f"Sandbox API listening on 0.0.0.0:{_config.server.sandbox_port}")
+
+    # Start internal API server (loopback only, no auth)
+    internal_server = uvicorn.Server(
+        uvicorn.Config(
+            internal_app,
+            host="127.0.0.1",
+            port=_config.server.internal_port,
+            log_level=_config.carapace.log_level,
+            log_config=None,
+        )
+    )
+    internal_task = asyncio.create_task(internal_server.serve())
+    logger.info(f"Internal API listening on 127.0.0.1:{_config.server.internal_port}")
 
     token = get_token()
 
@@ -300,6 +330,14 @@ async def lifespan(app: FastAPI):
     cleanup_task.cancel()
     if matrix_channel:
         await matrix_channel.stop()
+    sandbox_server.should_exit = True
+    internal_server.should_exit = True
+    sandbox_task.cancel()
+    internal_task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await sandbox_task
+    with contextlib.suppress(asyncio.CancelledError):
+        await internal_task
     await proxy.stop()
     await _sandbox_mgr.cleanup_all()
     price_updater.stop()
@@ -738,6 +776,8 @@ def main() -> None:
     token = get_token()
 
     logger.info(f"Starting Carapace server on {config.server.host}:{config.server.port}")
+    logger.info(f"Sandbox API on 0.0.0.0:{config.server.sandbox_port}")
+    logger.info(f"Internal API on 127.0.0.1:{config.server.internal_port}")
     logger.info(f"Bearer token: {token[:8]}…")
 
     uvicorn.run(
@@ -750,7 +790,9 @@ def main() -> None:
 
 
 # --- Internal endpoint for pre-receive hook sentinel evaluation ---
-# This runs on the API port (8321), unreachable from sandboxes.
+# Bound to 127.0.0.1 only — unreachable from sandbox containers.
+
+internal_app = FastAPI(title="Carapace Internal")
 
 
 class PushEvalRequest(BaseModel):
@@ -761,7 +803,7 @@ class PushEvalRequest(BaseModel):
     diff: str
 
 
-@app.post("/internal/sentinel/evaluate-push")
+@internal_app.post("/internal/sentinel/evaluate-push")
 async def evaluate_push(req: PushEvalRequest) -> dict[str, str]:
     """Evaluate a Git push via the sentinel. Called by the pre-receive hook."""
     active = _engine.get_or_activate(req.session_id)
@@ -782,6 +824,37 @@ async def evaluate_push(req: PushEvalRequest) -> dict[str, str]:
 
 
 app.include_router(router)
+
+
+# --- Sandbox-facing API (Basic Auth, serves git HTTP backend) ---
+
+sandbox_app = FastAPI(title="Carapace Sandbox API")
+
+
+@sandbox_app.api_route("/git/{path:path}", methods=["GET", "POST"])
+async def git_http_backend(request: Request, path: str) -> Response:
+    """Proxy Git HTTP Smart Protocol requests to ``git http-backend``."""
+    auth = request.headers.get("authorization")
+    session_id = _git_handler.authenticate(auth)
+    if session_id is None:
+        return Response(
+            status_code=401,
+            headers={"WWW-Authenticate": 'Basic realm="carapace git"'},
+        )
+
+    full_path = f"/git/{path}"
+    query = str(request.query_params)
+    body = await request.body()
+
+    status_code, headers, response_body = await _git_handler.handle(
+        session_id=session_id,
+        method=request.method,
+        path=full_path,
+        query_string=query,
+        content_type=request.headers.get("content-type"),
+        body=body,
+    )
+    return Response(content=response_body, status_code=status_code, headers=headers)
 
 
 if __name__ == "__main__":

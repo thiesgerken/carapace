@@ -7,8 +7,6 @@ from collections.abc import Awaitable, Callable
 
 from loguru import logger
 
-from carapace.git_http import GitHttpHandler
-
 _CONNECT_OK = b"HTTP/1.1 200 Connection Established\r\n\r\n"
 _FORBIDDEN_RESPONSE = (
     b"HTTP/1.1 403 Forbidden\r\nContent-Length: 30\r\nConnection: close\r\n\r\nDomain blocked by proxy policy"
@@ -39,20 +37,18 @@ class ProxyServer:
 
     def __init__(
         self,
-        get_session_by_token: Callable[[str], str | None],
+        verify_session_token: Callable[[str, str], bool],
         get_allowed_domains: Callable[[str], set[str]],
         request_approval: Callable[[str, str], Awaitable[bool]] | None = None,
         host: str = "0.0.0.0",
         port: int = 3128,
-        git_handler: GitHttpHandler | None = None,
     ) -> None:
-        self._get_session_by_token = get_session_by_token
+        self._verify_session_token = verify_session_token
         self._get_domains = get_allowed_domains
         self._request_approval = request_approval
         self._host = host
         self._port = port
         self._server: asyncio.Server | None = None
-        self._git_handler = git_handler
 
     async def start(self) -> None:
         self._server = await asyncio.start_server(
@@ -92,16 +88,20 @@ class ProxyServer:
 
             # Read all headers so we can extract Proxy-Authorization
             raw_headers: list[bytes] = []
-            proxy_token: str | None = None
+            proxy_auth: tuple[str, str] | None = None
             while True:
                 hdr = await asyncio.wait_for(reader.readline(), timeout=10)
                 if hdr in (b"\r\n", b"\n", b""):
                     break
                 raw_headers.append(hdr)
                 if hdr.lower().startswith(b"proxy-authorization:"):
-                    proxy_token = self._extract_proxy_token(hdr)
+                    proxy_auth = self._extract_basic_credentials(hdr)
 
-            session_id = self._get_session_by_token(proxy_token) if proxy_token else None
+            session_id: str | None = None
+            if proxy_auth:
+                sid, token = proxy_auth
+                if self._verify_session_token(sid, token):
+                    session_id = sid
             if session_id is None:
                 logger.warning(f"Proxy: no valid token from {client_ip}, rejecting")
                 writer.write(_FORBIDDEN_RESPONSE)
@@ -110,29 +110,6 @@ class ProxyServer:
 
             method = parts[0].upper()
             url = parts[1]
-
-            # Git HTTP requests arrive as direct HTTP (not proxy-style)
-            # because the server hostname is in NO_PROXY.
-            if self._git_handler and url.startswith("/git/"):
-                path, _, query = url.partition("?")
-                # Read body if Content-Length present
-                content_length = 0
-                for hdr in raw_headers:
-                    if hdr.lower().startswith(b"content-length:"):
-                        content_length = int(hdr.split(b":", 1)[1].strip())
-                body = b""
-                if content_length > 0:
-                    body = await asyncio.wait_for(reader.readexactly(content_length), timeout=120)
-                await self._git_handler.handle(
-                    writer,
-                    session_id,
-                    method,
-                    path,
-                    query,
-                    raw_headers,
-                    body,
-                )
-                return
 
             if method == "CONNECT":
                 await self._handle_connect(reader, writer, session_id, client_ip, url)
@@ -161,19 +138,18 @@ class ProxyServer:
                 pass
 
     @staticmethod
-    def _extract_proxy_token(header_line: bytes) -> str | None:
-        """Extract the token (password) from a ``Proxy-Authorization: Basic ...`` header.
-
-        Credentials are ``session_id:token`` encoded as Basic Auth.
-        """
+    def _extract_basic_credentials(header_line: bytes) -> tuple[str, str] | None:
+        """Extract ``(session_id, token)`` from a ``Proxy-Authorization: Basic ...`` header."""
         try:
             _, value = header_line.split(b":", 1)
             scheme, _, encoded = value.strip().partition(b" ")
             if scheme.lower() != b"basic":
                 return None
             decoded = base64.b64decode(encoded).decode()
-            _, _, password = decoded.partition(":")
-            return password or None
+            username, _, password = decoded.partition(":")
+            if not username or not password:
+                return None
+            return username, password
         except Exception:
             return None
 

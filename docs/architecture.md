@@ -118,6 +118,19 @@ Reads and writes Markdown-based memory files under `$CARAPACE_DATA_DIR/memory/`.
 
 An async forward proxy (HTTP + HTTPS CONNECT) running inside the Carapace server process. All outbound traffic from sandbox containers is routed through this proxy. It enforces per-session domain allowlisting with token-based authentication and delegates unknown domain requests to the security module for sentinel evaluation or user approval. See [sandbox.md](sandbox.md).
 
+## Server port architecture
+
+Carapace runs three separate listener ports for security isolation:
+
+| Port | Bind address | Auth | Purpose |
+| ---- | ------------ | ---- | ------- |
+| 8321 (public API) | `0.0.0.0` | Bearer token | REST API, WebSocket — used by the frontend and CLI |
+| 8322 (sandbox API) | `0.0.0.0` | HTTP Basic Auth (`session_id:token`) | Git HTTP backend — used by sandbox containers |
+| 8320 (internal API) | `127.0.0.1` | None (loopback only) | Sentinel callback — used by the pre-receive hook |
+| 3128 (proxy) | `0.0.0.0` | Proxy-Authorization Basic Auth | HTTP forward proxy — used by sandbox containers for outbound traffic |
+
+Sandbox containers can only reach ports 3128 (proxy) and 8322 (sandbox API). The public API (8321) and internal API (8320) are unreachable from sandboxes — enforced by Docker's internal network or Kubernetes NetworkPolicy.
+
 ## Data flow example
 
 This sequence shows what happens when a user asks: "Search the web for Python 3.14 release notes."
@@ -207,7 +220,9 @@ carapace:
 
 server:
   host: "0.0.0.0"
-  port: 8321
+  port: 8321          # public API (REST + WebSocket)
+  sandbox_port: 8322   # sandbox-facing API (Basic Auth, Git HTTP)
+  internal_port: 8320  # internal API (loopback only, sentinel callbacks)
   cors_origins: []
 
 channels:

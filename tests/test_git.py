@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-import asyncio
+import base64
 import os
 import stat
 from pathlib import Path
 
 import pytest
 
-from carapace.git_http import GitHttpHandler
-from carapace.git_store import _PRE_RECEIVE_HOOK, GitStore
+from carapace.git.http import GitHttpHandler
+from carapace.git.store import _PRE_RECEIVE_HOOK, GitStore
 
 # ── Helpers ──────────────────────────────────────────────────────────
 
@@ -172,7 +172,7 @@ class TestGitStoreRemote:
 
 
 class TestGitHttpHandlerCgiConversion:
-    """_cgi_to_http response parsing."""
+    """_parse_cgi_output response parsing."""
 
     def _handler(self) -> GitHttpHandler:
         return GitHttpHandler(
@@ -183,47 +183,95 @@ class TestGitHttpHandlerCgiConversion:
     def test_simple_200(self):
         h = self._handler()
         cgi = b"Content-Type: application/x-git\r\n\r\nbody-data"
-        result = h._cgi_to_http(cgi)
-        assert result.startswith(b"HTTP/1.1 200 OK\r\n")
-        assert result.endswith(b"body-data")
+        status, headers, body = h._parse_cgi_output(cgi)
+        assert status == 200
+        assert headers["Content-Type"] == "application/x-git"
+        assert body == b"body-data"
 
     def test_explicit_status(self):
         h = self._handler()
         cgi = b"Status: 404 Not Found\r\nContent-Type: text/plain\r\n\r\nnope"
-        result = h._cgi_to_http(cgi)
-        assert result.startswith(b"HTTP/1.1 404 Not Found\r\n")
-        assert b"nope" in result
-        # Status header should be stripped from response headers
-        assert b"Status:" not in result.split(b"\r\n\r\n")[0]
+        status, headers, body = h._parse_cgi_output(cgi)
+        assert status == 404
+        assert body == b"nope"
+        assert "Status" not in headers
 
     def test_lf_only_separator(self):
         h = self._handler()
         cgi = b"Content-Type: text/plain\n\nbody"
-        result = h._cgi_to_http(cgi)
-        assert b"200 OK" in result
-        assert result.endswith(b"body")
+        status, _headers, body = h._parse_cgi_output(cgi)
+        assert status == 200
+        assert body == b"body"
 
     def test_no_separator_returns_500(self):
         h = self._handler()
-        result = h._cgi_to_http(b"garbage without separator")
-        assert b"500" in result
+        status, _headers, _body = h._parse_cgi_output(b"garbage without separator")
+        assert status == 500
 
 
-class TestGitHttpHandlerGetHeader:
-    def test_found(self):
-        headers = [b"Content-Type: application/json", b"Accept: */*"]
-        assert GitHttpHandler._get_header(headers, b"content-type") == "application/json"
+class TestGitHttpHandlerAuth:
+    """_extract_basic_token and authenticate."""
 
-    def test_not_found(self):
-        assert GitHttpHandler._get_header([], b"content-type") is None
+    def test_valid_basic_credentials(self):
+        creds = base64.b64encode(b"sess-1:my-token").decode()
+        assert GitHttpHandler._extract_basic_credentials(f"Basic {creds}") == ("sess-1", "my-token")
 
-    def test_case_insensitive(self):
-        headers = [b"CONTENT-TYPE: text/html"]
-        assert GitHttpHandler._get_header(headers, b"content-type") == "text/html"
+    def test_no_password(self):
+        creds = base64.b64encode(b"sess-1:").decode()
+        assert GitHttpHandler._extract_basic_credentials(f"Basic {creds}") is None
+
+    def test_no_username(self):
+        creds = base64.b64encode(b":my-token").decode()
+        assert GitHttpHandler._extract_basic_credentials(f"Basic {creds}") is None
+
+    def test_non_basic_scheme(self):
+        assert GitHttpHandler._extract_basic_credentials("Bearer xyz") is None
+
+    def test_garbage(self):
+        assert GitHttpHandler._extract_basic_credentials("not-valid") is None
+
+    def test_authenticate_success(self):
+        h = GitHttpHandler(
+            knowledge_dir=Path("/tmp/knowledge"),
+            default_branch="main",
+            verify_session_token=lambda sid, tok: sid == "sess-1" and tok == "my-token",
+        )
+        creds = base64.b64encode(b"sess-1:my-token").decode()
+        assert h.authenticate(f"Basic {creds}") == "sess-1"
+
+    def test_authenticate_invalid_token(self):
+        h = GitHttpHandler(
+            knowledge_dir=Path("/tmp/knowledge"),
+            default_branch="main",
+            verify_session_token=lambda sid, tok: False,
+        )
+        creds = base64.b64encode(b"sess-1:bad-token").decode()
+        assert h.authenticate(f"Basic {creds}") is None
+
+    def test_authenticate_wrong_session(self):
+        h = GitHttpHandler(
+            knowledge_dir=Path("/tmp/knowledge"),
+            default_branch="main",
+            verify_session_token=lambda sid, tok: sid == "sess-1" and tok == "tok",
+        )
+        creds = base64.b64encode(b"sess-2:tok").decode()
+        assert h.authenticate(f"Basic {creds}") is None
+
+    def test_authenticate_no_header(self):
+        h = GitHttpHandler(
+            knowledge_dir=Path("/tmp/knowledge"),
+            default_branch="main",
+            verify_session_token=lambda sid, tok: True,
+        )
+        assert h.authenticate(None) is None
+
+    def test_case_insensitive_scheme(self):
+        creds = base64.b64encode(b"u:tok").decode()
+        assert GitHttpHandler._extract_basic_credentials(f"basic {creds}") == ("u", "tok")
 
 
 class TestGitHttpHandlerHandle:
-    """Integration-level tests for the handle() method using mock streams."""
+    """Integration-level tests for the handle() method."""
 
     def _handler(self) -> GitHttpHandler:
         return GitHttpHandler(
@@ -231,52 +279,30 @@ class TestGitHttpHandlerHandle:
             default_branch="main",
         )
 
-    def _make_writer(self) -> asyncio.StreamWriter:
-        writer = AsyncStreamWriter()
-        return writer  # type: ignore[return-value]
-
     async def test_forbidden_path_returns_403(self):
         h = self._handler()
-        writer = self._make_writer()
 
-        # Try to access a different repo under the parent dir
-        await h.handle(
-            writer,
-            "sess-1",
+        status, _headers, _body = await h.handle(
+            session_id="sess-1",
             method="GET",
             path="/git/etc/passwd",
             query_string="",
-            raw_headers=[],
+            content_type=None,
             body=b"",
         )
-        assert b"403" in writer.data  # type: ignore[attr-defined]
+        assert status == 403
 
     async def test_allowed_path_without_dot_git(self):
         h = self._handler()
-        writer = self._make_writer()
 
         # /git/knowledge/info/refs → PATH_INFO=/knowledge/info/refs → allowed
         # (will fail with 500 because no actual git repo, but should NOT be 403)
-        await h.handle(
-            writer,
-            "sess-1",
+        status, _headers, _body = await h.handle(
+            session_id="sess-1",
             method="GET",
             path="/git/knowledge/info/refs",
             query_string="service=git-upload-pack",
-            raw_headers=[],
+            content_type=None,
             body=b"",
         )
-        assert b"403" not in writer.data  # type: ignore[attr-defined]
-
-
-class AsyncStreamWriter:
-    """Minimal mock for asyncio.StreamWriter used in handler tests."""
-
-    def __init__(self):
-        self.data = b""
-
-    def write(self, data: bytes):
-        self.data += data
-
-    async def drain(self):
-        pass
+        assert status != 403

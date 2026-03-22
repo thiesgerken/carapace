@@ -133,6 +133,7 @@ class SandboxManager:
         idle_timeout_minutes: int = 15,
         host_data_dir: Path | None = None,
         proxy_port: int = 3128,
+        sandbox_port: int = 8322,
     ) -> None:
         self._runtime = runtime
         self._data_dir = data_dir
@@ -142,6 +143,7 @@ class SandboxManager:
         self._network_name = network_name
         self._idle_timeout = idle_timeout_minutes * 60
         self._proxy_port = proxy_port
+        self._sandbox_port = sandbox_port
         self._sessions: dict[str, SessionContainer] = {}
         self._token_to_session: dict[str, str] = {}
         self._session_tokens: dict[str, str] = {}
@@ -288,8 +290,10 @@ class SandboxManager:
         # Extract host (without scheme/port/auth) for NO_PROXY
         no_proxy_host = rest.rsplit(":", 1)[0]
         no_proxy = ",".join([no_proxy_host, "localhost", "127.0.0.1"])
-        # Git clone URL — same host:port, routed through the proxy
-        git_url = f"{proxy_url}/git/{self._knowledge_dir.name}"
+        # Git clone URL — points at the API server (Basic Auth)
+        git_url = (
+            f"{scheme}://{session_id}:{proxy_token}@{no_proxy_host}:{self._sandbox_port}/git/{self._knowledge_dir.name}"
+        )
         return {
             "HTTP_PROXY": authed_url,
             "HTTPS_PROXY": authed_url,
@@ -529,8 +533,9 @@ class SandboxManager:
         for sid in list(self._sessions):
             await self.cleanup_session(sid)
 
-    def get_session_by_token(self, token: str) -> str | None:
-        return self._token_to_session.get(token)
+    def verify_session_token(self, session_id: str, token: str) -> bool:
+        """Return True if *token* is valid for *session_id*."""
+        return self._token_to_session.get(token) == session_id
 
     def allow_domains(self, session_id: str, domains: set[str]) -> None:
         """Add *domains* to the proxy allowlist for *session_id*."""
