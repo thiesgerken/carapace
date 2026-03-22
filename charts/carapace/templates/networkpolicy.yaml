@@ -27,7 +27,7 @@ spec:
               app.kubernetes.io/component: server
       ports:
         - protocol: TCP
-          port: 3128
+          port: {{ .Values.server.proxyPort }}
     - to:
         - namespaceSelector: {}
           podSelector:

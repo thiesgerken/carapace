@@ -20,6 +20,13 @@ frontend:
     limits:
       memory: 128Mi
 
+# -- Server ports
+server:
+  # -- API port (FastAPI / REST + WebSocket)
+  apiPort: 8321
+  # -- Proxy port (sandbox HTTP proxy + Git HTTP)
+  proxyPort: 3128
+
 sandbox:
   image:
     registry: ghcr.io

@@ -31,9 +31,9 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:
             - name: api
-              containerPort: 8321
+              containerPort: {{ .Values.server.apiPort }}
             - name: proxy
-              containerPort: 3128
+              containerPort: {{ .Values.server.proxyPort }}
           env:
             - name: CARAPACE_CONFIG
               value: /var/lib/carapace/config.yaml

@@ -12,8 +12,8 @@ spec:
     app.kubernetes.io/component: server
   ports:
     - name: api
-      port: 8321
+      port: {{ .Values.server.apiPort }}
       targetPort: api
     - name: proxy
-      port: 3128
+      port: {{ .Values.server.proxyPort }}
       targetPort: proxy

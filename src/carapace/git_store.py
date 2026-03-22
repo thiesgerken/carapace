@@ -6,7 +6,8 @@ from pathlib import Path
 from loguru import logger
 
 # Pre-receive hook script — gates every push through the sentinel.
-# CARAPACE_SESSION_ID and CARAPACE_DEFAULT_BRANCH are set by the Git HTTP handler.
+# CARAPACE_SESSION_ID, CARAPACE_DEFAULT_BRANCH, and CARAPACE_API_PORT
+# are set by the Git HTTP handler.
 _PRE_RECEIVE_HOOK = """\
 #!/bin/sh
 # Pre-receive hook — sentinel evaluation of incoming pushes
@@ -21,7 +22,7 @@ while read old_sha new_sha ref; do
         is_default="true"
     fi
 
-    result=$(curl -s -X POST http://localhost:8321/internal/sentinel/evaluate-push \\
+    result=$(curl -s -X POST http://localhost:${CARAPACE_API_PORT:-8321}/internal/sentinel/evaluate-push \\
         -H "Content-Type: application/json" \\
         -d "{
             \\"session_id\\": \\"$CARAPACE_SESSION_ID\\",
