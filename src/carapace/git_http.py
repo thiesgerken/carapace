@@ -71,10 +71,20 @@ class GitHttpHandler:
             return
 
         # Strip /git/ prefix to get the PATH_INFO for git-http-backend
-        # e.g. /git/knowledge.git/info/refs -> /knowledge.git/info/refs
+        # e.g. /git/knowledge/info/refs -> /knowledge/info/refs
         path_info = path
         if path_info.startswith("/git"):
             path_info = path_info[4:]  # remove /git, keep leading /
+
+        # Validate PATH_INFO: must address only the intended repo to prevent
+        # git http-backend from serving arbitrary repos under the parent dir.
+        repo_name = self._knowledge_dir.name
+        allowed_prefixes = (f"/{repo_name}/", f"/{repo_name}.git/")
+        if not any(path_info.startswith(p) for p in allowed_prefixes):
+            logger.warning(f"Rejected git request with unexpected PATH_INFO: {path_info}")
+            writer.write(b"HTTP/1.1 403 Forbidden\r\n\r\n")
+            await writer.drain()
+            return
 
         is_push = "receive-pack" in path
 

@@ -325,6 +325,47 @@ class TestGitHttpHandlerHandle:
         )
         assert b"401" in writer.data  # type: ignore[attr-defined]
 
+    async def test_forbidden_path_returns_403(self):
+        h = self._handler()
+        writer = self._make_writer()
+        reader = asyncio.StreamReader()
+
+        creds = base64.b64encode(b"x:valid-tok").decode()
+        headers = [f"Authorization: Basic {creds}".encode()]
+
+        # Try to access a different repo under the parent dir
+        await h.handle(
+            reader,
+            writer,
+            method="GET",
+            path="/git/etc/passwd",
+            query_string="",
+            raw_headers=headers,
+            body=b"",
+        )
+        assert b"403" in writer.data  # type: ignore[attr-defined]
+
+    async def test_allowed_path_without_dot_git(self):
+        h = self._handler()
+        writer = self._make_writer()
+        reader = asyncio.StreamReader()
+
+        creds = base64.b64encode(b"x:valid-tok").decode()
+        headers = [f"Authorization: Basic {creds}".encode()]
+
+        # /git/knowledge/info/refs → PATH_INFO=/knowledge/info/refs → allowed
+        # (will fail with 500 because no actual git repo, but should NOT be 403)
+        await h.handle(
+            reader,
+            writer,
+            method="GET",
+            path="/git/knowledge/info/refs",
+            query_string="service=git-upload-pack",
+            raw_headers=headers,
+            body=b"",
+        )
+        assert b"403" not in writer.data  # type: ignore[attr-defined]
+
 
 class AsyncStreamWriter:
     """Minimal mock for asyncio.StreamWriter used in handler tests."""
