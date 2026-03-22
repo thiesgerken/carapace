@@ -222,7 +222,10 @@ class SandboxManager:
                     "sh",
                     "-c",
                     "setup-proxy.sh"
-                    " && git clone $GIT_REPO_URL /workspace"
+                    " && git clone $GIT_REPO_URL /workspace-repo"
+                    " && mv /workspace-repo/.git /workspace/"
+                    " && rmdir /workspace-repo"
+                    " && cd /workspace && git reset --hard"
                     " && echo 'carapace sandbox ready'"
                     " && exec sleep infinity",
                 ],

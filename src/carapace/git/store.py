@@ -13,8 +13,14 @@ _PRE_RECEIVE_HOOK = """\
 # Pre-receive hook — sentinel evaluation of incoming pushes
 
 while read old_sha new_sha ref; do
-    changes=$(git log --oneline "$old_sha..$new_sha" 2>/dev/null)
-    diff=$(git diff "$old_sha" "$new_sha" 2>/dev/null)
+    # Handle initial push (old_sha is null SHA)
+    if [ "$old_sha" = "0000000000000000000000000000000000000000" ]; then
+        changes=$(git log --oneline "$new_sha" 2>/dev/null)
+        diff=$(git show "$new_sha" 2>/dev/null)
+    else
+        changes=$(git log --oneline "$old_sha..$new_sha" 2>/dev/null)
+        diff=$(git diff "$old_sha" "$new_sha" 2>/dev/null)
+    fi
 
     branch=$(echo "$ref" | sed 's|refs/heads/||')
     is_default="false"
