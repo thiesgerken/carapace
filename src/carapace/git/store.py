@@ -59,7 +59,13 @@ class GitStore:
     No ``gitpython`` dependency — the ``git`` binary is always available.
     """
 
-    def __init__(self, repo_dir: Path, *, branch: str = "main", author: str = "Carapace Agent <%s>") -> None:
+    def __init__(
+        self,
+        repo_dir: Path,
+        *,
+        branch: str = "main",
+        author: str = "Carapace Session %s <%s@carapace.local>",
+    ) -> None:
         self.repo_dir = repo_dir
         self.branch = branch
         self.author_template = author

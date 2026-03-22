@@ -133,10 +133,12 @@ class SandboxManager:
         host_data_dir: Path | None = None,
         proxy_port: int = 3128,
         sandbox_port: int = 8322,
+        git_author: str = "Carapace Session %s <%s@carapace.local>",
     ) -> None:
         self._runtime = runtime
         self._data_dir = data_dir
         self._knowledge_dir = knowledge_dir
+        self._git_author = git_author
         self._host_data_dir = host_data_dir
         self._base_image = base_image
         self._network_name = network_name
@@ -363,6 +365,23 @@ class SandboxManager:
             "npm_config_https_proxy": authed_url,
             # Git knowledge repo URL (cloned during sandbox setup)
             "GIT_REPO_URL": git_url,
+            # Git identity for commits made inside the sandbox
+            **self._git_identity_env(session_id),
+        }
+
+    def _git_identity_env(self, session_id: str) -> dict[str, str]:
+        """Derive GIT_AUTHOR/COMMITTER env vars from the author template."""
+        filled = self._git_author.replace("%s", session_id)
+        if "<" in filled and filled.endswith(">"):
+            name, _, email = filled.rpartition("<")
+            name, email = name.strip(), email.rstrip(">").strip()
+        else:
+            name, email = filled, f"{session_id}@carapace"
+        return {
+            "GIT_AUTHOR_NAME": name,
+            "GIT_COMMITTER_NAME": name,
+            "GIT_AUTHOR_EMAIL": email,
+            "GIT_COMMITTER_EMAIL": email,
         }
 
     async def _exec(

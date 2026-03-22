@@ -30,10 +30,10 @@ class TestGitStoreParseAuthor:
     """_parse_author template substitution."""
 
     def test_default_template(self):
-        store = GitStore(Path("/tmp"), author="Carapace Agent <%s>")
+        store = GitStore(Path("/tmp"))
         name, email = store._parse_author("sess-123")
-        assert name == "Carapace Agent"
-        assert email == "sess-123"
+        assert name == "Carapace Session sess-123"
+        assert email == "sess-123@carapace.local"
 
     def test_custom_template(self):
         store = GitStore(Path("/tmp"), author="Bot <%s@example.com>")
@@ -50,8 +50,8 @@ class TestGitStoreParseAuthor:
     def test_server_default(self):
         store = GitStore(Path("/tmp"))
         name, email = store._parse_author("server")
-        assert name == "Carapace Agent"
-        assert email == "server"
+        assert name == "Carapace Session server"
+        assert email == "server@carapace.local"
 
 
 @needs_git

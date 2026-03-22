@@ -151,7 +151,7 @@ class GitConfig(BaseModel):
 
     remote: str = ""  # optional external remote URL
     branch: str = "main"
-    author: str = "Carapace Agent <%s>"  # %s → session ID
+    author: str = "Carapace Session %s <%s@carapace.local>"  # %s → session ID
 
 
 class ServerConfig(BaseSettings):

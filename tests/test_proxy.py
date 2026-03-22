@@ -140,6 +140,21 @@ class TestSandboxManagerAllowlists:
         assert "172.18.0.2" in env["NO_PROXY"]
         assert "GIT_REPO_URL" in env
 
+    def test_proxy_env_includes_git_identity(self, tmp_path: Path):
+        mgr = self._make_manager(tmp_path)
+        env = mgr._build_proxy_env("sess-1", "tok", "http://172.18.0.2:3128")
+        assert env["GIT_AUTHOR_NAME"] == "Carapace Session sess-1"
+        assert env["GIT_COMMITTER_NAME"] == "Carapace Session sess-1"
+        assert env["GIT_AUTHOR_EMAIL"] == "sess-1@carapace.local"
+        assert env["GIT_COMMITTER_EMAIL"] == "sess-1@carapace.local"
+
+    def test_git_identity_custom_author(self, tmp_path: Path):
+        mgr = self._make_manager(tmp_path)
+        mgr._git_author = "Bot <%s@example.com>"
+        env = mgr._build_proxy_env("sess-1", "tok", "http://172.18.0.2:3128")
+        assert env["GIT_AUTHOR_NAME"] == "Bot"
+        assert env["GIT_AUTHOR_EMAIL"] == "sess-1@example.com"
+
     def test_no_proxy_env_when_empty(self, tmp_path: Path):
         mgr = self._make_manager(tmp_path)
         assert mgr._build_proxy_env("sess-1", "tok", "") == {}
