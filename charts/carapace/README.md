@@ -17,6 +17,7 @@ Helm chart for deploying [Carapace](https://github.com/thiesgerken/carapace) on 
 > The chart installs a `NetworkPolicy` that restricts sandbox pod egress to the proxy port (3128), the sandbox API port (8322), and DNS only. **If you add broader egress rules to the namespace, or your CNI does not enforce NetworkPolicy, sandbox pods can bypass the proxy entirely — defeating the approval system and all domain-level security controls.**
 >
 > Before deploying, verify that:
+>
 > 1. Your CNI plugin enforces NetworkPolicy. k3s and distributions using Calico or Cilium support this out of the box. Standalone Flannel does **not** — it silently ignores NetworkPolicy.
 > 2. No other NetworkPolicy in the namespace grants sandbox pods wider egress (Kubernetes NetworkPolicy is additive — a permissive policy cannot be overridden by a restrictive one).
 > 3. No namespace-level network rules (e.g. Cilium `CiliumNetworkPolicy`, Calico `GlobalNetworkPolicy`) override the chart's restrictions.
@@ -52,7 +53,7 @@ For Kustomize-based GitOps:
 helmCharts:
   - name: carapace
     repo: oci://ghcr.io/thiesgerken/charts
-    version: 0.25.3  # pin to a specific version
+    version: 0.25.3 # pin to a specific version
     releaseName: carapace
     namespace: carapace
     valuesFile: values.yaml
@@ -78,12 +79,12 @@ All images default to the chart's `appVersion` tag, which is kept in sync with t
 
 ### Required configuration
 
-| What | How |
-|------|-----|
-| **API bearer token** | Set `CARAPACE_TOKEN` in the Secret referenced via `envFrom`. Both the server and CLI/frontend clients must use the same token. |
-| **Anthropic API key** | Set `ANTHROPIC_API_KEY` in the same Secret. |
-| **Ingress hostname** | `--set ingress.hostname=carapace.example.com` |
-| **Gateway parent ref** | `--set ingress.parentRefs[0].name=my-gateway` (defaults to `default-gateway`) |
+| What                   | How                                                                                                                            |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| **API bearer token**   | Set `CARAPACE_TOKEN` in the Secret referenced via `envFrom`. Both the server and CLI/frontend clients must use the same token. |
+| **Anthropic API key**  | Set `ANTHROPIC_API_KEY` in the same Secret.                                                                                    |
+| **Ingress hostname**   | `--set ingress.hostname=carapace.example.com`                                                                                  |
+| **Gateway parent ref** | `--set ingress.parentRefs[0].name=my-gateway` (defaults to `default-gateway`)                                                  |
 
 ### Injecting secrets and environment variables
 
@@ -93,9 +94,9 @@ The chart does **not** create Secret resources — manage them externally and re
 # values.yaml
 envFrom:
   - secretRef:
-      name: carapace-secrets       # your externally managed Secret
+      name: carapace-secrets # your externally managed Secret
   - configMapRef:
-      name: carapace-config        # optional ConfigMap for non-sensitive settings
+      name: carapace-config # optional ConfigMap for non-sensitive settings
 
 extraEnv:
   - name: CARAPACE_LOG_LEVEL
@@ -123,27 +124,27 @@ Leave `config` empty (`{}`) to skip the ConfigMap entirely and manage the file o
 
 ### Key values
 
-| Value | Default | Description |
-|-------|---------|-------------|
-| `image.registry` | `ghcr.io` | Server image registry |
-| `image.repository` | `thiesgerken/carapace` | Server image repository |
-| `image.tag` | `""` (appVersion) | Server image tag |
-| `frontend.enabled` | `true` | Deploy the Next.js frontend |
-| `frontend.image.tag` | `""` (appVersion) | Frontend image tag |
-| `sandbox.image.tag` | `""` (appVersion) | Sandbox base image tag |
-| `ingress.enabled` | `true` | Create a Gateway API HTTPRoute |
-| `ingress.hostname` | `carapace.example.com` | Ingress hostname |
-| `ingress.parentRefs` | `[{name: default-gateway}]` | Gateway parent references |
-| `ingress.annotations` | `{}` | Extra annotations on the HTTPRoute |
-| `persistence.storageClassName` | `""` (cluster default) | StorageClass for the RWX PVC |
-| `persistence.size` | `10Gi` | PVC size |
-| `persistence.finalizers` | `[]` | PVC finalizers (e.g. `kubernetes.io/pvc-protection`) |
-| `config` | `{}` | Application config (mounted as `/data/config.yaml` via ConfigMap) |
-| `priorityClassName` | `""` | PriorityClass for all pods (server, frontend, sandbox) |
-| `envFrom` | `[]` | Secret/ConfigMap refs injected into the server |
-| `extraEnv` | `[]` | Extra env vars for the server container |
-| `resources` | requests: 200m/256Mi, limit: 1Gi | Server resource requests/limits |
-| `frontend.resources` | requests: 50m/64Mi, limit: 128Mi | Frontend resource requests/limits |
+| Value                          | Default                          | Description                                                       |
+| ------------------------------ | -------------------------------- | ----------------------------------------------------------------- |
+| `image.registry`               | `ghcr.io`                        | Server image registry                                             |
+| `image.repository`             | `thiesgerken/carapace`           | Server image repository                                           |
+| `image.tag`                    | `""` (appVersion)                | Server image tag                                                  |
+| `frontend.enabled`             | `true`                           | Deploy the Next.js frontend                                       |
+| `frontend.image.tag`           | `""` (appVersion)                | Frontend image tag                                                |
+| `sandbox.image.tag`            | `""` (appVersion)                | Sandbox base image tag                                            |
+| `ingress.enabled`              | `true`                           | Create a Gateway API HTTPRoute                                    |
+| `ingress.hostname`             | `carapace.example.com`           | Ingress hostname                                                  |
+| `ingress.parentRefs`           | `[{name: default-gateway}]`      | Gateway parent references                                         |
+| `ingress.annotations`          | `{}`                             | Extra annotations on the HTTPRoute                                |
+| `persistence.storageClassName` | `""` (cluster default)           | StorageClass for the RWX PVC                                      |
+| `persistence.size`             | `10Gi`                           | PVC size                                                          |
+| `persistence.finalizers`       | `[]`                             | PVC finalizers (e.g. `kubernetes.io/pvc-protection`)              |
+| `config`                       | `{}`                             | Application config (mounted as `/data/config.yaml` via ConfigMap) |
+| `priorityClassName`            | `""`                             | PriorityClass for all pods (server, frontend, sandbox)            |
+| `envFrom`                      | `[]`                             | Secret/ConfigMap refs injected into the server                    |
+| `extraEnv`                     | `[]`                             | Extra env vars for the server container                           |
+| `resources`                    | requests: 200m/256Mi, limit: 1Gi | Server resource requests/limits                                   |
+| `frontend.resources`           | requests: 50m/64Mi, limit: 128Mi | Frontend resource requests/limits                                 |
 
 See [values.yaml](values.yaml) for the complete reference.
 

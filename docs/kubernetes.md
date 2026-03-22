@@ -90,7 +90,7 @@ When `CARAPACE_SANDBOX_RUNTIME` is unset or `docker` (the default), nothing chan
 
 ### Auto-detection
 
-When the server runs inside Kubernetes (the `KUBERNETES_SERVICE_HOST` env var is set), it loads in-cluster credentials automatically. No kubeconfig needed.
+When the server runs inside Kubernetes (the `KUBERNETES_SERVICE_HOST` env var is set), it loads in-cluster credentials automatically. No `kubeconfig` needed.
 
 ### Environment variable reference
 
@@ -150,6 +150,7 @@ This mirrors the Docker setup where sandbox containers are on an internal networ
 > - Namespace-level or cluster-level network rules (e.g. Cilium `CiliumNetworkPolicy`, Calico `GlobalNetworkPolicy`) open additional egress paths for sandbox pods.
 >
 > **Before deploying to production**, verify your setup:
+>
 > ```bash
 > # After deploying, exec into a sandbox pod and confirm it cannot reach the internet directly
 > kubectl exec -it <sandbox-pod> -- curl -m 5 https://example.com
