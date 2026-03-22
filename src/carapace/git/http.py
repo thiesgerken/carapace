@@ -39,19 +39,25 @@ class GitHttpHandler:
 
         Returns the ``session_id`` on success, ``None`` on failure.
         """
+
         if not authorization:
             logger.warning("Git auth failed: no Authorization header")
             return None
+
         if not self._verify_session_token:
             logger.warning("Git auth failed: no verify_session_token callback")
             return None
+
         creds = self._extract_basic_credentials(authorization)
         if not creds:
             logger.warning("Git auth failed: malformed Basic credentials")
             return None
+
         session_id, token = creds
         if self._verify_session_token(session_id, token):
+            logger.debug(f"Git auth succeeded for session {session_id}")
             return session_id
+
         logger.warning(f"Git auth failed: invalid token for session {session_id}")
         return None
 
