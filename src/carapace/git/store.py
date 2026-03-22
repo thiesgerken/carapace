@@ -34,8 +34,8 @@ while read old_sha new_sha ref; do
     result=$(curl -s --fail -X POST http://127.0.0.1:${CARAPACE_API_PORT:-8320}/internal/sentinel/evaluate-push \\
         -H "Content-Type: application/json" \\
         -d "{
-            \\"session_id\\": \\"$CARAPACE_SESSION_ID\\",
-            \\"ref\\": \\"$ref\\",
+            \\"session_id\\": $(echo "$CARAPACE_SESSION_ID" | jq -Rs .),
+            \\"ref\\": $(echo "$ref" | jq -Rs .),
             \\"is_default_branch\\": $is_default,
             \\"commits\\": $(echo "$changes" | jq -Rs .),
             \\"diff\\": $(echo "$diff" | jq -Rs .)
