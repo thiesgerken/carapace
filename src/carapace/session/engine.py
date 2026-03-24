@@ -26,7 +26,7 @@ from carapace.session.manager import SessionManager
 from carapace.session.titler import generate_title
 from carapace.skills import SkillRegistry
 from carapace.usage import UsageTracker
-from carapace.ws_models import SLASH_COMMANDS, ApprovalRequest, ApprovalResponse, ProxyApprovalResponse, TurnUsage
+from carapace.ws_models import SLASH_COMMANDS, ApprovalRequest, ApprovalResponse, EscalationResponse, TurnUsage
 
 ModelType = Literal["agent", "sentinel", "title"]
 
@@ -47,8 +47,9 @@ class SessionSubscriber(Protocol):
     async def on_error(self, detail: str) -> None: ...
     async def on_cancelled(self) -> None: ...
     async def on_approval_request(self, req: ApprovalRequest) -> None: ...
-    async def on_proxy_approval_request(
-        self, request_id: str, domain: str, command: str, kind: str = "proxy_domain"
+    async def on_proxy_approval_request(self, request_id: str, domain: str, command: str) -> None: ...
+    async def on_git_push_approval_request(
+        self, request_id: str, ref: str, explanation: str, changed_files: list[str]
     ) -> None: ...
     async def on_title_update(self, title: str) -> None: ...
     async def on_domain_info(self, domain: str, detail: str) -> None: ...
@@ -69,7 +70,7 @@ class ActiveSession:
     agent_task: asyncio.Task[None] | None = None
     subscribers: list[SessionSubscriber] = field(default_factory=list)
     tool_approval_queue: asyncio.Queue[ApprovalResponse | None] = field(default_factory=asyncio.Queue)
-    proxy_approval_queue: asyncio.Queue[ProxyApprovalResponse | None] = field(default_factory=asyncio.Queue)
+    escalation_queue: asyncio.Queue[EscalationResponse | None] = field(default_factory=asyncio.Queue)
     usage_tracker: UsageTracker = field(default_factory=UsageTracker)
     verbose: bool = True
     agent_model: Model | None = None
@@ -77,7 +78,7 @@ class ActiveSession:
     sentinel_model_name: str | None = None
     title_model_name: str | None = None
     pending_approval_requests: list[dict[str, Any]] = field(default_factory=list)
-    pending_proxy_approvals: list[dict[str, Any]] = field(default_factory=list)
+    pending_escalations: list[dict[str, Any]] = field(default_factory=list)
     _pending_sends: set[asyncio.Task[Any]] = field(default_factory=set)
 
 
@@ -187,7 +188,7 @@ class SessionEngine:
 
         # Wire security callbacks so domain escalation / info works
         # even outside an agent turn (e.g. during sandbox setup).
-        security.set_user_escalation_callback(self._make_domain_escalation_cb(active))
+        security.set_user_escalation_callback(self._make_escalation_cb(active))
         security.set_domain_info_callback(self._make_domain_info_cb(active))
         security.set_push_info_callback(self._make_push_info_cb(active))
 
@@ -305,8 +306,8 @@ class SessionEngine:
         # Drain leftover approval responses
         while not active.tool_approval_queue.empty():
             active.tool_approval_queue.get_nowait()
-        while not active.proxy_approval_queue.empty():
-            active.proxy_approval_queue.get_nowait()
+        while not active.escalation_queue.empty():
+            active.escalation_queue.get_nowait()
 
         active.agent_task = asyncio.create_task(
             self._run_turn(active, content, origin=origin),
@@ -321,7 +322,7 @@ class SessionEngine:
         if active.agent_task and not active.agent_task.done():
             active.agent_task.cancel()
             active.tool_approval_queue.put_nowait(None)
-            active.proxy_approval_queue.put_nowait(None)
+            active.escalation_queue.put_nowait(None)
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await active.agent_task
             active.agent_task = None
@@ -329,15 +330,15 @@ class SessionEngine:
     async def submit_approval(
         self,
         session_id: str,
-        response: ApprovalResponse | ProxyApprovalResponse,
+        response: ApprovalResponse | EscalationResponse,
     ) -> None:
-        """Forward an approval / proxy-approval response to the running turn."""
+        """Forward an approval / escalation response to the running turn."""
         active = self._active.get(session_id)
         if active:
             if isinstance(response, ApprovalResponse):
                 active.tool_approval_queue.put_nowait(response)
             else:
-                active.proxy_approval_queue.put_nowait(response)
+                active.escalation_queue.put_nowait(response)
 
     # -- slash commands --
 
@@ -722,37 +723,67 @@ class SessionEngine:
         except Exception as exc:
             logger.warning(f"Title generation failed for {session_id}: {exc}")
 
-    def _make_domain_escalation_cb(
+    def _make_escalation_cb(
         self,
         active: ActiveSession,
     ) -> Callable[[str, str, dict[str, Any]], Awaitable[bool]]:
-        """Build a callback that broadcasts proxy-domain escalations to subscribers."""
+        """Build a callback that broadcasts sentinel escalations (proxy domain or git push) to subscribers."""
 
         async def _escalate(session_id: str, domain: str, context: dict[str, Any]) -> bool:
             request_id = secrets.token_hex(8)
             cmd = context.get("command", "")
             kind = context.get("kind", "proxy_domain")
-            self._session_mgr.append_events(
-                session_id,
-                [{"role": "proxy_approval", "request_id": request_id, "domain": domain, "command": cmd, "kind": kind}],
-            )
-            active.pending_proxy_approvals.append(
-                {"request_id": request_id, "domain": domain, "command": cmd, "kind": kind}
-            )
-            await self._broadcast(active, "on_proxy_approval_request", request_id, domain, cmd, kind)
+            if kind == "git_push":
+                ref = context.get("ref", domain)
+                explanation = context.get("explanation", "")
+                changed_files: list[str] = context.get("changed_files", [])
+                self._session_mgr.append_events(
+                    session_id,
+                    [
+                        {
+                            "role": "git_push_approval",
+                            "request_id": request_id,
+                            "ref": ref,
+                            "explanation": explanation,
+                            "changed_files": changed_files,
+                        }
+                    ],
+                )
+                active.pending_escalations.append(
+                    {
+                        "request_id": request_id,
+                        "kind": "git_push",
+                        "ref": ref,
+                        "explanation": explanation,
+                        "changed_files": changed_files,
+                    }
+                )
+                await self._broadcast(
+                    active, "on_git_push_approval_request", request_id, ref, explanation, changed_files
+                )
+            else:
+                self._session_mgr.append_events(
+                    session_id,
+                    [{"role": "proxy_approval", "request_id": request_id, "domain": domain, "command": cmd}],
+                )
+                active.pending_escalations.append(
+                    {"request_id": request_id, "kind": "proxy_domain", "domain": domain, "command": cmd}
+                )
+                await self._broadcast(active, "on_proxy_approval_request", request_id, domain, cmd)
             # Block until a subscriber responds
             while True:
-                msg = await active.proxy_approval_queue.get()
+                msg = await active.escalation_queue.get()
                 if msg is None:
-                    active.pending_proxy_approvals.clear()
+                    active.pending_escalations.clear()
                     return False
                 if msg.request_id == request_id:
                     decision = msg.decision
+                    event_role = "git_push_approval" if kind == "git_push" else "proxy_approval"
                     self._session_mgr.append_events(
                         session_id,
                         [
                             {
-                                "role": "proxy_approval",
+                                "role": event_role,
                                 "request_id": request_id,
                                 "domain": domain,
                                 "command": cmd,
@@ -760,8 +791,8 @@ class SessionEngine:
                             }
                         ],
                     )
-                    active.pending_proxy_approvals = [
-                        p for p in active.pending_proxy_approvals if p["request_id"] != request_id
+                    active.pending_escalations = [
+                        p for p in active.pending_escalations if p["request_id"] != request_id
                     ]
                     return decision != "deny"
 

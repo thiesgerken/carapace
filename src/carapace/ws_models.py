@@ -42,10 +42,10 @@ class ApprovalResponse(BaseModel):
 DomainDecision = Literal["allow", "deny"]
 
 
-class ProxyApprovalResponse(BaseModel):
-    """Client → Server: user's decision for a proxy domain approval request."""
+class EscalationResponse(BaseModel):
+    """Client → Server: user's decision on a sentinel escalation (proxy domain or git push)."""
 
-    type: Literal["proxy_approval_response"] = "proxy_approval_response"
+    type: Literal["escalation_response"] = "escalation_response"
     request_id: str
     decision: DomainDecision
 
@@ -56,7 +56,7 @@ class CancelRequest(BaseModel):
     type: Literal["cancel"] = "cancel"
 
 
-ClientEnvelope = UserMessage | ApprovalResponse | ProxyApprovalResponse | CancelRequest
+ClientEnvelope = UserMessage | ApprovalResponse | EscalationResponse | CancelRequest
 
 
 def parse_client_message(raw: dict[str, Any]) -> ClientEnvelope:
@@ -65,8 +65,8 @@ def parse_client_message(raw: dict[str, Any]) -> ClientEnvelope:
             return UserMessage.model_validate(raw)
         case "approval_response":
             return ApprovalResponse.model_validate(raw)
-        case "proxy_approval_response":
-            return ProxyApprovalResponse.model_validate(raw)
+        case "escalation_response":
+            return EscalationResponse.model_validate(raw)
         case "cancel":
             return CancelRequest.model_validate(raw)
         case other:
@@ -111,7 +111,16 @@ class ProxyApprovalRequest(BaseModel):
     request_id: str
     domain: str
     command: str  # the exec command that triggered this connection attempt
-    kind: Literal["proxy_domain", "git_push"] = "proxy_domain"
+
+
+class GitPushApprovalRequest(BaseModel):
+    """Server → Client: sentinel is waiting for a git push decision."""
+
+    type: Literal["git_push_approval_request"] = "git_push_approval_request"
+    request_id: str
+    ref: str
+    explanation: str
+    changed_files: list[str]
 
 
 class TurnUsage(BaseModel):
@@ -173,6 +182,7 @@ ServerEnvelope = (
     | ToolResultInfo
     | ApprovalRequest
     | ProxyApprovalRequest
+    | GitPushApprovalRequest
     | Done
     | CommandResult
     | ErrorMessage

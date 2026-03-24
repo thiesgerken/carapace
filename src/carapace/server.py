@@ -57,8 +57,9 @@ from carapace.ws_models import (
     CommandResult,
     Done,
     ErrorMessage,
+    EscalationResponse,
+    GitPushApprovalRequest,
     ProxyApprovalRequest,
-    ProxyApprovalResponse,
     ServerEnvelope,
     SessionTitleUpdate,
     StatusUpdate,
@@ -577,10 +578,15 @@ class WebSocketSubscriber:
     async def on_approval_request(self, req: ApprovalRequest) -> None:
         await self._safe_send(req)
 
-    async def on_proxy_approval_request(
-        self, request_id: str, domain: str, command: str, kind: str = "proxy_domain"
+    async def on_proxy_approval_request(self, request_id: str, domain: str, command: str) -> None:
+        await self._safe_send(ProxyApprovalRequest(request_id=request_id, domain=domain, command=command))
+
+    async def on_git_push_approval_request(
+        self, request_id: str, ref: str, explanation: str, changed_files: list[str]
     ) -> None:
-        await self._safe_send(ProxyApprovalRequest(request_id=request_id, domain=domain, command=command, kind=kind))
+        await self._safe_send(
+            GitPushApprovalRequest(request_id=request_id, ref=ref, explanation=explanation, changed_files=changed_files)
+        )
 
     async def on_title_update(self, title: str) -> None:
         await self._safe_send(SessionTitleUpdate(title=title))
@@ -635,17 +641,27 @@ async def chat_ws(
                     risk_level=pa.get("risk_level", ""),
                 ),
             )
-    for pp in list(active.pending_proxy_approvals):
+    for pp in list(active.pending_escalations):
         with contextlib.suppress(Exception):
-            await _send(
-                websocket,
-                ProxyApprovalRequest(
-                    request_id=pp["request_id"],
-                    domain=pp.get("domain", ""),
-                    command=pp.get("command", ""),
-                    kind=pp.get("kind", "proxy_domain"),
-                ),
-            )
+            if pp.get("kind") == "git_push":
+                await _send(
+                    websocket,
+                    GitPushApprovalRequest(
+                        request_id=pp["request_id"],
+                        ref=pp.get("ref", ""),
+                        explanation=pp.get("explanation", ""),
+                        changed_files=pp.get("changed_files", []),
+                    ),
+                )
+            else:
+                await _send(
+                    websocket,
+                    ProxyApprovalRequest(
+                        request_id=pp["request_id"],
+                        domain=pp.get("domain", ""),
+                        command=pp.get("command", ""),
+                    ),
+                )
 
     try:
         while True:
@@ -662,7 +678,7 @@ async def chat_ws(
                 continue
 
             # --- Approval responses — forward to engine ---
-            if isinstance(client_msg, ApprovalResponse | ProxyApprovalResponse):
+            if isinstance(client_msg, ApprovalResponse | EscalationResponse):
                 await _engine.submit_approval(session_id, client_msg)
                 continue
 

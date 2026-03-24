@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any, Literal
 
 from pydantic_ai import ApprovalRequired
@@ -205,9 +206,19 @@ async def evaluate_push_with(
         allowed = False
         detail = f"[sentinel: deny] {verdict.explanation}"
     else:
+        # Extract changed file names from unified diff headers
+        changed_files = sorted(
+            {m.group(1) for m in re.finditer(r"^\+\+\+ b/(.+)$", diff, re.MULTILINE) if m.group(1) != "/dev/null"}
+        )
         allowed = await session.escalate_to_user(
             f"git push {ref}",
-            {"command": f"git push ({ref})", "explanation": verdict.explanation, "kind": "git_push"},
+            {
+                "command": f"git push ({ref})",
+                "explanation": verdict.explanation,
+                "kind": "git_push",
+                "ref": ref,
+                "changed_files": changed_files,
+            },
         )
         decision = "allowed" if allowed else "denied"
         detail = f"[sentinel: escalate \u2192 {decision}] {verdict.explanation}"

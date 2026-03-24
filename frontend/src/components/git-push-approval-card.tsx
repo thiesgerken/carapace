@@ -1,10 +1,10 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import type { DomainDecision, ProxyApprovalRequest } from "@/lib/types";
+import type { DomainDecision, GitPushApprovalRequest } from "@/lib/types";
 
-interface ProxyApprovalCardProps {
-  request: ProxyApprovalRequest;
+interface GitPushApprovalCardProps {
+  request: GitPushApprovalRequest;
   onRespond: (decision: DomainDecision) => void;
   decision?: DomainDecision;
 }
@@ -14,11 +14,11 @@ const DECISION_LABELS: Record<DomainDecision, string> = {
   deny: "Denied",
 };
 
-export function ProxyApprovalCard({
+export function GitPushApprovalCard({
   request,
   onRespond,
   decision,
-}: ProxyApprovalCardProps) {
+}: GitPushApprovalCardProps) {
   const resolved = decision !== undefined;
 
   return (
@@ -44,21 +44,32 @@ export function ProxyApprovalCard({
             d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z M9 10l2 2 4-4"
           />
         </svg>
-        Proxy Access Request
+        Git Push Request
       </div>
 
       <div className="space-y-1.5">
         <div>
-          <span className="text-muted-foreground">Domain: </span>
-          <span className="font-mono font-medium">{request.domain}</span>
+          <span className="text-muted-foreground">Ref: </span>
+          <span className="font-mono font-medium">{request.ref}</span>
         </div>
-        {request.command && (
+        {request.explanation && (
           <div>
-            <span className="text-muted-foreground">Triggered by: </span>
-            <span className="font-mono text-xs text-foreground/80">
-              {request.command}
-            </span>
+            <span className="text-muted-foreground">Reason: </span>
+            <span className="text-foreground/80">{request.explanation}</span>
           </div>
+        )}
+        {request.changed_files.length > 0 && (
+          <details className="mt-1">
+            <summary className="cursor-pointer text-xs text-muted-foreground hover:text-foreground">
+              {request.changed_files.length} changed file
+              {request.changed_files.length !== 1 && "s"}
+            </summary>
+            <ul className="mt-1 space-y-0.5 pl-3 font-mono text-xs text-foreground/80">
+              {request.changed_files.map((f) => (
+                <li key={f}>{f}</li>
+              ))}
+            </ul>
+          </details>
         )}
         {resolved && decision && (
           <div className="text-xs text-muted-foreground italic">
@@ -76,7 +87,7 @@ export function ProxyApprovalCard({
               "bg-foreground text-background hover:bg-foreground/90",
             )}
           >
-            Allow {request.domain}
+            Allow Push
           </button>
           <button
             onClick={() => onRespond("deny")}

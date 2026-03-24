@@ -5,6 +5,7 @@ import { MarkdownContent } from "./markdown-content";
 import { ToolCallBadge } from "./tool-call-badge";
 import { ApprovalCard } from "./approval-card";
 import { ProxyApprovalCard } from "./proxy-approval-card";
+import { GitPushApprovalCard } from "./git-push-approval-card";
 import { CommandResultView } from "./command-result";
 import { cn } from "@/lib/utils";
 
@@ -75,6 +76,17 @@ export function Message({
     case "proxy_approval":
       return (
         <ProxyApprovalCard
+          request={message.request}
+          decision={message.decision}
+          onRespond={(decision) =>
+            onProxyApproval?.(message.request.request_id, decision)
+          }
+        />
+      );
+
+    case "git_push_approval":
+      return (
+        <GitPushApprovalCard
           request={message.request}
           decision={message.decision}
           onRespond={(decision) =>

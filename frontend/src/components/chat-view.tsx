@@ -109,6 +109,27 @@ export function ChatView({ server, token, sessionId, onTitleUpdate }: ChatViewPr
               });
             }
             // Skip decision-only events (consumed above)
+          } else if (h.role === "git_push_approval" && h.request_id) {
+            // Git push approval: first event is the request, second has the decision
+            if (!h.decision) {
+              const next = history[i + 1];
+              const decision =
+                next?.role === "git_push_approval" &&
+                next.request_id === h.request_id
+                  ? (next.decision as DomainDecision)
+                  : undefined;
+              msgs.push({
+                kind: "git_push_approval",
+                request: {
+                  type: "git_push_approval_request",
+                  request_id: h.request_id,
+                  ref: h.ref ?? "",
+                  explanation: h.explanation ?? "",
+                  changed_files: (h.changed_files as string[] | undefined) ?? [],
+                },
+                decision,
+              });
+            }
           } else if (h.role === "git_push") {
             msgs.push({
               kind: "tool_call",
@@ -218,6 +239,13 @@ export function ChatView({ server, token, sessionId, onTitleUpdate }: ChatViewPr
           { kind: "proxy_approval", request: msg },
         ]);
         break;
+      case "git_push_approval_request":
+        setWaiting(true);
+        setMessages((prev) => [
+          ...prev,
+          { kind: "git_push_approval", request: msg },
+        ]);
+        break;
       case "command_result":
         setMessages((prev) => [
           ...prev,
@@ -316,10 +344,11 @@ export function ChatView({ server, token, sessionId, onTitleUpdate }: ChatViewPr
     requestId: string,
     decision: DomainDecision,
   ) {
-    send({ type: "proxy_approval_response", request_id: requestId, decision });
+    send({ type: "escalation_response", request_id: requestId, decision });
     setMessages((prev) =>
       prev.map((m) =>
-        m.kind === "proxy_approval" && m.request.request_id === requestId
+        (m.kind === "proxy_approval" || m.kind === "git_push_approval") &&
+        m.request.request_id === requestId
           ? { ...m, decision }
           : m,
       ),

@@ -28,6 +28,7 @@ export interface HistoryMessage {
   explanation?: string;
   risk_level?: string;
   ref?: string;
+  changed_files?: string[];
 }
 
 // WebSocket protocol — Server → Client
@@ -64,7 +65,14 @@ export interface ProxyApprovalRequest {
   request_id: string;
   domain: string;
   command: string;
-  kind?: "proxy_domain" | "git_push";
+}
+
+export interface GitPushApprovalRequest {
+  type: "git_push_approval_request";
+  request_id: string;
+  ref: string;
+  explanation: string;
+  changed_files: string[];
 }
 
 export interface TurnUsage {
@@ -116,6 +124,7 @@ export type ServerMessage =
   | ToolResultInfo
   | ApprovalRequest
   | ProxyApprovalRequest
+  | GitPushApprovalRequest
   | Done
   | CommandResult
   | ErrorMessage
@@ -139,8 +148,8 @@ export interface ApprovalResponse {
 
 export type DomainDecision = "allow" | "deny";
 
-export interface ProxyApprovalResponse {
-  type: "proxy_approval_response";
+export interface EscalationResponse {
+  type: "escalation_response";
   request_id: string;
   decision: DomainDecision;
 }
@@ -152,7 +161,7 @@ export interface CancelRequest {
 export type ClientMessage =
   | UserMessage
   | ApprovalResponse
-  | ProxyApprovalResponse
+  | EscalationResponse
   | CancelRequest;
 
 // Chat UI messages
@@ -173,6 +182,11 @@ export type ChatMessage =
   | {
       kind: "proxy_approval";
       request: ProxyApprovalRequest;
+      decision?: DomainDecision;
+    }
+  | {
+      kind: "git_push_approval";
+      request: GitPushApprovalRequest;
       decision?: DomainDecision;
     }
   | { kind: "command"; command: string; data: unknown }
