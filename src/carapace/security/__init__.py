@@ -182,8 +182,8 @@ async def evaluate_push_with(
     diff: str,
     *,
     usage_tracker: UsageTracker | None = None,
-) -> bool:
-    """Evaluate a Git push. Returns True to allow, False to deny.
+) -> tuple[bool, str]:
+    """Evaluate a Git push. Returns (allowed, explanation).
 
     If the sentinel escalates, delegates to the session's user escalation callback.
     """
@@ -226,7 +226,7 @@ async def evaluate_push_with(
         )
     )
 
-    return allowed
+    return allowed, verdict.explanation
 
 
 def _verdict_to_decision(verdict: SentinelVerdict) -> Literal["allowed", "escalated", "denied"]:

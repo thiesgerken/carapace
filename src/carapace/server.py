@@ -823,7 +823,7 @@ async def evaluate_push(req: PushEvalRequest) -> dict[str, str]:
 
     from carapace.security import evaluate_push_with
 
-    allowed = await evaluate_push_with(
+    allowed, explanation = await evaluate_push_with(
         active.security,
         active.sentinel,
         req.ref,
@@ -834,7 +834,7 @@ async def evaluate_push(req: PushEvalRequest) -> dict[str, str]:
     )
     if allowed:
         return {"verdict": "allow"}
-    return {"verdict": "deny", "reason": "Denied by sentinel"}
+    return {"verdict": "deny", "reason": explanation}
 
 
 app.include_router(router)

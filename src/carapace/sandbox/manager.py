@@ -576,12 +576,28 @@ class SandboxManager:
         )
         if result.exit_code != 0:
             raise SkillVenvError(f"Failed to restore trusted pyproject.toml: {result.output}")
-        await self._exec(
+        
+        # Restore uv.lock if tracked; delete it if not tracked (prevents using tampered lock)
+        lock_check = await self._exec(
             session_id,
-            f"git checkout HEAD -- {skill_path}/uv.lock 2>/dev/null || true",
+            f"git ls-files --error-unmatch {skill_path}/uv.lock 2>/dev/null",
             timeout=10,
             workdir=self._KNOWLEDGE_WORKDIR,
         )
+        if lock_check.exit_code == 0:
+            await self._exec(
+                session_id,
+                f"git checkout HEAD -- {skill_path}/uv.lock",
+                timeout=10,
+                workdir=self._KNOWLEDGE_WORKDIR,
+            )
+        else:
+            await self._exec(
+                session_id,
+                f"rm -f {skill_path}/uv.lock",
+                timeout=10,
+                workdir=self._KNOWLEDGE_WORKDIR,
+            )
 
         await self._build_skill_venv(session_id, skill_name)
         return "Venv rebuilt successfully."

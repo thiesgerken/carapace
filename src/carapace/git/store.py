@@ -46,7 +46,7 @@ while read old_sha new_sha ref; do
     fi
 
     SENTINEL_URL="http://127.0.0.1:${CARAPACE_API_PORT:-8320}/internal/sentinel/evaluate-push"
-    result=$(curl -s --fail --max-time 30 -X POST "$SENTINEL_URL" \\
+    result=$(curl -s --fail --max-time 300 -X POST "$SENTINEL_URL" \\
         -H "Content-Type: application/json" \\
         -d "{
             \\"session_id\\": \\"$CARAPACE_SESSION_ID\\",
