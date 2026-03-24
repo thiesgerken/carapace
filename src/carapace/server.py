@@ -450,7 +450,7 @@ async def get_session(session_id: str, _token: str = Depends(_verify_token)) -> 
 @router.delete("/sessions/{session_id}", status_code=204)
 async def delete_session(session_id: str, _token: str = Depends(_verify_token)) -> None:
     _engine.deactivate(session_id)
-    await _engine.sandbox_mgr.cleanup_session(session_id)
+    await _engine.sandbox_mgr.destroy_session(session_id)
     if not _engine.session_mgr.delete_session(session_id):
         raise HTTPException(status_code=404, detail="Session not found")
 

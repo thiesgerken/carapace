@@ -616,6 +616,24 @@ class SandboxManager:
             self._sessions.pop(session_id, None)
             logger.info(f"Cleaned up sandbox for session {session_id}")
 
+    async def destroy_session(self, session_id: str) -> None:
+        """Remove the sandbox container **and** all tracking state.
+
+        Use this for permanent session deletion where re-creation is not
+        expected.  Unlike ``cleanup_session``, this purges tokens, domain
+        allowlists, locks and other per-session bookkeeping.
+        """
+        await self.cleanup_session(session_id)
+        token = self._session_tokens.pop(session_id, None)
+        if token:
+            self._token_to_session.pop(token, None)
+        self._allowed_domains.pop(session_id, None)
+        self._exec_temp_domains.pop(session_id, None)
+        self._session_current_command.pop(session_id, None)
+        self._domain_approval_cbs.pop(session_id, None)
+        self._exec_locks.pop(session_id, None)
+        self._proxy_bypass_sessions.discard(session_id)
+
     async def cleanup_idle(self) -> None:
         """Remove containers that have been idle longer than the timeout.
 
