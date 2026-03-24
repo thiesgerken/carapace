@@ -196,7 +196,7 @@ class SandboxManager:
             if tail and tail.strip():
                 logger.info(f"Last logs from container {container_id[:12]} (session {session_id}):\n{tail}")
         except Exception:
-            logger.debug(f"Could not retrieve logs from container {container_id[:12]}")
+            logger.opt(exception=True).warning(f"Could not retrieve logs from container {container_id[:12]}")
 
     def _get_exec_lock(self, session_id: str) -> asyncio.Lock:
         if session_id not in self._exec_locks:
