@@ -148,3 +148,28 @@ class MatrixSubscriber:
         if self._channel._verbose.get(self._room_id, True):
             notice = f"🌐 `{domain}` {detail}"
             await self._channel._send_notice(self._room_id, notice)
+
+    async def on_git_push_approval_request(
+        self, request_id: str, ref: str, explanation: str, changed_files: list[str]
+    ) -> None:
+        files_preview = ", ".join(changed_files[:5]) + ("…" if len(changed_files) > 5 else "")
+        text = (
+            f"🔐 **Git Push Approval Required**\n\n"
+            f"Ref: `{ref}`\n{explanation}\n\n"
+            f"Changed files: {files_preview}\n\n"
+            f"React with ✅ to approve or ❌ to deny."
+        )
+        event_id = await self._channel._send_text(self._room_id, text)
+        if event_id:
+            self._domain_events[event_id] = request_id
+            from carapace.channels.matrix.approval import PendingDomainApproval
+
+            pending = PendingDomainApproval(event_id)
+            self._channel._pending_domain_approvals[event_id] = pending
+            self._channel._room_pending[self._room_id] = pending
+
+    async def on_git_push_info(self, ref: str, decision: str, detail: str) -> None:
+        logger.debug(f"Matrix [{self._room_id}] git push: {ref} {decision} {detail}")
+        if self._channel._verbose.get(self._room_id, True):
+            notice = f"🔀 `{ref}` {decision} — {detail}"
+            await self._channel._send_notice(self._room_id, notice)

@@ -466,6 +466,7 @@ _HistoryRole = Literal[
     "approval_request",
     "approval_response",
     "git_push",
+    "git_push_approval",
 ]
 
 
