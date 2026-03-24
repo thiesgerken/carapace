@@ -109,6 +109,13 @@ export function ChatView({ server, token, sessionId, onTitleUpdate }: ChatViewPr
               });
             }
             // Skip decision-only events (consumed above)
+          } else if (h.role === "git_push") {
+            msgs.push({
+              kind: "tool_call",
+              tool: "git_push",
+              args: { ref: h.ref ?? "", decision: h.decision ?? "" },
+              detail: h.detail ?? "",
+            });
           } else if (h.role === "command") {
             msgs.push({
               kind: "command",
@@ -166,9 +173,11 @@ export function ChatView({ server, token, sessionId, onTitleUpdate }: ChatViewPr
         finishWaiting();
         break;
       case "tool_call": {
-        setWaiting(true); // agent is active (may restore after reconnect)
+        const isGitPush = msg.tool === "git_push";
+        if (!isGitPush) setWaiting(true); // agent is active (may restore after reconnect)
         const isLoading =
           msg.tool !== "proxy_domain" &&
+          !isGitPush &&
           !msg.detail.includes("deny]") &&
           !msg.detail.includes("escalate]");
         setMessages((prev) => [
@@ -181,6 +190,7 @@ export function ChatView({ server, token, sessionId, onTitleUpdate }: ChatViewPr
             loading: isLoading,
           },
         ]);
+        if (isGitPush) finishWaiting();
         break;
       }
       case "tool_result":

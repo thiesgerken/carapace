@@ -782,8 +782,13 @@ class SessionEngine:
         active: ActiveSession,
     ) -> Callable[[str, str, str], Awaitable[None]]:
         """Build a callback that broadcasts git push decisions to subscribers."""
+        session_id = active.state.session_id
 
         async def _notify(ref: str, decision: str, detail: str) -> None:
+            self._session_mgr.append_events(
+                session_id,
+                [{"role": "git_push", "ref": ref, "decision": decision, "detail": detail}],
+            )
             await self._broadcast(active, "on_git_push_info", ref, decision, detail)
 
         return _notify

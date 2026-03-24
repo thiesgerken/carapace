@@ -464,6 +464,7 @@ _HistoryRole = Literal[
     "proxy_approval",
     "approval_request",
     "approval_response",
+    "git_push",
 ]
 
 
@@ -482,6 +483,7 @@ class HistoryMessage(BaseModel):
     tool_call_id: str | None = None
     explanation: str | None = None
     risk_level: str | None = None
+    ref: str | None = None
 
 
 @router.get("/sessions/{session_id}/history", response_model=list[HistoryMessage])
