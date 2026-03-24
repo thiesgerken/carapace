@@ -138,8 +138,11 @@ class GitHttpHandler:
         # Parse CGI output into status, headers, body
         status_code, headers, response_body = self._parse_cgi_output(stdout)
 
-        # Post-push success handling
-        if is_push and proc.returncode == 0 and self._on_push_success:
+        # Post-push success handling — gate on HTTP status *and* pack protocol.
+        # git http-backend returns HTTP 200 and exits 0 even when the
+        # pre-receive hook rejects the push; the actual rejection appears as
+        # "ng refs/…" in the Git report-status inside the response body.
+        if is_push and 200 <= status_code < 300 and b"ng refs/" not in response_body and self._on_push_success:
             try:
                 await self._on_push_success()
             except Exception as exc:
