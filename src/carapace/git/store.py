@@ -11,11 +11,25 @@ from loguru import logger
 _PRE_RECEIVE_HOOK = """\
 #!/bin/sh
 # Pre-receive hook — sentinel evaluation of incoming pushes
+set -e
+
+if ! command -v jq >/dev/null 2>&1; then
+    echo "DENIED: jq is required but not installed" >&2
+    exit 1
+fi
+
+if ! command -v curl >/dev/null 2>&1; then
+    echo "DENIED: curl is required but not installed" >&2
+    exit 1
+fi
 
 NULL_SHA="0000000000000000000000000000000000000000"
 EMPTY_TREE=$(git hash-object -t tree /dev/null)
+EVALUATED=0
 
 while read old_sha new_sha ref; do
+    EVALUATED=$((EVALUATED + 1))
+
     if [ "$old_sha" = "$NULL_SHA" ]; then
         # New branch: show all commits and diff against empty tree
         changes=$(git log --oneline "$new_sha" 2>/dev/null)
@@ -31,7 +45,8 @@ while read old_sha new_sha ref; do
         is_default="true"
     fi
 
-    result=$(curl -s --fail -X POST http://127.0.0.1:${CARAPACE_API_PORT:-8320}/internal/sentinel/evaluate-push \\
+    SENTINEL_URL="http://127.0.0.1:${CARAPACE_API_PORT:-8320}/internal/sentinel/evaluate-push"
+    result=$(curl -s --fail --max-time 30 -X POST "$SENTINEL_URL" \\
         -H "Content-Type: application/json" \\
         -d "{
             \\"session_id\\": \\"$CARAPACE_SESSION_ID\\",
@@ -39,7 +54,10 @@ while read old_sha new_sha ref; do
             \\"is_default_branch\\": $is_default,
             \\"commits\\": $(echo "$changes" | jq -Rs .),
             \\"diff\\": $(echo "$diff" | jq -Rs .)
-        }")
+        }") || {
+        echo "DENIED: failed to reach sentinel API" >&2
+        exit 1
+    }
 
     verdict=$(echo "$result" | jq -r '.verdict')
 
@@ -49,6 +67,11 @@ while read old_sha new_sha ref; do
         exit 1
     fi
 done
+
+if [ "$EVALUATED" -eq 0 ]; then
+    echo "DENIED: no refs received for evaluation" >&2
+    exit 1
+fi
 """
 
 
