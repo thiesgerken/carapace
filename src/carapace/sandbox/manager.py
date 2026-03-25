@@ -440,7 +440,6 @@ class SandboxManager:
             session_id,
             command,
             timeout=timeout,
-            workdir=self._KNOWLEDGE_WORKDIR,
         )
         output = result.output
         if result.exit_code != 0 and f"[exit code: {result.exit_code}]" not in output:

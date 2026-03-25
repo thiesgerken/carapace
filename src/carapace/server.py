@@ -487,6 +487,7 @@ class HistoryMessage(BaseModel):
     explanation: str | None = None
     risk_level: str | None = None
     ref: str | None = None
+    changed_files: list[str] | None = None
 
 
 @router.get("/sessions/{session_id}/history", response_model=list[HistoryMessage])
