@@ -53,7 +53,10 @@ while read old_sha new_sha ref; do
         --arg commits "$changes" \\
         --arg diff "$diff" \\
         '{session_id: $sid, ref: $ref, is_default_branch: $def, commits: $commits, diff: $diff}')
-    result=$(curl -s --fail --max-time 30 -X POST "$SENTINEL_URL" \\
+    # No --max-time: the sentinel may escalate to the user for approval,
+    # which can take arbitrarily long. --connect-timeout still catches a
+    # down server quickly.
+    result=$(curl -s --fail --connect-timeout 10 -X POST "$SENTINEL_URL" \\
         -H "Content-Type: application/json" \\
         -d "$payload") || {
         echo "DENIED: failed to reach sentinel API" >&2
