@@ -733,6 +733,19 @@ class SessionEngine:
             request_id = secrets.token_hex(8)
             cmd = context.get("command", "")
             kind = context.get("kind", "domain_access")
+
+            # Auto-deny stale pending escalations of the same kind+key.
+            # This happens when an exec timeout killed git push but the old
+            # escalation callback is still blocked on the queue.
+            match_key = "ref" if kind == "git_push" else "domain"
+            match_val = context.get(match_key, subject)
+            for old in list(active.pending_escalations):
+                if old.get("kind") == kind and old.get(match_key) == match_val:
+                    logger.info(f"Superseding stale {kind} escalation {old['request_id']} for {match_val}")
+                    active.escalation_queue.put_nowait(
+                        EscalationResponse(request_id=old["request_id"], decision="deny")
+                    )
+
             if kind == "git_push":
                 ref = context.get("ref", subject)
                 explanation = context.get("explanation", "")
