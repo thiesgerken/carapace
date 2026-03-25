@@ -222,11 +222,11 @@ class SessionSecurity:
         if self._push_info_callback is not None:
             await self._push_info_callback(ref, decision, detail)
 
-    async def escalate_to_user(self, domain: str, context: dict[str, Any]) -> bool:
+    async def escalate_to_user(self, subject: str, context: dict[str, Any]) -> bool:
         if self._user_escalation_callback is None:
-            logger.warning(f"No user escalation callback for session {self.session_id}, denying {domain}")
+            logger.warning(f"No user escalation callback for session {self.session_id}, denying {subject}")
             return False
-        return await self._user_escalation_callback(self.session_id, domain, context)
+        return await self._user_escalation_callback(self.session_id, subject, context)
 
     def reset_sentinel(self) -> None:
         self.sentinel_eval_count = 0

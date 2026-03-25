@@ -5,7 +5,7 @@ import { Loader2 } from "lucide-react";
 import { useWebSocket } from "@/hooks/use-websocket";
 import { fetchCommands, fetchHistory, fetchModels, wsUrl } from "@/lib/api";
 import type { SlashCommand } from "@/lib/api";
-import type { ChatMessage, ClientMessage, DomainDecision, ServerMessage, TurnUsage } from "@/lib/types";
+import type { ChatMessage, ClientMessage, EscalationDecision, ServerMessage, TurnUsage } from "@/lib/types";
 import { Message } from "./message";
 import { ChatInput } from "./chat-input";
 
@@ -87,20 +87,20 @@ export function ChatView({ server, token, sessionId, onTitleUpdate }: ChatViewPr
                 risk_level: h.risk_level ?? "",
               },
             });
-          } else if (h.role === "proxy_approval" && h.request_id) {
-            // Proxy approval: first event is the request, second has the decision
+          } else if ((h.role === "domain_access_approval" || h.role === "proxy_approval") && h.request_id) {
+            // Domain access approval: first event is the request, second has the decision
             if (!h.decision) {
               // Look ahead for the matching decision event
               const next = history[i + 1];
               const decision =
-                next?.role === "proxy_approval" &&
+                (next?.role === "domain_access_approval" || next?.role === "proxy_approval") &&
                 next.request_id === h.request_id
-                  ? (next.decision as DomainDecision)
+                  ? (next.decision as EscalationDecision)
                   : undefined;
               msgs.push({
-                kind: "proxy_approval",
+                kind: "domain_access_approval",
                 request: {
-                  type: "proxy_approval_request",
+                  type: "domain_access_approval_request",
                   request_id: h.request_id,
                   domain: h.domain ?? "",
                   command: h.command ?? "",
@@ -116,7 +116,7 @@ export function ChatView({ server, token, sessionId, onTitleUpdate }: ChatViewPr
               const decision =
                 next?.role === "git_push_approval" &&
                 next.request_id === h.request_id
-                  ? (next.decision as DomainDecision)
+                  ? (next.decision as EscalationDecision)
                   : undefined;
               msgs.push({
                 kind: "git_push_approval",
@@ -232,11 +232,11 @@ export function ChatView({ server, token, sessionId, onTitleUpdate }: ChatViewPr
         setWaiting(true);
         setMessages((prev) => [...prev, { kind: "approval", request: msg }]);
         break;
-      case "proxy_approval_request":
+      case "domain_access_approval_request":
         setWaiting(true);
         setMessages((prev) => [
           ...prev,
-          { kind: "proxy_approval", request: msg },
+          { kind: "domain_access_approval", request: msg },
         ]);
         break;
       case "git_push_approval_request":
@@ -340,14 +340,14 @@ export function ChatView({ server, token, sessionId, onTitleUpdate }: ChatViewPr
     setMessages((prev) => [...prev]);
   }
 
-  function handleProxyApproval(
+  function handleEscalation(
     requestId: string,
-    decision: DomainDecision,
+    decision: EscalationDecision,
   ) {
     send({ type: "escalation_response", request_id: requestId, decision });
     setMessages((prev) =>
       prev.map((m) =>
-        (m.kind === "proxy_approval" || m.kind === "git_push_approval") &&
+        (m.kind === "domain_access_approval" || m.kind === "git_push_approval") &&
         m.request.request_id === requestId
           ? { ...m, decision }
           : m,
@@ -401,7 +401,7 @@ export function ChatView({ server, token, sessionId, onTitleUpdate }: ChatViewPr
                   ? approvalState.get(msg.request.tool_call_id)
                   : undefined
               }
-              onProxyApproval={handleProxyApproval}
+              onEscalation={handleEscalation}
             />
           ))}
           {waiting && (

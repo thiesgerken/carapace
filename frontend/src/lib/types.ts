@@ -60,8 +60,8 @@ export interface ApprovalRequest {
   risk_level: string;
 }
 
-export interface ProxyApprovalRequest {
-  type: "proxy_approval_request";
+export interface DomainAccessApprovalRequest {
+  type: "domain_access_approval_request";
   request_id: string;
   domain: string;
   command: string;
@@ -123,7 +123,7 @@ export type ServerMessage =
   | ToolCallInfo
   | ToolResultInfo
   | ApprovalRequest
-  | ProxyApprovalRequest
+  | DomainAccessApprovalRequest
   | GitPushApprovalRequest
   | Done
   | CommandResult
@@ -146,12 +146,12 @@ export interface ApprovalResponse {
   approved: boolean;
 }
 
-export type DomainDecision = "allow" | "deny";
+export type EscalationDecision = "allow" | "deny";
 
 export interface EscalationResponse {
   type: "escalation_response";
   request_id: string;
-  decision: DomainDecision;
+  decision: EscalationDecision;
 }
 
 export interface CancelRequest {
@@ -180,14 +180,14 @@ export type ChatMessage =
     }
   | { kind: "approval"; request: ApprovalRequest }
   | {
-      kind: "proxy_approval";
-      request: ProxyApprovalRequest;
-      decision?: DomainDecision;
+      kind: "domain_access_approval";
+      request: DomainAccessApprovalRequest;
+      decision?: EscalationDecision;
     }
   | {
       kind: "git_push_approval";
       request: GitPushApprovalRequest;
-      decision?: DomainDecision;
+      decision?: EscalationDecision;
     }
   | { kind: "command"; command: string; data: unknown }
   | { kind: "error"; detail: string };

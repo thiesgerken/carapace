@@ -39,7 +39,7 @@ class ApprovalResponse(BaseModel):
     approved: bool
 
 
-DomainDecision = Literal["allow", "deny"]
+EscalationDecision = Literal["allow", "deny"]
 
 
 class EscalationResponse(BaseModel):
@@ -47,7 +47,7 @@ class EscalationResponse(BaseModel):
 
     type: Literal["escalation_response"] = "escalation_response"
     request_id: str
-    decision: DomainDecision
+    decision: EscalationDecision
 
 
 class CancelRequest(BaseModel):
@@ -104,10 +104,10 @@ class ApprovalRequest(BaseModel):
     risk_level: str = ""
 
 
-class ProxyApprovalRequest(BaseModel):
-    """Server → Client: proxy is waiting for a domain access decision."""
+class DomainAccessApprovalRequest(BaseModel):
+    """Server → Client: sentinel is waiting for a domain access decision."""
 
-    type: Literal["proxy_approval_request"] = "proxy_approval_request"
+    type: Literal["domain_access_approval_request"] = "domain_access_approval_request"
     request_id: str
     domain: str
     command: str  # the exec command that triggered this connection attempt
@@ -181,7 +181,7 @@ ServerEnvelope = (
     | ToolCallInfo
     | ToolResultInfo
     | ApprovalRequest
-    | ProxyApprovalRequest
+    | DomainAccessApprovalRequest
     | GitPushApprovalRequest
     | Done
     | CommandResult

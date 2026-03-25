@@ -133,7 +133,7 @@ async def evaluate_domain_with(
     If the sentinel escalates, delegates to the session's user escalation callback.
     """
 
-    verdict = await sentinel.evaluate_domain(
+    verdict = await sentinel.evaluate_domain_access(
         session,
         domain,
         command,
@@ -154,7 +154,7 @@ async def evaluate_domain_with(
     else:
         allowed = await session.escalate_to_user(
             domain,
-            {"command": command, "explanation": verdict.explanation},
+            {"command": command, "explanation": verdict.explanation, "kind": "domain_access"},
         )
         final_decision = "allowed" if allowed else "denied"
         detail = f"[sentinel: escalate \u2192 {final_decision}] {verdict.explanation}"

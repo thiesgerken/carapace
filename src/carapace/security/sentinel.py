@@ -191,7 +191,7 @@ class Sentinel:
 
         return result.output
 
-    async def evaluate_domain(
+    async def evaluate_domain_access(
         self,
         session: SessionSecurity,
         domain: str,
@@ -212,7 +212,7 @@ class Sentinel:
             prompt_parts.append("New entries since last evaluation:")
             prompt_parts.append(_format_action_log(new_entries))
 
-        prompt_parts.append(f"\nEVALUATE proxy_domain_request:\nDomain: {domain}\nTriggered by: {command}")
+        prompt_parts.append(f"\nEVALUATE domain_access_request:\nDomain: {domain}\nTriggered by: {command}")
 
         prompt = "\n".join(prompt_parts)
         result = await self._agent.run(

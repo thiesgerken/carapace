@@ -147,14 +147,10 @@ def format_command_result_text(result: CommandResult) -> str:
             return f"Command result: {json.dumps(data, indent=2, default=str)}"
 
 
-def format_domain_escalation(domain: str, command: str, explanation: str, *, kind: str = "proxy_domain") -> str:
-    """Format a sentinel-escalated domain request as a Matrix message."""
-    is_git_push = kind == "git_push"
-    heading = "📦 Git Push Request" if is_git_push else "🌐 Network Access Request"
-    label = "Ref" if is_git_push else "domain"
-
+def format_domain_escalation(domain: str, command: str, explanation: str) -> str:
+    """Format a sentinel-escalated domain access request as a Matrix message."""
     parts = [
-        f"**{heading}** — {label}: `{domain}`",
+        f"**🌐 Network Access Request** — domain: `{domain}`",
         f"**Command:** `{command}`",
     ]
     if explanation:

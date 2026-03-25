@@ -1,24 +1,24 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import type { DomainDecision, ProxyApprovalRequest } from "@/lib/types";
+import type { EscalationDecision, DomainAccessApprovalRequest } from "@/lib/types";
 
-interface ProxyApprovalCardProps {
-  request: ProxyApprovalRequest;
-  onRespond: (decision: DomainDecision) => void;
-  decision?: DomainDecision;
+interface DomainAccessApprovalCardProps {
+  request: DomainAccessApprovalRequest;
+  onRespond: (decision: EscalationDecision) => void;
+  decision?: EscalationDecision;
 }
 
-const DECISION_LABELS: Record<DomainDecision, string> = {
+const DECISION_LABELS: Record<EscalationDecision, string> = {
   allow: "Allowed",
   deny: "Denied",
 };
 
-export function ProxyApprovalCard({
+export function DomainAccessApprovalCard({
   request,
   onRespond,
   decision,
-}: ProxyApprovalCardProps) {
+}: DomainAccessApprovalCardProps) {
   const resolved = decision !== undefined;
 
   return (
@@ -44,7 +44,7 @@ export function ProxyApprovalCard({
             d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z M9 10l2 2 4-4"
           />
         </svg>
-        Proxy Access Request
+        Domain Access Request
       </div>
 
       <div className="space-y-1.5">

@@ -55,11 +55,11 @@ from carapace.ws_models import (
     Cancelled,
     CancelRequest,
     CommandResult,
+    DomainAccessApprovalRequest,
     Done,
     ErrorMessage,
     EscalationResponse,
     GitPushApprovalRequest,
-    ProxyApprovalRequest,
     ServerEnvelope,
     SessionTitleUpdate,
     StatusUpdate,
@@ -463,9 +463,11 @@ _HistoryRole = Literal[
     "tool_result",
     "command",
     "proxy_approval",
+    "domain_access_approval",
     "approval_request",
     "approval_response",
     "git_push",
+    "git_push_approval",
 ]
 
 
@@ -578,8 +580,8 @@ class WebSocketSubscriber:
     async def on_approval_request(self, req: ApprovalRequest) -> None:
         await self._safe_send(req)
 
-    async def on_proxy_approval_request(self, request_id: str, domain: str, command: str) -> None:
-        await self._safe_send(ProxyApprovalRequest(request_id=request_id, domain=domain, command=command))
+    async def on_domain_access_approval_request(self, request_id: str, domain: str, command: str) -> None:
+        await self._safe_send(DomainAccessApprovalRequest(request_id=request_id, domain=domain, command=command))
 
     async def on_git_push_approval_request(
         self, request_id: str, ref: str, explanation: str, changed_files: list[str]
@@ -656,7 +658,7 @@ async def chat_ws(
             else:
                 await _send(
                     websocket,
-                    ProxyApprovalRequest(
+                    DomainAccessApprovalRequest(
                         request_id=pp["request_id"],
                         domain=pp.get("domain", ""),
                         command=pp.get("command", ""),

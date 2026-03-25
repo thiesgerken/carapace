@@ -1,15 +1,15 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import type { DomainDecision, GitPushApprovalRequest } from "@/lib/types";
+import type { EscalationDecision, GitPushApprovalRequest } from "@/lib/types";
 
 interface GitPushApprovalCardProps {
   request: GitPushApprovalRequest;
-  onRespond: (decision: DomainDecision) => void;
-  decision?: DomainDecision;
+  onRespond: (decision: EscalationDecision) => void;
+  decision?: EscalationDecision;
 }
 
-const DECISION_LABELS: Record<DomainDecision, string> = {
+const DECISION_LABELS: Record<EscalationDecision, string> = {
   allow: "Allowed",
   deny: "Denied",
 };

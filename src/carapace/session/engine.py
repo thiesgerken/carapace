@@ -47,7 +47,7 @@ class SessionSubscriber(Protocol):
     async def on_error(self, detail: str) -> None: ...
     async def on_cancelled(self) -> None: ...
     async def on_approval_request(self, req: ApprovalRequest) -> None: ...
-    async def on_proxy_approval_request(self, request_id: str, domain: str, command: str) -> None: ...
+    async def on_domain_access_approval_request(self, request_id: str, domain: str, command: str) -> None: ...
     async def on_git_push_approval_request(
         self, request_id: str, ref: str, explanation: str, changed_files: list[str]
     ) -> None: ...
@@ -729,12 +729,12 @@ class SessionEngine:
     ) -> Callable[[str, str, dict[str, Any]], Awaitable[bool]]:
         """Build a callback that broadcasts sentinel escalations (proxy domain or git push) to subscribers."""
 
-        async def _escalate(session_id: str, domain: str, context: dict[str, Any]) -> bool:
+        async def _escalate(session_id: str, subject: str, context: dict[str, Any]) -> bool:
             request_id = secrets.token_hex(8)
             cmd = context.get("command", "")
-            kind = context.get("kind", "proxy_domain")
+            kind = context.get("kind", "domain_access")
             if kind == "git_push":
-                ref = context.get("ref", domain)
+                ref = context.get("ref", subject)
                 explanation = context.get("explanation", "")
                 changed_files: list[str] = context.get("changed_files", [])
                 self._session_mgr.append_events(
@@ -764,12 +764,12 @@ class SessionEngine:
             else:
                 self._session_mgr.append_events(
                     session_id,
-                    [{"role": "proxy_approval", "request_id": request_id, "domain": domain, "command": cmd}],
+                    [{"role": "domain_access_approval", "request_id": request_id, "domain": subject, "command": cmd}],
                 )
                 active.pending_escalations.append(
-                    {"request_id": request_id, "kind": "proxy_domain", "domain": domain, "command": cmd}
+                    {"request_id": request_id, "kind": "domain_access", "domain": subject, "command": cmd}
                 )
-                await self._broadcast(active, "on_proxy_approval_request", request_id, domain, cmd)
+                await self._broadcast(active, "on_domain_access_approval_request", request_id, subject, cmd)
             # Block until a subscriber responds
             while True:
                 msg = await active.escalation_queue.get()
@@ -778,14 +778,14 @@ class SessionEngine:
                     return False
                 if msg.request_id == request_id:
                     decision = msg.decision
-                    event_role = "git_push_approval" if kind == "git_push" else "proxy_approval"
+                    event_role = "git_push_approval" if kind == "git_push" else "domain_access_approval"
                     self._session_mgr.append_events(
                         session_id,
                         [
                             {
                                 "role": event_role,
                                 "request_id": request_id,
-                                "domain": domain,
+                                "domain": subject,
                                 "command": cmd,
                                 "decision": decision,
                             }
