@@ -266,7 +266,7 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
     # --- Runtime ---
 
     @agent.tool
-    async def exec(ctx: RunContext[Deps], command: str, timeout: int = 30) -> str | ToolDenied:
+    async def exec(ctx: RunContext[Deps], command: str) -> str | ToolDenied:
         """Run a shell command (typically bash) and return its output. Runs in a Docker sandbox."""
         if not ctx.tool_call_approved:
             if denied := await _gate(ctx, "exec", {"command": command}):
@@ -275,7 +275,7 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
             _notify_approved_start(ctx, "exec", {"command": command})
 
         session_id = ctx.deps.session_state.session_id
-        result = await ctx.deps.sandbox.exec_command(session_id, command, timeout)
+        result = await ctx.deps.sandbox.exec_command(session_id, command)
 
         ctx.deps.security.append(
             ToolResultEntry(tool="exec", status="error" if result.startswith("Error") else "success"),

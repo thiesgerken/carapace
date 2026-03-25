@@ -273,7 +273,8 @@ class KubernetesRuntime(ContainerRuntime):
         logger.debug(f"Exec in pod {container_id}: {shell_cmd} (timeout={timeout}s)")
 
         try:
-            result = await asyncio.wait_for(asyncio.to_thread(_exec), timeout=timeout)
+            coro = asyncio.to_thread(_exec)
+            result = await (asyncio.wait_for(coro, timeout=timeout) if timeout else coro)
         except ContainerGoneError:
             raise
         except TimeoutError:

@@ -434,7 +434,7 @@ class SandboxManager:
 
     _KNOWLEDGE_WORKDIR = "/workspace"
 
-    async def exec_command(self, session_id: str, command: str, timeout: int = 30) -> str:
+    async def exec_command(self, session_id: str, command: str, timeout: int = 3600) -> str:
         """Run a command in the sandbox and return formatted output."""
         result = await self._exec(
             session_id,

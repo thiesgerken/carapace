@@ -192,7 +192,8 @@ class DockerRuntime(ContainerRuntime):
         logger.debug(f"Exec in {container_id[:12]}: {cmd_preview} (timeout={timeout}s)")
 
         try:
-            result = await asyncio.wait_for(asyncio.to_thread(_exec), timeout=timeout)
+            coro = asyncio.to_thread(_exec)
+            result = await (asyncio.wait_for(coro, timeout=timeout) if timeout else coro)
         except ContainerGoneError:
             raise
         except TimeoutError:
