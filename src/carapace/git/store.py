@@ -46,15 +46,16 @@ while read old_sha new_sha ref; do
     fi
 
     SENTINEL_URL="http://127.0.0.1:${CARAPACE_API_PORT:-8320}/internal/sentinel/evaluate-push"
+    payload=$(jq -n \\
+        --arg sid "$CARAPACE_SESSION_ID" \\
+        --arg ref "$ref" \\
+        --argjson def "$is_default" \\
+        --arg commits "$changes" \\
+        --arg diff "$diff" \\
+        '{session_id: $sid, ref: $ref, is_default_branch: $def, commits: $commits, diff: $diff}')
     result=$(curl -s --fail --max-time 30 -X POST "$SENTINEL_URL" \\
         -H "Content-Type: application/json" \\
-        -d "{
-            \\"session_id\\": \\"$CARAPACE_SESSION_ID\\",
-            \\"ref\\": \\"$ref\\",
-            \\"is_default_branch\\": $is_default,
-            \\"commits\\": $(echo "$changes" | jq -Rs .),
-            \\"diff\\": $(echo "$diff" | jq -Rs .)
-        }") || {
+        -d "$payload") || {
         echo "DENIED: failed to reach sentinel API" >&2
         exit 1
     }
