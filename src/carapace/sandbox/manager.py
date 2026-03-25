@@ -288,7 +288,7 @@ class SandboxManager:
         """Clone the knowledge repo into the sandbox if not already present."""
         probe = await self._runtime.exec(
             container_id,
-            "test -d /workspace/knowledge/.git",
+            "test -d /workspace/.git",
             timeout=5,
         )
         if probe.exit_code == 0:
@@ -296,7 +296,7 @@ class SandboxManager:
             return
         result = await self._runtime.exec(
             container_id,
-            "git clone $GIT_REPO_URL /workspace/knowledge",
+            "git clone $GIT_REPO_URL /workspace",
             timeout=60,
         )
         if result.exit_code != 0:
@@ -432,7 +432,7 @@ class SandboxManager:
                 self._session_current_command.pop(session_id, None)
                 self._exec_temp_domains.pop(session_id, None)
 
-    _KNOWLEDGE_WORKDIR = "/workspace/knowledge"
+    _KNOWLEDGE_WORKDIR = "/workspace"
 
     async def exec_command(self, session_id: str, command: str, timeout: int = 30) -> str:
         """Run a command in the sandbox and return formatted output."""
@@ -510,7 +510,7 @@ class SandboxManager:
         await self.ensure_session(session_id)
 
         # Check that the skill exists in the server-side knowledge store.
-        # The sandbox already has it at /workspace/knowledge/skills/{name} via git clone.
+        # The sandbox already has it at /workspace/skills/{name} via git clone.
         master_skill_dir = self._knowledge_dir / "skills" / skill_name
         if not master_skill_dir.exists():
             logger.warning(f"Skill '{skill_name}' not found for session {session_id}")
@@ -525,14 +525,14 @@ class SandboxManager:
             except SkillVenvError as exc:
                 logger.info(f"Activated skill '{skill_name}' in session {session_id} (with errors)")
                 raise SkillVenvError(
-                    f"Skill '{skill_name}' activated at /workspace/knowledge/skills/{skill_name}/ but "
+                    f"Skill '{skill_name}' activated at /workspace/skills/{skill_name}/ but "
                     f"dependency install failed: {exc}\n"
                     "The skill is available but its Python dependencies are NOT installed. "
                     "You may need to install them manually inside the sandbox."
                 ) from exc
 
         logger.info(f"Activated skill '{skill_name}' in session {session_id}")
-        result = f"Skill '{skill_name}' activated at /workspace/knowledge/skills/{skill_name}/"
+        result = f"Skill '{skill_name}' activated at /workspace/skills/{skill_name}/"
         if venv_msg:
             result += f"\n{venv_msg}"
         return result
@@ -547,7 +547,7 @@ class SandboxManager:
             raise SkillVenvError(err)
 
         logger.info(f"Building venv for skill '{skill_name}' (session {session_id})")
-        skill_dir = f"/workspace/knowledge/skills/{shlex.quote(skill_name)}"
+        skill_dir = f"/workspace/skills/{shlex.quote(skill_name)}"
         result = await self._exec(
             session_id,
             f"uv sync --directory {skill_dir}",

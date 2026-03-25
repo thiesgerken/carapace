@@ -14,10 +14,9 @@ flowchart LR
     end
 
     subgraph container ["Session Container (Alpine + Python + uv)"]
-        Workspace["/workspace/ (persistent mount)"]
-        Knowledge["/workspace/knowledge/ (git clone)"]
-        Skills["/workspace/knowledge/skills/"]
-        Memory["/workspace/knowledge/memory/"]
+        Workspace["/workspace/ (git clone, persistent mount)"]
+        Skills["/workspace/skills/"]
+        Memory["/workspace/memory/"]
     end
 
     subgraph external [Internet]
@@ -35,7 +34,7 @@ flowchart LR
 - **File operations**: `read`, `write`, `edit`, `apply_patch` work directly on the container filesystem
 - **Network access**: All outbound traffic goes through the HTTP forward proxy, which enforces per-session domain allowlisting
 - **Skills**: Activated skills are available in the cloned knowledge repo; venvs are built via `uv sync`
-- **Workspace files**: `SOUL.md`, `USER.md`, `SECURITY.md` etc. live in the knowledge repo clone. Changes are persisted via `git commit` and `git push`.
+- **Workspace files**: `SOUL.md`, `USER.md`, `SECURITY.md` etc. live in the knowledge repo at `/workspace/`. Changes are persisted via `git commit` and `git push`.
 
 ## Mounts
 
@@ -45,7 +44,7 @@ When a session container is created, the following mounts are configured:
 | --- | --- | --- | --- |
 | `sessions/{sid}/workspace/` | `/workspace/` | read-write | Persistent session workspace |
 
-The knowledge repo is cloned into `/workspace/knowledge/` on first start. On container restarts the existing working tree is reused. To persist changes back to the server, the agent uses `git commit` and `git push` inside `/workspace/knowledge/` — every push is evaluated by the security sentinel via a pre-receive hook.
+The knowledge repo is cloned directly into `/workspace/` on first start. On container restarts the existing working tree is reused. To persist changes back to the server, the agent uses `git commit` and `git push` inside `/workspace/` — every push is evaluated by the security sentinel via a pre-receive hook.
 
 ## Network policy
 
