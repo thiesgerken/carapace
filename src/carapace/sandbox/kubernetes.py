@@ -214,11 +214,11 @@ class KubernetesRuntime(ContainerRuntime):
 
         # Kubernetes exec doesn't support workdir or env natively,
         # so we prepend cd and env vars to the shell command.
-        if workdir:
-            shell_cmd = f"cd {workdir} && {shell_cmd}"
         if env:
             env_prefix = " ".join(f"{k}={v}" for k, v in env.items())
             shell_cmd = f"env {env_prefix} {shell_cmd}"
+        if workdir:
+            shell_cmd = f"cd {workdir} && {shell_cmd}"
 
         exec_command = ["bash", "-c", shell_cmd]
 

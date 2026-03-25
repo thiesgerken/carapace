@@ -294,6 +294,13 @@ class SandboxManager:
         if probe.exit_code == 0:
             logger.debug(f"Knowledge repo already present in sandbox for {session_id}")
             return
+        cleanup = await self._runtime.exec(
+            container_id,
+            "rm -rf /workspace/* /workspace/.[!.]* 2>/dev/null || true",
+            timeout=10,
+        )
+        if cleanup.exit_code != 0:
+            logger.warning(f"Failed to clean workspace for {session_id}: {cleanup.output}")
         result = await self._runtime.exec(
             container_id,
             "git clone $GIT_REPO_URL /workspace",
