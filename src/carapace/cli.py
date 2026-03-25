@@ -236,14 +236,14 @@ def _render_usage(payload: dict[str, Any]) -> None:
 
 async def _render_proxy_approval_request(data: dict[str, Any]) -> str:
     """Render a proxy domain approval request and return the decision string."""
-    domain = data.get("domain", "?")
+    is_git_push = data.get("kind") == "git_push"
+    value = data.get("ref", "?") if is_git_push else data.get("domain", "?")
     command = data.get("command", "")
 
-    is_git_push = data.get("kind") == "git_push"
     title_text = "Git Push Request" if is_git_push else "Proxy Access Request"
     label = "Ref" if is_git_push else "Domain"
 
-    panel_lines = [f"[bold]{label}:[/bold] {domain}"]
+    panel_lines = [f"[bold]{label}:[/bold] {value}"]
     if command:
         panel_lines.append(f"[bold]Triggered by:[/bold] [dim]{command}[/dim]")
 
