@@ -1,6 +1,405 @@
 # CHANGELOG
 
 
+## v0.42.0 (2026-03-26)
+
+
+### ✨ Features
+
+
+- ✨Merge pull request #52 from thiesgerken/feat/git-knowledge-store
+  ([`086ba39`](https://github.com/thiesgerken/carapace/commit/086ba39cc4301b87b8fbaf1cb2193b6a56c8b301))
+
+  ✨ feat: git-backed knowledge store
+
+- ✨ feat: dedicated GitPushApprovalRequest with changed files and sentinel explanation
+  ([`c8f7d6c`](https://github.com/thiesgerken/carapace/commit/c8f7d6c53233d584b3d3a3295563819aa1dc3343))
+
+  - Split git push escalation out of ProxyApprovalRequest into its own
+    GitPushApprovalRequest WS model (ref, explanation, changed_files)
+  - New GitPushApprovalCard frontend component with collapsible file list
+  - Rename ProxyApprovalResponse → EscalationResponse (shared escalation
+    response for both proxy domain and git push)
+  - Rename proxy_approval_queue → escalation_queue,
+    pending_proxy_approvals → pending_escalations,
+    _make_domain_escalation_cb → _make_escalation_cb
+  - Extract changed file names from unified diff in evaluate_push_with
+
+- ✨ feat: sentinel push evaluation with UI notifications and escalation
+  ([`8062d71`](https://github.com/thiesgerken/carapace/commit/8062d717df3681243d0408170bceb3330e1c1f6b))
+
+  - Add GitPushEntry to action log and 'git_push' kind to audit log.
+  - Add evaluate_push_with() security gate (allow/deny/escalate) for
+    git pushes, analogous to evaluate_domain_with().
+  - Broadcast push decisions to all session subscribers via
+    on_git_push_info callback.
+  - Add 'kind' field to ProxyApprovalRequest so escalated git pushes
+    render as 'Git Push Request' in frontend, CLI, and Matrix.
+  - Update docs/security.md and docs/sessions-and-channels.md.
+
+- ✨ feat: auto-push to remote after sandbox push & /push slash command
+  ([`060b3b4`](https://github.com/thiesgerken/carapace/commit/060b3b484c1ad5dd84ed96787558caacf0192f3e))
+
+  - Make on_push_success callback async and wire git_store.push_to_remote
+    when an external remote is configured.
+  - Add /push slash command to manually trigger a push to the remote.
+
+- ✨ feat: set git identity in sandbox containers
+  ([`d2cff63`](https://github.com/thiesgerken/carapace/commit/d2cff631f4f03d095de13b74b2383886e9b7edd0))
+
+  Pass GIT_AUTHOR_NAME, GIT_COMMITTER_NAME, GIT_AUTHOR_EMAIL and GIT_COMMITTER_EMAIL env vars so the agent can commit and push without first running git config.  The identity is derived from the configurable git.author template (default: 'Carapace Session %s <%s@carapace.local>').
+
+- ✨ feat: add workdir parameter to ContainerRuntime.exec
+  ([`e46d1fc`](https://github.com/thiesgerken/carapace/commit/e46d1fc03154826ba7d9615c663d8abf929d6dcd))
+
+  Docker passes it natively to exec_run(); Kubernetes prepends 'cd <dir> &&' since its exec API has no workdir support.
+
+  exec_command and skill venv sync now use workdir=/workspace/knowledge so the agent's cwd is the knowledge repo clone.
+
+- ✨ feat: log container tail on sandbox recreation for troubleshooting
+  ([`fd18303`](https://github.com/thiesgerken/carapace/commit/fd183039f66f8a8fe455a7f445b40d22a4d9dda0))
+
+  When a sandbox container is detected as stopped or gone, fetch and log the last 40 lines of its output before spinning up a replacement. Adds a logs() method to the ContainerRuntime protocol with Docker and Kubernetes implementations.
+
+- ✨ feat: git-backed knowledge store
+  ([`f76a1be`](https://github.com/thiesgerken/carapace/commit/f76a1bec837b5023a1ced7449cfe3cc3fd7848b0))
+
+  Split data directory into persistent data/ (config, sessions) and knowledge/ (memory, skills, SOUL.md, USER.md, SECURITY.md) backed by a Git repository.
+
+  New modules:
+  - git_store.py: async Git CLI wrapper (init, commit, push, pull)
+  - git_http.py: Git HTTP handler via git-http-backend CGI on proxy port
+
+  Key changes:
+  - Config: CARAPACE_CONFIG env var, data_dir/knowledge_dir/git fields
+  - Bootstrap: split into ensure_data_dir() and ensure_knowledge_dir()
+  - Agent: removed write tools (write_memory, save_skill, save_workspace_file),
+    sandbox uses git commit/push instead
+  - Sentinel: added evaluate_push() for pre-receive hook security gating
+  - Sandbox: mount knowledge repo as /workspace, git HTTP on proxy port
+  - Server: full lifespan rewrite with GitStore init, remote pull, bootstrap
+  - Helm: two PVCs (data RWX, knowledge RWO)
+  - Dockerfile: added git, jq, curl
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix: display ref instead of '?' for git push approvals in CLI
+  ([`541f0cc`](https://github.com/thiesgerken/carapace/commit/541f0cc65a34add020baa603d1645787a813cb39))
+
+  Rename _render_proxy_approval_request → _render_escalation_request and read the 'ref' key for git push escalations instead of 'domain'.
+
+- 🐛 fix: auto-deny stale escalations when a duplicate arrives
+  ([`a27b6e2`](https://github.com/thiesgerken/carapace/commit/a27b6e2f4e7010acd9b36e5d8eecb79dd5bf73cd))
+
+  When a new escalation for the same kind+ref/domain is created (e.g. agent retries git push after a timeout), the old pending escalation is automatically denied so its approval card resolves in the frontend.
+
+- 🐛 fix: increase exec timeout to 1h and remove agent control
+  ([`4d9dbc7`](https://github.com/thiesgerken/carapace/commit/4d9dbc76d2bddbc357810ccde27ec508c8d6d970))
+
+  git push can block indefinitely when the sentinel escalates for user approval. Raise the default exec timeout to 3600s, support timeout=0 (no limit) in both runtimes, and remove the timeout parameter from the agent-facing exec tool.
+
+- 🐛 fix: remove curl response timeout for user approval flow
+  ([`7c83003`](https://github.com/thiesgerken/carapace/commit/7c830037a170c873b3eeefa4faff36e8bbb70993))
+
+  The sentinel may escalate pushes for user approval, which can block indefinitely. Replace --max-time with --connect-timeout to still detect a down server without timing out on long approval waits.
+
+- 🐛 fix: persist git push decisions and clear loading indicator
+  ([`004d53b`](https://github.com/thiesgerken/carapace/commit/004d53b06918d3a2702c7d074a6c9c65b3d4e9b0))
+
+- 🐛 fix: handle missing session in evaluate-push endpoint
+  ([`0a77af9`](https://github.com/thiesgerken/carapace/commit/0a77af982850d65ab460e804ee6f49e029d97ff4))
+
+- 🐛 fix: purge all tracking state on permanent session deletion
+  ([`ad22de3`](https://github.com/thiesgerken/carapace/commit/ad22de309c2865a76dd3f5fe77e85b4139acd1cf))
+
+- 🐛 fix: harden pre-receive hook against missing deps and empty stdin
+  ([`8c6c9b8`](https://github.com/thiesgerken/carapace/commit/8c6c9b8554b0ab62c01af2ca09bee403bdf81f44))
+
+- 🐛 fix: promote git auth failure logs from debug to warning
+  ([`57dc7a5`](https://github.com/thiesgerken/carapace/commit/57dc7a583338a9583b118caa81e96b6d29e980b3))
+
+- 🐛 fix: persist sandbox session tokens across server restarts
+  ([`1ee86e0`](https://github.com/thiesgerken/carapace/commit/1ee86e0efe72a1679579af904e8aa2c031287652))
+
+  Save session_id→token mapping to sandbox_tokens.json in the data dir. Tokens are reloaded on startup so existing sandbox containers (with credentials embedded in the git remote URL) can still authenticate.
+
+- 🐛 fix: add debug logging for git auth failures
+  ([`61ce299`](https://github.com/thiesgerken/carapace/commit/61ce299150a9ee09449939d53ca3148ddd3d74e8))
+
+  Log specific reason (no header, malformed creds, invalid token) when sandbox git requests return 401.
+
+- 🐛 fix: use TestModel in session tests to avoid requiring API keys in CI
+  ([`5e3dc3f`](https://github.com/thiesgerken/carapace/commit/5e3dc3f56b5f9ddb9ec551a0859499c255057a08))
+
+- 🐛 fix: address security and configuration bugs
+  ([`c55d421`](https://github.com/thiesgerken/carapace/commit/c55d42128ce667234d0756b645f861a9750a5179))
+
+  - Fix shell error suppression in _sync_skill_venv that masked pyproject.toml restore failures
+  - Change default api_port in GitHttpHandler from 8321 (public API) to 8320 (internal API)
+
+  Applied via @cursor push command
+
+- 🐛 fix: address security and configuration bugs
+  ([`6ee6347`](https://github.com/thiesgerken/carapace/commit/6ee6347a15417a180accffc5a30390a3e6882ac1))
+
+  - Fix shell error suppression in _sync_skill_venv that masked pyproject.toml restore failures
+  - Change default api_port in GitHttpHandler from 8321 (public API) to 8320 (internal API)
+
+- 🐛 fix: handle null SHA on initial branch push in pre-receive hook
+  ([`14c18ef`](https://github.com/thiesgerken/carapace/commit/14c18ef17c23eca610ec146ad4692d9b576d5b2f))
+
+- 🐛 fix: remove unused volume mapping for knowledge directory in docker-compose.yml
+  ([`75e7277`](https://github.com/thiesgerken/carapace/commit/75e72778ed8bb463e62a7b80ea529ac5c90b6e7f))
+
+- 🐛 fix: use 127.0.0.1 and --fail in pre-receive hook curl call
+  ([`8aba398`](https://github.com/thiesgerken/carapace/commit/8aba398ab50dc3bc9816110c660cc682a8355983))
+
+  Co-authored-by: thiesgerken <7550099+thiesgerken@users.noreply.github.com>
+
+  Agent-Logs-Url: https://github.com/thiesgerken/carapace/sessions/db6aa13c-6f79-4a79-8dce-9144ceaaba75
+
+- 🐛 fix: resolve knowledge_dir relative to config file, not CWD
+  ([`2a61a07`](https://github.com/thiesgerken/carapace/commit/2a61a078384f3f62cc0eb5e96807328f7b7e9b80))
+
+  Resolving relative to CWD made container deployments fragile — e.g. Docker mounts knowledge at /knowledge but ./knowledge resolved to /app/knowledge. Now uses the same strategy as data_dir: relative to the config file's parent directory.
+
+- 🐛 fix: load SOUL.md, USER.md, AGENTS.md from knowledge_dir
+  ([`1dbefab`](https://github.com/thiesgerken/carapace/commit/1dbefabc1213ec7455d8285f015041e08e0f318a))
+
+  These files were moved to the knowledge repo but build_system_prompt() still loaded them from data_dir, which now only holds config.yaml and sessions.
+
+### ♻️ Refactoring
+
+
+- ♻️ refactor: clone knowledge repo directly into /workspace
+  ([`c8e40ba`](https://github.com/thiesgerken/carapace/commit/c8e40ba181e714263b18ac8ef0136ec7b9a2cc3c))
+
+  Instead of /workspace/knowledge/, the git repo is now cloned into /workspace/ (the container workdir). Simplifies paths throughout the agent system prompt, sandbox manager, example skill, and docs.
+
+- ♻️ refactor: clean up naming inconsistencies across escalation pipeline
+  ([`0ac7e7e`](https://github.com/thiesgerken/carapace/commit/0ac7e7e0bacdb5156b68854fcda6210e32e1439b))
+
+  - DomainDecision → EscalationDecision (used for both domain and git push)
+  - ProxyApprovalRequest → DomainAccessApprovalRequest (names the action, not the mechanism)
+  - escalate_to_user(domain, ...) → escalate_to_user(subject, ...)
+  - evaluate_domain() → evaluate_domain_access(), prompt label proxy_domain_request → domain_access_request
+  - Explicit kind='domain_access' in evaluate_domain_with context dict (was implicit default)
+  - proxy_approval event role → domain_access_approval (back-compat for reading old sessions)
+  - on_proxy_approval_request → on_domain_access_approval_request subscriber method
+  - Renamed proxy-approval-card.tsx → domain-access-approval-card.tsx
+  - Added missing on_git_push_approval_request and on_git_push_info to Matrix subscriber
+  - Simplified format_domain_escalation (removed kind param, git pushes use dedicated method)
+
+- ♻️ refactor: per-session token files with lazy loading
+  ([`53de96c`](https://github.com/thiesgerken/carapace/commit/53de96c3bed3e6811fefc1cfb888ae7f9794c70c))
+
+  - Store sandbox tokens in sessions/{sid}/token instead of a single
+    sandbox_tokens.json.
+  - Load tokens lazily in _get_or_create_token(): memory → disk → new.
+    No bulk scan at startup.
+  - cleanup_session only removes the container reference, keeping
+    tokens and domain state so the sandbox can be re-created on
+    next use.
+  - _cleanup_tracking is now only the ensure_session error-path
+    rollback.
+  - Add 'no silent failures' guideline to AGENTS.md.
+
+- ♻️ refactor: wait for log readiness then exec git clone
+  ([`f43388b`](https://github.com/thiesgerken/carapace/commit/f43388b62fc0ce076e7e769c600869c46ec8df07))
+
+  Instead of running git clone inside the container entrypoint and polling for /workspace/knowledge/.git, the container now starts with only setup-proxy.sh + sleep infinity.  After 'carapace sandbox ready' appears in the container logs, an exec runs the git clone.
+
+  This gives direct visibility into clone errors (exit code + output) and cleanly separates container readiness from repo setup.
+
+- ♻️ refactor: mount whole workspace dir, clone knowledge repo into subdirectory
+  ([`5c8eb1c`](https://github.com/thiesgerken/carapace/commit/5c8eb1c118ccd9285abb12ce6572467cc2e9033e))
+
+  Replace the /workspace/tmp bind mount with a full /workspace/ mount (host: sessions/{sid}/workspace/, k8s: PVC subPath).  The knowledge repo is now cloned into /workspace/knowledge/ on first container start; existing clones are left untouched on restart.
+
+  This fixes 'destination path already exists' from git clone (the previous tmp sub-mount caused Docker to pre-create /workspace/) and gives the agent a persistent scratch area outside the git tree.
+
+- ♻️ refactor: make Deps.agent_model required, add ModelType literal
+  ([`c5f2729`](https://github.com/thiesgerken/carapace/commit/c5f2729effb009b360865f4a6183055717fd0070))
+
+  - Deps.agent_model is now Model (required, no None)
+  - _build_deps resolves fallback eagerly via _resolve_model()
+  - create_agent and loop.py use deps.agent_model directly
+  - ModelType = Literal['agent', 'sentinel', 'title'] for model commands
+  - _apply_model_override model_obj is Model | None (only used for agent)
+
+- ♻️ refactor: replace Any types in Deps with concrete annotations
+  ([`d46105e`](https://github.com/thiesgerken/carapace/commit/d46105e59379b28ed005bc65f994e8b97d9b5fac))
+
+  - Deps.sentinel: Sentinel, git_store: GitStore, agent_model: Model | None
+  - SessionEngine: git_store typed as GitStore, agent_model as Model | None
+  - ActiveSession.agent_model typed as Model | None
+  - tests use MagicMock(spec=...) for proper isinstance checks
+  - _patch_sentinel() helper for test_session Sentinel class patching
+
+- ♻️ refactor: remove host-side file ops from skill activation
+  ([`a1284d4`](https://github.com/thiesgerken/carapace/commit/a1284d409b0c3ca16354f47f6159c50d919a3210))
+
+  - activate_skill no longer copies skill files from knowledge_dir to
+    session workspace (git clone already provides them at /workspace)
+  - _sync_skill_venv restores trusted pyproject.toml/uv.lock via
+    git checkout inside the container instead of shutil.copy2
+  - rebuild_skill_venvs checks master knowledge_dir for pyproject.toml
+    instead of unmounted session workspace path
+  - removed unused shutil import
+
+- ♻️ refactor: reorganize modules into sub-packages
+  ([`69cbc0c`](https://github.com/thiesgerken/carapace/commit/69cbc0c6ac51b4cd766dbdd09aa3b2f06d47a187))
+
+  - agent.py + agent_loop.py → agent/{__init__, tools, loop}.py
+  - git_http.py + git_store.py → git/{__init__, http, store}.py
+  - session.py + session_engine.py + session_manager.py + titler.py
+    → session/{__init__, engine, manager, titler}.py
+  - Each package re-exports public API from __init__.py
+  - All external imports (carapace.session, carapace.agent) still work
+  - Deferred titler import promoted to top-level in session/engine.py
+
+- ♻️ refactor: standardise auth to session_id:token Basic Auth
+  ([`1e79ce1`](https://github.com/thiesgerken/carapace/commit/1e79ce14c1a5eaf23851cff5c514351785784abf))
+
+  - proxy extracts token from password field (was username)
+  - proxy URL uses session_id:token@ format
+  - git handler receives pre-authenticated session_id from proxy
+  - removed _extract_basic_auth and get_session_by_token from GitHttpHandler
+  - manager injects GIT_REPO_URL and clones during sandbox startup
+  - git traffic now routes through proxy (removed host.docker.internal bypass)
+  - updated tests for new auth contract
+
+- ♻️ refactor: use single PVC for data and knowledge
+  ([`bd838c3`](https://github.com/thiesgerken/carapace/commit/bd838c3c682deffd28c5b4cdd8d2f175764b13aa))
+
+  Knowledge directory lives as a subdirectory of the data PVC (/var/lib/carapace/knowledge) — no need for a separate PVC.
+
+### 🔒 Security
+
+
+- 🔒 fix: escape ref names in pre-receive hook JSON payload
+  ([`af672f6`](https://github.com/thiesgerken/carapace/commit/af672f62c35c85b451d726e1261fddc1bacb5b2e))
+
+  Use jq -n with --arg to build the JSON payload instead of shell string interpolation, preventing injection via crafted ref names.
+
+- 🔒 fix: use Path() to validate PATH_INFO against traversal in GitHttpHandler
+  ([`54eaee4`](https://github.com/thiesgerken/carapace/commit/54eaee43e03b3dbbfabb758f16dc259d36c9bc73))
+
+  Co-authored-by: thiesgerken <7550099+thiesgerken@users.noreply.github.com>
+
+  Agent-Logs-Url: https://github.com/thiesgerken/carapace/sessions/cc5a4d5f-efd9-42ef-ade5-933dac6420af
+
+- 🔒 refactor: split server into 3-port architecture
+  ([`b006e6f`](https://github.com/thiesgerken/carapace/commit/b006e6f21bdab60b40b25919caa1fae7ecb2d011))
+
+  - Public API (8321): REST + WebSocket, Bearer token auth
+  - Sandbox API (8322): Git HTTP backend, Basic Auth (session_id:token)
+  - Internal API (8320): sentinel callback, loopback only (127.0.0.1)
+  - SandboxManager uses sandbox_port for GIT_REPO_URL (was api_port)
+  - Pre-receive hook default port updated to 8320
+  - Helm chart: add sandboxPort to values, deployment, service, networkpolicy
+  - Updated architecture and kubernetes docs for 3-port model
+
+- 🔒 fix: validate PATH_INFO in GitHttpHandler to prevent repo traversal
+  ([`8f4f423`](https://github.com/thiesgerken/carapace/commit/8f4f423eb4923835f0d190fbd3a45503d995fe49))
+
+  GIT_PROJECT_ROOT is knowledge_dir.parent, which could be / if knowledge lives at /knowledge. Without validation, git http-backend could serve any git repo on the filesystem.
+
+  Now rejects requests whose PATH_INFO doesn't start with the intended repo name (knowledge_dir.name or knowledge_dir.name.git) with 403.
+
+  Also adds tests for the path validation (forbidden path returns 403, allowed path without .git suffix passes through).
+
+- 🔒 fix: don't bind-mount knowledge repo into sandbox
+  ([`0e314ff`](https://github.com/thiesgerken/carapace/commit/0e314ff57e7966f2fbfc594ecec2095b39f15845))
+
+  The sandbox should obtain the knowledge repo via git clone through the Git HTTP handler (port 3128), which enforces the pre-receive hook security gate. Mounting the host repo directly would bypass the sentinel evaluation entirely.
+
+  Also fixes master skill paths to use knowledge_dir instead of data_dir.
+
+### 🔧 Configuration
+
+
+- 🔧 fix: improve log retrieval error handling with warning level
+  ([`e483de1`](https://github.com/thiesgerken/carapace/commit/e483de188762135d0fb921ead895482f72e6fd86))
+
+- 🔧 fix: sync server ports via env vars between Helm and app
+  ([`fcce47d`](https://github.com/thiesgerken/carapace/commit/fcce47dc25d1d2778de7b21037b0ce34b02dd77f))
+
+  - ServerConfig now uses BaseSettings with CARAPACE_SERVER_ env prefix,
+    supporting CARAPACE_SERVER_PORT, CARAPACE_SERVER_SANDBOX_PORT, etc.
+  - Helm deployment template injects port values as env vars so changing
+    server.apiPort / sandboxPort / proxyPort in values.yaml automatically
+    configures the application without manual config.yaml edits
+
+- 🔧 fix: make API port configurable for pre-receive hook and Helm chart
+  ([`a358ade`](https://github.com/thiesgerken/carapace/commit/a358aded04dda7cea245cb5f3480005fd778118d))
+
+  - pre-receive hook uses ${CARAPACE_API_PORT:-8321} instead of hard-coded 8321
+  - GitHttpHandler passes CARAPACE_API_PORT in CGI env to git http-backend
+  - Helm chart: new server.apiPort / server.proxyPort values
+  - all templates reference values instead of hard-coded port numbers
+
+### Other
+
+
+- enhance post-push success handling with HTTP status and response validation
+  ([`a653015`](https://github.com/thiesgerken/carapace/commit/a6530150c5d30e5727e3ea5a8da7b142db8b68a6))
+
+- improve logging
+  ([`e274767`](https://github.com/thiesgerken/carapace/commit/e274767d2ea9563d16932b57185cbbef4fe59191))
+
+- 📝 docs: add pre-commit workflow note to AGENTS.md
+  ([`116be57`](https://github.com/thiesgerken/carapace/commit/116be57126733efd45e6e31d2e9f3f8572afcf2e))
+
+- Merge remote-tracking branch 'refs/remotes/origin/feat/git-knowledge-store' into feat/git-knowledge-store
+  ([`522ed4e`](https://github.com/thiesgerken/carapace/commit/522ed4e9c049e9fba4e81235463ab4eab9a0b757))
+
+- 🔥 refactor: remove config.yaml bootstrapping
+  ([`87c99d7`](https://github.com/thiesgerken/carapace/commit/87c99d79bc5d349e781822e89c802b8421addf4b))
+
+  Config() defaults match the bundled asset exactly, so seeding config.yaml on first start adds no value and creates a subtle ordering issue (load_config runs before ensure_data_dir).
+
+- 📝 docs: align architecture.md and memory.md with git-backed knowledge store
+  ([`10eb22a`](https://github.com/thiesgerken/carapace/commit/10eb22a1f9a48c4b4769f7f7e8bcb7e3388dea62))
+
+- Merge pull request #53 from thiesgerken/copilot/sub-pr-52
+  ([`82d5ebd`](https://github.com/thiesgerken/carapace/commit/82d5ebd8d5a4684602751147599375d0e59b421f))
+
+  Fix PATH_INFO path traversal in GitHttpHandler
+
+- Initial plan
+  ([`02f9300`](https://github.com/thiesgerken/carapace/commit/02f93003a04fabc4fe818c5b64ca595d3698cf64))
+
+- Merge pull request #54 from thiesgerken/copilot/sub-pr-52-again
+  ([`d6e2944`](https://github.com/thiesgerken/carapace/commit/d6e2944ae9ed254b3f3f866e87424ccc025d0fe0))
+
+  fix: use 127.0.0.1 and --fail in pre-receive hook curl call
+
+- Initial plan
+  ([`7922c55`](https://github.com/thiesgerken/carapace/commit/7922c55d5a7d43d8a0f61c6388fb12652220d1b7))
+
+- ignore tmp in .gitignore for workspace
+  ([`5c32ce1`](https://github.com/thiesgerken/carapace/commit/5c32ce10e5a72487a1ae90cefc08e727411ff313))
+
+  Co-authored-by: Copilot <175728472+Copilot@users.noreply.github.com>
+
+- mdlint
+  ([`bac496c`](https://github.com/thiesgerken/carapace/commit/bac496c10232dbffc0be535cfae23c23cda7d303))
+
+- ✅ test: add unit tests for GitStore and GitHttpHandler
+  ([`e0a57a4`](https://github.com/thiesgerken/carapace/commit/e0a57a40215edd98f8307c903a871854b7d2b2d2))
+
+  35 tests covering:
+  - GitStore: author template parsing, repo init, hook install,
+    commit (new file, empty, idempotent), remote management, pull/push
+  - GitHttpHandler: Basic Auth extraction (valid, missing, wrong scheme,
+    empty password, case-insensitive), CGI-to-HTTP conversion, header
+    lookup, 401 on unauthenticated/invalid token requests
+
+- 📝 chore: add comment to except ValueError in _host_path
+  ([`61a0114`](https://github.com/thiesgerken/carapace/commit/61a011454d39fccbd0188397290b1af444970125))
+
 ## v0.41.1 (2026-03-21)
 
 
