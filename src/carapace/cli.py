@@ -234,16 +234,18 @@ def _render_usage(payload: dict[str, Any]) -> None:
     console.print(f"[bold]Total:[/bold] {tokens_str}{cost_str}")
 
 
-async def _render_proxy_approval_request(data: dict[str, Any]) -> str:
-    """Render a proxy domain approval request and return the decision string."""
-    domain = data.get("domain", "?")
+async def _render_escalation_request(data: dict[str, Any]) -> str:
+    """Render a sentinel escalation (domain access or git push) and return the decision."""
     command = data.get("command", "")
 
     is_git_push = data.get("kind") == "git_push"
     title_text = "Git Push Request" if is_git_push else "Proxy Access Request"
-    label = "Ref" if is_git_push else "Domain"
+    if is_git_push:
+        label, value = "Ref", data.get("ref", "?")
+    else:
+        label, value = "Domain", data.get("domain", "?")
 
-    panel_lines = [f"[bold]{label}:[/bold] {domain}"]
+    panel_lines = [f"[bold]{label}:[/bold] {value}"]
     if command:
         panel_lines.append(f"[bold]Triggered by:[/bold] [dim]{command}[/dim]")
 
@@ -461,7 +463,7 @@ async def _read_server_responses(ws) -> None:
                 case "proxy_approval_request":
                     _stop_live()
                     try:
-                        decision = await _render_proxy_approval_request(msg)
+                        decision = await _render_escalation_request(msg)
                     except (KeyboardInterrupt, EOFError):
                         decision = "deny"
                         console.print("\n[dim]Denied (interrupted).[/dim]")

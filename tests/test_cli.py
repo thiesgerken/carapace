@@ -7,7 +7,7 @@ from unittest.mock import patch
 import pytest
 from typer.testing import CliRunner
 
-from carapace.cli import _render_proxy_approval_request, app
+from carapace.cli import _render_escalation_request, app
 
 runner = CliRunner()
 
@@ -45,5 +45,5 @@ def test_chat_help():
 )
 def test_proxy_approval_choice_mapping(choice: str, expected: str):
     with patch("carapace.cli.console.input", return_value=choice):
-        decision = asyncio.run(_render_proxy_approval_request({"domain": "example.com", "command": "curl"}))
+        decision = asyncio.run(_render_escalation_request({"domain": "example.com", "command": "curl"}))
     assert decision == expected
