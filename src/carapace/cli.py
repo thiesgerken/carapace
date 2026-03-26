@@ -238,7 +238,7 @@ async def _render_escalation_request(data: dict[str, Any]) -> str:
     """Render a sentinel escalation (domain access or git push) and return the decision."""
     command = data.get("command", "")
 
-    is_git_push = data.get("kind") == "git_push"
+    is_git_push = "ref" in data
     title_text = "Git Push Request" if is_git_push else "Proxy Access Request"
     if is_git_push:
         label, value = "Ref", data.get("ref", "?")
@@ -460,7 +460,7 @@ async def _read_server_responses(ws) -> None:
                         )
                     )
 
-                case "proxy_approval_request":
+                case "domain_access_approval_request" | "git_push_approval_request":
                     _stop_live()
                     try:
                         decision = await _render_escalation_request(msg)
@@ -470,7 +470,7 @@ async def _read_server_responses(ws) -> None:
                     await ws.send(
                         json.dumps(
                             {
-                                "type": "proxy_approval_response",
+                                "type": "escalation_response",
                                 "request_id": msg["request_id"],
                                 "decision": decision,
                             }
