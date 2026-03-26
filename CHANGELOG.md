@@ -1,6 +1,25 @@
 # CHANGELOG
 
 
+## v0.42.1 (2026-03-26)
+
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix: set fsGroup in server pod for PVC write access
+  ([`68244d2`](https://github.com/thiesgerken/carapace/commit/68244d24b230a806b50056eabbfd5a040e2e4851))
+
+  The nonroot user (UID/GID 999) cannot create directories on a freshly mounted PVC owned by root. Adding fsGroup: 999 to the pod security context lets Kubernetes chown mounted volumes to the correct group.
+
+### ♻️ Refactoring
+
+
+- ♻️ refactor: defer version commit until after Docker builds succeed
+  ([`2bbc75f`](https://github.com/thiesgerken/carapace/commit/2bbc75f069436678dbf3d5d0d34b6ec8f44d8e1c))
+
+  Move semantic-release version commit + tag from the first job to the publish step so that if any Docker build fails, no version commit is created. The version job now only computes the next version.
+
 ## v0.42.0 (2026-03-26)
 
 
