@@ -25,6 +25,8 @@ spec:
       {{- if .Values.priorityClassName }}
       priorityClassName: {{ .Values.priorityClassName }}
       {{- end }}
+      securityContext:
+        fsGroup: 999
       containers:
         - name: server
           image: {{ include "carapace.serverImage" . }}
