@@ -10,6 +10,8 @@ SLASH_COMMANDS: list[dict[str, str]] = [
     {"command": "/session", "description": "Show current session state"},
     {"command": "/skills", "description": "List available skills"},
     {"command": "/memory", "description": "List memory files"},
+    {"command": "/pull", "description": "Pull from external Git remote (if configured)"},
+    {"command": "/push", "description": "Push to external Git remote (if configured)"},
     {
         "command": "/models",
         "description": "View all models and available options",
@@ -37,15 +39,15 @@ class ApprovalResponse(BaseModel):
     approved: bool
 
 
-DomainDecision = Literal["allow", "deny"]
+EscalationDecision = Literal["allow", "deny"]
 
 
-class ProxyApprovalResponse(BaseModel):
-    """Client → Server: user's decision for a proxy domain approval request."""
+class EscalationResponse(BaseModel):
+    """Client → Server: user's decision on a sentinel escalation (proxy domain or git push)."""
 
-    type: Literal["proxy_approval_response"] = "proxy_approval_response"
+    type: Literal["escalation_response"] = "escalation_response"
     request_id: str
-    decision: DomainDecision
+    decision: EscalationDecision
 
 
 class CancelRequest(BaseModel):
@@ -54,7 +56,7 @@ class CancelRequest(BaseModel):
     type: Literal["cancel"] = "cancel"
 
 
-ClientEnvelope = UserMessage | ApprovalResponse | ProxyApprovalResponse | CancelRequest
+ClientEnvelope = UserMessage | ApprovalResponse | EscalationResponse | CancelRequest
 
 
 def parse_client_message(raw: dict[str, Any]) -> ClientEnvelope:
@@ -63,8 +65,8 @@ def parse_client_message(raw: dict[str, Any]) -> ClientEnvelope:
             return UserMessage.model_validate(raw)
         case "approval_response":
             return ApprovalResponse.model_validate(raw)
-        case "proxy_approval_response":
-            return ProxyApprovalResponse.model_validate(raw)
+        case "escalation_response":
+            return EscalationResponse.model_validate(raw)
         case "cancel":
             return CancelRequest.model_validate(raw)
         case other:
@@ -102,13 +104,23 @@ class ApprovalRequest(BaseModel):
     risk_level: str = ""
 
 
-class ProxyApprovalRequest(BaseModel):
-    """Server → Client: proxy is waiting for a domain access decision."""
+class DomainAccessApprovalRequest(BaseModel):
+    """Server → Client: sentinel is waiting for a domain access decision."""
 
-    type: Literal["proxy_approval_request"] = "proxy_approval_request"
+    type: Literal["domain_access_approval_request"] = "domain_access_approval_request"
     request_id: str
     domain: str
     command: str  # the exec command that triggered this connection attempt
+
+
+class GitPushApprovalRequest(BaseModel):
+    """Server → Client: sentinel is waiting for a git push decision."""
+
+    type: Literal["git_push_approval_request"] = "git_push_approval_request"
+    request_id: str
+    ref: str
+    explanation: str
+    changed_files: list[str]
 
 
 class TurnUsage(BaseModel):
@@ -169,7 +181,8 @@ ServerEnvelope = (
     | ToolCallInfo
     | ToolResultInfo
     | ApprovalRequest
-    | ProxyApprovalRequest
+    | DomainAccessApprovalRequest
+    | GitPushApprovalRequest
     | Done
     | CommandResult
     | ErrorMessage

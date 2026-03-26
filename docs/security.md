@@ -107,6 +107,7 @@ The action log is a per-session, append-only chronological record of all signifi
 | `ApprovalEntry`       | User approved or denied an escalated action                |
 | `SkillActivatedEntry` | A skill was activated (metadata only)                      |
 | `UserVouchedEntry`    | User explicitly vouched for context via `/approve-context` |
+| `GitPushEntry`        | Git push evaluated by sentinel (ref, decision, explanation) |
 
 The action log serves as the sentinel's primary source of truth. Raw tool results are never included -- only their metadata (size, success/failure) -- to prevent prompt injection via tool output.
 
@@ -115,7 +116,7 @@ The action log serves as the sentinel's primary source of truth. Raw tool result
 Every security decision is written to a per-session audit log file at `$CARAPACE_DATA_DIR/sessions/<session_id>/audit.yaml`. Each entry includes:
 
 - Timestamp
-- Whether it was a tool call or proxy domain request
+- Whether it was a tool call, proxy domain request, or git push
 - The sentinel's verdict (decision, explanation, risk level)
 - The final decision (may differ if user overrode an escalation)
 
@@ -127,6 +128,16 @@ When a sandboxed container makes a network request, the proxy intercepts it and 
 - A Python script connecting to an unrelated domain not mentioned in the task → suspicious.
 
 The sentinel's system prompt explicitly tells it that the tool call itself was already approved -- domain checks are a plausibility/safety-net layer, not a second full evaluation.
+
+## Git push evaluation
+
+When the agent pushes changes from a sandbox container back to the knowledge repository, the push is gated by a **pre-receive hook** that routes each ref update through the sentinel. The sentinel sees the branch, commit log, and diff, and decides whether to allow the push.
+
+Like tool calls and proxy domains, the sentinel can escalate a git push to the user for approval. Push evaluation results (allow, deny, escalate) are broadcast to all session subscribers (WebSocket, Matrix) and recorded in both the action log (`GitPushEntry`) and the audit log.
+
+If a push is denied, `git push` fails in the sandbox with a descriptive error message from the sentinel.
+
+If an external remote is configured (`git.remote` in config), a successful push from the sandbox is automatically forwarded to the remote. Users can also trigger this manually with the `/push` slash command.
 
 If the sentinel escalates a domain request, it is forwarded to the user through their channel (WebSocket, Matrix).
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any, Literal
 
 from pydantic_ai import ApprovalRequired
@@ -9,6 +10,7 @@ from carapace.security.context import (
 )
 from carapace.security.context import (
     AuditEntry,
+    GitPushEntry,
     SecurityDeniedError,
     SentinelVerdict,
     SessionSecurity,
@@ -131,7 +133,7 @@ async def evaluate_domain_with(
     If the sentinel escalates, delegates to the session's user escalation callback.
     """
 
-    verdict = await sentinel.evaluate_domain(
+    verdict = await sentinel.evaluate_domain_access(
         session,
         domain,
         command,
@@ -152,7 +154,7 @@ async def evaluate_domain_with(
     else:
         allowed = await session.escalate_to_user(
             domain,
-            {"command": command, "explanation": verdict.explanation},
+            {"command": command, "explanation": verdict.explanation, "kind": "domain_access"},
         )
         final_decision = "allowed" if allowed else "denied"
         detail = f"[sentinel: escalate \u2192 {final_decision}] {verdict.explanation}"
@@ -165,6 +167,72 @@ async def evaluate_domain_with(
             domain=domain,
             sentinel_verdict=verdict,
             final_decision=final_decision,
+            explanation=verdict.explanation,
+        )
+    )
+
+    return allowed
+
+
+async def evaluate_push_with(
+    session: SessionSecurity,
+    sentinel: Sentinel,
+    ref: str,
+    is_default_branch: bool,
+    commits: str,
+    diff: str,
+    *,
+    usage_tracker: UsageTracker | None = None,
+) -> bool:
+    """Evaluate a Git push. Returns True to allow, False to deny.
+
+    If the sentinel escalates, delegates to the session's user escalation callback.
+    """
+    verdict = await sentinel.evaluate_push(
+        session,
+        ref,
+        is_default_branch,
+        commits,
+        diff,
+        usage_tracker=usage_tracker,
+    )
+
+    decision = _verdict_to_decision(verdict)
+
+    if verdict.decision == "allow":
+        allowed = True
+        detail = f"[sentinel: allow] {verdict.explanation}"
+    elif verdict.decision == "deny":
+        allowed = False
+        detail = f"[sentinel: deny] {verdict.explanation}"
+    else:
+        # Extract changed file names from unified diff headers
+        changed_files = sorted(
+            {m.group(1) for m in re.finditer(r"^\+\+\+ b/(.+)$", diff, re.MULTILINE) if m.group(1) != "/dev/null"}
+        )
+        allowed = await session.escalate_to_user(
+            f"git push {ref}",
+            {
+                "command": f"git push ({ref})",
+                "explanation": verdict.explanation,
+                "kind": "git_push",
+                "ref": ref,
+                "changed_files": changed_files,
+            },
+        )
+        decision = "allowed" if allowed else "denied"
+        detail = f"[sentinel: escalate \u2192 {decision}] {verdict.explanation}"
+
+    entry = GitPushEntry(ref=ref, decision=decision, explanation=verdict.explanation)
+    session.append(entry)
+
+    await session.notify_push_decision(ref, decision, detail)
+
+    session.write_audit(
+        AuditEntry.now(
+            kind="git_push",
+            sentinel_verdict=verdict,
+            final_decision=decision,
             explanation=verdict.explanation,
         )
     )

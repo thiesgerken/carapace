@@ -39,7 +39,7 @@ graph TD
     subgraph ns ["Namespace: carapace"]
         Deploy["Deployment/carapace<br/>(server + proxy)"]
         Frontend["Deployment/frontend"]
-        SvcServer["Service/carapace<br/>(ports 8321 + 3128)"]
+        SvcServer["Service/carapace<br/>(ports 8321 + 8322 + 3128)"]
         SvcFront["Service/frontend<br/>(port 80)"]
         PVC["PVC/carapace-data (RWX)"]
         NetPol["NetworkPolicy/sandbox-isolation"]
@@ -90,7 +90,7 @@ When `CARAPACE_SANDBOX_RUNTIME` is unset or `docker` (the default), nothing chan
 
 ### Auto-detection
 
-When the server runs inside Kubernetes (the `KUBERNETES_SERVICE_HOST` env var is set), it loads in-cluster credentials automatically. No kubeconfig needed.
+When the server runs inside Kubernetes (the `KUBERNETES_SERVICE_HOST` env var is set), it loads in-cluster credentials automatically. No `kubeconfig` needed.
 
 ### Environment variable reference
 
@@ -112,11 +112,7 @@ A single RWX PVC (`carapace-data`) is shared between the server and all sandbox 
 | Consumer    | Mount path             | subPath                           | Mode |
 | ----------- | ---------------------- | --------------------------------- | ---- |
 | Server      | `/data`                | (root)                            | RW   |
-| Sandbox pod | `/workspace/AGENTS.md` | `AGENTS.md`                       | RO   |
-| Sandbox pod | `/workspace/SOUL.md`   | `SOUL.md`                         | RO   |
-| Sandbox pod | `/workspace/memory`    | `memory/`                         | RO   |
-| Sandbox pod | `/workspace/skills`    | `sessions/{sid}/workspace/skills` | RW   |
-| Sandbox pod | `/workspace/tmp`       | `sessions/{sid}/workspace/tmp`    | RW   |
+| Sandbox pod | `/workspace`           | `sessions/{sid}/workspace`        | RW   |
 
 The `KubernetesRuntime` automatically translates the `SandboxManager`'s host-path mounts into PVC subPath references — no configuration needed.
 
@@ -126,11 +122,15 @@ The `KubernetesRuntime` automatically translates the `SandboxManager`'s host-pat
 
 Sandbox pods reach the internet exclusively through the HTTP proxy running inside the server pod (port 3128). The proxy enforces per-session domain allowlisting with token-based auth. Sandbox pods receive **only** `HTTP_PROXY` / `HTTPS_PROXY` env vars pointing to the Carapace service.
 
+Git operations (`git clone`, `git push`) use the **sandbox API** (port 8322) directly with HTTP Basic Auth (`session_id:token`). The sandbox API hostname is added to `NO_PROXY` so Git traffic bypasses the HTTP proxy.
+
+The **internal API** (port 8320) is bound to `127.0.0.1` only and hosts the sentinel callback endpoint used by the pre-receive hook. It is unreachable from sandbox pods.
+
 ### NetworkPolicy
 
 The included `networkpolicy.yaml` restricts sandbox pods:
 
-- **Egress**: only to the server on port 3128 (proxy) + DNS
+- **Egress**: only to the server on ports 3128 (proxy) and 8322 (sandbox API) + DNS
 - **Ingress**: only from the server pod (for exec)
 
 This mirrors the Docker setup where sandbox containers are on an internal network with no direct internet access.
@@ -146,6 +146,7 @@ This mirrors the Docker setup where sandbox containers are on an internal networ
 > - Namespace-level or cluster-level network rules (e.g. Cilium `CiliumNetworkPolicy`, Calico `GlobalNetworkPolicy`) open additional egress paths for sandbox pods.
 >
 > **Before deploying to production**, verify your setup:
+>
 > ```bash
 > # After deploying, exec into a sandbox pod and confirm it cannot reach the internet directly
 > kubectl exec -it <sandbox-pod> -- curl -m 5 https://example.com

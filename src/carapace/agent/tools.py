@@ -49,15 +49,15 @@ def _notify_result(ctx: RunContext[Deps], tool_name: str, result: str) -> None:
 def build_system_prompt(deps: Deps) -> str:
     parts: list[str] = []
 
-    agents_md = load_workspace_file(deps.data_dir, "AGENTS.md")
+    agents_md = load_workspace_file(deps.knowledge_dir, "AGENTS.md")
     if agents_md:
         parts.append(agents_md)
 
-    soul_md = load_workspace_file(deps.data_dir, "SOUL.md")
+    soul_md = load_workspace_file(deps.knowledge_dir, "SOUL.md")
     if soul_md:
         parts.append(soul_md)
 
-    user_md = load_workspace_file(deps.data_dir, "USER.md")
+    user_md = load_workspace_file(deps.knowledge_dir, "USER.md")
     if user_md:
         parts.append(user_md)
 
@@ -75,15 +75,16 @@ def build_system_prompt(deps: Deps) -> str:
     parts.append(
         "# Sandbox Environment\n"
         "Commands run inside a Docker sandbox container.\n"
-        "- `/workspace/AGENTS.md`, `/workspace/SOUL.md`, `/workspace/USER.md`, `/workspace/SECURITY.md` "
-        "— editable working copies (NOT the live versions)\n"
-        "- `/workspace/memory/` — read-only memory files\n"
+        "`/workspace/` is a Git repository cloned from the server. "
+        "All changes to memory, skills, and other user files must be committed and pushed "
+        "(`git add`, `git commit`, `git push`) — this is the only way to persist changes. "
+        "Every push is evaluated by the security sentinel via a pre-receive hook.\n\n"
+        "## Workspace layout\n"
+        "- `/workspace/SOUL.md`, `/workspace/USER.md`, `/workspace/SECURITY.md` "
+        "— personality and security policy files\n"
+        "- `/workspace/memory/` — memory files\n"
         "- `/workspace/skills/` — activated skills (populated by `use_skill`)\n"
-        "- `/workspace/tmp/` — writable scratch space\n"
         "Call `use_skill(skill_name)` to activate a skill before running its scripts.\n"
-        "Call `save_skill(skill_name)` to persist edits back to the master skill directory.\n"
-        "Call `save_workspace_file(filename)` to persist edits to a workspace file "
-        "(AGENTS.md, SOUL.md, USER.md, SECURITY.md) back to the main data directory and make them live.\n"
         "`uv` is pre-installed; skill dependencies are managed via `pyproject.toml` + `uv.lock`.\n"
         "Run skill scripts with `uv run --directory /workspace/skills/<name> scripts/<script>.py`.\n\n"
         "## Network Access\n"
@@ -101,10 +102,8 @@ def build_system_prompt(deps: Deps) -> str:
 def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
     system_prompt = build_system_prompt(deps)
 
-    model = deps.agent_model or deps.config.agent.model
-
     agent: Agent[Deps, str | DeferredToolRequests] = Agent(
-        model,
+        deps.agent_model,
         deps_type=Deps,
         output_type=[str, DeferredToolRequests],  # type: ignore[arg-type]
         instructions=system_prompt,
@@ -129,7 +128,7 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
 
         Call before using a skill.
         """
-        registry = SkillRegistry(ctx.deps.data_dir / "skills")
+        registry = SkillRegistry(ctx.deps.knowledge_dir / "skills")
 
         carapace_cfg = registry.get_carapace_config(skill_name)
         requested_domains = carapace_cfg.network.domains if carapace_cfg else []
@@ -186,53 +185,14 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
         _notify_result(ctx, "use_skill", result)
         return result
 
-    @agent.tool
-    async def save_skill(ctx: RunContext[Deps], skill_name: str) -> str | ToolDenied:
-        """Save an activated skill back to the master skills directory. Persists edits made in the sandbox."""
-        if not ctx.tool_call_approved:
-            if denied := await _gate(ctx, "save_skill", {"skill_name": skill_name}):
-                return denied
-        else:
-            _notify_approved_start(ctx, "save_skill", {"skill_name": skill_name})
-
-        result = await ctx.deps.sandbox.save_skill(
-            ctx.deps.session_state.session_id,
-            skill_name,
-        )
-        ctx.deps.security.append(
-            ToolResultEntry(tool="save_skill", status="success"),
-        )
-        _notify_result(ctx, "save_skill", result)
-        return result
-
-    @agent.tool
-    async def save_workspace_file(ctx: RunContext[Deps], filename: str) -> str | ToolDenied:
-        """Save a workspace file (AGENTS.md, SOUL.md, USER.md, SECURITY.md) back to the main data directory.
-
-        The copies in /workspace/ are working copies — use this tool after editing
-        to make changes live. Only the listed filenames are accepted.
-        """
-        if not ctx.tool_call_approved:
-            if denied := await _gate(ctx, "save_workspace_file", {"filename": filename}):
-                return denied
-        else:
-            _notify_approved_start(ctx, "save_workspace_file", {"filename": filename})
-
-        result = await ctx.deps.sandbox.save_workspace_file(
-            ctx.deps.session_state.session_id,
-            filename,
-        )
-        ctx.deps.security.append(
-            ToolResultEntry(tool="save_workspace_file", status="success"),
-        )
-        _notify_result(ctx, "save_workspace_file", result)
-        return result
-
     # --- Filesystem (sandboxed — runs inside the Docker container) ---
 
     @agent.tool
     async def read(ctx: RunContext[Deps], path: str) -> str | ToolDenied:
-        """Read a file or list a directory inside the sandbox. Use container paths (e.g. /workspace/skills/foo.py)."""
+        """Read a file or list a directory inside the sandbox.
+
+        Use container paths (e.g. /workspace/skills/foo.py).
+        """
         if not ctx.tool_call_approved and (denied := await _gate(ctx, "read", {"path": path})):
             return denied
 
@@ -306,7 +266,7 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
     # --- Runtime ---
 
     @agent.tool
-    async def exec(ctx: RunContext[Deps], command: str, timeout: int = 30) -> str | ToolDenied:
+    async def exec(ctx: RunContext[Deps], command: str) -> str | ToolDenied:
         """Run a shell command (typically bash) and return its output. Runs in a Docker sandbox."""
         if not ctx.tool_call_approved:
             if denied := await _gate(ctx, "exec", {"command": command}):
@@ -315,7 +275,7 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
             _notify_approved_start(ctx, "exec", {"command": command})
 
         session_id = ctx.deps.session_state.session_id
-        result = await ctx.deps.sandbox.exec_command(session_id, command, timeout)
+        result = await ctx.deps.sandbox.exec_command(session_id, command)
 
         ctx.deps.security.append(
             ToolResultEntry(tool="exec", status="error" if result.startswith("Error") else "success"),
@@ -329,7 +289,7 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
     @agent.tool
     async def read_memory(ctx: RunContext[Deps], file_path: str = "", query: str = "") -> str:
         """Read memory files or search memory. Provide file_path to read a specific file, or query to search."""
-        store = MemoryStore(ctx.deps.data_dir)
+        store = MemoryStore(ctx.deps.knowledge_dir)
         if file_path:
             content = store.read(file_path)
             if content is None:
@@ -355,23 +315,6 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
             return result
         result = "Memory files:\n" + "\n".join(f"- {f}" for f in files)
         _notify_result(ctx, "read_memory", result)
-        return result
-
-    @agent.tool
-    async def write_memory(ctx: RunContext[Deps], file_path: str, content: str) -> str | ToolDenied:
-        """Write or update a memory file."""
-        if not ctx.tool_call_approved:
-            if denied := await _gate(ctx, "write_memory", {"file_path": file_path, "content": content[:200]}):
-                return denied
-        else:
-            _notify_approved_start(ctx, "write_memory", {"file_path": file_path})
-
-        store = MemoryStore(ctx.deps.data_dir)
-        result = store.write(file_path, content)
-        ctx.deps.security.append(
-            ToolResultEntry(tool="write_memory", status="success"),
-        )
-        _notify_result(ctx, "write_memory", result)
         return result
 
     return agent

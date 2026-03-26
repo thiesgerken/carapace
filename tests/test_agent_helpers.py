@@ -3,10 +3,14 @@
 from pathlib import Path
 from unittest.mock import MagicMock
 
+from pydantic_ai.models import Model
+
 from carapace.agent import build_system_prompt
+from carapace.git.store import GitStore
 from carapace.models import Config, Deps, SessionState
 from carapace.sandbox.manager import SandboxManager
 from carapace.security.context import SessionSecurity
+from carapace.security.sentinel import Sentinel
 from carapace.usage import UsageTracker
 
 
@@ -15,11 +19,14 @@ def test_build_system_prompt_minimal(tmp_path: Path):
     deps = Deps(
         config=Config(),
         data_dir=tmp_path,
+        knowledge_dir=tmp_path,
         session_state=state,
         rules=[],
         sandbox=MagicMock(spec=SandboxManager),
         security=SessionSecurity("test-123"),
-        sentinel=MagicMock(),
+        sentinel=MagicMock(spec=Sentinel),
+        git_store=MagicMock(spec=GitStore),
+        agent_model=MagicMock(spec=Model),
         usage_tracker=UsageTracker(),
     )
     prompt = build_system_prompt(deps)
@@ -32,11 +39,14 @@ def test_build_system_prompt_with_agents_md(tmp_path: Path):
     deps = Deps(
         config=Config(),
         data_dir=tmp_path,
+        knowledge_dir=tmp_path,
         session_state=state,
         rules=[],
         sandbox=MagicMock(spec=SandboxManager),
         security=SessionSecurity("s1"),
-        sentinel=MagicMock(),
+        sentinel=MagicMock(spec=Sentinel),
+        git_store=MagicMock(spec=GitStore),
+        agent_model=MagicMock(spec=Model),
         usage_tracker=UsageTracker(),
     )
     prompt = build_system_prompt(deps)

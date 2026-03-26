@@ -27,6 +27,8 @@ export interface HistoryMessage {
   tool_call_id?: string;
   explanation?: string;
   risk_level?: string;
+  ref?: string;
+  changed_files?: string[];
 }
 
 // WebSocket protocol — Server → Client
@@ -58,11 +60,19 @@ export interface ApprovalRequest {
   risk_level: string;
 }
 
-export interface ProxyApprovalRequest {
-  type: "proxy_approval_request";
+export interface DomainAccessApprovalRequest {
+  type: "domain_access_approval_request";
   request_id: string;
   domain: string;
   command: string;
+}
+
+export interface GitPushApprovalRequest {
+  type: "git_push_approval_request";
+  request_id: string;
+  ref: string;
+  explanation: string;
+  changed_files: string[];
 }
 
 export interface TurnUsage {
@@ -113,7 +123,8 @@ export type ServerMessage =
   | ToolCallInfo
   | ToolResultInfo
   | ApprovalRequest
-  | ProxyApprovalRequest
+  | DomainAccessApprovalRequest
+  | GitPushApprovalRequest
   | Done
   | CommandResult
   | ErrorMessage
@@ -135,12 +146,12 @@ export interface ApprovalResponse {
   approved: boolean;
 }
 
-export type DomainDecision = "allow" | "deny";
+export type EscalationDecision = "allow" | "deny";
 
-export interface ProxyApprovalResponse {
-  type: "proxy_approval_response";
+export interface EscalationResponse {
+  type: "escalation_response";
   request_id: string;
-  decision: DomainDecision;
+  decision: EscalationDecision;
 }
 
 export interface CancelRequest {
@@ -150,7 +161,7 @@ export interface CancelRequest {
 export type ClientMessage =
   | UserMessage
   | ApprovalResponse
-  | ProxyApprovalResponse
+  | EscalationResponse
   | CancelRequest;
 
 // Chat UI messages
@@ -169,9 +180,14 @@ export type ChatMessage =
     }
   | { kind: "approval"; request: ApprovalRequest }
   | {
-      kind: "proxy_approval";
-      request: ProxyApprovalRequest;
-      decision?: DomainDecision;
+      kind: "domain_access_approval";
+      request: DomainAccessApprovalRequest;
+      decision?: EscalationDecision;
+    }
+  | {
+      kind: "git_push_approval";
+      request: GitPushApprovalRequest;
+      decision?: EscalationDecision;
     }
   | { kind: "command"; command: string; data: unknown }
   | { kind: "error"; detail: string };

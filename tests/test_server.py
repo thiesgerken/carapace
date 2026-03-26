@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 import carapace.server as srv
 from carapace.bootstrap import ensure_data_dir
 from carapace.config import load_config
+from carapace.git.store import GitStore
 from carapace.sandbox.manager import SandboxManager
 from carapace.server import app
 from carapace.session import SessionEngine, SessionManager
@@ -39,6 +40,8 @@ def _setup_server(tmp_path, monkeypatch):
     srv._engine = SessionEngine(
         config=config,
         data_dir=tmp_path,
+        knowledge_dir=tmp_path,
+        git_store=MagicMock(spec=GitStore),
         session_mgr=session_mgr,
         skill_catalog=skill_catalog,
         agent_model=None,

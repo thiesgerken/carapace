@@ -148,7 +148,7 @@ def format_command_result_text(result: CommandResult) -> str:
 
 
 def format_domain_escalation(domain: str, command: str, explanation: str) -> str:
-    """Format a sentinel-escalated domain request as a Matrix message."""
+    """Format a sentinel-escalated domain access request as a Matrix message."""
     parts = [
         f"**🌐 Network Access Request** — domain: `{domain}`",
         f"**Command:** `{command}`",

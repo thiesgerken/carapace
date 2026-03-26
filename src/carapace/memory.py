@@ -4,8 +4,8 @@ from pathlib import Path
 
 
 class MemoryStore:
-    def __init__(self, data_dir: Path):
-        self.memory_dir = data_dir / "memory"
+    def __init__(self, knowledge_dir: Path):
+        self.memory_dir = knowledge_dir / "memory"
         self.memory_dir.mkdir(parents=True, exist_ok=True)
 
     def read(self, relative_path: str) -> str | None:

@@ -19,7 +19,7 @@ from typing import Any
 from pydantic_ai import DeferredToolRequests, DeferredToolResults, ToolDenied
 from pydantic_ai.messages import PartDeltaEvent, PartStartEvent, TextPart, TextPartDelta
 
-from carapace.agent import create_agent
+from carapace.agent.tools import create_agent
 from carapace.models import Deps
 from carapace.security.context import (
     AgentResponseEntry,
@@ -49,7 +49,7 @@ async def run_agent_turn(
     deps.security.append(UserMessageEntry(content=user_input))
 
     agent = create_agent(deps)
-    model_name = deps.agent_model.model_id if hasattr(deps.agent_model, "model_id") else deps.config.agent.model
+    model_name = deps.agent_model.model_id
 
     async def _stream_handler(_ctx: Any, events: Any) -> None:
         async for event in events:

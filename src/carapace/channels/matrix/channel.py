@@ -29,7 +29,7 @@ from carapace.channels.matrix.subscriber import MatrixSubscriber
 from carapace.models import Config, MatrixChannelConfig, MatrixTokenFile, SkillInfo
 from carapace.sandbox.manager import SandboxManager
 from carapace.session import SessionEngine, SessionManager
-from carapace.ws_models import ApprovalResponse, CommandResult, ProxyApprovalResponse
+from carapace.ws_models import ApprovalResponse, CommandResult, EscalationResponse
 
 
 class MatrixChannel:
@@ -372,7 +372,7 @@ class MatrixChannel:
                     decision = "allow" if approved else "deny"
                     await self._engine.submit_approval(
                         session_id,
-                        ProxyApprovalResponse(request_id=request_id, decision=decision),
+                        EscalationResponse(request_id=request_id, decision=decision),
                     )
                     sub._domain_events.pop(event.reacts_to, None)
                     self._pending_domain_approvals.pop(event.reacts_to, None)
@@ -517,7 +517,7 @@ class MatrixChannel:
             decision = "allow" if approve else "deny"
             await self._engine.submit_approval(
                 session_id,
-                ProxyApprovalResponse(request_id=request_id, decision=decision),
+                EscalationResponse(request_id=request_id, decision=decision),
             )
             sub._domain_events.pop(event_id, None)
             self._pending_domain_approvals.pop(event_id, None)

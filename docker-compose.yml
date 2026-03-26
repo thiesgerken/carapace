@@ -7,15 +7,16 @@ services:
     group_add:
       - ${DOCKER_GID:-0}
     volumes:
-      - ./data:/data
+      - ./data:/var/lib/carapace
       - /var/run/docker.sock:/var/run/docker.sock
       - ./src/carapace:/app/.venv/lib/python3.14/site-packages/carapace
     environment:
-      - CARAPACE_DATA_DIR=/data
+      - CARAPACE_CONFIG=/var/lib/carapace/config.yaml
       - CARAPACE_HOST_DATA_DIR=${PWD}/data
       - CARAPACE_TOKEN=${CARAPACE_TOKEN}
       - CARAPACE_RESET_ASSETS=true
       - CARAPACE_MATRIX_PASSWORD=${CARAPACE_MATRIX_PASSWORD:-}
+      - CARAPACE_GIT_TOKEN=${CARAPACE_GIT_TOKEN:-}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - GOOGLE_API_KEY=${GOOGLE_API_KEY}
     networks:

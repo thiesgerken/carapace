@@ -92,12 +92,12 @@ class Sentinel:
         self,
         *,
         model: str,
-        data_dir: Path,
+        knowledge_dir: Path,
         skills_dir: Path,
         reset_threshold: int = _RESET_THRESHOLD_DEFAULT,
     ) -> None:
         self._model = model
-        self._data_dir = data_dir
+        self._knowledge_dir = knowledge_dir
         self._skills_dir = skills_dir
         self._reset_threshold = reset_threshold
         self._agent = self._create_agent()
@@ -112,7 +112,7 @@ class Sentinel:
         return _build_system_prompt(self._load_security_md())
 
     def _load_security_md(self) -> str:
-        path = self._data_dir / "SECURITY.md"
+        path = self._knowledge_dir / "SECURITY.md"
         if path.exists():
             return path.read_text()
         return ""
@@ -191,7 +191,7 @@ class Sentinel:
 
         return result.output
 
-    async def evaluate_domain(
+    async def evaluate_domain_access(
         self,
         session: SessionSecurity,
         domain: str,
@@ -212,7 +212,7 @@ class Sentinel:
             prompt_parts.append("New entries since last evaluation:")
             prompt_parts.append(_format_action_log(new_entries))
 
-        prompt_parts.append(f"\nEVALUATE proxy_domain_request:\nDomain: {domain}\nTriggered by: {command}")
+        prompt_parts.append(f"\nEVALUATE domain_access_request:\nDomain: {domain}\nTriggered by: {command}")
 
         prompt = "\n".join(prompt_parts)
         result = await self._agent.run(
@@ -239,3 +239,50 @@ class Sentinel:
         self._agent = self._create_agent()
         self._message_history.clear()
         session.reset_sentinel()
+
+    async def evaluate_push(
+        self,
+        session: SessionSecurity,
+        ref: str,
+        is_default_branch: bool,
+        commits: str,
+        diff: str,
+        *,
+        usage_tracker: UsageTracker | None = None,
+    ) -> SentinelVerdict:
+        """Evaluate a Git push from the pre-receive hook."""
+        if self._should_reset(session):
+            self._reset(session)
+
+        new_entries = session.new_entries_since_sync()
+
+        prompt_parts: list[str] = []
+        if not self._message_history:
+            prompt_parts.append("Session started. Action log so far:")
+            prompt_parts.append(_format_action_log(session.action_log))
+        elif new_entries:
+            prompt_parts.append("New entries since last evaluation:")
+            prompt_parts.append(_format_action_log(new_entries))
+
+        prompt_parts.append("\nEVALUATE git_push:")
+        prompt_parts.append(f"Ref: {ref}")
+        prompt_parts.append(f"Is default branch: {is_default_branch}")
+        prompt_parts.append(f"Commits:\n{commits}")
+        # Truncate large diffs to avoid exceeding context limits
+        if len(diff) > 10000:
+            diff = diff[:10000] + "\n... (diff truncated)"
+        prompt_parts.append(f"Diff:\n{diff}")
+
+        prompt = "\n".join(prompt_parts)
+        result = await self._agent.run(
+            prompt,
+            deps=self._skills_dir,
+            message_history=self._message_history or None,
+        )
+        self._message_history = result.all_messages()
+        session.sentinel_eval_count += 1
+
+        if usage_tracker:
+            usage_tracker.record(self._model, "sentinel", result.usage())
+
+        return result.output

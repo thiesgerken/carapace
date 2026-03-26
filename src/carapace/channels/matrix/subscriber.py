@@ -128,9 +128,27 @@ class MatrixSubscriber:
             self._channel._pending_approvals[event_id] = pending
             self._channel._room_pending[self._room_id] = pending
 
-    async def on_proxy_approval_request(self, request_id: str, domain: str, command: str) -> None:
+    async def on_domain_access_approval_request(self, request_id: str, domain: str, command: str) -> None:
         explanation = ""  # not available at this level
         text = format_domain_escalation(domain, command, explanation)
+        event_id = await self._channel._send_text(self._room_id, text)
+        if event_id:
+            self._domain_events[event_id] = request_id
+            pending = PendingDomainApproval(event_id)
+            self._channel._pending_domain_approvals[event_id] = pending
+            self._channel._room_pending[self._room_id] = pending
+
+    async def on_git_push_approval_request(
+        self, request_id: str, ref: str, explanation: str, changed_files: list[str]
+    ) -> None:
+        parts = [f"📦 **Git Push Request** — ref: `{ref}`"]
+        if explanation:
+            parts.append(f"**Reason:** {explanation}")
+        if changed_files:
+            file_list = ", ".join(f"`{f}`" for f in changed_files[:20])
+            parts.append(f"**Changed files:** {file_list}")
+        parts.append("\nReact ✅ or type `/allow` / `/yes` to allow.\nReact ❌ or type `/deny` / `/no` to deny.")
+        text = "\n".join(parts)
         event_id = await self._channel._send_text(self._room_id, text)
         if event_id:
             self._domain_events[event_id] = request_id
@@ -145,4 +163,10 @@ class MatrixSubscriber:
         logger.debug(f"Matrix [{self._room_id}] domain: {domain} {detail}")
         if self._channel._verbose.get(self._room_id, True):
             notice = f"🌐 `{domain}` {detail}"
+            await self._channel._send_notice(self._room_id, notice)
+
+    async def on_git_push_info(self, ref: str, decision: str, detail: str) -> None:
+        logger.debug(f"Matrix [{self._room_id}] git_push: {ref} {decision} {detail}")
+        if self._channel._verbose.get(self._room_id, True):
+            notice = f"📦 `{ref}` {detail}"
             await self._channel._send_notice(self._room_id, notice)

@@ -7,23 +7,28 @@ import traceback
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Literal, Protocol, runtime_checkable
 
 from loguru import logger
 from pydantic_ai import ToolDenied
 from pydantic_ai.messages import ModelRequest, UserPromptPart
-from pydantic_ai.models import infer_model
+from pydantic_ai.models import Model, infer_model
 
 import carapace.security as security_mod
-from carapace.agent_loop import run_agent_turn
+from carapace.agent.loop import run_agent_turn
+from carapace.git.store import GitStore
 from carapace.memory import MemoryStore
 from carapace.models import Config, Deps, SessionState, SkillInfo
 from carapace.sandbox.manager import SandboxManager
 from carapace.security.context import SessionSecurity, UserVouchedEntry
 from carapace.security.sentinel import Sentinel
-from carapace.session_manager import SessionManager
+from carapace.session.manager import SessionManager
+from carapace.session.titler import generate_title
+from carapace.skills import SkillRegistry
 from carapace.usage import UsageTracker
-from carapace.ws_models import SLASH_COMMANDS, ApprovalRequest, ApprovalResponse, ProxyApprovalResponse, TurnUsage
+from carapace.ws_models import SLASH_COMMANDS, ApprovalRequest, ApprovalResponse, EscalationResponse, TurnUsage
+
+ModelType = Literal["agent", "sentinel", "title"]
 
 # security_mod is still imported for evaluate_domain_with (used in domain approval callback)
 
@@ -42,9 +47,13 @@ class SessionSubscriber(Protocol):
     async def on_error(self, detail: str) -> None: ...
     async def on_cancelled(self) -> None: ...
     async def on_approval_request(self, req: ApprovalRequest) -> None: ...
-    async def on_proxy_approval_request(self, request_id: str, domain: str, command: str) -> None: ...
+    async def on_domain_access_approval_request(self, request_id: str, domain: str, command: str) -> None: ...
+    async def on_git_push_approval_request(
+        self, request_id: str, ref: str, explanation: str, changed_files: list[str]
+    ) -> None: ...
     async def on_title_update(self, title: str) -> None: ...
     async def on_domain_info(self, domain: str, detail: str) -> None: ...
+    async def on_git_push_info(self, ref: str, decision: str, detail: str) -> None: ...
 
 
 # ---------------------------------------------------------------------------
@@ -61,15 +70,15 @@ class ActiveSession:
     agent_task: asyncio.Task[None] | None = None
     subscribers: list[SessionSubscriber] = field(default_factory=list)
     tool_approval_queue: asyncio.Queue[ApprovalResponse | None] = field(default_factory=asyncio.Queue)
-    proxy_approval_queue: asyncio.Queue[ProxyApprovalResponse | None] = field(default_factory=asyncio.Queue)
+    escalation_queue: asyncio.Queue[EscalationResponse | None] = field(default_factory=asyncio.Queue)
     usage_tracker: UsageTracker = field(default_factory=UsageTracker)
     verbose: bool = True
-    agent_model: Any = None
+    agent_model: Model | None = None
     agent_model_name: str | None = None
     sentinel_model_name: str | None = None
     title_model_name: str | None = None
     pending_approval_requests: list[dict[str, Any]] = field(default_factory=list)
-    pending_proxy_approvals: list[dict[str, Any]] = field(default_factory=list)
+    pending_escalations: list[dict[str, Any]] = field(default_factory=list)
     _pending_sends: set[asyncio.Task[Any]] = field(default_factory=set)
 
 
@@ -92,14 +101,18 @@ class SessionEngine:
         *,
         config: Config,
         data_dir: Path,
+        knowledge_dir: Path,
+        git_store: GitStore,
         session_mgr: SessionManager,
         skill_catalog: list[SkillInfo],
-        agent_model: Any,
+        agent_model: Model | None,
         sandbox_mgr: SandboxManager,
-        model_factory: Callable[[str], Any] | None = None,
+        model_factory: Callable[[str], Model] | None = None,
     ) -> None:
         self._config = config
         self._data_dir = data_dir
+        self._knowledge_dir = knowledge_dir
+        self._git_store = git_store
         self._session_mgr = session_mgr
         self._skill_catalog = skill_catalog
         self._agent_model = agent_model
@@ -134,12 +147,16 @@ class SessionEngine:
         return self._sandbox_mgr
 
     @property
-    def agent_model(self) -> Any:
+    def agent_model(self) -> Model | None:
         return self._agent_model
 
     @property
     def available_models(self) -> list[str]:
         return self._available_models()
+
+    def _resolve_model(self, name: str) -> Model:
+        """Create a Model from a name, using the model_factory if available."""
+        return self._model_factory(name) if self._model_factory else infer_model(name)
 
     # -- session lifecycle --
 
@@ -156,8 +173,8 @@ class SessionEngine:
         security = SessionSecurity(session_id, audit_dir=audit_dir)
         sentinel = Sentinel(
             model=self._config.agent.sentinel_model,
-            data_dir=self._data_dir,
-            skills_dir=self._data_dir / "skills",
+            knowledge_dir=self._knowledge_dir,
+            skills_dir=self._knowledge_dir / "skills",
         )
         usage_tracker = self._session_mgr.load_usage(session_id)
 
@@ -171,8 +188,9 @@ class SessionEngine:
 
         # Wire security callbacks so domain escalation / info works
         # even outside an agent turn (e.g. during sandbox setup).
-        security.set_user_escalation_callback(self._make_domain_escalation_cb(active))
+        security.set_user_escalation_callback(self._make_escalation_cb(active))
         security.set_domain_info_callback(self._make_domain_info_cb(active))
+        security.set_push_info_callback(self._make_push_info_cb(active))
 
         # Register a domain-approval callback so the sandbox proxy can
         # evaluate domain requests through the per-session sentinel.
@@ -256,11 +274,13 @@ class SessionEngine:
         return Deps(
             config=self._config,
             data_dir=self._data_dir,
+            knowledge_dir=self._knowledge_dir,
             session_state=active.state,
             security=active.security,
             sentinel=active.sentinel,
+            git_store=self._git_store,
             skill_catalog=self._skill_catalog,
-            agent_model=active.agent_model or self._agent_model,
+            agent_model=active.agent_model or self._agent_model or self._resolve_model(self._config.agent.model),
             verbose=active.verbose,
             tool_call_callback=tool_call_callback,
             tool_result_callback=tool_result_callback,
@@ -286,8 +306,8 @@ class SessionEngine:
         # Drain leftover approval responses
         while not active.tool_approval_queue.empty():
             active.tool_approval_queue.get_nowait()
-        while not active.proxy_approval_queue.empty():
-            active.proxy_approval_queue.get_nowait()
+        while not active.escalation_queue.empty():
+            active.escalation_queue.get_nowait()
 
         active.agent_task = asyncio.create_task(
             self._run_turn(active, content, origin=origin),
@@ -302,7 +322,7 @@ class SessionEngine:
         if active.agent_task and not active.agent_task.done():
             active.agent_task.cancel()
             active.tool_approval_queue.put_nowait(None)
-            active.proxy_approval_queue.put_nowait(None)
+            active.escalation_queue.put_nowait(None)
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await active.agent_task
             active.agent_task = None
@@ -310,15 +330,15 @@ class SessionEngine:
     async def submit_approval(
         self,
         session_id: str,
-        response: ApprovalResponse | ProxyApprovalResponse,
+        response: ApprovalResponse | EscalationResponse,
     ) -> None:
-        """Forward an approval / proxy-approval response to the running turn."""
+        """Forward an approval / escalation response to the running turn."""
         active = self._active.get(session_id)
         if active:
             if isinstance(response, ApprovalResponse):
                 active.tool_approval_queue.put_nowait(response)
             else:
-                active.proxy_approval_queue.put_nowait(response)
+                active.escalation_queue.put_nowait(response)
 
     # -- slash commands --
 
@@ -335,7 +355,7 @@ class SessionEngine:
             return {"command": "help", "data": {"commands": SLASH_COMMANDS}}
 
         if cmd == "/security":
-            security_path = self._data_dir / "SECURITY.md"
+            security_path = self._knowledge_dir / "SECURITY.md"
             policy = security_path.read_text() if security_path.exists() else "(no SECURITY.md loaded)"
             log_count = len(active.security.action_log) if active.security else 0
             eval_count = active.security.sentinel_eval_count if active.security else 0
@@ -372,7 +392,7 @@ class SessionEngine:
             return {"command": "skills", "data": skills}
 
         if cmd == "/memory":
-            store = MemoryStore(self._data_dir)
+            store = MemoryStore(self._knowledge_dir)
             files = store.list_files()
             return {"command": "memory", "data": files}
 
@@ -380,7 +400,12 @@ class SessionEngine:
             return self._handle_models_command(active)
 
         if cmd in ("/model", "/model-sentinel", "/model-title"):
-            model_type = {"model": "agent", "/model-sentinel": "sentinel", "/model-title": "title"}.get(cmd, "agent")
+            model_map: dict[str, ModelType] = {
+                "/model": "agent",
+                "/model-sentinel": "sentinel",
+                "/model-title": "title",
+            }
+            model_type = model_map[cmd]
             return await self._handle_model_command(active, model_type, parts[1].strip() if len(parts) > 1 else "")
 
         if cmd == "/usage":
@@ -397,11 +422,42 @@ class SessionEngine:
                 },
             }
 
+        if cmd == "/pull":
+            return await self._handle_pull_command()
+
+        if cmd == "/push":
+            return await self._handle_push_command()
+
         return None
+
+    # -- pull / push from/to remote --
+
+    async def _handle_push_command(self) -> dict[str, Any]:
+        """Handle the ``/push`` slash command — push to external remote."""
+        if not self._config.git.remote:
+            return {"command": "push", "data": {"message": "No external remote configured."}}
+        try:
+            await self._git_store.push_to_remote()
+            return {"command": "push", "data": {"message": "Pushed to external remote."}}
+        except Exception as exc:
+            return {"command": "push", "data": {"message": f"Push failed: {exc}"}}
+
+    async def _handle_pull_command(self) -> dict[str, Any]:
+        """Handle the ``/pull`` slash command — pull from external remote."""
+        if not self._config.git.remote:
+            return {"command": "pull", "data": {"message": "No external remote configured."}}
+        try:
+            summary = await self._git_store.pull_from_remote()
+            # Re-scan skills after pull
+            registry = SkillRegistry(self._knowledge_dir / "skills")
+            self._skill_catalog = registry.scan()
+            return {"command": "pull", "data": {"message": summary}}
+        except RuntimeError as exc:
+            return {"command": "pull", "data": {"message": f"Pull failed: {exc}"}}
 
     # -- model switching --
 
-    _MODEL_TYPES = ("agent", "sentinel", "title")
+    _MODEL_TYPES: tuple[ModelType, ...] = ("agent", "sentinel", "title")
 
     def _handle_models_command(self, active: ActiveSession) -> dict[str, Any]:
         """Show all model types with their current and default values."""
@@ -419,7 +475,7 @@ class SessionEngine:
         available = self._available_models()
         return {"command": "models", "data": {"models": models, "available": available}}
 
-    async def _handle_model_command(self, active: ActiveSession, model_type: str, arg: str) -> dict[str, Any]:
+    async def _handle_model_command(self, active: ActiveSession, model_type: ModelType, arg: str) -> dict[str, Any]:
         """Process ``/model[-(sentinel|title)] [MODEL | reset]``."""
         cmd_name = {"agent": "model", "sentinel": "model-sentinel", "title": "model-title"}[model_type]
         defaults = {
@@ -463,7 +519,9 @@ class SessionEngine:
             "data": {"current": arg, "default": default, "message": f"Switched to: {arg}"},
         }
 
-    def _apply_model_override(self, active: ActiveSession, model_type: str, name: str | None, model_obj: Any) -> None:
+    def _apply_model_override(
+        self, active: ActiveSession, model_type: ModelType, name: str | None, model_obj: Model | None = None
+    ) -> None:
         if model_type == "agent":
             active.agent_model = model_obj
             active.agent_model_name = name
@@ -651,8 +709,6 @@ class SessionEngine:
         self._session_mgr.save_history(session_id, history)
 
     async def _generate_title(self, active: ActiveSession, events: list[dict[str, Any]]) -> None:
-        from carapace.titler import generate_title
-
         session_id = active.state.session_id
         try:
             title = await generate_title(
@@ -667,43 +723,89 @@ class SessionEngine:
         except Exception as exc:
             logger.warning(f"Title generation failed for {session_id}: {exc}")
 
-    def _make_domain_escalation_cb(
+    def _make_escalation_cb(
         self,
         active: ActiveSession,
     ) -> Callable[[str, str, dict[str, Any]], Awaitable[bool]]:
-        """Build a callback that broadcasts proxy-domain escalations to subscribers."""
+        """Build a callback that broadcasts sentinel escalations (proxy domain or git push) to subscribers."""
 
-        async def _escalate(session_id: str, domain: str, context: dict[str, Any]) -> bool:
+        async def _escalate(session_id: str, subject: str, context: dict[str, Any]) -> bool:
             request_id = secrets.token_hex(8)
             cmd = context.get("command", "")
-            self._session_mgr.append_events(
-                session_id,
-                [{"role": "proxy_approval", "request_id": request_id, "domain": domain, "command": cmd}],
-            )
-            active.pending_proxy_approvals.append({"request_id": request_id, "domain": domain})
-            await self._broadcast(active, "on_proxy_approval_request", request_id, domain, cmd)
+            kind = context.get("kind", "domain_access")
+
+            # Auto-deny stale pending escalations of the same kind+key.
+            # This happens when an exec timeout killed git push but the old
+            # escalation callback is still blocked on the queue.
+            match_key = "ref" if kind == "git_push" else "domain"
+            match_val = context.get(match_key, subject)
+            for old in list(active.pending_escalations):
+                if old.get("kind") == kind and old.get(match_key) == match_val:
+                    logger.info(f"Superseding stale {kind} escalation {old['request_id']} for {match_val}")
+                    active.escalation_queue.put_nowait(
+                        EscalationResponse(request_id=old["request_id"], decision="deny")
+                    )
+
+            if kind == "git_push":
+                ref = context.get("ref", subject)
+                explanation = context.get("explanation", "")
+                changed_files: list[str] = context.get("changed_files", [])
+                self._session_mgr.append_events(
+                    session_id,
+                    [
+                        {
+                            "role": "git_push_approval",
+                            "request_id": request_id,
+                            "ref": ref,
+                            "explanation": explanation,
+                            "changed_files": changed_files,
+                        }
+                    ],
+                )
+                active.pending_escalations.append(
+                    {
+                        "request_id": request_id,
+                        "kind": "git_push",
+                        "ref": ref,
+                        "explanation": explanation,
+                        "changed_files": changed_files,
+                    }
+                )
+                await self._broadcast(
+                    active, "on_git_push_approval_request", request_id, ref, explanation, changed_files
+                )
+            else:
+                self._session_mgr.append_events(
+                    session_id,
+                    [{"role": "domain_access_approval", "request_id": request_id, "domain": subject, "command": cmd}],
+                )
+                active.pending_escalations.append(
+                    {"request_id": request_id, "kind": "domain_access", "domain": subject, "command": cmd}
+                )
+                await self._broadcast(active, "on_domain_access_approval_request", request_id, subject, cmd)
             # Block until a subscriber responds
             while True:
-                msg = await active.proxy_approval_queue.get()
+                msg = await active.escalation_queue.get()
                 if msg is None:
-                    active.pending_proxy_approvals.clear()
+                    active.pending_escalations.clear()
                     return False
                 if msg.request_id == request_id:
                     decision = msg.decision
+                    event_role = "git_push_approval" if kind == "git_push" else "domain_access_approval"
                     self._session_mgr.append_events(
                         session_id,
                         [
                             {
-                                "role": "proxy_approval",
+                                "role": event_role,
                                 "request_id": request_id,
-                                "domain": domain,
+                                "domain": subject,
                                 "command": cmd,
                                 "decision": decision,
                             }
                         ],
                     )
-                    active.pending_proxy_approvals = [
-                        p for p in active.pending_proxy_approvals if p["request_id"] != request_id
+                    active.pending_escalations = [
+                        p for p in active.pending_escalations if p["request_id"] != request_id
                     ]
                     return decision != "deny"
 
@@ -716,6 +818,22 @@ class SessionEngine:
             task = asyncio.ensure_future(self._broadcast(active, "on_domain_info", domain, detail))
             active._pending_sends.add(task)
             task.add_done_callback(active._pending_sends.discard)
+
+        return _notify
+
+    def _make_push_info_cb(
+        self,
+        active: ActiveSession,
+    ) -> Callable[[str, str, str], Awaitable[None]]:
+        """Build a callback that broadcasts git push decisions to subscribers."""
+        session_id = active.state.session_id
+
+        async def _notify(ref: str, decision: str, detail: str) -> None:
+            self._session_mgr.append_events(
+                session_id,
+                [{"role": "git_push", "ref": ref, "decision": decision, "detail": detail}],
+            )
+            await self._broadcast(active, "on_git_push_info", ref, decision, detail)
 
         return _notify
 

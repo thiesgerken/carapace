@@ -59,6 +59,13 @@ class UserVouchedEntry(BaseModel):
     type: Literal["user_vouched"] = "user_vouched"
 
 
+class GitPushEntry(BaseModel):
+    type: Literal["git_push"] = "git_push"
+    ref: str
+    decision: Literal["allowed", "escalated", "denied"] = "allowed"
+    explanation: str = ""
+
+
 ActionLogEntry = Annotated[
     UserMessageEntry
     | ToolCallEntry
@@ -66,7 +73,8 @@ ActionLogEntry = Annotated[
     | AgentResponseEntry
     | ApprovalEntry
     | SkillActivatedEntry
-    | UserVouchedEntry,
+    | UserVouchedEntry
+    | GitPushEntry,
     Field(discriminator="type"),
 ]
 
@@ -85,7 +93,7 @@ class SentinelVerdict(BaseModel):
 
 class AuditEntry(BaseModel):
     timestamp: datetime
-    kind: Literal["tool_call", "proxy_domain"]
+    kind: Literal["tool_call", "proxy_domain", "git_push"]
     tool: str | None = None
     args_summary: dict[str, Any] = {}
     domain: str | None = None
@@ -97,7 +105,7 @@ class AuditEntry(BaseModel):
     def now(
         cls,
         *,
-        kind: Literal["tool_call", "proxy_domain"],
+        kind: Literal["tool_call", "proxy_domain", "git_push"],
         final_decision: Literal["auto_allowed", "allowed", "escalated", "denied"],
         tool: str | None = None,
         args_summary: dict[str, Any] | None = None,
@@ -133,12 +141,14 @@ class SessionSecurity:
             | ApprovalEntry
             | SkillActivatedEntry
             | UserVouchedEntry
+            | GitPushEntry
         ] = []
         self.sentinel_eval_count: int = 0
         self._last_synced_idx: int = 0
         self._audit_dir = audit_dir
         self._user_escalation_callback: Callable[[str, str, dict[str, Any]], Awaitable[bool]] | None = None
         self._domain_info_callback: Callable[[str, str], None] | None = None
+        self._push_info_callback: Callable[[str, str, str], Awaitable[None]] | None = None
 
     def append(self, entry: ActionLogEntry) -> None:
         self.action_log.append(entry)
@@ -153,6 +163,7 @@ class SessionSecurity:
         | ApprovalEntry
         | SkillActivatedEntry
         | UserVouchedEntry
+        | GitPushEntry
     ]:
         """Return action log entries added since the last sentinel sync."""
         entries = self.action_log[self._last_synced_idx :]
@@ -197,11 +208,25 @@ class SessionSecurity:
         if self._domain_info_callback is not None:
             self._domain_info_callback(domain, detail)
 
-    async def escalate_to_user(self, domain: str, context: dict[str, Any]) -> bool:
+    def set_push_info_callback(
+        self,
+        callback: Callable[[str, str, str], Awaitable[None]] | None,
+    ) -> None:
+        """Set callback to notify the UI about push evaluation decisions.
+
+        Signature: ``callback(ref, decision, detail)``.
+        """
+        self._push_info_callback = callback
+
+    async def notify_push_decision(self, ref: str, decision: str, detail: str) -> None:
+        if self._push_info_callback is not None:
+            await self._push_info_callback(ref, decision, detail)
+
+    async def escalate_to_user(self, subject: str, context: dict[str, Any]) -> bool:
         if self._user_escalation_callback is None:
-            logger.warning(f"No user escalation callback for session {self.session_id}, denying {domain}")
+            logger.warning(f"No user escalation callback for session {self.session_id}, denying {subject}")
             return False
-        return await self._user_escalation_callback(self.session_id, domain, context)
+        return await self._user_escalation_callback(self.session_id, subject, context)
 
     def reset_sentinel(self) -> None:
         self.sentinel_eval_count = 0

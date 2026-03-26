@@ -31,12 +31,20 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:
             - name: api
-              containerPort: 8321
+              containerPort: {{ .Values.server.apiPort }}
+            - name: sandbox-api
+              containerPort: {{ .Values.server.sandboxPort }}
             - name: proxy
-              containerPort: 3128
+              containerPort: {{ .Values.server.proxyPort }}
           env:
-            - name: CARAPACE_DATA_DIR
-              value: /data
+            - name: CARAPACE_CONFIG
+              value: /var/lib/carapace/config.yaml
+            - name: CARAPACE_SERVER_PORT
+              value: {{ .Values.server.apiPort | quote }}
+            - name: CARAPACE_SERVER_SANDBOX_PORT
+              value: {{ .Values.server.sandboxPort | quote }}
+            - name: CARAPACE_SANDBOX_PROXY_PORT
+              value: {{ .Values.server.proxyPort | quote }}
             - name: CARAPACE_SANDBOX_RUNTIME
               value: kubernetes
             - name: CARAPACE_SANDBOX_BASE_IMAGE
@@ -68,10 +76,10 @@ spec:
           {{- end }}
           volumeMounts:
             - name: data
-              mountPath: /data
+              mountPath: /var/lib/carapace
           {{- if .Values.config }}
             - name: config
-              mountPath: /data/config.yaml
+              mountPath: /var/lib/carapace/config.yaml
               subPath: config.yaml
               readOnly: true
           {{- end }}

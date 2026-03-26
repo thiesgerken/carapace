@@ -20,6 +20,15 @@ frontend:
     limits:
       memory: 128Mi
 
+# -- Server ports
+server:
+  # -- API port (FastAPI / REST + WebSocket)
+  apiPort: 8321
+  # -- Sandbox-facing API port (Basic Auth, Git HTTP backend)
+  sandboxPort: 8322
+  # -- Proxy port (sandbox HTTP proxy)
+  proxyPort: 3128
+
 sandbox:
   image:
     registry: ghcr.io
@@ -36,14 +45,16 @@ ingress:
   # -- Extra annotations on the HTTPRoute
   annotations: {}
 
-# -- Persistence (RWX PVC shared between server and sandbox pods)
+# -- Persistence
 persistence:
-  # -- Leave empty to use the cluster default StorageClass
-  storageClassName: ""
-  size: 10Gi
-  # -- Finalizers to protect the PVC from accidental deletion (e.g. by ArgoCD pruning)
-  finalizers: []
-  # - kubernetes.io/pvc-protection
+  # Data PVC (config, sessions, knowledge — RWX for sandbox pod access)
+  data:
+    # -- Leave empty to use the cluster default StorageClass
+    storageClassName: ""
+    size: 10Gi
+    # -- Finalizers to protect the PVC from accidental deletion (e.g. by ArgoCD pruning)
+    finalizers: []
+    # - kubernetes.io/pvc-protection
 
 # -- Priority class name for all pods (server, frontend, sandbox)
 priorityClassName: ""

@@ -6,7 +6,6 @@ import json
 import re
 import secrets
 import shlex
-import shutil
 import time
 from collections.abc import Awaitable, Callable
 from pathlib import Path
@@ -24,10 +23,6 @@ from carapace.sandbox.runtime import (
 )
 
 _SKILL_NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]*$")
-
-# Workspace files that are copied (not mounted) into each session sandbox.
-# The agent can edit these copies and use save_workspace_file to persist them.
-_WORKSPACE_FILES = ("AGENTS.md", "SOUL.md", "USER.md", "SECURITY.md")
 
 # Inline Python scripts executed inside the sandbox container.
 # Data is passed as base64-encoded CLI args to avoid shell-escaping issues.
@@ -131,19 +126,25 @@ class SandboxManager:
         self,
         runtime: ContainerRuntime,
         data_dir: Path,
+        knowledge_dir: Path,
         base_image: str = "carapace-sandbox:latest",
         network_name: str = "carapace-sandbox",
         idle_timeout_minutes: int = 15,
         host_data_dir: Path | None = None,
         proxy_port: int = 3128,
+        sandbox_port: int = 8322,
+        git_author: str = "Carapace Session %s <%s@carapace.local>",
     ) -> None:
         self._runtime = runtime
         self._data_dir = data_dir
+        self._knowledge_dir = knowledge_dir
+        self._git_author = git_author
         self._host_data_dir = host_data_dir
         self._base_image = base_image
         self._network_name = network_name
         self._idle_timeout = idle_timeout_minutes * 60
         self._proxy_port = proxy_port
+        self._sandbox_port = sandbox_port
         self._sessions: dict[str, SessionContainer] = {}
         self._token_to_session: dict[str, str] = {}
         self._session_tokens: dict[str, str] = {}
@@ -165,6 +166,38 @@ class SandboxManager:
         """Register a callback to retrieve activated skills for a session (from persisted state)."""
         self._get_activated_skills_cb = cb
 
+    def _get_or_create_token(self, session_id: str) -> str:
+        """Return the proxy token for *session_id*, loading or creating as needed.
+
+        Order: in-memory → on-disk file → generate new.
+        The result is always written back to memory and disk.
+        """
+        token = self._session_tokens.get(session_id)
+        if token:
+            return token
+
+        token_path = self._data_dir / "sessions" / session_id / "token"
+        if token_path.exists():
+            token = token_path.read_text().strip()
+            logger.debug(f"Restored token for session {session_id} from disk")
+        else:
+            token = secrets.token_hex(16)
+            token_path.parent.mkdir(parents=True, exist_ok=True)
+            token_path.write_text(token)
+
+        self._session_tokens[session_id] = token
+        self._token_to_session[token] = session_id
+        return token
+
+    async def _log_container_tail(self, container_id: str, session_id: str) -> None:
+        """Log the last lines of a dead/stopped container for troubleshooting."""
+        try:
+            tail = await self._runtime.logs(container_id)
+            if tail and tail.strip():
+                logger.info(f"Last logs from container {container_id[:12]} (session {session_id}):\n{tail}")
+        except Exception:
+            logger.opt(exception=True).warning(f"Could not retrieve logs from container {container_id[:12]}")
+
     def _get_exec_lock(self, session_id: str) -> asyncio.Lock:
         if session_id not in self._exec_locks:
             self._exec_locks[session_id] = asyncio.Lock()
@@ -181,32 +214,16 @@ class SandboxManager:
             logger.warning(
                 f"Container {sc.container_id[:12]} for session {session_id} is no longer running, recreating"
             )
+            await self._log_container_tail(sc.container_id, session_id)
             self._prepare_session_recreate(session_id)
 
         session_workspace = self._data_dir / "sessions" / session_id / "workspace"
-        for subdir in ("skills", "tmp"):
-            d = session_workspace / subdir
-            d.mkdir(parents=True, exist_ok=True)
-            # Make world-writable so sandbox containers running as UID 1000
-            # can write to PVC subPath mounts (chown may not be available).
-            d.chmod(0o777)
+        session_workspace.mkdir(parents=True, exist_ok=True)
+        # Make world-writable so sandbox containers running as UID 1000
+        # can write to PVC subPath mounts (chown may not be available).
+        session_workspace.chmod(0o777)
 
-        # Copy workspace files into the session so the agent can edit them.
-        for filename in _WORKSPACE_FILES:
-            src = self._data_dir / filename
-            if src.exists():
-                dst = session_workspace / filename
-                shutil.copy2(src, dst)
-
-        proxy_token = secrets.token_hex(16)
-        # Evict any orphaned token left by a previous failed attempt for this
-        # session (one that never reached _sessions so _cleanup_tracking was
-        # never called on retry).
-        old_token = self._session_tokens.get(session_id)
-        if old_token:
-            self._token_to_session.pop(old_token, None)
-        self._token_to_session[proxy_token] = session_id
-        self._session_tokens[session_id] = proxy_token
+        proxy_token = self._get_or_create_token(session_id)
         try:
             host_ip = await self._runtime.get_host_ip(self._network_name)
             if not host_ip:
@@ -219,19 +236,28 @@ class SandboxManager:
             logger.info(f"Proxy URL for session {session_id}: {proxy_url}")
 
             mounts = self._build_mounts(session_id)
-            env = self._build_proxy_env(proxy_token, proxy_url)
+            env = self._build_proxy_env(session_id, proxy_token, proxy_url)
             config = ContainerConfig(
                 image=self._base_image,
                 name=f"carapace-sandbox-{session_id}",
                 labels={"carapace.session": session_id, "carapace.managed": "true"},
                 mounts=mounts,
                 network=self._network_name,
-                command=["sh", "-c", "setup-proxy.sh && echo 'carapace sandbox ready' && exec sleep infinity"],
+                command=[
+                    "sh",
+                    "-c",
+                    "setup-proxy.sh && echo 'carapace sandbox ready' && exec sleep infinity",
+                ],
                 environment=env,
             )
 
             container_id = await self._runtime.create(config)
             ip = await self._runtime.get_ip(container_id, self._network_name)
+
+            # Wait for the container to finish setup (proxy config etc.)
+            # before running the git clone as a separate exec.
+            await self._wait_for_ready(container_id, session_id)
+            await self._clone_knowledge_repo(container_id, session_id)
         except BaseException:
             self._cleanup_tracking(session_id)
             raise
@@ -247,6 +273,35 @@ class SandboxManager:
         logger.info(f"Created sandbox container {container_id[:12]} for session {session_id} (IP: {ip})")
         return sc, True
 
+    _READY_MARKER = "carapace sandbox ready"
+
+    async def _wait_for_ready(self, container_id: str, session_id: str) -> None:
+        """Poll container logs until the ready marker appears (up to 30s)."""
+        for _ in range(30):
+            log_output = await self._runtime.logs(container_id, tail=10)
+            if self._READY_MARKER in log_output:
+                return
+            await asyncio.sleep(1)
+        logger.warning(f"Sandbox for {session_id} did not become ready within 30s")
+
+    async def _clone_knowledge_repo(self, container_id: str, session_id: str) -> None:
+        """Clone the knowledge repo into the sandbox if not already present."""
+        probe = await self._runtime.exec(
+            container_id,
+            "test -d /workspace/.git",
+            timeout=5,
+        )
+        if probe.exit_code == 0:
+            logger.debug(f"Knowledge repo already present in sandbox for {session_id}")
+            return
+        result = await self._runtime.exec(
+            container_id,
+            "git clone $GIT_REPO_URL /workspace",
+            timeout=60,
+        )
+        if result.exit_code != 0:
+            logger.error(f"Git clone failed in sandbox for {session_id} (exit {result.exit_code}): {result.output}")
+
     def _host_path(self, path: Path) -> str:
         """Translate a container-local path to its host-side equivalent for bind mounts.
 
@@ -260,66 +315,34 @@ class SandboxManager:
         try:
             rel = resolved.relative_to(self._data_dir.resolve())
         except ValueError:
+            # Path is not under data_dir — use it as-is (no rewriting needed).
             return str(resolved)
         return str(self._host_data_dir / rel)
 
     def _build_mounts(self, session_id: str) -> list[Mount]:
-        mounts: list[Mount] = []
-
         session_workspace = self._data_dir / "sessions" / session_id / "workspace"
-
-        # Workspace files are copies (not read-only mounts) so the agent can
-        # edit them and save back via save_workspace_file.
-        for filename in _WORKSPACE_FILES:
-            path = session_workspace / filename
-            if path.exists():
-                mounts.append(
-                    Mount(
-                        source=self._host_path(path),
-                        target=f"/workspace/{filename}",
-                        read_only=False,
-                    )
-                )
-
-        memory_dir = self._data_dir / "memory"
-        if memory_dir.exists():
-            mounts.append(
-                Mount(
-                    source=self._host_path(memory_dir),
-                    target="/workspace/memory",
-                    read_only=True,
-                )
-            )
-
-        session_workspace = self._data_dir / "sessions" / session_id / "workspace"
-        mounts.append(
+        return [
             Mount(
-                source=self._host_path(session_workspace / "skills"),
-                target="/workspace/skills",
+                source=self._host_path(session_workspace),
+                target="/workspace",
                 read_only=False,
-            )
-        )
+            ),
+        ]
 
-        mounts.append(
-            Mount(
-                source=self._host_path(session_workspace / "tmp"),
-                target="/workspace/tmp",
-                read_only=False,
-            )
-        )
-
-        return mounts
-
-    def _build_proxy_env(self, proxy_token: str, proxy_url: str) -> dict[str, str]:
+    def _build_proxy_env(self, session_id: str, proxy_token: str, proxy_url: str) -> dict[str, str]:
         """Build HTTP_PROXY / NO_PROXY env vars for session containers."""
         if not proxy_url:
             return {}
-        # Embed the per-session token as proxy auth: http://token@host:port
+        # Embed credentials as session_id:token (standard Basic Auth)
         scheme, rest = proxy_url.split("://", 1)
-        authed_url = f"{scheme}://{proxy_token}@{rest}"
+        authed_url = f"{scheme}://{session_id}:{proxy_token}@{rest}"
         # Extract host (without scheme/port/auth) for NO_PROXY
         no_proxy_host = rest.rsplit(":", 1)[0]
         no_proxy = ",".join([no_proxy_host, "localhost", "127.0.0.1"])
+        # Git clone URL — points at the API server (Basic Auth)
+        git_url = (
+            f"{scheme}://{session_id}:{proxy_token}@{no_proxy_host}:{self._sandbox_port}/git/{self._knowledge_dir.name}"
+        )
         return {
             "HTTP_PROXY": authed_url,
             "HTTPS_PROXY": authed_url,
@@ -333,10 +356,35 @@ class SandboxManager:
             # npm / node-based tools
             "npm_config_proxy": authed_url,
             "npm_config_https_proxy": authed_url,
+            # Git knowledge repo URL (cloned during sandbox setup)
+            "GIT_REPO_URL": git_url,
+            # Git identity for commits made inside the sandbox
+            **self._git_identity_env(session_id),
+        }
+
+    def _git_identity_env(self, session_id: str) -> dict[str, str]:
+        """Derive GIT_AUTHOR/COMMITTER env vars from the author template."""
+        filled = self._git_author.replace("%s", session_id)
+        if "<" in filled and filled.endswith(">"):
+            name, _, email = filled.rpartition("<")
+            name, email = name.strip(), email.rstrip(">").strip()
+        else:
+            name, email = filled, f"{session_id}@carapace"
+        return {
+            "GIT_AUTHOR_NAME": name,
+            "GIT_COMMITTER_NAME": name,
+            "GIT_AUTHOR_EMAIL": email,
+            "GIT_COMMITTER_EMAIL": email,
         }
 
     async def _exec(
-        self, session_id: str, command: str, timeout: int = 30, *, bypass_proxy: bool = False
+        self,
+        session_id: str,
+        command: str,
+        timeout: int = 30,
+        *,
+        bypass_proxy: bool = False,
+        workdir: str | None = None,
     ) -> ExecResult:
         """Run a command in the sandbox and return the raw ExecResult.
 
@@ -359,13 +407,24 @@ class SandboxManager:
                 self._session_current_command[session_id] = command
                 self._exec_temp_domains[session_id] = set()
                 try:
-                    return await self._runtime.exec(sc.container_id, command, timeout=timeout)
+                    return await self._runtime.exec(
+                        sc.container_id,
+                        command,
+                        timeout=timeout,
+                        workdir=workdir,
+                    )
                 except ContainerGoneError:
                     logger.warning(f"Container gone for session {session_id}, recreating sandbox")
+                    await self._log_container_tail(sc.container_id, session_id)
                     self._prepare_session_recreate(session_id)
                     sc, _ = await self.ensure_session(session_id)
                     await self._rebuild_skill_venvs(session_id)
-                    return await self._runtime.exec(sc.container_id, command, timeout=timeout)
+                    return await self._runtime.exec(
+                        sc.container_id,
+                        command,
+                        timeout=timeout,
+                        workdir=workdir,
+                    )
             finally:
                 if bypass_proxy:
                     self._proxy_bypass_sessions.discard(session_id)
@@ -373,9 +432,16 @@ class SandboxManager:
                 self._session_current_command.pop(session_id, None)
                 self._exec_temp_domains.pop(session_id, None)
 
-    async def exec_command(self, session_id: str, command: str, timeout: int = 30) -> str:
+    _KNOWLEDGE_WORKDIR = "/workspace"
+
+    async def exec_command(self, session_id: str, command: str, timeout: int = 3600) -> str:
         """Run a command in the sandbox and return formatted output."""
-        result = await self._exec(session_id, command, timeout=timeout)
+        result = await self._exec(
+            session_id,
+            command,
+            timeout=timeout,
+            workdir=self._KNOWLEDGE_WORKDIR,
+        )
         output = result.output
         if result.exit_code != 0 and f"[exit code: {result.exit_code}]" not in output:
             logger.debug(f"Command failed in session {session_id} (exit {result.exit_code}): {command}")
@@ -443,18 +509,14 @@ class SandboxManager:
 
         await self.ensure_session(session_id)
 
-        master_skill_dir = self._data_dir / "skills" / skill_name
+        # Check that the skill exists in the server-side knowledge store.
+        # The sandbox already has it at /workspace/skills/{name} via git clone.
+        master_skill_dir = self._knowledge_dir / "skills" / skill_name
         if not master_skill_dir.exists():
             logger.warning(f"Skill '{skill_name}' not found for session {session_id}")
             return f"Skill '{skill_name}' not found."
 
-        session_skill_dir = self._data_dir / "sessions" / session_id / "workspace" / "skills" / skill_name
-
-        if session_skill_dir.exists():
-            shutil.rmtree(session_skill_dir)
-        shutil.copytree(master_skill_dir, session_skill_dir)
-
-        has_pyproject = (session_skill_dir / "pyproject.toml").exists()
+        has_pyproject = (master_skill_dir / "pyproject.toml").exists()
         venv_msg = ""
         if has_pyproject:
             try:
@@ -465,7 +527,7 @@ class SandboxManager:
                 raise SkillVenvError(
                     f"Skill '{skill_name}' activated at /workspace/skills/{skill_name}/ but "
                     f"dependency install failed: {exc}\n"
-                    "The skill was copied but its Python dependencies are NOT available. "
+                    "The skill is available but its Python dependencies are NOT installed. "
                     "You may need to install them manually inside the sandbox."
                 ) from exc
 
@@ -498,20 +560,28 @@ class SandboxManager:
         logger.info(f"Venv built successfully for skill '{skill_name}'")
 
     async def _sync_skill_venv(self, session_id: str, skill_name: str) -> str:
-        """Re-copy pyproject.toml + uv.lock from the trusted master, then rebuild venv."""
-        master = self._data_dir / "skills" / skill_name
-        session = self._data_dir / "sessions" / session_id / "workspace" / "skills" / skill_name
-
-        for filename in ("pyproject.toml", "uv.lock"):
-            src = master / filename
-            dst = session / filename
-            if src.exists():
-                shutil.copy2(src, dst)
-            elif dst.exists():
-                dst.unlink()
-
-        if not (session / "pyproject.toml").exists():
+        """Restore trusted pyproject.toml + uv.lock from git, then rebuild venv."""
+        master = self._knowledge_dir / "skills" / skill_name
+        if not (master / "pyproject.toml").exists():
             return ""
+
+        # Restore committed dependency manifests inside the sandbox,
+        # preventing the sandbox from running modified dependencies.
+        skill_path = f"skills/{shlex.quote(skill_name)}"
+        result = await self._exec(
+            session_id,
+            f"git checkout HEAD -- {skill_path}/pyproject.toml",
+            timeout=10,
+            workdir=self._KNOWLEDGE_WORKDIR,
+        )
+        if result.exit_code != 0:
+            raise SkillVenvError(f"Failed to restore trusted pyproject.toml: {result.output}")
+        await self._exec(
+            session_id,
+            f"git checkout HEAD -- {skill_path}/uv.lock 2>/dev/null || true",
+            timeout=10,
+            workdir=self._KNOWLEDGE_WORKDIR,
+        )
 
         await self._build_skill_venv(session_id, skill_name)
         return "Venv rebuilt successfully."
@@ -519,8 +589,8 @@ class SandboxManager:
     async def rebuild_skill_venvs(self, session_id: str, activated_skills: list[str]) -> None:
         """Rebuild venvs for all activated skills.  Called by SessionEngine after container recreation."""
         for skill_name in activated_skills:
-            skill_dir = self._data_dir / "sessions" / session_id / "workspace" / "skills" / skill_name
-            if (skill_dir / "pyproject.toml").exists():
+            master_skill_dir = self._knowledge_dir / "skills" / skill_name
+            if (master_skill_dir / "pyproject.toml").exists():
                 logger.info(f"Rebuilding venv for skill '{skill_name}' after container recreation")
                 try:
                     await self._sync_skill_venv(session_id, skill_name)
@@ -535,65 +605,42 @@ class SandboxManager:
         if activated:
             await self.rebuild_skill_venvs(session_id, activated)
 
-    async def save_skill(self, session_id: str, skill_name: str) -> str:
-        if err := _validate_skill_name(skill_name):
-            return err
-
-        session_skill_dir = self._data_dir / "sessions" / session_id / "workspace" / "skills" / skill_name
-        if not session_skill_dir.exists():
-            logger.warning(f"Cannot save skill '{skill_name}' — not found in session {session_id}")
-            return f"Skill '{skill_name}' not found in session."
-
-        master_skill_dir = self._data_dir / "skills" / skill_name
-        master_skill_dir.parent.mkdir(parents=True, exist_ok=True)
-
-        if master_skill_dir.exists():
-            shutil.rmtree(master_skill_dir)
-
-        shutil.copytree(
-            session_skill_dir,
-            master_skill_dir,
-            ignore=shutil.ignore_patterns(".venv", "__pycache__", "node_modules"),
-        )
-
-        logger.info(f"Saved skill '{skill_name}' from session {session_id} to {master_skill_dir}")
-
-        venv_msg = ""
-        if (master_skill_dir / "pyproject.toml").exists():
-            try:
-                venv_msg = await self._sync_skill_venv(session_id, skill_name)
-            except SkillVenvError as exc:
-                venv_msg = f"WARNING: venv rebuild failed after save: {exc}"
-                logger.error(venv_msg)
-
-        result = f"Skill '{skill_name}' saved to data/skills/{skill_name}/"
-        if venv_msg:
-            result += f"\n{venv_msg}"
-        return result
-
-    async def save_workspace_file(self, session_id: str, filename: str) -> str:
-        """Copy a workspace file from the session sandbox back to the main data directory."""
-        if filename not in _WORKSPACE_FILES:
-            allowed = ", ".join(_WORKSPACE_FILES)
-            return f"Error: '{filename}' is not a saveable workspace file. Allowed: {allowed}"
-
-        session_file = self._data_dir / "sessions" / session_id / "workspace" / filename
-        if not session_file.exists():
-            return f"Error: '{filename}' not found in session workspace."
-
-        target = self._data_dir / filename
-        shutil.copy2(session_file, target)
-        logger.info(f"Saved workspace file '{filename}' from session {session_id} to {target}")
-        return f"Saved '{filename}' to data directory. Changes are now live."
-
     async def cleanup_session(self, session_id: str) -> None:
+        """Remove the sandbox container but keep session state (token, domains).
+
+        The session can be spun up again later via ``ensure_session``.
+        """
         sc = self._sessions.get(session_id)
         if sc:
             await self._runtime.remove(sc.container_id)
-            self._cleanup_tracking(session_id)
+            self._sessions.pop(session_id, None)
             logger.info(f"Cleaned up sandbox for session {session_id}")
 
+    async def destroy_session(self, session_id: str) -> None:
+        """Remove the sandbox container **and** all tracking state.
+
+        Use this for permanent session deletion where re-creation is not
+        expected.  Unlike ``cleanup_session``, this purges tokens, domain
+        allowlists, locks and other per-session bookkeeping.
+        """
+        await self.cleanup_session(session_id)
+        token = self._session_tokens.pop(session_id, None)
+        if token:
+            self._token_to_session.pop(token, None)
+        self._allowed_domains.pop(session_id, None)
+        self._exec_temp_domains.pop(session_id, None)
+        self._session_current_command.pop(session_id, None)
+        self._domain_approval_cbs.pop(session_id, None)
+        self._exec_locks.pop(session_id, None)
+        self._proxy_bypass_sessions.discard(session_id)
+
     async def cleanup_idle(self) -> None:
+        """Remove containers that have been idle longer than the timeout.
+
+        Only the container is destroyed; session state (tokens, domains)
+        is preserved so the sandbox can be re-created on the next
+        ``ensure_session`` call.
+        """
         now = time.time()
         to_remove = [sid for sid, sc in self._sessions.items() if now - sc.last_used > self._idle_timeout]
         if to_remove:
@@ -602,14 +649,20 @@ class SandboxManager:
             await self.cleanup_session(sid)
 
     async def cleanup_all(self) -> None:
+        """Remove all sandbox containers (e.g. on server shutdown).
+
+        Session state is preserved so sandboxes can be re-created after
+        a restart.
+        """
         count = len(self._sessions)
         if count:
             logger.info(f"Cleaning up all {count} sandbox session(s)")
         for sid in list(self._sessions):
             await self.cleanup_session(sid)
 
-    def get_session_by_token(self, token: str) -> str | None:
-        return self._token_to_session.get(token)
+    def verify_session_token(self, session_id: str, token: str) -> bool:
+        """Return True if *token* is valid for *session_id*."""
+        return self._token_to_session.get(token) == session_id
 
     def allow_domains(self, session_id: str, domains: set[str]) -> None:
         """Add *domains* to the proxy allowlist for *session_id*."""
@@ -672,30 +725,34 @@ class SandboxManager:
         return allowed
 
     def _prepare_session_recreate(self, session_id: str) -> None:
-        """Drop container/token tracking while keeping policy state."""
-        self._cleanup_tracking(
-            session_id,
-            clear_domain_state=False,
-            clear_exec_state=False,
-        )
+        """Drop container reference while keeping all session state.
+
+        Called when a container is detected as stopped/gone and will be
+        replaced immediately.  Token and domain state survive because
+        ``ensure_session`` reuses the same credentials and the domain
+        allowlist is session-scoped.
+        """
+        self._sessions.pop(session_id, None)
 
     def _cleanup_tracking(
         self,
         session_id: str,
-        *,
-        clear_domain_state: bool = True,
-        clear_exec_state: bool = True,
     ) -> None:
+        """Roll back all in-memory tracking for a session.
+
+        Only called from the ``ensure_session`` error path when container
+        creation fails and we need to undo the partial setup.  The on-disk
+        token file is not removed — it lives in the session directory and
+        will be overwritten on the next attempt or deleted when the session
+        is permanently removed.
+        """
         self._sessions.pop(session_id, None)
         token = self._session_tokens.pop(session_id, None)
         if token:
             self._token_to_session.pop(token, None)
-        if clear_domain_state:
-            self._allowed_domains.pop(session_id, None)
-        if clear_exec_state:
-            self._exec_temp_domains.pop(session_id, None)
-            self._session_current_command.pop(session_id, None)
-            self._proxy_bypass_sessions.discard(session_id)
-            self._exec_locks.pop(session_id, None)
-        if clear_domain_state:
-            self._domain_approval_cbs.pop(session_id, None)
+        self._allowed_domains.pop(session_id, None)
+        self._exec_temp_domains.pop(session_id, None)
+        self._session_current_command.pop(session_id, None)
+        self._proxy_bypass_sessions.discard(session_id)
+        self._exec_locks.pop(session_id, None)
+        self._domain_approval_cbs.pop(session_id, None)

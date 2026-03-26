@@ -37,13 +37,13 @@ class ProxyServer:
 
     def __init__(
         self,
-        get_session_by_token: Callable[[str], str | None],
+        verify_session_token: Callable[[str, str], bool],
         get_allowed_domains: Callable[[str], set[str]],
         request_approval: Callable[[str, str], Awaitable[bool]] | None = None,
         host: str = "0.0.0.0",
         port: int = 3128,
     ) -> None:
-        self._get_session_by_token = get_session_by_token
+        self._verify_session_token = verify_session_token
         self._get_domains = get_allowed_domains
         self._request_approval = request_approval
         self._host = host
@@ -88,16 +88,20 @@ class ProxyServer:
 
             # Read all headers so we can extract Proxy-Authorization
             raw_headers: list[bytes] = []
-            proxy_token: str | None = None
+            proxy_auth: tuple[str, str] | None = None
             while True:
                 hdr = await asyncio.wait_for(reader.readline(), timeout=10)
                 if hdr in (b"\r\n", b"\n", b""):
                     break
                 raw_headers.append(hdr)
                 if hdr.lower().startswith(b"proxy-authorization:"):
-                    proxy_token = self._extract_proxy_token(hdr)
+                    proxy_auth = self._extract_basic_credentials(hdr)
 
-            session_id = self._get_session_by_token(proxy_token) if proxy_token else None
+            session_id: str | None = None
+            if proxy_auth:
+                sid, token = proxy_auth
+                if self._verify_session_token(sid, token):
+                    session_id = sid
             if session_id is None:
                 logger.warning(f"Proxy: no valid token from {client_ip}, rejecting")
                 writer.write(_FORBIDDEN_RESPONSE)
@@ -105,8 +109,10 @@ class ProxyServer:
                 return
 
             method = parts[0].upper()
+            url = parts[1]
+
             if method == "CONNECT":
-                await self._handle_connect(reader, writer, session_id, client_ip, parts[1])
+                await self._handle_connect(reader, writer, session_id, client_ip, url)
             else:
                 await self._handle_http(
                     reader,
@@ -114,7 +120,7 @@ class ProxyServer:
                     session_id,
                     client_ip,
                     method,
-                    parts[1],
+                    url,
                     parts[2],
                     raw_headers,
                 )
@@ -132,20 +138,18 @@ class ProxyServer:
                 pass
 
     @staticmethod
-    def _extract_proxy_token(header_line: bytes) -> str | None:
-        """Extract the username from a ``Proxy-Authorization: Basic ...`` header.
-
-        The token is stored as the username with an empty password
-        (``base64(token:)``).
-        """
+    def _extract_basic_credentials(header_line: bytes) -> tuple[str, str] | None:
+        """Extract ``(session_id, token)`` from a ``Proxy-Authorization: Basic ...`` header."""
         try:
             _, value = header_line.split(b":", 1)
             scheme, _, encoded = value.strip().partition(b" ")
             if scheme.lower() != b"basic":
                 return None
             decoded = base64.b64decode(encoded).decode()
-            username, _, _ = decoded.partition(":")
-            return username or None
+            username, _, password = decoded.partition(":")
+            if not username or not password:
+                return None
+            return username, password
         except Exception:
             return None
 

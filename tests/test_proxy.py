@@ -46,7 +46,7 @@ class TestDomainMatches:
 class TestProxyCheckDomain:
     def _make_proxy(self, domains: set[str]) -> ProxyServer:
         return ProxyServer(
-            get_session_by_token=lambda tok: "sess-1",
+            verify_session_token=lambda sid, tok: True,
             get_allowed_domains=lambda sid: domains,
         )
 
@@ -109,7 +109,7 @@ class TestProxyParsing:
 class TestSandboxManagerAllowlists:
     def _make_manager(self, tmp_path: Path):
         runtime = MagicMock(spec=ContainerRuntime)
-        return SandboxManager(runtime=runtime, data_dir=tmp_path)
+        return SandboxManager(runtime=runtime, data_dir=tmp_path, knowledge_dir=tmp_path)
 
     def test_empty_by_default(self, tmp_path: Path):
         mgr = self._make_manager(tmp_path)
@@ -134,27 +134,44 @@ class TestSandboxManagerAllowlists:
 
     def test_proxy_env_includes_token(self, tmp_path: Path):
         mgr = self._make_manager(tmp_path)
-        env = mgr._build_proxy_env("my-secret-token", "http://172.18.0.2:3128")
-        assert env["HTTP_PROXY"] == "http://my-secret-token@172.18.0.2:3128"
-        assert env["HTTPS_PROXY"] == "http://my-secret-token@172.18.0.2:3128"
+        env = mgr._build_proxy_env("sess-1", "my-secret-token", "http://172.18.0.2:3128")
+        assert env["HTTP_PROXY"] == "http://sess-1:my-secret-token@172.18.0.2:3128"
+        assert env["HTTPS_PROXY"] == "http://sess-1:my-secret-token@172.18.0.2:3128"
         assert "172.18.0.2" in env["NO_PROXY"]
+        assert "GIT_REPO_URL" in env
+
+    def test_proxy_env_includes_git_identity(self, tmp_path: Path):
+        mgr = self._make_manager(tmp_path)
+        env = mgr._build_proxy_env("sess-1", "tok", "http://172.18.0.2:3128")
+        assert env["GIT_AUTHOR_NAME"] == "Carapace Session sess-1"
+        assert env["GIT_COMMITTER_NAME"] == "Carapace Session sess-1"
+        assert env["GIT_AUTHOR_EMAIL"] == "sess-1@carapace.local"
+        assert env["GIT_COMMITTER_EMAIL"] == "sess-1@carapace.local"
+
+    def test_git_identity_custom_author(self, tmp_path: Path):
+        mgr = self._make_manager(tmp_path)
+        mgr._git_author = "Bot <%s@example.com>"
+        env = mgr._build_proxy_env("sess-1", "tok", "http://172.18.0.2:3128")
+        assert env["GIT_AUTHOR_NAME"] == "Bot"
+        assert env["GIT_AUTHOR_EMAIL"] == "sess-1@example.com"
 
     def test_no_proxy_env_when_empty(self, tmp_path: Path):
         mgr = self._make_manager(tmp_path)
-        assert mgr._build_proxy_env("tok", "") == {}
+        assert mgr._build_proxy_env("sess-1", "tok", "") == {}
 
     def test_token_lookup(self, tmp_path: Path):
         mgr = self._make_manager(tmp_path)
         mgr._token_to_session["abc123"] = "sess-1"
-        assert mgr.get_session_by_token("abc123") == "sess-1"
-        assert mgr.get_session_by_token("wrong") is None
+        assert mgr.verify_session_token("sess-1", "abc123") is True
+        assert mgr.verify_session_token("sess-1", "wrong") is False
+        assert mgr.verify_session_token("wrong-session", "abc123") is False
 
     def test_cleanup_clears_tokens(self, tmp_path: Path):
         mgr = self._make_manager(tmp_path)
         mgr._token_to_session["tok"] = "sess-1"
         mgr._session_tokens["sess-1"] = "tok"
         mgr._cleanup_tracking("sess-1")
-        assert mgr.get_session_by_token("tok") is None
+        assert mgr.verify_session_token("sess-1", "tok") is False
 
 
 @pytest.mark.anyio
@@ -163,14 +180,18 @@ async def test_exec_recreate_preserves_domains(tmp_path: Path):
     runtime.get_host_ip = AsyncMock(return_value="172.18.0.1")
     runtime.create = AsyncMock(side_effect=["container-1", "container-2"])
     runtime.get_ip = AsyncMock(return_value="172.18.0.22")
+    runtime.logs = AsyncMock(return_value="carapace sandbox ready")
+    _git_exists = ExecResult(exit_code=0, output="")
     runtime.exec = AsyncMock(
         side_effect=[
-            ContainerGoneError(),
-            ExecResult(exit_code=0, output="ok"),
+            _git_exists,  # knowledge repo probe after first create
+            ContainerGoneError(),  # exec_command triggers recreate
+            _git_exists,  # knowledge repo probe after recreate
+            ExecResult(exit_code=0, output="ok"),  # actual command retry
         ]
     )
 
-    mgr = SandboxManager(runtime=runtime, data_dir=tmp_path)
+    mgr = SandboxManager(runtime=runtime, data_dir=tmp_path, knowledge_dir=tmp_path)
     session_id = "sess-1"
     await mgr.ensure_session(session_id)
     mgr.allow_domains(session_id, {"api.example.com"})
@@ -239,28 +260,28 @@ class TestCarapaceYamlParsing:
 # ── Proxy token extraction ───────────────────────────────────────────
 
 
-class TestProxyTokenExtraction:
-    def test_basic_auth_token(self):
-        encoded = base64.b64encode(b"my-token:").decode()
+class TestProxyCredentialExtraction:
+    def test_basic_auth_credentials(self):
+        encoded = base64.b64encode(b"sess-1:my-token").decode()
         header = f"Proxy-Authorization: Basic {encoded}\r\n".encode()
-        assert ProxyServer._extract_proxy_token(header) == "my-token"
+        assert ProxyServer._extract_basic_credentials(header) == ("sess-1", "my-token")
 
     def test_no_password(self):
-        encoded = base64.b64encode(b"tok123:").decode()
+        encoded = base64.b64encode(b"sess-1:").decode()
         header = f"Proxy-Authorization: Basic {encoded}\r\n".encode()
-        assert ProxyServer._extract_proxy_token(header) == "tok123"
+        assert ProxyServer._extract_basic_credentials(header) is None
+
+    def test_no_username(self):
+        encoded = base64.b64encode(b":password").decode()
+        header = f"Proxy-Authorization: Basic {encoded}\r\n".encode()
+        assert ProxyServer._extract_basic_credentials(header) is None
 
     def test_non_basic_scheme(self):
         header = b"Proxy-Authorization: Bearer abc\r\n"
-        assert ProxyServer._extract_proxy_token(header) is None
+        assert ProxyServer._extract_basic_credentials(header) is None
 
     def test_garbage(self):
-        assert ProxyServer._extract_proxy_token(b"garbage\r\n") is None
-
-    def test_empty_username(self):
-        encoded = base64.b64encode(b":password").decode()
-        header = f"Proxy-Authorization: Basic {encoded}\r\n".encode()
-        assert ProxyServer._extract_proxy_token(header) is None
+        assert ProxyServer._extract_basic_credentials(b"garbage\r\n") is None
 
 
 # ── ProxyServer start/stop ──────────────────────────────────────────
@@ -269,7 +290,7 @@ class TestProxyTokenExtraction:
 @pytest.mark.anyio
 async def test_proxy_start_stop():
     proxy = ProxyServer(
-        get_session_by_token=lambda tok: None,
+        verify_session_token=lambda sid, tok: False,
         get_allowed_domains=lambda sid: set(),
         host="127.0.0.1",
         port=0,  # OS-assigned port

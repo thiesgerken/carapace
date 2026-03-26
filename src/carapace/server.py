@@ -19,6 +19,8 @@ from fastapi import (
     FastAPI,
     HTTPException,
     Query,
+    Request,
+    Response,
     WebSocket,
     WebSocketDisconnect,
     WebSocketException,
@@ -36,8 +38,10 @@ from pydantic_ai.retries import AsyncTenacityTransport, RetryConfig, wait_retry_
 from tenacity import retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from carapace.auth import get_token
-from carapace.bootstrap import ensure_data_dir
-from carapace.config import get_data_dir, load_config
+from carapace.bootstrap import ensure_data_dir, ensure_knowledge_dir
+from carapace.config import _resolve_data_dir, _resolve_knowledge_dir, get_config_path, get_data_dir, load_config
+from carapace.git.http import GitHttpHandler
+from carapace.git.store import GitStore
 from carapace.models import Config, SessionState
 from carapace.sandbox.manager import SandboxManager
 from carapace.sandbox.proxy import ProxyServer
@@ -51,10 +55,11 @@ from carapace.ws_models import (
     Cancelled,
     CancelRequest,
     CommandResult,
+    DomainAccessApprovalRequest,
     Done,
     ErrorMessage,
-    ProxyApprovalRequest,
-    ProxyApprovalResponse,
+    EscalationResponse,
+    GitPushApprovalRequest,
     ServerEnvelope,
     SessionTitleUpdate,
     StatusUpdate,
@@ -74,6 +79,7 @@ load_dotenv()
 _data_dir: Path
 _config: Config
 _engine: SessionEngine
+_git_handler: GitHttpHandler
 
 
 def _retry_http_client() -> AsyncClient:
@@ -140,18 +146,50 @@ async def _idle_cleanup_loop(sandbox_mgr: SandboxManager) -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _data_dir, _config, _engine
+    global _data_dir, _config, _engine, _git_handler
 
-    _data_dir = get_data_dir()
+    # 1. Load config
+    config_path = get_config_path()
+    _config = load_config()
+    _data_dir = _resolve_data_dir(config_path, _config)
+    knowledge_dir = _resolve_knowledge_dir(config_path, _config)
+
+    # 2. Bootstrap directories
     ensure_data_dir(_data_dir)
-    _config = load_config(_data_dir)
+
+    # 3. Git-backed knowledge store
+    git_store = GitStore(
+        knowledge_dir,
+        branch=_config.git.branch,
+        author=_config.git.author,
+    )
+    await git_store.ensure_repo()
+
+    # Pull from external remote if configured
+    git_token = os.environ.get("CARAPACE_GIT_TOKEN")
+    if _config.git.remote:
+        await git_store.add_remote(_config.git.remote, git_token)
+        if await git_store.has_commits():
+            try:
+                summary = await git_store.pull_from_remote()
+                logger.info(f"Pulled from remote: {summary}")
+            except RuntimeError as exc:
+                logger.error(str(exc))
+                raise SystemExit(1) from exc
+
+    # Bootstrap knowledge files (after pull so we don't override remote content)
+    seeded = ensure_knowledge_dir(knowledge_dir)
+    if seeded:
+        await git_store.commit(seeded, "🔧 bootstrap: seed default files")
+        if _config.git.remote:
+            await git_store.push_to_remote()
 
     if _config.carapace.logfire_token:
         logfire.configure(token=_config.carapace.logfire_token, console=False)
         logfire.instrument_pydantic_ai()
 
     session_mgr = SessionManager(_data_dir)
-    registry = SkillRegistry(_data_dir / "skills")
+    registry = SkillRegistry(knowledge_dir / "skills")
     skill_catalog = registry.scan()
     agent_model = _create_model(_config.agent.model)
 
@@ -196,17 +234,22 @@ async def lifespan(app: FastAPI):
     _sandbox_mgr = SandboxManager(
         runtime=runtime,
         data_dir=_data_dir,
+        knowledge_dir=knowledge_dir,
         base_image=base_image,
         network_name=sandbox_network,
         idle_timeout_minutes=_config.sandbox.idle_timeout_minutes,
         host_data_dir=host_data_dir,
         proxy_port=proxy_port,
+        sandbox_port=_config.server.sandbox_port,
+        git_author=_config.git.author,
     )
     logger.info(f"Sandbox enabled (image={base_image}, network={sandbox_network})")
 
     _engine = SessionEngine(
         config=_config,
         data_dir=_data_dir,
+        knowledge_dir=knowledge_dir,
+        git_store=git_store,
         session_mgr=session_mgr,
         skill_catalog=skill_catalog,
         agent_model=agent_model,
@@ -214,14 +257,49 @@ async def lifespan(app: FastAPI):
         model_factory=_create_model,
     )
 
+    # Git HTTP handler — serves the knowledge repo on the sandbox API
+    _git_handler = GitHttpHandler(
+        knowledge_dir=knowledge_dir,
+        default_branch=_config.git.branch,
+        api_port=_config.server.internal_port,
+        verify_session_token=_sandbox_mgr.verify_session_token,
+        on_push_success=git_store.push_to_remote if _config.git.remote else None,
+    )
+
     proxy = ProxyServer(
-        get_session_by_token=_sandbox_mgr.get_session_by_token,
+        verify_session_token=_sandbox_mgr.verify_session_token,
         get_allowed_domains=_sandbox_mgr.get_effective_domains,
         request_approval=_sandbox_mgr.request_domain_approval,
         host="0.0.0.0",
         port=proxy_port,
     )
     await proxy.start()
+
+    # Start sandbox-facing API server (Basic Auth, accessible by containers)
+    sandbox_server = uvicorn.Server(
+        uvicorn.Config(
+            sandbox_app,
+            host="0.0.0.0",
+            port=_config.server.sandbox_port,
+            log_level=_config.carapace.log_level,
+            log_config=None,
+        )
+    )
+    sandbox_task = asyncio.create_task(sandbox_server.serve())
+    logger.info(f"Sandbox API listening on 0.0.0.0:{_config.server.sandbox_port}")
+
+    # Start internal API server (loopback only, no auth)
+    internal_server = uvicorn.Server(
+        uvicorn.Config(
+            internal_app,
+            host="127.0.0.1",
+            port=_config.server.internal_port,
+            log_level=_config.carapace.log_level,
+            log_config=None,
+        )
+    )
+    internal_task = asyncio.create_task(internal_server.serve())
+    logger.info(f"Internal API listening on 127.0.0.1:{_config.server.internal_port}")
 
     token = get_token()
 
@@ -255,6 +333,14 @@ async def lifespan(app: FastAPI):
     cleanup_task.cancel()
     if matrix_channel:
         await matrix_channel.stop()
+    sandbox_server.should_exit = True
+    internal_server.should_exit = True
+    sandbox_task.cancel()
+    internal_task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await sandbox_task
+    with contextlib.suppress(asyncio.CancelledError):
+        await internal_task
     await proxy.stop()
     await _sandbox_mgr.cleanup_all()
     price_updater.stop()
@@ -365,7 +451,7 @@ async def get_session(session_id: str, _token: str = Depends(_verify_token)) -> 
 @router.delete("/sessions/{session_id}", status_code=204)
 async def delete_session(session_id: str, _token: str = Depends(_verify_token)) -> None:
     _engine.deactivate(session_id)
-    await _engine.sandbox_mgr.cleanup_session(session_id)
+    await _engine.sandbox_mgr.destroy_session(session_id)
     if not _engine.session_mgr.delete_session(session_id):
         raise HTTPException(status_code=404, detail="Session not found")
 
@@ -377,8 +463,11 @@ _HistoryRole = Literal[
     "tool_result",
     "command",
     "proxy_approval",
+    "domain_access_approval",
     "approval_request",
     "approval_response",
+    "git_push",
+    "git_push_approval",
 ]
 
 
@@ -397,6 +486,7 @@ class HistoryMessage(BaseModel):
     tool_call_id: str | None = None
     explanation: str | None = None
     risk_level: str | None = None
+    ref: str | None = None
 
 
 @router.get("/sessions/{session_id}/history", response_model=list[HistoryMessage])
@@ -490,14 +580,24 @@ class WebSocketSubscriber:
     async def on_approval_request(self, req: ApprovalRequest) -> None:
         await self._safe_send(req)
 
-    async def on_proxy_approval_request(self, request_id: str, domain: str, command: str) -> None:
-        await self._safe_send(ProxyApprovalRequest(request_id=request_id, domain=domain, command=command))
+    async def on_domain_access_approval_request(self, request_id: str, domain: str, command: str) -> None:
+        await self._safe_send(DomainAccessApprovalRequest(request_id=request_id, domain=domain, command=command))
+
+    async def on_git_push_approval_request(
+        self, request_id: str, ref: str, explanation: str, changed_files: list[str]
+    ) -> None:
+        await self._safe_send(
+            GitPushApprovalRequest(request_id=request_id, ref=ref, explanation=explanation, changed_files=changed_files)
+        )
 
     async def on_title_update(self, title: str) -> None:
         await self._safe_send(SessionTitleUpdate(title=title))
 
     async def on_domain_info(self, domain: str, detail: str) -> None:
         await self._safe_send(ToolCallInfo(tool="proxy_domain", args={"domain": domain}, detail=detail))
+
+    async def on_git_push_info(self, ref: str, decision: str, detail: str) -> None:
+        await self._safe_send(ToolCallInfo(tool="git_push", args={"ref": ref, "decision": decision}, detail=detail))
 
 
 @router.websocket("/chat/{session_id}")
@@ -543,16 +643,27 @@ async def chat_ws(
                     risk_level=pa.get("risk_level", ""),
                 ),
             )
-    for pp in list(active.pending_proxy_approvals):
+    for pp in list(active.pending_escalations):
         with contextlib.suppress(Exception):
-            await _send(
-                websocket,
-                ProxyApprovalRequest(
-                    request_id=pp["request_id"],
-                    domain=pp.get("domain", ""),
-                    command=pp.get("command", ""),
-                ),
-            )
+            if pp.get("kind") == "git_push":
+                await _send(
+                    websocket,
+                    GitPushApprovalRequest(
+                        request_id=pp["request_id"],
+                        ref=pp.get("ref", ""),
+                        explanation=pp.get("explanation", ""),
+                        changed_files=pp.get("changed_files", []),
+                    ),
+                )
+            else:
+                await _send(
+                    websocket,
+                    DomainAccessApprovalRequest(
+                        request_id=pp["request_id"],
+                        domain=pp.get("domain", ""),
+                        command=pp.get("command", ""),
+                    ),
+                )
 
     try:
         while True:
@@ -569,7 +680,7 @@ async def chat_ws(
                 continue
 
             # --- Approval responses — forward to engine ---
-            if isinstance(client_msg, ApprovalResponse | ProxyApprovalResponse):
+            if isinstance(client_msg, ApprovalResponse | EscalationResponse):
                 await _engine.submit_approval(session_id, client_msg)
                 continue
 
@@ -693,6 +804,8 @@ def main() -> None:
     token = get_token()
 
     logger.info(f"Starting Carapace server on {config.server.host}:{config.server.port}")
+    logger.info(f"Sandbox API on 0.0.0.0:{config.server.sandbox_port}")
+    logger.info(f"Internal API on 127.0.0.1:{config.server.internal_port}")
     logger.info(f"Bearer token: {token[:8]}…")
 
     uvicorn.run(
@@ -704,7 +817,78 @@ def main() -> None:
     )
 
 
+# --- Internal endpoint for pre-receive hook sentinel evaluation ---
+# Bound to 127.0.0.1 only — unreachable from sandbox containers.
+
+internal_app = FastAPI(title="Carapace Internal")
+
+
+class PushEvalRequest(BaseModel):
+    session_id: str
+    ref: str
+    is_default_branch: bool
+    commits: str
+    diff: str
+
+
+@internal_app.post("/internal/sentinel/evaluate-push")
+async def evaluate_push(req: PushEvalRequest) -> dict[str, str]:
+    """Evaluate a Git push via the sentinel. Called by the pre-receive hook."""
+    try:
+        active = _engine.get_or_activate(req.session_id)
+    except KeyError:
+        return {"verdict": "deny", "reason": "Session not found"}
+    if active.security is None or active.sentinel is None:
+        return {"verdict": "deny", "reason": "Session not initialised"}
+
+    from carapace.security import evaluate_push_with
+
+    allowed = await evaluate_push_with(
+        active.security,
+        active.sentinel,
+        req.ref,
+        req.is_default_branch,
+        req.commits,
+        req.diff,
+        usage_tracker=active.usage_tracker,
+    )
+    if allowed:
+        return {"verdict": "allow"}
+    return {"verdict": "deny", "reason": "Denied by sentinel"}
+
+
 app.include_router(router)
+
+
+# --- Sandbox-facing API (Basic Auth, serves git HTTP backend) ---
+
+sandbox_app = FastAPI(title="Carapace Sandbox API")
+
+
+@sandbox_app.api_route("/git/{path:path}", methods=["GET", "POST"])
+async def git_http_backend(request: Request, path: str) -> Response:
+    """Proxy Git HTTP Smart Protocol requests to ``git http-backend``."""
+    auth = request.headers.get("authorization")
+    session_id = _git_handler.authenticate(auth)
+    if session_id is None:
+        return Response(
+            status_code=401,
+            headers={"WWW-Authenticate": 'Basic realm="carapace git"'},
+        )
+
+    full_path = f"/git/{path}"
+    query = str(request.query_params)
+    body = await request.body()
+
+    status_code, headers, response_body = await _git_handler.handle(
+        session_id=session_id,
+        method=request.method,
+        path=full_path,
+        query_string=query,
+        content_type=request.headers.get("content-type"),
+        body=body,
+    )
+    return Response(content=response_body, status_code=status_code, headers=headers)
 
 
 if __name__ == "__main__":

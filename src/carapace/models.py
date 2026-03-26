@@ -6,10 +6,13 @@ from pathlib import Path
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict
+from pydantic_ai.models import Model
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from carapace.git.store import GitStore
 from carapace.sandbox.manager import SandboxManager
 from carapace.security.context import SessionSecurity
+from carapace.security.sentinel import Sentinel
 from carapace.usage import UsageTracker
 
 # --- Session State ---
@@ -143,9 +146,21 @@ class MemoryConfig(BaseModel):
     search: MemorySearchConfig = MemorySearchConfig()
 
 
-class ServerConfig(BaseModel):
+class GitConfig(BaseModel):
+    """Git-backed knowledge store configuration."""
+
+    remote: str = ""  # optional external remote URL
+    branch: str = "main"
+    author: str = "Carapace Session %s <%s@carapace.local>"  # %s → session ID
+
+
+class ServerConfig(BaseSettings):
+    model_config = SettingsConfigDict(env_prefix="CARAPACE_SERVER_")
+
     host: str = "0.0.0.0"
     port: int = 8321
+    sandbox_port: int = 8322
+    internal_port: int = 8320
     cors_origins: list[str] = ["http://localhost:3000"]
 
 
@@ -162,6 +177,9 @@ class Config(BaseModel):
     credentials: CredentialsConfig = CredentialsConfig()
     sandbox: SandboxConfig = SandboxConfig()
     memory: MemoryConfig = MemoryConfig()
+    git: GitConfig = GitConfig()
+    data_dir: str = "."  # resolved relative to config file location
+    knowledge_dir: str = "./knowledge"  # resolved relative to config file location
 
 
 # --- Skill Catalog Entry ---
@@ -193,13 +211,15 @@ class Deps(BaseModel):
 
     config: Config
     data_dir: Path
+    knowledge_dir: Path
     session_state: SessionState
     sandbox: SandboxManager
     security: SessionSecurity
-    sentinel: Any  # Sentinel (can't type strictly — tests use MagicMock)
+    sentinel: Sentinel
+    git_store: GitStore
     skill_catalog: list[SkillInfo] = []
     activated_skills: list[str] = []
-    agent_model: Any = None
+    agent_model: Model
     verbose: bool = True
     tool_call_callback: Callable[[str, dict[str, Any], str], None] | None = None
     tool_result_callback: Callable[[str, str], None] | None = None

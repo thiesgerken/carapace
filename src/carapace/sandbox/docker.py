@@ -163,6 +163,7 @@ class DockerRuntime(ContainerRuntime):
         command: str | list[str],
         timeout: int = 30,
         env: dict[str, str] | None = None,
+        workdir: str | None = None,
     ) -> ExecResult:
         def _exec() -> ExecResult:
             try:
@@ -172,7 +173,7 @@ class DockerRuntime(ContainerRuntime):
             cmd = ["bash", "-c", command] if isinstance(command, str) else command
 
             try:
-                result = container.exec_run(cmd, environment=env, demux=True)
+                result = container.exec_run(cmd, environment=env, workdir=workdir, demux=True)
             except APIError as err:
                 if err.status_code == 409:
                     raise ContainerGoneError(f"Container {container_id[:12]} is not running") from err
@@ -191,7 +192,8 @@ class DockerRuntime(ContainerRuntime):
         logger.debug(f"Exec in {container_id[:12]}: {cmd_preview} (timeout={timeout}s)")
 
         try:
-            result = await asyncio.wait_for(asyncio.to_thread(_exec), timeout=timeout)
+            coro = asyncio.to_thread(_exec)
+            result = await (asyncio.wait_for(coro, timeout=timeout) if timeout else coro)
         except ContainerGoneError:
             raise
         except TimeoutError:
@@ -222,6 +224,16 @@ class DockerRuntime(ContainerRuntime):
                 return False
 
         return await asyncio.to_thread(_check)
+
+    async def logs(self, container_id: str, tail: int = 40) -> str:
+        def _logs() -> str:
+            try:
+                container = self._client.containers.get(container_id)
+                return container.logs(tail=tail, timestamps=True).decode("utf-8", errors="replace")
+            except NotFound:
+                return "(container not found)"
+
+        return await asyncio.to_thread(_logs)
 
     async def get_self_network_info(self) -> dict[str, str]:
         """Return all network names → IP addresses visible to this process.
