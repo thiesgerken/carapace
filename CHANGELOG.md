@@ -1,6 +1,17 @@
 # CHANGELOG
 
 
+## v0.42.2 (2026-03-26)
+
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix: disable semantic-release build to avoid dist/ permission error
+  ([`4cd229b`](https://github.com/thiesgerken/carapace/commit/4cd229b266c73d7e957ee460ab6421a22f07ad48))
+
+  semantic-release's default build writes to dist/ before uv build, causing a PermissionError on overwrite. Disable it since we build explicitly with uv build.
+
 ## v0.42.1 (2026-03-26)
 
 
