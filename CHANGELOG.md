@@ -1,11 +1,38 @@
 # CHANGELOG
 
 
+## v0.42.3 (2026-03-27)
+
+
+### Other
+
+
+- Revert "♻️ refactor: defer version commit until after Docker builds succeed"
+  ([`5030c00`](https://github.com/thiesgerken/carapace/commit/5030c00d16ff068790af1ee6fbe58186c8ca56ec))
+
+  This reverts commit 2bbc75f069436678dbf3d5d0d34b6ec8f44d8e1c.
+
+- Revert "🐛 fix: disable semantic-release build to avoid dist/ permission error"
+  ([`57f2a1e`](https://github.com/thiesgerken/carapace/commit/57f2a1e1654b48e5d11e018fd5287328cad99e31))
+
+  This reverts commit 4cd229b266c73d7e957ee460ab6421a22f07ad48.
+
+- Revert "🐛 fix: stamp version into pyproject.toml before backend Docker build"
+  ([`1a7141a`](https://github.com/thiesgerken/carapace/commit/1a7141a17d4d4955fc471e1c89f7e61ddcd1666b))
+
+  This reverts commit 0cc7f973370826938d4f4a7aff003d93d86383e0.
+
+- Merge remote-tracking branch 'refs/remotes/origin/main'
+  ([`53e6959`](https://github.com/thiesgerken/carapace/commit/53e6959274274b447591a43452870f3e0c349554))
+
 ## v0.42.2 (2026-03-26)
 
 
 ### 🐛 Bug Fixes
 
+
+- 🐛 fix: stamp version into pyproject.toml before backend Docker build
+  ([`0cc7f97`](https://github.com/thiesgerken/carapace/commit/0cc7f973370826938d4f4a7aff003d93d86383e0))
 
 - 🐛 fix: disable semantic-release build to avoid dist/ permission error
   ([`4cd229b`](https://github.com/thiesgerken/carapace/commit/4cd229b266c73d7e957ee460ab6421a22f07ad48))
