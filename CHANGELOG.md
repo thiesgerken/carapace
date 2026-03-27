@@ -1,6 +1,17 @@
 # CHANGELOG
 
 
+## v0.42.4 (2026-03-27)
+
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix: run sandbox containers as root for package installs
+  ([`b75b837`](https://github.com/thiesgerken/carapace/commit/b75b837d49db87ace67c3a98882921d89bd42381))
+
+  Remove run_as_non_root / run_as_user=1000 from the K8s sandbox pod security context so the container can write to /etc/apt, /etc/pip and run apt-get install.  Privilege escalation and all capabilities remain blocked.  Revert setup-proxy.sh to the simpler root-level config writes.
+
 ## v0.42.3 (2026-03-27)
 
 
