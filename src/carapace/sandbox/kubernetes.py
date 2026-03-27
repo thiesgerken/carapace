@@ -113,8 +113,6 @@ class KubernetesRuntime(ContainerRuntime):
             env=env_vars or None,
             volume_mounts=volume_mounts or None,
             security_context=k8s_client.V1SecurityContext(
-                run_as_non_root=True,
-                run_as_user=1000,
                 allow_privilege_escalation=False,
                 capabilities=k8s_client.V1Capabilities(drop=["ALL"]),
             ),
