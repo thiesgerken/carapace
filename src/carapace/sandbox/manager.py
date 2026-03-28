@@ -219,6 +219,32 @@ class SandboxManager:
                 logger.opt(exception=True).debug(f"Resume failed for {sandbox_name}, will recreate")
             await self._log_container_tail(sc.container_id, session_id)
             self._prepare_session_recreate(session_id)
+        else:
+            # No in-memory state (e.g. after server restart) — check if the
+            # sandbox resource still exists in the runtime and try to resume it.
+            existing_id = await self._runtime.sandbox_exists(sandbox_name)
+            if existing_id:
+                try:
+                    if await self._runtime.is_running(existing_id):
+                        logger.info(f"Re-attached to running sandbox {sandbox_name} for session {session_id}")
+                    else:
+                        await self._runtime.resume_sandbox(sandbox_name)
+                        await self._wait_for_ready(existing_id, session_id)
+                        logger.info(f"Resumed orphaned sandbox {sandbox_name} for session {session_id}")
+                    ip = await self._runtime.get_ip(existing_id, self._network_name)
+                    sc = SessionContainer(
+                        container_id=existing_id,
+                        session_id=session_id,
+                        ip_address=ip,
+                        created_at=time.time(),
+                        last_used=time.time(),
+                    )
+                    self._sessions[session_id] = sc
+                    return sc, False
+                except Exception:
+                    logger.opt(exception=True).debug(
+                        f"Failed to re-attach/resume orphaned sandbox {sandbox_name}, will recreate"
+                    )
 
         proxy_token = self._get_or_create_token(session_id)
         try:
@@ -582,8 +608,9 @@ class SandboxManager:
     async def cleanup_session(self, session_id: str) -> None:
         """Suspend the sandbox — the runtime decides how (scale to 0 or remove).
 
-        Session state is preserved so the sandbox can be resumed later via
-        ``ensure_session``.
+        The ``SessionContainer`` entry is kept in ``self._sessions`` so that
+        ``ensure_session`` can detect the suspended sandbox and call
+        ``resume_sandbox`` instead of creating (and deleting) a new one.
         """
         sc = self._sessions.get(session_id)
         if sc:
@@ -591,8 +618,7 @@ class SandboxManager:
                 self._sandbox_name(session_id),
                 sc.container_id,
             )
-            self._sessions.pop(session_id, None)
-            logger.info(f"Cleaned up sandbox for session {session_id}")
+            logger.info(f"Suspended sandbox for session {session_id}")
 
     async def destroy_session(self, session_id: str) -> None:
         """Permanently remove the sandbox and all tracking state.

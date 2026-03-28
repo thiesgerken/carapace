@@ -195,6 +195,18 @@ class DockerRuntime(ContainerRuntime):
         """Destroy == remove in Docker."""
         await self.remove(container_id)
 
+    async def sandbox_exists(self, name: str) -> str | None:
+        """Return the container ID if a container with this name exists, else None."""
+
+        def _check() -> str | None:
+            try:
+                container = self._client.containers.get(name)
+                return container.id
+            except NotFound:
+                return None
+
+        return await asyncio.to_thread(_check)
+
     def _remove_stale(self, name: str) -> None:
         try:
             stale = self._client.containers.get(name)

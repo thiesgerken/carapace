@@ -363,6 +363,21 @@ class KubernetesRuntime(ContainerRuntime):
         """Delete the StatefulSet entirely (PVC cleaned up by retention policy)."""
         await self._delete_sts_if_exists(_sanitize_pod_name(name))
 
+    async def sandbox_exists(self, name: str) -> str | None:
+        """Return the pod name if the StatefulSet exists, else None."""
+        sts_name = _sanitize_pod_name(name)
+
+        def _check() -> str | None:
+            try:
+                self._apps.read_namespaced_stateful_set(name=sts_name, namespace=self._namespace)
+                return f"{sts_name}-0"
+            except ApiException as exc:
+                if exc.status == 404:
+                    return None
+                raise
+
+        return await asyncio.to_thread(_check)
+
     async def _delete_sts_if_exists(self, sts_name: str) -> None:
         def _delete() -> None:
             try:
