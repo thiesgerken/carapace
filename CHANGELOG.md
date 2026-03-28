@@ -1,6 +1,17 @@
 # CHANGELOG
 
 
+## v0.42.5 (2026-03-28)
+
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix: add safe.directory for /workspace in sandbox image
+  ([`299e504`](https://github.com/thiesgerken/carapace/commit/299e504ad2a5d6fbbeca0c985275f231e7717acc))
+
+  Git 2.35.2+ rejects operations when the repo owner differs from the current user.  The sandbox runs as root while the PVC workspace dir is owned by UID 999 (server fsGroup), triggering the dubious-ownership error on every git command.
+
 ## v0.42.4 (2026-03-27)
 
 
