@@ -1,6 +1,15 @@
 # CHANGELOG
 
 
+## v0.42.6 (2026-03-28)
+
+
+### 🐛 Bug Fixes
+
+
+- 🐛 add revisionHistoryLimit to frontend and server deployments
+  ([`1c73b40`](https://github.com/thiesgerken/carapace/commit/1c73b40b532f149a608596b86e710674fd60fdd7))
+
 ## v0.42.5 (2026-03-28)
 
 
