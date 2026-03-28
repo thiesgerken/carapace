@@ -152,7 +152,7 @@ See [docs/architecture.md](docs/architecture.md) for the full architecture with 
 | Sandbox             | Docker / Kubernetes sandboxed execution with HTTP proxy         | [docs/sandbox.md](docs/sandbox.md)                             |
 | Sessions & Channels | Channel-decoupled persistent sessions (WebSocket, Matrix)      | [docs/sessions-and-channels.md](docs/sessions-and-channels.md) |
 | Memory              | Markdown-based persistent memory with text search              | [docs/memory.md](docs/memory.md)                               |
-| Kubernetes          | Helm chart, sandbox pods, NetworkPolicy, shared PVC            | [docs/kubernetes.md](docs/kubernetes.md)                       |
+| Kubernetes          | Helm chart, StatefulSet sandboxes, per-session PVCs, NetworkPolicy | [docs/kubernetes.md](docs/kubernetes.md)                       |
 
 ## Technology stack
 
@@ -192,7 +192,7 @@ Other differences: Carapace is Python (not Node), uses Pydantic AI (not a custom
 
 ## Kubernetes deployment
 
-Carapace supports Kubernetes as a sandbox runtime — sandbox sessions run as pods instead of Docker containers, sharing a single RWX PVC for data. A [Helm chart](charts/carapace/) is included for deployment. See the [Kubernetes deployment guide](docs/kubernetes.md) for details and the [chart README](charts/carapace/README.md) for installation instructions.
+Carapace supports Kubernetes as a sandbox runtime — sandbox sessions run as StatefulSets with per-session PVCs (via `volumeClaimTemplates`). On idle timeout the StatefulSet is scaled to 0 replicas (PVC retained, no venv rebuild on resume); on session deletion the PVC is cleaned up automatically. A [Helm chart](charts/carapace/) is included for deployment. See the [Kubernetes deployment guide](docs/kubernetes.md) for details and the [chart README](charts/carapace/README.md) for installation instructions.
 
 ## Development setup
 

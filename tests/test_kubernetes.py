@@ -42,6 +42,14 @@ _mock_k8s_client.V1SecurityContext = _ns_factory()
 _mock_k8s_client.V1Capabilities = _ns_factory()
 _mock_k8s_client.V1PersistentVolumeClaimVolumeSource = _ns_factory()
 _mock_k8s_client.V1OwnerReference = _ns_factory()
+_mock_k8s_client.V1StatefulSet = _ns_factory()
+_mock_k8s_client.V1StatefulSetSpec = _ns_factory()
+_mock_k8s_client.V1StatefulSetPersistentVolumeClaimRetentionPolicy = _ns_factory()
+_mock_k8s_client.V1PodTemplateSpec = _ns_factory()
+_mock_k8s_client.V1LabelSelector = _ns_factory()
+_mock_k8s_client.V1PersistentVolumeClaim = _ns_factory()
+_mock_k8s_client.V1PersistentVolumeClaimSpec = _ns_factory()
+_mock_k8s_client.V1VolumeResourceRequirements = _ns_factory()
 _mock_k8s_client.CoreV1Api = MagicMock
 _mock_k8s_client.AppsV1Api = MagicMock
 
@@ -76,7 +84,7 @@ _mock_k8s_client.ApiException = _ApiException
 sys.modules.pop("carapace.sandbox.kubernetes", None)
 
 from carapace.sandbox.kubernetes import KubernetesRuntime, _sanitize_pod_name  # noqa: E402
-from carapace.sandbox.runtime import ContainerConfig, Mount  # noqa: E402
+from carapace.sandbox.runtime import ContainerConfig, Mount, SandboxConfig  # noqa: E402
 
 # --- Helpers ---
 
@@ -94,6 +102,8 @@ def _make_runtime(*, namespace: str = "carapace", data_dir: str = "/data") -> Ku
     rt._priority_class = None
     rt._owner_ref = None
     rt._app_instance = "carapace"
+    rt._session_pvc_size = "1Gi"
+    rt._session_pvc_storage_class = None
     return rt
 
 
@@ -214,9 +224,8 @@ def test_build_pod_spec_security_context():
     pod = rt._build_pod_spec(config)
     assert pod.spec is not None
     sc = pod.spec.containers[0].security_context
-    assert sc.run_as_non_root is True
-    assert sc.run_as_user == 1000
     assert sc.allow_privilege_escalation is False
+    assert sc.capabilities.drop == ["ALL"]
 
 
 # --- create ---
@@ -297,3 +306,69 @@ async def test_get_host_ip_from_env(monkeypatch):
     monkeypatch.setenv("CARAPACE_SERVICE_HOST", "10.43.0.100")
     ip = await rt.get_host_ip("any-network")
     assert ip == "10.43.0.100"
+
+
+# --- StatefulSet lifecycle ---
+
+
+def test_build_statefulset_spec():
+    rt = _make_runtime()
+    config = SandboxConfig(
+        name="carapace-sandbox-abc",
+        session_id="abc",
+        image="sandbox:latest",
+        labels={"carapace.session": "abc", "carapace.managed": "true"},
+        environment={"HTTP_PROXY": "http://proxy"},
+    )
+    sts = rt._build_statefulset_spec(config)
+    assert sts.kind == "StatefulSet"
+    assert sts.metadata.name == "carapace-sandbox-abc"
+    # Check retention policy
+    policy = sts.spec.persistent_volume_claim_retention_policy
+    assert policy.when_deleted == "Delete"
+    assert policy.when_scaled == "Retain"
+    # Check volumeClaimTemplate
+    assert len(sts.spec.volume_claim_templates) == 1
+    pvc_tpl = sts.spec.volume_claim_templates[0]
+    assert pvc_tpl.metadata.name == "session-data"
+    assert pvc_tpl.spec.access_modes == ["ReadWriteOnce"]
+    # Check container mounts /workspace
+    container = sts.spec.template.spec.containers[0]
+    assert any(vm.mount_path == "/workspace" for vm in container.volume_mounts)
+
+
+async def test_create_sandbox_calls_api():
+    rt = _make_runtime()
+    rt._core.read_namespaced_pod.return_value = SimpleNamespace(status=SimpleNamespace(phase="Running"))
+    rt._apps.delete_namespaced_stateful_set.side_effect = _ApiException(status=404, reason="Not Found")
+
+    config = SandboxConfig(
+        name="carapace-sandbox-abc",
+        session_id="abc",
+        image="sandbox:latest",
+        labels={"carapace.session": "abc"},
+    )
+    pod_name = await rt.create_sandbox(config)
+    assert pod_name == "carapace-sandbox-abc-0"
+    rt._apps.create_namespaced_stateful_set.assert_called_once()
+
+
+async def test_resume_sandbox():
+    rt = _make_runtime()
+    rt._core.read_namespaced_pod.return_value = SimpleNamespace(status=SimpleNamespace(phase="Running"))
+
+    await rt.resume_sandbox("carapace-sandbox-abc")
+    rt._apps.patch_namespaced_stateful_set_scale.assert_called_once()
+
+
+async def test_destroy_sandbox():
+    rt = _make_runtime()
+    await rt.destroy_sandbox("carapace-sandbox-abc", "carapace-sandbox-abc-0")
+    rt._apps.delete_namespaced_stateful_set.assert_called_once()
+
+
+async def test_destroy_sandbox_not_found():
+    rt = _make_runtime()
+    rt._apps.delete_namespaced_stateful_set.side_effect = _ApiException(status=404, reason="Not Found")
+    # Should not raise
+    await rt.destroy_sandbox("carapace-sandbox-abc", "carapace-sandbox-abc-0")

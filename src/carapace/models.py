@@ -134,6 +134,10 @@ class SandboxConfig(BaseSettings):
     # label and the argocd.argoproj.io/tracking-id annotation so that sandbox pods
     # appear in the ArgoCD resource tree even without an ownerReference.
     k8s_app_instance: str = "carapace"
+    # Size of per-session PVCs created via StatefulSet volumeClaimTemplates.
+    k8s_session_pvc_size: str = "1Gi"
+    # StorageClass for per-session PVCs (empty = cluster default).
+    k8s_session_pvc_storage_class: str = ""
 
 
 class MemorySearchConfig(BaseModel):

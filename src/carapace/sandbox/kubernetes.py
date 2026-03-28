@@ -10,7 +10,14 @@ from kubernetes.client import ApiException
 from kubernetes.stream import stream as k8s_stream
 from loguru import logger
 
-from carapace.sandbox.runtime import ContainerConfig, ContainerGoneError, ContainerRuntime, ExecResult, Mount
+from carapace.sandbox.runtime import (
+    ContainerConfig,
+    ContainerGoneError,
+    ContainerRuntime,
+    ExecResult,
+    Mount,
+    SandboxConfig,
+)
 
 
 def _sanitize_pod_name(name: str) -> str:
@@ -34,6 +41,8 @@ class KubernetesRuntime(ContainerRuntime):
         priority_class: str | None = None,
         owner_ref: bool = True,
         app_instance: str = "carapace",
+        session_pvc_size: str = "1Gi",
+        session_pvc_storage_class: str = "",
     ) -> None:
         if os.environ.get("KUBERNETES_SERVICE_HOST"):
             k8s_config.load_incluster_config()
@@ -48,6 +57,8 @@ class KubernetesRuntime(ContainerRuntime):
         self._service_account = service_account
         self._priority_class = priority_class
         self._app_instance = app_instance
+        self._session_pvc_size = session_pvc_size
+        self._session_pvc_storage_class = session_pvc_storage_class or None
 
         # Optionally look up the owner Deployment UID for ownerReferences on sandbox pods
         self._owner_ref: k8s_client.V1OwnerReference | None = None
@@ -199,6 +210,176 @@ class KubernetesRuntime(ContainerRuntime):
             if asyncio.get_event_loop().time() > deadline:
                 raise TimeoutError(f"Pod {pod_name} did not reach Running within {timeout}s (phase={phase})")
             await asyncio.sleep(1)
+
+    # ------------------------------------------------------------------
+    # StatefulSet lifecycle (internal)
+    # ------------------------------------------------------------------
+
+    def _build_statefulset_spec(self, config: SandboxConfig) -> k8s_client.V1StatefulSet:
+        """Build a V1StatefulSet with a volumeClaimTemplate for the session PVC."""
+        sts_name = _sanitize_pod_name(config.name)
+
+        env_vars = [k8s_client.V1EnvVar(name=k, value=v) for k, v in config.environment.items()]
+
+        command = config.command
+        if isinstance(command, str):
+            command = ["bash", "-c", command]
+        elif command is None:
+            command = ["sh", "-c", "echo 'carapace sandbox ready' && exec sleep infinity"]
+
+        container = k8s_client.V1Container(
+            name="sandbox",
+            image=config.image,
+            command=command,
+            env=env_vars or None,
+            volume_mounts=[
+                k8s_client.V1VolumeMount(
+                    name="session-data",
+                    mount_path="/workspace",
+                ),
+            ],
+            security_context=k8s_client.V1SecurityContext(
+                allow_privilege_escalation=False,
+                capabilities=k8s_client.V1Capabilities(drop=["ALL"]),
+            ),
+        )
+
+        labels = {
+            "app.kubernetes.io/instance": self._app_instance,
+            "app.kubernetes.io/part-of": "carapace",
+            "app.kubernetes.io/component": "sandbox",
+            "app.kubernetes.io/managed-by": "carapace-server",
+            "app": "carapace-sandbox",
+        }
+        labels.update(config.labels)
+
+        annotations = {
+            "argocd.argoproj.io/tracking-id": (f"{self._app_instance}:apps/StatefulSet:{self._namespace}/{sts_name}"),
+        }
+
+        pvc_spec = k8s_client.V1PersistentVolumeClaimSpec(
+            access_modes=["ReadWriteOnce"],
+            resources=k8s_client.V1VolumeResourceRequirements(
+                requests={"storage": self._session_pvc_size},
+            ),
+        )
+        if self._session_pvc_storage_class:
+            pvc_spec.storage_class_name = self._session_pvc_storage_class
+
+        return k8s_client.V1StatefulSet(
+            api_version="apps/v1",
+            kind="StatefulSet",
+            metadata=k8s_client.V1ObjectMeta(
+                name=sts_name,
+                namespace=self._namespace,
+                labels=labels,
+                annotations=annotations,
+                owner_references=[self._owner_ref] if self._owner_ref else None,
+            ),
+            spec=k8s_client.V1StatefulSetSpec(
+                replicas=1,
+                service_name="",
+                persistent_volume_claim_retention_policy=k8s_client.V1StatefulSetPersistentVolumeClaimRetentionPolicy(
+                    when_deleted="Delete",
+                    when_scaled="Retain",
+                ),
+                selector=k8s_client.V1LabelSelector(
+                    match_labels={"carapace.session": config.labels.get("carapace.session", sts_name)},
+                ),
+                template=k8s_client.V1PodTemplateSpec(
+                    metadata=k8s_client.V1ObjectMeta(labels=labels),
+                    spec=k8s_client.V1PodSpec(
+                        containers=[container],
+                        restart_policy="Always",
+                        service_account_name=self._service_account,
+                        automount_service_account_token=False,
+                        priority_class_name=self._priority_class,
+                    ),
+                ),
+                volume_claim_templates=[
+                    k8s_client.V1PersistentVolumeClaim(
+                        metadata=k8s_client.V1ObjectMeta(name="session-data"),
+                        spec=pvc_spec,
+                    ),
+                ],
+            ),
+        )
+
+    async def _create_statefulset(self, config: SandboxConfig) -> str:
+        sts_name = _sanitize_pod_name(config.name)
+        pod_name = f"{sts_name}-0"
+
+        # Delete stale StatefulSet if it exists (e.g. leftover from crash)
+        await self._delete_sts_if_exists(sts_name)
+
+        sts = self._build_statefulset_spec(config)
+
+        def _create() -> None:
+            self._apps.create_namespaced_stateful_set(namespace=self._namespace, body=sts)
+
+        await asyncio.to_thread(_create)
+        logger.info(f"Created StatefulSet {sts_name} (image={config.image})")
+
+        await self._wait_for_running(pod_name, timeout=120)
+        return pod_name
+
+    async def _scale_statefulset(self, name: str, replicas: int) -> None:
+        sts_name = _sanitize_pod_name(name)
+
+        def _scale() -> None:
+            self._apps.patch_namespaced_stateful_set_scale(
+                name=sts_name,
+                namespace=self._namespace,
+                body={"spec": {"replicas": replicas}},
+            )
+
+        await asyncio.to_thread(_scale)
+        logger.info(f"Scaled StatefulSet {sts_name} to {replicas} replicas")
+
+        if replicas > 0:
+            await self._wait_for_running(f"{sts_name}-0", timeout=120)
+
+    # ------------------------------------------------------------------
+    # Sandbox lifecycle (public protocol)
+    # ------------------------------------------------------------------
+
+    async def create_sandbox(self, config: SandboxConfig) -> str:
+        """Create a StatefulSet-backed sandbox with a per-session PVC."""
+        return await self._create_statefulset(config)
+
+    async def resume_sandbox(self, name: str) -> None:
+        """Scale the StatefulSet back to 1 replica (PVC is retained)."""
+        await self._scale_statefulset(name, 1)
+
+    async def suspend_sandbox(self, name: str, container_id: str) -> None:
+        """Scale the StatefulSet to 0 — PVC survives for later resume."""
+        try:
+            await self._scale_statefulset(name, 0)
+        except Exception:
+            logger.opt(exception=True).warning(f"Scale-down failed for {name}, deleting pod")
+            await self._delete_pod_if_exists(container_id)
+
+    async def destroy_sandbox(self, name: str, container_id: str) -> None:
+        """Delete the StatefulSet entirely (PVC cleaned up by retention policy)."""
+        await self._delete_sts_if_exists(_sanitize_pod_name(name))
+
+    async def _delete_sts_if_exists(self, sts_name: str) -> None:
+        def _delete() -> None:
+            try:
+                self._apps.delete_namespaced_stateful_set(
+                    name=sts_name,
+                    namespace=self._namespace,
+                    grace_period_seconds=0,
+                    propagation_policy="Foreground",
+                )
+                logger.info(f"Deleted StatefulSet {sts_name}")
+            except ApiException as exc:
+                if exc.status == 404:
+                    logger.debug(f"StatefulSet {sts_name} already gone, skip delete")
+                else:
+                    raise
+
+        await asyncio.to_thread(_delete)
 
     async def exec(
         self,

@@ -403,3 +403,21 @@ def test_handle_slash_command_inactive_session(tmp_path: Path):
         assert await engine.handle_slash_command(state.session_id, "/session") is None
 
     asyncio.run(_run())
+
+
+def test_handle_slash_command_reload(tmp_path: Path):
+    """handle_slash_command /reload calls reset_session and returns success."""
+    with _patch_sentinel():
+        engine = _make_engine(tmp_path)
+        state = engine.session_mgr.create_session()
+        sid = state.session_id
+        engine.get_or_activate(sid)
+
+        async def _run() -> None:
+            result = await engine.handle_slash_command(sid, "/reload")
+            assert result is not None
+            assert result["command"] == "reload"
+            assert "reset" in result["data"]["message"].lower() or "fresh" in result["data"]["message"].lower()
+            engine._sandbox_mgr.reset_session.assert_called_once_with(sid)
+
+        asyncio.run(_run())

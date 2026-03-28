@@ -29,13 +29,34 @@ class ContainerConfig(BaseModel):
     environment: dict[str, str] = {}
 
 
+class SandboxConfig(BaseModel):
+    """Runtime-agnostic sandbox creation parameters.
+
+    The manager builds this; each runtime translates it into Docker
+    containers, K8s StatefulSets, etc.
+    """
+
+    name: str
+    session_id: str
+    image: str
+    labels: dict[str, str] = {}
+    environment: dict[str, str] = {}
+    command: str | list[str] | None = None
+
+
 class ExecResult(BaseModel):
     exit_code: int
     output: str
 
 
 class ContainerRuntime(Protocol):
-    async def create(self, config: ContainerConfig) -> str: ...
+    # -- Sandbox lifecycle (runtime decides Docker vs K8s details) --
+    async def create_sandbox(self, config: SandboxConfig) -> str: ...
+    async def resume_sandbox(self, name: str) -> None: ...
+    async def suspend_sandbox(self, name: str, container_id: str) -> None: ...
+    async def destroy_sandbox(self, name: str, container_id: str) -> None: ...
+
+    # -- Low-level operations --
     async def exec(
         self,
         container_id: str,
@@ -44,7 +65,6 @@ class ContainerRuntime(Protocol):
         env: dict[str, str] | None = None,
         workdir: str | None = None,
     ) -> ExecResult: ...
-    async def remove(self, container_id: str) -> None: ...
     async def is_running(self, container_id: str) -> bool: ...
     async def get_ip(self, container_id: str, network: str) -> str | None: ...
     async def resolve_self_network_name(self, logical_name: str) -> str: ...

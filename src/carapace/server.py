@@ -127,11 +127,18 @@ def _create_sandbox_runtime(config: Config, data_dir: Path) -> ContainerRuntime:
             priority_class=config.sandbox.k8s_priority_class,
             owner_ref=config.sandbox.k8s_owner_ref,
             app_instance=config.sandbox.k8s_app_instance,
+            session_pvc_size=config.sandbox.k8s_session_pvc_size,
+            session_pvc_storage_class=config.sandbox.k8s_session_pvc_storage_class,
         )
 
     from carapace.sandbox.docker import DockerRuntime
 
-    return DockerRuntime()
+    host_data_dir_env = os.environ.get("CARAPACE_HOST_DATA_DIR")
+    return DockerRuntime(
+        data_dir=data_dir,
+        host_data_dir=Path(host_data_dir_env) if host_data_dir_env else None,
+        network_name=config.sandbox.network_name,
+    )
 
 
 async def _idle_cleanup_loop(sandbox_mgr: SandboxManager) -> None:
@@ -212,12 +219,8 @@ async def lifespan(app: FastAPI):
         )
         raise SystemExit(1)
 
-    host_data_dir: Path | None = None
     sandbox_network = _config.sandbox.network_name
     if _config.sandbox.runtime == "docker":
-        host_data_dir_env = os.environ.get("CARAPACE_HOST_DATA_DIR")
-        host_data_dir = Path(host_data_dir_env) if host_data_dir_env else None
-
         # Resolve the actual Docker network name once at startup.
         # Docker Compose prefixes networks with the project name, so the logical
         # name "carapace-sandbox" may be "carapace_carapace-sandbox" in Docker.
@@ -238,7 +241,6 @@ async def lifespan(app: FastAPI):
         base_image=base_image,
         network_name=sandbox_network,
         idle_timeout_minutes=_config.sandbox.idle_timeout_minutes,
-        host_data_dir=host_data_dir,
         proxy_port=proxy_port,
         sandbox_port=_config.server.sandbox_port,
         git_author=_config.git.author,

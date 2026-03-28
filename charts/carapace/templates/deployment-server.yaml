@@ -58,6 +58,12 @@ spec:
               value: {{ .Release.Name }}-data
             - name: CARAPACE_SANDBOX_K8S_APP_INSTANCE
               value: {{ .Release.Name }}
+            - name: CARAPACE_SANDBOX_K8S_SESSION_PVC_SIZE
+              value: {{ .Values.sandbox.sessionPvc.size | quote }}
+          {{- if .Values.sandbox.sessionPvc.storageClass }}
+            - name: CARAPACE_SANDBOX_K8S_SESSION_PVC_STORAGE_CLASS
+              value: {{ .Values.sandbox.sessionPvc.storageClass | quote }}
+          {{- end }}
           {{- if .Values.resetAssets }}
             - name: CARAPACE_RESET_ASSETS
               value: "true"
