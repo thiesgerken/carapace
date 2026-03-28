@@ -12,6 +12,7 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 COPY setup-proxy.sh /usr/local/bin/setup-proxy.sh
 RUN chmod +x /usr/local/bin/setup-proxy.sh
 
-RUN mkdir -p /workspace
+RUN mkdir -p /workspace \
+ && git config --global --add safe.directory /workspace
 
 WORKDIR /workspace
