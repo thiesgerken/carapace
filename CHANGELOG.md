@@ -1,6 +1,15 @@
 # CHANGELOG
 
 
+## v0.43.2 (2026-03-29)
+
+
+### ⬆️ Dependencies
+
+
+- ⬆️ update python deps
+  ([`e269f03`](https://github.com/thiesgerken/carapace/commit/e269f03aac49d76c2fdd0e3eb3e5f4e71ebbd6bc))
+
 ## v0.43.1 (2026-03-29)
 
 
