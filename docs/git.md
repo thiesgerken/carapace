@@ -16,12 +16,12 @@ git:
     env: CARAPACE_GIT_TOKEN
 ```
 
-| Field    | Default                                     | Description                                                                                    |
-| -------- | ------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| `remote` | `""` (none)                                 | URL of the upstream Git remote. Leave empty for local-only mode.                               |
-| `branch` | `"main"`                                    | Branch to use for all fetch, merge, and push operations. **Must already exist on the remote.** |
-| `author` | `"Carapace Session %s <%s@carapace.local>"` | Commit author template. `%s` is replaced with the session ID.                                  |
-| `token`  | `null`                                      | Authentication token for the remote (see below).                                               |
+| Field    | Default                                     | Description                                                                                                                            |
+| -------- | ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `remote` | `""` (none)                                 | URL of the upstream Git remote. Leave empty for local-only mode.                                                                       |
+| `branch` | `"main"`                                    | Remote branch to fetch from and push to. **Must already exist on the remote.** The local knowledge repo always uses `main` internally. |
+| `author` | `"Carapace Session %s <%s@carapace.local>"` | Commit author template. `%s` is replaced with the session ID.                                                                          |
+| `token`  | `null`                                      | Authentication token for the remote (see below).                                                                                       |
 
 ### Authentication
 
@@ -43,21 +43,23 @@ token:
 
 The token is embedded as `x-access-token:<token>` in the remote URL for HTTPS authentication. If no token is configured, the remote is added without credentials (suitable for public repos or SSH URLs).
 
-## Branch requirements
+## Remote branch
 
-The configured `branch` **must already exist** on the upstream remote before Carapace connects to it. Carapace does not create remote branches — it performs `git fetch origin <branch>` and `git merge --ff-only origin/<branch>`, both of which fail if the branch doesn't exist on the remote.
+The `branch` setting in the git config refers exclusively to the **remote** branch. The `branch` setting controls which **remote** branch Carapace fetches from and pushes to. It does **not** affect the local knowledge repo, which always uses a `main` branch internally. This means you can point Carapace at any branch on the remote (e.g. `dev`, `production`) without changing how sandboxes or the agent interact with the repo locally.
+
+The configured branch **must already exist** on the upstream remote before Carapace connects to it. Carapace does not create remote branches — it performs `git fetch origin <branch>` and `git merge --ff-only origin/<branch>`, both of which fail if the branch doesn't exist.
 
 If you're starting from scratch:
 
 1. Create the remote repository and its default branch (most hosting providers do this automatically).
-2. Make sure the branch name in `config.yaml` matches (e.g. `main`, `dev`).
+2. Set `branch` in `config.yaml` to match the remote branch you want to use (e.g. `main`, `dev`).
 3. Start Carapace — it will push the initial bootstrap commit to that branch.
 
 ## What happens on first start
 
 When the server starts with a remote configured:
 
-1. **Initialise local repo.** If `$CARAPACE_DATA_DIR/knowledge/` has no `.git` directory, `git init -b <branch>` creates one.
+1. **Initialise local repo.** If `$CARAPACE_DATA_DIR/knowledge/` has no `.git` directory, `git init -b main` creates one. The local branch is always `main`, regardless of the `branch` setting.
 2. **Add remote.** The upstream URL is registered as `origin` (or updated if it already exists).
 3. **Pull.** Carapace fetches from the remote and syncs the local branch. If the local repo is empty (fresh init) and the remote has content, it adopts the remote branch directly (`git reset --hard`). If the local repo already has commits, it does a fast-forward merge. If the remote branch is also empty, this step is a no-op.
 4. **Bootstrap.** Default knowledge files (`SECURITY.md`, `SOUL.md`, `USER.md`, `memory/CORE.md`, example skills) are seeded **only if they don't already exist** — files pulled from the remote are not overwritten.

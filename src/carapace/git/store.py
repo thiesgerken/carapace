@@ -86,15 +86,17 @@ class GitStore:
     No ``gitpython`` dependency — the ``git`` binary is always available.
     """
 
+    _LOCAL_BRANCH = "main"
+
     def __init__(
         self,
         repo_dir: Path,
         *,
-        branch: str = "main",
+        remote_branch: str = "main",
         author: str = "Carapace Session %s <%s@carapace.local>",
     ) -> None:
         self.repo_dir = repo_dir
-        self.branch = branch
+        self.remote_branch = remote_branch
         self.author_template = author
 
     async def _run(self, *args: str, cwd: Path | None = None) -> tuple[int, str]:
@@ -126,7 +128,7 @@ class GitStore:
 
         git_dir = self.repo_dir / ".git"
         if not git_dir.exists():
-            code, out = await self._run("init", "-b", self.branch)
+            code, out = await self._run("init", "-b", self._LOCAL_BRANCH)
             if code != 0:
                 raise RuntimeError(f"git init failed: {out}")
             logger.info(f"Initialised knowledge repo at {self.repo_dir}")
@@ -210,8 +212,10 @@ class GitStore:
         logger.info(f"Git remote origin set to {url}")
 
     async def push_to_remote(self) -> None:
-        """Push the current branch to the external remote."""
-        code, out = await self._run("push", "origin", self.branch)
+        """Push the local branch to the configured remote branch."""
+        refspec = f"{self._LOCAL_BRANCH}:{self.remote_branch}"
+        logger.info(f"Pushing {refspec} to origin")
+        code, out = await self._run("push", "origin", refspec)
         if code != 0:
             logger.warning(f"git push to remote failed: {out}")
         else:
@@ -227,28 +231,28 @@ class GitStore:
         Returns a summary string. Raises ``RuntimeError`` on merge conflict
         or fetch failure.
         """
-        logger.info(f"Fetching from origin/{self.branch}")
-        code, out = await self._run("fetch", "origin", self.branch)
+        logger.info(f"Fetching from origin/{self.remote_branch}")
+        code, out = await self._run("fetch", "origin", self.remote_branch)
         if code != 0:
             raise RuntimeError(f"git fetch failed: {out}")
 
         # Check whether the remote branch actually has any commits.
-        code, _ = await self._run("rev-parse", "--verify", f"origin/{self.branch}")
+        code, _ = await self._run("rev-parse", "--verify", f"origin/{self.remote_branch}")
         if code != 0:
             logger.info("Remote branch has no commits yet — nothing to pull")
             return "Remote branch is empty."
 
         if not await self.has_commits():
             # Empty local repo — adopt the remote branch wholesale.
-            logger.info(f"Local repo is empty, resetting to origin/{self.branch}")
-            code, out = await self._run("reset", "--hard", f"origin/{self.branch}")
+            logger.info(f"Local repo is empty, resetting to origin/{self.remote_branch}")
+            code, out = await self._run("reset", "--hard", f"origin/{self.remote_branch}")
             if code != 0:
-                raise RuntimeError(f"git reset to origin/{self.branch} failed: {out}")
+                raise RuntimeError(f"git reset to origin/{self.remote_branch} failed: {out}")
             code, summary = await self._run("log", "--oneline", "-10")
             return summary if code == 0 and summary else "Adopted remote branch."
 
         logger.info("Merging (fast-forward only)")
-        code, out = await self._run("merge", "--ff-only", f"origin/{self.branch}")
+        code, out = await self._run("merge", "--ff-only", f"origin/{self.remote_branch}")
         if code != 0:
             raise RuntimeError(
                 f"Merge conflict in knowledge repo. Resolve manually in {self.repo_dir} and restart.\n{out}"

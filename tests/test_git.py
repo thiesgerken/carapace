@@ -63,7 +63,7 @@ class TestGitStoreEnsureRepo:
         return tmp_path / "knowledge"
 
     async def test_creates_repo(self, repo_dir: Path):
-        store = GitStore(repo_dir, branch="main")
+        store = GitStore(repo_dir, remote_branch="main")
         await store.ensure_repo()
 
         assert (repo_dir / ".git").is_dir()
@@ -104,7 +104,7 @@ class TestGitStoreCommit:
     @pytest.fixture
     async def store(self, tmp_path: Path) -> GitStore:
         repo = tmp_path / "knowledge"
-        s = GitStore(repo, branch="main")
+        s = GitStore(repo, remote_branch="main")
         await s.ensure_repo()
         return s
 
@@ -136,7 +136,7 @@ class TestGitStoreRemote:
     @pytest.fixture
     async def store(self, tmp_path: Path) -> GitStore:
         repo = tmp_path / "knowledge"
-        s = GitStore(repo, branch="main")
+        s = GitStore(repo, remote_branch="main")
         await s.ensure_repo()
         return s
 

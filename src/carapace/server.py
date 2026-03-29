@@ -171,7 +171,7 @@ async def lifespan(app: FastAPI):
     # 3. Git-backed knowledge store
     git_store = GitStore(
         knowledge_dir,
-        branch=_config.git.branch,
+        remote_branch=_config.git.branch,
         author=_config.git.author,
     )
     await git_store.ensure_repo()
@@ -271,7 +271,7 @@ async def lifespan(app: FastAPI):
     # Git HTTP handler — serves the knowledge repo on the sandbox API
     _git_handler = GitHttpHandler(
         knowledge_dir=knowledge_dir,
-        default_branch=_config.git.branch,
+        default_branch="main",
         api_port=_config.server.internal_port,
         verify_session_token=_sandbox_mgr.verify_session_token,
         on_push_success=git_store.push_to_remote if _config.git.remote else None,

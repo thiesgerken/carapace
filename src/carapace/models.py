@@ -193,7 +193,7 @@ class GitConfig(BaseModel):
     """Git-backed knowledge store configuration."""
 
     remote: str = ""  # optional external remote URL
-    branch: str = "main"
+    branch: str = "main"  # remote branch to fetch/push (local is always "main")
     author: str = "Carapace Session %s <%s@carapace.local>"  # %s → session ID
     token: Secret | None = None
 
