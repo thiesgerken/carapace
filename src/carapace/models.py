@@ -148,16 +148,6 @@ class SandboxConfig(BaseSettings):
     cleanup_orphans_on_startup: bool = True
 
 
-class MemorySearchConfig(BaseModel):
-    enabled: bool = False
-    provider: str = "local"
-    local_model: str = "all-MiniLM-L6-v2"
-
-
-class MemoryConfig(BaseModel):
-    search: MemorySearchConfig = MemorySearchConfig()
-
-
 class GitConfig(BaseModel):
     """Git-backed knowledge store configuration."""
 
@@ -188,7 +178,6 @@ class Config(BaseModel):
     agent: AgentConfig = AgentConfig()
     credentials: CredentialsConfig = CredentialsConfig()
     sandbox: SandboxConfig = SandboxConfig()
-    memory: MemoryConfig = MemoryConfig()
     git: GitConfig = GitConfig()
     data_dir: str = "."  # resolved relative to config file location
     knowledge_dir: str = "./knowledge"  # resolved relative to config file location
