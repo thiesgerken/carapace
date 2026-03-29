@@ -199,7 +199,12 @@ class KubernetesRuntime(ContainerRuntime):
         while True:
 
             def _check() -> str:
-                pod = self._core.read_namespaced_pod(name=pod_name, namespace=self._namespace)
+                try:
+                    pod = self._core.read_namespaced_pod(name=pod_name, namespace=self._namespace)
+                except ApiException as exc:
+                    if exc.status == 404:
+                        return "Pending"
+                    raise
                 return pod.status.phase or "Unknown"
 
             phase = await asyncio.to_thread(_check)
