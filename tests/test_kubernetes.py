@@ -30,6 +30,7 @@ def _make_runtime(*, namespace: str = "carapace", data_dir: str = "/data") -> Ku
     rt._app_instance = "carapace"
     rt._session_pvc_size = "1Gi"
     rt._session_pvc_storage_class = None
+    rt._resource_spec = None
     rt._want_owner_ref = False
     rt._owner_deployment = None
     return rt

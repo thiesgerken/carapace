@@ -61,6 +61,10 @@ class KubernetesRuntime(ContainerRuntime):
         app_instance: str = "carapace",
         session_pvc_size: str = "1Gi",
         session_pvc_storage_class: str = "",
+        resource_requests_cpu: str = "",
+        resource_requests_memory: str = "",
+        resource_limits_cpu: str = "",
+        resource_limits_memory: str = "",
     ) -> None:
         self._namespace = namespace
         self._pvc_claim = pvc_claim
@@ -70,10 +74,43 @@ class KubernetesRuntime(ContainerRuntime):
         self._app_instance = app_instance
         self._session_pvc_size = session_pvc_size
         self._session_pvc_storage_class = session_pvc_storage_class or None
+        self._resource_spec = self._build_resource_spec(
+            resource_requests_cpu,
+            resource_requests_memory,
+            resource_limits_cpu,
+            resource_limits_memory,
+        )
         self._want_owner_ref = owner_ref
         self._owner_deployment: Deployment | None = None
 
         logger.info(f"KubernetesRuntime initialized (namespace={namespace}, pvc={pvc_claim}, data_dir={data_dir})")
+
+    @staticmethod
+    def _build_resource_spec(
+        req_cpu: str,
+        req_mem: str,
+        lim_cpu: str,
+        lim_mem: str,
+    ) -> dict | None:
+        """Build a Kubernetes container resources dict, or None if nothing is set."""
+        requests: dict[str, str] = {}
+        limits: dict[str, str] = {}
+        if req_cpu:
+            requests["cpu"] = req_cpu
+        if req_mem:
+            requests["memory"] = req_mem
+        if lim_cpu:
+            limits["cpu"] = lim_cpu
+        if lim_mem:
+            limits["memory"] = lim_mem
+        if not requests and not limits:
+            return None
+        spec: dict = {}
+        if requests:
+            spec["requests"] = requests
+        if limits:
+            spec["limits"] = limits
+        return spec
 
     async def _ensure_api(self) -> Api:
         """Lazily create the kr8s API client (must be called from async context)."""
@@ -161,6 +198,7 @@ class KubernetesRuntime(ContainerRuntime):
                             "allowPrivilegeEscalation": False,
                             "capabilities": {"drop": ["ALL"]},
                         },
+                        **({"resources": self._resource_spec} if self._resource_spec else {}),
                     }
                 ],
                 "volumes": [
@@ -271,6 +309,7 @@ class KubernetesRuntime(ContainerRuntime):
                                     "allowPrivilegeEscalation": False,
                                     "capabilities": {"drop": ["ALL"]},
                                 },
+                                **({"resources": self._resource_spec} if self._resource_spec else {}),
                             }
                         ],
                         "restartPolicy": "Always",

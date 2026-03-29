@@ -139,6 +139,11 @@ class SandboxConfig(BaseSettings):
     k8s_session_pvc_size: str = "1Gi"
     # StorageClass for per-session PVCs (empty = cluster default).
     k8s_session_pvc_storage_class: str = ""
+    # Resource requests/limits for sandbox containers (empty = no constraint).
+    k8s_resource_requests_cpu: str = ""
+    k8s_resource_requests_memory: str = ""
+    k8s_resource_limits_cpu: str = ""
+    k8s_resource_limits_memory: str = ""
 
 
 class MemorySearchConfig(BaseModel):

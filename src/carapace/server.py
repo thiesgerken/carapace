@@ -129,6 +129,10 @@ def _create_sandbox_runtime(config: Config, data_dir: Path) -> ContainerRuntime:
             app_instance=config.sandbox.k8s_app_instance,
             session_pvc_size=config.sandbox.k8s_session_pvc_size,
             session_pvc_storage_class=config.sandbox.k8s_session_pvc_storage_class,
+            resource_requests_cpu=config.sandbox.k8s_resource_requests_cpu,
+            resource_requests_memory=config.sandbox.k8s_resource_requests_memory,
+            resource_limits_cpu=config.sandbox.k8s_resource_limits_cpu,
+            resource_limits_memory=config.sandbox.k8s_resource_limits_memory,
         )
 
     from carapace.sandbox.docker import DockerRuntime

@@ -64,6 +64,28 @@ spec:
             - name: CARAPACE_SANDBOX_K8S_SESSION_PVC_STORAGE_CLASS
               value: {{ .Values.sandbox.sessionPvc.storageClass | quote }}
           {{- end }}
+          {{- with .Values.sandbox.resources }}
+          {{- if .requests }}
+          {{- if .requests.cpu }}
+            - name: CARAPACE_SANDBOX_K8S_RESOURCE_REQUESTS_CPU
+              value: {{ .requests.cpu | quote }}
+          {{- end }}
+          {{- if .requests.memory }}
+            - name: CARAPACE_SANDBOX_K8S_RESOURCE_REQUESTS_MEMORY
+              value: {{ .requests.memory | quote }}
+          {{- end }}
+          {{- end }}
+          {{- if .limits }}
+          {{- if .limits.cpu }}
+            - name: CARAPACE_SANDBOX_K8S_RESOURCE_LIMITS_CPU
+              value: {{ .limits.cpu | quote }}
+          {{- end }}
+          {{- if .limits.memory }}
+            - name: CARAPACE_SANDBOX_K8S_RESOURCE_LIMITS_MEMORY
+              value: {{ .limits.memory | quote }}
+          {{- end }}
+          {{- end }}
+          {{- end }}
           {{- if .Values.resetAssets }}
             - name: CARAPACE_RESET_ASSETS
               value: "true"
