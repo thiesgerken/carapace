@@ -1,8 +1,33 @@
 # CHANGELOG
 
 
+## v0.47.1 (2026-03-29)
+
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix: iterate kr8s async generator in list_sandboxes
+  ([`ff09539`](https://github.com/thiesgerken/carapace/commit/ff095393b7f3794cc911cec93215c04c6ef92437))
+
+  kr8s.asyncio.get() returns an async generator, not an awaitable list.
+
+### Other
+
+
+- Merge remote-tracking branch 'refs/remotes/origin/main'
+  ([`9cca306`](https://github.com/thiesgerken/carapace/commit/9cca3063274e8bb32f57053dbdbfd3fd1ec8a0e6))
+
 ## v0.47.0 (2026-03-29)
 
+
+### Other
+
+
+- 🔥 refactor: remove unused MemoryConfig / MemorySearchConfig
+  ([`75db61d`](https://github.com/thiesgerken/carapace/commit/75db61d16796fd2e3bd198645b63fb0794a65175))
+
+  These models were placeholders for a planned vector-search feature that was never implemented.  No code reads the config values.
 
 ### ✨ Features
 
