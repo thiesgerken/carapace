@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.45.0 (2026-03-29)
+
+
+### ✨ Features
+
+
+- ✨ feat: add resource limits for sandbox, frontend and backend containers
+  ([`9065878`](https://github.com/thiesgerken/carapace/commit/9065878c872ff977a4ea5562cf338be57153f6d6))
+
+  The Helm chart was missing a way to specify CPU/memory requests and limits for sandbox containers.  Frontend and backend already had resources blocks in values.yaml and their templates.
+
+  Add sandbox.resources to values.yaml with sensible defaults, pass them as CARAPACE_SANDBOX_K8S_RESOURCE_* env vars to the server, and wire them through SandboxConfig → KubernetesRuntime into both Pod and StatefulSet container specs.
+
 ## v0.44.3 (2026-03-29)
 
 
