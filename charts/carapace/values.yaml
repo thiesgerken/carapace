@@ -34,6 +34,8 @@ sandbox:
     registry: ghcr.io
     repository: thiesgerken/carapace-sandbox
     tag: "" # defaults to appVersion
+  # -- PriorityClass override for sandbox pods (empty = use global priorityClassName)
+  priorityClassName: ""
   # -- Resource requests/limits for sandbox containers
   resources:
     requests:
@@ -68,7 +70,7 @@ persistence:
     finalizers: []
     # - kubernetes.io/pvc-protection
 
-# -- Priority class name for all pods (server, frontend, sandbox)
+# -- Priority class name for server and frontend pods (sandbox can override via sandbox.priorityClassName)
 priorityClassName: ""
 
 # -- Server resource requests/limits

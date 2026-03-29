@@ -90,9 +90,9 @@ spec:
             - name: CARAPACE_RESET_ASSETS
               value: "true"
           {{- end }}
-          {{- if .Values.priorityClassName }}
+          {{- if or .Values.sandbox.priorityClassName .Values.priorityClassName }}
             - name: CARAPACE_SANDBOX_K8S_PRIORITY_CLASS
-              value: {{ .Values.priorityClassName }}
+              value: {{ .Values.sandbox.priorityClassName | default .Values.priorityClassName }}
           {{- end }}
           {{- if hasKey .Values.sandbox "ownerRef" }}
             - name: CARAPACE_SANDBOX_K8S_OWNER_REF
