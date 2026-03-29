@@ -1,6 +1,17 @@
 # CHANGELOG
 
 
+## v0.44.3 (2026-03-29)
+
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix: grant list verb on deployments for kr8s owner-ref lookup
+  ([`906d2d4`](https://github.com/thiesgerken/carapace/commit/906d2d4eb8c221ac7bf1ba34381341d287942c67))
+
+  kr8s uses LIST with fieldSelector instead of a direct GET, so the RBAC role needs the list verb in addition to get.
+
 ## v0.44.2 (2026-03-29)
 
 
