@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.48.0 (2026-03-29)
+
+
+### ✨ Features
+
+
+- ✨ feat: add Secret model for flexible credential sourcing
+  ([`c6fa9b4`](https://github.com/thiesgerken/carapace/commit/c6fa9b4ac65fcc662f0a7c826cf5e03576aded8c))
+
+  Introduce a Secret BaseModel that resolves credentials from a raw value, an environment variable, or a file path.  Accepts plain strings as shorthand for raw values.  resolve() returns SecretStr and raises ValueError when the configured source is missing.
+
+  Config fields (MatrixChannelConfig.password/token, GitConfig.token) are Secret | None — existing env-var fallbacks are preserved when no Secret is configured.
+
 ## v0.47.2 (2026-03-29)
 
 
