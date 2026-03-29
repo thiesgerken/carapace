@@ -264,7 +264,9 @@ class KubernetesRuntime(ContainerRuntime):
                                 "image": config.image,
                                 "command": _default_command(config.command),
                                 **({"env": env_vars} if env_vars else {}),
-                                "volumeMounts": [{"name": "session-data", "mountPath": "/workspace"}],
+                                "volumeMounts": [
+                                    {"name": "session-data", "mountPath": "/workspace", "subPath": "workspace"}
+                                ],
                                 "securityContext": {
                                     "allowPrivilegeEscalation": False,
                                     "capabilities": {"drop": ["ALL"]},

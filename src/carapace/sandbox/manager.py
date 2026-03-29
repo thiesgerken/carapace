@@ -327,7 +327,9 @@ class SandboxManager:
             timeout=60,
         )
         if result.exit_code != 0:
-            logger.error(f"Git clone failed in sandbox for {session_id} (exit {result.exit_code}): {result.output}")
+            raise RuntimeError(
+                f"Git clone failed in sandbox for {session_id} (exit {result.exit_code}): {result.output}"
+            )
 
     def _build_proxy_env(self, session_id: str, proxy_token: str, proxy_url: str) -> dict[str, str]:
         """Build HTTP_PROXY / NO_PROXY env vars for session containers."""
