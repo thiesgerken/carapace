@@ -180,13 +180,12 @@ async def lifespan(app: FastAPI):
     if _config.git.remote:
         git_token = _config.git.token.resolve().get_secret_value() if _config.git.token else None
         await git_store.add_remote(_config.git.remote, git_token)
-        if await git_store.has_commits():
-            try:
-                summary = await git_store.pull_from_remote()
-                logger.info(f"Pulled from remote: {summary}")
-            except RuntimeError as exc:
-                logger.error(str(exc))
-                raise SystemExit(1) from exc
+        try:
+            summary = await git_store.pull_from_remote()
+            logger.info(f"Pulled from remote: {summary}")
+        except RuntimeError as exc:
+            logger.error(str(exc))
+            raise SystemExit(1) from exc
 
     # Bootstrap knowledge files (after pull so we don't override remote content)
     seeded = ensure_knowledge_dir(knowledge_dir)

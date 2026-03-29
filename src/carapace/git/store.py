@@ -104,14 +104,25 @@ class GitStore:
             *args,
             cwd=cwd or self.repo_dir,
             stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT,
+            stderr=asyncio.subprocess.PIPE,
         )
-        stdout, _ = await proc.communicate()
-        return proc.returncode or 0, stdout.decode(errors="replace").strip()
+        stdout, stderr = await proc.communicate()
+        code = proc.returncode or 0
+        out = stdout.decode(errors="replace").strip()
+        err = stderr.decode(errors="replace").strip()
+        if err:
+            log = logger.warning if code != 0 else logger.debug
+            log(f"git {args[0]}: {err}")
+        return code, out
 
     async def ensure_repo(self) -> None:
         """Initialise the Git repo if it doesn't exist yet and install hooks."""
         self.repo_dir.mkdir(parents=True, exist_ok=True)
+
+        # Mark the repo directory as safe so git doesn't reject it when the
+        # current user differs from the directory owner (e.g. bind-mounted
+        # host dirs in Docker).
+        await self._run("config", "--global", "--replace-all", "safe.directory", str(self.repo_dir))
 
         git_dir = self.repo_dir / ".git"
         if not git_dir.exists():
@@ -209,12 +220,34 @@ class GitStore:
     async def pull_from_remote(self) -> str:
         """Fetch + fast-forward merge from external remote.
 
-        Returns a summary string. Raises ``RuntimeError`` on merge conflict.
+        If the local repo has no commits yet (fresh init), the remote branch
+        is adopted directly via ``git reset``.  Otherwise a fast-forward
+        merge is attempted.
+
+        Returns a summary string. Raises ``RuntimeError`` on merge conflict
+        or fetch failure.
         """
+        logger.info(f"Fetching from origin/{self.branch}")
         code, out = await self._run("fetch", "origin", self.branch)
         if code != 0:
             raise RuntimeError(f"git fetch failed: {out}")
 
+        # Check whether the remote branch actually has any commits.
+        code, _ = await self._run("rev-parse", "--verify", f"origin/{self.branch}")
+        if code != 0:
+            logger.info("Remote branch has no commits yet — nothing to pull")
+            return "Remote branch is empty."
+
+        if not await self.has_commits():
+            # Empty local repo — adopt the remote branch wholesale.
+            logger.info(f"Local repo is empty, resetting to origin/{self.branch}")
+            code, out = await self._run("reset", "--hard", f"origin/{self.branch}")
+            if code != 0:
+                raise RuntimeError(f"git reset to origin/{self.branch} failed: {out}")
+            code, summary = await self._run("log", "--oneline", "-10")
+            return summary if code == 0 and summary else "Adopted remote branch."
+
+        logger.info("Merging (fast-forward only)")
         code, out = await self._run("merge", "--ff-only", f"origin/{self.branch}")
         if code != 0:
             raise RuntimeError(

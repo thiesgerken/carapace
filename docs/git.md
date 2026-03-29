@@ -16,12 +16,12 @@ git:
     env: CARAPACE_GIT_TOKEN
 ```
 
-| Field | Default | Description |
-| --- | --- | --- |
-| `remote` | `""` (none) | URL of the upstream Git remote. Leave empty for local-only mode. |
-| `branch` | `"main"` | Branch to use for all fetch, merge, and push operations. **Must already exist on the remote.** |
-| `author` | `"Carapace Session %s <%s@carapace.local>"` | Commit author template. `%s` is replaced with the session ID. |
-| `token` | `null` | Authentication token for the remote (see below). |
+| Field    | Default                                     | Description                                                                                    |
+| -------- | ------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `remote` | `""` (none)                                 | URL of the upstream Git remote. Leave empty for local-only mode.                               |
+| `branch` | `"main"`                                    | Branch to use for all fetch, merge, and push operations. **Must already exist on the remote.** |
+| `author` | `"Carapace Session %s <%s@carapace.local>"` | Commit author template. `%s` is replaced with the session ID.                                  |
+| `token`  | `null`                                      | Authentication token for the remote (see below).                                               |
 
 ### Authentication
 
@@ -59,7 +59,7 @@ When the server starts with a remote configured:
 
 1. **Initialise local repo.** If `$CARAPACE_DATA_DIR/knowledge/` has no `.git` directory, `git init -b <branch>` creates one.
 2. **Add remote.** The upstream URL is registered as `origin` (or updated if it already exists).
-3. **Pull.** If the local repo already has commits, Carapace does a fast-forward pull (`git fetch` + `git merge --ff-only`). If the remote has content and the local repo is freshly initialised (no commits yet), this step is skipped — the bootstrap will create the first commit.
+3. **Pull.** Carapace fetches from the remote and syncs the local branch. If the local repo is empty (fresh init) and the remote has content, it adopts the remote branch directly (`git reset --hard`). If the local repo already has commits, it does a fast-forward merge. If the remote branch is also empty, this step is a no-op.
 4. **Bootstrap.** Default knowledge files (`SECURITY.md`, `SOUL.md`, `USER.md`, `memory/CORE.md`, example skills) are seeded **only if they don't already exist** — files pulled from the remote are not overwritten.
 5. **Commit & push.** If the bootstrap created any new files, they are committed and pushed to the remote.
 
@@ -90,7 +90,7 @@ Every session gets its own **sandbox container** with a clone of the knowledge r
 1. **Clone on creation.** When a sandbox starts, `git clone $GIT_REPO_URL /workspace` pulls the latest state from the server. If the workspace already exists (e.g. Kubernetes PVC from a previous run), the clone is skipped.
 2. **Agent commits & pushes.** The agent can run `git add`, `git commit`, and `git push` inside the sandbox. Pushes go to the server's Git HTTP backend.
 3. **Security gate.** Every push triggers a **pre-receive hook** that sends the full diff to the sentinel agent for evaluation. The sentinel can allow or deny the push based on the security policy.
-4. **Upstream propagation.** If the push is accepted *and* an upstream remote is configured, the server automatically pushes to the external remote.
+4. **Upstream propagation.** If the push is accepted _and_ an upstream remote is configured, the server automatically pushes to the external remote.
 
 ### Git identity
 
@@ -104,10 +104,10 @@ This makes it easy to trace which session produced which commit in the upstream 
 
 ## Slash commands
 
-| Command | Description |
-| --- | --- |
-| `/pull` | Fetch and fast-forward merge from the upstream remote into the server's knowledge repo. Re-scans skills afterwards. Fails if no remote is configured or if there's a merge conflict. |
-| `/push` | Push the server's knowledge repo to the upstream remote. Fails if no remote is configured. |
+| Command   | Description                                                                                                                                                                          |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `/pull`   | Fetch and fast-forward merge from the upstream remote into the server's knowledge repo. Re-scans skills afterwards. Fails if no remote is configured or if there's a merge conflict. |
+| `/push`   | Push the server's knowledge repo to the upstream remote. Fails if no remote is configured.                                                                                           |
 | `/reload` | Destroy the session's sandbox and re-create it on the next command. The new sandbox gets a fresh clone, picking up any changes that were pulled or pushed since the session started. |
 
 ## Local-only mode
