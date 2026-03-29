@@ -1,109 +1,37 @@
-"""Unit tests for KubernetesRuntime — mock all K8s API calls."""
+"""Unit tests for KubernetesRuntime — mock all kr8s API calls."""
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
-from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 
-def _ns_factory(**defaults):
-    """Create a callable that returns a SimpleNamespace with given kwargs."""
-
-    def factory(**kwargs):
-        merged = {**defaults, **kwargs}
-        return SimpleNamespace(**merged)
-
-    return factory
-
-
-# Mock the kubernetes package before importing KubernetesRuntime.
-# Use force-set (not setdefault) in case a previous test run cached stale mocks.
-_mock_k8s_client = MagicMock()
-_mock_k8s_config = MagicMock()
-_mock_k8s_stream = MagicMock()
-_mock_k8s_top = MagicMock()
-
-# Wire up `from kubernetes import client` → our custom mock
-_mock_k8s_top.client = _mock_k8s_client
-_mock_k8s_top.config = _mock_k8s_config
-
-# Replace model constructors with SimpleNamespace factories so tests can
-# inspect constructed objects by attribute access.
-_mock_k8s_client.V1Pod = _ns_factory()
-_mock_k8s_client.V1PodSpec = _ns_factory()
-_mock_k8s_client.V1Container = _ns_factory()
-_mock_k8s_client.V1ObjectMeta = _ns_factory()
-_mock_k8s_client.V1Volume = _ns_factory()
-_mock_k8s_client.V1VolumeMount = _ns_factory()
-_mock_k8s_client.V1EnvVar = _ns_factory()
-_mock_k8s_client.V1SecurityContext = _ns_factory()
-_mock_k8s_client.V1Capabilities = _ns_factory()
-_mock_k8s_client.V1PersistentVolumeClaimVolumeSource = _ns_factory()
-_mock_k8s_client.V1OwnerReference = _ns_factory()
-_mock_k8s_client.V1StatefulSet = _ns_factory()
-_mock_k8s_client.V1StatefulSetSpec = _ns_factory()
-_mock_k8s_client.V1StatefulSetPersistentVolumeClaimRetentionPolicy = _ns_factory()
-_mock_k8s_client.V1PodTemplateSpec = _ns_factory()
-_mock_k8s_client.V1LabelSelector = _ns_factory()
-_mock_k8s_client.V1PersistentVolumeClaim = _ns_factory()
-_mock_k8s_client.V1PersistentVolumeClaimSpec = _ns_factory()
-_mock_k8s_client.V1VolumeResourceRequirements = _ns_factory()
-_mock_k8s_client.CoreV1Api = MagicMock
-_mock_k8s_client.AppsV1Api = MagicMock
-
-sys.modules["kubernetes"] = _mock_k8s_top
-sys.modules["kubernetes.client"] = _mock_k8s_client
-sys.modules["kubernetes.config"] = _mock_k8s_config
-sys.modules["kubernetes.stream"] = _mock_k8s_stream
-sys.modules["kubernetes.client.rest"] = MagicMock()
-
-
-# Provide real exception class on the mocked module
-def _make_api_exception(status: int = 500, reason: str = "") -> Exception:
-    exc = Exception(reason)
-    exc.status = status  # type: ignore[attr-defined]
-    exc.reason = reason  # type: ignore[attr-defined]
-    return exc
-
-
-_ApiException = type("ApiException", (Exception,), {})
-
-
-def _api_exc_init(self: Exception, status: int = 500, reason: str = "") -> None:
-    super(_ApiException, self).__init__(reason)
-    self.status = status  # type: ignore[attr-defined]
-    self.reason = reason  # type: ignore[attr-defined]
-
-
-_ApiException.__init__ = _api_exc_init  # type: ignore[assignment]
-_mock_k8s_client.ApiException = _ApiException
-
-# Force reimport so the module picks up our stub constructors
-sys.modules.pop("carapace.sandbox.kubernetes", None)
-
-from carapace.sandbox.kubernetes import KubernetesRuntime, _sanitize_pod_name  # noqa: E402
-from carapace.sandbox.runtime import ContainerConfig, Mount, SandboxConfig  # noqa: E402
+from carapace.sandbox.kubernetes import (
+    KubernetesRuntime,
+    _default_command,
+    _sanitize_pod_name,
+    _standard_labels,
+)
+from carapace.sandbox.runtime import ContainerConfig, Mount, SandboxConfig
 
 # --- Helpers ---
 
 
 def _make_runtime(*, namespace: str = "carapace", data_dir: str = "/data") -> KubernetesRuntime:
-    """Build a KubernetesRuntime with mocked K8s clients."""
+    """Build a KubernetesRuntime without triggering __init__ side effects."""
     with patch.object(KubernetesRuntime, "__init__", lambda self, **kw: None):
         rt = KubernetesRuntime.__new__(KubernetesRuntime)
-    rt._core = MagicMock()
-    rt._apps = MagicMock()
     rt._namespace = namespace
     rt._pvc_claim = "carapace-data"
     rt._data_dir = Path(data_dir)
     rt._service_account = None
     rt._priority_class = None
-    rt._owner_ref = None
     rt._app_instance = "carapace"
     rt._session_pvc_size = "1Gi"
     rt._session_pvc_storage_class = None
+    rt._want_owner_ref = False
+    rt._owner_deployment = None
     return rt
 
 
@@ -127,6 +55,31 @@ def test_sanitize_pod_name_strips_hyphens():
     assert _sanitize_pod_name("--abc--") == "abc"
 
 
+# --- _default_command ---
+
+
+def test_default_command_none():
+    assert _default_command(None) == ["sh", "-c", "echo 'carapace sandbox ready' && exec sleep infinity"]
+
+
+def test_default_command_string():
+    assert _default_command("echo hello") == ["bash", "-c", "echo hello"]
+
+
+def test_default_command_list():
+    assert _default_command(["sleep", "infinity"]) == ["sleep", "infinity"]
+
+
+# --- _standard_labels ---
+
+
+def test_standard_labels():
+    labels = _standard_labels("carapace")
+    assert labels["app"] == "carapace-sandbox"
+    assert labels["app.kubernetes.io/component"] == "sandbox"
+    assert labels["app.kubernetes.io/managed-by"] == "carapace-server"
+
+
 # --- _mount_to_subpath ---
 
 
@@ -148,10 +101,10 @@ def test_mount_to_subpath_outside_data_dir():
     assert rt._mount_to_subpath(mount) == "/other/path"
 
 
-# --- _build_pod_spec ---
+# --- _build_pod_dict ---
 
 
-def test_build_pod_spec_basic():
+def test_build_pod_dict_basic():
     rt = _make_runtime()
     config = ContainerConfig(
         image="sandbox:latest",
@@ -165,35 +118,38 @@ def test_build_pod_spec_basic():
         command=["sleep", "infinity"],
         environment={"HTTP_PROXY": "http://proxy:3128"},
     )
-    pod = rt._build_pod_spec(config)
-    assert pod.metadata is not None
-    assert pod.spec is not None
-    assert pod.metadata.name == "carapace-sandbox-test123"
-    assert pod.metadata.namespace == "carapace"
-    assert pod.spec.containers[0].image == "sandbox:latest"
-    assert pod.spec.containers[0].command == ["sleep", "infinity"]
-    assert pod.spec.restart_policy == "Always"
-    assert pod.spec.automount_service_account_token is False
+    pod = rt._build_pod_dict(config)
 
-    # Standard labels should be merged with config labels
-    labels = pod.metadata.labels
+    assert pod["metadata"]["name"] == "carapace-sandbox-test123"
+    assert pod["metadata"]["namespace"] == "carapace"
+
+    container = pod["spec"]["containers"][0]
+    assert container["image"] == "sandbox:latest"
+    assert container["command"] == ["sleep", "infinity"]
+
+    assert pod["spec"]["restartPolicy"] == "Always"
+    assert pod["spec"]["automountServiceAccountToken"] is False
+
+    # Standard labels merged with config labels
+    labels = pod["metadata"]["labels"]
     assert labels["app"] == "carapace-sandbox"
     assert labels["app.kubernetes.io/component"] == "sandbox"
     assert labels["carapace.session"] == "test123"
 
-    # Volume mounts should use subPath from PVC
-    vmounts = pod.spec.containers[0].volume_mounts
+    # Volume mounts use subPath from PVC
+    vmounts = container["volumeMounts"]
     assert len(vmounts) == 2
-    assert vmounts[0].sub_path == "memory"
-    assert vmounts[0].read_only is True
-    assert vmounts[1].sub_path == "sessions/s1/workspace/skills"
+    assert vmounts[0]["subPath"] == "memory"
+    assert vmounts[0].get("readOnly") is True
+    assert vmounts[1]["subPath"] == "sessions/s1/workspace/skills"
 
     # Single PVC volume
-    assert len(pod.spec.volumes) == 1
-    assert pod.spec.volumes[0].persistent_volume_claim.claim_name == "carapace-data"
+    volumes = pod["spec"]["volumes"]
+    assert len(volumes) == 1
+    assert volumes[0]["persistentVolumeClaim"]["claimName"] == "carapace-data"
 
 
-def test_build_pod_spec_string_command():
+def test_build_pod_dict_string_command():
     rt = _make_runtime()
     config = ContainerConfig(
         image="sandbox:latest",
@@ -201,90 +157,159 @@ def test_build_pod_spec_string_command():
         network=None,
         command="echo hello",
     )
-    pod = rt._build_pod_spec(config)
-    assert pod.spec is not None
-    assert pod.spec.containers[0].command == ["bash", "-c", "echo hello"]
+    pod = rt._build_pod_dict(config)
+    assert pod["spec"]["containers"][0]["command"] == ["bash", "-c", "echo hello"]
 
 
-def test_build_pod_spec_no_command():
+def test_build_pod_dict_no_command():
     rt = _make_runtime()
     config = ContainerConfig(
         image="sandbox:latest",
         name="test",
         network=None,
     )
-    pod = rt._build_pod_spec(config)
-    assert pod.spec is not None
-    assert pod.spec.containers[0].command == ["sh", "-c", "echo 'carapace sandbox ready' && exec sleep infinity"]
+    pod = rt._build_pod_dict(config)
+    assert pod["spec"]["containers"][0]["command"] == [
+        "sh",
+        "-c",
+        "echo 'carapace sandbox ready' && exec sleep infinity",
+    ]
 
 
-def test_build_pod_spec_security_context():
+def test_build_pod_dict_security_context():
     rt = _make_runtime()
     config = ContainerConfig(image="sandbox:latest", name="test", network=None)
-    pod = rt._build_pod_spec(config)
-    assert pod.spec is not None
-    sc = pod.spec.containers[0].security_context
-    assert sc.allow_privilege_escalation is False
-    assert sc.capabilities.drop == ["ALL"]
+    pod = rt._build_pod_dict(config)
+    sc = pod["spec"]["containers"][0]["securityContext"]
+    assert sc["allowPrivilegeEscalation"] is False
+    assert sc["capabilities"]["drop"] == ["ALL"]
+
+
+# --- _build_statefulset_dict ---
+
+
+def test_build_statefulset_dict():
+    rt = _make_runtime()
+    config = SandboxConfig(
+        name="carapace-sandbox-abc",
+        session_id="abc",
+        image="sandbox:latest",
+        labels={"carapace.session": "abc", "carapace.managed": "true"},
+        environment={"HTTP_PROXY": "http://proxy"},
+    )
+    sts = rt._build_statefulset_dict(config)
+
+    assert sts["kind"] == "StatefulSet"
+    assert sts["metadata"]["name"] == "carapace-sandbox-abc"
+
+    # Retention policy
+    policy = sts["spec"]["persistentVolumeClaimRetentionPolicy"]
+    assert policy["whenDeleted"] == "Delete"
+    assert policy["whenScaled"] == "Retain"
+
+    # volumeClaimTemplate
+    templates = sts["spec"]["volumeClaimTemplates"]
+    assert len(templates) == 1
+    assert templates[0]["metadata"]["name"] == "session-data"
+    assert templates[0]["spec"]["accessModes"] == ["ReadWriteOnce"]
+
+    # Container mounts /workspace
+    container = sts["spec"]["template"]["spec"]["containers"][0]
+    assert any(vm["mountPath"] == "/workspace" for vm in container["volumeMounts"])
 
 
 # --- create ---
 
 
+@pytest.mark.asyncio
 async def test_create_calls_api():
     rt = _make_runtime()
-    rt._core.read_namespaced_pod.return_value = SimpleNamespace(status=SimpleNamespace(phase="Running"))
 
-    config = ContainerConfig(
-        image="sandbox:latest",
-        name="carapace-sandbox-abc",
-        network="carapace-sandbox",
-        command=["sleep", "infinity"],
-    )
-    container_id = await rt.create(config)
+    mock_pod_instance = AsyncMock()
+
+    async def _fake_pod(*args, **kwargs):
+        return mock_pod_instance
+
+    rt._ensure_api = AsyncMock()
+    rt._get_owner_deployment = AsyncMock(return_value=None)
+    rt._delete_pod_if_exists = AsyncMock()
+    rt._wait_for_running = AsyncMock()
+
+    with patch("carapace.sandbox.kubernetes.Pod", side_effect=_fake_pod):
+        config = ContainerConfig(
+            image="sandbox:latest",
+            name="carapace-sandbox-abc",
+            network="carapace-sandbox",
+            command=["sleep", "infinity"],
+        )
+        container_id = await rt.create(config)
+
     assert container_id == "carapace-sandbox-abc"
-    rt._core.create_namespaced_pod.assert_called_once()
+    mock_pod_instance.create.assert_called_once()
+    rt._wait_for_running.assert_called_once()
 
 
 # --- is_running ---
 
 
+@pytest.mark.asyncio
 async def test_is_running_true():
     rt = _make_runtime()
-    rt._core.read_namespaced_pod.return_value = SimpleNamespace(status=SimpleNamespace(phase="Running"))
-    assert await rt.is_running("test-pod") is True
+    rt._ensure_api = AsyncMock()
+
+    mock_pod = MagicMock()
+    mock_pod.status.phase = "Running"
+
+    with patch("carapace.sandbox.kubernetes.Pod") as mock_pod_cls:
+        mock_pod_cls.get = AsyncMock(return_value=mock_pod)
+        assert await rt.is_running("test-pod") is True
 
 
+@pytest.mark.asyncio
 async def test_is_running_false():
     rt = _make_runtime()
-    rt._core.read_namespaced_pod.return_value = SimpleNamespace(status=SimpleNamespace(phase="Pending"))
-    assert await rt.is_running("test-pod") is False
+    rt._ensure_api = AsyncMock()
+
+    mock_pod = MagicMock()
+    mock_pod.status.phase = "Pending"
+
+    with patch("carapace.sandbox.kubernetes.Pod") as mock_pod_cls:
+        mock_pod_cls.get = AsyncMock(return_value=mock_pod)
+        assert await rt.is_running("test-pod") is False
 
 
 # --- get_ip ---
 
 
+@pytest.mark.asyncio
 async def test_get_ip():
     rt = _make_runtime()
-    rt._core.read_namespaced_pod.return_value = SimpleNamespace(status=SimpleNamespace(pod_ip="10.42.0.5"))
-    ip = await rt.get_ip("test-pod", "any-network")
+    rt._ensure_api = AsyncMock()
+
+    mock_pod = MagicMock()
+    mock_pod.status.get.return_value = "10.42.0.5"
+
+    with patch("carapace.sandbox.kubernetes.Pod") as mock_pod_cls:
+        mock_pod_cls.get = AsyncMock(return_value=mock_pod)
+        ip = await rt.get_ip("test-pod", "any-network")
     assert ip == "10.42.0.5"
 
 
 # --- remove ---
 
 
+@pytest.mark.asyncio
 async def test_remove():
     rt = _make_runtime()
+    rt._delete_pod_if_exists = AsyncMock()
     await rt.remove("test-pod")
-    rt._core.delete_namespaced_pod.assert_called_once_with(
-        name="test-pod", namespace="carapace", grace_period_seconds=0
-    )
+    rt._delete_pod_if_exists.assert_called_once_with("test-pod")
 
 
 # --- resolve_self_network_name ---
 
 
+@pytest.mark.asyncio
 async def test_resolve_self_network_name_noop():
     rt = _make_runtime()
     assert await rt.resolve_self_network_name("carapace-sandbox") == "carapace-sandbox"
@@ -301,6 +326,7 @@ def test_image_exists_always_true():
 # --- get_host_ip ---
 
 
+@pytest.mark.asyncio
 async def test_get_host_ip_from_env(monkeypatch):
     rt = _make_runtime()
     monkeypatch.setenv("CARAPACE_SERVICE_HOST", "10.43.0.100")
@@ -311,64 +337,58 @@ async def test_get_host_ip_from_env(monkeypatch):
 # --- StatefulSet lifecycle ---
 
 
-def test_build_statefulset_spec():
-    rt = _make_runtime()
-    config = SandboxConfig(
-        name="carapace-sandbox-abc",
-        session_id="abc",
-        image="sandbox:latest",
-        labels={"carapace.session": "abc", "carapace.managed": "true"},
-        environment={"HTTP_PROXY": "http://proxy"},
-    )
-    sts = rt._build_statefulset_spec(config)
-    assert sts.kind == "StatefulSet"
-    assert sts.metadata.name == "carapace-sandbox-abc"
-    # Check retention policy
-    policy = sts.spec.persistent_volume_claim_retention_policy
-    assert policy.when_deleted == "Delete"
-    assert policy.when_scaled == "Retain"
-    # Check volumeClaimTemplate
-    assert len(sts.spec.volume_claim_templates) == 1
-    pvc_tpl = sts.spec.volume_claim_templates[0]
-    assert pvc_tpl.metadata.name == "session-data"
-    assert pvc_tpl.spec.access_modes == ["ReadWriteOnce"]
-    # Check container mounts /workspace
-    container = sts.spec.template.spec.containers[0]
-    assert any(vm.mount_path == "/workspace" for vm in container.volume_mounts)
-
-
+@pytest.mark.asyncio
 async def test_create_sandbox_calls_api():
     rt = _make_runtime()
-    rt._core.read_namespaced_pod.return_value = SimpleNamespace(status=SimpleNamespace(phase="Running"))
-    rt._apps.delete_namespaced_stateful_set.side_effect = _ApiException(status=404, reason="Not Found")
+    rt._ensure_api = AsyncMock()
+    rt._get_owner_deployment = AsyncMock(return_value=None)
+    rt._delete_sts_if_exists = AsyncMock()
+    rt._wait_for_running = AsyncMock()
 
-    config = SandboxConfig(
-        name="carapace-sandbox-abc",
-        session_id="abc",
-        image="sandbox:latest",
-        labels={"carapace.session": "abc"},
-    )
-    pod_name = await rt.create_sandbox(config)
+    mock_sts_instance = AsyncMock()
+
+    async def _fake_sts(*args, **kwargs):
+        return mock_sts_instance
+
+    with patch("carapace.sandbox.kubernetes.StatefulSet", side_effect=_fake_sts):
+        config = SandboxConfig(
+            name="carapace-sandbox-abc",
+            session_id="abc",
+            image="sandbox:latest",
+            labels={"carapace.session": "abc"},
+        )
+        pod_name = await rt.create_sandbox(config)
+
     assert pod_name == "carapace-sandbox-abc-0"
-    rt._apps.create_namespaced_stateful_set.assert_called_once()
+    mock_sts_instance.create.assert_called_once()
 
 
+@pytest.mark.asyncio
 async def test_resume_sandbox():
     rt = _make_runtime()
-    rt._core.read_namespaced_pod.return_value = SimpleNamespace(status=SimpleNamespace(phase="Running"))
+    rt._ensure_api = AsyncMock()
+    rt._wait_for_running = AsyncMock()
 
-    await rt.resume_sandbox("carapace-sandbox-abc")
-    rt._apps.patch_namespaced_stateful_set_scale.assert_called_once()
+    mock_sts = AsyncMock()
+
+    with patch("carapace.sandbox.kubernetes.StatefulSet") as mock_sts_cls:
+        mock_sts_cls.get = AsyncMock(return_value=mock_sts)
+        await rt.resume_sandbox("carapace-sandbox-abc")
+
+    mock_sts.scale.assert_called_once_with(1)
 
 
+@pytest.mark.asyncio
 async def test_destroy_sandbox():
     rt = _make_runtime()
+    rt._delete_sts_if_exists = AsyncMock()
     await rt.destroy_sandbox("carapace-sandbox-abc", "carapace-sandbox-abc-0")
-    rt._apps.delete_namespaced_stateful_set.assert_called_once()
+    rt._delete_sts_if_exists.assert_called_once_with("carapace-sandbox-abc")
 
 
+@pytest.mark.asyncio
 async def test_destroy_sandbox_not_found():
     rt = _make_runtime()
-    rt._apps.delete_namespaced_stateful_set.side_effect = _ApiException(status=404, reason="Not Found")
+    rt._delete_sts_if_exists = AsyncMock()
     # Should not raise
     await rt.destroy_sandbox("carapace-sandbox-abc", "carapace-sandbox-abc-0")
