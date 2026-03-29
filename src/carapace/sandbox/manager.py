@@ -629,14 +629,16 @@ class SandboxManager:
         container).  Unlike ``cleanup_session``, this purges tokens, domain
         allowlists, locks and other per-session bookkeeping.
         """
-        sc = self._sessions.get(session_id)
+        sc = self._sessions.pop(session_id, None)
+        sandbox_name = self._sandbox_name(session_id)
         if sc:
-            await self._runtime.destroy_sandbox(
-                self._sandbox_name(session_id),
-                sc.container_id,
-            )
-            self._sessions.pop(session_id, None)
+            await self._runtime.destroy_sandbox(sandbox_name, sc.container_id)
             logger.info(f"Destroyed sandbox for session {session_id}")
+        else:
+            existing_id = await self._runtime.sandbox_exists(sandbox_name)
+            if existing_id:
+                await self._runtime.destroy_sandbox(sandbox_name, existing_id)
+                logger.info(f"Destroyed orphaned sandbox for session {session_id}")
         token = self._session_tokens.pop(session_id, None)
         if token:
             self._token_to_session.pop(token, None)
@@ -649,14 +651,16 @@ class SandboxManager:
 
     async def reset_session(self, session_id: str) -> None:
         """Full sandbox reset: destroy and let ``ensure_session`` create a fresh one."""
-        sc = self._sessions.get(session_id)
+        sc = self._sessions.pop(session_id, None)
+        sandbox_name = self._sandbox_name(session_id)
         if sc:
-            await self._runtime.destroy_sandbox(
-                self._sandbox_name(session_id),
-                sc.container_id,
-            )
-            self._sessions.pop(session_id, None)
+            await self._runtime.destroy_sandbox(sandbox_name, sc.container_id)
             logger.info(f"Reset sandbox for session {session_id}")
+        else:
+            existing_id = await self._runtime.sandbox_exists(sandbox_name)
+            if existing_id:
+                await self._runtime.destroy_sandbox(sandbox_name, existing_id)
+                logger.info(f"Reset orphaned sandbox for session {session_id}")
 
     async def cleanup_idle(self) -> None:
         """Remove containers that have been idle longer than the timeout.
