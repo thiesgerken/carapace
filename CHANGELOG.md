@@ -1,6 +1,17 @@
 # CHANGELOG
 
 
+## v0.43.3 (2026-03-29)
+
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix: handle 404 in _wait_for_running when pod not yet created
+  ([`2c7e633`](https://github.com/thiesgerken/carapace/commit/2c7e633e77da19e928e741a868bc00305b60d046))
+
+  After creating a StatefulSet, the controller may not have created the pod yet when _wait_for_running starts polling. Treat a 404 ApiException as Pending instead of crashing, so the loop retries until the pod appears.
+
 ## v0.43.2 (2026-03-29)
 
 
