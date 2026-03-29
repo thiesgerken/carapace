@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.46.1 (2026-03-29)
+
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix: destroy sandbox on session delete even after idle suspend
+  ([`7fa2678`](https://github.com/thiesgerken/carapace/commit/7fa2678fa7de511599bd1901fd4744d7da0efb7c))
+
+  destroy_session and reset_session only called the runtime when the session had an in-memory entry.  After idle downscaling pops the entry, deleting from the UI silently skipped StatefulSet deletion, leaving orphaned resources in Kubernetes.
+
+  Fall back to sandbox_exists() runtime probe when no in-memory state is found, matching the pattern already used by ensure_session.
+
 ## v0.46.0 (2026-03-29)
 
 
