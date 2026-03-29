@@ -1,6 +1,17 @@
 # CHANGELOG
 
 
+## v0.43.4 (2026-03-29)
+
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix: clear tool-call spinners on error, cancel, and disconnect
+  ([`31ae55a`](https://github.com/thiesgerken/carapace/commit/31ae55a8945ef75e89dd8bd9121e17e168b25e84))
+
+  When an agent turn ends with an error or cancellation, or the WebSocket disconnects, any tool_call messages still showing a loading spinner are now cleared.  Previously the global waiting indicator stopped but individual tool badges kept spinning.
+
 ## v0.43.3 (2026-03-29)
 
 
