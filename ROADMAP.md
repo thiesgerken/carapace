@@ -1,0 +1,45 @@
+# Roadmap
+
+> This roadmap outlines planned features and improvements. Items are grouped by area and roughly ordered by priority within each section.
+
+## Authentication & Multi-User
+
+- [ ] **OIDC / OAuth 2.0** — replace the static bearer token with a proper OIDC provider (Keycloak, Authentik, Authelia, etc.) for login on both the web UI and CLI
+- [ ] **Multi-user support** — per-user sessions, memory, and security context; map OIDC subject to a Carapace user identity
+- [ ] **Session token lifecycle** — short-lived access tokens with refresh, proper logout / revocation
+- [ ] **Per-user data isolation** — each user gets their own memory, session history, and workspace files
+
+## Credential Management
+
+- [ ] **Real credential broker** — fetch secrets from Vaultwarden/Bitwarden via CLI or API, with a pluggable backend interface for future providers (1Password, `pass`, env vars)
+- [ ] **Per-session in-memory caching** — credentials exist only in memory for the session duration, never persisted to disk
+- [ ] **Credential injection into skill containers** — inject via env var, file, or stdin based on skill manifest
+- [ ] **Per-session approval flow** — each credential must be approved on first access; `/reset` revokes all approvals
+
+## Memory
+
+- [ ] **Structured memory layout** — organized directories (`CORE.md`, `daily/`, `topics/`) with predictable conventions
+- [ ] **Vector search** — local sentence-transformers embeddings with a SQLite index in `memory/.index/`
+- [ ] **Incremental index updates** — rebuild index automatically on memory file changes
+- [ ] **Smarter context loading** — load only `CORE.md` + recent daily logs at startup; older content available via search
+
+## Channels & Scheduling
+
+- [ ] **Cron channel** — scheduled jobs defined in `HEARTBEAT.md` or `config.yaml`, creating non-interactive sessions on a schedule
+- [ ] **Cross-channel approval routing** — non-interactive sessions route approval requests to an interactive channel (e.g. Matrix DM) via tagged system messages
+- [ ] **Matrix E2EE** — end-to-end encryption support via matrix-nio
+- [ ] **Webhook channel** — inbound HTTP/email triggers
+
+## Sessions & Multi-Agent
+
+- [ ] **Session history summarization** — compress long conversations to manage context window limits
+- [ ] **History processor integration** — use Pydantic AI's `history_processors` for token budgeting
+- [ ] **Sub-agent sessions** — `sessions_spawn` to run isolated sub-agent sessions and receive results back
+- [ ] **Cross-session interaction** — `sessions_list`, `sessions_history`, `sessions_send` for inspecting and messaging other sessions
+- [ ] **Sub-agent tool policy** — restrict which tools sub-agents can use
+
+## Workspace Files
+
+- [ ] **`HEARTBEAT.md` support** — cron reads this for periodic task definitions
+- [ ] **Gated workspace writes** — writes to `SOUL.md`, `USER.md`, etc. go through the pending-write approval mechanism
+- [ ] **`TOOLS.md` read gating** — optionally treat reading tool definitions as a security-sensitive operation

@@ -145,13 +145,13 @@ See [docs/architecture.md](docs/architecture.md) for the full architecture with 
 
 ## Core concepts
 
-| Concept             | Description                                                    | Doc                                                            |
-| ------------------- | -------------------------------------------------------------- | -------------------------------------------------------------- |
-| Security            | Sentinel agent + SECURITY.md policy + action log               | [docs/security.md](docs/security.md)                           |
-| Skills              | AgentSkills-compatible with uv-managed Python dependencies     | [docs/skills.md](docs/skills.md)                               |
-| Sandbox             | Docker / Kubernetes sandboxed execution with HTTP proxy         | [docs/sandbox.md](docs/sandbox.md)                             |
-| Sessions & Channels | Channel-decoupled persistent sessions (WebSocket, Matrix)      | [docs/sessions-and-channels.md](docs/sessions-and-channels.md) |
-| Memory              | Markdown-based persistent memory with text search              | [docs/memory.md](docs/memory.md)                               |
+| Concept             | Description                                                        | Doc                                                            |
+| ------------------- | ------------------------------------------------------------------ | -------------------------------------------------------------- |
+| Security            | Sentinel agent + SECURITY.md policy + action log                   | [docs/security.md](docs/security.md)                           |
+| Skills              | AgentSkills-compatible with uv-managed Python dependencies         | [docs/skills.md](docs/skills.md)                               |
+| Sandbox             | Docker / Kubernetes sandboxed execution with HTTP proxy            | [docs/sandbox.md](docs/sandbox.md)                             |
+| Sessions & Channels | Channel-decoupled persistent sessions (WebSocket, Matrix)          | [docs/sessions-and-channels.md](docs/sessions-and-channels.md) |
+| Memory              | Markdown-based persistent memory with text search                  | [docs/memory.md](docs/memory.md)                               |
 | Kubernetes          | Helm chart, StatefulSet sandboxes, per-session PVCs, NetworkPolicy | [docs/kubernetes.md](docs/kubernetes.md)                       |
 
 ## Technology stack
