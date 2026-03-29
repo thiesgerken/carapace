@@ -10,6 +10,7 @@ from loguru import logger
 
 from carapace.channels.matrix.approval import TYPING_INTERVAL, PendingApproval, PendingDomainApproval
 from carapace.channels.matrix.formatting import format_approval_request, format_domain_escalation
+from carapace.models import ToolResult
 from carapace.ws_models import ApprovalRequest, TurnUsage
 
 if TYPE_CHECKING:
@@ -67,11 +68,11 @@ class MatrixSubscriber:
             notice = f"🔧 `{tool}({args_brief})`" + (f" {detail}" if detail else "")
             await self._channel._send_notice(self._room_id, notice)
 
-    async def on_tool_result(self, tool: str, result: str) -> None:
+    async def on_tool_result(self, result: ToolResult) -> None:
         if self._channel._verbose.get(self._room_id, True):
             # Truncate long results to keep Matrix messages manageable
-            preview = result[:500] + ("…" if len(result) > 500 else "")
-            notice = f"📎 `{tool}` result:\n```\n{preview}\n```"
+            preview = result.output[:500] + ("…" if len(result.output) > 500 else "")
+            notice = f"📎 `{result.tool}` result:\n```\n{preview}\n```"
             await self._channel._send_notice(self._room_id, notice)
 
     _STREAM_EDIT_THRESHOLD = 200  # min chars between edits

@@ -19,6 +19,7 @@ export interface HistoryMessage {
   args?: Record<string, unknown>;
   detail?: string;
   result?: string;
+  exit_code?: number;
   command?: string;
   data?: unknown;
   request_id?: string;
@@ -49,6 +50,7 @@ export interface ToolResultInfo {
   type: "tool_result";
   tool: string;
   result: string;
+  exit_code?: number;
 }
 
 export interface ApprovalRequest {
@@ -176,6 +178,7 @@ export type ChatMessage =
       args: Record<string, unknown>;
       detail: string;
       result?: string;
+      exitCode?: number;
       loading?: boolean;
     }
   | { kind: "approval"; request: ApprovalRequest }

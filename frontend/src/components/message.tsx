@@ -58,6 +58,7 @@ export function Message({
           args={message.args}
           detail={message.detail}
           result={message.result}
+          exitCode={message.exitCode}
           loading={message.loading}
         />
       );

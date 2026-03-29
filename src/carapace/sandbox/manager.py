@@ -434,8 +434,8 @@ class SandboxManager:
 
     _KNOWLEDGE_WORKDIR = "/workspace"
 
-    async def exec_command(self, session_id: str, command: str, timeout: int = 3600) -> str:
-        """Run a command in the sandbox and return formatted output."""
+    async def exec_command(self, session_id: str, command: str, timeout: int = 3600) -> ExecResult:
+        """Run a command in the sandbox and return the result."""
         result = await self._exec(
             session_id,
             command,
@@ -446,7 +446,7 @@ class SandboxManager:
         if result.exit_code != 0 and f"[exit code: {result.exit_code}]" not in output:
             logger.debug(f"Command failed in session {session_id} (exit {result.exit_code}): {command}")
             output += f"\n[exit code: {result.exit_code}]"
-        return output or "(no output)"
+        return ExecResult(exit_code=result.exit_code, output=output or "(no output)")
 
     # ------------------------------------------------------------------
     # File operations (executed inside the sandbox container via
