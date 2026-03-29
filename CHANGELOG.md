@@ -1,6 +1,43 @@
 # CHANGELOG
 
 
+## v0.43.0 (2026-03-29)
+
+
+### ✨ Features
+
+
+- ✨Merge pull request #56 from thiesgerken/feature/sts
+  ([`4624b58`](https://github.com/thiesgerken/carapace/commit/4624b58ca7a441baaef22c65d953d5c1c4e9b54b))
+
+  ✨ Separate RWO PVCs for sessions, use StatefulSets
+
+- ✨ feat: StatefulSet sandboxes with unified runtime abstraction
+  ([`272a777`](https://github.com/thiesgerken/carapace/commit/272a777658dfadb57dd9fb25c45c1841ec919856))
+
+  Migrate Kubernetes sandboxes from bare Pods to StatefulSets with per-session PVCs (volumeClaimTemplates, RWO).  Idle sessions scale to 0 (PVC retained), resume scales back to 1.  PVC cleanup via persistentVolumeClaimRetentionPolicy (K8s 1.27+).
+
+  Introduce a clean sandbox lifecycle protocol on ContainerRuntime (create_sandbox / resume_sandbox / suspend_sandbox / destroy_sandbox) so the SandboxManager no longer branches on Docker vs Kubernetes. Mount-building, host-path rewriting, and workspace dir creation move into DockerRuntime; PVC size, storage class, service account and priority class move into KubernetesRuntime.
+
+  Add /reload slash command for full sandbox reset (delete + fresh clone).
+
+  Helm chart: RBAC for StatefulSets + PVCs, RWX to RWO on shared PVC, new sessionPvc values, env vars for PVC config.
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix: stop repeated suspend calls on already-suspended sandboxes
+  ([`26b975c`](https://github.com/thiesgerken/carapace/commit/26b975c07138d2e175a445582055c6465e49303a))
+
+  Restore the self._sessions.pop() in cleanup_session so cleanup_idle no longer rediscovers the same idle entries every cycle.  Resume after suspend now relies on the sandbox_exists() runtime probe added in the previous commit.
+
+- 🐛 fix: preserve session tracking on suspend and re-attach after restart
+  ([`6c6c241`](https://github.com/thiesgerken/carapace/commit/6c6c2414fd899c0c5df7ab4a59de8acad87e5d3b))
+
+  cleanup_session no longer pops the SessionContainer from self._sessions after suspending.  This lets ensure_session find the entry and call resume_sandbox instead of create_sandbox (which deletes the existing StatefulSet and its PVC).
+
+  Add sandbox_exists() to the ContainerRuntime protocol so ensure_session can detect orphaned sandboxes after a server restart (self._sessions is empty but the StatefulSet/container still exists in the runtime).  When found, the sandbox is re-attached or resumed rather than destroyed and recreated.
+
 ## v0.42.6 (2026-03-28)
 
 
