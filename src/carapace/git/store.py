@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from pathlib import Path
 
 from loguru import logger
@@ -101,12 +102,14 @@ class GitStore:
 
     async def _run(self, *args: str, cwd: Path | None = None) -> tuple[int, str]:
         """Run a git command and return ``(exit_code, combined_output)``."""
+        env = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
         proc = await asyncio.create_subprocess_exec(
             "git",
             *args,
             cwd=cwd or self.repo_dir,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            env=env,
         )
         stdout, stderr = await proc.communicate()
         code = proc.returncode or 0
@@ -115,7 +118,9 @@ class GitStore:
         if err:
             log = logger.warning if code != 0 else logger.debug
             log(f"git {args[0]}: {err}")
-        return code, out
+        # Combine stdout + stderr so callers can inspect error messages.
+        combined = f"{out}\n{err}".strip() if err else out
+        return code, combined
 
     async def ensure_repo(self) -> None:
         """Initialise the Git repo if it doesn't exist yet and install hooks."""
@@ -251,8 +256,8 @@ class GitStore:
             code, summary = await self._run("log", "--oneline", "-10")
             return summary if code == 0 and summary else "Adopted remote branch."
 
-        logger.info("Merging (fast-forward only)")
-        code, out = await self._run("merge", "--ff-only", f"origin/{self.remote_branch}")
+        logger.info("Merging from remote")
+        code, out = await self._run("merge", "--allow-unrelated-histories", "--no-edit", f"origin/{self.remote_branch}")
         if code != 0:
             raise RuntimeError(
                 f"Merge conflict in knowledge repo. Resolve manually in {self.repo_dir} and restart.\n{out}"
