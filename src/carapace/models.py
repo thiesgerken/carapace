@@ -147,10 +147,6 @@ class AgentConfig(BaseModel):
     max_parallel_llm: int = 2
 
 
-class CredentialsConfig(BaseModel):
-    backend: str = "mock"
-
-
 class SandboxConfig(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="CARAPACE_SANDBOX_")
 
@@ -222,7 +218,6 @@ class Config(BaseModel):
     server: ServerConfig = ServerConfig()
     channels: ChannelsConfig = ChannelsConfig()
     agent: AgentConfig = AgentConfig()
-    credentials: CredentialsConfig = CredentialsConfig()
     sandbox: SandboxConfig = SandboxConfig()
     git: GitConfig = GitConfig()
     data_dir: str = "."  # resolved relative to config file location
