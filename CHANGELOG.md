@@ -1,6 +1,49 @@
 # CHANGELOG
 
 
+## v0.44.0 (2026-03-29)
+
+
+### ✨ Features
+
+
+- ✨ Merge pull request #57 from thiesgerken/feat/tool-result-exit-code
+  ([`1c14b43`](https://github.com/thiesgerken/carapace/commit/1c14b437985abf0aef1caf470e1c2419e2d367b4))
+
+  ✨ Structured tool results with exit codes
+
+- ✨ feat: structured tool results with exit codes
+  ([`870bdd0`](https://github.com/thiesgerken/carapace/commit/870bdd008222d24250a094f1f9efcad51cd0cfda))
+
+  Introduce ToolResult dataclass (tool, output, exit_code) replacing loose (str, str, int) callback args throughout the tool result pipeline.
+
+  Backend:
+  - exec tool passes actual exit code from ExecResult; other sandbox
+    tools pass 0 for success, -1 for infrastructure exceptions
+  - Catch sandbox exceptions in all tool functions (exec, read, write,
+    edit, apply_patch) so errors become tool results instead of crashing
+    the agent turn
+  - exec_command returns ExecResult instead of plain str
+  - ToolResultInfo WS model gains exit_code field
+  - Subscriber protocol, engine, server, Matrix channel updated
+
+  Frontend:
+  - Tool call badge renders result with red destructive styling when
+    exit_code != 0
+  - Clear stale tool-call spinners on error, cancel, and WS disconnect
+  - exit_code persisted in session events and restored on reload
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix: update tests for exec_command and on_tool_result signature changes
+  ([`f99e66f`](https://github.com/thiesgerken/carapace/commit/f99e66f862577f383dd49046f57211a1b7e1f369))
+
+  - Fix test_exec_recreate_preserves_domains to check output.output instead of comparing ExecResult to string
+  - Update _FakeSubscriber.on_tool_result signature to match SessionSubscriber protocol (accepts ToolResult instead of tool, result)
+
+  Applied via @cursor push command
+
 ## v0.43.4 (2026-03-29)
 
 
