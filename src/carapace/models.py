@@ -144,6 +144,8 @@ class SandboxConfig(BaseSettings):
     k8s_resource_requests_memory: str = ""
     k8s_resource_limits_cpu: str = ""
     k8s_resource_limits_memory: str = ""
+    # Remove sandbox resources for sessions that no longer exist on disk at startup.
+    cleanup_orphans_on_startup: bool = True
 
 
 class MemorySearchConfig(BaseModel):

@@ -688,6 +688,19 @@ class SandboxManager:
         for sid in list(self._sessions):
             await self.cleanup_session(sid)
 
+    async def cleanup_orphaned_sandboxes(self, known_sessions: set[str]) -> int:
+        """Destroy sandbox resources whose session no longer exists on disk.
+
+        Returns the number of orphans removed.
+        """
+        live = await self._runtime.list_sandboxes()
+        orphans = {sid: cid for sid, cid in live.items() if sid not in known_sessions}
+        for sid, container_id in orphans.items():
+            sandbox_name = self._sandbox_name(sid)
+            await self._runtime.destroy_sandbox(sandbox_name, container_id)
+            logger.info(f"Removed orphaned sandbox for deleted session {sid}")
+        return len(orphans)
+
     def verify_session_token(self, session_id: str, token: str) -> bool:
         """Return True if *token* is valid for *session_id*."""
         return self._token_to_session.get(token) == session_id

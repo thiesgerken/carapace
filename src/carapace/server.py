@@ -251,6 +251,12 @@ async def lifespan(app: FastAPI):
     )
     logger.info(f"Sandbox enabled (image={base_image}, network={sandbox_network})")
 
+    if _config.sandbox.cleanup_orphans_on_startup:
+        known = set(session_mgr.list_sessions())
+        removed = await _sandbox_mgr.cleanup_orphaned_sandboxes(known)
+        if removed:
+            logger.info(f"Cleaned up {removed} orphaned sandbox(es)")
+
     _engine = SessionEngine(
         config=_config,
         data_dir=_data_dir,

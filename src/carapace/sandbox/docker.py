@@ -207,6 +207,18 @@ class DockerRuntime(ContainerRuntime):
 
         return await asyncio.to_thread(_check)
 
+    async def list_sandboxes(self) -> dict[str, str]:
+        """List all carapace-managed containers, returning ``{session_id: container_id}``."""
+
+        def _list() -> dict[str, str]:
+            containers = self._client.containers.list(
+                all=True,
+                filters={"label": ["carapace.managed=true"]},
+            )
+            return {c.labels["carapace.session"]: c.id for c in containers if "carapace.session" in c.labels}
+
+        return await asyncio.to_thread(_list)
+
     def _remove_stale(self, name: str) -> None:
         try:
             stale = self._client.containers.get(name)
