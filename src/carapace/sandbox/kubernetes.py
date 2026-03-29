@@ -364,10 +364,10 @@ class KubernetesRuntime(ContainerRuntime):
             },
             api=api,
         )
-        if await sts.exists():
+        try:
             await sts.delete(propagation_policy="Foreground", force=True)
             logger.info(f"Deleted StatefulSet {sts_name}")
-        else:
+        except kr8s.NotFoundError:
             logger.debug(f"StatefulSet {sts_name} already gone, skip delete")
 
     # ------------------------------------------------------------------
@@ -380,10 +380,10 @@ class KubernetesRuntime(ContainerRuntime):
             {"apiVersion": "v1", "kind": "Pod", "metadata": {"name": pod_name, "namespace": self._namespace}},
             api=api,
         )
-        if await pod.exists():
+        try:
             await pod.delete(force=True)
             logger.info(f"Deleted pod {pod_name}")
-        else:
+        except kr8s.NotFoundError:
             logger.debug(f"Pod {pod_name} already gone, skip delete")
 
     # ------------------------------------------------------------------
