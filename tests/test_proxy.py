@@ -178,7 +178,7 @@ class TestSandboxManagerAllowlists:
 async def test_exec_recreate_preserves_domains(tmp_path: Path):
     runtime = MagicMock(spec=ContainerRuntime)
     runtime.get_host_ip = AsyncMock(return_value="172.18.0.1")
-    runtime.create = AsyncMock(side_effect=["container-1", "container-2"])
+    runtime.create_sandbox = AsyncMock(side_effect=["container-1", "container-2"])
     runtime.get_ip = AsyncMock(return_value="172.18.0.22")
     runtime.logs = AsyncMock(return_value="carapace sandbox ready")
     _git_exists = ExecResult(exit_code=0, output="")

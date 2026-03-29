@@ -137,6 +137,7 @@ Slash commands are the user's control interface for managing sessions and securi
 | `/usage` | Show token usage breakdown with cost estimates |
 | `/pull` | Pull from external Git remote (if configured) |
 | `/push` | Push to external Git remote (if configured) |
+| `/reload` | Reset sandbox — destroy container + workspace, fresh git clone on next command |
 
 ### WebSocket-only commands
 

@@ -14,11 +14,10 @@ from loguru import logger
 from pydantic import BaseModel
 
 from carapace.sandbox.runtime import (
-    ContainerConfig,
     ContainerGoneError,
     ContainerRuntime,
     ExecResult,
-    Mount,
+    SandboxConfig,
     SkillVenvError,
 )
 
@@ -130,7 +129,6 @@ class SandboxManager:
         base_image: str = "carapace-sandbox:latest",
         network_name: str = "carapace-sandbox",
         idle_timeout_minutes: int = 15,
-        host_data_dir: Path | None = None,
         proxy_port: int = 3128,
         sandbox_port: int = 8322,
         git_author: str = "Carapace Session %s <%s@carapace.local>",
@@ -139,7 +137,6 @@ class SandboxManager:
         self._data_dir = data_dir
         self._knowledge_dir = knowledge_dir
         self._git_author = git_author
-        self._host_data_dir = host_data_dir
         self._base_image = base_image
         self._network_name = network_name
         self._idle_timeout = idle_timeout_minutes * 60
@@ -159,8 +156,6 @@ class SandboxManager:
             f"SandboxManager initialized (image={base_image}, "
             + f"network={network_name}, proxy_port={proxy_port}, idle_timeout={idle_timeout_minutes}m)"
         )
-        if host_data_dir:
-            logger.info(f"Host data dir override: {host_data_dir} (container sees {data_dir})")
 
     def set_activated_skills_callback(self, cb: Callable[[str], list[str]]) -> None:
         """Register a callback to retrieve activated skills for a session (from persisted state)."""
@@ -205,23 +200,51 @@ class SandboxManager:
 
     async def ensure_session(self, session_id: str) -> tuple[SessionContainer, bool]:
         """Return ``(container, was_created)`` — *was_created* is True when a new container was spun up."""
+        sandbox_name = self._sandbox_name(session_id)
+
         if session_id in self._sessions:
             sc = self._sessions[session_id]
             if await self._runtime.is_running(sc.container_id):
                 logger.debug(f"Reusing existing container {sc.container_id[:12]} for session {session_id}")
                 sc.last_used = time.time()
                 return sc, False
-            logger.warning(
-                f"Container {sc.container_id[:12]} for session {session_id} is no longer running, recreating"
-            )
+            # Container not running — try to resume (K8s scales up, Docker raises)
+            try:
+                await self._runtime.resume_sandbox(sandbox_name)
+                sc.last_used = time.time()
+                await self._wait_for_ready(sc.container_id, session_id)
+                logger.info(f"Resumed sandbox {sandbox_name} for session {session_id}")
+                return sc, False
+            except Exception:
+                logger.opt(exception=True).debug(f"Resume failed for {sandbox_name}, will recreate")
             await self._log_container_tail(sc.container_id, session_id)
             self._prepare_session_recreate(session_id)
-
-        session_workspace = self._data_dir / "sessions" / session_id / "workspace"
-        session_workspace.mkdir(parents=True, exist_ok=True)
-        # Make world-writable so sandbox containers running as UID 1000
-        # can write to PVC subPath mounts (chown may not be available).
-        session_workspace.chmod(0o777)
+        else:
+            # No in-memory state (e.g. after server restart) — check if the
+            # sandbox resource still exists in the runtime and try to resume it.
+            existing_id = await self._runtime.sandbox_exists(sandbox_name)
+            if existing_id:
+                try:
+                    if await self._runtime.is_running(existing_id):
+                        logger.info(f"Re-attached to running sandbox {sandbox_name} for session {session_id}")
+                    else:
+                        await self._runtime.resume_sandbox(sandbox_name)
+                        await self._wait_for_ready(existing_id, session_id)
+                        logger.info(f"Resumed orphaned sandbox {sandbox_name} for session {session_id}")
+                    ip = await self._runtime.get_ip(existing_id, self._network_name)
+                    sc = SessionContainer(
+                        container_id=existing_id,
+                        session_id=session_id,
+                        ip_address=ip,
+                        created_at=time.time(),
+                        last_used=time.time(),
+                    )
+                    self._sessions[session_id] = sc
+                    return sc, False
+                except Exception:
+                    logger.opt(exception=True).debug(
+                        f"Failed to re-attach/resume orphaned sandbox {sandbox_name}, will recreate"
+                    )
 
         proxy_token = self._get_or_create_token(session_id)
         try:
@@ -235,23 +258,23 @@ class SandboxManager:
             proxy_url = f"http://{host_ip}:{self._proxy_port}"
             logger.info(f"Proxy URL for session {session_id}: {proxy_url}")
 
-            mounts = self._build_mounts(session_id)
             env = self._build_proxy_env(session_id, proxy_token, proxy_url)
-            config = ContainerConfig(
-                image=self._base_image,
-                name=f"carapace-sandbox-{session_id}",
-                labels={"carapace.session": session_id, "carapace.managed": "true"},
-                mounts=mounts,
-                network=self._network_name,
-                command=[
-                    "sh",
-                    "-c",
-                    "setup-proxy.sh && echo 'carapace sandbox ready' && exec sleep infinity",
-                ],
-                environment=env,
-            )
+            command: list[str] = [
+                "sh",
+                "-c",
+                "setup-proxy.sh && echo 'carapace sandbox ready' && exec sleep infinity",
+            ]
 
-            container_id = await self._runtime.create(config)
+            sandbox_config = SandboxConfig(
+                name=sandbox_name,
+                session_id=session_id,
+                image=self._base_image,
+                labels={"carapace.session": session_id, "carapace.managed": "true"},
+                environment=env,
+                command=command,
+            )
+            container_id = await self._runtime.create_sandbox(sandbox_config)
+
             ip = await self._runtime.get_ip(container_id, self._network_name)
 
             # Wait for the container to finish setup (proxy config etc.)
@@ -272,6 +295,10 @@ class SandboxManager:
         self._sessions[session_id] = sc
         logger.info(f"Created sandbox container {container_id[:12]} for session {session_id} (IP: {ip})")
         return sc, True
+
+    def _sandbox_name(self, session_id: str) -> str:
+        """Derive the sandbox resource name for a session."""
+        return f"carapace-sandbox-{session_id}"
 
     _READY_MARKER = "carapace sandbox ready"
 
@@ -301,33 +328,6 @@ class SandboxManager:
         )
         if result.exit_code != 0:
             logger.error(f"Git clone failed in sandbox for {session_id} (exit {result.exit_code}): {result.output}")
-
-    def _host_path(self, path: Path) -> str:
-        """Translate a container-local path to its host-side equivalent for bind mounts.
-
-        When running inside Docker (DooD), the Docker daemon needs host-absolute
-        paths but we only see the container-internal mount point.  If
-        ``_host_data_dir`` is set we rewrite the ``_data_dir`` prefix accordingly.
-        """
-        resolved = path.resolve()
-        if self._host_data_dir is None:
-            return str(resolved)
-        try:
-            rel = resolved.relative_to(self._data_dir.resolve())
-        except ValueError:
-            # Path is not under data_dir — use it as-is (no rewriting needed).
-            return str(resolved)
-        return str(self._host_data_dir / rel)
-
-    def _build_mounts(self, session_id: str) -> list[Mount]:
-        session_workspace = self._data_dir / "sessions" / session_id / "workspace"
-        return [
-            Mount(
-                source=self._host_path(session_workspace),
-                target="/workspace",
-                read_only=False,
-            ),
-        ]
 
     def _build_proxy_env(self, session_id: str, proxy_token: str, proxy_url: str) -> dict[str, str]:
         """Build HTTP_PROXY / NO_PROXY env vars for session containers."""
@@ -606,24 +606,35 @@ class SandboxManager:
             await self.rebuild_skill_venvs(session_id, activated)
 
     async def cleanup_session(self, session_id: str) -> None:
-        """Remove the sandbox container but keep session state (token, domains).
+        """Suspend the sandbox — the runtime decides how (scale to 0 or remove).
 
-        The session can be spun up again later via ``ensure_session``.
+        The entry is removed from ``self._sessions`` so ``cleanup_idle``
+        does not re-suspend it every cycle.  ``ensure_session`` will
+        rediscover the sandbox via ``sandbox_exists`` and resume it.
+        """
+        sc = self._sessions.pop(session_id, None)
+        if sc:
+            await self._runtime.suspend_sandbox(
+                self._sandbox_name(session_id),
+                sc.container_id,
+            )
+            logger.info(f"Suspended sandbox for session {session_id}")
+
+    async def destroy_session(self, session_id: str) -> None:
+        """Permanently remove the sandbox and all tracking state.
+
+        The runtime decides how to destroy (delete STS + PVC, or remove
+        container).  Unlike ``cleanup_session``, this purges tokens, domain
+        allowlists, locks and other per-session bookkeeping.
         """
         sc = self._sessions.get(session_id)
         if sc:
-            await self._runtime.remove(sc.container_id)
+            await self._runtime.destroy_sandbox(
+                self._sandbox_name(session_id),
+                sc.container_id,
+            )
             self._sessions.pop(session_id, None)
-            logger.info(f"Cleaned up sandbox for session {session_id}")
-
-    async def destroy_session(self, session_id: str) -> None:
-        """Remove the sandbox container **and** all tracking state.
-
-        Use this for permanent session deletion where re-creation is not
-        expected.  Unlike ``cleanup_session``, this purges tokens, domain
-        allowlists, locks and other per-session bookkeeping.
-        """
-        await self.cleanup_session(session_id)
+            logger.info(f"Destroyed sandbox for session {session_id}")
         token = self._session_tokens.pop(session_id, None)
         if token:
             self._token_to_session.pop(token, None)
@@ -633,6 +644,17 @@ class SandboxManager:
         self._domain_approval_cbs.pop(session_id, None)
         self._exec_locks.pop(session_id, None)
         self._proxy_bypass_sessions.discard(session_id)
+
+    async def reset_session(self, session_id: str) -> None:
+        """Full sandbox reset: destroy and let ``ensure_session`` create a fresh one."""
+        sc = self._sessions.get(session_id)
+        if sc:
+            await self._runtime.destroy_sandbox(
+                self._sandbox_name(session_id),
+                sc.container_id,
+            )
+            self._sessions.pop(session_id, None)
+            logger.info(f"Reset sandbox for session {session_id}")
 
     async def cleanup_idle(self) -> None:
         """Remove containers that have been idle longer than the timeout.

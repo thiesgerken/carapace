@@ -1,11 +1,11 @@
 # Kubernetes Deployment
 
-Carapace supports Kubernetes as a sandbox runtime. Instead of Docker containers, sandbox sessions run as Kubernetes pods that share a single RWX PersistentVolumeClaim for data.
+Carapace supports Kubernetes as a sandbox runtime. Instead of Docker containers, sandbox sessions run as Kubernetes StatefulSets with per-session PVCs. Each session gets its own PersistentVolumeClaim via `volumeClaimTemplates`, eliminating the need for a shared RWX volume.
 
 ## Prerequisites
 
-- **Kubernetes cluster** — tested with k3s, works with any conformant cluster
-- **RWX StorageClass** — CephFS, NFS, or another ReadWriteMany-capable provisioner. The server pod and all sandbox pods mount the same PVC.
+- **Kubernetes cluster** (1.27+) — tested with k3s, works with any conformant cluster. K8s 1.27+ is required for the `persistentVolumeClaimRetentionPolicy` feature (GA).
+- **RWO StorageClass** — any standard ReadWriteOnce provisioner. The server pod has its own data PVC; sandbox sessions each get a dedicated PVC.
 - **Container images** pushed to a registry accessible by the cluster (GHCR by default)
 - **Helm 3** installed locally
 
@@ -41,28 +41,39 @@ graph TD
         Frontend["Deployment/frontend"]
         SvcServer["Service/carapace<br/>(ports 8321 + 8322 + 3128)"]
         SvcFront["Service/frontend<br/>(port 80)"]
-        PVC["PVC/carapace-data (RWX)"]
+        DataPVC["PVC/carapace-data (RWO, server only)"]
         NetPol["NetworkPolicy/sandbox-isolation"]
         Route["HTTPRoute (Gateway API)"]
         RBAC["RBAC (SA + Role + RoleBinding)"]
-        SandboxA["Pod/carapace-session-aaa"]
-        SandboxB["Pod/carapace-session-bbb"]
+        StsA["StatefulSet/carapace-sandbox-aaa"]
+        StsB["StatefulSet/carapace-sandbox-bbb"]
+        PvcA["PVC/session-data-…-aaa-0 (RWO)"]
+        PvcB["PVC/session-data-…-bbb-0 (RWO)"]
     end
 
-    Deploy -->|mounts| PVC
-    Deploy -->|creates via K8s API| SandboxA & SandboxB
-    SandboxA & SandboxB -->|mount subPaths| PVC
+    Deploy -->|mounts| DataPVC
+    Deploy -->|creates via K8s API| StsA & StsB
+    StsA -->|volumeClaimTemplate| PvcA
+    StsB -->|volumeClaimTemplate| PvcB
     SvcServer --> Deploy
     SvcFront --> Frontend
     Route --> SvcServer & SvcFront
-    NetPol -.->|restricts| SandboxA & SandboxB
+    NetPol -.->|restricts| StsA & StsB
 ```
 
-The server pod manages sandbox pods directly via the Kubernetes API. Each session gets its own pod running `sleep infinity`, with commands executed via `kubectl exec`. Sandbox pods are owned by the server Deployment (via `ownerReferences`), so they:
+The server pod manages sandbox StatefulSets directly via the Kubernetes API. Each session gets its own StatefulSet (replicas=1) with a per-session PVC created via `volumeClaimTemplates`. Commands are executed in the pod `{sts-name}-0` via `kubectl exec`.
+
+Sandbox StatefulSets are owned by the server Deployment (via `ownerReferences`), so they:
 
 - Appear as children in ArgoCD's resource tree
 - Are garbage-collected when the Deployment is deleted
 - Don't cause OutOfSync warnings
+
+### Idle lifecycle
+
+When a session is idle (configurable timeout, default 15 min), the StatefulSet is scaled to **0 replicas**. The PVC is retained (`whenScaled: Retain`), preserving the workspace, skill venvs, and all session files. When the session resumes, the StatefulSet is scaled back to 1 replica — the pod mounts the existing PVC and is immediately ready (no git clone or venv rebuild needed).
+
+When a session is permanently deleted (or the user runs `/reload`), the entire StatefulSet is deleted. The PVC is automatically cleaned up via the retention policy (`whenDeleted: Delete`).
 
 ## Configuration
 
@@ -101,20 +112,24 @@ When the server runs inside Kubernetes (the `KUBERNETES_SERVICE_HOST` env var is
 | `CARAPACE_SANDBOX_IDLE_TIMEOUT_MINUTES` | `15`                      | Idle sandbox cleanup interval         |
 | `CARAPACE_SANDBOX_PROXY_PORT`           | `3128`                    | HTTP proxy port for domain filtering  |
 | `CARAPACE_SANDBOX_K8S_NAMESPACE`        | `carapace`                | Namespace for sandbox pods            |
-| `CARAPACE_SANDBOX_K8S_PVC_CLAIM`        | `carapace-data`           | Shared PVC claim name                 |
+| `CARAPACE_SANDBOX_K8S_PVC_CLAIM`        | `carapace-data`           | Server data PVC claim name            |
+| `CARAPACE_SANDBOX_K8S_SESSION_PVC_SIZE`  | `1Gi`                     | Per-session PVC size                  |
+| `CARAPACE_SANDBOX_K8S_SESSION_PVC_STORAGE_CLASS` | (cluster default) | StorageClass for session PVCs         |
 | `CARAPACE_SANDBOX_K8S_SERVICE_ACCOUNT`  | `null`                    | ServiceAccount for sandbox pods       |
 | `CARAPACE_SANDBOX_NETWORK_NAME`         | `carapace-sandbox`        | Docker network name (Docker only)     |
 
 ## Storage
 
-A single RWX PVC (`carapace-data`) is shared between the server and all sandbox pods:
+The server uses a single RWO PVC (`carapace-data`) for its own data (config, sessions, knowledge repo). Sandbox sessions each get a dedicated RWO PVC via StatefulSet `volumeClaimTemplates`:
 
-| Consumer    | Mount path             | subPath                           | Mode |
-| ----------- | ---------------------- | --------------------------------- | ---- |
-| Server      | `/data`                | (root)                            | RW   |
-| Sandbox pod | `/workspace`           | `sessions/{sid}/workspace`        | RW   |
+| Consumer             | Volume                                  | Mount path     | Mode |
+| -------------------- | --------------------------------------- | -------------- | ---- |
+| Server               | `carapace-data` (RWO)                   | `/data`        | RW   |
+| Sandbox StatefulSet  | `session-data` (per-session PVC, RWO)   | `/workspace`   | RW   |
 
-The `KubernetesRuntime` automatically translates the `SandboxManager`'s host-path mounts into PVC subPath references — no configuration needed.
+Sandbox pods have **no access** to the server's data PVC. The workspace is populated via `git clone` from the server's Git HTTP backend on first start. Changes are persisted back via `git push`.
+
+The per-session PVC size is configurable via `sandbox.sessionPvc.size` in the Helm values (default: 1Gi).
 
 ## Networking
 
@@ -155,7 +170,7 @@ This mirrors the Docker setup where sandbox containers are on an internal networ
 
 ## RBAC
 
-The server needs a ServiceAccount with permissions to manage pods in its namespace:
+The server needs a ServiceAccount with permissions to manage pods and StatefulSets in its namespace:
 
 ```yaml
 rules:
@@ -165,6 +180,12 @@ rules:
   - apiGroups: ["apps"]
     resources: ["deployments"]
     verbs: ["get"] # for ownerReference lookup
+  - apiGroups: ["apps"]
+    resources: ["statefulsets", "statefulsets/scale"]
+    verbs: ["create", "get", "list", "delete", "patch"]
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims"]
+    verbs: ["get", "list", "delete"]
 ```
 
 ## ArgoCD
@@ -176,8 +197,9 @@ Application: carapace
 ├── Deployment/carapace              ✅ Synced
 │   ├── ReplicaSet/carapace-xxx      ✅
 │   │   └── Pod/carapace-xxx-abc     ✅ Running (server)
-│   ├── Pod/carapace-session-aaa     ✅ Running (sandbox)
-│   └── Pod/carapace-session-bbb     ✅ Running (sandbox)
+│   ├── StatefulSet/carapace-sandbox-aaa  ✅ (sandbox)
+│   │   └── Pod/carapace-sandbox-aaa-0    ✅ Running
+│   └── StatefulSet/carapace-sandbox-bbb  ✅ (sandbox, scaled to 0 = idle)
 ├── Deployment/frontend              ✅ Synced
 ├── Service/carapace                 ✅
 └── PVC/carapace-data                ✅
@@ -194,4 +216,4 @@ No special ArgoCD configuration is needed — the standard annotation-based trac
 - **Priority class**: set `priorityClassName` to apply to all pods (server, frontend, sandbox)
 - **PVC protection**: set `persistence.finalizers` to `["kubernetes.io/pvc-protection"]` to guard against accidental deletion
 
-> **Future plans**: Per-session PVCs, StatefulSets for sandbox pods (scale down on idle), and git-backed storage for memory and skills. See [plans/kubernetes.md](plans/kubernetes.md).
+> **Future plans**: Git-backed external remote sync, vector search for memory. See [plans/kubernetes.md](plans/kubernetes.md).

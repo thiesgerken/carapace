@@ -428,6 +428,9 @@ class SessionEngine:
         if cmd == "/push":
             return await self._handle_push_command()
 
+        if cmd == "/reload":
+            return await self._handle_reload_command(session_id)
+
         return None
 
     # -- pull / push from/to remote --
@@ -454,6 +457,19 @@ class SessionEngine:
             return {"command": "pull", "data": {"message": summary}}
         except RuntimeError as exc:
             return {"command": "pull", "data": {"message": f"Pull failed: {exc}"}}
+
+    async def _handle_reload_command(self, session_id: str) -> dict[str, Any]:
+        """Handle the ``/reload`` slash command — reset the sandbox completely."""
+        try:
+            await self._sandbox_mgr.reset_session(session_id)
+            return {
+                "command": "reload",
+                "data": {
+                    "message": ("Sandbox reset. A fresh workspace will be created from Git on the next command."),
+                },
+            }
+        except Exception as exc:
+            return {"command": "reload", "data": {"message": f"Reload failed: {exc}"}}
 
     # -- model switching --
 

@@ -246,6 +246,10 @@ sandbox:
   base_image: carapace-sandbox:latest
   idle_timeout_minutes: 15
   proxy_port: 3128
+  # Kubernetes-only settings (also available as CARAPACE_SANDBOX_* env vars):
+  # k8s_namespace: carapace
+  # k8s_session_pvc_size: 1Gi
+  # k8s_session_pvc_storage_class: ""
 ```
 
 LLM API keys are provided as standard environment variables (`ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`, etc.) — not through the config file.

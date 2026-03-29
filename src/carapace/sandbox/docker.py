@@ -9,7 +9,14 @@ from docker.errors import APIError, DockerException, ImageNotFound, NotFound
 from docker.types import Mount as DockerMount
 from loguru import logger
 
-from carapace.sandbox.runtime import ContainerConfig, ContainerGoneError, ContainerRuntime, ExecResult
+from carapace.sandbox.runtime import (
+    ContainerConfig,
+    ContainerGoneError,
+    ContainerRuntime,
+    ExecResult,
+    Mount,
+    SandboxConfig,
+)
 
 _FALLBACK_SOCKETS = (Path.home() / ".docker/run/docker.sock",)
 
@@ -38,8 +45,17 @@ def _connect() -> docker.DockerClient:
 
 
 class DockerRuntime(ContainerRuntime):
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        data_dir: Path | None = None,
+        host_data_dir: Path | None = None,
+        network_name: str = "carapace-sandbox",
+    ) -> None:
         self._client = _connect()
+        self._data_dir = data_dir
+        self._host_data_dir = host_data_dir
+        self._network_name = network_name
         # Maps logical network name → actual Docker network name.
         # Docker Compose prefixes networks with the project name, so
         # "carapace-sandbox" becomes "carapace_carapace-sandbox".  We resolve
@@ -114,6 +130,82 @@ class DockerRuntime(ContainerRuntime):
             return container.id
 
         return await asyncio.to_thread(_create)
+
+    # ------------------------------------------------------------------
+    # Sandbox lifecycle
+    # ------------------------------------------------------------------
+
+    def _host_path(self, path: Path) -> str:
+        """Translate a container-local path to its host-side equivalent for bind mounts.
+
+        When running inside Docker (DooD), the Docker daemon needs host-absolute
+        paths but we only see the container-internal mount point.  If
+        ``_host_data_dir`` is set we rewrite the ``_data_dir`` prefix accordingly.
+        """
+        resolved = path.resolve()
+        if self._host_data_dir is None or self._data_dir is None:
+            return str(resolved)
+        try:
+            rel = resolved.relative_to(self._data_dir.resolve())
+        except ValueError:
+            return str(resolved)
+        return str(self._host_data_dir / rel)
+
+    def _build_sandbox_mounts(self, session_id: str) -> list[Mount]:
+        """Build bind-mount list for a Docker sandbox container."""
+        if self._data_dir is None:
+            return []
+        session_workspace = self._data_dir / "sessions" / session_id / "workspace"
+        return [
+            Mount(
+                source=self._host_path(session_workspace),
+                target="/workspace",
+                read_only=False,
+            ),
+        ]
+
+    async def create_sandbox(self, config: SandboxConfig) -> str:
+        """Create a Docker container with bind mounts for the session workspace."""
+        if self._data_dir is not None:
+            session_workspace = self._data_dir / "sessions" / config.session_id / "workspace"
+            session_workspace.mkdir(parents=True, exist_ok=True)
+            session_workspace.chmod(0o777)
+
+        mounts = self._build_sandbox_mounts(config.session_id)
+        container_config = ContainerConfig(
+            image=config.image,
+            name=config.name,
+            labels=config.labels,
+            mounts=mounts,
+            network=self._network_name,
+            command=config.command,
+            environment=config.environment,
+        )
+        return await self.create(container_config)
+
+    async def resume_sandbox(self, name: str) -> None:
+        """Docker containers cannot be resumed — always raises."""
+        raise RuntimeError(f"Docker container {name} cannot be resumed, must be recreated")
+
+    async def suspend_sandbox(self, name: str, container_id: str) -> None:
+        """Suspend == remove in Docker (no persistent volume to keep)."""
+        await self.remove(container_id)
+
+    async def destroy_sandbox(self, name: str, container_id: str) -> None:
+        """Destroy == remove in Docker."""
+        await self.remove(container_id)
+
+    async def sandbox_exists(self, name: str) -> str | None:
+        """Return the container ID if a container with this name exists, else None."""
+
+        def _check() -> str | None:
+            try:
+                container = self._client.containers.get(name)
+                return container.id
+            except NotFound:
+                return None
+
+        return await asyncio.to_thread(_check)
 
     def _remove_stale(self, name: str) -> None:
         try:

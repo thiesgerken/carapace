@@ -12,6 +12,7 @@ SLASH_COMMANDS: list[dict[str, str]] = [
     {"command": "/memory", "description": "List memory files"},
     {"command": "/pull", "description": "Pull from external Git remote (if configured)"},
     {"command": "/push", "description": "Push to external Git remote (if configured)"},
+    {"command": "/reload", "description": "Reset sandbox (delete container + workspace, fresh git clone)"},
     {
         "command": "/models",
         "description": "View all models and available options",

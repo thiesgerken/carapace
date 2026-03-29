@@ -40,9 +40,21 @@ flowchart LR
 
 When a session container is created, the following mounts are configured:
 
+### Docker mode
+
 | Host source | Container path | Mode | Purpose |
 | --- | --- | --- | --- |
 | `sessions/{sid}/workspace/` | `/workspace/` | read-write | Persistent session workspace |
+
+### Kubernetes mode (StatefulSet)
+
+Each session gets its own PVC via the StatefulSet's `volumeClaimTemplates`:
+
+| Volume | Container path | Mode | Purpose |
+| --- | --- | --- | --- |
+| `session-data` (per-session PVC) | `/workspace/` | read-write | Persistent session workspace |
+
+No shared PVC access — the server's data PVC is `ReadWriteOnce`.
 
 The knowledge repo is cloned directly into `/workspace/` on first start. On container restarts the existing working tree is reused. To persist changes back to the server, the agent uses `git commit` and `git push` inside `/workspace/` — every push is evaluated by the security sentinel via a pre-receive hook.
 
@@ -68,8 +80,9 @@ The proxy supports exact domain matching (`example.com`) and wildcard matching (
 
 - **Creation**: A container is created (or ensured running) when a session needs it — typically on the first tool call
 - **Reuse**: The container stays running for the session's duration. Multiple tool calls reuse the same container.
-- **Idle timeout**: Configurable (default: 15 min). After timeout, containers are destroyed. Sessions themselves persist (history, state) — only containers are ephemeral.
-- **Re-warming**: When the user sends a new message after containers expired, a new container is created with the same mounts. Activated skill venvs are rebuilt automatically.
+- **Idle timeout**: Configurable (default: 15 min). In Docker mode, idle containers are destroyed. In Kubernetes mode, the StatefulSet is scaled to 0 replicas — the PVC is retained, so venvs and workspace state survive.
+- **Re-warming**: When the user sends a new message after the container expired, a new container is created (Docker: fresh container with same bind mounts; Kubernetes: StatefulSet scaled back to 1 replica, PVC still attached). In Docker mode, activated skill venvs are rebuilt automatically. In Kubernetes mode, the existing PVC already contains the venvs — no rebuild needed.
+- **Reset** (`/reload`): Fully destroys the container and workspace (including the PVC in Kubernetes mode) and creates a fresh sandbox with a new git clone on the next command.
 
 ## Runtimes
 
@@ -81,9 +94,9 @@ The default runtime. Uses the Docker socket (`/var/run/docker.sock`) to manage c
 
 ### Kubernetes
 
-For cluster deployments. Sandbox sessions run as Kubernetes pods with commands executed via the Kubernetes exec API. See [kubernetes.md](kubernetes.md) for full details.
+For cluster deployments. Sandbox sessions run as Kubernetes StatefulSets with per-session PVCs (via `volumeClaimTemplates`). Commands are executed via the Kubernetes exec API. On idle timeout the StatefulSet is scaled to 0 replicas (PVC retained); on resume it's scaled back to 1. See [kubernetes.md](kubernetes.md) for full details.
 
-Both runtimes implement the same `SandboxRuntime` interface, so the rest of Carapace doesn't need to know which backend is in use.
+Both runtimes implement the same `ContainerRuntime` interface, so the rest of Carapace doesn't need to know which backend is in use.
 
 ## Docker socket
 
