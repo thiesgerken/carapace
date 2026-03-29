@@ -209,13 +209,13 @@ docker compose build sandbox
 uv run carapace-server
 
 # In another terminal — start the frontend (dev mode with hot reload)
-cd frontend && npm install && npm run dev
+cd frontend && pnpm install && pnpm dev
 
 # In another terminal — connect via CLI
 uv run carapace
 ```
 
-Additional prerequisites: **Python 3.12+** (3.14 recommended), **[uv](https://docs.astral.sh/uv/)**, and **Node.js 22+** for the frontend.
+Additional prerequisites: **Python 3.12+** (3.14 recommended), **[uv](https://docs.astral.sh/uv/)**, **Node.js 24+**, and **pnpm** (`corepack enable pnpm`) for the frontend.
 
 ## Status
 
