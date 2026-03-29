@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
@@ -189,6 +190,15 @@ class Config(BaseModel):
 # --- Skill Catalog Entry ---
 
 
+@dataclass(frozen=True, slots=True)
+class ToolResult:
+    """Structured result passed through ``tool_result_callback``."""
+
+    tool: str
+    output: str
+    exit_code: int = 0
+
+
 class SkillNetworkConfig(BaseModel):
     domains: list[str] = []
 
@@ -226,5 +236,5 @@ class Deps(BaseModel):
     agent_model: Model
     verbose: bool = True
     tool_call_callback: Callable[[str, dict[str, Any], str], None] | None = None
-    tool_result_callback: Callable[[str, str], None] | None = None
+    tool_result_callback: Callable[[ToolResult], None] | None = None
     usage_tracker: UsageTracker

@@ -53,16 +53,14 @@ export function ChatView({ server, token, sessionId, onTitleUpdate }: ChatViewPr
           } else if (h.role === "tool_call") {
             // Look ahead for a matching tool_result
             const next = history[i + 1];
-            const result =
-              next?.role === "tool_result" && next.tool === h.tool
-                ? next.result
-                : undefined;
+            const hasResult = next?.role === "tool_result" && next.tool === h.tool;
             msgs.push({
               kind: "tool_call",
               tool: h.tool ?? "",
               args: h.args ?? {},
               detail: h.detail ?? "",
-              result: result ?? undefined,
+              result: hasResult ? next.result : undefined,
+              exitCode: hasResult ? next.exit_code : undefined,
             });
           } else if (h.role === "tool_result") {
             // Skip — already consumed by the tool_call above
@@ -232,7 +230,7 @@ export function ChatView({ server, token, sessionId, onTitleUpdate }: ChatViewPr
           for (let i = updated.length - 1; i >= 0; i--) {
             const m = updated[i];
             if (m.kind === "tool_call" && m.loading && m.tool === msg.tool) {
-              updated[i] = { ...m, result: msg.result, loading: false };
+              updated[i] = { ...m, result: msg.result, exitCode: msg.exit_code, loading: false };
               break;
             }
           }

@@ -9,6 +9,7 @@ interface ToolCallBadgeProps {
   args: Record<string, unknown>;
   detail: string;
   result?: string;
+  exitCode?: number;
   loading?: boolean;
 }
 
@@ -98,11 +99,13 @@ export function ToolCallBadge({
   args,
   detail,
   result,
+  exitCode,
   loading,
 }: ToolCallBadgeProps) {
   const [open, setOpen] = useState(false);
   const { source, verdict, explanation } = parseDetail(detail);
   const argsSummary = formatArgsSummary(args);
+  const isError = exitCode != null && exitCode !== 0;
 
   return (
     <div className="my-1">
@@ -151,7 +154,12 @@ export function ToolCallBadge({
               <summary className="cursor-pointer text-muted-foreground hover:text-foreground transition-colors font-medium select-none">
                 Result
               </summary>
-              <pre className="mt-1.5 rounded-md bg-muted p-2.5 font-mono overflow-x-auto max-h-48 overflow-y-auto whitespace-pre-wrap border border-border/40">
+              <pre className={cn(
+                "mt-1.5 rounded-md p-2.5 font-mono overflow-x-auto max-h-48 overflow-y-auto whitespace-pre-wrap border",
+                isError
+                  ? "bg-destructive/10 text-destructive border-destructive/30"
+                  : "bg-muted border-border/40",
+              )}>
                 {result}
               </pre>
             </details>

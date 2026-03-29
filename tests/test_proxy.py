@@ -197,7 +197,7 @@ async def test_exec_recreate_preserves_domains(tmp_path: Path):
     mgr.allow_domains(session_id, {"api.example.com"})
 
     output = await mgr.exec_command(session_id, "curl https://api.example.com")
-    assert output == "ok"
+    assert output.output == "ok"
     assert mgr.get_allowed_domains(session_id) == {"api.example.com"}
 
 

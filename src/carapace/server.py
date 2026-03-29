@@ -42,7 +42,7 @@ from carapace.bootstrap import ensure_data_dir, ensure_knowledge_dir
 from carapace.config import _resolve_data_dir, _resolve_knowledge_dir, get_config_path, get_data_dir, load_config
 from carapace.git.http import GitHttpHandler
 from carapace.git.store import GitStore
-from carapace.models import Config, SessionState
+from carapace.models import Config, SessionState, ToolResult
 from carapace.sandbox.manager import SandboxManager
 from carapace.sandbox.proxy import ProxyServer
 from carapace.sandbox.runtime import ContainerRuntime
@@ -564,8 +564,8 @@ class WebSocketSubscriber:
     async def on_tool_call(self, tool: str, args: dict[str, Any], detail: str) -> None:
         await self._safe_send(ToolCallInfo(tool=tool, args=args, detail=detail))
 
-    async def on_tool_result(self, tool: str, result: str) -> None:
-        await self._safe_send(ToolResultInfo(tool=tool, result=result))
+    async def on_tool_result(self, result: ToolResult) -> None:
+        await self._safe_send(ToolResultInfo(tool=result.tool, result=result.output, exit_code=result.exit_code))
 
     async def on_token(self, content: str) -> None:
         await self._safe_send(TokenChunk(content=content))
