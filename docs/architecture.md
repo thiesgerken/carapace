@@ -238,8 +238,15 @@ channels:
     enabled: false
     homeserver: https://matrix.example.com
     user_id: "@carapace:example.com"
+    password:
+      env: CARAPACE_MATRIX_PASSWORD
     allowed_users:
       - "@me:example.com"
+
+git:
+  remote: https://gitea.example.com/user/knowledge.git
+  token:
+    env: CARAPACE_GIT_TOKEN
 
 sandbox:
   runtime: docker           # "docker" or "kubernetes"
@@ -253,3 +260,32 @@ sandbox:
 ```
 
 LLM API keys are provided as standard environment variables (`ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`, etc.) — not through the config file.
+
+### Secrets
+
+Secrets (Matrix password/token, Git remote token) are configured using a `Secret` object that supports three sources:
+
+```yaml
+# Inline value (also accepts a plain string as shorthand)
+password:
+  raw: "my-secret-value"
+password: "my-secret-value"  # equivalent shorthand
+
+# Environment variable (raises if the variable is not set)
+password:
+  env: CARAPACE_MATRIX_PASSWORD
+
+# File path (raises if the file does not exist)
+password:
+  file: /run/secrets/matrix_password
+```
+
+Resolution priority: `raw` > `env` > `file`. Exactly one source should be set. `resolve()` returns a `SecretStr` and raises `ValueError` if the configured source is missing.
+
+When a secret field is omitted from the config (`None`), the code falls back to legacy environment variables for backwards compatibility:
+
+| Config field | Legacy env var fallback |
+| --- | --- |
+| `channels.matrix.password` | `CARAPACE_MATRIX_PASSWORD` |
+| `channels.matrix.token` | `CARAPACE_MATRIX_TOKEN` |
+| `git.token` | `CARAPACE_GIT_TOKEN` |
