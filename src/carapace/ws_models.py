@@ -94,6 +94,7 @@ class ToolResultInfo(BaseModel):
     type: Literal["tool_result"] = "tool_result"
     tool: str
     result: str
+    exit_code: int = 0
 
 
 class ApprovalRequest(BaseModel):

@@ -18,7 +18,7 @@ import carapace.security as security_mod
 from carapace.agent.loop import run_agent_turn
 from carapace.git.store import GitStore
 from carapace.memory import MemoryStore
-from carapace.models import Config, Deps, SessionState, SkillInfo
+from carapace.models import Config, Deps, SessionState, SkillInfo, ToolResult
 from carapace.sandbox.manager import SandboxManager
 from carapace.security.context import SessionSecurity, UserVouchedEntry
 from carapace.security.sentinel import Sentinel
@@ -41,7 +41,7 @@ ModelType = Literal["agent", "sentinel", "title"]
 class SessionSubscriber(Protocol):
     async def on_user_message(self, content: str, *, from_self: bool) -> None: ...
     async def on_tool_call(self, tool: str, args: dict[str, Any], detail: str) -> None: ...
-    async def on_tool_result(self, tool: str, result: str) -> None: ...
+    async def on_tool_result(self, result: ToolResult) -> None: ...
     async def on_token(self, content: str) -> None: ...
     async def on_done(self, content: str, usage: TurnUsage) -> None: ...
     async def on_error(self, detail: str) -> None: ...
@@ -268,7 +268,7 @@ class SessionEngine:
         active: ActiveSession,
         *,
         tool_call_callback: Callable[[str, dict[str, Any], str], None] | None = None,
-        tool_result_callback: Callable[[str, str], None] | None = None,
+        tool_result_callback: Callable[[ToolResult], None] | None = None,
     ) -> Deps:
         assert active.security is not None and active.sentinel is not None
         return Deps(
@@ -587,12 +587,12 @@ class SessionEngine:
             active._pending_sends.add(task)
             task.add_done_callback(active._pending_sends.discard)
 
-        def _tool_result_cb(tool: str, result: str) -> None:
+        def _tool_result_cb(tr: ToolResult) -> None:
             self._session_mgr.append_events(
                 session_id,
-                [{"role": "tool_result", "tool": tool, "result": result}],
+                [{"role": "tool_result", "tool": tr.tool, "result": tr.output, "exit_code": tr.exit_code}],
             )
-            task = asyncio.ensure_future(self._broadcast(active, "on_tool_result", tool, result))
+            task = asyncio.ensure_future(self._broadcast(active, "on_tool_result", tr))
             active._pending_sends.add(task)
             task.add_done_callback(active._pending_sends.discard)
 

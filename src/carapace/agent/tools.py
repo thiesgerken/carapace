@@ -8,7 +8,7 @@ from pydantic_ai import Agent, DeferredToolRequests, RunContext, ToolDenied
 import carapace.security as security
 from carapace.config import load_workspace_file
 from carapace.memory import MemoryStore
-from carapace.models import Deps
+from carapace.models import Deps, ToolResult
 from carapace.sandbox.runtime import SkillVenvError
 from carapace.security.context import SkillActivatedEntry, ToolResultEntry
 from carapace.skills import SkillRegistry
@@ -41,9 +41,9 @@ def _notify_approved_start(ctx: RunContext[Deps], tool_name: str, args: dict[str
         ctx.deps.tool_call_callback(tool_name, args, "[user approved]")
 
 
-def _notify_result(ctx: RunContext[Deps], tool_name: str, result: str) -> None:
+def _notify_result(ctx: RunContext[Deps], tool_name: str, result: str, exit_code: int = 0) -> None:
     if ctx.deps.tool_result_callback:
-        ctx.deps.tool_result_callback(tool_name, result[:2000])
+        ctx.deps.tool_result_callback(ToolResult(tool=tool_name, output=result[:2000], exit_code=exit_code))
 
 
 def build_system_prompt(deps: Deps) -> str:
@@ -197,8 +197,13 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
             return denied
 
         session_id = ctx.deps.session_state.session_id
-        result = await ctx.deps.sandbox.file_read(session_id, path)
-        _notify_result(ctx, "read", result)
+        exit_code = 0
+        try:
+            result = await ctx.deps.sandbox.file_read(session_id, path)
+        except Exception as exc:
+            result = f"Error: {exc}"
+            exit_code = -1
+        _notify_result(ctx, "read", result, exit_code)
         return result
 
     @agent.tool
@@ -210,8 +215,13 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
             return denied
 
         session_id = ctx.deps.session_state.session_id
-        result = await ctx.deps.sandbox.file_write(session_id, path, content)
-        _notify_result(ctx, "write", result)
+        exit_code = 0
+        try:
+            result = await ctx.deps.sandbox.file_write(session_id, path, content)
+        except Exception as exc:
+            result = f"Error: {exc}"
+            exit_code = -1
+        _notify_result(ctx, "write", result, exit_code)
         return result
 
     @agent.tool
@@ -237,8 +247,13 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
             return denied
 
         session_id = ctx.deps.session_state.session_id
-        result = await ctx.deps.sandbox.file_edit(session_id, path, old_string, new_string)
-        _notify_result(ctx, "edit", result)
+        exit_code = 0
+        try:
+            result = await ctx.deps.sandbox.file_edit(session_id, path, old_string, new_string)
+        except Exception as exc:
+            result = f"Error: {exc}"
+            exit_code = -1
+        _notify_result(ctx, "edit", result, exit_code)
         return result
 
     @agent.tool
@@ -259,8 +274,13 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
             return denied
 
         session_id = ctx.deps.session_state.session_id
-        result = await ctx.deps.sandbox.file_apply_patch(session_id, changes)
-        _notify_result(ctx, "apply_patch", result)
+        exit_code = 0
+        try:
+            result = await ctx.deps.sandbox.file_apply_patch(session_id, changes)
+        except Exception as exc:
+            result = f"Error: {exc}"
+            exit_code = -1
+        _notify_result(ctx, "apply_patch", result, exit_code)
         return result
 
     # --- Runtime ---
@@ -275,13 +295,19 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
             _notify_approved_start(ctx, "exec", {"command": command})
 
         session_id = ctx.deps.session_state.session_id
-        result = await ctx.deps.sandbox.exec_command(session_id, command)
+        try:
+            exec_result = await ctx.deps.sandbox.exec_command(session_id, command)
+            result = exec_result.output
+            exit_code = exec_result.exit_code
+        except Exception as exc:
+            result = f"Error: {exc}"
+            exit_code = -1
 
         ctx.deps.security.append(
-            ToolResultEntry(tool="exec", status="error" if result.startswith("Error") else "success"),
+            ToolResultEntry(tool="exec", status="error" if exit_code != 0 else "success"),
         )
 
-        _notify_result(ctx, "exec", result)
+        _notify_result(ctx, "exec", result, exit_code)
         return result
 
     # --- Memory ---
