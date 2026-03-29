@@ -13,6 +13,7 @@ from pydantic_ai.models.test import TestModel
 from carapace.bootstrap import ensure_data_dir
 from carapace.config import load_config
 from carapace.git.store import GitStore
+from carapace.models import ToolResult
 from carapace.sandbox.manager import SandboxManager
 from carapace.security.sentinel import Sentinel
 from carapace.session import SessionEngine, SessionManager
@@ -87,7 +88,7 @@ class _FakeSubscriber:
     async def on_tool_call(self, tool: str, args: dict[str, Any], detail: str) -> None:
         pass
 
-    async def on_tool_result(self, tool: str, result: str) -> None:
+    async def on_tool_result(self, result: ToolResult) -> None:
         pass
 
     async def on_done(self, content: str, usage: TurnUsage) -> None:
