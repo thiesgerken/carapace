@@ -164,8 +164,19 @@ export function ChatView({ server, token, sessionId, onTitleUpdate }: ChatViewPr
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [server, token]);
 
+  // Clear the loading spinner on any tool_call messages still pending
+  function clearToolLoading() {
+    setMessages((prev) => {
+      if (!prev.some((m) => m.kind === "tool_call" && m.loading)) return prev;
+      return prev.map((m) =>
+        m.kind === "tool_call" && m.loading ? { ...m, loading: false } : m,
+      );
+    });
+  }
+
   // Flush a queued message if present, otherwise mark as not-waiting
   function finishWaiting() {
+    clearToolLoading();
     const queued = queueRef.current;
     if (queued) {
       queueRef.current = null;
@@ -297,6 +308,7 @@ export function ChatView({ server, token, sessionId, onTitleUpdate }: ChatViewPr
   const onWsDisconnect = useCallback(() => {
     queueRef.current = null;
     setQueuedMessage(null);
+    clearToolLoading();
     setWaiting(false);
   }, []);
   const url = wsUrl(server, sessionId, token);
