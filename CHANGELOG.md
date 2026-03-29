@@ -1,6 +1,52 @@
 # CHANGELOG
 
 
+## v0.44.1 (2026-03-29)
+
+
+### ♻️ Refactoring
+
+
+- ♻️Merge pull request #58 from thiesgerken/refactor/migrate-to-kr8s
+  ([`7f7be5b`](https://github.com/thiesgerken/carapace/commit/7f7be5b971ae4092afd06d91a801699f4cc45db5))
+
+  ♻️ refactor: migrate Kubernetes runtime from official client to kr8s
+
+- ♻️ refactor: migrate Kubernetes runtime from official client to kr8s
+  ([`f1550e6`](https://github.com/thiesgerken/carapace/commit/f1550e6d1271ff0395bced6b9e12523a6c36c141))
+
+  Replace the kubernetes Python client with kr8s, a modern async-native typed Kubernetes client. Key changes:
+
+  - All K8s operations are now natively async (no asyncio.to_thread wrappers)
+  - Pod/StatefulSet specs built as plain dicts instead of V1* model objects
+  - API client lazily initialized via kr8s.asyncio.api()
+  - Owner references via dict instead of V1OwnerReference
+  - Exceptions: kr8s.NotFoundError/ServerError/ExecError replace ApiException
+  - exec uses kr8s CompletedExec (subprocess.run-like API)
+  - Tests simplified: no more sys.modules hacking to mock kubernetes package
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix: catch ServerError in _get_owner_deployment for resilient owner ref lookup
+  ([`5b1eb82`](https://github.com/thiesgerken/carapace/commit/5b1eb820b49ef3bcc1162a54dcda1f13dfba5a8e))
+
+  Applied via @cursor push command
+
+- 🐛 fix: correct return type of _ensure_api to match kr8s.asyncio.api()
+  ([`b01eea2`](https://github.com/thiesgerken/carapace/commit/b01eea2a39400153984111f985b71555d982fa95))
+
+- 🐛 fix: eliminate TOCTOU race in delete helpers
+  ([`fa565b5`](https://github.com/thiesgerken/carapace/commit/fa565b55f17a05786c0e0ddd192d73c1c4bf951f))
+
+  Use try/except around the delete call instead of check-then-act (exists + delete). The resource could be deleted between the two calls by GC, an operator, or another process.
+
+### Other
+
+
+- Merge remote-tracking branch 'origin/main' into refactor/migrate-to-kr8s
+  ([`b5b0963`](https://github.com/thiesgerken/carapace/commit/b5b0963c2505c4cd03c5715aecc67971c2d253e4))
+
 ## v0.44.0 (2026-03-29)
 
 
