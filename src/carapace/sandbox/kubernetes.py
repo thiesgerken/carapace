@@ -4,6 +4,7 @@ import asyncio
 import os
 import socket
 from pathlib import Path
+from typing import cast
 
 import kr8s
 from kr8s._api import Api
@@ -400,12 +401,12 @@ class KubernetesRuntime(ContainerRuntime):
         """List all carapace-managed StatefulSets, returning ``{session_id: pod_name}``."""
         api = await self._ensure_api()
         result: dict[str, str] = {}
-        async for sts in kr8s.asyncio.get(
-            "statefulsets",
+        async for sts in StatefulSet.list(
             namespace=self._namespace,
             label_selector="app.kubernetes.io/managed-by=carapace-server",
             api=api,
         ):
+            sts = cast(StatefulSet, sts)
             session_id = sts.labels.get("carapace.session")
             if session_id:
                 result[session_id] = f"{sts.name}-0"
