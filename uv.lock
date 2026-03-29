@@ -304,7 +304,7 @@ wheels = [
 
 [[package]]
 name = "carapace"
-version = "0.48.2"
+version = "0.48.3"
 source = { editable = "." }
 dependencies = [
     { name = "docker" },

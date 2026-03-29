@@ -1,6 +1,22 @@
 # CHANGELOG
 
 
+## v0.48.3 (2026-03-29)
+
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix: git fetch hangs and unrelated-history merge failures
+  ([`0be2168`](https://github.com/thiesgerken/carapace/commit/0be2168cf4be23734f1d8aa457ab50091d8e8e66))
+
+  - Set GIT_TERMINAL_PROMPT=0 on all git subprocess calls so git fails
+    immediately instead of blocking on credential prompts.
+  - Return combined stdout+stderr from _run() so callers see error
+    messages in the output string.
+  - Allow unrelated histories when merging from the remote — the local
+    bootstrap commit and the remote history may have no common ancestor.
+
 ## v0.48.2 (2026-03-29)
 
 
