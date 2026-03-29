@@ -6,6 +6,7 @@ import socket
 from pathlib import Path
 
 import kr8s
+from kr8s._api import Api
 from kr8s.asyncio.objects import Deployment, Pod, StatefulSet
 from loguru import logger
 
@@ -74,7 +75,7 @@ class KubernetesRuntime(ContainerRuntime):
 
         logger.info(f"KubernetesRuntime initialized (namespace={namespace}, pvc={pvc_claim}, data_dir={data_dir})")
 
-    async def _ensure_api(self) -> kr8s.Api:
+    async def _ensure_api(self) -> Api:
         """Lazily create the kr8s API client (must be called from async context)."""
         return await kr8s.asyncio.api(namespace=self._namespace)
 
