@@ -1,6 +1,17 @@
 # CHANGELOG
 
 
+## v0.46.0 (2026-03-29)
+
+
+### ✨ Features
+
+
+- ✨ feat: allow separate priorityClassName for sandbox pods
+  ([`92ab9c1`](https://github.com/thiesgerken/carapace/commit/92ab9c1d9b18ce71e070e76ab487bb6dc361a408))
+
+  Add sandbox.priorityClassName to the Helm chart values.  When set it overrides the global priorityClassName for sandbox StatefulSets/Pods, letting operators assign a lower priority to sandboxes than to the server and frontend.
+
 ## v0.45.0 (2026-03-29)
 
 
