@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.48.2 (2026-03-29)
+
+
+### ♻️ Refactoring
+
+
+- ♻️ refactor: local knowledge repo always uses main branch
+  ([`8e2b44e`](https://github.com/thiesgerken/carapace/commit/8e2b44e585dabfc7fbaa5e34160c70180be43301))
+
+  The git.branch config now only controls the remote branch to fetch from and push to.  Locally the knowledge repo is always initialised as 'main', and push uses a main:<remote_branch> refspec.  Sandboxes see 'main' as the default branch regardless of the remote config.
+
+  Rename GitStore.branch → GitStore.remote_branch to make the distinction explicit.  Update docs/git.md accordingly.
+
 ## v0.48.1 (2026-03-29)
 
 
