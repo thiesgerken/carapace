@@ -459,7 +459,7 @@ class KubernetesRuntime(ContainerRuntime):
             api = await self._ensure_api()
             pod = await Pod.get(container_id, namespace=self._namespace, api=api)
             return pod.status.phase == "Running"
-        except (kr8s.NotFoundError, kr8s.ServerError):
+        except (kr8s.NotFoundError, kr8s.ServerError, kr8s.APITimeoutError, kr8s.ConnectionClosedError):
             return False
 
     async def logs(self, container_id: str, tail: int = 40) -> str:
@@ -470,7 +470,7 @@ class KubernetesRuntime(ContainerRuntime):
             async for line in pod.logs(tail_lines=tail, timestamps=True):
                 lines.append(line)
             return "\n".join(lines)
-        except (kr8s.NotFoundError, kr8s.ServerError):
+        except (kr8s.NotFoundError, kr8s.ServerError, kr8s.APITimeoutError, kr8s.ConnectionClosedError):
             return "(pod not found or logs unavailable)"
 
     def image_exists(self, tag: str) -> bool:
@@ -482,7 +482,7 @@ class KubernetesRuntime(ContainerRuntime):
             api = await self._ensure_api()
             pod = await Pod.get(container_id, namespace=self._namespace, api=api)
             return pod.status.get("podIP")
-        except (kr8s.NotFoundError, kr8s.ServerError):
+        except (kr8s.NotFoundError, kr8s.ServerError, kr8s.APITimeoutError, kr8s.ConnectionClosedError):
             return None
 
     async def resolve_self_network_name(self, logical_name: str) -> str:
@@ -501,7 +501,7 @@ class KubernetesRuntime(ContainerRuntime):
             ip = pod.status.get("podIP")
             if ip:
                 return {"pod": ip}
-        except (kr8s.NotFoundError, kr8s.ServerError):
+        except (kr8s.NotFoundError, kr8s.ServerError, kr8s.APITimeoutError, kr8s.ConnectionClosedError):
             pass
 
         try:
