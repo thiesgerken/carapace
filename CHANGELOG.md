@@ -1,6 +1,23 @@
 # CHANGELOG
 
 
+## v0.47.2 (2026-03-29)
+
+
+### Other
+
+
+- another small typing fix
+  ([`c048894`](https://github.com/thiesgerken/carapace/commit/c04889455faebe5e0fd6c8cef26d0aa27c3a8631))
+
+### ♻️ Refactoring
+
+
+- ♻️ refactor: use StatefulSet.list() for typed sandbox listing
+  ([`a41ed6d`](https://github.com/thiesgerken/carapace/commit/a41ed6d2ac2f4c14d5f89df360244d1e3b5ecf0f))
+
+  Replace kr8s.asyncio.get() with StatefulSet.list() for proper typing.
+
 ## v0.47.1 (2026-03-29)
 
 
