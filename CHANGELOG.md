@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.47.0 (2026-03-29)
+
+
+### ✨ Features
+
+
+- ✨ feat: clean up orphaned sandboxes on server startup
+  ([`fe644ff`](https://github.com/thiesgerken/carapace/commit/fe644ff46b4c646b87714c3331a5e3e62a030eb5))
+
+  Add list_sandboxes() to the ContainerRuntime protocol.  Docker lists containers by the carapace.managed label; Kubernetes lists StatefulSets by app.kubernetes.io/managed-by=carapace-server.
+
+  At startup the SandboxManager diffs live sandbox resources against sessions on disk and destroys anything that no longer has a matching session directory.  Controlled by the new cleanup_orphans_on_startup config flag (default: true, env: CARAPACE_SANDBOX_CLEANUP_ORPHANS_ON_STARTUP).
+
 ## v0.46.1 (2026-03-29)
 
 
