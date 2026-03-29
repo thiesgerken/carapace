@@ -1,8 +1,27 @@
 # CHANGELOG
 
 
+## v0.43.1 (2026-03-29)
+
+
+### Other
+
+
+- Merge remote-tracking branch 'refs/remotes/origin/main'
+  ([`ce7a45e`](https://github.com/thiesgerken/carapace/commit/ce7a45e6dd2ee42327fd2784fdcc165839c96850))
+
 ## v0.43.0 (2026-03-29)
 
+
+### ⬆️ Dependencies
+
+
+- ⬆️ chore: upgrade frontend to Node 24, pnpm, TS 6
+  ([`47a5029`](https://github.com/thiesgerken/carapace/commit/47a5029ec2234555943283f595bc2ccd88ab9345))
+
+  Switch package manager from npm to pnpm (via corepack). Upgrade Node base image from 22 to 24, TypeScript to 6.0, ESLint to 10, lucide-react to 1.x, and bump other dev deps.
+
+  Add globals.css.d.ts for TS 6 strict CSS import checking. Update Dockerfile, README, AGENTS.md to reference pnpm.
 
 ### ✨ Features
 
