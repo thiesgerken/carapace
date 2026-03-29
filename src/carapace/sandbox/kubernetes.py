@@ -399,14 +399,13 @@ class KubernetesRuntime(ContainerRuntime):
     async def list_sandboxes(self) -> dict[str, str]:
         """List all carapace-managed StatefulSets, returning ``{session_id: pod_name}``."""
         api = await self._ensure_api()
-        sts_list = await kr8s.asyncio.get(
+        result: dict[str, str] = {}
+        async for sts in kr8s.asyncio.get(
             "statefulsets",
             namespace=self._namespace,
             label_selector="app.kubernetes.io/managed-by=carapace-server",
             api=api,
-        )
-        result: dict[str, str] = {}
-        for sts in sts_list:
+        ):
             session_id = sts.labels.get("carapace.session")
             if session_id:
                 result[session_id] = f"{sts.name}-0"
