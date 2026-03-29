@@ -91,7 +91,7 @@ class KubernetesRuntime(ContainerRuntime):
             self._owner_deployment = deploy
             logger.info(f"KubernetesRuntime: owner Deployment UID = {deploy.raw.metadata.uid}")
             return deploy
-        except kr8s.NotFoundError:
+        except (kr8s.NotFoundError, kr8s.ServerError):
             logger.warning("Could not look up owner Deployment — sandbox resources will lack ownerRef")
             self._want_owner_ref = False
             return None
