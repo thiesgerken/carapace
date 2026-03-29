@@ -1,6 +1,18 @@
 # CHANGELOG
 
 
+## v0.44.2 (2026-03-29)
+
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix: use subPath for K8s workspace mount and fail on clone error
+  ([`53f0361`](https://github.com/thiesgerken/carapace/commit/53f0361f7d547b518bf4d37e38ba100fa63e2a62))
+
+  - Mount PVC at subPath 'workspace' to avoid lost+found polluting /workspace
+  - Raise RuntimeError on git clone failure instead of silently continuing
+
 ## v0.44.1 (2026-03-29)
 
 
