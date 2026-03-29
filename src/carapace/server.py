@@ -177,7 +177,10 @@ async def lifespan(app: FastAPI):
     await git_store.ensure_repo()
 
     # Pull from external remote if configured
-    git_token = os.environ.get("CARAPACE_GIT_TOKEN")
+    if _config.git.token:
+        git_token = _config.git.token.resolve().get_secret_value()
+    else:
+        git_token = os.environ.get("CARAPACE_GIT_TOKEN")
     if _config.git.remote:
         await git_store.add_remote(_config.git.remote, git_token)
         if await git_store.has_commits():

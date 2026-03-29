@@ -161,7 +161,10 @@ class MatrixChannel:
             except Exception as exc:
                 logger.warning(f"Matrix: could not read persisted token file: {exc}")
 
-        raw = os.environ.get("CARAPACE_MATRIX_TOKEN", "")
+        if self._config.token:
+            raw = self._config.token.resolve().get_secret_value()
+        else:
+            raw = os.environ.get("CARAPACE_MATRIX_TOKEN", "")
         if raw:
             device_id = None
             if ":" in raw:
@@ -172,10 +175,13 @@ class MatrixChannel:
         return "", None
 
     async def _password_login(self, token_file: Path) -> None:
-        """Log in with CARAPACE_MATRIX_PASSWORD and persist the new token. Raises on failure."""
-        password = os.environ.get("CARAPACE_MATRIX_PASSWORD", "")
+        """Log in with the configured password secret and persist the new token. Raises on failure."""
+        if self._config.password:
+            password = self._config.password.resolve().get_secret_value()
+        else:
+            password = os.environ.get("CARAPACE_MATRIX_PASSWORD", "")
         if not password:
-            raise RuntimeError("Matrix channel: no valid token available and CARAPACE_MATRIX_PASSWORD is not set")
+            raise RuntimeError("Matrix channel: no valid token available and no password secret configured")
 
         resp = await self._client.login(password, device_name=self._config.device_name)
         if isinstance(resp, nio.LoginError):

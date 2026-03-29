@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import os
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, SecretStr, model_validator
 from pydantic_ai.models import Model
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -54,6 +55,48 @@ class SessionState(BaseModel):
         )
 
 
+# --- Secrets ---
+
+
+class Secret(BaseModel):
+    """Flexible secret source: raw value, environment variable, or file.
+
+    Accepts a plain string as shorthand for ``Secret(raw="...")``.
+    Resolution priority: raw > env > file.
+    """
+
+    raw: str | None = None
+    env: str | None = None
+    file: str | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _accept_plain_string(cls, data: Any) -> Any:
+        if isinstance(data, str):
+            return {"raw": data}
+        return data
+
+    def resolve(self) -> SecretStr:
+        """Return the resolved secret value.
+
+        Raises ``ValueError`` when no source is configured or the
+        configured source (env var / file) does not exist.
+        """
+        if self.raw is not None:
+            return SecretStr(self.raw)
+        if self.env is not None:
+            val = os.environ.get(self.env)
+            if val is None:
+                raise ValueError(f"Environment variable {self.env!r} is not set")
+            return SecretStr(val)
+        if self.file is not None:
+            path = Path(self.file)
+            if not path.exists():
+                raise ValueError(f"Secret file {self.file!r} does not exist")
+            return SecretStr(path.read_text().strip())
+        raise ValueError("Secret has no source configured (set raw, env, or file)")
+
+
 # --- Configuration ---
 
 
@@ -70,6 +113,8 @@ class MatrixChannelConfig(BaseModel):
     homeserver: str = ""
     user_id: str = ""
     device_name: str = "carapace"
+    password: Secret | None = None
+    token: Secret | None = None
     allowed_rooms: list[str] = []
     allowed_users: list[str] = []
 
@@ -154,6 +199,7 @@ class GitConfig(BaseModel):
     remote: str = ""  # optional external remote URL
     branch: str = "main"
     author: str = "Carapace Session %s <%s@carapace.local>"  # %s → session ID
+    token: Secret | None = None
 
 
 class ServerConfig(BaseSettings):
