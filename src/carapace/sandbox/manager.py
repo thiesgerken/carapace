@@ -608,11 +608,11 @@ class SandboxManager:
     async def cleanup_session(self, session_id: str) -> None:
         """Suspend the sandbox — the runtime decides how (scale to 0 or remove).
 
-        The ``SessionContainer`` entry is kept in ``self._sessions`` so that
-        ``ensure_session`` can detect the suspended sandbox and call
-        ``resume_sandbox`` instead of creating (and deleting) a new one.
+        The entry is removed from ``self._sessions`` so ``cleanup_idle``
+        does not re-suspend it every cycle.  ``ensure_session`` will
+        rediscover the sandbox via ``sandbox_exists`` and resume it.
         """
-        sc = self._sessions.get(session_id)
+        sc = self._sessions.pop(session_id, None)
         if sc:
             await self._runtime.suspend_sandbox(
                 self._sandbox_name(session_id),
