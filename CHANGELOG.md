@@ -1,6 +1,40 @@
 # CHANGELOG
 
 
+## v0.48.1 (2026-03-29)
+
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix: always pull from remote on startup, log git stderr
+  ([`0bab482`](https://github.com/thiesgerken/carapace/commit/0bab482bf1e4868a19dbbd6ae9e35230c1ee0292))
+
+  - pull_from_remote() now handles empty local repos by resetting to the
+    remote branch instead of skipping the pull entirely.
+  - ensure_repo() sets safe.directory so bind-mounted host dirs don't
+    trigger git's dubious-ownership check.
+  - _run() captures stderr separately and logs it (warning on failure,
+    debug on success) instead of merging it into stdout.
+
+### Other
+
+
+- 🔥 remove: legacy env-var fallbacks for Secret fields
+  ([`f96022f`](https://github.com/thiesgerken/carapace/commit/f96022f0023e24628890d527e0bb7a6717a2c449))
+
+  Drop CARAPACE_GIT_TOKEN, CARAPACE_MATRIX_TOKEN, and CARAPACE_MATRIX_PASSWORD environment-variable fallbacks.  If no Secret is configured the feature is simply unavailable.
+
+  Add docs/git.md documenting upstream remote setup, branch requirements, first-start behaviour, and sandbox Git workflow.
+
+- 🔥 remove: dead CredentialsConfig class
+  ([`b6e7a5e`](https://github.com/thiesgerken/carapace/commit/b6e7a5ea283205ab681c806f4d275cea1f270bda))
+
+  The class and its Config field were never read by application code.
+
+- 📝 docs: document Secret config model and git remote setup
+  ([`751823e`](https://github.com/thiesgerken/carapace/commit/751823eb8d3ab6ddbacbdc0f92782694caadea3b))
+
 ## v0.48.0 (2026-03-29)
 
 
