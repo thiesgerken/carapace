@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import os
 import time
 from pathlib import Path
 from typing import Any
@@ -161,10 +160,7 @@ class MatrixChannel:
             except Exception as exc:
                 logger.warning(f"Matrix: could not read persisted token file: {exc}")
 
-        if self._config.token:
-            raw = self._config.token.resolve().get_secret_value()
-        else:
-            raw = os.environ.get("CARAPACE_MATRIX_TOKEN", "")
+        raw = self._config.token.resolve().get_secret_value() if self._config.token else ""
         if raw:
             device_id = None
             if ":" in raw:
@@ -176,10 +172,7 @@ class MatrixChannel:
 
     async def _password_login(self, token_file: Path) -> None:
         """Log in with the configured password secret and persist the new token. Raises on failure."""
-        if self._config.password:
-            password = self._config.password.resolve().get_secret_value()
-        else:
-            password = os.environ.get("CARAPACE_MATRIX_PASSWORD", "")
+        password = self._config.password.resolve().get_secret_value() if self._config.password else ""
         if not password:
             raise RuntimeError("Matrix channel: no valid token available and no password secret configured")
 

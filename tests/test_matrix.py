@@ -21,7 +21,7 @@ from carapace.channels.matrix import (
 )
 from carapace.channels.matrix.subscriber import MatrixSubscriber
 from carapace.config import load_config
-from carapace.models import MatrixChannelConfig, MatrixTokenFile
+from carapace.models import MatrixChannelConfig, MatrixTokenFile, Secret
 from carapace.sandbox.manager import SandboxManager
 from carapace.session import SessionEngine, SessionManager
 from carapace.ws_models import ApprovalRequest, CommandResult
@@ -617,9 +617,8 @@ def test_load_token_discards_legacy_file_without_user_id(tmp_path: Path):
 @pytest.mark.anyio
 async def test_password_login_persists_user_id(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """After password login the persisted file includes the configured user_id."""
-    monkeypatch.setenv("CARAPACE_MATRIX_PASSWORD", "secret")
 
-    ch = _make_channel(tmp_path)
+    ch = _make_channel(tmp_path, password=Secret(raw="secret"))
     token_file = tmp_path / "matrix_token.json"
 
     login_resp = MagicMock()

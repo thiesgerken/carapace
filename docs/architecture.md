@@ -282,10 +282,4 @@ password:
 
 Resolution priority: `raw` > `env` > `file`. Exactly one source should be set. `resolve()` returns a `SecretStr` and raises `ValueError` if the configured source is missing.
 
-When a secret field is omitted from the config (`None`), the code falls back to legacy environment variables for backwards compatibility:
-
-| Config field | Legacy env var fallback |
-| --- | --- |
-| `channels.matrix.password` | `CARAPACE_MATRIX_PASSWORD` |
-| `channels.matrix.token` | `CARAPACE_MATRIX_TOKEN` |
-| `git.token` | `CARAPACE_GIT_TOKEN` |
+Secret fields are optional (`Secret | None`). When omitted, the feature that requires the secret is simply unavailable (e.g. no Matrix password login, no Git remote authentication).
