@@ -2,12 +2,18 @@
 
 > This roadmap outlines planned features and improvements. Items are grouped by area and roughly ordered by priority within each section.
 
-## Authentication & Multi-User
+- [ ] Proper Icon + Logo, rewrite README to be more ... advertising
+- [ ] warm-up a sandbox as soon as the session is created?
 
-- [ ] **OIDC / OAuth 2.0** — replace the static bearer token with a proper OIDC provider (Keycloak, Authentik, Authelia, etc.) for login on both the web UI and CLI
-- [ ] **Multi-user support** — per-user sessions, memory, and security context; map OIDC subject to a Carapace user identity
-- [ ] **Session token lifecycle** — short-lived access tokens with refresh, proper logout / revocation
-- [ ] **Per-user data isolation** — each user gets their own memory, session history, and workspace files
+## UI Improvements
+
+- [ ] browser for the current session's workspace + preview (no need to support manual editing though)
+- [ ] syntax highlighting, copy message button, ...
+- [ ] indicator how many commits ahead/behind the session's knowledge repo is + the ability to pull/push inside the sandbox without telling the agent
+- [ ] warn user if deleting a session that has commits not pushed
+- [ ] replace pull / push slash commands (that aren't really tied to the session anyway) with a global indicator how many commits ahead/behind the backend's global repo is compared to the remote repo
+- [ ] show which sessions have sandboxes, size of the pvcs, is the sandbox in standby
+- [ ] tell the user what exactly is happening in the exec — sandbox creation, sentinel, execution? where is the command right now?
 
 ## Credential Management
 
@@ -15,6 +21,13 @@
 - [ ] **Per-session in-memory caching** — credentials exist only in memory for the session duration, never persisted to disk
 - [ ] **Credential injection into skill containers** — inject via env var, file, or stdin based on skill manifest
 - [ ] **Per-session approval flow** — each credential must be approved on first access; `/reset` revokes all approvals
+
+## Authentication & Multi-User
+
+- [ ] **OIDC / OAuth 2.0** — replace the static bearer token with a proper OIDC provider (Keycloak, Authentik, Authelia, etc.) for login on both the web UI and CLI
+- [ ] **Multi-user support** — per-user sessions, memory, and security context; map OIDC subject to a Carapace user identity
+- [ ] **Session token lifecycle** — short-lived access tokens with refresh, proper logout / revocation
+- [ ] **Per-user data isolation** — each user gets their own memory, session history, and workspace files
 
 ## Memory
 
