@@ -42,4 +42,4 @@ skills/example/
 3. Optionally add `pyproject.toml` + `uv.lock` for dependencies
 4. Add scripts under `scripts/`
 5. Call `use_skill("my-skill")` to activate — this copies the skill into the sandbox and builds the venv
-6. Call `save_skill("my-skill")` to persist any edits back to the master directory
+6. Commit and push to persist any edits back to the repository

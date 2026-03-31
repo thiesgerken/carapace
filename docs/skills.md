@@ -97,7 +97,7 @@ A skill can include a `pyproject.toml` to declare its Python dependencies. Depen
 
 1. **Activation** (`use_skill`): Carapace copies the skill into the sandbox at `/workspace/skills/<name>/`. If a `pyproject.toml` is present, it runs `uv sync --directory /workspace/skills/<name>` to create a `.venv` with all declared dependencies. The proxy is temporarily bypassed during install.
 2. **Runtime**: Scripts should be invoked with `uv run --directory /workspace/skills/<name> scripts/<script>.py` so they run inside the venv.
-3. **Save** (`save_skill`): Copies the skill back to the master directory (excluding `.venv` and `__pycache__`). If there is a `pyproject.toml`, the master venv is rebuilt.
+3. **Persistence**: Skills are persisted via Git — changes in `/workspace/skills/` are committed and pushed to the workspace repository.
 4. **Container restart**: Venvs are rebuilt for all activated skills automatically when a container is recreated after idle timeout.
 
 ### Managing dependencies
@@ -125,15 +125,15 @@ The full `SKILL.md` body is loaded only when the agent decides a skill is releva
 
 ## Skill activation as a security event
 
-When the agent activates a skill (loads its full `SKILL.md` into context), a `SkillActivatedEntry` is recorded in the action log. This gives the sentinel agent context about what the agent has learned — skill instructions may reveal the user's personal infrastructure (services, credential paths, workflow patterns).
+When the agent activates a skill (loads its full `SKILL.md` into context), a `SkillActivatedEntry` is recorded in the action log. The `use_skill` tool itself is safe-listed (auto-allowed without sentinel evaluation), but the activation is logged so the sentinel has context for evaluating subsequent actions.
 
-The sentinel uses this context when evaluating subsequent actions. For example, after the agent reads skill instructions describing email credentials, the sentinel will be more cautious about outbound network requests — it knows the agent now has knowledge that could be exfiltrated.
+For example, after the agent reads skill instructions describing email credentials, the sentinel will be more cautious about outbound network requests — it knows the agent now has knowledge that could be exfiltrated.
 
 The sentinel can also read skill files directly (via its `list_skill_files` and `read_skill_file` tools) to understand what a skill-related tool call will actually do.
 
 ## Self-improvement
 
-The agent can create new skills by writing files to `/workspace/skills/` in the sandbox (SKILL.md, scripts, optional pyproject.toml, optional carapace.yaml) and then using `save_skill` to persist them. The sentinel evaluates the `save_skill` call per the `SECURITY.md` policy.
+The agent can create new skills by writing files to `/workspace/skills/` in the sandbox (SKILL.md, scripts, optional pyproject.toml, optional carapace.yaml) and then committing and pushing them via Git.
 
 The workflow for the agent to create a skill via chat:
 
@@ -141,7 +141,7 @@ The workflow for the agent to create a skill via chat:
 2. Agent plans the skill (SKILL.md, scripts, optional pyproject.toml, optional carapace.yaml)
 3. Agent writes the files in the sandbox at `/workspace/skills/<skill-name>/`
 4. Agent tests the skill in the sandbox
-5. Agent calls `save_skill` to persist — sentinel evaluates and may escalate for approval
-6. On approval, the skill is copied to the master `skills/` directory and becomes available in future sessions
+5. Agent commits and pushes via Git — the sentinel evaluates the push via the pre-receive hook
+6. On approval, the skill is persisted in the workspace repository and becomes available in future sessions
 
 A built-in `create-skill` skill is seeded on first run to guide the agent through this process.

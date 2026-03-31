@@ -115,9 +115,9 @@ Skills can declare Python dependencies via a standard `pyproject.toml`. Dependen
    ```
    uv lock --directory /workspace/skills/my-skill
    ```
-3. Save the skill so `pyproject.toml` and `uv.lock` are persisted:
+3. Commit and push the skill so `pyproject.toml` and `uv.lock` are persisted:
    ```
-   save_skill("my-skill")
+   git add /workspace/skills/my-skill && git commit -m "Add my-skill" && git push
    ```
 
 #### Adding or removing dependencies later
@@ -129,7 +129,7 @@ uv add --directory /workspace/skills/my-skill beautifulsoup4
 uv remove --directory /workspace/skills/my-skill httpx
 ```
 
-Then `save_skill("my-skill")` to persist changes.
+Then commit and push to persist changes.
 
 #### How it works at activation
 
