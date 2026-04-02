@@ -7,10 +7,11 @@ from pydantic_ai import Agent, DeferredToolRequests, RunContext, ToolDenied
 
 import carapace.security as security
 from carapace.config import load_workspace_file
+from carapace.credentials import CredentialRegistry
 from carapace.memory import MemoryStore
-from carapace.models import Deps, ToolResult
+from carapace.models import CredentialMetadata, Deps, SkillCredentialDecl, ToolResult
 from carapace.sandbox.runtime import SkillVenvError
-from carapace.security.context import SkillActivatedEntry, ToolResultEntry
+from carapace.security.context import CredentialAccessEntry, SkillActivatedEntry, ToolResultEntry
 from carapace.skills import SkillRegistry
 
 
@@ -44,6 +45,101 @@ def _notify_approved_start(ctx: RunContext[Deps], tool_name: str, args: dict[str
 def _notify_result(ctx: RunContext[Deps], tool_name: str, result: str, exit_code: int = 0) -> None:
     if ctx.deps.tool_result_callback:
         ctx.deps.tool_result_callback(ToolResult(tool=tool_name, output=result[:2000], exit_code=exit_code))
+
+
+async def _inject_skill_credentials(
+    ctx: RunContext[Deps],
+    cred_decls: list[SkillCredentialDecl],
+    skill_name: str,
+) -> str:
+    """Fetch and inject declared skill credentials into the sandbox.
+
+    Returns a human-readable summary for the agent (never includes values).
+    """
+    if not cred_decls:
+        return ""
+
+    cred_registry: CredentialRegistry | None = ctx.deps.credential_registry
+    if cred_registry is None:
+        return ""
+
+    approved_paths = {c.vault_path for c in ctx.deps.session_state.approved_credentials}
+
+    # Filter to credentials not yet approved
+    needed = [c for c in cred_decls if c.vault_path not in approved_paths]
+    if not needed:
+        # All already approved — re-inject in case container was recreated
+        return await _do_inject(ctx, cred_decls, cred_registry, skill_name)
+
+    # Fetch metadata for all needed credentials
+    metas: list[CredentialMetadata] = []
+    for decl in needed:
+        try:
+            meta = await cred_registry.fetch_metadata(decl.vault_path)
+        except KeyError:
+            meta = CredentialMetadata(vault_path=decl.vault_path, name=decl.vault_path, description=decl.description)
+        metas.append(meta)
+
+    # Record the credential access in the action log (the sentinel already gated use_skill)
+    ctx.deps.security.append(
+        CredentialAccessEntry(
+            vault_paths=[m.vault_path for m in metas],
+            action="fetch",
+            decision="approved",
+        )
+    )
+
+    # Record approvals in session state
+    for meta in metas:
+        if not any(c.vault_path == meta.vault_path for c in ctx.deps.session_state.approved_credentials):
+            ctx.deps.session_state.approved_credentials.append(meta)
+
+    return await _do_inject(ctx, cred_decls, cred_registry, skill_name)
+
+
+async def _do_inject(
+    ctx: RunContext[Deps],
+    cred_decls: list[SkillCredentialDecl],
+    cred_registry: CredentialRegistry,
+    skill_name: str,
+) -> str:
+    """Fetch credential values and inject them into the sandbox."""
+    session_id = ctx.deps.session_state.session_id
+    injected_env = 0
+    injected_file = 0
+    errors: list[str] = []
+
+    for decl in cred_decls:
+        try:
+            value = await cred_registry.fetch(decl.vault_path)
+        except KeyError:
+            errors.append(f"Credential {decl.vault_path} not found in vault")
+            continue
+
+        if decl.env_var:
+            ctx.deps.sandbox.set_session_env(session_id, {decl.env_var: value})
+            injected_env += 1
+
+        if decl.file:
+            import base64
+            import shlex
+
+            b64 = base64.b64encode(value.encode()).decode()
+            path_q = shlex.quote(decl.file)
+            cmd = f'mkdir -p "$(dirname {path_q})" && printf %s {b64} | base64 -d > {path_q} && chmod 0400 {path_q}'
+            result = await ctx.deps.sandbox.exec_command(session_id, cmd)
+            if result.exit_code != 0:
+                errors.append(f"Failed to write {decl.file}: {result.output}")
+            else:
+                injected_file += 1
+
+    parts: list[str] = []
+    total = injected_env + injected_file
+    if total:
+        parts.append(f"{total} credential(s) injected for skill '{skill_name}'.")
+    if errors:
+        parts.append("Credential errors: " + "; ".join(errors))
+    return " ".join(parts)
 
 
 def build_system_prompt(deps: Deps) -> str:
@@ -132,11 +228,14 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
 
         carapace_cfg = registry.get_carapace_config(skill_name)
         requested_domains = carapace_cfg.network.domains if carapace_cfg else []
+        requested_creds = carapace_cfg.credentials if carapace_cfg else []
 
         if not ctx.tool_call_approved:
             gate_args: dict[str, Any] = {"skill_name": skill_name}
             if requested_domains:
                 gate_args["network_domains"] = requested_domains
+            if requested_creds:
+                gate_args["credentials"] = [c.vault_path for c in requested_creds]
             if denied := await _gate(ctx, "use_skill", gate_args):
                 return denied
         else:
@@ -162,6 +261,9 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
                 set(requested_domains),
             )
 
+        # Credential auto-injection
+        cred_msg = await _inject_skill_credentials(ctx, requested_creds, skill_name)
+
         ctx.deps.activated_skills.append(skill_name)
         if skill_name not in ctx.deps.session_state.activated_skills:
             ctx.deps.session_state.activated_skills.append(skill_name)
@@ -180,6 +282,8 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
             parts.append(sandbox_msg)
         if requested_domains:
             parts.append(f"Network access granted for: {', '.join(requested_domains)}")
+        if cred_msg:
+            parts.append(cred_msg)
         parts.append(f"Instructions:\n\n{instructions}")
         result = "\n".join(parts)
         _notify_result(ctx, "use_skill", result)

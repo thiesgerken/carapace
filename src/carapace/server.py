@@ -271,6 +271,7 @@ async def lifespan(app: FastAPI):
         agent_model=agent_model,
         sandbox_mgr=_sandbox_mgr,
         model_factory=_create_model,
+        credential_registry=_credential_registry,
     )
 
     # Credential vault backends

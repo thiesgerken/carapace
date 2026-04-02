@@ -312,3 +312,4 @@ class Deps(BaseModel):
     tool_call_callback: Callable[[str, dict[str, Any], str], None] | None = None
     tool_result_callback: Callable[[ToolResult], None] | None = None
     usage_tracker: UsageTracker
+    credential_registry: Any = None  # CredentialRegistry — Any to avoid circular import
