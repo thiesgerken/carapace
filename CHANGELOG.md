@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.49.1 (2026-04-02)
+
+
+### 🔧 Configuration
+
+
+- 🔧 chore: exclude CHANGELOG.md from markdownlint
+  ([`8f3b1b0`](https://github.com/thiesgerken/carapace/commit/8f3b1b05a6a69e1e1a4563e148a3c4d8b32eecad))
+
+  - Add .markdownlintignore and pass -p from prek markdownlint-fix hook
+
+  Made-with: Cursor
+
 ## v0.49.0 (2026-04-02)
 
 
