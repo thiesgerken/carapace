@@ -224,6 +224,22 @@ class CarapaceConfig(BaseModel):
     logfire_token: str = ""
 
 
+class CredentialBackendConfig(BaseModel):
+    """Configuration for a single credential vault backend."""
+
+    type: Literal["file", "vaultwarden"] = "file"
+    path: str = ""  # file backend: path to .env file
+    url: str = ""  # vaultwarden backend: server URL
+    expose: list[str] = []  # allowlist — only these identifiers are accessible
+    hide: list[str] = []  # blocklist — these identifiers are excluded
+
+
+class CredentialsConfig(BaseModel):
+    """Top-level credential configuration with named backends."""
+
+    backends: dict[str, CredentialBackendConfig] = {}
+
+
 class Config(BaseModel):
     carapace: CarapaceConfig = CarapaceConfig()
     server: ServerConfig = ServerConfig()
@@ -231,6 +247,7 @@ class Config(BaseModel):
     agent: AgentConfig = AgentConfig()
     sandbox: SandboxConfig = SandboxConfig()
     git: GitConfig = GitConfig()
+    credentials: CredentialsConfig = CredentialsConfig()
     data_dir: str = "."  # resolved relative to config file location
     knowledge_dir: str = "./knowledge"  # resolved relative to config file location
 
