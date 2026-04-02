@@ -22,14 +22,9 @@ GET /credentials?q=gmail
 Authorization: Bearer <SANDBOX_TOKEN>
 ```
 
-Returns a JSON array of available credential names (and optionally vault paths) that match the query. **Does not return values** — only metadata. This lets the agent discover what credentials exist in the vault without exposing secrets.
+Returns a JSON array of available credential metadata (vault path, name, optional description) matching the query. **Does not return values** — only metadata. This lets the agent discover what credentials exist in the vault without exposing secrets.
 
-Listing and searching are gated: the sentinel evaluates a `credential_list` action and can escalate. Two levels of approval are tracked per session:
-
-- **`credential_list_all`**: approving an unfiltered `GET /credentials` grants access to all future list and search calls
-- **`credential_search`**: approving a filtered `GET /credentials?q=...` only grants access to future searches, not unfiltered listing
-
-A `credential_list_all` approval subsumes `credential_search` (but not vice versa).
+Each list or search call is gated at the **tool call level** — the sentinel evaluates the `exec` call that runs `ccred list`, not the HTTP request itself. No persistent approval state is tracked for listing. The sentinel should allow searches that make sense for the task at hand and deny fishing expeditions. The worst-case leak from a list call is credential keys (vault paths and names), not values.
 
 ### Fetch a credential
 
@@ -58,21 +53,24 @@ Skills declare their credential needs in `carapace.yaml`:
 
 ```yaml
 credentials:
-  - vault_path: "carapace/gmail"
+  - vault_path: "personal/9742101e-68b8-4a07-b5b1-9578b5f88e6f"
+    description: "Gmail app password for sending emails"
     env_var: GMAIL_APP_PASSWORD
-  - vault_path: "carapace/ssh/deploy-key"
+  - vault_path: "personal/a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+    description: "SSH deploy key for the production server"
     file: /home/sandbox/.ssh/id_ed25519
 ```
 
 Each credential entry has:
 
-| Field        | Description                                                                  |
-| ------------ | ---------------------------------------------------------------------------- |
-| `vault_path` | Path in the password manager (also the identifier shown in approval prompts) |
-| `env_var`    | Inject as this environment variable on skill activation (optional)           |
-| `file`       | Write to this file path inside the sandbox on skill activation (optional)    |
+| Field         | Description                                                                                                                                                    |
+| ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `vault_path`  | `<backend>/<id>` — the configured backend name as prefix, followed by the credential identifier (UUID for Bitwarden backends, arbitrary key for file backends) |
+| `description` | Human-readable explanation of what this credential is and what it's used for                                                                                   |
+| `env_var`     | Inject as this environment variable on skill activation (optional)                                                                                             |
+| `file`        | Write to this file path inside the sandbox on skill activation (optional)                                                                                      |
 
-`vault_path` is the canonical identifier — it is what gets shown to the user in approval prompts and stored in `approved_credentials`.
+`vault_path` is the canonical identifier — it is what gets shown to the user in approval prompts and stored in `approved_credentials`. The prefix is the **name of the backend as configured in `config.yaml`** — not a hardcoded protocol name. This means you can have multiple Bitwarden accounts (`personal/...`, `work/...`), mix backends of different types, or point two backends at different Vaultwarden instances, and vault paths remain unambiguous. For Bitwarden backends, UUIDs are used as the identifier part — guaranteed globally unique. For file backends, the identifier is whatever key you used in the secrets file. The `description` is what the agent sees and what gets shown in approval prompts alongside the vault path — without it the agent would have no idea what a credential is for and might try to discover it by searching the vault on its own.
 
 ### Auto-injection on skill activation
 
@@ -105,12 +103,12 @@ sequenceDiagram
     participant Sandbox
 
     Agent->>Backend: use_skill("email-sender")
-    Backend->>Backend: parse carapace.yaml → needs carapace/gmail + carapace/smtp-host
+    Backend->>Backend: parse carapace.yaml → needs Gmail app password + SMTP host credential
     Backend->>Sentinel: evaluate use_skill (all vault paths in one call)
-    Sentinel->>User: "Skill email-sender needs carapace/gmail, carapace/smtp-host. Approve?"
+    Sentinel->>User: "Skill email-sender needs: Gmail app password, SMTP host credential. Approve?"
     User->>Backend: /approve
 
-    Backend->>Vault: fetch carapace/gmail + carapace/smtp-host
+    Backend->>Vault: fetch personal/<uuid1> + personal/<uuid2>
     Vault-->>Backend: credential values
     Backend->>Sandbox: inject as env vars / write to files
     Backend-->>Agent: "Skill activated. 2 credentials injected."
@@ -126,8 +124,8 @@ sequenceDiagram
     participant User
     participant Vault as Password Manager
 
-    Agent->>Sandbox: run: ccred get carapace/github-token
-    Sandbox->>Backend: GET /credentials/carapace/github-token (with sandbox token)
+    Agent->>Sandbox: run: ccred get personal/7063feab-4b10-472e-b64c-785e2b870b92
+    Sandbox->>Backend: GET /credentials/personal/7063feab-... (with sandbox token)
     Backend->>Backend: check approved_credentials
 
     alt Not yet approved
@@ -140,7 +138,7 @@ sequenceDiagram
     Vault-->>Backend: credential value
     Backend-->>Sandbox: raw value (plain text)
     Note over Sandbox: Script uses value (env, file, pipe, etc.)
-    Note over Backend: Value never enters LLM context
+    Note over Backend: Value never returned to agent
 ```
 
 ## Built-in credentials skill
@@ -149,21 +147,22 @@ A built-in skill (`credentials`) teaches the agent how the credential system wor
 
 - How to read a skill's `carapace.yaml` to discover required credentials
 - That credentials declared with `env_var` or `file` are auto-injected when the skill is activated
-- How to list available credentials: `ccred list` or `ccred list -q gmail` (the request blocks until the user approves on first use)
-- How to fetch a credential: `ccred get carapace/gmail` (blocks until approved, then prints to stdout)
-- How to write a credential to a file: `ccred get carapace/ssh/key -o ~/.ssh/id_ed25519`
-- How to inject a fetched value as an env var: `export TOKEN=$(ccred get carapace/github-token)`
-- That credential values must **never** be echoed, printed, or passed back to the agent
+- How to list available credentials: `ccred list` or `ccred list -q gmail` (evaluated by the sentinel on each call)
+- How to fetch a credential: `ccred get personal/<uuid>` (blocks until approved, then prints to stdout)
+- How to write a credential to a file: `ccred get personal/<uuid> -o ~/.ssh/id_ed25519` — preferred for SSH keys and certificates
+- How to use a credential inline in a command: `PASSWORD=$(ccred get personal/<uuid>) my-command` — the value is scoped to that single command
+- How to use a credential as a persistent env var across commands: declare `env_var` in `carapace.yaml` — Carapace injects it into every sandbox exec call for the session so it is available without re-fetching. Alternatively, with the persistent shell, `export TOKEN=$(ccred get personal/<uuid>)` works for the duration of the shell session.
+- That credential values must **never** be echoed, printed, logged, or returned as command output — not even partially
 - That requests block while the user is deciding — the agent should tell the user what it needs **before** running the `ccred` command
 
 This way the agent learns the credential workflow from the skill's instructions — no special tool needed.
 
 ## Security properties
 
-- **Credentials never enter LLM context**: Values stay inside the sandbox process. The agent orchestrates but never sees raw secrets.
+- **Credentials stay out of LLM context (by convention, not code enforcement)**: The backend never returns credential values to the agent — it fetches them and injects them directly into the sandbox. However, this guarantee relies on the agent following instructions (the `credentials` skill explicitly prohibits printing or returning secrets) and the sentinel detecting and blocking any command that would echo a credential. It is **not** enforced at the protocol level — if the agent were compelled by a malicious prompt to print a secret it had already written to a file, the sentinel would be the last line of defence. Treat it as defense-in-depth rather than a hard boundary.
 - **No credential persistence**: The server never writes credentials to disk. They exist only in memory for the duration of a request.
 - **Per-session approval**: Each credential must be approved the first time it is requested in a session. Approval is all-or-nothing for bundled requests (skill activation) — the user cannot partially approve a bundle. After `/reset`, all approvals are revoked. There is no mid-session revocation: once a credential has been injected into the sandbox, the value may have been copied elsewhere inside the container, so revoking access would be cosmetic.
-- **Sentinel evaluation**: Credential access (both auto-injection and on-demand) is visible to the sentinel — it sees the credential names in tool args or shell commands and can escalate/deny.
+- **Sentinel evaluation**: All credential access is gated at the tool-call level — the sentinel evaluates the `exec` call containing the `ccred` command or the `use_skill` call that triggers auto-injection. The backend API is on the same host as the git remote and is excluded from the HTTP proxy, so the sentinel never sees the HTTP requests themselves; the `exec` tool call is the only gate. For list/search the sentinel sees the command string and can deny it if it doesn't fit the task. For fetch, it sees the vault path in the command args.
 - **Audit trail**: Every credential access is logged as a `CredentialAccessEntry` in the session action log and visible in Logfire traces.
 - **Sandbox-scoped**: The REST endpoint is only reachable from inside the sandbox (authenticated by sandbox token). The credential is delivered to the container, not to the agent.
 
@@ -182,6 +181,8 @@ The frontend displays credential state for the active session:
   {
     type: "credential_approval_request",
     vault_paths: string[],       // one or more credentials being requested
+    names: string[],             // human-readable names (parallel to vault_paths)
+    descriptions: string[],      // optional descriptions (empty string if unavailable)
     skill_name?: string,         // set when triggered by skill activation
     explanation: string
   }
@@ -200,45 +201,159 @@ The frontend displays credential state for the active session:
 
 Supported backends:
 
-| Backend                 | Integration                |
-| ----------------------- | -------------------------- |
-| Vaultwarden / Bitwarden | Via REST API               |
-| 1Password               | Via CLI (`op`) or Connect  |
-| `pass`                  | Unix password store        |
-| Environment variables   | Fallback for simple setups |
+| Backend                 | Integration        |
+| ----------------------- | ------------------ |
+| Vaultwarden / Bitwarden | Via `bw serve` CLI |
+| File                    | `.env`-format file |
 
 Start with a single backend. Multiple backends (prefix-based routing, per-backend exposure rules) can be added later without rearchitecting — the vault interface stays the same, the server just dispatches to different instances based on vault path prefix.
 
-The env-var backend is the natural starting point (zero dependencies). It resolves `vault_path` like `carapace/gmail` to an env var `CARAPACE_VAULT_CARAPACE_GMAIL` (uppercased, slashes replaced with underscores) on the server side.
+### File backend
 
-### Exposure control
+The simplest backend: a single file in `.env` format where each line is `vault_path=secret_value`. Default location is `<data_dir>/secrets.env`, overridable in config.
 
-The vault config includes an allowlist or blocklist of vault path patterns that Carapace is permitted to access. This is a hard boundary enforced **before** the sentinel — if a credential doesn't match the exposure rules, the server rejects the request immediately without consulting the sentinel or prompting the user.
+```env
+gmail=myapppassword123
+github-token=ghp_xxxxxxxxxxxx
+ssh/deploy-key=-----BEGIN OPENSSH PRIVATE KEY-----...
+```
 
-This lets users connect a password manager that holds hundreds of unrelated secrets while only exposing the handful that are relevant to Carapace. The sentinel provides contextual, per-session gating on top; exposure control provides a static, config-level boundary underneath.
-
-Rules use glob patterns matched against `vault_path`:
-
-- **`expose`** (allowlist mode): only matching paths are accessible. Default if specified.
-- **`hide`** (blocklist mode): matching paths are excluded, everything else is accessible.
-
-If neither is specified, all credentials in the vault are accessible (sentinel-only gating).
+The file is read once at startup and cached in memory. Listing returns all keys; searching filters by substring match against the key. The vault path for a key is `<backend-name>/<key>` — e.g. if the backend is configured as `dev`, then `dev/gmail` maps to the `gmail` entry. This backend is useful for simple setups, development, and testing.
 
 Configuration in `config.yaml`:
 
 ```yaml
 credentials:
-  backend: env # or "vaultwarden", "1password", "pass"
-  expose:
-    - "carapace/*" # everything under carapace/
-    - "shared/api-keys/*" # plus shared API keys
-  # OR alternatively:
-  # hide:
-  #   - "personal/*"
-  #   - "work/banking/*"
-  vaultwarden:
-    url: https://vault.example.com
-    # auth token via CARAPACE_VAULT_TOKEN env var
+  backends:
+    dev: # becomes the vault_path prefix: dev/<key>
+      type: file
+      path: ./data/secrets.env # default: <data_dir>/secrets.env
+```
+
+### Vaultwarden / Bitwarden backend
+
+Carapace is a personal assistant — it needs access to your personal password store, not a separate secrets system. Sharing credentials from your existing Vaultwarden vault is much more natural than copying them to another tool.
+
+Bitwarden encrypts all vault data client-side — there is no server API that returns plaintext secrets. Decryption always happens locally, which means Carapace uses the **`bw serve`** command to run a local REST API that handles decryption transparently.
+
+#### Why `bw serve` instead of the `bw` CLI
+
+Shelling out to `bw get` for every credential request has drawbacks: process startup overhead, session key management, and error-prone argument passing. The `bw serve` command starts a persistent local HTTP server (Express.js) that exposes the full Vault Management API. Carapace talks to it via `httpx` — no subprocess spawning per request.
+
+#### `vault_path` identifier
+
+Every Bitwarden item has a stable UUID. Credential references in `carapace.yaml` use the format `<backend-name>/<uuid>`, where `<backend-name>` is whatever name you gave this backend in `config.yaml`. For example, if the backend is named `personal`, vault paths look like `personal/9742101e-68b8-4a07-b5b1-9578b5f88e6f`. This means you can configure a second Bitwarden account as backend `work` and its items appear as `work/<uuid>` — no collision with `personal/...`. Skill authors look up the UUID in the Bitwarden web UI (or via `bw list items`) and paste it into their `carapace.yaml`.
+
+The `description` field in `carapace.yaml` provides the human- and agent-readable context for what the credential is. Without it, the agent would only see an opaque UUID and might try searching the vault on its own.
+
+#### Authentication
+
+Authentication requires two things:
+
+- **API key** (`BW_CLIENTID` + `BW_CLIENTSECRET`) — for non-interactive login. Generated in the Bitwarden web UI under account settings.
+- **Master password** (`CARAPACE_VAULT_PASSWORD`) — for vault decryption.
+
+#### Startup sequence
+
+The Carapace server authenticates and starts `bw serve` at startup:
+
+```bash
+bw config server https://vault.example.com       # point to self-hosted instance
+bw login --apikey                                  # uses BW_CLIENTID + BW_CLIENTSECRET
+bw unlock --passwordenv CARAPACE_VAULT_PASSWORD    # decrypts the vault
+bw serve --port 8087 --hostname 127.0.0.1          # starts local REST API
+```
+
+The `bw serve` process is managed as a child process of the Carapace server. It listens only on `127.0.0.1` and is never exposed externally.
+
+#### API usage
+
+Once `bw serve` is running, Carapace uses the [Vault Management API](https://bitwarden.com/help/vault-management-api/):
+
+```
+GET http://127.0.0.1:8087/object/item/{uuid}         # full item (all fields, decrypted)
+GET http://127.0.0.1:8087/object/password/{uuid}      # just the password
+GET http://127.0.0.1:8087/object/username/{uuid}      # just the username
+GET http://127.0.0.1:8087/list/object/items            # list all items (metadata)
+GET http://127.0.0.1:8087/list/object/items?search=gmail  # search by name
+POST http://127.0.0.1:8087/sync                        # refresh vault from server
+```
+
+When Carapace receives a request for `<backend-name>/<uuid>`, the backend strips the `<backend-name>/` prefix and calls `GET /object/password/<uuid>` (or `/object/item/<uuid>` for full access including username, notes, custom fields, etc.).
+
+For the `GET /credentials` list/search endpoint, the backend calls `GET /list/object/items` on `bw serve`, maps the results to return only metadata (item name, UUID, folder), and applies exposure filters before returning.
+
+#### Optional: dedicated Carapace user
+
+For tighter isolation, create a separate Bitwarden user account for Carapace and share items via an organization collection. This way the `bw serve` instance only sees explicitly shared items. This is optional — using your personal account with exposure-control patterns works fine too.
+
+#### Lifecycle
+
+The `bw` CLI binary must be available on the Carapace server (installed in the Docker image or host). The `bw serve` process runs for the lifetime of the Carapace server. If it crashes, the server restarts it automatically and re-authenticates. A periodic `POST /sync` call keeps the local vault in sync with the Vaultwarden server.
+
+#### Credential metadata returned by `bw serve`
+
+The backend interface returns a `CredentialMetadata` object alongside the value for every listed item:
+
+```python
+class CredentialMetadata(BaseModel):
+    vault_path: str       # full path including backend prefix
+    name: str             # human-readable name (Bitwarden item name)
+    description: str = "" # optional extra context
+```
+
+For the Bitwarden backend, `name` is the item's name in Bitwarden and `description` is empty (it is only set when a `carapace.yaml` entry provides one). For the file backend, `name` is the key itself and `description` is always empty. The `CredentialMetadata` objects are stored in `approved_credentials` so the session info panel and approval prompts have the right data at hand without querying the vault again.
+
+#### Deployment in Kubernetes
+
+When running in Kubernetes, `bw serve` naturally becomes a **sidecar container** in the same Pod rather than a child process. Containers in a Pod share a network namespace, so `127.0.0.1:8087` still works — exactly as in the child-process case. No network policy is needed because the port is never exposed outside the Pod. The sidecar mounts the same secrets (API key, master password) via the same env vars, and Carapace talks to it identically. For a single-user personal deployment, sidecar is the simplest option. A separate Pod (accessible only to Carapace via a `NetworkPolicy`) adds complexity without meaningful benefit given the already-personal nature of the vault.
+
+Configuration in `config.yaml`:
+
+```yaml
+credentials:
+  backends:
+    personal: # becomes the vault_path prefix: personal/<uuid>
+      type: vaultwarden
+      url: https://vault.example.com
+      # Auth via env vars:
+      #   BW_CLIENTID              — API key client ID
+      #   BW_CLIENTSECRET          — API key client secret
+      #   CARAPACE_VAULT_PASSWORD  — master password for vault unlock
+```
+
+### Exposure control
+
+The vault config includes an allowlist or blocklist of Bitwarden item UUIDs (or glob patterns on vault paths) that Carapace is permitted to access. This is a hard boundary enforced **before** the sentinel — if a credential doesn't match the exposure rules, the server rejects the request immediately without consulting the sentinel or prompting the user.
+
+When using your personal Vaultwarden account, exposure control is the primary mechanism for limiting what Carapace can see. Without it, the agent could potentially request any item in your vault (though it would still need sentinel + user approval for each one).
+
+Rules match the identifier part of the vault path (everything after the backend prefix). Exposure is configured per-backend:
+
+- **`expose`** (allowlist mode): only listed IDs are accessible. Default if specified.
+- **`hide`** (blocklist mode): listed IDs are excluded, everything else is accessible.
+
+If neither is specified, all credentials in that backend are accessible (sentinel-only gating).
+
+Configuration in `config.yaml`:
+
+```yaml
+credentials:
+  backends:
+    personal:
+      type: vaultwarden
+      url: https://vault.example.com
+      expose:
+        - "9742101e-68b8-4a07-b5b1-9578b5f88e6f" # Gmail app password
+        - "a1b2c3d4-e5f6-7890-abcd-ef1234567890" # GitHub token
+        - "7063feab-4b10-472e-b64c-785e2b870b92" # SSH deploy key
+      # OR alternatively:
+      # hide:
+      #   - "deadbeef-..."  # banking credentials
+      # Auth via env vars: BW_CLIENTID, BW_CLIENTSECRET, CARAPACE_VAULT_PASSWORD
+    dev:
+      type: file
+      path: ./data/secrets.env
 ```
 
 The `GET /credentials` list endpoint only returns credentials that pass the exposure filter. The `GET /credentials/{vault_path}` fetch endpoint returns `404` (not `403`) for hidden credentials — they are invisible, not just denied.
@@ -247,27 +362,45 @@ The `GET /credentials` list endpoint only returns credentials that pass the expo
 
 ### What already exists
 
-- `SessionState.approved_credentials` — list field, ready to track per-session approvals
+- `SessionState.approved_credentials` — list field; needs to change from `list[str]` to `list[CredentialMetadata]` to carry name + description
 - `SkillCarapaceConfig.credentials` — `carapace.yaml` parsing works (currently `list[dict[str, str]]` — should become a typed model)
 - Sandbox token auth — the sandbox already authenticates to the backend for git
-- Container env injection — `docker.py` `exec()` accepts `env: dict[str, str]`
+- Container env injection — `docker.py` `exec()` accepts `env: dict[str, str]` (per-exec only; session-wide env needs the new `session_env` field)
 - Domain approval pattern in `use_skill` — can be mirrored for credential gating
+- `_build_proxy_env()` in `manager.py` — already injects `GIT_REPO_URL`, `HTTP_PROXY`, etc.; `CARAPACE_API_URL` goes here too
 
 ### What needs to be built
 
-1. **Typed `SkillCredentialDecl` model** replacing `list[dict[str, str]]` in `SkillCarapaceConfig` (fields: `vault_path`, `env_var`, `file`)
-2. **`GET /credentials/{vault_path}` endpoint** in `server.py` — blocking approval flow, vault fetch, logging
-3. **`GET /credentials` list/search endpoint** in `server.py` — metadata only, gated, no values
-4. **Vault backend interface** + env-var implementation
-5. **Credential gating in `use_skill`** — extend the `_gate()` call to include vault paths, inject approved values as env vars / files into sandbox
-6. **`CredentialAccessEntry`** in `security/context.py` action log (covers both fetch and list/search)
-7. **`CredentialApprovalRequest` / `CredentialApprovalResponse`** WebSocket messages — both carry `vault_paths: list[str]` to support bundled approval
-8. **Frontend `CredentialApprovalCard`** component — renders a list of vault paths with approve/deny for the bundle
-9. **Blocking approval mechanism** — server holds the HTTP response (on-demand) or `use_skill` call (auto-injection) until the user approves/denies via WebSocket
-10. **Session info panel** in the frontend showing approved credentials
-11. **Built-in `credentials` skill** with `SKILL.md` documenting the pull mechanism (including list/search)
-12. **`ccred` CLI helper** baked into the sandbox image — subcommands: `list [-q query]`, `get <vault_path> [-o file]`
+1. **`CredentialMetadata` model** in `models.py` — `vault_path`, `name`, `description` — returned by both backend list and fetch, stored in session state and approval prompts
+2. **`SkillCredentialDecl` model** replacing `list[dict[str, str]]` in `SkillCarapaceConfig` (fields: `vault_path`, `description`, `env_var`, `file`)
+3. **`SessionContainer.session_env: dict[str, str]`** field on `SessionContainer` — merged into every `_exec()` call so approved `env_var` credentials persist for the lifetime of the container. On container recreation, the engine must re-fetch and re-inject all currently-approved `env_var` credentials before the agent resumes — the agent should never observe that the container restarted.
+4. **`CARAPACE_API_URL` env var** injected by `_build_proxy_env()` — the same host:port the git remote already uses, just exposed as a named variable. `ccred` uses this as its base URL.
+5. **`GET /credentials/{vault_path}` endpoint** in `server.py` — blocking approval flow, vault fetch, logging
+6. **`GET /credentials` list/search endpoint** in `server.py` — metadata only, gated, no values
+7. **Vault backend protocol** (`credentials.py`) — abstract interface with `fetch(id) -> str`, `list(query) -> list[CredentialMetadata]`, `fetch_metadata(id) -> CredentialMetadata`
+8. **File backend** implementation of the vault protocol
+9. **Vaultwarden/`bw serve` backend** implementation
+10. **`bw serve` process management** — start/stop/restart as a child process, health checks, auto-recovery
+11. **Credential gating in `use_skill`** — extend the `_gate()` call to include vault paths + metadata, inject approved values into `session_env` (env vars) or write to files in sandbox on approval
+12. **`approved_credentials`** updated from `list[str]` to `list[CredentialMetadata]` in `SessionState` and all callers
+13. **`CredentialAccessEntry`** in `security/context.py` action log (covers both fetch and list/search)
+14. **`CredentialApprovalRequest` / `CredentialApprovalResponse`** WebSocket messages (`ws_models.py`) — carry `vault_paths`, `names`, `descriptions`, and optional `skill_name`; follow the same escalation queue pattern as domain/git-push approvals
+15. **Matrix channel support** — `on_credential_approval_request` in `MatrixSubscriber`, resolve via reaction/command (same pattern as domain approval); `PendingCredentialApproval` class in `approval.py`
+16. **Frontend `CredentialApprovalCard`** component — renders name + description for each credential with approve/deny for the bundle
+17. **Session info panel** frontend update — show `approved_credentials` (with names) alongside skills and domains
+18. **Built-in `credentials` skill** with `SKILL.md` documenting the pull mechanism (including list/search and the `CARAPACE_API_URL` env var)
+19. **`ccred` CLI helper** baked into the sandbox image — subcommands: `list [-q query]`, `get <vault_path> [-o file]`
 
 ### Cleanup
 
 - Remove `MockCredentialBroker` from `credentials.py` — it is unused and the pull-based design replaces it entirely
+
+### Docs & testing
+
+- **`AGENTS.md`** (repo root): add `credentials.py` to the project structure map with a one-line description of the new vault backend interface
+- **`docs/sandbox.md`**: add `CARAPACE_API_URL` to the list of env vars injected into containers
+- **`docs/architecture.md`**: add credential endpoints to the server API section and mention the vault backend abstraction
+- **`docs/security.md`**: add a note that credential access (fetch + list) goes through the sentinel and that the LLM-context guarantee is convention-based, not protocol-enforced
+- **Tests** (`tests/test_credentials.py` — new file): file backend unit tests (fetch, list, exposure filter); mock vault backend tests for the REST endpoints (approval flow, blocking, `403` vs `404`)
+- **Tests** (`tests/test_server.py`): add credential endpoint tests alongside the existing server tests
+- **Tests** (`tests/test_session.py`): cover `session_env` re-injection on container recreation
