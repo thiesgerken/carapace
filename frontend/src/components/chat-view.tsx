@@ -5,7 +5,7 @@ import { Loader2 } from "lucide-react";
 import { useWebSocket } from "@/hooks/use-websocket";
 import { fetchCommands, fetchHistory, fetchModels, wsUrl } from "@/lib/api";
 import type { SlashCommand } from "@/lib/api";
-import type { ChatMessage, ClientMessage, EscalationDecision, ServerMessage, TurnUsage } from "@/lib/types";
+import type { ChatMessage, ClientMessage, CredentialDecision, EscalationDecision, ServerMessage, TurnUsage } from "@/lib/types";
 import { Message } from "./message";
 import { ChatInput } from "./chat-input";
 
@@ -124,6 +124,28 @@ export function ChatView({ server, token, sessionId, onTitleUpdate }: ChatViewPr
                   ref: h.ref ?? "",
                   explanation: h.explanation ?? "",
                   changed_files: (h.changed_files as string[] | undefined) ?? [],
+                },
+                decision,
+              });
+            }
+          } else if (h.role === "credential_approval" && h.request_id) {
+            if (!h.decision) {
+              const next = history[i + 1];
+              const decision =
+                next?.role === "credential_approval" &&
+                next.request_id === h.request_id
+                  ? (next.decision as CredentialDecision)
+                  : undefined;
+              msgs.push({
+                kind: "credential_approval",
+                request: {
+                  type: "credential_approval_request",
+                  request_id: h.request_id,
+                  vault_paths: h.vault_paths ?? [],
+                  names: h.names ?? [],
+                  descriptions: h.descriptions ?? [],
+                  skill_name: h.skill_name,
+                  explanation: h.explanation ?? "",
                 },
                 decision,
               });
@@ -255,6 +277,13 @@ export function ChatView({ server, token, sessionId, onTitleUpdate }: ChatViewPr
           { kind: "git_push_approval", request: msg },
         ]);
         break;
+      case "credential_approval_request":
+        setWaiting(true);
+        setMessages((prev) => [
+          ...prev,
+          { kind: "credential_approval", request: msg },
+        ]);
+        break;
       case "command_result":
         setMessages((prev) => [
           ...prev,
@@ -365,6 +394,21 @@ export function ChatView({ server, token, sessionId, onTitleUpdate }: ChatViewPr
     );
   }
 
+  function handleCredentialApproval(
+    vaultPaths: string[],
+    decision: CredentialDecision,
+  ) {
+    send({ type: "credential_approval_response", vault_paths: vaultPaths, decision });
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.kind === "credential_approval" &&
+        m.request.vault_paths.join(",") === vaultPaths.join(",")
+          ? { ...m, decision }
+          : m,
+      ),
+    );
+  }
+
   function handleCancel() {
     send({ type: "cancel" });
   }
@@ -412,6 +456,7 @@ export function ChatView({ server, token, sessionId, onTitleUpdate }: ChatViewPr
                   : undefined
               }
               onEscalation={handleEscalation}
+              onCredentialApproval={handleCredentialApproval}
             />
           ))}
           {waiting && (

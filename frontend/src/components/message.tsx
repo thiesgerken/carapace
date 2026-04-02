@@ -1,9 +1,10 @@
 "use client";
 
-import type { ChatMessage, EscalationDecision } from "@/lib/types";
+import type { ChatMessage, CredentialDecision, EscalationDecision } from "@/lib/types";
 import { MarkdownContent } from "./markdown-content";
 import { ToolCallBadge } from "./tool-call-badge";
 import { ApprovalCard } from "./approval-card";
+import { CredentialApprovalCard } from "./credential-approval-card";
 import { DomainAccessApprovalCard } from "./domain-access-approval-card";
 import { GitPushApprovalCard } from "./git-push-approval-card";
 import { CommandResultView } from "./command-result";
@@ -14,6 +15,7 @@ interface MessageProps {
   onApproval?: (toolCallId: string, approved: boolean) => void;
   approvalResolved?: boolean;
   onEscalation?: (requestId: string, decision: EscalationDecision) => void;
+  onCredentialApproval?: (vaultPaths: string[], decision: CredentialDecision) => void;
 }
 
 export function Message({
@@ -21,6 +23,7 @@ export function Message({
   onApproval,
   approvalResolved,
   onEscalation,
+  onCredentialApproval,
 }: MessageProps) {
   switch (message.kind) {
     case "user":
@@ -92,6 +95,17 @@ export function Message({
           decision={message.decision}
           onRespond={(decision) =>
             onEscalation?.(message.request.request_id, decision)
+          }
+        />
+      );
+
+    case "credential_approval":
+      return (
+        <CredentialApprovalCard
+          request={message.request}
+          decision={message.decision}
+          onRespond={(decision) =>
+            onCredentialApproval?.(message.request.vault_paths, decision)
           }
         />
       );

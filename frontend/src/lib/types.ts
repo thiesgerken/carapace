@@ -30,6 +30,10 @@ export interface HistoryMessage {
   risk_level?: string;
   ref?: string;
   changed_files?: string[];
+  vault_paths?: string[];
+  names?: string[];
+  descriptions?: string[];
+  skill_name?: string;
 }
 
 // WebSocket protocol — Server → Client
@@ -75,6 +79,16 @@ export interface GitPushApprovalRequest {
   ref: string;
   explanation: string;
   changed_files: string[];
+}
+
+export interface CredentialApprovalRequest {
+  type: "credential_approval_request";
+  request_id: string;
+  vault_paths: string[];
+  names: string[];
+  descriptions: string[];
+  skill_name?: string;
+  explanation: string;
 }
 
 export interface TurnUsage {
@@ -127,6 +141,7 @@ export type ServerMessage =
   | ApprovalRequest
   | DomainAccessApprovalRequest
   | GitPushApprovalRequest
+  | CredentialApprovalRequest
   | Done
   | CommandResult
   | ErrorMessage
@@ -156,6 +171,14 @@ export interface EscalationResponse {
   decision: EscalationDecision;
 }
 
+export type CredentialDecision = "approved" | "denied";
+
+export interface CredentialApprovalResponse {
+  type: "credential_approval_response";
+  vault_paths: string[];
+  decision: CredentialDecision;
+}
+
 export interface CancelRequest {
   type: "cancel";
 }
@@ -164,6 +187,7 @@ export type ClientMessage =
   | UserMessage
   | ApprovalResponse
   | EscalationResponse
+  | CredentialApprovalResponse
   | CancelRequest;
 
 // Chat UI messages
@@ -191,6 +215,11 @@ export type ChatMessage =
       kind: "git_push_approval";
       request: GitPushApprovalRequest;
       decision?: EscalationDecision;
+    }
+  | {
+      kind: "credential_approval";
+      request: CredentialApprovalRequest;
+      decision?: CredentialDecision;
     }
   | { kind: "command"; command: string; data: unknown }
   | { kind: "error"; detail: string };
