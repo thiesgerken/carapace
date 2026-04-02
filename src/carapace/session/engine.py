@@ -26,7 +26,14 @@ from carapace.session.manager import SessionManager
 from carapace.session.titler import generate_title
 from carapace.skills import SkillRegistry
 from carapace.usage import UsageTracker
-from carapace.ws_models import SLASH_COMMANDS, ApprovalRequest, ApprovalResponse, EscalationResponse, TurnUsage
+from carapace.ws_models import (
+    SLASH_COMMANDS,
+    ApprovalRequest,
+    ApprovalResponse,
+    CredentialApprovalResponse,
+    EscalationResponse,
+    TurnUsage,
+)
 
 ModelType = Literal["agent", "sentinel", "title"]
 
@@ -54,6 +61,15 @@ class SessionSubscriber(Protocol):
     async def on_title_update(self, title: str) -> None: ...
     async def on_domain_info(self, domain: str, detail: str) -> None: ...
     async def on_git_push_info(self, ref: str, decision: str, detail: str) -> None: ...
+    async def on_credential_approval_request(
+        self,
+        request_id: str,
+        vault_paths: list[str],
+        names: list[str],
+        descriptions: list[str],
+        skill_name: str | None,
+        explanation: str,
+    ) -> None: ...
 
 
 # ---------------------------------------------------------------------------
@@ -79,6 +95,8 @@ class ActiveSession:
     title_model_name: str | None = None
     pending_approval_requests: list[dict[str, Any]] = field(default_factory=list)
     pending_escalations: list[dict[str, Any]] = field(default_factory=list)
+    pending_credential_approvals: list[dict[str, Any]] = field(default_factory=list)
+    credential_approval_queue: asyncio.Queue[CredentialApprovalResponse | None] = field(default_factory=asyncio.Queue)
     _pending_sends: set[asyncio.Task[Any]] = field(default_factory=set)
 
 
@@ -330,15 +348,70 @@ class SessionEngine:
     async def submit_approval(
         self,
         session_id: str,
-        response: ApprovalResponse | EscalationResponse,
+        response: ApprovalResponse | EscalationResponse | CredentialApprovalResponse,
     ) -> None:
-        """Forward an approval / escalation response to the running turn."""
+        """Forward an approval / escalation / credential response to the running turn."""
         active = self._active.get(session_id)
         if active:
             if isinstance(response, ApprovalResponse):
                 active.tool_approval_queue.put_nowait(response)
+            elif isinstance(response, CredentialApprovalResponse):
+                active.credential_approval_queue.put_nowait(response)
             else:
                 active.escalation_queue.put_nowait(response)
+
+    async def request_credential_approval(
+        self,
+        session_id: str,
+        vault_paths: list[str],
+        names: list[str],
+        descriptions: list[str],
+        *,
+        skill_name: str | None = None,
+        explanation: str = "",
+    ) -> bool:
+        """Send a credential approval request to subscribers and block until resolved.
+
+        Returns ``True`` if the user approved, ``False`` if denied.
+        """
+        active = self._active.get(session_id)
+        if not active:
+            return False
+
+        request_id = secrets.token_hex(8)
+        pending = {
+            "request_id": request_id,
+            "vault_paths": vault_paths,
+            "names": names,
+            "descriptions": descriptions,
+            "skill_name": skill_name,
+        }
+        active.pending_credential_approvals.append(pending)
+
+        await self._broadcast(
+            active,
+            "on_credential_approval_request",
+            request_id,
+            vault_paths,
+            names,
+            descriptions,
+            skill_name,
+            explanation,
+        )
+
+        # Block until a matching response arrives
+        while True:
+            msg = await active.credential_approval_queue.get()
+            if msg is None:
+                active.pending_credential_approvals = [
+                    p for p in active.pending_credential_approvals if p["request_id"] != request_id
+                ]
+                return False
+            if set(msg.vault_paths) == set(vault_paths):
+                active.pending_credential_approvals = [
+                    p for p in active.pending_credential_approvals if p["request_id"] != request_id
+                ]
+                return msg.decision == "approved"
 
     # -- slash commands --
 

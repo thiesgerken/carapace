@@ -66,6 +66,13 @@ class GitPushEntry(BaseModel):
     explanation: str = ""
 
 
+class CredentialAccessEntry(BaseModel):
+    type: Literal["credential_access"] = "credential_access"
+    vault_paths: list[str]
+    action: Literal["list", "fetch"] = "fetch"
+    decision: Literal["approved", "denied"] = "approved"
+
+
 ActionLogEntry = Annotated[
     UserMessageEntry
     | ToolCallEntry
@@ -74,7 +81,8 @@ ActionLogEntry = Annotated[
     | ApprovalEntry
     | SkillActivatedEntry
     | UserVouchedEntry
-    | GitPushEntry,
+    | GitPushEntry
+    | CredentialAccessEntry,
     Field(discriminator="type"),
 ]
 
@@ -142,6 +150,7 @@ class SessionSecurity:
             | SkillActivatedEntry
             | UserVouchedEntry
             | GitPushEntry
+            | CredentialAccessEntry
         ] = []
         self.sentinel_eval_count: int = 0
         self._last_synced_idx: int = 0
@@ -164,6 +173,7 @@ class SessionSecurity:
         | SkillActivatedEntry
         | UserVouchedEntry
         | GitPushEntry
+        | CredentialAccessEntry
     ]:
         """Return action log entries added since the last sentinel sync."""
         entries = self.action_log[self._last_synced_idx :]

@@ -16,6 +16,9 @@ from carapace.security.context import (
     SessionSecurity,
     ToolCallEntry,
 )
+from carapace.security.context import (
+    CredentialAccessEntry as CredentialAccessEntry,
+)
 from carapace.security.sentinel import Sentinel
 from carapace.usage import UsageTracker
 
