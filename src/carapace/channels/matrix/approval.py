@@ -45,3 +45,19 @@ class PendingDomainApproval:
 
     async def wait(self) -> bool:
         return await self._future
+
+
+class PendingCredentialApproval:
+    """Tracks a pending credential approval message in a room."""
+
+    def __init__(self, event_id: str, vault_paths: list[str]) -> None:
+        self.event_id = event_id
+        self.vault_paths = vault_paths
+        self._future: asyncio.Future[bool] = asyncio.get_running_loop().create_future()
+
+    def resolve(self, approved: bool) -> None:
+        if not self._future.done():
+            self._future.set_result(approved)
+
+    async def wait(self) -> bool:
+        return await self._future

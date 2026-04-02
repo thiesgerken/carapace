@@ -18,6 +18,7 @@ from carapace.channels.matrix.approval import (
     DENY_REACTIONS,
     TYPING_INTERVAL,
     PendingApproval,
+    PendingCredentialApproval,
     PendingDomainApproval,
 )
 from carapace.channels.matrix.formatting import (
@@ -28,7 +29,7 @@ from carapace.channels.matrix.subscriber import MatrixSubscriber
 from carapace.models import Config, MatrixChannelConfig, MatrixTokenFile, SkillInfo
 from carapace.sandbox.manager import SandboxManager
 from carapace.session import SessionEngine, SessionManager
-from carapace.ws_models import ApprovalResponse, CommandResult, EscalationResponse
+from carapace.ws_models import ApprovalResponse, CommandResult, CredentialApprovalResponse, EscalationResponse
 
 
 class MatrixChannel:
@@ -63,8 +64,10 @@ class MatrixChannel:
         self._pending_approvals: dict[str, PendingApproval] = {}
         # event_id of pending domain-approval message -> PendingDomainApproval
         self._pending_domain_approvals: dict[str, PendingDomainApproval] = {}
-        # room_id -> most recent pending approval of either kind (for command resolution)
-        self._room_pending: dict[str, PendingApproval | PendingDomainApproval] = {}
+        # event_id of pending credential-approval message -> PendingCredentialApproval
+        self._pending_credential_approvals: dict[str, PendingCredentialApproval] = {}
+        # room_id -> most recent pending approval of any kind (for command resolution)
+        self._room_pending: dict[str, PendingApproval | PendingDomainApproval | PendingCredentialApproval] = {}
         # verbose mode per room (room_id -> bool); defaults to True (show tool calls)
         self._verbose: dict[str, bool] = {}
         # room_id -> MatrixSubscriber (persistent per room)
@@ -376,6 +379,26 @@ class MatrixChannel:
                     sub._domain_events.pop(event.reacts_to, None)
                     self._pending_domain_approvals.pop(event.reacts_to, None)
                     self._room_pending.pop(room_id, None)
+            return
+
+        # Credential approval
+        if event.reacts_to in self._pending_credential_approvals:
+            logger.info(
+                f"Matrix: credential decision={'approved' if approved else 'denied'} "
+                + f"via reaction from {event.sender} in {room_id}"
+            )
+            if session_id:
+                sub = self._room_subscribers.get(room_id)
+                vault_paths = sub._credential_events.get(event.reacts_to) if sub else None
+                if sub and vault_paths:
+                    decision = "approved" if approved else "denied"
+                    await self._engine.submit_approval(
+                        session_id,
+                        CredentialApprovalResponse(vault_paths=vault_paths, decision=decision),
+                    )
+                    sub._credential_events.pop(event.reacts_to, None)
+                    self._pending_credential_approvals.pop(event.reacts_to, None)
+                    self._room_pending.pop(room_id, None)
 
     async def _on_message(self, room: nio.MatrixRoom, event: nio.RoomMessageText) -> None:
         """Handle a text message from a room."""
@@ -522,6 +545,18 @@ class MatrixChannel:
             self._pending_domain_approvals.pop(event_id, None)
             self._room_pending.pop(room_id, None)
             msg = "✅ Domain access allowed." if approve else "❌ Domain access denied."
+            await self._send_text(room_id, msg)
+        elif sub._credential_events:
+            event_id, vault_paths = next(iter(sub._credential_events.items()))
+            decision = "approved" if approve else "denied"
+            await self._engine.submit_approval(
+                session_id,
+                CredentialApprovalResponse(vault_paths=vault_paths, decision=decision),
+            )
+            sub._credential_events.pop(event_id, None)
+            self._pending_credential_approvals.pop(event_id, None)
+            self._room_pending.pop(room_id, None)
+            msg = "✅ Credentials approved." if approve else "❌ Credentials denied."
             await self._send_text(room_id, msg)
         else:
             await self._send_text(room_id, "No pending approval request.")
