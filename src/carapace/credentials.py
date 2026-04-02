@@ -1,16 +1,34 @@
 from __future__ import annotations
 
+from typing import Protocol
 
-class MockCredentialBroker:
-    """Mock credential broker for the PoC. Returns placeholder values."""
+from carapace.models import CredentialMetadata
 
-    def __init__(self) -> None:
-        self._cache: dict[str, str] = {}
 
-    def get(self, credential_name: str) -> str:
-        if credential_name not in self._cache:
-            self._cache[credential_name] = f"<mock-value-for-{credential_name}>"
-        return self._cache[credential_name]
+class VaultBackend(Protocol):
+    """Abstract interface for credential storage backends.
 
-    def is_approved(self, credential_name: str, approved_list: list[str]) -> bool:
-        return credential_name in approved_list
+    Implementations fetch secrets from a password manager (file, Bitwarden, …)
+    and return metadata for listing/searching.
+    """
+
+    async def fetch(self, identifier: str) -> str:
+        """Return the raw secret value for *identifier*.
+
+        Raises ``KeyError`` if the identifier does not exist.
+        """
+        ...
+
+    async def fetch_metadata(self, identifier: str) -> CredentialMetadata:
+        """Return metadata (vault_path, name, description) for *identifier*.
+
+        Raises ``KeyError`` if the identifier does not exist.
+        """
+        ...
+
+    async def list(self, query: str = "") -> list[CredentialMetadata]:
+        """Return metadata for all credentials matching *query*.
+
+        An empty *query* returns everything the backend exposes.
+        """
+        ...

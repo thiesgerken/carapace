@@ -86,6 +86,13 @@ def _replay_history(server: str, session_id: str, headers: dict[str, str], limit
 # --- Rendering helpers for server responses ---
 
 
+def _format_credentials(creds: list[dict[str, str]] | None) -> str:
+    """Format approved credentials for display."""
+    if not creds:
+        return "(none)"
+    return ", ".join(c["name"] if isinstance(c, dict) else str(c) for c in creds)
+
+
 def _render_command_result(data: dict[str, Any]) -> None:
     cmd = data.get("command", "")
     payload: Any = data.get("data", {})
@@ -125,7 +132,7 @@ def _render_command_result(data: dict[str, Any]) -> None:
                 Panel(
                     f"[bold]Session ID:[/bold] {payload['session_id']}\n"
                     f"[bold]Channel:[/bold] {payload['channel_type']}\n"
-                    f"[bold]Approved credentials:[/bold] {payload.get('approved_credentials') or '(none)'}\n"
+                    f"[bold]Approved credentials:[/bold] {_format_credentials(payload.get('approved_credentials'))}\n"
                     f"[bold]Allowed domains:[/bold]{domains_str}",
                     title="Session State",
                 )

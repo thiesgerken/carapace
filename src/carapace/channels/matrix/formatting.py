@@ -38,7 +38,8 @@ def format_command_result_text(result: CommandResult) -> str:
             return data.get("message", "Context approved.")
 
         case "session":
-            creds = data.get("approved_credentials") or []
+            creds: list[dict[str, str]] = data.get("approved_credentials") or []
+            creds_str = ", ".join(c["name"] if isinstance(c, dict) else str(c) for c in creds) if creds else "(none)"
             domain_entries: list[dict[str, str]] = data.get("allowed_domains") or []
             if domain_entries:
                 domains_str = "\n" + "\n".join(f"  - `{e['domain']}` ({e['scope']})" for e in domain_entries)
@@ -47,7 +48,7 @@ def format_command_result_text(result: CommandResult) -> str:
             lines = [
                 f"**Session:** `{data.get('session_id', '?')}`",
                 f"**Channel:** {data.get('channel_type', '?')}",
-                f"**Approved credentials:** {', '.join(creds) if creds else '(none)'}",
+                f"**Approved credentials:** {creds_str}",
                 f"**Allowed domains:**{domains_str}",
             ]
             return "\n".join(lines)

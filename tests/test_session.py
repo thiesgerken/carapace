@@ -59,14 +59,16 @@ def test_list_sessions(tmp_path: Path):
 
 
 def test_save_and_resume_state(tmp_path: Path):
+    from carapace.models import CredentialMetadata
+
     mgr = SessionManager(tmp_path)
     state = mgr.create_session()
-    state.approved_credentials.append("test-cred")
+    state.approved_credentials.append(CredentialMetadata(vault_path="dev/test", name="test-cred"))
     mgr.save_state(state)
 
     resumed = mgr.resume_session(state.session_id)
     assert resumed is not None
-    assert "test-cred" in resumed.approved_credentials
+    assert any(c.vault_path == "dev/test" for c in resumed.approved_credentials)
 
 
 # ---------------------------------------------------------------------------

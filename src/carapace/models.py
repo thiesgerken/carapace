@@ -17,6 +17,17 @@ from carapace.security.context import SessionSecurity
 from carapace.security.sentinel import Sentinel
 from carapace.usage import UsageTracker
 
+# --- Credentials ---
+
+
+class CredentialMetadata(BaseModel):
+    """Vault credential metadata returned by backends and stored in session state."""
+
+    vault_path: str
+    name: str
+    description: str = ""
+
+
 # --- Session State ---
 
 
@@ -25,7 +36,7 @@ class SessionState(BaseModel):
     channel_type: str = "cli"
     channel_ref: str | None = None
     title: str | None = None
-    approved_credentials: list[str] = []
+    approved_credentials: list[CredentialMetadata] = []
     approved_operations: list[str] = []
     activated_skills: list[str] = []
     created_at: datetime
@@ -39,7 +50,7 @@ class SessionState(BaseModel):
         channel_type: str = "cli",
         channel_ref: str | None = None,
         title: str | None = None,
-        approved_credentials: list[str] | None = None,
+        approved_credentials: list[CredentialMetadata] | None = None,
         approved_operations: list[str] | None = None,
     ) -> SessionState:
         ts = datetime.now(tz=UTC)
@@ -236,6 +247,15 @@ class ToolResult:
     exit_code: int = 0
 
 
+class SkillCredentialDecl(BaseModel):
+    """A credential requirement declared in a skill's ``carapace.yaml``."""
+
+    vault_path: str
+    description: str = ""
+    env_var: str | None = None
+    file: str | None = None
+
+
 class SkillNetworkConfig(BaseModel):
     domains: list[str] = []
 
@@ -244,7 +264,7 @@ class SkillCarapaceConfig(BaseModel):
     """Parsed contents of a skill's ``carapace.yaml``."""
 
     network: SkillNetworkConfig = SkillNetworkConfig()
-    credentials: list[dict[str, str]] = []
+    credentials: list[SkillCredentialDecl] = []
     hints: dict[str, str] = {}
 
 

@@ -31,7 +31,7 @@ def test_import_skills():
 
 
 def test_import_credentials():
-    from carapace.credentials import MockCredentialBroker  # noqa: F401
+    from carapace.credentials import VaultBackend  # noqa: F401
 
 
 def test_import_agent():

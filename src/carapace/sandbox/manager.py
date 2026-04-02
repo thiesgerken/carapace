@@ -107,6 +107,7 @@ class SessionContainer(BaseModel):
     ip_address: str | None = None
     created_at: float
     last_used: float
+    session_env: dict[str, str] = {}
 
 
 def _validate_skill_name(skill_name: str) -> str | None:
@@ -360,6 +361,8 @@ class SandboxManager:
             "npm_config_https_proxy": authed_url,
             # Git knowledge repo URL (cloned during sandbox setup)
             "GIT_REPO_URL": git_url,
+            # Carapace API base URL (used by ccred and other sandbox-side tools)
+            "CARAPACE_API_URL": f"{scheme}://{session_id}:{proxy_token}@{no_proxy_host}:{self._sandbox_port}",
             # Git identity for commits made inside the sandbox
             **self._git_identity_env(session_id),
         }
@@ -408,12 +411,14 @@ class SandboxManager:
 
                 self._session_current_command[session_id] = command
                 self._exec_temp_domains[session_id] = set()
+                env = sc.session_env or None
                 try:
                     return await self._runtime.exec(
                         sc.container_id,
                         command,
                         timeout=timeout,
                         workdir=workdir,
+                        env=env,
                     )
                 except ContainerGoneError:
                     logger.warning(f"Container gone for session {session_id}, recreating sandbox")
@@ -421,11 +426,13 @@ class SandboxManager:
                     self._prepare_session_recreate(session_id)
                     sc, _ = await self.ensure_session(session_id)
                     await self._rebuild_skill_venvs(session_id)
+                    env = sc.session_env or None
                     return await self._runtime.exec(
                         sc.container_id,
                         command,
                         timeout=timeout,
                         workdir=workdir,
+                        env=env,
                     )
             finally:
                 if bypass_proxy:
@@ -700,6 +707,21 @@ class SandboxManager:
             await self._runtime.destroy_sandbox(sandbox_name, container_id)
             logger.info(f"Removed orphaned sandbox for deleted session {sid}")
         return len(orphans)
+
+    def set_session_env(self, session_id: str, env: dict[str, str]) -> None:
+        """Merge *env* into the persistent session environment.
+
+        Values are passed as ``env`` to every subsequent ``_exec()`` call
+        so that credential-injected variables survive across commands.
+        """
+        sc = self._sessions.get(session_id)
+        if sc:
+            sc.session_env.update(env)
+
+    def get_session_env(self, session_id: str) -> dict[str, str]:
+        """Return a copy of the current session environment."""
+        sc = self._sessions.get(session_id)
+        return dict(sc.session_env) if sc else {}
 
     def verify_session_token(self, session_id: str, token: str) -> bool:
         """Return True if *token* is valid for *session_id*."""
