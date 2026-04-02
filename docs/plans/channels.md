@@ -38,6 +38,7 @@ channels:
 Add end-to-end encryption support to the Matrix channel via matrix-nio's E2EE capabilities. Currently the Matrix channel uses plain-text messaging only.
 
 Requirements:
+
 - Device key management and verification
 - Encrypted room support
 - Key backup and recovery

@@ -102,6 +102,7 @@ Skills can declare Python dependencies via a standard `pyproject.toml`. Dependen
 #### Adding dependencies to a new skill
 
 1. Create a `pyproject.toml` in the skill directory:
+
    ```toml
    [project]
    name = "my-skill"
@@ -111,11 +112,15 @@ Skills can declare Python dependencies via a standard `pyproject.toml`. Dependen
        "httpx>=0.28,<1",
    ]
    ```
+
 2. Generate the lock file inside the sandbox:
+
    ```
    uv lock --directory /workspace/skills/my-skill
    ```
+
 3. Commit and push the skill so `pyproject.toml` and `uv.lock` are persisted:
+
    ```
    git add /workspace/skills/my-skill && git commit -m "Add my-skill" && git push
    ```

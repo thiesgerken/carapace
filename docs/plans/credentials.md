@@ -177,6 +177,7 @@ The frontend displays credential state for the active session:
 ### WebSocket messages
 
 - New `CredentialApprovalRequest` server message:
+
   ```typescript
   {
     type: "credential_approval_request",
@@ -187,7 +188,9 @@ The frontend displays credential state for the active session:
     explanation: string
   }
   ```
+
 - Response from the frontend:
+
   ```typescript
   {
     type: "credential_approval_response",
@@ -195,6 +198,7 @@ The frontend displays credential state for the active session:
     decision: "approved" | "denied"
   }
   ```
+
 - The existing `StatusUpdate` or a new `SessionStateUpdate` message can push credential approvals to the UI in real-time so the session info panel stays current.
 
 ## Password manager backends

@@ -1,6 +1,76 @@
 # CHANGELOG
 
 
+## v0.49.0 (2026-04-02)
+
+
+### 🔧 Configuration
+
+
+- 🔧 chore: update package versions in uv.lock
+  ([`549abed`](https://github.com/thiesgerken/carapace/commit/549abed71f50b6e50ccf4ac0b7a1750474fb20e6))
+
+  - Bump ag-ui-protocol from 0.1.14 to 0.1.15
+  - Bump aiohttp from 3.13.4 to 3.13.5
+
+  This update includes new source distributions and wheel files for both packages.
+
+### ✨ Features
+
+
+- ✨ feat: add markdownlint-fix via prek
+  ([`50c0ec6`](https://github.com/thiesgerken/carapace/commit/50c0ec670febfaf828d426795cdb2bfa8a517c6e))
+
+  - Configure relaxed .markdownlint.json (focus on auto-fixable issues)
+  - Wire igorshubovych/markdownlint-cli v0.48.0 in prek.toml
+  - Apply markdownlint autofixes to existing docs
+
+  Made-with: Cursor
+
+## v0.48.4 (2026-04-02)
+
+
+### 🔧 Configuration
+
+
+- 🔧 chore: migrate from pre-commit to prek
+  ([`3ff7de8`](https://github.com/thiesgerken/carapace/commit/3ff7de8cfcb6b0bf8812886f97af020fce3ce499))
+
+  - Add prek.toml with repo: builtin hooks and ruff-pre-commit
+  - Run prek in CI via j178/prek-action
+  - Document prek in AGENTS.md; enable Ruff T100 for debugger checks
+
+  Made-with: Cursor
+
+### Other
+
+
+- work on credential plan
+  ([`456e639`](https://github.com/thiesgerken/carapace/commit/456e639d2feaf6a932e6cb428e9551e546930b48))
+
+- 📋 docs: add plan for persistent shell implementation in the agent
+  ([`6edd112`](https://github.com/thiesgerken/carapace/commit/6edd1129d2fc0d13b2c8d442e31fb1e3763b62e5))
+
+- 📝 docs: rewrite credential management plan + update skill persistence refs
+  ([`b912fe3`](https://github.com/thiesgerken/carapace/commit/b912fe3839b3e272aee0c5e1c57142c390876ae2))
+
+  - Replace push-based CredentialBroker design with pull-based REST endpoint
+    (GET /credentials/{vault_path}) that sandbox scripts fetch from on demand
+  - Add built-in credentials skill with ccred CLI helper
+  - Support auto-injection via carapace.yaml (env_var + file) on skill activation
+  - Bundled approval for multiple credentials in one prompt
+  - Credential list/search endpoint with tiered gating (list-all vs search)
+  - Exposure control (allowlist/blocklist) in vault config
+  - Blocking approval flow (no 403 retry loops)
+  - UI: session credential visibility + CredentialApprovalCard component
+  - Update docs/skills.md and SKILL.md assets: replace save_skill with git push
+
+- 📋 docs: update roadmap with UI improvements and restructured authentication plans; remove Kubernetes enhancements section
+  ([`efdb391`](https://github.com/thiesgerken/carapace/commit/efdb391aaed1cf7cdeda2d5c4216a18d1100dc92))
+
+- 📋 docs: add roadmap for planned features and improvements; remove outdated TODO list
+  ([`2ebb2c5`](https://github.com/thiesgerken/carapace/commit/2ebb2c5c7a1243e47e137b3d06abf61f6624a689))
+
 ## v0.48.3 (2026-03-29)
 
 
