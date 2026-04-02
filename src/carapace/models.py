@@ -230,6 +230,7 @@ class CredentialBackendConfig(BaseModel):
     type: Literal["file", "vaultwarden"] = "file"
     path: str = ""  # file backend: path to .env file
     url: str = ""  # vaultwarden backend: server URL
+    bw_serve_port: int = 8087  # local port for bw serve
     expose: list[str] = []  # allowlist — only these identifiers are accessible
     hide: list[str] = []  # blocklist — these identifiers are excluded
 

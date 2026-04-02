@@ -251,21 +251,24 @@ def test_registry_backend_names(file_backend: FileVaultBackend) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_build_registry_file_backend(tmp_path: Path) -> None:
+@pytest.mark.asyncio
+async def test_build_registry_file_backend(tmp_path: Path) -> None:
     env = _write_env(tmp_path, "token=abc\n")
     config = CredentialsConfig(backends={"dev": CredentialBackendConfig(type="file", path=str(env))})
-    reg = build_credential_registry(config, tmp_path)
+    reg = await build_credential_registry(config, tmp_path)
     assert "dev" in reg.backend_names
 
 
-def test_build_registry_unknown_type(tmp_path: Path) -> None:
+@pytest.mark.asyncio
+async def test_build_registry_unknown_type(tmp_path: Path) -> None:
     config = CredentialsConfig(backends={"x": CredentialBackendConfig(type="file", path=str(tmp_path / "missing.env"))})
-    reg = build_credential_registry(config, tmp_path)
+    reg = await build_credential_registry(config, tmp_path)
     assert "x" in reg.backend_names
 
 
-def test_build_registry_default_path(tmp_path: Path) -> None:
+@pytest.mark.asyncio
+async def test_build_registry_default_path(tmp_path: Path) -> None:
     (tmp_path / "secrets.env").write_text("k=v\n")
     config = CredentialsConfig(backends={"dev": CredentialBackendConfig(type="file")})
-    reg = build_credential_registry(config, tmp_path)
+    reg = await build_credential_registry(config, tmp_path)
     assert "dev" in reg.backend_names
