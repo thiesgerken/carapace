@@ -53,6 +53,7 @@ rev = "v0.48.0"
 
 [[repos.hooks]]
 id = "markdownlint-fix"
+args = ["-p", ".markdownlintignore"]
 
 [[repos]]
 repo = "https://github.com/astral-sh/ruff-pre-commit"
