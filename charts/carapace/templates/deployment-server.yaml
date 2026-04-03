@@ -163,6 +163,7 @@ spec:
             periodSeconds: 10
           livenessProbe:
             exec:
+              # liveness probe doubles as a cronjob to sync the vault
               command: ["wget", "-q", "-O", "/dev/null", "--post-data=", "http://127.0.0.1:{{ .port | default 8087 }}/sync"]
             periodSeconds: 120
             timeoutSeconds: 10
