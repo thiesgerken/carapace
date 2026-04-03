@@ -1,8 +1,33 @@
 # CHANGELOG
 
 
+## v0.52.1 (2026-04-03)
+
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix: probe Bitwarden sidecar via curl on 127.0.0.1
+  ([`1103491`](https://github.com/thiesgerken/carapace/commit/1103491e80f6a3b5b0b78affced60e5bd8f164fe))
+
+  tcpSocket probes target the pod IP while bw serve binds localhost only. Install curl in the sidecar image; use exec probes for startup, readiness, and POST /sync liveness.
+
+  Made-with: Cursor
+
+### Other
+
+
+- Merge remote-tracking branch 'refs/remotes/origin/main'
+  ([`5b4cab0`](https://github.com/thiesgerken/carapace/commit/5b4cab0af576720b3b78d5e4411f38fc9b80b504))
+
 ## v0.52.0 (2026-04-03)
 
+
+### Other
+
+
+- scale down bw-cli on dev
+  ([`3f69588`](https://github.com/thiesgerken/carapace/commit/3f69588cf6f98c0f1ade5f9e8649454b2bc1eb45))
 
 ### ✨ Features
 
