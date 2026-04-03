@@ -223,11 +223,12 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
         requested_creds = carapace_cfg.credentials if carapace_cfg else []
 
         if not ctx.tool_call_approved:
-            gate_args: dict[str, Any] = {"skill_name": skill_name}
-            if requested_domains:
-                gate_args["network_domains"] = requested_domains
-            if requested_creds:
-                gate_args["credentials"] = [c.vault_path for c in requested_creds]
+            gate_args: dict[str, Any] = {
+                "skill_name": skill_name,
+                "requested_creds": requested_creds,
+                "requested_domains": requested_domains,
+            }
+
             if denied := await _gate(ctx, "use_skill", gate_args):
                 return denied
         else:

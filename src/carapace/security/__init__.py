@@ -30,7 +30,6 @@ SAFE_TOOLS: frozenset[str] = frozenset(
         "apply_patch",
         "read_memory",
         "list_skills",
-        "use_skill",
     }
 )
 
