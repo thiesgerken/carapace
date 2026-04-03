@@ -127,7 +127,7 @@ The full `SKILL.md` body is loaded only when the agent decides a skill is releva
 
 ## Skill activation as a security event
 
-When the agent activates a skill (loads its full `SKILL.md` into context), a `SkillActivatedEntry` is recorded in the action log. The `use_skill` tool itself is safe-listed (auto-allowed without sentinel evaluation), but the activation is logged so the sentinel has context for evaluating subsequent actions.
+When the agent activates a skill (loads its full `SKILL.md` into context), a `SkillActivatedEntry` is recorded in the action log. The `use_skill` tool call goes through the sentinel (not the safe-list); the activation is logged so the sentinel has context for evaluating subsequent actions.
 
 For example, after the agent reads skill instructions describing email credentials, the sentinel will be more cautious about outbound network requests — it knows the agent now has knowledge that could be exfiltrated.
 

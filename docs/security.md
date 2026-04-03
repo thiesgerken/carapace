@@ -57,15 +57,16 @@ Edit `SECURITY.md` to customize the policy for your setup. The sentinel will imm
 
 The following tools are auto-allowed without consulting the sentinel:
 
-| Tool          | Reason                                         |
-| ------------- | ---------------------------------------------- |
-| `read`        | File reads are always safe                     |
-| `write`       | File writes in the sandbox                     |
-| `edit`        | File edits in the sandbox                      |
-| `apply_patch` | Batch edits across files in the sandbox        |
-| `read_memory` | Memory reads are non-destructive               |
-| `list_skills` | Listing available skills is informational      |
-| `use_skill`   | Activating a skill loads trusted documentation |
+| Tool          | Reason                                    |
+| ------------- | ----------------------------------------- |
+| `read`        | File reads are always safe                |
+| `write`       | File writes in the sandbox                |
+| `edit`        | File edits in the sandbox                 |
+| `apply_patch` | Batch edits across files in the sandbox   |
+| `read_memory` | Memory reads are non-destructive          |
+| `list_skills` | Listing available skills is informational |
+
+`use_skill` is **not** safe-listed: activating a skill (copy into sandbox, optional venv sync, credential injection) is evaluated by the sentinel like other gated tools.
 
 The safe-list is defined in `src/carapace/security/__init__.py`.
 

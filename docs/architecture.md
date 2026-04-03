@@ -172,7 +172,8 @@ sequenceDiagram
     Note over Agent: Agent decides to activate web-search skill
 
     Agent->>Security: evaluate(use_skill, "web-search")
-    Security-->>Agent: auto-allowed (safe-list)
+    Security->>Sentinel: evaluate tool call
+    Sentinel-->>Security: verdict: allow (skill activation)
 
     Note over Agent: Skill loaded, agent runs search script
 
