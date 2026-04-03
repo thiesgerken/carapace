@@ -262,6 +262,13 @@ class CredentialsConfig(BaseModel):
 
     backends: dict[str, CredentialBackendConfig] = {}
 
+    @model_validator(mode="after")
+    def _validate_backend_names(self) -> CredentialsConfig:
+        for name in self.backends:
+            if "/" in name:
+                raise ValueError(f"Backend name {name!r} must not contain '/' (used as vault_path separator)")
+        return self
+
 
 class Config(BaseModel):
     carapace: CarapaceConfig = CarapaceConfig()

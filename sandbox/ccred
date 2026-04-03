@@ -17,7 +17,6 @@ import base64
 import json
 import os
 import sys
-import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -99,23 +98,18 @@ def cmd_get(args: argparse.Namespace) -> None:
     vault_path = args.vault_path
     path = f"/credentials/{vault_path}"
 
-    while True:
-        try:
-            with urllib.request.urlopen(_request(path)) as resp:
-                value = resp.read().decode()
-        except urllib.error.HTTPError as e:
-            if e.code == 403:
-                print("error: credential request denied by user", file=sys.stderr)
-                sys.exit(1)
-            if e.code == 404:
-                print(f"error: credential not found: {vault_path}", file=sys.stderr)
-                sys.exit(1)
-            if e.code == 202:
-                time.sleep(2)
-                continue
-            print(f"error: {e.code} {e.reason}", file=sys.stderr)
+    try:
+        with urllib.request.urlopen(_request(path)) as resp:
+            value = resp.read().decode()
+    except urllib.error.HTTPError as e:
+        if e.code == 403:
+            print("error: credential request denied by user", file=sys.stderr)
             sys.exit(1)
-        break
+        if e.code == 404:
+            print(f"error: credential not found: {vault_path}", file=sys.stderr)
+            sys.exit(1)
+        print(f"error: {e.code} {e.reason}", file=sys.stderr)
+        sys.exit(1)
 
     if args.output:
         fd = os.open(args.output, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o400)

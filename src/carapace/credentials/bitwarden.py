@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import httpx
 
-from carapace.credentials.protocol import is_exposed
+from carapace.credentials.protocol import is_exposed, require_exposed
 from carapace.models import BitwardenCredentialBackendConfig, CredentialMetadata
 
 
@@ -31,8 +31,7 @@ class BitwardenBackend:
 
     async def fetch(self, identifier: str) -> str:
         """Fetch the password for a Bitwarden item by UUID."""
-        if not is_exposed(identifier, self._cfg):
-            raise KeyError(f"Credential '{identifier}' not found in backend '{self._name}'")
+        require_exposed(identifier, self._cfg, self._name)
         resp = await self._client.get(f"/object/password/{identifier}")
         if resp.status_code == 404:
             raise KeyError(f"Credential '{identifier}' not found in backend '{self._name}'")
@@ -42,8 +41,7 @@ class BitwardenBackend:
 
     async def fetch_metadata(self, identifier: str) -> CredentialMetadata:
         """Fetch item metadata by UUID."""
-        if not is_exposed(identifier, self._cfg):
-            raise KeyError(f"Credential '{identifier}' not found in backend '{self._name}'")
+        require_exposed(identifier, self._cfg, self._name)
         resp = await self._client.get(f"/object/item/{identifier}")
         if resp.status_code == 404:
             raise KeyError(f"Credential '{identifier}' not found in backend '{self._name}'")

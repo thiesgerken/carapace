@@ -4,7 +4,7 @@ from pathlib import Path
 
 from loguru import logger
 
-from carapace.credentials.protocol import is_exposed
+from carapace.credentials.protocol import is_exposed, require_exposed
 from carapace.models import CredentialMetadata, FileCredentialBackendConfig
 
 
@@ -41,18 +41,17 @@ class FileVaultBackend:
     def _vault_path(self, key: str) -> str:
         return f"{self._name}/{key}"
 
-    async def fetch(self, identifier: str) -> str:
+    def _require(self, identifier: str) -> None:
         if identifier not in self._secrets:
             raise KeyError(f"Credential '{identifier}' not found in backend '{self._name}'")
-        if not is_exposed(identifier, self._cfg):
-            raise KeyError(f"Credential '{identifier}' not found in backend '{self._name}'")
+        require_exposed(identifier, self._cfg, self._name)
+
+    async def fetch(self, identifier: str) -> str:
+        self._require(identifier)
         return self._secrets[identifier]
 
     async def fetch_metadata(self, identifier: str) -> CredentialMetadata:
-        if identifier not in self._secrets:
-            raise KeyError(f"Credential '{identifier}' not found in backend '{self._name}'")
-        if not is_exposed(identifier, self._cfg):
-            raise KeyError(f"Credential '{identifier}' not found in backend '{self._name}'")
+        self._require(identifier)
         return CredentialMetadata(vault_path=self._vault_path(identifier), name=identifier)
 
     async def list(self, query: str = "") -> list[CredentialMetadata]:

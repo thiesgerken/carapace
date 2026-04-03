@@ -44,3 +44,13 @@ def is_exposed(identifier: str, cfg: FileCredentialBackendConfig | BitwardenCred
     if cfg.hide:
         return identifier not in cfg.hide
     return True
+
+
+def require_exposed(
+    identifier: str,
+    cfg: FileCredentialBackendConfig | BitwardenCredentialBackendConfig,
+    backend_name: str,
+) -> None:
+    """Raise ``KeyError`` if *identifier* is hidden by exposure rules."""
+    if not is_exposed(identifier, cfg):
+        raise KeyError(f"Credential '{identifier}' not found in backend '{backend_name}'")
