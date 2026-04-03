@@ -23,6 +23,12 @@ from carapace.sandbox.runtime import (
 
 _SKILL_NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]*$")
 
+
+def _expand_home(path: str) -> str:
+    """Replace a leading ``~/`` with ``$HOME/`` so bash resolves it inside double quotes."""
+    return "$HOME/" + path[2:] if path.startswith("~/") else path
+
+
 # Inline Python scripts executed inside the sandbox container.
 # Data is passed as base64-encoded CLI args to avoid shell-escaping issues.
 # Scripts use only double quotes so that shlex.quote (single-quote wrapping)
@@ -475,12 +481,16 @@ class SandboxManager:
             return f"Directory listing of {path}/:\n" + output[len("::DIR::\n") :]
         return output or "(empty file)"
 
-    async def file_write(self, session_id: str, path: str, content: str) -> str:
+    async def file_write(
+        self, session_id: str, path: str, content: str, *, mode: int | None = None, workdir: str | None = None
+    ) -> str:
         """Write content to a file inside the sandbox."""
-        pq = shlex.quote(path)
+        shell_path = _expand_home(path)
         content_b64 = base64.b64encode(content.encode()).decode()
-        cmd = f'mkdir -p "$(dirname {pq})" && printf %s {content_b64} | base64 -d > {pq}'
-        result = await self._exec(session_id, cmd, timeout=10)
+        cmd = f'mkdir -p "$(dirname "{shell_path}")" && printf %s {content_b64} | base64 -d > "{shell_path}"'
+        if mode is not None:
+            cmd += f' && chmod {mode:04o} "{shell_path}"'
+        result = await self._exec(session_id, cmd, timeout=10, workdir=workdir)
         if result.exit_code != 0:
             return result.output or f"Error: cannot write {path}"
         return f"Written to {path}"

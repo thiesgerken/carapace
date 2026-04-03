@@ -121,15 +121,10 @@ async def _do_inject(
             injected_env += 1
 
         if decl.file:
-            import base64
-            import shlex
-
-            b64 = base64.b64encode(value.encode()).decode()
-            path_q = shlex.quote(decl.file)
-            cmd = f'mkdir -p "$(dirname {path_q})" && printf %s {b64} | base64 -d > {path_q} && chmod 0400 {path_q}'
-            result = await ctx.deps.sandbox.exec_command(session_id, cmd)
-            if result.exit_code != 0:
-                errors.append(f"Failed to write {decl.file}: {result.output}")
+            skill_dir = f"/workspace/skills/{skill_name}"
+            result = await ctx.deps.sandbox.file_write(session_id, decl.file, value, mode=0o400, workdir=skill_dir)
+            if result.startswith("Error"):
+                errors.append(f"Failed to write {decl.file}: {result}")
             else:
                 injected_file += 1
 
