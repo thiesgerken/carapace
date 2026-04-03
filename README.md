@@ -86,38 +86,13 @@ Goodbye.
 
 ## Getting started
 
-### Prerequisites
-
-- **Docker** (required for sandbox execution in all setups)
-- An **Anthropic API key** (set `ANTHROPIC_API_KEY` in `.env` or your environment)
-
-### Configuration
-
-1. Copy `.env.example` to `.env` and set your API key.
-2. Set `CARAPACE_TOKEN` in `.env` — this is the bearer token used to authenticate CLI/frontend connections.
-3. Customise files under `data/` — see [Data directory](#data-directory) below.
-
-The web UI prompts for the server URL and token on first connect.
-
-### Deployment with Docker Compose
-
-Run the backend and frontend as containers:
-
 ```bash
-# Build all images (server, frontend, sandbox)
+cp .env.example .env   # fill in ANTHROPIC_API_KEY and CARAPACE_TOKEN
 docker compose build
-
-# Start the server and frontend
 docker compose up -d
 ```
 
-The server is available at `http://localhost:8321`, the frontend at `http://localhost:3001`.
-
-To connect via the CLI from the host:
-
-```bash
-uv run carapace --token "$CARAPACE_TOKEN"
-```
+Server at `http://localhost:8321`, frontend at `http://localhost:3001`. See the **[Quickstart guide](docs/quickstart.md)** for full setup including Matrix integration, credential backends, and personalisation.
 
 ## Architecture overview
 
@@ -147,6 +122,7 @@ See [docs/architecture.md](docs/architecture.md) for the full architecture with 
 
 | Concept             | Description                                                        | Doc                                                            |
 | ------------------- | ------------------------------------------------------------------ | -------------------------------------------------------------- |
+| Quickstart          | Docker Compose setup, Matrix, credentials, personalisation         | [docs/quickstart.md](docs/quickstart.md)                       |
 | Security            | Sentinel agent + SECURITY.md policy + action log                   | [docs/security.md](docs/security.md)                           |
 | Skills              | AgentSkills-compatible with uv-managed Python dependencies         | [docs/skills.md](docs/skills.md)                               |
 | Sandbox             | Docker / Kubernetes sandboxed execution with HTTP proxy            | [docs/sandbox.md](docs/sandbox.md)                             |
