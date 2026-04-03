@@ -919,18 +919,23 @@ class SessionEngine:
                         "credential_access": "credential_approval",
                     }
                     event_role = event_roles.get(kind, "domain_access_approval")
-                    self._session_mgr.append_events(
-                        session_id,
-                        [
-                            {
-                                "role": event_role,
-                                "request_id": request_id,
-                                "domain": subject,
-                                "command": cmd,
-                                "decision": decision,
-                            }
-                        ],
-                    )
+                    if kind == "credential_access":
+                        vp = context.get("vault_path", subject)
+                        response_event: dict[str, Any] = {
+                            "role": event_role,
+                            "request_id": request_id,
+                            "vault_paths": [vp],
+                            "decision": decision,
+                        }
+                    else:
+                        response_event = {
+                            "role": event_role,
+                            "request_id": request_id,
+                            "domain": subject,
+                            "command": cmd,
+                            "decision": decision,
+                        }
+                    self._session_mgr.append_events(session_id, [response_event])
                     active.pending_escalations = [
                         p for p in active.pending_escalations if p["request_id"] != request_id
                     ]

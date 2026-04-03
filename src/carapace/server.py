@@ -1052,8 +1052,7 @@ async def fetch_credential(request: Request, vault_path: str) -> Response:
                         {
                             "role": "credential_approval",
                             "request_id": request_id,
-                            "domain": vault_path,
-                            "command": "",
+                            "vault_paths": [vault_path],
                             "decision": "allow",
                         },
                     ],

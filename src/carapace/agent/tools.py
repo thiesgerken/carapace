@@ -118,8 +118,7 @@ async def _inject_skill_credentials(
                 {
                     "role": "credential_approval",
                     "request_id": request_id,
-                    "domain": vault_paths[0],
-                    "command": "",
+                    "vault_paths": vault_paths,
                     "decision": "allow",
                 },
             ]
