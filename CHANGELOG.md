@@ -1,6 +1,511 @@
 # CHANGELOG
 
 
+## v0.50.0 (2026-04-03)
+
+
+### ✨ Features
+
+
+- ✨ Merge pull request #59 from thiesgerken/feature/credentials
+  ([`360155d`](https://github.com/thiesgerken/carapace/commit/360155de7648d46d6aadc02d888648ae73afcaa5))
+
+  ✨ feat: credential management system
+
+- ✨ feat: log sandbox tool exceptions for better error tracking
+  ([`fe91b2e`](https://github.com/thiesgerken/carapace/commit/fe91b2e4964ccf53ccc87c0b24b7fc90b4bc5e68))
+
+  - Introduced a new function `_log_sandbox_tool_exception` to log full tracebacks for sandbox tool failures.
+  - Integrated this logging function into the error handling of file read, write, edit, apply patch, and exec operations to enhance debugging capabilities.
+
+  Made-with: Cursor
+
+- ✨ feat: context_tokens for usage bar and breakdown
+  ([`4d8fd9d`](https://github.com/thiesgerken/carapace/commit/4d8fd9d9bae5d05e82df28b539cac8a88e38bb9e))
+
+  Track last-LLM slice on ModelUsage; expose TurnUsage.context_tokens over WS. Web gauge uses it; /usage shows a Context column for categories only. CLI and Matrix usage tables match.
+
+  Made-with: Cursor
+
+- ✨ feat: show per-category usage cost
+  ([`0da2b45`](https://github.com/thiesgerken/carapace/commit/0da2b45c465a0763fd2fdf7109abffe13adc1357))
+
+  Track tokens per category and model for pricing, expose category_costs in /usage payload, and render Cost in By Category (web, CLI, Matrix).
+
+  Made-with: Cursor
+
+- ✨ feat: enhance skill management and asset synchronization
+  ([`92d6072`](https://github.com/thiesgerken/carapace/commit/92d607236eaf668fec6bb2c6738e85a0ea419d33))
+
+  Introduced a new function to recursively gather file paths from bundled skills and updated the knowledge directory synchronization process to copy these skills into the target directory when missing. Removed the previous seeding logic for skills in favor of this more dynamic approach.
+
+  Made-with: Cursor
+
+- ✨ feat: Matrix channel support for credential approvals
+  ([`692fdb5`](https://github.com/thiesgerken/carapace/commit/692fdb5756b163defb175ad85f526556646cdab3))
+
+  Phase 8 of credential management.
+
+  - PendingCredentialApproval class in approval.py
+  - MatrixSubscriber.on_credential_approval_request sends formatted
+    credential request message (key icon, names, descriptions)
+  - _on_reaction handles credential approval via emoji reactions
+  - _resolve_pending handles /allow and /deny commands for credentials
+  - CredentialApprovalResponse wired through submit_approval
+
+  Made-with: Cursor
+
+- ✨ feat: Vaultwarden backend and bw serve process management
+  ([`9aef3a4`](https://github.com/thiesgerken/carapace/commit/9aef3a42199da1dd5c29eb6371b9a6e42d26957c))
+
+  Phase 7 of credential management.
+
+  - BwServeManager: handles bw login, unlock, serve lifecycle, periodic
+    vault sync, and auto-restart; managed as a child process
+  - VaultwardenBackend: talks to bw serve via httpx — fetch password by
+    UUID, fetch item metadata, list/search items with exposure filtering
+  - build_credential_registry is now async to support bw serve startup
+  - Server lifespan calls shutdown_credential_registry on exit
+  - Added bw_serve_port config field to CredentialBackendConfig
+
+  Made-with: Cursor
+
+- ✨ feat: ccred CLI helper and built-in credentials skill
+  ([`fb5b623`](https://github.com/thiesgerken/carapace/commit/fb5b623d6954ec7d4aac1cfdc4ac3d1d527bcc63))
+
+  Phase 6 of credential management.
+
+  - ccred: stdlib-only Python CLI baked into sandbox image
+    - `ccred list [-q query]`: list credential metadata
+    - `ccred get <vault_path> [-o file]`: fetch value (blocks until approved)
+    - Uses CARAPACE_API_URL for auth, no extra dependencies
+  - Built-in credentials skill (SKILL.md) teaches the agent:
+    - Auto-injection via carapace.yaml (env_var + file)
+    - On-demand fetch with ccred
+    - Security rules (never echo/log/return values)
+  - Updated sandbox Dockerfile to include ccred
+
+  Made-with: Cursor
+
+- ✨ feat: credential approval card in frontend
+  ([`2b9d253`](https://github.com/thiesgerken/carapace/commit/2b9d253ea6c3168edca406cb613104e31f33b835))
+
+  Phase 5 of credential management: frontend UI integration.
+
+  - CredentialApprovalRequest/Response types in types.ts
+  - CredentialApprovalCard component (key icon, name/description list,
+    approve/deny buttons — follows existing escalation card pattern)
+  - chat-view.tsx handles credential_approval_request WS messages,
+    sends credential_approval_response on user action
+  - History loading supports credential approval events
+  - Message component renders credential_approval chat messages
+
+  Made-with: Cursor
+
+- ✨ feat: wire credential auto-injection into use_skill tool
+  ([`4733d55`](https://github.com/thiesgerken/carapace/commit/4733d55849ba42c5294615a6d7ac0bb531824815))
+
+  Phase 4 of credential management: skill activation credential gating.
+
+  - use_skill includes credential vault_paths in sentinel gate args
+  - After approval, credentials are fetched from vault and injected:
+    - env_var entries → session_env (persists across exec calls)
+    - file entries → written to sandbox with mode 0400
+  - CredentialRegistry added to Deps and wired through SessionEngine
+  - Approved credentials recorded in session state and action log
+  - Agent never sees credential values — only injection summary
+
+  Made-with: Cursor
+
+- ✨ feat: add credential REST endpoints, approval flow, and WS messages
+  ([`34f5347`](https://github.com/thiesgerken/carapace/commit/34f5347bf100f9203c84de2cde92ec072236f6fc))
+
+  Phase 3 of credential management: server endpoints and approval wiring.
+
+  - GET /credentials (list/search) and GET /credentials/{vault_path} (fetch)
+    on sandbox API with blocking approval flow
+  - CredentialApprovalRequest/Response WebSocket messages
+  - CredentialAccessEntry in security action log
+  - SessionEngine.request_credential_approval() with queue-based blocking
+  - on_credential_approval_request added to SessionSubscriber protocol
+  - WebSocketSubscriber wired for credential approval + reconnect re-send
+  - CredentialRegistry built in server lifespan
+
+  Made-with: Cursor
+
+- ✨ feat: add file vault backend, exposure filter, and credential registry
+  ([`ab29fb1`](https://github.com/thiesgerken/carapace/commit/ab29fb198183b02cceccd4d39aa1c26ca302dee2))
+
+  Phase 2 of credential management: vault backend implementation.
+
+  - FileVaultBackend reads .env-format files, caches in memory
+  - Exposure filter (expose allowlist / hide blocklist) per backend
+  - CredentialRegistry dispatches vault_path prefixes to backends
+  - build_credential_registry() factory from config
+  - CredentialBackendConfig + CredentialsConfig added to Config model
+  - Comprehensive tests for file backend, exposure, and registry
+
+  Made-with: Cursor
+
+- ✨ feat: add credential models, vault protocol, and session_env plumbing
+  ([`12e6bcc`](https://github.com/thiesgerken/carapace/commit/12e6bcc8ef16293279016bf7d49502d81ba215a5))
+
+  Phase 1 of credential management: models and wiring.
+
+  - Add CredentialMetadata and SkillCredentialDecl models
+  - Upgrade SessionState.approved_credentials to list[CredentialMetadata]
+  - Replace MockCredentialBroker with VaultBackend protocol
+  - Add session_env to SessionContainer, wired into every _exec() call
+  - Inject CARAPACE_API_URL into sandbox environment
+  - Update all callers and tests for the new types
+
+  Made-with: Cursor
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix: survive vault HTTP errors during skill credential injection
+  ([`2426f7f`](https://github.com/thiesgerken/carapace/commit/2426f7f8c3346f4840a8fc659e17350300b040db))
+
+  Catch httpx transport and status errors around fetch_metadata and fetch; log warnings, report to the agent, and only approve/inject paths that succeeded so use_skill still completes after activate_skill.
+
+  Made-with: Cursor
+
+- 🐛 fix: count credentials once when both env and file inject
+  ([`efc0a3f`](https://github.com/thiesgerken/carapace/commit/efc0a3f96d7a3ec114843e63aed923e4dca85a4f))
+
+  _do_inject previously summed env and file placements, so one decl with both targets reported two credentials.
+
+  Made-with: Cursor
+
+- 🐛 fix: record vault_paths on credential approval response events
+  ([`b2064ed`](https://github.com/thiesgerken/carapace/commit/b2064edbdec035e9db43b5291603a9d10a812c41))
+
+  Stop reusing domain/command from domain-access escalation shape; keeps history and audits from misclassifying vault paths as network domains.
+
+  Made-with: Cursor
+
+- 🐛 fix: resolve sandbox Docker network from server container attachments
+  ([`e782dd6`](https://github.com/thiesgerken/carapace/commit/e782dd606a8b60834923dbe7c37ba37c779f4f57))
+
+  Prefer the network the Carapace container is already on (exact or *_{logical}) before listing by short name, so Compose-prefixed bridges are not missed and a duplicate carapace-sandbox network is not created.
+
+  Made-with: Cursor
+
+- 🐛 fix: handle relative paths for file credentials in registry
+  ([`f2298a6`](https://github.com/thiesgerken/carapace/commit/f2298a632d35d6a592ece3a397917a4cd33ff93b))
+
+  Updated the `build_credential_registry` function to correctly resolve relative paths for file credentials, ensuring they are properly combined with the data directory. Added a new test to verify the functionality of relative paths under the data directory.
+
+  Made-with: Cursor
+
+- 🐛 fix: safely re-inject file credentials after sandbox recreation
+  ([`034441d`](https://github.com/thiesgerken/carapace/commit/034441d2fc5b55ddb762d5bbe642cc7601f7c795))
+
+  Restore approved file credentials during skill sync after container recreation, including skills without a venv. Avoid lock re-entry by performing rebuild-time exec and file writes on the active container without nested _exec calls.
+
+  Made-with: Cursor
+
+- 🐛 fix: preserve session_env across container recreation
+  ([`4fecda3`](https://github.com/thiesgerken/carapace/commit/4fecda35204441eca45a2dd850d0f0b90b137db9))
+
+  _prepare_session_recreate discarded the SessionContainer including its session_env, so credential variables injected via set_session_env were silently lost when a sandbox was recreated after a ContainerGoneError. Stash the env before popping and restore it onto the replacement container.
+
+  Made-with: Cursor
+
+- 🐛 fix: accept credential approval events in history
+  ([`ae6116a`](https://github.com/thiesgerken/carapace/commit/ae6116afcccd47becd9a7a5e5e9f69ae50dfd14c))
+
+  Include credential approval role and payload fields in history API validation so persisted approval events are returned instead of being dropped during reconnect.
+
+  Made-with: Cursor
+
+- 🐛 fix: preserve ~ expansion in quoted file_write paths
+  ([`f759e9f`](https://github.com/thiesgerken/carapace/commit/f759e9f159c6b48f98f7672df01ebcb6dfca6166))
+
+  Keep `$HOME` unquoted for `~/` inputs when `quote=True` so shell expansion still works while path suffixes remain safely quoted.
+
+  Made-with: Cursor
+
+- 🐛 fix: render approved credential names in Matrix session output
+  ([`b2db35c`](https://github.com/thiesgerken/carapace/commit/b2db35c3a0227cb2ac94113cf19e789f81ea6fba))
+
+  Handle CredentialMetadata model instances in Matrix command formatting so /session shows clean credential names instead of Pydantic repr strings.
+
+  Made-with: Cursor
+
+- 🐛 fix: persist explanation in credential approval and drain queue on cancel
+  ([`dc98158`](https://github.com/thiesgerken/carapace/commit/dc9815844f0c61a2fb1d274215490927112a886c))
+
+  Explanation was passed to broadcast but not stored in pending_credential_approvals, so reconnecting clients lost context. credential_approval_queue was also never drained on new turns or signaled on cancel, risking stale decisions and hung waiters.
+
+  Made-with: Cursor
+
+- 🐛 fix: build credential registry before SessionEngine uses it
+  ([`0acc510`](https://github.com/thiesgerken/carapace/commit/0acc510bfcc2fedff3d21bdaedf3daec2e07fc75))
+
+  The engine was constructed with the uninitialized _credential_registry reference. Move registry construction before engine creation and inject it via set_credential_registry().
+
+  Made-with: Cursor
+
+- 🐛 fix: skip lines without '=' in file credential backend
+  ([`9a4c22d`](https://github.com/thiesgerken/carapace/commit/9a4c22d898cb26f2be5427a87dde1ab84e85e308))
+
+  str.partition() never returns None for the separator, so the old `value is not None` check always passed. Check the separator instead and log a warning for malformed lines.
+
+  Made-with: Cursor
+
+- 🐛 fix: send Basic Auth header in ccred requests
+  ([`b215b86`](https://github.com/thiesgerken/carapace/commit/b215b86ef4b7dc7a996b121d1ae179c1409b61c5))
+
+  urllib doesn't extract credentials from user:pass@host URLs automatically. Parse CARAPACE_API_URL, extract embedded credentials, and attach them as an Authorization header on every request.
+
+  Made-with: Cursor
+
+- 🐛 fix: use HTTPException for 401 in credential endpoints
+  ([`cff109a`](https://github.com/thiesgerken/carapace/commit/cff109a7f2241137b3ea9efd9dd8d97635b52554))
+
+  Replace Response(401) with HTTPException so the return type annotation is accurate and the OpenAPI schema stays consistent.
+
+  Made-with: Cursor
+
+### ♻️ Refactoring
+
+
+- ♻️ refactor: pass credential registry into SessionEngine
+  ([`e4f8f2a`](https://github.com/thiesgerken/carapace/commit/e4f8f2a9452cbc287dd29851253153052fb71797))
+
+  Require CredentialRegistryProtocol on engine construction and Deps; build the registry before creating the engine in server lifespan. Remove set_credential_registry and the None registry code path in skill injection.
+
+  Made-with: Cursor
+
+- ♻️ refactor: return ExecResult from sandbox file ops
+  ([`448f1ba`](https://github.com/thiesgerken/carapace/commit/448f1ba15b689c118995da1add28fc6106e6b547))
+
+  file_write, file_edit, and file_apply_patch now expose exit_code and output like exec_command. Call sites use exit_code for failures instead of parsing message prefixes.
+
+  Made-with: Cursor
+
+- ♻️ refactor: dedupe sandbox exec and file-write paths
+  ([`dd1a815`](https://github.com/thiesgerken/carapace/commit/dd1a815a88a4c48ddfddec41ee8e1d8cd25fb3c5))
+
+  - Add _exec_in_container and route _exec through it (keep lock, bypass, retry)
+  - Share _file_write_shell_command and _file_write_in_container
+  - Unify skill venv build in _build_skill_venv_in_session
+
+  Made-with: Cursor
+
+- ♻️ refactor: unify credential backend shutdown interface
+  ([`ed77c5b`](https://github.com/thiesgerken/carapace/commit/ed77c5b988e0bba4e5d00dcaafffc1f24638e7b4))
+
+  Make registry shutdown backend-agnostic by requiring a close() method on all credential backends. This removes backend type checks and keeps lifecycle handling consistent as backends evolve.
+
+  Made-with: Cursor
+
+- ♻️ refactor: credential module cleanups
+  ([`0604902`](https://github.com/thiesgerken/carapace/commit/06049024eb39895baa31c88302d9607a4c7abd96))
+
+  - Remove dead HTTP 202 retry loop in ccred (server blocks until resolved)
+  - Extract require_exposed() helper to DRY up is_exposed guard in backends
+  - Validate that backend names don't contain '/' (vault_path separator)
+
+  Made-with: Cursor
+
+- ♻️ refactor: credential registry type safety and encapsulation
+  ([`e1d3bbf`](https://github.com/thiesgerken/carapace/commit/e1d3bbf4420c833bc7aa1a44844ba499bd336015))
+
+  - Add CredentialRegistryProtocol to replace Any typing in Deps and engine
+  - Use CredentialBackendConfig discriminated union in CredentialsConfig.backends
+  - Add assert_never exhaustiveness branch in build_credential_registry
+  - Move shutdown logic into CredentialRegistry.close(), drop standalone function
+
+  Made-with: Cursor
+
+- ♻️ refactor: externalize bw serve, discriminated union config, bw-serve image
+  ([`bc883de`](https://github.com/thiesgerken/carapace/commit/bc883de69c041927e220eccfdfc1e57fc0cd5b27))
+
+  - Remove BwServeManager — Carapace no longer spawns bw serve; it expects
+    an external sidecar (Docker Compose network_mode or K8s sidecar).
+  - Rename VaultwardenBackend → BitwardenBackend, vaultwarden.py → bitwarden.py.
+  - Replace flat CredentialBackendConfig with discriminated union
+    (FileCredentialBackendConfig | BitwardenCredentialBackendConfig).
+  - Replace bw_serve_port with full url field (default http://127.0.0.1:8087).
+  - Add bw-serve/ Dockerfile + entrypoint (Bitwarden CLI sidecar image).
+  - Add CI + release jobs for the bw-serve image.
+  - Add bw sidecar to docker-compose (scale: 0 by default).
+  - Add bitwarden.instances sidecar support to Helm chart with startup,
+    readiness, and liveness probes (liveness doubles as periodic vault sync).
+  - Update credentials plan, Helm README, and chart values.
+
+  Made-with: Cursor
+
+- ♻️ refactor: split credentials module into subpackage
+  ([`5f690e3`](https://github.com/thiesgerken/carapace/commit/5f690e3a0f70656df8154fa564adeb65dac988b4))
+
+  Extract credentials.py into credentials/ with separate files for the protocol, file backend, vaultwarden backend, and registry. Public API unchanged via __init__.py re-exports.
+
+  Made-with: Cursor
+
+- ♻️ refactor: drop CredentialAccessEntry action field and list logging
+  ([`11ddfb4`](https://github.com/thiesgerken/carapace/commit/11ddfb4cebe8f050774ef3f0ac0e9dc8345aa6a0))
+
+  Credential list/search is gated purely at the tool level by the sentinel; no separate audit entry needed. Keep CredentialAccessEntry for fetch only.
+
+  Made-with: Cursor
+
+- ♻️ refactor: improve file_write with ~ expansion, mode, and workdir
+  ([`0240ece`](https://github.com/thiesgerken/carapace/commit/0240ece35423713ff08284f8fc039f9a67393d54))
+
+  - Add _expand_home() to replace ~/ with $HOME/ for bash double-quoting
+  - Add optional mode and workdir params to file_write
+  - Credential file injection now uses file_write instead of hand-rolled
+    shell commands, with workdir set to the skill directory for relative paths
+  - Remove lazy imports from tools.py
+
+  Made-with: Cursor
+
+- ♻️ refactor: remove approval timeout from ccred get
+  ([`8f61a4d`](https://github.com/thiesgerken/carapace/commit/8f61a4d71923b1f113d6e787b7a41044671ecace))
+
+  The command now polls indefinitely until the user approves or denies, rather than giving up after 300 seconds.
+
+  Made-with: Cursor
+
+- ♻️ refactor: rename ccred `list -q` to `search`, update examples and wording
+  ([`8e37077`](https://github.com/thiesgerken/carapace/commit/8e37077856b6a52da22baf18b0844a2a63377660))
+
+  - Split `list -q QUERY` into a standalone `search QUERY` subcommand
+  - Use `<backend>/<id>` instead of `personal/<uuid>` in examples
+  - Note that `-o` is subject to approval like stdout fetch
+  - Reword guidance: only request needed credentials, never echo secrets;
+    agent does not need to coordinate the approval UI flow
+
+  Made-with: Cursor
+
+- ♻️ refactor: remove request_id from CredentialApprovalRequest
+  ([`d77a0a7`](https://github.com/thiesgerken/carapace/commit/d77a0a705f2220183bcea8932000ab56048031ac))
+
+  vault_paths already serves as a natural key — duplicate in-flight requests with the same paths cannot occur within a session, so request_id was unnecessary overhead.
+
+  Made-with: Cursor
+
+### 🔧 Configuration
+
+
+- 🔧 refactor: remove unused _make_credential_eval_cb method
+  ([`c839ae6`](https://github.com/thiesgerken/carapace/commit/c839ae6548faf073d94e61e19ec44d8f5d5923ff))
+
+  - Deleted the _make_credential_eval_cb method from SessionEngine as it was no longer needed, streamlining the codebase and improving maintainability.
+
+- 🔧 refactor: update Bitwarden service context and image references
+  ([`1ecabe8`](https://github.com/thiesgerken/carapace/commit/1ecabe86de7583644818f300dc170a9c163d0dce))
+
+  - Changed the build context from `bw-serve` to `bitwarden-cli` in `docker-compose.yml`, `ci.yml`, and `release.yml`.
+  - Updated documentation to reflect the new image tag for the Bitwarden sidecar in `README.md` and `quickstart.md`.
+
+  This refactor aligns the service configuration with the new directory structure and improves clarity in the setup process.
+
+### Other
+
+
+- forgot to move
+  ([`243cbf8`](https://github.com/thiesgerken/carapace/commit/243cbf8baca06fafc9d24fce76647cc8f67e9255))
+
+- fix bitwarden problems
+  ([`5b6e896`](https://github.com/thiesgerken/carapace/commit/5b6e89658fed9a118e6e5c6a1f7224bffd4ef93d))
+
+- 📝 docs: update security and skill activation documentation
+  ([`e79068e`](https://github.com/thiesgerken/carapace/commit/e79068ee17fd30d06e745b7af93975a331260402))
+
+  Clarified the evaluation process for the `use_skill` tool, emphasizing that it is not safe-listed and requires sentinel evaluation. Updated the security documentation to reflect the new skill activation guidelines and added a new section on skill creation. Introduced new skills for managing credentials and provided a template for creating skills, including dependency management with `pyproject.toml`.
+
+  Made-with: Cursor
+
+- 📝 docs: migrate credentials docs from plan
+  ([`7a54418`](https://github.com/thiesgerken/carapace/commit/7a544182aab66ec347ee7ec281fed373d2be1818))
+
+  Document the implemented credential flow across README, architecture, security, quickstart, and skills docs; add a dedicated credentials guide and remove the obsolete credentials plan.
+
+  Made-with: Cursor
+
+- ✅ test: add unit coverage for Bitwarden credential backend
+  ([`d735fcb`](https://github.com/thiesgerken/carapace/commit/d735fcba048d7674d682c8d7be7274848cf44df9))
+
+  Add focused async tests for Bitwarden fetch, metadata, list filtering, and registry wiring using a fake HTTP client so the suite runs without a live bw serve dependency.
+
+  Made-with: Cursor
+
+- 📝 docs: add quickstart guide and .env.example
+  ([`da5869e`](https://github.com/thiesgerken/carapace/commit/da5869edf80408b48e063b5614a64a5abfa14ca9))
+
+  Step-by-step Docker Compose setup covering configuration, Matrix integration, credential backends (file + Bitwarden), and personalisation. Condense the README getting-started section to link to the new guide.
+
+  Made-with: Cursor
+
+- add a comment
+  ([`95a113b`](https://github.com/thiesgerken/carapace/commit/95a113bee356ee41b2fbc007b9cd8532c0ca2950))
+
+- 📝 docs: tighten credentials SKILL.md wording
+  ([`7a9bacd`](https://github.com/thiesgerken/carapace/commit/7a9bacd91201d01ac02c7208439e1e4f699d5d08))
+
+  - Distinguish auto-injected vs on-demand credential flows
+  - Remove bare ccred get example that would echo the secret
+  - Replace /reset mention with session-scoped approvals
+
+  Made-with: Cursor
+
+- Merge remote-tracking branch 'origin/main' into feature/credentials
+  ([`6946114`](https://github.com/thiesgerken/carapace/commit/6946114fb7faa83879aab31bb73de17739b59f92))
+
+- Merge branch 'main' into feature/credentials
+  ([`77433bc`](https://github.com/thiesgerken/carapace/commit/77433bc21aa9c2c73d6fc44d98e5e0a5e4b1f941))
+
+### 🔒 Security
+
+
+- 🔒 feat: enhance Bitwarden backend error handling and request management
+  ([`095e68d`](https://github.com/thiesgerken/carapace/commit/095e68d883608277cc819b908cefa44272aa021f))
+
+  - Introduced a new private method `_get` to centralize HTTP GET requests and improve error logging with detailed messages.
+  - Updated existing methods to utilize `_get` for fetching passwords, item metadata, and listing items, enhancing code clarity and maintainability.
+
+  Made-with: Cursor
+
+- 🔒 refactor: update credential decision handling in evaluate_credential_with
+  ([`69e77d7`](https://github.com/thiesgerken/carapace/commit/69e77d7f2aaa106d1b74c643a44a2c085d61ad8b))
+
+  - Introduced a new variable `cred_decision` to streamline the decision logic for credential access.
+  - Replaced the direct assignment of `decision` with `cred_decision` in the CredentialAccessEntry to enhance clarity and maintainability.
+
+  Made-with: Cursor
+
+- 🔒 feat: credential audit entries and approval UI events
+  ([`761da61`](https://github.com/thiesgerken/carapace/commit/761da6100083b3e4d28156bd3bbdb8e497d4c0f3))
+
+  - Return CredentialAccessEvaluation from evaluate_credential_with
+  - Audit and notify on sandbox credential list; append approval events on
+    auto-allowed fetch when the user was not prompted
+  - Emit credential_approval events when skills get implicit credential access
+  - Wire append_session_events into agent Deps from SessionEngine
+
+  Made-with: Cursor
+
+- 🔒 feat: gate sandbox credential HTTP access through sentinel
+  ([`7999717`](https://github.com/thiesgerken/carapace/commit/79997178d153f10e88c1c8f516d0f58ba8439e61))
+
+  Sandbox GET /credentials now runs evaluate_credential_with: sentinel allow/deny with UI detail lines, escalate via shared escalation queue and EscalationResponse (Web, CLI, Matrix). Skill credential injection remains covered by use_skill gating. Removes credential_approval_queue and CredentialApprovalResponse; CredentialApprovalRequest gains request_id.
+
+  Made-with: Cursor
+
+- 🔒 fix: shell-quote paths in file_write and restore carapace.yaml from git
+  ([`a84a2e3`](https://github.com/thiesgerken/carapace/commit/a84a2e3b82b425f476d9312ec1b649bf27711bf4))
+
+  file_write now uses shlex.quote by default, preventing shell injection from LLM-provided paths. A quote=False escape hatch preserves $HOME expansion for trusted carapace.yaml file declarations.
+
+  _sync_skill_venv restores carapace.yaml alongside pyproject.toml and uv.lock, preventing the sandbox from tampering with credential or network declarations.
+
+  Made-with: Cursor
+
 ## v0.49.1 (2026-04-02)
 
 
