@@ -74,11 +74,9 @@ def cmd_get(args: argparse.Namespace) -> None:
     vault_path = args.vault_path
     path = f"/credentials/{vault_path}"
 
-    max_wait = 300
-    start = time.monotonic()
     while True:
         try:
-            with urllib.request.urlopen(_request(path), timeout=max_wait) as resp:
+            with urllib.request.urlopen(_request(path)) as resp:
                 value = resp.read().decode()
         except urllib.error.HTTPError as e:
             if e.code == 403:
@@ -88,10 +86,6 @@ def cmd_get(args: argparse.Namespace) -> None:
                 print(f"error: credential not found: {vault_path}", file=sys.stderr)
                 sys.exit(1)
             if e.code == 202:
-                elapsed = time.monotonic() - start
-                if elapsed > max_wait:
-                    print("error: timed out waiting for approval", file=sys.stderr)
-                    sys.exit(1)
                 time.sleep(2)
                 continue
             print(f"error: {e.code} {e.reason}", file=sys.stderr)
