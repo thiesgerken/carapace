@@ -3,6 +3,7 @@ from __future__ import annotations
 import secrets
 from typing import Any
 
+import httpx
 from loguru import logger
 from pydantic_ai import Agent, DeferredToolRequests, RunContext, ToolDenied
 
@@ -74,55 +75,72 @@ async def _inject_skill_credentials(
         # All already approved — re-inject in case container was recreated
         return await _do_inject(ctx, cred_decls, cred_registry, skill_name)
 
-    # Fetch metadata for all needed credentials
+    # Fetch metadata for all needed credentials (vault HTTP errors must not abort use_skill)
+    meta_errors: list[str] = []
     metas: list[CredentialMetadata] = []
     for decl in needed:
         try:
             meta = await cred_registry.fetch_metadata(decl.vault_path)
         except KeyError:
             meta = CredentialMetadata(vault_path=decl.vault_path, name=decl.vault_path, description=decl.description)
+        except (httpx.RequestError, httpx.HTTPStatusError) as exc:
+            logger.warning(f"Credential metadata fetch failed for {decl.vault_path!r} (skill {skill_name!r}): {exc}")
+            meta_errors.append(f"{decl.vault_path}: vault unreachable or error ({type(exc).__name__})")
+            continue
         metas.append(meta)
 
     # No separate approval prompt here — the user already approved the
     # use_skill tool call which listed these credential vault paths in its
     # gate_args.  Skill-declared credentials are covered by that approval.
-    ctx.deps.security.append(CredentialAccessEntry(vault_paths=[m.vault_path for m in metas], decision="approved"))
+    if metas:
+        ctx.deps.security.append(CredentialAccessEntry(vault_paths=[m.vault_path for m in metas], decision="approved"))
 
-    # Record approvals in session state
-    for meta in metas:
-        if not any(c.vault_path == meta.vault_path for c in ctx.deps.session_state.approved_credentials):
-            ctx.deps.session_state.approved_credentials.append(meta)
+        # Record approvals in session state
+        for meta in metas:
+            if not any(c.vault_path == meta.vault_path for c in ctx.deps.session_state.approved_credentials):
+                ctx.deps.session_state.approved_credentials.append(meta)
 
-    if ctx.deps.append_session_events and metas:
-        request_id = secrets.token_hex(8)
-        vault_paths = [m.vault_path for m in metas]
-        names = [m.name for m in metas]
-        descriptions = [m.description for m in metas]
-        explanation = (
-            f"Credential access for skill {skill_name!r} approved implicitly with use_skill "
-            "(paths were listed in the skill activation tool approval)."
+        if ctx.deps.append_session_events:
+            request_id = secrets.token_hex(8)
+            vault_paths = [m.vault_path for m in metas]
+            names = [m.name for m in metas]
+            descriptions = [m.description for m in metas]
+            explanation = (
+                f"Credential access for skill {skill_name!r} approved implicitly with use_skill "
+                "(paths were listed in the skill activation tool approval)."
+            )
+            ctx.deps.append_session_events(
+                [
+                    {
+                        "role": "credential_approval",
+                        "request_id": request_id,
+                        "vault_paths": vault_paths,
+                        "names": names,
+                        "descriptions": descriptions,
+                        "skill_name": skill_name,
+                        "explanation": explanation,
+                    },
+                    {
+                        "role": "credential_approval",
+                        "request_id": request_id,
+                        "vault_paths": vault_paths,
+                        "decision": "allow",
+                    },
+                ]
+            )
+
+    approved_paths_now = {c.vault_path for c in ctx.deps.session_state.approved_credentials}
+    decls_to_inject = [c for c in cred_decls if c.vault_path in approved_paths_now]
+    inject_msg = await _do_inject(ctx, decls_to_inject, cred_registry, skill_name)
+
+    parts: list[str] = []
+    if meta_errors:
+        parts.append(
+            "Credential vault unavailable for some declarations (not approved or injected): " + "; ".join(meta_errors)
         )
-        ctx.deps.append_session_events(
-            [
-                {
-                    "role": "credential_approval",
-                    "request_id": request_id,
-                    "vault_paths": vault_paths,
-                    "names": names,
-                    "descriptions": descriptions,
-                    "skill_name": skill_name,
-                    "explanation": explanation,
-                },
-                {
-                    "role": "credential_approval",
-                    "request_id": request_id,
-                    "vault_paths": vault_paths,
-                    "decision": "allow",
-                },
-            ]
-        )
-
-    return await _do_inject(ctx, cred_decls, cred_registry, skill_name)
+    if inject_msg:
+        parts.append(inject_msg)
+    return " ".join(parts)
 
 
 async def _do_inject(
@@ -141,6 +159,12 @@ async def _do_inject(
             value = await cred_registry.fetch(decl.vault_path)
         except KeyError:
             errors.append(f"Credential {decl.vault_path} not found in vault")
+            continue
+        except (httpx.RequestError, httpx.HTTPStatusError) as exc:
+            logger.warning(
+                f"Credential fetch failed for {decl.vault_path!r} (session {session_id}, skill {skill_name!r}): {exc}"
+            )
+            errors.append(f"Credential {decl.vault_path}: vault request failed ({type(exc).__name__})")
             continue
 
         placed = False
