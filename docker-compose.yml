@@ -43,6 +43,7 @@ services:
     depends_on:
       - carapace
     restart: unless-stopped
+    scale: 0
 
   frontend:
     build: ./frontend
