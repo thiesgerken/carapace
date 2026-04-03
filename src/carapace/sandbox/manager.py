@@ -24,9 +24,15 @@ from carapace.sandbox.runtime import (
 _SKILL_NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]*$")
 
 
-def _expand_home(path: str) -> str:
-    """Replace a leading ``~/`` with ``$HOME/`` so bash resolves it inside double quotes."""
-    return "$HOME/" + path[2:] if path.startswith("~/") else path
+def _shell_path(path: str, *, quote: bool) -> str:
+    """Return a shell-safe path, expanding ``~/`` inside the shell when needed."""
+    if path.startswith("~/"):
+        suffix = path[2:]
+        if quote:
+            # Keep $HOME unquoted so shell expands it; quote only the suffix.
+            return "$HOME/" if not suffix else f"$HOME/{shlex.quote(suffix)}"
+        return f'"$HOME/{suffix}"'
+    return shlex.quote(path) if quote else f'"{path}"'
 
 
 # Inline Python scripts executed inside the sandbox container.
@@ -492,7 +498,7 @@ class SandboxManager:
         quote: bool = True,
     ) -> str:
         """Write content to a file inside the sandbox."""
-        shell_path = shlex.quote(_expand_home(path)) if quote else f'"{_expand_home(path)}"'
+        shell_path = _shell_path(path, quote=quote)
         content_b64 = base64.b64encode(content.encode()).decode()
         cmd = f'mkdir -p "$(dirname {shell_path})" && printf %s {content_b64} | base64 -d > {shell_path}'
         if mode is not None:
