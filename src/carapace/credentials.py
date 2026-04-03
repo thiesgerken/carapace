@@ -84,9 +84,12 @@ class FileVaultBackend:
             line = line.strip()
             if not line or line.startswith("#"):
                 continue
-            key, _, value = line.partition("=")
+            key, sep, value = line.partition("=")
             key = key.strip()
-            if key and value is not None:
+            if not sep:
+                logger.warning(f"File backend '{self._name}': ignoring invalid line (no '='): {line!r}")
+                continue
+            if key:
                 self._secrets[key] = value
         logger.info(f"File credential backend '{self._name}': loaded {len(self._secrets)} key(s) from {path}")
 
