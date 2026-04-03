@@ -125,7 +125,6 @@ class SessionEngine:
         agent_model: Model | None,
         sandbox_mgr: SandboxManager,
         model_factory: Callable[[str], Model] | None = None,
-        credential_registry: Any = None,
     ) -> None:
         self._config = config
         self._data_dir = data_dir
@@ -136,12 +135,15 @@ class SessionEngine:
         self._agent_model = agent_model
         self._sandbox_mgr = sandbox_mgr
         self._model_factory = model_factory
-        self._credential_registry = credential_registry
+        self._credential_registry: Any = None
         self._active: dict[str, ActiveSession] = {}
         self._llm_semaphore = asyncio.Semaphore(config.agent.max_parallel_llm)
 
         # Let SandboxManager retrieve activated skills for venv rebuild on container recreation
         sandbox_mgr.set_activated_skills_callback(self._get_activated_skills)
+
+    def set_credential_registry(self, registry: Any) -> None:
+        self._credential_registry = registry
 
     # -- public access to file I/O manager --
 

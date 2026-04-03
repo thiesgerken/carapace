@@ -271,13 +271,13 @@ async def lifespan(app: FastAPI):
         agent_model=agent_model,
         sandbox_mgr=_sandbox_mgr,
         model_factory=_create_model,
-        credential_registry=_credential_registry,
     )
 
-    # Credential vault backends
+    # Credential vault backends (must be built before passing to engine)
     _credential_registry = await build_credential_registry(_config.credentials, _data_dir)
     if _credential_registry.backend_names:
         logger.info(f"Credential backends: {', '.join(_credential_registry.backend_names)}")
+    _engine.set_credential_registry(_credential_registry)
 
     # Git HTTP handler — serves the knowledge repo on the sandbox API
     _git_handler = GitHttpHandler(
