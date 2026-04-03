@@ -68,7 +68,11 @@ async def build_credential_registry(config: CredentialsConfig, data_dir: Path) -
     for name, cfg in config.backends.items():
         match cfg:
             case FileCredentialBackendConfig():
-                path = Path(cfg.path) if cfg.path else data_dir / "secrets.env"
+                if cfg.path:
+                    raw = Path(cfg.path)
+                    path = raw if raw.is_absolute() else data_dir / raw
+                else:
+                    path = data_dir / "secrets.env"
                 registry.register(name, FileVaultBackend(name=name, path=path, cfg=cfg))
             case BitwardenCredentialBackendConfig():
                 registry.register(name, BitwardenBackend(name=name, base_url=cfg.url, cfg=cfg))

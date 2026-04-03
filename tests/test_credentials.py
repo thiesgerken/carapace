@@ -279,6 +279,14 @@ async def test_build_registry_default_path(tmp_path: Path) -> None:
     assert "dev" in reg.backend_names
 
 
+@pytest.mark.asyncio
+async def test_build_registry_relative_path_under_data_dir(tmp_path: Path) -> None:
+    (tmp_path / "secrets.env").write_text("k=v\n")
+    config = CredentialsConfig(backends={"dev": FileCredentialBackendConfig(type="file", path="secrets.env")})
+    reg = await build_credential_registry(config, tmp_path)
+    assert await reg.fetch("dev/k") == "v"
+
+
 # ---------------------------------------------------------------------------
 # BitwardenBackend tests
 # ---------------------------------------------------------------------------
