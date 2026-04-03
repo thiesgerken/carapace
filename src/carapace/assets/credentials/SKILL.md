@@ -6,9 +6,12 @@ description: Documents the credential system — how to list, fetch, and use sec
 # Credentials
 
 Carapace provides a pull-based credential system. Credentials live in an
-external vault (password manager or file) and are fetched on demand. **You
-never see the raw secret values** — they are injected directly into the
-sandbox environment.
+external vault (password manager or file) and are fetched on demand.
+Auto-injected credentials (via `carapace.yaml`) are placed directly into the
+sandbox as env vars or files — **you must not read, echo, or return their
+values**. On-demand credentials fetched with `ccred get` pass through the
+sandbox shell; wire them into commands via `-o` or subshell capture so that
+values are consumed by tools without being exposed.
 
 ## Auto-injection via `carapace.yaml`
 
@@ -50,14 +53,14 @@ The list shows metadata only (name, vault path, description) — never values.
 For credentials not declared in `carapace.yaml`, use `ccred get`:
 
 ```bash
-# Print value to stdout (for piping or subshell capture; blocks until approved)
-ccred get <backend>/<id>
-
 # Write to a file with restrictive permissions (0400; -o is also subject to approval)
 ccred get <backend>/<id> -o ~/.ssh/id_ed25519
 
-# Use as an env var for a single command
+# Use as an env var for a single command (value never visible in output)
 API_KEY=$(ccred get <backend>/api-key) ./my-script.sh
+
+# Pipe directly into a tool
+ccred get <backend>/<id> | some-tool --token-stdin
 ```
 
 `<backend>` is the vault backend name from server config; `<id>` is the
@@ -73,4 +76,3 @@ actually needed for the task.
 - **Never** store credentials in files that will be committed to git
 - If a credential is already approved for the session, `ccred get` returns
   it immediately without re-prompting
-- After `/reset`, all approvals are revoked
