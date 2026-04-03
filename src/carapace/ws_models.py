@@ -151,6 +151,7 @@ class TurnUsage(BaseModel):
 
     input_tokens: int = 0
     output_tokens: int = 0
+    context_tokens: int = 0
 
 
 class Done(BaseModel):
@@ -185,7 +186,7 @@ class SessionTitleUpdate(BaseModel):
 
 
 class StatusUpdate(BaseModel):
-    """Server → Client: session status on connect."""
+    """Server → Client: session status on connect (includes last agent-turn usage for the context bar)."""
 
     type: Literal["status"] = "status"
     agent_running: bool

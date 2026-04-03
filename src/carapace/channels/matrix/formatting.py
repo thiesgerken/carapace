@@ -97,15 +97,23 @@ def format_command_result_text(result: CommandResult) -> str:
 
             has_costs = any(v != "0" for k, v in costs.items() if k != "total")
 
+            def _fmt_context(n: object) -> str:
+                v = int(n or 0)
+                return f"{v:,}" if v else "-"
+
             def _table(
                 title: str,
                 rows: dict[str, dict],
                 *,
                 show_cost: bool = False,
                 row_costs: dict[str, str] | None = None,
+                show_context_column: bool = False,
             ) -> str:
                 hdr = "| | Input | Output |"
                 sep = "|---|---:|---:|"
+                if show_context_column:
+                    hdr += " Context |"
+                    sep += "---:|"
                 if has_cache:
                     hdr += " Cache R | Cache W |"
                     sep += "---:|---:|"
@@ -119,6 +127,8 @@ def format_command_result_text(result: CommandResult) -> str:
                 lookup = row_costs if row_costs is not None else costs
                 for name, b in rows.items():
                     row = f"| {name} | {b.get('input_tokens', 0):,} | {b.get('output_tokens', 0):,} |"
+                    if show_context_column:
+                        row += f" {_fmt_context(b.get('context_tokens'))} |"
                     if has_cache:
                         row += f" {b.get('cache_read_tokens', 0):,} | {b.get('cache_write_tokens', 0):,} |"
                     row += f" {b.get('requests', 0)} |"
@@ -132,7 +142,15 @@ def format_command_result_text(result: CommandResult) -> str:
             if models:
                 parts.append(_table("By Model", models, show_cost=True))
             if categories:
-                parts.append(_table("By Category", categories, show_cost=True, row_costs=category_costs))
+                parts.append(
+                    _table(
+                        "By Category",
+                        categories,
+                        show_cost=True,
+                        row_costs=category_costs,
+                        show_context_column=True,
+                    ),
+                )
 
             total_tokens = total_input + total_output
             cost_str = f" | ${total_cost:.4f}" if total_cost else ""

@@ -208,17 +208,23 @@ def _render_usage(payload: dict[str, Any]) -> None:
             return "-"
         return f"[{_cost_style(n)}]${n:.4f}[/{_cost_style(n)}]"
 
+    def _fmt_context_tokens(n: int) -> str:
+        return f"{n:,}" if n else "-"
+
     def _make_table(
         title: str,
         rows: dict[str, dict[str, int]],
         *,
         show_cost: bool = False,
         row_costs: dict[str, str] | None = None,
+        show_context_column: bool = False,
     ) -> Table:
         table = Table(title=title)
         table.add_column("Source", style="bold")
         table.add_column("Input", justify="right")
         table.add_column("Output", justify="right")
+        if show_context_column:
+            table.add_column("Context", justify="right")
         if has_cache:
             table.add_column("Cache Read", justify="right")
             table.add_column("Cache Write", justify="right")
@@ -228,6 +234,8 @@ def _render_usage(payload: dict[str, Any]) -> None:
         lookup = row_costs if row_costs is not None else costs
         for name, usage in rows.items():
             row = [name, f"{usage.get('input_tokens', 0):,}", f"{usage.get('output_tokens', 0):,}"]
+            if show_context_column:
+                row.append(_fmt_context_tokens(int(usage.get("context_tokens", 0) or 0)))
             if has_cache:
                 row += [f"{usage.get('cache_read_tokens', 0):,}", f"{usage.get('cache_write_tokens', 0):,}"]
             row.append(str(usage.get("requests", 0)))
@@ -240,7 +248,13 @@ def _render_usage(payload: dict[str, Any]) -> None:
         console.print(_make_table("Usage by Model", models, show_cost=True))
     if categories:
         console.print(
-            _make_table("Usage by Category", categories, show_cost=True, row_costs=category_costs),
+            _make_table(
+                "Usage by Category",
+                categories,
+                show_cost=True,
+                row_costs=category_costs,
+                show_context_column=True,
+            ),
         )
 
     total_in = payload.get("total_input", 0)

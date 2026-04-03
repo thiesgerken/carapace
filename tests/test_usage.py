@@ -5,6 +5,19 @@ from pydantic_ai.usage import RunUsage
 from carapace.usage import UsageTracker
 
 
+def test_record_sets_context_tokens_to_last_event_slice() -> None:
+    t = UsageTracker()
+    t.record(
+        "m",
+        "agent",
+        RunUsage(input_tokens=100, output_tokens=50, requests=1),
+    )
+    assert t.categories["agent"].context_tokens == 150
+    assert t.models["m"].context_tokens == 150
+    t.record("m", "agent", RunUsage(input_tokens=10, output_tokens=5, requests=1))
+    assert t.categories["agent"].context_tokens == 15
+
+
 def test_category_by_model_splits_per_category() -> None:
     t = UsageTracker()
     t.record(

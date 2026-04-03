@@ -18,6 +18,7 @@ class ModelUsage(BaseModel):
     output_audio_tokens: int = 0
     cache_audio_read_tokens: int = 0
     requests: int = 0
+    context_tokens: int = 0
 
 
 def _price_for_usage(model_key: str, u: ModelUsage) -> Decimal | None:
@@ -43,6 +44,18 @@ def _price_for_usage(model_key: str, u: ModelUsage) -> Decimal | None:
         return None
 
 
+def _merge_run_usage_into_bucket(bucket: ModelUsage, usage: RunUsage) -> None:
+    bucket.input_tokens += usage.input_tokens or 0
+    bucket.output_tokens += usage.output_tokens or 0
+    bucket.cache_read_tokens += usage.cache_read_tokens or 0
+    bucket.cache_write_tokens += usage.cache_write_tokens or 0
+    bucket.input_audio_tokens += usage.input_audio_tokens or 0
+    bucket.output_audio_tokens += usage.output_audio_tokens or 0
+    bucket.cache_audio_read_tokens += usage.cache_audio_read_tokens or 0
+    bucket.requests += usage.requests
+    bucket.context_tokens = (usage.input_tokens or 0) + (usage.output_tokens or 0)
+
+
 class UsageTracker(BaseModel):
     models: dict[str, ModelUsage] = {}
     categories: dict[str, ModelUsage] = {}
@@ -53,24 +66,10 @@ class UsageTracker(BaseModel):
             self.models.setdefault(model, ModelUsage()),
             self.categories.setdefault(category, ModelUsage()),
         ):
-            bucket.input_tokens += usage.input_tokens or 0
-            bucket.output_tokens += usage.output_tokens or 0
-            bucket.cache_read_tokens += usage.cache_read_tokens or 0
-            bucket.cache_write_tokens += usage.cache_write_tokens or 0
-            bucket.input_audio_tokens += usage.input_audio_tokens or 0
-            bucket.output_audio_tokens += usage.output_audio_tokens or 0
-            bucket.cache_audio_read_tokens += usage.cache_audio_read_tokens or 0
-            bucket.requests += usage.requests
+            _merge_run_usage_into_bucket(bucket, usage)
         cm = self.category_by_model.setdefault(category, {})
         m_bucket = cm.setdefault(model, ModelUsage())
-        m_bucket.input_tokens += usage.input_tokens or 0
-        m_bucket.output_tokens += usage.output_tokens or 0
-        m_bucket.cache_read_tokens += usage.cache_read_tokens or 0
-        m_bucket.cache_write_tokens += usage.cache_write_tokens or 0
-        m_bucket.input_audio_tokens += usage.input_audio_tokens or 0
-        m_bucket.output_audio_tokens += usage.output_audio_tokens or 0
-        m_bucket.cache_audio_read_tokens += usage.cache_audio_read_tokens or 0
-        m_bucket.requests += usage.requests
+        _merge_run_usage_into_bucket(m_bucket, usage)
 
     @property
     def total_input(self) -> int:

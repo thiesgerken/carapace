@@ -802,7 +802,11 @@ class SessionEngine:
                         active,
                         "on_done",
                         output,
-                        TurnUsage(input_tokens=inp_tok, output_tokens=out_tok),
+                        TurnUsage(
+                            input_tokens=inp_tok,
+                            output_tokens=out_tok,
+                            context_tokens=inp_tok + out_tok,
+                        ),
                     )
 
                 # Generate a title after the 1st and 3rd user message

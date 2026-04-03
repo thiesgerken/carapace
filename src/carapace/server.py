@@ -667,11 +667,9 @@ async def chat_ws(
     # Tell the client whether an agent turn is in progress.
     agent_running = active.agent_task is not None and not active.agent_task.done()
     tracker = active.usage_tracker
-    usage = (
-        TurnUsage(input_tokens=tracker.total_input, output_tokens=tracker.total_output)
-        if tracker.total_input or tracker.total_output
-        else None
-    )
+    agent_cat = tracker.categories.get("agent")
+    ctx = agent_cat.context_tokens if agent_cat else 0
+    usage = TurnUsage(context_tokens=ctx) if ctx else None
     with contextlib.suppress(Exception):
         await _send(websocket, StatusUpdate(agent_running=agent_running, usage=usage))
 
