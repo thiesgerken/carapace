@@ -13,6 +13,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import os
 import sys
@@ -23,16 +24,40 @@ import urllib.request
 from typing import Any
 
 
-def _api_url() -> str:
-    url = os.environ.get("CARAPACE_API_URL")
-    if not url:
+def _parse_api_url() -> tuple[str, str | None]:
+    """Return (base_url, auth_header) from CARAPACE_API_URL.
+
+    The URL may embed credentials as ``scheme://user:pass@host:port``.
+    urllib doesn't send them automatically, so we extract and encode them.
+    """
+    raw = os.environ.get("CARAPACE_API_URL")
+    if not raw:
         print("error: CARAPACE_API_URL not set", file=sys.stderr)
         sys.exit(1)
-    return url.rstrip("/")
+    parsed = urllib.parse.urlparse(raw)
+    if parsed.username and parsed.hostname:
+        creds = base64.b64encode(f"{parsed.username}:{parsed.password or ''}".encode()).decode()
+        clean = parsed._replace(netloc=parsed.hostname + (f":{parsed.port}" if parsed.port else ""))
+        return clean.geturl().rstrip("/"), f"Basic {creds}"
+    return raw.rstrip("/"), None
 
 
-def _request(path: str, *, retries: int = 0, delay: float = 2.0) -> urllib.request.Request:
-    return urllib.request.Request(f"{_api_url()}{path}")
+_base_url: str | None = None
+_auth_header: str | None = None
+
+
+def _ensure_api() -> None:
+    global _base_url, _auth_header
+    if _base_url is None:
+        _base_url, _auth_header = _parse_api_url()
+
+
+def _request(path: str) -> urllib.request.Request:
+    _ensure_api()
+    req = urllib.request.Request(f"{_base_url}{path}")
+    if _auth_header:
+        req.add_header("Authorization", _auth_header)
+    return req
 
 
 def _fetch_credential_metadata(query: str) -> list[dict[str, Any]]:
