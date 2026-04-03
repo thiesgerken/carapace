@@ -83,6 +83,7 @@ export interface GitPushApprovalRequest {
 
 export interface CredentialApprovalRequest {
   type: "credential_approval_request";
+  request_id: string;
   vault_paths: string[];
   names: string[];
   descriptions: string[];
@@ -171,14 +172,6 @@ export interface EscalationResponse {
   decision: EscalationDecision;
 }
 
-export type CredentialDecision = "approved" | "denied";
-
-export interface CredentialApprovalResponse {
-  type: "credential_approval_response";
-  vault_paths: string[];
-  decision: CredentialDecision;
-}
-
 export interface CancelRequest {
   type: "cancel";
 }
@@ -187,7 +180,6 @@ export type ClientMessage =
   | UserMessage
   | ApprovalResponse
   | EscalationResponse
-  | CredentialApprovalResponse
   | CancelRequest;
 
 // Chat UI messages
@@ -219,7 +211,7 @@ export type ChatMessage =
   | {
       kind: "credential_approval";
       request: CredentialApprovalRequest;
-      decision?: CredentialDecision;
+      decision?: EscalationDecision;
     }
   | { kind: "command"; command: string; data: unknown }
   | { kind: "error"; detail: string };

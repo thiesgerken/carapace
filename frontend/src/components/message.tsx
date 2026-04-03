@@ -1,6 +1,6 @@
 "use client";
 
-import type { ChatMessage, CredentialDecision, EscalationDecision } from "@/lib/types";
+import type { ChatMessage, EscalationDecision } from "@/lib/types";
 import { MarkdownContent } from "./markdown-content";
 import { ToolCallBadge } from "./tool-call-badge";
 import { ApprovalCard } from "./approval-card";
@@ -15,7 +15,10 @@ interface MessageProps {
   onApproval?: (toolCallId: string, approved: boolean) => void;
   approvalResolved?: boolean;
   onEscalation?: (requestId: string, decision: EscalationDecision) => void;
-  onCredentialApproval?: (vaultPaths: string[], decision: CredentialDecision) => void;
+  onCredentialApproval?: (
+    requestId: string,
+    decision: EscalationDecision,
+  ) => void;
 }
 
 export function Message({
@@ -105,7 +108,7 @@ export function Message({
           request={message.request}
           decision={message.decision}
           onRespond={(decision) =>
-            onCredentialApproval?.(message.request.vault_paths, decision)
+            onCredentialApproval?.(message.request.request_id, decision)
           }
         />
       );

@@ -50,9 +50,9 @@ class PendingDomainApproval:
 class PendingCredentialApproval:
     """Tracks a pending credential approval message in a room."""
 
-    def __init__(self, event_id: str, vault_paths: list[str]) -> None:
+    def __init__(self, event_id: str, request_id: str) -> None:
         self.event_id = event_id
-        self.vault_paths = vault_paths
+        self.request_id = request_id
         self._future: asyncio.Future[bool] = asyncio.get_running_loop().create_future()
 
     def resolve(self, approved: bool) -> None:

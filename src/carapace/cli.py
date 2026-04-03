@@ -297,6 +297,38 @@ async def _render_escalation_request(data: dict[str, Any]) -> str:
     return "deny"
 
 
+async def _render_credential_escalation(data: dict[str, Any]) -> str:
+    """Render a sentinel-escalated credential request and return the decision."""
+    names = data.get("names", [])
+    descriptions = data.get("descriptions", [])
+    explanation = data.get("explanation", "")
+
+    panel_lines: list[str] = []
+    for name, desc in zip(names, descriptions, strict=False):
+        line = f"[bold]{name}[/bold]"
+        if desc:
+            line += f" — {desc}"
+        panel_lines.append(line)
+    if explanation:
+        panel_lines.append(f"\n[dim]{explanation}[/dim]")
+
+    console.print()
+    console.print(
+        Panel(
+            "\n".join(panel_lines),
+            title="[yellow]Credential Request[/yellow]",
+            border_style="yellow",
+        )
+    )
+    choice = await asyncio.get_event_loop().run_in_executor(
+        None,
+        lambda: console.input("[bold]\\[a]llow / \\[d]eny?[/bold] ").strip().lower(),
+    )
+    if choice in ("a", "allow", "y", "yes"):
+        return "allow"
+    return "deny"
+
+
 async def _render_approval_request(data: dict[str, Any]) -> bool:
     """Render an approval request and return True if approved."""
     panel_lines = [
@@ -491,7 +523,7 @@ async def _read_server_responses(ws) -> None:
                         )
                     )
 
-                case "proxy_approval_request":
+                case "proxy_approval_request" | "domain_access_approval_request":
                     _stop_live()
                     try:
                         decision = await _render_escalation_request(msg)
@@ -501,7 +533,24 @@ async def _read_server_responses(ws) -> None:
                     await ws.send(
                         json.dumps(
                             {
-                                "type": "proxy_approval_response",
+                                "type": "escalation_response",
+                                "request_id": msg["request_id"],
+                                "decision": decision,
+                            }
+                        )
+                    )
+
+                case "credential_approval_request":
+                    _stop_live()
+                    try:
+                        decision = await _render_credential_escalation(msg)
+                    except (KeyboardInterrupt, EOFError):
+                        decision = "deny"
+                        console.print("\n[dim]Denied (interrupted).[/dim]")
+                    await ws.send(
+                        json.dumps(
+                            {
+                                "type": "escalation_response",
                                 "request_id": msg["request_id"],
                                 "decision": decision,
                             }

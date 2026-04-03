@@ -29,7 +29,7 @@ from carapace.channels.matrix.subscriber import MatrixSubscriber
 from carapace.models import Config, MatrixChannelConfig, MatrixTokenFile, SkillInfo
 from carapace.sandbox.manager import SandboxManager
 from carapace.session import SessionEngine, SessionManager
-from carapace.ws_models import ApprovalResponse, CommandResult, CredentialApprovalResponse, EscalationResponse
+from carapace.ws_models import ApprovalResponse, CommandResult, EscalationResponse
 
 
 class MatrixChannel:
@@ -384,17 +384,17 @@ class MatrixChannel:
         # Credential approval
         if event.reacts_to in self._pending_credential_approvals:
             logger.info(
-                f"Matrix: credential decision={'approved' if approved else 'denied'} "
+                f"Matrix: credential decision={'allowed' if approved else 'denied'} "
                 + f"via reaction from {event.sender} in {room_id}"
             )
             if session_id:
                 sub = self._room_subscribers.get(room_id)
-                vault_paths = sub._credential_events.get(event.reacts_to) if sub else None
-                if sub and vault_paths:
-                    decision = "approved" if approved else "denied"
+                request_id = sub._credential_events.get(event.reacts_to) if sub else None
+                if sub and request_id:
+                    decision = "allow" if approved else "deny"
                     await self._engine.submit_approval(
                         session_id,
-                        CredentialApprovalResponse(vault_paths=vault_paths, decision=decision),
+                        EscalationResponse(request_id=request_id, decision=decision),
                     )
                     sub._credential_events.pop(event.reacts_to, None)
                     self._pending_credential_approvals.pop(event.reacts_to, None)
@@ -547,16 +547,16 @@ class MatrixChannel:
             msg = "✅ Domain access allowed." if approve else "❌ Domain access denied."
             await self._send_text(room_id, msg)
         elif sub._credential_events:
-            event_id, vault_paths = next(iter(sub._credential_events.items()))
-            decision = "approved" if approve else "denied"
+            event_id, request_id = next(iter(sub._credential_events.items()))
+            decision = "allow" if approve else "deny"
             await self._engine.submit_approval(
                 session_id,
-                CredentialApprovalResponse(vault_paths=vault_paths, decision=decision),
+                EscalationResponse(request_id=request_id, decision=decision),
             )
             sub._credential_events.pop(event_id, None)
             self._pending_credential_approvals.pop(event_id, None)
             self._room_pending.pop(room_id, None)
-            msg = "✅ Credentials approved." if approve else "❌ Credentials denied."
+            msg = "✅ Credential access allowed." if approve else "❌ Credential access denied."
             await self._send_text(room_id, msg)
         else:
             await self._send_text(room_id, "No pending approval request.")

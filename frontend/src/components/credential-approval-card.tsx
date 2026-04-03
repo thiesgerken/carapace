@@ -1,17 +1,20 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import type { CredentialApprovalRequest, CredentialDecision } from "@/lib/types";
+import type {
+  CredentialApprovalRequest,
+  EscalationDecision,
+} from "@/lib/types";
 
 interface CredentialApprovalCardProps {
   request: CredentialApprovalRequest;
-  onRespond: (decision: CredentialDecision) => void;
-  decision?: CredentialDecision;
+  onRespond: (decision: EscalationDecision) => void;
+  decision?: EscalationDecision;
 }
 
-const DECISION_LABELS: Record<CredentialDecision, string> = {
-  approved: "Approved",
-  denied: "Denied",
+const DECISION_LABELS: Record<EscalationDecision, string> = {
+  allow: "Allowed",
+  deny: "Denied",
 };
 
 export function CredentialApprovalCard({
@@ -57,7 +60,9 @@ export function CredentialApprovalCard({
         <div className="space-y-1">
           {request.names.map((name, i) => (
             <div key={request.vault_paths[i]} className="flex flex-col">
-              <span className="font-mono font-medium text-foreground">{name}</span>
+              <span className="font-mono font-medium text-foreground">
+                {name}
+              </span>
               {request.descriptions[i] && (
                 <span className="text-xs text-muted-foreground">
                   {request.descriptions[i]}
@@ -81,16 +86,16 @@ export function CredentialApprovalCard({
       {!resolved && (
         <div className="mt-3 flex flex-wrap gap-2">
           <button
-            onClick={() => onRespond("approved")}
+            onClick={() => onRespond("allow")}
             className={cn(
               "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
               "bg-foreground text-background hover:bg-foreground/90",
             )}
           >
-            Approve
+            Allow
           </button>
           <button
-            onClick={() => onRespond("denied")}
+            onClick={() => onRespond("deny")}
             className={cn(
               "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
               "border border-destructive/50 text-destructive hover:bg-destructive/10",

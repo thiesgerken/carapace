@@ -30,7 +30,6 @@ from carapace.ws_models import (
     SLASH_COMMANDS,
     ApprovalRequest,
     ApprovalResponse,
-    CredentialApprovalResponse,
     EscalationResponse,
     TurnUsage,
 )
@@ -61,8 +60,10 @@ class SessionSubscriber(Protocol):
     async def on_title_update(self, title: str) -> None: ...
     async def on_domain_info(self, domain: str, detail: str) -> None: ...
     async def on_git_push_info(self, ref: str, decision: str, detail: str) -> None: ...
+    async def on_credential_info(self, vault_path: str, detail: str) -> None: ...
     async def on_credential_approval_request(
         self,
+        request_id: str,
         vault_paths: list[str],
         names: list[str],
         descriptions: list[str],
@@ -94,8 +95,6 @@ class ActiveSession:
     title_model_name: str | None = None
     pending_approval_requests: list[dict[str, Any]] = field(default_factory=list)
     pending_escalations: list[dict[str, Any]] = field(default_factory=list)
-    pending_credential_approvals: list[dict[str, Any]] = field(default_factory=list)
-    credential_approval_queue: asyncio.Queue[CredentialApprovalResponse | None] = field(default_factory=asyncio.Queue)
     _pending_sends: set[asyncio.Task[Any]] = field(default_factory=set)
 
 
@@ -213,6 +212,7 @@ class SessionEngine:
         security.set_user_escalation_callback(self._make_escalation_cb(active))
         security.set_domain_info_callback(self._make_domain_info_cb(active))
         security.set_push_info_callback(self._make_push_info_cb(active))
+        security.set_credential_info_callback(self._make_credential_info_cb(active))
 
         # Register a domain-approval callback so the sandbox proxy can
         # evaluate domain requests through the per-session sentinel.
@@ -364,8 +364,6 @@ class SessionEngine:
             active.tool_approval_queue.get_nowait()
         while not active.escalation_queue.empty():
             active.escalation_queue.get_nowait()
-        while not active.credential_approval_queue.empty():
-            active.credential_approval_queue.get_nowait()
 
         active.agent_task = asyncio.create_task(
             self._run_turn(active, content, origin=origin),
@@ -381,7 +379,6 @@ class SessionEngine:
             active.agent_task.cancel()
             active.tool_approval_queue.put_nowait(None)
             active.escalation_queue.put_nowait(None)
-            active.credential_approval_queue.put_nowait(None)
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await active.agent_task
             active.agent_task = None
@@ -389,68 +386,15 @@ class SessionEngine:
     async def submit_approval(
         self,
         session_id: str,
-        response: ApprovalResponse | EscalationResponse | CredentialApprovalResponse,
+        response: ApprovalResponse | EscalationResponse,
     ) -> None:
-        """Forward an approval / escalation / credential response to the running turn."""
+        """Forward an approval / escalation response to the running turn."""
         active = self._active.get(session_id)
         if active:
             if isinstance(response, ApprovalResponse):
                 active.tool_approval_queue.put_nowait(response)
-            elif isinstance(response, CredentialApprovalResponse):
-                active.credential_approval_queue.put_nowait(response)
             else:
                 active.escalation_queue.put_nowait(response)
-
-    async def request_credential_approval(
-        self,
-        session_id: str,
-        vault_paths: list[str],
-        names: list[str],
-        descriptions: list[str],
-        *,
-        skill_name: str | None = None,
-        explanation: str = "",
-    ) -> bool:
-        """Send a credential approval request to subscribers and block until resolved.
-
-        Returns ``True`` if the user approved, ``False`` if denied.
-        """
-        active = self._active.get(session_id)
-        if not active:
-            return False
-
-        pending = {
-            "vault_paths": vault_paths,
-            "names": names,
-            "descriptions": descriptions,
-            "skill_name": skill_name,
-            "explanation": explanation,
-        }
-        active.pending_credential_approvals.append(pending)
-
-        await self._broadcast(
-            active,
-            "on_credential_approval_request",
-            vault_paths,
-            names,
-            descriptions,
-            skill_name,
-            explanation,
-        )
-
-        # Block until a matching response arrives
-        while True:
-            msg = await active.credential_approval_queue.get()
-            if msg is None:
-                active.pending_credential_approvals = [
-                    p for p in active.pending_credential_approvals if p["vault_paths"] != vault_paths
-                ]
-                return False
-            if set(msg.vault_paths) == set(vault_paths):
-                active.pending_credential_approvals = [
-                    p for p in active.pending_credential_approvals if p["vault_paths"] != vault_paths
-                ]
-                return msg.decision == "approved"
 
     # -- slash commands --
 
@@ -871,7 +815,7 @@ class SessionEngine:
             # Auto-deny stale pending escalations of the same kind+key.
             # This happens when an exec timeout killed git push but the old
             # escalation callback is still blocked on the queue.
-            match_key = "ref" if kind == "git_push" else "domain"
+            match_key = {"git_push": "ref", "credential_access": "vault_path"}.get(kind, "domain")
             match_val = context.get(match_key, subject)
             for old in list(active.pending_escalations):
                 if old.get("kind") == kind and old.get(match_key) == match_val:
@@ -908,6 +852,45 @@ class SessionEngine:
                 await self._broadcast(
                     active, "on_git_push_approval_request", request_id, ref, explanation, changed_files
                 )
+            elif kind == "credential_access":
+                vault_path = context.get("vault_path", subject)
+                cred_name = context.get("name", vault_path)
+                cred_desc = context.get("description", "")
+                explanation = context.get("explanation", "")
+                self._session_mgr.append_events(
+                    session_id,
+                    [
+                        {
+                            "role": "credential_approval",
+                            "request_id": request_id,
+                            "vault_paths": [vault_path],
+                            "names": [cred_name],
+                            "descriptions": [cred_desc],
+                            "explanation": explanation,
+                        }
+                    ],
+                )
+                active.pending_escalations.append(
+                    {
+                        "request_id": request_id,
+                        "kind": "credential_access",
+                        "vault_path": vault_path,
+                        "vault_paths": [vault_path],
+                        "names": [cred_name],
+                        "descriptions": [cred_desc],
+                        "explanation": explanation,
+                    }
+                )
+                await self._broadcast(
+                    active,
+                    "on_credential_approval_request",
+                    request_id,
+                    [vault_path],
+                    [cred_name],
+                    [cred_desc],
+                    None,
+                    explanation,
+                )
             else:
                 self._session_mgr.append_events(
                     session_id,
@@ -925,7 +908,11 @@ class SessionEngine:
                     return False
                 if msg.request_id == request_id:
                     decision = msg.decision
-                    event_role = "git_push_approval" if kind == "git_push" else "domain_access_approval"
+                    event_roles = {
+                        "git_push": "git_push_approval",
+                        "credential_access": "credential_approval",
+                    }
+                    event_role = event_roles.get(kind, "domain_access_approval")
                     self._session_mgr.append_events(
                         session_id,
                         [
@@ -971,6 +958,16 @@ class SessionEngine:
 
         return _notify
 
+    def _make_credential_info_cb(self, active: ActiveSession) -> Callable[[str, str], None]:
+        """Build a callback that broadcasts credential access decisions to subscribers."""
+
+        def _notify(vault_path: str, detail: str) -> None:
+            task = asyncio.ensure_future(self._broadcast(active, "on_credential_info", vault_path, detail))
+            active._pending_sends.add(task)
+            task.add_done_callback(active._pending_sends.discard)
+
+        return _notify
+
     def _make_domain_eval_cb(
         self,
         security: SessionSecurity,
@@ -985,6 +982,27 @@ class SessionEngine:
                 sentinel,
                 domain,
                 command,
+                usage_tracker=active.usage_tracker,
+            )
+
+        return _eval
+
+    def _make_credential_eval_cb(
+        self,
+        security: SessionSecurity,
+        sentinel: Sentinel,
+        active: ActiveSession,
+    ) -> Callable[[str, str, str, str], Awaitable[bool]]:
+        """Build a callback for evaluating credential access via the sentinel."""
+
+        async def _eval(vault_path: str, name: str, description: str, trigger: str) -> bool:
+            return await security_mod.evaluate_credential_with(
+                security,
+                sentinel,
+                vault_path,
+                name,
+                description,
+                trigger,
                 usage_tracker=active.usage_tracker,
             )
 

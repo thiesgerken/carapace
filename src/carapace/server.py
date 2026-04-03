@@ -47,7 +47,6 @@ from carapace.models import Config, SessionState, ToolResult
 from carapace.sandbox.manager import SandboxManager
 from carapace.sandbox.proxy import ProxyServer
 from carapace.sandbox.runtime import ContainerRuntime
-from carapace.security.context import CredentialAccessEntry
 from carapace.session import SessionEngine, SessionManager
 from carapace.skills import SkillRegistry
 from carapace.ws_models import (
@@ -58,7 +57,6 @@ from carapace.ws_models import (
     CancelRequest,
     CommandResult,
     CredentialApprovalRequest,
-    CredentialApprovalResponse,
     DomainAccessApprovalRequest,
     Done,
     ErrorMessage,
@@ -628,8 +626,12 @@ class WebSocketSubscriber:
     async def on_git_push_info(self, ref: str, decision: str, detail: str) -> None:
         await self._safe_send(ToolCallInfo(tool="git_push", args={"ref": ref, "decision": decision}, detail=detail))
 
+    async def on_credential_info(self, vault_path: str, detail: str) -> None:
+        await self._safe_send(ToolCallInfo(tool="credential_access", args={"vault_path": vault_path}, detail=detail))
+
     async def on_credential_approval_request(
         self,
+        request_id: str,
         vault_paths: list[str],
         names: list[str],
         descriptions: list[str],
@@ -638,6 +640,7 @@ class WebSocketSubscriber:
     ) -> None:
         await self._safe_send(
             CredentialApprovalRequest(
+                request_id=request_id,
                 vault_paths=vault_paths,
                 names=names,
                 descriptions=descriptions,
@@ -700,6 +703,18 @@ async def chat_ws(
                         changed_files=pp.get("changed_files", []),
                     ),
                 )
+            elif pp.get("kind") == "credential_access":
+                await _send(
+                    websocket,
+                    CredentialApprovalRequest(
+                        request_id=pp["request_id"],
+                        vault_paths=pp.get("vault_paths", []),
+                        names=pp.get("names", []),
+                        descriptions=pp.get("descriptions", []),
+                        skill_name=pp.get("skill_name"),
+                        explanation=pp.get("explanation", ""),
+                    ),
+                )
             else:
                 await _send(
                     websocket,
@@ -709,19 +724,6 @@ async def chat_ws(
                         command=pp.get("command", ""),
                     ),
                 )
-
-    for pc in list(active.pending_credential_approvals):
-        with contextlib.suppress(Exception):
-            await _send(
-                websocket,
-                CredentialApprovalRequest(
-                    vault_paths=pc.get("vault_paths", []),
-                    names=pc.get("names", []),
-                    descriptions=pc.get("descriptions", []),
-                    skill_name=pc.get("skill_name"),
-                    explanation=pc.get("explanation", ""),
-                ),
-            )
 
     try:
         while True:
@@ -738,7 +740,7 @@ async def chat_ws(
                 continue
 
             # --- Approval responses — forward to engine ---
-            if isinstance(client_msg, ApprovalResponse | EscalationResponse | CredentialApprovalResponse):
+            if isinstance(client_msg, ApprovalResponse | EscalationResponse):
                 await _engine.submit_approval(session_id, client_msg)
                 continue
 
@@ -981,12 +983,11 @@ async def list_credentials(request: Request, q: str = "") -> list[dict[str, str]
 
 @sandbox_app.get("/credentials/{vault_path:path}")
 async def fetch_credential(request: Request, vault_path: str) -> Response:
-    """Fetch a credential value (blocks until user approves if not yet approved)."""
+    """Fetch a credential value (sentinel-gated, may escalate to user)."""
     session_id = _authenticate_sandbox(request.headers.get("authorization"))
     if session_id is None:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
-    # Check if credential exists in any backend
     try:
         meta = await _credential_registry.fetch_metadata(vault_path)
     except KeyError:
@@ -994,34 +995,34 @@ async def fetch_credential(request: Request, vault_path: str) -> Response:
 
     active = _engine.get_or_activate(session_id)
 
-    # Check if already approved in this session
     already_approved = any(c.vault_path == vault_path for c in active.state.approved_credentials)
 
     if not already_approved:
-        approved = await _engine.request_credential_approval(
-            session_id,
-            vault_paths=[vault_path],
-            names=[meta.name],
-            descriptions=[meta.description],
-            explanation=f"Sandbox requested credential: {meta.name}",
+        if active.security is None or active.sentinel is None:
+            return Response(status_code=403, content="Session not initialised")
+
+        from carapace.security import evaluate_credential_with
+
+        allowed = await evaluate_credential_with(
+            active.security,
+            active.sentinel,
+            vault_path,
+            meta.name,
+            meta.description,
+            f"Sandbox requested credential: {meta.name}",
+            usage_tracker=active.usage_tracker,
         )
-        if not approved:
-            if active.security:
-                active.security.append(CredentialAccessEntry(vault_paths=[vault_path], decision="denied"))
+        if not allowed:
             return Response(status_code=403, content="Credential access denied")
 
-        # Record approval in session state
         active.state.approved_credentials.append(meta)
         _engine.session_mgr.save_state(active.state)
 
-    # Fetch the actual value
     try:
         value = await _credential_registry.fetch(vault_path)
     except KeyError:
         return Response(status_code=404, content="Credential not found")
 
-    if active.security:
-        active.security.append(CredentialAccessEntry(vault_paths=[vault_path], decision="approved"))
     return Response(content=value, media_type="text/plain")
 
 

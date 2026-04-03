@@ -242,6 +242,73 @@ async def evaluate_push_with(
     return allowed
 
 
+async def evaluate_credential_with(
+    session: SessionSecurity,
+    sentinel: Sentinel,
+    vault_path: str,
+    name: str,
+    description: str,
+    trigger: str,
+    *,
+    usage_tracker: UsageTracker | None = None,
+) -> bool:
+    """Evaluate a credential access request. Returns True to allow, False to deny.
+
+    If the sentinel escalates, delegates to the session's user escalation callback.
+    """
+    verdict = await sentinel.evaluate_credential_access(
+        session,
+        vault_path,
+        name,
+        description,
+        trigger,
+        usage_tracker=usage_tracker,
+    )
+
+    decision = _verdict_to_decision(verdict)
+
+    if verdict.decision == "allow":
+        allowed = True
+        detail = f"[sentinel: allow] {verdict.explanation}"
+    elif verdict.decision == "deny":
+        allowed = False
+        detail = f"[sentinel: deny] {verdict.explanation}"
+    else:
+        allowed = await session.escalate_to_user(
+            vault_path,
+            {
+                "kind": "credential_access",
+                "vault_path": vault_path,
+                "name": name,
+                "description": description,
+                "explanation": verdict.explanation,
+                "trigger": trigger,
+            },
+        )
+        decision = "allowed" if allowed else "denied"
+        detail = f"[sentinel: escalate → {decision}] {verdict.explanation}"
+
+    entry = CredentialAccessEntry(
+        vault_paths=[vault_path],
+        decision=decision,
+        explanation=verdict.explanation,
+    )
+    session.append(entry)
+
+    session.notify_credential_decision(vault_path, detail)
+
+    session.write_audit(
+        AuditEntry.now(
+            kind="credential_access",
+            sentinel_verdict=verdict,
+            final_decision=decision,
+            explanation=verdict.explanation,
+        )
+    )
+
+    return allowed
+
+
 def _verdict_to_decision(verdict: SentinelVerdict) -> Literal["allowed", "escalated", "denied"]:
     match verdict.decision:
         case "allow":

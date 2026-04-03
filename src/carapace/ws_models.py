@@ -51,21 +51,13 @@ class EscalationResponse(BaseModel):
     decision: EscalationDecision
 
 
-class CredentialApprovalResponse(BaseModel):
-    """Client → Server: user's decision on a credential approval request."""
-
-    type: Literal["credential_approval_response"] = "credential_approval_response"
-    vault_paths: list[str]
-    decision: Literal["approved", "denied"]
-
-
 class CancelRequest(BaseModel):
     """Client → Server: cancel the in-flight agent turn."""
 
     type: Literal["cancel"] = "cancel"
 
 
-ClientEnvelope = UserMessage | ApprovalResponse | EscalationResponse | CredentialApprovalResponse | CancelRequest
+ClientEnvelope = UserMessage | ApprovalResponse | EscalationResponse | CancelRequest
 
 
 def parse_client_message(raw: dict[str, Any]) -> ClientEnvelope:
@@ -76,8 +68,6 @@ def parse_client_message(raw: dict[str, Any]) -> ClientEnvelope:
             return ApprovalResponse.model_validate(raw)
         case "escalation_response":
             return EscalationResponse.model_validate(raw)
-        case "credential_approval_response":
-            return CredentialApprovalResponse.model_validate(raw)
         case "cancel":
             return CancelRequest.model_validate(raw)
         case other:
@@ -136,9 +126,10 @@ class GitPushApprovalRequest(BaseModel):
 
 
 class CredentialApprovalRequest(BaseModel):
-    """Server → Client: user needs to approve credential access."""
+    """Server → Client: sentinel escalated a credential access request to the user."""
 
     type: Literal["credential_approval_request"] = "credential_approval_request"
+    request_id: str
     vault_paths: list[str]
     names: list[str]
     descriptions: list[str]

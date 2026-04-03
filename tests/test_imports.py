@@ -72,4 +72,4 @@ def test_import_security():
 
 
 def test_import_ws_credential_models():
-    from carapace.ws_models import CredentialApprovalRequest, CredentialApprovalResponse  # noqa: F401
+    from carapace.ws_models import CredentialApprovalRequest  # noqa: F401
