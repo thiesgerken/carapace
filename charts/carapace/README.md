@@ -181,33 +181,36 @@ config:
 
 The `url` defaults to `http://127.0.0.1:8087`, which works out of the box with the sidecar. Override it if `bw serve` runs elsewhere (e.g. a separate Service).
 
-Multiple instances are supported — just add more entries with different names and ports (e.g. `personal` on 8087, `work` on 8088). Each instance gets its own sidecar container and its own Kubernetes Secret.
+Multiple instances are supported — just add more entries with different names and ports (e.g. `personal` on 8087, `work` on 8088). Each instance gets its own sidecar container, its own Kubernetes Secret, and (when persistence is enabled) its own PVC mounted at `/var/lib/bitwarden-cli` so Bitwarden CLI device/session data survives Pod reschedules — reducing repeated logins and “new device” emails from the vault provider. Set `bitwarden.persistence.enabled` to `false` if you prefer an ephemeral sidecar.
 
 ### Key values
 
-| Value                          | Default                          | Description                                                       |
-| ------------------------------ | -------------------------------- | ----------------------------------------------------------------- |
-| `image.registry`               | `ghcr.io`                        | Server image registry                                             |
-| `image.repository`             | `thiesgerken/carapace`           | Server image repository                                           |
-| `image.tag`                    | `""` (appVersion)                | Server image tag                                                  |
-| `frontend.enabled`             | `true`                           | Deploy the Next.js frontend                                       |
-| `frontend.image.tag`           | `""` (appVersion)                | Frontend image tag                                                |
-| `sandbox.image.tag`            | `""` (appVersion)                | Sandbox base image tag                                            |
-| `ingress.enabled`              | `true`                           | Create a Gateway API HTTPRoute                                    |
-| `ingress.hostname`             | `carapace.example.com`           | Ingress hostname                                                  |
-| `ingress.parentRefs`           | `[{name: default-gateway}]`      | Gateway parent references                                         |
-| `ingress.annotations`          | `{}`                             | Extra annotations on the HTTPRoute                                |
-| `persistence.storageClassName` | `""` (cluster default)           | StorageClass for the RWX PVC                                      |
-| `persistence.size`             | `10Gi`                           | PVC size                                                          |
-| `persistence.finalizers`       | `[]`                             | PVC finalizers (e.g. `kubernetes.io/pvc-protection`)              |
-| `config`                       | `{}`                             | Application config (mounted as `/data/config.yaml` via ConfigMap) |
-| `priorityClassName`            | `""`                             | PriorityClass for all pods (server, frontend, sandbox)            |
-| `envFrom`                      | `[]`                             | Secret/ConfigMap refs injected into the server                    |
-| `extraEnv`                     | `[]`                             | Extra env vars for the server container                           |
-| `resources`                    | requests: 200m/256Mi, limit: 1Gi | Server resource requests/limits                                   |
-| `frontend.resources`           | requests: 50m/64Mi, limit: 128Mi | Frontend resource requests/limits                                 |
-| `bitwarden.image.tag`          | `""` (appVersion)                | bitwarden-cli sidecar image tag                                   |
-| `bitwarden.instances`          | `[]`                             | List of `bw serve` sidecars (see above)                           |
+| Value                                    | Default                          | Description                                                        |
+| ---------------------------------------- | -------------------------------- | ------------------------------------------------------------------ |
+| `image.registry`                         | `ghcr.io`                        | Server image registry                                              |
+| `image.repository`                       | `thiesgerken/carapace`           | Server image repository                                            |
+| `image.tag`                              | `""` (appVersion)                | Server image tag                                                   |
+| `frontend.enabled`                       | `true`                           | Deploy the Next.js frontend                                        |
+| `frontend.image.tag`                     | `""` (appVersion)                | Frontend image tag                                                 |
+| `sandbox.image.tag`                      | `""` (appVersion)                | Sandbox base image tag                                             |
+| `ingress.enabled`                        | `true`                           | Create a Gateway API HTTPRoute                                     |
+| `ingress.hostname`                       | `carapace.example.com`           | Ingress hostname                                                   |
+| `ingress.parentRefs`                     | `[{name: default-gateway}]`      | Gateway parent references                                          |
+| `ingress.annotations`                    | `{}`                             | Extra annotations on the HTTPRoute                                 |
+| `persistence.storageClassName`           | `""` (cluster default)           | StorageClass for the RWX PVC                                       |
+| `persistence.size`                       | `10Gi`                           | PVC size                                                           |
+| `persistence.finalizers`                 | `[]`                             | PVC finalizers (e.g. `kubernetes.io/pvc-protection`)               |
+| `config`                                 | `{}`                             | Application config (mounted as `/data/config.yaml` via ConfigMap)  |
+| `priorityClassName`                      | `""`                             | PriorityClass for all pods (server, frontend, sandbox)             |
+| `envFrom`                                | `[]`                             | Secret/ConfigMap refs injected into the server                     |
+| `extraEnv`                               | `[]`                             | Extra env vars for the server container                            |
+| `resources`                              | requests: 200m/256Mi, limit: 1Gi | Server resource requests/limits                                    |
+| `frontend.resources`                     | requests: 50m/64Mi, limit: 128Mi | Frontend resource requests/limits                                  |
+| `bitwarden.image.tag`                    | `""` (appVersion)                | bitwarden-cli sidecar image tag                                    |
+| `bitwarden.persistence.enabled`          | `true`                           | Create a PVC per sidecar for CLI data (`BITWARDENCLI_APPDATA_DIR`) |
+| `bitwarden.persistence.size`             | `256Mi`                          | Size of each Bitwarden sidecar PVC                                 |
+| `bitwarden.persistence.storageClassName` | `""` (cluster default)           | StorageClass for Bitwarden PVCs                                    |
+| `bitwarden.instances`                    | `[]`                             | List of `bw serve` sidecars (see above)                            |
 
 See [values.yaml](values.yaml) for the complete reference.
 

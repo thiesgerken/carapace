@@ -144,6 +144,10 @@ spec:
             - name: BW_SERVE_PORT
               value: {{ .port | default 8087 | quote }}
           volumeMounts:
+            {{- if $.Values.bitwarden.persistence.enabled }}
+            - name: bitwarden-data-{{ .name }}
+              mountPath: /var/lib/bitwarden-cli
+            {{- end }}
             - name: bitwarden-creds-{{ .name }}
               mountPath: /run/secrets/bitwarden
               readOnly: true
@@ -176,6 +180,13 @@ spec:
         - name: config
           configMap:
             name: {{ .Release.Name }}-config
+      {{- end }}
+      {{- if $.Values.bitwarden.persistence.enabled }}
+      {{- range .Values.bitwarden.instances }}
+        - name: bitwarden-data-{{ .name }}
+          persistentVolumeClaim:
+            claimName: {{ $.Release.Name }}-bitwarden-{{ .name }}
+      {{- end }}
       {{- end }}
       {{- range .Values.bitwarden.instances }}
         - name: bitwarden-creds-{{ .name }}

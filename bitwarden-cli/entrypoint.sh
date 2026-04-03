@@ -49,8 +49,13 @@ if [ -z "$BW_MASTER_PASSWORD" ]; then
   exit 1
 fi
 
-# Ephemeral path on the container writable layer (survives restart, not `compose down`/recreate).
-STATE_DIR=/root/.cache/carapace-bw-sidecar
+# Persist Bitwarden CLI device/session data (BITWARDENCLI_APPDATA_DIR) and our server-URL cache
+# across pod/container recreation — avoids repeated "new login" emails from the vault provider.
+# Mount a PVC (Helm) or Docker volume at BW_DATA_DIR (default /var/lib/bitwarden-cli).
+BW_DATA_DIR="${BW_DATA_DIR:-/var/lib/bitwarden-cli}"
+export BITWARDENCLI_APPDATA_DIR="${BW_DATA_DIR}/appdata"
+STATE_DIR="${BW_DATA_DIR}/carapace-state"
+mkdir -p "$BITWARDENCLI_APPDATA_DIR" "$STATE_DIR"
 LAST_URL_FILE="$STATE_DIR/last_bw_server_url"
 
 DESIRED=$(trim "$BW_SERVER_URL")

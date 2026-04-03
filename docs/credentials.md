@@ -28,7 +28,7 @@ credentials:
 Supported backend types:
 
 - `file`: reads `key=value` pairs from a secrets file (`path` defaults to `<data_dir>/secrets.env`).
-- `bitwarden`: talks to an externally managed `bw serve` endpoint (typically sidecar/companion container). The Docker Compose `bw` service uses env vars such as `BW_SERVER_URL` (vault base URL for the CLI login). Empty `BW_SERVER_URL` is applied as US cloud via `bw config server bitwarden.com` when it first differs from the value stored in ephemeral container disk (`/root/.cache/carapace-bw-sidecar/`); the sidecar only logs out and re-runs `bw config server` when that env changes. See `docs/quickstart.md` for the full sidecar variable list.
+- `bitwarden`: talks to an externally managed `bw serve` endpoint (typically sidecar/companion container). The Docker Compose `bw` service uses env vars such as `BW_SERVER_URL` (vault base URL for the CLI login). Empty `BW_SERVER_URL` is applied as US cloud via `bw config server bitwarden.com` when it first differs from the value stored under the sidecar data directory (`$BW_DATA_DIR/carapace-state/`, e.g. on a Docker volume or Kubernetes PVC); the sidecar only logs out and re-runs `bw config server` when that env changes. See `docs/quickstart.md` for the full sidecar variable list.
 
 Each credential is addressed by `vault_path` as `<backend>/<id>`, for example:
 

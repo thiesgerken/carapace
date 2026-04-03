@@ -6,19 +6,22 @@ The entrypoint is [`entrypoint.sh`](./entrypoint.sh). Build with [`Dockerfile`](
 
 ## Environment variables
 
-| Variable             | Required | Description                                                                                                                                                |
-| -------------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `BW_MASTER_PASSWORD` | Yes      | Master password for vault decryption. Can be supplied via env or secret file (see below).                                                                  |
-| `BW_CLIENTID`        | No\*     | API key client ID (Bitwarden web → Account Settings → Keys). With `BW_CLIENTSECRET`, selects **API key login** (needed for 2FA accounts).                  |
-| `BW_CLIENTSECRET`    | No\*     | API key client secret. Both must be set together, or both omitted for password login.                                                                      |
-| `BW_EMAIL`           | No\*     | Account email for **password-only** login when API key vars are unset. Can be supplied via env or secret file (see below).                                 |
-| `BW_SERVER_URL`      | No       | Vault server base URL (e.g. self-hosted Vaultwarden). Empty/unset applies US cloud (`bitwarden.com`) on first run or when the URL changes vs cached state. |
-| `BW_SERVE_PORT`      | No       | Port for `bw serve` (default `8087`).                                                                                                                      |
-| `BW_SECRET_DIR`      | No       | Directory for optional file-backed credentials (default `/run/secrets/bitwarden`).                                                                         |
+| Variable             | Required | Description                                                                                                                                                       |
+| -------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `BW_MASTER_PASSWORD` | Yes      | Master password for vault decryption. Can be supplied via env or secret file (see below).                                                                         |
+| `BW_CLIENTID`        | No\*     | API key client ID (Bitwarden web → Account Settings → Keys). With `BW_CLIENTSECRET`, selects **API key login** (needed for 2FA accounts).                         |
+| `BW_CLIENTSECRET`    | No\*     | API key client secret. Both must be set together, or both omitted for password login.                                                                             |
+| `BW_EMAIL`           | No\*     | Account email for **password-only** login when API key vars are unset. Can be supplied via env or secret file (see below).                                        |
+| `BW_SERVER_URL`      | No       | Vault server base URL (e.g. self-hosted Vaultwarden). Empty/unset applies US cloud (`bitwarden.com`) on first run or when the URL changes vs cached state.        |
+| `BW_SERVE_PORT`      | No       | Port for `bw serve` (default `8087`).                                                                                                                             |
+| `BW_SECRET_DIR`      | No       | Directory for optional file-backed credentials (default `/run/secrets/bitwarden`).                                                                                |
+| `BW_DATA_DIR`        | No       | Writable root for Bitwarden CLI app data and Carapace’s server-URL cache (default `/var/lib/bitwarden-cli`). Mount a volume here to survive container recreation. |
 
 \* Either set both `BW_CLIENTID` and `BW_CLIENTSECRET`, or set `BW_EMAIL` for password login.
 
 `BW_NOINTERACTION=true` is set by the entrypoint for non-interactive use.
+
+The entrypoint sets **`BITWARDENCLI_APPDATA_DIR`** to `$BW_DATA_DIR/appdata` (Bitwarden CLI upstream) so login/device state is stored on disk. Without a volume on `BW_DATA_DIR`, a new container looks like a new client and many vaults send a “new login” email.
 
 ## Secret files (optional)
 
@@ -54,7 +57,7 @@ You can use [Compose secrets](https://docs.docker.com/compose/how-tos/use-secret
 
 ## Server URL caching
 
-The desired `BW_SERVER_URL` (after trim) is stored under `/root/.cache/carapace-bw-sidecar/last_bw_server_url` on the container filesystem. If it matches the current env on the next start, the entrypoint skips `bw logout` and `bw config server`. Recreating the container clears that cache so the URL is reapplied from env.
+The desired `BW_SERVER_URL` (after trim) is stored under `$BW_DATA_DIR/carapace-state/last_bw_server_url`. If it matches the current env on the next start, the entrypoint skips `bw logout` and `bw config server`. With a persistent `BW_DATA_DIR`, that cache survives recreation; otherwise it is lost with the container.
 
 ## Logging
 

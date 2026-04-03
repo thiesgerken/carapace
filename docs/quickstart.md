@@ -116,7 +116,7 @@ This uses a `bw serve` sidecar container that shares the server's network namesp
 
 ```env
 # Optional. Empty means US cloud; the sidecar applies that once via `bw config server bitwarden.com`,
-# records it under /root/.cache/carapace-bw-sidecar/ (ephemeral container disk, no volume), and only
+# records it under $BW_DATA_DIR/carapace-state/ (Compose mounts a named volume on /var/lib/bitwarden-cli), and only
 # runs logout + `bw config server` again if you change this value. EU / self-hosted: set explicitly.
 # BW_SERVER_URL=
 
@@ -138,7 +138,7 @@ Self-hosted **Vaultwarden** must be new enough for your **Bitwarden CLI** versio
 docker compose up -d --scale bw=1
 ```
 
-Startup messages from the entrypoint go to the **`bw` container** — use `docker compose logs -f bw` (not only `carapace`). Without a TTY, stdout is often block-buffered and lines can appear late or only after exit; this stack allocates a TTY for `bw` and logs progress to stderr so `docker compose logs` shows them as they run. Recreating the `bw` container clears the cached server URL; the next start applies `BW_SERVER_URL` from scratch.
+Startup messages from the entrypoint go to the **`bw` container** — use `docker compose logs -f bw` (not only `carapace`). Without a TTY, stdout is often block-buffered and lines can appear late or only after exit; this stack allocates a TTY for `bw` and logs progress to stderr so `docker compose logs` shows them as they run. The `bitwarden-cli-data` volume keeps Bitwarden CLI login/device state and the cached server URL across container recreation; removing that volume applies `BW_SERVER_URL` from scratch on the next start.
 
 3. Add to `data/config.yaml`:
 

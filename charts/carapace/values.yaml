@@ -105,6 +105,10 @@ config: {}
 #
 # Example:
 #   bitwarden:
+#     persistence:
+#       enabled: true   # set false for ephemeral sidecar (no PVC)
+#       size: 256Mi
+#       storageClassName: ""
 #     instances:
 #       - name: bw-personal
 #         port: 8087
@@ -124,6 +128,12 @@ bitwarden:
     repository: thiesgerken/carapace-bitwarden-cli
     tag: "" # defaults to appVersion
     pullPolicy: IfNotPresent
+  # -- One PVC per bitwarden instance; stores CLI device/session data so redeploys do not
+  # trigger a fresh login (and provider "new device" emails). Disable for ephemeral sidecars.
+  persistence:
+    enabled: true
+    size: 256Mi
+    storageClassName: ""
   instances: []
 
 # -- Extra environment variables injected into the server container

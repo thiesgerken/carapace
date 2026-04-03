@@ -31,6 +31,8 @@ services:
     image: carapace-bitwarden-cli:latest
     tty: true
     network_mode: service:carapace
+    volumes:
+      - bitwarden-cli-data:/var/lib/bitwarden-cli
     environment:
       # Empty = US cloud; sidecar reapplies only when this changes (see docs/quickstart.md).
       BW_SERVER_URL: ${BW_SERVER_URL:-}
@@ -53,6 +55,9 @@ services:
     build: ./sandbox
     image: carapace-sandbox:latest
     profiles: ["build"]
+
+volumes:
+  bitwarden-cli-data:
 
 networks:
   carapace-sandbox:

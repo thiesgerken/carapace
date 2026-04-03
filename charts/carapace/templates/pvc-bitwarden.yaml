@@ -1,0 +1,21 @@
+{{- if and .Values.bitwarden.persistence.enabled (gt (len .Values.bitwarden.instances) 0) }}
+{{- range .Values.bitwarden.instances }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ $.Release.Name }}-bitwarden-{{ .name }}
+  labels:
+    {{- include "carapace.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: bitwarden
+spec:
+  accessModes:
+    - ReadWriteOnce
+  {{- if $.Values.bitwarden.persistence.storageClassName }}
+  storageClassName: {{ $.Values.bitwarden.persistence.storageClassName | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ $.Values.bitwarden.persistence.size | quote }}
+{{- end }}
+{{- end }}
