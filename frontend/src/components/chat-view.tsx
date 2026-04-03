@@ -128,19 +128,19 @@ export function ChatView({ server, token, sessionId, onTitleUpdate }: ChatViewPr
                 decision,
               });
             }
-          } else if (h.role === "credential_approval" && h.request_id) {
+          } else if (h.role === "credential_approval" && h.vault_paths) {
             if (!h.decision) {
               const next = history[i + 1];
+              const pathKey = (h.vault_paths ?? []).join(",");
               const decision =
                 next?.role === "credential_approval" &&
-                next.request_id === h.request_id
+                (next.vault_paths ?? []).join(",") === pathKey
                   ? (next.decision as CredentialDecision)
                   : undefined;
               msgs.push({
                 kind: "credential_approval",
                 request: {
                   type: "credential_approval_request",
-                  request_id: h.request_id,
                   vault_paths: h.vault_paths ?? [],
                   names: h.names ?? [],
                   descriptions: h.descriptions ?? [],

@@ -139,7 +139,6 @@ class CredentialApprovalRequest(BaseModel):
     """Server → Client: user needs to approve credential access."""
 
     type: Literal["credential_approval_request"] = "credential_approval_request"
-    request_id: str
     vault_paths: list[str]
     names: list[str]
     descriptions: list[str]

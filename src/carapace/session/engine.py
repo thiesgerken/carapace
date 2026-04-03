@@ -63,7 +63,6 @@ class SessionSubscriber(Protocol):
     async def on_git_push_info(self, ref: str, decision: str, detail: str) -> None: ...
     async def on_credential_approval_request(
         self,
-        request_id: str,
         vault_paths: list[str],
         names: list[str],
         descriptions: list[str],
@@ -381,9 +380,7 @@ class SessionEngine:
         if not active:
             return False
 
-        request_id = secrets.token_hex(8)
         pending = {
-            "request_id": request_id,
             "vault_paths": vault_paths,
             "names": names,
             "descriptions": descriptions,
@@ -394,7 +391,6 @@ class SessionEngine:
         await self._broadcast(
             active,
             "on_credential_approval_request",
-            request_id,
             vault_paths,
             names,
             descriptions,
@@ -407,12 +403,12 @@ class SessionEngine:
             msg = await active.credential_approval_queue.get()
             if msg is None:
                 active.pending_credential_approvals = [
-                    p for p in active.pending_credential_approvals if p["request_id"] != request_id
+                    p for p in active.pending_credential_approvals if p["vault_paths"] != vault_paths
                 ]
                 return False
             if set(msg.vault_paths) == set(vault_paths):
                 active.pending_credential_approvals = [
-                    p for p in active.pending_credential_approvals if p["request_id"] != request_id
+                    p for p in active.pending_credential_approvals if p["vault_paths"] != vault_paths
                 ]
                 return msg.decision == "approved"
 

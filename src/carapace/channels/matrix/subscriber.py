@@ -166,7 +166,6 @@ class MatrixSubscriber:
 
     async def on_credential_approval_request(
         self,
-        request_id: str,
         vault_paths: list[str],
         names: list[str],
         descriptions: list[str],

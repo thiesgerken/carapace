@@ -624,7 +624,6 @@ class WebSocketSubscriber:
 
     async def on_credential_approval_request(
         self,
-        request_id: str,
         vault_paths: list[str],
         names: list[str],
         descriptions: list[str],
@@ -633,7 +632,6 @@ class WebSocketSubscriber:
     ) -> None:
         await self._safe_send(
             CredentialApprovalRequest(
-                request_id=request_id,
                 vault_paths=vault_paths,
                 names=names,
                 descriptions=descriptions,
@@ -713,7 +711,6 @@ async def chat_ws(
             await _send(
                 websocket,
                 CredentialApprovalRequest(
-                    request_id=pc["request_id"],
                     vault_paths=pc.get("vault_paths", []),
                     names=pc.get("names", []),
                     descriptions=pc.get("descriptions", []),

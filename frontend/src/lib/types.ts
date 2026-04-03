@@ -83,7 +83,6 @@ export interface GitPushApprovalRequest {
 
 export interface CredentialApprovalRequest {
   type: "credential_approval_request";
-  request_id: string;
   vault_paths: string[];
   names: string[];
   descriptions: string[];
