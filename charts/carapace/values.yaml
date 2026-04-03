@@ -97,6 +97,35 @@ resetAssets: false
 #         enabled: true
 config: {}
 
+# -- Bitwarden CLI sidecar(s) for Bitwarden-compatible credential backends.
+# Each entry spawns a sidecar container running `bw serve` in the server Pod,
+# sharing the network namespace so Carapace reaches it at 127.0.0.1:<port>.
+# The matching credential backend in config.yaml should use type: bitwarden
+# with url set to http://127.0.0.1:<port>.
+#
+# Example:
+#   bitwarden:
+#     instances:
+#       - name: bw-personal
+#         port: 8087
+#         serverUrl: https://vault.example.com
+#         existingSecret: carapace-bw-personal
+#         # The secret must contain BW_MASTER_PASSWORD; BW_CLIENTID + BW_CLIENTSECRET
+#         # are needed if the account has 2FA enabled.
+#         resources:
+#           requests:
+#             cpu: 50m
+#             memory: 128Mi
+#           limits:
+#             memory: 256Mi
+bitwarden:
+  image:
+    registry: ghcr.io
+    repository: thiesgerken/carapace-bitwarden-cli
+    tag: "" # defaults to appVersion
+    pullPolicy: IfNotPresent
+  instances: []
+
 # -- Extra environment variables injected into the server container
 # Example:
 #   extraEnv:

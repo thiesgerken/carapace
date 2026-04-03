@@ -12,9 +12,9 @@ from carapace.credentials import (
     is_exposed,
 )
 from carapace.models import (
-    CredentialBackendConfig,
     CredentialMetadata,
     CredentialsConfig,
+    FileCredentialBackendConfig,
     SkillCredentialDecl,
 )
 
@@ -57,27 +57,27 @@ def test_vault_backend_is_protocol():
 
 
 def test_exposed_no_rules():
-    cfg = CredentialBackendConfig()
+    cfg = FileCredentialBackendConfig()
     assert is_exposed("anything", cfg) is True
 
 
 def test_exposed_allowlist_hit():
-    cfg = CredentialBackendConfig(expose=["gmail", "ssh"])
+    cfg = FileCredentialBackendConfig(expose=["gmail", "ssh"])
     assert is_exposed("gmail", cfg) is True
 
 
 def test_exposed_allowlist_miss():
-    cfg = CredentialBackendConfig(expose=["gmail", "ssh"])
+    cfg = FileCredentialBackendConfig(expose=["gmail", "ssh"])
     assert is_exposed("banking", cfg) is False
 
 
 def test_exposed_blocklist_hit():
-    cfg = CredentialBackendConfig(hide=["banking"])
+    cfg = FileCredentialBackendConfig(hide=["banking"])
     assert is_exposed("banking", cfg) is False
 
 
 def test_exposed_blocklist_miss():
-    cfg = CredentialBackendConfig(hide=["banking"])
+    cfg = FileCredentialBackendConfig(hide=["banking"])
     assert is_exposed("gmail", cfg) is True
 
 
@@ -98,7 +98,7 @@ def file_backend(tmp_path: Path) -> FileVaultBackend:
         tmp_path,
         "gmail=myapppassword\ngithub-token=ghp_xxx\n# comment\n\nssh-key=secretkey\n",
     )
-    return FileVaultBackend(name="dev", path=env, cfg=CredentialBackendConfig())
+    return FileVaultBackend(name="dev", path=env, cfg=FileCredentialBackendConfig())
 
 
 @pytest.mark.asyncio
@@ -143,7 +143,7 @@ async def test_file_list_case_insensitive(file_backend: FileVaultBackend) -> Non
 @pytest.mark.asyncio
 async def test_file_exposure_filter_hides_from_list(tmp_path: Path) -> None:
     env = _write_env(tmp_path, "gmail=pw\nbanking=secret\n")
-    backend = FileVaultBackend(name="dev", path=env, cfg=CredentialBackendConfig(hide=["banking"]))
+    backend = FileVaultBackend(name="dev", path=env, cfg=FileCredentialBackendConfig(hide=["banking"]))
     items = await backend.list()
     assert len(items) == 1
     assert items[0].name == "gmail"
@@ -152,7 +152,7 @@ async def test_file_exposure_filter_hides_from_list(tmp_path: Path) -> None:
 @pytest.mark.asyncio
 async def test_file_exposure_filter_hides_from_fetch(tmp_path: Path) -> None:
     env = _write_env(tmp_path, "gmail=pw\nbanking=secret\n")
-    backend = FileVaultBackend(name="dev", path=env, cfg=CredentialBackendConfig(hide=["banking"]))
+    backend = FileVaultBackend(name="dev", path=env, cfg=FileCredentialBackendConfig(hide=["banking"]))
     with pytest.raises(KeyError):
         await backend.fetch("banking")
 
@@ -160,21 +160,21 @@ async def test_file_exposure_filter_hides_from_fetch(tmp_path: Path) -> None:
 @pytest.mark.asyncio
 async def test_file_allowlist_restricts_list(tmp_path: Path) -> None:
     env = _write_env(tmp_path, "gmail=pw\nbanking=secret\nssh=key\n")
-    backend = FileVaultBackend(name="dev", path=env, cfg=CredentialBackendConfig(expose=["gmail"]))
+    backend = FileVaultBackend(name="dev", path=env, cfg=FileCredentialBackendConfig(expose=["gmail"]))
     items = await backend.list()
     assert len(items) == 1
     assert items[0].name == "gmail"
 
 
 def test_file_missing_file(tmp_path: Path) -> None:
-    backend = FileVaultBackend(name="dev", path=tmp_path / "missing.env", cfg=CredentialBackendConfig())
+    backend = FileVaultBackend(name="dev", path=tmp_path / "missing.env", cfg=FileCredentialBackendConfig())
     # Should not crash, just have no secrets
     assert backend._secrets == {}
 
 
 def test_file_comments_and_blanks(tmp_path: Path) -> None:
     env = _write_env(tmp_path, "# header\n\nkey=value\n  \n# trailing")
-    backend = FileVaultBackend(name="dev", path=env, cfg=CredentialBackendConfig())
+    backend = FileVaultBackend(name="dev", path=env, cfg=FileCredentialBackendConfig())
     assert "key" in backend._secrets
     assert len(backend._secrets) == 1
 
@@ -229,8 +229,8 @@ async def test_registry_list_multiple_backends(tmp_path: Path) -> None:
     dir_b = tmp_path / "b"
     dir_b.mkdir()
     env2 = _write_env(dir_b, "k2=v2\n")
-    b1 = FileVaultBackend(name="a", path=env1, cfg=CredentialBackendConfig())
-    b2 = FileVaultBackend(name="b", path=env2, cfg=CredentialBackendConfig())
+    b1 = FileVaultBackend(name="a", path=env1, cfg=FileCredentialBackendConfig())
+    b2 = FileVaultBackend(name="b", path=env2, cfg=FileCredentialBackendConfig())
     reg = CredentialRegistry()
     reg.register("a", b1)
     reg.register("b", b2)
@@ -254,14 +254,16 @@ def test_registry_backend_names(file_backend: FileVaultBackend) -> None:
 @pytest.mark.asyncio
 async def test_build_registry_file_backend(tmp_path: Path) -> None:
     env = _write_env(tmp_path, "token=abc\n")
-    config = CredentialsConfig(backends={"dev": CredentialBackendConfig(type="file", path=str(env))})
+    config = CredentialsConfig(backends={"dev": FileCredentialBackendConfig(type="file", path=str(env))})
     reg = await build_credential_registry(config, tmp_path)
     assert "dev" in reg.backend_names
 
 
 @pytest.mark.asyncio
 async def test_build_registry_unknown_type(tmp_path: Path) -> None:
-    config = CredentialsConfig(backends={"x": CredentialBackendConfig(type="file", path=str(tmp_path / "missing.env"))})
+    config = CredentialsConfig(
+        backends={"x": FileCredentialBackendConfig(type="file", path=str(tmp_path / "missing.env"))}
+    )
     reg = await build_credential_registry(config, tmp_path)
     assert "x" in reg.backend_names
 
@@ -269,6 +271,6 @@ async def test_build_registry_unknown_type(tmp_path: Path) -> None:
 @pytest.mark.asyncio
 async def test_build_registry_default_path(tmp_path: Path) -> None:
     (tmp_path / "secrets.env").write_text("k=v\n")
-    config = CredentialsConfig(backends={"dev": CredentialBackendConfig(type="file")})
+    config = CredentialsConfig(backends={"dev": FileCredentialBackendConfig(type="file")})
     reg = await build_credential_registry(config, tmp_path)
     assert "dev" in reg.backend_names

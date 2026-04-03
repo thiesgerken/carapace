@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from carapace.credentials.bitwarden import BitwardenBackend
 from carapace.credentials.file import FileVaultBackend
 from carapace.credentials.protocol import VaultBackend, is_exposed
 from carapace.credentials.registry import (
@@ -7,14 +8,12 @@ from carapace.credentials.registry import (
     build_credential_registry,
     shutdown_credential_registry,
 )
-from carapace.credentials.vaultwarden import BwServeManager, VaultwardenBackend
 
 __all__ = [
-    "BwServeManager",
+    "BitwardenBackend",
     "CredentialRegistry",
     "FileVaultBackend",
     "VaultBackend",
-    "VaultwardenBackend",
     "build_credential_registry",
     "is_exposed",
     "shutdown_credential_registry",

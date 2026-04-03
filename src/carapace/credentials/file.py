@@ -5,7 +5,7 @@ from pathlib import Path
 from loguru import logger
 
 from carapace.credentials.protocol import is_exposed
-from carapace.models import CredentialBackendConfig, CredentialMetadata
+from carapace.models import CredentialMetadata, FileCredentialBackendConfig
 
 
 class FileVaultBackend:
@@ -15,7 +15,7 @@ class FileVaultBackend:
     Lines starting with ``#`` and blank lines are ignored.
     """
 
-    def __init__(self, *, name: str, path: Path, cfg: CredentialBackendConfig) -> None:
+    def __init__(self, *, name: str, path: Path, cfg: FileCredentialBackendConfig) -> None:
         self._name = name
         self._cfg = cfg
         self._secrets: dict[str, str] = {}

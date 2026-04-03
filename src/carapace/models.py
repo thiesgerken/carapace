@@ -5,9 +5,9 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, SecretStr, model_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 from pydantic_ai.models import Model
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -224,21 +224,34 @@ class CarapaceConfig(BaseModel):
     logfire_token: str = ""
 
 
-class CredentialBackendConfig(BaseModel):
-    """Configuration for a single credential vault backend."""
+class FileCredentialBackendConfig(BaseModel):
+    """Configuration for the file-based credential backend."""
 
-    type: Literal["file", "vaultwarden"] = "file"
-    path: str = ""  # file backend: path to .env file
-    url: str = ""  # vaultwarden backend: server URL
-    bw_serve_port: int = 8087  # local port for bw serve
-    expose: list[str] = []  # allowlist — only these identifiers are accessible
-    hide: list[str] = []  # blocklist — these identifiers are excluded
+    type: Literal["file"] = "file"
+    path: str = ""
+    expose: list[str] = []
+    hide: list[str] = []
+
+
+class BitwardenCredentialBackendConfig(BaseModel):
+    """Configuration for a Bitwarden/Vaultwarden credential backend."""
+
+    type: Literal["bitwarden"] = "bitwarden"
+    url: str = "http://127.0.0.1:8087"
+    expose: list[str] = []
+    hide: list[str] = []
+
+
+CredentialBackendConfig = Annotated[
+    FileCredentialBackendConfig | BitwardenCredentialBackendConfig,
+    Field(discriminator="type"),
+]
 
 
 class CredentialsConfig(BaseModel):
     """Top-level credential configuration with named backends."""
 
-    backends: dict[str, CredentialBackendConfig] = {}
+    backends: dict[str, FileCredentialBackendConfig | BitwardenCredentialBackendConfig] = {}
 
 
 class Config(BaseModel):

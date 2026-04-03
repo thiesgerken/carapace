@@ -17,7 +17,7 @@
 
 ## Credential Management
 
-- [ ] **Real credential broker** — fetch secrets from Vaultwarden/Bitwarden via CLI or API, with a pluggable backend interface for future providers (1Password, `pass`, env vars)
+- [ ] **Real credential broker** — fetch secrets from Bitwarden-compatible vaults via CLI or API, with a pluggable backend interface for future providers (1Password, `pass`, env vars)
 - [ ] **Per-session in-memory caching** — credentials exist only in memory for the session duration, never persisted to disk
 - [ ] **Credential injection into skill containers** — inject via env var, file, or stdin based on skill manifest
 - [ ] **Per-session approval flow** — each credential must be approved on first access; `/reset` revokes all approvals

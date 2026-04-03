@@ -70,7 +70,7 @@ Each credential entry has:
 | `env_var`     | Inject as this environment variable on skill activation (optional)                                                                                             |
 | `file`        | Write to this file path inside the sandbox on skill activation (optional)                                                                                      |
 
-`vault_path` is the canonical identifier — it is what gets shown to the user in approval prompts and stored in `approved_credentials`. The prefix is the **name of the backend as configured in `config.yaml`** — not a hardcoded protocol name. This means you can have multiple Bitwarden accounts (`personal/...`, `work/...`), mix backends of different types, or point two backends at different Vaultwarden instances, and vault paths remain unambiguous. For Bitwarden backends, UUIDs are used as the identifier part — guaranteed globally unique. For file backends, the identifier is whatever key you used in the secrets file. The `description` is what the agent sees and what gets shown in approval prompts alongside the vault path — without it the agent would have no idea what a credential is for and might try to discover it by searching the vault on its own.
+`vault_path` is the canonical identifier — it is what gets shown to the user in approval prompts and stored in `approved_credentials`. The prefix is the **name of the backend as configured in `config.yaml`** — not a hardcoded protocol name. This means you can have multiple Bitwarden accounts (`personal/...`, `work/...`), mix backends of different types, or point two backends at different Bitwarden-compatible instances, and vault paths remain unambiguous. For Bitwarden backends, UUIDs are used as the identifier part — guaranteed globally unique. For file backends, the identifier is whatever key you used in the secrets file. The `description` is what the agent sees and what gets shown in approval prompts alongside the vault path — without it the agent would have no idea what a credential is for and might try to discover it by searching the vault on its own.
 
 ### Auto-injection on skill activation
 
@@ -206,10 +206,10 @@ The frontend displays credential state for the active session:
 
 Supported backends:
 
-| Backend                 | Integration        |
-| ----------------------- | ------------------ |
-| Vaultwarden / Bitwarden | Via `bw serve` CLI |
-| File                    | `.env`-format file |
+| Backend   | Integration        |
+| --------- | ------------------ |
+| Bitwarden | Via `bw serve` CLI |
+| File      | `.env`-format file |
 
 Start with a single backend. Multiple backends (prefix-based routing, per-backend exposure rules) can be added later without rearchitecting — the vault interface stays the same, the server just dispatches to different instances based on vault path prefix.
 
@@ -235,9 +235,9 @@ credentials:
       path: ./data/secrets.env # default: <data_dir>/secrets.env
 ```
 
-### Vaultwarden / Bitwarden backend
+### Bitwarden backend
 
-Carapace is a personal assistant — it needs access to your personal password store, not a separate secrets system. Sharing credentials from your existing Vaultwarden vault is much more natural than copying them to another tool.
+Carapace is a personal assistant — it needs access to your personal password store, not a separate secrets system. Sharing credentials from your existing Bitwarden-compatible vault is much more natural than copying them to another tool.
 
 Bitwarden encrypts all vault data client-side — there is no server API that returns plaintext secrets. Decryption always happens locally, which means Carapace uses the **`bw serve`** command to run a local REST API that handles decryption transparently.
 
@@ -294,7 +294,9 @@ For tighter isolation, create a separate Bitwarden user account for Carapace and
 
 #### Lifecycle
 
-The `bw` CLI binary must be available on the Carapace server (installed in the Docker image or host). The `bw serve` process runs for the lifetime of the Carapace server. If it crashes, the server restarts it automatically and re-authenticates. A periodic `POST /sync` call keeps the local vault in sync with the Vaultwarden server.
+Carapace does **not** manage the `bw serve` process — it expects the process to be running externally before startup. In Docker Compose this is a companion service with `network_mode: service:carapace` (shared network namespace); in Kubernetes it runs as a sidecar container in the same Pod. Either way, `bw serve` is reachable at `127.0.0.1:<port>` from the Carapace container without any network policy.
+
+The `bw` CLI binary is **not** installed in the Carapace image. Vault credentials (`BW_CLIENTID`, `BW_CLIENTSECRET`, master password) are only present in the `bw serve` container's environment, never in the Carapace container. A periodic `POST /sync` call (managed by the sidecar's own entrypoint or Carapace's backend) keeps the local vault in sync with the Bitwarden server.
 
 #### Credential metadata returned by `bw serve`
 
@@ -309,9 +311,13 @@ class CredentialMetadata(BaseModel):
 
 For the Bitwarden backend, `name` is the item's name in Bitwarden and `description` is empty (it is only set when a `carapace.yaml` entry provides one). For the file backend, `name` is the key itself and `description` is always empty. The `CredentialMetadata` objects are stored in `approved_credentials` so the session info panel and approval prompts have the right data at hand without querying the vault again.
 
-#### Deployment in Kubernetes
+#### Deployment
 
-When running in Kubernetes, `bw serve` naturally becomes a **sidecar container** in the same Pod rather than a child process. Containers in a Pod share a network namespace, so `127.0.0.1:8087` still works — exactly as in the child-process case. No network policy is needed because the port is never exposed outside the Pod. The sidecar mounts the same secrets (API key, master password) via the same env vars, and Carapace talks to it identically. For a single-user personal deployment, sidecar is the simplest option. A separate Pod (accessible only to Carapace via a `NetworkPolicy`) adds complexity without meaningful benefit given the already-personal nature of the vault.
+In both Docker Compose and Kubernetes, `bw serve` runs as a **separate container sharing the Carapace network namespace** — not as a child process. Carapace never spawns or manages `bw serve`; it just connects to `127.0.0.1:<port>`.
+
+**Docker Compose**: The `bw` service uses `network_mode: service:carapace` so it shares `127.0.0.1` with the Carapace container. Vault secrets are only in the `bw` service's environment.
+
+**Kubernetes**: `bw serve` runs as a sidecar container in the same Pod. Containers in a Pod share a network namespace, so `127.0.0.1:8087` still works. Vault secrets are mounted from a K8s Secret into the sidecar only. See the Helm chart's `bitwarden.instances` value for configuration.
 
 Configuration in `config.yaml`:
 
@@ -319,7 +325,7 @@ Configuration in `config.yaml`:
 credentials:
   backends:
     personal: # becomes the vault_path prefix: personal/<uuid>
-      type: vaultwarden
+      type: bitwarden
       url: https://vault.example.com
       # Auth via env vars:
       #   BW_CLIENTID              — API key client ID
@@ -331,7 +337,7 @@ credentials:
 
 The vault config includes an allowlist or blocklist of Bitwarden item UUIDs (or glob patterns on vault paths) that Carapace is permitted to access. This is a hard boundary enforced **before** the sentinel — if a credential doesn't match the exposure rules, the server rejects the request immediately without consulting the sentinel or prompting the user.
 
-When using your personal Vaultwarden account, exposure control is the primary mechanism for limiting what Carapace can see. Without it, the agent could potentially request any item in your vault (though it would still need sentinel + user approval for each one).
+When using your personal Bitwarden account, exposure control is the primary mechanism for limiting what Carapace can see. Without it, the agent could potentially request any item in your vault (though it would still need sentinel + user approval for each one).
 
 Rules match the identifier part of the vault path (everything after the backend prefix). Exposure is configured per-backend:
 
@@ -346,7 +352,7 @@ Configuration in `config.yaml`:
 credentials:
   backends:
     personal:
-      type: vaultwarden
+      type: bitwarden
       url: https://vault.example.com
       expose:
         - "9742101e-68b8-4a07-b5b1-9578b5f88e6f" # Gmail app password
@@ -384,17 +390,16 @@ The `GET /credentials` list endpoint only returns credentials that pass the expo
 6. **`GET /credentials` list/search endpoint** in `server.py` — metadata only, gated, no values
 7. **Vault backend protocol** (`credentials.py`) — abstract interface with `fetch(id) -> str`, `list(query) -> list[CredentialMetadata]`, `fetch_metadata(id) -> CredentialMetadata`
 8. **File backend** implementation of the vault protocol
-9. **Vaultwarden/`bw serve` backend** implementation
-10. **`bw serve` process management** — start/stop/restart as a child process, health checks, auto-recovery
-11. **Credential gating in `use_skill`** — extend the `_gate()` call to include vault paths + metadata, inject approved values into `session_env` (env vars) or write to files in sandbox on approval
-12. **`approved_credentials`** updated from `list[str]` to `list[CredentialMetadata]` in `SessionState` and all callers
-13. **`CredentialAccessEntry`** in `security/context.py` action log (covers both fetch and list/search)
-14. **`CredentialApprovalRequest` / `CredentialApprovalResponse`** WebSocket messages (`ws_models.py`) — carry `vault_paths`, `names`, `descriptions`, and optional `skill_name`; follow the same escalation queue pattern as domain/git-push approvals
-15. **Matrix channel support** — `on_credential_approval_request` in `MatrixSubscriber`, resolve via reaction/command (same pattern as domain approval); `PendingCredentialApproval` class in `approval.py`
-16. **Frontend `CredentialApprovalCard`** component — renders name + description for each credential with approve/deny for the bundle
-17. **Session info panel** frontend update — show `approved_credentials` (with names) alongside skills and domains
-18. **Built-in `credentials` skill** with `SKILL.md` documenting the pull mechanism (including list/search and the `CARAPACE_API_URL` env var)
-19. **`ccred` CLI helper** baked into the sandbox image — subcommands: `list`, `search <query>`, `get <vault_path> [-o file]`
+9. **Bitwarden/`bw serve` backend** implementation — HTTP client pointing at an externally managed `bw serve`
+10. **Credential gating in `use_skill`** — extend the `_gate()` call to include vault paths + metadata, inject approved values into `session_env` (env vars) or write to files in sandbox on approval
+11. **`approved_credentials`** updated from `list[str]` to `list[CredentialMetadata]` in `SessionState` and all callers
+12. **`CredentialAccessEntry`** in `security/context.py` action log (covers both fetch and list/search)
+13. **`CredentialApprovalRequest` / `CredentialApprovalResponse`** WebSocket messages (`ws_models.py`) — carry `vault_paths`, `names`, `descriptions`, and optional `skill_name`; follow the same escalation queue pattern as domain/git-push approvals
+14. **Matrix channel support** — `on_credential_approval_request` in `MatrixSubscriber`, resolve via reaction/command (same pattern as domain approval); `PendingCredentialApproval` class in `approval.py`
+15. **Frontend `CredentialApprovalCard`** component — renders name + description for each credential with approve/deny for the bundle
+16. **Session info panel** frontend update — show `approved_credentials` (with names) alongside skills and domains
+17. **Built-in `credentials` skill** with `SKILL.md` documenting the pull mechanism (including list/search and the `CARAPACE_API_URL` env var)
+18. **`ccred` CLI helper** baked into the sandbox image — subcommands: `list`, `search <query>`, `get <vault_path> [-o file]`
 
 ### Cleanup
 

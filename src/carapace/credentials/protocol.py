@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from carapace.models import CredentialBackendConfig, CredentialMetadata
+from carapace.models import BitwardenCredentialBackendConfig, CredentialMetadata, FileCredentialBackendConfig
 
 
 class VaultBackend(Protocol):
@@ -34,7 +34,7 @@ class VaultBackend(Protocol):
         ...
 
 
-def is_exposed(identifier: str, cfg: CredentialBackendConfig) -> bool:
+def is_exposed(identifier: str, cfg: FileCredentialBackendConfig | BitwardenCredentialBackendConfig) -> bool:
     """Check whether *identifier* passes the backend's exposure rules.
 
     Returns ``True`` when the credential should be visible; ``False`` otherwise.
