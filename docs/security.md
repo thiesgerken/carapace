@@ -47,6 +47,7 @@ The default policy covers:
 - **External communication** -- outbound actions require approval unless explicitly requested.
 - **Memory** -- writes to persistent memory require approval.
 - **Skills** -- activation is fine; modification requires approval.
+- **Credentials** -- credential discovery/fetch must be justified and secrets must never be echoed.
 - **Autonomy and vigilance** -- more scrutiny when the agent has been running unattended or after consuming unsanitized external content.
 - **Proxy domain requests** -- plausibility checks for network requests from sandboxed containers.
 
@@ -98,18 +99,31 @@ This lets the sentinel inspect trusted skill code to understand what a tool invo
 
 The action log is a per-session, append-only chronological record of all significant events:
 
-| Entry type            | What it records                                            |
-| --------------------- | ---------------------------------------------------------- |
-| `UserMessageEntry`    | User sent a message (truncated preview)                    |
-| `AgentResponseEntry`  | Agent generated a response (token count only)              |
-| `ToolCallEntry`       | Tool was called, with decision and explanation             |
-| `ToolResultEntry`     | Tool returned a result (metadata only, not content)        |
-| `ApprovalEntry`       | User approved or denied an escalated action                |
-| `SkillActivatedEntry` | A skill was activated (metadata only)                      |
-| `UserVouchedEntry`    | User explicitly vouched for context via `/approve-context` |
-| `GitPushEntry`        | Git push evaluated by sentinel (ref, decision, explanation) |
+| Entry type              | What it records                                             |
+| ----------------------- | ----------------------------------------------------------- |
+| `UserMessageEntry`      | User sent a message (truncated preview)                     |
+| `AgentResponseEntry`    | Agent generated a response (token count only)               |
+| `ToolCallEntry`         | Tool was called, with decision and explanation              |
+| `ToolResultEntry`       | Tool returned a result (metadata only, not content)         |
+| `ApprovalEntry`         | User approved or denied an escalated action                 |
+| `SkillActivatedEntry`   | A skill was activated (metadata only)                       |
+| `UserVouchedEntry`      | User explicitly vouched for context via `/approve-context`  |
+| `GitPushEntry`          | Git push evaluated by sentinel (ref, decision, explanation) |
+| `CredentialAccessEntry` | Credential access attempt (vault paths, decision)           |
 
 The action log serves as the sentinel's primary source of truth. Raw tool results are never included -- only their metadata (size, success/failure) -- to prevent prompt injection via tool output.
+
+## Credential access
+
+Credential access is mediated through the sandbox API and session state:
+
+- Sandbox scripts use `ccred` (or direct HTTP) to call `GET /credentials` and `GET /credentials/{vault_path}`.
+- `list` / `search` expose metadata only and are security-reviewed at the `exec` tool-call layer.
+- `fetch` is per-session approval-based: if a credential is not yet approved for the session, Carapace sends a credential approval request and blocks until approve/deny.
+- Approved credential metadata is tracked in `approved_credentials` and reflected in `/session`.
+- Credential access decisions are recorded as `CredentialAccessEntry` action-log events.
+
+As with the rest of Carapace's model, the "keep secrets out of model output" guarantee is defense-in-depth: policy + sentinel + agent behavior. It is not a protocol-level cryptographic boundary, so secret-echoing commands must remain prohibited.
 
 ## Audit log
 
@@ -157,7 +171,7 @@ Users can interact with the security system through slash commands:
 
 | Command            | Description                                                                           |
 | ------------------ | ------------------------------------------------------------------------------------- |
-| `/security`        | Show the current security policy and a summary of the action log |
+| `/security`        | Show the current security policy and a summary of the action log                      |
 | `/approve-context` | Record a `UserVouchedEntry` in the action log, signaling trust in the current context |
 
 ## Prompt injection hardening

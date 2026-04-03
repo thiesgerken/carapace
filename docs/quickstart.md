@@ -85,7 +85,7 @@ Set `CARAPACE_MATRIX_PASSWORD` in your `.env` and restart. Carapace will join th
 
 ## 6. Set up credentials
 
-Carapace can fetch credentials from a password manager on demand. The agent does not have blanket access — every credential request is evaluated by the sentinel agent and requires explicit user approval the first time it is used in a session. The agent never sees raw credential values; they are injected directly into the sandbox. Two backends are available.
+Carapace can fetch credentials from a password manager on demand. The agent does not have blanket access — every credential request is evaluated by the sentinel agent and requires explicit user approval the first time it is used in a session. Credentials are intended to be consumed inside the sandbox (auto-injected via skill config or fetched with `ccred`) and must never be echoed or logged. Two backends are available.
 
 ### File backend (simple)
 

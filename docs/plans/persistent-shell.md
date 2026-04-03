@@ -120,7 +120,7 @@ async def exec_in_shell(self, container_id: str, command: str, cmd_id: str, time
 - `exec_command()`: replace `self._exec(...)` with `self._runtime.exec_in_shell(...)` (still goes through the exec lock)
 - On container recreation (`_prepare_session_recreate`): `ensure_shell` is called again as part of `ensure_session`, so the tmux session is automatically re-created — shell state is lost (the container is gone), which is unavoidable and expected
 
-### 6. Credential plan (`docs/plans/credentials.md`)
+### 6. Credentials (`docs/credentials.md`)
 
 The caveat about `export TOKEN=...` not persisting is removed — with tmux, it works correctly. The credentials skill `SKILL.md` no longer needs to warn about this limitation.
 

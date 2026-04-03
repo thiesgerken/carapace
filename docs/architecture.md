@@ -22,6 +22,7 @@ flowchart TB
         SkillRegistry[Skill Registry]
         MemoryStore[Memory Store]
         GitStore[Git Store]
+        CredentialRegistry[Credential Registry]
         Proxy[HTTP Forward Proxy]
     end
 
@@ -31,6 +32,7 @@ flowchart TB
 
     subgraph external [External Services]
         Web[Web / APIs]
+        Vault[Password Manager / Vault]
     end
 
     subgraph datadir ["$CARAPACE_DATA_DIR"]
@@ -61,6 +63,8 @@ flowchart TB
     Container -->|outbound traffic| Proxy
     Proxy --> Web
     Container -->|git push| GitStore
+    Container -->|GET /credentials| CredentialRegistry
+    CredentialRegistry --> Vault
     GitStore --> Sentinel
 
     knowledgedir -.->|git clone| Container
@@ -85,18 +89,19 @@ Orchestrates a single agent turn: streams tokens to subscribers, handles the def
 
 The main agent, built on [Pydantic AI](https://ai.pydantic.dev/). It receives messages from sessions, decides which tools/skills to invoke, and produces responses. Registered tools:
 
-| Tool | Description |
-| --- | --- |
-| `list_skills` | List available skills (names + descriptions) |
-| `use_skill` | Activate a skill: copy to sandbox, build venv, load instructions |
-| `read` | Read a file or list a directory inside the sandbox |
-| `write` | Write content to a file in the sandbox |
-| `edit` | Search-and-replace edit of a file in the sandbox |
-| `apply_patch` | Batch edits across multiple files in the sandbox |
-| `exec` | Run a shell command in the sandbox (default timeout: 30s) |
-| `read_memory` | Read a memory file or search memory |
+| Tool          | Description                                                      |
+| ------------- | ---------------------------------------------------------------- |
+| `list_skills` | List available skills (names + descriptions)                     |
+| `use_skill`   | Activate a skill: copy to sandbox, build venv, load instructions |
+| `read`        | Read a file or list a directory inside the sandbox               |
+| `write`       | Write content to a file in the sandbox                           |
+| `edit`        | Search-and-replace edit of a file in the sandbox                 |
+| `apply_patch` | Batch edits across multiple files in the sandbox                 |
+| `exec`        | Run a shell command in the sandbox (default timeout: 30s)        |
+| `read_memory` | Read a memory file or search memory                              |
 
 Persistent writes (memory, skills, workspace files) happen via `git commit` + `git push` inside the sandbox. Each push is evaluated by the security sentinel through a pre-receive hook — there is no direct write tool.
+Skill credential declarations in `carapace.yaml` are evaluated during `use_skill`; approved credentials are fetched from the configured backend and injected into the sandbox as session env vars and/or files.
 
 ### Security Module
 
@@ -122,6 +127,12 @@ Reads Markdown-based memory files from the knowledge directory's `memory/` sub-f
 
 Manages the knowledge directory as a Git repository. Initialises the repo on startup, installs a pre-receive hook that gates every push through the sentinel, and optionally syncs with an external remote. Sandbox containers receive a Git clone of this repo as their `/workspace/`; the agent persists changes (memory, skills, workspace files) by committing and pushing back. See the "Server port architecture" table for the sandbox-facing Git HTTP backend on port 8322.
 
+### Credential Registry
+
+Routes `vault_path` identifiers (`<backend>/<id>`) to named credential backends and provides three operations: `list(query)`, `fetch_metadata(vault_path)`, and `fetch(vault_path)`. Backends implement a small protocol (`file` and Bitwarden via `bw serve` are built in), including per-backend exposure rules (`expose` allowlist / `hide` blocklist).
+
+Credential reads are sandbox-only: containers call `GET /credentials` and `GET /credentials/{vault_path}` on the sandbox API using their session token. The first per-session fetch triggers an approval request to channel subscribers; approved credentials are recorded in session state and access is appended to the action log as `credential_access` entries.
+
 ### HTTP Forward Proxy
 
 An async forward proxy (HTTP + HTTPS CONNECT) running inside the Carapace server process. All outbound traffic from sandbox containers is routed through this proxy. It enforces per-session domain allowlisting with token-based authentication and delegates unknown domain requests to the security module for sentinel evaluation or user approval. See [sandbox.md](sandbox.md).
@@ -130,12 +141,12 @@ An async forward proxy (HTTP + HTTPS CONNECT) running inside the Carapace server
 
 Carapace runs three separate listener ports for security isolation:
 
-| Port | Bind address | Auth | Purpose |
-| ---- | ------------ | ---- | ------- |
-| 8321 (public API) | `0.0.0.0` | Bearer token | REST API, WebSocket — used by the frontend and CLI |
-| 8322 (sandbox API) | `0.0.0.0` | HTTP Basic Auth (`session_id:token`) | Git HTTP backend — used by sandbox containers |
-| 8320 (internal API) | `127.0.0.1` | None (loopback only) | Sentinel callback — used by the pre-receive hook |
-| 3128 (proxy) | `0.0.0.0` | Proxy-Authorization Basic Auth | HTTP forward proxy — used by sandbox containers for outbound traffic |
+| Port                | Bind address | Auth                                 | Purpose                                                                               |
+| ------------------- | ------------ | ------------------------------------ | ------------------------------------------------------------------------------------- |
+| 8321 (public API)   | `0.0.0.0`    | Bearer token                         | REST API, WebSocket — used by the frontend and CLI                                    |
+| 8322 (sandbox API)  | `0.0.0.0`    | HTTP Basic Auth (`session_id:token`) | Git HTTP backend + credential endpoints (`/credentials`) — used by sandbox containers |
+| 8320 (internal API) | `127.0.0.1`  | None (loopback only)                 | Sentinel callback — used by the pre-receive hook                                      |
+| 3128 (proxy)        | `0.0.0.0`    | Proxy-Authorization Basic Auth       | HTTP forward proxy — used by sandbox containers for outbound traffic                  |
 
 Sandbox containers can only reach ports 3128 (proxy) and 8322 (sandbox API). The public API (8321) and internal API (8320) are unreachable from sandboxes — enforced by Docker's internal network or Kubernetes NetworkPolicy.
 
@@ -228,9 +239,9 @@ carapace:
 
 server:
   host: "0.0.0.0"
-  port: 8321          # public API (REST + WebSocket)
-  sandbox_port: 8322   # sandbox-facing API (Basic Auth, Git HTTP)
-  internal_port: 8320  # internal API (loopback only, sentinel callbacks)
+  port: 8321 # public API (REST + WebSocket)
+  sandbox_port: 8322 # sandbox-facing API (Basic Auth, Git HTTP)
+  internal_port: 8320 # internal API (loopback only, sentinel callbacks)
   cors_origins: []
 
 channels:
@@ -249,7 +260,7 @@ git:
     env: CARAPACE_GIT_TOKEN
 
 sandbox:
-  runtime: docker           # "docker" or "kubernetes"
+  runtime: docker # "docker" or "kubernetes"
   base_image: carapace-sandbox:latest
   idle_timeout_minutes: 15
   proxy_port: 3128
@@ -260,6 +271,21 @@ sandbox:
 ```
 
 LLM API keys are provided as standard environment variables (`ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`, etc.) — not through the config file.
+
+Credential backends are configured under `credentials.backends`:
+
+```yaml
+credentials:
+  backends:
+    dev:
+      type: file
+      path: ./data/secrets.env
+    personal:
+      type: bitwarden
+      url: http://127.0.0.1:8087
+      expose:
+        - "9742101e-68b8-4a07-b5b1-9578b5f88e6f"
+```
 
 ### Secrets
 

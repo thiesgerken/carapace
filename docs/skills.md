@@ -70,10 +70,12 @@ network:
     - "*.search.example.com"
 
 credentials:
-  - name: SEARXNG_URL
-    vault_path: "carapace/searxng"
-    inject_as: env
+  - vault_path: "dev/searxng-url"
+    description: Base URL for the SearXNG instance
     env_var: SEARXNG_URL
+  - vault_path: "dev/searxng-cert"
+    description: Optional client certificate
+    file: "~/.config/searxng/client.pem"
 ```
 
 ### Fields
@@ -82,12 +84,12 @@ credentials:
 
 **`credentials`** — list of credentials the skill needs. Each entry has:
 
-- `name` — identifier for the credential
 - `vault_path` — path in the password manager
-- `inject_as` — how to inject: `env` (environment variable), `file`, or `stdin`
-- `env_var` — environment variable name (when `inject_as: env`)
+- `description` — human-readable explanation shown in approval prompts
+- `env_var` — environment variable name for auto-injection (optional)
+- `file` — file path for auto-injection with mode `0400` (optional)
 
-> **Note**: The credential broker is not yet implemented — credential declarations are parsed but not functional. See [plans/credentials.md](plans/credentials.md).
+> **Note**: Credential declarations are implemented. See [credentials.md](credentials.md) for approval flow, backend config, and `ccred` usage.
 
 ## pyproject.toml-based dependencies
 
