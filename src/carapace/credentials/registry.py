@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import assert_never
 
 from loguru import logger
 
@@ -51,6 +52,12 @@ class CredentialRegistry:
             results.extend(await backend.list(query))
         return results
 
+    async def close(self) -> None:
+        """Close HTTP clients for managed backends."""
+        for backend in self._backends.values():
+            if isinstance(backend, BitwardenBackend):
+                await backend.close()
+
     @property
     def backend_names(self) -> list[str]:
         return list(self._backends)
@@ -67,12 +74,6 @@ async def build_credential_registry(config: CredentialsConfig, data_dir: Path) -
             case BitwardenCredentialBackendConfig():
                 registry.register(name, BitwardenBackend(name=name, base_url=cfg.url, cfg=cfg))
                 logger.info(f"Bitwarden backend '{name}' configured at {cfg.url}")
+            case _:
+                assert_never(cfg)
     return registry
-
-
-async def shutdown_credential_registry(registry: CredentialRegistry) -> None:
-    """Close HTTP clients for managed backends."""
-    for name in registry.backend_names:
-        backend = registry._backends.get(name)
-        if isinstance(backend, BitwardenBackend):
-            await backend.close()

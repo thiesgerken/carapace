@@ -5,7 +5,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 from pydantic_ai.models import Model
@@ -26,6 +26,15 @@ class CredentialMetadata(BaseModel):
     vault_path: str
     name: str
     description: str = ""
+
+
+@runtime_checkable
+class CredentialRegistryProtocol(Protocol):
+    """Structural type for credential registries — avoids importing the concrete class."""
+
+    async def fetch(self, vault_path: str) -> str: ...
+    async def fetch_metadata(self, vault_path: str) -> CredentialMetadata: ...
+    async def list(self, query: str = "") -> list[CredentialMetadata]: ...
 
 
 # --- Session State ---
@@ -251,7 +260,7 @@ CredentialBackendConfig = Annotated[
 class CredentialsConfig(BaseModel):
     """Top-level credential configuration with named backends."""
 
-    backends: dict[str, FileCredentialBackendConfig | BitwardenCredentialBackendConfig] = {}
+    backends: dict[str, CredentialBackendConfig] = {}
 
 
 class Config(BaseModel):
@@ -326,4 +335,4 @@ class Deps(BaseModel):
     tool_call_callback: Callable[[str, dict[str, Any], str], None] | None = None
     tool_result_callback: Callable[[ToolResult], None] | None = None
     usage_tracker: UsageTracker
-    credential_registry: Any = None  # CredentialRegistry — Any to avoid circular import
+    credential_registry: CredentialRegistryProtocol | None = None

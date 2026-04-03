@@ -7,9 +7,8 @@ from pydantic_ai import Agent, DeferredToolRequests, RunContext, ToolDenied
 
 import carapace.security as security
 from carapace.config import load_workspace_file
-from carapace.credentials import CredentialRegistry
 from carapace.memory import MemoryStore
-from carapace.models import CredentialMetadata, Deps, SkillCredentialDecl, ToolResult
+from carapace.models import CredentialMetadata, CredentialRegistryProtocol, Deps, SkillCredentialDecl, ToolResult
 from carapace.sandbox.runtime import SkillVenvError
 from carapace.security.context import CredentialAccessEntry, SkillActivatedEntry, ToolResultEntry
 from carapace.skills import SkillRegistry
@@ -59,7 +58,7 @@ async def _inject_skill_credentials(
     if not cred_decls:
         return ""
 
-    cred_registry: CredentialRegistry | None = ctx.deps.credential_registry
+    cred_registry: CredentialRegistryProtocol | None = ctx.deps.credential_registry
     if cred_registry is None:
         return ""
 
@@ -96,7 +95,7 @@ async def _inject_skill_credentials(
 async def _do_inject(
     ctx: RunContext[Deps],
     cred_decls: list[SkillCredentialDecl],
-    cred_registry: CredentialRegistry,
+    cred_registry: CredentialRegistryProtocol,
     skill_name: str,
 ) -> str:
     """Fetch credential values and inject them into the sandbox."""

@@ -18,7 +18,7 @@ import carapace.security as security_mod
 from carapace.agent.loop import run_agent_turn
 from carapace.git.store import GitStore
 from carapace.memory import MemoryStore
-from carapace.models import Config, Deps, SessionState, SkillInfo, ToolResult
+from carapace.models import Config, CredentialRegistryProtocol, Deps, SessionState, SkillInfo, ToolResult
 from carapace.sandbox.manager import SandboxManager
 from carapace.security.context import SessionSecurity, UserVouchedEntry
 from carapace.security.sentinel import Sentinel
@@ -135,14 +135,14 @@ class SessionEngine:
         self._agent_model = agent_model
         self._sandbox_mgr = sandbox_mgr
         self._model_factory = model_factory
-        self._credential_registry: Any = None
+        self._credential_registry: CredentialRegistryProtocol | None = None
         self._active: dict[str, ActiveSession] = {}
         self._llm_semaphore = asyncio.Semaphore(config.agent.max_parallel_llm)
 
         # Let SandboxManager retrieve activated skills for venv rebuild on container recreation
         sandbox_mgr.set_activated_skills_callback(self._get_activated_skills)
 
-    def set_credential_registry(self, registry: Any) -> None:
+    def set_credential_registry(self, registry: CredentialRegistryProtocol) -> None:
         self._credential_registry = registry
 
     # -- public access to file I/O manager --

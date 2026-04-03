@@ -6,7 +6,6 @@ from carapace.credentials.protocol import VaultBackend, is_exposed
 from carapace.credentials.registry import (
     CredentialRegistry,
     build_credential_registry,
-    shutdown_credential_registry,
 )
 
 __all__ = [
@@ -16,5 +15,4 @@ __all__ = [
     "VaultBackend",
     "build_credential_registry",
     "is_exposed",
-    "shutdown_credential_registry",
 ]

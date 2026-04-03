@@ -40,7 +40,7 @@ from tenacity import retry_if_exception_type, stop_after_attempt, wait_exponenti
 from carapace.auth import get_token
 from carapace.bootstrap import ensure_data_dir, ensure_knowledge_dir
 from carapace.config import _resolve_data_dir, _resolve_knowledge_dir, get_config_path, get_data_dir, load_config
-from carapace.credentials import CredentialRegistry, build_credential_registry, shutdown_credential_registry
+from carapace.credentials import CredentialRegistry, build_credential_registry
 from carapace.git.http import GitHttpHandler
 from carapace.git.store import GitStore
 from carapace.models import Config, SessionState, ToolResult
@@ -364,7 +364,7 @@ async def lifespan(app: FastAPI):
     with contextlib.suppress(asyncio.CancelledError):
         await internal_task
     await proxy.stop()
-    await shutdown_credential_registry(_credential_registry)
+    await _credential_registry.close()
     await _sandbox_mgr.cleanup_all()
     price_updater.stop()
     logger.info("Shutdown complete")
