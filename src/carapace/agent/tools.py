@@ -135,8 +135,7 @@ async def _do_inject(
 ) -> str:
     """Fetch credential values and inject them into the sandbox."""
     session_id = ctx.deps.session_state.session_id
-    injected_env = 0
-    injected_file = 0
+    injected = 0
     errors: list[str] = []
 
     for decl in cred_decls:
@@ -146,9 +145,10 @@ async def _do_inject(
             errors.append(f"Credential {decl.vault_path} not found in vault")
             continue
 
+        placed = False
         if decl.env_var:
             ctx.deps.sandbox.set_session_env(session_id, {decl.env_var: value})
-            injected_env += 1
+            placed = True
 
         if decl.file:
             skill_dir = f"/workspace/skills/{skill_name}"
@@ -158,12 +158,14 @@ async def _do_inject(
             if fw.exit_code != 0:
                 errors.append(f"Failed to write {decl.file}: {fw.output}")
             else:
-                injected_file += 1
+                placed = True
+
+        if placed:
+            injected += 1
 
     parts: list[str] = []
-    total = injected_env + injected_file
-    if total:
-        parts.append(f"{total} credential(s) injected for skill '{skill_name}'.")
+    if injected:
+        parts.append(f"{injected} credential(s) injected for skill '{skill_name}'.")
     if errors:
         parts.append("Credential errors: " + "; ".join(errors))
     return " ".join(parts)
