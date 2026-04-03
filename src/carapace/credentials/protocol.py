@@ -33,6 +33,10 @@ class VaultBackend(Protocol):
         """
         ...
 
+    async def close(self) -> None:
+        """Release backend resources."""
+        ...
+
 
 def is_exposed(identifier: str, cfg: FileCredentialBackendConfig | BitwardenCredentialBackendConfig) -> bool:
     """Check whether *identifier* passes the backend's exposure rules.

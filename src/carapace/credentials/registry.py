@@ -53,10 +53,9 @@ class CredentialRegistry:
         return results
 
     async def close(self) -> None:
-        """Close HTTP clients for managed backends."""
+        """Close all managed credential backends."""
         for backend in self._backends.values():
-            if isinstance(backend, BitwardenBackend):
-                await backend.close()
+            await backend.close()
 
     @property
     def backend_names(self) -> list[str]:

@@ -63,3 +63,6 @@ class FileVaultBackend:
                 continue
             results.append(CredentialMetadata(vault_path=self._vault_path(key), name=key))
         return results
+
+    async def close(self) -> None:
+        return
