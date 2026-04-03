@@ -1,6 +1,22 @@
 # CHANGELOG
 
 
+## v0.52.0 (2026-04-03)
+
+
+### ✨ Features
+
+
+- ✨ feat: persist Bitwarden CLI data across restarts
+  ([`0d42d7b`](https://github.com/thiesgerken/carapace/commit/0d42d7b452776516384c48553c92ebf069c2d837))
+
+  - Set BITWARDENCLI_APPDATA_DIR under BW_DATA_DIR; cache server URL in carapace-state
+  - Helm: optional PVC per sidecar (bitwarden.persistence, default enabled)
+  - Docker Compose: named volume on /var/lib/bitwarden-cli
+  - Document in chart README, bitwarden-cli README, quickstart, credentials
+
+  Made-with: Cursor
+
 ## v0.51.0 (2026-04-03)
 
 
