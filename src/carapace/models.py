@@ -343,4 +343,4 @@ class Deps(BaseModel):
     tool_result_callback: Callable[[ToolResult], None] | None = None
     append_session_events: Callable[[list[dict[str, Any]]], None] | None = None
     usage_tracker: UsageTracker
-    credential_registry: CredentialRegistryProtocol | None = None
+    credential_registry: CredentialRegistryProtocol

@@ -6,6 +6,7 @@ from unittest.mock import MagicMock
 from pydantic_ai.models import Model
 
 from carapace.agent import build_system_prompt
+from carapace.credentials import CredentialRegistry
 from carapace.git.store import GitStore
 from carapace.models import Config, Deps, SessionState
 from carapace.sandbox.manager import SandboxManager
@@ -28,6 +29,7 @@ def test_build_system_prompt_minimal(tmp_path: Path):
         git_store=MagicMock(spec=GitStore),
         agent_model=MagicMock(spec=Model),
         usage_tracker=UsageTracker(),
+        credential_registry=CredentialRegistry(),
     )
     prompt = build_system_prompt(deps)
     assert "test-123" in prompt
@@ -48,6 +50,7 @@ def test_build_system_prompt_with_agents_md(tmp_path: Path):
         git_store=MagicMock(spec=GitStore),
         agent_model=MagicMock(spec=Model),
         usage_tracker=UsageTracker(),
+        credential_registry=CredentialRegistry(),
     )
     prompt = build_system_prompt(deps)
     assert "Agent Instructions" in prompt

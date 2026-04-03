@@ -12,6 +12,7 @@ from pydantic_ai.models.test import TestModel
 
 from carapace.bootstrap import ensure_data_dir
 from carapace.config import load_config
+from carapace.credentials import CredentialRegistry
 from carapace.git.store import GitStore
 from carapace.models import ToolResult
 from carapace.sandbox.manager import SandboxManager
@@ -132,6 +133,7 @@ def _make_engine(tmp_path: Path) -> SessionEngine:
         skill_catalog=skill_catalog,
         agent_model=None,
         sandbox_mgr=sandbox_mgr,
+        credential_registry=CredentialRegistry(),
         model_factory=lambda _name: TestModel(),
     )
 

@@ -123,6 +123,7 @@ class SessionEngine:
         skill_catalog: list[SkillInfo],
         agent_model: Model | None,
         sandbox_mgr: SandboxManager,
+        credential_registry: CredentialRegistryProtocol,
         model_factory: Callable[[str], Model] | None = None,
     ) -> None:
         self._config = config
@@ -134,16 +135,13 @@ class SessionEngine:
         self._agent_model = agent_model
         self._sandbox_mgr = sandbox_mgr
         self._model_factory = model_factory
-        self._credential_registry: CredentialRegistryProtocol | None = None
+        self._credential_registry = credential_registry
         self._active: dict[str, ActiveSession] = {}
         self._llm_semaphore = asyncio.Semaphore(config.agent.max_parallel_llm)
 
         # Let SandboxManager retrieve activated skills for venv rebuild on container recreation
         sandbox_mgr.set_activated_skills_callback(self._get_activated_skills)
         sandbox_mgr.set_reinject_credentials_callback(self._reinject_skill_credentials)
-
-    def set_credential_registry(self, registry: CredentialRegistryProtocol) -> None:
-        self._credential_registry = registry
 
     # -- public access to file I/O manager --
 
@@ -235,9 +233,6 @@ class SessionEngine:
 
     async def _reinject_skill_credentials(self, session_id: str, skill_name: str) -> list[tuple[str, str]]:
         """Return approved file credentials that should be re-injected for a skill."""
-        if not self._credential_registry:
-            return []
-
         registry = SkillRegistry(self._knowledge_dir / "skills")
         carapace_cfg = registry.get_carapace_config(skill_name)
         if not carapace_cfg or not carapace_cfg.credentials:

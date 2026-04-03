@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 import carapace.server as srv
 from carapace.bootstrap import ensure_data_dir
 from carapace.config import load_config
+from carapace.credentials import CredentialRegistry
 from carapace.git.store import GitStore
 from carapace.models import CredentialMetadata
 from carapace.sandbox.manager import SandboxManager
@@ -38,8 +39,10 @@ def _setup_server(tmp_path, monkeypatch):
     sandbox_mgr = MagicMock(spec=SandboxManager)
     sandbox_mgr.get_domain_info.return_value = []
 
+    cred_reg = CredentialRegistry()
     srv._data_dir = tmp_path
     srv._config = config
+    srv._credential_registry = cred_reg
     srv._engine = SessionEngine(
         config=config,
         data_dir=tmp_path,
@@ -49,6 +52,7 @@ def _setup_server(tmp_path, monkeypatch):
         skill_catalog=skill_catalog,
         agent_model=None,
         sandbox_mgr=sandbox_mgr,
+        credential_registry=cred_reg,
     )
 
 

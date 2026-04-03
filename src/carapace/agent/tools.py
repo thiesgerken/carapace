@@ -64,9 +64,7 @@ async def _inject_skill_credentials(
     if not cred_decls:
         return ""
 
-    cred_registry: CredentialRegistryProtocol | None = ctx.deps.credential_registry
-    if cred_registry is None:
-        return ""
+    cred_registry = ctx.deps.credential_registry
 
     approved_paths = {c.vault_path for c in ctx.deps.session_state.approved_credentials}
 
