@@ -1,6 +1,28 @@
 # CHANGELOG
 
 
+## v0.51.0 (2026-04-03)
+
+
+### Other
+
+
+- comment
+  ([`329a4f0`](https://github.com/thiesgerken/carapace/commit/329a4f0254212182fd4bd30aaafd914b60affe2e))
+
+### ✨ Features
+
+
+- ✨ feat: load Bitwarden creds from mounted secret files
+  ([`2fefbf4`](https://github.com/thiesgerken/carapace/commit/2fefbf401d07bd01f406d30cca5adcf9c1e7bdaa))
+
+  - Sidecar entrypoint reads BW_* from BW_SECRET_DIR (default /run/secrets/bitwarden)
+    when env is unset, then unsets sensitive vars before bw serve
+  - Helm: mount existingSecret at /run/secrets/bitwarden instead of envFrom
+  - Document in bitwarden-cli/README.md and charts/carapace README/values
+
+  Made-with: Cursor
+
 ## v0.50.0 (2026-04-03)
 
 
