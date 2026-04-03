@@ -206,7 +206,7 @@ Multiple instances are supported — just add more entries with different names 
 | `extraEnv`                     | `[]`                             | Extra env vars for the server container                           |
 | `resources`                    | requests: 200m/256Mi, limit: 1Gi | Server resource requests/limits                                   |
 | `frontend.resources`           | requests: 50m/64Mi, limit: 128Mi | Frontend resource requests/limits                                 |
-| `bitwarden.image.tag`          | `""` (appVersion)                | bw-serve sidecar image tag                                        |
+| `bitwarden.image.tag`          | `""` (appVersion)                | bitwarden-cli sidecar image tag                                   |
 | `bitwarden.instances`          | `[]`                             | List of `bw serve` sidecars (see above)                           |
 
 See [values.yaml](values.yaml) for the complete reference.

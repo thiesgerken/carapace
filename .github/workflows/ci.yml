@@ -106,7 +106,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - uses: docker/build-push-action@v7
         with:
-          context: bw-serve
+          context: bitwarden-cli
           push: true
           tags: ghcr.io/${{ github.repository }}-bitwarden-cli:pr${{ github.event.pull_request.number }}
           cache-from: type=gha

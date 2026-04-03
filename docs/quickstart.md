@@ -130,7 +130,7 @@ BW_MASTER_PASSWORD=your-master-password
 
 If the logs show password login but you intended API key login, both `BW_CLIENTID` and `BW_CLIENTSECRET` must be non-empty in the environment Compose sees (check `.env` spelling and that variables are not commented out).
 
-Self-hosted **Vaultwarden** must be new enough for your **Bitwarden CLI** version. If `bw login` throws `TypeError: ... toWrappedAccountCryptographicState`, upgrade Vaultwarden (see [vaultwarden#6912](https://github.com/dani-garcia/vaultwarden/issues/6912)) or pin an older `@bitwarden/cli` in `bw-serve/Dockerfile`.
+Self-hosted **Vaultwarden** must be new enough for your **Bitwarden CLI** version. If `bw login` throws `TypeError: ... toWrappedAccountCryptographicState`, upgrade Vaultwarden (see [vaultwarden#6912](https://github.com/dani-garcia/vaultwarden/issues/6912)) or pin an older `@bitwarden/cli` in `bitwarden-cli/Dockerfile`.
 
 2. Start the sidecar:
 

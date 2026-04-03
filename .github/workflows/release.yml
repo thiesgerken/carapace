@@ -147,7 +147,7 @@ jobs:
             type=raw,value=latest
       - uses: docker/build-push-action@v7
         with:
-          context: bw-serve
+          context: bitwarden-cli
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
