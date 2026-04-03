@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import secrets
 from typing import Any
 
 from loguru import logger
@@ -88,6 +89,36 @@ async def _inject_skill_credentials(
     for meta in metas:
         if not any(c.vault_path == meta.vault_path for c in ctx.deps.session_state.approved_credentials):
             ctx.deps.session_state.approved_credentials.append(meta)
+
+    if ctx.deps.append_session_events and metas:
+        request_id = secrets.token_hex(8)
+        vault_paths = [m.vault_path for m in metas]
+        names = [m.name for m in metas]
+        descriptions = [m.description for m in metas]
+        explanation = (
+            f"Credential access for skill {skill_name!r} approved implicitly with use_skill "
+            "(paths were listed in the skill activation tool approval)."
+        )
+        ctx.deps.append_session_events(
+            [
+                {
+                    "role": "credential_approval",
+                    "request_id": request_id,
+                    "vault_paths": vault_paths,
+                    "names": names,
+                    "descriptions": descriptions,
+                    "skill_name": skill_name,
+                    "explanation": explanation,
+                },
+                {
+                    "role": "credential_approval",
+                    "request_id": request_id,
+                    "domain": vault_paths[0],
+                    "command": "",
+                    "decision": "allow",
+                },
+            ]
+        )
 
     return await _do_inject(ctx, cred_decls, cred_registry, skill_name)
 

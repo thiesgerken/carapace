@@ -326,6 +326,11 @@ class SessionEngine:
         tool_result_callback: Callable[[ToolResult], None] | None = None,
     ) -> Deps:
         assert active.security is not None and active.sentinel is not None
+        session_id = active.state.session_id
+
+        def _append_session_events(events: list[dict[str, Any]]) -> None:
+            self._session_mgr.append_events(session_id, events)
+
         return Deps(
             config=self._config,
             data_dir=self._data_dir,
@@ -339,6 +344,7 @@ class SessionEngine:
             verbose=active.verbose,
             tool_call_callback=tool_call_callback,
             tool_result_callback=tool_result_callback,
+            append_session_events=_append_session_events,
             usage_tracker=active.usage_tracker,
             sandbox=self._sandbox_mgr,
             activated_skills=[],
@@ -996,7 +1002,7 @@ class SessionEngine:
         """Build a callback for evaluating credential access via the sentinel."""
 
         async def _eval(vault_path: str, name: str, description: str, trigger: str) -> bool:
-            return await security_mod.evaluate_credential_with(
+            result = await security_mod.evaluate_credential_with(
                 security,
                 sentinel,
                 vault_path,
@@ -1005,5 +1011,6 @@ class SessionEngine:
                 trigger,
                 usage_tracker=active.usage_tracker,
             )
+            return result.allowed
 
         return _eval

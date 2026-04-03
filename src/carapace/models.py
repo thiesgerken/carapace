@@ -341,5 +341,6 @@ class Deps(BaseModel):
     verbose: bool = True
     tool_call_callback: Callable[[str, dict[str, Any], str], None] | None = None
     tool_result_callback: Callable[[ToolResult], None] | None = None
+    append_session_events: Callable[[list[dict[str, Any]]], None] | None = None
     usage_tracker: UsageTracker
     credential_registry: CredentialRegistryProtocol | None = None

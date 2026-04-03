@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from typing import Any, Literal
 
 from pydantic_ai import ApprovalRequired
@@ -242,6 +243,20 @@ async def evaluate_push_with(
     return allowed
 
 
+@dataclass(frozen=True, slots=True)
+class CredentialAccessEvaluation:
+    """Outcome of ``evaluate_credential_with`` for callers that need audit or UI parity."""
+
+    allowed: bool
+    """True if access was granted."""
+
+    user_was_prompted: bool
+    """True when the sentinel escalated and the user escalation callback ran."""
+
+    explanation: str
+    """Sentinel explanation text (same as stored on the audit entry)."""
+
+
 async def evaluate_credential_with(
     session: SessionSecurity,
     sentinel: Sentinel,
@@ -251,10 +266,12 @@ async def evaluate_credential_with(
     trigger: str,
     *,
     usage_tracker: UsageTracker | None = None,
-) -> bool:
-    """Evaluate a credential access request. Returns True to allow, False to deny.
+) -> CredentialAccessEvaluation:
+    """Evaluate a credential access request.
 
     If the sentinel escalates, delegates to the session's user escalation callback.
+    ``user_was_prompted`` is False when the sentinel allowed or denied without escalation
+    (the engine's escalation callback already persists UI events when escalation runs).
     """
     verdict = await sentinel.evaluate_credential_access(
         session,
@@ -266,6 +283,7 @@ async def evaluate_credential_with(
     )
 
     decision = _verdict_to_decision(verdict)
+    user_was_prompted = verdict.decision == "escalate"
 
     if verdict.decision == "allow":
         allowed = True
@@ -306,7 +324,11 @@ async def evaluate_credential_with(
         )
     )
 
-    return allowed
+    return CredentialAccessEvaluation(
+        allowed=allowed,
+        user_was_prompted=user_was_prompted,
+        explanation=verdict.explanation,
+    )
 
 
 def _verdict_to_decision(verdict: SentinelVerdict) -> Literal["allowed", "escalated", "denied"]:

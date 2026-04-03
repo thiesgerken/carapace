@@ -5,6 +5,7 @@ import contextlib
 import inspect
 import logging  # stdlib logging used only for _InterceptHandler → loguru bridge
 import os
+import secrets
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated, Any, Literal
@@ -47,6 +48,7 @@ from carapace.models import Config, SessionState, ToolResult
 from carapace.sandbox.manager import SandboxManager
 from carapace.sandbox.proxy import ProxyServer
 from carapace.sandbox.runtime import ContainerRuntime
+from carapace.security.context import AuditEntry, CredentialAccessEntry
 from carapace.session import SessionEngine, SessionManager
 from carapace.skills import SkillRegistry
 from carapace.ws_models import (
@@ -976,7 +978,23 @@ async def list_credentials(request: Request, q: str = "") -> list[dict[str, str]
     if session_id is None:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
+    active = _engine.get_or_activate(session_id)
+    if active.security is None:
+        raise HTTPException(status_code=403, detail="Session not initialised")
+
     items = await _credential_registry.list(q)
+    paths = [i.vault_path for i in items]
+    explanation = f"Sandbox listed credential metadata (query={q!r}, {len(paths)} item(s))"
+    active.security.append(CredentialAccessEntry(vault_paths=paths, decision="approved", explanation=explanation))
+    active.security.write_audit(
+        AuditEntry.now(
+            kind="credential_access",
+            final_decision="auto_allowed",
+            args_summary={"operation": "list", "query": q, "count": len(paths)},
+            explanation=explanation,
+        )
+    )
+    active.security.notify_credential_decision("<list>", f"[sandbox: list metadata] {explanation}")
 
     return [i.model_dump() for i in items]
 
@@ -1003,7 +1021,7 @@ async def fetch_credential(request: Request, vault_path: str) -> Response:
 
         from carapace.security import evaluate_credential_with
 
-        allowed = await evaluate_credential_with(
+        cred_eval = await evaluate_credential_with(
             active.security,
             active.sentinel,
             vault_path,
@@ -1012,11 +1030,34 @@ async def fetch_credential(request: Request, vault_path: str) -> Response:
             f"Sandbox requested credential: {meta.name}",
             usage_tracker=active.usage_tracker,
         )
-        if not allowed:
+        if not cred_eval.allowed:
             return Response(status_code=403, content="Credential access denied")
 
-        active.state.approved_credentials.append(meta)
-        _engine.session_mgr.save_state(active.state)
+        if not any(c.vault_path == vault_path for c in active.state.approved_credentials):
+            active.state.approved_credentials.append(meta)
+            _engine.session_mgr.save_state(active.state)
+            if not cred_eval.user_was_prompted:
+                request_id = secrets.token_hex(8)
+                _engine.session_mgr.append_events(
+                    session_id,
+                    [
+                        {
+                            "role": "credential_approval",
+                            "request_id": request_id,
+                            "vault_paths": [vault_path],
+                            "names": [meta.name],
+                            "descriptions": [meta.description],
+                            "explanation": f"Sandbox credential fetch (sentinel allowed): {cred_eval.explanation}",
+                        },
+                        {
+                            "role": "credential_approval",
+                            "request_id": request_id,
+                            "domain": vault_path,
+                            "command": "",
+                            "decision": "allow",
+                        },
+                    ],
+                )
 
     try:
         value = await _credential_registry.fetch(vault_path)
