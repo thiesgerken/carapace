@@ -491,6 +491,7 @@ _HistoryRole = Literal[
     "approval_response",
     "git_push",
     "git_push_approval",
+    "credential_approval",
 ]
 
 
@@ -510,6 +511,11 @@ class HistoryMessage(BaseModel):
     explanation: str | None = None
     risk_level: str | None = None
     ref: str | None = None
+    changed_files: list[str] | None = None
+    vault_paths: list[str] | None = None
+    names: list[str] | None = None
+    descriptions: list[str] | None = None
+    skill_name: str | None = None
 
 
 @router.get("/sessions/{session_id}/history", response_model=list[HistoryMessage])
