@@ -82,6 +82,7 @@ def format_command_result_text(result: CommandResult) -> str:
             models: dict[str, dict] = data.get("models", {})
             categories: dict[str, dict] = data.get("categories", {})
             costs: dict[str, str] = data.get("costs", {})
+            category_costs: dict[str, str] = data.get("category_costs", {})
             total_input = data.get("total_input", 0)
             total_output = data.get("total_output", 0)
             total_cost = float(costs.get("total", 0))
@@ -94,7 +95,15 @@ def format_command_result_text(result: CommandResult) -> str:
                 for b in [*models.values(), *categories.values()]
             )
 
-            def _table(title: str, rows: dict[str, dict], *, show_cost: bool = False) -> str:
+            has_costs = any(v != "0" for k, v in costs.items() if k != "total")
+
+            def _table(
+                title: str,
+                rows: dict[str, dict],
+                *,
+                show_cost: bool = False,
+                row_costs: dict[str, str] | None = None,
+            ) -> str:
                 hdr = "| | Input | Output |"
                 sep = "|---|---:|---:|"
                 if has_cache:
@@ -102,18 +111,19 @@ def format_command_result_text(result: CommandResult) -> str:
                     sep += "---:|---:|"
                 hdr += " Req |"
                 sep += "---:|"
-                if show_cost:
+                if show_cost and has_costs:
                     hdr += " Cost |"
                     sep += "---:|"
 
                 lines = [f"**{title}**\n", hdr, sep]
+                lookup = row_costs if row_costs is not None else costs
                 for name, b in rows.items():
                     row = f"| {name} | {b.get('input_tokens', 0):,} | {b.get('output_tokens', 0):,} |"
                     if has_cache:
                         row += f" {b.get('cache_read_tokens', 0):,} | {b.get('cache_write_tokens', 0):,} |"
                     row += f" {b.get('requests', 0)} |"
-                    if show_cost:
-                        c = costs.get(name, "0")
+                    if show_cost and has_costs:
+                        c = lookup.get(name, "0")
                         row += f" ${float(c):.4f} |" if c != "0" else " - |"
                     lines.append(row)
                 return "\n".join(lines)
@@ -122,7 +132,7 @@ def format_command_result_text(result: CommandResult) -> str:
             if models:
                 parts.append(_table("By Model", models, show_cost=True))
             if categories:
-                parts.append(_table("By Category", categories))
+                parts.append(_table("By Category", categories, show_cost=True, row_costs=category_costs))
 
             total_tokens = total_input + total_output
             cost_str = f" | ${total_cost:.4f}" if total_cost else ""

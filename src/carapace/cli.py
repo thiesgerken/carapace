@@ -185,6 +185,7 @@ def _render_usage(payload: dict[str, Any]) -> None:
     models: dict[str, dict[str, int]] = payload.get("models", {})
     categories: dict[str, dict[str, int]] = payload.get("categories", {})
     costs: dict[str, str] = payload.get("costs", {})
+    category_costs: dict[str, str] = payload.get("category_costs", {})
 
     if not models and not categories:
         console.print("[dim]No token usage recorded yet.[/dim]")
@@ -207,7 +208,13 @@ def _render_usage(payload: dict[str, Any]) -> None:
             return "-"
         return f"[{_cost_style(n)}]${n:.4f}[/{_cost_style(n)}]"
 
-    def _make_table(title: str, rows: dict[str, dict[str, int]], show_cost: bool = False) -> Table:
+    def _make_table(
+        title: str,
+        rows: dict[str, dict[str, int]],
+        *,
+        show_cost: bool = False,
+        row_costs: dict[str, str] | None = None,
+    ) -> Table:
         table = Table(title=title)
         table.add_column("Source", style="bold")
         table.add_column("Input", justify="right")
@@ -218,20 +225,23 @@ def _render_usage(payload: dict[str, Any]) -> None:
         table.add_column("Requests", justify="right")
         if show_cost and has_costs:
             table.add_column("Cost", justify="right")
+        lookup = row_costs if row_costs is not None else costs
         for name, usage in rows.items():
             row = [name, f"{usage.get('input_tokens', 0):,}", f"{usage.get('output_tokens', 0):,}"]
             if has_cache:
                 row += [f"{usage.get('cache_read_tokens', 0):,}", f"{usage.get('cache_write_tokens', 0):,}"]
             row.append(str(usage.get("requests", 0)))
             if show_cost and has_costs:
-                row.append(_styled_cost(costs.get(name, "0")))
+                row.append(_styled_cost(lookup.get(name, "0")))
             table.add_row(*row)
         return table
 
     if models:
         console.print(_make_table("Usage by Model", models, show_cost=True))
     if categories:
-        console.print(_make_table("Usage by Category", categories))
+        console.print(
+            _make_table("Usage by Category", categories, show_cost=True, row_costs=category_costs),
+        )
 
     total_in = payload.get("total_input", 0)
     total_out = payload.get("total_output", 0)

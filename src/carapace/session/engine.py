@@ -523,6 +523,7 @@ class SessionEngine:
         if cmd == "/usage":
             tracker = active.usage_tracker
             costs = tracker.estimated_cost()
+            cat_costs = tracker.estimated_category_cost()
             return {
                 "command": "usage",
                 "data": {
@@ -531,6 +532,7 @@ class SessionEngine:
                     "total_input": tracker.total_input,
                     "total_output": tracker.total_output,
                     "costs": {k: str(v) for k, v in costs.items()},
+                    "category_costs": {k: str(v) for k, v in cat_costs.items()},
                 },
             }
 
