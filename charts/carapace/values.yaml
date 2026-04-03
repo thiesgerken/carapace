@@ -110,9 +110,8 @@ config: {}
 #         port: 8087
 #         serverUrl: https://vault.example.com
 #         existingSecret: carapace-bw-personal
-#         # The secret must contain BW_MASTER_PASSWORD; BW_CLIENTID + BW_CLIENTSECRET
-#         # for API key login, or BW_EMAIL for password-only login.
-#         # are needed if the account has 2FA enabled.
+#         # The Secret is mounted as files under /run/secrets/bitwarden (e.g. BW_MASTER_PASSWORD;
+#         # BW_CLIENTID + BW_CLIENTSECRET for API key login, or BW_EMAIL for password-only login).
 #         resources:
 #           requests:
 #             cpu: 50m

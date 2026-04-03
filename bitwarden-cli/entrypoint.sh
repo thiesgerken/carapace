@@ -14,18 +14,44 @@ log() {
 
 log "[entrypoint] sidecar starting"
 
+trim() {
+  printf '%s' "$1" | tr -d '\r' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'
+}
+
+BW_SECRET_DIR="${BW_SECRET_DIR:-/run/secrets/bitwarden}"
+loaded_secret_from_dir=false
+if [ -z "${BW_MASTER_PASSWORD:-}" ] && [ -r "$BW_SECRET_DIR/BW_MASTER_PASSWORD" ]; then
+  BW_MASTER_PASSWORD=$(trim "$(cat "$BW_SECRET_DIR/BW_MASTER_PASSWORD")")
+  export BW_MASTER_PASSWORD
+  loaded_secret_from_dir=true
+fi
+if [ -z "${BW_CLIENTID:-}" ] && [ -r "$BW_SECRET_DIR/BW_CLIENTID" ]; then
+  BW_CLIENTID=$(trim "$(cat "$BW_SECRET_DIR/BW_CLIENTID")")
+  export BW_CLIENTID
+  loaded_secret_from_dir=true
+fi
+if [ -z "${BW_CLIENTSECRET:-}" ] && [ -r "$BW_SECRET_DIR/BW_CLIENTSECRET" ]; then
+  BW_CLIENTSECRET=$(trim "$(cat "$BW_SECRET_DIR/BW_CLIENTSECRET")")
+  export BW_CLIENTSECRET
+  loaded_secret_from_dir=true
+fi
+if [ -z "${BW_EMAIL:-}" ] && [ -r "$BW_SECRET_DIR/BW_EMAIL" ]; then
+  BW_EMAIL=$(trim "$(cat "$BW_SECRET_DIR/BW_EMAIL")")
+  export BW_EMAIL
+  loaded_secret_from_dir=true
+fi
+if [ "$loaded_secret_from_dir" = true ]; then
+  log "[entrypoint] filled unset creds from files under $BW_SECRET_DIR"
+fi
+
 if [ -z "$BW_MASTER_PASSWORD" ]; then
-  log "[entrypoint] error: BW_MASTER_PASSWORD is required"
+  log "[entrypoint] error: BW_MASTER_PASSWORD is required (env or $BW_SECRET_DIR/BW_MASTER_PASSWORD)"
   exit 1
 fi
 
 # Ephemeral path on the container writable layer (survives restart, not `compose down`/recreate).
 STATE_DIR=/root/.cache/carapace-bw-sidecar
 LAST_URL_FILE="$STATE_DIR/last_bw_server_url"
-
-trim() {
-  printf '%s' "$1" | tr -d '\r' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'
-}
 
 DESIRED=$(trim "$BW_SERVER_URL")
 if [ -f "$LAST_URL_FILE" ]; then
@@ -127,6 +153,8 @@ fi
 log "[entrypoint] running: bw unlock --check"
 bw unlock --check
 log "[entrypoint] vault unlocked"
+
+unset BW_MASTER_PASSWORD BW_CLIENTID BW_CLIENTSECRET BW_EMAIL 2>/dev/null || true
 
 log "[entrypoint] status (non-fatal if this errors):"
 bw --pretty status 2>&1 || true

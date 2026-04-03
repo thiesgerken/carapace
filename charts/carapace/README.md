@@ -128,7 +128,7 @@ To use a Bitwarden-compatible vault (including Vaultwarden) as a credential back
 
 The sidecar image (`carapace-bitwarden-cli`) is built as part of the Carapace release and bundles the Bitwarden CLI. On startup it logs in, unlocks the vault, and starts `bw serve`. The liveness probe periodically calls `/sync` to keep the vault data fresh.
 
-1. **Create a Secret** with the Bitwarden CLI credentials:
+1. **Create a Secret** with Bitwarden CLI credentials. The chart mounts it read-only at `/run/secrets/bitwarden`; the sidecar entrypoint reads keys from files when the matching env vars are unset (see [`bitwarden-cli/README.md`](../../bitwarden-cli/README.md)).
 
 ```bash
 kubectl create secret generic carapace-bw-personal -n carapace \
@@ -138,18 +138,18 @@ kubectl create secret generic carapace-bw-personal -n carapace \
   --from-literal=BW_EMAIL=you@example.com
 ```
 
-Omit `BW_EMAIL` when using only API key login (`BW_CLIENTID` + `BW_CLIENTSECRET`).
+Omit `BW_EMAIL` when using only API key login (`BW_CLIENTID` + `BW_CLIENTSECRET`). Omit `BW_CLIENTID` and `BW_CLIENTSECRET` when using password-only login (then `BW_EMAIL` is required).
 
-Supported secret keys:
+Supported **Secret** keys (each becomes a file name under the mount):
 
 | Key                  | Required | Description                                                                |
 | -------------------- | -------- | -------------------------------------------------------------------------- |
 | `BW_MASTER_PASSWORD` | yes      | Master password for vault decryption                                       |
-| `BW_EMAIL`           | no       | Account email; required when `BW_CLIENTID` / `BW_CLIENTSECRET` are unset   |
+| `BW_EMAIL`           | no       | Account email; required for password-only login (omit for API key login)   |
 | `BW_CLIENTID`        | no       | API key client ID (generate in Bitwarden web UI → Account Settings → Keys) |
 | `BW_CLIENTSECRET`    | no       | API key client secret                                                      |
 
-When `BW_CLIENTID` and `BW_CLIENTSECRET` are provided, the sidecar uses API key login (required if 2FA is enabled). Otherwise it falls back to password login and requires `BW_EMAIL`. The master password is needed in both cases. As the project readme mentions, it is recommended to use a dedicated user for Carapace and share entries to it instead of using your account directly.
+When both `BW_CLIENTID` and `BW_CLIENTSECRET` are present, the sidecar uses API key login (required if 2FA is enabled). Otherwise it uses password login and needs `BW_EMAIL` in the Secret. The master password is needed in both cases. As the project readme mentions, it is recommended to use a dedicated user for Carapace and share entries to it instead of using your account directly.
 
 2. **Enable the sidecar** in your values:
 

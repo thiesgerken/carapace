@@ -143,9 +143,10 @@ spec:
               value: {{ .serverUrl | quote }}
             - name: BW_SERVE_PORT
               value: {{ .port | default 8087 | quote }}
-          envFrom:
-            - secretRef:
-                name: {{ .existingSecret }}
+          volumeMounts:
+            - name: bitwarden-creds-{{ .name }}
+              mountPath: /run/secrets/bitwarden
+              readOnly: true
           {{- with .resources }}
           resources:
             {{- toYaml . | nindent 12 }}
@@ -174,4 +175,10 @@ spec:
         - name: config
           configMap:
             name: {{ .Release.Name }}-config
+      {{- end }}
+      {{- range .Values.bitwarden.instances }}
+        - name: bitwarden-creds-{{ .name }}
+          secret:
+            secretName: {{ .existingSecret }}
+            defaultMode: 0400
       {{- end }}
