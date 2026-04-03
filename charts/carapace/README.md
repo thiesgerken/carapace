@@ -134,18 +134,22 @@ The sidecar image (`carapace-bitwarden-cli`) is built as part of the Carapace re
 kubectl create secret generic carapace-bw-personal -n carapace \
   --from-literal=BW_CLIENTID=user.xxxxxxxx-... \
   --from-literal=BW_CLIENTSECRET=xxxxxxxxxxxx \
-  --from-literal=BW_MASTER_PASSWORD=your-master-password
+  --from-literal=BW_MASTER_PASSWORD=your-master-password \
+  --from-literal=BW_EMAIL=you@example.com
 ```
+
+Omit `BW_EMAIL` when using only API key login (`BW_CLIENTID` + `BW_CLIENTSECRET`).
 
 Supported secret keys:
 
 | Key                  | Required | Description                                                                |
 | -------------------- | -------- | -------------------------------------------------------------------------- |
 | `BW_MASTER_PASSWORD` | yes      | Master password for vault decryption                                       |
+| `BW_EMAIL`           | no       | Account email; required when `BW_CLIENTID` / `BW_CLIENTSECRET` are unset   |
 | `BW_CLIENTID`        | no       | API key client ID (generate in Bitwarden web UI → Account Settings → Keys) |
 | `BW_CLIENTSECRET`    | no       | API key client secret                                                      |
 
-When `BW_CLIENTID` and `BW_CLIENTSECRET` are provided, the sidecar uses API key login (required if 2FA is enabled). Otherwise it falls back to password-only login. The password is needed in both cases. As the project readme mentions, it is recommended to use a dedicated user for Carapace and share entries to it instead of using your account directly.
+When `BW_CLIENTID` and `BW_CLIENTSECRET` are provided, the sidecar uses API key login (required if 2FA is enabled). Otherwise it falls back to password login and requires `BW_EMAIL`. The master password is needed in both cases. As the project readme mentions, it is recommended to use a dedicated user for Carapace and share entries to it instead of using your account directly.
 
 2. **Enable the sidecar** in your values:
 

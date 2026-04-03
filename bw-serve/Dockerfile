@@ -1,17 +1,12 @@
-FROM debian:bookworm-slim
+FROM alpine:3.21
 
-ARG BW_CLI_VERSION=2026.2.0
+# 2026.2.0 has https://github.com/dani-garcia/vaultwarden/issues/6912
+ARG BW_CLI_VERSION=2026.1.0
 
-RUN apt-get update \
- && apt-get install -y --no-install-recommends wget unzip ca-certificates \
- && wget -q "https://github.com/bitwarden/clients/releases/download/cli-v${BW_CLI_VERSION}/bw-linux-${BW_CLI_VERSION}.zip" \
- && unzip "bw-linux-${BW_CLI_VERSION}.zip" \
- && chmod +x bw \
- && mv bw /usr/local/bin/bw \
- && rm -f *.zip \
- && apt-get purge -y wget unzip \
- && apt-get autoremove -y \
- && rm -rf /var/lib/apt/lists/*
+RUN apk add --no-cache nodejs npm ca-certificates \
+ && npm install -g @bitwarden/cli@${BW_CLI_VERSION} \
+ && npm cache clean --force \
+ && rm -rf /root/.npm
 
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh

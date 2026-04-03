@@ -111,6 +111,7 @@ config: {}
 #         serverUrl: https://vault.example.com
 #         existingSecret: carapace-bw-personal
 #         # The secret must contain BW_MASTER_PASSWORD; BW_CLIENTID + BW_CLIENTSECRET
+#         # for API key login, or BW_EMAIL for password-only login.
 #         # are needed if the account has 2FA enabled.
 #         resources:
 #           requests:

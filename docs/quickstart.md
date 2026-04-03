@@ -115,19 +115,30 @@ This uses a `bw serve` sidecar container that shares the server's network namesp
 1. Add your Bitwarden credentials to `.env`:
 
 ```env
-BW_SERVER_URL=https://vault.example.com
+# Optional. Empty means US cloud; the sidecar applies that once via `bw config server bitwarden.com`,
+# records it under /root/.cache/carapace-bw-sidecar/ (ephemeral container disk, no volume), and only
+# runs logout + `bw config server` again if you change this value. EU / self-hosted: set explicitly.
+# BW_SERVER_URL=
+
+BW_EMAIL=you@example.com
 BW_CLIENTID=user.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 BW_CLIENTSECRET=xxxxxxxxxxxxxxxxxxxx
 BW_MASTER_PASSWORD=your-master-password
 ```
 
-`BW_CLIENTID` and `BW_CLIENTSECRET` are API keys generated in the Bitwarden web UI (Account Settings → Keys). They are required if your account has 2FA enabled — password-only login would prompt for a TOTP code, which can't work non-interactively.
+`BW_EMAIL` is required when using password login (no API key). `BW_CLIENTID` and `BW_CLIENTSECRET` are API keys generated in the Bitwarden web UI (Account Settings → Keys). Use them if your account has 2FA — password-only login would prompt for a TOTP code, which cannot work non-interactively in the sidecar.
+
+If the logs show password login but you intended API key login, both `BW_CLIENTID` and `BW_CLIENTSECRET` must be non-empty in the environment Compose sees (check `.env` spelling and that variables are not commented out).
+
+Self-hosted **Vaultwarden** must be new enough for your **Bitwarden CLI** version. If `bw login` throws `TypeError: ... toWrappedAccountCryptographicState`, upgrade Vaultwarden (see [vaultwarden#6912](https://github.com/dani-garcia/vaultwarden/issues/6912)) or pin an older `@bitwarden/cli` in `bw-serve/Dockerfile`.
 
 2. Start the sidecar:
 
 ```bash
 docker compose up -d --scale bw=1
 ```
+
+Startup messages from the entrypoint go to the **`bw` container** — use `docker compose logs -f bw` (not only `carapace`). Without a TTY, stdout is often block-buffered and lines can appear late or only after exit; this stack allocates a TTY for `bw` and logs progress to stderr so `docker compose logs` shows them as they run. Recreating the `bw` container clears the cached server URL; the next start applies `BW_SERVER_URL` from scratch.
 
 3. Add to `data/config.yaml`:
 
