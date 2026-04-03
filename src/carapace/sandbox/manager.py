@@ -164,6 +164,7 @@ class SandboxManager:
         self._domain_approval_cbs: dict[str, Callable[[str, str], Awaitable[bool]]] = {}
         self._exec_locks: dict[str, asyncio.Lock] = {}
         self._proxy_bypass_sessions: set[str] = set()
+        self._stashed_session_env: dict[str, dict[str, str]] = {}
         self._get_activated_skills_cb: Callable[[str], list[str]] | None = None
         logger.info(
             f"SandboxManager initialized (image={base_image}, "
@@ -305,6 +306,9 @@ class SandboxManager:
             created_at=time.time(),
             last_used=time.time(),
         )
+        stashed_env = self._stashed_session_env.pop(session_id, None)
+        if stashed_env:
+            sc.session_env.update(stashed_env)
         self._sessions[session_id] = sc
         logger.info(f"Created sandbox container {container_id[:12]} for session {session_id} (IP: {ip})")
         return sc, True
@@ -811,9 +815,12 @@ class SandboxManager:
         Called when a container is detected as stopped/gone and will be
         replaced immediately.  Token and domain state survive because
         ``ensure_session`` reuses the same credentials and the domain
-        allowlist is session-scoped.
+        allowlist is session-scoped.  The session_env is stashed so it
+        can be restored onto the replacement container.
         """
-        self._sessions.pop(session_id, None)
+        sc = self._sessions.pop(session_id, None)
+        if sc and sc.session_env:
+            self._stashed_session_env[session_id] = dict(sc.session_env)
 
     def _cleanup_tracking(
         self,
@@ -828,6 +835,7 @@ class SandboxManager:
         is permanently removed.
         """
         self._sessions.pop(session_id, None)
+        self._stashed_session_env.pop(session_id, None)
         token = self._session_tokens.pop(session_id, None)
         if token:
             self._token_to_session.pop(token, None)
