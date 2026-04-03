@@ -2,9 +2,11 @@
 
 from pathlib import Path
 
+import httpx
 import pytest
 
 from carapace.credentials import (
+    BitwardenBackend,
     CredentialRegistry,
     FileVaultBackend,
     VaultBackend,
@@ -12,6 +14,7 @@ from carapace.credentials import (
     is_exposed,
 )
 from carapace.models import (
+    BitwardenCredentialBackendConfig,
     CredentialMetadata,
     CredentialsConfig,
     FileCredentialBackendConfig,
@@ -274,3 +277,118 @@ async def test_build_registry_default_path(tmp_path: Path) -> None:
     config = CredentialsConfig(backends={"dev": FileCredentialBackendConfig(type="file")})
     reg = await build_credential_registry(config, tmp_path)
     assert "dev" in reg.backend_names
+
+
+# ---------------------------------------------------------------------------
+# BitwardenBackend tests
+# ---------------------------------------------------------------------------
+
+
+class _FakeResponse:
+    def __init__(self, *, status_code: int, payload: dict) -> None:
+        self.status_code = status_code
+        self._payload = payload
+        self._request = httpx.Request("GET", "http://bitwarden.local")
+
+    def raise_for_status(self) -> None:
+        if self.status_code >= 400:
+            raise httpx.HTTPStatusError("request failed", request=self._request, response=self)
+
+    def json(self) -> dict:
+        return self._payload
+
+
+class _FakeBitwardenClient:
+    def __init__(self, responses: dict[str, _FakeResponse]) -> None:
+        self._responses = responses
+        self.calls: list[tuple[str, dict[str, str] | None]] = []
+        self.closed = False
+
+    async def get(self, path: str, params: dict[str, str] | None = None) -> _FakeResponse:
+        self.calls.append((path, params))
+        key = path if params is None else f"{path}?search={params.get('search', '')}"
+        return self._responses[key]
+
+    async def aclose(self) -> None:
+        self.closed = True
+
+
+@pytest.mark.asyncio
+async def test_bitwarden_fetch_success() -> None:
+    backend = BitwardenBackend(name="bw", base_url="http://bitwarden.local", cfg=BitwardenCredentialBackendConfig())
+    backend._client = _FakeBitwardenClient(  # type: ignore[assignment]
+        {"/object/password/id-1": _FakeResponse(status_code=200, payload={"data": {"data": "s3cr3t"}})}
+    )
+
+    result = await backend.fetch("id-1")
+    assert result == "s3cr3t"
+
+
+@pytest.mark.asyncio
+async def test_bitwarden_fetch_missing_raises_keyerror() -> None:
+    backend = BitwardenBackend(name="bw", base_url="http://bitwarden.local", cfg=BitwardenCredentialBackendConfig())
+    backend._client = _FakeBitwardenClient(  # type: ignore[assignment]
+        {"/object/password/missing": _FakeResponse(status_code=404, payload={"data": {}})}
+    )
+
+    with pytest.raises(KeyError):
+        await backend.fetch("missing")
+
+
+@pytest.mark.asyncio
+async def test_bitwarden_fetch_respects_expose_allowlist() -> None:
+    cfg = BitwardenCredentialBackendConfig(expose=["allowed-id"])
+    backend = BitwardenBackend(name="bw", base_url="http://bitwarden.local", cfg=cfg)
+    backend._client = _FakeBitwardenClient(  # type: ignore[assignment]
+        {"/object/password/blocked-id": _FakeResponse(status_code=200, payload={"data": {"data": "ignored"}})}
+    )
+
+    with pytest.raises(KeyError):
+        await backend.fetch("blocked-id")
+
+
+@pytest.mark.asyncio
+async def test_bitwarden_fetch_metadata_success() -> None:
+    backend = BitwardenBackend(name="bw", base_url="http://bitwarden.local", cfg=BitwardenCredentialBackendConfig())
+    backend._client = _FakeBitwardenClient(  # type: ignore[assignment]
+        {"/object/item/id-2": _FakeResponse(status_code=200, payload={"data": {"name": "GitHub Token"}})}
+    )
+
+    meta = await backend.fetch_metadata("id-2")
+    assert meta.vault_path == "bw/id-2"
+    assert meta.name == "GitHub Token"
+
+
+@pytest.mark.asyncio
+async def test_bitwarden_list_filters_hidden_and_passes_query() -> None:
+    cfg = BitwardenCredentialBackendConfig(hide=["hidden-id"])
+    backend = BitwardenBackend(name="bw", base_url="http://bitwarden.local", cfg=cfg)
+    fake_client = _FakeBitwardenClient(
+        {
+            "/list/object/items?search=git": _FakeResponse(
+                status_code=200,
+                payload={
+                    "data": {
+                        "data": [
+                            {"id": "visible-id", "name": "GitHub"},
+                            {"id": "hidden-id", "name": "Hidden"},
+                        ]
+                    }
+                },
+            )
+        }
+    )
+    backend._client = fake_client  # type: ignore[assignment]
+
+    items = await backend.list("git")
+    assert [item.vault_path for item in items] == ["bw/visible-id"]
+    assert fake_client.calls == [("/list/object/items", {"search": "git"})]
+
+
+@pytest.mark.asyncio
+async def test_build_registry_bitwarden_backend(tmp_path: Path) -> None:
+    config = CredentialsConfig(
+        backends={"bw": BitwardenCredentialBackendConfig(type="bitwarden", url="http://bitwarden.local")}
+    )
+    reg = await build_credential_registry(config, tmp_path)
+    assert "bw" in reg.backend_names
