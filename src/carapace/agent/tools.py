@@ -47,6 +47,11 @@ def _notify_result(ctx: RunContext[Deps], tool_name: str, result: str, exit_code
         ctx.deps.tool_result_callback(ToolResult(tool=tool_name, output=result[:2000], exit_code=exit_code))
 
 
+def _log_sandbox_tool_exception(tool: str, session_id: str) -> None:
+    """Log full traceback for sandbox tool failures (must run inside ``except``)."""
+    logger.exception(f"Sandbox tool {tool!r} failed (session {session_id})")
+
+
 async def _inject_skill_credentials(
     ctx: RunContext[Deps],
     cred_decls: list[SkillCredentialDecl],
@@ -329,6 +334,7 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
         try:
             result = await ctx.deps.sandbox.file_read(session_id, path)
         except Exception as exc:
+            _log_sandbox_tool_exception("read", session_id)
             result = f"Error: {exc}"
             exit_code = -1
         _notify_result(ctx, "read", result, exit_code)
@@ -347,6 +353,7 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
         try:
             result = await ctx.deps.sandbox.file_write(session_id, path, content)
         except Exception as exc:
+            _log_sandbox_tool_exception("write", session_id)
             result = f"Error: {exc}"
             exit_code = -1
         _notify_result(ctx, "write", result, exit_code)
@@ -379,6 +386,7 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
         try:
             result = await ctx.deps.sandbox.file_edit(session_id, path, old_string, new_string)
         except Exception as exc:
+            _log_sandbox_tool_exception("edit", session_id)
             result = f"Error: {exc}"
             exit_code = -1
         _notify_result(ctx, "edit", result, exit_code)
@@ -406,6 +414,7 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
         try:
             result = await ctx.deps.sandbox.file_apply_patch(session_id, changes)
         except Exception as exc:
+            _log_sandbox_tool_exception("apply_patch", session_id)
             result = f"Error: {exc}"
             exit_code = -1
         _notify_result(ctx, "apply_patch", result, exit_code)
@@ -428,6 +437,7 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
             result = exec_result.output
             exit_code = exec_result.exit_code
         except Exception as exc:
+            _log_sandbox_tool_exception("exec", session_id)
             result = f"Error: {exc}"
             exit_code = -1
 
