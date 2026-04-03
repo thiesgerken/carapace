@@ -971,15 +971,6 @@ async def list_credentials(request: Request, q: str = "") -> list[dict[str, str]
 
     items = await _credential_registry.list(q)
 
-    active = _engine.get_active(session_id)
-    if active and active.security:
-        active.security.append(
-            CredentialAccessEntry(
-                vault_paths=[i.vault_path for i in items],
-                action="list",
-                decision="approved",
-            )
-        )
     return [i.model_dump() for i in items]
 
 
@@ -1011,9 +1002,7 @@ async def fetch_credential(request: Request, vault_path: str) -> Response:
         )
         if not approved:
             if active.security:
-                active.security.append(
-                    CredentialAccessEntry(vault_paths=[vault_path], action="fetch", decision="denied")
-                )
+                active.security.append(CredentialAccessEntry(vault_paths=[vault_path], decision="denied"))
             return Response(status_code=403, content="Credential access denied")
 
         # Record approval in session state
@@ -1027,7 +1016,7 @@ async def fetch_credential(request: Request, vault_path: str) -> Response:
         return Response(status_code=404, content="Credential not found")
 
     if active.security:
-        active.security.append(CredentialAccessEntry(vault_paths=[vault_path], action="fetch", decision="approved"))
+        active.security.append(CredentialAccessEntry(vault_paths=[vault_path], decision="approved"))
     return Response(content=value, media_type="text/plain")
 
 

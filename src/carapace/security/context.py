@@ -69,7 +69,6 @@ class GitPushEntry(BaseModel):
 class CredentialAccessEntry(BaseModel):
     type: Literal["credential_access"] = "credential_access"
     vault_paths: list[str]
-    action: Literal["list", "fetch"] = "fetch"
     decision: Literal["approved", "denied"] = "approved"
 
 

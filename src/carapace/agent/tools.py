@@ -80,14 +80,7 @@ async def _inject_skill_credentials(
             meta = CredentialMetadata(vault_path=decl.vault_path, name=decl.vault_path, description=decl.description)
         metas.append(meta)
 
-    # Record the credential access in the action log (the sentinel already gated use_skill)
-    ctx.deps.security.append(
-        CredentialAccessEntry(
-            vault_paths=[m.vault_path for m in metas],
-            action="fetch",
-            decision="approved",
-        )
-    )
+    ctx.deps.security.append(CredentialAccessEntry(vault_paths=[m.vault_path for m in metas], decision="approved"))
 
     # Record approvals in session state
     for meta in metas:
