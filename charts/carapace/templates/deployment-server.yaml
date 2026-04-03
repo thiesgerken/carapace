@@ -156,21 +156,33 @@ spec:
             {{- toYaml . | nindent 12 }}
           {{- end }}
           startupProbe:
-            tcpSocket:
-              port: {{ .port | default 8087 }}
-            initialDelaySeconds: 10
+            exec:
+              # bw serve binds 127.0.0.1 only — kubelet tcp probes use the pod IP and would fail.
+              command:
+                - sh
+                - -c
+                - curl -sS -o /dev/null --connect-timeout 2 --max-time 5 http://127.0.0.1:{{ .port | default 8087 }}/
+            initialDelaySeconds: 5
             periodSeconds: 5
-            failureThreshold: 30
+            failureThreshold: 36
+            timeoutSeconds: 6
           readinessProbe:
-            tcpSocket:
-              port: {{ .port | default 8087 }}
+            exec:
+              command:
+                - sh
+                - -c
+                - curl -sS -o /dev/null --connect-timeout 2 --max-time 5 http://127.0.0.1:{{ .port | default 8087 }}/
             periodSeconds: 10
+            timeoutSeconds: 6
           livenessProbe:
             exec:
-              # liveness probe doubles as a cronjob to sync the vault
-              command: ["wget", "-q", "-O", "/dev/null", "--post-data=", "http://127.0.0.1:{{ .port | default 8087 }}/sync"]
+              # doubles as a periodic vault sync; must hit localhost (bw not bound on pod IP)
+              command:
+                - sh
+                - -c
+                - curl -sS -f -o /dev/null -X POST --connect-timeout 10 --max-time 60 http://127.0.0.1:{{ .port | default 8087 }}/sync
             periodSeconds: 120
-            timeoutSeconds: 10
+            timeoutSeconds: 65
       {{- end }}
       volumes:
         - name: data
