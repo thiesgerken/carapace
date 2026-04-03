@@ -28,3 +28,10 @@ Sandbox image with tag defaulting to appVersion
 {{- define "carapace.sandboxImage" -}}
 {{ .Values.sandbox.image.registry }}/{{ .Values.sandbox.image.repository }}:{{ .Values.sandbox.image.tag | default .Chart.AppVersion }}
 {{- end }}
+
+{{/*
+Bitwarden CLI sidecar image with tag defaulting to appVersion
+*/}}
+{{- define "carapace.bitwardenImage" -}}
+{{ .Values.bitwarden.image.registry }}/{{ .Values.bitwarden.image.repository }}:{{ .Values.bitwarden.image.tag | default .Chart.AppVersion }}
+{{- end }}

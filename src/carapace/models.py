@@ -5,9 +5,9 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Literal
+from typing import Annotated, Any, Literal, Protocol, runtime_checkable
 
-from pydantic import BaseModel, ConfigDict, SecretStr, model_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 from pydantic_ai.models import Model
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -17,6 +17,26 @@ from carapace.security.context import SessionSecurity
 from carapace.security.sentinel import Sentinel
 from carapace.usage import UsageTracker
 
+# --- Credentials ---
+
+
+class CredentialMetadata(BaseModel):
+    """Vault credential metadata returned by backends and stored in session state."""
+
+    vault_path: str
+    name: str
+    description: str = ""
+
+
+@runtime_checkable
+class CredentialRegistryProtocol(Protocol):
+    """Structural type for credential registries — avoids importing the concrete class."""
+
+    async def fetch(self, vault_path: str) -> str: ...
+    async def fetch_metadata(self, vault_path: str) -> CredentialMetadata: ...
+    async def list(self, query: str = "") -> list[CredentialMetadata]: ...
+
+
 # --- Session State ---
 
 
@@ -25,7 +45,7 @@ class SessionState(BaseModel):
     channel_type: str = "cli"
     channel_ref: str | None = None
     title: str | None = None
-    approved_credentials: list[str] = []
+    approved_credentials: list[CredentialMetadata] = []
     approved_operations: list[str] = []
     activated_skills: list[str] = []
     created_at: datetime
@@ -39,7 +59,7 @@ class SessionState(BaseModel):
         channel_type: str = "cli",
         channel_ref: str | None = None,
         title: str | None = None,
-        approved_credentials: list[str] | None = None,
+        approved_credentials: list[CredentialMetadata] | None = None,
         approved_operations: list[str] | None = None,
     ) -> SessionState:
         ts = datetime.now(tz=UTC)
@@ -213,6 +233,43 @@ class CarapaceConfig(BaseModel):
     logfire_token: str = ""
 
 
+class FileCredentialBackendConfig(BaseModel):
+    """Configuration for the file-based credential backend."""
+
+    type: Literal["file"] = "file"
+    path: str = ""
+    expose: list[str] = []
+    hide: list[str] = []
+
+
+class BitwardenCredentialBackendConfig(BaseModel):
+    """Configuration for a Bitwarden/Vaultwarden credential backend."""
+
+    type: Literal["bitwarden"] = "bitwarden"
+    url: str = "http://127.0.0.1:8087"
+    expose: list[str] = []
+    hide: list[str] = []
+
+
+CredentialBackendConfig = Annotated[
+    FileCredentialBackendConfig | BitwardenCredentialBackendConfig,
+    Field(discriminator="type"),
+]
+
+
+class CredentialsConfig(BaseModel):
+    """Top-level credential configuration with named backends."""
+
+    backends: dict[str, CredentialBackendConfig] = {}
+
+    @model_validator(mode="after")
+    def _validate_backend_names(self) -> CredentialsConfig:
+        for name in self.backends:
+            if "/" in name:
+                raise ValueError(f"Backend name {name!r} must not contain '/' (used as vault_path separator)")
+        return self
+
+
 class Config(BaseModel):
     carapace: CarapaceConfig = CarapaceConfig()
     server: ServerConfig = ServerConfig()
@@ -220,6 +277,7 @@ class Config(BaseModel):
     agent: AgentConfig = AgentConfig()
     sandbox: SandboxConfig = SandboxConfig()
     git: GitConfig = GitConfig()
+    credentials: CredentialsConfig = CredentialsConfig()
     data_dir: str = "."  # resolved relative to config file location
     knowledge_dir: str = "./knowledge"  # resolved relative to config file location
 
@@ -236,6 +294,15 @@ class ToolResult:
     exit_code: int = 0
 
 
+class SkillCredentialDecl(BaseModel):
+    """A credential requirement declared in a skill's ``carapace.yaml``."""
+
+    vault_path: str
+    description: str = ""
+    env_var: str | None = None
+    file: str | None = None
+
+
 class SkillNetworkConfig(BaseModel):
     domains: list[str] = []
 
@@ -244,7 +311,7 @@ class SkillCarapaceConfig(BaseModel):
     """Parsed contents of a skill's ``carapace.yaml``."""
 
     network: SkillNetworkConfig = SkillNetworkConfig()
-    credentials: list[dict[str, str]] = []
+    credentials: list[SkillCredentialDecl] = []
     hints: dict[str, str] = {}
 
 
@@ -274,4 +341,6 @@ class Deps(BaseModel):
     verbose: bool = True
     tool_call_callback: Callable[[str, dict[str, Any], str], None] | None = None
     tool_result_callback: Callable[[ToolResult], None] | None = None
+    append_session_events: Callable[[list[dict[str, Any]]], None] | None = None
     usage_tracker: UsageTracker
+    credential_registry: CredentialRegistryProtocol

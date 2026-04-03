@@ -53,7 +53,9 @@ export function ChatInput({
   }, []);
 
   // Show autocomplete when input starts with "/" and is a single word, but not if it exactly matches a command
-  const exactMatch = commands.some((c) => c.command === value.trim().toLowerCase());
+  const exactMatch = commands.some(
+    (c) => c.command === value.trim().toLowerCase(),
+  );
   const showMenu = value.startsWith("/") && !value.includes(" ") && !exactMatch;
 
   const filtered = useMemo(() => {
@@ -75,9 +77,12 @@ export function ChatInput({
     if (afterCmd.trimEnd().includes(" ")) return { items: [], prefix: "" };
 
     // Don't show if the argument already exactly matches a model
-    if (availableModels.some((m) => m.toLowerCase() === partial)) return { items: [], prefix: "" };
+    if (availableModels.some((m) => m.toLowerCase() === partial))
+      return { items: [], prefix: "" };
 
-    const suggestions = availableModels.filter((m) => m.toLowerCase().startsWith(partial));
+    const suggestions = availableModels.filter((m) =>
+      m.toLowerCase().startsWith(partial),
+    );
     return { items: suggestions, prefix: afterCmd };
   }, [value, availableModels]);
 
@@ -85,7 +90,10 @@ export function ChatInput({
 
   const selectModelSuggestion = useCallback(
     (item: string) => {
-      const prefix = value.slice(0, value.length - modelSuggestions.prefix.length);
+      const prefix = value.slice(
+        0,
+        value.length - modelSuggestions.prefix.length,
+      );
       setValue(prefix + item);
       textareaRef.current?.focus();
     },
@@ -95,17 +103,16 @@ export function ChatInput({
   // Scroll selected item into view
   useEffect(() => {
     if (!menuRef.current) return;
-    const item = menuRef.current.children[selectedIndex] as HTMLElement | undefined;
+    const item = menuRef.current.children[selectedIndex] as
+      | HTMLElement
+      | undefined;
     item?.scrollIntoView({ block: "nearest" });
   }, [selectedIndex]);
 
-  const selectCommand = useCallback(
-    (cmd: string) => {
-      setValue(cmd);
-      textareaRef.current?.focus();
-    },
-    [],
-  );
+  const selectCommand = useCallback((cmd: string) => {
+    setValue(cmd);
+    textareaRef.current?.focus();
+  }, []);
 
   const clearInput = useCallback(() => {
     setValue("");
@@ -131,7 +138,12 @@ export function ChatInput({
 
   function handleKeyDown(e: React.KeyboardEvent) {
     const activeMenu = showMenu ? "commands" : showModelMenu ? "models" : null;
-    const menuLength = activeMenu === "commands" ? filtered.length : activeMenu === "models" ? modelSuggestions.items.length : 0;
+    const menuLength =
+      activeMenu === "commands"
+        ? filtered.length
+        : activeMenu === "models"
+          ? modelSuggestions.items.length
+          : 0;
 
     if (activeMenu && menuLength > 0) {
       if (e.key === "ArrowDown") {
@@ -309,20 +321,38 @@ export function ChatInput({
         </div>
 
         {/* Token usage gauge */}
-        {usage && (usage.input_tokens > 0 || usage.output_tokens > 0) && (
-          <TokenGauge usage={usage} onClickUsage={connected && !waiting ? () => onSend("/usage") : undefined} />
+        {usage && turnContextTokens(usage) > 0 && (
+          <TokenGauge
+            usage={usage}
+            onClickUsage={
+              connected && !waiting ? () => onSend("/usage") : undefined
+            }
+          />
         )}
       </div>
     </div>
   );
 }
 
+/** Prefer server-reported last-LLM slice; fall back to in+out for older payloads. */
+function turnContextTokens(u: TurnUsage): number {
+  const c = u.context_tokens ?? 0;
+  if (c > 0) return c;
+  return u.input_tokens + u.output_tokens;
+}
+
 /** Compact context-window gauge rendered below the input box. */
-function TokenGauge({ usage, onClickUsage }: { usage: TurnUsage; onClickUsage?: () => void }) {
-  const total = usage.input_tokens + usage.output_tokens;
+function TokenGauge({
+  usage,
+  onClickUsage,
+}: {
+  usage: TurnUsage;
+  onClickUsage?: () => void;
+}) {
+  const ctx = turnContextTokens(usage);
   // Context window limits for common models; 200k is a safe default
   const cap = 200_000;
-  const pct = Math.min((usage.input_tokens / cap) * 100, 100);
+  const pct = Math.min((ctx / cap) * 100, 100);
 
   // Color shifts from muted → yellow → red as context fills up
   const barColor =
@@ -332,7 +362,7 @@ function TokenGauge({ usage, onClickUsage }: { usage: TurnUsage; onClickUsage?: 
         ? "bg-warning/70"
         : "bg-muted-foreground/30";
 
-  const tooltip = `${formatTokens(total)} / 200k context window tokens used\nClick for detailed usage breakdown`;
+  const tooltip = `${formatTokens(ctx)} / 200k context window tokens used\nClick for detailed usage breakdown`;
 
   return (
     <div className="mt-1.5 flex items-center gap-2 px-1">
@@ -349,11 +379,12 @@ function TokenGauge({ usage, onClickUsage }: { usage: TurnUsage; onClickUsage?: 
         title={tooltip}
         className={cn(
           "shrink-0 text-[10px] tabular-nums text-muted-foreground",
-          onClickUsage && "hover:text-foreground cursor-pointer transition-colors",
+          onClickUsage &&
+            "hover:text-foreground cursor-pointer transition-colors",
           !onClickUsage && "cursor-default",
         )}
       >
-        {formatTokens(total)} tokens
+        {formatTokens(ctx)} tokens
       </button>
     </div>
   );

@@ -7,6 +7,7 @@ Maps one session per room; supports slash commands including /reset.
 from __future__ import annotations
 
 from carapace.channels.matrix.approval import PendingApproval as _PendingApproval
+from carapace.channels.matrix.approval import PendingCredentialApproval as _PendingCredentialApproval
 from carapace.channels.matrix.approval import PendingDomainApproval as _PendingDomainApproval
 from carapace.channels.matrix.channel import MatrixChannel
 from carapace.channels.matrix.formatting import (
@@ -25,6 +26,7 @@ from carapace.channels.matrix.formatting import (
 __all__ = [
     "MatrixChannel",
     "_PendingApproval",
+    "_PendingCredentialApproval",
     "_PendingDomainApproval",
     "_format_approval_request",
     "_format_command_result_text",

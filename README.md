@@ -18,7 +18,7 @@ Carapace is a self-hosted AI agent gateway with a web UI and Matrix integration 
 - **Skills are trusted code.** A personal agent has access to so much of your data and life that running completely untrusted skills through it would be reckless. The user (or an LLM acting on their behalf) is responsible for reviewing skills before installing them. The security model protects against the agent being _influenced by outside data_ to misuse skills, not against malicious skills themselves.
 - **Skills are portable.** Skills follow the open [AgentSkills](https://agentskills.io/) format (SKILL.md + scripts). They work in Claude Code, Cursor, Gemini CLI too. Carapace extends the format with `carapace.yaml` for network domain declarations and credential metadata, and optional `pyproject.toml` for Python dependencies (managed by uv).
 - **The agent improves itself.** Carapace can write new skills, update its memory, and evolve its personality -- all gated by the same security system. No special "architect mode", just a sentinel that understands context.
-- **Credentials stay in your vault.** Carapace is designed to fetch credentials from your password manager on demand with per-session approval. (Credential broker is [planned](docs/plans/credentials.md) — currently mock-only.)
+- **Credentials stay in your vault.** Carapace fetches credentials from configured backends (file or Bitwarden via `bw serve`) with per-session approval. Skills can auto-inject approved secrets as env vars or files, and sandbox scripts can fetch on demand with `ccred`. See [docs/credentials.md](docs/credentials.md).
 
 ## Demo
 
@@ -86,38 +86,13 @@ Goodbye.
 
 ## Getting started
 
-### Prerequisites
-
-- **Docker** (required for sandbox execution in all setups)
-- An **Anthropic API key** (set `ANTHROPIC_API_KEY` in `.env` or your environment)
-
-### Configuration
-
-1. Copy `.env.example` to `.env` and set your API key.
-2. Set `CARAPACE_TOKEN` in `.env` — this is the bearer token used to authenticate CLI/frontend connections.
-3. Customise files under `data/` — see [Data directory](#data-directory) below.
-
-The web UI prompts for the server URL and token on first connect.
-
-### Deployment with Docker Compose
-
-Run the backend and frontend as containers:
-
 ```bash
-# Build all images (server, frontend, sandbox)
+cp .env.example .env   # fill in ANTHROPIC_API_KEY and CARAPACE_TOKEN
 docker compose build
-
-# Start the server and frontend
 docker compose up -d
 ```
 
-The server is available at `http://localhost:8321`, the frontend at `http://localhost:3001`.
-
-To connect via the CLI from the host:
-
-```bash
-uv run carapace --token "$CARAPACE_TOKEN"
-```
+Server at `http://localhost:8321`, frontend at `http://localhost:3001`. See the **[Quickstart guide](docs/quickstart.md)** for full setup including Matrix integration, credential backends, and personalisation.
 
 ## Architecture overview
 
@@ -147,8 +122,10 @@ See [docs/architecture.md](docs/architecture.md) for the full architecture with 
 
 | Concept             | Description                                                        | Doc                                                            |
 | ------------------- | ------------------------------------------------------------------ | -------------------------------------------------------------- |
+| Quickstart          | Docker Compose setup, Matrix, credentials, personalisation         | [docs/quickstart.md](docs/quickstart.md)                       |
 | Security            | Sentinel agent + SECURITY.md policy + action log                   | [docs/security.md](docs/security.md)                           |
 | Skills              | AgentSkills-compatible with uv-managed Python dependencies         | [docs/skills.md](docs/skills.md)                               |
+| Credentials         | Vault-backed credential access, approvals, and sandbox injection   | [docs/credentials.md](docs/credentials.md)                     |
 | Sandbox             | Docker / Kubernetes sandboxed execution with HTTP proxy            | [docs/sandbox.md](docs/sandbox.md)                             |
 | Sessions & Channels | Channel-decoupled persistent sessions (WebSocket, Matrix)          | [docs/sessions-and-channels.md](docs/sessions-and-channels.md) |
 | Memory              | Markdown-based persistent memory with text search                  | [docs/memory.md](docs/memory.md)                               |
@@ -221,4 +198,4 @@ Additional prerequisites: **Python 3.12+** (3.14 recommended), **[uv](https://do
 
 In active development. Core features are working: client-server architecture with FastAPI + WebSocket, Next.js web frontend, Matrix channel, sentinel-gated tool execution, sandboxed containers (Docker + Kubernetes), HTTP proxy with domain allowlisting, skill system with uv-managed dependencies, and interactive CLI.
 
-Planned features: [credential broker](docs/plans/credentials.md), [vector search for memory](docs/plans/memory.md), [task scheduling](docs/plans/channels.md), [Kubernetes enhancements](docs/plans/kubernetes.md).
+Planned features: [vector search for memory](docs/plans/memory.md), [task scheduling](docs/plans/channels.md), [Kubernetes enhancements](docs/plans/kubernetes.md).

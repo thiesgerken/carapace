@@ -122,6 +122,67 @@ config:
 
 Leave `config` empty (`{}`) to skip the ConfigMap entirely and manage the file on the PVC instead.
 
+### Bitwarden / Vaultwarden credential backend
+
+To use a Bitwarden-compatible vault (including Vaultwarden) as a credential backend, the chart can inject one or more `bw serve` sidecar containers into the server Pod. Each sidecar shares the Pod's network namespace, so Carapace reaches it at `127.0.0.1:<port>`. Because `bw serve` only listens on localhost, no NetworkPolicy is needed to protect it — unlike a standalone deployment where the unauthenticated API would be reachable cluster-wide.
+
+The sidecar image (`carapace-bitwarden-cli`) is built as part of the Carapace release and bundles the Bitwarden CLI. On startup it logs in, unlocks the vault, and starts `bw serve`. The liveness probe periodically calls `/sync` to keep the vault data fresh.
+
+1. **Create a Secret** with the Bitwarden CLI credentials:
+
+```bash
+kubectl create secret generic carapace-bw-personal -n carapace \
+  --from-literal=BW_CLIENTID=user.xxxxxxxx-... \
+  --from-literal=BW_CLIENTSECRET=xxxxxxxxxxxx \
+  --from-literal=BW_MASTER_PASSWORD=your-master-password \
+  --from-literal=BW_EMAIL=you@example.com
+```
+
+Omit `BW_EMAIL` when using only API key login (`BW_CLIENTID` + `BW_CLIENTSECRET`).
+
+Supported secret keys:
+
+| Key                  | Required | Description                                                                |
+| -------------------- | -------- | -------------------------------------------------------------------------- |
+| `BW_MASTER_PASSWORD` | yes      | Master password for vault decryption                                       |
+| `BW_EMAIL`           | no       | Account email; required when `BW_CLIENTID` / `BW_CLIENTSECRET` are unset   |
+| `BW_CLIENTID`        | no       | API key client ID (generate in Bitwarden web UI → Account Settings → Keys) |
+| `BW_CLIENTSECRET`    | no       | API key client secret                                                      |
+
+When `BW_CLIENTID` and `BW_CLIENTSECRET` are provided, the sidecar uses API key login (required if 2FA is enabled). Otherwise it falls back to password login and requires `BW_EMAIL`. The master password is needed in both cases. As the project readme mentions, it is recommended to use a dedicated user for Carapace and share entries to it instead of using your account directly.
+
+2. **Enable the sidecar** in your values:
+
+```yaml
+bitwarden:
+  instances:
+    - name: bw-personal
+      port: 8087
+      serverUrl: https://vault.example.com
+      existingSecret: carapace-bw-personal
+      resources:
+        requests:
+          cpu: 50m
+          memory: 128Mi
+        limits:
+          memory: 256Mi
+```
+
+3. **Configure the matching credential backend** in your application config:
+
+```yaml
+config:
+  credentials:
+    backends:
+      personal:
+        type: bitwarden
+        url: http://127.0.0.1:8087
+```
+
+The `url` defaults to `http://127.0.0.1:8087`, which works out of the box with the sidecar. Override it if `bw serve` runs elsewhere (e.g. a separate Service).
+
+Multiple instances are supported — just add more entries with different names and ports (e.g. `personal` on 8087, `work` on 8088). Each instance gets its own sidecar container and its own Kubernetes Secret.
+
 ### Key values
 
 | Value                          | Default                          | Description                                                       |
@@ -145,6 +206,8 @@ Leave `config` empty (`{}`) to skip the ConfigMap entirely and manage the file o
 | `extraEnv`                     | `[]`                             | Extra env vars for the server container                           |
 | `resources`                    | requests: 200m/256Mi, limit: 1Gi | Server resource requests/limits                                   |
 | `frontend.resources`           | requests: 50m/64Mi, limit: 128Mi | Frontend resource requests/limits                                 |
+| `bitwarden.image.tag`          | `""` (appVersion)                | bitwarden-cli sidecar image tag                                   |
+| `bitwarden.instances`          | `[]`                             | List of `bw serve` sidecars (see above)                           |
 
 See [values.yaml](values.yaml) for the complete reference.
 

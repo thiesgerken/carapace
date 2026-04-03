@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from importlib.resources import as_file, files
+from importlib.resources.abc import Traversable
 from pathlib import Path
 
 _ASSETS = files("carapace.assets")
@@ -23,14 +24,6 @@ _KNOWLEDGE_USER_FILES: list[tuple[str, str]] = [
 _KNOWLEDGE_CRITICAL_FILES: list[tuple[str, str]] = [
     ("SECURITY.md", "SECURITY.md"),
     ("CORE.md", "memory/CORE.md"),
-]
-
-_SEED_SKILLS: list[tuple[str, str]] = [
-    ("example-skill/SKILL.md", "skills/example/SKILL.md"),
-    ("example-skill/pyproject.toml", "skills/example/pyproject.toml"),
-    ("example-skill/uv.lock", "skills/example/uv.lock"),
-    ("example-skill/scripts/hello.py", "skills/example/scripts/hello.py"),
-    ("create-skill/SKILL.md", "skills/create-skill/SKILL.md"),
 ]
 
 _KNOWLEDGE_GITIGNORE = """\
@@ -73,6 +66,46 @@ def _copy_asset(asset_path: str, target: Path) -> None:
     source = _ASSETS.joinpath(*asset_path.split("/"))
     with as_file(source) as src:
         target.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
+
+
+def _skill_file_relpaths(skill_root: Traversable) -> list[str]:
+    paths: list[str] = []
+
+    def walk(node: Traversable, prefix: str) -> None:
+        for child in sorted(node.iterdir(), key=lambda c: c.name):
+            rel = f"{prefix}/{child.name}" if prefix else child.name
+            if child.is_dir():
+                walk(child, rel)
+            elif child.is_file():
+                paths.append(rel)
+
+    walk(skill_root, "")
+    return paths
+
+
+def _sync_bundled_skills(knowledge_dir: Path, reset: bool, created: list[str]) -> None:
+    """Copy each ``carapace.assets/skills/<name>/`` tree into *knowledge_dir* when missing.
+
+    When *reset* is true, overwrite files for every bundled skill (same as critical
+    knowledge files).
+    """
+    skills_assets = _ASSETS.joinpath("skills")
+    if not skills_assets.is_dir():
+        return
+    skills_out = knowledge_dir / "skills"
+    for skill_root in sorted(skills_assets.iterdir(), key=lambda p: p.name):
+        if not skill_root.is_dir():
+            continue
+        name = skill_root.name
+        dest_root = skills_out / name
+        if not reset and dest_root.exists():
+            continue
+        for rel in _skill_file_relpaths(skill_root):
+            target_rel = f"skills/{name}/{rel}"
+            target = knowledge_dir / target_rel
+            target.parent.mkdir(parents=True, exist_ok=True)
+            _copy_asset(f"skills/{name}/{rel}", target)
+            created.append(target_rel)
 
 
 def ensure_data_dir(data_dir: Path) -> list[str]:
@@ -126,13 +159,6 @@ def ensure_knowledge_dir(knowledge_dir: Path) -> list[str]:
             _copy_asset(asset_name, target)
             created.append(target_rel)
 
-    # Seed skills directory
-    skills_dir = knowledge_dir / "skills"
-    if reset or not skills_dir.exists():
-        for asset_name, target_rel in _SEED_SKILLS:
-            target = knowledge_dir / target_rel
-            target.parent.mkdir(parents=True, exist_ok=True)
-            _copy_asset(asset_name, target)
-            created.append(target_rel)
+    _sync_bundled_skills(knowledge_dir, reset, created)
 
     return created

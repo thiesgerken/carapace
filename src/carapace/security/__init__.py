@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from typing import Any, Literal
 
 from pydantic_ai import ApprovalRequired
@@ -16,6 +17,9 @@ from carapace.security.context import (
     SessionSecurity,
     ToolCallEntry,
 )
+from carapace.security.context import (
+    CredentialAccessEntry as CredentialAccessEntry,
+)
 from carapace.security.sentinel import Sentinel
 from carapace.usage import UsageTracker
 
@@ -27,7 +31,6 @@ SAFE_TOOLS: frozenset[str] = frozenset(
         "apply_patch",
         "read_memory",
         "list_skills",
-        "use_skill",
     }
 )
 
@@ -238,6 +241,97 @@ async def evaluate_push_with(
     )
 
     return allowed
+
+
+@dataclass(frozen=True, slots=True)
+class CredentialAccessEvaluation:
+    """Outcome of ``evaluate_credential_with`` for callers that need audit or UI parity."""
+
+    allowed: bool
+    """True if access was granted."""
+
+    user_was_prompted: bool
+    """True when the sentinel escalated and the user escalation callback ran."""
+
+    explanation: str
+    """Sentinel explanation text (same as stored on the audit entry)."""
+
+
+async def evaluate_credential_with(
+    session: SessionSecurity,
+    sentinel: Sentinel,
+    vault_path: str,
+    name: str,
+    description: str,
+    trigger: str,
+    *,
+    usage_tracker: UsageTracker | None = None,
+) -> CredentialAccessEvaluation:
+    """Evaluate a credential access request.
+
+    If the sentinel escalates, delegates to the session's user escalation callback.
+    ``user_was_prompted`` is False when the sentinel allowed or denied without escalation
+    (the engine's escalation callback already persists UI events when escalation runs).
+    """
+    verdict = await sentinel.evaluate_credential_access(
+        session,
+        vault_path,
+        name,
+        description,
+        trigger,
+        usage_tracker=usage_tracker,
+    )
+
+    decision = _verdict_to_decision(verdict)
+    user_was_prompted = verdict.decision == "escalate"
+
+    if verdict.decision == "allow":
+        allowed = True
+        detail = f"[sentinel: allow] {verdict.explanation}"
+    elif verdict.decision == "deny":
+        allowed = False
+        detail = f"[sentinel: deny] {verdict.explanation}"
+    else:
+        allowed = await session.escalate_to_user(
+            vault_path,
+            {
+                "kind": "credential_access",
+                "vault_path": vault_path,
+                "name": name,
+                "description": description,
+                "explanation": verdict.explanation,
+                "trigger": trigger,
+            },
+        )
+        decision = "allowed" if allowed else "denied"
+        detail = f"[sentinel: escalate → {decision}] {verdict.explanation}"
+
+    cred_decision: Literal["approved", "escalated", "denied"] = (
+        "approved" if decision == "allowed" else "denied" if decision == "denied" else "escalated"
+    )
+    entry = CredentialAccessEntry(
+        vault_paths=[vault_path],
+        decision=cred_decision,
+        explanation=verdict.explanation,
+    )
+    session.append(entry)
+
+    session.notify_credential_decision(vault_path, detail)
+
+    session.write_audit(
+        AuditEntry.now(
+            kind="credential_access",
+            sentinel_verdict=verdict,
+            final_decision=decision,
+            explanation=verdict.explanation,
+        )
+    )
+
+    return CredentialAccessEvaluation(
+        allowed=allowed,
+        user_was_prompted=user_was_prompted,
+        explanation=verdict.explanation,
+    )
 
 
 def _verdict_to_decision(verdict: SentinelVerdict) -> Literal["allowed", "escalated", "denied"]:

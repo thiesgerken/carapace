@@ -250,11 +250,13 @@ class TestCarapaceYamlParsing:
         cfg = SkillCarapaceConfig.model_validate(
             {
                 "network": {"domains": ["a.com"]},
-                "credentials": [{"name": "FOO", "vault_path": "x/y"}],
+                "credentials": [{"vault_path": "x/y", "description": "Test cred", "env_var": "FOO"}],
             }
         )
         assert cfg.network.domains == ["a.com"]
-        assert cfg.credentials == [{"name": "FOO", "vault_path": "x/y"}]
+        assert len(cfg.credentials) == 1
+        assert cfg.credentials[0].vault_path == "x/y"
+        assert cfg.credentials[0].env_var == "FOO"
 
 
 # ── Proxy token extraction ───────────────────────────────────────────

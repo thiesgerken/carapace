@@ -18,7 +18,7 @@ import carapace.security as security_mod
 from carapace.agent.loop import run_agent_turn
 from carapace.git.store import GitStore
 from carapace.memory import MemoryStore
-from carapace.models import Config, Deps, SessionState, SkillInfo, ToolResult
+from carapace.models import Config, CredentialRegistryProtocol, Deps, SessionState, SkillInfo, ToolResult
 from carapace.sandbox.manager import SandboxManager
 from carapace.security.context import SessionSecurity, UserVouchedEntry
 from carapace.security.sentinel import Sentinel
@@ -26,7 +26,13 @@ from carapace.session.manager import SessionManager
 from carapace.session.titler import generate_title
 from carapace.skills import SkillRegistry
 from carapace.usage import UsageTracker
-from carapace.ws_models import SLASH_COMMANDS, ApprovalRequest, ApprovalResponse, EscalationResponse, TurnUsage
+from carapace.ws_models import (
+    SLASH_COMMANDS,
+    ApprovalRequest,
+    ApprovalResponse,
+    EscalationResponse,
+    TurnUsage,
+)
 
 ModelType = Literal["agent", "sentinel", "title"]
 
@@ -54,6 +60,16 @@ class SessionSubscriber(Protocol):
     async def on_title_update(self, title: str) -> None: ...
     async def on_domain_info(self, domain: str, detail: str) -> None: ...
     async def on_git_push_info(self, ref: str, decision: str, detail: str) -> None: ...
+    async def on_credential_info(self, vault_path: str, detail: str) -> None: ...
+    async def on_credential_approval_request(
+        self,
+        request_id: str,
+        vault_paths: list[str],
+        names: list[str],
+        descriptions: list[str],
+        skill_name: str | None,
+        explanation: str,
+    ) -> None: ...
 
 
 # ---------------------------------------------------------------------------
@@ -107,6 +123,7 @@ class SessionEngine:
         skill_catalog: list[SkillInfo],
         agent_model: Model | None,
         sandbox_mgr: SandboxManager,
+        credential_registry: CredentialRegistryProtocol,
         model_factory: Callable[[str], Model] | None = None,
     ) -> None:
         self._config = config
@@ -118,11 +135,13 @@ class SessionEngine:
         self._agent_model = agent_model
         self._sandbox_mgr = sandbox_mgr
         self._model_factory = model_factory
+        self._credential_registry = credential_registry
         self._active: dict[str, ActiveSession] = {}
         self._llm_semaphore = asyncio.Semaphore(config.agent.max_parallel_llm)
 
         # Let SandboxManager retrieve activated skills for venv rebuild on container recreation
         sandbox_mgr.set_activated_skills_callback(self._get_activated_skills)
+        sandbox_mgr.set_reinject_credentials_callback(self._reinject_skill_credentials)
 
     # -- public access to file I/O manager --
 
@@ -191,6 +210,7 @@ class SessionEngine:
         security.set_user_escalation_callback(self._make_escalation_cb(active))
         security.set_domain_info_callback(self._make_domain_info_cb(active))
         security.set_push_info_callback(self._make_push_info_cb(active))
+        security.set_credential_info_callback(self._make_credential_info_cb(active))
 
         # Register a domain-approval callback so the sandbox proxy can
         # evaluate domain requests through the per-session sentinel.
@@ -210,6 +230,36 @@ class SessionEngine:
         if state:
             return list(state.activated_skills)
         return []
+
+    async def _reinject_skill_credentials(self, session_id: str, skill_name: str) -> list[tuple[str, str]]:
+        """Return approved file credentials that should be re-injected for a skill."""
+        registry = SkillRegistry(self._knowledge_dir / "skills")
+        carapace_cfg = registry.get_carapace_config(skill_name)
+        if not carapace_cfg or not carapace_cfg.credentials:
+            return []
+
+        approved_paths = self._get_approved_credential_paths(session_id)
+        reinject: list[tuple[str, str]] = []
+        for decl in carapace_cfg.credentials:
+            if decl.vault_path not in approved_paths or not decl.file:
+                continue
+            try:
+                value = await self._credential_registry.fetch(decl.vault_path)
+            except KeyError:
+                logger.warning(f"Credential {decl.vault_path} not found in vault during re-injection")
+                continue
+            reinject.append((decl.file, value))
+        return reinject
+
+    def _get_approved_credential_paths(self, session_id: str) -> set[str]:
+        """Return approved credential vault paths for a session."""
+        active = self._active.get(session_id)
+        if active:
+            return {credential.vault_path for credential in active.state.approved_credentials}
+        state = self._session_mgr.load_state(session_id)
+        if state:
+            return {credential.vault_path for credential in state.approved_credentials}
+        return set()
 
     def get_active(self, session_id: str) -> ActiveSession | None:
         """Return the ``ActiveSession`` if loaded, else ``None``."""
@@ -271,6 +321,11 @@ class SessionEngine:
         tool_result_callback: Callable[[ToolResult], None] | None = None,
     ) -> Deps:
         assert active.security is not None and active.sentinel is not None
+        session_id = active.state.session_id
+
+        def _append_session_events(events: list[dict[str, Any]]) -> None:
+            self._session_mgr.append_events(session_id, events)
+
         return Deps(
             config=self._config,
             data_dir=self._data_dir,
@@ -284,9 +339,11 @@ class SessionEngine:
             verbose=active.verbose,
             tool_call_callback=tool_call_callback,
             tool_result_callback=tool_result_callback,
+            append_session_events=_append_session_events,
             usage_tracker=active.usage_tracker,
             sandbox=self._sandbox_mgr,
             activated_skills=[],
+            credential_registry=self._credential_registry,
         )
 
     async def submit_message(
@@ -411,6 +468,7 @@ class SessionEngine:
         if cmd == "/usage":
             tracker = active.usage_tracker
             costs = tracker.estimated_cost()
+            cat_costs = tracker.estimated_category_cost()
             return {
                 "command": "usage",
                 "data": {
@@ -419,6 +477,7 @@ class SessionEngine:
                     "total_input": tracker.total_input,
                     "total_output": tracker.total_output,
                     "costs": {k: str(v) for k, v in costs.items()},
+                    "category_costs": {k: str(v) for k, v in cat_costs.items()},
                 },
             }
 
@@ -688,7 +747,11 @@ class SessionEngine:
                         active,
                         "on_done",
                         output,
-                        TurnUsage(input_tokens=inp_tok, output_tokens=out_tok),
+                        TurnUsage(
+                            input_tokens=inp_tok,
+                            output_tokens=out_tok,
+                            context_tokens=inp_tok + out_tok,
+                        ),
                     )
 
                 # Generate a title after the 1st and 3rd user message
@@ -753,7 +816,7 @@ class SessionEngine:
             # Auto-deny stale pending escalations of the same kind+key.
             # This happens when an exec timeout killed git push but the old
             # escalation callback is still blocked on the queue.
-            match_key = "ref" if kind == "git_push" else "domain"
+            match_key = {"git_push": "ref", "credential_access": "vault_path"}.get(kind, "domain")
             match_val = context.get(match_key, subject)
             for old in list(active.pending_escalations):
                 if old.get("kind") == kind and old.get(match_key) == match_val:
@@ -790,6 +853,45 @@ class SessionEngine:
                 await self._broadcast(
                     active, "on_git_push_approval_request", request_id, ref, explanation, changed_files
                 )
+            elif kind == "credential_access":
+                vault_path = context.get("vault_path", subject)
+                cred_name = context.get("name", vault_path)
+                cred_desc = context.get("description", "")
+                explanation = context.get("explanation", "")
+                self._session_mgr.append_events(
+                    session_id,
+                    [
+                        {
+                            "role": "credential_approval",
+                            "request_id": request_id,
+                            "vault_paths": [vault_path],
+                            "names": [cred_name],
+                            "descriptions": [cred_desc],
+                            "explanation": explanation,
+                        }
+                    ],
+                )
+                active.pending_escalations.append(
+                    {
+                        "request_id": request_id,
+                        "kind": "credential_access",
+                        "vault_path": vault_path,
+                        "vault_paths": [vault_path],
+                        "names": [cred_name],
+                        "descriptions": [cred_desc],
+                        "explanation": explanation,
+                    }
+                )
+                await self._broadcast(
+                    active,
+                    "on_credential_approval_request",
+                    request_id,
+                    [vault_path],
+                    [cred_name],
+                    [cred_desc],
+                    None,
+                    explanation,
+                )
             else:
                 self._session_mgr.append_events(
                     session_id,
@@ -807,19 +909,28 @@ class SessionEngine:
                     return False
                 if msg.request_id == request_id:
                     decision = msg.decision
-                    event_role = "git_push_approval" if kind == "git_push" else "domain_access_approval"
-                    self._session_mgr.append_events(
-                        session_id,
-                        [
-                            {
-                                "role": event_role,
-                                "request_id": request_id,
-                                "domain": subject,
-                                "command": cmd,
-                                "decision": decision,
-                            }
-                        ],
-                    )
+                    event_roles = {
+                        "git_push": "git_push_approval",
+                        "credential_access": "credential_approval",
+                    }
+                    event_role = event_roles.get(kind, "domain_access_approval")
+                    if kind == "credential_access":
+                        vp = context.get("vault_path", subject)
+                        response_event: dict[str, Any] = {
+                            "role": event_role,
+                            "request_id": request_id,
+                            "vault_paths": [vp],
+                            "decision": decision,
+                        }
+                    else:
+                        response_event = {
+                            "role": event_role,
+                            "request_id": request_id,
+                            "domain": subject,
+                            "command": cmd,
+                            "decision": decision,
+                        }
+                    self._session_mgr.append_events(session_id, [response_event])
                     active.pending_escalations = [
                         p for p in active.pending_escalations if p["request_id"] != request_id
                     ]
@@ -850,6 +961,16 @@ class SessionEngine:
                 [{"role": "git_push", "ref": ref, "decision": decision, "detail": detail}],
             )
             await self._broadcast(active, "on_git_push_info", ref, decision, detail)
+
+        return _notify
+
+    def _make_credential_info_cb(self, active: ActiveSession) -> Callable[[str, str], None]:
+        """Build a callback that broadcasts credential access decisions to subscribers."""
+
+        def _notify(vault_path: str, detail: str) -> None:
+            task = asyncio.ensure_future(self._broadcast(active, "on_credential_info", vault_path, detail))
+            active._pending_sends.add(task)
+            task.add_done_callback(active._pending_sends.discard)
 
         return _notify
 

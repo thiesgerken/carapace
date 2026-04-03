@@ -82,7 +82,10 @@ export function CommandResultView({ command, data }: CommandResultViewProps) {
   }
 
   if (command === "models" && isModelData(data) && data.models) {
-    const models = data.models as Record<string, { current: string; default: string }>;
+    const models = data.models as Record<
+      string,
+      { current: string; default: string }
+    >;
     const available = (data.available ?? []) as string[];
     return (
       <div className="my-2 text-sm">
@@ -121,11 +124,18 @@ export function CommandResultView({ command, data }: CommandResultViewProps) {
     );
   }
 
-  if ((command === "model" || command === "model-sentinel" || command === "model-title") && isModelData(data)) {
+  if (
+    (command === "model" ||
+      command === "model-sentinel" ||
+      command === "model-title") &&
+    isModelData(data)
+  ) {
     if (data.error)
       return <p className="my-1 text-sm text-destructive">{data.error}</p>;
     if (data.message)
-      return <p className="my-1 text-sm text-muted-foreground">{data.message}</p>;
+      return (
+        <p className="my-1 text-sm text-muted-foreground">{data.message}</p>
+      );
     return (
       <div className="my-1 text-sm">
         <p>
@@ -173,9 +183,7 @@ function isVerboseData(d: unknown): d is { verbose: boolean; message: string } {
   return !!d && typeof d === "object" && "message" in d;
 }
 
-function isModelData(
-  d: unknown,
-): d is {
+function isModelData(d: unknown): d is {
   current?: string;
   default?: string;
   message?: string;
@@ -193,6 +201,7 @@ function isMessageData(d: unknown): d is { message?: string; error?: string } {
 interface UsageBucket {
   input_tokens: number;
   output_tokens: number;
+  context_tokens?: number;
   cache_read_tokens: number;
   cache_write_tokens: number;
   input_audio_tokens: number;
@@ -207,6 +216,7 @@ interface UsagePayload {
   total_input: number;
   total_output: number;
   costs?: Record<string, string>;
+  category_costs?: Record<string, string>;
 }
 
 function isUsageData(d: unknown): d is UsagePayload {
@@ -228,6 +238,11 @@ function fmtCost(val: string): string {
   return n ? `$${n.toFixed(4)}` : "-";
 }
 
+function fmtContextTokens(n: number | undefined): string {
+  const v = n ?? 0;
+  return v > 0 ? fmt(v) : "-";
+}
+
 function UsageView({ data }: { data: UsagePayload }) {
   const allBuckets = [
     ...Object.values(data.models),
@@ -237,10 +252,10 @@ function UsageView({ data }: { data: UsagePayload }) {
     (b) => b.cache_read_tokens || b.cache_write_tokens,
   );
   const costs = data.costs ?? {};
+  const categoryCosts = data.category_costs ?? {};
   const hasCosts = Object.entries(costs).some(
     ([k, v]) => k !== "total" && v !== "0",
   );
-
   const isEmpty =
     Object.keys(data.models).length === 0 &&
     Object.keys(data.categories).length === 0;
@@ -256,7 +271,10 @@ function UsageView({ data }: { data: UsagePayload }) {
     title: string,
     rows: Record<string, UsageBucket>,
     showCost: boolean = false,
+    rowCosts: Record<string, string> | undefined = undefined,
+    showContextColumn = false,
   ) {
+    const costLookup = rowCosts ?? costs;
     return (
       <div className="my-2 text-sm">
         <p className="mb-1 text-xs font-medium text-muted-foreground">
@@ -268,6 +286,9 @@ function UsageView({ data }: { data: UsagePayload }) {
               <th className="pb-1 pr-3 font-medium">Source</th>
               <th className="pb-1 pr-3 font-medium text-right">Input</th>
               <th className="pb-1 pr-3 font-medium text-right">Output</th>
+              {showContextColumn && (
+                <th className="pb-1 pr-3 font-medium text-right">Context</th>
+              )}
               {hasCache && (
                 <th className="pb-1 pr-3 font-medium text-right">Cache Read</th>
               )}
@@ -292,6 +313,11 @@ function UsageView({ data }: { data: UsagePayload }) {
                 <td className="py-1 pr-3 text-xs text-right">
                   {fmt(u.output_tokens)}
                 </td>
+                {showContextColumn && (
+                  <td className="py-1 pr-3 text-xs text-right">
+                    {fmtContextTokens(u.context_tokens)}
+                  </td>
+                )}
                 {hasCache && (
                   <td className="py-1 pr-3 text-xs text-right">
                     {fmt(u.cache_read_tokens)}
@@ -305,9 +331,9 @@ function UsageView({ data }: { data: UsagePayload }) {
                 <td className="py-1 pr-3 text-xs text-right">{u.requests}</td>
                 {showCost && hasCosts && (
                   <td
-                    className={`py-1 text-xs text-right ${costColor(parseFloat(costs[name] ?? "0"))}`}
+                    className={`py-1 text-xs text-right ${costColor(parseFloat(costLookup[name] ?? "0"))}`}
                   >
-                    {fmtCost(costs[name] ?? "0")}
+                    {fmtCost(costLookup[name] ?? "0")}
                   </td>
                 )}
               </tr>
@@ -332,7 +358,7 @@ function UsageView({ data }: { data: UsagePayload }) {
       {Object.keys(data.models).length > 0 &&
         renderTable("By Model", data.models, true)}
       {Object.keys(data.categories).length > 0 &&
-        renderTable("By Category", data.categories)}
+        renderTable("By Category", data.categories, true, categoryCosts, true)}
       <p className="mt-1 text-xs text-muted-foreground">
         Total: {fmt(total)} tokens ({fmt(data.total_input)} in +{" "}
         {fmt(data.total_output)} out){costStr}

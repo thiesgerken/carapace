@@ -30,6 +30,10 @@ export interface HistoryMessage {
   risk_level?: string;
   ref?: string;
   changed_files?: string[];
+  vault_paths?: string[];
+  names?: string[];
+  descriptions?: string[];
+  skill_name?: string;
 }
 
 // WebSocket protocol — Server → Client
@@ -77,9 +81,20 @@ export interface GitPushApprovalRequest {
   changed_files: string[];
 }
 
+export interface CredentialApprovalRequest {
+  type: "credential_approval_request";
+  request_id: string;
+  vault_paths: string[];
+  names: string[];
+  descriptions: string[];
+  skill_name?: string;
+  explanation: string;
+}
+
 export interface TurnUsage {
   input_tokens: number;
   output_tokens: number;
+  context_tokens?: number;
 }
 
 export interface Done {
@@ -127,6 +142,7 @@ export type ServerMessage =
   | ApprovalRequest
   | DomainAccessApprovalRequest
   | GitPushApprovalRequest
+  | CredentialApprovalRequest
   | Done
   | CommandResult
   | ErrorMessage
@@ -190,6 +206,11 @@ export type ChatMessage =
   | {
       kind: "git_push_approval";
       request: GitPushApprovalRequest;
+      decision?: EscalationDecision;
+    }
+  | {
+      kind: "credential_approval";
+      request: CredentialApprovalRequest;
       decision?: EscalationDecision;
     }
   | { kind: "command"; command: string; data: unknown }

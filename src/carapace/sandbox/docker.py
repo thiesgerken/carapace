@@ -71,29 +71,62 @@ class DockerRuntime(ContainerRuntime):
         except ImageNotFound:
             return False
 
+    def _attached_network_for_logical(self, logical: str) -> str | None:
+        """If this process runs inside a container, return the Docker network name we are
+        attached to that matches *logical* (exact or ``*_{logical}`` compose prefix).
+
+        Avoids creating a duplicate bridge when Compose uses ``project_logical`` but
+        config only says ``logical``.
+        """
+        import os
+
+        hostname = os.environ.get("HOSTNAME", "")
+        if not hostname:
+            return None
+
+        try:
+            container = self._client.containers.get(hostname)
+            container.reload()
+            nets: dict[str, object] = container.attrs.get("NetworkSettings", {}).get("Networks", {})
+            if logical in nets:
+                return logical
+            suffix = f"_{logical}"
+            for key in nets:
+                if key.endswith(suffix):
+                    return key
+        except NotFound:
+            pass
+        return None
+
     def _ensure_network(self, name: str, *, internal: bool = False) -> str:
         """Ensure the network exists and return its actual Docker name.
 
         Docker Compose adds a project-name prefix (e.g. ``carapace_carapace-sandbox``).
-        We resolve that here so containers are always connected to the right network.
+        When the server container is already on that net, we prefer it over
+        ``docker network list`` by short name (which can miss the prefixed net).
         """
         if name in self._network_name_cache:
             return self._network_name_cache[name]
 
-        existing = self._client.networks.list(names=[name])
+        attached = self._attached_network_for_logical(name)
+        lookup = attached if attached else name
+        if attached and attached != name:
+            logger.debug(f"Using host container's sandbox network '{attached}' (logical '{name}')")
+
+        existing = self._client.networks.list(names=[lookup])
         if existing:
             # Pick the network whose name matches exactly or ends with _{name}.
             # n.name is str | None in the SDK stubs, so guard against None.
             actual: str = next(
-                (n.name for n in existing if n.name and (n.name == name or n.name.endswith(f"_{name}"))),
-                existing[0].name or name,
+                (n.name for n in existing if n.name and (n.name == lookup or n.name.endswith(f"_{lookup}"))),
+                existing[0].name or lookup,
             )
             if actual != name:
                 logger.debug(f"Resolved network '{name}' → '{actual}' (docker-compose prefix)")
         else:
-            self._client.networks.create(name, driver="bridge", internal=internal)
-            logger.info(f"Created Docker network '{name}' (internal={internal})")
-            actual = name
+            self._client.networks.create(lookup, driver="bridge", internal=internal)
+            logger.info(f"Created Docker network '{lookup}' (internal={internal})")
+            actual = lookup
 
         self._network_name_cache[name] = actual
         return actual

@@ -1,0 +1,161 @@
+#!/usr/bin/env python3
+"""ccred — credential helper for Carapace sandbox containers.
+
+Talks to the Carapace REST API via CARAPACE_API_URL to list and fetch
+credentials from the configured vault backends.
+
+Usage:
+    ccred list
+    ccred search QUERY
+    ccred get <vault_path> [-o FILE]
+"""
+
+from __future__ import annotations
+
+import argparse
+import base64
+import json
+import os
+import sys
+import urllib.error
+import urllib.parse
+import urllib.request
+from typing import Any
+
+
+def _parse_api_url() -> tuple[str, str | None]:
+    """Return (base_url, auth_header) from CARAPACE_API_URL.
+
+    The URL may embed credentials as ``scheme://user:pass@host:port``.
+    urllib doesn't send them automatically, so we extract and encode them.
+    """
+    raw = os.environ.get("CARAPACE_API_URL")
+    if not raw:
+        print("error: CARAPACE_API_URL not set", file=sys.stderr)
+        sys.exit(1)
+    parsed = urllib.parse.urlparse(raw)
+    if parsed.username and parsed.hostname:
+        creds = base64.b64encode(f"{parsed.username}:{parsed.password or ''}".encode()).decode()
+        clean = parsed._replace(netloc=parsed.hostname + (f":{parsed.port}" if parsed.port else ""))
+        return clean.geturl().rstrip("/"), f"Basic {creds}"
+    return raw.rstrip("/"), None
+
+
+_base_url: str | None = None
+_auth_header: str | None = None
+
+
+def _ensure_api() -> None:
+    global _base_url, _auth_header
+    if _base_url is None:
+        _base_url, _auth_header = _parse_api_url()
+
+
+def _request(path: str) -> urllib.request.Request:
+    _ensure_api()
+    req = urllib.request.Request(f"{_base_url}{path}")
+    if _auth_header:
+        req.add_header("Authorization", _auth_header)
+    return req
+
+
+def _fetch_credential_metadata(query: str) -> list[dict[str, Any]]:
+    path = "/credentials"
+    if query:
+        path += f"?q={urllib.parse.quote(query)}"
+    try:
+        with urllib.request.urlopen(_request(path)) as resp:
+            return json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        print(f"error: {e.code} {e.reason}", file=sys.stderr)
+        sys.exit(1)
+
+
+def _print_credential_list(data: list[dict[str, Any]]) -> None:
+    if not data:
+        print("No credentials found.")
+        return
+
+    for cred in data:
+        line = cred.get("name", cred.get("vault_path", "?"))
+        desc = cred.get("description", "")
+        vp = cred.get("vault_path", "")
+        if desc:
+            print(f"{line} ({vp}) — {desc}")
+        else:
+            print(f"{line} ({vp})")
+
+
+def cmd_list(_args: argparse.Namespace) -> None:
+    _print_credential_list(_fetch_credential_metadata(""))
+
+
+def cmd_search(args: argparse.Namespace) -> None:
+    _print_credential_list(_fetch_credential_metadata(args.query))
+
+
+def cmd_get(args: argparse.Namespace) -> None:
+    vault_path = args.vault_path
+    path = f"/credentials/{vault_path}"
+
+    try:
+        with urllib.request.urlopen(_request(path)) as resp:
+            value = resp.read().decode()
+    except urllib.error.HTTPError as e:
+        if e.code == 403:
+            print("error: credential request denied by user", file=sys.stderr)
+            sys.exit(1)
+        if e.code == 404:
+            print(f"error: credential not found: {vault_path}", file=sys.stderr)
+            sys.exit(1)
+        print(f"error: {e.code} {e.reason}", file=sys.stderr)
+        sys.exit(1)
+
+    if args.output:
+        fd = os.open(args.output, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o400)
+        with os.fdopen(fd, "w") as f:
+            f.write(value)
+        print(f"Written to {args.output}", file=sys.stderr)
+    else:
+        sys.stdout.write(value)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        prog="ccred",
+        description="Carapace credential helper",
+        epilog=(
+            "examples:\n"
+            "  ccred list                         list all available credentials\n"
+            "  ccred search gmail                 search credentials matching 'gmail'\n"
+            "  ccred get <backend>/<id>           fetch value to stdout (blocks until approved)\n"
+            "  ccred get <backend>/<id> -o FILE   write value to FILE with mode 0400\n"
+            "                                     (-o is subject to approval like stdout fetch)\n"
+            "\n"
+            "Only request credentials that are needed. Never echo secret values or log them;\n"
+            "prefer -o or env/subshell wiring so tools consume secrets without exposing them."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    sub.add_parser("list", help="List available credentials")
+
+    sr = sub.add_parser("search", help="Search credentials by name or description")
+    sr.add_argument("query", help="Search term")
+
+    get = sub.add_parser("get", help="Fetch a credential value")
+    get.add_argument("vault_path", help="Vault path (<backend>/<id>)")
+    get.add_argument("-o", "--output", help="Write value to file instead of stdout")
+
+    args = parser.parse_args(args=None if sys.argv[1:] else ["--help"])
+    if args.command == "list":
+        cmd_list(args)
+    elif args.command == "search":
+        cmd_search(args)
+    elif args.command == "get":
+        cmd_get(args)
+
+
+if __name__ == "__main__":
+    main()

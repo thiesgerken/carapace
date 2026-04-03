@@ -31,7 +31,7 @@ def test_import_skills():
 
 
 def test_import_credentials():
-    from carapace.credentials import MockCredentialBroker  # noqa: F401
+    from carapace.credentials import VaultBackend  # noqa: F401
 
 
 def test_import_agent():
@@ -61,7 +61,7 @@ def test_import_ws_models():
 
 
 def test_import_security():
-    from carapace.security import SAFE_TOOLS, evaluate_domain_with, evaluate_with  # noqa: F401
+    from carapace.security import SAFE_TOOLS, CredentialAccessEntry, evaluate_domain_with, evaluate_with  # noqa: F401
     from carapace.security.context import (  # noqa: F401
         ActionLogEntry,
         AuditEntry,
@@ -69,3 +69,7 @@ def test_import_security():
         SessionSecurity,
     )
     from carapace.security.sentinel import Sentinel  # noqa: F401
+
+
+def test_import_ws_credential_models():
+    from carapace.ws_models import CredentialApprovalRequest  # noqa: F401

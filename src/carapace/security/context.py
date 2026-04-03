@@ -66,6 +66,13 @@ class GitPushEntry(BaseModel):
     explanation: str = ""
 
 
+class CredentialAccessEntry(BaseModel):
+    type: Literal["credential_access"] = "credential_access"
+    vault_paths: list[str]
+    decision: Literal["approved", "escalated", "denied"] = "approved"
+    explanation: str = ""
+
+
 ActionLogEntry = Annotated[
     UserMessageEntry
     | ToolCallEntry
@@ -74,7 +81,8 @@ ActionLogEntry = Annotated[
     | ApprovalEntry
     | SkillActivatedEntry
     | UserVouchedEntry
-    | GitPushEntry,
+    | GitPushEntry
+    | CredentialAccessEntry,
     Field(discriminator="type"),
 ]
 
@@ -93,7 +101,7 @@ class SentinelVerdict(BaseModel):
 
 class AuditEntry(BaseModel):
     timestamp: datetime
-    kind: Literal["tool_call", "proxy_domain", "git_push"]
+    kind: Literal["tool_call", "proxy_domain", "git_push", "credential_access"]
     tool: str | None = None
     args_summary: dict[str, Any] = {}
     domain: str | None = None
@@ -105,7 +113,7 @@ class AuditEntry(BaseModel):
     def now(
         cls,
         *,
-        kind: Literal["tool_call", "proxy_domain", "git_push"],
+        kind: Literal["tool_call", "proxy_domain", "git_push", "credential_access"],
         final_decision: Literal["auto_allowed", "allowed", "escalated", "denied"],
         tool: str | None = None,
         args_summary: dict[str, Any] | None = None,
@@ -142,6 +150,7 @@ class SessionSecurity:
             | SkillActivatedEntry
             | UserVouchedEntry
             | GitPushEntry
+            | CredentialAccessEntry
         ] = []
         self.sentinel_eval_count: int = 0
         self._last_synced_idx: int = 0
@@ -149,6 +158,7 @@ class SessionSecurity:
         self._user_escalation_callback: Callable[[str, str, dict[str, Any]], Awaitable[bool]] | None = None
         self._domain_info_callback: Callable[[str, str], None] | None = None
         self._push_info_callback: Callable[[str, str, str], Awaitable[None]] | None = None
+        self._credential_info_callback: Callable[[str, str], None] | None = None
 
     def append(self, entry: ActionLogEntry) -> None:
         self.action_log.append(entry)
@@ -164,6 +174,7 @@ class SessionSecurity:
         | SkillActivatedEntry
         | UserVouchedEntry
         | GitPushEntry
+        | CredentialAccessEntry
     ]:
         """Return action log entries added since the last sentinel sync."""
         entries = self.action_log[self._last_synced_idx :]
@@ -221,6 +232,20 @@ class SessionSecurity:
     async def notify_push_decision(self, ref: str, decision: str, detail: str) -> None:
         if self._push_info_callback is not None:
             await self._push_info_callback(ref, decision, detail)
+
+    def set_credential_info_callback(
+        self,
+        callback: Callable[[str, str], None] | None,
+    ) -> None:
+        """Set callback to notify the UI about credential access decisions.
+
+        Signature: ``callback(vault_path, detail)``.
+        """
+        self._credential_info_callback = callback
+
+    def notify_credential_decision(self, vault_path: str, detail: str) -> None:
+        if self._credential_info_callback is not None:
+            self._credential_info_callback(vault_path, detail)
 
     async def escalate_to_user(self, subject: str, context: dict[str, Any]) -> bool:
         if self._user_escalation_callback is None:

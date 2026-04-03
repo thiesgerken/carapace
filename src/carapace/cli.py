@@ -86,6 +86,13 @@ def _replay_history(server: str, session_id: str, headers: dict[str, str], limit
 # --- Rendering helpers for server responses ---
 
 
+def _format_credentials(creds: list[dict[str, str]] | None) -> str:
+    """Format approved credentials for display."""
+    if not creds:
+        return "(none)"
+    return ", ".join(c["name"] if isinstance(c, dict) else str(c) for c in creds)
+
+
 def _render_command_result(data: dict[str, Any]) -> None:
     cmd = data.get("command", "")
     payload: Any = data.get("data", {})
@@ -125,7 +132,7 @@ def _render_command_result(data: dict[str, Any]) -> None:
                 Panel(
                     f"[bold]Session ID:[/bold] {payload['session_id']}\n"
                     f"[bold]Channel:[/bold] {payload['channel_type']}\n"
-                    f"[bold]Approved credentials:[/bold] {payload.get('approved_credentials') or '(none)'}\n"
+                    f"[bold]Approved credentials:[/bold] {_format_credentials(payload.get('approved_credentials'))}\n"
                     f"[bold]Allowed domains:[/bold]{domains_str}",
                     title="Session State",
                 )
@@ -178,6 +185,7 @@ def _render_usage(payload: dict[str, Any]) -> None:
     models: dict[str, dict[str, int]] = payload.get("models", {})
     categories: dict[str, dict[str, int]] = payload.get("categories", {})
     costs: dict[str, str] = payload.get("costs", {})
+    category_costs: dict[str, str] = payload.get("category_costs", {})
 
     if not models and not categories:
         console.print("[dim]No token usage recorded yet.[/dim]")
@@ -200,31 +208,54 @@ def _render_usage(payload: dict[str, Any]) -> None:
             return "-"
         return f"[{_cost_style(n)}]${n:.4f}[/{_cost_style(n)}]"
 
-    def _make_table(title: str, rows: dict[str, dict[str, int]], show_cost: bool = False) -> Table:
+    def _fmt_context_tokens(n: int) -> str:
+        return f"{n:,}" if n else "-"
+
+    def _make_table(
+        title: str,
+        rows: dict[str, dict[str, int]],
+        *,
+        show_cost: bool = False,
+        row_costs: dict[str, str] | None = None,
+        show_context_column: bool = False,
+    ) -> Table:
         table = Table(title=title)
         table.add_column("Source", style="bold")
         table.add_column("Input", justify="right")
         table.add_column("Output", justify="right")
+        if show_context_column:
+            table.add_column("Context", justify="right")
         if has_cache:
             table.add_column("Cache Read", justify="right")
             table.add_column("Cache Write", justify="right")
         table.add_column("Requests", justify="right")
         if show_cost and has_costs:
             table.add_column("Cost", justify="right")
+        lookup = row_costs if row_costs is not None else costs
         for name, usage in rows.items():
             row = [name, f"{usage.get('input_tokens', 0):,}", f"{usage.get('output_tokens', 0):,}"]
+            if show_context_column:
+                row.append(_fmt_context_tokens(int(usage.get("context_tokens", 0) or 0)))
             if has_cache:
                 row += [f"{usage.get('cache_read_tokens', 0):,}", f"{usage.get('cache_write_tokens', 0):,}"]
             row.append(str(usage.get("requests", 0)))
             if show_cost and has_costs:
-                row.append(_styled_cost(costs.get(name, "0")))
+                row.append(_styled_cost(lookup.get(name, "0")))
             table.add_row(*row)
         return table
 
     if models:
         console.print(_make_table("Usage by Model", models, show_cost=True))
     if categories:
-        console.print(_make_table("Usage by Category", categories))
+        console.print(
+            _make_table(
+                "Usage by Category",
+                categories,
+                show_cost=True,
+                row_costs=category_costs,
+                show_context_column=True,
+            ),
+        )
 
     total_in = payload.get("total_input", 0)
     total_out = payload.get("total_output", 0)
@@ -254,6 +285,38 @@ async def _render_escalation_request(data: dict[str, Any]) -> str:
         Panel(
             "\n".join(panel_lines),
             title=f"[yellow]{title_text}[/yellow]",
+            border_style="yellow",
+        )
+    )
+    choice = await asyncio.get_event_loop().run_in_executor(
+        None,
+        lambda: console.input("[bold]\\[a]llow / \\[d]eny?[/bold] ").strip().lower(),
+    )
+    if choice in ("a", "allow", "y", "yes"):
+        return "allow"
+    return "deny"
+
+
+async def _render_credential_escalation(data: dict[str, Any]) -> str:
+    """Render a sentinel-escalated credential request and return the decision."""
+    names = data.get("names", [])
+    descriptions = data.get("descriptions", [])
+    explanation = data.get("explanation", "")
+
+    panel_lines: list[str] = []
+    for name, desc in zip(names, descriptions, strict=False):
+        line = f"[bold]{name}[/bold]"
+        if desc:
+            line += f" — {desc}"
+        panel_lines.append(line)
+    if explanation:
+        panel_lines.append(f"\n[dim]{explanation}[/dim]")
+
+    console.print()
+    console.print(
+        Panel(
+            "\n".join(panel_lines),
+            title="[yellow]Credential Request[/yellow]",
             border_style="yellow",
         )
     )
@@ -460,7 +523,7 @@ async def _read_server_responses(ws) -> None:
                         )
                     )
 
-                case "proxy_approval_request":
+                case "proxy_approval_request" | "domain_access_approval_request":
                     _stop_live()
                     try:
                         decision = await _render_escalation_request(msg)
@@ -470,7 +533,24 @@ async def _read_server_responses(ws) -> None:
                     await ws.send(
                         json.dumps(
                             {
-                                "type": "proxy_approval_response",
+                                "type": "escalation_response",
+                                "request_id": msg["request_id"],
+                                "decision": decision,
+                            }
+                        )
+                    )
+
+                case "credential_approval_request":
+                    _stop_live()
+                    try:
+                        decision = await _render_credential_escalation(msg)
+                    except (KeyboardInterrupt, EOFError):
+                        decision = "deny"
+                        console.print("\n[dim]Denied (interrupted).[/dim]")
+                    await ws.send(
+                        json.dumps(
+                            {
+                                "type": "escalation_response",
                                 "request_id": msg["request_id"],
                                 "decision": decision,
                             }

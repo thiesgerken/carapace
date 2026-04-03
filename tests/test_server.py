@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+import base64
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
@@ -11,9 +12,12 @@ from fastapi.testclient import TestClient
 import carapace.server as srv
 from carapace.bootstrap import ensure_data_dir
 from carapace.config import load_config
+from carapace.credentials import CredentialRegistry
 from carapace.git.store import GitStore
+from carapace.models import CredentialMetadata
 from carapace.sandbox.manager import SandboxManager
-from carapace.server import app
+from carapace.security.context import CredentialAccessEntry
+from carapace.server import app, sandbox_app
 from carapace.session import SessionEngine, SessionManager
 from carapace.skills import SkillRegistry
 
@@ -35,8 +39,10 @@ def _setup_server(tmp_path, monkeypatch):
     sandbox_mgr = MagicMock(spec=SandboxManager)
     sandbox_mgr.get_domain_info.return_value = []
 
+    cred_reg = CredentialRegistry()
     srv._data_dir = tmp_path
     srv._config = config
+    srv._credential_registry = cred_reg
     srv._engine = SessionEngine(
         config=config,
         data_dir=tmp_path,
@@ -46,6 +52,7 @@ def _setup_server(tmp_path, monkeypatch):
         skill_catalog=skill_catalog,
         agent_model=None,
         sandbox_mgr=sandbox_mgr,
+        credential_registry=cred_reg,
     )
 
 
@@ -108,6 +115,40 @@ def test_get_session(client, auth_headers):
 def test_get_nonexistent_session(client, auth_headers):
     resp = client.get("/api/sessions/doesnotexist", headers=auth_headers)
     assert resp.status_code == 404
+
+
+def test_sandbox_list_credentials_audit(client, auth_headers, monkeypatch):
+    """GET /credentials appends CredentialAccessEntry and audit for the session."""
+    create_resp = client.post("/api/sessions", headers=auth_headers)
+    sid = create_resp.json()["session_id"]
+
+    mock_reg = MagicMock()
+    mock_reg.list = AsyncMock(return_value=[CredentialMetadata(vault_path="dev/key", name="key", description="test")])
+    monkeypatch.setattr(srv, "_credential_registry", mock_reg, raising=False)
+    srv._engine.sandbox_mgr.verify_session_token.side_effect = lambda s, t: s == sid and t == "secret"
+
+    basic = base64.b64encode(b"wrong-id:secret").decode()
+    sb_client = TestClient(sandbox_app)
+    resp = sb_client.get("/credentials", headers={"Authorization": f"Basic {basic}"})
+    assert resp.status_code == 401
+
+    basic_ok = base64.b64encode(f"{sid}:secret".encode()).decode()
+    resp = sb_client.get("/credentials?q=dev", headers={"Authorization": f"Basic {basic_ok}"})
+    assert resp.status_code == 200
+    assert resp.json() == [{"vault_path": "dev/key", "name": "key", "description": "test"}]
+
+    active = srv._engine.get_or_activate(sid)
+    cred_entries = [e for e in active.security.action_log if isinstance(e, CredentialAccessEntry)]
+    assert len(cred_entries) == 1
+    assert cred_entries[0].vault_paths == ["dev/key"]
+    assert cred_entries[0].decision == "approved"
+    assert "query='dev'" in cred_entries[0].explanation
+
+    audit_path = srv._data_dir / "sessions" / sid / "audit.yaml"
+    assert audit_path.is_file()
+    text = audit_path.read_text()
+    assert "credential_access" in text
+    assert "auto_allowed" in text
 
 
 # --- WebSocket: basic slash commands ---

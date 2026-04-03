@@ -125,11 +125,24 @@ class GitPushApprovalRequest(BaseModel):
     changed_files: list[str]
 
 
+class CredentialApprovalRequest(BaseModel):
+    """Server → Client: sentinel escalated a credential access request to the user."""
+
+    type: Literal["credential_approval_request"] = "credential_approval_request"
+    request_id: str
+    vault_paths: list[str]
+    names: list[str]
+    descriptions: list[str]
+    skill_name: str | None = None
+    explanation: str = ""
+
+
 class TurnUsage(BaseModel):
     """Token counts from the last LLM request of a turn."""
 
     input_tokens: int = 0
     output_tokens: int = 0
+    context_tokens: int = 0
 
 
 class Done(BaseModel):
@@ -164,7 +177,7 @@ class SessionTitleUpdate(BaseModel):
 
 
 class StatusUpdate(BaseModel):
-    """Server → Client: session status on connect."""
+    """Server → Client: session status on connect (includes last agent-turn usage for the context bar)."""
 
     type: Literal["status"] = "status"
     agent_running: bool
@@ -185,6 +198,7 @@ ServerEnvelope = (
     | ApprovalRequest
     | DomainAccessApprovalRequest
     | GitPushApprovalRequest
+    | CredentialApprovalRequest
     | Done
     | CommandResult
     | ErrorMessage

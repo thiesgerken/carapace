@@ -118,6 +118,12 @@ spec:
           resources:
             {{- toYaml . | nindent 12 }}
           {{- end }}
+          startupProbe:
+            tcpSocket:
+              port: api
+            initialDelaySeconds: 2
+            periodSeconds: 5
+            failureThreshold: 20
           livenessProbe:
             tcpSocket:
               port: api
@@ -128,6 +134,38 @@ spec:
               port: api
             initialDelaySeconds: 5
             periodSeconds: 10
+      {{- range .Values.bitwarden.instances }}
+        - name: {{ .name }}
+          image: {{ include "carapace.bitwardenImage" $ }}
+          imagePullPolicy: {{ $.Values.bitwarden.image.pullPolicy }}
+          env:
+            - name: BW_SERVER_URL
+              value: {{ .serverUrl | quote }}
+            - name: BW_SERVE_PORT
+              value: {{ .port | default 8087 | quote }}
+          envFrom:
+            - secretRef:
+                name: {{ .existingSecret }}
+          {{- with .resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          startupProbe:
+            tcpSocket:
+              port: {{ .port | default 8087 }}
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            failureThreshold: 30
+          readinessProbe:
+            tcpSocket:
+              port: {{ .port | default 8087 }}
+            periodSeconds: 10
+          livenessProbe:
+            exec:
+              command: ["wget", "-q", "-O", "/dev/null", "--post-data=", "http://127.0.0.1:{{ .port | default 8087 }}/sync"]
+            periodSeconds: 120
+            timeoutSeconds: 10
+      {{- end }}
       volumes:
         - name: data
           persistentVolumeClaim:

@@ -5,6 +5,7 @@ import contextlib
 import inspect
 import logging  # stdlib logging used only for _InterceptHandler → loguru bridge
 import os
+import secrets
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated, Any, Literal
@@ -40,12 +41,14 @@ from tenacity import retry_if_exception_type, stop_after_attempt, wait_exponenti
 from carapace.auth import get_token
 from carapace.bootstrap import ensure_data_dir, ensure_knowledge_dir
 from carapace.config import _resolve_data_dir, _resolve_knowledge_dir, get_config_path, get_data_dir, load_config
+from carapace.credentials import CredentialRegistry, build_credential_registry
 from carapace.git.http import GitHttpHandler
 from carapace.git.store import GitStore
 from carapace.models import Config, SessionState, ToolResult
 from carapace.sandbox.manager import SandboxManager
 from carapace.sandbox.proxy import ProxyServer
 from carapace.sandbox.runtime import ContainerRuntime
+from carapace.security.context import AuditEntry, CredentialAccessEntry
 from carapace.session import SessionEngine, SessionManager
 from carapace.skills import SkillRegistry
 from carapace.ws_models import (
@@ -55,6 +58,7 @@ from carapace.ws_models import (
     Cancelled,
     CancelRequest,
     CommandResult,
+    CredentialApprovalRequest,
     DomainAccessApprovalRequest,
     Done,
     ErrorMessage,
@@ -80,6 +84,7 @@ _data_dir: Path
 _config: Config
 _engine: SessionEngine
 _git_handler: GitHttpHandler
+_credential_registry: CredentialRegistry
 
 
 def _retry_http_client() -> AsyncClient:
@@ -157,7 +162,7 @@ async def _idle_cleanup_loop(sandbox_mgr: SandboxManager) -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _data_dir, _config, _engine, _git_handler
+    global _data_dir, _config, _engine, _git_handler, _credential_registry
 
     # 1. Load config
     config_path = get_config_path()
@@ -256,6 +261,10 @@ async def lifespan(app: FastAPI):
         if removed:
             logger.info(f"Cleaned up {removed} orphaned sandbox(es)")
 
+    _credential_registry = await build_credential_registry(_config.credentials, _data_dir)
+    if _credential_registry.backend_names:
+        logger.info(f"Credential backends: {', '.join(_credential_registry.backend_names)}")
+
     _engine = SessionEngine(
         config=_config,
         data_dir=_data_dir,
@@ -265,6 +274,7 @@ async def lifespan(app: FastAPI):
         skill_catalog=skill_catalog,
         agent_model=agent_model,
         sandbox_mgr=_sandbox_mgr,
+        credential_registry=_credential_registry,
         model_factory=_create_model,
     )
 
@@ -353,6 +363,7 @@ async def lifespan(app: FastAPI):
     with contextlib.suppress(asyncio.CancelledError):
         await internal_task
     await proxy.stop()
+    await _credential_registry.close()
     await _sandbox_mgr.cleanup_all()
     price_updater.stop()
     logger.info("Shutdown complete")
@@ -479,6 +490,7 @@ _HistoryRole = Literal[
     "approval_response",
     "git_push",
     "git_push_approval",
+    "credential_approval",
 ]
 
 
@@ -498,6 +510,11 @@ class HistoryMessage(BaseModel):
     explanation: str | None = None
     risk_level: str | None = None
     ref: str | None = None
+    changed_files: list[str] | None = None
+    vault_paths: list[str] | None = None
+    names: list[str] | None = None
+    descriptions: list[str] | None = None
+    skill_name: str | None = None
 
 
 @router.get("/sessions/{session_id}/history", response_model=list[HistoryMessage])
@@ -610,6 +627,29 @@ class WebSocketSubscriber:
     async def on_git_push_info(self, ref: str, decision: str, detail: str) -> None:
         await self._safe_send(ToolCallInfo(tool="git_push", args={"ref": ref, "decision": decision}, detail=detail))
 
+    async def on_credential_info(self, vault_path: str, detail: str) -> None:
+        await self._safe_send(ToolCallInfo(tool="credential_access", args={"vault_path": vault_path}, detail=detail))
+
+    async def on_credential_approval_request(
+        self,
+        request_id: str,
+        vault_paths: list[str],
+        names: list[str],
+        descriptions: list[str],
+        skill_name: str | None,
+        explanation: str,
+    ) -> None:
+        await self._safe_send(
+            CredentialApprovalRequest(
+                request_id=request_id,
+                vault_paths=vault_paths,
+                names=names,
+                descriptions=descriptions,
+                skill_name=skill_name,
+                explanation=explanation,
+            )
+        )
+
 
 @router.websocket("/chat/{session_id}")
 async def chat_ws(
@@ -631,11 +671,9 @@ async def chat_ws(
     # Tell the client whether an agent turn is in progress.
     agent_running = active.agent_task is not None and not active.agent_task.done()
     tracker = active.usage_tracker
-    usage = (
-        TurnUsage(input_tokens=tracker.total_input, output_tokens=tracker.total_output)
-        if tracker.total_input or tracker.total_output
-        else None
-    )
+    agent_cat = tracker.categories.get("agent")
+    ctx = agent_cat.context_tokens if agent_cat else 0
+    usage = TurnUsage(context_tokens=ctx) if ctx else None
     with contextlib.suppress(Exception):
         await _send(websocket, StatusUpdate(agent_running=agent_running, usage=usage))
 
@@ -664,6 +702,18 @@ async def chat_ws(
                         ref=pp.get("ref", ""),
                         explanation=pp.get("explanation", ""),
                         changed_files=pp.get("changed_files", []),
+                    ),
+                )
+            elif pp.get("kind") == "credential_access":
+                await _send(
+                    websocket,
+                    CredentialApprovalRequest(
+                        request_id=pp["request_id"],
+                        vault_paths=pp.get("vault_paths", []),
+                        names=pp.get("names", []),
+                        descriptions=pp.get("descriptions", []),
+                        skill_name=pp.get("skill_name"),
+                        explanation=pp.get("explanation", ""),
                     ),
                 )
             else:
@@ -900,6 +950,119 @@ async def git_http_backend(request: Request, path: str) -> Response:
         body=body,
     )
     return Response(content=response_body, status_code=status_code, headers=headers)
+
+
+def _authenticate_sandbox(auth: str | None) -> str | None:
+    """Extract and verify session_id from Basic Auth on the sandbox API."""
+    if not auth or not auth.startswith("Basic "):
+        return None
+    import base64
+
+    try:
+        decoded = base64.b64decode(auth.removeprefix("Basic ")).decode()
+    except Exception:
+        return None
+    session_id, _, token = decoded.partition(":")
+    if not session_id or not token:
+        return None
+    if _engine.sandbox_mgr.verify_session_token(session_id, token):
+        return session_id
+    return None
+
+
+@sandbox_app.get("/credentials")
+async def list_credentials(request: Request, q: str = "") -> list[dict[str, str]]:
+    """List/search available credentials (metadata only, no values)."""
+    session_id = _authenticate_sandbox(request.headers.get("authorization"))
+    if session_id is None:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    active = _engine.get_or_activate(session_id)
+    if active.security is None:
+        raise HTTPException(status_code=403, detail="Session not initialised")
+
+    items = await _credential_registry.list(q)
+    paths = [i.vault_path for i in items]
+    explanation = f"Sandbox listed credential metadata (query={q!r}, {len(paths)} item(s))"
+    active.security.append(CredentialAccessEntry(vault_paths=paths, decision="approved", explanation=explanation))
+    active.security.write_audit(
+        AuditEntry.now(
+            kind="credential_access",
+            final_decision="auto_allowed",
+            args_summary={"operation": "list", "query": q, "count": len(paths)},
+            explanation=explanation,
+        )
+    )
+    active.security.notify_credential_decision("<list>", f"[sandbox: list metadata] {explanation}")
+
+    return [i.model_dump() for i in items]
+
+
+@sandbox_app.get("/credentials/{vault_path:path}")
+async def fetch_credential(request: Request, vault_path: str) -> Response:
+    """Fetch a credential value (sentinel-gated, may escalate to user)."""
+    session_id = _authenticate_sandbox(request.headers.get("authorization"))
+    if session_id is None:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    try:
+        meta = await _credential_registry.fetch_metadata(vault_path)
+    except KeyError:
+        return Response(status_code=404, content="Credential not found")
+
+    active = _engine.get_or_activate(session_id)
+
+    already_approved = any(c.vault_path == vault_path for c in active.state.approved_credentials)
+
+    if not already_approved:
+        if active.security is None or active.sentinel is None:
+            return Response(status_code=403, content="Session not initialised")
+
+        from carapace.security import evaluate_credential_with
+
+        cred_eval = await evaluate_credential_with(
+            active.security,
+            active.sentinel,
+            vault_path,
+            meta.name,
+            meta.description,
+            f"Sandbox requested credential: {meta.name}",
+            usage_tracker=active.usage_tracker,
+        )
+        if not cred_eval.allowed:
+            return Response(status_code=403, content="Credential access denied")
+
+        if not any(c.vault_path == vault_path for c in active.state.approved_credentials):
+            active.state.approved_credentials.append(meta)
+            _engine.session_mgr.save_state(active.state)
+            if not cred_eval.user_was_prompted:
+                request_id = secrets.token_hex(8)
+                _engine.session_mgr.append_events(
+                    session_id,
+                    [
+                        {
+                            "role": "credential_approval",
+                            "request_id": request_id,
+                            "vault_paths": [vault_path],
+                            "names": [meta.name],
+                            "descriptions": [meta.description],
+                            "explanation": f"Sandbox credential fetch (sentinel allowed): {cred_eval.explanation}",
+                        },
+                        {
+                            "role": "credential_approval",
+                            "request_id": request_id,
+                            "vault_paths": [vault_path],
+                            "decision": "allow",
+                        },
+                    ],
+                )
+
+    try:
+        value = await _credential_registry.fetch(vault_path)
+    except KeyError:
+        return Response(status_code=404, content="Credential not found")
+
+    return Response(content=value, media_type="text/plain")
 
 
 if __name__ == "__main__":

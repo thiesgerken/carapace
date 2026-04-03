@@ -8,7 +8,12 @@ from typing import TYPE_CHECKING, Any
 
 from loguru import logger
 
-from carapace.channels.matrix.approval import TYPING_INTERVAL, PendingApproval, PendingDomainApproval
+from carapace.channels.matrix.approval import (
+    TYPING_INTERVAL,
+    PendingApproval,
+    PendingCredentialApproval,
+    PendingDomainApproval,
+)
 from carapace.channels.matrix.formatting import format_approval_request, format_domain_escalation
 from carapace.models import ToolResult
 from carapace.ws_models import ApprovalRequest, TurnUsage
@@ -31,6 +36,8 @@ class MatrixSubscriber:
         self._approval_events: dict[str, str] = {}
         # event_id → request_id (for reaction-based domain approval)
         self._domain_events: dict[str, str] = {}
+        # event_id → request_id (for reaction-based credential approval)
+        self._credential_events: dict[str, str] = {}
 
     def _start_typing(self) -> None:
         if self._typing_task is None or self._typing_task.done():
@@ -155,6 +162,40 @@ class MatrixSubscriber:
             self._domain_events[event_id] = request_id
             pending = PendingDomainApproval(event_id)
             self._channel._pending_domain_approvals[event_id] = pending
+            self._channel._room_pending[self._room_id] = pending
+
+    async def on_credential_info(self, vault_path: str, detail: str) -> None:
+        logger.debug(f"Matrix [{self._room_id}] credential: {vault_path} {detail}")
+        if self._channel._verbose.get(self._room_id, True):
+            notice = f"🔑 `{vault_path}` {detail}"
+            await self._channel._send_notice(self._room_id, notice)
+
+    async def on_credential_approval_request(
+        self,
+        request_id: str,
+        vault_paths: list[str],
+        names: list[str],
+        descriptions: list[str],
+        skill_name: str | None,
+        explanation: str,
+    ) -> None:
+        parts = ["🔑 **Credential Request**"]
+        if skill_name:
+            parts.append(f"Skill: **{skill_name}**")
+        for name, desc in zip(names, descriptions, strict=False):
+            line = f"- `{name}`"
+            if desc:
+                line += f" — {desc}"
+            parts.append(line)
+        if explanation:
+            parts.append(f"\n_{explanation}_")
+        parts.append("\nReact ✅ or type `/allow` / `/yes` to allow.\nReact ❌ or type `/deny` / `/no` to deny.")
+        text = "\n".join(parts)
+        event_id = await self._channel._send_text(self._room_id, text)
+        if event_id:
+            self._credential_events[event_id] = request_id
+            pending = PendingCredentialApproval(event_id, request_id)
+            self._channel._pending_credential_approvals[event_id] = pending
             self._channel._room_pending[self._room_id] = pending
 
     async def on_title_update(self, title: str) -> None:
