@@ -306,9 +306,12 @@ async def evaluate_credential_with(
         decision = "allowed" if allowed else "denied"
         detail = f"[sentinel: escalate → {decision}] {verdict.explanation}"
 
+    cred_decision: Literal["approved", "escalated", "denied"] = (
+        "approved" if decision == "allowed" else "denied" if decision == "denied" else "escalated"
+    )
     entry = CredentialAccessEntry(
         vault_paths=[vault_path],
-        decision=decision,
+        decision=cred_decision,
         explanation=verdict.explanation,
     )
     session.append(entry)
