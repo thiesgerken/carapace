@@ -967,7 +967,7 @@ async def list_credentials(request: Request, q: str = "") -> list[dict[str, str]
     """List/search available credentials (metadata only, no values)."""
     session_id = _authenticate_sandbox(request.headers.get("authorization"))
     if session_id is None:
-        return Response(status_code=401, content="Unauthorized")  # type: ignore[return-value]
+        raise HTTPException(status_code=401, detail="Unauthorized")
 
     items = await _credential_registry.list(q)
 
@@ -979,7 +979,7 @@ async def fetch_credential(request: Request, vault_path: str) -> Response:
     """Fetch a credential value (blocks until user approves if not yet approved)."""
     session_id = _authenticate_sandbox(request.headers.get("authorization"))
     if session_id is None:
-        return Response(status_code=401, content="Unauthorized")
+        raise HTTPException(status_code=401, detail="Unauthorized")
 
     # Check if credential exists in any backend
     try:
