@@ -16,10 +16,10 @@ Skills that need credentials declare them in their `carapace.yaml`:
 
 ```yaml
 credentials:
-  - vault_path: personal/9742101e-...
+  - vault_path: <backend>/9742101e-...
     description: Gmail app password
     env_var: GMAIL_APP_PASSWORD
-  - vault_path: dev/ssh-deploy-key
+  - vault_path: <backend>/ssh-deploy-key
     description: SSH deploy key
     file: ~/.ssh/id_ed25519
 ```
@@ -40,7 +40,7 @@ are ready.
 
 ```bash
 ccred list              # show all available credentials
-ccred list -q gmail     # filter by name or description
+ccred search gmail      # filter by name or description
 ```
 
 The list shows metadata only (name, vault path, description) — never values.
@@ -50,22 +50,25 @@ The list shows metadata only (name, vault path, description) — never values.
 For credentials not declared in `carapace.yaml`, use `ccred get`:
 
 ```bash
-# Print value to stdout (for piping or subshell capture)
-ccred get personal/9742101e-...
+# Print value to stdout (for piping or subshell capture; blocks until approved)
+ccred get <backend>/<id>
 
-# Write to a file with restrictive permissions (0400)
-ccred get dev/ssh-deploy-key -o ~/.ssh/id_ed25519
+# Write to a file with restrictive permissions (0400; -o is also subject to approval)
+ccred get <backend>/<id> -o ~/.ssh/id_ed25519
 
 # Use as an env var for a single command
-API_KEY=$(ccred get dev/api-key) ./my-script.sh
+API_KEY=$(ccred get <backend>/api-key) ./my-script.sh
 ```
 
-The `get` command **blocks** until the user approves the credential. Always
-explain to the user what you need and why **before** running `ccred get`.
+`<backend>` is the vault backend name from server config; `<id>` is the
+credential identifier (often a UUID). The `get` command blocks until approval in
+the UI — you do not need to manage that flow. Only request credentials that are
+actually needed for the task.
 
 ## Important rules
 
-- **Never** echo, print, log, or return credential values as command output
+- Only request credentials that are needed; **never** echo, print, log, or
+  return secret values as command output
 - **Never** include credential values in tool call arguments or responses
 - **Never** store credentials in files that will be committed to git
 - If a credential is already approved for the session, `ccred get` returns

@@ -24,7 +24,7 @@ Authorization: Bearer <SANDBOX_TOKEN>
 
 Returns a JSON array of available credential metadata (vault path, name, optional description) matching the query. **Does not return values** — only metadata. This lets the agent discover what credentials exist in the vault without exposing secrets.
 
-Each list or search call is gated at the **tool call level** — the sentinel evaluates the `exec` call that runs `ccred list`, not the HTTP request itself. No persistent approval state is tracked for listing. The sentinel should allow searches that make sense for the task at hand and deny fishing expeditions. The worst-case leak from a list call is credential keys (vault paths and names), not values.
+Each list or search call is gated at the **tool call level** — the sentinel evaluates the `exec` call that runs `ccred list` or `ccred search`, not the HTTP request itself. No persistent approval state is tracked for listing. The sentinel should allow searches that make sense for the task at hand and deny fishing expeditions. The worst-case leak from a list call is credential keys (vault paths and names), not values.
 
 ### Fetch a credential
 
@@ -87,7 +87,7 @@ When `use_skill` activates a skill whose `carapace.yaml` declares credentials wi
 
 This covers the common cases (API keys as env vars, SSH keys as files). For anything more dynamic, the skill's instructions can tell the agent to use the REST endpoint or `ccred` CLI directly.
 
-The on-demand `ccred get` flow from inside the sandbox is always single-credential — `ccred` retries in a loop internally until the credential is approved or the command times out. The agent should explain to the user what it needs before running the command.
+The on-demand `ccred get` flow from inside the sandbox is always single-credential — `ccred` retries in a loop internally until the credential is approved or the command times out. The agent does not need to coordinate with approval; it should only request credentials that are needed and never echo secret values.
 
 ## Credential flow
 
@@ -108,7 +108,7 @@ sequenceDiagram
     Sentinel->>User: "Skill email-sender needs: Gmail app password, SMTP host credential. Approve?"
     User->>Backend: /approve
 
-    Backend->>Vault: fetch personal/<uuid1> + personal/<uuid2>
+    Backend->>Vault: fetch <backend>/<id> (multiple vault paths)
     Vault-->>Backend: credential values
     Backend->>Sandbox: inject as env vars / write to files
     Backend-->>Agent: "Skill activated. 2 credentials injected."
@@ -124,7 +124,7 @@ sequenceDiagram
     participant User
     participant Vault as Password Manager
 
-    Agent->>Sandbox: run: ccred get personal/7063feab-4b10-472e-b64c-785e2b870b92
+    Agent->>Sandbox: run: ccred get <backend>/<id>
     Sandbox->>Backend: GET /credentials/personal/7063feab-... (with sandbox token)
     Backend->>Backend: check approved_credentials
 
@@ -147,13 +147,14 @@ A built-in skill (`credentials`) teaches the agent how the credential system wor
 
 - How to read a skill's `carapace.yaml` to discover required credentials
 - That credentials declared with `env_var` or `file` are auto-injected when the skill is activated
-- How to list available credentials: `ccred list` or `ccred list -q gmail` (evaluated by the sentinel on each call)
-- How to fetch a credential: `ccred get personal/<uuid>` (blocks until approved, then prints to stdout)
-- How to write a credential to a file: `ccred get personal/<uuid> -o ~/.ssh/id_ed25519` — preferred for SSH keys and certificates
-- How to use a credential inline in a command: `PASSWORD=$(ccred get personal/<uuid>) my-command` — the value is scoped to that single command
-- How to use a credential as a persistent env var across commands: declare `env_var` in `carapace.yaml` — Carapace injects it into every sandbox exec call for the session so it is available without re-fetching. Alternatively, with the persistent shell, `export TOKEN=$(ccred get personal/<uuid>)` works for the duration of the shell session.
+- How to list available credentials: `ccred list` (evaluated by the sentinel on each call)
+- How to search: `ccred search gmail` — same gating as list, filtered by name/description
+- How to fetch a credential: `ccred get <backend>/<id>` (blocks until approved, then prints to stdout)
+- How to write a credential to a file: `ccred get <backend>/<id> -o ~/.ssh/id_ed25519` with mode `0400` — `-o` is subject to approval like stdout fetch; preferred for SSH keys and certificates
+- How to use a credential inline in a command: `PASSWORD=$(ccred get <backend>/<id>) my-command` — the value is scoped to that single command
+- How to use a credential as a persistent env var across commands: declare `env_var` in `carapace.yaml` — Carapace injects it into every sandbox exec call for the session so it is available without re-fetching. Alternatively, with the persistent shell, `export TOKEN=$(ccred get <backend>/<id>)` works for the duration of the shell session.
 - That credential values must **never** be echoed, printed, logged, or returned as command output — not even partially
-- That requests block while the user is deciding — the agent should tell the user what it needs **before** running the `ccred` command
+- That only credentials that are needed should be requested, and secrets must never be echoed directly — the agent does not need to manage the approval UI flow
 
 This way the agent learns the credential workflow from the skill's instructions — no special tool needed.
 
@@ -393,7 +394,7 @@ The `GET /credentials` list endpoint only returns credentials that pass the expo
 16. **Frontend `CredentialApprovalCard`** component — renders name + description for each credential with approve/deny for the bundle
 17. **Session info panel** frontend update — show `approved_credentials` (with names) alongside skills and domains
 18. **Built-in `credentials` skill** with `SKILL.md` documenting the pull mechanism (including list/search and the `CARAPACE_API_URL` env var)
-19. **`ccred` CLI helper** baked into the sandbox image — subcommands: `list [-q query]`, `get <vault_path> [-o file]`
+19. **`ccred` CLI helper** baked into the sandbox image — subcommands: `list`, `search <query>`, `get <vault_path> [-o file]`
 
 ### Cleanup
 

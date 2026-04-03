@@ -5,7 +5,8 @@ Talks to the Carapace REST API via CARAPACE_API_URL to list and fetch
 credentials from the configured vault backends.
 
 Usage:
-    ccred list [-q QUERY]
+    ccred list
+    ccred search QUERY
     ccred get <vault_path> [-o FILE]
 """
 
@@ -17,7 +18,9 @@ import os
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
+from typing import Any
 
 
 def _api_url() -> str:
@@ -32,17 +35,19 @@ def _request(path: str, *, retries: int = 0, delay: float = 2.0) -> urllib.reque
     return urllib.request.Request(f"{_api_url()}{path}")
 
 
-def cmd_list(args: argparse.Namespace) -> None:
+def _fetch_credential_metadata(query: str) -> list[dict[str, Any]]:
     path = "/credentials"
-    if args.query:
-        path += f"?q={urllib.request.quote(args.query)}"
+    if query:
+        path += f"?q={urllib.parse.quote(query)}"
     try:
         with urllib.request.urlopen(_request(path)) as resp:
-            data = json.loads(resp.read())
+            return json.loads(resp.read())
     except urllib.error.HTTPError as e:
         print(f"error: {e.code} {e.reason}", file=sys.stderr)
         sys.exit(1)
 
+
+def _print_credential_list(data: list[dict[str, Any]]) -> None:
     if not data:
         print("No credentials found.")
         return
@@ -55,6 +60,14 @@ def cmd_list(args: argparse.Namespace) -> None:
             print(f"{line} ({vp}) — {desc}")
         else:
             print(f"{line} ({vp})")
+
+
+def cmd_list(_args: argparse.Namespace) -> None:
+    _print_credential_list(_fetch_credential_metadata(""))
+
+
+def cmd_search(args: argparse.Namespace) -> None:
+    _print_credential_list(_fetch_credential_metadata(args.query))
 
 
 def cmd_get(args: argparse.Namespace) -> None:
@@ -95,19 +108,38 @@ def cmd_get(args: argparse.Namespace) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(prog="ccred", description="Carapace credential helper")
+    parser = argparse.ArgumentParser(
+        prog="ccred",
+        description="Carapace credential helper",
+        epilog=(
+            "examples:\n"
+            "  ccred list                         list all available credentials\n"
+            "  ccred search gmail                 search credentials matching 'gmail'\n"
+            "  ccred get <backend>/<id>           fetch value to stdout (blocks until approved)\n"
+            "  ccred get <backend>/<id> -o FILE   write value to FILE with mode 0400\n"
+            "                                     (-o is subject to approval like stdout fetch)\n"
+            "\n"
+            "Only request credentials that are needed. Never echo secret values or log them;\n"
+            "prefer -o or env/subshell wiring so tools consume secrets without exposing them."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
-    ls = sub.add_parser("list", help="List available credentials")
-    ls.add_argument("-q", "--query", default="", help="Filter by name/description")
+    sub.add_parser("list", help="List available credentials")
+
+    sr = sub.add_parser("search", help="Search credentials by name or description")
+    sr.add_argument("query", help="Search term")
 
     get = sub.add_parser("get", help="Fetch a credential value")
-    get.add_argument("vault_path", help="Vault path (e.g. dev/gmail)")
+    get.add_argument("vault_path", help="Vault path (<backend>/<id>)")
     get.add_argument("-o", "--output", help="Write value to file instead of stdout")
 
-    args = parser.parse_args()
+    args = parser.parse_args(args=None if sys.argv[1:] else ["--help"])
     if args.command == "list":
         cmd_list(args)
+    elif args.command == "search":
+        cmd_search(args)
     elif args.command == "get":
         cmd_get(args)
 
