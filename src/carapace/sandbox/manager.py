@@ -531,15 +531,16 @@ class SandboxManager:
         mode: int | None = None,
         workdir: str | None = None,
         quote: bool = True,
-    ) -> str:
+    ) -> ExecResult:
         """Write content to a file inside the sandbox."""
         cmd = _file_write_shell_command(path, content, mode=mode, quote=quote)
         result = await self._exec(session_id, cmd, timeout=10, workdir=workdir)
         if result.exit_code != 0:
-            return result.output or f"Error: cannot write {path}"
-        return f"Written to {path}"
+            output = result.output or f"Error: cannot write {path}"
+            return ExecResult(exit_code=result.exit_code, output=output)
+        return ExecResult(exit_code=0, output=f"Written to {path}")
 
-    async def file_edit(self, session_id: str, path: str, old_string: str, new_string: str) -> str:
+    async def file_edit(self, session_id: str, path: str, old_string: str, new_string: str) -> ExecResult:
         """Edit a file inside the sandbox (search-and-replace)."""
         pq = shlex.quote(path)
         old_b64 = base64.b64encode(old_string.encode()).decode()
@@ -547,10 +548,14 @@ class SandboxManager:
         cmd = f"python3 -c {shlex.quote(_EDIT_SCRIPT)} {pq} {old_b64} {new_b64}"
         result = await self._exec(session_id, cmd, timeout=10)
         if result.exit_code != 0:
-            return result.output or f"Error: cannot edit {path}"
-        return f"Edited {path}:\n```diff\n{result.output}```"
+            output = result.output or f"Error: cannot edit {path}"
+            return ExecResult(exit_code=result.exit_code, output=output)
+        return ExecResult(
+            exit_code=0,
+            output=f"Edited {path}:\n```diff\n{result.output}```",
+        )
 
-    async def file_apply_patch(self, session_id: str, changes: list[dict[str, str]]) -> str:
+    async def file_apply_patch(self, session_id: str, changes: list[dict[str, str]]) -> ExecResult:
         """Apply structured edits across files inside the sandbox."""
         encoded_changes: list[dict[str, str]] = []
         for change in changes:
@@ -564,7 +569,7 @@ class SandboxManager:
         payload_b64 = base64.b64encode(json.dumps(encoded_changes).encode()).decode()
         cmd = f"python3 -c {shlex.quote(_PATCH_SCRIPT)} {payload_b64}"
         result = await self._exec(session_id, cmd, timeout=10)
-        return result.output or "(no output)"
+        return ExecResult(exit_code=result.exit_code, output=result.output or "(no output)")
 
     async def activate_skill(self, session_id: str, skill_name: str) -> str:
         if err := _validate_skill_name(skill_name):
@@ -650,13 +655,14 @@ class SandboxManager:
         mode: int | None = None,
         workdir: str | None = None,
         quote: bool = True,
-    ) -> str:
+    ) -> ExecResult:
         """Write a file using an existing container while the exec lock is already held."""
         cmd = _file_write_shell_command(path, content, mode=mode, quote=quote)
         result = await self._exec_in_container(sc, cmd, timeout=10, workdir=workdir)
         if result.exit_code != 0:
-            return result.output or f"Error: cannot write {path}"
-        return f"Written to {path}"
+            output = result.output or f"Error: cannot write {path}"
+            return ExecResult(exit_code=result.exit_code, output=output)
+        return ExecResult(exit_code=0, output=f"Written to {path}")
 
     async def _reinject_credential_files(self, sc: SessionContainer, skill_name: str) -> None:
         if not self._reinject_credentials_cb:
@@ -674,8 +680,10 @@ class SandboxManager:
                 workdir=skill_dir,
                 quote=False,
             )
-            if result.startswith("Error"):
-                logger.error(f"Failed to re-inject credential file {credential_file} for skill {skill_name}: {result}")
+            if result.exit_code != 0:
+                logger.error(
+                    f"Failed to re-inject credential file {credential_file} for skill {skill_name}: {result.output}"
+                )
                 continue
             logger.info(f"Re-injected credential file {credential_file} for skill {skill_name}")
 

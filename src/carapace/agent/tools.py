@@ -153,11 +153,11 @@ async def _do_inject(
 
         if decl.file:
             skill_dir = f"/workspace/skills/{skill_name}"
-            result = await ctx.deps.sandbox.file_write(
+            fw = await ctx.deps.sandbox.file_write(
                 session_id, decl.file, value, mode=0o400, workdir=skill_dir, quote=False
             )
-            if result.startswith("Error"):
-                errors.append(f"Failed to write {decl.file}: {result}")
+            if fw.exit_code != 0:
+                errors.append(f"Failed to write {decl.file}: {fw.output}")
             else:
                 injected_file += 1
 
@@ -351,7 +351,9 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
         session_id = ctx.deps.session_state.session_id
         exit_code = 0
         try:
-            result = await ctx.deps.sandbox.file_write(session_id, path, content)
+            exec_result = await ctx.deps.sandbox.file_write(session_id, path, content)
+            result = exec_result.output
+            exit_code = exec_result.exit_code
         except Exception as exc:
             _log_sandbox_tool_exception("write", session_id)
             result = f"Error: {exc}"
@@ -384,7 +386,9 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
         session_id = ctx.deps.session_state.session_id
         exit_code = 0
         try:
-            result = await ctx.deps.sandbox.file_edit(session_id, path, old_string, new_string)
+            exec_result = await ctx.deps.sandbox.file_edit(session_id, path, old_string, new_string)
+            result = exec_result.output
+            exit_code = exec_result.exit_code
         except Exception as exc:
             _log_sandbox_tool_exception("edit", session_id)
             result = f"Error: {exc}"
@@ -412,7 +416,9 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
         session_id = ctx.deps.session_state.session_id
         exit_code = 0
         try:
-            result = await ctx.deps.sandbox.file_apply_patch(session_id, changes)
+            exec_result = await ctx.deps.sandbox.file_apply_patch(session_id, changes)
+            result = exec_result.output
+            exit_code = exec_result.exit_code
         except Exception as exc:
             _log_sandbox_tool_exception("apply_patch", session_id)
             result = f"Error: {exc}"
