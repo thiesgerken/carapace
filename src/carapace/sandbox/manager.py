@@ -35,6 +35,15 @@ def _shell_path(path: str, *, quote: bool) -> str:
     return shlex.quote(path) if quote else f'"{path}"'
 
 
+def _file_write_shell_command(path: str, content: str, *, mode: int | None, quote: bool) -> str:
+    shell_path = _shell_path(path, quote=quote)
+    content_b64 = base64.b64encode(content.encode()).decode()
+    cmd = f'mkdir -p "$(dirname {shell_path})" && printf %s {content_b64} | base64 -d > {shell_path}'
+    if mode is not None:
+        cmd += f" && chmod {mode:04o} {shell_path}"
+    return cmd
+
+
 # Inline Python scripts executed inside the sandbox container.
 # Data is passed as base64-encoded CLI args to avoid shell-escaping issues.
 # Scripts use only double quotes so that shlex.quote (single-quote wrapping)
@@ -403,6 +412,37 @@ class SandboxManager:
             "GIT_COMMITTER_EMAIL": email,
         }
 
+    async def _exec_in_container(
+        self,
+        sc: SessionContainer,
+        command: str,
+        timeout: int = 30,
+        *,
+        bypass_proxy: bool = False,
+        workdir: str | None = None,
+    ) -> ExecResult:
+        """Run *command* in *sc* without acquiring the exec lock.
+
+        When *bypass_proxy* is True, the bypass window covers only this call.
+        Callers running under ``_exec`` with bypass already enabled must pass
+        ``bypass_proxy=False`` so the session is not added to the set twice.
+        """
+        if bypass_proxy:
+            self._proxy_bypass_sessions.add(sc.session_id)
+            logger.info(f"Proxy bypass ENABLED for session {sc.session_id}")
+        try:
+            return await self._runtime.exec(
+                sc.container_id,
+                command,
+                timeout=timeout,
+                workdir=workdir,
+                env=sc.session_env or None,
+            )
+        finally:
+            if bypass_proxy:
+                self._proxy_bypass_sessions.discard(sc.session_id)
+                logger.info(f"Proxy bypass DISABLED for session {sc.session_id}")
+
     async def _exec(
         self,
         session_id: str,
@@ -432,29 +472,15 @@ class SandboxManager:
 
                 self._session_current_command[session_id] = command
                 self._exec_temp_domains[session_id] = set()
-                env = sc.session_env or None
                 try:
-                    return await self._runtime.exec(
-                        sc.container_id,
-                        command,
-                        timeout=timeout,
-                        workdir=workdir,
-                        env=env,
-                    )
+                    return await self._exec_in_container(sc, command, timeout, workdir=workdir, bypass_proxy=False)
                 except ContainerGoneError:
                     logger.warning(f"Container gone for session {session_id}, recreating sandbox")
                     await self._log_container_tail(sc.container_id, session_id)
                     self._prepare_session_recreate(session_id)
                     sc, _ = await self.ensure_session(session_id)
                     await self._rebuild_skill_venvs(session_id)
-                    env = sc.session_env or None
-                    return await self._runtime.exec(
-                        sc.container_id,
-                        command,
-                        timeout=timeout,
-                        workdir=workdir,
-                        env=env,
-                    )
+                    return await self._exec_in_container(sc, command, timeout, workdir=workdir, bypass_proxy=False)
             finally:
                 if bypass_proxy:
                     self._proxy_bypass_sessions.discard(session_id)
@@ -507,11 +533,7 @@ class SandboxManager:
         quote: bool = True,
     ) -> str:
         """Write content to a file inside the sandbox."""
-        shell_path = _shell_path(path, quote=quote)
-        content_b64 = base64.b64encode(content.encode()).decode()
-        cmd = f'mkdir -p "$(dirname {shell_path})" && printf %s {content_b64} | base64 -d > {shell_path}'
-        if mode is not None:
-            cmd += f" && chmod {mode:04o} {shell_path}"
+        cmd = _file_write_shell_command(path, content, mode=mode, quote=quote)
         result = await self._exec(session_id, cmd, timeout=10, workdir=workdir)
         if result.exit_code != 0:
             return result.output or f"Error: cannot write {path}"
@@ -584,66 +606,42 @@ class SandboxManager:
         Runs ``uv sync`` inside the session container.  The proxy is temporarily
         bypassed (all domains allowed) for the duration of the install.
         """
-        if err := _validate_skill_name(skill_name):
-            raise SkillVenvError(err)
+        await self._build_skill_venv_in_session(skill_name, session_id=session_id)
 
-        logger.info(f"Building venv for skill '{skill_name}' (session {session_id})")
-        skill_dir = f"/workspace/skills/{shlex.quote(skill_name)}"
-        result = await self._exec(
-            session_id,
-            f"uv sync --directory {skill_dir}",
-            timeout=120,
-            bypass_proxy=True,
-        )
-        if result.exit_code != 0:
-            logger.error(f"Venv build failed for skill '{skill_name}' (exit {result.exit_code}): {result.output[:300]}")
-            raise SkillVenvError(f"exit {result.exit_code}: {result.output[:500]}")
-        logger.info(f"Venv built successfully for skill '{skill_name}'")
-
-    async def _exec_without_lock(
+    async def _build_skill_venv_in_session(
         self,
-        sc: SessionContainer,
-        command: str,
-        timeout: int = 30,
+        skill_name: str,
         *,
-        bypass_proxy: bool = False,
-        workdir: str | None = None,
-    ) -> ExecResult:
-        """Run a command in a known container while the session exec lock is already held."""
-        if bypass_proxy:
-            self._proxy_bypass_sessions.add(sc.session_id)
-            logger.info(f"Proxy bypass ENABLED for session {sc.session_id}")
-        try:
-            return await self._runtime.exec(
-                sc.container_id,
-                command,
-                timeout=timeout,
-                workdir=workdir,
-                env=sc.session_env or None,
-            )
-        finally:
-            if bypass_proxy:
-                self._proxy_bypass_sessions.discard(sc.session_id)
-                logger.info(f"Proxy bypass DISABLED for session {sc.session_id}")
+        session_id: str | None = None,
+        sc: SessionContainer | None = None,
+    ) -> None:
+        """Shared venv build: either via ``_exec`` (lock + ensure_session) or on a known *sc*."""
+        if (session_id is None) == (sc is None):
+            raise ValueError("Exactly one of session_id and sc must be set")
 
-    async def _build_skill_venv_without_lock(self, sc: SessionContainer, skill_name: str) -> None:
         if err := _validate_skill_name(skill_name):
             raise SkillVenvError(err)
 
-        logger.info(f"Building venv for skill '{skill_name}' (session {sc.session_id})")
+        if session_id is not None:
+            sid = session_id
+        else:
+            assert sc is not None
+            sid = sc.session_id
+
+        logger.info(f"Building venv for skill '{skill_name}' (session {sid})")
         skill_dir = f"/workspace/skills/{shlex.quote(skill_name)}"
-        result = await self._exec_without_lock(
-            sc,
-            f"uv sync --directory {skill_dir}",
-            timeout=120,
-            bypass_proxy=True,
-        )
+        cmd = f"uv sync --directory {skill_dir}"
+        if session_id is not None:
+            result = await self._exec(session_id, cmd, timeout=120, bypass_proxy=True)
+        else:
+            assert sc is not None
+            result = await self._exec_in_container(sc, cmd, timeout=120, bypass_proxy=True)
         if result.exit_code != 0:
             logger.error(f"Venv build failed for skill '{skill_name}' (exit {result.exit_code}): {result.output[:300]}")
             raise SkillVenvError(f"exit {result.exit_code}: {result.output[:500]}")
         logger.info(f"Venv built successfully for skill '{skill_name}'")
 
-    async def _file_write_without_lock(
+    async def _file_write_in_container(
         self,
         sc: SessionContainer,
         path: str,
@@ -653,12 +651,9 @@ class SandboxManager:
         workdir: str | None = None,
         quote: bool = True,
     ) -> str:
-        shell_path = _shell_path(path, quote=quote)
-        content_b64 = base64.b64encode(content.encode()).decode()
-        cmd = f'mkdir -p "$(dirname {shell_path})" && printf %s {content_b64} | base64 -d > {shell_path}'
-        if mode is not None:
-            cmd += f" && chmod {mode:04o} {shell_path}"
-        result = await self._exec_without_lock(sc, cmd, timeout=10, workdir=workdir)
+        """Write a file using an existing container while the exec lock is already held."""
+        cmd = _file_write_shell_command(path, content, mode=mode, quote=quote)
+        result = await self._exec_in_container(sc, cmd, timeout=10, workdir=workdir)
         if result.exit_code != 0:
             return result.output or f"Error: cannot write {path}"
         return f"Written to {path}"
@@ -671,7 +666,7 @@ class SandboxManager:
             return
         skill_dir = f"/workspace/skills/{skill_name}"
         for credential_file, credential_value in credentials:
-            result = await self._file_write_without_lock(
+            result = await self._file_write_in_container(
                 sc,
                 credential_file,
                 credential_value,
@@ -692,7 +687,7 @@ class SandboxManager:
         # Restore committed config files inside the sandbox, preventing
         # the sandbox from tampering with credential/network declarations.
         for fname in ("carapace.yaml", "pyproject.toml", "uv.lock"):
-            await self._exec_without_lock(
+            await self._exec_in_container(
                 sc,
                 f"git checkout HEAD -- {skill_path}/{fname} 2>/dev/null || true",
                 timeout=10,
@@ -701,7 +696,7 @@ class SandboxManager:
 
         venv_msg = ""
         if (master / "pyproject.toml").exists():
-            await self._build_skill_venv_without_lock(sc, skill_name)
+            await self._build_skill_venv_in_session(skill_name, sc=sc)
             venv_msg = "Venv rebuilt successfully."
 
         await self._reinject_credential_files(sc, skill_name)
