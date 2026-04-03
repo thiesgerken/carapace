@@ -166,6 +166,7 @@ class SandboxManager:
         self._proxy_bypass_sessions: set[str] = set()
         self._stashed_session_env: dict[str, dict[str, str]] = {}
         self._get_activated_skills_cb: Callable[[str], list[str]] | None = None
+        self._reinject_credentials_cb: Callable[[str, str], Awaitable[list[tuple[str, str]]]] | None = None
         logger.info(
             f"SandboxManager initialized (image={base_image}, "
             + f"network={network_name}, proxy_port={proxy_port}, idle_timeout={idle_timeout_minutes}m)"
@@ -174,6 +175,10 @@ class SandboxManager:
     def set_activated_skills_callback(self, cb: Callable[[str], list[str]]) -> None:
         """Register a callback to retrieve activated skills for a session (from persisted state)."""
         self._get_activated_skills_cb = cb
+
+    def set_reinject_credentials_callback(self, cb: Callable[[str, str], Awaitable[list[tuple[str, str]]]]) -> None:
+        """Register a callback to retrieve file credentials for re-injection."""
+        self._reinject_credentials_cb = cb
 
     def _get_or_create_token(self, session_id: str) -> str:
         """Return the proxy token for *session_id*, loading or creating as needed.
@@ -595,7 +600,91 @@ class SandboxManager:
             raise SkillVenvError(f"exit {result.exit_code}: {result.output[:500]}")
         logger.info(f"Venv built successfully for skill '{skill_name}'")
 
-    async def _sync_skill_venv(self, session_id: str, skill_name: str) -> str:
+    async def _exec_without_lock(
+        self,
+        sc: SessionContainer,
+        command: str,
+        timeout: int = 30,
+        *,
+        bypass_proxy: bool = False,
+        workdir: str | None = None,
+    ) -> ExecResult:
+        """Run a command in a known container while the session exec lock is already held."""
+        if bypass_proxy:
+            self._proxy_bypass_sessions.add(sc.session_id)
+            logger.info(f"Proxy bypass ENABLED for session {sc.session_id}")
+        try:
+            return await self._runtime.exec(
+                sc.container_id,
+                command,
+                timeout=timeout,
+                workdir=workdir,
+                env=sc.session_env or None,
+            )
+        finally:
+            if bypass_proxy:
+                self._proxy_bypass_sessions.discard(sc.session_id)
+                logger.info(f"Proxy bypass DISABLED for session {sc.session_id}")
+
+    async def _build_skill_venv_without_lock(self, sc: SessionContainer, skill_name: str) -> None:
+        if err := _validate_skill_name(skill_name):
+            raise SkillVenvError(err)
+
+        logger.info(f"Building venv for skill '{skill_name}' (session {sc.session_id})")
+        skill_dir = f"/workspace/skills/{shlex.quote(skill_name)}"
+        result = await self._exec_without_lock(
+            sc,
+            f"uv sync --directory {skill_dir}",
+            timeout=120,
+            bypass_proxy=True,
+        )
+        if result.exit_code != 0:
+            logger.error(f"Venv build failed for skill '{skill_name}' (exit {result.exit_code}): {result.output[:300]}")
+            raise SkillVenvError(f"exit {result.exit_code}: {result.output[:500]}")
+        logger.info(f"Venv built successfully for skill '{skill_name}'")
+
+    async def _file_write_without_lock(
+        self,
+        sc: SessionContainer,
+        path: str,
+        content: str,
+        *,
+        mode: int | None = None,
+        workdir: str | None = None,
+        quote: bool = True,
+    ) -> str:
+        shell_path = _shell_path(path, quote=quote)
+        content_b64 = base64.b64encode(content.encode()).decode()
+        cmd = f'mkdir -p "$(dirname {shell_path})" && printf %s {content_b64} | base64 -d > {shell_path}'
+        if mode is not None:
+            cmd += f" && chmod {mode:04o} {shell_path}"
+        result = await self._exec_without_lock(sc, cmd, timeout=10, workdir=workdir)
+        if result.exit_code != 0:
+            return result.output or f"Error: cannot write {path}"
+        return f"Written to {path}"
+
+    async def _reinject_credential_files(self, sc: SessionContainer, skill_name: str) -> None:
+        if not self._reinject_credentials_cb:
+            return
+        credentials = await self._reinject_credentials_cb(sc.session_id, skill_name)
+        if not credentials:
+            return
+        skill_dir = f"/workspace/skills/{skill_name}"
+        for credential_file, credential_value in credentials:
+            result = await self._file_write_without_lock(
+                sc,
+                credential_file,
+                credential_value,
+                mode=0o400,
+                workdir=skill_dir,
+                quote=False,
+            )
+            if result.startswith("Error"):
+                logger.error(f"Failed to re-inject credential file {credential_file} for skill {skill_name}: {result}")
+                continue
+            logger.info(f"Re-injected credential file {credential_file} for skill {skill_name}")
+
+    async def _sync_skill_venv(self, sc: SessionContainer, skill_name: str) -> str:
         """Restore trusted skill config from git and rebuild the venv if needed."""
         master = self._knowledge_dir / "skills" / skill_name
         skill_path = f"skills/{shlex.quote(skill_name)}"
@@ -603,28 +692,34 @@ class SandboxManager:
         # Restore committed config files inside the sandbox, preventing
         # the sandbox from tampering with credential/network declarations.
         for fname in ("carapace.yaml", "pyproject.toml", "uv.lock"):
-            await self._exec(
-                session_id,
+            await self._exec_without_lock(
+                sc,
                 f"git checkout HEAD -- {skill_path}/{fname} 2>/dev/null || true",
                 timeout=10,
                 workdir=self._KNOWLEDGE_WORKDIR,
             )
 
-        if not (master / "pyproject.toml").exists():
-            return ""
+        venv_msg = ""
+        if (master / "pyproject.toml").exists():
+            await self._build_skill_venv_without_lock(sc, skill_name)
+            venv_msg = "Venv rebuilt successfully."
 
-        await self._build_skill_venv(session_id, skill_name)
-        return "Venv rebuilt successfully."
+        await self._reinject_credential_files(sc, skill_name)
+        return venv_msg
 
     async def rebuild_skill_venvs(self, session_id: str, activated_skills: list[str]) -> None:
         """Restore trusted config and rebuild venvs for activated skills.
 
         Called by SessionEngine after container recreation.
         """
+        sc = self._sessions.get(session_id)
+        if sc is None:
+            logger.warning(f"Cannot rebuild skill venvs: missing container state for session {session_id}")
+            return
         for skill_name in activated_skills:
             logger.info(f"Syncing skill '{skill_name}' after container recreation")
             try:
-                await self._sync_skill_venv(session_id, skill_name)
+                await self._sync_skill_venv(sc, skill_name)
             except SkillVenvError as exc:
                 logger.error(f"Failed to rebuild venv for '{skill_name}': {exc}")
 

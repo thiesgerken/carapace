@@ -141,6 +141,7 @@ class SessionEngine:
 
         # Let SandboxManager retrieve activated skills for venv rebuild on container recreation
         sandbox_mgr.set_activated_skills_callback(self._get_activated_skills)
+        sandbox_mgr.set_reinject_credentials_callback(self._reinject_skill_credentials)
 
     def set_credential_registry(self, registry: CredentialRegistryProtocol) -> None:
         self._credential_registry = registry
@@ -231,6 +232,39 @@ class SessionEngine:
         if state:
             return list(state.activated_skills)
         return []
+
+    async def _reinject_skill_credentials(self, session_id: str, skill_name: str) -> list[tuple[str, str]]:
+        """Return approved file credentials that should be re-injected for a skill."""
+        if not self._credential_registry:
+            return []
+
+        registry = SkillRegistry(self._knowledge_dir / "skills")
+        carapace_cfg = registry.get_carapace_config(skill_name)
+        if not carapace_cfg or not carapace_cfg.credentials:
+            return []
+
+        approved_paths = self._get_approved_credential_paths(session_id)
+        reinject: list[tuple[str, str]] = []
+        for decl in carapace_cfg.credentials:
+            if decl.vault_path not in approved_paths or not decl.file:
+                continue
+            try:
+                value = await self._credential_registry.fetch(decl.vault_path)
+            except KeyError:
+                logger.warning(f"Credential {decl.vault_path} not found in vault during re-injection")
+                continue
+            reinject.append((decl.file, value))
+        return reinject
+
+    def _get_approved_credential_paths(self, session_id: str) -> set[str]:
+        """Return approved credential vault paths for a session."""
+        active = self._active.get(session_id)
+        if active:
+            return {credential.vault_path for credential in active.state.approved_credentials}
+        state = self._session_mgr.load_state(session_id)
+        if state:
+            return {credential.vault_path for credential in state.approved_credentials}
+        return set()
 
     def get_active(self, session_id: str) -> ActiveSession | None:
         """Return the ``ActiveSession`` if loaded, else ``None``."""
