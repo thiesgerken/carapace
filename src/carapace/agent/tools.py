@@ -80,6 +80,9 @@ async def _inject_skill_credentials(
             meta = CredentialMetadata(vault_path=decl.vault_path, name=decl.vault_path, description=decl.description)
         metas.append(meta)
 
+    # No separate approval prompt here — the user already approved the
+    # use_skill tool call which listed these credential vault paths in its
+    # gate_args.  Skill-declared credentials are covered by that approval.
     ctx.deps.security.append(CredentialAccessEntry(vault_paths=[m.vault_path for m in metas], decision="approved"))
 
     # Record approvals in session state
