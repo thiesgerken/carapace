@@ -115,7 +115,9 @@ async def _do_inject(
 
         if decl.file:
             skill_dir = f"/workspace/skills/{skill_name}"
-            result = await ctx.deps.sandbox.file_write(session_id, decl.file, value, mode=0o400, workdir=skill_dir)
+            result = await ctx.deps.sandbox.file_write(
+                session_id, decl.file, value, mode=0o400, workdir=skill_dir, quote=False
+            )
             if result.startswith("Error"):
                 errors.append(f"Failed to write {decl.file}: {result}")
             else:

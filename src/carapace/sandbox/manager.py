@@ -482,14 +482,21 @@ class SandboxManager:
         return output or "(empty file)"
 
     async def file_write(
-        self, session_id: str, path: str, content: str, *, mode: int | None = None, workdir: str | None = None
+        self,
+        session_id: str,
+        path: str,
+        content: str,
+        *,
+        mode: int | None = None,
+        workdir: str | None = None,
+        quote: bool = True,
     ) -> str:
         """Write content to a file inside the sandbox."""
-        shell_path = _expand_home(path)
+        shell_path = shlex.quote(_expand_home(path)) if quote else f'"{_expand_home(path)}"'
         content_b64 = base64.b64encode(content.encode()).decode()
-        cmd = f'mkdir -p "$(dirname "{shell_path}")" && printf %s {content_b64} | base64 -d > "{shell_path}"'
+        cmd = f'mkdir -p "$(dirname {shell_path})" && printf %s {content_b64} | base64 -d > {shell_path}'
         if mode is not None:
-            cmd += f' && chmod {mode:04o} "{shell_path}"'
+            cmd += f" && chmod {mode:04o} {shell_path}"
         result = await self._exec(session_id, cmd, timeout=10, workdir=workdir)
         if result.exit_code != 0:
             return result.output or f"Error: cannot write {path}"
@@ -579,42 +586,37 @@ class SandboxManager:
         logger.info(f"Venv built successfully for skill '{skill_name}'")
 
     async def _sync_skill_venv(self, session_id: str, skill_name: str) -> str:
-        """Restore trusted pyproject.toml + uv.lock from git, then rebuild venv."""
+        """Restore trusted skill config from git and rebuild the venv if needed."""
         master = self._knowledge_dir / "skills" / skill_name
+        skill_path = f"skills/{shlex.quote(skill_name)}"
+
+        # Restore committed config files inside the sandbox, preventing
+        # the sandbox from tampering with credential/network declarations.
+        for fname in ("carapace.yaml", "pyproject.toml", "uv.lock"):
+            await self._exec(
+                session_id,
+                f"git checkout HEAD -- {skill_path}/{fname} 2>/dev/null || true",
+                timeout=10,
+                workdir=self._KNOWLEDGE_WORKDIR,
+            )
+
         if not (master / "pyproject.toml").exists():
             return ""
-
-        # Restore committed dependency manifests inside the sandbox,
-        # preventing the sandbox from running modified dependencies.
-        skill_path = f"skills/{shlex.quote(skill_name)}"
-        result = await self._exec(
-            session_id,
-            f"git checkout HEAD -- {skill_path}/pyproject.toml",
-            timeout=10,
-            workdir=self._KNOWLEDGE_WORKDIR,
-        )
-        if result.exit_code != 0:
-            raise SkillVenvError(f"Failed to restore trusted pyproject.toml: {result.output}")
-        await self._exec(
-            session_id,
-            f"git checkout HEAD -- {skill_path}/uv.lock 2>/dev/null || true",
-            timeout=10,
-            workdir=self._KNOWLEDGE_WORKDIR,
-        )
 
         await self._build_skill_venv(session_id, skill_name)
         return "Venv rebuilt successfully."
 
     async def rebuild_skill_venvs(self, session_id: str, activated_skills: list[str]) -> None:
-        """Rebuild venvs for all activated skills.  Called by SessionEngine after container recreation."""
+        """Restore trusted config and rebuild venvs for activated skills.
+
+        Called by SessionEngine after container recreation.
+        """
         for skill_name in activated_skills:
-            master_skill_dir = self._knowledge_dir / "skills" / skill_name
-            if (master_skill_dir / "pyproject.toml").exists():
-                logger.info(f"Rebuilding venv for skill '{skill_name}' after container recreation")
-                try:
-                    await self._sync_skill_venv(session_id, skill_name)
-                except SkillVenvError as exc:
-                    logger.error(f"Failed to rebuild venv for '{skill_name}': {exc}")
+            logger.info(f"Syncing skill '{skill_name}' after container recreation")
+            try:
+                await self._sync_skill_venv(session_id, skill_name)
+            except SkillVenvError as exc:
+                logger.error(f"Failed to rebuild venv for '{skill_name}': {exc}")
 
     async def _rebuild_skill_venvs(self, session_id: str) -> None:
         """Internal: rebuild venvs using the activated_skills callback (for _exec recreation)."""
