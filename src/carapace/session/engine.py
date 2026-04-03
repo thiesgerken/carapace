@@ -992,25 +992,3 @@ class SessionEngine:
             )
 
         return _eval
-
-    def _make_credential_eval_cb(
-        self,
-        security: SessionSecurity,
-        sentinel: Sentinel,
-        active: ActiveSession,
-    ) -> Callable[[str, str, str, str], Awaitable[bool]]:
-        """Build a callback for evaluating credential access via the sentinel."""
-
-        async def _eval(vault_path: str, name: str, description: str, trigger: str) -> bool:
-            result = await security_mod.evaluate_credential_with(
-                security,
-                sentinel,
-                vault_path,
-                name,
-                description,
-                trigger,
-                usage_tracker=active.usage_tracker,
-            )
-            return result.allowed
-
-        return _eval
