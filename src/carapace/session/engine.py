@@ -330,6 +330,8 @@ class SessionEngine:
             active.tool_approval_queue.get_nowait()
         while not active.escalation_queue.empty():
             active.escalation_queue.get_nowait()
+        while not active.credential_approval_queue.empty():
+            active.credential_approval_queue.get_nowait()
 
         active.agent_task = asyncio.create_task(
             self._run_turn(active, content, origin=origin),
@@ -345,6 +347,7 @@ class SessionEngine:
             active.agent_task.cancel()
             active.tool_approval_queue.put_nowait(None)
             active.escalation_queue.put_nowait(None)
+            active.credential_approval_queue.put_nowait(None)
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await active.agent_task
             active.agent_task = None
@@ -387,6 +390,7 @@ class SessionEngine:
             "names": names,
             "descriptions": descriptions,
             "skill_name": skill_name,
+            "explanation": explanation,
         }
         active.pending_credential_approvals.append(pending)
 

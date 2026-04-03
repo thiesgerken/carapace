@@ -715,6 +715,7 @@ async def chat_ws(
                     names=pc.get("names", []),
                     descriptions=pc.get("descriptions", []),
                     skill_name=pc.get("skill_name"),
+                    explanation=pc.get("explanation", ""),
                 ),
             )
 
