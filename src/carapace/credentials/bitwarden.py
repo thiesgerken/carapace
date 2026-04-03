@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import httpx
+from loguru import logger
 
 from carapace.credentials.protocol import is_exposed, require_exposed
 from carapace.models import BitwardenCredentialBackendConfig, CredentialMetadata
@@ -24,7 +25,26 @@ class BitwardenBackend:
     ) -> None:
         self._name = name
         self._cfg = cfg
+        self._base_url = base_url.rstrip("/")
         self._client = httpx.AsyncClient(base_url=base_url, timeout=30.0)
+
+    async def _get(
+        self,
+        path: str,
+        *,
+        operation: str,
+        params: dict[str, str] | None = None,
+    ) -> httpx.Response:
+        try:
+            if params is not None:
+                return await self._client.get(path, params=params)
+            return await self._client.get(path)
+        except httpx.RequestError:
+            logger.exception(
+                f"Bitwarden backend {self._name!r}: vault HTTP request failed ({operation}) — "
+                f"target {self._base_url}{path}. Is `bw serve` running and reachable from this process?"
+            )
+            raise
 
     def _vault_path(self, uuid: str) -> str:
         return f"{self._name}/{uuid}"
@@ -32,7 +52,7 @@ class BitwardenBackend:
     async def fetch(self, identifier: str) -> str:
         """Fetch the password for a Bitwarden item by UUID."""
         require_exposed(identifier, self._cfg, self._name)
-        resp = await self._client.get(f"/object/password/{identifier}")
+        resp = await self._get(f"/object/password/{identifier}", operation="fetch password")
         if resp.status_code == 404:
             raise KeyError(f"Credential '{identifier}' not found in backend '{self._name}'")
         resp.raise_for_status()
@@ -42,7 +62,7 @@ class BitwardenBackend:
     async def fetch_metadata(self, identifier: str) -> CredentialMetadata:
         """Fetch item metadata by UUID."""
         require_exposed(identifier, self._cfg, self._name)
-        resp = await self._client.get(f"/object/item/{identifier}")
+        resp = await self._get(f"/object/item/{identifier}", operation="fetch item metadata")
         if resp.status_code == 404:
             raise KeyError(f"Credential '{identifier}' not found in backend '{self._name}'")
         resp.raise_for_status()
@@ -54,10 +74,8 @@ class BitwardenBackend:
 
     async def list(self, query: str = "") -> list[CredentialMetadata]:
         """List items, optionally filtered by search query."""
-        params: dict[str, str] = {}
-        if query:
-            params["search"] = query
-        resp = await self._client.get("/list/object/items", params=params)
+        params: dict[str, str] | None = {"search": query} if query else None
+        resp = await self._get("/list/object/items", operation="list items", params=params)
         resp.raise_for_status()
         items = resp.json().get("data", {}).get("data", [])
         results: list[CredentialMetadata] = []
