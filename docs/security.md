@@ -6,7 +6,7 @@ Carapace gates every agent action through a two-layer security system: a fast **
 
 Every tool call and skill invocation passes through the security module before execution:
 
-1. **Safe-list check.** A hardcoded set of tool names (reads, memory reads, skill listing) is auto-allowed without any LLM call.
+1. **Safe-list check.** A hardcoded set of tool names (file reads, sandbox writes/edits/patches, memory reads, skill listing) is auto-allowed without any LLM call.
 2. **Sentinel evaluation.** All other operations are sent to the sentinel agent -- an LLM that receives the action log, the tool name and arguments, and makes a contextual decision.
 3. **Verdict.** The sentinel returns one of three decisions:
    - **allow** -- proceed without interruption.
@@ -40,16 +40,17 @@ flowchart TD
 
 The security policy lives in `$CARAPACE_DATA_DIR/SECURITY.md`. It is written in plain English and becomes part of the sentinel agent's system prompt. There are no rigid YAML rules to parse -- the sentinel interprets the policy with full LLM understanding.
 
-The default policy covers:
+The shipped default policy (see `src/carapace/assets/SECURITY.md`) covers:
 
-- **General principles** -- reads are safe, writes need evaluation.
-- **Shell commands** -- read-only commands are fine; scripts need scrutiny.
-- **External communication** -- outbound actions require approval unless explicitly requested.
-- **Memory** -- writes to persistent memory require approval.
-- **Skills** -- activation is fine; modification requires approval.
-- **Credentials** -- credential discovery/fetch must be justified and secrets must never be echoed.
-- **Autonomy and vigilance** -- more scrutiny when the agent has been running unattended or after consuming unsanitized external content.
-- **Proxy domain requests** -- plausibility checks for network requests from sandboxed containers.
+- **Default stance** -- assume the agent is usually doing the right thing; escalate for genuine ambiguity or risk, not routine work; deny when listed threats clearly apply; the user may instruct the sentinel how to treat a specific next step (within hard safety limits).
+- **Threats** -- prompt injection, destructive or absurd approaches, task drift, unsafe handling of passwords.
+- **Sandbox and layered defense** -- local `exec` is judged in context; network and Git push provide a second line of defense, but obviously malicious commands should still be stopped early.
+- **Network (proxy)** -- TLS hides everything except the domain; higher bar for outbound than inbound; judge plausibility from the triggering command and conversation.
+- **Skill activation** -- permissive `use_skill`; lighter touch when the skill injects no credentials; skill-declared vault paths are covered by `use_skill` approval (no extra prompt by design).
+- **Credentials** -- explicit sandbox vault access must fit the user’s task; deny exfiltration-style patterns; secrets must never be echoed or logged in plain text.
+- **Git push** -- always escalate when `USER.md`, `SOUL.md`, `AGENTS.md`, or `SECURITY.md` change; other files may be allowed when the chat clearly shows user intent.
+- **Autonomy** -- slightly more care after long unsupervised stretches or fresh external content, without escalating every harmless step.
+- **Proxy domain requests** -- plausibility pass on domains after the tool call that triggered the connection was already evaluated.
 
 Edit `SECURITY.md` to customize the policy for your setup. The sentinel will immediately pick up changes on the next session.
 
