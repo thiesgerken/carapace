@@ -18,7 +18,6 @@ class ModelUsage(BaseModel):
     output_audio_tokens: int = 0
     cache_audio_read_tokens: int = 0
     requests: int = 0
-    context_tokens: int = 0
 
 
 def _price_for_usage(model_key: str, u: ModelUsage) -> Decimal | None:
@@ -53,7 +52,6 @@ def _merge_run_usage_into_bucket(bucket: ModelUsage, usage: RunUsage) -> None:
     bucket.output_audio_tokens += usage.output_audio_tokens or 0
     bucket.cache_audio_read_tokens += usage.cache_audio_read_tokens or 0
     bucket.requests += usage.requests
-    bucket.context_tokens = (usage.input_tokens or 0) + (usage.output_tokens or 0)
 
 
 class UsageTracker(BaseModel):

@@ -10,6 +10,7 @@ from typing import Any
 import yaml
 from pydantic_ai import ModelMessage, ModelMessagesTypeAdapter
 
+from carapace.llm_request_log import LlmRequestLog
 from carapace.models import SessionState
 from carapace.usage import UsageTracker
 
@@ -132,6 +133,23 @@ class SessionManager:
         usage_path = session_dir / "usage.yaml"
         with open(usage_path, "w") as f:
             yaml.dump(tracker.model_dump(mode="json"), f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+
+    # --- Per-LLM-request log (API tokens + input-shape ratios) ---
+
+    def load_llm_request_log(self, session_id: str) -> LlmRequestLog:
+        path = self.sessions_dir / session_id / "llm_requests.yaml"
+        if not path.exists():
+            return LlmRequestLog()
+        with open(path) as f:
+            raw = yaml.safe_load(f)
+        return LlmRequestLog.model_validate(raw or {})
+
+    def save_llm_request_log(self, session_id: str, log: LlmRequestLog) -> None:
+        session_dir = self.sessions_dir / session_id
+        session_dir.mkdir(parents=True, exist_ok=True)
+        path = session_dir / "llm_requests.yaml"
+        with open(path, "w") as f:
+            yaml.dump(log.model_dump(mode="json"), f, default_flow_style=False, allow_unicode=True, sort_keys=False)
 
     # --- Event log (ordered display history including slash commands) ---
 

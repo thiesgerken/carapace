@@ -22,6 +22,7 @@ dependencies = [
     "matrix-nio>=0.25,<1",
     "markdown>=3,<4",
     "kr8s>=0.20,<1",
+    "tiktoken>=0.8,<1",
 ]
 
 [project.scripts]

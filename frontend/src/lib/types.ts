@@ -94,7 +94,6 @@ export interface CredentialApprovalRequest {
 export interface TurnUsage {
   input_tokens: number;
   output_tokens: number;
-  context_tokens?: number;
 }
 
 export interface Done {

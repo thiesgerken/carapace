@@ -674,10 +674,11 @@ async def chat_ws(
 
     # Tell the client whether an agent turn is in progress.
     agent_running = active.agent_task is not None and not active.agent_task.done()
-    tracker = active.usage_tracker
-    agent_cat = tracker.categories.get("agent")
-    ctx = agent_cat.context_tokens if agent_cat else 0
-    usage = TurnUsage(context_tokens=ctx) if ctx else None
+    usage: TurnUsage | None = None
+    for rec in reversed(active.llm_request_log.records):
+        if rec.source == "agent":
+            usage = TurnUsage(input_tokens=rec.input_tokens, output_tokens=rec.output_tokens)
+            break
     with contextlib.suppress(Exception):
         await _send(websocket, StatusUpdate(agent_running=agent_running, usage=usage))
 
@@ -908,15 +909,16 @@ async def evaluate_push(req: PushEvalRequest) -> dict[str, str]:
 
     from carapace.security import evaluate_push_with
 
-    allowed = await evaluate_push_with(
-        active.security,
-        active.sentinel,
-        req.ref,
-        req.is_default_branch,
-        req.commits,
-        req.diff,
-        usage_tracker=active.usage_tracker,
-    )
+    with _engine.llm_request_recording(active):
+        allowed = await evaluate_push_with(
+            active.security,
+            active.sentinel,
+            req.ref,
+            req.is_default_branch,
+            req.commits,
+            req.diff,
+            usage_tracker=active.usage_tracker,
+        )
     if allowed:
         return {"verdict": "allow"}
     return {"verdict": "deny", "reason": "Denied by sentinel"}
@@ -1024,15 +1026,16 @@ async def fetch_credential(request: Request, vault_path: str) -> Response:
 
         from carapace.security import evaluate_credential_with
 
-        cred_eval = await evaluate_credential_with(
-            active.security,
-            active.sentinel,
-            vault_path,
-            meta.name,
-            meta.description,
-            f"Sandbox requested credential: {meta.name}",
-            usage_tracker=active.usage_tracker,
-        )
+        with _engine.llm_request_recording(active):
+            cred_eval = await evaluate_credential_with(
+                active.security,
+                active.sentinel,
+                vault_path,
+                meta.name,
+                meta.description,
+                f"Sandbox requested credential: {meta.name}",
+                usage_tracker=active.usage_tracker,
+            )
         if not cred_eval.allowed:
             return Response(status_code=403, content="Credential access denied")
 

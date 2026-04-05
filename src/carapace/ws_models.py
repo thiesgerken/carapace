@@ -142,7 +142,6 @@ class TurnUsage(BaseModel):
 
     input_tokens: int = 0
     output_tokens: int = 0
-    context_tokens: int = 0
 
 
 class Done(BaseModel):

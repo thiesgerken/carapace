@@ -9,6 +9,7 @@ from pydantic_ai import Agent, DeferredToolRequests, RunContext, ToolDenied
 
 import carapace.security as security
 from carapace.config import load_workspace_file
+from carapace.llm_request_log import LlmRequestLogCapability
 from carapace.memory import MemoryStore
 from carapace.models import CredentialMetadata, CredentialRegistryProtocol, Deps, SkillCredentialDecl, ToolResult
 from carapace.sandbox.runtime import SkillVenvError
@@ -254,6 +255,7 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
         deps_type=Deps,
         output_type=[str, DeferredToolRequests],  # type: ignore[arg-type]
         instructions=system_prompt,
+        capabilities=[LlmRequestLogCapability(source="agent")],
     )
 
     # --- Skills ---

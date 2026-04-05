@@ -208,23 +208,17 @@ def _render_usage(payload: dict[str, Any]) -> None:
             return "-"
         return f"[{_cost_style(n)}]${n:.4f}[/{_cost_style(n)}]"
 
-    def _fmt_context_tokens(n: int) -> str:
-        return f"{n:,}" if n else "-"
-
     def _make_table(
         title: str,
         rows: dict[str, dict[str, int]],
         *,
         show_cost: bool = False,
         row_costs: dict[str, str] | None = None,
-        show_context_column: bool = False,
     ) -> Table:
         table = Table(title=title)
         table.add_column("Source", style="bold")
         table.add_column("Input", justify="right")
         table.add_column("Output", justify="right")
-        if show_context_column:
-            table.add_column("Context", justify="right")
         if has_cache:
             table.add_column("Cache Read", justify="right")
             table.add_column("Cache Write", justify="right")
@@ -234,8 +228,6 @@ def _render_usage(payload: dict[str, Any]) -> None:
         lookup = row_costs if row_costs is not None else costs
         for name, usage in rows.items():
             row = [name, f"{usage.get('input_tokens', 0):,}", f"{usage.get('output_tokens', 0):,}"]
-            if show_context_column:
-                row.append(_fmt_context_tokens(int(usage.get("context_tokens", 0) or 0)))
             if has_cache:
                 row += [f"{usage.get('cache_read_tokens', 0):,}", f"{usage.get('cache_write_tokens', 0):,}"]
             row.append(str(usage.get("requests", 0)))
@@ -243,6 +235,13 @@ def _render_usage(payload: dict[str, Any]) -> None:
                 row.append(_styled_cost(lookup.get(name, "0")))
             table.add_row(*row)
         return table
+
+    total_in = payload.get("total_input", 0)
+    total_out = payload.get("total_output", 0)
+    total_cost = costs.get("total", "0")
+    cost_str = f" | {_styled_cost(total_cost)}" if total_cost != "0" else ""
+    tokens_str = f"{total_in + total_out:,} tokens ({total_in:,} in + {total_out:,} out)"
+    console.print(f"[bold]Total:[/bold] {tokens_str}{cost_str}")
 
     if models:
         console.print(_make_table("Usage by Model", models, show_cost=True))
@@ -253,16 +252,56 @@ def _render_usage(payload: dict[str, Any]) -> None:
                 categories,
                 show_cost=True,
                 row_costs=category_costs,
-                show_context_column=True,
             ),
         )
 
-    total_in = payload.get("total_input", 0)
-    total_out = payload.get("total_output", 0)
-    total_cost = costs.get("total", "0")
-    cost_str = f" | {_styled_cost(total_cost)}" if total_cost != "0" else ""
-    tokens_str = f"{total_in + total_out:,} tokens ({total_in:,} in + {total_out:,} out)"
-    console.print(f"[bold]Total:[/bold] {tokens_str}{cost_str}")
+    def _fmt_pct_cell(val: object) -> str:
+        if val is None:
+            return "—"
+        if isinstance(val, int | float):
+            return f"{float(val):.1f}%"
+        return "—"
+
+    last_rows: list[tuple[str, dict[str, Any]]] = []
+    for key, src in (("last_llm_agent", "agent"), ("last_llm_sentinel", "sentinel")):
+        row = payload.get(key)
+        if isinstance(row, dict) and row.get("context_size", 0) > 0:
+            last_rows.append((src, row))
+
+    if last_rows:
+        show_other = False
+        for _, row in last_rows:
+            b = row.get("breakdown_pct") if isinstance(row.get("breakdown_pct"), dict) else {}
+            o = b.get("other")
+            if isinstance(o, int | float) and float(o) > 0:
+                show_other = True
+                break
+
+        lr = Table(title="Context")
+        lr.add_column("Source", style="bold")
+        lr.add_column("Tokens", justify="right")
+        lr.add_column("sys%", justify="right")
+        lr.add_column("usr%", justify="right")
+        lr.add_column("asst%", justify="right")
+        lr.add_column("tool calls %", justify="right")
+        lr.add_column("tool outputs %", justify="right")
+        if show_other:
+            lr.add_column("oth%", justify="right")
+        for src, row in last_rows:
+            b = row.get("breakdown_pct") if isinstance(row.get("breakdown_pct"), dict) else {}
+            cells = [
+                src,
+                f"{int(row.get('context_size', 0)):,}",
+                _fmt_pct_cell(b.get("system")),
+                _fmt_pct_cell(b.get("user")),
+                _fmt_pct_cell(b.get("assistant")),
+                _fmt_pct_cell(b.get("tool_calls")),
+                _fmt_pct_cell(b.get("tool_returns")),
+            ]
+            if show_other:
+                cells.append(_fmt_pct_cell(b.get("other")))
+            lr.add_row(*cells)
+        console.print(lr)
 
 
 async def _render_escalation_request(data: dict[str, Any]) -> str:

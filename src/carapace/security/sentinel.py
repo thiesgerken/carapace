@@ -6,6 +6,7 @@ from typing import Any
 from loguru import logger
 from pydantic_ai import Agent, RunContext
 
+from carapace.llm_request_log import LlmRequestLogCapability
 from carapace.security.context import (
     ActionLogEntry,
     AgentResponseEntry,
@@ -136,6 +137,7 @@ class Sentinel:
             deps_type=Path,
             output_type=SentinelVerdict,
             instructions=self._load_system_prompt,
+            capabilities=[LlmRequestLogCapability(source="sentinel")],
         )
 
         @agent.tool

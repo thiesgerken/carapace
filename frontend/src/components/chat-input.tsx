@@ -321,7 +321,7 @@ export function ChatInput({
         </div>
 
         {/* Token usage gauge */}
-        {usage && turnContextTokens(usage) > 0 && (
+        {usage && turnGaugeTokens(usage) > 0 && (
           <TokenGauge
             usage={usage}
             onClickUsage={
@@ -334,10 +334,8 @@ export function ChatInput({
   );
 }
 
-/** Prefer server-reported last-LLM slice; fall back to in+out for older payloads. */
-function turnContextTokens(u: TurnUsage): number {
-  const c = u.context_tokens ?? 0;
-  if (c > 0) return c;
+/** API input+output tokens for the last agent model request (or last turn slice from done). */
+function turnGaugeTokens(u: TurnUsage): number {
   return u.input_tokens + u.output_tokens;
 }
 
@@ -349,8 +347,7 @@ function TokenGauge({
   usage: TurnUsage;
   onClickUsage?: () => void;
 }) {
-  const ctx = turnContextTokens(usage);
-  // Context window limits for common models; 200k is a safe default
+  const ctx = turnGaugeTokens(usage);
   const cap = 200_000;
   const pct = Math.min((ctx / cap) * 100, 100);
 
@@ -362,7 +359,7 @@ function TokenGauge({
         ? "bg-warning/70"
         : "bg-muted-foreground/30";
 
-  const tooltip = `${formatTokens(ctx)} / 200k context window tokens used\nClick for detailed usage breakdown`;
+  const tooltip = `${formatTokens(ctx)} API tokens (last agent request)\nShown vs 200k window — click for /usage`;
 
   return (
     <div className="mt-1.5 flex items-center gap-2 px-1">
