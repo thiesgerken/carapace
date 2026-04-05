@@ -15,6 +15,7 @@ Skills live under `skills/` in the data directory. Each skill is a directory con
 skills/
   my-skill/
     SKILL.md          # required
+    carapace.yaml     # optional: Carapace — proxy domains + credential declarations
     scripts/           # optional: executable code
     references/        # optional: additional docs
     assets/            # optional: templates, data files
@@ -84,6 +85,52 @@ See [the API reference](references/api.md) for endpoint details.
 - **`skill-modification`** (always active): creating, editing, or deleting any file under `skills/` requires user approval. The user will be prompted automatically.
 - **`no-exfil-after-skill-read`**: after activating a skill (reading its instructions), outbound communication is blocked without approval. Keep this in mind -- skills may contain sensitive workflow details.
 
+### carapace.yaml (optional)
+
+Carapace reads `skills/<name>/carapace.yaml` when the agent calls `use_skill("<name>")`. It declares **which hostnames the sandbox proxy may reach** and **which vault credentials to inject** (after user approval). Omit the file if the skill needs neither.
+
+**Top-level keys** (all optional):
+
+| Key               | Type            | Purpose                                                                                               |
+| ----------------- | --------------- | ----------------------------------------------------------------------------------------------------- |
+| `network`         | object          | Must contain `domains` — not a bare list under `network`.                                             |
+| `network.domains` | list of strings | Hostnames added to the session allowlist (wildcards like `*.cdn.example.com` allowed).                |
+| `credentials`     | list of objects | Each entry: `vault_path` (required), `description`, and either `env_var` and/or `file` for injection. |
+| `hints`           | string map      | Extra metadata for tooling (does not replace `network` / `credentials`).                              |
+
+**Valid example** (shape matters):
+
+```yaml
+network:
+  domains:
+    - api.example.com
+    - "*.cdn.example.com"
+
+credentials:
+  - vault_path: my-backend/some-secret-id
+    description: API key for Example service
+    env_var: EXAMPLE_API_KEY
+  - vault_path: my-backend/deploy-key
+    description: SSH private key for deploys
+    file: ~/.ssh/id_example_deploy
+```
+
+**Common mistake — invalid YAML for Carapace:**
+
+```yaml
+# WRONG: `network` must be an object with a `domains` key, not a YAML list.
+network:
+  - api.example.com
+```
+
+That parses as a list assigned to `network`, Pydantic validation fails, and **the entire `carapace.yaml` is ignored** (no domains, no credentials). Check server logs for a parse/validation warning if nothing applies.
+
+**Rules:**
+
+- Paths are resolved from the skill directory next to `SKILL.md` in the knowledge repo (under `skills/<name>/carapace.yaml`).
+- Credential values are never echoed to the user; env vars and files are set inside the sandbox after approval.
+- For full detail, see bundled `credentials` skill and project `docs/skills.md`.
+
 ### Creating a skill step by step
 
 1. Choose a name: lowercase, hyphenated, descriptive (e.g. `email-summary`, `git-changelog`)
@@ -92,8 +139,9 @@ See [the API reference](references/api.md) for endpoint details.
    - The `skill-modification` rule will trigger approval
 3. Write clear frontmatter with a good `description`
 4. Write concise instructions in the body
-5. Optionally add `scripts/`, `references/`, or `assets/` directories
-6. Tell the user the skill will appear in `/skills` and be available in new sessions
+5. Optionally add `carapace.yaml` if the skill needs outbound domains or vault-backed secrets
+6. Optionally add `scripts/`, `references/`, or `assets/` directories
+7. Tell the user the skill will appear in `/skills` and be available in new sessions
 
 ### Python dependencies
 
@@ -188,5 +236,7 @@ description: <What it does and when to use it.>
 
 <Things to watch out for.>
 ```
+
+If the skill needs outbound HTTP or credentials, add `carapace.yaml` with `network.domains` and/or `credentials` as in the section above.
 
 If the skill needs Python dependencies, also create a `pyproject.toml` and generate `uv.lock` with `uv lock` in the sandbox.
