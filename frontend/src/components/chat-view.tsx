@@ -341,7 +341,11 @@ export function ChatView({
           if (msg.usage) setUsage(msg.usage);
           break;
         case "user_message":
-          setWaiting(true);
+          // Slash commands end with command_result (no agent); echo must not re-arm waiting
+          // after command_result cleared it (message order / batching).
+          if (!msg.content.startsWith("/")) {
+            setWaiting(true);
+          }
           setMessages((prev) => [
             ...prev,
             { kind: "user", content: msg.content },

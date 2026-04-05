@@ -18,6 +18,7 @@ from carapace.models import ToolResult
 from carapace.sandbox.manager import SandboxManager
 from carapace.security.sentinel import Sentinel
 from carapace.session import SessionEngine, SessionManager
+from carapace.session.engine import _non_slash_user_message_count
 from carapace.skills import SkillRegistry
 from carapace.usage import ModelUsage
 from carapace.ws_models import ApprovalRequest, TurnUsage
@@ -426,3 +427,21 @@ def test_handle_slash_command_reload(tmp_path: Path):
             engine._sandbox_mgr.reset_session.assert_called_once_with(sid)
 
         asyncio.run(_run())
+
+
+def test_non_slash_user_message_count_ignores_slash_lines() -> None:
+    events: list[dict[str, Any]] = [
+        {"role": "user", "content": "/model openai:gpt-4o"},
+        {"role": "command", "command": "model", "data": {}},
+        {"role": "user", "content": "hello"},
+    ]
+    assert _non_slash_user_message_count(events) == 1
+
+
+def test_non_slash_user_message_count_plain_users() -> None:
+    events: list[dict[str, Any]] = [
+        {"role": "user", "content": "a"},
+        {"role": "user", "content": "b"},
+        {"role": "user", "content": "c"},
+    ]
+    assert _non_slash_user_message_count(events) == 3

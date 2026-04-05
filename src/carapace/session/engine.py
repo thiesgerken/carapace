@@ -36,6 +36,16 @@ from carapace.ws_models import (
 
 ModelType = Literal["agent", "sentinel", "title"]
 
+
+def _non_slash_user_message_count(events: list[dict[str, Any]]) -> int:
+    """Count user lines that are not slash commands (matches server slash-command routing)."""
+    return sum(
+        1
+        for e in events
+        if e.get("role") == "user" and isinstance(c := e.get("content"), str) and not c.startswith("/")
+    )
+
+
 # security_mod is still imported for evaluate_domain_with (used in domain approval callback)
 
 # ---------------------------------------------------------------------------
@@ -463,7 +473,12 @@ class SessionEngine:
                 "/model-title": "title",
             }
             model_type = model_map[cmd]
-            return await self._handle_model_command(active, model_type, parts[1].strip() if len(parts) > 1 else "")
+            return await self._handle_model_command(
+                active,
+                model_type,
+                parts[1].strip() if len(parts) > 1 else "",
+                slash_line=command.strip(),
+            )
 
         if cmd == "/usage":
             tracker = active.usage_tracker
@@ -550,7 +565,9 @@ class SessionEngine:
         available = self._available_models()
         return {"command": "models", "data": {"models": models, "available": available}}
 
-    async def _handle_model_command(self, active: ActiveSession, model_type: ModelType, arg: str) -> dict[str, Any]:
+    async def _handle_model_command(
+        self, active: ActiveSession, model_type: ModelType, arg: str, *, slash_line: str
+    ) -> dict[str, Any]:
         """Process ``/model[-(sentinel|title)] [MODEL | reset]``."""
         cmd_name = {"agent": "model", "sentinel": "model-sentinel", "title": "model-title"}[model_type]
         defaults = {
@@ -574,7 +591,7 @@ class SessionEngine:
         if arg == "reset":
             self._apply_model_override(active, model_type, None, None)
             if model_type == "title":
-                await self._regenerate_title(active)
+                await self._regenerate_title(active, pending_user_line=slash_line)
             return {
                 "command": cmd_name,
                 "data": {"current": default, "default": default, "message": f"Reset to default: {default}"},
@@ -588,7 +605,7 @@ class SessionEngine:
 
         self._apply_model_override(active, model_type, arg, new_model if model_type == "agent" else None)
         if model_type == "title":
-            await self._regenerate_title(active)
+            await self._regenerate_title(active, pending_user_line=slash_line)
         return {
             "command": cmd_name,
             "data": {"current": arg, "default": default, "message": f"Switched to: {arg}"},
@@ -607,10 +624,16 @@ class SessionEngine:
         elif model_type == "title":
             active.title_model_name = name
 
-    async def _regenerate_title(self, active: ActiveSession) -> None:
-        """Regenerate the session title using the current title model."""
+    async def _regenerate_title(self, active: ActiveSession, *, pending_user_line: str | None = None) -> None:
+        """Regenerate the session title using the current title model.
+
+        *pending_user_line* is the slash command line not yet persisted to events (e.g. first
+        ``/model-title`` in a session).
+        """
         session_id = active.state.session_id
-        events = self._session_mgr.load_events(session_id)
+        events = list(self._session_mgr.load_events(session_id))
+        if pending_user_line:
+            events.append({"role": "user", "content": pending_user_line})
         if events:
             await self._generate_title(active, events)
 
@@ -754,10 +777,9 @@ class SessionEngine:
                         ),
                     )
 
-                # Generate a title after the 1st and 3rd user message
+                # Generate a title after the 1st and 3rd non-slash user message
                 events = self._session_mgr.load_events(session_id)
-                user_msg_count = sum(1 for e in events if e.get("role") == "user")
-                if user_msg_count in (1, 3):
+                if _non_slash_user_message_count(events) in (1, 3):
                     t = asyncio.create_task(
                         self._generate_title(active, events),
                         name=f"title-{session_id}",
