@@ -1,6 +1,31 @@
 # CHANGELOG
 
 
+## v0.52.2 (2026-04-05)
+
+
+### 🐛 Bug Fixes
+
+
+- 🐛 make it clear in the example skills and create skill skill how carapace.yaml works
+  ([`7922bb8`](https://github.com/thiesgerken/carapace/commit/7922bb8f63a463cc5fecdc70715f77ab9c59a675))
+
+- 🐛 swawp colors for shields in ui, safe-list -> auto
+  ([`aca08e4`](https://github.com/thiesgerken/carapace/commit/aca08e41e0679831cd0806212766aad49074f861))
+
+### Other
+
+
+- 📝 docs: update security policy documentation
+  ([`b378a14`](https://github.com/thiesgerken/carapace/commit/b378a14afbbf062283b27290fd7fabd82b8811d2))
+
+  - Expanded the safe-list check to include additional tool names.
+  - Revised the default security policy to clarify principles and threats.
+  - Enhanced descriptions of the sentinel's role and decision-making criteria.
+  - Streamlined guidance on handling network requests and skill activations.
+
+  These changes improve clarity and comprehensiveness of the security measures in place.
+
 ## v0.52.1 (2026-04-03)
 
 
