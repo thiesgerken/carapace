@@ -32,7 +32,12 @@ def _make_runtime(*, namespace: str = "carapace", data_dir: str = "/data") -> Ku
     rt._session_pvc_storage_class = None
     rt._resource_spec = None
     rt._want_owner_ref = False
-    rt._owner_deployment = None
+    rt._owner_target = "auto"
+    rt._server_deployment_name = "carapace"
+    rt._argocd_application_name = ""
+    rt._argocd_application_namespace = ""
+    rt._sandbox_owner = None
+    rt._sandbox_owner_lookup_done = False
     return rt
 
 
@@ -232,7 +237,7 @@ async def test_create_calls_api():
         return mock_pod_instance
 
     rt._ensure_api = AsyncMock()
-    rt._get_owner_deployment = AsyncMock(return_value=None)
+    rt._get_sandbox_owner = AsyncMock(return_value=None)
     rt._delete_pod_if_exists = AsyncMock()
     rt._wait_for_running = AsyncMock()
 
@@ -342,7 +347,7 @@ async def test_get_host_ip_from_env(monkeypatch):
 async def test_create_sandbox_calls_api():
     rt = _make_runtime()
     rt._ensure_api = AsyncMock()
-    rt._get_owner_deployment = AsyncMock(return_value=None)
+    rt._get_sandbox_owner = AsyncMock(return_value=None)
     rt._delete_sts_if_exists = AsyncMock()
     rt._wait_for_running = AsyncMock()
 

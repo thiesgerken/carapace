@@ -63,11 +63,11 @@ graph TD
 
 The server pod manages sandbox StatefulSets directly via the Kubernetes API. Each session gets its own StatefulSet (replicas=1) with a per-session PVC created via `volumeClaimTemplates`. Commands are executed in the pod `{sts-name}-0` via `kubectl exec`.
 
-Sandbox StatefulSets are owned by the server Deployment (via `ownerReferences`), so they:
+Sandbox StatefulSets get an `ownerReference` so they show under the owning object in Argo CD and are garbage-collected when that object is deleted.
 
-- Appear as children in ArgoCD's resource tree
-- Are garbage-collected when the Deployment is deleted
-- Don't cause OutOfSync warnings
+With **`CARAPACE_SANDBOX_K8S_OWNER_TARGET=auto`** (default): the server prefers an **Argo CD `Application`** CR in the **same namespace as the workload** (name defaults to `CARAPACE_SANDBOX_K8S_APP_INSTANCE`, usually the Helm release name). If no such Application exists (typical when the Application lives only in `argocd`), it falls back to the **server `Deployment`**. Kubernetes does not allow a namespaced owner in a different namespace than the StatefulSet, so an Application in `argocd` cannot own sandboxes in `carapace` — use [applications in any namespace](https://argo-cd.readthedocs.io/en/stable/operator-manual/app-any-namespace/) and colocate the Application CR with the workload, or set **`CARAPACE_SANDBOX_K8S_OWNER_TARGET=deployment`** to skip the Application lookup.
+
+Set **`CARAPACE_SANDBOX_K8S_OWNER_REF=false`** to omit `ownerReferences` entirely (Argo CD still associates sandboxes via `argocd.argoproj.io/tracking-id`).
 
 ### Idle lifecycle
 
@@ -105,27 +105,32 @@ When the server runs inside Kubernetes (the `KUBERNETES_SERVICE_HOST` env var is
 
 ### Environment variable reference
 
-| Env var                                 | Default                   | Description                           |
-| --------------------------------------- | ------------------------- | ------------------------------------- |
-| `CARAPACE_SANDBOX_RUNTIME`              | `docker`                  | `docker` or `kubernetes`              |
-| `CARAPACE_SANDBOX_BASE_IMAGE`           | `carapace-sandbox:latest` | Sandbox container image (pin version) |
-| `CARAPACE_SANDBOX_IDLE_TIMEOUT_MINUTES` | `15`                      | Idle sandbox cleanup interval         |
-| `CARAPACE_SANDBOX_PROXY_PORT`           | `3128`                    | HTTP proxy port for domain filtering  |
-| `CARAPACE_SANDBOX_K8S_NAMESPACE`        | `carapace`                | Namespace for sandbox pods            |
-| `CARAPACE_SANDBOX_K8S_PVC_CLAIM`        | `carapace-data`           | Server data PVC claim name            |
-| `CARAPACE_SANDBOX_K8S_SESSION_PVC_SIZE`  | `1Gi`                     | Per-session PVC size                  |
-| `CARAPACE_SANDBOX_K8S_SESSION_PVC_STORAGE_CLASS` | (cluster default) | StorageClass for session PVCs         |
-| `CARAPACE_SANDBOX_K8S_SERVICE_ACCOUNT`  | `null`                    | ServiceAccount for sandbox pods       |
-| `CARAPACE_SANDBOX_NETWORK_NAME`         | `carapace-sandbox`        | Docker network name (Docker only)     |
+| Env var                                             | Default                   | Description                                                           |
+| --------------------------------------------------- | ------------------------- | --------------------------------------------------------------------- |
+| `CARAPACE_SANDBOX_RUNTIME`                          | `docker`                  | `docker` or `kubernetes`                                              |
+| `CARAPACE_SANDBOX_BASE_IMAGE`                       | `carapace-sandbox:latest` | Sandbox container image (pin version)                                 |
+| `CARAPACE_SANDBOX_IDLE_TIMEOUT_MINUTES`             | `15`                      | Idle sandbox cleanup interval                                         |
+| `CARAPACE_SANDBOX_PROXY_PORT`                       | `3128`                    | HTTP proxy port for domain filtering                                  |
+| `CARAPACE_SANDBOX_K8S_NAMESPACE`                    | `carapace`                | Namespace for sandbox pods                                            |
+| `CARAPACE_SANDBOX_K8S_PVC_CLAIM`                    | `carapace-data`           | Server data PVC claim name                                            |
+| `CARAPACE_SANDBOX_K8S_SESSION_PVC_SIZE`             | `1Gi`                     | Per-session PVC size                                                  |
+| `CARAPACE_SANDBOX_K8S_SESSION_PVC_STORAGE_CLASS`    | (cluster default)         | StorageClass for session PVCs                                         |
+| `CARAPACE_SANDBOX_K8S_SERVICE_ACCOUNT`              | `null`                    | ServiceAccount for sandbox pods                                       |
+| `CARAPACE_SANDBOX_K8S_OWNER_REF`                    | `true`                    | Attach `ownerReferences` to sandboxes                                 |
+| `CARAPACE_SANDBOX_K8S_OWNER_TARGET`                 | `auto`                    | `auto` (Application in workload ns, else Deployment) or `deployment`  |
+| `CARAPACE_SANDBOX_K8S_SERVER_DEPLOYMENT_NAME`       | `carapace`                | Server Deployment name (Helm sets to release name)                    |
+| `CARAPACE_SANDBOX_K8S_ARGOCD_APPLICATION_NAME`      | (see `K8S_APP_INSTANCE`)  | Override Application name for owner lookup                            |
+| `CARAPACE_SANDBOX_K8S_ARGOCD_APPLICATION_NAMESPACE` | (workload ns)             | Override Application namespace (must equal workload ns for owner ref) |
+| `CARAPACE_SANDBOX_NETWORK_NAME`                     | `carapace-sandbox`        | Docker network name (Docker only)                                     |
 
 ## Storage
 
 The server uses a single RWO PVC (`carapace-data`) for its own data (config, sessions, knowledge repo). Sandbox sessions each get a dedicated RWO PVC via StatefulSet `volumeClaimTemplates`:
 
-| Consumer             | Volume                                  | Mount path     | Mode |
-| -------------------- | --------------------------------------- | -------------- | ---- |
-| Server               | `carapace-data` (RWO)                   | `/data`        | RW   |
-| Sandbox StatefulSet  | `session-data` (per-session PVC, RWO)   | `/workspace`   | RW   |
+| Consumer            | Volume                                | Mount path   | Mode |
+| ------------------- | ------------------------------------- | ------------ | ---- |
+| Server              | `carapace-data` (RWO)                 | `/data`      | RW   |
+| Sandbox StatefulSet | `session-data` (per-session PVC, RWO) | `/workspace` | RW   |
 
 Sandbox pods have **no access** to the server's data PVC. The workspace is populated via `git clone` from the server's Git HTTP backend on first start. Changes are persisted back via `git push`.
 
@@ -179,7 +184,10 @@ rules:
     verbs: ["create", "get", "list", "delete"]
   - apiGroups: ["apps"]
     resources: ["deployments"]
-    verbs: ["get"] # for ownerReference lookup
+    verbs: ["get", "list"] # for ownerReference lookup
+  - apiGroups: ["argoproj.io"]
+    resources: ["applications"]
+    verbs: ["get", "list"]
   - apiGroups: ["apps"]
     resources: ["statefulsets", "statefulsets/scale"]
     verbs: ["create", "get", "list", "delete", "patch"]
@@ -190,10 +198,10 @@ rules:
 
 ## ArgoCD
 
-Sandbox pods are created at runtime and don't exist in Git. They appear in ArgoCD's resource tree as children of the server Deployment (via `ownerReferences`):
+Sandbox StatefulSets are created at runtime and don't exist in Git. With **`ownerTarget: auto`** and an Argo CD Application CR in the **workload namespace**, sandboxes appear as children of that Application in the resource tree. Otherwise they nest under the server Deployment (or appear as tracked resources via `argocd.argoproj.io/tracking-id` when owner refs are disabled).
 
 ```text
-Application: carapace
+Application: carapace (or Deployment/carapace when Application is not co-located)
 ├── Deployment/carapace              ✅ Synced
 │   ├── ReplicaSet/carapace-xxx      ✅
 │   │   └── Pod/carapace-xxx-abc     ✅ Running (server)
@@ -205,7 +213,7 @@ Application: carapace
 └── PVC/carapace-data                ✅
 ```
 
-No special ArgoCD configuration is needed — the standard annotation-based tracking handles it.
+Labels and `argocd.argoproj.io/tracking-id` keep sandboxes associated with the app even without an `ownerReference`.
 
 ## Customization
 

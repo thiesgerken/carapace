@@ -188,10 +188,19 @@ class SandboxConfig(BaseSettings):
     k8s_service_account: str | None = None
     # PriorityClass for sandbox pods (None = cluster default).
     k8s_priority_class: str | None = None
-    # Set an ownerReference on sandbox pods pointing to the carapace Deployment.
-    # When True, deleting the Deployment garbage-collects all sandboxes.
-    # When False, sandbox pods appear as standalone resources under the ArgoCD app.
+    # Attach ownerReferences on sandbox StatefulSets (and legacy pod sandboxes).
+    # When False, resources rely on labels + argocd.argoproj.io/tracking-id only.
     k8s_owner_ref: bool = True
+    # auto: prefer an Argo CD Application CR in the workload namespace (same UID
+    # across server rollouts); else fall back to the server Deployment.
+    # deployment: only use the server Deployment (no Application lookup).
+    k8s_owner_target: Literal["auto", "deployment"] = "auto"
+    # Server Deployment name for ownerReference fallback (Helm: release name).
+    k8s_server_deployment_name: str = "carapace"
+    # Argo CD Application metadata (owner ref only; must match k8s_namespace).
+    # Empty name defaults to k8s_app_instance.
+    k8s_argocd_application_name: str = ""
+    k8s_argocd_application_namespace: str = ""
     # ArgoCD application / Helm release name. Used for the app.kubernetes.io/instance
     # label and the argocd.argoproj.io/tracking-id annotation so that sandbox pods
     # appear in the ArgoCD resource tree even without an ownerReference.

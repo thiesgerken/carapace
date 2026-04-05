@@ -3,12 +3,13 @@ from __future__ import annotations
 import asyncio
 import os
 import socket
+from dataclasses import dataclass
 from pathlib import Path
-from typing import cast
+from typing import Literal, cast
 
 import kr8s
 from kr8s._api import Api
-from kr8s.asyncio.objects import Deployment, Pod, StatefulSet
+from kr8s.asyncio.objects import Deployment, Pod, StatefulSet, new_class
 from loguru import logger
 
 from carapace.sandbox.runtime import (
@@ -19,6 +20,8 @@ from carapace.sandbox.runtime import (
     Mount,
     SandboxConfig,
 )
+
+_ArgocdApplication = new_class("Application", "argoproj.io/v1alpha1", asyncio=True)
 
 
 def _sanitize_pod_name(name: str) -> str:
@@ -47,6 +50,26 @@ def _standard_labels(app_instance: str) -> dict[str, str]:
     }
 
 
+@dataclass(frozen=True, slots=True)
+class _SandboxOwner:
+    """Kubernetes object to set as ownerReferences on sandbox workloads."""
+
+    api_version: str
+    kind: str
+    name: str
+    uid: str
+
+    def as_owner_reference(self) -> dict[str, object]:
+        return {
+            "apiVersion": self.api_version,
+            "kind": self.kind,
+            "name": self.name,
+            "uid": self.uid,
+            "controller": False,
+            "blockOwnerDeletion": False,
+        }
+
+
 class KubernetesRuntime(ContainerRuntime):
     """ContainerRuntime backed by Kubernetes pods (using kr8s)."""
 
@@ -59,6 +82,10 @@ class KubernetesRuntime(ContainerRuntime):
         service_account: str | None = None,
         priority_class: str | None = None,
         owner_ref: bool = True,
+        owner_target: Literal["auto", "deployment"] = "auto",
+        server_deployment_name: str = "carapace",
+        argocd_application_name: str = "",
+        argocd_application_namespace: str = "",
         app_instance: str = "carapace",
         session_pvc_size: str = "1Gi",
         session_pvc_storage_class: str = "",
@@ -82,7 +109,12 @@ class KubernetesRuntime(ContainerRuntime):
             resource_limits_memory,
         )
         self._want_owner_ref = owner_ref
-        self._owner_deployment: Deployment | None = None
+        self._owner_target: Literal["auto", "deployment"] = owner_target
+        self._server_deployment_name = server_deployment_name
+        self._argocd_application_name = argocd_application_name
+        self._argocd_application_namespace = argocd_application_namespace
+        self._sandbox_owner: _SandboxOwner | None = None
+        self._sandbox_owner_lookup_done = False
 
         logger.info(f"KubernetesRuntime initialized (namespace={namespace}, pvc={pvc_claim}, data_dir={data_dir})")
 
@@ -117,32 +149,72 @@ class KubernetesRuntime(ContainerRuntime):
         """Lazily create the kr8s API client (must be called from async context)."""
         return await kr8s.asyncio.api(namespace=self._namespace)
 
-    async def _get_owner_deployment(self) -> Deployment | None:
-        """Look up the owner Deployment once and cache it."""
-        if self._owner_deployment is not None:
-            return self._owner_deployment
+    async def _try_argocd_application_owner(self, api: Api) -> _SandboxOwner | None:
+        """Resolve Argo CD Application as owner (must live in the workload namespace)."""
+        app_ns = self._argocd_application_namespace or self._namespace
+        if app_ns != self._namespace:
+            logger.debug(
+                f"Skipping Argo CD Application owner (namespace {app_ns} != workload namespace {self._namespace})"
+            )
+            return None
+        app_name = self._argocd_application_name or self._app_instance
+        try:
+            app = await _ArgocdApplication.get(app_name, namespace=app_ns, api=api, timeout=2)
+        except (kr8s.NotFoundError, kr8s.ServerError):
+            return None
+        raw = app.raw
+        uid = raw["metadata"]["uid"]
+        api_version = raw["apiVersion"]
+        logger.info(f"KubernetesRuntime: sandbox owner Argo CD Application {app_name!r} UID = {uid}")
+        return _SandboxOwner(
+            api_version=api_version,
+            kind="Application",
+            name=app_name,
+            uid=uid,
+        )
+
+    async def _try_server_deployment_owner(self, api: Api) -> _SandboxOwner | None:
+        try:
+            deploy = await Deployment.get(
+                self._server_deployment_name,
+                namespace=self._namespace,
+                api=api,
+            )
+        except (kr8s.NotFoundError, kr8s.ServerError):
+            return None
+        uid = deploy.raw.metadata.uid
+        logger.info(f"KubernetesRuntime: sandbox owner Deployment {self._server_deployment_name!r} UID = {uid}")
+        return _SandboxOwner(
+            api_version="apps/v1",
+            kind="Deployment",
+            name=self._server_deployment_name,
+            uid=uid,
+        )
+
+    async def _get_sandbox_owner(self) -> _SandboxOwner | None:
+        """Resolve owner for sandbox ownerReferences once (Application preferred, else Deployment)."""
         if not self._want_owner_ref:
             return None
-        try:
-            api = await self._ensure_api()
-            deploy = await Deployment.get("carapace", namespace=self._namespace, api=api)
-            self._owner_deployment = deploy
-            logger.info(f"KubernetesRuntime: owner Deployment UID = {deploy.raw.metadata.uid}")
-            return deploy
-        except (kr8s.NotFoundError, kr8s.ServerError):
-            logger.warning("Could not look up owner Deployment — sandbox resources will lack ownerRef")
+        if self._sandbox_owner is not None:
+            return self._sandbox_owner
+        if self._sandbox_owner_lookup_done:
+            return None
+        self._sandbox_owner_lookup_done = True
+        api = await self._ensure_api()
+        owner: _SandboxOwner | None = None
+        if self._owner_target == "auto":
+            owner = await self._try_argocd_application_owner(api)
+        if owner is None:
+            owner = await self._try_server_deployment_owner(api)
+        if owner is None:
+            logger.warning(
+                "Could not resolve sandbox owner (Argo CD Application / Deployment) — "
+                "sandbox resources will lack ownerRef"
+            )
             self._want_owner_ref = False
             return None
-
-    def _owner_ref_dict(self, deploy: Deployment) -> dict:
-        return {
-            "apiVersion": "apps/v1",
-            "kind": "Deployment",
-            "name": "carapace",
-            "uid": deploy.raw.metadata.uid,
-            "controller": False,
-            "blockOwnerDeletion": False,
-        }
+        self._sandbox_owner = owner
+        return owner
 
     def _mount_to_subpath(self, mount: Mount) -> str:
         """Convert a Mount.source path to a PVC subPath."""
@@ -221,9 +293,9 @@ class KubernetesRuntime(ContainerRuntime):
 
         api = await self._ensure_api()
         pod_dict = self._build_pod_dict(config)
-        owner = await self._get_owner_deployment()
+        owner = await self._get_sandbox_owner()
         if owner:
-            pod_dict["metadata"]["ownerReferences"] = [self._owner_ref_dict(owner)]
+            pod_dict["metadata"]["ownerReferences"] = [owner.as_owner_reference()]
 
         pod = await Pod(pod_dict, api=api)
         await pod.create()
@@ -336,9 +408,9 @@ class KubernetesRuntime(ContainerRuntime):
 
         api = await self._ensure_api()
         sts_dict = self._build_statefulset_dict(config)
-        owner = await self._get_owner_deployment()
+        owner = await self._get_sandbox_owner()
         if owner:
-            sts_dict["metadata"]["ownerReferences"] = [self._owner_ref_dict(owner)]
+            sts_dict["metadata"]["ownerReferences"] = [owner.as_owner_reference()]
 
         sts = await StatefulSet(sts_dict, api=api)
         await sts.create()
