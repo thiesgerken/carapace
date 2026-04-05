@@ -132,6 +132,17 @@ def usage_last_request_row(rec: LlmRequestRecord | None) -> UsageLastRequestRow 
     }
 
 
+def gauge_breakdown_pct_dict(rec: LlmRequestRecord | None) -> dict[str, float] | None:
+    """Shape percents for the web token gauge (all six keys, sum 100). ``None`` if no tiktoken shape."""
+    row = usage_last_request_row(rec)
+    if row is None:
+        return None
+    b = row["breakdown_pct"]
+    if all(v is None for v in b.values()):
+        return None
+    return {k: float(v) for k, v in b.items()}
+
+
 def _encoding_for_model(model_name: str | None) -> tiktoken.Encoding:
     key = (model_name or "").lower()
     if any(x in key for x in ("gpt-4o", "gpt-5", "o1", "o3", "o4")):

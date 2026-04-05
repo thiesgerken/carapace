@@ -7,6 +7,7 @@ from pydantic_ai.messages import ModelRequest, ModelResponse, SystemPromptPart, 
 from carapace.llm_request_log import (
     InputShapeRatios,
     LlmRequestRecord,
+    gauge_breakdown_pct_dict,
     input_shape_ratios_from_messages,
     usage_last_request_row,
 )
@@ -75,3 +76,34 @@ def test_usage_last_request_row_tiktoken_pct_independent_of_api_output() -> None
     assert bp["assistant"] == 0.0
     total_pct = sum(v for v in bp.values() if v is not None)
     assert abs(total_pct - 100.0) < 1e-6
+
+
+def test_gauge_breakdown_pct_dict_none_without_shape() -> None:
+    rec = LlmRequestRecord(
+        ts=datetime.now(tz=UTC),
+        source="agent",
+        input_tokens=10,
+        output_tokens=5,
+        input_shape=None,
+    )
+    assert gauge_breakdown_pct_dict(rec) is None
+
+
+def test_gauge_breakdown_pct_dict_matches_row() -> None:
+    rec = LlmRequestRecord(
+        ts=datetime.now(tz=UTC),
+        source="agent",
+        input_tokens=100,
+        output_tokens=0,
+        input_shape=InputShapeRatios(
+            system=0.8,
+            user=0.2,
+            assistant=0,
+            tool_calls=0,
+            tool_returns=0,
+            other=0,
+        ),
+    )
+    d = gauge_breakdown_pct_dict(rec)
+    assert d is not None
+    assert d["system"] == 80.0 and d["user"] == 20.0

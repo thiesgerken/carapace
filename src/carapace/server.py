@@ -44,6 +44,7 @@ from carapace.config import _resolve_data_dir, _resolve_knowledge_dir, get_confi
 from carapace.credentials import CredentialRegistry, build_credential_registry
 from carapace.git.http import GitHttpHandler
 from carapace.git.store import GitStore
+from carapace.llm_request_log import gauge_breakdown_pct_dict, last_record_for_source
 from carapace.models import Config, SessionState, ToolResult
 from carapace.sandbox.manager import SandboxManager
 from carapace.sandbox.proxy import ProxyServer
@@ -71,6 +72,7 @@ from carapace.ws_models import (
     ToolCallInfo,
     ToolResultInfo,
     TurnUsage,
+    TurnUsageBreakdownPct,
     UserMessage,
     UserMessageNotification,
     parse_client_message,
@@ -675,10 +677,14 @@ async def chat_ws(
     # Tell the client whether an agent turn is in progress.
     agent_running = active.agent_task is not None and not active.agent_task.done()
     usage: TurnUsage | None = None
-    for rec in reversed(active.llm_request_log.records):
-        if rec.source == "agent":
-            usage = TurnUsage(input_tokens=rec.input_tokens, output_tokens=rec.output_tokens)
-            break
+    rec_agent = last_record_for_source(active.llm_request_log, "agent")
+    if rec_agent:
+        bd = gauge_breakdown_pct_dict(rec_agent)
+        usage = TurnUsage(
+            input_tokens=rec_agent.input_tokens,
+            output_tokens=rec_agent.output_tokens,
+            breakdown_pct=TurnUsageBreakdownPct.model_validate(bd) if bd else None,
+        )
     with contextlib.suppress(Exception):
         await _send(websocket, StatusUpdate(agent_running=agent_running, usage=usage))
 

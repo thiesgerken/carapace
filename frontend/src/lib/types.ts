@@ -91,9 +91,20 @@ export interface CredentialApprovalRequest {
   explanation: string;
 }
 
+/** Tiktoken prompt-mix percents for the last agent request (sum 100). */
+export interface TurnUsageBreakdownPct {
+  system: number;
+  user: number;
+  assistant: number;
+  tool_calls: number;
+  tool_returns: number;
+  other: number;
+}
+
 export interface TurnUsage {
   input_tokens: number;
   output_tokens: number;
+  breakdown_pct?: TurnUsageBreakdownPct | null;
 }
 
 export interface Done {

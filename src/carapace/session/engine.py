@@ -20,6 +20,7 @@ from carapace.git.store import GitStore
 from carapace.llm_request_log import (
     LlmRequestLog,
     LlmRequestRecord,
+    gauge_breakdown_pct_dict,
     last_record_for_source,
     llm_request_sink_scope,
     usage_last_request_row,
@@ -39,6 +40,7 @@ from carapace.ws_models import (
     ApprovalResponse,
     EscalationResponse,
     TurnUsage,
+    TurnUsageBreakdownPct,
 )
 
 ModelType = Literal["agent", "sentinel", "title"]
@@ -793,6 +795,7 @@ class SessionEngine:
                 if output.startswith("Unexpected agent output type:"):
                     await self._broadcast(active, "on_error", output)
                 else:
+                    bd = gauge_breakdown_pct_dict(last_record_for_source(active.llm_request_log, "agent"))
                     await self._broadcast(
                         active,
                         "on_done",
@@ -800,6 +803,7 @@ class SessionEngine:
                         TurnUsage(
                             input_tokens=inp_tok,
                             output_tokens=out_tok,
+                            breakdown_pct=TurnUsageBreakdownPct.model_validate(bd) if bd else None,
                         ),
                     )
 
