@@ -1,6 +1,27 @@
 # CHANGELOG
 
 
+## v0.53.0 (2026-04-05)
+
+
+### ✨ Features
+
+
+- ✨ feat: prefer Argo CD Application as sandbox owner on Kubernetes
+  ([`89f24ba`](https://github.com/thiesgerken/carapace/commit/89f24ba882db8e2f3c815e21fe648c2ab5f12c9f))
+
+  When owner refs are enabled and ownerTarget is auto (default), resolve an argoproj.io Application in the workload namespace before falling back to the server Deployment. Same-namespace owner refs are required by K8s.
+
+  Helm sets server deployment name from the release and grants get/list on applications. Add sandbox.ownerTarget and optional argocdApplication overrides in values.
+
+  Made-with: Cursor
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix: model title not running when first message was a slash command
+  ([`ef4c3de`](https://github.com/thiesgerken/carapace/commit/ef4c3de1633427f7bf7eaaa908319c8edeef13d8))
+
 ## v0.52.2 (2026-04-05)
 
 
