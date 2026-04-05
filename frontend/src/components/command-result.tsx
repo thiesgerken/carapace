@@ -396,19 +396,19 @@ function UsageView({ data }: { data: UsagePayload }) {
               <tr className="border-b border-border text-left text-xs text-muted-foreground">
                 <th className="pb-1 pr-2 font-medium">Source</th>
                 <th className="pb-1 pr-2 font-medium text-right">Tokens</th>
-                <th className="pb-1 pr-2 font-medium text-right">system %</th>
-                <th className="pb-1 pr-2 font-medium text-right">user %</th>
+                <th className="pb-1 pr-2 font-medium text-right">System %</th>
+                <th className="pb-1 pr-2 font-medium text-right">User %</th>
                 <th className="pb-1 pr-2 font-medium text-right">
-                  assistant %
+                  Assistant %
                 </th>
                 <th className="pb-1 pr-2 font-medium text-right">
-                  tool calls %
+                  Tool Calls %
                 </th>
                 <th className="pb-1 pr-2 font-medium text-right">
-                  tool outputs %
+                  Tool Outputs %
                 </th>
                 {showOtherPctCol ? (
-                  <th className="pb-1 font-medium text-right">other %</th>
+                  <th className="pb-1 font-medium text-right">Other %</th>
                 ) : null}
               </tr>
             </thead>
