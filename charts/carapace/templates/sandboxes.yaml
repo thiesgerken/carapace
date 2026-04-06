@@ -1,0 +1,10 @@
+apiVersion: carapace.dev/v1alpha1
+kind: Sandboxes
+metadata:
+  name: {{ .Values.sandbox.sandboxesName | default (printf "%s-sandboxes" .Release.Name) }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "carapace.labels" . | nindent 4 }}
+    app.kubernetes.io/component: sandbox
+spec:
+  description: Ownership anchor for runtime-created Carapace sandbox StatefulSets.

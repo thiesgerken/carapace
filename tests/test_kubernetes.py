@@ -32,10 +32,8 @@ def _make_runtime(*, namespace: str = "carapace", data_dir: str = "/data") -> Ku
     rt._session_pvc_storage_class = None
     rt._resource_spec = None
     rt._want_owner_ref = False
-    rt._owner_target = "auto"
     rt._server_deployment_name = "carapace"
-    rt._argocd_application_name = ""
-    rt._argocd_application_namespace = ""
+    rt._sandboxes_name = "carapace-sandboxes"
     rt._sandbox_owner = None
     rt._sandbox_owner_lookup_done = False
     return rt
@@ -398,3 +396,47 @@ async def test_destroy_sandbox_not_found():
     rt._delete_sts_if_exists = AsyncMock()
     # Should not raise
     await rt.destroy_sandbox("carapace-sandbox-abc", "carapace-sandbox-abc-0")
+
+
+# --- owner resolution ---
+
+
+@pytest.mark.asyncio
+async def test_get_sandbox_owner_prefers_sandboxes():
+    rt = _make_runtime()
+    rt._want_owner_ref = True
+    rt._ensure_api = AsyncMock(return_value=object())
+
+    collection = MagicMock()
+    collection.raw = {
+        "apiVersion": "carapace.dev/v1alpha1",
+        "metadata": {"uid": "collection-uid"},
+    }
+
+    with patch("carapace.sandbox.kubernetes._Sandboxes") as sandboxes_cls:
+        sandboxes_cls.get = AsyncMock(return_value=collection)
+        with patch("carapace.sandbox.kubernetes.Deployment") as deploy_cls:
+            deploy_cls.get = AsyncMock()
+            owner = await rt._get_sandbox_owner()
+
+    assert owner is not None
+    assert owner.kind == "Sandboxes"
+    assert owner.name == "carapace-sandboxes"
+    deploy_cls.get.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_get_sandbox_owner_falls_back_to_deployment():
+    rt = _make_runtime()
+    rt._want_owner_ref = True
+    rt._ensure_api = AsyncMock(return_value=object())
+    deploy_owner = MagicMock()
+    deploy_owner.kind = "Deployment"
+    deploy_owner.name = "carapace"
+    rt._try_sandboxes_owner = AsyncMock(return_value=None)
+    rt._try_server_deployment_owner = AsyncMock(return_value=deploy_owner)
+    owner = await rt._get_sandbox_owner()
+
+    assert owner is not None
+    assert owner.kind == "Deployment"
+    assert owner.name == "carapace"

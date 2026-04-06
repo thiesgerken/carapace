@@ -185,37 +185,37 @@ Multiple instances are supported — just add more entries with different names 
 
 ### Key values
 
-| Value                                    | Default                          | Description                                                                                                  |
-| ---------------------------------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `image.registry`                         | `ghcr.io`                        | Server image registry                                                                                        |
-| `image.repository`                       | `thiesgerken/carapace`           | Server image repository                                                                                      |
-| `image.tag`                              | `""` (appVersion)                | Server image tag                                                                                             |
-| `frontend.enabled`                       | `true`                           | Deploy the Next.js frontend                                                                                  |
-| `frontend.image.tag`                     | `""` (appVersion)                | Frontend image tag                                                                                           |
-| `sandbox.image.tag`                      | `""` (appVersion)                | Sandbox base image tag                                                                                       |
-| `sandbox.ownerTarget`                    | `auto`                           | Sandbox `ownerReference`: Argo Application in workload ns, else Deployment (`deployment` = skip Application) |
-| `sandbox.argocdApplication.name`         | `""`                             | Override Argo CD Application name for owner lookup (default: release name)                                   |
-| `sandbox.argocdApplication.namespace`    | `""`                             | Application namespace (must match workload ns for a valid owner ref)                                         |
-| `ingress.enabled`                        | `true`                           | Create a Gateway API HTTPRoute                                                                               |
-| `ingress.hostname`                       | `carapace.example.com`           | Ingress hostname                                                                                             |
-| `ingress.parentRefs`                     | `[{name: default-gateway}]`      | Gateway parent references                                                                                    |
-| `ingress.annotations`                    | `{}`                             | Extra annotations on the HTTPRoute                                                                           |
-| `persistence.storageClassName`           | `""` (cluster default)           | StorageClass for the RWX PVC                                                                                 |
-| `persistence.size`                       | `10Gi`                           | PVC size                                                                                                     |
-| `persistence.finalizers`                 | `[]`                             | PVC finalizers (e.g. `kubernetes.io/pvc-protection`)                                                         |
-| `config`                                 | `{}`                             | Application config (mounted as `/data/config.yaml` via ConfigMap)                                            |
-| `priorityClassName`                      | `""`                             | PriorityClass for all pods (server, frontend, sandbox)                                                       |
-| `envFrom`                                | `[]`                             | Secret/ConfigMap refs injected into the server                                                               |
-| `extraEnv`                               | `[]`                             | Extra env vars for the server container                                                                      |
-| `resources`                              | requests: 200m/256Mi, limit: 1Gi | Server resource requests/limits                                                                              |
-| `frontend.resources`                     | requests: 50m/64Mi, limit: 128Mi | Frontend resource requests/limits                                                                            |
-| `bitwarden.image.tag`                    | `""` (appVersion)                | bitwarden-cli sidecar image tag                                                                              |
-| `bitwarden.persistence.enabled`          | `true`                           | Create a PVC per sidecar for CLI data (`BITWARDENCLI_APPDATA_DIR`)                                           |
-| `bitwarden.persistence.size`             | `256Mi`                          | Size of each Bitwarden sidecar PVC                                                                           |
-| `bitwarden.persistence.storageClassName` | `""` (cluster default)           | StorageClass for Bitwarden PVCs                                                                              |
-| `bitwarden.instances`                    | `[]`                             | List of `bw serve` sidecars (see above)                                                                      |
+| Value                                    | Default                          | Description                                                        |
+| ---------------------------------------- | -------------------------------- | ------------------------------------------------------------------ |
+| `image.registry`                         | `ghcr.io`                        | Server image registry                                              |
+| `image.repository`                       | `thiesgerken/carapace`           | Server image repository                                            |
+| `image.tag`                              | `""` (appVersion)                | Server image tag                                                   |
+| `frontend.enabled`                       | `true`                           | Deploy the Next.js frontend                                        |
+| `frontend.image.tag`                     | `""` (appVersion)                | Frontend image tag                                                 |
+| `sandbox.image.tag`                      | `""` (appVersion)                | Sandbox base image tag                                             |
+| `sandbox.sandboxesName`                  | `""` (`<release>-sandboxes`)     | Preferred `Sandboxes` CR name for sandbox `ownerReferences`        |
+| `ingress.enabled`                        | `true`                           | Create a Gateway API HTTPRoute                                     |
+| `ingress.hostname`                       | `carapace.example.com`           | Ingress hostname                                                   |
+| `ingress.parentRefs`                     | `[{name: default-gateway}]`      | Gateway parent references                                          |
+| `ingress.annotations`                    | `{}`                             | Extra annotations on the HTTPRoute                                 |
+| `persistence.storageClassName`           | `""` (cluster default)           | StorageClass for the RWX PVC                                       |
+| `persistence.size`                       | `10Gi`                           | PVC size                                                           |
+| `persistence.finalizers`                 | `[]`                             | PVC finalizers (e.g. `kubernetes.io/pvc-protection`)               |
+| `config`                                 | `{}`                             | Application config (mounted as `/data/config.yaml` via ConfigMap)  |
+| `priorityClassName`                      | `""`                             | PriorityClass for all pods (server, frontend, sandbox)             |
+| `envFrom`                                | `[]`                             | Secret/ConfigMap refs injected into the server                     |
+| `extraEnv`                               | `[]`                             | Extra env vars for the server container                            |
+| `resources`                              | requests: 200m/256Mi, limit: 1Gi | Server resource requests/limits                                    |
+| `frontend.resources`                     | requests: 50m/64Mi, limit: 128Mi | Frontend resource requests/limits                                  |
+| `bitwarden.image.tag`                    | `""` (appVersion)                | bitwarden-cli sidecar image tag                                    |
+| `bitwarden.persistence.enabled`          | `true`                           | Create a PVC per sidecar for CLI data (`BITWARDENCLI_APPDATA_DIR`) |
+| `bitwarden.persistence.size`             | `256Mi`                          | Size of each Bitwarden sidecar PVC                                 |
+| `bitwarden.persistence.storageClassName` | `""` (cluster default)           | StorageClass for Bitwarden PVCs                                    |
+| `bitwarden.instances`                    | `[]`                             | List of `bw serve` sidecars (see above)                            |
 
 See [values.yaml](values.yaml) for the complete reference.
+
+The `Sandboxes` CR is currently used only as an ownership/metadata anchor. The chart installs the CRD and a singleton resource, but no operator/controller is deployed yet; runtime sandbox lifecycle is still managed directly by the Carapace server.
 
 ## Development
 

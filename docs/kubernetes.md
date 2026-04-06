@@ -65,7 +65,9 @@ The server pod manages sandbox StatefulSets directly via the Kubernetes API. Eac
 
 Sandbox StatefulSets get an `ownerReference` so they show under the owning object in Argo CD and are garbage-collected when that object is deleted.
 
-With **`CARAPACE_SANDBOX_K8S_OWNER_TARGET=auto`** (default): the server prefers an **Argo CD `Application`** CR in the **same namespace as the workload** (name defaults to `CARAPACE_SANDBOX_K8S_APP_INSTANCE`, usually the Helm release name). If no such Application exists (typical when the Application lives only in `argocd`), it falls back to the **server `Deployment`**. Kubernetes does not allow a namespaced owner in a different namespace than the StatefulSet, so an Application in `argocd` cannot own sandboxes in `carapace` — use [applications in any namespace](https://argo-cd.readthedocs.io/en/stable/operator-manual/app-any-namespace/) and colocate the Application CR with the workload, or set **`CARAPACE_SANDBOX_K8S_OWNER_TARGET=deployment`** to skip the Application lookup.
+The server prefers a namespaced **`Sandboxes`** custom resource (name from `CARAPACE_SANDBOX_K8S_SANDBOXES_NAME`, Helm default `<release>-sandboxes`) as owner. If that CR is missing or unavailable, it falls back to the server `Deployment` (`CARAPACE_SANDBOX_K8S_SERVER_DEPLOYMENT_NAME`).
+
+The `Sandboxes` CR is currently an ownership/metadata anchor only. There is no operator/controller reconciling sandbox resources yet; the Carapace server still creates/scales/deletes sandbox StatefulSets directly.
 
 Set **`CARAPACE_SANDBOX_K8S_OWNER_REF=false`** to omit `ownerReferences` entirely (Argo CD still associates sandboxes via `argocd.argoproj.io/tracking-id`).
 
@@ -105,23 +107,21 @@ When the server runs inside Kubernetes (the `KUBERNETES_SERVICE_HOST` env var is
 
 ### Environment variable reference
 
-| Env var                                             | Default                   | Description                                                           |
-| --------------------------------------------------- | ------------------------- | --------------------------------------------------------------------- |
-| `CARAPACE_SANDBOX_RUNTIME`                          | `docker`                  | `docker` or `kubernetes`                                              |
-| `CARAPACE_SANDBOX_BASE_IMAGE`                       | `carapace-sandbox:latest` | Sandbox container image (pin version)                                 |
-| `CARAPACE_SANDBOX_IDLE_TIMEOUT_MINUTES`             | `15`                      | Idle sandbox cleanup interval                                         |
-| `CARAPACE_SANDBOX_PROXY_PORT`                       | `3128`                    | HTTP proxy port for domain filtering                                  |
-| `CARAPACE_SANDBOX_K8S_NAMESPACE`                    | `carapace`                | Namespace for sandbox pods                                            |
-| `CARAPACE_SANDBOX_K8S_PVC_CLAIM`                    | `carapace-data`           | Server data PVC claim name                                            |
-| `CARAPACE_SANDBOX_K8S_SESSION_PVC_SIZE`             | `1Gi`                     | Per-session PVC size                                                  |
-| `CARAPACE_SANDBOX_K8S_SESSION_PVC_STORAGE_CLASS`    | (cluster default)         | StorageClass for session PVCs                                         |
-| `CARAPACE_SANDBOX_K8S_SERVICE_ACCOUNT`              | `null`                    | ServiceAccount for sandbox pods                                       |
-| `CARAPACE_SANDBOX_K8S_OWNER_REF`                    | `true`                    | Attach `ownerReferences` to sandboxes                                 |
-| `CARAPACE_SANDBOX_K8S_OWNER_TARGET`                 | `auto`                    | `auto` (Application in workload ns, else Deployment) or `deployment`  |
-| `CARAPACE_SANDBOX_K8S_SERVER_DEPLOYMENT_NAME`       | `carapace`                | Server Deployment name (Helm sets to release name)                    |
-| `CARAPACE_SANDBOX_K8S_ARGOCD_APPLICATION_NAME`      | (see `K8S_APP_INSTANCE`)  | Override Application name for owner lookup                            |
-| `CARAPACE_SANDBOX_K8S_ARGOCD_APPLICATION_NAMESPACE` | (workload ns)             | Override Application namespace (must equal workload ns for owner ref) |
-| `CARAPACE_SANDBOX_NETWORK_NAME`                     | `carapace-sandbox`        | Docker network name (Docker only)                                     |
+| Env var                                          | Default                   | Description                                               |
+| ------------------------------------------------ | ------------------------- | --------------------------------------------------------- |
+| `CARAPACE_SANDBOX_RUNTIME`                       | `docker`                  | `docker` or `kubernetes`                                  |
+| `CARAPACE_SANDBOX_BASE_IMAGE`                    | `carapace-sandbox:latest` | Sandbox container image (pin version)                     |
+| `CARAPACE_SANDBOX_IDLE_TIMEOUT_MINUTES`          | `15`                      | Idle sandbox cleanup interval                             |
+| `CARAPACE_SANDBOX_PROXY_PORT`                    | `3128`                    | HTTP proxy port for domain filtering                      |
+| `CARAPACE_SANDBOX_K8S_NAMESPACE`                 | `carapace`                | Namespace for sandbox pods                                |
+| `CARAPACE_SANDBOX_K8S_PVC_CLAIM`                 | `carapace-data`           | Server data PVC claim name                                |
+| `CARAPACE_SANDBOX_K8S_SESSION_PVC_SIZE`          | `1Gi`                     | Per-session PVC size                                      |
+| `CARAPACE_SANDBOX_K8S_SESSION_PVC_STORAGE_CLASS` | (cluster default)         | StorageClass for session PVCs                             |
+| `CARAPACE_SANDBOX_K8S_SERVICE_ACCOUNT`           | `null`                    | ServiceAccount for sandbox pods                           |
+| `CARAPACE_SANDBOX_K8S_OWNER_REF`                 | `true`                    | Attach `ownerReferences` to sandboxes                     |
+| `CARAPACE_SANDBOX_K8S_SANDBOXES_NAME`          | `carapace-sandboxes`      | Preferred `Sandboxes` owner in workload namespace         |
+| `CARAPACE_SANDBOX_K8S_SERVER_DEPLOYMENT_NAME`    | `carapace`                | Server Deployment name (Helm sets to release name)        |
+| `CARAPACE_SANDBOX_NETWORK_NAME`                  | `carapace-sandbox`        | Docker network name (Docker only)                         |
 
 ## Storage
 
@@ -184,9 +184,9 @@ rules:
     verbs: ["create", "get", "list", "delete"]
   - apiGroups: ["apps"]
     resources: ["deployments"]
-    verbs: ["get", "list"] # for ownerReference lookup
-  - apiGroups: ["argoproj.io"]
-    resources: ["applications"]
+    verbs: ["get", "list"] # Deployment fallback owner lookup
+  - apiGroups: ["carapace.dev"]
+    resources: ["sandboxes"]
     verbs: ["get", "list"]
   - apiGroups: ["apps"]
     resources: ["statefulsets", "statefulsets/scale"]
@@ -198,19 +198,13 @@ rules:
 
 ## ArgoCD
 
-Sandbox StatefulSets are created at runtime and don't exist in Git. With **`ownerTarget: auto`** and an Argo CD Application CR in the **workload namespace**, sandboxes appear as children of that Application in the resource tree. Otherwise they nest under the server Deployment (or appear as tracked resources via `argocd.argoproj.io/tracking-id` when owner refs are disabled).
+Sandbox StatefulSets are created at runtime and don't exist in Git. With a `Sandboxes` CR present in the workload namespace, sandboxes appear as children of that resource in the tree. If it is missing, they nest under the server Deployment (or appear as tracked resources via `argocd.argoproj.io/tracking-id` when owner refs are disabled).
 
 ```text
-Application: carapace (or Deployment/carapace when Application is not co-located)
-├── Deployment/carapace              ✅ Synced
-│   ├── ReplicaSet/carapace-xxx      ✅
-│   │   └── Pod/carapace-xxx-abc     ✅ Running (server)
-│   ├── StatefulSet/carapace-sandbox-aaa  ✅ (sandbox)
-│   │   └── Pod/carapace-sandbox-aaa-0    ✅ Running
-│   └── StatefulSet/carapace-sandbox-bbb  ✅ (sandbox, scaled to 0 = idle)
-├── Deployment/frontend              ✅ Synced
-├── Service/carapace                 ✅
-└── PVC/carapace-data                ✅
+Sandboxes/carapace-sandboxes (or Deployment/carapace when Sandboxes CR missing)
+├── StatefulSet/carapace-sandbox-aaa      ✅ (sandbox)
+│   └── Pod/carapace-sandbox-aaa-0        ✅ Running
+└── StatefulSet/carapace-sandbox-bbb      ✅ (sandbox, scaled to 0 = idle)
 ```
 
 Labels and `argocd.argoproj.io/tracking-id` keep sandboxes associated with the app even without an `ownerReference`.

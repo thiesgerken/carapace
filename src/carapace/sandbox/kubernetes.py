@@ -5,7 +5,7 @@ import os
 import socket
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, cast
+from typing import cast
 
 import kr8s
 from kr8s._api import Api
@@ -21,7 +21,7 @@ from carapace.sandbox.runtime import (
     SandboxConfig,
 )
 
-_ArgocdApplication = new_class("Application", "argoproj.io/v1alpha1", asyncio=True)
+_Sandboxes = new_class("Sandboxes", "carapace.dev/v1alpha1", asyncio=True)
 
 
 def _sanitize_pod_name(name: str) -> str:
@@ -82,10 +82,8 @@ class KubernetesRuntime(ContainerRuntime):
         service_account: str | None = None,
         priority_class: str | None = None,
         owner_ref: bool = True,
-        owner_target: Literal["auto", "deployment"] = "auto",
         server_deployment_name: str = "carapace",
-        argocd_application_name: str = "",
-        argocd_application_namespace: str = "",
+        sandboxes_name: str = "carapace-sandboxes",
         app_instance: str = "carapace",
         session_pvc_size: str = "1Gi",
         session_pvc_storage_class: str = "",
@@ -109,10 +107,8 @@ class KubernetesRuntime(ContainerRuntime):
             resource_limits_memory,
         )
         self._want_owner_ref = owner_ref
-        self._owner_target: Literal["auto", "deployment"] = owner_target
         self._server_deployment_name = server_deployment_name
-        self._argocd_application_name = argocd_application_name
-        self._argocd_application_namespace = argocd_application_namespace
+        self._sandboxes_name = sandboxes_name
         self._sandbox_owner: _SandboxOwner | None = None
         self._sandbox_owner_lookup_done = False
 
@@ -149,27 +145,25 @@ class KubernetesRuntime(ContainerRuntime):
         """Lazily create the kr8s API client (must be called from async context)."""
         return await kr8s.asyncio.api(namespace=self._namespace)
 
-    async def _try_argocd_application_owner(self, api: Api) -> _SandboxOwner | None:
-        """Resolve Argo CD Application as owner (must live in the workload namespace)."""
-        app_ns = self._argocd_application_namespace or self._namespace
-        if app_ns != self._namespace:
-            logger.debug(
-                f"Skipping Argo CD Application owner (namespace {app_ns} != workload namespace {self._namespace})"
-            )
-            return None
-        app_name = self._argocd_application_name or self._app_instance
+    async def _try_sandboxes_owner(self, api: Api) -> _SandboxOwner | None:
+        """Resolve Sandboxes CR owner in the workload namespace."""
         try:
-            app = await _ArgocdApplication.get(app_name, namespace=app_ns, api=api, timeout=2)
+            sandboxes = await _Sandboxes.get(
+                self._sandboxes_name,
+                namespace=self._namespace,
+                api=api,
+                timeout=2,
+            )
         except (kr8s.NotFoundError, kr8s.ServerError):
             return None
-        raw = app.raw
+        raw = sandboxes.raw
         uid = raw["metadata"]["uid"]
         api_version = raw["apiVersion"]
-        logger.info(f"KubernetesRuntime: sandbox owner Argo CD Application {app_name!r} UID = {uid}")
+        logger.info(f"KubernetesRuntime: sandbox owner Sandboxes {self._sandboxes_name!r} UID = {uid}")
         return _SandboxOwner(
             api_version=api_version,
-            kind="Application",
-            name=app_name,
+            kind="Sandboxes",
+            name=self._sandboxes_name,
             uid=uid,
         )
 
@@ -192,7 +186,7 @@ class KubernetesRuntime(ContainerRuntime):
         )
 
     async def _get_sandbox_owner(self) -> _SandboxOwner | None:
-        """Resolve owner for sandbox ownerReferences once (Application preferred, else Deployment)."""
+        """Resolve owner for sandbox ownerReferences once (Sandboxes preferred, else Deployment)."""
         if not self._want_owner_ref:
             return None
         if self._sandbox_owner is not None:
@@ -201,15 +195,16 @@ class KubernetesRuntime(ContainerRuntime):
             return None
         self._sandbox_owner_lookup_done = True
         api = await self._ensure_api()
-        owner: _SandboxOwner | None = None
-        if self._owner_target == "auto":
-            owner = await self._try_argocd_application_owner(api)
+        owner = await self._try_sandboxes_owner(api)
         if owner is None:
+            logger.warning(
+                f"Could not resolve Sandboxes {self._sandboxes_name!r}; "
+                f"falling back to Deployment {self._server_deployment_name!r}"
+            )
             owner = await self._try_server_deployment_owner(api)
         if owner is None:
             logger.warning(
-                "Could not resolve sandbox owner (Argo CD Application / Deployment) — "
-                "sandbox resources will lack ownerRef"
+                "Could not resolve sandbox owner (Sandboxes / Deployment) — sandbox resources will lack ownerRef"
             )
             self._want_owner_ref = False
             return None
