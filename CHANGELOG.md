@@ -1,6 +1,15 @@
 # CHANGELOG
 
 
+## v0.54.1 (2026-04-06)
+
+
+### ♻️ Refactoring
+
+
+- ♻️ refactor: reorganize usage stuff into one file
+  ([`70a87ed`](https://github.com/thiesgerken/carapace/commit/70a87edfed59a4a6baca738c8187e9089b85e237))
+
 ## v0.54.0 (2026-04-06)
 
 
