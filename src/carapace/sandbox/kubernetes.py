@@ -21,7 +21,8 @@ from carapace.sandbox.runtime import (
     SandboxConfig,
 )
 
-_Sandboxes = new_class("Sandboxes", "carapace.dev/v1alpha1", asyncio=True)
+# kr8s defaults plural to kind.lower() + "s" → "sandboxess" for kind Sandboxes; CRD plural is "sandboxes".
+_Sandboxes = new_class("Sandboxes", "carapace.dev/v1alpha1", asyncio=True, plural="sandboxes")
 
 
 def _sanitize_pod_name(name: str) -> str:

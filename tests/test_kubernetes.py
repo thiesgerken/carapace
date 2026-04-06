@@ -10,6 +10,7 @@ import pytest
 from carapace.sandbox.kubernetes import (
     KubernetesRuntime,
     _default_command,
+    _Sandboxes,
     _sanitize_pod_name,
     _standard_labels,
 )
@@ -82,6 +83,12 @@ def test_standard_labels():
     assert labels["app"] == "carapace-sandbox"
     assert labels["app.kubernetes.io/component"] == "sandbox"
     assert labels["app.kubernetes.io/managed-by"] == "carapace-server"
+
+
+def test_sandboxes_kr8s_plural_matches_crd():
+    """kr8s defaults plural to kind.lower() + 's', which yields sandboxess for kind Sandboxes."""
+    assert _Sandboxes.plural == "sandboxes"
+    assert _Sandboxes.endpoint == "sandboxes"
 
 
 # --- _mount_to_subpath ---
