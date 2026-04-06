@@ -1,5 +1,8 @@
 "use client";
 
+import { Check, Copy } from "lucide-react";
+import { useCallback, useState } from "react";
+
 import type { ChatMessage, EscalationDecision } from "@/lib/types";
 import { MarkdownContent } from "./markdown-content";
 import { ToolCallBadge } from "./tool-call-badge";
@@ -9,6 +12,47 @@ import { DomainAccessApprovalCard } from "./domain-access-approval-card";
 import { GitPushApprovalCard } from "./git-push-approval-card";
 import { CommandResultView } from "./command-result";
 import { cn } from "@/lib/utils";
+
+function MessageCopyButton({
+  text,
+  className,
+}: {
+  text: string;
+  className?: string;
+}) {
+  const [copied, setCopied] = useState(false);
+  const copy = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      /* clipboard may be denied; avoid throwing in UI */
+    }
+  }, [text]);
+
+  if (!text) return null;
+
+  return (
+    <button
+      type="button"
+      className={cn(
+        "rounded-md p-1 text-muted-foreground transition-[opacity,colors] hover:bg-muted hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+        "opacity-100 md:opacity-0 md:group-hover:opacity-100",
+        className,
+      )}
+      aria-label={copied ? "Copied" : "Copy original Markdown"}
+      title="Copy original Markdown"
+      onClick={() => void copy()}
+    >
+      {copied ? (
+        <Check className="size-3.5" strokeWidth={2} />
+      ) : (
+        <Copy className="size-3.5" strokeWidth={2} />
+      )}
+    </button>
+  );
+}
 
 interface MessageProps {
   message: ChatMessage;
@@ -45,15 +89,21 @@ export function Message({
 
     case "assistant":
       return (
-        <div className="max-w-[85%] text-sm">
-          <MarkdownContent content={message.content} />
+        <div className="group flex max-w-[85%] items-start gap-1.5 text-sm">
+          <div className="min-w-0 flex-1">
+            <MarkdownContent content={message.content} />
+          </div>
+          <MessageCopyButton text={message.content} className="shrink-0" />
         </div>
       );
 
     case "streaming":
       return (
-        <div className="max-w-[85%] text-sm">
-          <MarkdownContent content={message.content} />
+        <div className="group flex max-w-[85%] items-start gap-1.5 text-sm">
+          <div className="min-w-0 flex-1">
+            <MarkdownContent content={message.content} />
+          </div>
+          <MessageCopyButton text={message.content} className="shrink-0" />
         </div>
       );
 

@@ -14,7 +14,6 @@
 ## UI Improvements
 
 - [ ] browser for the current session's workspace + preview (no need to support manual editing though)
-- [ ] syntax highlighting, copy message button, ...
 - [ ] indicator how many commits ahead/behind the session's knowledge repo is + the ability to pull/push inside the sandbox without telling the agent
 - [ ] warn user if deleting a session that has commits not pushed
 - [ ] replace pull / push slash commands (that aren't really tied to the session anyway) with a global indicator how many commits ahead/behind the backend's global repo is compared to the remote repo
