@@ -139,6 +139,26 @@ def _make_engine(tmp_path: Path) -> SessionEngine:
     )
 
 
+def test_available_model_entries_override_default_with_metadata(tmp_path: Path):
+    """Later YAML row for the same model id replaces defaults (e.g. adds max_input_tokens)."""
+    (tmp_path / "config.yaml").write_text(
+        "agent:\n"
+        "  model: anthropic:alpha\n"
+        "  sentinel_model: anthropic:beta\n"
+        "  title_model: anthropic:gamma\n"
+        "  available_models:\n"
+        "    - provider: anthropic\n"
+        "      name: alpha\n"
+        "      max_input_tokens: 424242\n"
+    )
+    ensure_data_dir(tmp_path)
+    engine = _make_engine(tmp_path)
+    by_id = {e.model_id: e for e in engine.available_model_entries}
+    assert by_id["anthropic:alpha"].max_input_tokens == 424242
+    ids = [e.model_id for e in engine.available_model_entries]
+    assert ids == sorted(ids)
+
+
 def test_user_message_from_self(tmp_path: Path):
     """Origin subscriber gets from_self=True, others get from_self=False."""
 

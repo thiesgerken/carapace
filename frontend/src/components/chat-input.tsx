@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowUp, Clock, Square } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { SlashCommand } from "@/lib/api";
+import type { AvailableModelInfo, SlashCommand } from "@/lib/api";
 import type { TurnUsage, TurnUsageBreakdownPct } from "@/lib/types";
 
 function formatTokens(n: number): string {
@@ -22,7 +22,7 @@ interface ChatInputProps {
   waiting?: boolean;
   queuedMessage?: string | null;
   commands?: SlashCommand[];
-  availableModels?: string[];
+  availableModelEntries?: AvailableModelInfo[];
   usage?: TurnUsage | null;
 }
 
@@ -34,13 +34,18 @@ export function ChatInput({
   waiting,
   queuedMessage,
   commands = [],
-  availableModels = [],
+  availableModelEntries = [],
   usage,
 }: ChatInputProps) {
   const [value, setValue] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+
+  const availableModelIds = useMemo(
+    () => availableModelEntries.map((e) => e.id),
+    [availableModelEntries],
+  );
 
   // Focus textarea on mount (e.g. when a new session is created).
   // Skip on touch devices — programmatic focus opens the keyboard but the
@@ -77,14 +82,14 @@ export function ChatInput({
     if (afterCmd.trimEnd().includes(" ")) return { items: [], prefix: "" };
 
     // Don't show if the argument already exactly matches a model
-    if (availableModels.some((m) => m.toLowerCase() === partial))
+    if (availableModelIds.some((m) => m.toLowerCase() === partial))
       return { items: [], prefix: "" };
 
-    const suggestions = availableModels.filter((m) =>
+    const suggestions = availableModelIds.filter((m) =>
       m.toLowerCase().startsWith(partial),
     );
     return { items: suggestions, prefix: afterCmd };
-  }, [value, availableModels]);
+  }, [value, availableModelIds]);
 
   const showModelMenu = modelSuggestions.items.length > 0;
 
@@ -324,6 +329,7 @@ export function ChatInput({
         {usage && turnGaugeTokens(usage) > 0 && (
           <TokenGauge
             usage={usage}
+            availableModelEntries={availableModelEntries}
             onClickUsage={
               connected && !waiting ? () => onSend("/usage") : undefined
             }
@@ -362,16 +368,42 @@ function breakdownTooltipLines(bp: TurnUsageBreakdownPct): string[] {
   return lines;
 }
 
+const DEFAULT_CONTEXT_CAP = 200_000;
+
+/** Match API ``usage.model`` to a descriptor (canonical id or provider-short name). */
+function findModelEntryForGauge(
+  modelId: string | null | undefined,
+  entries: AvailableModelInfo[],
+): AvailableModelInfo | undefined {
+  if (!modelId) return undefined;
+  const exact = entries.find((e) => e.id === modelId);
+  if (exact) return exact;
+  const byName = entries.find((e) => e.name === modelId);
+  if (byName) return byName;
+  return entries.find((e) => e.id.endsWith(`:${modelId}`));
+}
+
+function contextTokenCap(
+  usage: TurnUsage,
+  entries: AvailableModelInfo[],
+): number {
+  const row = findModelEntryForGauge(usage.model, entries);
+  if (row?.max_input_tokens != null) return row.max_input_tokens;
+  return DEFAULT_CONTEXT_CAP;
+}
+
 /** Compact context-window gauge rendered below the input box. */
 function TokenGauge({
   usage,
+  availableModelEntries,
   onClickUsage,
 }: {
   usage: TurnUsage;
+  availableModelEntries: AvailableModelInfo[];
   onClickUsage?: () => void;
 }) {
   const ctx = turnGaugeTokens(usage);
-  const cap = 200_000;
+  const cap = contextTokenCap(usage, availableModelEntries);
   const fillPct = Math.min((ctx / cap) * 100, 100);
   const bp = usage.breakdown_pct;
 
@@ -383,9 +415,15 @@ function TokenGauge({
         ? "ring-1 ring-warning/30"
         : "";
 
+  const matched = findModelEntryForGauge(usage.model, availableModelEntries);
+  const limitFromConfig = matched?.max_input_tokens != null;
+  const limitNote = limitFromConfig
+    ? `Context limit: ${formatTokens(cap)} tokens.`
+    : `Assuming a ${formatTokens(cap)} context limit.`;
+
   const tooltipLines = [
     `${formatTokens(ctx)} API tokens (last agent request)`,
-    "Assuming a 200k context limit.",
+    limitNote,
     "Click to send /usage to the agent for more details.",
   ];
   if (bp) {

@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, Any, Literal, Protocol, runtime_checkable
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, computed_field, model_validator
 from pydantic_ai.models import Model
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -156,13 +156,39 @@ class ChannelsConfig(BaseModel):
     cron: CronChannelConfig = CronChannelConfig()
 
 
+class AvailableModelEntry(BaseModel):
+    """One row in ``agent.available_models``: shorthand ``provider:name`` string or a mapping."""
+
+    model_config = ConfigDict(extra="allow")
+
+    provider: str
+    name: str
+    max_input_tokens: int | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_shorthand_string(cls, data: Any) -> Any:
+        if isinstance(data, str):
+            if ":" not in data:
+                msg = f"model string must be 'provider:name', got {data!r}"
+                raise ValueError(msg)
+            provider, name = data.split(":", 1)
+            return {"provider": provider, "name": name}
+        return data
+
+    @computed_field(alias="id", return_type=str)
+    @property
+    def model_id(self) -> str:
+        return f"{self.provider}:{self.name}"
+
+
 class AgentConfig(BaseModel):
     model: str = "anthropic:claude-sonnet-4-6"
     sentinel_model: str = "anthropic:claude-haiku-4-5"
     title_model: str = "anthropic:claude-haiku-4-5"
 
     # the default models are added automatically + this is only used for autocomplete, not enforced.
-    available_models: list[str] = []
+    available_models: list[AvailableModelEntry] = []
 
     max_parallel_llm: int = 2
 

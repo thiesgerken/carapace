@@ -86,7 +86,7 @@ export function CommandResultView({ command, data }: CommandResultViewProps) {
       string,
       { current: string; default: string }
     >;
-    const available = (data.available ?? []) as string[];
+    const available = Array.isArray(data.available) ? data.available : [];
     return (
       <div className="my-2 text-sm">
         <table className="w-full">
@@ -112,12 +112,37 @@ export function CommandResultView({ command, data }: CommandResultViewProps) {
         {available.length > 0 && (
           <p className="mt-2 text-xs text-muted-foreground">
             <span className="font-medium">Available: </span>
-            {available.map((m, i) => (
-              <span key={m}>
-                {i > 0 && ", "}
-                <code className="text-foreground">{m}</code>
-              </span>
-            ))}
+            {available.map((entry, i) => {
+              const id =
+                typeof entry === "string"
+                  ? entry
+                  : entry &&
+                      typeof entry === "object" &&
+                      "id" in entry &&
+                      typeof (entry as { id: unknown }).id === "string"
+                    ? (entry as { id: string }).id
+                    : "";
+              if (!id) return null;
+              const maxTok =
+                entry &&
+                typeof entry === "object" &&
+                typeof (entry as { max_input_tokens?: unknown })
+                  .max_input_tokens === "number"
+                  ? (entry as { max_input_tokens: number }).max_input_tokens
+                  : null;
+              return (
+                <span key={`${id}-${i}`}>
+                  {i > 0 && ", "}
+                  <code className="text-foreground">{id}</code>
+                  {maxTok != null && (
+                    <span className="text-muted-foreground/90">
+                      {" "}
+                      ({maxTok.toLocaleString()} ctx)
+                    </span>
+                  )}
+                </span>
+              );
+            })}
           </p>
         )}
       </div>
@@ -189,7 +214,7 @@ function isModelData(d: unknown): d is {
   message?: string;
   error?: string;
   models?: Record<string, { current: string; default: string }>;
-  available?: string[];
+  available?: unknown[];
 } {
   return !!d && typeof d === "object";
 }

@@ -154,6 +154,7 @@ class TurnUsage(BaseModel):
     input_tokens: int = 0
     output_tokens: int = 0
     breakdown_pct: TurnUsageBreakdownPct | None = None
+    model: str | None = None
 
 
 class Done(BaseModel):

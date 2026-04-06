@@ -161,8 +161,19 @@ def _render_command_result(data: dict[str, Any]) -> None:
                     marker = " [dim](overridden)[/dim]" if info["current"] != info["default"] else ""
                     console.print(f"  [bold]{model_type}:[/bold] {info['current']}{marker}")
                 if payload.get("available"):
-                    console.print()
-                    console.print("  [dim]Available:[/dim] " + ", ".join(payload["available"]))
+                    parts: list[str] = []
+                    for item in payload["available"]:
+                        if isinstance(item, str):
+                            parts.append(item)
+                        elif isinstance(item, dict) and item.get("id"):
+                            s = str(item["id"])
+                            mt = item.get("max_input_tokens")
+                            if mt is not None:
+                                s += f" (max_input_tokens={mt})"
+                            parts.append(s)
+                    if parts:
+                        console.print()
+                        console.print("  [dim]Available:[/dim] " + ", ".join(parts))
 
         case "model" | "model-sentinel" | "model-title":
             if "error" in payload:

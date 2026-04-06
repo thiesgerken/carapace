@@ -71,13 +71,48 @@ export async function fetchCommands(
   return res.json();
 }
 
+export interface AvailableModelInfo {
+  id: string;
+  provider: string;
+  name: string;
+  max_input_tokens?: number | null;
+}
+
 export async function fetchModels(
   server: string,
   token: string,
-): Promise<string[]> {
+): Promise<AvailableModelInfo[]> {
   const res = await fetch(`${server}/api/models`, { headers: headers(token) });
   if (!res.ok) return [];
-  return res.json();
+  const raw: unknown = await res.json();
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((item): AvailableModelInfo | null => {
+      if (typeof item === "string") {
+        const i = item.indexOf(":");
+        if (i === -1)
+          return { id: item, provider: "", name: item, max_input_tokens: null };
+        return {
+          id: item,
+          provider: item.slice(0, i),
+          name: item.slice(i + 1),
+          max_input_tokens: null,
+        };
+      }
+      if (item && typeof item === "object" && "id" in item) {
+        const o = item as Record<string, unknown>;
+        const id = String(o.id ?? "");
+        return {
+          id,
+          provider: String(o.provider ?? ""),
+          name: String(o.name ?? ""),
+          max_input_tokens:
+            typeof o.max_input_tokens === "number" ? o.max_input_tokens : null,
+        };
+      }
+      return null;
+    })
+    .filter((e): e is AvailableModelInfo => e !== null && e.id.length > 0);
 }
 
 export function wsUrl(

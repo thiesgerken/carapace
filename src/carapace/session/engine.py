@@ -18,7 +18,15 @@ import carapace.security as security_mod
 from carapace.agent.loop import run_agent_turn
 from carapace.git.store import GitStore
 from carapace.memory import MemoryStore
-from carapace.models import Config, CredentialRegistryProtocol, Deps, SessionState, SkillInfo, ToolResult
+from carapace.models import (
+    AvailableModelEntry,
+    Config,
+    CredentialRegistryProtocol,
+    Deps,
+    SessionState,
+    SkillInfo,
+    ToolResult,
+)
 from carapace.sandbox.manager import SandboxManager
 from carapace.security.context import SessionSecurity, UserVouchedEntry
 from carapace.security.sentinel import Sentinel
@@ -191,7 +199,30 @@ class SessionEngine:
 
     @property
     def available_models(self) -> list[str]:
-        return self._available_models()
+        return [e.model_id for e in self._available_model_entries()]
+
+    @property
+    def available_model_entries(self) -> list[AvailableModelEntry]:
+        return self._available_model_entries()
+
+    def _available_model_entries(self) -> list[AvailableModelEntry]:
+        """Merge default agent/sentinel/title models with ``available_models``; last wins per id."""
+        cfg = self._config.agent
+        by_id: dict[str, AvailableModelEntry] = {}
+        for mid in (cfg.model, cfg.sentinel_model, cfg.title_model):
+            e = AvailableModelEntry.model_validate(mid)
+            by_id[e.model_id] = e
+        for e in cfg.available_models:
+            by_id[e.model_id] = e
+        return sorted(by_id.values(), key=lambda e: e.model_id)
+
+    def agent_model_id_for_gauge(self, active: ActiveSession) -> str:
+        """Canonical Carapace model id (``provider:name``) for UI gauge / config lookup.
+
+        Do not use the provider's raw ``model_name`` from the LLM log — it is often a short
+        id without the ``provider:`` prefix, so it would not match ``available_models`` entries.
+        """
+        return active.agent_model_name or self._config.agent.model
 
     def _resolve_model(self, name: str) -> Model:
         """Create a Model from a name, using the model_factory if available."""
@@ -589,7 +620,7 @@ class SessionEngine:
             "title": active.title_model_name,
         }
         models = {t: {"current": overrides[t] or defaults[t], "default": defaults[t]} for t in self._MODEL_TYPES}
-        available = self._available_models()
+        available = [e.model_dump(mode="json", by_alias=True) for e in self._available_model_entries()]
         return {"command": "models", "data": {"models": models, "available": available}}
 
     async def _handle_model_command(
@@ -663,17 +694,6 @@ class SessionEngine:
             events.append({"role": "user", "content": pending_user_line})
         if events:
             await self._generate_title(active, events)
-
-    def _available_models(self) -> list[str]:
-        """Return deduplicated sorted list of available models."""
-        return sorted(
-            {
-                self._config.agent.model,
-                self._config.agent.sentinel_model,
-                self._config.agent.title_model,
-                *self._config.agent.available_models,
-            }
-        )
 
     # -- internal turn runner --
 
@@ -804,6 +824,7 @@ class SessionEngine:
                             input_tokens=inp_tok,
                             output_tokens=out_tok,
                             breakdown_pct=TurnUsageBreakdownPct.model_validate(bd) if bd else None,
+                            model=self.agent_model_id_for_gauge(active),
                         ),
                     )
 

@@ -574,8 +574,8 @@ async def list_commands(_token: str = Depends(_verify_token)) -> list[dict[str, 
 
 
 @router.get("/models")
-async def list_models(_token: str = Depends(_verify_token)) -> list[str]:
-    return _engine.available_models
+async def list_models(_token: str = Depends(_verify_token)) -> list[dict[str, Any]]:
+    return [e.model_dump(mode="json", by_alias=True) for e in _engine.available_model_entries]
 
 
 class WebSocketSubscriber:
@@ -684,6 +684,7 @@ async def chat_ws(
             input_tokens=rec_agent.input_tokens,
             output_tokens=rec_agent.output_tokens,
             breakdown_pct=TurnUsageBreakdownPct.model_validate(bd) if bd else None,
+            model=_engine.agent_model_id_for_gauge(active),
         )
     with contextlib.suppress(Exception):
         await _send(websocket, StatusUpdate(agent_running=agent_running, usage=usage))
