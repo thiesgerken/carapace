@@ -186,6 +186,20 @@ export function CommandResultView({ command, data }: CommandResultViewProps) {
     return <UsageView data={data} />;
   }
 
+  if (isPlainMessagePayload(data)) {
+    if (data.error) {
+      return <p className="my-1 text-sm text-destructive">{data.error}</p>;
+    }
+    const failed = /\bfailed\b/i.test(data.message);
+    return (
+      <p
+        className={`my-1 text-sm whitespace-pre-wrap ${failed ? "text-destructive" : "text-muted-foreground"}`}
+      >
+        {data.message}
+      </p>
+    );
+  }
+
   return (
     <pre className="my-2 rounded-md bg-muted p-2 text-xs font-mono overflow-x-auto">
       {JSON.stringify(data, null, 2)}
@@ -221,6 +235,21 @@ function isModelData(d: unknown): d is {
 
 function isMessageData(d: unknown): d is { message?: string; error?: string } {
   return !!d && typeof d === "object";
+}
+
+/** Object with only message (and optional error) — avoids JSON dump for simple slash results. */
+function isPlainMessagePayload(
+  d: unknown,
+): d is { message: string; error?: string } {
+  if (!d || typeof d !== "object") return false;
+  const o = d as Record<string, unknown>;
+  if (typeof o.message !== "string") return false;
+  for (const k of Object.keys(o)) {
+    if (k === "message") continue;
+    if (k === "error" && typeof o.error === "string") continue;
+    return false;
+  }
+  return true;
 }
 
 interface UsageBucket {

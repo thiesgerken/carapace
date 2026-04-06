@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import os
 import stat
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -166,6 +167,34 @@ class TestGitStoreRemote:
     async def test_push_no_remote_does_not_raise(self, store: GitStore):
         # push logs a warning but does not raise
         await store.push_to_remote()
+
+    async def test_pull_twice_reports_already_up_to_date_second_time(self, tmp_path: Path) -> None:
+        """Second pull with no new remote commits must not repeat the prior log summary."""
+        bare = tmp_path / "origin.git"
+        bare.mkdir()
+        subprocess.run(["git", "init", "--bare", "-b", "main"], cwd=bare, check=True)
+
+        seed = tmp_path / "seed"
+        seed.mkdir()
+        subprocess.run(["git", "init", "-b", "main"], cwd=seed, check=True)
+        subprocess.run(["git", "config", "user.email", "seed@test"], cwd=seed, check=True)
+        subprocess.run(["git", "config", "user.name", "seed"], cwd=seed, check=True)
+        (seed / "a.txt").write_text("x")
+        subprocess.run(["git", "add", "a.txt"], cwd=seed, check=True)
+        subprocess.run(["git", "commit", "-m", "seed commit"], cwd=seed, check=True)
+        subprocess.run(["git", "remote", "add", "origin", str(bare.resolve())], cwd=seed, check=True)
+        subprocess.run(["git", "push", "-u", "origin", "main"], cwd=seed, check=True)
+
+        knowledge = tmp_path / "knowledge"
+        store = GitStore(knowledge, remote_branch="main")
+        await store.ensure_repo()
+        await store.add_remote(str(bare.resolve()))
+
+        first = await store.pull_from_remote()
+        assert "revision" in first
+        assert "seed commit" in first
+        second = await store.pull_from_remote()
+        assert second == "Already up to date."
 
 
 # ── GitHttpHandler ───────────────────────────────────────────────────

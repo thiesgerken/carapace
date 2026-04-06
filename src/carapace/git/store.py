@@ -80,6 +80,11 @@ fi
 """
 
 
+def _log_subjects_as_bullets(subjects_stdout: str) -> str:
+    lines = [s.strip() for s in subjects_stdout.split("\n") if s.strip()]
+    return "\n".join(f"• {line}" for line in lines)
+
+
 class GitStore:
     """Thin wrapper around Git CLI for managing the knowledge repo.
 
@@ -253,21 +258,55 @@ class GitStore:
             code, out = await self._run("reset", "--hard", f"origin/{self.remote_branch}")
             if code != 0:
                 raise RuntimeError(f"git reset to origin/{self.remote_branch} failed: {out}")
-            code, summary = await self._run("log", "--oneline", "-10")
-            return summary if code == 0 and summary else "Adopted remote branch."
+            code, short = await self._run("rev-parse", "--short", "HEAD")
+            tip = short.strip() if code == 0 else "?"
+            code, subjects = await self._run("log", "-10", "--format=%s")
+            lead = f"Loaded the remote knowledge branch into this workspace. Your copy is now at revision {tip}."
+            if code == 0 and subjects.strip():
+                bullets = _log_subjects_as_bullets(subjects)
+                return f"{lead}\n\nLatest commits on that branch (newest first):\n{bullets}"
+            return lead
 
         logger.info("Merging from remote")
+        code, head_before = await self._run("rev-parse", "HEAD")
+        if code != 0:
+            raise RuntimeError(f"git rev-parse HEAD failed: {head_before}")
+        head_before = head_before.strip()
         code, out = await self._run("merge", "--allow-unrelated-histories", "--no-edit", f"origin/{self.remote_branch}")
         if code != 0:
             raise RuntimeError(
                 f"Merge conflict in knowledge repo. Resolve manually in {self.repo_dir} and restart.\n{out}"
             )
 
-        # Summarise what changed
-        code, summary = await self._run("log", "--oneline", "HEAD@{1}..HEAD")
-        if code != 0 or not summary:
+        code, head_after = await self._run("rev-parse", "HEAD")
+        if code != 0:
+            raise RuntimeError(f"git rev-parse HEAD failed after merge: {head_after}")
+        head_after = head_after.strip()
+        if head_before == head_after:
             return "Already up to date."
-        return summary
+
+        code_s, short = await self._run("rev-parse", "--short", "HEAD")
+        tip = short.strip() if code_s == 0 else head_after[:7]
+        code_n, n_out = await self._run("rev-list", "--count", f"{head_before}..{head_after}")
+        n = int(n_out.strip()) if code_n == 0 and n_out.strip().isdigit() else 0
+        if n == 1:
+            lead = "Pulled 1 new commit from the remote."
+        elif n > 1:
+            lead = f"Pulled {n} new commits from the remote."
+        else:
+            lead = "Pulled updates from the remote."
+
+        code, subjects = await self._run(
+            "log",
+            "--reverse",
+            "--format=%s",
+            f"{head_before}..{head_after}",
+        )
+        tail = f"Your knowledge repo is now at revision {tip}."
+        if code != 0 or not subjects.strip():
+            return f"{lead} {tail}"
+        bullets = _log_subjects_as_bullets(subjects)
+        return f"{lead} {tail}\n\nWhat changed:\n{bullets}"
 
     async def has_remote(self) -> bool:
         """Check if an ``origin`` remote is configured."""
