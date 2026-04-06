@@ -1,6 +1,17 @@
 # CHANGELOG
 
 
+## v0.62.0 (2026-04-06)
+
+
+### ✨ Features
+
+
+- ✨ feat(frontend): add copy Markdown control for assistant messages
+  ([`b614480`](https://github.com/thiesgerken/carapace/commit/b6144804a65dccb56687cd3bbb595bb3f431a0f4))
+
+  Made-with: Cursor
+
 ## v0.61.3 (2026-04-06)
 
 
