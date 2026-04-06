@@ -9,6 +9,11 @@ import {
   UserCheck,
 } from "lucide-react";
 import { MarkdownContent } from "./markdown-content";
+import {
+  fencedCodeBlock,
+  languageFromFilePath,
+  splitReadToolResult,
+} from "@/lib/sandbox-read";
 import { cn } from "@/lib/utils";
 
 interface ToolCallBadgeProps {
@@ -196,6 +201,14 @@ export function ToolCallBadge({
   const isError = exitCode != null && exitCode !== 0;
   const isExecTool = tool === "exec";
   const isUseSkillTool = tool === "use_skill";
+  const isReadTool = tool === "read";
+  const readPath = isReadTool && typeof args.path === "string" ? args.path : "";
+  const readSplit =
+    isReadTool && result != null ? splitReadToolResult(result) : null;
+  const readBodyMarkdown =
+    readSplit?.hasSplit === true
+      ? fencedCodeBlock(languageFromFilePath(readPath), readSplit.body)
+      : "";
   const execCommand = isExecTool ? getExecCommand(args) : "";
   const execTranscript = isExecTool
     ? buildShellTranscript(execCommand, result)
@@ -275,6 +288,24 @@ export function ToolCallBadge({
                   <MarkdownContent content={useSkillResult} />
                 </div>
               )}
+            </>
+          ) : isReadTool && readSplit?.hasSplit ? (
+            <>
+              <div className="rounded-md border border-border/40 bg-muted/25 px-3 py-2">
+                <div className="whitespace-pre-wrap text-muted-foreground leading-relaxed">
+                  {readSplit.header}
+                </div>
+              </div>
+              <div
+                className={cn(
+                  "rounded-md border overflow-hidden max-w-none [&_.prose]:max-w-none",
+                  isError
+                    ? "border-destructive/30 bg-destructive/5"
+                    : "border-border/40",
+                )}
+              >
+                <MarkdownContent content={readBodyMarkdown} />
+              </div>
             </>
           ) : (
             <>
