@@ -149,6 +149,17 @@ body {
 .dark .prose figure[data-rehype-pretty-code-figure] .md-code-block-shell > pre {
   background: var(--shiki-dark-bg) !important;
 }
+.exec-terminal-block {
+  font-size: 0.9rem;
+}
+.exec-terminal-block .prose .md-code-block-shell > pre,
+.exec-terminal-block
+  .prose
+  figure[data-rehype-pretty-code-figure]
+  .md-code-block-shell
+  > pre {
+  font-size: 0.9rem !important;
+}
 /* Line numbers (rehype-pretty-code + showLineNumbers in meta via filterMetaString) */
 .prose .md-code-block-shell > pre code[data-line-numbers] {
   counter-reset: line;
