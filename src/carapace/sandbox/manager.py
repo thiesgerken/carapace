@@ -13,6 +13,15 @@ from pathlib import Path
 from loguru import logger
 from pydantic import BaseModel
 
+from carapace.sandbox.container_scripts import (
+    SANDBOX_EDIT_SCRIPT as _EDIT_SCRIPT,
+)
+from carapace.sandbox.container_scripts import (
+    SANDBOX_PATCH_SCRIPT as _PATCH_SCRIPT,
+)
+from carapace.sandbox.container_scripts import (
+    build_file_read_script,
+)
 from carapace.sandbox.runtime import (
     ContainerGoneError,
     ContainerRuntime,
@@ -22,6 +31,13 @@ from carapace.sandbox.runtime import (
 )
 
 _SKILL_NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]*$")
+
+# Maximum characters returned for a single text file read (body only; headers are extra).
+MAX_READ_OUTPUT_CHARS = 65536
+# Maximum ``limit`` (line window) accepted by the agent read tool.
+READ_TOOL_MAX_LINE_WINDOW = 1000
+# Printed between read-tool metadata and file body (agents/UI can split on this line).
+SANDBOX_READ_BODY_SEPARATOR = "-" * 24
 
 
 def _shell_path(path: str, *, quote: bool) -> str:
@@ -44,82 +60,7 @@ def _file_write_shell_command(path: str, content: str, *, mode: int | None, quot
     return cmd
 
 
-# Inline Python scripts executed inside the sandbox container.
-# Data is passed as base64-encoded CLI args to avoid shell-escaping issues.
-# Scripts use only double quotes so that shlex.quote (single-quote wrapping)
-# works without any escaping.
-
-_EDIT_SCRIPT = """\
-import sys, base64, difflib
-p, o_b64, n_b64 = sys.argv[1], sys.argv[2], sys.argv[3]
-old = base64.b64decode(o_b64).decode()
-new = base64.b64decode(n_b64).decode()
-try:
-    text = open(p).read()
-except FileNotFoundError:
-    print(f"Error: file not found: {p}")
-    sys.exit(1)
-except PermissionError:
-    print(f"Error: permission denied: {p}")
-    sys.exit(1)
-count = text.count(old)
-if count == 0:
-    print("Error: old_string not found")
-    sys.exit(1)
-if count > 1:
-    print(f"Error: old_string appears {count} times (must be unique)")
-    sys.exit(1)
-updated = text.replace(old, new, 1)
-try:
-    open(p, "w").write(updated)
-except PermissionError:
-    print(f"Error: permission denied (read-only): {p}")
-    sys.exit(1)
-d = difflib.unified_diff(text.splitlines(keepends=True), updated.splitlines(keepends=True), f"a/{p}", f"b/{p}", n=3)
-print("".join(d))\
-"""
-
-_PATCH_SCRIPT = """\
-import sys, base64, json, os
-changes = json.loads(base64.b64decode(sys.argv[1]).decode())
-for i, c in enumerate(changes):
-    p = c.get("path", "")
-    old = base64.b64decode(c["old_b64"]).decode() if c.get("old_b64") else ""
-    new = base64.b64decode(c["new_b64"]).decode() if c.get("new_b64") else ""
-    if not p:
-        print(f"Change {i+1}: missing path")
-        continue
-    if not old:
-        d = os.path.dirname(p)
-        if d:
-            os.makedirs(d, exist_ok=True)
-        try:
-            open(p, "w").write(new)
-            print(f"Change {i+1}: created {p}")
-        except PermissionError:
-            print(f"Change {i+1} ({p}): permission denied")
-        continue
-    if not os.path.exists(p):
-        print(f"Change {i+1}: file not found: {p}")
-        continue
-    try:
-        t = open(p).read()
-    except PermissionError:
-        print(f"Change {i+1} ({p}): permission denied")
-        continue
-    cnt = t.count(old)
-    if cnt == 0:
-        print(f"Change {i+1} ({p}): old_string not found")
-        continue
-    if cnt > 1:
-        print(f"Change {i+1} ({p}): old_string appears {cnt} times (must be unique)")
-        continue
-    try:
-        open(p, "w").write(t.replace(old, new, 1))
-        print(f"Change {i+1}: edited {p}")
-    except PermissionError:
-        print(f"Change {i+1} ({p}): permission denied")\
-"""
+FILE_READ_SCRIPT = build_file_read_script(SANDBOX_READ_BODY_SEPARATOR)
 
 
 class SessionContainer(BaseModel):
@@ -510,11 +451,11 @@ class SandboxManager:
     # Data is passed as base64 CLI args to avoid shell-escaping issues.
     # ------------------------------------------------------------------
 
-    async def file_read(self, session_id: str, path: str) -> str:
-        """Read a file or list a directory inside the sandbox."""
+    async def file_read(self, session_id: str, path: str, *, offset: int = 0, limit: int = 100) -> str:
+        """Read a text file (windowed), summarize a binary file, or list a directory inside the sandbox."""
         pq = shlex.quote(path)
-        cmd = f'if [ -d {pq} ]; then echo "::DIR::"; ls -1 {pq}; else cat {pq}; fi'
-        result = await self._exec(session_id, cmd, timeout=10)
+        cmd = f"python3 -c {shlex.quote(FILE_READ_SCRIPT)} {pq} {int(offset)} {int(limit)} {MAX_READ_OUTPUT_CHARS}"
+        result = await self._exec(session_id, cmd, timeout=30)
         if result.exit_code != 0:
             return result.output or f"Error: cannot read {path}"
         output = result.output

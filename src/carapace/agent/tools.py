@@ -1,16 +1,18 @@
 from __future__ import annotations
 
 import secrets
-from typing import Any
+from typing import Annotated, Any
 
 import httpx
 from loguru import logger
+from pydantic import Field
 from pydantic_ai import Agent, DeferredToolRequests, RunContext, ToolDenied
 
 import carapace.security as security
 from carapace.config import load_workspace_file
 from carapace.memory import MemoryStore
 from carapace.models import CredentialMetadata, CredentialRegistryProtocol, Deps, SkillCredentialDecl, ToolResult
+from carapace.sandbox.manager import READ_TOOL_MAX_LINE_WINDOW
 from carapace.sandbox.runtime import SkillVenvError
 from carapace.security.context import CredentialAccessEntry, SkillActivatedEntry, ToolResultEntry
 from carapace.skills import SkillRegistry
@@ -355,18 +357,38 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
     # --- Filesystem (sandboxed — runs inside the Docker container) ---
 
     @agent.tool
-    async def read(ctx: RunContext[Deps], path: str) -> str | ToolDenied:
-        """Read a file or list a directory inside the sandbox.
+    async def read(
+        ctx: RunContext[Deps],
+        path: str,
+        offset: Annotated[int, Field(ge=0)] = 0,
+        limit: Annotated[int, Field(ge=1, le=READ_TOOL_MAX_LINE_WINDOW)] = 100,
+    ) -> str | ToolDenied:
+        """Read a path under `/workspace` (or list a directory).
 
-        Use container paths (e.g. /workspace/skills/foo.py).
+        Relative ``path`` values are resolved from ``/workspace``. Absolute paths are used as-is.
+
+        **Files:** You get a short header, a line of dashes, then the text. The header
+        says total lines, which lines you received (1-based, like an editor), and whether
+        output was cut short. If you need more, call again with a higher ``offset``:
+        that is how many lines to skip from the start. Each call returns at most
+        ``limit`` lines (default 100, max 1000) and about 64k characters of body text—if
+        you hit either cap, read the header and continue with a larger ``offset``.
+
+        **Binaries:** You do not get file bytes, only size and a brief ``file``-style type.
+        Use ``exec`` if you need something else (e.g. ``hexdump``, ``xxd``).
+
+        **Directories:** Lists entry names; ``offset``/``limit`` do not apply to listings.
         """
-        if not ctx.tool_call_approved and (denied := await _gate(ctx, "read", {"path": path})):
+
+        if not ctx.tool_call_approved and (
+            denied := await _gate(ctx, "read", {"path": path, "offset": offset, "limit": limit})
+        ):
             return denied
 
         session_id = ctx.deps.session_state.session_id
         exit_code = 0
         try:
-            result = await ctx.deps.sandbox.file_read(session_id, path)
+            result = await ctx.deps.sandbox.file_read(session_id, path, offset=offset, limit=limit)
         except Exception as exc:
             _log_sandbox_tool_exception("read", session_id)
             result = f"Error: {exc}"
