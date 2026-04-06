@@ -1,6 +1,20 @@
 # CHANGELOG
 
 
+## v0.61.3 (2026-04-06)
+
+
+### 🐛 Bug Fixes
+
+
+- 🐛 force colored logging
+  ([`5127fde`](https://github.com/thiesgerken/carapace/commit/5127fde124a26b928cf62ba019449875535fc5bb))
+
+- 🐛 fix: pass explicit kr8s plural for Sandboxes (avoid sandboxess URL)
+  ([`60881cc`](https://github.com/thiesgerken/carapace/commit/60881cc33d104e8a76a729351eecb1b0b0a93215))
+
+  Made-with: Cursor
+
 ## v0.61.2 (2026-04-06)
 
 
