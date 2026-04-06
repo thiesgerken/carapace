@@ -1,6 +1,17 @@
 # CHANGELOG
 
 
+## v0.61.2 (2026-04-06)
+
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix: log Sandboxes owner lookup failures (403 RBAC vs 404 name)
+  ([`968abd9`](https://github.com/thiesgerken/carapace/commit/968abd928224425f273f86de282da036123b0ff4))
+
+  Made-with: Cursor
+
 ## v0.61.1 (2026-04-06)
 
 
