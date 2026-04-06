@@ -154,7 +154,26 @@ class KubernetesRuntime(ContainerRuntime):
                 api=api,
                 timeout=2,
             )
-        except (kr8s.NotFoundError, kr8s.ServerError):
+        except kr8s.NotFoundError:
+            logger.warning(
+                f"No Sandboxes CR named {self._sandboxes_name!r} in namespace {self._namespace!r} — "
+                "check CARAPACE_SANDBOX_K8S_SANDBOXES_NAME matches the chart object name "
+                f"(Helm default is <release>-sandboxes)."
+            )
+            return None
+        except kr8s.ServerError as exc:
+            code = exc.response.status_code if exc.response is not None else None
+            if code == 403:
+                logger.warning(
+                    f"Forbidden (403) loading Sandboxes {self._sandboxes_name!r} in {self._namespace!r}: {exc}. "
+                    "Grant the server ServiceAccount get/list on apiGroup carapace.dev resource sandboxes "
+                    f"(Helm Role {self._server_deployment_name}-server or your GitOps equivalent)."
+                )
+            else:
+                logger.warning(
+                    f"Sandboxes owner lookup failed (HTTP {code}): {exc} — "
+                    "check API availability and RBAC for carapace.dev/sandboxes."
+                )
             return None
         raw = sandboxes.raw
         uid = raw["metadata"]["uid"]
