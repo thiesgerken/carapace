@@ -1,8 +1,50 @@
 # CHANGELOG
 
 
+## v0.56.0 (2026-04-06)
+
+
+### Other
+
+
+- Merge remote-tracking branch 'refs/remotes/origin/main'
+  ([`9ad9f90`](https://github.com/thiesgerken/carapace/commit/9ad9f9082d07b0ce9c9e6ef4099cc5b9960e6910))
+
+- dev: add more ports to cors
+  ([`802a352`](https://github.com/thiesgerken/carapace/commit/802a35248eeab0d548b25dff0da4f220a5ff72bd))
+
+- Merge remote-tracking branch 'refs/remotes/origin/main'
+  ([`daebdc0`](https://github.com/thiesgerken/carapace/commit/daebdc0316680a18fb490404ca81a383a39a022d))
+
+### ✨ Features
+
+
+- ✨ feat: show context cap percentage in /usage display
+  ([`513cce2`](https://github.com/thiesgerken/carapace/commit/513cce2ef41d40d8c48d024da33f8586a366f0b4))
+
+  - Enrich last_llm rows with context_cap_tokens and context_used_pct (config max_input_tokens or 200k default)
+  - Web UsageView Tokens column: show pct next to token count; CLI Context table matches
+
+  Made-with: Cursor
+
+### 💄 UI/UX
+
+
+- 💄 polish: improve tool call row layout and argument summary
+  ([`ac88c27`](https://github.com/thiesgerken/carapace/commit/ac88c277b54a6fdeaa9c7dc4c3bd5dfd7a3ae9d0))
+
+  Omit redundant key prefixes for exec/read/use_skill, use full-width flex truncation for arguments, and improve argument text contrast.
+
+  Made-with: Cursor
+
 ## v0.55.0 (2026-04-06)
 
+
+### Other
+
+
+- 📋 docs: add todos to roadmap
+  ([`c38c220`](https://github.com/thiesgerken/carapace/commit/c38c2208718508405dd809e90489810adaa17318))
 
 ### ✨ Features
 
