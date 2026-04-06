@@ -1,6 +1,21 @@
 # CHANGELOG
 
 
+## v0.63.0 (2026-04-06)
+
+
+### ✨ Features
+
+
+- ✨ feat: improve pull and slash-command result UX
+  ([`932f184`](https://github.com/thiesgerken/carapace/commit/932f184c8ad41cc22ef4df71ce980c74b21cf92d))
+
+  - Render message-only command_result payloads as prose in the web UI
+  - Fix repeated /pull summary when merge is a no-op (compare HEAD before/after)
+  - Human-readable pull text: revision line and bullet list of commit subjects
+
+  Made-with: Cursor
+
 ## v0.62.0 (2026-04-06)
 
 
