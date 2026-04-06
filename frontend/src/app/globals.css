@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "katex/dist/katex.min.css";
 
 @custom-variant dark (&:where(.dark, .dark *));
 
@@ -187,6 +188,25 @@ body {
   background: var(--muted);
   border-radius: 0.25rem;
   padding: 0.15em 0.35em;
+}
+.prose .katex-display {
+  margin: 0.75em 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.dark .prose .katex {
+  color: var(--foreground);
+}
+.dark .prose .katex .mord,
+.dark .prose .katex .mop,
+.dark .prose .katex .mbin,
+.dark .prose .katex .mrel,
+.dark .prose .katex .mopen,
+.dark .prose .katex .mclose,
+.dark .prose .katex .mpunct,
+.dark .prose .katex .minner,
+.dark .prose .katex .mspace {
+  color: inherit;
 }
 .prose ul, .prose ol { margin: 0.5em 0; padding-left: 1.5em; }
 .prose li { margin: 0.2em 0; }

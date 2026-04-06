@@ -247,7 +247,8 @@ def build_system_prompt(deps: Deps) -> str:
         "Format your replies using Markdown (headings, lists, emphasis, links) when it helps readability.\n"
         "When you use fenced code blocks and the language is clear, add it after the opening fence "
         "(e.g. ```python, ```yaml, ```bash) so the client can syntax-highlight; "
-        "omit the language tag only when unknown."
+        "omit the language tag only when unknown.\n"
+        "For LaTeX math, use $...$ inline and $$...$$ on their own lines for display equations."
     )
 
     parts.append(f"# Session Info\nSession ID: {deps.session_state.session_id}")
