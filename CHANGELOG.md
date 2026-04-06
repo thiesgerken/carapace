@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.57.0 (2026-04-06)
+
+
+### ✨ Features
+
+
+- ✨ feat: chat markdown highlighting and code block UX
+  ([`5ba01c3`](https://github.com/thiesgerken/carapace/commit/5ba01c3c4b5413741f8287753662c3c671638cf6))
+
+  Add Shiki via rehype-pretty-code with MarkdownHooks, theme-aware CSS, copy button and language label, line numbers, and a 35-line scroll cap. Plain-fence fallback gets the same line numbers. Extend the agent system prompt for Markdown replies and fenced-code language tags. Ignore .pnpm-store in .gitignore.
+
+  Made-with: Cursor
+
 ## v0.56.0 (2026-04-06)
 
 
