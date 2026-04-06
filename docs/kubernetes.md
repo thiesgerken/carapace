@@ -65,9 +65,9 @@ The server pod manages sandbox StatefulSets directly via the Kubernetes API. Eac
 
 Sandbox StatefulSets get an `ownerReference` so they show under the owning object in Argo CD and are garbage-collected when that object is deleted.
 
-The server prefers a namespaced **`SandboxCollection`** custom resource (name from `CARAPACE_SANDBOX_K8S_SANDBOX_COLLECTION_NAME`, Helm default `<release>-sandboxes`) as owner. If that CR is missing or unavailable, it falls back to the server `Deployment` (`CARAPACE_SANDBOX_K8S_SERVER_DEPLOYMENT_NAME`).
+The server prefers a namespaced **`Sandboxes`** custom resource (name from `CARAPACE_SANDBOX_K8S_SANDBOXES_NAME`, Helm default `<release>-sandboxes`) as owner. If that CR is missing or unavailable, it falls back to the server `Deployment` (`CARAPACE_SANDBOX_K8S_SERVER_DEPLOYMENT_NAME`).
 
-`SandboxCollection` is currently an ownership/metadata anchor only. There is no operator/controller reconciling sandbox resources yet; the Carapace server still creates/scales/deletes sandbox StatefulSets directly.
+The `Sandboxes` CR is currently an ownership/metadata anchor only. There is no operator/controller reconciling sandbox resources yet; the Carapace server still creates/scales/deletes sandbox StatefulSets directly.
 
 Set **`CARAPACE_SANDBOX_K8S_OWNER_REF=false`** to omit `ownerReferences` entirely (Argo CD still associates sandboxes via `argocd.argoproj.io/tracking-id`).
 
@@ -119,7 +119,7 @@ When the server runs inside Kubernetes (the `KUBERNETES_SERVICE_HOST` env var is
 | `CARAPACE_SANDBOX_K8S_SESSION_PVC_STORAGE_CLASS` | (cluster default)         | StorageClass for session PVCs                             |
 | `CARAPACE_SANDBOX_K8S_SERVICE_ACCOUNT`           | `null`                    | ServiceAccount for sandbox pods                           |
 | `CARAPACE_SANDBOX_K8S_OWNER_REF`                 | `true`                    | Attach `ownerReferences` to sandboxes                     |
-| `CARAPACE_SANDBOX_K8S_SANDBOX_COLLECTION_NAME`   | `carapace-sandboxes`      | Preferred `SandboxCollection` owner in workload namespace |
+| `CARAPACE_SANDBOX_K8S_SANDBOXES_NAME`          | `carapace-sandboxes`      | Preferred `Sandboxes` owner in workload namespace         |
 | `CARAPACE_SANDBOX_K8S_SERVER_DEPLOYMENT_NAME`    | `carapace`                | Server Deployment name (Helm sets to release name)        |
 | `CARAPACE_SANDBOX_NETWORK_NAME`                  | `carapace-sandbox`        | Docker network name (Docker only)                         |
 
@@ -186,7 +186,7 @@ rules:
     resources: ["deployments"]
     verbs: ["get", "list"] # Deployment fallback owner lookup
   - apiGroups: ["carapace.dev"]
-    resources: ["sandboxcollections"]
+    resources: ["sandboxes"]
     verbs: ["get", "list"]
   - apiGroups: ["apps"]
     resources: ["statefulsets", "statefulsets/scale"]
@@ -198,10 +198,10 @@ rules:
 
 ## ArgoCD
 
-Sandbox StatefulSets are created at runtime and don't exist in Git. With a `SandboxCollection` CR present in the workload namespace, sandboxes appear as children of that resource in the tree. If it is missing, they nest under the server Deployment (or appear as tracked resources via `argocd.argoproj.io/tracking-id` when owner refs are disabled).
+Sandbox StatefulSets are created at runtime and don't exist in Git. With a `Sandboxes` CR present in the workload namespace, sandboxes appear as children of that resource in the tree. If it is missing, they nest under the server Deployment (or appear as tracked resources via `argocd.argoproj.io/tracking-id` when owner refs are disabled).
 
 ```text
-SandboxCollection/carapace-sandboxes (or Deployment/carapace when collection missing)
+Sandboxes/carapace-sandboxes (or Deployment/carapace when Sandboxes CR missing)
 ├── StatefulSet/carapace-sandbox-aaa      ✅ (sandbox)
 │   └── Pod/carapace-sandbox-aaa-0        ✅ Running
 └── StatefulSet/carapace-sandbox-bbb      ✅ (sandbox, scaled to 0 = idle)

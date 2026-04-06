@@ -19,7 +19,7 @@ rules:
     resources: ["deployments"]
     verbs: ["get", "list"]
   - apiGroups: ["carapace.dev"]
-    resources: ["sandboxcollections"]
+    resources: ["sandboxes"]
     verbs: ["get", "list"]
   - apiGroups: ["apps"]
     resources: ["statefulsets", "statefulsets/scale"]

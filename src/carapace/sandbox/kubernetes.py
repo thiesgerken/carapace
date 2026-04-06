@@ -21,7 +21,7 @@ from carapace.sandbox.runtime import (
     SandboxConfig,
 )
 
-_SandboxCollection = new_class("SandboxCollection", "carapace.dev/v1alpha1", asyncio=True)
+_Sandboxes = new_class("Sandboxes", "carapace.dev/v1alpha1", asyncio=True)
 
 
 def _sanitize_pod_name(name: str) -> str:
@@ -83,7 +83,7 @@ class KubernetesRuntime(ContainerRuntime):
         priority_class: str | None = None,
         owner_ref: bool = True,
         server_deployment_name: str = "carapace",
-        sandbox_collection_name: str = "carapace-sandboxes",
+        sandboxes_name: str = "carapace-sandboxes",
         app_instance: str = "carapace",
         session_pvc_size: str = "1Gi",
         session_pvc_storage_class: str = "",
@@ -108,7 +108,7 @@ class KubernetesRuntime(ContainerRuntime):
         )
         self._want_owner_ref = owner_ref
         self._server_deployment_name = server_deployment_name
-        self._sandbox_collection_name = sandbox_collection_name
+        self._sandboxes_name = sandboxes_name
         self._sandbox_owner: _SandboxOwner | None = None
         self._sandbox_owner_lookup_done = False
 
@@ -145,25 +145,25 @@ class KubernetesRuntime(ContainerRuntime):
         """Lazily create the kr8s API client (must be called from async context)."""
         return await kr8s.asyncio.api(namespace=self._namespace)
 
-    async def _try_sandbox_collection_owner(self, api: Api) -> _SandboxOwner | None:
-        """Resolve SandboxCollection owner in the workload namespace."""
+    async def _try_sandboxes_owner(self, api: Api) -> _SandboxOwner | None:
+        """Resolve Sandboxes CR owner in the workload namespace."""
         try:
-            collection = await _SandboxCollection.get(
-                self._sandbox_collection_name,
+            sandboxes = await _Sandboxes.get(
+                self._sandboxes_name,
                 namespace=self._namespace,
                 api=api,
                 timeout=2,
             )
         except (kr8s.NotFoundError, kr8s.ServerError):
             return None
-        raw = collection.raw
+        raw = sandboxes.raw
         uid = raw["metadata"]["uid"]
         api_version = raw["apiVersion"]
-        logger.info(f"KubernetesRuntime: sandbox owner SandboxCollection {self._sandbox_collection_name!r} UID = {uid}")
+        logger.info(f"KubernetesRuntime: sandbox owner Sandboxes {self._sandboxes_name!r} UID = {uid}")
         return _SandboxOwner(
             api_version=api_version,
-            kind="SandboxCollection",
-            name=self._sandbox_collection_name,
+            kind="Sandboxes",
+            name=self._sandboxes_name,
             uid=uid,
         )
 
@@ -186,7 +186,7 @@ class KubernetesRuntime(ContainerRuntime):
         )
 
     async def _get_sandbox_owner(self) -> _SandboxOwner | None:
-        """Resolve owner for sandbox ownerReferences once (SandboxCollection preferred, else Deployment)."""
+        """Resolve owner for sandbox ownerReferences once (Sandboxes preferred, else Deployment)."""
         if not self._want_owner_ref:
             return None
         if self._sandbox_owner is not None:
@@ -195,17 +195,16 @@ class KubernetesRuntime(ContainerRuntime):
             return None
         self._sandbox_owner_lookup_done = True
         api = await self._ensure_api()
-        owner = await self._try_sandbox_collection_owner(api)
+        owner = await self._try_sandboxes_owner(api)
         if owner is None:
             logger.warning(
-                f"Could not resolve SandboxCollection {self._sandbox_collection_name!r}; "
+                f"Could not resolve Sandboxes {self._sandboxes_name!r}; "
                 f"falling back to Deployment {self._server_deployment_name!r}"
             )
             owner = await self._try_server_deployment_owner(api)
         if owner is None:
             logger.warning(
-                "Could not resolve sandbox owner (SandboxCollection / Deployment) — "
-                "sandbox resources will lack ownerRef"
+                "Could not resolve sandbox owner (Sandboxes / Deployment) — sandbox resources will lack ownerRef"
             )
             self._want_owner_ref = False
             return None

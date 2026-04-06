@@ -48,8 +48,8 @@ sandbox:
     size: 1Gi
     # -- Leave empty to use the cluster default StorageClass
     storageClass: ""
-  # -- Preferred owner CR name for sandbox StatefulSets; if missing, Deployment fallback is used
-  sandboxCollectionName: ""
+  # -- Preferred Sandboxes CR name for sandbox StatefulSets; if missing, Deployment fallback is used
+  sandboxesName: ""
 
 # -- Ingress configuration (Gateway API HTTPRoute)
 ingress:

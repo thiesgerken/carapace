@@ -134,7 +134,7 @@ def _create_sandbox_runtime(config: Config, data_dir: Path) -> ContainerRuntime:
             priority_class=config.sandbox.k8s_priority_class,
             owner_ref=config.sandbox.k8s_owner_ref,
             server_deployment_name=config.sandbox.k8s_server_deployment_name,
-            sandbox_collection_name=config.sandbox.k8s_sandbox_collection_name,
+            sandboxes_name=config.sandbox.k8s_sandboxes_name,
             app_instance=config.sandbox.k8s_app_instance,
             session_pvc_size=config.sandbox.k8s_session_pvc_size,
             session_pvc_storage_class=config.sandbox.k8s_session_pvc_storage_class,

@@ -193,7 +193,7 @@ Multiple instances are supported — just add more entries with different names 
 | `frontend.enabled`                       | `true`                           | Deploy the Next.js frontend                                        |
 | `frontend.image.tag`                     | `""` (appVersion)                | Frontend image tag                                                 |
 | `sandbox.image.tag`                      | `""` (appVersion)                | Sandbox base image tag                                             |
-| `sandbox.sandboxCollectionName`          | `""` (`<release>-sandboxes`)     | Preferred ownership anchor CR name for sandbox `ownerReferences`   |
+| `sandbox.sandboxesName`                  | `""` (`<release>-sandboxes`)     | Preferred `Sandboxes` CR name for sandbox `ownerReferences`        |
 | `ingress.enabled`                        | `true`                           | Create a Gateway API HTTPRoute                                     |
 | `ingress.hostname`                       | `carapace.example.com`           | Ingress hostname                                                   |
 | `ingress.parentRefs`                     | `[{name: default-gateway}]`      | Gateway parent references                                          |
@@ -215,7 +215,7 @@ Multiple instances are supported — just add more entries with different names 
 
 See [values.yaml](values.yaml) for the complete reference.
 
-`SandboxCollection` is currently used only as an ownership/metadata anchor. The chart installs the CRD and a singleton resource, but no operator/controller is deployed yet; runtime sandbox lifecycle is still managed directly by the Carapace server.
+The `Sandboxes` CR is currently used only as an ownership/metadata anchor. The chart installs the CRD and a singleton resource, but no operator/controller is deployed yet; runtime sandbox lifecycle is still managed directly by the Carapace server.
 
 ## Development
 

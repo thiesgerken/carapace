@@ -33,7 +33,7 @@ def _make_runtime(*, namespace: str = "carapace", data_dir: str = "/data") -> Ku
     rt._resource_spec = None
     rt._want_owner_ref = False
     rt._server_deployment_name = "carapace"
-    rt._sandbox_collection_name = "carapace-sandboxes"
+    rt._sandboxes_name = "carapace-sandboxes"
     rt._sandbox_owner = None
     rt._sandbox_owner_lookup_done = False
     return rt
@@ -402,7 +402,7 @@ async def test_destroy_sandbox_not_found():
 
 
 @pytest.mark.asyncio
-async def test_get_sandbox_owner_prefers_collection():
+async def test_get_sandbox_owner_prefers_sandboxes():
     rt = _make_runtime()
     rt._want_owner_ref = True
     rt._ensure_api = AsyncMock(return_value=object())
@@ -413,14 +413,14 @@ async def test_get_sandbox_owner_prefers_collection():
         "metadata": {"uid": "collection-uid"},
     }
 
-    with patch("carapace.sandbox.kubernetes._SandboxCollection") as collection_cls:
-        collection_cls.get = AsyncMock(return_value=collection)
+    with patch("carapace.sandbox.kubernetes._Sandboxes") as sandboxes_cls:
+        sandboxes_cls.get = AsyncMock(return_value=collection)
         with patch("carapace.sandbox.kubernetes.Deployment") as deploy_cls:
             deploy_cls.get = AsyncMock()
             owner = await rt._get_sandbox_owner()
 
     assert owner is not None
-    assert owner.kind == "SandboxCollection"
+    assert owner.kind == "Sandboxes"
     assert owner.name == "carapace-sandboxes"
     deploy_cls.get.assert_not_called()
 
@@ -433,7 +433,7 @@ async def test_get_sandbox_owner_falls_back_to_deployment():
     deploy_owner = MagicMock()
     deploy_owner.kind = "Deployment"
     deploy_owner.name = "carapace"
-    rt._try_sandbox_collection_owner = AsyncMock(return_value=None)
+    rt._try_sandboxes_owner = AsyncMock(return_value=None)
     rt._try_server_deployment_owner = AsyncMock(return_value=deploy_owner)
     owner = await rt._get_sandbox_owner()
 
