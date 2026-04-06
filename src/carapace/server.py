@@ -6,6 +6,7 @@ import inspect
 import logging  # stdlib logging used only for _InterceptHandler → loguru bridge
 import os
 import secrets
+import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated, Any, Literal
@@ -861,6 +862,8 @@ def _setup_logging() -> None:
         if record["name"]:
             record["name"] = record["name"].replace("carapace.", "cp.").replace("sandbox.", "sndbx.")
 
+    logger.remove()
+    logger.add(sys.stderr, colorize=True)
     logger.configure(patcher=_abbrev_patcher)
 
 
