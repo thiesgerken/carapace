@@ -3,7 +3,13 @@
 > This roadmap outlines planned features and improvements. Items are grouped by area and roughly ordered by priority within each section.
 
 - [ ] Proper Icon + Logo, rewrite README to be more ... advertising
-- [ ] warm-up a sandbox as soon as the session is created?
+- [ ] warm-up a sandbox as soon as the session is created? (or keep a warmed sandbox for the next session?) would need to be configurable + maybe we should even delete old PVCs after a while if they are not used?
+- [ ] tool outputs need a max output length
+- [ ] would be nice to be able to give the session a budget in dollars / tokens
+- [ ] file write could show total bytes written, display more of the output, and format it more nicely (currently just uses `repr()`)
+- [ ] compaction
+- [ ] block reading of skill.md files ? error prone, but saves some context. warn him that this is only possible after activating the skill?
+- [ ] image input
 
 ## UI Improvements
 
@@ -12,7 +18,7 @@
 - [ ] indicator how many commits ahead/behind the session's knowledge repo is + the ability to pull/push inside the sandbox without telling the agent
 - [ ] warn user if deleting a session that has commits not pushed
 - [ ] replace pull / push slash commands (that aren't really tied to the session anyway) with a global indicator how many commits ahead/behind the backend's global repo is compared to the remote repo
-- [ ] show which sessions have sandboxes, size of the pvcs, is the sandbox in standby
+- [ ] show which sessions have sandboxes, size of the PVCs, is the sandbox in standby
 - [ ] tell the user what exactly is happening in the exec — sandbox creation, sentinel, execution? where is the command right now?
 
 ## Credential Management
