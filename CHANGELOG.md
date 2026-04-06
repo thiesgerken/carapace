@@ -1,8 +1,23 @@
 # CHANGELOG
 
 
+## v0.54.2 (2026-04-06)
+
+
+### Other
+
+
+- Merge remote-tracking branch 'refs/remotes/origin/main'
+  ([`da513a1`](https://github.com/thiesgerken/carapace/commit/da513a134636b000cdfa2b760424b1991d4dae30))
+
 ## v0.54.1 (2026-04-06)
 
+
+### 💄 UI/UX
+
+
+- 💄 typos and lints
+  ([`d890665`](https://github.com/thiesgerken/carapace/commit/d890665c87d2190206eb2979e55f00b6fa5e1c26))
 
 ### ♻️ Refactoring
 
