@@ -88,3 +88,4 @@ build/
 /data
 .cursor/plans/
 /plans
+.pnpm-store

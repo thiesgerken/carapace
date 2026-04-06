@@ -242,6 +242,14 @@ def build_system_prompt(deps: Deps) -> str:
         "Skills can declare specific domains they need; those are granted when the skill is activated."
     )
 
+    parts.append(
+        "# Response format\n"
+        "Format your replies using Markdown (headings, lists, emphasis, links) when it helps readability.\n"
+        "When you use fenced code blocks and the language is clear, add it after the opening fence "
+        "(e.g. ```python, ```yaml, ```bash) so the client can syntax-highlight; "
+        "omit the language tag only when unknown."
+    )
+
     parts.append(f"# Session Info\nSession ID: {deps.session_state.session_id}")
 
     return "\n\n---\n\n".join(parts)

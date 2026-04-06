@@ -75,6 +75,110 @@ body {
   font-size: 0.85em;
   margin: 0.5em 0;
 }
+.prose .md-code-block-shell {
+  margin: 0.5em 0;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  overflow: hidden;
+}
+.prose figure[data-rehype-pretty-code-figure] {
+  margin: 0.5em 0;
+}
+.prose figure[data-rehype-pretty-code-figure] .md-code-block-shell {
+  margin: 0;
+}
+.prose .md-code-block-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.35rem;
+  padding: 0.2rem 0.4rem 0.2rem 0.5rem;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in oklch, var(--muted) 65%, transparent);
+  min-height: 1.75rem;
+}
+.prose .md-code-block-lang {
+  margin-right: auto;
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 0.65rem;
+  font-weight: 500;
+  text-transform: lowercase;
+  letter-spacing: 0.02em;
+  color: var(--muted-foreground);
+  opacity: 0.72;
+  max-width: 70%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.prose .md-code-block-copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.2rem;
+  border-radius: 0.25rem;
+  color: var(--muted-foreground);
+  opacity: 0.85;
+  line-height: 0;
+}
+.prose .md-code-block-copy:hover {
+  background: color-mix(in oklch, var(--foreground) 8%, transparent);
+  color: var(--foreground);
+  opacity: 1;
+}
+.prose .md-code-block-shell > pre {
+  margin: 0 !important;
+  border: none !important;
+  border-radius: 0 !important;
+  line-height: 1.5;
+  max-height: calc(35 * 1.5em);
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+.prose figure[data-rehype-pretty-code-figure] .md-code-block-shell > pre {
+  background: var(--shiki-light-bg) !important;
+  padding: 0.75rem 1rem;
+  overflow-x: auto;
+  overflow-y: auto;
+  font-size: 0.85em;
+  line-height: 1.5;
+  max-height: calc(35 * 1.5em);
+  scrollbar-gutter: stable;
+}
+.dark .prose figure[data-rehype-pretty-code-figure] .md-code-block-shell > pre {
+  background: var(--shiki-dark-bg) !important;
+}
+/* Line numbers (rehype-pretty-code + showLineNumbers in meta via filterMetaString) */
+.prose .md-code-block-shell > pre code[data-line-numbers] {
+  counter-reset: line;
+}
+.prose .md-code-block-shell > pre code[data-line-numbers] > [data-line]::before {
+  counter-increment: line;
+  content: counter(line);
+  display: inline-block;
+  width: 2.25rem;
+  margin-right: 0.65rem;
+  text-align: right;
+  color: var(--muted-foreground);
+  opacity: 0.62;
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+}
+.prose .md-code-block-shell > pre code.md-plain-fence-code > [data-line] {
+  display: block;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.prose figure[data-rehype-pretty-code-figure] .md-code-block-shell code[data-theme*=" "],
+.prose figure[data-rehype-pretty-code-figure] .md-code-block-shell code[data-theme*=" "] span {
+  color: var(--shiki-light) !important;
+  background-color: transparent !important;
+}
+.dark .prose figure[data-rehype-pretty-code-figure] .md-code-block-shell code[data-theme*=" "],
+.dark .prose figure[data-rehype-pretty-code-figure] .md-code-block-shell code[data-theme*=" "] span {
+  color: var(--shiki-dark) !important;
+  background-color: transparent !important;
+}
 .prose code {
   font-family: var(--font-geist-mono), ui-monospace, monospace;
   font-size: 0.85em;
