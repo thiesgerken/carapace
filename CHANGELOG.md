@@ -1,6 +1,62 @@
 # CHANGELOG
 
 
+## v0.60.0 (2026-04-06)
+
+
+### Other
+
+
+- Merge remote-tracking branch 'refs/remotes/origin/main'
+  ([`81a4173`](https://github.com/thiesgerken/carapace/commit/81a41738ebf00fc7dd2cfc358242cc95d76c799f))
+
+## v0.59.1 (2026-04-06)
+
+
+### ✨ Features
+
+
+- ✨ feat: send full tool results to UI callbacks.
+  ([`52f7435`](https://github.com/thiesgerken/carapace/commit/52f74354af78ab26c09220253ee01ab557b6b68a))
+
+  Stop truncating tool_result callback output so UI rendering receives complete tool results; future command-length limits can be handled separately at execution time.
+
+  Made-with: Cursor
+
+- ✨ feat: simplify skill activation card rendering.
+  ([`1e4e0d4`](https://github.com/thiesgerken/carapace/commit/1e4e0d4381f45e2ab5ad1c96a51b3ac687dedf16))
+
+  Show a concise skill activation intent line and render use_skill output as markdown with YAML front matter highlighted for better readability.
+
+  Made-with: Cursor
+
+### Other
+
+
+- Merge remote-tracking branch 'refs/remotes/origin/main'
+  ([`2b54c69`](https://github.com/thiesgerken/carapace/commit/2b54c69b84a477e5a07e0677cec1a368e1f291f5))
+
+## v0.59.0 (2026-04-06)
+
+
+### 💄 UI/UX
+
+
+- 💄 style: update body font size in globals.css
+  ([`d19baac`](https://github.com/thiesgerken/carapace/commit/d19baac5165915ab0ee6e6f63d0c65a70316676b))
+
+  Increase font size from 0.85em to 0.9em for improved readability in body styles across the application.
+
+### ✨ Features
+
+
+- ✨ feat: render exec details as shell transcript markdown.
+  ([`148d18d`](https://github.com/thiesgerken/carapace/commit/148d18d4844226d75c1805024a1dc5fae1612e8d))
+
+  Use markdown-based shell transcript rendering for expanded exec calls with a cleaner single-block UI, improved prompt styling, and tuned sizing/trimming for readable output.
+
+  Made-with: Cursor
+
 ## v0.58.0 (2026-04-06)
 
 

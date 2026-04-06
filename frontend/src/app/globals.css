@@ -73,7 +73,7 @@ body {
   border-radius: 0.5rem;
   padding: 0.75rem 1rem;
   overflow-x: auto;
-  font-size: 0.85em;
+  font-size: 0.9em;
   margin: 0.5em 0;
 }
 .prose .md-code-block-shell {
@@ -141,13 +141,24 @@ body {
   padding: 0.75rem 1rem;
   overflow-x: auto;
   overflow-y: auto;
-  font-size: 0.85em;
+  font-size: 0.9em;
   line-height: 1.5;
   max-height: calc(35 * 1.5em);
   scrollbar-gutter: stable;
 }
 .dark .prose figure[data-rehype-pretty-code-figure] .md-code-block-shell > pre {
   background: var(--shiki-dark-bg) !important;
+}
+.exec-terminal-block {
+  font-size: 0.9rem;
+}
+.exec-terminal-block .prose .md-code-block-shell > pre,
+.exec-terminal-block
+  .prose
+  figure[data-rehype-pretty-code-figure]
+  .md-code-block-shell
+  > pre {
+  font-size: 0.9rem !important;
 }
 /* Line numbers (rehype-pretty-code + showLineNumbers in meta via filterMetaString) */
 .prose .md-code-block-shell > pre code[data-line-numbers] {

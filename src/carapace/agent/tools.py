@@ -46,7 +46,7 @@ def _notify_approved_start(ctx: RunContext[Deps], tool_name: str, args: dict[str
 
 def _notify_result(ctx: RunContext[Deps], tool_name: str, result: str, exit_code: int = 0) -> None:
     if ctx.deps.tool_result_callback:
-        ctx.deps.tool_result_callback(ToolResult(tool=tool_name, output=result[:2000], exit_code=exit_code))
+        ctx.deps.tool_result_callback(ToolResult(tool=tool_name, output=result, exit_code=exit_code))
 
 
 def _log_sandbox_tool_exception(tool: str, session_id: str) -> None:

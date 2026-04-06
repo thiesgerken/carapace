@@ -8,6 +8,7 @@ import {
   ShieldAlert,
   UserCheck,
 } from "lucide-react";
+import { MarkdownContent } from "./markdown-content";
 import { cn } from "@/lib/utils";
 
 interface ToolCallBadgeProps {
@@ -102,6 +103,37 @@ function formatArgsSummary(
   return parts.join(", ");
 }
 
+function getExecCommand(args: Record<string, unknown>): string {
+  const raw = args.command;
+  if (typeof raw === "string" && raw.trim().length > 0) return raw;
+  return "(missing command)";
+}
+
+function buildShellTranscript(command: string, output?: string): string {
+  const body = ["❯ " + command];
+  const normalizedOutput = output?.replace(/\n+$/, "") ?? "";
+  if (normalizedOutput.length > 0) body.push(normalizedOutput);
+  const payload = body.join("\n");
+  const fence = payload.includes("~~~") ? "~~~~" : "~~~";
+  return `${fence}shell\n${payload}\n${fence}`;
+}
+
+function getUseSkillName(args: Record<string, unknown>): string {
+  const raw = args.skill_name;
+  if (typeof raw === "string" && raw.trim().length > 0) return raw;
+  return "(missing skill_name)";
+}
+
+function formatUseSkillResult(result: string): string {
+  const normalized = result.replace(/\n+$/, "");
+  // Render YAML front matter as fenced YAML for readable syntax highlighting.
+  return normalized.replace(
+    /(^|\n)---\n([\s\S]*?)\n---(?=\n|$)/,
+    (_m, prefix: string, yamlBody: string) =>
+      `${prefix}\`\`\`yaml\n${yamlBody.trim()}\n\`\`\``,
+  );
+}
+
 function ApprovalBadge({
   source,
   verdict,
@@ -162,6 +194,15 @@ export function ToolCallBadge({
   const { source, verdict, explanation } = parseDetail(detail);
   const argsSummary = formatArgsSummary(tool, args);
   const isError = exitCode != null && exitCode !== 0;
+  const isExecTool = tool === "exec";
+  const isUseSkillTool = tool === "use_skill";
+  const execCommand = isExecTool ? getExecCommand(args) : "";
+  const execTranscript = isExecTool
+    ? buildShellTranscript(execCommand, result)
+    : "";
+  const useSkillName = isUseSkillTool ? getUseSkillName(args) : "";
+  const useSkillResult =
+    isUseSkillTool && result != null ? formatUseSkillResult(result) : "";
 
   return (
     <div className="my-1 w-full min-w-0">
@@ -208,31 +249,62 @@ export function ToolCallBadge({
             </div>
           )}
 
-          <details open>
-            <summary className="cursor-pointer text-muted-foreground hover:text-foreground transition-colors font-medium select-none">
-              Arguments
-            </summary>
-            <pre className="mt-1.5 rounded-md bg-muted p-2.5 font-mono overflow-x-auto border border-border/40">
-              {JSON.stringify(args, null, 2)}
-            </pre>
-          </details>
+          {isExecTool ? (
+            <div className={cn("exec-terminal-block")}>
+              <MarkdownContent content={execTranscript} />
+            </div>
+          ) : isUseSkillTool ? (
+            <>
+              <div className="text-muted-foreground">
+                Agent wants to activate the{" "}
+                <span className="font-mono text-foreground/85">
+                  {useSkillName}
+                </span>{" "}
+                skill.
+              </div>
 
-          {result != null && (
-            <details open>
-              <summary className="cursor-pointer text-muted-foreground hover:text-foreground transition-colors font-medium select-none">
-                Result
-              </summary>
-              <pre
-                className={cn(
-                  "mt-1.5 rounded-md p-2.5 font-mono overflow-x-auto max-h-48 overflow-y-auto whitespace-pre-wrap border",
-                  isError
-                    ? "bg-destructive/10 text-destructive border-destructive/30"
-                    : "bg-muted border-border/40",
-                )}
-              >
-                {result}
-              </pre>
-            </details>
+              {result != null && (
+                <div
+                  className={cn(
+                    "rounded-md border overflow-hidden",
+                    isError
+                      ? "border-destructive/30 bg-destructive/5"
+                      : "border-border/40",
+                  )}
+                >
+                  <MarkdownContent content={useSkillResult} />
+                </div>
+              )}
+            </>
+          ) : (
+            <>
+              <details open>
+                <summary className="cursor-pointer text-muted-foreground hover:text-foreground transition-colors font-medium select-none">
+                  Arguments
+                </summary>
+                <pre className="mt-1.5 rounded-md bg-muted p-2.5 font-mono overflow-x-auto border border-border/40">
+                  {JSON.stringify(args, null, 2)}
+                </pre>
+              </details>
+
+              {result != null && (
+                <details open>
+                  <summary className="cursor-pointer text-muted-foreground hover:text-foreground transition-colors font-medium select-none">
+                    Result
+                  </summary>
+                  <pre
+                    className={cn(
+                      "mt-1.5 rounded-md p-2.5 font-mono overflow-x-auto max-h-48 overflow-y-auto whitespace-pre-wrap border",
+                      isError
+                        ? "bg-destructive/10 text-destructive border-destructive/30"
+                        : "bg-muted border-border/40",
+                    )}
+                  >
+                    {result}
+                  </pre>
+                </details>
+              )}
+            </>
           )}
         </div>
       )}
