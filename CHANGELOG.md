@@ -1,6 +1,17 @@
 # CHANGELOG
 
 
+## v0.61.1 (2026-04-06)
+
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix: Sandboxes CRD schema must not mix properties with additionalProperties
+  ([`b566274`](https://github.com/thiesgerken/carapace/commit/b566274f42c4178382996f8ae165e4ff8e731936))
+
+  Made-with: Cursor
+
 ## v0.61.0 (2026-04-06)
 
 
