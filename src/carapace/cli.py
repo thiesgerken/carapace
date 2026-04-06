@@ -300,9 +300,12 @@ def _render_usage(payload: dict[str, Any]) -> None:
             lr.add_column("oth%", justify="right")
         for src, row in last_rows:
             b = row.get("breakdown_pct") if isinstance(row.get("breakdown_pct"), dict) else {}
+            tok_n = int(row.get("context_size", 0))
+            pct_raw = row.get("context_used_pct")
+            tok_cell = f"{tok_n:,} ({float(pct_raw):.1f}%)" if isinstance(pct_raw, int | float) else f"{tok_n:,}"
             cells = [
                 src,
-                f"{int(row.get('context_size', 0)):,}",
+                tok_cell,
                 _fmt_pct_cell(b.get("system")),
                 _fmt_pct_cell(b.get("user")),
                 _fmt_pct_cell(b.get("assistant")),
