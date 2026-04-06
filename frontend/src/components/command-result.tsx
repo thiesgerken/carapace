@@ -250,6 +250,10 @@ interface LastLlmRequestRow {
   output_tokens: number;
   context_size: number;
   breakdown_pct: LastLlmBreakdownPct;
+  /** Config (or default) context window used for ``context_used_pct``. */
+  context_cap_tokens?: number;
+  /** Share of context cap used by input+output tokens for this request (0–100). */
+  context_used_pct?: number;
 }
 
 interface UsagePayload {
@@ -446,6 +450,12 @@ function UsageView({ data }: { data: UsagePayload }) {
                   <td className="py-1 pr-2">{r.source}</td>
                   <td className="py-1 pr-2 text-right tabular-nums">
                     {fmt(r.context_size)}
+                    {typeof r.context_used_pct === "number" ? (
+                      <span className="text-muted-foreground">
+                        {" "}
+                        ({r.context_used_pct.toFixed(1)}%)
+                      </span>
+                    ) : null}
                   </td>
                   <td className="py-1 pr-2 text-right tabular-nums">
                     {fmtPctCell(r.breakdown_pct?.system)}

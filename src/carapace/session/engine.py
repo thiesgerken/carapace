@@ -36,6 +36,7 @@ from carapace.skills import SkillRegistry
 from carapace.usage import (
     LlmRequestLog,
     LlmRequestRecord,
+    LlmSource,
     UsageTracker,
     gauge_breakdown_pct_dict,
     last_record_for_source,
@@ -52,6 +53,8 @@ from carapace.ws_models import (
 )
 
 ModelType = Literal["agent", "sentinel", "title"]
+
+_DEFAULT_CONTEXT_CAP_TOKENS = 200_000
 
 
 def _non_slash_user_message_count(events: list[dict[str, Any]]) -> int:
@@ -215,6 +218,33 @@ class SessionEngine:
         for e in cfg.available_models:
             by_id[e.model_id] = e
         return sorted(by_id.values(), key=lambda e: e.model_id)
+
+    def _max_input_tokens_for_model_id(self, model_id: str) -> int | None:
+        for e in self._available_model_entries():
+            if e.model_id == model_id:
+                return e.max_input_tokens
+        return None
+
+    def _usage_last_llm_payload_row(self, active: ActiveSession, source: LlmSource) -> dict[str, Any] | None:
+        """``usage_last_request_row`` plus ``context_cap_tokens`` and ``context_used_pct`` for the UI."""
+        rec = last_record_for_source(active.llm_request_log, source)
+        row = usage_last_request_row(rec)
+        if row is None:
+            return None
+        mid = (
+            active.agent_model_name or self._config.agent.model
+            if source == "agent"
+            else active.sentinel_model_name or self._config.agent.sentinel_model
+        )
+        cap = self._max_input_tokens_for_model_id(mid)
+        if cap is None:
+            cap = _DEFAULT_CONTEXT_CAP_TOKENS
+        cs = row["context_size"]
+        pct = min(100.0, (100.0 * cs / cap)) if cap > 0 else 0.0
+        out: dict[str, Any] = dict(row)
+        out["context_cap_tokens"] = cap
+        out["context_used_pct"] = round(pct, 1)
+        return out
 
     def agent_model_id_for_gauge(self, active: ActiveSession) -> str:
         """Canonical Carapace model id (``provider:name``) for UI gauge / config lookup.
@@ -539,7 +569,6 @@ class SessionEngine:
             tracker = active.usage_tracker
             costs = tracker.estimated_cost()
             cat_costs = tracker.estimated_category_cost()
-            log = active.llm_request_log
             return {
                 "command": "usage",
                 "data": {
@@ -549,8 +578,8 @@ class SessionEngine:
                     "total_output": tracker.total_output,
                     "costs": {k: str(v) for k, v in costs.items()},
                     "category_costs": {k: str(v) for k, v in cat_costs.items()},
-                    "last_llm_agent": usage_last_request_row(last_record_for_source(log, "agent")),
-                    "last_llm_sentinel": usage_last_request_row(last_record_for_source(log, "sentinel")),
+                    "last_llm_agent": self._usage_last_llm_payload_row(active, "agent"),
+                    "last_llm_sentinel": self._usage_last_llm_payload_row(active, "sentinel"),
                 },
             }
 
