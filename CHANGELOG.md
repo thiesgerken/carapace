@@ -1,6 +1,15 @@
 # CHANGELOG
 
 
+## v0.60.1 (2026-04-06)
+
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix: add unified as explicit dependency
+  ([`621aa1f`](https://github.com/thiesgerken/carapace/commit/621aa1feefb7494e73702460a8bda0797248d34c))
+
 ## v0.60.0 (2026-04-06)
 
 
