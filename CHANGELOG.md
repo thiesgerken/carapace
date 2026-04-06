@@ -1,6 +1,47 @@
 # CHANGELOG
 
 
+## v0.61.0 (2026-04-06)
+
+
+### ✨ Features
+
+
+- ✨Merge pull request #61 from thiesgerken/feat/sandbox-collection-owner
+  ([`859774f`](https://github.com/thiesgerken/carapace/commit/859774fff972eca2c367631f17e8748aa4deca1b))
+
+  ✨ feat: prefer SandboxCollection owner for sandbox StatefulSets
+
+- ✨ feat: prefer SandboxCollection owner for sandbox StatefulSets
+  ([`f9ffb84`](https://github.com/thiesgerken/carapace/commit/f9ffb84d442691d78290efc4a6ccec12774930c7))
+
+  Introduce a SandboxCollection CRD as the preferred ownerReference anchor for runtime sandboxes while preserving Deployment fallback for safe rollout, and remove Argo Application owner lookup. Update Helm, RBAC, tests, and docs to reflect ownership-only CRD usage with no operator yet.
+
+  Made-with: Cursor
+
+### ♻️ Refactoring
+
+
+- ♻️ refactor: rename SandboxCollection CRD to Sandboxes
+  ([`3ef624a`](https://github.com/thiesgerken/carapace/commit/3ef624a3e61137a0833512da8cb357802dff0819))
+
+  Made-with: Cursor
+
+### Other
+
+
+- Merge branch 'main' into feat/sandbox-collection-owner
+  ([`90c2690`](https://github.com/thiesgerken/carapace/commit/90c2690a10ad517906cfe909c30802f3a5b5ff91))
+
+- Merge remote-tracking branch 'origin/main' into feat/sandbox-collection-owner
+  ([`bb395d4`](https://github.com/thiesgerken/carapace/commit/bb395d43f0759390520bd13989cf52573ec4a306))
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix: add unified as explicit dependency
+  ([`13043c7`](https://github.com/thiesgerken/carapace/commit/13043c73a847f87ea888506083f9f4bd08ce317d))
+
 ## v0.60.1 (2026-04-06)
 
 
