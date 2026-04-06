@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.59.0 (2026-04-06)
+
+
+### ✨ Features
+
+
+- ✨ feat: render exec details as shell transcript markdown.
+  ([`148d18d`](https://github.com/thiesgerken/carapace/commit/148d18d4844226d75c1805024a1dc5fae1612e8d))
+
+  Use markdown-based shell transcript rendering for expanded exec calls with a cleaner single-block UI, improved prompt styling, and tuned sizing/trimming for readable output.
+
+  Made-with: Cursor
+
 ## v0.58.0 (2026-04-06)
 
 
