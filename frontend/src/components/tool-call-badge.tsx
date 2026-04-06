@@ -291,17 +291,21 @@ export function ToolCallBadge({
             </>
           ) : isReadTool && readSplit?.hasSplit ? (
             <>
-              <div className="rounded-md border border-border/40 bg-muted/25 px-3 py-2">
+              <div
+                className={cn(
+                  "rounded-md border bg-muted/25 px-3 py-2",
+                  isError ? "border-destructive/30" : "border-border/40",
+                )}
+              >
                 <div className="whitespace-pre-wrap text-muted-foreground leading-relaxed">
                   {readSplit.header}
                 </div>
               </div>
               <div
                 className={cn(
-                  "rounded-md border overflow-hidden max-w-none [&_.prose]:max-w-none",
-                  isError
-                    ? "border-destructive/30 bg-destructive/5"
-                    : "border-border/40",
+                  "max-w-none [&_.prose]:max-w-none",
+                  isError &&
+                    "[&_.prose_.md-code-block-shell]:border-destructive/40 [&_.prose_.md-code-block-shell]:bg-destructive/5",
                 )}
               >
                 <MarkdownContent content={readBodyMarkdown} />
