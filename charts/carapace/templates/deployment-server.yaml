@@ -60,18 +60,8 @@ spec:
               value: {{ .Release.Name }}
             - name: CARAPACE_SANDBOX_K8S_SERVER_DEPLOYMENT_NAME
               value: {{ .Release.Name }}
-            - name: CARAPACE_SANDBOX_K8S_OWNER_TARGET
-              value: {{ .Values.sandbox.ownerTarget | default "auto" | quote }}
-            {{- with .Values.sandbox.argocdApplication }}
-            {{- if .name }}
-            - name: CARAPACE_SANDBOX_K8S_ARGOCD_APPLICATION_NAME
-              value: {{ .name | quote }}
-            {{- end }}
-            {{- if .namespace }}
-            - name: CARAPACE_SANDBOX_K8S_ARGOCD_APPLICATION_NAMESPACE
-              value: {{ .namespace | quote }}
-            {{- end }}
-            {{- end }}
+            - name: CARAPACE_SANDBOX_K8S_SANDBOX_COLLECTION_NAME
+              value: {{ .Values.sandbox.sandboxCollectionName | default (printf "%s-sandboxes" .Release.Name) | quote }}
             - name: CARAPACE_SANDBOX_K8S_SESSION_PVC_SIZE
               value: {{ .Values.sandbox.sessionPvc.size | quote }}
           {{- if .Values.sandbox.sessionPvc.storageClass }}

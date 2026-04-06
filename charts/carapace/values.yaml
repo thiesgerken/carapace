@@ -48,12 +48,8 @@ sandbox:
     size: 1Gi
     # -- Leave empty to use the cluster default StorageClass
     storageClass: ""
-  # -- ownerReferences on sandbox StatefulSets: auto (Argo CD Application in workload ns, else Deployment) or deployment only
-  ownerTarget: auto
-  # -- Optional Argo CD Application metadata when it differs from release name / namespace (must still match workload namespace for owner ref)
-  argocdApplication:
-    name: ""
-    namespace: ""
+  # -- Preferred owner CR name for sandbox StatefulSets; if missing, Deployment fallback is used
+  sandboxCollectionName: ""
 
 # -- Ingress configuration (Gateway API HTTPRoute)
 ingress:
