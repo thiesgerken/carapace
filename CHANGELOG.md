@@ -1,8 +1,34 @@
 # CHANGELOG
 
 
+## v0.60.0 (2026-04-06)
+
+
+### Other
+
+
+- Merge remote-tracking branch 'refs/remotes/origin/main'
+  ([`81a4173`](https://github.com/thiesgerken/carapace/commit/81a41738ebf00fc7dd2cfc358242cc95d76c799f))
+
 ## v0.59.1 (2026-04-06)
 
+
+### ✨ Features
+
+
+- ✨ feat: send full tool results to UI callbacks.
+  ([`52f7435`](https://github.com/thiesgerken/carapace/commit/52f74354af78ab26c09220253ee01ab557b6b68a))
+
+  Stop truncating tool_result callback output so UI rendering receives complete tool results; future command-length limits can be handled separately at execution time.
+
+  Made-with: Cursor
+
+- ✨ feat: simplify skill activation card rendering.
+  ([`1e4e0d4`](https://github.com/thiesgerken/carapace/commit/1e4e0d4381f45e2ab5ad1c96a51b3ac687dedf16))
+
+  Show a concise skill activation intent line and render use_skill output as markdown with YAML front matter highlighted for better readability.
+
+  Made-with: Cursor
 
 ### Other
 
