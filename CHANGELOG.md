@@ -1,6 +1,33 @@
 # CHANGELOG
 
 
+## v0.54.0 (2026-04-06)
+
+
+### ✨ Features
+
+
+- ✨Merge pull request #60 from thiesgerken/feature/context-breakdown
+  ([`74e5ca8`](https://github.com/thiesgerken/carapace/commit/74e5ca85b1c64a7ab2d35ab1d8a14674ae1bfde2))
+
+  ✨ feat: LLM request log with tiktoken context breakdown
+
+- ✨ feat: LLM request log with tiktoken context breakdown
+  ([`1e0d90f`](https://github.com/thiesgerken/carapace/commit/1e0d90f6bc80a2cd532951c25b9ba29a48aa7be9))
+
+  Persist per-request API token counts and prompt-bucket percentages (system/user/assistant/tool calls/tool outputs) via LlmRequestLog; show Context section in web, CLI, and Matrix /usage; remove context_tokens; add tiktoken dependency.
+
+  Made-with: Cursor
+
+### Other
+
+
+- show breakdown in the context gauge
+  ([`d171b14`](https://github.com/thiesgerken/carapace/commit/d171b1473cc8d43816fb6bf928619ef6fe5480a9))
+
+- styling
+  ([`64a24f1`](https://github.com/thiesgerken/carapace/commit/64a24f1e5b81431bf29a6b2d3546c5716ccdec53))
+
 ## v0.53.0 (2026-04-05)
 
 
