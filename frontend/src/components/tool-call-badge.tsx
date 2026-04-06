@@ -72,16 +72,34 @@ const SHORT_KEYS: Record<string, string> = {
   directory: "dir",
 };
 
-function formatArgsSummary(args: Record<string, unknown>): string {
+/** Arg keys shown without `key=` when the tool name already implies them. */
+const OMIT_ARG_LABEL: Record<string, ReadonlySet<string>> = {
+  exec: new Set(["command"]),
+  read: new Set(["path"]),
+  use_skill: new Set(["skill_name"]),
+};
+
+const MAX_SUMMARY_VALUE_CHARS = 4096;
+
+function formatArgsSummary(
+  tool: string,
+  args: Record<string, unknown>,
+): string {
+  const omit = OMIT_ARG_LABEL[tool];
   const parts: string[] = [];
   for (const [k, v] of Object.entries(args)) {
     let vStr = typeof v === "string" ? v : JSON.stringify(v);
-    if (vStr.length > 50) vStr = vStr.slice(0, 47) + "…";
-    const shortKey = SHORT_KEYS[k] ?? k;
-    parts.push(`${shortKey}=${vStr}`);
+    if (vStr.length > MAX_SUMMARY_VALUE_CHARS) {
+      vStr = vStr.slice(0, MAX_SUMMARY_VALUE_CHARS - 1) + "…";
+    }
+    if (omit?.has(k)) {
+      parts.push(vStr);
+    } else {
+      const shortKey = SHORT_KEYS[k] ?? k;
+      parts.push(`${shortKey}=${vStr}`);
+    }
   }
-  const joined = parts.join(", ");
-  return joined.length > 120 ? joined.slice(0, 117) + "…" : joined;
+  return parts.join(", ");
 }
 
 function ApprovalBadge({
@@ -142,18 +160,18 @@ export function ToolCallBadge({
 }: ToolCallBadgeProps) {
   const [open, setOpen] = useState(false);
   const { source, verdict, explanation } = parseDetail(detail);
-  const argsSummary = formatArgsSummary(args);
+  const argsSummary = formatArgsSummary(tool, args);
   const isError = exitCode != null && exitCode !== 0;
 
   return (
-    <div className="my-1">
+    <div className="my-1 w-full min-w-0">
       <button
+        type="button"
         onClick={() => setOpen(!open)}
         className={cn(
-          "inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs",
+          "flex w-full min-w-0 items-center gap-1.5 rounded-md px-2 py-1 text-xs text-left",
           "bg-muted/60 text-muted-foreground",
           "hover:bg-accent transition-colors",
-          "max-w-full",
         )}
       >
         <ChevronRight
@@ -162,16 +180,23 @@ export function ToolCallBadge({
             open && "rotate-90",
           )}
         />
-        <span className="font-mono font-medium text-foreground/80">{tool}</span>
-        {argsSummary && (
-          <span className="truncate opacity-50 font-mono max-w-[300px]">
+        <span className="shrink-0 font-mono font-medium text-foreground/80">
+          {tool}
+        </span>
+        {argsSummary ? (
+          <span
+            className="min-w-0 flex-1 truncate font-mono text-[11px] text-foreground/65 dark:text-foreground/70"
+            title={argsSummary}
+          >
             {argsSummary}
           </span>
-        )}
-        <ApprovalBadge source={source} verdict={verdict} />
-        {loading && (
-          <Loader2 className="ml-0.5 h-3 w-3 shrink-0 animate-spin text-muted-foreground" />
-        )}
+        ) : null}
+        <span className="inline-flex shrink-0 items-center gap-1">
+          <ApprovalBadge source={source} verdict={verdict} />
+          {loading && (
+            <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
+          )}
+        </span>
       </button>
 
       {open && (
