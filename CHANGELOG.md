@@ -1,6 +1,23 @@
 # CHANGELOG
 
 
+## v0.55.0 (2026-04-06)
+
+
+### ✨ Features
+
+
+- ✨ feat: structured available_models and context gauge from max_input_tokens
+  ([`ef097b4`](https://github.com/thiesgerken/carapace/commit/ef097b4f689bb7addac8fa1233a53a21512845fb))
+
+  - Add AvailableModelEntry (shorthand provider:name or mapping with optional max_input_tokens)
+  - Merge/dedupe entries in SessionEngine; GET /api/models and /models return objects with id alias
+  - TurnUsage includes canonical agent model id for WebSocket done/status
+  - Frontend: fetch model descriptors, TokenGauge cap from config with 200k fallback
+  - CLI /models prints structured available list; tests for parsing and merge last-wins
+
+  Made-with: Cursor
+
 ## v0.54.2 (2026-04-06)
 
 
