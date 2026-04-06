@@ -44,7 +44,6 @@ from carapace.config import _resolve_data_dir, _resolve_knowledge_dir, get_confi
 from carapace.credentials import CredentialRegistry, build_credential_registry
 from carapace.git.http import GitHttpHandler
 from carapace.git.store import GitStore
-from carapace.llm_request_log import gauge_breakdown_pct_dict, last_record_for_source
 from carapace.models import Config, SessionState, ToolResult
 from carapace.sandbox.manager import SandboxManager
 from carapace.sandbox.proxy import ProxyServer
@@ -52,6 +51,7 @@ from carapace.sandbox.runtime import ContainerRuntime
 from carapace.security.context import AuditEntry, CredentialAccessEntry
 from carapace.session import SessionEngine, SessionManager
 from carapace.skills import SkillRegistry
+from carapace.usage import gauge_breakdown_pct_dict, last_record_for_source
 from carapace.ws_models import (
     SLASH_COMMANDS,
     ApprovalRequest,

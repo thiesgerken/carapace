@@ -17,14 +17,6 @@ from pydantic_ai.models import Model, infer_model
 import carapace.security as security_mod
 from carapace.agent.loop import run_agent_turn
 from carapace.git.store import GitStore
-from carapace.llm_request_log import (
-    LlmRequestLog,
-    LlmRequestRecord,
-    gauge_breakdown_pct_dict,
-    last_record_for_source,
-    llm_request_sink_scope,
-    usage_last_request_row,
-)
 from carapace.memory import MemoryStore
 from carapace.models import Config, CredentialRegistryProtocol, Deps, SessionState, SkillInfo, ToolResult
 from carapace.sandbox.manager import SandboxManager
@@ -33,7 +25,15 @@ from carapace.security.sentinel import Sentinel
 from carapace.session.manager import SessionManager
 from carapace.session.titler import generate_title
 from carapace.skills import SkillRegistry
-from carapace.usage import UsageTracker
+from carapace.usage import (
+    LlmRequestLog,
+    LlmRequestRecord,
+    UsageTracker,
+    gauge_breakdown_pct_dict,
+    last_record_for_source,
+    llm_request_sink_scope,
+    usage_last_request_row,
+)
 from carapace.ws_models import (
     SLASH_COMMANDS,
     ApprovalRequest,

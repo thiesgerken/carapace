@@ -9,12 +9,12 @@ from pydantic_ai import Agent, DeferredToolRequests, RunContext, ToolDenied
 
 import carapace.security as security
 from carapace.config import load_workspace_file
-from carapace.llm_request_log import LlmRequestLogCapability
 from carapace.memory import MemoryStore
 from carapace.models import CredentialMetadata, CredentialRegistryProtocol, Deps, SkillCredentialDecl, ToolResult
 from carapace.sandbox.runtime import SkillVenvError
 from carapace.security.context import CredentialAccessEntry, SkillActivatedEntry, ToolResultEntry
 from carapace.skills import SkillRegistry
+from carapace.usage import LlmRequestLogCapability
 
 
 async def _gate(ctx: RunContext[Deps], tool_name: str, args: dict[str, Any]) -> ToolDenied | None:

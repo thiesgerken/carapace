@@ -6,7 +6,6 @@ from typing import Any
 from loguru import logger
 from pydantic_ai import Agent, RunContext
 
-from carapace.llm_request_log import LlmRequestLogCapability
 from carapace.security.context import (
     ActionLogEntry,
     AgentResponseEntry,
@@ -21,7 +20,7 @@ from carapace.security.context import (
     UserMessageEntry,
     UserVouchedEntry,
 )
-from carapace.usage import UsageTracker
+from carapace.usage import LlmRequestLogCapability, UsageTracker
 
 _SENTINEL_SYSTEM_PREFIX = """\
 You are the security gate for an AI agent system called Carapace.

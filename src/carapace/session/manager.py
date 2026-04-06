@@ -10,9 +10,8 @@ from typing import Any
 import yaml
 from pydantic_ai import ModelMessage, ModelMessagesTypeAdapter
 
-from carapace.llm_request_log import LlmRequestLog
 from carapace.models import SessionState
-from carapace.usage import UsageTracker
+from carapace.usage import LlmRequestLog, UsageTracker
 
 
 class SessionManager:

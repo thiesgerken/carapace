@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 
 from pydantic_ai.messages import ModelRequest, ModelResponse, SystemPromptPart, TextPart, UserPromptPart
 
-from carapace.llm_request_log import (
+from carapace.usage import (
     InputShapeRatios,
     LlmRequestRecord,
     gauge_breakdown_pct_dict,
