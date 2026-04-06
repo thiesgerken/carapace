@@ -1,6 +1,33 @@
 # CHANGELOG
 
 
+## v0.64.0 (2026-04-06)
+
+
+### ✨ Features
+
+
+- ✨ feat(frontend): split read tool result into metadata and highlighted body
+  ([`9173efb`](https://github.com/thiesgerken/carapace/commit/9173efbe48c11a058f12a71a4378b7dfdd48440f))
+
+  - Parse 24-dash separator to match sandbox read output; fence body with language from path.
+  - Style read metadata like sentinel text; omit duplicate args block when split layout is used.
+
+  Made-with: Cursor
+
+- ✨ feat(sandbox): harden read tool with paging, caps, and binary handling
+  ([`b2b9fae`](https://github.com/thiesgerken/carapace/commit/b2b9fae741de65f839774d8b37835ba5304fd58b))
+
+  - Replace cat-based read with an inline Python script: line window (offset/limit),
+    64Ki body char cap with truthful headers and partial-line truncation metadata.
+  - Binary files return size and file(1) description only; NUL probe in first 64KiB.
+  - Directory listing keeps ::DIR:: prefix; sandbox image installs the file package.
+  - Add dashed separator between read metadata and body for UI/agent parsing.
+  - Move sandbox exec script sources to container_scripts.py; gate read with offset/limit.
+  - Add subprocess tests for the read script.
+
+  Made-with: Cursor
+
 ## v0.63.0 (2026-04-06)
 
 
