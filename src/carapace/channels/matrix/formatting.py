@@ -97,23 +97,15 @@ def format_command_result_text(result: CommandResult) -> str:
 
             has_costs = any(v != "0" for k, v in costs.items() if k != "total")
 
-            def _fmt_context(n: object) -> str:
-                v = int(n or 0)
-                return f"{v:,}" if v else "-"
-
             def _table(
                 title: str,
                 rows: dict[str, dict],
                 *,
                 show_cost: bool = False,
                 row_costs: dict[str, str] | None = None,
-                show_context_column: bool = False,
             ) -> str:
                 hdr = "| | Input | Output |"
                 sep = "|---|---:|---:|"
-                if show_context_column:
-                    hdr += " Context |"
-                    sep += "---:|"
                 if has_cache:
                     hdr += " Cache R | Cache W |"
                     sep += "---:|---:|"
@@ -127,8 +119,6 @@ def format_command_result_text(result: CommandResult) -> str:
                 lookup = row_costs if row_costs is not None else costs
                 for name, b in rows.items():
                     row = f"| {name} | {b.get('input_tokens', 0):,} | {b.get('output_tokens', 0):,} |"
-                    if show_context_column:
-                        row += f" {_fmt_context(b.get('context_tokens'))} |"
                     if has_cache:
                         row += f" {b.get('cache_read_tokens', 0):,} | {b.get('cache_write_tokens', 0):,} |"
                     row += f" {b.get('requests', 0)} |"
@@ -139,6 +129,11 @@ def format_command_result_text(result: CommandResult) -> str:
                 return "\n".join(lines)
 
             parts: list[str] = []
+            total_tokens = total_input + total_output
+            cost_str = f" | ${total_cost:.4f}" if total_cost else ""
+            parts.append(
+                f"**Total:** {total_tokens:,} tokens ({total_input:,} in + {total_output:,} out){cost_str}",
+            )
             if models:
                 parts.append(_table("By Model", models, show_cost=True))
             if categories:
@@ -148,13 +143,55 @@ def format_command_result_text(result: CommandResult) -> str:
                         categories,
                         show_cost=True,
                         row_costs=category_costs,
-                        show_context_column=True,
                     ),
                 )
 
-            total_tokens = total_input + total_output
-            cost_str = f" | ${total_cost:.4f}" if total_cost else ""
-            parts.append(f"**Total:** {total_tokens:,} tokens ({total_input:,} in + {total_output:,} out){cost_str}")
+            def _fmt_pct_cell(v: object) -> str:
+                if v is None:
+                    return "—"
+                if isinstance(v, bool):
+                    return str(v)
+                if isinstance(v, int | float):
+                    return f"{float(v):.1f}%"
+                return "—"
+
+            last_rows: list[tuple[str, dict]] = []
+            for key, src in (("last_llm_agent", "agent"), ("last_llm_sentinel", "sentinel")):
+                row = data.get(key)
+                if isinstance(row, dict) and int(row.get("context_size", 0) or 0) > 0:
+                    last_rows.append((src, row))
+
+            if last_rows:
+                show_other = False
+                for _, row in last_rows:
+                    b = row.get("breakdown_pct") if isinstance(row.get("breakdown_pct"), dict) else {}
+                    o = b.get("other")
+                    if isinstance(o, int | float) and float(o) > 0:
+                        show_other = True
+                        break
+
+                if show_other:
+                    hdr = (
+                        "| Source | Tokens | sys% | usr% | asst% | tool calls % | tool outputs % | oth% |\n"
+                        "|---|---:|---:|---:|---:|---:|---:|---:|"
+                    )
+                else:
+                    hdr = (
+                        "| Source | Tokens | sys% | usr% | asst% | tool calls % | tool outputs % |\n"
+                        "|---|---:|---:|---:|---:|---:|---:|"
+                    )
+                lines = ["**Context**", hdr]
+                for src, row in last_rows:
+                    b = row.get("breakdown_pct") if isinstance(row.get("breakdown_pct"), dict) else {}
+                    core = (
+                        f"| {src} | {int(row.get('context_size', 0)):,} | "
+                        f"{_fmt_pct_cell(b.get('system'))} | {_fmt_pct_cell(b.get('user'))} | "
+                        f"{_fmt_pct_cell(b.get('assistant'))} | {_fmt_pct_cell(b.get('tool_calls'))} | "
+                        f"{_fmt_pct_cell(b.get('tool_returns'))}"
+                    )
+                    lines.append(f"{core} | {_fmt_pct_cell(b.get('other'))} |" if show_other else f"{core} |")
+                parts.append("\n".join(lines))
+
             return "\n\n".join(parts)
 
         case "models":

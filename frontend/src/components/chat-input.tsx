@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowUp, Clock, Square } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { SlashCommand } from "@/lib/api";
-import type { TurnUsage } from "@/lib/types";
+import type { TurnUsage, TurnUsageBreakdownPct } from "@/lib/types";
 
 function formatTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -321,7 +321,7 @@ export function ChatInput({
         </div>
 
         {/* Token usage gauge */}
-        {usage && turnContextTokens(usage) > 0 && (
+        {usage && turnGaugeTokens(usage) > 0 && (
           <TokenGauge
             usage={usage}
             onClickUsage={
@@ -334,11 +334,32 @@ export function ChatInput({
   );
 }
 
-/** Prefer server-reported last-LLM slice; fall back to in+out for older payloads. */
-function turnContextTokens(u: TurnUsage): number {
-  const c = u.context_tokens ?? 0;
-  if (c > 0) return c;
+/** API input+output tokens for the last agent model request (or last turn slice from done). */
+function turnGaugeTokens(u: TurnUsage): number {
   return u.input_tokens + u.output_tokens;
+}
+
+const GAUGE_BREAKDOWN_ORDER: {
+  key: keyof TurnUsageBreakdownPct;
+  label: string;
+  className: string;
+}[] = [
+  { key: "system", label: "system", className: "bg-sky-500/80" },
+  { key: "user", label: "user", className: "bg-emerald-500/80" },
+  { key: "assistant", label: "assistant", className: "bg-violet-500/80" },
+  { key: "tool_calls", label: "tool calls", className: "bg-amber-500/80" },
+  { key: "tool_returns", label: "tool outputs", className: "bg-orange-500/80" },
+  { key: "other", label: "other", className: "bg-muted-foreground/60" },
+];
+
+function breakdownTooltipLines(bp: TurnUsageBreakdownPct): string[] {
+  const lines: string[] = [];
+  for (const { key, label } of GAUGE_BREAKDOWN_ORDER) {
+    const v = bp[key];
+    if (key === "other" && v <= 0) continue;
+    lines.push(`${label}: ${v.toFixed(1)}%`);
+  }
+  return lines;
 }
 
 /** Compact context-window gauge rendered below the input box. */
@@ -349,28 +370,72 @@ function TokenGauge({
   usage: TurnUsage;
   onClickUsage?: () => void;
 }) {
-  const ctx = turnContextTokens(usage);
-  // Context window limits for common models; 200k is a safe default
+  const ctx = turnGaugeTokens(usage);
   const cap = 200_000;
-  const pct = Math.min((ctx / cap) * 100, 100);
+  const fillPct = Math.min((ctx / cap) * 100, 100);
+  const bp = usage.breakdown_pct;
 
-  // Color shifts from muted → yellow → red as context fills up
-  const barColor =
-    pct > 75
-      ? "bg-destructive/70"
-      : pct > 50
-        ? "bg-warning/70"
-        : "bg-muted-foreground/30";
+  const stress = fillPct > 75 ? "high" : fillPct > 50 ? "mid" : "low";
+  const trackRing =
+    stress === "high"
+      ? "ring-1 ring-destructive/35"
+      : stress === "mid"
+        ? "ring-1 ring-warning/30"
+        : "";
 
-  const tooltip = `${formatTokens(ctx)} / 200k context window tokens used\nClick for detailed usage breakdown`;
+  const tooltipLines = [
+    `${formatTokens(ctx)} API tokens (last agent request)`,
+    "Assuming a 200k context limit.",
+    "Click to send /usage to the agent for more details.",
+  ];
+  if (bp) {
+    tooltipLines.push("", ...breakdownTooltipLines(bp));
+  }
+
+  const tooltip = tooltipLines.join("\n");
 
   return (
     <div className="mt-1.5 flex items-center gap-2 px-1">
-      <div className="h-1 flex-1 rounded-full bg-muted overflow-hidden">
+      <div
+        title={tooltip}
+        className="flex min-h-6 flex-1 cursor-default items-center py-2 -my-2"
+      >
         <div
-          className={cn("h-full rounded-full transition-all", barColor)}
-          style={{ width: `${pct}%` }}
-        />
+          className={cn(
+            "relative h-1 w-full rounded-full bg-muted overflow-hidden",
+            trackRing,
+          )}
+        >
+          <div
+            className="absolute left-0 top-0 h-full flex overflow-hidden rounded-l-full transition-[width]"
+            style={{ width: `${fillPct}%` }}
+          >
+            {bp ? (
+              GAUGE_BREAKDOWN_ORDER.map(({ key, className }) => {
+                const w = bp[key];
+                if (w <= 0) return null;
+                return (
+                  <div
+                    key={key}
+                    className={cn("h-full min-w-px shrink-0", className)}
+                    style={{ width: `${w}%` }}
+                  />
+                );
+              })
+            ) : (
+              <div
+                className={cn(
+                  "h-full w-full rounded-l-full transition-colors",
+                  stress === "high"
+                    ? "bg-destructive/70"
+                    : stress === "mid"
+                      ? "bg-warning/70"
+                      : "bg-muted-foreground/30",
+                )}
+              />
+            )}
+          </div>
+        </div>
       </div>
       <button
         type="button"

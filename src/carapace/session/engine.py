@@ -17,6 +17,14 @@ from pydantic_ai.models import Model, infer_model
 import carapace.security as security_mod
 from carapace.agent.loop import run_agent_turn
 from carapace.git.store import GitStore
+from carapace.llm_request_log import (
+    LlmRequestLog,
+    LlmRequestRecord,
+    gauge_breakdown_pct_dict,
+    last_record_for_source,
+    llm_request_sink_scope,
+    usage_last_request_row,
+)
 from carapace.memory import MemoryStore
 from carapace.models import Config, CredentialRegistryProtocol, Deps, SessionState, SkillInfo, ToolResult
 from carapace.sandbox.manager import SandboxManager
@@ -32,6 +40,7 @@ from carapace.ws_models import (
     ApprovalResponse,
     EscalationResponse,
     TurnUsage,
+    TurnUsageBreakdownPct,
 )
 
 ModelType = Literal["agent", "sentinel", "title"]
@@ -98,6 +107,7 @@ class ActiveSession:
     tool_approval_queue: asyncio.Queue[ApprovalResponse | None] = field(default_factory=asyncio.Queue)
     escalation_queue: asyncio.Queue[EscalationResponse | None] = field(default_factory=asyncio.Queue)
     usage_tracker: UsageTracker = field(default_factory=UsageTracker)
+    llm_request_log: LlmRequestLog = field(default_factory=LlmRequestLog)
     verbose: bool = True
     agent_model: Model | None = None
     agent_model_name: str | None = None
@@ -206,12 +216,14 @@ class SessionEngine:
             skills_dir=self._knowledge_dir / "skills",
         )
         usage_tracker = self._session_mgr.load_usage(session_id)
+        llm_log = self._session_mgr.load_llm_request_log(session_id)
 
         active = ActiveSession(
             state=state,
             security=security,
             sentinel=sentinel,
             usage_tracker=usage_tracker,
+            llm_request_log=llm_log,
         )
         self._active[session_id] = active
 
@@ -295,6 +307,17 @@ class SessionEngine:
             active.subscribers.append(sub)
         return active
 
+    @contextlib.contextmanager
+    def llm_request_recording(self, active: ActiveSession):
+        session_id = active.state.session_id
+
+        def sink(rec: LlmRequestRecord) -> None:
+            active.llm_request_log.records.append(rec)
+            self._session_mgr.save_llm_request_log(session_id, active.llm_request_log)
+
+        with llm_request_sink_scope(sink):
+            yield
+
     def unsubscribe(self, session_id: str, sub: SessionSubscriber) -> None:
         """Detach a subscriber.  Does NOT cancel agent work or destroy security."""
         active = self._active.get(session_id)
@@ -305,6 +328,7 @@ class SessionEngine:
             # flush usage to disk, but keep the active session alive.
             if not active.subscribers and (active.agent_task is None or active.agent_task.done()):
                 self._session_mgr.save_usage(session_id, active.usage_tracker)
+                self._session_mgr.save_llm_request_log(session_id, active.llm_request_log)
 
     # -- broadcasting helpers --
 
@@ -484,6 +508,7 @@ class SessionEngine:
             tracker = active.usage_tracker
             costs = tracker.estimated_cost()
             cat_costs = tracker.estimated_category_cost()
+            log = active.llm_request_log
             return {
                 "command": "usage",
                 "data": {
@@ -493,6 +518,8 @@ class SessionEngine:
                     "total_output": tracker.total_output,
                     "costs": {k: str(v) for k, v in costs.items()},
                     "category_costs": {k: str(v) for k, v in cat_costs.items()},
+                    "last_llm_agent": usage_last_request_row(last_record_for_source(log, "agent")),
+                    "last_llm_sentinel": usage_last_request_row(last_record_for_source(log, "sentinel")),
                 },
             }
 
@@ -746,18 +773,20 @@ class SessionEngine:
                     await self._broadcast(active, "on_token", chunk)
 
                 async with self._llm_semaphore:
-                    messages, output, (inp_tok, out_tok) = await run_agent_turn(
-                        user_input,
-                        deps,
-                        message_history,
-                        send_approval_request=_send_approval,
-                        collect_approvals=_collect_approvals,
-                        on_token=_on_token,
-                    )
+                    with self.llm_request_recording(active):
+                        messages, output, (inp_tok, out_tok) = await run_agent_turn(
+                            user_input,
+                            deps,
+                            message_history,
+                            send_approval_request=_send_approval,
+                            collect_approvals=_collect_approvals,
+                            on_token=_on_token,
+                        )
 
                 self._session_mgr.save_history(session_id, messages)
                 self._session_mgr.save_state(active.state)
                 self._session_mgr.save_usage(session_id, active.usage_tracker)
+                self._session_mgr.save_llm_request_log(session_id, active.llm_request_log)
                 self._session_mgr.append_events(
                     session_id,
                     [{"role": "assistant", "content": output}],
@@ -766,6 +795,7 @@ class SessionEngine:
                 if output.startswith("Unexpected agent output type:"):
                     await self._broadcast(active, "on_error", output)
                 else:
+                    bd = gauge_breakdown_pct_dict(last_record_for_source(active.llm_request_log, "agent"))
                     await self._broadcast(
                         active,
                         "on_done",
@@ -773,7 +803,7 @@ class SessionEngine:
                         TurnUsage(
                             input_tokens=inp_tok,
                             output_tokens=out_tok,
-                            context_tokens=inp_tok + out_tok,
+                            breakdown_pct=TurnUsageBreakdownPct.model_validate(bd) if bd else None,
                         ),
                     )
 
@@ -790,6 +820,7 @@ class SessionEngine:
         except asyncio.CancelledError:
             logger.info(f"Agent turn cancelled for session {session_id}")
             self._session_mgr.save_usage(session_id, active.usage_tracker)
+            self._session_mgr.save_llm_request_log(session_id, active.llm_request_log)
             self._save_user_message_on_failure(session_id, user_input)
             await self._broadcast(active, "on_cancelled")
         except Exception:
@@ -1005,12 +1036,13 @@ class SessionEngine:
         """Build a callback for SandboxManager.request_domain_approval."""
 
         async def _eval(domain: str, command: str) -> bool:
-            return await security_mod.evaluate_domain_with(
-                security,
-                sentinel,
-                domain,
-                command,
-                usage_tracker=active.usage_tracker,
-            )
+            with self.llm_request_recording(active):
+                return await security_mod.evaluate_domain_with(
+                    security,
+                    sentinel,
+                    domain,
+                    command,
+                    usage_tracker=active.usage_tracker,
+                )
 
         return _eval

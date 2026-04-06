@@ -201,13 +201,30 @@ function isMessageData(d: unknown): d is { message?: string; error?: string } {
 interface UsageBucket {
   input_tokens: number;
   output_tokens: number;
-  context_tokens?: number;
   cache_read_tokens: number;
   cache_write_tokens: number;
   input_audio_tokens: number;
   output_audio_tokens: number;
   cache_audio_read_tokens: number;
   requests: number;
+}
+
+/** % of tiktoken mass over the prompt only (sum 100); unrelated to API billing tokens. */
+interface LastLlmBreakdownPct {
+  system: number | null;
+  user: number | null;
+  assistant: number | null;
+  tool_calls: number | null;
+  tool_returns: number | null;
+  other: number | null;
+}
+
+interface LastLlmRequestRow {
+  source: string;
+  input_tokens: number;
+  output_tokens: number;
+  context_size: number;
+  breakdown_pct: LastLlmBreakdownPct;
 }
 
 interface UsagePayload {
@@ -217,6 +234,8 @@ interface UsagePayload {
   total_output: number;
   costs?: Record<string, string>;
   category_costs?: Record<string, string>;
+  last_llm_agent?: LastLlmRequestRow | null;
+  last_llm_sentinel?: LastLlmRequestRow | null;
 }
 
 function isUsageData(d: unknown): d is UsagePayload {
@@ -238,9 +257,13 @@ function fmtCost(val: string): string {
   return n ? `$${n.toFixed(4)}` : "-";
 }
 
-function fmtContextTokens(n: number | undefined): string {
-  const v = n ?? 0;
-  return v > 0 ? fmt(v) : "-";
+function fmtPctCell(v: number | null | undefined): string {
+  if (v === null || v === undefined) return "—";
+  return `${v.toFixed(1)}%`;
+}
+
+function lastRequestRowsShowOtherPct(rows: LastLlmRequestRow[]): boolean {
+  return rows.some((r) => (r.breakdown_pct?.other ?? 0) > 0);
 }
 
 function UsageView({ data }: { data: UsagePayload }) {
@@ -272,7 +295,6 @@ function UsageView({ data }: { data: UsagePayload }) {
     rows: Record<string, UsageBucket>,
     showCost: boolean = false,
     rowCosts: Record<string, string> | undefined = undefined,
-    showContextColumn = false,
   ) {
     const costLookup = rowCosts ?? costs;
     return (
@@ -286,9 +308,6 @@ function UsageView({ data }: { data: UsagePayload }) {
               <th className="pb-1 pr-3 font-medium">Source</th>
               <th className="pb-1 pr-3 font-medium text-right">Input</th>
               <th className="pb-1 pr-3 font-medium text-right">Output</th>
-              {showContextColumn && (
-                <th className="pb-1 pr-3 font-medium text-right">Context</th>
-              )}
               {hasCache && (
                 <th className="pb-1 pr-3 font-medium text-right">Cache Read</th>
               )}
@@ -313,11 +332,6 @@ function UsageView({ data }: { data: UsagePayload }) {
                 <td className="py-1 pr-3 text-xs text-right">
                   {fmt(u.output_tokens)}
                 </td>
-                {showContextColumn && (
-                  <td className="py-1 pr-3 text-xs text-right">
-                    {fmtContextTokens(u.context_tokens)}
-                  </td>
-                )}
                 {hasCache && (
                   <td className="py-1 pr-3 text-xs text-right">
                     {fmt(u.cache_read_tokens)}
@@ -353,16 +367,87 @@ function UsageView({ data }: { data: UsagePayload }) {
         | {fmtCost(totalCost)}
       </span>
     ) : null;
+
+  const lastRequestRows = (
+    [data.last_llm_agent, data.last_llm_sentinel] as const
+  ).filter(
+    (r): r is LastLlmRequestRow =>
+      r != null && typeof r.context_size === "number" && r.context_size > 0,
+  );
+  const showOtherPctCol = lastRequestRowsShowOtherPct(lastRequestRows);
+
   return (
     <div>
-      {Object.keys(data.models).length > 0 &&
-        renderTable("By Model", data.models, true)}
-      {Object.keys(data.categories).length > 0 &&
-        renderTable("By Category", data.categories, true, categoryCosts, true)}
-      <p className="mt-1 text-xs text-muted-foreground">
+      <p className="mb-2 text-xs text-muted-foreground">
         Total: {fmt(total)} tokens ({fmt(data.total_input)} in +{" "}
         {fmt(data.total_output)} out){costStr}
       </p>
+      {Object.keys(data.models).length > 0 &&
+        renderTable("By Model", data.models, true)}
+      {Object.keys(data.categories).length > 0 &&
+        renderTable("By Category", data.categories, true, categoryCosts)}
+      {lastRequestRows.length > 0 ? (
+        <div className="mt-2 text-sm">
+          <p className="mb-1 text-xs font-medium text-muted-foreground">
+            Context
+          </p>
+          <table className="w-full">
+            <thead>
+              <tr className="border-b border-border text-left text-xs text-muted-foreground">
+                <th className="pb-1 pr-2 font-medium">Source</th>
+                <th className="pb-1 pr-2 font-medium text-right">Tokens</th>
+                <th className="pb-1 pr-2 font-medium text-right">System %</th>
+                <th className="pb-1 pr-2 font-medium text-right">User %</th>
+                <th className="pb-1 pr-2 font-medium text-right">
+                  Assistant %
+                </th>
+                <th className="pb-1 pr-2 font-medium text-right">
+                  Tool Calls %
+                </th>
+                <th className="pb-1 pr-2 font-medium text-right">
+                  Tool Outputs %
+                </th>
+                {showOtherPctCol ? (
+                  <th className="pb-1 font-medium text-right">Other %</th>
+                ) : null}
+              </tr>
+            </thead>
+            <tbody>
+              {lastRequestRows.map((r) => (
+                <tr
+                  key={r.source}
+                  className="border-b border-border/50 font-mono text-xs"
+                >
+                  <td className="py-1 pr-2">{r.source}</td>
+                  <td className="py-1 pr-2 text-right tabular-nums">
+                    {fmt(r.context_size)}
+                  </td>
+                  <td className="py-1 pr-2 text-right tabular-nums">
+                    {fmtPctCell(r.breakdown_pct?.system)}
+                  </td>
+                  <td className="py-1 pr-2 text-right tabular-nums">
+                    {fmtPctCell(r.breakdown_pct?.user)}
+                  </td>
+                  <td className="py-1 pr-2 text-right tabular-nums">
+                    {fmtPctCell(r.breakdown_pct?.assistant)}
+                  </td>
+                  <td className="py-1 pr-2 text-right tabular-nums">
+                    {fmtPctCell(r.breakdown_pct?.tool_calls)}
+                  </td>
+                  <td className="py-1 pr-2 text-right tabular-nums">
+                    {fmtPctCell(r.breakdown_pct?.tool_returns)}
+                  </td>
+                  {showOtherPctCol ? (
+                    <td className="py-1 text-right tabular-nums">
+                      {fmtPctCell(r.breakdown_pct?.other)}
+                    </td>
+                  ) : null}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
     </div>
   );
 }

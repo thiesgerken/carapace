@@ -44,6 +44,7 @@ from carapace.config import _resolve_data_dir, _resolve_knowledge_dir, get_confi
 from carapace.credentials import CredentialRegistry, build_credential_registry
 from carapace.git.http import GitHttpHandler
 from carapace.git.store import GitStore
+from carapace.llm_request_log import gauge_breakdown_pct_dict, last_record_for_source
 from carapace.models import Config, SessionState, ToolResult
 from carapace.sandbox.manager import SandboxManager
 from carapace.sandbox.proxy import ProxyServer
@@ -71,6 +72,7 @@ from carapace.ws_models import (
     ToolCallInfo,
     ToolResultInfo,
     TurnUsage,
+    TurnUsageBreakdownPct,
     UserMessage,
     UserMessageNotification,
     parse_client_message,
@@ -674,10 +676,15 @@ async def chat_ws(
 
     # Tell the client whether an agent turn is in progress.
     agent_running = active.agent_task is not None and not active.agent_task.done()
-    tracker = active.usage_tracker
-    agent_cat = tracker.categories.get("agent")
-    ctx = agent_cat.context_tokens if agent_cat else 0
-    usage = TurnUsage(context_tokens=ctx) if ctx else None
+    usage: TurnUsage | None = None
+    rec_agent = last_record_for_source(active.llm_request_log, "agent")
+    if rec_agent:
+        bd = gauge_breakdown_pct_dict(rec_agent)
+        usage = TurnUsage(
+            input_tokens=rec_agent.input_tokens,
+            output_tokens=rec_agent.output_tokens,
+            breakdown_pct=TurnUsageBreakdownPct.model_validate(bd) if bd else None,
+        )
     with contextlib.suppress(Exception):
         await _send(websocket, StatusUpdate(agent_running=agent_running, usage=usage))
 
@@ -908,15 +915,16 @@ async def evaluate_push(req: PushEvalRequest) -> dict[str, str]:
 
     from carapace.security import evaluate_push_with
 
-    allowed = await evaluate_push_with(
-        active.security,
-        active.sentinel,
-        req.ref,
-        req.is_default_branch,
-        req.commits,
-        req.diff,
-        usage_tracker=active.usage_tracker,
-    )
+    with _engine.llm_request_recording(active):
+        allowed = await evaluate_push_with(
+            active.security,
+            active.sentinel,
+            req.ref,
+            req.is_default_branch,
+            req.commits,
+            req.diff,
+            usage_tracker=active.usage_tracker,
+        )
     if allowed:
         return {"verdict": "allow"}
     return {"verdict": "deny", "reason": "Denied by sentinel"}
@@ -1024,15 +1032,16 @@ async def fetch_credential(request: Request, vault_path: str) -> Response:
 
         from carapace.security import evaluate_credential_with
 
-        cred_eval = await evaluate_credential_with(
-            active.security,
-            active.sentinel,
-            vault_path,
-            meta.name,
-            meta.description,
-            f"Sandbox requested credential: {meta.name}",
-            usage_tracker=active.usage_tracker,
-        )
+        with _engine.llm_request_recording(active):
+            cred_eval = await evaluate_credential_with(
+                active.security,
+                active.sentinel,
+                vault_path,
+                meta.name,
+                meta.description,
+                f"Sandbox requested credential: {meta.name}",
+                usage_tracker=active.usage_tracker,
+            )
         if not cred_eval.allowed:
             return Response(status_code=403, content="Credential access denied")
 

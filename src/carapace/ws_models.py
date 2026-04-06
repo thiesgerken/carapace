@@ -137,12 +137,23 @@ class CredentialApprovalRequest(BaseModel):
     explanation: str = ""
 
 
+class TurnUsageBreakdownPct(BaseModel):
+    """Tiktoken prompt-mix percents for the last agent request (sum 100)."""
+
+    system: float
+    user: float
+    assistant: float
+    tool_calls: float
+    tool_returns: float
+    other: float
+
+
 class TurnUsage(BaseModel):
     """Token counts from the last LLM request of a turn."""
 
     input_tokens: int = 0
     output_tokens: int = 0
-    context_tokens: int = 0
+    breakdown_pct: TurnUsageBreakdownPct | None = None
 
 
 class Done(BaseModel):
