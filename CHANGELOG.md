@@ -1,8 +1,25 @@
 # CHANGELOG
 
 
+## v0.59.1 (2026-04-06)
+
+
+### Other
+
+
+- Merge remote-tracking branch 'refs/remotes/origin/main'
+  ([`2b54c69`](https://github.com/thiesgerken/carapace/commit/2b54c69b84a477e5a07e0677cec1a368e1f291f5))
+
 ## v0.59.0 (2026-04-06)
 
+
+### 💄 UI/UX
+
+
+- 💄 style: update body font size in globals.css
+  ([`d19baac`](https://github.com/thiesgerken/carapace/commit/d19baac5165915ab0ee6e6f63d0c65a70316676b))
+
+  Increase font size from 0.85em to 0.9em for improved readability in body styles across the application.
 
 ### ✨ Features
 
