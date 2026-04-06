@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.58.0 (2026-04-06)
+
+
+### ✨ Features
+
+
+- ✨ feat: add LaTeX math rendering in chat markdown.
+  ([`aaff202`](https://github.com/thiesgerken/carapace/commit/aaff20209610dfe2302148939edbfa50eb9ca5c6))
+
+  Enable inline and block formula rendering with remark-math + rehype-katex while preserving Shiki async highlighting, and update response guidance so math is emitted in supported delimiters.
+
+  Made-with: Cursor
+
 ## v0.57.0 (2026-04-06)
 
 
