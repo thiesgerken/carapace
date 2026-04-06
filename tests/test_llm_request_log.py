@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+from pydantic_ai import ModelMessage
 from pydantic_ai.messages import ModelRequest, ModelResponse, SystemPromptPart, TextPart, UserPromptPart
 
 from carapace.usage import (
@@ -14,7 +15,7 @@ from carapace.usage import (
 
 
 def test_input_shape_ratios_single_user_only() -> None:
-    messages = [
+    messages: list[ModelMessage] = [
         ModelRequest(parts=[UserPromptPart("hello world")]),
     ]
     r = input_shape_ratios_from_messages(messages, model_name="gpt-4o")
@@ -23,7 +24,7 @@ def test_input_shape_ratios_single_user_only() -> None:
 
 
 def test_input_shape_ratios_splits_system_and_user() -> None:
-    messages = [
+    messages: list[ModelMessage] = [
         ModelRequest(parts=[SystemPromptPart("sys"), UserPromptPart("hi")]),
     ]
     r = input_shape_ratios_from_messages(messages, model_name="gpt-4o")
@@ -74,7 +75,7 @@ def test_usage_last_request_row_tiktoken_pct_independent_of_api_output() -> None
     bp = row["breakdown_pct"]
     assert bp["system"] == 50.0 and bp["user"] == 50.0
     assert bp["assistant"] == 0.0
-    total_pct = sum(v for v in bp.values() if v is not None)
+    total_pct = sum(v for v in bp.values() if isinstance(v, float))
     assert abs(total_pct - 100.0) < 1e-6
 
 

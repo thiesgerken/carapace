@@ -136,7 +136,7 @@ class GitStore:
             code, out = await self._run("init", "-b", self._LOCAL_BRANCH)
             if code != 0:
                 raise RuntimeError(f"git init failed: {out}")
-            logger.info(f"Initialised knowledge repo at {self.repo_dir}")
+            logger.info(f"initialized knowledge repo at {self.repo_dir}")
 
             # Set default git config for server-side commits
             author_name, author_email = self._parse_author("server")

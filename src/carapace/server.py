@@ -911,7 +911,7 @@ async def evaluate_push(req: PushEvalRequest) -> dict[str, str]:
     except KeyError:
         return {"verdict": "deny", "reason": "Session not found"}
     if active.security is None or active.sentinel is None:
-        return {"verdict": "deny", "reason": "Session not initialised"}
+        return {"verdict": "deny", "reason": "Session not initialized"}
 
     from carapace.security import evaluate_push_with
 
@@ -991,7 +991,7 @@ async def list_credentials(request: Request, q: str = "") -> list[dict[str, str]
 
     active = _engine.get_or_activate(session_id)
     if active.security is None:
-        raise HTTPException(status_code=403, detail="Session not initialised")
+        raise HTTPException(status_code=403, detail="Session not initialized")
 
     items = await _credential_registry.list(q)
     paths = [i.vault_path for i in items]
@@ -1028,7 +1028,7 @@ async def fetch_credential(request: Request, vault_path: str) -> Response:
 
     if not already_approved:
         if active.security is None or active.sentinel is None:
-            return Response(status_code=403, content="Session not initialised")
+            return Response(status_code=403, content="Session not initialized")
 
         from carapace.security import evaluate_credential_with
 
