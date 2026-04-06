@@ -118,6 +118,22 @@ function buildShellTranscript(command: string, output?: string): string {
   return `${fence}shell\n${payload}\n${fence}`;
 }
 
+function getUseSkillName(args: Record<string, unknown>): string {
+  const raw = args.skill_name;
+  if (typeof raw === "string" && raw.trim().length > 0) return raw;
+  return "(missing skill_name)";
+}
+
+function formatUseSkillResult(result: string): string {
+  const normalized = result.replace(/\n+$/, "");
+  // Render YAML front matter as fenced YAML for readable syntax highlighting.
+  return normalized.replace(
+    /(^|\n)---\n([\s\S]*?)\n---(?=\n|$)/,
+    (_m, prefix: string, yamlBody: string) =>
+      `${prefix}\`\`\`yaml\n${yamlBody.trim()}\n\`\`\``,
+  );
+}
+
 function ApprovalBadge({
   source,
   verdict,
@@ -179,10 +195,14 @@ export function ToolCallBadge({
   const argsSummary = formatArgsSummary(tool, args);
   const isError = exitCode != null && exitCode !== 0;
   const isExecTool = tool === "exec";
+  const isUseSkillTool = tool === "use_skill";
   const execCommand = isExecTool ? getExecCommand(args) : "";
   const execTranscript = isExecTool
     ? buildShellTranscript(execCommand, result)
     : "";
+  const useSkillName = isUseSkillTool ? getUseSkillName(args) : "";
+  const useSkillResult =
+    isUseSkillTool && result != null ? formatUseSkillResult(result) : "";
 
   return (
     <div className="my-1 w-full min-w-0">
@@ -233,6 +253,29 @@ export function ToolCallBadge({
             <div className={cn("exec-terminal-block")}>
               <MarkdownContent content={execTranscript} />
             </div>
+          ) : isUseSkillTool ? (
+            <>
+              <div className="text-muted-foreground">
+                Agent wants to activate the{" "}
+                <span className="font-mono text-foreground/85">
+                  {useSkillName}
+                </span>{" "}
+                skill.
+              </div>
+
+              {result != null && (
+                <div
+                  className={cn(
+                    "rounded-md border overflow-hidden",
+                    isError
+                      ? "border-destructive/30 bg-destructive/5"
+                      : "border-border/40",
+                  )}
+                >
+                  <MarkdownContent content={useSkillResult} />
+                </div>
+              )}
+            </>
           ) : (
             <>
               <details open>
