@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.64.1 (2026-04-06)
+
+
+### 💄 UI/UX
+
+
+- 💄 ui(frontend): split read tool metadata and code into separate cards
+  ([`caa6c14`](https://github.com/thiesgerken/carapace/commit/caa6c148001bcfa48975d1b420a0c1527d99d734))
+
+  Avoid nested borders on the code block; style error state on header and shell only.
+
+  Made-with: Cursor
+
 ## v0.64.0 (2026-04-06)
 
 
