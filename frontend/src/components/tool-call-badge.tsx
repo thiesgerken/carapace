@@ -126,6 +126,34 @@ function formatReadSummary(args: Record<string, unknown>): string {
   return `lines ${start} to ${end} of ${path}`;
 }
 
+function countOutputLines(body: string): number {
+  const normalized = body.replace(/\n+$/, "");
+  if (normalized.length === 0) return 0;
+  return normalized.split("\n").length;
+}
+
+function formatReadSummaryFromSplit(
+  args: Record<string, unknown>,
+  path: string,
+  split: ReturnType<typeof splitReadToolResult> | null,
+): string {
+  const fallback = formatReadSummary(args);
+  if (!split?.hasSplit) return fallback;
+  const offset = Math.max(0, intArg(args, "offset") ?? 0);
+  const limit = Math.max(1, intArg(args, "limit") ?? 100);
+  const bodyLines = countOutputLines(split.body);
+
+  if (offset === 0 && bodyLines < limit) return path;
+  if (offset === 0) return `first ${bodyLines || limit} lines of ${path}`;
+
+  if (bodyLines > 0) {
+    const start = offset + 1;
+    const end = offset + bodyLines;
+    return `lines ${start} to ${end} of ${path}`;
+  }
+  return fallback;
+}
+
 function formatWriteSummary(args: Record<string, unknown>): string {
   const path = stringArg(args, "path") || "(missing path)";
   const contentLines = lineCount(stringArg(args, "content"));
@@ -149,7 +177,6 @@ function formatArgsSummary(
   tool: string,
   args: Record<string, unknown>,
 ): string {
-  if (tool === "read") return formatReadSummary(args);
   if (tool === "write") return formatWriteSummary(args);
   if (tool === "str_replace") return formatStrReplaceSummary(args);
 
@@ -259,7 +286,6 @@ export function ToolCallBadge({
 }: ToolCallBadgeProps) {
   const [open, setOpen] = useState(false);
   const { source, verdict, explanation } = parseDetail(detail);
-  const argsSummary = formatArgsSummary(tool, args);
   const isError = exitCode != null && exitCode !== 0;
   const isExecTool = tool === "exec";
   const isUseSkillTool = tool === "use_skill";
@@ -298,6 +324,9 @@ export function ToolCallBadge({
     ? boolArg(args, "replace_all")
     : undefined;
   const toolLabel = isStrReplaceTool ? "replace" : tool;
+  const argsSummary = isReadTool
+    ? formatReadSummaryFromSplit(args, readPath || "(missing path)", readSplit)
+    : formatArgsSummary(tool, args);
   const writeLang = isWriteTool ? languageFromFilePath(writePath) : "text";
   const writeContentMarkdown = isWriteTool
     ? fencedCodeBlock(writeLang, writeContent)
