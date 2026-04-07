@@ -1049,8 +1049,20 @@ class SessionEngine:
 
     def _make_domain_info_cb(self, active: ActiveSession) -> Callable[[str, str], None]:
         """Build a callback that broadcasts domain access decisions to subscribers."""
+        session_id = active.state.session_id
 
         def _notify(domain: str, detail: str) -> None:
+            self._session_mgr.append_events(
+                session_id,
+                [
+                    {
+                        "role": "tool_call",
+                        "tool": "proxy_domain",
+                        "args": {"domain": domain},
+                        "detail": detail,
+                    }
+                ],
+            )
             task = asyncio.ensure_future(self._broadcast(active, "on_domain_info", domain, detail))
             active._pending_sends.add(task)
             task.add_done_callback(active._pending_sends.discard)
@@ -1075,8 +1087,20 @@ class SessionEngine:
 
     def _make_credential_info_cb(self, active: ActiveSession) -> Callable[[str, str], None]:
         """Build a callback that broadcasts credential access decisions to subscribers."""
+        session_id = active.state.session_id
 
         def _notify(vault_path: str, detail: str) -> None:
+            self._session_mgr.append_events(
+                session_id,
+                [
+                    {
+                        "role": "tool_call",
+                        "tool": "credential_access",
+                        "args": {"vault_path": vault_path},
+                        "detail": detail,
+                    }
+                ],
+            )
             task = asyncio.ensure_future(self._broadcast(active, "on_credential_info", vault_path, detail))
             active._pending_sends.add(task)
             task.add_done_callback(active._pending_sends.discard)
