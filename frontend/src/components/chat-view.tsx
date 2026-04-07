@@ -234,17 +234,17 @@ export function ChatView({
   }, [server, token]);
 
   // Clear the loading spinner on any tool_call messages still pending
-  function clearToolLoading() {
+  const clearToolLoading = useCallback(() => {
     setMessages((prev) => {
       if (!prev.some((m) => m.kind === "tool_call" && m.loading)) return prev;
       return prev.map((m) =>
         m.kind === "tool_call" && m.loading ? { ...m, loading: false } : m,
       );
     });
-  }
+  }, []);
 
   // Flush a queued message if present, otherwise mark as not-waiting
-  function finishWaiting() {
+  const finishWaiting = useCallback(() => {
     clearToolLoading();
     const queued = queueRef.current;
     if (queued) {
@@ -255,7 +255,7 @@ export function ChatView({
     } else {
       setWaiting(false);
     }
-  }
+  }, [clearToolLoading]);
 
   const onMessage = useCallback(
     (msg: ServerMessage) => {
@@ -399,7 +399,7 @@ export function ChatView({
           break;
       }
     },
-    [onTitleUpdate],
+    [finishWaiting, onTitleUpdate],
   );
 
   const onWsDisconnect = useCallback(() => {
@@ -407,7 +407,7 @@ export function ChatView({
     setQueuedMessage(null);
     clearToolLoading();
     setWaiting(false);
-  }, []);
+  }, [clearToolLoading]);
   const url = wsUrl(server, sessionId, token);
   const { status, send } = useWebSocket(url, onMessage, onWsDisconnect);
   useEffect(() => {

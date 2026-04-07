@@ -250,7 +250,7 @@ function ApprovalBadge({
 export function ToolCallBadge({
   tool,
   args,
-  detail,
+  detail: _detail,
   approvalSource,
   approvalVerdict,
   approvalExplanation,
@@ -259,6 +259,7 @@ export function ToolCallBadge({
   loading,
 }: ToolCallBadgeProps) {
   const [open, setOpen] = useState(false);
+  void _detail;
   const source = approvalSource;
   const verdict = approvalVerdict ?? "allow";
   const explanation = approvalExplanation ?? "";
@@ -287,7 +288,6 @@ export function ToolCallBadge({
     isUseSkillTool && result != null ? formatUseSkillResult(result) : "";
   const writePath = isWriteTool ? stringArg(args, "path") : "";
   const writeContent = isWriteTool ? stringArg(args, "content") : "";
-  const writeChars = writeContent.length;
   const strReplacePath = isStrReplaceTool ? stringArg(args, "path") : "";
   const strReplaceSource = isStrReplaceTool
     ? stringArg(args, "old_string")
@@ -295,13 +295,6 @@ export function ToolCallBadge({
   const strReplaceReplacement = isStrReplaceTool
     ? stringArg(args, "new_string")
     : "";
-  const strReplaceSrcChars = isStrReplaceTool ? strReplaceSource.length : 0;
-  const strReplaceDstChars = isStrReplaceTool
-    ? strReplaceReplacement.length
-    : 0;
-  const strReplaceAll = isStrReplaceTool
-    ? boolArg(args, "replace_all")
-    : undefined;
   const credentialAccessPath = isCredentialAccessTool
     ? stringArg(args, "vault_path")
     : "";

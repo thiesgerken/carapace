@@ -77,7 +77,9 @@ function wrapPlainFenceWithLineNumbers(children: ReactNode): ReactNode {
     </span>
   ));
 
-  const { children: _c, node: _nodeCode, ...restProps } = p;
+  const restProps = { ...p };
+  delete (restProps as { children?: ReactNode }).children;
+  delete (restProps as { node?: unknown }).node;
   const prevCls = p.className;
   const className = [prevCls, "md-plain-fence-code"].filter(Boolean).join(" ");
 
@@ -89,13 +91,11 @@ function wrapPlainFenceWithLineNumbers(children: ReactNode): ReactNode {
   });
 }
 
-export function MarkdownPre({
-  children,
-  node: _node,
-  ...props
-}: MarkdownPreProps) {
+export function MarkdownPre({ children, ...props }: MarkdownPreProps) {
   const preRef = useRef<HTMLPreElement>(null);
-  const record = props as Record<string, unknown>;
+  const preProps = { ...props };
+  delete (preProps as { node?: unknown }).node;
+  const record = preProps as Record<string, unknown>;
   const lang = readDataLanguage(record) ?? languageFromFenceCode(children);
 
   const [copied, setCopied] = useState(false);
@@ -139,7 +139,7 @@ export function MarkdownPre({
           )}
         </button>
       </div>
-      <pre ref={preRef} {...props}>
+      <pre ref={preRef} {...preProps}>
         {wrapPlainFenceWithLineNumbers(children)}
       </pre>
     </div>
