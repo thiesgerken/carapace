@@ -1,11 +1,27 @@
 # CHANGELOG
 
 
+## v0.68.4 (2026-04-07)
+
+
+### Other
+
+
+- Merge remote-tracking branch 'refs/remotes/origin/main'
+  ([`8ea5f66`](https://github.com/thiesgerken/carapace/commit/8ea5f66243d792183461aee044ac33743676ad8e))
+
 ## v0.68.3 (2026-04-07)
 
 
 ### 🐛 Bug Fixes
 
+
+- 🐛 fix(agent): align done usage with last LLM request
+  ([`9297e33`](https://github.com/thiesgerken/carapace/commit/9297e3359475067da1572d4a3da5186cd9059e51))
+
+  Use the last agent request record for done usage tokens so the UI matches the breakdown source, and remove the now-unused token tuple returned by run_agent_turn.
+
+  Made-with: Cursor
 
 - 🐛 fix(frontend): improve date formatting in sidebar component
   ([`6c2412a`](https://github.com/thiesgerken/carapace/commit/6c2412affc3a404b3a3daa3672b89875796577c0))
