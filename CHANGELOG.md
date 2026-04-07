@@ -1,8 +1,27 @@
 # CHANGELOG
 
 
+## v0.68.6 (2026-04-07)
+
+
+### Other
+
+
+- Merge remote-tracking branch 'refs/remotes/origin/main'
+  ([`4843128`](https://github.com/thiesgerken/carapace/commit/48431280a64283ae56786a1082467176d53e87f8))
+
 ## v0.68.5 (2026-04-07)
 
+
+### 💄 UI/UX
+
+
+- 💄 polish(frontend): improve tool call phrasing and reload state
+  ([`a6e2cf1`](https://github.com/thiesgerken/carapace/commit/a6e2cf170aaf21c7f6399d3e03378192c3fb5ca3))
+
+  Refine tool-call one-liners with clearer action wording/tenses and preserve auxiliary styling, and make history hydration match interleaved tool results so completed calls render correctly after reload.
+
+  Made-with: Cursor
 
 ### 🐛 Bug Fixes
 
