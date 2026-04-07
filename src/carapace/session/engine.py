@@ -827,7 +827,7 @@ class SessionEngine:
 
                 async with self._llm_semaphore:
                     with self.llm_request_recording(active):
-                        messages, output, (inp_tok, out_tok) = await run_agent_turn(
+                        messages, output = await run_agent_turn(
                             user_input,
                             deps,
                             message_history,
@@ -848,14 +848,15 @@ class SessionEngine:
                 if output.startswith("Unexpected agent output type:"):
                     await self._broadcast(active, "on_error", output)
                 else:
-                    bd = gauge_breakdown_pct_dict(last_record_for_source(active.llm_request_log, "agent"))
+                    rec_agent = last_record_for_source(active.llm_request_log, "agent")
+                    bd = gauge_breakdown_pct_dict(rec_agent)
                     await self._broadcast(
                         active,
                         "on_done",
                         output,
                         TurnUsage(
-                            input_tokens=inp_tok,
-                            output_tokens=out_tok,
+                            input_tokens=rec_agent.input_tokens if rec_agent else 0,
+                            output_tokens=rec_agent.output_tokens if rec_agent else 0,
                             breakdown_pct=TurnUsageBreakdownPct.model_validate(bd) if bd else None,
                             model=self.agent_model_id_for_gauge(active),
                             context_cap_tokens=self.agent_context_cap_for_gauge(active),
