@@ -100,15 +100,36 @@ function boolArg(
   return typeof v === "boolean" ? v : undefined;
 }
 
+function intArg(
+  args: Record<string, unknown>,
+  key: string,
+): number | undefined {
+  const v = args[key];
+  if (typeof v === "number" && Number.isFinite(v)) return Math.trunc(v);
+  return undefined;
+}
+
 function lineCount(text: string): number {
   if (text.length === 0) return 0;
   return text.split("\n").length;
 }
 
+function formatReadSummary(args: Record<string, unknown>): string {
+  const path = stringArg(args, "path") || "(missing path)";
+  const offset = Math.max(0, intArg(args, "offset") ?? 0);
+  const limit = Math.max(1, intArg(args, "limit") ?? 100);
+  if (offset === 0) {
+    return `first ${limit} lines of ${path}`;
+  }
+  const start = offset + 1;
+  const end = offset + limit;
+  return `lines ${start} to ${end} of ${path}`;
+}
+
 function formatWriteSummary(args: Record<string, unknown>): string {
   const path = stringArg(args, "path") || "(missing path)";
   const contentLines = lineCount(stringArg(args, "content"));
-  return `${path}, ${contentLines} lines`;
+  return `${contentLines} lines to ${path}`;
 }
 
 function formatStrReplaceSummary(args: Record<string, unknown>): string {
@@ -116,18 +137,19 @@ function formatStrReplaceSummary(args: Record<string, unknown>): string {
   const srcLines = lineCount(stringArg(args, "old_string"));
   const dstLines = lineCount(stringArg(args, "new_string"));
   const replaceAll = boolArg(args, "replace_all");
-  const replaceAllLabel = replaceAll ? ", replace_all=true" : "";
   const lineSummary =
     srcLines === dstLines
       ? `${srcLines} lines`
       : `${srcLines} lines with ${dstLines} lines`;
-  return `${path}, ${lineSummary}${replaceAllLabel}`;
+  const suffix = replaceAll ? " (all matches)" : "";
+  return `${lineSummary} in ${path}${suffix}`;
 }
 
 function formatArgsSummary(
   tool: string,
   args: Record<string, unknown>,
 ): string {
+  if (tool === "read") return formatReadSummary(args);
   if (tool === "write") return formatWriteSummary(args);
   if (tool === "str_replace") return formatStrReplaceSummary(args);
 
@@ -275,6 +297,7 @@ export function ToolCallBadge({
   const strReplaceAll = isStrReplaceTool
     ? boolArg(args, "replace_all")
     : undefined;
+  const toolLabel = isStrReplaceTool ? "replace" : tool;
   const writeLang = isWriteTool ? languageFromFilePath(writePath) : "text";
   const writeContentMarkdown = isWriteTool
     ? fencedCodeBlock(writeLang, writeContent)
@@ -307,7 +330,7 @@ export function ToolCallBadge({
           )}
         />
         <span className="shrink-0 font-mono font-medium text-foreground/80">
-          {tool}
+          {toolLabel}
         </span>
         {argsSummary ? (
           <span
