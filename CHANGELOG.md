@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.68.5 (2026-04-07)
+
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix(session): persist proxy and credential info tool calls
+  ([`117058b`](https://github.com/thiesgerken/carapace/commit/117058b519e4d10edda39eae51c27b2a68eae4ce))
+
+  Store `proxy_domain` and `credential_access` info callbacks as tool_call events so they survive session history reloads instead of only appearing in live websocket updates.
+
+  Made-with: Cursor
+
 ## v0.68.4 (2026-04-07)
 
 
