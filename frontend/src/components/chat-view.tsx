@@ -66,26 +66,39 @@ export function ChatView({
       .then((history) => {
         if (cancelled) return;
         const msgs: ChatMessage[] = [];
+        const pendingToolCallIndices = new Map<string, number[]>();
         const approvals = new Map<string, boolean>();
         for (let i = 0; i < history.length; i++) {
           const h = history[i];
           if (h.role === "user") {
             msgs.push({ kind: "user", content: h.content });
           } else if (h.role === "tool_call") {
-            // Look ahead for a matching tool_result
-            const next = history[i + 1];
-            const hasResult =
-              next?.role === "tool_result" && next.tool === h.tool;
             msgs.push({
               kind: "tool_call",
               tool: h.tool ?? "",
               args: h.args ?? {},
               detail: h.detail ?? "",
-              result: hasResult ? next.result : undefined,
-              exitCode: hasResult ? next.exit_code : undefined,
             });
+            const toolName = h.tool ?? "";
+            const idx = msgs.length - 1;
+            const queue = pendingToolCallIndices.get(toolName) ?? [];
+            queue.push(idx);
+            pendingToolCallIndices.set(toolName, queue);
           } else if (h.role === "tool_result") {
-            // Skip — already consumed by the tool_call above
+            const toolName = h.tool ?? "";
+            const queue = pendingToolCallIndices.get(toolName);
+            const idx = queue?.shift();
+            if (idx != null && msgs[idx]?.kind === "tool_call") {
+              const toolCall = msgs[idx];
+              msgs[idx] = {
+                ...toolCall,
+                result: h.result,
+                exitCode: h.exit_code,
+              };
+            }
+            if (queue && queue.length === 0) {
+              pendingToolCallIndices.delete(toolName);
+            }
           } else if (h.role === "approval_response") {
             // Skip — consumed by the approval_request above
           } else if (h.role === "approval_request" && h.tool_call_id) {

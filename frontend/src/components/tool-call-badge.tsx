@@ -52,6 +52,16 @@ function parseDetail(detail: string): {
     return { source: "sentinel", verdict, explanation, summary: explanation };
   }
 
+  // Post-approval sandbox info lines are still part of the security flow.
+  if (detail.startsWith("[sandbox:")) {
+    return {
+      source: "sentinel",
+      verdict: "allow",
+      explanation: detail,
+      summary: detail,
+    };
+  }
+
   if (
     detail.includes("user approved") ||
     detail.includes("escalate → allowed")
@@ -173,12 +183,24 @@ function formatStrReplaceSummary(args: Record<string, unknown>): string {
   return `${lineSummary} in ${path}${suffix}`;
 }
 
+function formatCredentialAccessSummary(args: Record<string, unknown>): string {
+  const vaultPath = stringArg(args, "vault_path");
+  if (!vaultPath || vaultPath === "<list>") return "";
+  return vaultPath;
+}
+
+function formatProxyDomainSummary(args: Record<string, unknown>): string {
+  return stringArg(args, "domain");
+}
+
 function formatArgsSummary(
   tool: string,
   args: Record<string, unknown>,
 ): string {
   if (tool === "write") return formatWriteSummary(args);
   if (tool === "str_replace") return formatStrReplaceSummary(args);
+  if (tool === "credential_access") return formatCredentialAccessSummary(args);
+  if (tool === "proxy_domain") return formatProxyDomainSummary(args);
 
   const omit = OMIT_ARG_LABEL[tool];
   const parts: string[] = [];
@@ -292,6 +314,9 @@ export function ToolCallBadge({
   const isReadTool = tool === "read";
   const isWriteTool = tool === "write";
   const isStrReplaceTool = tool === "str_replace";
+  const isCredentialAccessTool = tool === "credential_access";
+  const isProxyDomainTool = tool === "proxy_domain";
+  const isAuxiliaryTool = isCredentialAccessTool || isProxyDomainTool;
   const readPath = isReadTool && typeof args.path === "string" ? args.path : "";
   const readSplit =
     isReadTool && result != null ? splitReadToolResult(result) : null;
@@ -323,7 +348,44 @@ export function ToolCallBadge({
   const strReplaceAll = isStrReplaceTool
     ? boolArg(args, "replace_all")
     : undefined;
-  const toolLabel = isStrReplaceTool ? "replace" : tool;
+  const credentialAccessPath = isCredentialAccessTool
+    ? stringArg(args, "vault_path")
+    : "";
+  const isCredentialList =
+    isCredentialAccessTool &&
+    (credentialAccessPath.length === 0 || credentialAccessPath === "<list>");
+  const isCompleted =
+    !loading && (result != null || exitCode != null || isAuxiliaryTool);
+  const isSuccessful = isCompleted && !isError;
+  const toolLabel = isSuccessful
+    ? isWriteTool
+      ? "wrote"
+      : isStrReplaceTool
+        ? "replaced"
+        : isUseSkillTool
+          ? "activated skill"
+          : isExecTool
+            ? "executed"
+            : isCredentialAccessTool
+              ? isCredentialList
+                ? "listed credentials"
+                : "accessed credential"
+              : isProxyDomainTool
+                ? "accessed domain"
+                : tool
+    : isUseSkillTool
+      ? "activate skill"
+      : isExecTool
+        ? "execute"
+        : isCredentialAccessTool
+          ? isCredentialList
+            ? "list credentials"
+            : "access credential"
+          : isProxyDomainTool
+            ? "access domain"
+            : isStrReplaceTool
+              ? "replace"
+              : tool;
   const argsSummary = isReadTool
     ? formatReadSummaryFromSplit(args, readPath || "(missing path)", readSplit)
     : formatArgsSummary(tool, args);
@@ -350,6 +412,7 @@ export function ToolCallBadge({
           "flex w-full min-w-0 items-center gap-1.5 rounded-md px-2 py-1 text-xs text-left",
           "bg-muted/60 text-muted-foreground",
           "hover:bg-accent transition-colors",
+          isAuxiliaryTool && "ml-4 w-[calc(100%-1rem)] bg-muted/40",
         )}
       >
         <ChevronRight
