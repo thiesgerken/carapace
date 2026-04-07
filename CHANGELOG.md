@@ -1,6 +1,23 @@
 # CHANGELOG
 
 
+## v0.69.2 (2026-04-07)
+
+
+### Other
+
+
+- docs: adjust roadmap
+  ([`6b59c36`](https://github.com/thiesgerken/carapace/commit/6b59c36cadf7f957e4cbbac0d6c14f5cb6d77919))
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix: blank line before Matrix /usage context table for HTML render
+  ([`476a996`](https://github.com/thiesgerken/carapace/commit/476a996e9519f23df64935051bbb081c317df233))
+
+  Made-with: Cursor
+
 ## v0.69.1 (2026-04-07)
 
 
