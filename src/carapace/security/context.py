@@ -221,7 +221,7 @@ class SessionSecurity:
     ) -> None:
         """Set callback to notify the UI about domain access decisions.
 
-        Signature: ``callback(domain, detail)``.
+        Signature: ``callback(domain, detail, approval_source, approval_verdict, approval_explanation)``.
         """
         self._domain_info_callback = callback
 
@@ -244,7 +244,7 @@ class SessionSecurity:
     ) -> None:
         """Set callback to notify the UI about push evaluation decisions.
 
-        Signature: ``callback(ref, decision, detail)``.
+        Signature: ``callback(ref, decision, detail, approval_source, approval_verdict, approval_explanation)``.
         """
         self._push_info_callback = callback
 
@@ -268,7 +268,7 @@ class SessionSecurity:
     ) -> None:
         """Set callback to notify the UI about credential access decisions.
 
-        Signature: ``callback(vault_path, detail)``.
+        Signature: ``callback(vault_path, detail, approval_source, approval_verdict, approval_explanation)``.
         """
         self._credential_info_callback = callback
 

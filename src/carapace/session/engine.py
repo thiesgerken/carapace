@@ -25,6 +25,7 @@ from carapace.models import (
     Deps,
     SessionState,
     SkillInfo,
+    ToolCallCallback,
     ToolResult,
 )
 from carapace.sandbox.manager import SandboxManager
@@ -446,7 +447,7 @@ class SessionEngine:
         self,
         active: ActiveSession,
         *,
-        tool_call_callback: Callable[..., None] | None = None,
+        tool_call_callback: ToolCallCallback | None = None,
         tool_result_callback: Callable[[ToolResult], None] | None = None,
     ) -> Deps:
         assert active.security is not None and active.sentinel is not None

@@ -277,11 +277,12 @@ export function ChatView({
         case "tool_call": {
           const isGitPush = msg.tool === "git_push";
           if (!isGitPush) setWaiting(true); // agent is active (may restore after reconnect)
+          const verdict = msg.approval_verdict;
           const isLoading =
             msg.tool !== "proxy_domain" &&
             !isGitPush &&
-            !msg.detail.includes("deny]") &&
-            !msg.detail.includes("escalate]");
+            verdict !== "deny" &&
+            verdict !== "escalate";
           setMessages((prev) => [
             ...prev,
             {
