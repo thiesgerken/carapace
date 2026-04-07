@@ -180,7 +180,7 @@ def format_command_result_text(result: CommandResult) -> str:
                         "| Source | Tokens | sys% | usr% | asst% | tool calls % | tool outputs % |\n"
                         "|---|---:|---:|---:|---:|---:|---:|"
                     )
-                lines = ["**Context**", hdr]
+                lines = ["**Context**\n", hdr]
                 for src, row in last_rows:
                     b = row.get("breakdown_pct") if isinstance(row.get("breakdown_pct"), dict) else {}
                     core = (

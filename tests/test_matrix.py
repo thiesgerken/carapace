@@ -430,6 +430,34 @@ def test_format_command_result_security():
     assert "5" in text
 
 
+def test_format_command_result_usage_context_table_preceded_by_blank_line():
+    """Matrix HTML uses python-markdown; tables need a blank line after the heading."""
+    result = CommandResult(
+        command="usage",
+        data={
+            "models": {"m": {"input_tokens": 1, "output_tokens": 0, "requests": 1}},
+            "categories": {},
+            "costs": {"total": "0", "m": "0"},
+            "category_costs": {},
+            "total_input": 1,
+            "total_output": 0,
+            "last_llm_agent": {
+                "context_size": 100,
+                "breakdown_pct": {
+                    "system": 50.0,
+                    "user": 10.0,
+                    "assistant": 0.0,
+                    "tool_calls": 20.0,
+                    "tool_returns": 20.0,
+                },
+            },
+        },
+    )
+    text = _format_command_result_text(result)
+    assert "**Context**\n\n| Source |" in text
+    assert "<table" in _md_to_html(text)
+
+
 # ---------------------------------------------------------------------------
 # Unit tests — /yes and /no aliases
 # ---------------------------------------------------------------------------
