@@ -282,7 +282,8 @@ export function ChatView({
             msg.tool !== "proxy_domain" &&
             !isGitPush &&
             verdict !== "deny" &&
-            verdict !== "escalate";
+            verdict !== "escalate" &&
+            verdict !== undefined;
           setMessages((prev) => [
             ...prev,
             {

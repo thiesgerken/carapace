@@ -31,6 +31,54 @@ interface ToolCallBadgeProps {
 type ApprovalSource = "safe-list" | "sentinel" | "user" | "unknown";
 type ApprovalVerdict = "allow" | "deny" | "escalate";
 
+function parseDetail(detail: string): {
+  source: ApprovalSource;
+  verdict: ApprovalVerdict;
+  explanation: string;
+} {
+  if (detail.startsWith("[safe-list]")) {
+    return {
+      source: "safe-list",
+      verdict: "allow",
+      explanation: "",
+    };
+  }
+
+  const match = detail.match(
+    /^\[sentinel:\s*(allow|deny|escalate)]\s*([\s\S]*)/,
+  );
+  if (match) {
+    const verdict = match[1] as ApprovalVerdict;
+    const explanation = match[2] ?? "";
+    return { source: "sentinel", verdict, explanation };
+  }
+
+  if (detail.startsWith("[sandbox:")) {
+    return {
+      source: "sentinel",
+      verdict: "allow",
+      explanation: detail,
+    };
+  }
+
+  if (
+    detail.includes("user approved") ||
+    detail.includes("escalate → allowed")
+  ) {
+    return {
+      source: "user",
+      verdict: "allow",
+      explanation: detail,
+    };
+  }
+
+  return {
+    source: "unknown",
+    verdict: "allow",
+    explanation: detail,
+  };
+}
+
 const SHORT_KEYS: Record<string, string> = {
   command: "cmd",
   filename: "file",
@@ -250,7 +298,7 @@ function ApprovalBadge({
 export function ToolCallBadge({
   tool,
   args,
-  detail: _detail,
+  detail,
   approvalSource,
   approvalVerdict,
   approvalExplanation,
@@ -259,10 +307,14 @@ export function ToolCallBadge({
   loading,
 }: ToolCallBadgeProps) {
   const [open, setOpen] = useState(false);
-  void _detail;
-  const source = approvalSource;
-  const verdict = approvalVerdict ?? "allow";
-  const explanation = source === "sentinel" ? (approvalExplanation ?? "") : "";
+  const fallback =
+    approvalSource === undefined ? parseDetail(detail) : undefined;
+  const source = approvalSource ?? fallback?.source;
+  const verdict = approvalVerdict ?? fallback?.verdict ?? "allow";
+  const explanation =
+    source === "sentinel"
+      ? approvalExplanation ?? fallback?.explanation ?? ""
+      : "";
   const isError = exitCode != null && exitCode !== 0;
   const isExecTool = tool === "exec";
   const isUseSkillTool = tool === "use_skill";
