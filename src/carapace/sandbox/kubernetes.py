@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import shlex
 import socket
 from dataclasses import dataclass
 from pathlib import Path
@@ -544,12 +545,11 @@ class KubernetesRuntime(ContainerRuntime):
         workdir: str | None = None,
     ) -> ExecResult:
         shell_cmd = command if isinstance(command, str) else " ".join(command)
-
         if workdir:
-            shell_cmd = f"cd {workdir} && {shell_cmd}"
+            shell_cmd = f"cd {shlex.quote(workdir)} && {shell_cmd}"
         if env:
-            env_prefix = " ".join(f"{k}={v}" for k, v in env.items())
-            shell_cmd = f"env {env_prefix} {shell_cmd}"
+            env_prefix = " ".join(f"{shlex.quote(k)}={shlex.quote(v)}" for k, v in env.items())
+            shell_cmd = f"env {env_prefix} bash -lc {shlex.quote(shell_cmd)}"
 
         exec_command = ["bash", "-c", shell_cmd]
         logger.debug(f"Exec in pod {container_id}: {shell_cmd} (timeout={timeout}s)")
