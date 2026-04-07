@@ -87,10 +87,50 @@ const OMIT_ARG_LABEL: Record<string, ReadonlySet<string>> = {
 
 const MAX_SUMMARY_VALUE_CHARS = 4096;
 
+function stringArg(args: Record<string, unknown>, key: string): string {
+  const v = args[key];
+  return typeof v === "string" ? v : "";
+}
+
+function boolArg(
+  args: Record<string, unknown>,
+  key: string,
+): boolean | undefined {
+  const v = args[key];
+  return typeof v === "boolean" ? v : undefined;
+}
+
+function lineCount(text: string): number {
+  if (text.length === 0) return 0;
+  return text.split("\n").length;
+}
+
+function formatWriteSummary(args: Record<string, unknown>): string {
+  const path = stringArg(args, "path") || "(missing path)";
+  const contentLines = lineCount(stringArg(args, "content"));
+  return `${path}, ${contentLines} lines`;
+}
+
+function formatStrReplaceSummary(args: Record<string, unknown>): string {
+  const path = stringArg(args, "path") || "(missing path)";
+  const srcLines = lineCount(stringArg(args, "old_string"));
+  const dstLines = lineCount(stringArg(args, "new_string"));
+  const replaceAll = boolArg(args, "replace_all");
+  const replaceAllLabel = replaceAll ? ", replace_all=true" : "";
+  const lineSummary =
+    srcLines === dstLines
+      ? `${srcLines} lines`
+      : `${srcLines} lines with ${dstLines} lines`;
+  return `${path}, ${lineSummary}${replaceAllLabel}`;
+}
+
 function formatArgsSummary(
   tool: string,
   args: Record<string, unknown>,
 ): string {
+  if (tool === "write") return formatWriteSummary(args);
+  if (tool === "str_replace") return formatStrReplaceSummary(args);
+
   const omit = OMIT_ARG_LABEL[tool];
   const parts: string[] = [];
   for (const [k, v] of Object.entries(args)) {
@@ -202,6 +242,8 @@ export function ToolCallBadge({
   const isExecTool = tool === "exec";
   const isUseSkillTool = tool === "use_skill";
   const isReadTool = tool === "read";
+  const isWriteTool = tool === "write";
+  const isStrReplaceTool = tool === "str_replace";
   const readPath = isReadTool && typeof args.path === "string" ? args.path : "";
   const readSplit =
     isReadTool && result != null ? splitReadToolResult(result) : null;
@@ -216,6 +258,36 @@ export function ToolCallBadge({
   const useSkillName = isUseSkillTool ? getUseSkillName(args) : "";
   const useSkillResult =
     isUseSkillTool && result != null ? formatUseSkillResult(result) : "";
+  const writePath = isWriteTool ? stringArg(args, "path") : "";
+  const writeContent = isWriteTool ? stringArg(args, "content") : "";
+  const writeChars = writeContent.length;
+  const strReplacePath = isStrReplaceTool ? stringArg(args, "path") : "";
+  const strReplaceSource = isStrReplaceTool
+    ? stringArg(args, "old_string")
+    : "";
+  const strReplaceReplacement = isStrReplaceTool
+    ? stringArg(args, "new_string")
+    : "";
+  const strReplaceSrcChars = isStrReplaceTool ? strReplaceSource.length : 0;
+  const strReplaceDstChars = isStrReplaceTool
+    ? strReplaceReplacement.length
+    : 0;
+  const strReplaceAll = isStrReplaceTool
+    ? boolArg(args, "replace_all")
+    : undefined;
+  const writeLang = isWriteTool ? languageFromFilePath(writePath) : "text";
+  const writeContentMarkdown = isWriteTool
+    ? fencedCodeBlock(writeLang, writeContent)
+    : "";
+  const strReplaceLang = isStrReplaceTool
+    ? languageFromFilePath(strReplacePath)
+    : "text";
+  const strReplaceSourceMarkdown = isStrReplaceTool
+    ? fencedCodeBlock(strReplaceLang, strReplaceSource)
+    : "";
+  const strReplaceReplacementMarkdown = isStrReplaceTool
+    ? fencedCodeBlock(strReplaceLang, strReplaceReplacement)
+    : "";
 
   return (
     <div className="my-1 w-full min-w-0">
@@ -310,6 +382,71 @@ export function ToolCallBadge({
               >
                 <MarkdownContent content={readBodyMarkdown} />
               </div>
+            </>
+          ) : isWriteTool ? (
+            <>
+              <div
+                className={cn(
+                  "max-w-none [&_.prose]:max-w-none",
+                  isError &&
+                    "[&_.prose_.md-code-block-shell]:border-destructive/40 [&_.prose_.md-code-block-shell]:bg-destructive/5",
+                )}
+              >
+                <MarkdownContent content={writeContentMarkdown} />
+              </div>
+              {result != null && result.length > 0 && (
+                <div
+                  className={cn(
+                    "rounded-md border bg-muted/25 px-3 py-2",
+                    isError ? "border-destructive/30" : "border-border/40",
+                  )}
+                >
+                  <div className="whitespace-pre-wrap text-muted-foreground leading-relaxed">
+                    {result}
+                  </div>
+                </div>
+              )}
+            </>
+          ) : isStrReplaceTool ? (
+            <>
+              <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                <div
+                  className={cn(
+                    "max-w-none [&_.prose]:max-w-none",
+                    isError &&
+                      "[&_.prose_.md-code-block-shell]:border-destructive/40 [&_.prose_.md-code-block-shell]:bg-destructive/5",
+                  )}
+                >
+                  <div className="mb-1 text-[11px] font-medium text-muted-foreground">
+                    Source
+                  </div>
+                  <MarkdownContent content={strReplaceSourceMarkdown} />
+                </div>
+                <div
+                  className={cn(
+                    "max-w-none [&_.prose]:max-w-none",
+                    isError &&
+                      "[&_.prose_.md-code-block-shell]:border-destructive/40 [&_.prose_.md-code-block-shell]:bg-destructive/5",
+                  )}
+                >
+                  <div className="mb-1 text-[11px] font-medium text-muted-foreground">
+                    Replacement
+                  </div>
+                  <MarkdownContent content={strReplaceReplacementMarkdown} />
+                </div>
+              </div>
+              {result != null && result.length > 0 && (
+                <div
+                  className={cn(
+                    "rounded-md border bg-muted/25 px-3 py-2",
+                    isError ? "border-destructive/30" : "border-border/40",
+                  )}
+                >
+                  <div className="whitespace-pre-wrap text-muted-foreground leading-relaxed">
+                    {result}
+                  </div>
+                </div>
+              )}
             </>
           ) : (
             <>
