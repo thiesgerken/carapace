@@ -13,7 +13,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from carapace.git.store import GitStore
 from carapace.sandbox.manager import SandboxManager
-from carapace.security.context import SessionSecurity
+from carapace.security.context import ApprovalSource, ApprovalVerdict, SessionSecurity
 from carapace.security.sentinel import Sentinel
 from carapace.usage import UsageTracker
 
@@ -354,6 +354,11 @@ class SkillInfo(BaseModel):
 # --- Deps for Pydantic AI RunContext ---
 
 
+type ToolCallCallback = Callable[
+    [str, dict[str, Any], str, ApprovalSource | None, ApprovalVerdict | None, str | None], None
+]
+
+
 class Deps(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -369,7 +374,7 @@ class Deps(BaseModel):
     activated_skills: list[str] = []
     agent_model: Model
     verbose: bool = True
-    tool_call_callback: Callable[[str, dict[str, Any], str], None] | None = None
+    tool_call_callback: ToolCallCallback | None = None
     tool_result_callback: Callable[[ToolResult], None] | None = None
     append_session_events: Callable[[list[dict[str, Any]]], None] | None = None
     usage_tracker: UsageTracker

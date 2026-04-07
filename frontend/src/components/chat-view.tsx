@@ -78,6 +78,9 @@ export function ChatView({
               tool: h.tool ?? "",
               args: h.args ?? {},
               detail: h.detail ?? "",
+              approvalSource: h.approval_source,
+              approvalVerdict: h.approval_verdict,
+              approvalExplanation: h.approval_explanation,
             });
             const toolName = h.tool ?? "";
             const idx = msgs.length - 1;
@@ -199,6 +202,9 @@ export function ChatView({
               tool: "git_push",
               args: { ref: h.ref ?? "", decision: h.decision ?? "" },
               detail: h.detail ?? "",
+              approvalSource: h.approval_source,
+              approvalVerdict: h.approval_verdict,
+              approvalExplanation: h.approval_explanation,
             });
           } else if (h.role === "command") {
             msgs.push({
@@ -228,17 +234,17 @@ export function ChatView({
   }, [server, token]);
 
   // Clear the loading spinner on any tool_call messages still pending
-  function clearToolLoading() {
+  const clearToolLoading = useCallback(() => {
     setMessages((prev) => {
       if (!prev.some((m) => m.kind === "tool_call" && m.loading)) return prev;
       return prev.map((m) =>
         m.kind === "tool_call" && m.loading ? { ...m, loading: false } : m,
       );
     });
-  }
+  }, []);
 
   // Flush a queued message if present, otherwise mark as not-waiting
-  function finishWaiting() {
+  const finishWaiting = useCallback(() => {
     clearToolLoading();
     const queued = queueRef.current;
     if (queued) {
@@ -249,7 +255,7 @@ export function ChatView({
     } else {
       setWaiting(false);
     }
-  }
+  }, [clearToolLoading]);
 
   const onMessage = useCallback(
     (msg: ServerMessage) => {
@@ -271,11 +277,9 @@ export function ChatView({
         case "tool_call": {
           const isGitPush = msg.tool === "git_push";
           if (!isGitPush) setWaiting(true); // agent is active (may restore after reconnect)
+          const verdict = msg.approval_verdict;
           const isLoading =
-            msg.tool !== "proxy_domain" &&
-            !isGitPush &&
-            !msg.detail.includes("deny]") &&
-            !msg.detail.includes("escalate]");
+            msg.tool !== "proxy_domain" && !isGitPush && verdict === "allow";
           setMessages((prev) => [
             ...prev,
             {
@@ -283,6 +287,9 @@ export function ChatView({
               tool: msg.tool,
               args: msg.args,
               detail: msg.detail,
+              approvalSource: msg.approval_source,
+              approvalVerdict: msg.approval_verdict,
+              approvalExplanation: msg.approval_explanation,
               loading: isLoading,
             },
           ]);
@@ -390,7 +397,7 @@ export function ChatView({
           break;
       }
     },
-    [onTitleUpdate],
+    [finishWaiting, onTitleUpdate],
   );
 
   const onWsDisconnect = useCallback(() => {
@@ -398,7 +405,7 @@ export function ChatView({
     setQueuedMessage(null);
     clearToolLoading();
     setWaiting(false);
-  }, []);
+  }, [clearToolLoading]);
   const url = wsUrl(server, sessionId, token);
   const { status, send } = useWebSocket(url, onMessage, onWsDisconnect);
   useEffect(() => {

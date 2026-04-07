@@ -20,6 +20,9 @@ interface ToolCallBadgeProps {
   tool: string;
   args: Record<string, unknown>;
   detail: string;
+  approvalSource?: ApprovalSource;
+  approvalVerdict?: ApprovalVerdict;
+  approvalExplanation?: string;
   result?: string;
   exitCode?: number;
   loading?: boolean;
@@ -27,60 +30,6 @@ interface ToolCallBadgeProps {
 
 type ApprovalSource = "safe-list" | "sentinel" | "user" | "unknown";
 type ApprovalVerdict = "allow" | "deny" | "escalate";
-
-function parseDetail(detail: string): {
-  source: ApprovalSource;
-  verdict: ApprovalVerdict;
-  explanation: string;
-  summary: string;
-} {
-  if (detail.startsWith("[safe-list]")) {
-    return {
-      source: "safe-list",
-      verdict: "allow",
-      explanation: "",
-      summary: "auto-allowed",
-    };
-  }
-
-  const match = detail.match(
-    /^\[sentinel:\s*(allow|deny|escalate)]\s*([\s\S]*)/,
-  );
-  if (match) {
-    const verdict = match[1] as ApprovalVerdict;
-    const explanation = match[2] ?? "";
-    return { source: "sentinel", verdict, explanation, summary: explanation };
-  }
-
-  // Post-approval sandbox info lines are still part of the security flow.
-  if (detail.startsWith("[sandbox:")) {
-    return {
-      source: "sentinel",
-      verdict: "allow",
-      explanation: detail,
-      summary: detail,
-    };
-  }
-
-  if (
-    detail.includes("user approved") ||
-    detail.includes("escalate → allowed")
-  ) {
-    return {
-      source: "user",
-      verdict: "allow",
-      explanation: detail,
-      summary: detail,
-    };
-  }
-
-  return {
-    source: "unknown",
-    verdict: "allow",
-    explanation: detail,
-    summary: detail,
-  };
-}
 
 const SHORT_KEYS: Record<string, string> = {
   command: "cmd",
@@ -301,13 +250,19 @@ function ApprovalBadge({
 export function ToolCallBadge({
   tool,
   args,
-  detail,
+  detail: _detail,
+  approvalSource,
+  approvalVerdict,
+  approvalExplanation,
   result,
   exitCode,
   loading,
 }: ToolCallBadgeProps) {
   const [open, setOpen] = useState(false);
-  const { source, verdict, explanation } = parseDetail(detail);
+  void _detail;
+  const source = approvalSource;
+  const verdict = approvalVerdict ?? "allow";
+  const explanation = source === "sentinel" ? (approvalExplanation ?? "") : "";
   const isError = exitCode != null && exitCode !== 0;
   const isExecTool = tool === "exec";
   const isUseSkillTool = tool === "use_skill";
@@ -333,7 +288,6 @@ export function ToolCallBadge({
     isUseSkillTool && result != null ? formatUseSkillResult(result) : "";
   const writePath = isWriteTool ? stringArg(args, "path") : "";
   const writeContent = isWriteTool ? stringArg(args, "content") : "";
-  const writeChars = writeContent.length;
   const strReplacePath = isStrReplaceTool ? stringArg(args, "path") : "";
   const strReplaceSource = isStrReplaceTool
     ? stringArg(args, "old_string")
@@ -341,13 +295,6 @@ export function ToolCallBadge({
   const strReplaceReplacement = isStrReplaceTool
     ? stringArg(args, "new_string")
     : "";
-  const strReplaceSrcChars = isStrReplaceTool ? strReplaceSource.length : 0;
-  const strReplaceDstChars = isStrReplaceTool
-    ? strReplaceReplacement.length
-    : 0;
-  const strReplaceAll = isStrReplaceTool
-    ? boolArg(args, "replace_all")
-    : undefined;
   const credentialAccessPath = isCredentialAccessTool
     ? stringArg(args, "vault_path")
     : "";
@@ -432,8 +379,8 @@ export function ToolCallBadge({
             {argsSummary}
           </span>
         ) : null}
-        <span className="inline-flex shrink-0 items-center gap-1">
-          <ApprovalBadge source={source} verdict={verdict} />
+        <span className="ml-auto inline-flex shrink-0 items-center gap-1">
+          {source && <ApprovalBadge source={source} verdict={verdict} />}
           {loading && (
             <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
           )}

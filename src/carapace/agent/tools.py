@@ -85,7 +85,14 @@ async def _gate(ctx: RunContext[Deps], tool_name: str, args: dict[str, Any]) -> 
 def _notify_approved_start(ctx: RunContext[Deps], tool_name: str, args: dict[str, Any]) -> None:
     """For previously-escalated tools, send a ToolCallInfo before execution."""
     if ctx.deps.tool_call_callback:
-        ctx.deps.tool_call_callback(tool_name, args, "[user approved]")
+        ctx.deps.tool_call_callback(
+            tool_name,
+            args,
+            "[user approved]",
+            "user",
+            "allow",
+            "user approved",
+        )
 
 
 def _notify_result(ctx: RunContext[Deps], tool_name: str, result: str, exit_code: int = 0) -> None:

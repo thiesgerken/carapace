@@ -10,6 +10,8 @@ from carapace.security.context import (
     ActionLogEntry as ActionLogEntry,
 )
 from carapace.security.context import (
+    ApprovalSource,
+    ApprovalVerdict,
     AuditEntry,
     GitPushEntry,
     SecurityDeniedError,
@@ -59,7 +61,15 @@ async def evaluate_with(
             )
         )
         if verbose:
-            _log_tool_call(tool_name, args, "[safe-list] auto-allowed", tool_call_callback)
+            _log_tool_call(
+                tool_name,
+                args,
+                "[safe-list] auto-allowed",
+                tool_call_callback,
+                approval_source="safe-list",
+                approval_verdict="allow",
+                approval_explanation="auto-allowed",
+            )
         return
 
     verdict = await sentinel.evaluate_tool_call(
@@ -81,7 +91,15 @@ async def evaluate_with(
 
     detail = f"[sentinel: {verdict.decision}] {verdict.explanation}"
     if verbose:
-        _log_tool_call(tool_name, args, detail, tool_call_callback)
+        _log_tool_call(
+            tool_name,
+            args,
+            detail,
+            tool_call_callback,
+            approval_source="sentinel",
+            approval_verdict=verdict.decision,
+            approval_explanation=verdict.explanation,
+        )
 
     if verdict.decision == "deny":
         session.write_audit(
@@ -160,7 +178,15 @@ async def evaluate_domain_with(
         final_decision = "allowed" if allowed else "denied"
         detail = f"[sentinel: escalate \u2192 {final_decision}] {verdict.explanation}"
 
-    session.notify_domain_decision(domain, detail)
+    source: ApprovalSource = "sentinel" if verdict.decision != "escalate" else "user"
+    approval_verdict: ApprovalVerdict = "allow" if allowed else "deny"
+    session.notify_domain_decision(
+        domain,
+        detail,
+        approval_source=source,
+        approval_verdict=approval_verdict,
+        approval_explanation=verdict.explanation,
+    )
 
     session.write_audit(
         AuditEntry.now(
@@ -227,7 +253,16 @@ async def evaluate_push_with(
     entry = GitPushEntry(ref=ref, decision=decision, explanation=verdict.explanation)
     session.append(entry)
 
-    await session.notify_push_decision(ref, decision, detail)
+    source: ApprovalSource = "sentinel" if verdict.decision != "escalate" else "user"
+    approval_verdict: ApprovalVerdict = "allow" if allowed else "deny"
+    await session.notify_push_decision(
+        ref,
+        decision,
+        detail,
+        approval_source=source,
+        approval_verdict=approval_verdict,
+        approval_explanation=verdict.explanation,
+    )
 
     session.write_audit(
         AuditEntry.now(
@@ -314,7 +349,15 @@ async def evaluate_credential_with(
     )
     session.append(entry)
 
-    session.notify_credential_decision(vault_path, detail)
+    source: ApprovalSource = "sentinel" if verdict.decision != "escalate" else "user"
+    approval_verdict: ApprovalVerdict = "allow" if allowed else "deny"
+    session.notify_credential_decision(
+        vault_path,
+        detail,
+        approval_source=source,
+        approval_verdict=approval_verdict,
+        approval_explanation=verdict.explanation,
+    )
 
     session.write_audit(
         AuditEntry.now(
@@ -349,6 +392,9 @@ def _log_tool_call(
     args: dict[str, Any],
     detail: str,
     callback: Any = None,
+    approval_source: ApprovalSource | None = None,
+    approval_verdict: ApprovalVerdict | None = None,
+    approval_explanation: str | None = None,
 ) -> None:
     args_parts = []
     for k, v in args.items():
@@ -361,6 +407,6 @@ def _log_tool_call(
         args_str = args_str[:197] + "..."
 
     if callback:
-        callback(tool_name, args, detail)
+        callback(tool_name, args, detail, approval_source, approval_verdict, approval_explanation)
     else:
         print(f"  \033[2m{tool_name}({args_str}) {detail}\033[0m")

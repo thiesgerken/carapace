@@ -25,6 +25,7 @@ from carapace.models import (
     Deps,
     SessionState,
     SkillInfo,
+    ToolCallCallback,
     ToolResult,
 )
 from carapace.sandbox.manager import SandboxManager
@@ -76,7 +77,15 @@ def _non_slash_user_message_count(events: list[dict[str, Any]]) -> int:
 @runtime_checkable
 class SessionSubscriber(Protocol):
     async def on_user_message(self, content: str, *, from_self: bool) -> None: ...
-    async def on_tool_call(self, tool: str, args: dict[str, Any], detail: str) -> None: ...
+    async def on_tool_call(
+        self,
+        tool: str,
+        args: dict[str, Any],
+        detail: str,
+        approval_source: Literal["safe-list", "sentinel", "user", "unknown"] | None = None,
+        approval_verdict: Literal["allow", "deny", "escalate"] | None = None,
+        approval_explanation: str | None = None,
+    ) -> None: ...
     async def on_tool_result(self, result: ToolResult) -> None: ...
     async def on_token(self, content: str) -> None: ...
     async def on_done(self, content: str, usage: TurnUsage) -> None: ...
@@ -88,9 +97,31 @@ class SessionSubscriber(Protocol):
         self, request_id: str, ref: str, explanation: str, changed_files: list[str]
     ) -> None: ...
     async def on_title_update(self, title: str) -> None: ...
-    async def on_domain_info(self, domain: str, detail: str) -> None: ...
-    async def on_git_push_info(self, ref: str, decision: str, detail: str) -> None: ...
-    async def on_credential_info(self, vault_path: str, detail: str) -> None: ...
+    async def on_domain_info(
+        self,
+        domain: str,
+        detail: str,
+        approval_source: Literal["safe-list", "sentinel", "user", "unknown"] | None = None,
+        approval_verdict: Literal["allow", "deny", "escalate"] | None = None,
+        approval_explanation: str | None = None,
+    ) -> None: ...
+    async def on_git_push_info(
+        self,
+        ref: str,
+        decision: str,
+        detail: str,
+        approval_source: Literal["safe-list", "sentinel", "user", "unknown"] | None = None,
+        approval_verdict: Literal["allow", "deny", "escalate"] | None = None,
+        approval_explanation: str | None = None,
+    ) -> None: ...
+    async def on_credential_info(
+        self,
+        vault_path: str,
+        detail: str,
+        approval_source: Literal["safe-list", "sentinel", "user", "unknown"] | None = None,
+        approval_verdict: Literal["allow", "deny", "escalate"] | None = None,
+        approval_explanation: str | None = None,
+    ) -> None: ...
     async def on_credential_approval_request(
         self,
         request_id: str,
@@ -416,7 +447,7 @@ class SessionEngine:
         self,
         active: ActiveSession,
         *,
-        tool_call_callback: Callable[[str, dict[str, Any], str], None] | None = None,
+        tool_call_callback: ToolCallCallback | None = None,
         tool_result_callback: Callable[[ToolResult], None] | None = None,
     ) -> Deps:
         assert active.security is not None and active.sentinel is not None
@@ -740,12 +771,40 @@ class SessionEngine:
         """Execute a single agent turn with semaphore-bounded LLM access."""
         session_id = active.state.session_id
 
-        def _tool_call_cb(tool: str, args: dict[str, Any], detail: str) -> None:
+        def _tool_call_cb(
+            tool: str,
+            args: dict[str, Any],
+            detail: str,
+            approval_source: Literal["safe-list", "sentinel", "user", "unknown"] | None = None,
+            approval_verdict: Literal["allow", "deny", "escalate"] | None = None,
+            approval_explanation: str | None = None,
+        ) -> None:
             self._session_mgr.append_events(
                 session_id,
-                [{"role": "tool_call", "tool": tool, "args": args, "detail": detail}],
+                [
+                    {
+                        "role": "tool_call",
+                        "tool": tool,
+                        "args": args,
+                        "detail": detail,
+                        "approval_source": approval_source,
+                        "approval_verdict": approval_verdict,
+                        "approval_explanation": approval_explanation,
+                    }
+                ],
             )
-            task = asyncio.ensure_future(self._broadcast(active, "on_tool_call", tool, args, detail))
+            task = asyncio.ensure_future(
+                self._broadcast(
+                    active,
+                    "on_tool_call",
+                    tool,
+                    args,
+                    detail,
+                    approval_source,
+                    approval_verdict,
+                    approval_explanation,
+                )
+            )
             active._pending_sends.add(task)
             task.add_done_callback(active._pending_sends.discard)
 
@@ -1047,11 +1106,29 @@ class SessionEngine:
 
         return _escalate
 
-    def _make_domain_info_cb(self, active: ActiveSession) -> Callable[[str, str], None]:
+    def _make_domain_info_cb(
+        self,
+        active: ActiveSession,
+    ) -> Callable[
+        [
+            str,
+            str,
+            Literal["safe-list", "sentinel", "user", "unknown"] | None,
+            Literal["allow", "deny", "escalate"] | None,
+            str | None,
+        ],
+        None,
+    ]:
         """Build a callback that broadcasts domain access decisions to subscribers."""
         session_id = active.state.session_id
 
-        def _notify(domain: str, detail: str) -> None:
+        def _notify(
+            domain: str,
+            detail: str,
+            approval_source: Literal["safe-list", "sentinel", "user", "unknown"] | None = None,
+            approval_verdict: Literal["allow", "deny", "escalate"] | None = None,
+            approval_explanation: str | None = None,
+        ) -> None:
             self._session_mgr.append_events(
                 session_id,
                 [
@@ -1060,10 +1137,23 @@ class SessionEngine:
                         "tool": "proxy_domain",
                         "args": {"domain": domain},
                         "detail": detail,
+                        "approval_source": approval_source,
+                        "approval_verdict": approval_verdict,
+                        "approval_explanation": approval_explanation,
                     }
                 ],
             )
-            task = asyncio.ensure_future(self._broadcast(active, "on_domain_info", domain, detail))
+            task = asyncio.ensure_future(
+                self._broadcast(
+                    active,
+                    "on_domain_info",
+                    domain,
+                    detail,
+                    approval_source,
+                    approval_verdict,
+                    approval_explanation,
+                )
+            )
             active._pending_sends.add(task)
             task.add_done_callback(active._pending_sends.discard)
 
@@ -1072,24 +1162,78 @@ class SessionEngine:
     def _make_push_info_cb(
         self,
         active: ActiveSession,
-    ) -> Callable[[str, str, str], Awaitable[None]]:
+    ) -> Callable[
+        [
+            str,
+            str,
+            str,
+            Literal["safe-list", "sentinel", "user", "unknown"] | None,
+            Literal["allow", "deny", "escalate"] | None,
+            str | None,
+        ],
+        Awaitable[None],
+    ]:
         """Build a callback that broadcasts git push decisions to subscribers."""
         session_id = active.state.session_id
 
-        async def _notify(ref: str, decision: str, detail: str) -> None:
+        async def _notify(
+            ref: str,
+            decision: str,
+            detail: str,
+            approval_source: Literal["safe-list", "sentinel", "user", "unknown"] | None = None,
+            approval_verdict: Literal["allow", "deny", "escalate"] | None = None,
+            approval_explanation: str | None = None,
+        ) -> None:
             self._session_mgr.append_events(
                 session_id,
-                [{"role": "git_push", "ref": ref, "decision": decision, "detail": detail}],
+                [
+                    {
+                        "role": "git_push",
+                        "ref": ref,
+                        "decision": decision,
+                        "detail": detail,
+                        "approval_source": approval_source,
+                        "approval_verdict": approval_verdict,
+                        "approval_explanation": approval_explanation,
+                    }
+                ],
             )
-            await self._broadcast(active, "on_git_push_info", ref, decision, detail)
+            await self._broadcast(
+                active,
+                "on_git_push_info",
+                ref,
+                decision,
+                detail,
+                approval_source,
+                approval_verdict,
+                approval_explanation,
+            )
 
         return _notify
 
-    def _make_credential_info_cb(self, active: ActiveSession) -> Callable[[str, str], None]:
+    def _make_credential_info_cb(
+        self,
+        active: ActiveSession,
+    ) -> Callable[
+        [
+            str,
+            str,
+            Literal["safe-list", "sentinel", "user", "unknown"] | None,
+            Literal["allow", "deny", "escalate"] | None,
+            str | None,
+        ],
+        None,
+    ]:
         """Build a callback that broadcasts credential access decisions to subscribers."""
         session_id = active.state.session_id
 
-        def _notify(vault_path: str, detail: str) -> None:
+        def _notify(
+            vault_path: str,
+            detail: str,
+            approval_source: Literal["safe-list", "sentinel", "user", "unknown"] | None = None,
+            approval_verdict: Literal["allow", "deny", "escalate"] | None = None,
+            approval_explanation: str | None = None,
+        ) -> None:
             self._session_mgr.append_events(
                 session_id,
                 [
@@ -1098,10 +1242,23 @@ class SessionEngine:
                         "tool": "credential_access",
                         "args": {"vault_path": vault_path},
                         "detail": detail,
+                        "approval_source": approval_source,
+                        "approval_verdict": approval_verdict,
+                        "approval_explanation": approval_explanation,
                     }
                 ],
             )
-            task = asyncio.ensure_future(self._broadcast(active, "on_credential_info", vault_path, detail))
+            task = asyncio.ensure_future(
+                self._broadcast(
+                    active,
+                    "on_credential_info",
+                    vault_path,
+                    detail,
+                    approval_source,
+                    approval_verdict,
+                    approval_explanation,
+                )
+            )
             active._pending_sends.add(task)
             task.add_done_callback(active._pending_sends.discard)
 

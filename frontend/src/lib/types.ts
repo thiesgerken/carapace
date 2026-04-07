@@ -18,6 +18,9 @@ export interface HistoryMessage {
   tool?: string;
   args?: Record<string, unknown>;
   detail?: string;
+  approval_source?: "safe-list" | "sentinel" | "user" | "unknown";
+  approval_verdict?: "allow" | "deny" | "escalate";
+  approval_explanation?: string;
   result?: string;
   exit_code?: number;
   command?: string;
@@ -48,6 +51,9 @@ export interface ToolCallInfo {
   tool: string;
   args: Record<string, unknown>;
   detail: string;
+  approval_source?: "safe-list" | "sentinel" | "user" | "unknown";
+  approval_verdict?: "allow" | "deny" | "escalate";
+  approval_explanation?: string;
 }
 
 export interface ToolResultInfo {
@@ -207,6 +213,9 @@ export type ChatMessage =
       tool: string;
       args: Record<string, unknown>;
       detail: string;
+      approvalSource?: "safe-list" | "sentinel" | "user" | "unknown";
+      approvalVerdict?: "allow" | "deny" | "escalate";
+      approvalExplanation?: string;
       result?: string;
       exitCode?: number;
       loading?: boolean;
