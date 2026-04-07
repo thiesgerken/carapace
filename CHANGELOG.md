@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.68.2 (2026-04-07)
+
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix(frontend): wrap markdown code lines without horizontal scrolling
+  ([`dd7421a`](https://github.com/thiesgerken/carapace/commit/dd7421aa72b96d2b6aa43329e39f788d9629bc85))
+
+  Ensure numbered markdown code lines soft-wrap and disable horizontal scrolling in the markdown code block renderer so long lines remain readable in place.
+
+  Made-with: Cursor
+
 ## v0.68.1 (2026-04-07)
 
 
