@@ -1,6 +1,42 @@
 # CHANGELOG
 
 
+## v0.66.0 (2026-04-07)
+
+
+### ✨ Features
+
+
+- ✨ feat(frontend): improve write/str_replace tool result UX
+  ([`78b209a`](https://github.com/thiesgerken/carapace/commit/78b209a404ea84929a7670c404e00d20ec60de06))
+
+  - Show write content and str_replace source/replacement as highlighted code.
+  - Render str_replace source/replacement side-by-side on wider screens.
+  - Streamline expanded panels by removing redundant metadata blocks.
+  - Keep concise one-liners with line-count summaries and conditional replace_all.
+
+  Made-with: Cursor
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix(sandbox): improve file_write result messaging
+  ([`e30bb53`](https://github.com/thiesgerken/carapace/commit/e30bb532f7316dcfa4718113d1f18243ec4703eb))
+
+  Return concise period-terminated success output with written line count for sandbox file writes, and include exit code details in fallback write errors.
+
+  Made-with: Cursor
+
+### ♻️ Refactoring
+
+
+- ♻️ refactor(security): stop truncating tool call args in audit/events
+  ([`e218cc6`](https://github.com/thiesgerken/carapace/commit/e218cc69c7dd576135c667a4efa465d248ed480a))
+
+  Remove _truncate_args usage so tool call args are preserved in session and audit entries, including escalation metadata summaries.
+
+  Made-with: Cursor
+
 ## v0.65.0 (2026-04-07)
 
 
