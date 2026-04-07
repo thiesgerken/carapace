@@ -387,6 +387,12 @@ function contextTokenCap(
   usage: TurnUsage,
   entries: AvailableModelInfo[],
 ): number {
+  if (
+    typeof usage.context_cap_tokens === "number" &&
+    usage.context_cap_tokens > 0
+  ) {
+    return usage.context_cap_tokens;
+  }
   const row = findModelEntryForGauge(usage.model, entries);
   if (row?.max_input_tokens != null) return row.max_input_tokens;
   return DEFAULT_CONTEXT_CAP;

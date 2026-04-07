@@ -684,6 +684,7 @@ async def chat_ws(
             output_tokens=rec_agent.output_tokens,
             breakdown_pct=TurnUsageBreakdownPct.model_validate(bd) if bd else None,
             model=_engine.agent_model_id_for_gauge(active),
+            context_cap_tokens=_engine.agent_context_cap_for_gauge(active),
         )
     with contextlib.suppress(Exception):
         await _send(websocket, StatusUpdate(agent_running=agent_running, usage=usage))

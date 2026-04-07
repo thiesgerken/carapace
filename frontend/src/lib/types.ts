@@ -107,6 +107,8 @@ export interface TurnUsage {
   breakdown_pct?: TurnUsageBreakdownPct | null;
   /** Canonical agent model id for this usage row (e.g. anthropic:claude-haiku-4-5). */
   model?: string | null;
+  /** Backend-resolved context window for this usage row. */
+  context_cap_tokens?: number | null;
 }
 
 export interface Done {

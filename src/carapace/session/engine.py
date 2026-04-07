@@ -254,6 +254,10 @@ class SessionEngine:
         """
         return active.agent_model_name or self._config.agent.model
 
+    def agent_context_cap_for_gauge(self, active: ActiveSession) -> int:
+        model_id = self.agent_model_id_for_gauge(active)
+        return self._max_input_tokens_for_model_id(model_id) or _DEFAULT_CONTEXT_CAP_TOKENS
+
     def _resolve_model(self, name: str) -> Model:
         """Create a Model from a name, using the model_factory if available."""
         return self._model_factory(name) if self._model_factory else infer_model(name)
@@ -854,6 +858,7 @@ class SessionEngine:
                             output_tokens=out_tok,
                             breakdown_pct=TurnUsageBreakdownPct.model_validate(bd) if bd else None,
                             model=self.agent_model_id_for_gauge(active),
+                            context_cap_tokens=self.agent_context_cap_for_gauge(active),
                         ),
                     )
 
