@@ -1077,7 +1077,13 @@ async def list_credentials(request: Request, q: str = "") -> list[dict[str, str]
             explanation=explanation,
         )
     )
-    active.security.notify_credential_decision("<list>", f"[sandbox: list metadata] {explanation}")
+    active.security.notify_credential_decision(
+        "<list>",
+        f"[sandbox: list metadata] {explanation}",
+        approval_source="safe-list",
+        approval_verdict="allow",
+        approval_explanation=explanation,
+    )
 
     return [i.model_dump() for i in items]
 
