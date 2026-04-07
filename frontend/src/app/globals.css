@@ -133,13 +133,14 @@ body {
   border-radius: 0 !important;
   line-height: 1.5;
   max-height: calc(35 * 1.5em);
+  overflow-x: hidden;
   overflow-y: auto;
   scrollbar-gutter: stable;
 }
 .prose figure[data-rehype-pretty-code-figure] .md-code-block-shell > pre {
   background: var(--shiki-light-bg) !important;
   padding: 0.75rem 1rem;
-  overflow-x: auto;
+  overflow-x: hidden;
   overflow-y: auto;
   font-size: 0.9em;
   line-height: 1.5;
@@ -163,6 +164,11 @@ body {
 /* Line numbers (rehype-pretty-code + showLineNumbers in meta via filterMetaString) */
 .prose .md-code-block-shell > pre code[data-line-numbers] {
   counter-reset: line;
+}
+.prose .md-code-block-shell > pre code[data-line-numbers] > [data-line] {
+  display: block;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 .prose .md-code-block-shell > pre code[data-line-numbers] > [data-line]::before {
   counter-increment: line;
