@@ -316,8 +316,6 @@ def input_shape_ratios_from_messages(
     buckets = {k: "" for k in ("system", "user", "assistant", "tool_calls", "tool_returns", "other")}
     for msg in messages:
         if isinstance(msg, ModelRequest):
-            if msg.instructions:
-                buckets["system"] += msg.instructions + "\n"
             for p in msg.parts:
                 _accumulate_request_part(p, buckets)
         elif isinstance(msg, ModelResponse):
