@@ -1,6 +1,21 @@
 # CHANGELOG
 
 
+## v0.68.0 (2026-04-07)
+
+
+### ✨ Features
+
+
+- ✨ feat(frontend): refine tool one-liners for natural read/write/replace phrasing
+  ([`b516b11`](https://github.com/thiesgerken/carapace/commit/b516b11cafee978d507ccd4562cecfadbf69d115))
+
+  - Derive read summaries from separator-split output and emitted line count.
+  - Collapse full-file reads to path-only summary to avoid duplicated 'read'.
+  - Keep inclusive read ranges and cleaner write/replace wording in compact rows.
+
+  Made-with: Cursor
+
 ## v0.67.1 (2026-04-07)
 
 
