@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import secrets
+from pathlib import Path, PurePosixPath
 from typing import Annotated, Any
 
 import httpx
@@ -16,6 +17,48 @@ from carapace.sandbox.runtime import SkillVenvError
 from carapace.security.context import CredentialAccessEntry, SkillActivatedEntry, ToolResultEntry
 from carapace.skills import SkillRegistry
 from carapace.usage import LlmRequestLogCapability
+
+_WORKSPACE_ROOT = PurePosixPath("/workspace")
+_SKILLS_ROOT = PurePosixPath("skills")
+
+
+def _normalize_workspace_path(path: str) -> PurePosixPath:
+    raw = PurePosixPath(path)
+    if raw.is_absolute():
+        if raw == _WORKSPACE_ROOT:
+            return PurePosixPath(".")
+        try:
+            return raw.relative_to(_WORKSPACE_ROOT)
+        except ValueError:
+            return raw
+    return raw
+
+
+def _extract_skill_path(path: str) -> tuple[str, PurePosixPath] | None:
+    normalized = _normalize_workspace_path(path)
+    parts = normalized.parts
+    if ".." in parts or len(parts) < 2 or parts[0] != _SKILLS_ROOT.as_posix():
+        return None
+    return parts[1], normalized
+
+
+def _skill_file_exists_in_backend_knowledge(knowledge_dir: Path, relative_path: PurePosixPath) -> bool:
+    parts = relative_path.parts
+    if relative_path.is_absolute() or len(parts) < 2 or parts[0] != _SKILLS_ROOT.as_posix():
+        return False
+    return (knowledge_dir / relative_path).exists()
+
+
+def _read_skill_access_denial(path: str, knowledge_dir: Path, activated_skills: list[str]) -> str | None:
+    skill_path = _extract_skill_path(path)
+    if not skill_path:
+        return None
+    skill_name, rel_path = skill_path
+    if skill_name in activated_skills:
+        return None
+    if not _skill_file_exists_in_backend_knowledge(knowledge_dir, rel_path):
+        return None
+    return f"Please activate the {skill_name} skill using the use_skill tool before accessing the skill's files"
 
 
 async def _gate(ctx: RunContext[Deps], tool_name: str, args: dict[str, Any]) -> ToolDenied | None:
@@ -378,6 +421,19 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
 
         **Directories:** Lists entry names; ``offset``/``limit`` do not apply to listings.
         """
+        if denied_message := _read_skill_access_denial(
+            path,
+            ctx.deps.knowledge_dir,
+            ctx.deps.session_state.activated_skills,
+        ):
+            if ctx.deps.tool_call_callback:
+                ctx.deps.tool_call_callback(
+                    "read",
+                    {"path": path, "offset": offset, "limit": limit},
+                    "[blocked: skill not activated]",
+                )
+            _notify_result(ctx, "read", denied_message, exit_code=1)
+            return denied_message
 
         if not ctx.tool_call_approved and (
             denied := await _gate(ctx, "read", {"path": path, "offset": offset, "limit": limit})

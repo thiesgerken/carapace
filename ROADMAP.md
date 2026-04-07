@@ -7,7 +7,6 @@
 - [ ] tool outputs need a max output length
 - [ ] would be nice to be able to give the session a budget in dollars / tokens
 - [ ] compaction
-- [ ] block reading of skill.md files ? error prone, but saves some context. warn him that this is only possible after activating the skill?
 - [ ] image input
 
 ## UI Improvements
