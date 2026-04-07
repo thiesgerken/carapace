@@ -1,6 +1,88 @@
 # CHANGELOG
 
 
+## v0.68.8 (2026-04-07)
+
+
+### ♻️ Refactoring
+
+
+- ♻️Merge pull request #62 from thiesgerken/refactor/structured-tool-approval-metadata
+  ([`081cb57`](https://github.com/thiesgerken/carapace/commit/081cb57fe0d1c90a3c826c70e3d84f33c1d3d3df))
+
+  ♻️ refactor: use structured tool approval metadata
+
+- ♻️ refactor(frontend): resolve remaining eslint warnings
+  ([`b3627bf`](https://github.com/thiesgerken/carapace/commit/b3627bff14924126e21ed86f72c53bd822a3c8e6))
+
+  Stabilize callback dependencies and remove unused values in chat and code-rendering components so frontend lint passes cleanly without suppressing rules.
+
+  Made-with: Cursor
+
+- ♻️ refactor(ui): use structured tool approval metadata
+  ([`c1e449b`](https://github.com/thiesgerken/carapace/commit/c1e449b4e427f1c2e6720254135afc97c3b96d53))
+
+  Pass approval source/verdict/explanation as typed fields from security evaluation through websocket/history into the UI, and render badges strictly from structured metadata instead of parsing detail strings.
+
+  Made-with: Cursor
+
+### 💄 UI/UX
+
+
+- 💄 style(frontend): right-align tool approval badges
+  ([`dab4d56`](https://github.com/thiesgerken/carapace/commit/dab4d56d19c7719353ff492a0cbc5d0ea4f3f153))
+
+  Pin the badge/loading container to the right edge of tool call rows so approval badges stay consistently aligned when argument summaries are short or absent.
+
+  Made-with: Cursor
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix(server): include approval metadata for credential listing events
+  ([`b9ac674`](https://github.com/thiesgerken/carapace/commit/b9ac674b68b4e1b4e63d1b6f8d6cea40279d3c15))
+
+  Emit structured approval_source/verdict/explanation for sandbox credential list notifications so the UI can render the approval badge for listed credentials.
+
+  Made-with: Cursor
+
+- 🐛 fix(frontend): avoid infinite loading without verdict metadata
+  ([`4538b9b`](https://github.com/thiesgerken/carapace/commit/4538b9b7a0f83a63203363aa3163471bd9dccf72))
+
+  Only show tool-call loading state when approval_verdict is explicitly allow, so missing metadata does not leave legacy events spinning forever.
+
+  Made-with: Cursor
+
+- 🐛 fix: address PR review feedback on approval metadata
+  ([`e2ef222`](https://github.com/thiesgerken/carapace/commit/e2ef222a74fc21ce35ad7dd372867f8a33548981))
+
+  Tighten callback typing and align docs/UI behavior with structured approval metadata so review comments are resolved without relying on fragile detail parsing.
+
+  Made-with: Cursor
+
+- 🐛 fix(frontend): restore lint compatibility and standardize caret ranges
+  ([`80a8a76`](https://github.com/thiesgerken/carapace/commit/80a8a76bcdf0c9d2b9e1fe4f035bd0cfb04267c2))
+
+  Pin ESLint to v9 to avoid the eslint-plugin-react crash in lint runs, and scope lint targets/ignores to prevent config and declaration files from triggering rule execution. Also standardize frontend dependency specifiers to caret ranges and set the local pnpm save-prefix for future consistency.
+
+  Made-with: Cursor
+
+### Other
+
+
+- relock
+  ([`d5cd24d`](https://github.com/thiesgerken/carapace/commit/d5cd24dc6924c4992f583f80ebf15093147b43dc))
+
+- ✅ ci: run frontend lint on pull requests
+  ([`f337154`](https://github.com/thiesgerken/carapace/commit/f337154060ee6a95e37a64824b52b1ff58050dfd))
+
+  Add a dedicated frontend lint job in CI that installs frontend dependencies with pnpm and executes the lint script to catch UI lint regressions in PRs.
+
+  Made-with: Cursor
+
+- Merge branch 'main' into refactor/structured-tool-approval-metadata
+  ([`66fb6fb`](https://github.com/thiesgerken/carapace/commit/66fb6fb8d965633a47a49e888a12f487e47a426f))
+
 ## v0.68.7 (2026-04-07)
 
 
