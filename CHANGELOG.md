@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.68.7 (2026-04-07)
+
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix(session): sanitize event payloads for safe YAML replay
+  ([`cce41c8`](https://github.com/thiesgerken/carapace/commit/cce41c8d6810ac67f400ef15eff8b4ce97db757c))
+
+  Avoid persisting Python object tags in session events by serializing skill credential gate args as JSON-safe data and sanitizing appended events. Add resilient event loading that skips malformed legacy docs instead of crashing turns.
+
+  Made-with: Cursor
+
 ## v0.68.6 (2026-04-07)
 
 
