@@ -1,6 +1,15 @@
 # CHANGELOG
 
 
+## v0.69.1 (2026-04-07)
+
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix(usage): fix wrong counting of instructions
+  ([`d02a144`](https://github.com/thiesgerken/carapace/commit/d02a144fdc81b469483339f985b02d371236fd37))
+
 ## v0.69.0 (2026-04-07)
 
 
