@@ -8,6 +8,8 @@
 - [ ] would be nice to be able to give the session a budget in dollars / tokens
 - [ ] compaction
 - [ ] image input
+- [ ] custom sentinel instructions for skills, e.g. moneydb: make sure that the agent only does mutations based on user approval
+- [ ] replace tool: show diff
 
 ## UI Improvements
 
