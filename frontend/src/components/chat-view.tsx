@@ -78,6 +78,9 @@ export function ChatView({
               tool: h.tool ?? "",
               args: h.args ?? {},
               detail: h.detail ?? "",
+              approvalSource: h.approval_source,
+              approvalVerdict: h.approval_verdict,
+              approvalExplanation: h.approval_explanation,
             });
             const toolName = h.tool ?? "";
             const idx = msgs.length - 1;
@@ -199,6 +202,9 @@ export function ChatView({
               tool: "git_push",
               args: { ref: h.ref ?? "", decision: h.decision ?? "" },
               detail: h.detail ?? "",
+              approvalSource: h.approval_source,
+              approvalVerdict: h.approval_verdict,
+              approvalExplanation: h.approval_explanation,
             });
           } else if (h.role === "command") {
             msgs.push({
@@ -283,6 +289,9 @@ export function ChatView({
               tool: msg.tool,
               args: msg.args,
               detail: msg.detail,
+              approvalSource: msg.approval_source,
+              approvalVerdict: msg.approval_verdict,
+              approvalExplanation: msg.approval_explanation,
               loading: isLoading,
             },
           ]);

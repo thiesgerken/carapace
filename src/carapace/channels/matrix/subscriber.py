@@ -68,7 +68,15 @@ class MatrixSubscriber:
         # Cross-channel message (e.g. from web UI) — forward to the room
         await self._channel._send_text(self._room_id, f"💬 {content}")
 
-    async def on_tool_call(self, tool: str, args: dict[str, Any], detail: str) -> None:
+    async def on_tool_call(
+        self,
+        tool: str,
+        args: dict[str, Any],
+        detail: str,
+        approval_source: str | None = None,
+        approval_verdict: str | None = None,
+        approval_explanation: str | None = None,
+    ) -> None:
         logger.debug(f"Matrix [{self._room_id}] tool call: {tool}({args}) — {detail}")
         if self._channel._verbose.get(self._room_id, True):
             args_brief = json.dumps(args, default=str)
@@ -164,7 +172,14 @@ class MatrixSubscriber:
             self._channel._pending_domain_approvals[event_id] = pending
             self._channel._room_pending[self._room_id] = pending
 
-    async def on_credential_info(self, vault_path: str, detail: str) -> None:
+    async def on_credential_info(
+        self,
+        vault_path: str,
+        detail: str,
+        approval_source: str | None = None,
+        approval_verdict: str | None = None,
+        approval_explanation: str | None = None,
+    ) -> None:
         logger.debug(f"Matrix [{self._room_id}] credential: {vault_path} {detail}")
         if self._channel._verbose.get(self._room_id, True):
             notice = f"🔑 `{vault_path}` {detail}"
@@ -201,13 +216,28 @@ class MatrixSubscriber:
     async def on_title_update(self, title: str) -> None:
         pass  # Matrix rooms have their own titles
 
-    async def on_domain_info(self, domain: str, detail: str) -> None:
+    async def on_domain_info(
+        self,
+        domain: str,
+        detail: str,
+        approval_source: str | None = None,
+        approval_verdict: str | None = None,
+        approval_explanation: str | None = None,
+    ) -> None:
         logger.debug(f"Matrix [{self._room_id}] domain: {domain} {detail}")
         if self._channel._verbose.get(self._room_id, True):
             notice = f"🌐 `{domain}` {detail}"
             await self._channel._send_notice(self._room_id, notice)
 
-    async def on_git_push_info(self, ref: str, decision: str, detail: str) -> None:
+    async def on_git_push_info(
+        self,
+        ref: str,
+        decision: str,
+        detail: str,
+        approval_source: str | None = None,
+        approval_verdict: str | None = None,
+        approval_explanation: str | None = None,
+    ) -> None:
         logger.debug(f"Matrix [{self._room_id}] git_push: {ref} {decision} {detail}")
         if self._channel._verbose.get(self._room_id, True):
             notice = f"📦 `{ref}` {detail}"

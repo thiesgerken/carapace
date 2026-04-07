@@ -96,6 +96,10 @@ class SentinelVerdict(BaseModel):
     risk_level: Literal["low", "medium", "high"] = "medium"
 
 
+ApprovalSource = Literal["safe-list", "sentinel", "user", "unknown"]
+ApprovalVerdict = Literal["allow", "deny", "escalate"]
+
+
 # --- Audit Log ---
 
 
@@ -156,9 +160,15 @@ class SessionSecurity:
         self._last_synced_idx: int = 0
         self._audit_dir = audit_dir
         self._user_escalation_callback: Callable[[str, str, dict[str, Any]], Awaitable[bool]] | None = None
-        self._domain_info_callback: Callable[[str, str], None] | None = None
-        self._push_info_callback: Callable[[str, str, str], Awaitable[None]] | None = None
-        self._credential_info_callback: Callable[[str, str], None] | None = None
+        self._domain_info_callback: (
+            Callable[[str, str, ApprovalSource | None, ApprovalVerdict | None, str | None], None] | None
+        ) = None
+        self._push_info_callback: (
+            Callable[[str, str, str, ApprovalSource | None, ApprovalVerdict | None, str | None], Awaitable[None]] | None
+        ) = None
+        self._credential_info_callback: (
+            Callable[[str, str, ApprovalSource | None, ApprovalVerdict | None, str | None], None] | None
+        ) = None
 
     def append(self, entry: ActionLogEntry) -> None:
         self.action_log.append(entry)
@@ -207,7 +217,7 @@ class SessionSecurity:
 
     def set_domain_info_callback(
         self,
-        callback: Callable[[str, str], None] | None,
+        callback: Callable[[str, str, ApprovalSource | None, ApprovalVerdict | None, str | None], None] | None,
     ) -> None:
         """Set callback to notify the UI about domain access decisions.
 
@@ -215,13 +225,22 @@ class SessionSecurity:
         """
         self._domain_info_callback = callback
 
-    def notify_domain_decision(self, domain: str, detail: str) -> None:
+    def notify_domain_decision(
+        self,
+        domain: str,
+        detail: str,
+        approval_source: ApprovalSource | None = None,
+        approval_verdict: ApprovalVerdict | None = None,
+        approval_explanation: str | None = None,
+    ) -> None:
         if self._domain_info_callback is not None:
-            self._domain_info_callback(domain, detail)
+            self._domain_info_callback(domain, detail, approval_source, approval_verdict, approval_explanation)
 
     def set_push_info_callback(
         self,
-        callback: Callable[[str, str, str], Awaitable[None]] | None,
+        callback: (
+            Callable[[str, str, str, ApprovalSource | None, ApprovalVerdict | None, str | None], Awaitable[None]] | None
+        ),
     ) -> None:
         """Set callback to notify the UI about push evaluation decisions.
 
@@ -229,13 +248,23 @@ class SessionSecurity:
         """
         self._push_info_callback = callback
 
-    async def notify_push_decision(self, ref: str, decision: str, detail: str) -> None:
+    async def notify_push_decision(
+        self,
+        ref: str,
+        decision: str,
+        detail: str,
+        approval_source: ApprovalSource | None = None,
+        approval_verdict: ApprovalVerdict | None = None,
+        approval_explanation: str | None = None,
+    ) -> None:
         if self._push_info_callback is not None:
-            await self._push_info_callback(ref, decision, detail)
+            await self._push_info_callback(
+                ref, decision, detail, approval_source, approval_verdict, approval_explanation
+            )
 
     def set_credential_info_callback(
         self,
-        callback: Callable[[str, str], None] | None,
+        callback: Callable[[str, str, ApprovalSource | None, ApprovalVerdict | None, str | None], None] | None,
     ) -> None:
         """Set callback to notify the UI about credential access decisions.
 
@@ -243,9 +272,16 @@ class SessionSecurity:
         """
         self._credential_info_callback = callback
 
-    def notify_credential_decision(self, vault_path: str, detail: str) -> None:
+    def notify_credential_decision(
+        self,
+        vault_path: str,
+        detail: str,
+        approval_source: ApprovalSource | None = None,
+        approval_verdict: ApprovalVerdict | None = None,
+        approval_explanation: str | None = None,
+    ) -> None:
         if self._credential_info_callback is not None:
-            self._credential_info_callback(vault_path, detail)
+            self._credential_info_callback(vault_path, detail, approval_source, approval_verdict, approval_explanation)
 
     async def escalate_to_user(self, subject: str, context: dict[str, Any]) -> bool:
         if self._user_escalation_callback is None:

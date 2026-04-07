@@ -505,6 +505,9 @@ class HistoryMessage(BaseModel):
     tool: str | None = None
     args: dict[str, Any] | None = None
     detail: str | None = None
+    approval_source: Literal["safe-list", "sentinel", "user", "unknown"] | None = None
+    approval_verdict: Literal["allow", "deny", "escalate"] | None = None
+    approval_explanation: str | None = None
     result: str | None = None
     command: str | None = None
     data: Any = None
@@ -592,8 +595,25 @@ class WebSocketSubscriber:
     async def on_user_message(self, content: str, *, from_self: bool) -> None:
         await self._safe_send(UserMessageNotification(content=content))
 
-    async def on_tool_call(self, tool: str, args: dict[str, Any], detail: str) -> None:
-        await self._safe_send(ToolCallInfo(tool=tool, args=args, detail=detail))
+    async def on_tool_call(
+        self,
+        tool: str,
+        args: dict[str, Any],
+        detail: str,
+        approval_source: Literal["safe-list", "sentinel", "user", "unknown"] | None = None,
+        approval_verdict: Literal["allow", "deny", "escalate"] | None = None,
+        approval_explanation: str | None = None,
+    ) -> None:
+        await self._safe_send(
+            ToolCallInfo(
+                tool=tool,
+                args=args,
+                detail=detail,
+                approval_source=approval_source,
+                approval_verdict=approval_verdict,
+                approval_explanation=approval_explanation,
+            )
+        )
 
     async def on_tool_result(self, result: ToolResult) -> None:
         await self._safe_send(ToolResultInfo(tool=result.tool, result=result.output, exit_code=result.exit_code))
@@ -626,14 +646,63 @@ class WebSocketSubscriber:
     async def on_title_update(self, title: str) -> None:
         await self._safe_send(SessionTitleUpdate(title=title))
 
-    async def on_domain_info(self, domain: str, detail: str) -> None:
-        await self._safe_send(ToolCallInfo(tool="proxy_domain", args={"domain": domain}, detail=detail))
+    async def on_domain_info(
+        self,
+        domain: str,
+        detail: str,
+        approval_source: Literal["safe-list", "sentinel", "user", "unknown"] | None = None,
+        approval_verdict: Literal["allow", "deny", "escalate"] | None = None,
+        approval_explanation: str | None = None,
+    ) -> None:
+        await self._safe_send(
+            ToolCallInfo(
+                tool="proxy_domain",
+                args={"domain": domain},
+                detail=detail,
+                approval_source=approval_source,
+                approval_verdict=approval_verdict,
+                approval_explanation=approval_explanation,
+            )
+        )
 
-    async def on_git_push_info(self, ref: str, decision: str, detail: str) -> None:
-        await self._safe_send(ToolCallInfo(tool="git_push", args={"ref": ref, "decision": decision}, detail=detail))
+    async def on_git_push_info(
+        self,
+        ref: str,
+        decision: str,
+        detail: str,
+        approval_source: Literal["safe-list", "sentinel", "user", "unknown"] | None = None,
+        approval_verdict: Literal["allow", "deny", "escalate"] | None = None,
+        approval_explanation: str | None = None,
+    ) -> None:
+        await self._safe_send(
+            ToolCallInfo(
+                tool="git_push",
+                args={"ref": ref, "decision": decision},
+                detail=detail,
+                approval_source=approval_source,
+                approval_verdict=approval_verdict,
+                approval_explanation=approval_explanation,
+            )
+        )
 
-    async def on_credential_info(self, vault_path: str, detail: str) -> None:
-        await self._safe_send(ToolCallInfo(tool="credential_access", args={"vault_path": vault_path}, detail=detail))
+    async def on_credential_info(
+        self,
+        vault_path: str,
+        detail: str,
+        approval_source: Literal["safe-list", "sentinel", "user", "unknown"] | None = None,
+        approval_verdict: Literal["allow", "deny", "escalate"] | None = None,
+        approval_explanation: str | None = None,
+    ) -> None:
+        await self._safe_send(
+            ToolCallInfo(
+                tool="credential_access",
+                args={"vault_path": vault_path},
+                detail=detail,
+                approval_source=approval_source,
+                approval_verdict=approval_verdict,
+                approval_explanation=approval_explanation,
+            )
+        )
 
     async def on_credential_approval_request(
         self,

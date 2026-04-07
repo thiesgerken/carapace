@@ -369,7 +369,7 @@ class Deps(BaseModel):
     activated_skills: list[str] = []
     agent_model: Model
     verbose: bool = True
-    tool_call_callback: Callable[[str, dict[str, Any], str], None] | None = None
+    tool_call_callback: Callable[..., None] | None = None
     tool_result_callback: Callable[[ToolResult], None] | None = None
     append_session_events: Callable[[list[dict[str, Any]]], None] | None = None
     usage_tracker: UsageTracker
