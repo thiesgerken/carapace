@@ -56,6 +56,12 @@ def _file_write_shell_command(path: str, content: str, *, mode: int | None, quot
     return cmd
 
 
+def _line_count(content: str) -> int:
+    if not content:
+        return 0
+    return content.count("\n") + 1
+
+
 FILE_READ_SCRIPT = build_file_read_script(SANDBOX_READ_BODY_SEPARATOR)
 
 
@@ -473,9 +479,10 @@ class SandboxManager:
         cmd = _file_write_shell_command(path, content, mode=mode, quote=quote)
         result = await self._exec(session_id, cmd, timeout=10, workdir=workdir)
         if result.exit_code != 0:
-            output = result.output or f"Error: cannot write {path}"
+            output = result.output or f"Error: cannot write {path} (exit {result.exit_code})."
             return ExecResult(exit_code=result.exit_code, output=output)
-        return ExecResult(exit_code=0, output=f"Written to {path}")
+        lines = _line_count(content)
+        return ExecResult(exit_code=0, output=f"Wrote {lines} line(s) to {path}.")
 
     async def file_str_replace(
         self,
@@ -585,9 +592,10 @@ class SandboxManager:
         cmd = _file_write_shell_command(path, content, mode=mode, quote=quote)
         result = await self._exec_in_container(sc, cmd, timeout=10, workdir=workdir)
         if result.exit_code != 0:
-            output = result.output or f"Error: cannot write {path}"
+            output = result.output or f"Error: cannot write {path} (exit {result.exit_code})."
             return ExecResult(exit_code=result.exit_code, output=output)
-        return ExecResult(exit_code=0, output=f"Written to {path}")
+        lines = _line_count(content)
+        return ExecResult(exit_code=0, output=f"Wrote {lines} line(s) to {path}.")
 
     async def _reinject_credential_files(self, sc: SessionContainer, skill_name: str) -> None:
         if not self._reinject_credentials_cb:
