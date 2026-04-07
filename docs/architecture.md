@@ -95,10 +95,9 @@ The main agent, built on [Pydantic AI](https://ai.pydantic.dev/). It receives me
 | `use_skill`   | Activate a skill: copy to sandbox, build venv, load instructions |
 | `read`        | Read a file or list a directory inside the sandbox               |
 | `write`       | Write content to a file in the sandbox                           |
-| `str_replace` | Search-and-replace edit of a file in the sandbox                |
+| `str_replace` | Search-and-replace edit of a file in the sandbox                 |
 
-| `exec`        | Run a shell command in the sandbox (default timeout: 30s)        |
-| `read_memory` | Read a memory file or search memory                              |
+| `exec` | Run a shell command in the sandbox (default timeout: 30s) |
 
 Persistent writes (memory, skills, workspace files) happen via `git commit` + `git push` inside the sandbox. Each push is evaluated by the security sentinel through a pre-receive hook — there is no direct write tool.
 Skill credential declarations in `carapace.yaml` are evaluated during `use_skill`; approved credentials are fetched from the configured backend and injected into the sandbox as session env vars and/or files.
@@ -121,7 +120,7 @@ Loads skill metadata (name, description) from each skill's `SKILL.md` frontmatte
 
 ### Memory Store
 
-Reads Markdown-based memory files from the knowledge directory's `memory/` sub-folder. Provides case-insensitive text search over all memory files. The agent reads memory via the `read_memory` tool; writes happen through `git push` from the sandbox (see Git Store). See [memory.md](memory.md).
+Reads Markdown-based memory files from the knowledge directory's `memory/` sub-folder. The agent accesses memory files from the sandbox workspace; writes happen through `git push` from the sandbox (see Git Store). See [memory.md](memory.md).
 
 ### Git Store
 

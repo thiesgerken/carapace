@@ -10,7 +10,6 @@ from pydantic_ai import Agent, DeferredToolRequests, RunContext, ToolDenied
 
 import carapace.security as security
 from carapace.config import load_workspace_file
-from carapace.memory import MemoryStore
 from carapace.models import CredentialMetadata, CredentialRegistryProtocol, Deps, SkillCredentialDecl, ToolResult
 from carapace.sandbox.manager import READ_TOOL_MAX_LINE_WINDOW
 from carapace.sandbox.runtime import SkillVenvError
@@ -488,39 +487,6 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
         )
 
         _notify_result(ctx, "exec", result, exit_code)
-        return result
-
-    # --- Memory ---
-
-    @agent.tool
-    async def read_memory(ctx: RunContext[Deps], file_path: str = "", query: str = "") -> str:
-        """Read memory files or search memory. Provide file_path to read a specific file, or query to search."""
-        store = MemoryStore(ctx.deps.knowledge_dir)
-        if file_path:
-            content = store.read(file_path)
-            if content is None:
-                result = f"Memory file not found: {file_path}"
-                _notify_result(ctx, "read_memory", result)
-                return result
-            _notify_result(ctx, "read_memory", content)
-            return content
-        if query:
-            results = store.search(query)
-            if not results:
-                result = f"No memory matches for '{query}'"
-                _notify_result(ctx, "read_memory", result)
-                return result
-            lines = [f"- {r['file']}: {r['matches']}" for r in results]
-            result = "Memory search results:\n" + "\n".join(lines)
-            _notify_result(ctx, "read_memory", result)
-            return result
-        files = store.list_files()
-        if not files:
-            result = "No memory files."
-            _notify_result(ctx, "read_memory", result)
-            return result
-        result = "Memory files:\n" + "\n".join(f"- {f}" for f in files)
-        _notify_result(ctx, "read_memory", result)
         return result
 
     return agent

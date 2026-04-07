@@ -10,11 +10,7 @@ Memory is persistent context that survives across sessions. It's a Markdown-base
 
 ### Operations
 
-| Tool | Description |
-| --- | --- |
-| `read_memory` | Read a specific file by path, or search all memory files by query |
-
-**Read**: The agent can always read memory files. Memory is available inside the sandbox at `/workspace/memory/` (part of the Git-cloned knowledge repo), and the agent also has the `read_memory` tool which reads directly from the host.
+**Read**: The agent reads memory files from `/workspace/memory/` inside the sandbox (part of the Git-cloned knowledge repo).
 
 **Write**: The agent edits memory files inside the sandbox and persists changes via `git commit` + `git push`. Every push is evaluated by the security sentinel through a pre-receive hook, which gates persistent writes per the `SECURITY.md` policy.
 
@@ -34,12 +30,12 @@ The agent is instructed (via `AGENTS.md`) to proactively suggest memory writes w
 
 These are top-level Markdown files in the knowledge directory that define the agent's identity, knowledge of the user, and behavioral guidelines. They are part of the Git-tracked knowledge repo and cloned into each session's sandbox at `/workspace/`. Changes are loaded into the agent's system prompt at session start.
 
-| File | Purpose | Agent-writable? |
-| --- | --- | --- |
-| `AGENTS.md` | Master behavioral guide: what to do, safety rules, memory management. The agent's "operating manual." | Yes (via `git push`, sentinel-gated) |
-| `SOUL.md` | Agent personality, tone, boundaries. "Who you are." | Yes (via `git push`, sentinel-gated) |
-| `USER.md` | About the human: name, timezone, preferences, projects. Built up over time. | Yes (via `git push`, sentinel-gated) |
-| `SECURITY.md` | Natural-language security policy for the sentinel agent. | Yes (via `git push`, sentinel-gated) |
+| File          | Purpose                                                                                               | Agent-writable?                      |
+| ------------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------ |
+| `AGENTS.md`   | Master behavioral guide: what to do, safety rules, memory management. The agent's "operating manual." | Yes (via `git push`, sentinel-gated) |
+| `SOUL.md`     | Agent personality, tone, boundaries. "Who you are."                                                   | Yes (via `git push`, sentinel-gated) |
+| `USER.md`     | About the human: name, timezone, preferences, projects. Built up over time.                           | Yes (via `git push`, sentinel-gated) |
+| `SECURITY.md` | Natural-language security policy for the sentinel agent.                                              | Yes (via `git push`, sentinel-gated) |
 
 ### How workspace file editing works
 

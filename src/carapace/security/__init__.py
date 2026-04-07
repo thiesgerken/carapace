@@ -28,7 +28,6 @@ SAFE_TOOLS: frozenset[str] = frozenset(
         "read",
         "write",
         "str_replace",
-        "read_memory",
         "list_skills",
     }
 )
