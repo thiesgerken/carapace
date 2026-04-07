@@ -1,6 +1,25 @@
 # CHANGELOG
 
 
+## v0.67.1 (2026-04-07)
+
+
+### Other
+
+
+- 📋 docs: update roadmap
+  ([`55d2f49`](https://github.com/thiesgerken/carapace/commit/55d2f49cb7e29a893989aa961c8a5a7a8ff694e4))
+
+### ♻️ Refactoring
+
+
+- ♻️ refactor(agent): disable unfinished read_memory tool
+  ([`4bdfd2b`](https://github.com/thiesgerken/carapace/commit/4bdfd2b88ee7ee573bcfdb9b9a4d6b8ec84d9153))
+
+  Remove the read_memory tool from the agent and safe-list so memory access only happens via sandbox workspace files for now. Update docs to stop advertising host-side memory reads until the feature is fully fleshed out.
+
+  Made-with: Cursor
+
 ## v0.67.0 (2026-04-07)
 
 
