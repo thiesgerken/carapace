@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.65.0 (2026-04-07)
+
+
+### ✨ Features
+
+
+- ✨ feat: replace edit/apply_patch with str_replace
+  ([`a4f7898`](https://github.com/thiesgerken/carapace/commit/a4f7898e6f2e156a7416d0f057488552f2e640d9))
+
+  Consolidate sandbox file editing around a single str_replace tool and remove diff-heavy edit outputs to keep agent context compact. Add replace_all semantics with original match line numbers in status messages, update safelist/docs/skill guidance, and cover the new script behavior with dedicated tests.
+
+  Made-with: Cursor
+
 ## v0.64.1 (2026-04-06)
 
 
