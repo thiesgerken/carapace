@@ -8,10 +8,35 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+from loguru import logger
+from pydantic import BaseModel
 from pydantic_ai import ModelMessage, ModelMessagesTypeAdapter
 
 from carapace.models import SessionState
 from carapace.usage import LlmRequestLog, UsageTracker
+
+
+def _to_yaml_safe(value: Any) -> Any:
+    if isinstance(value, BaseModel):
+        return value.model_dump(mode="json")
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, dict):
+        return {str(key): _to_yaml_safe(item) for key, item in value.items()}
+    if isinstance(value, list | tuple | set):
+        return [_to_yaml_safe(item) for item in value]
+    if isinstance(value, str | int | float | bool) or value is None:
+        return value
+    return repr(value)
+
+
+def _append_loaded_event(doc: Any, result: list[dict[str, Any]]) -> None:
+    if isinstance(doc, list):
+        result.extend(item for item in doc if isinstance(item, dict))
+    elif isinstance(doc, dict):
+        result.append(doc)
 
 
 class SessionManager:
@@ -162,11 +187,25 @@ class SessionManager:
             return []
         result: list[dict[str, Any]] = []
         with open(events_path) as f:
-            for doc in yaml.safe_load_all(f):
-                if isinstance(doc, list):
-                    result.extend(doc)
-                elif isinstance(doc, dict):
-                    result.append(doc)
+            try:
+                for doc in yaml.safe_load_all(f):
+                    _append_loaded_event(doc, result)
+            except yaml.YAMLError as exc:
+                logger.warning(f"Failed to parse events.yaml safely for session {session_id}: {exc}")
+                f.seek(0)
+                docs = f.read().split("---\n")
+                skipped_docs = 0
+                for raw_doc in docs:
+                    if not raw_doc.strip():
+                        continue
+                    try:
+                        doc = yaml.safe_load(raw_doc)
+                    except yaml.YAMLError:
+                        skipped_docs += 1
+                        continue
+                    _append_loaded_event(doc, result)
+                if skipped_docs:
+                    logger.warning(f"Skipped {skipped_docs} invalid event document(s) in session {session_id}")
         return result
 
     def append_events(self, session_id: str, events: list[dict[str, Any]]) -> None:
@@ -176,4 +215,4 @@ class SessionManager:
         with open(events_path, "a") as f:
             for event in events:
                 f.write("---\n")
-                yaml.dump(event, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+                yaml.dump(_to_yaml_safe(event), f, default_flow_style=False, allow_unicode=True, sort_keys=False)
