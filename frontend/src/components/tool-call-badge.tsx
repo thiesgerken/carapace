@@ -379,7 +379,7 @@ export function ToolCallBadge({
             {argsSummary}
           </span>
         ) : null}
-        <span className="inline-flex shrink-0 items-center gap-1">
+        <span className="ml-auto inline-flex shrink-0 items-center gap-1">
           {source && <ApprovalBadge source={source} verdict={verdict} />}
           {loading && (
             <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
