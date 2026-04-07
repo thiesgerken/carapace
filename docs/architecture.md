@@ -95,8 +95,8 @@ The main agent, built on [Pydantic AI](https://ai.pydantic.dev/). It receives me
 | `use_skill`   | Activate a skill: copy to sandbox, build venv, load instructions |
 | `read`        | Read a file or list a directory inside the sandbox               |
 | `write`       | Write content to a file in the sandbox                           |
-| `edit`        | Search-and-replace edit of a file in the sandbox                 |
-| `apply_patch` | Batch edits across multiple files in the sandbox                 |
+| `str_replace` | Search-and-replace edit of a file in the sandbox                |
+
 | `exec`        | Run a shell command in the sandbox (default timeout: 30s)        |
 | `read_memory` | Read a memory file or search memory                              |
 

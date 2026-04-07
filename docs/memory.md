@@ -44,7 +44,7 @@ These are top-level Markdown files in the knowledge directory that define the ag
 ### How workspace file editing works
 
 1. On container creation, the knowledge repo is **Git-cloned** into the session's `/workspace/` directory
-2. The agent can freely edit these working copies inside the sandbox (via `read`, `write`, `edit`)
+2. The agent can freely edit these working copies inside the sandbox (via `read`, `write`, `str_replace`)
 3. To make changes permanent, the agent uses `git add`, `git commit`, and `git push` inside the sandbox
 4. Every push is **evaluated by the sentinel** via a pre-receive hook — changes that violate the security policy are denied or escalated for user approval
 

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import base64
-import json
 import re
 import secrets
 import shlex
@@ -14,10 +13,7 @@ from loguru import logger
 from pydantic import BaseModel
 
 from carapace.sandbox.container_scripts import (
-    SANDBOX_EDIT_SCRIPT as _EDIT_SCRIPT,
-)
-from carapace.sandbox.container_scripts import (
-    SANDBOX_PATCH_SCRIPT as _PATCH_SCRIPT,
+    SANDBOX_STR_REPLACE_SCRIPT as _STR_REPLACE_SCRIPT,
 )
 from carapace.sandbox.container_scripts import (
     build_file_read_script,
@@ -481,36 +477,24 @@ class SandboxManager:
             return ExecResult(exit_code=result.exit_code, output=output)
         return ExecResult(exit_code=0, output=f"Written to {path}")
 
-    async def file_edit(self, session_id: str, path: str, old_string: str, new_string: str) -> ExecResult:
-        """Edit a file inside the sandbox (search-and-replace)."""
+    async def file_str_replace(
+        self,
+        session_id: str,
+        path: str,
+        old_string: str,
+        new_string: str,
+        *,
+        replace_all: bool = False,
+    ) -> ExecResult:
+        """Replace text in a file inside the sandbox, optionally replacing all matches."""
         pq = shlex.quote(path)
         old_b64 = base64.b64encode(old_string.encode()).decode()
         new_b64 = base64.b64encode(new_string.encode()).decode()
-        cmd = f"python3 -c {shlex.quote(_EDIT_SCRIPT)} {pq} {old_b64} {new_b64}"
+        replace_all_flag = "1" if replace_all else "0"
+        cmd = f"python3 -c {shlex.quote(_STR_REPLACE_SCRIPT)} {pq} {old_b64} {new_b64} {replace_all_flag}"
         result = await self._exec(session_id, cmd, timeout=10)
-        if result.exit_code != 0:
-            output = result.output or f"Error: cannot edit {path}"
-            return ExecResult(exit_code=result.exit_code, output=output)
-        return ExecResult(
-            exit_code=0,
-            output=f"Edited {path}:\n```diff\n{result.output}```",
-        )
-
-    async def file_apply_patch(self, session_id: str, changes: list[dict[str, str]]) -> ExecResult:
-        """Apply structured edits across files inside the sandbox."""
-        encoded_changes: list[dict[str, str]] = []
-        for change in changes:
-            encoded: dict[str, str] = {"path": change.get("path", "")}
-            if change.get("old_string"):
-                encoded["old_b64"] = base64.b64encode(change["old_string"].encode()).decode()
-            if change.get("new_string"):
-                encoded["new_b64"] = base64.b64encode(change["new_string"].encode()).decode()
-            encoded_changes.append(encoded)
-
-        payload_b64 = base64.b64encode(json.dumps(encoded_changes).encode()).decode()
-        cmd = f"python3 -c {shlex.quote(_PATCH_SCRIPT)} {payload_b64}"
-        result = await self._exec(session_id, cmd, timeout=10)
-        return ExecResult(exit_code=result.exit_code, output=result.output or "(no output)")
+        output = result.output or f"Error: cannot replace in {path}"
+        return ExecResult(exit_code=result.exit_code, output=output)
 
     async def activate_skill(self, session_id: str, skill_name: str) -> str:
         if err := _validate_skill_name(skill_name):

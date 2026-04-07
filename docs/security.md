@@ -6,7 +6,7 @@ Carapace gates every agent action through a two-layer security system: a fast **
 
 Every tool call and skill invocation passes through the security module before execution:
 
-1. **Safe-list check.** A hardcoded set of tool names (file reads, sandbox writes/edits/patches, memory reads, skill listing) is auto-allowed without any LLM call.
+1. **Safe-list check.** A hardcoded set of tool names (file reads/writes/replacements in the sandbox, memory reads, skill listing) is auto-allowed without any LLM call.
 2. **Sentinel evaluation.** All other operations are sent to the sentinel agent -- an LLM that receives the action log, the tool name and arguments, and makes a contextual decision.
 3. **Verdict.** The sentinel returns one of three decisions:
    - **allow** -- proceed without interruption.
@@ -62,8 +62,8 @@ The following tools are auto-allowed without consulting the sentinel:
 | ------------- | ----------------------------------------- |
 | `read`        | File reads are always safe                |
 | `write`       | File writes in the sandbox                |
-| `edit`        | File edits in the sandbox                 |
-| `apply_patch` | Batch edits across files in the sandbox   |
+| `str_replace` | String replacement edits in sandbox files |
+
 | `read_memory` | Memory reads are non-destructive          |
 | `list_skills` | Listing available skills is informational |
 

@@ -31,7 +31,7 @@ flowchart LR
 ### Container capabilities
 
 - **Shell access**: The agent runs commands via `exec` (equivalent to `docker exec` / `kubectl exec`)
-- **File operations**: `read`, `write`, `edit`, `apply_patch` work directly on the container filesystem
+- **File operations**: `read`, `write`, `str_replace` work directly on the container filesystem
 - **Network access**: All outbound traffic goes through the HTTP forward proxy, which enforces per-session domain allowlisting
 - **Skills**: Activated skills are available in the cloned knowledge repo; venvs are built via `uv sync`
 - **Workspace files**: `SOUL.md`, `USER.md`, `SECURITY.md` etc. live in the knowledge repo at `/workspace/`. Changes are persisted via `git commit` and `git push`.

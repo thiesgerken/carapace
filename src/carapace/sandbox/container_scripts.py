@@ -9,76 +9,53 @@ from __future__ import annotations
 # Placeholder replaced by :func:`build_file_read_script` with the real separator line.
 FILE_READ_BODY_SEPARATOR_TOKEN = "__READ_BODY_SEP__"
 
-SANDBOX_EDIT_SCRIPT = """\
-import sys, base64, difflib
-p, o_b64, n_b64 = sys.argv[1], sys.argv[2], sys.argv[3]
+SANDBOX_STR_REPLACE_SCRIPT = """\
+import base64, os, sys
+p, o_b64, n_b64, replace_all_flag = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
 old = base64.b64decode(o_b64).decode()
 new = base64.b64decode(n_b64).decode()
-try:
-    text = open(p).read()
-except FileNotFoundError:
+replace_all = replace_all_flag == "1"
+if not old:
+    print("Error: old_string must not be empty.")
+    sys.exit(1)
+if not os.path.exists(p):
     print(f"Error: file not found: {p}")
     sys.exit(1)
+try:
+    text = open(p).read()
 except PermissionError:
     print(f"Error: permission denied: {p}")
     sys.exit(1)
-count = text.count(old)
+positions = []
+start = 0
+while True:
+    idx = text.find(old, start)
+    if idx < 0:
+        break
+    positions.append(idx)
+    start = idx + len(old)
+count = len(positions)
 if count == 0:
-    print("Error: old_string not found")
+    print(f"Error: old_string not found in {p}.")
     sys.exit(1)
-if count > 1:
-    print(f"Error: old_string appears {count} times (must be unique)")
+line_numbers = [text.count("\\n", 0, i) + 1 for i in positions]
+lines_str = ",".join(str(n) for n in line_numbers)
+if not replace_all and count > 1:
+    print(
+        f"Error: old_string appears {count} times in {p} at lines {lines_str}; "
+        "set replace_all=true to replace all."
+    )
     sys.exit(1)
-updated = text.replace(old, new, 1)
+updated = text.replace(old, new) if replace_all else text.replace(old, new, 1)
 try:
     open(p, "w").write(updated)
 except PermissionError:
     print(f"Error: permission denied (read-only): {p}")
     sys.exit(1)
-d = difflib.unified_diff(text.splitlines(keepends=True), updated.splitlines(keepends=True), f"a/{p}", f"b/{p}", n=3)
-print("".join(d))\
-"""
-
-SANDBOX_PATCH_SCRIPT = """\
-import sys, base64, json, os
-changes = json.loads(base64.b64decode(sys.argv[1]).decode())
-for i, c in enumerate(changes):
-    p = c.get("path", "")
-    old = base64.b64decode(c["old_b64"]).decode() if c.get("old_b64") else ""
-    new = base64.b64decode(c["new_b64"]).decode() if c.get("new_b64") else ""
-    if not p:
-        print(f"Change {i+1}: missing path")
-        continue
-    if not old:
-        d = os.path.dirname(p)
-        if d:
-            os.makedirs(d, exist_ok=True)
-        try:
-            open(p, "w").write(new)
-            print(f"Change {i+1}: created {p}")
-        except PermissionError:
-            print(f"Change {i+1} ({p}): permission denied")
-        continue
-    if not os.path.exists(p):
-        print(f"Change {i+1}: file not found: {p}")
-        continue
-    try:
-        t = open(p).read()
-    except PermissionError:
-        print(f"Change {i+1} ({p}): permission denied")
-        continue
-    cnt = t.count(old)
-    if cnt == 0:
-        print(f"Change {i+1} ({p}): old_string not found")
-        continue
-    if cnt > 1:
-        print(f"Change {i+1} ({p}): old_string appears {cnt} times (must be unique)")
-        continue
-    try:
-        open(p, "w").write(t.replace(old, new, 1))
-        print(f"Change {i+1}: edited {p}")
-    except PermissionError:
-        print(f"Change {i+1} ({p}): permission denied")\
+if replace_all:
+    print(f"Replaced {count} occurrences in {p} at lines {lines_str}.")
+else:
+    print(f"Replaced 1 occurrence in {p} at line {line_numbers[0]}.")
 """
 
 # argv: path, offset (0-based line), limit (max lines), max_body_chars.

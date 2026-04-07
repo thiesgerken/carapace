@@ -418,22 +418,28 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
         return result
 
     @agent.tool
-    async def edit(
+    async def str_replace(
         ctx: RunContext[Deps],
         path: str,
         old_string: str,
         new_string: str,
+        replace_all: bool = False,
     ) -> str | ToolDenied:
-        """Edit a file in the sandbox by replacing old_string with new_string.
-        The old_string must appear exactly once."""
+        """Replace text in a file.
+
+        Use ``replace_all=False`` (default) to require exactly one match.
+        Use ``replace_all=True`` to replace all matches.
+        Returns a compact status string including match count and original line number(s).
+        """
         if not ctx.tool_call_approved and (
             denied := await _gate(
                 ctx,
-                "edit",
+                "str_replace",
                 {
                     "path": path,
-                    "old_string": old_string[:100],
-                    "new_string": new_string[:100],
+                    "old_string": old_string,
+                    "new_string": new_string,
+                    "replace_all": replace_all,
                 },
             )
         ):
@@ -442,44 +448,20 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
         session_id = ctx.deps.session_state.session_id
         exit_code = 0
         try:
-            exec_result = await ctx.deps.sandbox.file_edit(session_id, path, old_string, new_string)
-            result = exec_result.output
-            exit_code = exec_result.exit_code
-        except Exception as exc:
-            _log_sandbox_tool_exception("edit", session_id)
-            result = f"Error: {exc}"
-            exit_code = -1
-        _notify_result(ctx, "edit", result, exit_code)
-        return result
-
-    @agent.tool
-    async def apply_patch(ctx: RunContext[Deps], changes: list[dict[str, str]]) -> str | ToolDenied:
-        """Apply structured edits across one or more files in the sandbox.
-
-        Each change is a dict with 'path', 'old_string', and 'new_string'.
-        If old_string is empty, the file is created with new_string as content.
-        """
-        paths_summary = [c.get("path", "?") for c in changes]
-        if not ctx.tool_call_approved and (
-            denied := await _gate(
-                ctx,
-                "apply_patch",
-                {"files": paths_summary, "num_changes": len(changes)},
+            exec_result = await ctx.deps.sandbox.file_str_replace(
+                session_id,
+                path,
+                old_string,
+                new_string,
+                replace_all=replace_all,
             )
-        ):
-            return denied
-
-        session_id = ctx.deps.session_state.session_id
-        exit_code = 0
-        try:
-            exec_result = await ctx.deps.sandbox.file_apply_patch(session_id, changes)
             result = exec_result.output
             exit_code = exec_result.exit_code
         except Exception as exc:
-            _log_sandbox_tool_exception("apply_patch", session_id)
+            _log_sandbox_tool_exception("str_replace", session_id)
             result = f"Error: {exc}"
             exit_code = -1
-        _notify_result(ctx, "apply_patch", result, exit_code)
+        _notify_result(ctx, "str_replace", result, exit_code)
         return result
 
     # --- Runtime ---

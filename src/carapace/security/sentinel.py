@@ -325,8 +325,8 @@ class Sentinel:
         prompt_parts.append(f"Is default branch: {is_default_branch}")
         prompt_parts.append(f"Commits:\n{commits}")
         # Truncate large diffs to avoid exceeding context limits
-        if len(diff) > 10000:
-            diff = diff[:10000] + "\n... (diff truncated)"
+        if len(diff) > 8192:
+            diff = diff[:8192] + "\n... (diff truncated)"
         prompt_parts.append(f"Diff:\n{diff}")
 
         prompt = "\n".join(prompt_parts)

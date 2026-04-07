@@ -200,7 +200,7 @@ uv run --directory /workspace/skills/my-skill scripts/my_script.py
 
 ### Editing an existing skill
 
-Use the `edit` tool on `skills/<name>/SKILL.md`. The same approval rule applies.
+Use the `str_replace` tool on `skills/<name>/SKILL.md` for targeted updates, or `write` to replace the full file. The same approval rule applies.
 
 ### Good description examples
 

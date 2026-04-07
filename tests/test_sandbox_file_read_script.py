@@ -35,9 +35,9 @@ def test_text_truncation_stops_at_char_cap_with_accurate_line_count(tmp_path: Pa
     assert r.returncode == 0
     out = r.stdout
     assert SANDBOX_READ_BODY_SEPARATOR in out
-    assert "Output truncated at" in out
-    assert "Lines 1-24 of" in out or "Lines 1-25 of" in out
-    assert "Lines 1-100 of" not in out
+    assert "Output is truncated at" in out
+    assert "Reading lines 1 through 24." in out or "Reading lines 1 through 25." in out
+    assert "Reading lines 1 through 100." not in out
 
 
 def test_partial_last_line_shows_truncation_suffix(tmp_path: Path) -> None:
@@ -50,7 +50,7 @@ def test_partial_last_line_shows_truncation_suffix(tmp_path: Path) -> None:
     assert SANDBOX_READ_BODY_SEPARATOR in r.stdout
     assert "truncated:" in r.stdout
     assert "line has 5001 characters" in r.stdout
-    assert "Last line is incomplete." in r.stdout
+    assert "The last line is incomplete." in r.stdout
 
 
 def test_binary_file_metadata_only(tmp_path: Path) -> None:
