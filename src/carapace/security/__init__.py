@@ -49,13 +49,13 @@ async def evaluate_with(
     Raises ApprovalRequired if the sentinel escalates, or SecurityDeniedError if denied.
     """
     if tool_name in SAFE_TOOLS:
-        entry = ToolCallEntry(tool=tool_name, args=_truncate_args(args), decision="auto_allowed")
+        entry = ToolCallEntry(tool=tool_name, args=args, decision="auto_allowed")
         session.append(entry)
         session.write_audit(
             AuditEntry.now(
                 kind="tool_call",
                 tool=tool_name,
-                args_summary=_truncate_args(args),
+                args_summary=args,
                 final_decision="auto_allowed",
             )
         )
@@ -74,7 +74,7 @@ async def evaluate_with(
 
     entry = ToolCallEntry(
         tool=tool_name,
-        args=_truncate_args(args),
+        args=args,
         decision=decision_str,
         explanation=verdict.explanation,
     )
@@ -89,7 +89,7 @@ async def evaluate_with(
             AuditEntry.now(
                 kind="tool_call",
                 tool=tool_name,
-                args_summary=_truncate_args(args),
+                args_summary=args,
                 sentinel_verdict=verdict,
                 final_decision="denied",
                 explanation=verdict.explanation,
@@ -105,7 +105,7 @@ async def evaluate_with(
                 "explanation": verdict.explanation,
                 "risk_level": verdict.risk_level,
                 "sentinel_verdict": verdict,
-                "args_summary": _truncate_args(args),
+                "args_summary": args,
             }
         )
 
@@ -114,7 +114,7 @@ async def evaluate_with(
         AuditEntry.now(
             kind="tool_call",
             tool=tool_name,
-            args_summary=_truncate_args(args),
+            args_summary=args,
             sentinel_verdict=verdict,
             final_decision="allowed",
             explanation=verdict.explanation,
@@ -343,14 +343,6 @@ def _verdict_to_decision(verdict: SentinelVerdict) -> Literal["allowed", "escala
             return "denied"
         case _:
             return "denied"
-
-
-def _truncate_args(args: dict[str, Any], limit: int = 200) -> dict[str, Any]:
-    result: dict[str, Any] = {}
-    for k, v in args.items():
-        v_str = repr(v) if isinstance(v, str) else str(v)
-        result[k] = v_str[:limit] if len(v_str) > limit else v_str
-    return result
 
 
 def _log_tool_call(

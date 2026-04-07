@@ -399,9 +399,7 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
     @agent.tool
     async def write(ctx: RunContext[Deps], path: str, content: str) -> str | ToolDenied:
         """Write content to a file in the sandbox. Creates parent directories as needed."""
-        if not ctx.tool_call_approved and (
-            denied := await _gate(ctx, "write", {"path": path, "content": content[:200]})
-        ):
+        if not ctx.tool_call_approved and (denied := await _gate(ctx, "write", {"path": path, "content": content})):
             return denied
 
         session_id = ctx.deps.session_state.session_id
