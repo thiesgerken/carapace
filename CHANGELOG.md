@@ -1,6 +1,22 @@
 # CHANGELOG
 
 
+## v0.67.0 (2026-04-07)
+
+
+### ✨ Features
+
+
+- ✨ feat(frontend): humanize tool one-liners and polish write/replace panels
+  ([`b4cd7c9`](https://github.com/thiesgerken/carapace/commit/b4cd7c9826ef57de69502ac0afb153e805ac9b27))
+
+  - Make read/write/replace one-liners more natural-language and less key-value style.
+  - Show  label instead of  and avoid duplicated wording.
+  - Use line-based summaries (including equal-line compact form) and inclusive read ranges.
+  - Keep highlighted write/replace payload views with tool output blocks where useful.
+
+  Made-with: Cursor
+
 ## v0.66.0 (2026-04-07)
 
 
