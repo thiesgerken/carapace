@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.68.9 (2026-04-07)
+
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix(sandbox): run env-injected commands via bash shell
+  ([`3cd2d1e`](https://github.com/thiesgerken/carapace/commit/3cd2d1e7deaa5247a557cfb2ca9ba7a24e35f0ed))
+
+  Wrap env-prefixed Kubernetes exec commands with bash -lc and quote workdir/env values so shell builtins like cd work reliably with credential-injected variables.
+
+  Made-with: Cursor
+
 ## v0.68.8 (2026-04-07)
 
 
