@@ -335,11 +335,12 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
         carapace_cfg = registry.get_carapace_config(skill_name)
         requested_domains = carapace_cfg.network.domains if carapace_cfg else []
         requested_creds = carapace_cfg.credentials if carapace_cfg else []
+        requested_creds_payload = [decl.model_dump(mode="json") for decl in requested_creds]
 
         if not ctx.tool_call_approved:
             gate_args: dict[str, Any] = {
                 "skill_name": skill_name,
-                "requested_creds": requested_creds,
+                "requested_creds": requested_creds_payload,
                 "requested_domains": requested_domains,
             }
 
