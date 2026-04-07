@@ -1,6 +1,26 @@
 # CHANGELOG
 
 
+## v0.68.1 (2026-04-07)
+
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix(frontend): stabilize token gauge context cap source
+  ([`f8d1990`](https://github.com/thiesgerken/carapace/commit/f8d1990f7ff18156c10c526e69fa4befed8776bc))
+
+  Use the backend-resolved context cap in turn usage payloads so the UI gauge no longer jumps to the 200k fallback when model metadata is temporarily unavailable after reconnects or backend restarts.
+
+  Made-with: Cursor
+
+- 🐛 fix(agent): require skill activation before reading existing skill files
+  ([`48a64d3`](https://github.com/thiesgerken/carapace/commit/48a64d31aad5a11f2a6bd3789827cbee9860151f))
+
+  Block `read` access to backend-existing files under `skills/<name>/` until the skill is activated, while still allowing sandbox-only files for skill creation. Also update the roadmap item now covered by this behavior.
+
+  Made-with: Cursor
+
 ## v0.68.0 (2026-04-07)
 
 
