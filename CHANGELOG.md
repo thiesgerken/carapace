@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.69.0 (2026-04-07)
+
+
+### ✨ Features
+
+
+- ✨ feat(session): persist resumable partial history on cancellation
+  ([`c981c10`](https://github.com/thiesgerken/carapace/commit/c981c10ea3b00aca2022047803f94ef15cca90d8))
+
+  Store message snapshots during turns and trim unresolved tool-call tails before persisting, keeping model and UI histories consistent after cancel or failure.
+
+  Made-with: Cursor
+
 ## v0.68.9 (2026-04-07)
 
 
