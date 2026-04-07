@@ -1,6 +1,17 @@
 # CHANGELOG
 
 
+## v0.68.3 (2026-04-07)
+
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix(frontend): improve date formatting in sidebar component
+  ([`6c2412a`](https://github.com/thiesgerken/carapace/commit/6c2412affc3a404b3a3daa3672b89875796577c0))
+
+  Update the date formatting in the sidebar to use German locale settings, ensuring consistent display of day, month, and year. Additionally, clean up the JSX structure for better readability.
+
 ## v0.68.2 (2026-04-07)
 
 
