@@ -262,7 +262,7 @@ export function ToolCallBadge({
   void _detail;
   const source = approvalSource;
   const verdict = approvalVerdict ?? "allow";
-  const explanation = source === "sentinel" ? (approvalExplanation ?? "") : "";
+  const explanation = approvalExplanation ?? "";
   const isError = exitCode != null && exitCode !== 0;
   const isExecTool = tool === "exec";
   const isUseSkillTool = tool === "use_skill";
