@@ -216,3 +216,12 @@ class SessionManager:
             for event in events:
                 f.write("---\n")
                 yaml.dump(_to_yaml_safe(event), f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+
+    def save_events(self, session_id: str, events: list[dict[str, Any]]) -> None:
+        session_dir = self.sessions_dir / session_id
+        session_dir.mkdir(parents=True, exist_ok=True)
+        events_path = session_dir / "events.yaml"
+        with open(events_path, "w") as f:
+            for event in events:
+                f.write("---\n")
+                yaml.dump(_to_yaml_safe(event), f, default_flow_style=False, allow_unicode=True, sort_keys=False)

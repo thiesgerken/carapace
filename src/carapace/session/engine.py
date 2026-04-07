@@ -11,7 +11,16 @@ from typing import Any, Literal, Protocol, runtime_checkable
 
 from loguru import logger
 from pydantic_ai import ToolDenied
-from pydantic_ai.messages import ModelRequest, UserPromptPart
+from pydantic_ai.messages import (
+    BuiltinToolCallPart,
+    BuiltinToolReturnPart,
+    ModelMessage,
+    ModelRequest,
+    ModelResponse,
+    ToolCallPart,
+    ToolReturnPart,
+    UserPromptPart,
+)
 from pydantic_ai.models import Model, infer_model
 
 import carapace.security as security_mod
@@ -770,6 +779,11 @@ class SessionEngine:
     ) -> None:
         """Execute a single agent turn with semaphore-bounded LLM access."""
         session_id = active.state.session_id
+        latest_messages: list[ModelMessage] | None = None
+
+        def _set_latest_messages(snapshot: list[Any]) -> None:
+            nonlocal latest_messages
+            latest_messages = [m for m in snapshot if isinstance(m, ModelMessage)]
 
         def _tool_call_cb(
             tool: str,
@@ -893,6 +907,7 @@ class SessionEngine:
                             send_approval_request=_send_approval,
                             collect_approvals=_collect_approvals,
                             on_token=_on_token,
+                            on_messages_snapshot=lambda snapshot: _set_latest_messages(snapshot),
                         )
 
                 self._session_mgr.save_history(session_id, messages)
@@ -936,24 +951,87 @@ class SessionEngine:
             logger.info(f"Agent turn cancelled for session {session_id}")
             self._session_mgr.save_usage(session_id, active.usage_tracker)
             self._session_mgr.save_llm_request_log(session_id, active.llm_request_log)
-            self._save_user_message_on_failure(session_id, user_input)
+            self._save_user_message_on_failure(session_id, user_input, latest_messages=latest_messages)
             await self._broadcast(active, "on_cancelled")
         except Exception:
             logger.exception("Agent error")
-            self._save_user_message_on_failure(session_id, user_input)
+            self._save_user_message_on_failure(session_id, user_input, latest_messages=latest_messages)
             await self._broadcast(active, "on_error", traceback.format_exc())
         finally:
             active.agent_task = None
 
-    def _save_user_message_on_failure(self, session_id: str, user_input: str) -> None:
+    def _save_user_message_on_failure(
+        self,
+        session_id: str,
+        user_input: str,
+        *,
+        latest_messages: list[ModelMessage] | None = None,
+    ) -> None:
         """Persist the user message to history even when the agent turn fails.
 
         Without this the next turn would load stale history and the agent would
         have no memory of what the user said before the error.
         """
-        history = self._session_mgr.load_history(session_id)
-        history.append(ModelRequest(parts=[UserPromptPart(content=user_input)]))
-        self._session_mgr.save_history(session_id, history)
+        if latest_messages is not None:
+            history = list(latest_messages)
+        else:
+            history = self._session_mgr.load_history(session_id)
+            history.append(ModelRequest(parts=[UserPromptPart(content=user_input)]))
+        self._session_mgr.save_history(session_id, self._truncate_incomplete_model_history(history))
+        self._session_mgr.save_events(
+            session_id, self._truncate_incomplete_events(self._session_mgr.load_events(session_id))
+        )
+
+    def _truncate_incomplete_model_history(self, messages: list[ModelMessage]) -> list[ModelMessage]:
+        pending_tool_calls: set[str] = set()
+        safe_prefix_end = 0
+
+        for idx, message in enumerate(messages):
+            if isinstance(message, ModelResponse):
+                for part in message.parts:
+                    if isinstance(part, ToolCallPart | BuiltinToolCallPart):
+                        tool_call_id = getattr(part, "tool_call_id", None)
+                        if isinstance(tool_call_id, str) and tool_call_id:
+                            pending_tool_calls.add(tool_call_id)
+            elif isinstance(message, ModelRequest):
+                for part in message.parts:
+                    if isinstance(part, ToolReturnPart | BuiltinToolReturnPart):
+                        tool_call_id = getattr(part, "tool_call_id", None)
+                        if isinstance(tool_call_id, str) and tool_call_id in pending_tool_calls:
+                            pending_tool_calls.remove(tool_call_id)
+
+            if not pending_tool_calls:
+                safe_prefix_end = idx + 1
+
+        return messages[:safe_prefix_end]
+
+    def _truncate_incomplete_events(self, events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        tools_with_results = {
+            e.get("tool") for e in events if e.get("role") == "tool_result" and isinstance(e.get("tool"), str)
+        }
+        pending_by_tool: dict[str, int] = {}
+        safe_prefix_end = 0
+
+        for idx, event in enumerate(events):
+            role = event.get("role")
+            tool = event.get("tool")
+            if not isinstance(tool, str):
+                tool = ""
+
+            if role == "tool_call" and tool in tools_with_results:
+                pending_by_tool[tool] = pending_by_tool.get(tool, 0) + 1
+            elif role == "tool_result" and tool in tools_with_results:
+                outstanding = pending_by_tool.get(tool, 0)
+                if outstanding > 0:
+                    if outstanding == 1:
+                        pending_by_tool.pop(tool, None)
+                    else:
+                        pending_by_tool[tool] = outstanding - 1
+
+            if not pending_by_tool:
+                safe_prefix_end = idx + 1
+
+        return events[:safe_prefix_end]
 
     async def _generate_title(self, active: ActiveSession, events: list[dict[str, Any]]) -> None:
         session_id = active.state.session_id

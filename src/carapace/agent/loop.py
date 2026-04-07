@@ -38,6 +38,7 @@ async def run_agent_turn(
     send_approval_request: Callable[[ApprovalRequest], Awaitable[None]],
     collect_approvals: Callable[[set[str]], Awaitable[dict[str, bool | ToolDenied]]],
     on_token: Callable[[str], Awaitable[None]] | None = None,
+    on_messages_snapshot: Callable[[list[Any]], None] | None = None,
 ) -> tuple[list[Any], str]:
     """Run one full agent turn, handling approval loops.
 
@@ -67,6 +68,8 @@ async def run_agent_turn(
     )
     deps.usage_tracker.record(model_name, "agent", result.usage())
     messages = result.all_messages()
+    if on_messages_snapshot is not None:
+        on_messages_snapshot(list(messages))
 
     while isinstance(result.output, DeferredToolRequests):
         requests = result.output
@@ -123,6 +126,8 @@ async def run_agent_turn(
         )
         deps.usage_tracker.record(model_name, "agent", result.usage())
         messages = result.all_messages()
+        if on_messages_snapshot is not None:
+            on_messages_snapshot(list(messages))
 
     if isinstance(result.output, str):
         last_usage = result.usage()

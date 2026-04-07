@@ -8,6 +8,7 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
+from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, ToolCallPart, ToolReturnPart, UserPromptPart
 from pydantic_ai.models.test import TestModel
 
 from carapace.bootstrap import ensure_data_dir
@@ -465,3 +466,52 @@ def test_non_slash_user_message_count_plain_users() -> None:
         {"role": "user", "content": "c"},
     ]
     assert _non_slash_user_message_count(events) == 3
+
+
+def test_truncate_incomplete_model_history_drops_dangling_tool_tail(tmp_path: Path) -> None:
+    with _patch_sentinel():
+        engine = _make_engine(tmp_path)
+        messages = [
+            ModelRequest(parts=[UserPromptPart(content="hello")]),
+            ModelResponse(parts=[ToolCallPart(tool_name="cmd", args={}, tool_call_id="call-1")]),
+            ModelRequest(parts=[ToolReturnPart(tool_name="cmd", content="ok", tool_call_id="call-1")]),
+            ModelResponse(parts=[TextPart(content="done")]),
+            ModelResponse(parts=[ToolCallPart(tool_name="cmd", args={}, tool_call_id="call-2")]),
+        ]
+
+        truncated = engine._truncate_incomplete_model_history(messages)
+
+        assert len(truncated) == 4
+        assert isinstance(truncated[-1], ModelResponse)
+        assert truncated[-1].parts[0].part_kind == "text"
+
+
+def test_truncate_incomplete_model_history_keeps_complete_pairs(tmp_path: Path) -> None:
+    with _patch_sentinel():
+        engine = _make_engine(tmp_path)
+        messages = [
+            ModelRequest(parts=[UserPromptPart(content="hello")]),
+            ModelResponse(parts=[ToolCallPart(tool_name="cmd", args={}, tool_call_id="call-1")]),
+            ModelRequest(parts=[ToolReturnPart(tool_name="cmd", content="ok", tool_call_id="call-1")]),
+            ModelResponse(parts=[TextPart(content="done")]),
+        ]
+
+        truncated = engine._truncate_incomplete_model_history(messages)
+        assert truncated == messages
+
+
+def test_truncate_incomplete_events_drops_dangling_tool_tail(tmp_path: Path) -> None:
+    with _patch_sentinel():
+        engine = _make_engine(tmp_path)
+        events: list[dict[str, Any]] = [
+            {"role": "user", "content": "hello"},
+            {"role": "tool_call", "tool": "shell", "args": {"command": "echo ok"}, "detail": "run"},
+            {"role": "tool_result", "tool": "shell", "result": "ok", "exit_code": 0},
+            {"role": "assistant", "content": "done"},
+            {"role": "tool_call", "tool": "shell", "args": {"command": "sleep 10"}, "detail": "run"},
+        ]
+
+        truncated = engine._truncate_incomplete_events(events)
+
+        assert len(truncated) == 4
+        assert truncated[-1]["role"] == "assistant"
