@@ -49,7 +49,7 @@ async def run_agent_turn(
     deps.security.append(UserMessageEntry(content=user_input))
 
     agent = create_agent(deps)
-    model_name = deps.agent_model.model_id
+    usage_model_key = deps.agent_model_id
 
     async def _stream_handler(_ctx: Any, events: Any) -> None:
         async for event in events:
@@ -66,7 +66,7 @@ async def run_agent_turn(
         message_history=message_history or None,
         event_stream_handler=_stream_handler,
     )
-    deps.usage_tracker.record(model_name, "agent", result.usage())
+    deps.usage_tracker.record(usage_model_key, "agent", result.usage())
     messages = result.all_messages()
     if on_messages_snapshot is not None:
         on_messages_snapshot(list(messages))
@@ -124,7 +124,7 @@ async def run_agent_turn(
             deferred_tool_results=deferred_results,
             event_stream_handler=_stream_handler,
         )
-        deps.usage_tracker.record(model_name, "agent", result.usage())
+        deps.usage_tracker.record(usage_model_key, "agent", result.usage())
         messages = result.all_messages()
         if on_messages_snapshot is not None:
             on_messages_snapshot(list(messages))

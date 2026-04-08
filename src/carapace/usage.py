@@ -356,15 +356,17 @@ class LlmRequestLogCapability(AbstractCapability[AgentDepsT]):
 
         usage = response.usage
         details = {k: int(v) for k, v in (usage.details or {}).items() if isinstance(v, int)}
-        model_name = response.model_name or request_context.model.model_name
+        api_model_name = response.model_name or request_context.model.model_name
         shape = input_shape_ratios_from_messages(
             request_context.messages,
-            model_name=model_name,
+            model_name=api_model_name,
         )
+        carapace_id = getattr(ctx.deps, "agent_model_id", None)
+        stored_model_name = carapace_id if isinstance(carapace_id, str) and carapace_id else api_model_name
         record = LlmRequestRecord(
             ts=datetime.now(tz=UTC),
             source=self.source,
-            model_name=model_name,
+            model_name=stored_model_name,
             input_tokens=usage.input_tokens or 0,
             output_tokens=usage.output_tokens or 0,
             usage_details=details,

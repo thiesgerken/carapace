@@ -42,6 +42,10 @@ def test_import_server():
     from carapace.server import app, main  # noqa: F401
 
 
+def test_import_llm():
+    from carapace.llm import infer_model_with_retry_transport, make_model_factory  # noqa: F401
+
+
 def test_import_auth():
     from carapace.auth import get_token  # noqa: F401
 

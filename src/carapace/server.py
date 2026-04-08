@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import inspect
 import logging  # stdlib logging used only for _InterceptHandler → loguru bridge
 import os
 import secrets
@@ -31,13 +30,8 @@ from fastapi import (
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from genai_prices import UpdatePrices
-from httpx import AsyncClient, HTTPStatusError, Timeout
 from loguru import logger
 from pydantic import BaseModel
-from pydantic_ai.models import Model, infer_model
-from pydantic_ai.providers import Provider, infer_provider, infer_provider_class
-from pydantic_ai.retries import AsyncTenacityTransport, RetryConfig, wait_retry_after
-from tenacity import retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from carapace.auth import get_token
 from carapace.bootstrap import ensure_data_dir, ensure_knowledge_dir
@@ -45,6 +39,7 @@ from carapace.config import _resolve_data_dir, _resolve_knowledge_dir, get_confi
 from carapace.credentials import CredentialRegistry, build_credential_registry
 from carapace.git.http import GitHttpHandler
 from carapace.git.store import GitStore
+from carapace.llm import make_model_factory
 from carapace.models import Config, SessionState, ToolResult
 from carapace.sandbox.manager import SandboxManager
 from carapace.sandbox.proxy import ProxyServer
@@ -88,38 +83,6 @@ _config: Config
 _engine: SessionEngine
 _git_handler: GitHttpHandler
 _credential_registry: CredentialRegistry
-
-
-def _retry_http_client() -> AsyncClient:
-    transport = AsyncTenacityTransport(
-        config=RetryConfig(
-            retry=retry_if_exception_type((HTTPStatusError, ConnectionError)),
-            wait=wait_retry_after(fallback_strategy=wait_exponential(multiplier=1, max=60), max_wait=300),
-            stop=stop_after_attempt(5),
-            reraise=True,
-        ),
-        validate_response=lambda r: r.raise_for_status() if r.status_code in (429, 502, 503, 504) else None,
-    )
-    return AsyncClient(transport=transport, timeout=Timeout(60.0))
-
-
-def _create_model(model_name: str) -> Model:
-    """Create a Pydantic AI model with retry-capable HTTP transport."""
-    http_client = _retry_http_client()
-
-    def _provider_factory(name: str) -> Provider:
-        if name.startswith("gateway/"):
-            return infer_provider(name)
-        if name in ("google-vertex", "google-gla"):
-            from pydantic_ai.providers.google import GoogleProvider
-
-            return GoogleProvider(vertexai=name == "google-vertex", http_client=http_client)
-        cls = infer_provider_class(name)
-        if "http_client" in inspect.signature(cls).parameters:
-            return cls(http_client=http_client)  # type: ignore
-        return cls()
-
-    return infer_model(model_name, provider_factory=_provider_factory)
 
 
 def _create_sandbox_runtime(config: Config, data_dir: Path) -> ContainerRuntime:
@@ -211,7 +174,8 @@ async def lifespan(app: FastAPI):
     session_mgr = SessionManager(_data_dir)
     registry = SkillRegistry(knowledge_dir / "skills")
     skill_catalog = registry.scan()
-    agent_model = _create_model(_config.agent.model)
+    model_factory = make_model_factory(_config)
+    agent_model = model_factory(_config.agent.model)
 
     runtime = _create_sandbox_runtime(_config, _data_dir)
 
@@ -280,7 +244,7 @@ async def lifespan(app: FastAPI):
         agent_model=agent_model,
         sandbox_mgr=_sandbox_mgr,
         credential_registry=_credential_registry,
-        model_factory=_create_model,
+        model_factory=model_factory,
     )
 
     # Git HTTP handler — serves the knowledge repo on the sandbox API

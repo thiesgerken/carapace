@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, Any, Literal, Protocol, runtime_checkable
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, computed_field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_serializer, model_validator
 from pydantic_ai.models import Model
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -163,7 +163,16 @@ class AvailableModelEntry(BaseModel):
 
     provider: str
     name: str
+    id: str | None = Field(
+        default=None,
+        description="Stable id for this row (slash commands, API). Defaults to provider:name.",
+    )
     max_input_tokens: int | None = None
+    base_url: str | None = Field(
+        default=None,
+        description="OpenAI-compatible API base URL (openai / openai-chat rows only).",
+    )
+    api_key: Secret | None = Field(default=None, exclude=True)
 
     @model_validator(mode="before")
     @classmethod
@@ -176,10 +185,30 @@ class AvailableModelEntry(BaseModel):
             return {"provider": provider, "name": name}
         return data
 
-    @computed_field(alias="id", return_type=str)
+    @model_validator(mode="after")
+    def _validate_openai_compatible_fields(self) -> AvailableModelEntry:
+        if self.base_url is None and self.api_key is None:
+            return self
+        if self.provider not in ("openai", "openai-chat"):
+            raise ValueError("base_url/api_key are only supported for provider 'openai' or 'openai-chat'")
+        return self
+
     @property
     def model_id(self) -> str:
-        return f"{self.provider}:{self.name}"
+        return self.id if self.id is not None else f"{self.provider}:{self.name}"
+
+    @model_serializer(mode="wrap")
+    def _serialize(self, handler: Callable[..., Any]) -> dict[str, Any]:
+        data = handler(self)
+        data["id"] = self.model_id
+        return data
+
+
+def _default_agent_available_models() -> list[AvailableModelEntry]:
+    return [
+        AvailableModelEntry.model_validate("anthropic:claude-sonnet-4-6"),
+        AvailableModelEntry.model_validate("anthropic:claude-haiku-4-5"),
+    ]
 
 
 class AgentConfig(BaseModel):
@@ -187,10 +216,28 @@ class AgentConfig(BaseModel):
     sentinel_model: str = "anthropic:claude-haiku-4-5"
     title_model: str = "anthropic:claude-haiku-4-5"
 
-    # the default models are added automatically + this is only used for autocomplete, not enforced.
-    available_models: list[AvailableModelEntry] = []
+    available_models: list[AvailableModelEntry] = Field(default_factory=_default_agent_available_models)
 
     max_parallel_llm: int = 2
+
+    @model_validator(mode="after")
+    def _defaults_listed_in_available_models(self) -> AgentConfig:
+        catalog_ids = {e.model_id for e in self.available_models}
+        for field_name in ("model", "sentinel_model", "title_model"):
+            mid = getattr(self, field_name)
+            if mid not in catalog_ids:
+                raise ValueError(
+                    f"agent.{field_name}={mid!r} must match an entry in agent.available_models (as id or provider:name)"
+                )
+        return self
+
+
+def agent_available_model_entries(agent: AgentConfig) -> list[AvailableModelEntry]:
+    """Catalog for API and model factory: YAML order, duplicate ``model_id`` keeps last row; sorted ids."""
+    by_id: dict[str, AvailableModelEntry] = {}
+    for e in agent.available_models:
+        by_id[e.model_id] = e
+    return sorted(by_id.values(), key=lambda e: e.model_id)
 
 
 class SandboxConfig(BaseSettings):
@@ -373,6 +420,10 @@ class Deps(BaseModel):
     skill_catalog: list[SkillInfo] = []
     activated_skills: list[str] = []
     agent_model: Model
+    agent_model_id: str = Field(
+        description="Carapace-registered model id (custom id or provider:name); usage keys, not provider wire ids.",
+    )
+
     verbose: bool = True
     tool_call_callback: ToolCallCallback | None = None
     tool_result_callback: Callable[[ToolResult], None] | None = None

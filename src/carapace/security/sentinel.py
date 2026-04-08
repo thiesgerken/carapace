@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 from loguru import logger
 from pydantic_ai import Agent, RunContext
+from pydantic_ai.models import Model, infer_model
 
 from carapace.security.context import (
     ActionLogEntry,
@@ -108,11 +110,13 @@ class Sentinel:
         knowledge_dir: Path,
         skills_dir: Path,
         reset_threshold: int = _RESET_THRESHOLD_DEFAULT,
+        model_factory: Callable[[str], Model] | None = None,
     ) -> None:
         self._model = model
         self._knowledge_dir = knowledge_dir
         self._skills_dir = skills_dir
         self._reset_threshold = reset_threshold
+        self._model_factory = model_factory
         self._agent = self._create_agent()
         self._message_history: list[Any] = []
 
@@ -131,8 +135,9 @@ class Sentinel:
         return ""
 
     def _create_agent(self) -> Agent[Path, SentinelVerdict]:
+        resolved = self._model_factory(self._model) if self._model_factory is not None else infer_model(self._model)
         agent: Agent[Path, SentinelVerdict] = Agent(
-            self._model,
+            resolved,
             deps_type=Path,
             output_type=SentinelVerdict,
             instructions=self._load_system_prompt,

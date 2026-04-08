@@ -36,6 +36,7 @@ from carapace.models import (
     SkillInfo,
     ToolCallCallback,
     ToolResult,
+    agent_available_model_entries,
 )
 from carapace.sandbox.manager import SandboxManager
 from carapace.security.context import SessionSecurity, UserVouchedEntry
@@ -242,25 +243,15 @@ class SessionEngine:
 
     @property
     def available_models(self) -> list[str]:
-        return [e.model_id for e in self._available_model_entries()]
+        return [e.model_id for e in self.available_model_entries]
 
     @property
     def available_model_entries(self) -> list[AvailableModelEntry]:
-        return self._available_model_entries()
-
-    def _available_model_entries(self) -> list[AvailableModelEntry]:
-        """Merge default agent/sentinel/title models with ``available_models``; last wins per id."""
-        cfg = self._config.agent
-        by_id: dict[str, AvailableModelEntry] = {}
-        for mid in (cfg.model, cfg.sentinel_model, cfg.title_model):
-            e = AvailableModelEntry.model_validate(mid)
-            by_id[e.model_id] = e
-        for e in cfg.available_models:
-            by_id[e.model_id] = e
-        return sorted(by_id.values(), key=lambda e: e.model_id)
+        """Deduplicated ``agent.available_models`` (last row per ``model_id``), sorted by id."""
+        return agent_available_model_entries(self._config.agent)
 
     def _max_input_tokens_for_model_id(self, model_id: str) -> int | None:
-        for e in self._available_model_entries():
+        for e in self.available_model_entries:
             if e.model_id == model_id:
                 return e.max_input_tokens
         return None
@@ -319,6 +310,7 @@ class SessionEngine:
             model=self._config.agent.sentinel_model,
             knowledge_dir=self._knowledge_dir,
             skills_dir=self._knowledge_dir / "skills",
+            model_factory=self._model_factory,
         )
         usage_tracker = self._session_mgr.load_usage(session_id)
         llm_log = self._session_mgr.load_llm_request_log(session_id)
@@ -475,6 +467,7 @@ class SessionEngine:
             git_store=self._git_store,
             skill_catalog=self._skill_catalog,
             agent_model=active.agent_model or self._agent_model or self._resolve_model(self._config.agent.model),
+            agent_model_id=active.agent_model_name or self._config.agent.model,
             verbose=active.verbose,
             tool_call_callback=tool_call_callback,
             tool_result_callback=tool_result_callback,
@@ -693,7 +686,7 @@ class SessionEngine:
             "title": active.title_model_name,
         }
         models = {t: {"current": overrides[t] or defaults[t], "default": defaults[t]} for t in self._MODEL_TYPES}
-        available = [e.model_dump(mode="json", by_alias=True) for e in self._available_model_entries()]
+        available = [e.model_dump(mode="json", by_alias=True) for e in self.available_model_entries]
         return {"command": "models", "data": {"models": models, "available": available}}
 
     async def _handle_model_command(
@@ -730,7 +723,7 @@ class SessionEngine:
 
         # Switch
         try:
-            new_model = self._model_factory(arg) if self._model_factory else infer_model(arg)
+            new_model = self._resolve_model(arg)
         except Exception as exc:
             return {"command": cmd_name, "data": {"current": current, "default": default, "error": str(exc)}}
 
@@ -783,7 +776,7 @@ class SessionEngine:
 
         def _set_latest_messages(snapshot: list[Any]) -> None:
             nonlocal latest_messages
-            latest_messages = [m for m in snapshot if isinstance(m, ModelMessage)]
+            latest_messages = [m for m in snapshot if isinstance(m, (ModelRequest, ModelResponse))]
 
         def _tool_call_cb(
             tool: str,
@@ -1040,6 +1033,7 @@ class SessionEngine:
                 events,
                 model=active.title_model_name or self._config.agent.title_model,
                 usage_tracker=active.usage_tracker,
+                model_factory=self._model_factory,
             )
             if title:
                 active.state.title = title

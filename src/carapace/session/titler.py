@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 from loguru import logger
 from pydantic_ai import Agent
+from pydantic_ai.models import Model, infer_model
 
 from carapace.usage import UsageTracker
 
@@ -22,6 +24,7 @@ async def generate_title(
     *,
     model: str,
     usage_tracker: UsageTracker | None = None,
+    model_factory: Callable[[str], Model] | None = None,
 ) -> str:
     """Build a short emoji-prefixed title from conversation events.
 
@@ -43,7 +46,8 @@ async def generate_title(
     # Keep the prompt compact — at most ~2000 chars from the conversation
     prompt = "\n".join(lines)[:2000]
 
-    agent: Agent[None, str] = Agent(model, output_type=str, instructions=_SYSTEM_PROMPT)
+    resolved = model_factory(model) if model_factory is not None else infer_model(model)
+    agent: Agent[None, str] = Agent(resolved, output_type=str, instructions=_SYSTEM_PROMPT)
     try:
         result = await agent.run(prompt)
         if usage_tracker:

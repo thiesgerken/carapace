@@ -28,6 +28,7 @@ def test_build_system_prompt_minimal(tmp_path: Path):
         sentinel=MagicMock(spec=Sentinel),
         git_store=MagicMock(spec=GitStore),
         agent_model=MagicMock(spec=Model),
+        agent_model_id="anthropic:claude-sonnet-4-6",
         usage_tracker=UsageTracker(),
         credential_registry=CredentialRegistry(),
     )
@@ -49,6 +50,7 @@ def test_build_system_prompt_with_agents_md(tmp_path: Path):
         sentinel=MagicMock(spec=Sentinel),
         git_store=MagicMock(spec=GitStore),
         agent_model=MagicMock(spec=Model),
+        agent_model_id="anthropic:claude-sonnet-4-6",
         usage_tracker=UsageTracker(),
         credential_registry=CredentialRegistry(),
     )

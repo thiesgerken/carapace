@@ -141,7 +141,7 @@ def _make_engine(tmp_path: Path) -> SessionEngine:
 
 
 def test_available_model_entries_override_default_with_metadata(tmp_path: Path):
-    """Later YAML row for the same model id replaces defaults (e.g. adds max_input_tokens)."""
+    """``available_models`` lists every selectable model; duplicate id in YAML keeps last row metadata."""
     (tmp_path / "config.yaml").write_text(
         "agent:\n"
         "  model: anthropic:alpha\n"
@@ -151,6 +151,10 @@ def test_available_model_entries_override_default_with_metadata(tmp_path: Path):
         "    - provider: anthropic\n"
         "      name: alpha\n"
         "      max_input_tokens: 424242\n"
+        "    - provider: anthropic\n"
+        "      name: beta\n"
+        "    - provider: anthropic\n"
+        "      name: gamma\n"
     )
     ensure_data_dir(tmp_path)
     engine = _make_engine(tmp_path)
