@@ -33,6 +33,29 @@ def test_input_shape_ratios_splits_system_and_user() -> None:
     assert abs(r.system + r.user - 1.0) < 0.02
 
 
+def test_input_shape_ratios_counts_first_model_request_instructions_only() -> None:
+    """Agent ``instructions=`` is on ``ModelRequest.instructions``; only first request counts."""
+    big = "S" * 200
+    small_user = "U" * 200
+    small_out = "A" * 200
+    one_turn = input_shape_ratios_from_messages(
+        [ModelRequest(instructions=big, parts=[UserPromptPart(small_user)])],
+        model_name="gpt-4o",
+    )
+    two_turn = input_shape_ratios_from_messages(
+        [
+            ModelRequest(instructions=big, parts=[UserPromptPart(small_user)]),
+            ModelResponse(parts=[TextPart(small_out)]),
+            ModelRequest(instructions=big, parts=[UserPromptPart(small_user)]),
+        ],
+        model_name="gpt-4o",
+    )
+    assert one_turn is not None and two_turn is not None
+    assert one_turn.system > 0
+    # Later requests repeat the same blob; shape uses the first only.
+    assert two_turn.system < one_turn.system
+
+
 def test_input_shape_ratios_includes_assistant_response() -> None:
     messages = [
         ModelRequest(parts=[UserPromptPart("q")]),

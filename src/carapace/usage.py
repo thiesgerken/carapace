@@ -318,6 +318,8 @@ def input_shape_ratios_from_messages(
         if isinstance(msg, ModelRequest):
             for p in msg.parts:
                 _accumulate_request_part(p, buckets)
+            if not buckets["system"] and msg.instructions:
+                buckets["system"] += msg.instructions + "\n"
         elif isinstance(msg, ModelResponse):
             for p in msg.parts:
                 _accumulate_response_part(p, buckets)
