@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.70.2 (2026-04-08)
+
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix: include ModelRequest instructions in usage input-shape ratios
+  ([`043ba5d`](https://github.com/thiesgerken/carapace/commit/043ba5d1f45d5a2e4d1917bdc2d930635ca1af96))
+
+  Agent prompts use pydantic-ai instructions= on ModelRequest, not SystemPromptPart; tiktoken breakdown left system at 0. Append instructions once when the system bucket is still empty after parts.
+
+  Made-with: Cursor
+
 ## v0.70.1 (2026-04-08)
 
 
