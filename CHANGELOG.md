@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.71.0 (2026-04-08)
+
+
+### ✨ Features
+
+
+- ✨ feat: rename /model to /model-agent; /model sets all three roles
+  ([`7a5e172`](https://github.com/thiesgerken/carapace/commit/7a5e1723a8aaf323516dd744eee92fb1a7370222))
+
+  /model now shows or updates agent, sentinel, and title together; /model-agent replaces per-session agent-only switching. CLI, Matrix, and web UI handle the new command names and combined /model payload shape.
+
+  Made-with: Cursor
+
 ## v0.70.2 (2026-04-08)
 
 
