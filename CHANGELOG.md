@@ -1,6 +1,15 @@
 # CHANGELOG
 
 
+## v0.70.1 (2026-04-08)
+
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix: add retries+output retries to all agents
+  ([`9d9f817`](https://github.com/thiesgerken/carapace/commit/9d9f81742cd5b51bf7c0952c2e4e4d3949727a89))
+
 ## v0.70.0 (2026-04-08)
 
 
