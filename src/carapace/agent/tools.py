@@ -316,6 +316,8 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
         output_type=[str, DeferredToolRequests],  # type: ignore[arg-type]
         instructions=system_prompt,
         capabilities=[LlmRequestLogCapability(source="agent")],
+        retries=1,
+        output_retries=3,
     )
 
     # --- Skills ---

@@ -47,7 +47,7 @@ async def generate_title(
     prompt = "\n".join(lines)[:2000]
 
     resolved = model_factory(model) if model_factory is not None else infer_model(model)
-    agent: Agent[None, str] = Agent(resolved, output_type=str, instructions=_SYSTEM_PROMPT)
+    agent: Agent[None, str] = Agent(resolved, output_type=str, instructions=_SYSTEM_PROMPT, retries=1, output_retries=3)
     try:
         result = await agent.run(prompt)
         if usage_tracker:

@@ -142,6 +142,8 @@ class Sentinel:
             output_type=SentinelVerdict,
             instructions=self._load_system_prompt,
             capabilities=[LlmRequestLogCapability(source="sentinel")],
+            output_retries=3,
+            retries=1,
         )
 
         @agent.tool
