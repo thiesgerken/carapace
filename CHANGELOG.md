@@ -1,6 +1,30 @@
 # CHANGELOG
 
 
+## v0.70.0 (2026-04-08)
+
+
+### Other
+
+
+- 📋 docs: add ideas to roadmap
+  ([`2d680a9`](https://github.com/thiesgerken/carapace/commit/2d680a9963dce69f0ed5614e3aeb5a2f684a9bf5))
+
+### ✨ Features
+
+
+- ✨ feat: OpenAI-compatible models, llm module, catalog-only available_models
+  ([`d43490c`](https://github.com/thiesgerken/carapace/commit/d43490c3e0f6d2b26381d4da8bbba855f4d5ea6a))
+
+  - Extend AvailableModelEntry with optional id, base_url, api_key; validate OpenAI-only overrides
+  - Add carapace.llm (retry client, infer_model_with_retry_transport, make_model_factory)
+  - Register-only model ids in factory; resolve infer_model via provider:name not custom id
+  - agent.available_models is sole catalog (defaults + validator for model/sentinel/title)
+  - Deps.agent_model_id for usage tracking and LLM log labels; fix ModelMessage isinstance
+  - Wire model_factory through Sentinel and title generation
+
+  Made-with: Cursor
+
 ## v0.69.2 (2026-04-07)
 
 
