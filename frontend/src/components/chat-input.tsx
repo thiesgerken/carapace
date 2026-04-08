@@ -12,7 +12,12 @@ function formatTokens(n: number): string {
   return String(n);
 }
 
-const MODEL_COMMANDS = ["/model", "/model-sentinel", "/model-title"];
+const MODEL_COMMANDS = [
+  "/model",
+  "/model-agent",
+  "/model-sentinel",
+  "/model-title",
+];
 
 interface ChatInputProps {
   onSend: (content: string) => void;
@@ -69,7 +74,7 @@ export function ChatInput({
     return commands.filter((c) => c.command.startsWith(prefix));
   }, [value, showMenu, commands]);
 
-  // Model argument autocomplete for /model, /model-sentinel, /model-title
+  // Model argument autocomplete for /model, /model-agent, /model-sentinel, /model-title
   const modelSuggestions = useMemo((): { items: string[]; prefix: string } => {
     const lower = value.toLowerCase();
     const match = MODEL_COMMANDS.find((c) => lower.startsWith(c + " "));

@@ -208,7 +208,30 @@ def format_command_result_text(result: CommandResult) -> str:
                 return "\n".join(lines)
             return str(data)
 
-        case "model" | "model-sentinel" | "model-title":
+        case "model":
+            if "models" in data:
+                lines = []
+                for model_type, info in data["models"].items():
+                    line = f"**{model_type}:** `{info['current']}`"
+                    if info["current"] != info["default"]:
+                        line += f" (default: `{info['default']}`)"
+                    lines.append(line)
+                body = "\n".join(lines)
+                if data.get("error"):
+                    return f"❌ {data['error']}\n\n{body}"
+                if data.get("message"):
+                    return f"{body}\n\n{data['message']}"
+                return body
+            if "error" in data:
+                return f"❌ {data['error']}"
+            if "message" in data:
+                return data["message"]
+            reply = f"**Current model:** `{data['current']}`"
+            if data.get("default") and data["default"] != data["current"]:
+                reply += f"\n**Default:** `{data['default']}`"
+            return reply
+
+        case "model-agent" | "model-sentinel" | "model-title":
             if "error" in data:
                 return f"❌ {data['error']}"
             if "message" in data:

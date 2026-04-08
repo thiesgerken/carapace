@@ -81,7 +81,11 @@ export function CommandResultView({ command, data }: CommandResultViewProps) {
     return <p className="my-1 text-sm text-muted-foreground">{data.message}</p>;
   }
 
-  if (command === "models" && isModelData(data) && data.models) {
+  if (
+    isModelData(data) &&
+    data.models &&
+    (command === "models" || command === "model")
+  ) {
     const models = data.models as Record<
       string,
       { current: string; default: string }
@@ -89,6 +93,9 @@ export function CommandResultView({ command, data }: CommandResultViewProps) {
     const available = Array.isArray(data.available) ? data.available : [];
     return (
       <div className="my-2 text-sm">
+        {command === "model" && data.error ? (
+          <p className="mb-2 text-sm text-destructive">{data.error}</p>
+        ) : null}
         <table className="w-full">
           <thead>
             <tr className="border-b border-border text-left text-xs text-muted-foreground">
@@ -109,7 +116,7 @@ export function CommandResultView({ command, data }: CommandResultViewProps) {
             ))}
           </tbody>
         </table>
-        {available.length > 0 && (
+        {command === "models" && available.length > 0 && (
           <p className="mt-2 text-xs text-muted-foreground">
             <span className="font-medium">Available: </span>
             {available.map((entry, i) => {
@@ -145,16 +152,41 @@ export function CommandResultView({ command, data }: CommandResultViewProps) {
             })}
           </p>
         )}
+        {command === "model" && data.message ? (
+          <p className="mt-2 text-sm text-muted-foreground">{data.message}</p>
+        ) : null}
       </div>
     );
   }
 
   if (
-    (command === "model" ||
+    (command === "model-agent" ||
       command === "model-sentinel" ||
       command === "model-title") &&
     isModelData(data)
   ) {
+    if (data.error)
+      return <p className="my-1 text-sm text-destructive">{data.error}</p>;
+    if (data.message)
+      return (
+        <p className="my-1 text-sm text-muted-foreground">{data.message}</p>
+      );
+    return (
+      <div className="my-1 text-sm">
+        <p>
+          <span className="text-muted-foreground">Current model: </span>
+          <span className="font-mono">{data.current}</span>
+        </p>
+        {data.default && data.default !== data.current && (
+          <p className="text-xs text-muted-foreground">
+            Default: {data.default}
+          </p>
+        )}
+      </div>
+    );
+  }
+
+  if (command === "model" && isModelData(data)) {
     if (data.error)
       return <p className="my-1 text-sm text-destructive">{data.error}</p>;
     if (data.message)

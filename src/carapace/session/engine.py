@@ -588,9 +588,16 @@ class SessionEngine:
         if cmd == "/models":
             return self._handle_models_command(active)
 
-        if cmd in ("/model", "/model-sentinel", "/model-title"):
+        if cmd == "/model":
+            return await self._handle_model_all_command(
+                active,
+                parts[1].strip() if len(parts) > 1 else "",
+                slash_line=command.strip(),
+            )
+
+        if cmd in ("/model-agent", "/model-sentinel", "/model-title"):
             model_map: dict[str, ModelType] = {
-                "/model": "agent",
+                "/model-agent": "agent",
                 "/model-sentinel": "sentinel",
                 "/model-title": "title",
             }
@@ -675,6 +682,11 @@ class SessionEngine:
 
     def _handle_models_command(self, active: ActiveSession) -> dict[str, Any]:
         """Show all model types with their current and default values."""
+        models = self._models_slash_view(active)
+        available = [e.model_dump(mode="json", by_alias=True) for e in self.available_model_entries]
+        return {"command": "models", "data": {"models": models, "available": available}}
+
+    def _models_slash_view(self, active: ActiveSession) -> dict[str, dict[str, str]]:
         defaults = {
             "agent": self._config.agent.model,
             "sentinel": self._config.agent.sentinel_model,
@@ -685,15 +697,53 @@ class SessionEngine:
             "sentinel": active.sentinel_model_name,
             "title": active.title_model_name,
         }
-        models = {t: {"current": overrides[t] or defaults[t], "default": defaults[t]} for t in self._MODEL_TYPES}
-        available = [e.model_dump(mode="json", by_alias=True) for e in self.available_model_entries]
-        return {"command": "models", "data": {"models": models, "available": available}}
+        return {t: {"current": overrides[t] or defaults[t], "default": defaults[t]} for t in self._MODEL_TYPES}
+
+    async def _handle_model_all_command(self, active: ActiveSession, arg: str, *, slash_line: str) -> dict[str, Any]:
+        """Process ``/model [MODEL | reset]`` — show or set all three model roles at once."""
+        defaults = {
+            "agent": self._config.agent.model,
+            "sentinel": self._config.agent.sentinel_model,
+            "title": self._config.agent.title_model,
+        }
+        models_view = self._models_slash_view(active)
+
+        if not arg:
+            return {"command": "model", "data": {"models": models_view}}
+
+        if arg == "reset":
+            for mt in self._MODEL_TYPES:
+                self._apply_model_override(active, mt, None, None)
+            await self._regenerate_title(active, pending_user_line=slash_line)
+            reset_view = {t: {"current": defaults[t], "default": defaults[t]} for t in self._MODEL_TYPES}
+            return {
+                "command": "model",
+                "data": {"models": reset_view, "message": "Reset all models to defaults."},
+            }
+
+        try:
+            new_model = self._resolve_model(arg)
+        except Exception as exc:
+            return {"command": "model", "data": {"models": models_view, "error": str(exc)}}
+
+        self._apply_model_override(active, "agent", arg, new_model)
+        self._apply_model_override(active, "sentinel", arg, None)
+        self._apply_model_override(active, "title", arg, None)
+        await self._regenerate_title(active, pending_user_line=slash_line)
+        switched = {t: {"current": arg, "default": defaults[t]} for t in self._MODEL_TYPES}
+        return {
+            "command": "model",
+            "data": {
+                "models": switched,
+                "message": f"Switched agent, sentinel, and title to: {arg}",
+            },
+        }
 
     async def _handle_model_command(
         self, active: ActiveSession, model_type: ModelType, arg: str, *, slash_line: str
     ) -> dict[str, Any]:
-        """Process ``/model[-(sentinel|title)] [MODEL | reset]``."""
-        cmd_name = {"agent": "model", "sentinel": "model-sentinel", "title": "model-title"}[model_type]
+        """Process ``/model-(agent|sentinel|title) [MODEL | reset]``."""
+        cmd_name = {"agent": "model-agent", "sentinel": "model-sentinel", "title": "model-title"}[model_type]
         defaults = {
             "agent": self._config.agent.model,
             "sentinel": self._config.agent.sentinel_model,

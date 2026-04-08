@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, ToolCallPart, ToolReturnPart, UserPromptPart
@@ -454,10 +454,53 @@ def test_handle_slash_command_reload(tmp_path: Path):
         asyncio.run(_run())
 
 
+def test_handle_slash_command_model_sets_all_three(tmp_path: Path):
+    """``/model NAME`` applies the same id to agent, sentinel, and title."""
+    with _patch_sentinel():
+        engine = _make_engine(tmp_path)
+        state = engine.session_mgr.create_session()
+        sid = state.session_id
+        active = engine.get_or_activate(sid)
+
+        async def _run() -> None:
+            with patch.object(engine, "_regenerate_title", new=AsyncMock()):
+                result = await engine.handle_slash_command(sid, "/model openai:gpt-4o")
+            assert result is not None
+            assert result["command"] == "model"
+            assert "models" in result["data"]
+            for key in ("agent", "sentinel", "title"):
+                assert result["data"]["models"][key]["current"] == "openai:gpt-4o"
+            assert active.agent_model_name == "openai:gpt-4o"
+            assert active.sentinel_model_name == "openai:gpt-4o"
+            assert active.title_model_name == "openai:gpt-4o"
+
+        asyncio.run(_run())
+
+
+def test_handle_slash_command_model_agent_only(tmp_path: Path):
+    """``/model-agent`` changes only the agent model."""
+    with _patch_sentinel():
+        engine = _make_engine(tmp_path)
+        state = engine.session_mgr.create_session()
+        sid = state.session_id
+        active = engine.get_or_activate(sid)
+
+        async def _run() -> None:
+            result = await engine.handle_slash_command(sid, "/model-agent openai:gpt-4o")
+            assert result is not None
+            assert result["command"] == "model-agent"
+            assert result["data"]["current"] == "openai:gpt-4o"
+            assert active.agent_model_name == "openai:gpt-4o"
+            assert active.sentinel_model_name is None
+            assert active.title_model_name is None
+
+        asyncio.run(_run())
+
+
 def test_non_slash_user_message_count_ignores_slash_lines() -> None:
     events: list[dict[str, Any]] = [
-        {"role": "user", "content": "/model openai:gpt-4o"},
-        {"role": "command", "command": "model", "data": {}},
+        {"role": "user", "content": "/model-agent openai:gpt-4o"},
+        {"role": "command", "command": "model-agent", "data": {}},
         {"role": "user", "content": "hello"},
     ]
     assert _non_slash_user_message_count(events) == 1

@@ -17,7 +17,11 @@ SLASH_COMMANDS: list[dict[str, str]] = [
         "command": "/models",
         "description": "View all models and available options",
     },
-    {"command": "/model", "description": "View or switch the agent model (e.g. /model openai:gpt-4o)"},
+    {
+        "command": "/model",
+        "description": "View or switch agent, sentinel, and title models together (e.g. /model openai:gpt-4o)",
+    },
+    {"command": "/model-agent", "description": "View or switch the agent model only"},
     {"command": "/model-sentinel", "description": "View or switch the sentinel model"},
     {"command": "/model-title", "description": "View or switch the title model"},
     {"command": "/usage", "description": "Show token usage for this session"},
