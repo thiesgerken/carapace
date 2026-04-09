@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, ToolCallPart, ToolReturnPart, UserPromptPart
@@ -463,8 +463,7 @@ def test_handle_slash_command_model_sets_all_three(tmp_path: Path):
         active = engine.get_or_activate(sid)
 
         async def _run() -> None:
-            with patch.object(engine, "_regenerate_title", new=AsyncMock()):
-                result = await engine.handle_slash_command(sid, "/model openai:gpt-4o")
+            result = await engine.handle_slash_command(sid, "/model openai:gpt-4o")
             assert result is not None
             assert result["command"] == "model"
             assert "models" in result["data"]

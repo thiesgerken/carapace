@@ -589,10 +589,9 @@ class SessionEngine:
             return self._handle_models_command(active)
 
         if cmd == "/model":
-            return await self._handle_model_all_command(
+            return self._handle_model_all_command(
                 active,
                 parts[1].strip() if len(parts) > 1 else "",
-                slash_line=command.strip(),
             )
 
         if cmd in ("/model-agent", "/model-sentinel", "/model-title"):
@@ -699,7 +698,7 @@ class SessionEngine:
         }
         return {t: {"current": overrides[t] or defaults[t], "default": defaults[t]} for t in self._MODEL_TYPES}
 
-    async def _handle_model_all_command(self, active: ActiveSession, arg: str, *, slash_line: str) -> dict[str, Any]:
+    def _handle_model_all_command(self, active: ActiveSession, arg: str) -> dict[str, Any]:
         """Process ``/model [MODEL | reset]`` — show or set all three model roles at once."""
         defaults = {
             "agent": self._config.agent.model,
@@ -714,7 +713,6 @@ class SessionEngine:
         if arg == "reset":
             for mt in self._MODEL_TYPES:
                 self._apply_model_override(active, mt, None, None)
-            await self._regenerate_title(active, pending_user_line=slash_line)
             reset_view = {t: {"current": defaults[t], "default": defaults[t]} for t in self._MODEL_TYPES}
             return {
                 "command": "model",
@@ -729,7 +727,6 @@ class SessionEngine:
         self._apply_model_override(active, "agent", arg, new_model)
         self._apply_model_override(active, "sentinel", arg, None)
         self._apply_model_override(active, "title", arg, None)
-        await self._regenerate_title(active, pending_user_line=slash_line)
         switched = {t: {"current": arg, "default": defaults[t]} for t in self._MODEL_TYPES}
         return {
             "command": "model",
