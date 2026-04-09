@@ -280,6 +280,7 @@ export function ToolCallBadge({
       ? fencedCodeBlock(languageFromFilePath(readPath), readSplit.body)
       : "";
   const execCommand = isExecTool ? getExecCommand(args) : "";
+  const execTitle = isExecTool ? stringArg(args, "title") : "";
   const execTranscript = isExecTool
     ? buildShellTranscript(execCommand, result)
     : "";
@@ -333,9 +334,12 @@ export function ToolCallBadge({
             : isStrReplaceTool
               ? "replace"
               : tool;
-  const argsSummary = isReadTool
-    ? formatReadSummaryFromSplit(args, readPath || "(missing path)", readSplit)
-    : formatArgsSummary(tool, args);
+  const argsSummary =
+    isExecTool && execTitle
+      ? execTitle
+      : isReadTool
+        ? formatReadSummaryFromSplit(args, readPath || "(missing path)", readSplit)
+        : formatArgsSummary(tool, args);
   const writeLang = isWriteTool ? languageFromFilePath(writePath) : "text";
   const writeContentMarkdown = isWriteTool
     ? fencedCodeBlock(writeLang, writeContent)
@@ -397,9 +401,16 @@ export function ToolCallBadge({
           )}
 
           {isExecTool ? (
-            <div className={cn("exec-terminal-block")}>
-              <MarkdownContent content={execTranscript} />
-            </div>
+            <>
+              {execTitle && (
+                <div className="font-medium text-foreground/80">
+                  {execTitle}
+                </div>
+              )}
+              <div className={cn("exec-terminal-block")}>
+                <MarkdownContent content={execTranscript} />
+              </div>
+            </>
           ) : isUseSkillTool ? (
             <>
               <div className="text-muted-foreground">
