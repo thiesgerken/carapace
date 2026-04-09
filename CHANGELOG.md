@@ -1,6 +1,15 @@
 # CHANGELOG
 
 
+## v0.73.0 (2026-04-09)
+
+
+### ✨ Features
+
+
+- ✨ feat: add optional title param to exec tool
+  ([`4de1f5a`](https://github.com/thiesgerken/carapace/commit/4de1f5a83eb25eebaa23322f25c75c958896506f))
+
 ## v0.72.0 (2026-04-09)
 
 
