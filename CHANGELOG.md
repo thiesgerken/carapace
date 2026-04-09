@@ -1,11 +1,23 @@
 # CHANGELOG
 
 
+## v0.74.0 (2026-04-09)
+
+
+### Other
+
+
+- Merge remote-tracking branch 'refs/remotes/origin/main'
+  ([`cea60ea`](https://github.com/thiesgerken/carapace/commit/cea60eab785623c86cc640a52916bfc24cf20380))
+
 ## v0.73.0 (2026-04-09)
 
 
 ### ✨ Features
 
+
+- ✨ feat: add unified diff viewer to str_replace tool details
+  ([`14b8112`](https://github.com/thiesgerken/carapace/commit/14b8112386bedd3bcf86059c7c91c007779b2447))
 
 - ✨ feat: add optional title param to exec tool
   ([`4de1f5a`](https://github.com/thiesgerken/carapace/commit/4de1f5a83eb25eebaa23322f25c75c958896506f))
