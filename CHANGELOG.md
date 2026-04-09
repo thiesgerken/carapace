@@ -1,6 +1,34 @@
 # CHANGELOG
 
 
+## v0.72.0 (2026-04-09)
+
+
+### ✨ Features
+
+
+- ✨ feat: git identity via git config + commit-msg session trailer
+  ([`2bcf331`](https://github.com/thiesgerken/carapace/commit/2bcf3318b66eb66ebdee9cedc6f1cb2c27c8bb5d))
+
+  Replace GIT_AUTHOR/COMMITTER env vars with git config inside sandbox containers so %h (hostname) resolves at runtime. Install a commit-msg hook that appends a Carapace-Session trailer to every sandbox commit.
+
+  Default author changed to 'Carapace <carapace@%h>'.
+
+- ✨ feat: titler skips slash lines, truncates user text; add /retitle
+  ([`b86402c`](https://github.com/thiesgerken/carapace/commit/b86402c7ed64a92f502fd26f0d3626e47a0c3959))
+
+  Made-with: Cursor
+
+### ⚡ Performance
+
+
+- ⚡ perf: skip title LLM when using /model bulk switch
+  ([`3a42d3b`](https://github.com/thiesgerken/carapace/commit/3a42d3bf4079ff67b2062e3443ba462ae048c813))
+
+  Remove _regenerate_title from /model and /model reset; make _handle_model_all_command synchronous. Drop the test mock that only existed to stub that call.
+
+  Made-with: Cursor
+
 ## v0.71.0 (2026-04-08)
 
 
