@@ -10,6 +10,10 @@ SLASH_COMMANDS: list[dict[str, str]] = [
     {"command": "/session", "description": "Show current session state"},
     {"command": "/skills", "description": "List available skills"},
     {"command": "/memory", "description": "List memory files"},
+    {
+        "command": "/retitle",
+        "description": "Regenerate session title, or set it: /retitle My title",
+    },
     {"command": "/pull", "description": "Pull from external Git remote (if configured)"},
     {"command": "/push", "description": "Push to external Git remote (if configured)"},
     {"command": "/reload", "description": "Reset sandbox (delete container + workspace, fresh git clone)"},

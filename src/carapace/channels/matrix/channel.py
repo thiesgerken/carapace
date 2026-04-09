@@ -477,6 +477,7 @@ class MatrixChannel:
                     "- `/session` — Show current session state\n"
                     "- `/skills` — List available skills\n"
                     "- `/memory` — List memory files\n"
+                    "- `/retitle` — Regenerate title, or `/retitle My title` to set it\n"
                     "- `/usage` — Show token usage\n"
                     "- `/model` — View or switch agent, sentinel, and title models together\n"
                     "- `/model-agent` — View or switch the agent model only\n"

@@ -119,6 +119,9 @@ def _render_command_result(data: dict[str, Any]) -> None:
         case "approve-context":
             console.print(f"[green]{payload.get('message', 'Context approved.')}[/green]")
 
+        case "retitle":
+            console.print(f"[green]{payload.get('message', '')}[/green]")
+
         case "session":
             domain_entries: list[dict[str, str]] = payload.get("allowed_domains") or []
             if domain_entries:

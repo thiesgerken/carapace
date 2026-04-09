@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, ToolCallPart, ToolReturnPart, UserPromptPart
@@ -421,6 +421,50 @@ def test_handle_slash_command_unknown(tmp_path: Path):
 
         async def _run() -> None:
             assert await engine.handle_slash_command(sid, "/nonexistent") is None
+
+        asyncio.run(_run())
+
+
+def test_handle_slash_command_retitle_sets_title(tmp_path: Path):
+    """``/retitle TEXT`` stores the title and returns a message."""
+    with _patch_sentinel():
+        engine = _make_engine(tmp_path)
+        state = engine.session_mgr.create_session()
+        sid = state.session_id
+        active = engine.get_or_activate(sid)
+
+        async def _run() -> None:
+            result = await engine.handle_slash_command(sid, "/retitle Hello world")
+            assert result is not None
+            assert result["command"] == "retitle"
+            assert "Hello world" in result["data"]["message"]
+            assert active.state.title == "Hello world"
+            reloaded = engine.session_mgr.load_state(sid)
+            assert reloaded is not None
+            assert reloaded.title == "Hello world"
+
+        asyncio.run(_run())
+
+
+def test_handle_slash_command_retitle_regenerates(tmp_path: Path):
+    """``/retitle`` with no args runs title generation."""
+    with _patch_sentinel():
+        engine = _make_engine(tmp_path)
+        state = engine.session_mgr.create_session()
+        sid = state.session_id
+        active = engine.get_or_activate(sid)
+        engine.session_mgr.append_events(sid, [{"role": "user", "content": "talk about cats"}])
+
+        async def _run() -> None:
+            with patch(
+                "carapace.session.engine.generate_title",
+                new=AsyncMock(return_value="📌 Cats chat"),
+            ):
+                result = await engine.handle_slash_command(sid, "/retitle")
+            assert result is not None
+            assert result["command"] == "retitle"
+            assert "Cats chat" in result["data"]["message"]
+            assert active.state.title == "📌 Cats chat"
 
         asyncio.run(_run())
 

@@ -28,16 +28,23 @@ async def generate_title(
 ) -> str:
     """Build a short emoji-prefixed title from conversation events.
 
-    Only user and assistant messages are included in the prompt.
-    The conversation is truncated to keep token usage low.
+    Only user and assistant messages are included. User lines that start with
+    ``/`` (slash commands) are skipped. Each line is truncated to 300 characters.
+    The joined prompt is capped at ~2000 characters.
     """
     lines: list[str] = []
     for e in events:
         role = e.get("role")
         content = e.get("content", "")
         if role == "user":
-            lines.append(f"User: {content}")
+            if not isinstance(content, str):
+                content = str(content)
+            if content.startswith("/"):
+                continue
+            lines.append(f"User: {content[:300]}")
         elif role == "assistant":
+            if not isinstance(content, str):
+                content = str(content)
             lines.append(f"Assistant: {content[:300]}")
 
     if not lines:

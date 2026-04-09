@@ -78,6 +78,9 @@ def format_command_result_text(result: CommandResult) -> str:
                 lines.append(f"- {f}")
             return "\n".join(lines)
 
+        case "retitle":
+            return data.get("message", "")
+
         case "usage":
             models: dict[str, dict] = data.get("models", {})
             categories: dict[str, dict] = data.get("categories", {})

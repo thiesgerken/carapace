@@ -585,6 +585,22 @@ class SessionEngine:
             files = store.list_files()
             return {"command": "memory", "data": files}
 
+        if cmd == "/retitle":
+            arg = parts[1].strip() if len(parts) > 1 else ""
+            if arg:
+                active.state.title = arg
+                self._session_mgr.save_state(active.state)
+                await self._broadcast(active, "on_title_update", arg)
+                return {"command": "retitle", "data": {"message": f"Title set to: {arg}"}}
+            events = list(self._session_mgr.load_events(session_id))
+            new_title = await self._generate_title(active, events)
+            if not new_title:
+                return {
+                    "command": "retitle",
+                    "data": {"message": "Could not generate a title (no eligible messages yet, or generation failed)."},
+                }
+            return {"command": "retitle", "data": {"message": f"Title: {new_title}"}}
+
         if cmd == "/models":
             return self._handle_models_command(active)
 
@@ -1073,7 +1089,7 @@ class SessionEngine:
 
         return events[:safe_prefix_end]
 
-    async def _generate_title(self, active: ActiveSession, events: list[dict[str, Any]]) -> None:
+    async def _generate_title(self, active: ActiveSession, events: list[dict[str, Any]]) -> str:
         session_id = active.state.session_id
         try:
             title = await generate_title(
@@ -1086,8 +1102,10 @@ class SessionEngine:
                 active.state.title = title
                 self._session_mgr.save_state(active.state)
                 await self._broadcast(active, "on_title_update", title)
+                return title
         except Exception as exc:
             logger.warning(f"Title generation failed for {session_id}: {exc}")
+        return ""
 
     def _make_escalation_cb(
         self,
