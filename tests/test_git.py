@@ -33,8 +33,11 @@ class TestGitStoreParseAuthor:
     def test_default_template(self):
         store = GitStore(Path("/tmp"))
         name, email = store._parse_author("sess-123")
-        assert name == "Carapace Session sess-123"
-        assert email == "sess-123@carapace.local"
+        import socket
+
+        expected_host = socket.gethostname()
+        assert name == "Carapace"
+        assert email == f"carapace@{expected_host}"
 
     def test_custom_template(self):
         store = GitStore(Path("/tmp"), author="Bot <%s@example.com>")
@@ -51,8 +54,19 @@ class TestGitStoreParseAuthor:
     def test_server_default(self):
         store = GitStore(Path("/tmp"))
         name, email = store._parse_author("server")
-        assert name == "Carapace Session server"
-        assert email == "server@carapace.local"
+        import socket
+
+        expected_host = socket.gethostname()
+        assert name == "Carapace"
+        assert email == f"carapace@{expected_host}"
+
+    def test_hostname_placeholder(self):
+        store = GitStore(Path("/tmp"), author="Agent <%s@%h>")
+        name, email = store._parse_author("sess-1")
+        import socket
+
+        assert name == "Agent"
+        assert email == f"sess-1@{socket.gethostname()}"
 
 
 @needs_git

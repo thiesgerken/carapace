@@ -291,7 +291,7 @@ class GitConfig(BaseModel):
 
     remote: str = ""  # optional external remote URL
     branch: str = "main"  # remote branch to fetch/push (local is always "main")
-    author: str = "Carapace Session %s <%s@carapace.local>"  # %s → session ID
+    author: str = "Carapace <carapace@%h>"  # %s → session ID, %h → hostname
     token: Secret | None = None
 
 

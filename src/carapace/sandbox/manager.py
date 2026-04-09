@@ -96,7 +96,7 @@ class SandboxManager:
         idle_timeout_minutes: int = 15,
         proxy_port: int = 3128,
         sandbox_port: int = 8322,
-        git_author: str = "Carapace Session %s <%s@carapace.local>",
+        git_author: str = "Carapace <carapace@%h>",
     ) -> None:
         self._runtime = runtime
         self._data_dir = data_dir
@@ -305,6 +305,49 @@ class SandboxManager:
                 f"Git clone failed in sandbox for {session_id} (exit {result.exit_code}): {result.output}"
             )
 
+        await self._setup_git_identity(container_id, session_id)
+        await self._install_commit_msg_hook(container_id, session_id)
+
+    async def _setup_git_identity(self, container_id: str, session_id: str) -> None:
+        """Configure git user.name and user.email inside the sandbox.
+
+        Placeholders ``%s`` (session ID) are resolved server-side;
+        ``%h`` is resolved inside the container via ``$(hostname)``.
+        """
+        # Resolve %s server-side, leave %h for shell expansion
+        name_tpl = self._git_author.replace("%s", session_id)
+        # Parse "Name <email>" format
+        if "<" in name_tpl and name_tpl.endswith(">"):
+            name, _, email = name_tpl.rpartition("<")
+            name, email = name.strip(), email.rstrip(">").strip()
+        else:
+            name, email = name_tpl, f"{session_id}@carapace"
+        # Shell-expand %h via $(hostname) inside the container
+        name_sh = name.replace("%h", "$(hostname)")
+        email_sh = email.replace("%h", "$(hostname)")
+        cmd = f'git -C /workspace config user.name "{name_sh}" && git -C /workspace config user.email "{email_sh}"'
+        await self._runtime.exec(container_id, cmd, timeout=10)
+
+    _COMMIT_TRAILER_KEY = "Carapace-Session"
+
+    async def _install_commit_msg_hook(self, container_id: str, session_id: str) -> None:
+        """Install a commit-msg hook that appends a session trailer to commits."""
+        key = self._COMMIT_TRAILER_KEY
+        # The hook appends the trailer only if not already present.
+        hook = (
+            "#!/bin/sh\n"
+            f'if ! grep -q "^{key}:" "$1"; then\n'
+            f'  echo "" >> "$1"\n'
+            f'  echo "{key}: $CARAPACE_SESSION_ID" >> "$1"\n'
+            "fi\n"
+        )
+        cmd = (
+            "mkdir -p /workspace/.git/hooks && "
+            f"printf '%s' '{hook}' > /workspace/.git/hooks/commit-msg && "
+            "chmod +x /workspace/.git/hooks/commit-msg"
+        )
+        await self._runtime.exec(container_id, cmd, timeout=10)
+
     def _build_proxy_env(self, session_id: str, proxy_token: str, proxy_url: str) -> dict[str, str]:
         """Build HTTP_PROXY / NO_PROXY env vars for session containers."""
         if not proxy_url:
@@ -336,23 +379,8 @@ class SandboxManager:
             "GIT_REPO_URL": git_url,
             # Carapace API base URL (used by ccred and other sandbox-side tools)
             "CARAPACE_API_URL": f"{scheme}://{session_id}:{proxy_token}@{no_proxy_host}:{self._sandbox_port}",
-            # Git identity for commits made inside the sandbox
-            **self._git_identity_env(session_id),
-        }
-
-    def _git_identity_env(self, session_id: str) -> dict[str, str]:
-        """Derive GIT_AUTHOR/COMMITTER env vars from the author template."""
-        filled = self._git_author.replace("%s", session_id)
-        if "<" in filled and filled.endswith(">"):
-            name, _, email = filled.rpartition("<")
-            name, email = name.strip(), email.rstrip(">").strip()
-        else:
-            name, email = filled, f"{session_id}@carapace"
-        return {
-            "GIT_AUTHOR_NAME": name,
-            "GIT_COMMITTER_NAME": name,
-            "GIT_AUTHOR_EMAIL": email,
-            "GIT_COMMITTER_EMAIL": email,
+            # Session ID (used by the commit-msg hook for trailers)
+            "CARAPACE_SESSION_ID": session_id,
         }
 
     async def _exec_in_container(

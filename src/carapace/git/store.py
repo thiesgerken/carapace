@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import socket
 from pathlib import Path
 
 from loguru import logger
@@ -99,7 +100,7 @@ class GitStore:
         repo_dir: Path,
         *,
         remote_branch: str = "main",
-        author: str = "Carapace Session %s <%s@carapace.local>",
+        author: str = "Carapace <carapace@%h>",
     ) -> None:
         self.repo_dir = repo_dir
         self.remote_branch = remote_branch
@@ -167,8 +168,11 @@ class GitStore:
         logger.debug("Installed pre-receive hook")
 
     def _parse_author(self, session_id: str) -> tuple[str, str]:
-        """Parse the author template into (name, email)."""
-        filled = self.author_template.replace("%s", session_id)
+        """Parse the author template into (name, email).
+
+        Supported placeholders: ``%s`` → *session_id*, ``%h`` → hostname.
+        """
+        filled = self.author_template.replace("%s", session_id).replace("%h", socket.gethostname())
         # Expected format: "Name <email>"
         if "<" in filled and filled.endswith(">"):
             name, _, email = filled.rpartition("<")
