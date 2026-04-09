@@ -8,6 +8,7 @@ import {
   ShieldAlert,
   UserCheck,
 } from "lucide-react";
+import { diffLines } from "diff";
 import { MarkdownContent } from "./markdown-content";
 import {
   fencedCodeBlock,
@@ -199,6 +200,20 @@ function formatUseSkillResult(result: string): string {
   );
 }
 
+function buildUnifiedDiff(oldText: string, newText: string): string {
+  const changes = diffLines(oldText, newText);
+  const lines: string[] = [];
+  for (const change of changes) {
+    const chunk = change.value.replace(/\n$/, "");
+    for (const line of chunk.split("\n")) {
+      if (change.added) lines.push("+ " + line);
+      else if (change.removed) lines.push("- " + line);
+      else lines.push("  " + line);
+    }
+  }
+  return lines.join("\n");
+}
+
 function ApprovalBadge({
   source,
   verdict,
@@ -352,6 +367,9 @@ export function ToolCallBadge({
     : "";
   const strReplaceReplacementMarkdown = isStrReplaceTool
     ? fencedCodeBlock(strReplaceLang, strReplaceReplacement)
+    : "";
+  const strReplaceDiffMarkdown = isStrReplaceTool
+    ? fencedCodeBlock("diff", buildUnifiedDiff(strReplaceSource, strReplaceReplacement))
     : "";
 
   return (
@@ -507,6 +525,18 @@ export function ToolCallBadge({
                   </div>
                   <MarkdownContent content={strReplaceReplacementMarkdown} />
                 </div>
+              </div>
+              <div
+                className={cn(
+                  "max-w-none [&_.prose]:max-w-none",
+                  isError &&
+                    "[&_.prose_.md-code-block-shell]:border-destructive/40 [&_.prose_.md-code-block-shell]:bg-destructive/5",
+                )}
+              >
+                <div className="mb-1 text-[11px] font-medium text-muted-foreground">
+                  Diff
+                </div>
+                <MarkdownContent content={strReplaceDiffMarkdown} />
               </div>
               {result != null && result.length > 0 && (
                 <div
