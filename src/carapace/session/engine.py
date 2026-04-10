@@ -353,6 +353,10 @@ class SessionEngine:
     async def _reinject_skill_credentials(self, session_id: str, skill_name: str) -> list[tuple[str, str, str]]:
         """Return approved credentials that should be re-injected for a skill.
 
+        Args:
+            session_id: The session whose approved credentials to look up.
+            skill_name: The skill whose ``carapace.yaml`` declarations to inspect.
+
         Returns ``(kind, key, value)`` tuples where *kind* is ``"file"`` or ``"env"``.
         """
         registry = SkillRegistry(self._knowledge_dir / "skills")

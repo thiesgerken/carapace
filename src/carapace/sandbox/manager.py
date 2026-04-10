@@ -136,9 +136,10 @@ class SandboxManager:
     ) -> None:
         """Register a callback to retrieve credentials for re-injection.
 
-        The callback returns a list of ``(kind, key, value)`` tuples where *kind* is
-        ``"file"`` (write *value* to the file at *key* inside the skill dir) or
-        ``"env"`` (set *key* as an environment variable with *value*).
+        The callback signature is ``(session_id, skill_name)`` and it returns a
+        list of ``(kind, key, value)`` tuples where *kind* is ``"file"`` (write
+        *value* to the file at *key* inside the skill dir) or ``"env"`` (set
+        *key* as an environment variable with *value*).
         """
         self._reinject_credentials_cb = cb
 
@@ -828,8 +829,13 @@ class SandboxManager:
     def allow_domains(self, session_id: str, domains: set[str], *, source: str | None = None) -> None:
         """Add *domains* to the proxy allowlist for *session_id*.
 
-        *source* is an optional human-readable label (e.g. ``"skill:webtools"``)
-        stored for display in the ``/session`` command output.
+        Args:
+            session_id: The session to update.
+            domains: Domain patterns to allow (exact or wildcard, e.g. ``"*.example.com"``).
+            source: Optional human-readable label (e.g. ``"skill:webtools"``)
+                stored for display in the ``/session`` command output.  The first
+                source that adds a given domain wins; subsequent calls do not
+                overwrite it.
         """
         existing = self._allowed_domains.setdefault(session_id, set())
         existing.update(domains)
