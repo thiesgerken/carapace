@@ -118,7 +118,9 @@ class SandboxManager:
         self._proxy_bypass_sessions: set[str] = set()
         self._stashed_session_env: dict[str, dict[str, str]] = {}
         self._get_activated_skills_cb: Callable[[str], list[str]] | None = None
-        self._reinject_credentials_cb: Callable[[str, str], Awaitable[list[tuple[str, str]]]] | None = None
+        self._reinject_credentials_cb: Callable[[str, str], Awaitable[list[tuple[str, str, str]]]] | None = None
+        self._needs_env_restore: set[str] = set()
+        self._domain_sources: dict[str, dict[str, str]] = {}  # session_id -> domain -> source label
         logger.info(
             f"SandboxManager initialized (image={base_image}, "
             + f"network={network_name}, proxy_port={proxy_port}, idle_timeout={idle_timeout_minutes}m)"
@@ -128,8 +130,16 @@ class SandboxManager:
         """Register a callback to retrieve activated skills for a session (from persisted state)."""
         self._get_activated_skills_cb = cb
 
-    def set_reinject_credentials_callback(self, cb: Callable[[str, str], Awaitable[list[tuple[str, str]]]]) -> None:
-        """Register a callback to retrieve file credentials for re-injection."""
+    def set_reinject_credentials_callback(
+        self,
+        cb: Callable[[str, str], Awaitable[list[tuple[str, str, str]]]],
+    ) -> None:
+        """Register a callback to retrieve credentials for re-injection.
+
+        The callback returns a list of ``(kind, key, value)`` tuples where *kind* is
+        ``"file"`` (write *value* to the file at *key* inside the skill dir) or
+        ``"env"`` (set *key* as an environment variable with *value*).
+        """
         self._reinject_credentials_cb = cb
 
     def _get_or_create_token(self, session_id: str) -> str:
@@ -211,6 +221,8 @@ class SandboxManager:
                         last_used=time.time(),
                     )
                     self._sessions[session_id] = sc
+                    # Mark that env-var credentials need to be restored (server restart scenario).
+                    self._needs_env_restore.add(session_id)
                     return sc, False
                 except Exception:
                     logger.opt(exception=True).debug(
@@ -436,8 +448,9 @@ class SandboxManager:
                 logger.info(f"Proxy bypass ENABLED for session {session_id}")
             try:
                 sc, was_created = await self.ensure_session(session_id)
-                if was_created:
+                if was_created or session_id in self._needs_env_restore:
                     await self._rebuild_skill_venvs(session_id)
+                    self._needs_env_restore.discard(session_id)
                 sc.last_used = time.time()
                 logger.debug(f"Exec in session {session_id}: {command}")
 
@@ -632,21 +645,25 @@ class SandboxManager:
         if not credentials:
             return
         skill_dir = f"/workspace/skills/{skill_name}"
-        for credential_file, credential_value in credentials:
-            result = await self._file_write_in_container(
-                sc,
-                credential_file,
-                credential_value,
-                mode=0o400,
-                workdir=skill_dir,
-                quote=False,
-            )
-            if result.exit_code != 0:
-                logger.error(
-                    f"Failed to re-inject credential file {credential_file} for skill {skill_name}: {result.output}"
+        for cred_kind, cred_key, cred_value in credentials:
+            if cred_kind == "env":
+                sc.session_env[cred_key] = cred_value
+                logger.info(f"Restored env-var credential '{cred_key}' for skill {skill_name}")
+            elif cred_kind == "file":
+                result = await self._file_write_in_container(
+                    sc,
+                    cred_key,
+                    cred_value,
+                    mode=0o400,
+                    workdir=skill_dir,
+                    quote=False,
                 )
-                continue
-            logger.info(f"Re-injected credential file {credential_file} for skill {skill_name}")
+                if result.exit_code != 0:
+                    logger.error(
+                        f"Failed to re-inject credential file {cred_key} for skill {skill_name}: {result.output}"
+                    )
+                    continue
+                logger.info(f"Re-injected credential file {cred_key} for skill {skill_name}")
 
     async def _sync_skill_venv(self, sc: SessionContainer, skill_name: str) -> str:
         """Restore trusted skill config from git and rebuild the venv if needed."""
@@ -808,24 +825,36 @@ class SandboxManager:
         """Return True if *token* is valid for *session_id*."""
         return self._token_to_session.get(token) == session_id
 
-    def allow_domains(self, session_id: str, domains: set[str]) -> None:
-        """Add *domains* to the proxy allowlist for *session_id*."""
+    def allow_domains(self, session_id: str, domains: set[str], *, source: str | None = None) -> None:
+        """Add *domains* to the proxy allowlist for *session_id*.
+
+        *source* is an optional human-readable label (e.g. ``"skill:webtools"``)
+        stored for display in the ``/session`` command output.
+        """
         existing = self._allowed_domains.setdefault(session_id, set())
         existing.update(domains)
+        if source:
+            src_map = self._domain_sources.setdefault(session_id, {})
+            for d in domains:
+                src_map.setdefault(d, source)
         logger.info(f"Allowed domains for session {session_id}: {existing}")
 
     def get_allowed_domains(self, session_id: str) -> set[str]:
         return self._allowed_domains.get(session_id, set())
 
     def get_domain_info(self, session_id: str) -> list[dict[str, str]]:
-        """Return a list of allowed domain entries with their scope/expiry for display.
+        """Return a list of allowed domain entries with their scope/source for display.
 
-        Each entry has ``domain`` and ``scope``, where scope is one of:
-        ``"permanent"`` or ``"exec"`` (current tool call only).
+        Each entry has ``domain``, ``scope`` (``"permanent"`` or ``"this exec only"``),
+        and an optional ``source`` label (e.g. ``"skill:webtools"``).
         """
+        src_map = self._domain_sources.get(session_id, {})
         entries: list[dict[str, str]] = []
         for d in sorted(self._allowed_domains.get(session_id, set())):
-            entries.append({"domain": d, "scope": "permanent"})
+            entry: dict[str, str] = {"domain": d, "scope": "permanent"}
+            if d in src_map:
+                entry["source"] = src_map[d]
+            entries.append(entry)
         for d in sorted(self._exec_temp_domains.get(session_id, set())):
             entries.append({"domain": d, "scope": "this exec only"})
         return entries
@@ -899,8 +928,10 @@ class SandboxManager:
         if token:
             self._token_to_session.pop(token, None)
         self._allowed_domains.pop(session_id, None)
+        self._domain_sources.pop(session_id, None)
         self._exec_temp_domains.pop(session_id, None)
         self._session_current_command.pop(session_id, None)
         self._proxy_bypass_sessions.discard(session_id)
+        self._needs_env_restore.discard(session_id)
         self._exec_locks.pop(session_id, None)
         self._domain_approval_cbs.pop(session_id, None)

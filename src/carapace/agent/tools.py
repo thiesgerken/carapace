@@ -376,6 +376,7 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
             ctx.deps.sandbox.allow_domains(
                 ctx.deps.session_state.session_id,
                 set(requested_domains),
+                source=f"skill:{skill_name}",
             )
 
         # Credential auto-injection

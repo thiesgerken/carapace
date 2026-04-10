@@ -172,6 +172,43 @@ class TestSandboxManagerAllowlists:
         mgr._cleanup_tracking("sess-1")
         assert mgr.verify_session_token("sess-1", "tok") is False
 
+    def test_allow_domains_with_source(self, tmp_path: Path):
+        mgr = self._make_manager(tmp_path)
+        mgr.allow_domains("sess-1", {"api.example.com", "cdn.example.com"}, source="skill:webtools")
+        info = mgr.get_domain_info("sess-1")
+        assert len(info) == 2
+        for entry in info:
+            assert entry["scope"] == "permanent"
+            assert entry["source"] == "skill:webtools"
+
+    def test_allow_domains_without_source_no_key(self, tmp_path: Path):
+        mgr = self._make_manager(tmp_path)
+        mgr.allow_domains("sess-1", {"api.example.com"})
+        info = mgr.get_domain_info("sess-1")
+        assert len(info) == 1
+        assert "source" not in info[0]
+
+    def test_allow_domains_source_not_overwritten(self, tmp_path: Path):
+        """First source wins when the same domain is re-added."""
+        mgr = self._make_manager(tmp_path)
+        mgr.allow_domains("sess-1", {"api.example.com"}, source="skill:first")
+        mgr.allow_domains("sess-1", {"api.example.com"}, source="skill:second")
+        info = mgr.get_domain_info("sess-1")
+        assert len(info) == 1
+        assert info[0]["source"] == "skill:first"
+
+    def test_cleanup_clears_domain_sources(self, tmp_path: Path):
+        mgr = self._make_manager(tmp_path)
+        mgr.allow_domains("sess-1", {"api.example.com"}, source="skill:webtools")
+        mgr._cleanup_tracking("sess-1")
+        assert mgr.get_domain_info("sess-1") == []
+
+    def test_cleanup_clears_needs_env_restore(self, tmp_path: Path):
+        mgr = self._make_manager(tmp_path)
+        mgr._needs_env_restore.add("sess-1")
+        mgr._cleanup_tracking("sess-1")
+        assert "sess-1" not in mgr._needs_env_restore
+
 
 @pytest.mark.anyio
 async def test_exec_recreate_preserves_domains(tmp_path: Path):
@@ -198,6 +235,74 @@ async def test_exec_recreate_preserves_domains(tmp_path: Path):
     output = await mgr.exec_command(session_id, "curl https://api.example.com")
     assert output.output == "ok"
     assert mgr.get_allowed_domains(session_id) == {"api.example.com"}
+
+
+@pytest.mark.anyio
+async def test_reinject_credential_files_handles_env_vars(tmp_path: Path):
+    """_reinject_credential_files sets sc.session_env for 'env' kind credentials."""
+    runtime = MagicMock(spec=ContainerRuntime)
+    runtime.get_host_ip = AsyncMock(return_value="172.18.0.1")
+    runtime.create_sandbox = AsyncMock(return_value="container-1")
+    runtime.get_ip = AsyncMock(return_value="172.18.0.22")
+    runtime.logs = AsyncMock(return_value="carapace sandbox ready")
+    runtime.exec = AsyncMock(return_value=ExecResult(exit_code=0, output=""))
+
+    mgr = SandboxManager(runtime=runtime, data_dir=tmp_path, knowledge_dir=tmp_path)
+    session_id = "sess-1"
+
+    injected_envs: dict[str, str] = {}
+
+    async def fake_reinject_cb(sid: str, skill: str) -> list[tuple[str, str, str]]:
+        return [
+            ("env", "MY_API_KEY", "secret-value"),
+            ("env", "ANOTHER_VAR", "another-secret"),
+        ]
+
+    mgr.set_reinject_credentials_callback(fake_reinject_cb)
+    sc, _ = await mgr.ensure_session(session_id)
+
+    # Simulate calling _reinject_credential_files directly
+    await mgr._reinject_credential_files(sc, "my-skill")
+
+    assert sc.session_env.get("MY_API_KEY") == "secret-value"
+    assert sc.session_env.get("ANOTHER_VAR") == "another-secret"
+
+
+@pytest.mark.anyio
+async def test_reinject_credentials_restored_on_server_restart(tmp_path: Path):
+    """When the server restarts and re-attaches to a running container, env-var
+    credentials are restored the first time an exec runs."""
+    runtime = MagicMock(spec=ContainerRuntime)
+    runtime.get_host_ip = AsyncMock(return_value="172.18.0.1")
+    existing_container_id = "existing-container"
+    runtime.sandbox_exists = AsyncMock(return_value=existing_container_id)
+    runtime.is_running = AsyncMock(return_value=True)
+    runtime.get_ip = AsyncMock(return_value="172.18.0.22")
+    runtime.exec = AsyncMock(return_value=ExecResult(exit_code=0, output="ok"))
+
+    mgr = SandboxManager(runtime=runtime, data_dir=tmp_path, knowledge_dir=tmp_path)
+    session_id = "sess-1"
+
+    # Simulate the reinject callback (would come from session engine)
+    async def fake_reinject_cb(sid: str, skill: str) -> list[tuple[str, str, str]]:
+        if skill == "my-skill":
+            return [("env", "MY_API_KEY", "restored-secret")]
+        return []
+
+    mgr.set_reinject_credentials_callback(fake_reinject_cb)
+    mgr.set_activated_skills_callback(lambda sid: ["my-skill"])
+
+    # Simulated call: no in-memory state, but sandbox_exists returns container.
+    # ensure_session should re-attach and set _needs_env_restore.
+    sc, was_created = await mgr.ensure_session(session_id)
+    assert not was_created
+    assert session_id in mgr._needs_env_restore
+
+    # On first exec, _needs_env_restore triggers _rebuild_skill_venvs which
+    # calls _reinject_credential_files -> sets session_env.
+    await mgr.exec_command(session_id, "echo hello")
+    assert session_id not in mgr._needs_env_restore
+    assert sc.session_env.get("MY_API_KEY") == "restored-secret"
 
 
 # ── carapace.yaml parsing ───────────────────────────────────────────

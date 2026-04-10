@@ -218,6 +218,10 @@ export function CommandResultView({ command, data }: CommandResultViewProps) {
     return <UsageView data={data} />;
   }
 
+  if (command === "session" && isSessionData(data)) {
+    return <SessionView data={data} />;
+  }
+
   if (isPlainMessagePayload(data)) {
     if (data.error) {
       return <p className="my-1 text-sm text-destructive">{data.error}</p>;
@@ -544,6 +548,115 @@ function UsageView({ data }: { data: UsagePayload }) {
           </table>
         </div>
       ) : null}
+    </div>
+  );
+}
+
+interface ApprovedCredential {
+  vault_path: string;
+  name: string;
+  description?: string;
+}
+
+interface AllowedDomain {
+  domain: string;
+  scope: string;
+  source?: string;
+}
+
+interface SessionPayload {
+  session_id: string;
+  channel_type: string;
+  approved_credentials: ApprovedCredential[];
+  allowed_domains: AllowedDomain[];
+}
+
+function isSessionData(d: unknown): d is SessionPayload {
+  return (
+    !!d &&
+    typeof d === "object" &&
+    "session_id" in d &&
+    "approved_credentials" in d &&
+    "allowed_domains" in d
+  );
+}
+
+function SessionView({ data }: { data: SessionPayload }) {
+  const hasCreds = data.approved_credentials.length > 0;
+  const hasDomains = data.allowed_domains.length > 0;
+
+  return (
+    <div className="my-2 space-y-3 text-sm">
+      <div className="text-xs text-muted-foreground">
+        <span className="font-medium">Session: </span>
+        <span className="font-mono">{data.session_id}</span>
+        <span className="ml-3 font-medium">Channel: </span>
+        <span className="font-mono">{data.channel_type}</span>
+      </div>
+
+      <div>
+        <p className="mb-1 text-xs font-medium text-muted-foreground">
+          Approved Credentials {hasCreds ? `(${data.approved_credentials.length})` : ""}
+        </p>
+        {hasCreds ? (
+          <table className="w-full">
+            <thead>
+              <tr className="border-b border-border text-left text-xs text-muted-foreground">
+                <th className="pb-1 pr-4 font-medium">Name</th>
+                <th className="pb-1 pr-4 font-medium">Vault Path</th>
+                <th className="pb-1 font-medium">Description</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.approved_credentials.map((c) => (
+                <tr key={c.vault_path} className="border-b border-border/50">
+                  <td className="py-1 pr-4 font-medium">{c.name}</td>
+                  <td className="py-1 pr-4 font-mono text-xs text-muted-foreground">
+                    {c.vault_path}
+                  </td>
+                  <td className="py-1 text-xs text-muted-foreground">
+                    {c.description ?? ""}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <p className="text-xs text-muted-foreground">None</p>
+        )}
+      </div>
+
+      <div>
+        <p className="mb-1 text-xs font-medium text-muted-foreground">
+          Allowed Domains {hasDomains ? `(${data.allowed_domains.length})` : ""}
+        </p>
+        {hasDomains ? (
+          <table className="w-full">
+            <thead>
+              <tr className="border-b border-border text-left text-xs text-muted-foreground">
+                <th className="pb-1 pr-4 font-medium">Domain</th>
+                <th className="pb-1 pr-4 font-medium">Scope</th>
+                <th className="pb-1 font-medium">Source</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.allowed_domains.map((d) => (
+                <tr key={`${d.domain}-${d.scope}`} className="border-b border-border/50">
+                  <td className="py-1 pr-4 font-mono text-xs">{d.domain}</td>
+                  <td className="py-1 pr-4 text-xs text-muted-foreground">
+                    {d.scope}
+                  </td>
+                  <td className="py-1 text-xs text-muted-foreground">
+                    {d.source ?? ""}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <p className="text-xs text-muted-foreground">None</p>
+        )}
+      </div>
     </div>
   );
 }

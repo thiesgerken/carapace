@@ -350,24 +350,32 @@ class SessionEngine:
             return list(state.activated_skills)
         return []
 
-    async def _reinject_skill_credentials(self, session_id: str, skill_name: str) -> list[tuple[str, str]]:
-        """Return approved file credentials that should be re-injected for a skill."""
+    async def _reinject_skill_credentials(self, session_id: str, skill_name: str) -> list[tuple[str, str, str]]:
+        """Return approved credentials that should be re-injected for a skill.
+
+        Returns ``(kind, key, value)`` tuples where *kind* is ``"file"`` or ``"env"``.
+        """
         registry = SkillRegistry(self._knowledge_dir / "skills")
         carapace_cfg = registry.get_carapace_config(skill_name)
         if not carapace_cfg or not carapace_cfg.credentials:
             return []
 
         approved_paths = self._get_approved_credential_paths(session_id)
-        reinject: list[tuple[str, str]] = []
+        reinject: list[tuple[str, str, str]] = []
         for decl in carapace_cfg.credentials:
-            if decl.vault_path not in approved_paths or not decl.file:
+            if decl.vault_path not in approved_paths:
+                continue
+            if not decl.file and not decl.env_var:
                 continue
             try:
                 value = await self._credential_registry.fetch(decl.vault_path)
             except KeyError:
                 logger.warning(f"Credential {decl.vault_path} not found in vault during re-injection")
                 continue
-            reinject.append((decl.file, value))
+            if decl.env_var:
+                reinject.append(("env", decl.env_var, value))
+            if decl.file:
+                reinject.append(("file", decl.file, value))
         return reinject
 
     def _get_approved_credential_paths(self, session_id: str) -> set[str]:
