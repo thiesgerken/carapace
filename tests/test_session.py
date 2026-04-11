@@ -15,7 +15,7 @@ from carapace.bootstrap import ensure_data_dir
 from carapace.config import load_config
 from carapace.credentials import CredentialRegistry
 from carapace.git.store import GitStore
-from carapace.models import ToolResult
+from carapace.models import ContextGrant, CredentialRegistryProtocol, SkillCredentialDecl, ToolResult
 from carapace.sandbox.manager import SandboxManager
 from carapace.security.sentinel import Sentinel
 from carapace.session import SessionEngine, SessionManager
@@ -77,6 +77,57 @@ def test_save_and_resume_state(tmp_path: Path):
     assert resumed is not None
     assert "my-skill" in resumed.context_grants
     assert "dev/test" in resumed.context_grants["my-skill"].vault_paths
+
+
+@pytest.mark.anyio
+async def test_reinject_skill_credentials_uses_context_grant(tmp_path: Path):
+    """Venv/container rebuild re-fetches file creds when the skill has a persisted context grant."""
+    skill_name = "reinject-skill"
+    skill_dir = tmp_path / "skills" / skill_name
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(f"---\nname: {skill_name}\n---\n")
+    (skill_dir / "carapace.yaml").write_text(
+        "credentials:\n  - vault_path: vault/secret\n    description: API key\n    file: .secrets/key.txt\n"
+    )
+
+    with _patch_sentinel():
+        engine = _make_engine(tmp_path)
+
+    state = engine.session_mgr.create_session()
+    sid = state.session_id
+    active = engine.get_or_activate(sid)
+    active.state.context_grants[skill_name] = ContextGrant(
+        skill_name=skill_name,
+        credential_decls=[
+            SkillCredentialDecl(vault_path="vault/secret", description="API key", file=".secrets/key.txt"),
+        ],
+    )
+
+    mock_reg = AsyncMock(spec=CredentialRegistryProtocol)
+    mock_reg.fetch = AsyncMock(return_value="secret-value")
+    engine._credential_registry = mock_reg
+
+    result = await engine._reinject_skill_credentials(sid, skill_name)
+    assert result == [(".secrets/key.txt", "secret-value")]
+    mock_reg.fetch.assert_awaited_once_with("vault/secret")
+
+    active.state.context_grants.pop(skill_name, None)
+    mock_reg.fetch.reset_mock()
+    assert await engine._reinject_skill_credentials(sid, skill_name) == []
+    mock_reg.fetch.assert_not_called()
+
+    # Reload from disk when session is not active (same path as idle resume + venv sync)
+    active.state.context_grants[skill_name] = ContextGrant(
+        skill_name=skill_name,
+        credential_decls=[
+            SkillCredentialDecl(vault_path="vault/secret", description="API key", file=".secrets/key.txt"),
+        ],
+    )
+    engine.session_mgr.save_state(active.state)
+    engine.deactivate(sid)
+    mock_reg.fetch.reset_mock()
+    mock_reg.fetch = AsyncMock(return_value="from-disk")
+    assert await engine._reinject_skill_credentials(sid, skill_name) == [(".secrets/key.txt", "from-disk")]
 
 
 # ---------------------------------------------------------------------------

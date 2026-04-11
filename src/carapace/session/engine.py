@@ -363,7 +363,7 @@ class SessionEngine:
         if not carapace_cfg or not carapace_cfg.credentials:
             return []
 
-        approved_paths = self._get_approved_credential_paths(session_id)
+        approved_paths = self._credential_vault_paths_for_skill(session_id, skill_name)
         reinject: list[tuple[str, str]] = []
         for decl in carapace_cfg.credentials:
             if decl.vault_path not in approved_paths or not decl.file:
@@ -376,16 +376,14 @@ class SessionEngine:
             reinject.append((decl.file, value))
         return reinject
 
-    def _get_approved_credential_paths(self, session_id: str) -> set[str]:
-        """Return approved credential vault paths derived from context grants."""
+    def _credential_vault_paths_for_skill(self, session_id: str, skill_name: str) -> set[str]:
+        """Vault paths allowed for file re-injection: that skill's context grant (from ``use_skill``)."""
         active = self._active.get(session_id)
         state = active.state if active else self._session_mgr.load_state(session_id)
         if not state:
             return set()
-        paths: set[str] = set()
-        for grant in state.context_grants.values():
-            paths.update(grant.vault_paths)
-        return paths
+        grant = state.context_grants.get(skill_name)
+        return grant.vault_paths if grant else set()
 
     def get_active(self, session_id: str) -> ActiveSession | None:
         """Return the ``ActiveSession`` if loaded, else ``None``."""
