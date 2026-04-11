@@ -30,7 +30,7 @@ carapace = "carapace.cli:app"
 carapace-server = "carapace.server:main"
 
 [dependency-groups]
-dev = ["pytest", "pytest-asyncio"]
+dev = ["pytest", "pytest-asyncio", "ruff>=0.15.10"]
 
 [build-system]
 requires = ["hatchling"]
