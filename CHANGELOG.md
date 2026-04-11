@@ -1,6 +1,15 @@
 # CHANGELOG
 
 
+## v0.75.2 (2026-04-11)
+
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix: copy assets using shutil to make binaries work as well
+  ([`51dcb4a`](https://github.com/thiesgerken/carapace/commit/51dcb4a13c259b86b4c77bdc1f0aef4cf973443c))
+
 ## v0.75.1 (2026-04-11)
 
 
