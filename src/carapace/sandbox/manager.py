@@ -452,7 +452,7 @@ class SandboxManager:
             are written before the command and deleted in the ``finally`` block.
         """
         contexts = contexts or []
-        written_files: list[tuple[str, str]] = []  # (session_id-relative path written, skill_name)
+        written_files: list[tuple[str, str]] = []  # (file_path, skill_name)
 
         async with self._get_exec_lock(session_id):
             if bypass_proxy:
@@ -475,25 +475,10 @@ class SandboxManager:
                     self._exec_temp_domains[session_id].update(context_domains)
                     self._exec_context_skill_domains[session_id].update(context_domains)
 
-                # Write file-based credentials before exec
-                if context_file_creds:
-                    for skill_name, file_path, vault_path in context_file_creds:
-                        value = self.get_cached_credential(session_id, vault_path)
-                        if value is None:
-                            logger.warning(
-                                f"Cached credential missing for {vault_path!r} (skill {skill_name!r}), skipping file"
-                            )
-                            continue
-                        skill_dir = f"/workspace/skills/{skill_name}"
-                        fw = await self._file_write_in_container(
-                            sc, file_path, value, mode=0o400, workdir=skill_dir, quote=False
-                        )
-                        if fw.exit_code != 0:
-                            logger.error(f"Failed to write credential file {file_path} for {skill_name}: {fw.output}")
-                        else:
-                            written_files.append((file_path, skill_name))
-
                 try:
+                    # Write file-based credentials + run the command
+                    if context_file_creds:
+                        written_files = await self._write_context_file_credentials(sc, context_file_creds)
                     return await self._exec_in_container(
                         sc, command, timeout, workdir=workdir, bypass_proxy=False, extra_env=extra_env
                     )
@@ -507,17 +492,7 @@ class SandboxManager:
                     # Re-write file credentials after container recreation
                     written_files.clear()
                     if context_file_creds:
-                        for skill_name, file_path, vault_path in context_file_creds:
-                            value = self.get_cached_credential(session_id, vault_path)
-                            if value is None:
-                                continue
-                            skill_dir = f"/workspace/skills/{skill_name}"
-                            fw = await self._file_write_in_container(
-                                sc, file_path, value, mode=0o400, workdir=skill_dir, quote=False
-                            )
-                            if fw.exit_code == 0:
-                                written_files.append((file_path, skill_name))
-
+                        written_files = await self._write_context_file_credentials(sc, context_file_creds)
                     return await self._exec_in_container(
                         sc, command, timeout, workdir=workdir, bypass_proxy=False, extra_env=extra_env
                     )
@@ -532,19 +507,7 @@ class SandboxManager:
 
                 # Delete file-based credentials written for this exec
                 if written_files:
-                    sc_now = self._sessions.get(session_id)
-                    if sc_now:
-                        for file_path, skill_name in written_files:
-                            skill_dir = f"/workspace/skills/{skill_name}"
-                            rm_path = f"{skill_dir}/{file_path}" if not file_path.startswith("/") else file_path
-                            try:
-                                await self._runtime.exec(
-                                    sc_now.container_id,
-                                    f"rm -f {shlex.quote(rm_path)}",
-                                    timeout=5,
-                                )
-                            except Exception:
-                                logger.warning(f"Failed to delete credential file {rm_path} after exec")
+                    await self._delete_context_file_credentials(session_id, written_files)
 
     _KNOWLEDGE_WORKDIR = "/workspace"
 
@@ -732,6 +695,39 @@ class SandboxManager:
             return ExecResult(exit_code=result.exit_code, output=output)
         lines = _line_count(content)
         return ExecResult(exit_code=0, output=f"Wrote {lines} line(s) to {path}.")
+
+    async def _file_delete_in_container(
+        self,
+        sc: SessionContainer,
+        path: str,
+        *,
+        workdir: str | None = None,
+        quote: bool = True,
+    ) -> ExecResult:
+        """Delete a file using an existing container while the exec lock is already held."""
+        shell_path = _shell_path(path, quote=quote)
+        cmd = f"rm -f {shell_path}"
+        return await self._exec_in_container(sc, cmd, timeout=5, workdir=workdir)
+
+    async def _write_context_file_credentials(
+        self,
+        sc: SessionContainer,
+        context_file_creds: list[tuple[str, str, str]],
+    ) -> list[tuple[str, str]]:
+        """Write file-based credentials into the container, returning written ``(file_path, skill_name)`` pairs."""
+        written: list[tuple[str, str]] = []
+        for skill_name, file_path, vault_path in context_file_creds:
+            value = self.get_cached_credential(sc.session_id, vault_path)
+            if value is None:
+                logger.warning(f"Cached credential missing for {vault_path!r} (skill {skill_name!r}), skipping file")
+                continue
+            skill_dir = f"/workspace/skills/{skill_name}"
+            fw = await self._file_write_in_container(sc, file_path, value, mode=0o400, workdir=skill_dir, quote=False)
+            if fw.exit_code != 0:
+                logger.error(f"Failed to write credential file {file_path} for {skill_name}: {fw.output}")
+            else:
+                written.append((file_path, skill_name))
+        return written
 
     async def _reinject_credential_files(self, sc: SessionContainer, skill_name: str) -> None:
         """Re-inject file-based credentials after container recreation.
