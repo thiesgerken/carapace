@@ -865,20 +865,19 @@ class SessionEngine:
             approval_verdict: ApprovalVerdict | None = None,
             approval_explanation: str | None = None,
         ) -> None:
-            self._session_mgr.append_events(
-                session_id,
-                [
-                    {
-                        "role": "tool_call",
-                        "tool": tool,
-                        "args": args,
-                        "detail": detail,
-                        "approval_source": approval_source,
-                        "approval_verdict": approval_verdict,
-                        "approval_explanation": approval_explanation,
-                    }
-                ],
-            )
+            event: dict[str, Any] = {
+                "role": "tool_call",
+                "tool": tool,
+                "args": args,
+                "detail": detail,
+                "approval_source": approval_source,
+                "approval_verdict": approval_verdict,
+                "approval_explanation": approval_explanation,
+            }
+            contexts_raw = args.get("contexts")
+            if isinstance(contexts_raw, list):
+                event["contexts"] = list(contexts_raw)
+            self._session_mgr.append_events(session_id, [event])
             task = asyncio.ensure_future(
                 self._broadcast(
                     active,

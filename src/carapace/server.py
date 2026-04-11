@@ -7,7 +7,7 @@ import os
 import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, Self
 
 import logfire
 import loguru
@@ -30,7 +30,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from genai_prices import UpdatePrices
 from loguru import logger
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
 from carapace.auth import get_token
 from carapace.bootstrap import ensure_data_dir, ensure_knowledge_dir
@@ -469,6 +469,7 @@ class HistoryMessage(BaseModel):
     tool: str | None = None
     args: dict[str, Any] | None = None
     detail: str | None = None
+    contexts: list[str] | None = None
     approval_source: ApprovalSource | None = None
     approval_verdict: ApprovalVerdict | None = None
     approval_explanation: str | None = None
@@ -487,6 +488,16 @@ class HistoryMessage(BaseModel):
     names: list[str] | None = None
     descriptions: list[str] | None = None
     skill_name: str | None = None
+
+    @model_validator(mode="after")
+    def _contexts_from_args_when_missing(self) -> Self:
+        """Legacy events only stored contexts inside ``args``; expose them top-level."""
+        if self.role != "tool_call" or self.contexts is not None:
+            return self
+        raw = self.args.get("contexts") if self.args else None
+        if isinstance(raw, list):
+            return self.model_copy(update={"contexts": list(raw)})
+        return self
 
 
 @router.get("/sessions/{session_id}/history", response_model=list[HistoryMessage])
@@ -521,7 +532,17 @@ def _history_from_messages(session_id: str) -> list[HistoryMessage]:
             for part in msg.parts:
                 if isinstance(part, ToolCallPart):
                     args = part.args if isinstance(part.args, dict) else {}
-                    result.append(HistoryMessage(role="tool_call", content="", tool=part.tool_name, args=args))
+                    ctx_raw = args.get("contexts")
+                    contexts = list(ctx_raw) if isinstance(ctx_raw, list) else None
+                    result.append(
+                        HistoryMessage(
+                            role="tool_call",
+                            content="",
+                            tool=part.tool_name,
+                            args=args,
+                            contexts=contexts,
+                        )
+                    )
                 elif isinstance(part, TextPart):
                     result.append(HistoryMessage(role="assistant", content=part.content))
     return result
