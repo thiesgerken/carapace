@@ -341,20 +341,19 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
             sandbox_msg = f"ERROR: {exc}"
 
         # Register context grant (replaces permanent allow_domains + session env injection)
-        if requested_domains or requested_creds:
-            grant = ContextGrant(
+        grant = ContextGrant(
+            skill_name=skill_name,
+            domains=set(requested_domains),
+            credential_decls=list(requested_creds),
+        )
+        ctx.deps.session_state.context_grants[skill_name] = grant
+        ctx.deps.security.append(
+            ContextGrantEntry(
                 skill_name=skill_name,
-                domains=set(requested_domains),
-                credential_decls=list(requested_creds),
-            )
-            ctx.deps.session_state.context_grants[skill_name] = grant
-            ctx.deps.security.append(
-                ContextGrantEntry(
-                    skill_name=skill_name,
-                    domains=requested_domains,
-                    vault_paths=[c.vault_path for c in requested_creds],
-                ),
-            )
+                domains=requested_domains,
+                vault_paths=[c.vault_path for c in requested_creds],
+            ),
+        )
 
         # Cache credential values for per-exec injection
         cred_msg = await _cache_skill_credentials(ctx, requested_creds, skill_name)

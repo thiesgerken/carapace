@@ -293,6 +293,39 @@ class SessionSecurity:
         if self._credential_info_callback is not None:
             self._credential_info_callback(vault_path, detail, approval_source, approval_verdict, approval_explanation)
 
+    def record_credential_access(
+        self,
+        *,
+        vault_paths: list[str],
+        decision: Literal["approved", "escalated", "denied"],
+        explanation: str,
+        ui_label: str,
+        approval_source: ApprovalSource,
+        approval_verdict: ApprovalVerdict,
+        audit_final: Literal["auto_allowed", "allowed", "escalated", "denied"],
+        audit_args: dict[str, Any] | None = None,
+        sentinel_verdict: SentinelVerdict | None = None,
+    ) -> None:
+        """Record a credential access in action log, audit log, and UI notification."""
+        self.append(CredentialAccessEntry(vault_paths=vault_paths, decision=decision, explanation=explanation))
+        self.write_audit(
+            AuditEntry.now(
+                kind="credential_access",
+                sentinel_verdict=sentinel_verdict,
+                final_decision=audit_final,
+                args_summary=audit_args or {},
+                explanation=explanation,
+            ),
+        )
+        display_path = vault_paths[0] if len(vault_paths) == 1 else "<list>"
+        self.notify_credential_decision(
+            display_path,
+            ui_label,
+            approval_source=approval_source,
+            approval_verdict=approval_verdict,
+            approval_explanation=explanation,
+        )
+
     async def escalate_to_user(self, subject: str, context: dict[str, Any]) -> bool:
         if self._user_escalation_callback is None:
             logger.warning(f"No user escalation callback for session {self.session_id}, denying {subject}")

@@ -43,7 +43,7 @@ from carapace.models import Config, SessionState, ToolResult
 from carapace.sandbox.manager import SandboxManager
 from carapace.sandbox.proxy import ProxyServer
 from carapace.sandbox.runtime import ContainerRuntime
-from carapace.security.context import ApprovalSource, ApprovalVerdict, AuditEntry, CredentialAccessEntry
+from carapace.security.context import ApprovalSource, ApprovalVerdict
 from carapace.session import SessionEngine, SessionManager
 from carapace.skills import SkillRegistry
 from carapace.usage import gauge_breakdown_pct_dict, last_record_for_source
@@ -1032,21 +1032,15 @@ async def list_credentials(request: Request, q: str = "") -> list[dict[str, str]
     items = await _credential_registry.list(q)
     paths = [i.vault_path for i in items]
     explanation = f"Sandbox listed credential metadata (query={q!r}, {len(paths)} item(s))"
-    active.security.append(CredentialAccessEntry(vault_paths=paths, decision="approved", explanation=explanation))
-    active.security.write_audit(
-        AuditEntry.now(
-            kind="credential_access",
-            final_decision="auto_allowed",
-            args_summary={"operation": "list", "query": q, "count": len(paths)},
-            explanation=explanation,
-        )
-    )
-    active.security.notify_credential_decision(
-        "<list>",
-        f"[sandbox: list metadata] {explanation}",
+    active.security.record_credential_access(
+        vault_paths=paths,
+        decision="approved",
+        explanation=explanation,
+        ui_label=f"[sandbox: list metadata] {explanation}",
         approval_source="safe-list",
         approval_verdict="allow",
-        approval_explanation=explanation,
+        audit_final="auto_allowed",
+        audit_args={"operation": "list", "query": q, "count": len(paths)},
     )
 
     return [i.model_dump() for i in items]
@@ -1082,14 +1076,18 @@ async def fetch_credential(request: Request, vault_path: str) -> Response:
                 break
 
     if skill_covered:
-        # Allowed by skill context — notify UI and skip sentinel
+        # Allowed by skill context — record + notify, skip sentinel
         if active.security:
-            active.security.notify_credential_decision(
-                vault_path,
-                f"[skill] {meta.name}",
+            explanation = "skill-declared credential under active context"
+            active.security.record_credential_access(
+                vault_paths=[vault_path],
+                decision="approved",
+                explanation=explanation,
+                ui_label=f"[skill] {meta.name}",
                 approval_source="skill",
                 approval_verdict="allow",
-                approval_explanation="skill-declared credential under active context",
+                audit_final="auto_allowed",
+                audit_args={"operation": "fetch", "vault_path": vault_path, "source": "skill_context"},
             )
     else:
         # Always evaluate via sentinel (no session-wide short-circuit)
