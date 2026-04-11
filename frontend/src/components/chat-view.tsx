@@ -68,6 +68,21 @@ export function ChatView({
         const msgs: ChatMessage[] = [];
         const pendingToolCallIndices = new Map<string, number[]>();
         const approvals = new Map<string, boolean>();
+
+        function findLaterEscalationDecision(
+          fromIndex: number,
+          requestId: string,
+          roleMatches: (role: string) => boolean,
+        ): EscalationDecision | undefined {
+          for (let j = fromIndex + 1; j < history.length; j++) {
+            const e = history[j];
+            if (e.request_id !== requestId || !roleMatches(e.role)) continue;
+            const d = e.decision;
+            if (d === "allow" || d === "deny") return d;
+          }
+          return undefined;
+        }
+
         for (let i = 0; i < history.length; i++) {
           const h = history[i];
           if (h.role === "user") {
@@ -134,15 +149,15 @@ export function ChatView({
               h.role === "proxy_approval") &&
             h.request_id
           ) {
-            // Domain access approval: first event is the request, second has the decision
+            // Domain access approval: request entry, then decision (may be non-adjacent)
             if (!h.decision) {
-              const next = history[i + 1];
-              const decision =
-                (next?.role === "domain_access_approval" ||
-                  next?.role === "proxy_approval") &&
-                next.request_id === h.request_id
-                  ? (next.decision as EscalationDecision)
-                  : undefined;
+              const decision = findLaterEscalationDecision(
+                i,
+                h.request_id,
+                (role) =>
+                  role === "domain_access_approval" ||
+                  role === "proxy_approval",
+              );
               if (!decision) {
                 msgs.push({
                   kind: "domain_access_approval",
@@ -158,14 +173,13 @@ export function ChatView({
             }
             // Skip decision-only events (consumed above)
           } else if (h.role === "git_push_approval" && h.request_id) {
-            // Git push approval: first event is the request, second has the decision
+            // Git push approval: request entry, then decision (may be non-adjacent)
             if (!h.decision) {
-              const next = history[i + 1];
-              const decision =
-                next?.role === "git_push_approval" &&
-                next.request_id === h.request_id
-                  ? (next.decision as EscalationDecision)
-                  : undefined;
+              const decision = findLaterEscalationDecision(
+                i,
+                h.request_id,
+                (role) => role === "git_push_approval",
+              );
               if (!decision) {
                 msgs.push({
                   kind: "git_push_approval",
@@ -183,13 +197,11 @@ export function ChatView({
             }
           } else if (h.role === "credential_approval" && h.request_id) {
             if (!h.decision) {
-              const next = history[i + 1];
-              const decision =
-                next?.role === "credential_approval" &&
-                next.request_id === h.request_id
-                  ? (next.decision as EscalationDecision)
-                  : undefined;
-              // Only show the card while pending (no decision in the next entry).
+              const decision = findLaterEscalationDecision(
+                i,
+                h.request_id,
+                (role) => role === "credential_approval",
+              );
               if (!decision) {
                 msgs.push({
                   kind: "credential_approval",
