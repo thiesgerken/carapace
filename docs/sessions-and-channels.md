@@ -31,13 +31,13 @@ Each session also has an `ActiveSession` in-memory object (when loaded) that hol
 
 Sessions are stored on disk at `$CARAPACE_DATA_DIR/sessions/<session_id>/`:
 
-| File | Contents |
-| --- | --- |
-| `state.yaml` | Session metadata (SessionState) |
-| `history.yaml` | Full message history (agent + user messages) |
-| `events.yaml` | Event stream (tool calls, results, etc.) |
-| `usage.yaml` | Token usage breakdown by model |
-| `audit.yaml` | Security audit trail (sentinel verdicts, decisions) |
+| File           | Contents                                            |
+| -------------- | --------------------------------------------------- |
+| `state.yaml`   | Session metadata (SessionState)                     |
+| `history.yaml` | Full message history (agent + user messages)        |
+| `events.yaml`  | Event stream (tool calls, results, etc.)            |
+| `usage.yaml`   | Token usage breakdown by model                      |
+| `audit.yaml`   | Security audit trail (sentinel verdicts, decisions) |
 
 Sessions persist across server restarts. In-memory state (action log, sentinel conversation) is rebuilt when a session is reactivated.
 
@@ -60,34 +60,19 @@ The primary interactive channel. A Next.js web app connects to the Carapace serv
 
 **REST API:**
 
-| Endpoint | Method | Description |
-| --- | --- | --- |
-| `/api/sessions` | `POST` | Create a new session |
-| `/api/sessions` | `GET` | List all sessions |
-| `/api/sessions/{id}` | `GET` | Get session details |
-| `/api/sessions/{id}` | `DELETE` | Delete session + cleanup sandbox |
-| `/api/sessions/{id}/history` | `GET` | Get chat history (optional `limit` param) |
+| Endpoint                     | Method   | Description                               |
+| ---------------------------- | -------- | ----------------------------------------- |
+| `/api/sessions`              | `POST`   | Create a new session                      |
+| `/api/sessions`              | `GET`    | List all sessions                         |
+| `/api/sessions/{id}`         | `GET`    | Get session details                       |
+| `/api/sessions/{id}`         | `DELETE` | Delete session + cleanup sandbox          |
+| `/api/sessions/{id}/history` | `GET`    | Get chat history (optional `limit` param) |
 
 **WebSocket protocol** (`/api/chat/{session_id}`):
 
-| Direction | Message type | Purpose |
-| --- | --- | --- |
-| Client → Server | `UserMessage` | Chat input |
-| Client → Server | `ApprovalResponse` | Approve/deny a tool call |
-| Client → Server | `ProxyApprovalResponse` | Allow/deny a domain request |
-| Client → Server | `CancelRequest` | Cancel running agent turn |
-| Server → Client | `TokenChunk` | Streamed response token |
-| Server → Client | `ToolCallInfo` | Tool being called (name, args) |
-| Server → Client | `ToolResultInfo` | Tool result |
-| Server → Client | `ApprovalRequest` | Tool needs user approval |
-| Server → Client | `ProxyApprovalRequest` | Domain access request |
-| Server → Client | `Done` | Turn complete (content, usage) |
-| Server → Client | `SessionTitleUpdate` | New auto-generated title |
-| Server → Client | `StatusUpdate` | Connection status (on connect) |
+Message `type` values, JSON fields, authentication, and what the server sends on a **fresh connect** (including replay of pending approvals and escalations) are documented in **[websocket-session.md](websocket-session.md)**.
 
-On reconnect, the server re-sends any pending approval requests so the user can respond.
-
-Authentication uses a bearer token (`CARAPACE_TOKEN` env var) passed as a query parameter or header.
+Authentication uses a bearer token (`CARAPACE_TOKEN` env var) passed as a query parameter or `Authorization: Bearer` header.
 
 ### Matrix Channel
 
@@ -126,37 +111,37 @@ Slash commands are the user's control interface for managing sessions and securi
 
 ### Common commands (both channels)
 
-| Command | Effect |
-| --- | --- |
-| `/help` | Show available commands |
-| `/security` | Show security policy preview and action log summary |
-| `/approve-context` | Vouch for the current context (records trust signal for the sentinel) |
-| `/session` | Show session metadata and domain allowlist |
-| `/skills` | List available skills |
-| `/memory` | List memory files |
-| `/usage` | Show token usage breakdown with cost estimates |
-| `/pull` | Pull from external Git remote (if configured) |
-| `/push` | Push to external Git remote (if configured) |
-| `/reload` | Reset sandbox — destroy container + workspace, fresh git clone on next command |
+| Command            | Effect                                                                         |
+| ------------------ | ------------------------------------------------------------------------------ |
+| `/help`            | Show available commands                                                        |
+| `/security`        | Show security policy preview and action log summary                            |
+| `/approve-context` | Vouch for the current context (records trust signal for the sentinel)          |
+| `/session`         | Show session metadata and domain allowlist                                     |
+| `/skills`          | List available skills                                                          |
+| `/memory`          | List memory files                                                              |
+| `/usage`           | Show token usage breakdown with cost estimates                                 |
+| `/pull`            | Pull from external Git remote (if configured)                                  |
+| `/push`            | Push to external Git remote (if configured)                                    |
+| `/reload`          | Reset sandbox — destroy container + workspace, fresh git clone on next command |
 
 ### WebSocket-only commands
 
-| Command | Effect |
-| --- | --- |
-| `/verbose` | Toggle tool call display |
-| `/models` | View all models (agent, sentinel, title) and available options |
-| `/model [NAME\|reset]` | View or switch the agent model |
-| `/model-sentinel [NAME\|reset]` | View or switch the sentinel model |
-| `/model-title [NAME\|reset]` | View or switch the title model |
-| `/quit` / `/exit` | Close WebSocket connection |
+| Command                         | Effect                                                         |
+| ------------------------------- | -------------------------------------------------------------- |
+| `/verbose`                      | Toggle tool call display                                       |
+| `/models`                       | View all models (agent, sentinel, title) and available options |
+| `/model [NAME\|reset]`          | View or switch the agent model                                 |
+| `/model-sentinel [NAME\|reset]` | View or switch the sentinel model                              |
+| `/model-title [NAME\|reset]`    | View or switch the title model                                 |
+| `/quit` / `/exit`               | Close WebSocket connection                                     |
 
 ### Matrix-only commands
 
-| Command | Effect |
-| --- | --- |
-| `/reset` | Create a new session for the room (clears history, credentials, security state) |
-| `/approve` | Approve the pending operation (alternative to ✅ reaction) |
-| `/deny` | Deny the pending operation (alternative to ❌ reaction) |
+| Command    | Effect                                                                          |
+| ---------- | ------------------------------------------------------------------------------- |
+| `/reset`   | Create a new session for the room (clears history, credentials, security state) |
+| `/approve` | Approve the pending operation (alternative to ✅ reaction)                      |
+| `/deny`    | Deny the pending operation (alternative to ❌ reaction)                         |
 
 ---
 
