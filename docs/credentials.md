@@ -5,7 +5,7 @@ Carapace keeps credentials in external vault backends and exposes them to sandbo
 ## Design: pull, not push
 
 - Credentials are fetched by sandbox workloads via the sandbox API (`/credentials`).
-- Skill-declared credentials are fetched during `use_skill` and injected as env vars/files.
+- Skill-declared credentials are cached at `use_skill` time, then injected per-exec via the `contexts` parameter.
 - The agent should use credentials without printing them.
 
 In short: credentials are consumed inside the sandbox, not returned to the user-facing agent response.
@@ -73,11 +73,20 @@ credentials:
 On `use_skill`:
 
 1. Credential vault paths are included in the gated `use_skill` decision.
-2. After approval, Carapace fetches the values from the configured backend.
-3. `env_var` entries are stored in session env and available for subsequent `exec` calls.
-4. `file` entries are written inside the sandbox with mode `0400`.
+2. After approval, Carapace fetches and **caches** the values from the configured backend (in memory only, never persisted to disk).
+3. A **context grant** is registered for the skill, recording which vault paths and injection mappings are available.
+4. Credentials are **not injected** into the session environment. They are only available during `exec` calls that explicitly request the skill's context (see [skills.md — Context-scoped access](skills.md#context-scoped-access)).
 
-Already-approved credentials are re-injected if the sandbox is recreated.
+### Per-exec injection
+
+When the agent runs `exec(command, contexts=["skill-name"])`:
+
+- `env_var` entries are injected as environment variables for that single command.
+- `file` entries are written inside the sandbox with mode `0400` before the command, then deleted immediately after it completes (in a `finally` block).
+
+### Container restart
+
+Cached credential values are re-fetched from the vault when the session is reloaded. File-based credentials are re-written only for the next exec that requests the context.
 
 ## On-demand use with `ccred`
 
@@ -105,9 +114,10 @@ These endpoints are served on the sandbox API port (`8322`) and require Basic au
 
 ## Approval and audit behavior
 
-- First access to a credential in a session requires user approval.
-- Decisions are visible in UI approval cards (including bundled skill requests).
-- Approved credential metadata is tracked in session state (`approved_credentials`).
+- **Every** credential access goes through the sentinel LLM for evaluation — there is no session-wide short-circuit.
+- **Context fast path**: If the credential is covered by a context grant from an activated skill, and the current exec has that skill in its `contexts`, access is allowed with `approval_source="skill"` without sentinel evaluation.
+- **No context match**: Credentials accessed outside a matching context always go through the sentinel, which may allow, deny, or escalate to the user.
+- All access attempts are visible in the UI: skill-granted (teal badge), sentinel-allowed (green), user-approved (purple), or denied (red).
 - Access attempts are appended to the session action log as `credential_access`.
 
 Use `/session` to inspect approved credentials for the current session.

@@ -96,7 +96,7 @@ class ToolCallInfo(BaseModel):
     tool: str
     args: dict[str, Any]
     detail: str
-    approval_source: Literal["safe-list", "sentinel", "user", "unknown"] | None = None
+    approval_source: Literal["safe-list", "sentinel", "user", "skill", "bypass", "unknown"] | None = None
     approval_verdict: Literal["allow", "deny", "escalate"] | None = None
     approval_explanation: str | None = None
 

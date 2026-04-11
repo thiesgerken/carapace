@@ -92,7 +92,7 @@ class SessionSubscriber(Protocol):
         tool: str,
         args: dict[str, Any],
         detail: str,
-        approval_source: Literal["safe-list", "sentinel", "user", "unknown"] | None = None,
+        approval_source: Literal["safe-list", "sentinel", "user", "skill", "bypass", "unknown"] | None = None,
         approval_verdict: Literal["allow", "deny", "escalate"] | None = None,
         approval_explanation: str | None = None,
     ) -> None: ...
@@ -111,7 +111,7 @@ class SessionSubscriber(Protocol):
         self,
         domain: str,
         detail: str,
-        approval_source: Literal["safe-list", "sentinel", "user", "unknown"] | None = None,
+        approval_source: Literal["safe-list", "sentinel", "user", "skill", "bypass", "unknown"] | None = None,
         approval_verdict: Literal["allow", "deny", "escalate"] | None = None,
         approval_explanation: str | None = None,
     ) -> None: ...
@@ -120,7 +120,7 @@ class SessionSubscriber(Protocol):
         ref: str,
         decision: str,
         detail: str,
-        approval_source: Literal["safe-list", "sentinel", "user", "unknown"] | None = None,
+        approval_source: Literal["safe-list", "sentinel", "user", "skill", "bypass", "unknown"] | None = None,
         approval_verdict: Literal["allow", "deny", "escalate"] | None = None,
         approval_explanation: str | None = None,
     ) -> None: ...
@@ -128,7 +128,7 @@ class SessionSubscriber(Protocol):
         self,
         vault_path: str,
         detail: str,
-        approval_source: Literal["safe-list", "sentinel", "user", "unknown"] | None = None,
+        approval_source: Literal["safe-list", "sentinel", "user", "skill", "bypass", "unknown"] | None = None,
         approval_verdict: Literal["allow", "deny", "escalate"] | None = None,
         approval_explanation: str | None = None,
     ) -> None: ...
@@ -337,6 +337,12 @@ class SessionEngine:
             session_id,
             self._make_domain_eval_cb(security, sentinel, active),
         )
+        # Register a domain-notify callback so skill-granted and bypass
+        # domain accesses also emit UI events.
+        self._sandbox_mgr.set_domain_notify_callback(
+            session_id,
+            self._make_domain_info_cb(active),
+        )
 
         return active
 
@@ -394,6 +400,7 @@ class SessionEngine:
         if active and active.agent_task and not active.agent_task.done():
             active.agent_task.cancel()
         self._sandbox_mgr.set_domain_approval_callback(session_id, None)
+        self._sandbox_mgr.set_domain_notify_callback(session_id, None)
 
     # -- subscribers --
 
@@ -845,7 +852,7 @@ class SessionEngine:
             tool: str,
             args: dict[str, Any],
             detail: str,
-            approval_source: Literal["safe-list", "sentinel", "user", "unknown"] | None = None,
+            approval_source: Literal["safe-list", "sentinel", "user", "skill", "bypass", "unknown"] | None = None,
             approval_verdict: Literal["allow", "deny", "escalate"] | None = None,
             approval_explanation: str | None = None,
         ) -> None:
@@ -1250,7 +1257,7 @@ class SessionEngine:
         [
             str,
             str,
-            Literal["safe-list", "sentinel", "user", "unknown"] | None,
+            Literal["safe-list", "sentinel", "user", "skill", "bypass", "unknown"] | None,
             Literal["allow", "deny", "escalate"] | None,
             str | None,
         ],
@@ -1262,7 +1269,7 @@ class SessionEngine:
         def _notify(
             domain: str,
             detail: str,
-            approval_source: Literal["safe-list", "sentinel", "user", "unknown"] | None = None,
+            approval_source: Literal["safe-list", "sentinel", "user", "skill", "bypass", "unknown"] | None = None,
             approval_verdict: Literal["allow", "deny", "escalate"] | None = None,
             approval_explanation: str | None = None,
         ) -> None:
@@ -1304,7 +1311,7 @@ class SessionEngine:
             str,
             str,
             str,
-            Literal["safe-list", "sentinel", "user", "unknown"] | None,
+            Literal["safe-list", "sentinel", "user", "skill", "bypass", "unknown"] | None,
             Literal["allow", "deny", "escalate"] | None,
             str | None,
         ],
@@ -1317,7 +1324,7 @@ class SessionEngine:
             ref: str,
             decision: str,
             detail: str,
-            approval_source: Literal["safe-list", "sentinel", "user", "unknown"] | None = None,
+            approval_source: Literal["safe-list", "sentinel", "user", "skill", "bypass", "unknown"] | None = None,
             approval_verdict: Literal["allow", "deny", "escalate"] | None = None,
             approval_explanation: str | None = None,
         ) -> None:
@@ -1355,7 +1362,7 @@ class SessionEngine:
         [
             str,
             str,
-            Literal["safe-list", "sentinel", "user", "unknown"] | None,
+            Literal["safe-list", "sentinel", "user", "skill", "bypass", "unknown"] | None,
             Literal["allow", "deny", "escalate"] | None,
             str | None,
         ],
@@ -1367,7 +1374,7 @@ class SessionEngine:
         def _notify(
             vault_path: str,
             detail: str,
-            approval_source: Literal["safe-list", "sentinel", "user", "unknown"] | None = None,
+            approval_source: Literal["safe-list", "sentinel", "user", "skill", "bypass", "unknown"] | None = None,
             approval_verdict: Literal["allow", "deny", "escalate"] | None = None,
             approval_explanation: str | None = None,
         ) -> None:

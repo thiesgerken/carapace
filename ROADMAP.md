@@ -9,7 +9,9 @@
 - [ ] compaction
 - [ ] image input
 - [ ] custom sentinel instructions for skills, e.g. moneydb: make sure that the agent only does mutations based on user approval
-- [ ] replace tool: show diff
+- [ ] remove support for env exporting passwords in carapace.yaml? files seem a bit more secure. (even only by ease of access — exfiltrating `env` output is the most obvious for an attacker to do)
+- [ ] ! network access taucht nicht mehr auf in der UI wenn über skill freigegeben
+- [ ] exec braucht "skills" liste, nur die credentials von diesen skills werden reingetan in env/file für den befehl
 
 ## UI Improvements
 
@@ -19,7 +21,6 @@
 - [ ] replace pull / push slash commands (that aren't really tied to the session anyway) with a global indicator how many commits ahead/behind the backend's global repo is compared to the remote repo
 - [ ] show which sessions have sandboxes, size of the PVCs, is the sandbox in standby
 - [ ] tell the user what exactly is happening in the exec — sandbox creation, sentinel, execution? where is the command right now?
-- [ ] remove support for env exporting passwords in carapace.yaml? files seem a bit more secure. (even only by ease of access — exfiltrating `env` output is the most obvious for an attacker to do)
 
 ## Authentication & Multi-User
 

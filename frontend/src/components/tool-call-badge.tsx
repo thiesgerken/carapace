@@ -7,6 +7,8 @@ import {
   ShieldCheck,
   ShieldAlert,
   UserCheck,
+  Puzzle,
+  Zap,
 } from "lucide-react";
 import { diffLines } from "diff";
 import { MarkdownContent } from "./markdown-content";
@@ -29,7 +31,7 @@ interface ToolCallBadgeProps {
   loading?: boolean;
 }
 
-type ApprovalSource = "safe-list" | "sentinel" | "user" | "unknown";
+type ApprovalSource = "safe-list" | "sentinel" | "user" | "skill" | "bypass" | "unknown";
 type ApprovalVerdict = "allow" | "deny" | "escalate";
 
 const SHORT_KEYS: Record<string, string> = {
@@ -259,6 +261,33 @@ function ApprovalBadge({
     );
   }
 
+  if (source === "skill") {
+    return (
+      <span className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium bg-teal-500/10 text-teal-600 dark:text-teal-400">
+        <Puzzle className="h-2.5 w-2.5" />
+        skill
+      </span>
+    );
+  }
+
+  if (source === "bypass") {
+    return (
+      <span className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium bg-gray-500/10 text-gray-500 dark:text-gray-400">
+        <Zap className="h-2.5 w-2.5" />
+        bypass
+      </span>
+    );
+  }
+
+  if (verdict === "deny") {
+    return (
+      <span className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium bg-red-500/10 text-red-600 dark:text-red-400">
+        <ShieldAlert className="h-2.5 w-2.5" />
+        denied
+      </span>
+    );
+  }
+
   return null;
 }
 
@@ -332,9 +361,13 @@ export function ToolCallBadge({
             : isCredentialAccessTool
               ? isCredentialList
                 ? "listed credentials"
-                : "accessed credential"
+                : verdict === "deny"
+                  ? "credential denied"
+                  : "accessed credential"
               : isProxyDomainTool
-                ? "accessed domain"
+                ? verdict === "deny"
+                  ? "domain denied"
+                  : "accessed domain"
                 : tool
     : isUseSkillTool
       ? "activate skill"

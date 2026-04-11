@@ -73,6 +73,13 @@ class CredentialAccessEntry(BaseModel):
     explanation: str = ""
 
 
+class ContextGrantEntry(BaseModel):
+    type: Literal["context_grant"] = "context_grant"
+    skill_name: str
+    domains: list[str] = []
+    vault_paths: list[str] = []
+
+
 ActionLogEntry = Annotated[
     UserMessageEntry
     | ToolCallEntry
@@ -82,7 +89,8 @@ ActionLogEntry = Annotated[
     | SkillActivatedEntry
     | UserVouchedEntry
     | GitPushEntry
-    | CredentialAccessEntry,
+    | CredentialAccessEntry
+    | ContextGrantEntry,
     Field(discriminator="type"),
 ]
 
@@ -96,7 +104,7 @@ class SentinelVerdict(BaseModel):
     risk_level: Literal["low", "medium", "high"] = "medium"
 
 
-ApprovalSource = Literal["safe-list", "sentinel", "user", "unknown"]
+ApprovalSource = Literal["safe-list", "sentinel", "user", "skill", "bypass", "unknown"]
 ApprovalVerdict = Literal["allow", "deny", "escalate"]
 
 
@@ -155,6 +163,7 @@ class SessionSecurity:
             | UserVouchedEntry
             | GitPushEntry
             | CredentialAccessEntry
+            | ContextGrantEntry
         ] = []
         self.sentinel_eval_count: int = 0
         self._last_synced_idx: int = 0
@@ -185,6 +194,7 @@ class SessionSecurity:
         | UserVouchedEntry
         | GitPushEntry
         | CredentialAccessEntry
+        | ContextGrantEntry
     ]:
         """Return action log entries added since the last sentinel sync."""
         entries = self.action_log[self._last_synced_idx :]

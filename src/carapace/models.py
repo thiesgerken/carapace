@@ -48,6 +48,7 @@ class SessionState(BaseModel):
     approved_credentials: list[CredentialMetadata] = []
     approved_operations: list[str] = []
     activated_skills: list[str] = []
+    context_grants: dict[str, ContextGrant] = {}
     created_at: datetime
     last_active: datetime
 
@@ -390,6 +391,19 @@ class SkillCarapaceConfig(BaseModel):
     network: SkillNetworkConfig = SkillNetworkConfig()
     credentials: list[SkillCredentialDecl] = []
     hints: dict[str, str] = {}
+
+
+class ContextGrant(BaseModel):
+    """Context-scoped grant for a skill's declared domains and credentials.
+
+    Registered at ``use_skill`` time, keyed by skill name.  The agent must pass
+    matching ``contexts`` on ``exec`` for these grants to take effect.
+    """
+
+    skill_name: str
+    domains: set[str] = set()
+    vault_paths: set[str] = set()
+    credential_decls: list[SkillCredentialDecl] = []
 
 
 class SkillInfo(BaseModel):

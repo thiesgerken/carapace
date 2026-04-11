@@ -4,7 +4,6 @@ import asyncio
 import contextlib
 import logging  # stdlib logging used only for _InterceptHandler → loguru bridge
 import os
-import secrets
 import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -260,6 +259,7 @@ async def lifespan(app: FastAPI):
         verify_session_token=_sandbox_mgr.verify_session_token,
         get_allowed_domains=_sandbox_mgr.get_effective_domains,
         request_approval=_sandbox_mgr.request_domain_approval,
+        notify_domain_access=_sandbox_mgr.notify_domain_access,
         host="0.0.0.0",
         port=proxy_port,
     )
@@ -469,7 +469,7 @@ class HistoryMessage(BaseModel):
     tool: str | None = None
     args: dict[str, Any] | None = None
     detail: str | None = None
-    approval_source: Literal["safe-list", "sentinel", "user", "unknown"] | None = None
+    approval_source: Literal["safe-list", "sentinel", "user", "skill", "bypass", "unknown"] | None = None
     approval_verdict: Literal["allow", "deny", "escalate"] | None = None
     approval_explanation: str | None = None
     result: str | None = None
@@ -564,7 +564,7 @@ class WebSocketSubscriber:
         tool: str,
         args: dict[str, Any],
         detail: str,
-        approval_source: Literal["safe-list", "sentinel", "user", "unknown"] | None = None,
+        approval_source: Literal["safe-list", "sentinel", "user", "skill", "bypass", "unknown"] | None = None,
         approval_verdict: Literal["allow", "deny", "escalate"] | None = None,
         approval_explanation: str | None = None,
     ) -> None:
@@ -614,7 +614,7 @@ class WebSocketSubscriber:
         self,
         domain: str,
         detail: str,
-        approval_source: Literal["safe-list", "sentinel", "user", "unknown"] | None = None,
+        approval_source: Literal["safe-list", "sentinel", "user", "skill", "bypass", "unknown"] | None = None,
         approval_verdict: Literal["allow", "deny", "escalate"] | None = None,
         approval_explanation: str | None = None,
     ) -> None:
@@ -634,7 +634,7 @@ class WebSocketSubscriber:
         ref: str,
         decision: str,
         detail: str,
-        approval_source: Literal["safe-list", "sentinel", "user", "unknown"] | None = None,
+        approval_source: Literal["safe-list", "sentinel", "user", "skill", "bypass", "unknown"] | None = None,
         approval_verdict: Literal["allow", "deny", "escalate"] | None = None,
         approval_explanation: str | None = None,
     ) -> None:
@@ -653,7 +653,7 @@ class WebSocketSubscriber:
         self,
         vault_path: str,
         detail: str,
-        approval_source: Literal["safe-list", "sentinel", "user", "unknown"] | None = None,
+        approval_source: Literal["safe-list", "sentinel", "user", "skill", "bypass", "unknown"] | None = None,
         approval_verdict: Literal["allow", "deny", "escalate"] | None = None,
         approval_explanation: str | None = None,
     ) -> None:
@@ -1054,7 +1054,12 @@ async def list_credentials(request: Request, q: str = "") -> list[dict[str, str]
 
 @sandbox_app.get("/credentials/{vault_path:path}")
 async def fetch_credential(request: Request, vault_path: str) -> Response:
-    """Fetch a credential value (sentinel-gated, may escalate to user)."""
+    """Fetch a credential value (sentinel-gated, may escalate to user).
+
+    Fast path: if the credential is declared by a skill whose context is
+    active for the current exec, it is allowed without sentinel evaluation.
+    Otherwise, **every** access goes through ``evaluate_credential_with``.
+    """
     session_id = _authenticate_sandbox(request.headers.get("authorization"))
     if session_id is None:
         raise HTTPException(status_code=401, detail="Unauthorized")
@@ -1066,9 +1071,28 @@ async def fetch_credential(request: Request, vault_path: str) -> Response:
 
     active = _engine.get_or_activate(session_id)
 
-    already_approved = any(c.vault_path == vault_path for c in active.state.approved_credentials)
+    # Context fast path: check if the credential is covered by active contexts
+    current_contexts = _engine.sandbox_mgr.get_current_contexts(session_id)
+    skill_covered = False
+    if current_contexts:
+        context_set = set(current_contexts)
+        for grant in active.state.context_grants.values():
+            if grant.skill_name in context_set and vault_path in grant.vault_paths:
+                skill_covered = True
+                break
 
-    if not already_approved:
+    if skill_covered:
+        # Allowed by skill context — notify UI and skip sentinel
+        if active.security:
+            active.security.notify_credential_decision(
+                vault_path,
+                f"[skill] {meta.name}",
+                approval_source="skill",
+                approval_verdict="allow",
+                approval_explanation="skill-declared credential under active context",
+            )
+    else:
+        # Always evaluate via sentinel (no session-wide short-circuit)
         if active.security is None or active.sentinel is None:
             return Response(status_code=403, content="Session not initialized")
 
@@ -1086,31 +1110,6 @@ async def fetch_credential(request: Request, vault_path: str) -> Response:
             )
         if not cred_eval.allowed:
             return Response(status_code=403, content="Credential access denied")
-
-        if not any(c.vault_path == vault_path for c in active.state.approved_credentials):
-            active.state.approved_credentials.append(meta)
-            _engine.session_mgr.save_state(active.state)
-            if not cred_eval.user_was_prompted:
-                request_id = secrets.token_hex(8)
-                _engine.session_mgr.append_events(
-                    session_id,
-                    [
-                        {
-                            "role": "credential_approval",
-                            "request_id": request_id,
-                            "vault_paths": [vault_path],
-                            "names": [meta.name],
-                            "descriptions": [meta.description],
-                            "explanation": f"Sandbox credential fetch (sentinel allowed): {cred_eval.explanation}",
-                        },
-                        {
-                            "role": "credential_approval",
-                            "request_id": request_id,
-                            "vault_paths": [vault_path],
-                            "decision": "allow",
-                        },
-                    ],
-                )
 
     try:
         value = await _credential_registry.fetch(vault_path)
