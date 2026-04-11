@@ -79,7 +79,9 @@ export function ChatView({
               tool: h.tool ?? "",
               args: h.args ?? {},
               detail: h.detail ?? "",
-              contexts: Array.isArray(rawContexts) ? rawContexts as string[] : undefined,
+              contexts: Array.isArray(rawContexts)
+                ? (rawContexts as string[])
+                : undefined,
               approvalSource: h.approval_source,
               approvalVerdict: h.approval_verdict,
               approvalExplanation: h.approval_explanation,
@@ -134,7 +136,6 @@ export function ChatView({
           ) {
             // Domain access approval: first event is the request, second has the decision
             if (!h.decision) {
-              // Look ahead for the matching decision event
               const next = history[i + 1];
               const decision =
                 (next?.role === "domain_access_approval" ||
@@ -142,16 +143,18 @@ export function ChatView({
                 next.request_id === h.request_id
                   ? (next.decision as EscalationDecision)
                   : undefined;
-              msgs.push({
-                kind: "domain_access_approval",
-                request: {
-                  type: "domain_access_approval_request",
-                  request_id: h.request_id,
-                  domain: h.domain ?? "",
-                  command: h.command ?? "",
-                },
-                decision,
-              });
+              if (!decision) {
+                msgs.push({
+                  kind: "domain_access_approval",
+                  request: {
+                    type: "domain_access_approval_request",
+                    request_id: h.request_id,
+                    domain: h.domain ?? "",
+                    command: h.command ?? "",
+                  },
+                  decision,
+                });
+              }
             }
             // Skip decision-only events (consumed above)
           } else if (h.role === "git_push_approval" && h.request_id) {
@@ -163,18 +166,20 @@ export function ChatView({
                 next.request_id === h.request_id
                   ? (next.decision as EscalationDecision)
                   : undefined;
-              msgs.push({
-                kind: "git_push_approval",
-                request: {
-                  type: "git_push_approval_request",
-                  request_id: h.request_id,
-                  ref: h.ref ?? "",
-                  explanation: h.explanation ?? "",
-                  changed_files:
-                    (h.changed_files as string[] | undefined) ?? [],
-                },
-                decision,
-              });
+              if (!decision) {
+                msgs.push({
+                  kind: "git_push_approval",
+                  request: {
+                    type: "git_push_approval_request",
+                    request_id: h.request_id,
+                    ref: h.ref ?? "",
+                    explanation: h.explanation ?? "",
+                    changed_files:
+                      (h.changed_files as string[] | undefined) ?? [],
+                  },
+                  decision,
+                });
+              }
             }
           } else if (h.role === "credential_approval" && h.request_id) {
             if (!h.decision) {
@@ -184,8 +189,7 @@ export function ChatView({
                 next.request_id === h.request_id
                   ? (next.decision as EscalationDecision)
                   : undefined;
-              // Only show the card if it was actually escalated to the user
-              // (no immediate decision in the next history entry).
+              // Only show the card while pending (no decision in the next entry).
               if (!decision) {
                 msgs.push({
                   kind: "credential_approval",
@@ -294,7 +298,9 @@ export function ChatView({
               tool: msg.tool,
               args: msg.args,
               detail: msg.detail,
-              contexts: Array.isArray(rawContexts) ? rawContexts as string[] : undefined,
+              contexts: Array.isArray(rawContexts)
+                ? (rawContexts as string[])
+                : undefined,
               approvalSource: msg.approval_source,
               approvalVerdict: msg.approval_verdict,
               approvalExplanation: msg.approval_explanation,
@@ -461,12 +467,13 @@ export function ChatView({
   function handleEscalation(requestId: string, decision: EscalationDecision) {
     send({ type: "escalation_response", request_id: requestId, decision });
     setMessages((prev) =>
-      prev.map((m) =>
-        (m.kind === "domain_access_approval" ||
-          m.kind === "git_push_approval") &&
-        m.request.request_id === requestId
-          ? { ...m, decision }
-          : m,
+      prev.filter(
+        (m) =>
+          !(
+            (m.kind === "domain_access_approval" ||
+              m.kind === "git_push_approval") &&
+            m.request.request_id === requestId
+          ),
       ),
     );
   }
@@ -477,10 +484,12 @@ export function ChatView({
   ) {
     send({ type: "escalation_response", request_id: requestId, decision });
     setMessages((prev) =>
-      prev.map((m) =>
-        m.kind === "credential_approval" && m.request.request_id === requestId
-          ? { ...m, decision }
-          : m,
+      prev.filter(
+        (m) =>
+          !(
+            m.kind === "credential_approval" &&
+            m.request.request_id === requestId
+          ),
       ),
     );
   }

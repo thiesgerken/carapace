@@ -18,6 +18,7 @@ export interface HistoryMessage {
   tool?: string;
   args?: Record<string, unknown>;
   detail?: string;
+  contexts?: string[];
   approval_source?:
     | "safe-list"
     | "sentinel"
