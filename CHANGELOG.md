@@ -1,60 +1,59 @@
 # CHANGELOG
 
 
-## v0.75.0 (2026-04-11)
+## v0.75.1 (2026-04-11)
 
-
-### ✨ Features
-
-
-- ✨Merge pull request #64 from thiesgerken/feat/context-scoped-skill-allowlists
-  ([`c258670`](https://github.com/thiesgerken/carapace/commit/c258670bfa5169e68b6e3955615729067c95920f))
-
-  ✨ Context-scoped skill allowlists
-
-- ✨ feat: show skill domains and credentials in expanded use_skill card, clean up summary
-  ([`0a34122`](https://github.com/thiesgerken/carapace/commit/0a341222b2d19e88f7df0c79ab392f8e5358f3cd))
-
-- ✨ feat: add per-tool Lucide icons to tool-call badges and approval cards
-  ([`20d1e6f`](https://github.com/thiesgerken/carapace/commit/20d1e6f077597f624a485b48b9eb875920c8f237))
-
-- ✨ feat: show active contexts in tool call expanded card
-  ([`26037c2`](https://github.com/thiesgerken/carapace/commit/26037c22f169475c339ef5c6e123436e357bd4c8))
-
-- ✨ feat: live WS notification for skill credential cache + dedupe tests
-  ([`5caf1b0`](https://github.com/thiesgerken/carapace/commit/5caf1b059461f40e6e9c0813628fcf33e99760b6))
-
-- ✨ feat: add record_credential_access helper, always register context_grant
-  ([`e0529c2`](https://github.com/thiesgerken/carapace/commit/e0529c2b5a69b41a12acb19c10feb0faec96b540))
-
-  - Add SessionSecurity.record_credential_access() that combines action log,
-    audit log, and UI notification in a single call
-  - Use the helper in server.py skill fast path (was missing action log entry),
-    list_credentials endpoint, and evaluate_credential_with
-  - Move context_grant creation outside the domains/creds guard in use_skill
-    so every activated skill gets a grant registered
-
-- ✨ feat: context-scoped skill allowlists
-  ([`ebb8146`](https://github.com/thiesgerken/carapace/commit/ebb81465c322376e12a88db24c88ae28a2987418))
-
-  Replace session-wide domain/credential approvals with context-scoped grants keyed by skill name. Every credential access goes through the sentinel except when covered by an activated skill under matching contexts. Emit proxy and credential events to the UI for full visibility, including denied requests.
-
-  Changes:
-  - Add ContextGrant model and context_grants field on SessionState
-  - Extend ApprovalSource with 'skill' and 'bypass' literals
-  - Rewrite use_skill to register context grants (not session-wide injection)
-  - Add credential value cache to SandboxManager (per-exec, not permanent)
-  - Thread contexts parameter through exec tool and sandbox stack
-  - Per-exec file credential write/delete lifecycle
-  - Domain auth fast path with skill/bypass origin tracking
-  - Remove session-wide credential short-circuit; sentinel evaluates every access
-  - Context fast path in fetch_credential for skill-declared vault paths
-  - Frontend: skill (teal), bypass (gray), and deny (red) badge variants
-  - 20 new tests for context grants, credential cache, and context tracking
-  - Update docs: skills.md, credentials.md, websocket-session.md
 
 ### Other
 
+
+- chore: update package versions in uv.lock
+  ([`6e4fc37`](https://github.com/thiesgerken/carapace/commit/6e4fc37a729173a6b9a7eba91782669afee46468))
+
+  - Updated anthropic from 0.88.0 to 0.94.0
+  - Updated boto3 from 1.42.82 to 1.42.88
+  - Updated botocore from 1.42.82 to 1.42.88
+  - Updated click from 8.3.1 to 8.3.2
+  - Updated cohere from 5.21.1 to 6.1.0
+  - Updated cryptography from 46.0.6 to 46.0.7
+
+- Merge remote-tracking branch 'refs/remotes/origin/main'
+  ([`babb304`](https://github.com/thiesgerken/carapace/commit/babb3045b27e298cf359c81dbe48e092b0ef0fc7))
+
+## v0.75.0 (2026-04-11)
+
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix: tool_call_callback invocation
+  ([`9d94aa6`](https://github.com/thiesgerken/carapace/commit/9d94aa6b4a533ed001358974a1b5b36a438547a2))
+
+- 🐛 fix: keep skill credential cache on sandbox create rollback
+  ([`8ab4fc6`](https://github.com/thiesgerken/carapace/commit/8ab4fc6b70ea86fd1ba444527a7172320f1c3b8c))
+
+  _cleanup_tracking must not drop _credential_cache: values come from use_skill and survive transient ensure_session failures. destroy_session still purges the cache.
+
+  Made-with: Cursor
+
+- 🐛 fix: clean up session data on sandbox manager teardown
+  ([`eb46b33`](https://github.com/thiesgerken/carapace/commit/eb46b334f7641c42faa2fa33be0f08fa6c43812e))
+
+  Removed credential cache and current contexts from session cleanup to ensure proper resource management.
+
+- 🐛 fix: hide credential approval card for auto-approved credentials in history
+  ([`09c8fca`](https://github.com/thiesgerken/carapace/commit/09c8fca5621ebc24ef442ae233d27aeb61fa71d6))
+
+- 🐛 fix: notify credential injection at exec time, not use_skill
+  ([`5f1dbda`](https://github.com/thiesgerken/carapace/commit/5f1dbdae9904d99b666acf76b69b125329198812))
+
+  Credential UI entries (with "skill" badge) now appear when credentials are actually injected into an exec via contexts, rather than when they are cached during use_skill. The sentinel action-log entries from use_skill are preserved so the security agent stays aware of skill-declared credentials.
+
+### Other
+
+
+- add ruff to dev deps
+  ([`756c5be`](https://github.com/thiesgerken/carapace/commit/756c5bec86a74e0114730630c3304bc03a2b78f8))
 
 - fix: align credential dedupe with action log and audit
   ([`c9bfea1`](https://github.com/thiesgerken/carapace/commit/c9bfea1cc337e719744e28865cfbac87986cc159))
@@ -172,28 +171,54 @@
 - 📋 docs: websocket messages
   ([`fd5da2e`](https://github.com/thiesgerken/carapace/commit/fd5da2e21078081d3887993751551eac8a3959bd))
 
-### 🐛 Bug Fixes
+### ✨ Features
 
 
-- 🐛 fix: keep skill credential cache on sandbox create rollback
-  ([`8ab4fc6`](https://github.com/thiesgerken/carapace/commit/8ab4fc6b70ea86fd1ba444527a7172320f1c3b8c))
+- ✨Merge pull request #64 from thiesgerken/feat/context-scoped-skill-allowlists
+  ([`c258670`](https://github.com/thiesgerken/carapace/commit/c258670bfa5169e68b6e3955615729067c95920f))
 
-  _cleanup_tracking must not drop _credential_cache: values come from use_skill and survive transient ensure_session failures. destroy_session still purges the cache.
+  ✨ Context-scoped skill allowlists
 
-  Made-with: Cursor
+- ✨ feat: show skill domains and credentials in expanded use_skill card, clean up summary
+  ([`0a34122`](https://github.com/thiesgerken/carapace/commit/0a341222b2d19e88f7df0c79ab392f8e5358f3cd))
 
-- 🐛 fix: clean up session data on sandbox manager teardown
-  ([`eb46b33`](https://github.com/thiesgerken/carapace/commit/eb46b334f7641c42faa2fa33be0f08fa6c43812e))
+- ✨ feat: add per-tool Lucide icons to tool-call badges and approval cards
+  ([`20d1e6f`](https://github.com/thiesgerken/carapace/commit/20d1e6f077597f624a485b48b9eb875920c8f237))
 
-  Removed credential cache and current contexts from session cleanup to ensure proper resource management.
+- ✨ feat: show active contexts in tool call expanded card
+  ([`26037c2`](https://github.com/thiesgerken/carapace/commit/26037c22f169475c339ef5c6e123436e357bd4c8))
 
-- 🐛 fix: hide credential approval card for auto-approved credentials in history
-  ([`09c8fca`](https://github.com/thiesgerken/carapace/commit/09c8fca5621ebc24ef442ae233d27aeb61fa71d6))
+- ✨ feat: live WS notification for skill credential cache + dedupe tests
+  ([`5caf1b0`](https://github.com/thiesgerken/carapace/commit/5caf1b059461f40e6e9c0813628fcf33e99760b6))
 
-- 🐛 fix: notify credential injection at exec time, not use_skill
-  ([`5f1dbda`](https://github.com/thiesgerken/carapace/commit/5f1dbdae9904d99b666acf76b69b125329198812))
+- ✨ feat: add record_credential_access helper, always register context_grant
+  ([`e0529c2`](https://github.com/thiesgerken/carapace/commit/e0529c2b5a69b41a12acb19c10feb0faec96b540))
 
-  Credential UI entries (with "skill" badge) now appear when credentials are actually injected into an exec via contexts, rather than when they are cached during use_skill. The sentinel action-log entries from use_skill are preserved so the security agent stays aware of skill-declared credentials.
+  - Add SessionSecurity.record_credential_access() that combines action log,
+    audit log, and UI notification in a single call
+  - Use the helper in server.py skill fast path (was missing action log entry),
+    list_credentials endpoint, and evaluate_credential_with
+  - Move context_grant creation outside the domains/creds guard in use_skill
+    so every activated skill gets a grant registered
+
+- ✨ feat: context-scoped skill allowlists
+  ([`ebb8146`](https://github.com/thiesgerken/carapace/commit/ebb81465c322376e12a88db24c88ae28a2987418))
+
+  Replace session-wide domain/credential approvals with context-scoped grants keyed by skill name. Every credential access goes through the sentinel except when covered by an activated skill under matching contexts. Emit proxy and credential events to the UI for full visibility, including denied requests.
+
+  Changes:
+  - Add ContextGrant model and context_grants field on SessionState
+  - Extend ApprovalSource with 'skill' and 'bypass' literals
+  - Rewrite use_skill to register context grants (not session-wide injection)
+  - Add credential value cache to SandboxManager (per-exec, not permanent)
+  - Thread contexts parameter through exec tool and sandbox stack
+  - Per-exec file credential write/delete lifecycle
+  - Domain auth fast path with skill/bypass origin tracking
+  - Remove session-wide credential short-circuit; sentinel evaluates every access
+  - Context fast path in fetch_credential for skill-declared vault paths
+  - Frontend: skill (teal), bypass (gray), and deny (red) badge variants
+  - 20 new tests for context grants, credential cache, and context tracking
+  - Update docs: skills.md, credentials.md, websocket-session.md
 
 ### ♻️ Refactoring
 
