@@ -9,9 +9,6 @@
 - [ ] compaction
 - [ ] image input
 - [ ] custom sentinel instructions for skills, e.g. moneydb: make sure that the agent only does mutations based on user approval
-- [ ] remove support for env exporting passwords in carapace.yaml? files seem a bit more secure. (even only by ease of access — exfiltrating `env` output is the most obvious for an attacker to do)
-- [ ] ! network access taucht nicht mehr auf in der UI wenn über skill freigegeben
-- [ ] exec braucht "skills" liste, nur die credentials von diesen skills werden reingetan in env/file für den befehl
 
 ## UI Improvements
 
