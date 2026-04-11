@@ -729,6 +729,22 @@ class SandboxManager:
                 written.append((file_path, skill_name))
         return written
 
+    async def _delete_context_file_credentials(
+        self,
+        session_id: str,
+        written_files: list[tuple[str, str]],
+    ) -> None:
+        """Delete file-based credentials that were written for an exec."""
+        sc = self._sessions.get(session_id)
+        if sc is None:
+            return
+        for file_path, skill_name in written_files:
+            skill_dir = f"/workspace/skills/{skill_name}"
+            try:
+                await self._file_delete_in_container(sc, file_path, workdir=skill_dir, quote=False)
+            except Exception:
+                logger.warning(f"Failed to delete credential file {file_path} (skill {skill_name!r}) after exec")
+
     async def _reinject_credential_files(self, sc: SessionContainer, skill_name: str) -> None:
         """Re-inject file-based credentials after container recreation.
 
