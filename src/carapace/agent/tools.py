@@ -185,7 +185,6 @@ async def _cache_skill_credentials(
 
     # Fetch values and cache (not inject)
     cached = 0
-    cached_paths: list[str] = []
     fetch_errors: list[str] = []
     for decl in cred_decls:
         if decl.vault_path in failed_vault_paths:
@@ -203,17 +202,6 @@ async def _cache_skill_credentials(
             continue
         ctx.deps.sandbox.cache_credential(session_id, decl.vault_path, value)
         cached += 1
-        cached_paths.append(decl.vault_path)
-
-    # Notify live subscribers (dedupe handled by the per-exec notified set)
-    for vp in cached_paths:
-        ctx.deps.security.notify_credential_decision(
-            vp,
-            f"[skill] {vp}",
-            approval_source="skill",
-            approval_verdict="allow",
-            approval_explanation=f"skill-declared credential ({skill_name})",
-        )
 
     parts: list[str] = []
     if cached:
@@ -564,6 +552,7 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
         context_domains: set[str] = set()
         context_file_creds: list[tuple[str, str, str]] = []  # (skill_name, file_path, vault_path)
         missing_cached: list[tuple[str, str]] = []
+        injected_creds: list[tuple[str, str]] = []  # (ctx_name, vault_path)
         for ctx_name in contexts:
             grant = grants[ctx_name]
             context_domains.update(grant.domains)
@@ -574,6 +563,7 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
                 if cached is None:
                     missing_cached.append((ctx_name, decl.vault_path))
                     continue
+                injected_creds.append((ctx_name, decl.vault_path))
                 if decl.env_var:
                     extra_env[decl.env_var] = cached
                 if decl.file:
@@ -602,6 +592,16 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
                 "(re-run use_skill for the skill if you need them):\n"
                 f"{lines}\n\n"
             ) + result
+
+        # Notify credential injection for each context-scoped credential
+        for ctx_name, vp in injected_creds:
+            ctx.deps.security.notify_credential_decision(
+                vp,
+                f"[skill] {vp}",
+                approval_source="skill",
+                approval_verdict="allow",
+                approval_explanation=f"skill-declared credential ({ctx_name})",
+            )
 
         ctx.deps.security.append(
             ToolResultEntry(tool="exec", status="error" if exit_code != 0 else "success"),
