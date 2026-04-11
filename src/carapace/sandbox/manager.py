@@ -25,6 +25,7 @@ from carapace.sandbox.runtime import (
     SandboxConfig,
     SkillVenvError,
 )
+from carapace.security.context import ApprovalSource, ApprovalVerdict
 
 _SKILL_NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]*$")
 
@@ -115,7 +116,10 @@ class SandboxManager:
         self._exec_context_skill_domains: dict[str, set[str]] = {}  # skill-sourced subset of exec_temp_domains
         self._session_current_command: dict[str, str] = {}
         self._domain_approval_cbs: dict[str, Callable[[str, str], Awaitable[bool]]] = {}
-        self._domain_notify_cbs: dict[str, Callable[[str, str, str | None, str | None, str | None], None]] = {}
+        self._domain_notify_cbs: dict[
+            str,
+            Callable[[str, str, ApprovalSource | None, ApprovalVerdict | None, str | None], None],
+        ] = {}
         self._exec_locks: dict[str, asyncio.Lock] = {}
         self._proxy_bypass_sessions: set[str] = set()
         self._stashed_session_env: dict[str, dict[str, str]] = {}
@@ -637,10 +641,10 @@ class SandboxManager:
                 ) from exc
 
         logger.info(f"Activated skill '{skill_name}' in session {session_id}")
-        result = f"Skill '{skill_name}' activated at /workspace/skills/{skill_name}/"
+        parts = [f"Skill '{skill_name}' activated at /workspace/skills/{skill_name}/"]
         if venv_msg:
-            result += f"\n{venv_msg}"
-        return result
+            parts.append(venv_msg)
+        return " ".join(parts)
 
     async def _build_skill_venv(self, session_id: str, skill_name: str) -> None:
         """Build a skill venv inside the session container with proxy bypass.
@@ -1069,7 +1073,7 @@ class SandboxManager:
     def set_domain_notify_callback(
         self,
         session_id: str,
-        cb: Callable[[str, str, str | None, str | None, str | None], None] | None,
+        cb: Callable[[str, str, ApprovalSource | None, ApprovalVerdict | None, str | None], None] | None,
     ) -> None:
         """Register or remove a per-session domain access notification callback.
 
