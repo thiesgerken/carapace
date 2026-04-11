@@ -1069,9 +1069,10 @@ async def fetch_credential(request: Request, vault_path: str) -> Response:
     current_contexts = _engine.sandbox_mgr.get_current_contexts(session_id)
     skill_covered = False
     if current_contexts:
-        context_set = set(current_contexts)
-        for grant in active.state.context_grants.values():
-            if grant.skill_name in context_set and vault_path in grant.vault_paths:
+        grants = active.state.context_grants
+        for ctx_name in current_contexts:
+            grant = grants.get(ctx_name)
+            if grant is not None and vault_path in grant.vault_paths:
                 skill_covered = True
                 break
 
