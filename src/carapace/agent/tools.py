@@ -222,7 +222,7 @@ async def _cache_skill_credentials(
         parts.append("Credential vault unavailable for some declarations (not cached): " + "; ".join(meta_errors))
     if fetch_errors:
         parts.append("Credential errors: " + "; ".join(fetch_errors))
-    return " ".join(parts)
+    return "\n".join(parts)
 
 
 def build_system_prompt(deps: Deps) -> str:
@@ -383,15 +383,18 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
             ),
         )
 
-        parts = [f"Skill '{skill_name}' activated."]
+        status_lines: list[str] = []
         if sandbox_msg:
-            parts.append(sandbox_msg)
+            status_lines.append(sandbox_msg)
+        else:
+            status_lines.append(f"Skill '{skill_name}' activated.")
         if requested_domains:
-            parts.append(f"Network access granted for: {', '.join(requested_domains)}")
+            status_lines.append(f"Network access granted for: {', '.join(requested_domains)}")
         if cred_msg:
-            parts.append(cred_msg)
-        parts.append(f"Instructions:\n\n{instructions}")
-        result = "\n".join(parts)
+            status_lines.append(cred_msg)
+
+        result = "\n".join(f"- {line}" for line in status_lines)
+        result += f"\n\nInstructions:\n\n{instructions}"
         _notify_result(ctx, "use_skill", result)
         return result
 
