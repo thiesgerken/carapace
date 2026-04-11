@@ -43,7 +43,7 @@ from carapace.models import Config, SessionState, ToolResult
 from carapace.sandbox.manager import SandboxManager
 from carapace.sandbox.proxy import ProxyServer
 from carapace.sandbox.runtime import ContainerRuntime
-from carapace.security.context import AuditEntry, CredentialAccessEntry
+from carapace.security.context import ApprovalSource, ApprovalVerdict, AuditEntry, CredentialAccessEntry
 from carapace.session import SessionEngine, SessionManager
 from carapace.skills import SkillRegistry
 from carapace.usage import gauge_breakdown_pct_dict, last_record_for_source
@@ -469,8 +469,8 @@ class HistoryMessage(BaseModel):
     tool: str | None = None
     args: dict[str, Any] | None = None
     detail: str | None = None
-    approval_source: Literal["safe-list", "sentinel", "user", "skill", "bypass", "unknown"] | None = None
-    approval_verdict: Literal["allow", "deny", "escalate"] | None = None
+    approval_source: ApprovalSource | None = None
+    approval_verdict: ApprovalVerdict | None = None
     approval_explanation: str | None = None
     result: str | None = None
     command: str | None = None
@@ -564,8 +564,8 @@ class WebSocketSubscriber:
         tool: str,
         args: dict[str, Any],
         detail: str,
-        approval_source: Literal["safe-list", "sentinel", "user", "skill", "bypass", "unknown"] | None = None,
-        approval_verdict: Literal["allow", "deny", "escalate"] | None = None,
+        approval_source: ApprovalSource | None = None,
+        approval_verdict: ApprovalVerdict | None = None,
         approval_explanation: str | None = None,
     ) -> None:
         await self._safe_send(
@@ -614,8 +614,8 @@ class WebSocketSubscriber:
         self,
         domain: str,
         detail: str,
-        approval_source: Literal["safe-list", "sentinel", "user", "skill", "bypass", "unknown"] | None = None,
-        approval_verdict: Literal["allow", "deny", "escalate"] | None = None,
+        approval_source: ApprovalSource | None = None,
+        approval_verdict: ApprovalVerdict | None = None,
         approval_explanation: str | None = None,
     ) -> None:
         await self._safe_send(
@@ -634,8 +634,8 @@ class WebSocketSubscriber:
         ref: str,
         decision: str,
         detail: str,
-        approval_source: Literal["safe-list", "sentinel", "user", "skill", "bypass", "unknown"] | None = None,
-        approval_verdict: Literal["allow", "deny", "escalate"] | None = None,
+        approval_source: ApprovalSource | None = None,
+        approval_verdict: ApprovalVerdict | None = None,
         approval_explanation: str | None = None,
     ) -> None:
         await self._safe_send(
@@ -653,8 +653,8 @@ class WebSocketSubscriber:
         self,
         vault_path: str,
         detail: str,
-        approval_source: Literal["safe-list", "sentinel", "user", "skill", "bypass", "unknown"] | None = None,
-        approval_verdict: Literal["allow", "deny", "escalate"] | None = None,
+        approval_source: ApprovalSource | None = None,
+        approval_verdict: ApprovalVerdict | None = None,
         approval_explanation: str | None = None,
     ) -> None:
         await self._safe_send(

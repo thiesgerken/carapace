@@ -137,6 +137,7 @@ async def _cache_skill_credentials(
 
     # Fetch metadata for UI / action-log
     meta_errors: list[str] = []
+    failed_vault_paths: set[str] = set()
     metas: list[CredentialMetadata] = []
     for decl in cred_decls:
         try:
@@ -146,6 +147,7 @@ async def _cache_skill_credentials(
         except (httpx.RequestError, httpx.HTTPStatusError) as exc:
             logger.warning(f"Credential metadata fetch failed for {decl.vault_path!r} (skill {skill_name!r}): {exc}")
             meta_errors.append(f"{decl.vault_path}: vault unreachable or error ({type(exc).__name__})")
+            failed_vault_paths.add(decl.vault_path)
             continue
         metas.append(meta)
 
@@ -185,7 +187,7 @@ async def _cache_skill_credentials(
     cached = 0
     fetch_errors: list[str] = []
     for decl in cred_decls:
-        if decl.vault_path in {e.split(":")[0] for e in meta_errors}:
+        if decl.vault_path in failed_vault_paths:
             continue  # skip if metadata fetch already failed
         try:
             value = await cred_registry.fetch(decl.vault_path)
@@ -529,7 +531,7 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
         grants = ctx.deps.session_state.context_grants
         invalid = [c for c in contexts if c not in grants]
         if invalid:
-            return f"Unknown contexts (not activated skills): {', '.join(invalid)}"
+            return f"Unknown contexts: {', '.join(invalid)}. If these are skills, please activate them first."
 
         args: dict[str, Any] = {"command": command}
         if title is not None:

@@ -4,6 +4,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel
 
+from carapace.security.context import ApprovalSource, ApprovalVerdict
+
 SLASH_COMMANDS: list[dict[str, str]] = [
     {"command": "/security", "description": "Show security policy summary"},
     {"command": "/approve-context", "description": "Vouch for the current agent context as trustworthy"},
@@ -96,8 +98,8 @@ class ToolCallInfo(BaseModel):
     tool: str
     args: dict[str, Any]
     detail: str
-    approval_source: Literal["safe-list", "sentinel", "user", "skill", "bypass", "unknown"] | None = None
-    approval_verdict: Literal["allow", "deny", "escalate"] | None = None
+    approval_source: ApprovalSource | None = None
+    approval_verdict: ApprovalVerdict | None = None
     approval_explanation: str | None = None
 
 
