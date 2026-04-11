@@ -204,7 +204,7 @@ def test_agent_config_mixed_available_models():
 def test_session_state_defaults():
     state = SessionState.now(session_id="abc123")
     assert state.channel_type == "cli"
-    assert state.approved_credentials == []
+    assert state.context_grants == {}
 
 
 def test_sentinel_verdict():

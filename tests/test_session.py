@@ -62,16 +62,21 @@ def test_list_sessions(tmp_path: Path):
 
 
 def test_save_and_resume_state(tmp_path: Path):
-    from carapace.models import CredentialMetadata
+    from carapace.models import ContextGrant, SkillCredentialDecl
 
     mgr = SessionManager(tmp_path)
     state = mgr.create_session()
-    state.approved_credentials.append(CredentialMetadata(vault_path="dev/test", name="test-cred"))
+    state.context_grants["my-skill"] = ContextGrant(
+        skill_name="my-skill",
+        domains={"example.com"},
+        credential_decls=[SkillCredentialDecl(vault_path="dev/test", description="test cred")],
+    )
     mgr.save_state(state)
 
     resumed = mgr.resume_session(state.session_id)
     assert resumed is not None
-    assert any(c.vault_path == "dev/test" for c in resumed.approved_credentials)
+    assert "my-skill" in resumed.context_grants
+    assert "dev/test" in resumed.context_grants["my-skill"].vault_paths
 
 
 # ---------------------------------------------------------------------------

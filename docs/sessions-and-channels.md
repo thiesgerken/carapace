@@ -12,9 +12,9 @@ class SessionState(BaseModel):
     channel_type: str           # "cli" | "matrix" | "web" | ...
     channel_ref: str | None     # channel-specific ID (room_id, etc.)
     title: str | None           # auto-generated after first messages
-    approved_credentials: list[str]
     approved_operations: list[str]
     activated_skills: list[str]
+    context_grants: dict[str, ContextGrant]  # per-skill domain & credential grants
     created_at: datetime
     last_active: datetime
 ```

@@ -120,7 +120,7 @@ Credential access is mediated through the sandbox API and session state:
 - Sandbox scripts use `ccred` (or direct HTTP) to call `GET /credentials` and `GET /credentials/{vault_path}`.
 - `list` / `search` expose metadata only and are security-reviewed at the `exec` tool-call layer.
 - `fetch` is per-session approval-based: if a credential is not yet approved for the session, Carapace sends a credential approval request and blocks until approve/deny.
-- Approved credential metadata is tracked in `approved_credentials` and reflected in `/session`.
+- Approved credential metadata is tracked via context grants in `SessionState.context_grants` and reflected in `/session`.
 - Credential access decisions are recorded as `CredentialAccessEntry` action-log events.
 
 As with the rest of Carapace's model, the "keep secrets out of model output" guarantee is defense-in-depth: policy + sentinel + agent behavior. It is not a protocol-level cryptographic boundary, so secret-echoing commands must remain prohibited.

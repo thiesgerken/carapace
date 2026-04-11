@@ -377,14 +377,15 @@ class SessionEngine:
         return reinject
 
     def _get_approved_credential_paths(self, session_id: str) -> set[str]:
-        """Return approved credential vault paths for a session."""
+        """Return approved credential vault paths derived from context grants."""
         active = self._active.get(session_id)
-        if active:
-            return {credential.vault_path for credential in active.state.approved_credentials}
-        state = self._session_mgr.load_state(session_id)
-        if state:
-            return {credential.vault_path for credential in state.approved_credentials}
-        return set()
+        state = active.state if active else self._session_mgr.load_state(session_id)
+        if not state:
+            return set()
+        paths: set[str] = set()
+        for grant in state.context_grants.values():
+            paths.update(grant.vault_paths)
+        return paths
 
     def get_active(self, session_id: str) -> ActiveSession | None:
         """Return the ``ActiveSession`` if loaded, else ``None``."""
@@ -573,12 +574,22 @@ class SessionEngine:
             }
 
         if cmd == "/session":
+            grants_summary: dict[str, dict[str, Any]] = {}
+            for skill, grant in active.state.context_grants.items():
+                cached = sum(
+                    1 for vp in grant.vault_paths if self._sandbox_mgr.get_cached_credential(session_id, vp) is not None
+                )
+                grants_summary[skill] = {
+                    "domains": sorted(grant.domains),
+                    "vault_paths": sorted(grant.vault_paths),
+                    "cached_credentials": cached,
+                }
             return {
                 "command": "session",
                 "data": {
                     "session_id": session_id,
                     "channel_type": active.state.channel_type,
-                    "approved_credentials": active.state.approved_credentials,
+                    "context_grants": grants_summary,
                     "allowed_domains": self._sandbox_mgr.get_domain_info(session_id),
                 },
             }

@@ -45,7 +45,6 @@ class SessionState(BaseModel):
     channel_type: str = "cli"
     channel_ref: str | None = None
     title: str | None = None
-    approved_credentials: list[CredentialMetadata] = []
     approved_operations: list[str] = []
     activated_skills: list[str] = []
     context_grants: dict[str, ContextGrant] = {}
@@ -60,7 +59,6 @@ class SessionState(BaseModel):
         channel_type: str = "cli",
         channel_ref: str | None = None,
         title: str | None = None,
-        approved_credentials: list[CredentialMetadata] | None = None,
         approved_operations: list[str] | None = None,
     ) -> SessionState:
         ts = datetime.now(tz=UTC)
@@ -69,7 +67,6 @@ class SessionState(BaseModel):
             channel_type=channel_type,
             channel_ref=channel_ref,
             title=title,
-            approved_credentials=approved_credentials or [],
             approved_operations=approved_operations or [],
             created_at=ts,
             last_active=ts,

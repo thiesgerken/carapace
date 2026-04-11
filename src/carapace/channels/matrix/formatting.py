@@ -9,15 +9,6 @@ import markdown as md
 from carapace.ws_models import ApprovalRequest, CommandResult
 
 
-def _credential_name(credential: object) -> str:
-    if isinstance(credential, dict):
-        name = credential.get("name")
-        return str(name) if name else str(credential)
-
-    name = getattr(credential, "name", None)
-    return str(name) if name else str(credential)
-
-
 def md_to_html(text: str) -> str:
     """Convert markdown text to HTML for Matrix rich-text messages."""
     return md.markdown(text, extensions=["fenced_code", "tables"])
@@ -47,8 +38,22 @@ def format_command_result_text(result: CommandResult) -> str:
             return data.get("message", "Context approved.")
 
         case "session":
-            creds: list[object] = data.get("approved_credentials") or []
-            creds_str = ", ".join(_credential_name(c) for c in creds) if creds else "(none)"
+            grants: dict[str, dict[str, object]] = data.get("context_grants") or {}
+            if grants:
+                grant_lines: list[str] = []
+                for skill, info in grants.items():
+                    parts_g = [f"- **{skill}**"]
+                    domains_list = info.get("domains") or []
+                    if domains_list:
+                        parts_g.append(f"  domains: {', '.join(str(d) for d in domains_list)}")
+                    vps = info.get("vault_paths") or []
+                    cached = info.get("cached_credentials", 0)
+                    if vps:
+                        parts_g.append(f"  credentials: {len(vps)} declared, {cached} cached")
+                    grant_lines.append("\n".join(parts_g))
+                grants_str = "\n" + "\n".join(grant_lines)
+            else:
+                grants_str = " (none)"
             domain_entries: list[dict[str, str]] = data.get("allowed_domains") or []
             if domain_entries:
                 domains_str = "\n" + "\n".join(f"  - `{e['domain']}` ({e['scope']})" for e in domain_entries)
@@ -57,7 +62,7 @@ def format_command_result_text(result: CommandResult) -> str:
             lines = [
                 f"**Session:** `{data.get('session_id', '?')}`",
                 f"**Channel:** {data.get('channel_type', '?')}",
-                f"**Approved credentials:** {creds_str}",
+                f"**Context grants:**{grants_str}",
                 f"**Allowed domains:**{domains_str}",
             ]
             return "\n".join(lines)

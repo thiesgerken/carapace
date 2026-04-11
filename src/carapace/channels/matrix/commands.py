@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from carapace.memory import MemoryStore
 from carapace.models import Deps
 from carapace.security.context import UserVouchedEntry
@@ -47,12 +49,22 @@ def handle_matrix_slash_command(
 
     if cmd == "/session":
         session_id = deps.session_state.session_id
+        grants_summary: dict[str, dict[str, Any]] = {}
+        for skill, grant in deps.session_state.context_grants.items():
+            cached = sum(
+                1 for vp in grant.vault_paths if deps.sandbox.get_cached_credential(session_id, vp) is not None
+            )
+            grants_summary[skill] = {
+                "domains": sorted(grant.domains),
+                "vault_paths": sorted(grant.vault_paths),
+                "cached_credentials": cached,
+            }
         return CommandResult(
             command="session",
             data={
                 "session_id": session_id,
                 "channel_type": deps.session_state.channel_type,
-                "approved_credentials": deps.session_state.approved_credentials,
+                "context_grants": grants_summary,
                 "allowed_domains": deps.sandbox.get_domain_info(session_id),
             },
         )

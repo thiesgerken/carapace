@@ -120,7 +120,7 @@ These endpoints are served on the sandbox API port (`8322`) and require Basic au
 - All access attempts are visible in the UI: skill-granted (teal badge), sentinel-allowed (green), user-approved (purple), or denied (red).
 - Access attempts are appended to the session action log as `credential_access`.
 
-Use `/session` to inspect approved credentials for the current session.
+Use `/session` to inspect context grants and cached credentials for the current session.
 
 ## Security notes
 
