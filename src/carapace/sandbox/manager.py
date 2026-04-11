@@ -1138,6 +1138,8 @@ class SandboxManager:
         self._exec_context_skill_domains.pop(session_id, None)
         self._session_current_command.pop(session_id, None)
         self._proxy_bypass_sessions.discard(session_id)
+        self._credential_cache.pop(session_id, None)
+        self._session_current_contexts.pop(session_id, None)
         self._exec_locks.pop(session_id, None)
         self._domain_approval_cbs.pop(session_id, None)
         self._domain_notify_cbs.pop(session_id, None)
