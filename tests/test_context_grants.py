@@ -26,7 +26,6 @@ class TestContextGrantModel:
         grant = ContextGrant(
             skill_name="moneydb",
             domains={"api.moneydb.io", "*.storage.googleapis.com"},
-            vault_paths={"dev/token"},
             credential_decls=[decl],
         )
         assert "api.moneydb.io" in grant.domains
@@ -37,13 +36,13 @@ class TestContextGrantModel:
         grant = ContextGrant(
             skill_name="example",
             domains={"a.com"},
-            vault_paths={"dev/key"},
             credential_decls=[SkillCredentialDecl(vault_path="dev/key", file="/tmp/key")],
         )
         data = grant.model_dump()
         restored = ContextGrant.model_validate(data)
         assert restored.skill_name == "example"
         assert restored.domains == {"a.com"}
+        assert restored.vault_paths == {"dev/key"}
         assert restored.credential_decls[0].file == "/tmp/key"
 
 
@@ -90,7 +89,7 @@ class TestSessionStateContextGrants:
         state.context_grants["example"] = ContextGrant(
             skill_name="example",
             domains={"a.com"},
-            vault_paths={"dev/key"},
+            credential_decls=[SkillCredentialDecl(vault_path="dev/key")],
         )
         data = state.model_dump()
         restored = SessionState.model_validate(data)

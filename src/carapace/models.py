@@ -402,8 +402,11 @@ class ContextGrant(BaseModel):
 
     skill_name: str
     domains: set[str] = set()
-    vault_paths: set[str] = set()
     credential_decls: list[SkillCredentialDecl] = []
+
+    @property
+    def vault_paths(self) -> set[str]:
+        return {c.vault_path for c in self.credential_decls}
 
 
 class SkillInfo(BaseModel):

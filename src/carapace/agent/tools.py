@@ -345,7 +345,6 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
             grant = ContextGrant(
                 skill_name=skill_name,
                 domains=set(requested_domains),
-                vault_paths={c.vault_path for c in requested_creds},
                 credential_decls=list(requested_creds),
             )
             ctx.deps.session_state.context_grants[skill_name] = grant
