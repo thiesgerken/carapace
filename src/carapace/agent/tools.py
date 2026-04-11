@@ -373,13 +373,13 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
 
         status_lines: list[str] = []
         if sandbox_msg:
-            status_lines.append(sandbox_msg)
+            status_lines.extend(sandbox_msg.splitlines())
         else:
             status_lines.append(f"Skill '{skill_name}' activated.")
         if requested_domains:
             status_lines.append(f"Network access granted for: {', '.join(requested_domains)}")
         if cred_msg:
-            status_lines.append(cred_msg)
+            status_lines.extend(cred_msg.splitlines())
 
         result = "\n".join(f"- {line}" for line in status_lines)
         result += f"\n\nInstructions:\n\n{instructions}"
