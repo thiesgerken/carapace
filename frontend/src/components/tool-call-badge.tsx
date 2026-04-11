@@ -167,6 +167,7 @@ function formatArgsSummary(
   tool: string,
   args: Record<string, unknown>,
 ): string {
+  if (tool === "use_skill") return stringArg(args, "skill_name");
   if (tool === "write") return formatWriteSummary(args);
   if (tool === "str_replace") return formatStrReplaceSummary(args);
   if (tool === "credential_access") return formatCredentialAccessSummary(args);
@@ -511,6 +512,31 @@ export function ToolCallBadge({
                 </span>{" "}
                 skill.
               </div>
+
+              {Array.isArray(args.requested_domains) && args.requested_domains.length > 0 && (
+                <div className="text-[11px] text-muted-foreground">
+                  <span className="font-medium text-foreground/70">Domains: </span>
+                  {(args.requested_domains as string[]).map((d, i) => (
+                    <span key={d}>
+                      {i > 0 && ", "}
+                      <span className="font-mono">{d}</span>
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              {Array.isArray(args.requested_creds) && args.requested_creds.length > 0 && (
+                <div className="text-[11px] text-muted-foreground">
+                  <span className="font-medium text-foreground/70">Credentials: </span>
+                  {(args.requested_creds as Array<{ vault_path: string; description?: string }>).map((c, i) => (
+                    <span key={c.vault_path}>
+                      {i > 0 && ", "}
+                      <span className="font-mono">{c.vault_path}</span>
+                      {c.description && <span className="text-muted-foreground/70"> ({c.description})</span>}
+                    </span>
+                  ))}
+                </div>
+              )}
 
               {result != null && (
                 <div
