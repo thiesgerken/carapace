@@ -569,6 +569,16 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
                 if decl.file:
                     context_file_creds.append((ctx_name, decl.file, decl.vault_path))
 
+        def _notify_injected_skill_creds() -> None:
+            for ctx_name, vp in injected_creds:
+                ctx.deps.security.notify_credential_decision(
+                    vp,
+                    f"[skill] {vp}",
+                    approval_source="skill",
+                    approval_verdict="allow",
+                    approval_explanation=f"skill-declared credential ({ctx_name})",
+                )
+
         try:
             exec_result = await ctx.deps.sandbox.exec_command(
                 session_id,
@@ -577,6 +587,7 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
                 extra_env=extra_env or None,
                 context_domains=context_domains or None,
                 context_file_creds=context_file_creds or None,
+                after_exec_credential_notify=_notify_injected_skill_creds if injected_creds else None,
             )
             result = exec_result.output
             exit_code = exec_result.exit_code
@@ -592,16 +603,6 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
                 "(re-run use_skill for the skill if you need them):\n"
                 f"{lines}\n\n"
             ) + result
-
-        # Notify credential injection for each context-scoped credential
-        for ctx_name, vp in injected_creds:
-            ctx.deps.security.notify_credential_decision(
-                vp,
-                f"[skill] {vp}",
-                approval_source="skill",
-                approval_verdict="allow",
-                approval_explanation=f"skill-declared credential ({ctx_name})",
-            )
 
         ctx.deps.security.append(
             ToolResultEntry(tool="exec", status="error" if exit_code != 0 else "success"),

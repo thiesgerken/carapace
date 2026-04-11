@@ -9,8 +9,8 @@ import pytest
 
 from carapace.models import ContextGrant, SessionState, SkillCredentialDecl, context_grants_session_summary
 from carapace.sandbox.manager import SandboxManager
-from carapace.sandbox.runtime import ContainerRuntime
-from carapace.security.context import ApprovalSource, ContextGrantEntry
+from carapace.sandbox.runtime import ContainerRuntime, ExecResult
+from carapace.security.context import ApprovalSource, ContextGrantEntry, CredentialAccessEntry, SessionSecurity
 from carapace.security.sentinel import _format_entry
 
 # ── ContextGrant model ──────────────────────────────────────────────
@@ -303,6 +303,36 @@ class TestExecNotificationDedupe:
         # Different path still works
         assert mgr.mark_credential_notified("s1", "dev/other") is False
 
+    def test_record_credential_access_dedupe_skips_action_audit_and_ui(self, tmp_path: Path):
+        """Second in-exec record for the same UI key must not touch action log, audit, or UI."""
+        mgr = self._make_manager(tmp_path)
+        audit_dir = tmp_path / "audit"
+        sec = SessionSecurity("s1", audit_dir=audit_dir)
+        mgr._exec_notified_credentials["s1"] = set()
+        sec.set_credential_notify_suppress(lambda vp: mgr.mark_credential_notified("s1", vp))
+        ui_calls: list[tuple] = []
+        sec.set_credential_info_callback(lambda *a: ui_calls.append(a))
+
+        kwargs = {
+            "vault_paths": ["dev/token"],
+            "decision": "approved",
+            "explanation": "e1",
+            "ui_label": "l1",
+            "approval_source": "skill",
+            "approval_verdict": "allow",
+            "audit_final": "auto_allowed",
+            "audit_args": {"operation": "fetch"},
+        }
+        sec.record_credential_access(**kwargs)
+        sec.record_credential_access(**kwargs)
+
+        assert len(sec.action_log) == 1
+        assert isinstance(sec.action_log[0], CredentialAccessEntry)
+        assert len(ui_calls) == 1
+        audit_file = audit_dir / "audit.yaml"
+        assert audit_file.is_file()
+        assert audit_file.read_text().count("---\n") == 1
+
     def test_cleanup_clears_notified_sets(self, tmp_path: Path):
         mgr = self._make_manager(tmp_path)
         mgr._exec_notified_domains["s1"] = {"a.com"}
@@ -310,3 +340,70 @@ class TestExecNotificationDedupe:
         mgr._cleanup_tracking("s1")
         assert "s1" not in mgr._exec_notified_domains
         assert "s1" not in mgr._exec_notified_credentials
+
+    @pytest.mark.asyncio
+    async def test_after_exec_credential_notify_runs_before_notified_set_cleared(self, tmp_path: Path):
+        """Skill injection UI notify must run while per-exec dedupe is still active."""
+        mgr = self._make_manager(tmp_path)
+        sc = MagicMock()
+        sc.container_id = "c1"
+        sc.session_id = "s1"
+        sc.session_env = {}
+
+        async def fake_ensure(sid: str):
+            return sc, False
+
+        async def fake_rebuild(sid: str) -> None:
+            return None
+
+        post_calls: list[str] = []
+
+        async def fake_exec_in_container(*_a, **_kw):
+            assert mgr._exec_notified_credentials.get("s1") is not None
+            mgr.mark_credential_notified("s1", "dev/token")
+            return ExecResult(exit_code=0, output="ok")
+
+        mgr.ensure_session = fake_ensure
+        mgr._rebuild_skill_venvs = fake_rebuild
+        mgr._exec_in_container = fake_exec_in_container
+
+        def after_notify() -> None:
+            if mgr.mark_credential_notified("s1", "dev/token"):
+                return
+            post_calls.append("dev/token")
+
+        result = await mgr._exec("s1", "echo", after_exec_credential_notify=after_notify)
+        assert result.exit_code == 0
+        assert post_calls == []
+        assert "s1" not in mgr._exec_notified_credentials
+
+    @pytest.mark.asyncio
+    async def test_after_exec_credential_notify_fires_when_not_pre_notified(self, tmp_path: Path):
+        mgr = self._make_manager(tmp_path)
+        sc = MagicMock()
+        sc.container_id = "c1"
+        sc.session_id = "s1"
+        sc.session_env = {}
+
+        async def fake_ensure(sid: str):
+            return sc, False
+
+        async def fake_rebuild(sid: str) -> None:
+            return None
+
+        post_calls: list[str] = []
+
+        async def fake_exec_in_container(*_a, **_kw):
+            return ExecResult(exit_code=0, output="ok")
+
+        mgr.ensure_session = fake_ensure
+        mgr._rebuild_skill_venvs = fake_rebuild
+        mgr._exec_in_container = fake_exec_in_container
+
+        def after_notify() -> None:
+            if mgr.mark_credential_notified("s1", "dev/token"):
+                return
+            post_calls.append("dev/token")
+
+        await mgr._exec("s1", "echo", after_exec_credential_notify=after_notify)
+        assert post_calls == ["dev/token"]

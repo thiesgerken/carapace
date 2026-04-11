@@ -443,6 +443,7 @@ class SandboxManager:
         extra_env: dict[str, str] | None = None,
         context_domains: set[str] | None = None,
         context_file_creds: list[tuple[str, str, str]] | None = None,
+        after_exec_credential_notify: Callable[[], None] | None = None,
     ) -> ExecResult:
         """Run a command in the sandbox and return the raw ExecResult.
 
@@ -456,6 +457,9 @@ class SandboxManager:
         *context_domains*: skill-declared domains to add to exec-scoped temp allowlist.
         *context_file_creds*: ``(skill_name, file_path, vault_path)`` tuples; files
             are written before the command and deleted in the ``finally`` block.
+        *after_exec_credential_notify*: optional sync hook invoked after the container
+            command finishes but **before** per-exec notification state is torn down,
+            so UI dedupe via `mark_credential_notified` still applies.
         """
         contexts = contexts or []
         written_files: list[tuple[str, str]] = []  # (file_path, skill_name)
@@ -487,7 +491,7 @@ class SandboxManager:
                     # Write file-based credentials + run the command
                     if context_file_creds:
                         written_files = await self._write_context_file_credentials(sc, context_file_creds)
-                    return await self._exec_in_container(
+                    exec_result = await self._exec_in_container(
                         sc, command, timeout, workdir=workdir, bypass_proxy=False, extra_env=extra_env
                     )
                 except ContainerGoneError:
@@ -501,9 +505,13 @@ class SandboxManager:
                     written_files.clear()
                     if context_file_creds:
                         written_files = await self._write_context_file_credentials(sc, context_file_creds)
-                    return await self._exec_in_container(
+                    exec_result = await self._exec_in_container(
                         sc, command, timeout, workdir=workdir, bypass_proxy=False, extra_env=extra_env
                     )
+
+                if after_exec_credential_notify is not None:
+                    after_exec_credential_notify()
+                return exec_result
             finally:
                 if bypass_proxy:
                     self._proxy_bypass_sessions.discard(session_id)
@@ -531,6 +539,7 @@ class SandboxManager:
         extra_env: dict[str, str] | None = None,
         context_domains: set[str] | None = None,
         context_file_creds: list[tuple[str, str, str]] | None = None,
+        after_exec_credential_notify: Callable[[], None] | None = None,
     ) -> ExecResult:
         """Run a command in the sandbox and return the result.
 
@@ -539,6 +548,7 @@ class SandboxManager:
         *context_domains*: domains to add to exec-scoped temp allowlist.
         *context_file_creds*: ``(skill_name, file_path, vault_path)`` tuples for file-based
             credentials to be written before exec and deleted after.
+        *after_exec_credential_notify*: passed through to `_exec` (see there).
         """
         result = await self._exec(
             session_id,
@@ -549,6 +559,7 @@ class SandboxManager:
             extra_env=extra_env,
             context_domains=context_domains,
             context_file_creds=context_file_creds,
+            after_exec_credential_notify=after_exec_credential_notify,
         )
         output = result.output
         if result.exit_code != 0 and f"[exit code: {result.exit_code}]" not in output:
