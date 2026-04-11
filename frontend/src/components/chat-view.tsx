@@ -184,19 +184,23 @@ export function ChatView({
                 next.request_id === h.request_id
                   ? (next.decision as EscalationDecision)
                   : undefined;
-              msgs.push({
-                kind: "credential_approval",
-                request: {
-                  type: "credential_approval_request",
-                  request_id: h.request_id,
-                  vault_paths: h.vault_paths ?? [],
-                  names: h.names ?? [],
-                  descriptions: h.descriptions ?? [],
-                  skill_name: h.skill_name,
-                  explanation: h.explanation ?? "",
-                },
-                decision,
-              });
+              // Only show the card if it was actually escalated to the user
+              // (no immediate decision in the next history entry).
+              if (!decision) {
+                msgs.push({
+                  kind: "credential_approval",
+                  request: {
+                    type: "credential_approval_request",
+                    request_id: h.request_id,
+                    vault_paths: h.vault_paths ?? [],
+                    names: h.names ?? [],
+                    descriptions: h.descriptions ?? [],
+                    skill_name: h.skill_name,
+                    explanation: h.explanation ?? "",
+                  },
+                  decision,
+                });
+              }
             }
           } else if (h.role === "git_push") {
             msgs.push({
