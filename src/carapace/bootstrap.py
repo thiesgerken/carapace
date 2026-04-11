@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import os
+import shutil
 from importlib.resources import as_file, files
 from importlib.resources.abc import Traversable
 from pathlib import Path
+
+from loguru import logger
 
 _ASSETS = files("carapace.assets")
 
@@ -65,7 +68,8 @@ def _reset_assets() -> bool:
 def _copy_asset(asset_path: str, target: Path) -> None:
     source = _ASSETS.joinpath(*asset_path.split("/"))
     with as_file(source) as src:
-        target.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
+        logger.debug(f"Copying asset {asset_path} to {target}")
+        shutil.copy2(src, target)
 
 
 def _skill_file_relpaths(skill_root: Traversable) -> list[str]:
