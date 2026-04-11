@@ -1127,6 +1127,12 @@ class SandboxManager:
         token file is not removed — it lives in the session directory and
         will be overwritten on the next attempt or deleted when the session
         is permanently removed.
+
+        Credential cache entries are **not** cleared: values are tied to the
+        session (``use_skill``), not to a specific container, and must survive
+        a transient create failure so the next ``ensure_session`` can inject
+        them on ``exec``.  ``destroy_session`` clears the cache when all
+        session tracking is purged.
         """
         self._sessions.pop(session_id, None)
         self._stashed_session_env.pop(session_id, None)
@@ -1138,7 +1144,6 @@ class SandboxManager:
         self._exec_context_skill_domains.pop(session_id, None)
         self._session_current_command.pop(session_id, None)
         self._proxy_bypass_sessions.discard(session_id)
-        self._credential_cache.pop(session_id, None)
         self._session_current_contexts.pop(session_id, None)
         self._exec_locks.pop(session_id, None)
         self._domain_approval_cbs.pop(session_id, None)

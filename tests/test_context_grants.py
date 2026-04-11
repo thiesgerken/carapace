@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
 
 from carapace.models import ContextGrant, SessionState, SkillCredentialDecl, context_grants_session_summary
 from carapace.sandbox.manager import SandboxManager
@@ -150,11 +152,21 @@ class TestSandboxManagerCredentialCache:
         mgr = self._make_manager(tmp_path)
         assert mgr.get_cached_credential("sess-1", "dev/token") is None
 
-    def test_cache_cleared_on_destroy(self, tmp_path: Path):
+    def test_credential_cache_survives_cleanup_tracking(self, tmp_path: Path):
         mgr = self._make_manager(tmp_path)
         mgr.cache_credential("sess-1", "dev/token", "secret-value")
-        # _cleanup_tracking rolls back all in-memory session tracking, including cache
+        # ensure_session error path: container bookkeeping only, not skill cache
         mgr._cleanup_tracking("sess-1")
+        assert mgr.get_cached_credential("sess-1", "dev/token") == "secret-value"
+
+    @pytest.mark.anyio
+    async def test_credential_cache_cleared_on_destroy_session(self, tmp_path: Path):
+        runtime = MagicMock(spec=ContainerRuntime)
+        runtime.destroy_sandbox = AsyncMock()
+        mgr = SandboxManager(runtime=runtime, data_dir=tmp_path, knowledge_dir=tmp_path)
+        mgr.cache_credential("sess-1", "dev/token", "secret-value")
+        mgr._sessions["sess-1"] = MagicMock(container_id="c1", session_env={})
+        await mgr.destroy_session("sess-1")
         assert mgr.get_cached_credential("sess-1", "dev/token") is None
 
 
