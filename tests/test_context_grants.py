@@ -9,6 +9,7 @@ from carapace.models import ContextGrant, SessionState, SkillCredentialDecl
 from carapace.sandbox.manager import SandboxManager
 from carapace.sandbox.runtime import ContainerRuntime
 from carapace.security.context import ApprovalSource, ContextGrantEntry
+from carapace.security.sentinel import _format_entry
 
 # ── ContextGrant model ──────────────────────────────────────────────
 
@@ -64,6 +65,18 @@ class TestContextGrantEntry:
         )
         assert entry.skill_name == "moneydb"
         assert "api.moneydb.io" in entry.domains
+
+    def test_sentinel_action_log_format(self):
+        line = _format_entry(
+            ContextGrantEntry(
+                skill_name="moneydb",
+                domains=["z.io", "a.io"],
+                vault_paths=["b/v", "a/v"],
+            ),
+        )
+        assert line.startswith("[context_grant]: moneydb")
+        assert "domains=['a.io', 'z.io']" in line
+        assert "credentials=['a/v', 'b/v']" in line
 
 
 # ── SessionState context_grants field ────────────────────────────────

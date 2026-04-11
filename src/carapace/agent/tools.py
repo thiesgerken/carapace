@@ -560,12 +560,16 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
         extra_env: dict[str, str] = {}
         context_domains: set[str] = set()
         context_file_creds: list[tuple[str, str, str]] = []  # (skill_name, file_path, vault_path)
+        missing_cached: list[tuple[str, str]] = []
         for ctx_name in contexts:
             grant = grants[ctx_name]
             context_domains.update(grant.domains)
             for decl in grant.credential_decls:
+                if not (decl.env_var or decl.file):
+                    continue
                 cached = ctx.deps.sandbox.get_cached_credential(session_id, decl.vault_path)
                 if cached is None:
+                    missing_cached.append((ctx_name, decl.vault_path))
                     continue
                 if decl.env_var:
                     extra_env[decl.env_var] = cached
@@ -587,6 +591,14 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
             _log_sandbox_tool_exception("exec", session_id)
             result = f"Error: {exc}"
             exit_code = -1
+
+        if missing_cached:
+            lines = "\n".join(f"  - skill {name!r}, vault path {vp!r}" for name, vp in dict.fromkeys(missing_cached))
+            result = (
+                "Warning: these credentials are not in the session cache and were not injected "
+                "(re-run use_skill for the skill if you need them):\n"
+                f"{lines}\n\n"
+            ) + result
 
         ctx.deps.security.append(
             ToolResultEntry(tool="exec", status="error" if exit_code != 0 else "success"),

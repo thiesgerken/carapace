@@ -747,9 +747,15 @@ class SandboxManager:
         for file_path, skill_name in written_files:
             skill_dir = f"/workspace/skills/{skill_name}"
             try:
-                await self._file_delete_in_container(sc, file_path, workdir=skill_dir, quote=False)
-            except Exception:
-                logger.warning(f"Failed to delete credential file {file_path} (skill {skill_name!r}) after exec")
+                dr = await self._file_delete_in_container(sc, file_path, workdir=skill_dir, quote=False)
+            except ContainerGoneError as exc:
+                logger.warning(f"Could not delete credential file {file_path} (skill {skill_name!r}) after exec: {exc}")
+                continue
+            if dr.exit_code != 0:
+                logger.warning(
+                    f"Failed to delete credential file {file_path} (skill {skill_name!r}) after exec: "
+                    f"{dr.output or '(no output)'}"
+                )
 
     async def _reinject_credential_files(self, sc: SessionContainer, skill_name: str) -> None:
         """Re-inject file-based credentials after container recreation.
