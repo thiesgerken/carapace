@@ -748,7 +748,8 @@ class SandboxManager:
             skill_dir = f"/workspace/skills/{skill_name}"
             try:
                 dr = await self._file_delete_in_container(sc, file_path, workdir=skill_dir, quote=False)
-            except ContainerGoneError as exc:
+            except Exception as exc:
+                # Never let cleanup failures replace the exec's original exception (finally runs during unwind).
                 logger.warning(f"Could not delete credential file {file_path} (skill {skill_name!r}) after exec: {exc}")
                 continue
             if dr.exit_code != 0:
