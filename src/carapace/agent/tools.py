@@ -421,6 +421,9 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
                     "read",
                     {"path": path, "offset": offset, "limit": limit},
                     "[blocked: skill not activated]",
+                    "skill",
+                    "deny",
+                    "skill not activated",
                 )
             _notify_result(ctx, "read", denied_message, exit_code=1)
             return denied_message
