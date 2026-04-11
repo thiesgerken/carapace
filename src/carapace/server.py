@@ -1076,19 +1076,20 @@ async def fetch_credential(request: Request, vault_path: str) -> Response:
                 break
 
     if skill_covered:
-        # Allowed by skill context — record + notify, skip sentinel
-        if active.security:
-            explanation = "skill-declared credential under active context"
-            active.security.record_credential_access(
-                vault_paths=[vault_path],
-                decision="approved",
-                explanation=explanation,
-                ui_label=f"[skill] {meta.name}",
-                approval_source="skill",
-                approval_verdict="allow",
-                audit_final="auto_allowed",
-                audit_args={"operation": "fetch", "vault_path": vault_path, "source": "skill_context"},
-            )
+        # Allowed by skill context — must still record; same bar as list / sentinel path
+        if active.security is None:
+            return Response(status_code=403, content="Session not initialized")
+        explanation = "skill-declared credential under active context"
+        active.security.record_credential_access(
+            vault_paths=[vault_path],
+            decision="approved",
+            explanation=explanation,
+            ui_label=f"[skill] {meta.name}",
+            approval_source="skill",
+            approval_verdict="allow",
+            audit_final="auto_allowed",
+            audit_args={"operation": "fetch", "vault_path": vault_path, "source": "skill_context"},
+        )
     else:
         # Always evaluate via sentinel (no session-wide short-circuit)
         if active.security is None or active.sentinel is None:
