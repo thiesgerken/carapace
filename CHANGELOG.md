@@ -1,6 +1,242 @@
 # CHANGELOG
 
 
+## v0.75.0 (2026-04-11)
+
+
+### ✨ Features
+
+
+- ✨Merge pull request #64 from thiesgerken/feat/context-scoped-skill-allowlists
+  ([`c258670`](https://github.com/thiesgerken/carapace/commit/c258670bfa5169e68b6e3955615729067c95920f))
+
+  ✨ Context-scoped skill allowlists
+
+- ✨ feat: show skill domains and credentials in expanded use_skill card, clean up summary
+  ([`0a34122`](https://github.com/thiesgerken/carapace/commit/0a341222b2d19e88f7df0c79ab392f8e5358f3cd))
+
+- ✨ feat: add per-tool Lucide icons to tool-call badges and approval cards
+  ([`20d1e6f`](https://github.com/thiesgerken/carapace/commit/20d1e6f077597f624a485b48b9eb875920c8f237))
+
+- ✨ feat: show active contexts in tool call expanded card
+  ([`26037c2`](https://github.com/thiesgerken/carapace/commit/26037c22f169475c339ef5c6e123436e357bd4c8))
+
+- ✨ feat: live WS notification for skill credential cache + dedupe tests
+  ([`5caf1b0`](https://github.com/thiesgerken/carapace/commit/5caf1b059461f40e6e9c0813628fcf33e99760b6))
+
+- ✨ feat: add record_credential_access helper, always register context_grant
+  ([`e0529c2`](https://github.com/thiesgerken/carapace/commit/e0529c2b5a69b41a12acb19c10feb0faec96b540))
+
+  - Add SessionSecurity.record_credential_access() that combines action log,
+    audit log, and UI notification in a single call
+  - Use the helper in server.py skill fast path (was missing action log entry),
+    list_credentials endpoint, and evaluate_credential_with
+  - Move context_grant creation outside the domains/creds guard in use_skill
+    so every activated skill gets a grant registered
+
+- ✨ feat: context-scoped skill allowlists
+  ([`ebb8146`](https://github.com/thiesgerken/carapace/commit/ebb81465c322376e12a88db24c88ae28a2987418))
+
+  Replace session-wide domain/credential approvals with context-scoped grants keyed by skill name. Every credential access goes through the sentinel except when covered by an activated skill under matching contexts. Emit proxy and credential events to the UI for full visibility, including denied requests.
+
+  Changes:
+  - Add ContextGrant model and context_grants field on SessionState
+  - Extend ApprovalSource with 'skill' and 'bypass' literals
+  - Rewrite use_skill to register context grants (not session-wide injection)
+  - Add credential value cache to SandboxManager (per-exec, not permanent)
+  - Thread contexts parameter through exec tool and sandbox stack
+  - Per-exec file credential write/delete lifecycle
+  - Domain auth fast path with skill/bypass origin tracking
+  - Remove session-wide credential short-circuit; sentinel evaluates every access
+  - Context fast path in fetch_credential for skill-declared vault paths
+  - Frontend: skill (teal), bypass (gray), and deny (red) badge variants
+  - 20 new tests for context grants, credential cache, and context tracking
+  - Update docs: skills.md, credentials.md, websocket-session.md
+
+### Other
+
+
+- fix: align credential dedupe with action log and audit
+  ([`c9bfea1`](https://github.com/thiesgerken/carapace/commit/c9bfea1cc337e719744e28865cfbac87986cc159))
+
+  Apply per-exec mark_credential_notified via SessionSecurity before record_credential_access writes the action log or audit file, and before notify_credential_decision emits UI. Remove duplicate check from the engine credential callback so the vault path is consumed once per notification.
+
+  Made-with: Cursor
+
+- fix: dedupe skill credential UI notify with sandbox API access
+  ([`45d8e81`](https://github.com/thiesgerken/carapace/commit/45d8e818ae630715adb582ee6e91f0fb6b361d13))
+
+  Run context-scoped credential injection notifications inside _exec via after_exec_credential_notify, before _exec_notified_credentials is cleared, so mark_credential_notified still suppresses duplicates when ccred ran during the same exec. Add regression tests.
+
+  Made-with: Cursor
+
+- fix(web): pair escalation requests with decisions across interleaved history
+  ([`18bcc22`](https://github.com/thiesgerken/carapace/commit/18bcc22d4f3198dacbe9d7a5f8a68729a3145b33))
+
+  Scan forward by request_id instead of only history[i+1] so resolved domain/git/credential approvals do not render as pending or allow duplicate escalation responses when other events appear between request and decision.
+
+  Made-with: Cursor
+
+- fix(agent): bullet-prefix every line of use_skill status output
+  ([`17e2565`](https://github.com/thiesgerken/carapace/commit/17e25658876fece7ce0ed4ba133d779377094b26))
+
+  Multi-line cred_msg from _cache_skill_credentials was a single status_lines entry, so only the first line received the "- " prefix. Split sandbox_msg and cred_msg with splitlines() so each line is its own bullet.
+
+  Made-with: Cursor
+
+- refactor: share context_grants /session payload builder
+  ([`467b625`](https://github.com/thiesgerken/carapace/commit/467b625e25dfe62cdd6ff2cff3afcda8d4f3cd56))
+
+  Extract context_grants_session_summary() in models.py and use it from SessionEngine and Matrix slash commands. Add a unit test for the helper and align credential-cache test with _cleanup_tracking clearing the cache.
+
+  Made-with: Cursor
+
+- fix: persist contexts on history tool_call events
+  ([`c0ccbd5`](https://github.com/thiesgerken/carapace/commit/c0ccbd594f15e2acf58132559fb0f128c97cfb94))
+
+  Add contexts to HistoryMessage so the REST history API matches WebSocket tool_call payloads. Session events now store top-level contexts when present in args; a model validator backfills from args for legacy rows. History fallback from model messages copies contexts from ToolCallPart args.
+
+  Made-with: Cursor
+
+- fix(web): show escalation cards only while pending
+  ([`c8c502f`](https://github.com/thiesgerken/carapace/commit/c8c502f86ab87840a895562fa8ef2300f54b81e4))
+
+  - Reconstruct history without domain, git push, or credential approval
+    cards once a matching decision exists; tool rows carry the outcome.
+  - On live response, remove those cards instead of a dimmed resolved state.
+  - Add optional contexts to HistoryMessage for tool_call history parsing.
+
+  Made-with: Cursor
+
+- 📋 docs: better frontend readme
+  ([`c05b3b4`](https://github.com/thiesgerken/carapace/commit/c05b3b4dd09be9f3b7a48261faf616dcbe8f4b7b))
+
+- fix(sandbox): update domain notify callback to include approval context
+  ([`244871d`](https://github.com/thiesgerken/carapace/commit/244871d4ce3b95bdec47170512ece301cadc37e7))
+
+- fix(tools): improve formatting of credential and skill activation messages
+  ([`ab24529`](https://github.com/thiesgerken/carapace/commit/ab24529431a065a6100ec5d23cc7ce0d63ca1a31))
+
+- fix(server): improve context grant handling in credential fetch
+  ([`4c0ed01`](https://github.com/thiesgerken/carapace/commit/4c0ed01e11b0cf5761cd0162c8a97b3178516db1))
+
+  - Refactor credential fetching logic to directly access context grants by name, enhancing clarity and performance.
+  - Ensure that only valid grants are checked against vault paths, preventing unnecessary iterations.
+
+  Made-with: Cursor
+
+- fix(sandbox): broaden exception handling for credential file deletion
+  ([`e8b55c4`](https://github.com/thiesgerken/carapace/commit/e8b55c4b938c2138ba4e9d8ef38337bc44f340ab))
+
+  - Change exception handling in SandboxManager to catch all exceptions during credential file deletion, ensuring that cleanup failures do not obscure the original execution errors.
+  - Log a warning when deletion fails, maintaining clarity in error reporting.
+
+  Made-with: Cursor
+
+- fix(sandbox): deny skill-context credential fetch when security is unset
+  ([`3f4d97c`](https://github.com/thiesgerken/carapace/commit/3f4d97c606e8ea631463c64d9f04cf18871f18c6))
+
+  The skill fast path previously returned vault values without recording when active.security was None. Align with list/sentinel paths: return 403 Session not initialized and always record after security is confirmed.
+
+  Made-with: Cursor
+
+- fix(session): reinject skill file creds via context_grants
+  ([`0bde194`](https://github.com/thiesgerken/carapace/commit/0bde1947d7aed8b788000cedba41491fb1e9dab1))
+
+  Gate credential re-injection on the skill's ContextGrant vault paths instead of removed approved_credentials, and scope paths per skill.
+
+  Add regression test for active and disk-loaded session state.
+
+  Made-with: Cursor
+
+- 🔇 fix: dedupe domain and credential UI notifications per exec
+  ([`72200aa`](https://github.com/thiesgerken/carapace/commit/72200aa94712183b4499329bd32fe5a6b73e3177))
+
+- add a test for reinjection
+  ([`9a473d6`](https://github.com/thiesgerken/carapace/commit/9a473d609a2e36fc3d25a925ca7250ef3498cba5))
+
+- 🔥 refactor: remove approved_credentials from session surface
+  ([`0f75b26`](https://github.com/thiesgerken/carapace/commit/0f75b268dc45d7135695cfb37ab1eff505b82c78))
+
+  Replace approved_credentials on SessionState with context_grants summary in /session command. The new output shows per-skill domains, vault_paths (metadata only), and cached credential count.
+
+  - Remove approved_credentials field from SessionState and now()
+  - Rewrite _get_approved_credential_paths to derive from context_grants
+  - Update /session in engine.py, CLI, and Matrix channel
+  - Remove unused _format_credentials and _credential_name helpers
+  - Update tests and docs
+
+- update docs
+  ([`b9e690d`](https://github.com/thiesgerken/carapace/commit/b9e690d47063994c69d163cd5a4bb70008d7148d))
+
+- 📋 docs: websocket messages
+  ([`fd5da2e`](https://github.com/thiesgerken/carapace/commit/fd5da2e21078081d3887993751551eac8a3959bd))
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix: keep skill credential cache on sandbox create rollback
+  ([`8ab4fc6`](https://github.com/thiesgerken/carapace/commit/8ab4fc6b70ea86fd1ba444527a7172320f1c3b8c))
+
+  _cleanup_tracking must not drop _credential_cache: values come from use_skill and survive transient ensure_session failures. destroy_session still purges the cache.
+
+  Made-with: Cursor
+
+- 🐛 fix: clean up session data on sandbox manager teardown
+  ([`eb46b33`](https://github.com/thiesgerken/carapace/commit/eb46b334f7641c42faa2fa33be0f08fa6c43812e))
+
+  Removed credential cache and current contexts from session cleanup to ensure proper resource management.
+
+- 🐛 fix: hide credential approval card for auto-approved credentials in history
+  ([`09c8fca`](https://github.com/thiesgerken/carapace/commit/09c8fca5621ebc24ef442ae233d27aeb61fa71d6))
+
+- 🐛 fix: notify credential injection at exec time, not use_skill
+  ([`5f1dbda`](https://github.com/thiesgerken/carapace/commit/5f1dbdae9904d99b666acf76b69b125329198812))
+
+  Credential UI entries (with "skill" badge) now appear when credentials are actually injected into an exec via contexts, rather than when they are cached during use_skill. The sentinel action-log entries from use_skill are preserved so the security agent stays aware of skill-declared credentials.
+
+### ♻️ Refactoring
+
+
+- ♻️ refactor: replace inline SVGs with Lucide icons in approval cards
+  ([`907a2fa`](https://github.com/thiesgerken/carapace/commit/907a2fa71c02af0aa513dec973779932d7fe3b5c))
+
+- ♻️ refactor: extract _delete_context_file_credentials, widen ContainerGoneError catch
+  ([`3d3332f`](https://github.com/thiesgerken/carapace/commit/3d3332f7c313e1839305857a711c1439043f4171))
+
+  - Add _delete_context_file_credentials helper (mirrors _write_context_file_credentials)
+  - Move ContainerGoneError catch to wrap both credential file write and exec,
+    so a container dying between ensure_session and the credential write is
+    handled the same way as one dying during exec
+  - Inline delete loop in finally block replaced with helper call
+
+- ♻️ refactor: extract _file_delete_in_container and _write_context_file_credentials helpers
+  ([`7bc429a`](https://github.com/thiesgerken/carapace/commit/7bc429a6248a328da9a46b77c8012d2d715f5082))
+
+- ♻️ refactor: derive ContextGrant.vault_paths from credential_decls
+  ([`5fea999`](https://github.com/thiesgerken/carapace/commit/5fea999a7a26154635b56d04ceae177ebdf06968))
+
+- ♻️ refactor: extract ApprovalSource alias, fix meta_errors parsing, improve context error message
+  ([`687a90c`](https://github.com/thiesgerken/carapace/commit/687a90cc2b534f1bb61c1caa686c669d97fd1b69))
+
+  - Replace 18 inline Literal[...] repetitions with ApprovalSource/ApprovalVerdict
+    imports from security.context across engine.py, server.py, ws_models.py
+  - Add failed_vault_paths set instead of fragile string splitting on meta_errors
+  - Improve unknown contexts error: guide the user to activate skills first
+
+### 💄 UI/UX
+
+
+- 💄 polish: context grant sentinel format, exec cache warning, cred delete
+  ([`02e1ad2`](https://github.com/thiesgerken/carapace/commit/02e1ad29d4cda75087736b0220f2b620bc445e00))
+
+  - Format ContextGrantEntry in sentinel action log (no more [unknown])
+  - Prefix exec output when skill credentials are missing from sandbox cache
+  - Log rm failures and catch ContainerGoneError only after credential exec
+  - Add test for _format_entry(ContextGrantEntry)
+
+  Made-with: Cursor
+
 ## v0.74.0 (2026-04-09)
 
 
