@@ -3,11 +3,20 @@
 import { useState } from "react";
 import {
   ChevronRight,
+  FileText,
+  FilePen,
+  Globe,
+  KeyRound,
   Loader2,
-  ShieldCheck,
+  Puzzle,
+  Replace,
   ShieldAlert,
+  ShieldCheck,
+  Terminal,
   UserCheck,
+  Zap,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { diffLines } from "diff";
 import { MarkdownContent } from "./markdown-content";
 import {
@@ -21,6 +30,7 @@ interface ToolCallBadgeProps {
   tool: string;
   args: Record<string, unknown>;
   detail: string;
+  contexts?: string[];
   approvalSource?: ApprovalSource;
   approvalVerdict?: ApprovalVerdict;
   approvalExplanation?: string;
@@ -29,8 +39,18 @@ interface ToolCallBadgeProps {
   loading?: boolean;
 }
 
-type ApprovalSource = "safe-list" | "sentinel" | "user" | "unknown";
+type ApprovalSource = "safe-list" | "sentinel" | "user" | "skill" | "bypass" | "unknown";
 type ApprovalVerdict = "allow" | "deny" | "escalate";
+
+const TOOL_ICONS: Record<string, LucideIcon> = {
+  exec: Terminal,
+  read: FileText,
+  write: FilePen,
+  str_replace: Replace,
+  use_skill: Puzzle,
+  credential_access: KeyRound,
+  proxy_domain: Globe,
+};
 
 const SHORT_KEYS: Record<string, string> = {
   command: "cmd",
@@ -147,6 +167,7 @@ function formatArgsSummary(
   tool: string,
   args: Record<string, unknown>,
 ): string {
+  if (tool === "use_skill") return stringArg(args, "skill_name");
   if (tool === "write") return formatWriteSummary(args);
   if (tool === "str_replace") return formatStrReplaceSummary(args);
   if (tool === "credential_access") return formatCredentialAccessSummary(args);
@@ -259,6 +280,33 @@ function ApprovalBadge({
     );
   }
 
+  if (source === "skill") {
+    return (
+      <span className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium bg-teal-500/10 text-teal-600 dark:text-teal-400">
+        <Puzzle className="h-2.5 w-2.5" />
+        skill
+      </span>
+    );
+  }
+
+  if (source === "bypass") {
+    return (
+      <span className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium bg-gray-500/10 text-gray-500 dark:text-gray-400">
+        <Zap className="h-2.5 w-2.5" />
+        bypass
+      </span>
+    );
+  }
+
+  if (verdict === "deny") {
+    return (
+      <span className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium bg-red-500/10 text-red-600 dark:text-red-400">
+        <ShieldAlert className="h-2.5 w-2.5" />
+        denied
+      </span>
+    );
+  }
+
   return null;
 }
 
@@ -266,6 +314,7 @@ export function ToolCallBadge({
   tool,
   args,
   detail: _detail,
+  contexts,
   approvalSource,
   approvalVerdict,
   approvalExplanation,
@@ -332,9 +381,13 @@ export function ToolCallBadge({
             : isCredentialAccessTool
               ? isCredentialList
                 ? "listed credentials"
-                : "accessed credential"
+                : verdict === "deny"
+                  ? "credential denied"
+                  : "accessed credential"
               : isProxyDomainTool
-                ? "accessed domain"
+                ? verdict === "deny"
+                  ? "domain denied"
+                  : "accessed domain"
                 : tool
     : isUseSkillTool
       ? "activate skill"
@@ -390,6 +443,12 @@ export function ToolCallBadge({
             open && "rotate-90",
           )}
         />
+        {(() => {
+          const ToolIcon = TOOL_ICONS[tool];
+          return ToolIcon ? (
+            <ToolIcon className="h-3 w-3 shrink-0 text-muted-foreground" />
+          ) : null;
+        })()}
         <span className="shrink-0 font-mono font-medium text-foreground/80">
           {toolLabel}
         </span>
@@ -418,6 +477,21 @@ export function ToolCallBadge({
             </div>
           )}
 
+          {contexts && contexts.length > 0 && (
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="text-[11px] font-medium text-muted-foreground">Contexts:</span>
+              {contexts.map((ctx) => (
+                <span
+                  key={ctx}
+                  className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium bg-teal-500/10 text-teal-600 dark:text-teal-400 font-mono"
+                >
+                  <Puzzle className="h-2.5 w-2.5" />
+                  {ctx}
+                </span>
+              ))}
+            </div>
+          )}
+
           {isExecTool ? (
             <>
               {execTitle && (
@@ -438,6 +512,31 @@ export function ToolCallBadge({
                 </span>{" "}
                 skill.
               </div>
+
+              {Array.isArray(args.requested_domains) && args.requested_domains.length > 0 && (
+                <div className="text-[11px] text-muted-foreground">
+                  <span className="font-medium text-foreground/70">Domains: </span>
+                  {(args.requested_domains as string[]).map((d, i) => (
+                    <span key={d}>
+                      {i > 0 && ", "}
+                      <span className="font-mono">{d}</span>
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              {Array.isArray(args.requested_creds) && args.requested_creds.length > 0 && (
+                <div className="text-[11px] text-muted-foreground">
+                  <span className="font-medium text-foreground/70">Credentials: </span>
+                  {(args.requested_creds as Array<{ vault_path: string; description?: string }>).map((c, i) => (
+                    <span key={c.vault_path}>
+                      {i > 0 && ", "}
+                      <span className="font-mono">{c.vault_path}</span>
+                      {c.description && <span className="text-muted-foreground/70"> ({c.description})</span>}
+                    </span>
+                  ))}
+                </div>
+              )}
 
               {result != null && (
                 <div

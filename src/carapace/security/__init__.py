@@ -342,30 +342,18 @@ async def evaluate_credential_with(
     cred_decision: Literal["approved", "escalated", "denied"] = (
         "approved" if decision == "allowed" else "denied" if decision == "denied" else "escalated"
     )
-    entry = CredentialAccessEntry(
+    source: ApprovalSource = "sentinel" if verdict.decision != "escalate" else "user"
+    approval_verdict: ApprovalVerdict = "allow" if allowed else "deny"
+
+    session.record_credential_access(
         vault_paths=[vault_path],
         decision=cred_decision,
         explanation=verdict.explanation,
-    )
-    session.append(entry)
-
-    source: ApprovalSource = "sentinel" if verdict.decision != "escalate" else "user"
-    approval_verdict: ApprovalVerdict = "allow" if allowed else "deny"
-    session.notify_credential_decision(
-        vault_path,
-        detail,
+        ui_label=detail,
         approval_source=source,
         approval_verdict=approval_verdict,
-        approval_explanation=verdict.explanation,
-    )
-
-    session.write_audit(
-        AuditEntry.now(
-            kind="credential_access",
-            sentinel_verdict=verdict,
-            final_decision=decision,
-            explanation=verdict.explanation,
-        )
+        audit_final=decision,
+        sentinel_verdict=verdict,
     )
 
     return CredentialAccessEvaluation(

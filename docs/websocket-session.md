@@ -84,8 +84,12 @@ Exact args depend on the producer; see `WebSocketSubscriber` in [`src/carapace/s
 
 When present:
 
-- `approval_source`: `safe-list` \| `sentinel` \| `user` \| `unknown`
+- `approval_source`: `safe-list` \| `sentinel` \| `user` \| `skill` \| `bypass` \| `unknown`
 - `approval_verdict`: `allow` \| `deny` \| `escalate`
+
+**`skill`** — the action was allowed because it's covered by a context grant from an activated skill (e.g., domain access or credential fetch within a matching `contexts` exec).
+
+**`bypass`** — the action was silently allowed without sentinel evaluation (e.g., proxy bypass during venv install).
 
 ## Typical turn flow (server → client)
 

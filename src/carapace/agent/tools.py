@@ -11,10 +11,21 @@ from pydantic_ai import Agent, DeferredToolRequests, RunContext, ToolDenied
 
 import carapace.security as security
 from carapace.config import load_workspace_file
-from carapace.models import CredentialMetadata, CredentialRegistryProtocol, Deps, SkillCredentialDecl, ToolResult
+from carapace.models import (
+    ContextGrant,
+    CredentialMetadata,
+    Deps,
+    SkillCredentialDecl,
+    ToolResult,
+)
 from carapace.sandbox.manager import READ_TOOL_MAX_LINE_WINDOW
 from carapace.sandbox.runtime import SkillVenvError
-from carapace.security.context import CredentialAccessEntry, SkillActivatedEntry, ToolResultEntry
+from carapace.security.context import (
+    ContextGrantEntry,
+    CredentialAccessEntry,
+    SkillActivatedEntry,
+    ToolResultEntry,
+)
 from carapace.skills import SkillRegistry
 from carapace.usage import LlmRequestLogCapability
 
@@ -105,12 +116,16 @@ def _log_sandbox_tool_exception(tool: str, session_id: str) -> None:
     logger.exception(f"Sandbox tool {tool!r} failed (session {session_id})")
 
 
-async def _inject_skill_credentials(
+async def _cache_skill_credentials(
     ctx: RunContext[Deps],
     cred_decls: list[SkillCredentialDecl],
     skill_name: str,
 ) -> str:
-    """Fetch and inject declared skill credentials into the sandbox.
+    """Fetch declared skill credentials and cache them for per-exec injection.
+
+    Values are stored in ``SandboxManager._credential_cache`` — **not** in
+    ``session_env``.  They will be injected (env vars) or written (files) only
+    for ``exec`` calls that carry a matching context.
 
     Returns a human-readable summary for the agent (never includes values).
     """
@@ -118,19 +133,13 @@ async def _inject_skill_credentials(
         return ""
 
     cred_registry = ctx.deps.credential_registry
+    session_id = ctx.deps.session_state.session_id
 
-    approved_paths = {c.vault_path for c in ctx.deps.session_state.approved_credentials}
-
-    # Filter to credentials not yet approved
-    needed = [c for c in cred_decls if c.vault_path not in approved_paths]
-    if not needed:
-        # All already approved — re-inject in case container was recreated
-        return await _do_inject(ctx, cred_decls, cred_registry, skill_name)
-
-    # Fetch metadata for all needed credentials (vault HTTP errors must not abort use_skill)
+    # Fetch metadata for UI / action-log
     meta_errors: list[str] = []
+    failed_vault_paths: set[str] = set()
     metas: list[CredentialMetadata] = []
-    for decl in needed:
+    for decl in cred_decls:
         try:
             meta = await cred_registry.fetch_metadata(decl.vault_path)
         except KeyError:
@@ -138,20 +147,13 @@ async def _inject_skill_credentials(
         except (httpx.RequestError, httpx.HTTPStatusError) as exc:
             logger.warning(f"Credential metadata fetch failed for {decl.vault_path!r} (skill {skill_name!r}): {exc}")
             meta_errors.append(f"{decl.vault_path}: vault unreachable or error ({type(exc).__name__})")
+            failed_vault_paths.add(decl.vault_path)
             continue
         metas.append(meta)
 
-    # No separate approval prompt here — the user already approved the
-    # use_skill tool call which listed these credential vault paths in its
-    # gate_args.  Skill-declared credentials are covered by that approval.
+    # Append action-log entry so the sentinel is aware
     if metas:
         ctx.deps.security.append(CredentialAccessEntry(vault_paths=[m.vault_path for m in metas], decision="approved"))
-
-        # Record approvals in session state
-        for meta in metas:
-            if not any(c.vault_path == meta.vault_path for c in ctx.deps.session_state.approved_credentials):
-                ctx.deps.session_state.approved_credentials.append(meta)
-
         if ctx.deps.append_session_events:
             request_id = secrets.token_hex(8)
             vault_paths = [m.vault_path for m in metas]
@@ -181,68 +183,34 @@ async def _inject_skill_credentials(
                 ]
             )
 
-    approved_paths_now = {c.vault_path for c in ctx.deps.session_state.approved_credentials}
-    decls_to_inject = [c for c in cred_decls if c.vault_path in approved_paths_now]
-    inject_msg = await _do_inject(ctx, decls_to_inject, cred_registry, skill_name)
-
-    parts: list[str] = []
-    if meta_errors:
-        parts.append(
-            "Credential vault unavailable for some declarations (not approved or injected): " + "; ".join(meta_errors)
-        )
-    if inject_msg:
-        parts.append(inject_msg)
-    return " ".join(parts)
-
-
-async def _do_inject(
-    ctx: RunContext[Deps],
-    cred_decls: list[SkillCredentialDecl],
-    cred_registry: CredentialRegistryProtocol,
-    skill_name: str,
-) -> str:
-    """Fetch credential values and inject them into the sandbox."""
-    session_id = ctx.deps.session_state.session_id
-    injected = 0
-    errors: list[str] = []
-
+    # Fetch values and cache (not inject)
+    cached = 0
+    fetch_errors: list[str] = []
     for decl in cred_decls:
+        if decl.vault_path in failed_vault_paths:
+            continue  # skip if metadata fetch already failed
         try:
             value = await cred_registry.fetch(decl.vault_path)
         except KeyError:
-            errors.append(f"Credential {decl.vault_path} not found in vault")
+            fetch_errors.append(f"Credential {decl.vault_path} not found in vault")
             continue
         except (httpx.RequestError, httpx.HTTPStatusError) as exc:
             logger.warning(
                 f"Credential fetch failed for {decl.vault_path!r} (session {session_id}, skill {skill_name!r}): {exc}"
             )
-            errors.append(f"Credential {decl.vault_path}: vault request failed ({type(exc).__name__})")
+            fetch_errors.append(f"Credential {decl.vault_path}: vault request failed ({type(exc).__name__})")
             continue
-
-        placed = False
-        if decl.env_var:
-            ctx.deps.sandbox.set_session_env(session_id, {decl.env_var: value})
-            placed = True
-
-        if decl.file:
-            skill_dir = f"/workspace/skills/{skill_name}"
-            fw = await ctx.deps.sandbox.file_write(
-                session_id, decl.file, value, mode=0o400, workdir=skill_dir, quote=False
-            )
-            if fw.exit_code != 0:
-                errors.append(f"Failed to write {decl.file}: {fw.output}")
-            else:
-                placed = True
-
-        if placed:
-            injected += 1
+        ctx.deps.sandbox.cache_credential(session_id, decl.vault_path, value)
+        cached += 1
 
     parts: list[str] = []
-    if injected:
-        parts.append(f"{injected} credential(s) injected for skill '{skill_name}'.")
-    if errors:
-        parts.append("Credential errors: " + "; ".join(errors))
-    return " ".join(parts)
+    if cached:
+        parts.append(f"{cached} credential(s) cached for skill '{skill_name}' (injected per-exec via contexts).")
+    if meta_errors:
+        parts.append("Credential vault unavailable for some declarations (not cached): " + "; ".join(meta_errors))
+    if fetch_errors:
+        parts.append("Credential errors: " + "; ".join(fetch_errors))
+    return "\n".join(parts)
 
 
 def build_system_prompt(deps: Deps) -> str:
@@ -372,14 +340,23 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
             logger.exception(f"Error activating skill {skill_name}: {exc}")
             sandbox_msg = f"ERROR: {exc}"
 
-        if requested_domains:
-            ctx.deps.sandbox.allow_domains(
-                ctx.deps.session_state.session_id,
-                set(requested_domains),
-            )
+        # Register context grant (replaces permanent allow_domains + session env injection)
+        grant = ContextGrant(
+            skill_name=skill_name,
+            domains=set(requested_domains),
+            credential_decls=list(requested_creds),
+        )
+        ctx.deps.session_state.context_grants[skill_name] = grant
+        ctx.deps.security.append(
+            ContextGrantEntry(
+                skill_name=skill_name,
+                domains=requested_domains,
+                vault_paths=[c.vault_path for c in requested_creds],
+            ),
+        )
 
-        # Credential auto-injection
-        cred_msg = await _inject_skill_credentials(ctx, requested_creds, skill_name)
+        # Cache credential values for per-exec injection
+        cred_msg = await _cache_skill_credentials(ctx, requested_creds, skill_name)
 
         ctx.deps.activated_skills.append(skill_name)
         if skill_name not in ctx.deps.session_state.activated_skills:
@@ -394,15 +371,18 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
             ),
         )
 
-        parts = [f"Skill '{skill_name}' activated."]
+        status_lines: list[str] = []
         if sandbox_msg:
-            parts.append(sandbox_msg)
+            status_lines.extend(sandbox_msg.splitlines())
+        else:
+            status_lines.append(f"Skill '{skill_name}' activated.")
         if requested_domains:
-            parts.append(f"Network access granted for: {', '.join(requested_domains)}")
+            status_lines.append(f"Network access granted for: {', '.join(requested_domains)}")
         if cred_msg:
-            parts.append(cred_msg)
-        parts.append(f"Instructions:\n\n{instructions}")
-        result = "\n".join(parts)
+            status_lines.extend(cred_msg.splitlines())
+
+        result = "\n".join(f"- {line}" for line in status_lines)
+        result += f"\n\nInstructions:\n\n{instructions}"
         _notify_result(ctx, "use_skill", result)
         return result
 
@@ -530,17 +510,35 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
     # --- Runtime ---
 
     @agent.tool
-    async def exec(ctx: RunContext[Deps], command: str, title: str | None = None) -> str | ToolDenied:
+    async def exec(
+        ctx: RunContext[Deps],
+        command: str,
+        title: str | None = None,
+        contexts: list[str] | None = None,
+    ) -> str | ToolDenied:
         """Run a shell command (typically bash) and return its output. Runs in a Docker sandbox.
 
         Args:
             command: The shell command to execute.
             title: Optional short label (a few words) describing the purpose of this command,
                 e.g. "clean up temp files and commit".
+            contexts: Optional list of activated skill names whose declared network domains
+                and credentials should be available for this command. Each entry must match
+                an activated skill; unknown names are rejected.
         """
+        contexts = contexts or []
+
+        # Validate contexts against activated skills
+        grants = ctx.deps.session_state.context_grants
+        invalid = [c for c in contexts if c not in grants]
+        if invalid:
+            return f"Unknown contexts: {', '.join(invalid)}. If these are skills, please activate them first."
+
         args: dict[str, Any] = {"command": command}
         if title is not None:
             args["title"] = title
+        if contexts:
+            args["contexts"] = contexts
         if not ctx.tool_call_approved:
             if denied := await _gate(ctx, "exec", args):
                 return denied
@@ -548,14 +546,63 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
             _notify_approved_start(ctx, "exec", args)
 
         session_id = ctx.deps.session_state.session_id
+
+        # Build per-exec injection data from matching context grants
+        extra_env: dict[str, str] = {}
+        context_domains: set[str] = set()
+        context_file_creds: list[tuple[str, str, str]] = []  # (skill_name, file_path, vault_path)
+        missing_cached: list[tuple[str, str]] = []
+        injected_creds: list[tuple[str, str]] = []  # (ctx_name, vault_path)
+        for ctx_name in contexts:
+            grant = grants[ctx_name]
+            context_domains.update(grant.domains)
+            for decl in grant.credential_decls:
+                if not (decl.env_var or decl.file):
+                    continue
+                cached = ctx.deps.sandbox.get_cached_credential(session_id, decl.vault_path)
+                if cached is None:
+                    missing_cached.append((ctx_name, decl.vault_path))
+                    continue
+                injected_creds.append((ctx_name, decl.vault_path))
+                if decl.env_var:
+                    extra_env[decl.env_var] = cached
+                if decl.file:
+                    context_file_creds.append((ctx_name, decl.file, decl.vault_path))
+
+        def _notify_injected_skill_creds() -> None:
+            for ctx_name, vp in injected_creds:
+                ctx.deps.security.notify_credential_decision(
+                    vp,
+                    f"[skill] {vp}",
+                    approval_source="skill",
+                    approval_verdict="allow",
+                    approval_explanation=f"skill-declared credential ({ctx_name})",
+                )
+
         try:
-            exec_result = await ctx.deps.sandbox.exec_command(session_id, command)
+            exec_result = await ctx.deps.sandbox.exec_command(
+                session_id,
+                command,
+                contexts=contexts,
+                extra_env=extra_env or None,
+                context_domains=context_domains or None,
+                context_file_creds=context_file_creds or None,
+                after_exec_credential_notify=_notify_injected_skill_creds if injected_creds else None,
+            )
             result = exec_result.output
             exit_code = exec_result.exit_code
         except Exception as exc:
             _log_sandbox_tool_exception("exec", session_id)
             result = f"Error: {exc}"
             exit_code = -1
+
+        if missing_cached:
+            lines = "\n".join(f"  - skill {name!r}, vault path {vp!r}" for name, vp in dict.fromkeys(missing_cached))
+            result = (
+                "Warning: these credentials are not in the session cache and were not injected "
+                "(re-run use_skill for the skill if you need them):\n"
+                f"{lines}\n\n"
+            ) + result
 
         ctx.deps.security.append(
             ToolResultEntry(tool="exec", status="error" if exit_code != 0 else "success"),

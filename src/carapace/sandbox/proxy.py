@@ -40,12 +40,14 @@ class ProxyServer:
         verify_session_token: Callable[[str, str], bool],
         get_allowed_domains: Callable[[str], set[str]],
         request_approval: Callable[[str, str], Awaitable[bool]] | None = None,
+        notify_domain_access: Callable[[str, str, bool], None] | None = None,
         host: str = "0.0.0.0",
         port: int = 3128,
     ) -> None:
         self._verify_session_token = verify_session_token
         self._get_domains = get_allowed_domains
         self._request_approval = request_approval
+        self._notify_domain_access = notify_domain_access
         self._host = host
         self._port = port
         self._server: asyncio.Server | None = None
@@ -322,11 +324,19 @@ class ProxyServer:
         denied immediately.
         """
         if self._is_allowed(session_id, domain):
+            if self._notify_domain_access:
+                self._notify_domain_access(session_id, domain, True)
             return True
         if self._request_approval is None:
+            if self._notify_domain_access:
+                self._notify_domain_access(session_id, domain, False)
             return False
         logger.info(f"Proxy: suspending connection to {domain} (session={session_id}), requesting approval")
-        return await self._request_approval(session_id, domain)
+        allowed = await self._request_approval(session_id, domain)
+        # Note: request_approval already notifies for sentinel/user outcomes,
+        # but for denied-without-callback and silently-allowed cases, we
+        # notify above.
+        return allowed
 
     def _is_allowed(self, session_id: str, domain: str) -> bool:
         allowed = self._get_domains(session_id)

@@ -37,9 +37,10 @@ from carapace.models import (
     ToolCallCallback,
     ToolResult,
     agent_available_model_entries,
+    context_grants_session_summary,
 )
 from carapace.sandbox.manager import SandboxManager
-from carapace.security.context import SessionSecurity, UserVouchedEntry
+from carapace.security.context import ApprovalSource, ApprovalVerdict, SessionSecurity, UserVouchedEntry
 from carapace.security.sentinel import Sentinel
 from carapace.session.manager import SessionManager
 from carapace.session.titler import generate_title
@@ -92,8 +93,8 @@ class SessionSubscriber(Protocol):
         tool: str,
         args: dict[str, Any],
         detail: str,
-        approval_source: Literal["safe-list", "sentinel", "user", "unknown"] | None = None,
-        approval_verdict: Literal["allow", "deny", "escalate"] | None = None,
+        approval_source: ApprovalSource | None = None,
+        approval_verdict: ApprovalVerdict | None = None,
         approval_explanation: str | None = None,
     ) -> None: ...
     async def on_tool_result(self, result: ToolResult) -> None: ...
@@ -111,8 +112,8 @@ class SessionSubscriber(Protocol):
         self,
         domain: str,
         detail: str,
-        approval_source: Literal["safe-list", "sentinel", "user", "unknown"] | None = None,
-        approval_verdict: Literal["allow", "deny", "escalate"] | None = None,
+        approval_source: ApprovalSource | None = None,
+        approval_verdict: ApprovalVerdict | None = None,
         approval_explanation: str | None = None,
     ) -> None: ...
     async def on_git_push_info(
@@ -120,16 +121,16 @@ class SessionSubscriber(Protocol):
         ref: str,
         decision: str,
         detail: str,
-        approval_source: Literal["safe-list", "sentinel", "user", "unknown"] | None = None,
-        approval_verdict: Literal["allow", "deny", "escalate"] | None = None,
+        approval_source: ApprovalSource | None = None,
+        approval_verdict: ApprovalVerdict | None = None,
         approval_explanation: str | None = None,
     ) -> None: ...
     async def on_credential_info(
         self,
         vault_path: str,
         detail: str,
-        approval_source: Literal["safe-list", "sentinel", "user", "unknown"] | None = None,
-        approval_verdict: Literal["allow", "deny", "escalate"] | None = None,
+        approval_source: ApprovalSource | None = None,
+        approval_verdict: ApprovalVerdict | None = None,
         approval_explanation: str | None = None,
     ) -> None: ...
     async def on_credential_approval_request(
@@ -330,12 +331,21 @@ class SessionEngine:
         security.set_domain_info_callback(self._make_domain_info_cb(active))
         security.set_push_info_callback(self._make_push_info_cb(active))
         security.set_credential_info_callback(self._make_credential_info_cb(active))
+        security.set_credential_notify_suppress(
+            lambda vp: self._sandbox_mgr.mark_credential_notified(state.session_id, vp),
+        )
 
         # Register a domain-approval callback so the sandbox proxy can
         # evaluate domain requests through the per-session sentinel.
         self._sandbox_mgr.set_domain_approval_callback(
             session_id,
             self._make_domain_eval_cb(security, sentinel, active),
+        )
+        # Register a domain-notify callback so skill-granted and bypass
+        # domain accesses also emit UI events.
+        self._sandbox_mgr.set_domain_notify_callback(
+            session_id,
+            self._make_domain_info_cb(active),
         )
 
         return active
@@ -357,7 +367,7 @@ class SessionEngine:
         if not carapace_cfg or not carapace_cfg.credentials:
             return []
 
-        approved_paths = self._get_approved_credential_paths(session_id)
+        approved_paths = self._credential_vault_paths_for_skill(session_id, skill_name)
         reinject: list[tuple[str, str]] = []
         for decl in carapace_cfg.credentials:
             if decl.vault_path not in approved_paths or not decl.file:
@@ -370,15 +380,14 @@ class SessionEngine:
             reinject.append((decl.file, value))
         return reinject
 
-    def _get_approved_credential_paths(self, session_id: str) -> set[str]:
-        """Return approved credential vault paths for a session."""
+    def _credential_vault_paths_for_skill(self, session_id: str, skill_name: str) -> set[str]:
+        """Vault paths allowed for file re-injection: that skill's context grant (from ``use_skill``)."""
         active = self._active.get(session_id)
-        if active:
-            return {credential.vault_path for credential in active.state.approved_credentials}
-        state = self._session_mgr.load_state(session_id)
-        if state:
-            return {credential.vault_path for credential in state.approved_credentials}
-        return set()
+        state = active.state if active else self._session_mgr.load_state(session_id)
+        if not state:
+            return set()
+        grant = state.context_grants.get(skill_name)
+        return grant.vault_paths if grant else set()
 
     def get_active(self, session_id: str) -> ActiveSession | None:
         """Return the ``ActiveSession`` if loaded, else ``None``."""
@@ -394,6 +403,7 @@ class SessionEngine:
         if active and active.agent_task and not active.agent_task.done():
             active.agent_task.cancel()
         self._sandbox_mgr.set_domain_approval_callback(session_id, None)
+        self._sandbox_mgr.set_domain_notify_callback(session_id, None)
 
     # -- subscribers --
 
@@ -566,12 +576,17 @@ class SessionEngine:
             }
 
         if cmd == "/session":
+            grants_summary = context_grants_session_summary(
+                session_id,
+                active.state.context_grants,
+                self._sandbox_mgr.get_cached_credential,
+            )
             return {
                 "command": "session",
                 "data": {
                     "session_id": session_id,
                     "channel_type": active.state.channel_type,
-                    "approved_credentials": active.state.approved_credentials,
+                    "context_grants": grants_summary,
                     "allowed_domains": self._sandbox_mgr.get_domain_info(session_id),
                 },
             }
@@ -845,24 +860,23 @@ class SessionEngine:
             tool: str,
             args: dict[str, Any],
             detail: str,
-            approval_source: Literal["safe-list", "sentinel", "user", "unknown"] | None = None,
-            approval_verdict: Literal["allow", "deny", "escalate"] | None = None,
+            approval_source: ApprovalSource | None = None,
+            approval_verdict: ApprovalVerdict | None = None,
             approval_explanation: str | None = None,
         ) -> None:
-            self._session_mgr.append_events(
-                session_id,
-                [
-                    {
-                        "role": "tool_call",
-                        "tool": tool,
-                        "args": args,
-                        "detail": detail,
-                        "approval_source": approval_source,
-                        "approval_verdict": approval_verdict,
-                        "approval_explanation": approval_explanation,
-                    }
-                ],
-            )
+            event: dict[str, Any] = {
+                "role": "tool_call",
+                "tool": tool,
+                "args": args,
+                "detail": detail,
+                "approval_source": approval_source,
+                "approval_verdict": approval_verdict,
+                "approval_explanation": approval_explanation,
+            }
+            contexts_raw = args.get("contexts")
+            if isinstance(contexts_raw, list):
+                event["contexts"] = list(contexts_raw)
+            self._session_mgr.append_events(session_id, [event])
             task = asyncio.ensure_future(
                 self._broadcast(
                     active,
@@ -1250,8 +1264,8 @@ class SessionEngine:
         [
             str,
             str,
-            Literal["safe-list", "sentinel", "user", "unknown"] | None,
-            Literal["allow", "deny", "escalate"] | None,
+            ApprovalSource | None,
+            ApprovalVerdict | None,
             str | None,
         ],
         None,
@@ -1262,8 +1276,8 @@ class SessionEngine:
         def _notify(
             domain: str,
             detail: str,
-            approval_source: Literal["safe-list", "sentinel", "user", "unknown"] | None = None,
-            approval_verdict: Literal["allow", "deny", "escalate"] | None = None,
+            approval_source: ApprovalSource | None = None,
+            approval_verdict: ApprovalVerdict | None = None,
             approval_explanation: str | None = None,
         ) -> None:
             self._session_mgr.append_events(
@@ -1304,8 +1318,8 @@ class SessionEngine:
             str,
             str,
             str,
-            Literal["safe-list", "sentinel", "user", "unknown"] | None,
-            Literal["allow", "deny", "escalate"] | None,
+            ApprovalSource | None,
+            ApprovalVerdict | None,
             str | None,
         ],
         Awaitable[None],
@@ -1317,8 +1331,8 @@ class SessionEngine:
             ref: str,
             decision: str,
             detail: str,
-            approval_source: Literal["safe-list", "sentinel", "user", "unknown"] | None = None,
-            approval_verdict: Literal["allow", "deny", "escalate"] | None = None,
+            approval_source: ApprovalSource | None = None,
+            approval_verdict: ApprovalVerdict | None = None,
             approval_explanation: str | None = None,
         ) -> None:
             self._session_mgr.append_events(
@@ -1355,8 +1369,8 @@ class SessionEngine:
         [
             str,
             str,
-            Literal["safe-list", "sentinel", "user", "unknown"] | None,
-            Literal["allow", "deny", "escalate"] | None,
+            ApprovalSource | None,
+            ApprovalVerdict | None,
             str | None,
         ],
         None,
@@ -1367,8 +1381,8 @@ class SessionEngine:
         def _notify(
             vault_path: str,
             detail: str,
-            approval_source: Literal["safe-list", "sentinel", "user", "unknown"] | None = None,
-            approval_verdict: Literal["allow", "deny", "escalate"] | None = None,
+            approval_source: ApprovalSource | None = None,
+            approval_verdict: ApprovalVerdict | None = None,
             approval_explanation: str | None = None,
         ) -> None:
             self._session_mgr.append_events(

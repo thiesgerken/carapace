@@ -80,16 +80,33 @@ credentials:
 
 ### Fields
 
-**`network.domains`** — list of domains the skill needs to access. These are automatically added to the session's proxy allowlist when the skill is activated. Supports wildcard matching (`*.example.com`).
+**`network.domains`** — list of domains the skill needs to access. These are registered as a **context grant** when the skill is activated. The domains are only allowed during commands that explicitly request the skill's context (see [Context-scoped access](#context-scoped-access) below). Supports wildcard matching (`*.example.com`).
 
 **`credentials`** — list of credentials the skill needs. Each entry has:
 
 - `vault_path` — path in the password manager
 - `description` — human-readable explanation shown in approval prompts
-- `env_var` — environment variable name for auto-injection (optional)
-- `file` — file path for auto-injection with mode `0400` (optional)
+- `env_var` — environment variable name for per-exec injection (optional)
+- `file` — file path for per-exec injection with mode `0400` (optional)
 
 > **Note**: Credential declarations are implemented. See [credentials.md](credentials.md) for approval flow, backend config, and `ccred` usage.
+
+## Context-scoped access
+
+Skill-declared domains and credentials are **not globally available** in the session. Instead, they're scoped to individual `exec` calls via the `contexts` parameter.
+
+### How it works
+
+1. **Activation** creates a context grant: `use_skill("moneydb")` registers the skill's declared domains and credential vault paths as a grant keyed by `"moneydb"`.
+2. **Exec requests contexts**: The agent passes `contexts=["moneydb"]` when running commands that need the skill's resources.
+3. **Per-exec injection**: Domains are temporarily allowed in the proxy. Credential values are injected as env vars or written as files for the duration of that single exec. File-based credentials are deleted immediately after the command completes.
+4. **No context = no access**: An exec without `contexts` (or with unrelated contexts) does not get the skill's domains or credentials. The sentinel evaluates any credential access without a matching context.
+
+### Matching semantics
+
+- **Subset matching**: `contexts=["moneydb", "example"]` matches grants for both `"moneydb"` and `"example"` (union of both grants' resources).
+- **Validation**: Every context string must correspond to an activated skill. Unknown context names are rejected.
+- **Piping**: When piping output between skill scripts, pass all relevant contexts: `contexts=["moneydb", "web-search"]`.
 
 ## pyproject.toml-based dependencies
 

@@ -68,16 +68,35 @@ export function ChatView({
         const msgs: ChatMessage[] = [];
         const pendingToolCallIndices = new Map<string, number[]>();
         const approvals = new Map<string, boolean>();
+
+        function findLaterEscalationDecision(
+          fromIndex: number,
+          requestId: string,
+          roleMatches: (role: string) => boolean,
+        ): EscalationDecision | undefined {
+          for (let j = fromIndex + 1; j < history.length; j++) {
+            const e = history[j];
+            if (e.request_id !== requestId || !roleMatches(e.role)) continue;
+            const d = e.decision;
+            if (d === "allow" || d === "deny") return d;
+          }
+          return undefined;
+        }
+
         for (let i = 0; i < history.length; i++) {
           const h = history[i];
           if (h.role === "user") {
             msgs.push({ kind: "user", content: h.content });
           } else if (h.role === "tool_call") {
+            const rawContexts = h.contexts ?? h.args?.contexts;
             msgs.push({
               kind: "tool_call",
               tool: h.tool ?? "",
               args: h.args ?? {},
               detail: h.detail ?? "",
+              contexts: Array.isArray(rawContexts)
+                ? (rawContexts as string[])
+                : undefined,
               approvalSource: h.approval_source,
               approvalVerdict: h.approval_verdict,
               approvalExplanation: h.approval_explanation,
@@ -130,71 +149,74 @@ export function ChatView({
               h.role === "proxy_approval") &&
             h.request_id
           ) {
-            // Domain access approval: first event is the request, second has the decision
+            // Domain access approval: request entry, then decision (may be non-adjacent)
             if (!h.decision) {
-              // Look ahead for the matching decision event
-              const next = history[i + 1];
-              const decision =
-                (next?.role === "domain_access_approval" ||
-                  next?.role === "proxy_approval") &&
-                next.request_id === h.request_id
-                  ? (next.decision as EscalationDecision)
-                  : undefined;
-              msgs.push({
-                kind: "domain_access_approval",
-                request: {
-                  type: "domain_access_approval_request",
-                  request_id: h.request_id,
-                  domain: h.domain ?? "",
-                  command: h.command ?? "",
-                },
-                decision,
-              });
+              const decision = findLaterEscalationDecision(
+                i,
+                h.request_id,
+                (role) =>
+                  role === "domain_access_approval" ||
+                  role === "proxy_approval",
+              );
+              if (!decision) {
+                msgs.push({
+                  kind: "domain_access_approval",
+                  request: {
+                    type: "domain_access_approval_request",
+                    request_id: h.request_id,
+                    domain: h.domain ?? "",
+                    command: h.command ?? "",
+                  },
+                  decision,
+                });
+              }
             }
             // Skip decision-only events (consumed above)
           } else if (h.role === "git_push_approval" && h.request_id) {
-            // Git push approval: first event is the request, second has the decision
+            // Git push approval: request entry, then decision (may be non-adjacent)
             if (!h.decision) {
-              const next = history[i + 1];
-              const decision =
-                next?.role === "git_push_approval" &&
-                next.request_id === h.request_id
-                  ? (next.decision as EscalationDecision)
-                  : undefined;
-              msgs.push({
-                kind: "git_push_approval",
-                request: {
-                  type: "git_push_approval_request",
-                  request_id: h.request_id,
-                  ref: h.ref ?? "",
-                  explanation: h.explanation ?? "",
-                  changed_files:
-                    (h.changed_files as string[] | undefined) ?? [],
-                },
-                decision,
-              });
+              const decision = findLaterEscalationDecision(
+                i,
+                h.request_id,
+                (role) => role === "git_push_approval",
+              );
+              if (!decision) {
+                msgs.push({
+                  kind: "git_push_approval",
+                  request: {
+                    type: "git_push_approval_request",
+                    request_id: h.request_id,
+                    ref: h.ref ?? "",
+                    explanation: h.explanation ?? "",
+                    changed_files:
+                      (h.changed_files as string[] | undefined) ?? [],
+                  },
+                  decision,
+                });
+              }
             }
           } else if (h.role === "credential_approval" && h.request_id) {
             if (!h.decision) {
-              const next = history[i + 1];
-              const decision =
-                next?.role === "credential_approval" &&
-                next.request_id === h.request_id
-                  ? (next.decision as EscalationDecision)
-                  : undefined;
-              msgs.push({
-                kind: "credential_approval",
-                request: {
-                  type: "credential_approval_request",
-                  request_id: h.request_id,
-                  vault_paths: h.vault_paths ?? [],
-                  names: h.names ?? [],
-                  descriptions: h.descriptions ?? [],
-                  skill_name: h.skill_name,
-                  explanation: h.explanation ?? "",
-                },
-                decision,
-              });
+              const decision = findLaterEscalationDecision(
+                i,
+                h.request_id,
+                (role) => role === "credential_approval",
+              );
+              if (!decision) {
+                msgs.push({
+                  kind: "credential_approval",
+                  request: {
+                    type: "credential_approval_request",
+                    request_id: h.request_id,
+                    vault_paths: h.vault_paths ?? [],
+                    names: h.names ?? [],
+                    descriptions: h.descriptions ?? [],
+                    skill_name: h.skill_name,
+                    explanation: h.explanation ?? "",
+                  },
+                  decision,
+                });
+              }
             }
           } else if (h.role === "git_push") {
             msgs.push({
@@ -280,6 +302,7 @@ export function ChatView({
           const verdict = msg.approval_verdict;
           const isLoading =
             msg.tool !== "proxy_domain" && !isGitPush && verdict === "allow";
+          const rawContexts = msg.contexts ?? msg.args?.contexts;
           setMessages((prev) => [
             ...prev,
             {
@@ -287,6 +310,9 @@ export function ChatView({
               tool: msg.tool,
               args: msg.args,
               detail: msg.detail,
+              contexts: Array.isArray(rawContexts)
+                ? (rawContexts as string[])
+                : undefined,
               approvalSource: msg.approval_source,
               approvalVerdict: msg.approval_verdict,
               approvalExplanation: msg.approval_explanation,
@@ -453,12 +479,13 @@ export function ChatView({
   function handleEscalation(requestId: string, decision: EscalationDecision) {
     send({ type: "escalation_response", request_id: requestId, decision });
     setMessages((prev) =>
-      prev.map((m) =>
-        (m.kind === "domain_access_approval" ||
-          m.kind === "git_push_approval") &&
-        m.request.request_id === requestId
-          ? { ...m, decision }
-          : m,
+      prev.filter(
+        (m) =>
+          !(
+            (m.kind === "domain_access_approval" ||
+              m.kind === "git_push_approval") &&
+            m.request.request_id === requestId
+          ),
       ),
     );
   }
@@ -469,10 +496,12 @@ export function ChatView({
   ) {
     send({ type: "escalation_response", request_id: requestId, decision });
     setMessages((prev) =>
-      prev.map((m) =>
-        m.kind === "credential_approval" && m.request.request_id === requestId
-          ? { ...m, decision }
-          : m,
+      prev.filter(
+        (m) =>
+          !(
+            m.kind === "credential_approval" &&
+            m.request.request_id === requestId
+          ),
       ),
     );
   }

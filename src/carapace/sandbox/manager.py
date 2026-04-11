@@ -25,6 +25,7 @@ from carapace.sandbox.runtime import (
     SandboxConfig,
     SkillVenvError,
 )
+from carapace.security.context import ApprovalSource, ApprovalVerdict
 
 _SKILL_NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]*$")
 
@@ -112,11 +113,20 @@ class SandboxManager:
         self._session_tokens: dict[str, str] = {}
         self._allowed_domains: dict[str, set[str]] = {}
         self._exec_temp_domains: dict[str, set[str]] = {}  # session_id -> domains, cleared after each exec
+        self._exec_context_skill_domains: dict[str, set[str]] = {}  # skill-sourced subset of exec_temp_domains
         self._session_current_command: dict[str, str] = {}
         self._domain_approval_cbs: dict[str, Callable[[str, str], Awaitable[bool]]] = {}
+        self._domain_notify_cbs: dict[
+            str,
+            Callable[[str, str, ApprovalSource | None, ApprovalVerdict | None, str | None], None],
+        ] = {}
         self._exec_locks: dict[str, asyncio.Lock] = {}
         self._proxy_bypass_sessions: set[str] = set()
         self._stashed_session_env: dict[str, dict[str, str]] = {}
+        self._credential_cache: dict[str, dict[str, str]] = {}  # session_id -> {vault_path: value}
+        self._session_current_contexts: dict[str, list[str]] = {}
+        self._exec_notified_domains: dict[str, set[str]] = {}  # dedupe silent-allow domain UI notifications
+        self._exec_notified_credentials: dict[str, set[str]] = {}  # dedupe credential UI notifications
         self._get_activated_skills_cb: Callable[[str], list[str]] | None = None
         self._reinject_credentials_cb: Callable[[str, str], Awaitable[list[tuple[str, str]]]] | None = None
         logger.info(
@@ -391,23 +401,30 @@ class SandboxManager:
         *,
         bypass_proxy: bool = False,
         workdir: str | None = None,
+        extra_env: dict[str, str] | None = None,
     ) -> ExecResult:
         """Run *command* in *sc* without acquiring the exec lock.
 
         When *bypass_proxy* is True, the bypass window covers only this call.
         Callers running under ``_exec`` with bypass already enabled must pass
         ``bypass_proxy=False`` so the session is not added to the set twice.
+
+        *extra_env* is merged on top of the session env for this single exec
+        (used for per-exec credential injection via contexts).
         """
         if bypass_proxy:
             self._proxy_bypass_sessions.add(sc.session_id)
             logger.info(f"Proxy bypass ENABLED for session {sc.session_id}")
         try:
+            env = sc.session_env or None
+            if extra_env:
+                env = {**(sc.session_env or {}), **extra_env}
             return await self._runtime.exec(
                 sc.container_id,
                 command,
                 timeout=timeout,
                 workdir=workdir,
-                env=sc.session_env or None,
+                env=env,
             )
         finally:
             if bypass_proxy:
@@ -422,6 +439,11 @@ class SandboxManager:
         *,
         bypass_proxy: bool = False,
         workdir: str | None = None,
+        contexts: list[str] | None = None,
+        extra_env: dict[str, str] | None = None,
+        context_domains: set[str] | None = None,
+        context_file_creds: list[tuple[str, str, str]] | None = None,
+        after_exec_credential_notify: Callable[[], None] | None = None,
     ) -> ExecResult:
         """Run a command in the sandbox and return the raw ExecResult.
 
@@ -429,7 +451,19 @@ class SandboxManager:
         for the duration of this exec (used during venv builds).  The bypass
         flag is set/cleared **under the exec lock** so no concurrent command
         can exploit the open window.
+
+        *contexts*: activated skill names active for this exec.
+        *extra_env*: per-exec env vars (credential values).
+        *context_domains*: skill-declared domains to add to exec-scoped temp allowlist.
+        *context_file_creds*: ``(skill_name, file_path, vault_path)`` tuples; files
+            are written before the command and deleted in the ``finally`` block.
+        *after_exec_credential_notify*: optional sync hook invoked after the container
+            command finishes but **before** per-exec notification state is torn down,
+            so UI dedupe via `mark_credential_notified` still applies.
         """
+        contexts = contexts or []
+        written_files: list[tuple[str, str]] = []  # (file_path, skill_name)
+
         async with self._get_exec_lock(session_id):
             if bypass_proxy:
                 self._proxy_bypass_sessions.add(session_id)
@@ -442,32 +476,90 @@ class SandboxManager:
                 logger.debug(f"Exec in session {session_id}: {command}")
 
                 self._session_current_command[session_id] = command
+                self._session_current_contexts[session_id] = contexts
                 self._exec_temp_domains[session_id] = set()
+                self._exec_context_skill_domains[session_id] = set()
+                self._exec_notified_domains[session_id] = set()
+                self._exec_notified_credentials[session_id] = set()
+
+                # Add context-scoped domains to exec-temp allowlist
+                if context_domains:
+                    self._exec_temp_domains[session_id].update(context_domains)
+                    self._exec_context_skill_domains[session_id].update(context_domains)
+
                 try:
-                    return await self._exec_in_container(sc, command, timeout, workdir=workdir, bypass_proxy=False)
+                    # Write file-based credentials + run the command
+                    if context_file_creds:
+                        written_files = await self._write_context_file_credentials(sc, context_file_creds)
+                    exec_result = await self._exec_in_container(
+                        sc, command, timeout, workdir=workdir, bypass_proxy=False, extra_env=extra_env
+                    )
                 except ContainerGoneError:
                     logger.warning(f"Container gone for session {session_id}, recreating sandbox")
                     await self._log_container_tail(sc.container_id, session_id)
                     self._prepare_session_recreate(session_id)
                     sc, _ = await self.ensure_session(session_id)
                     await self._rebuild_skill_venvs(session_id)
-                    return await self._exec_in_container(sc, command, timeout, workdir=workdir, bypass_proxy=False)
+
+                    # Re-write file credentials after container recreation
+                    written_files.clear()
+                    if context_file_creds:
+                        written_files = await self._write_context_file_credentials(sc, context_file_creds)
+                    exec_result = await self._exec_in_container(
+                        sc, command, timeout, workdir=workdir, bypass_proxy=False, extra_env=extra_env
+                    )
+
+                if after_exec_credential_notify is not None:
+                    after_exec_credential_notify()
+                return exec_result
             finally:
                 if bypass_proxy:
                     self._proxy_bypass_sessions.discard(session_id)
                     logger.info(f"Proxy bypass DISABLED for session {session_id}")
                 self._session_current_command.pop(session_id, None)
+                self._session_current_contexts.pop(session_id, None)
                 self._exec_temp_domains.pop(session_id, None)
+                self._exec_context_skill_domains.pop(session_id, None)
+                self._exec_notified_domains.pop(session_id, None)
+                self._exec_notified_credentials.pop(session_id, None)
+
+                # Delete file-based credentials written for this exec
+                if written_files:
+                    await self._delete_context_file_credentials(session_id, written_files)
 
     _KNOWLEDGE_WORKDIR = "/workspace"
 
-    async def exec_command(self, session_id: str, command: str, timeout: int = 3600) -> ExecResult:
-        """Run a command in the sandbox and return the result."""
+    async def exec_command(
+        self,
+        session_id: str,
+        command: str,
+        timeout: int = 3600,
+        *,
+        contexts: list[str] | None = None,
+        extra_env: dict[str, str] | None = None,
+        context_domains: set[str] | None = None,
+        context_file_creds: list[tuple[str, str, str]] | None = None,
+        after_exec_credential_notify: Callable[[], None] | None = None,
+    ) -> ExecResult:
+        """Run a command in the sandbox and return the result.
+
+        *contexts*: activated skill names active for this exec.
+        *extra_env*: per-exec env vars (credential values) — merged on top of session env.
+        *context_domains*: domains to add to exec-scoped temp allowlist.
+        *context_file_creds*: ``(skill_name, file_path, vault_path)`` tuples for file-based
+            credentials to be written before exec and deleted after.
+        *after_exec_credential_notify*: passed through to `_exec` (see there).
+        """
         result = await self._exec(
             session_id,
             command,
             timeout=timeout,
             workdir=self._KNOWLEDGE_WORKDIR,
+            contexts=contexts,
+            extra_env=extra_env,
+            context_domains=context_domains,
+            context_file_creds=context_file_creds,
+            after_exec_credential_notify=after_exec_credential_notify,
         )
         output = result.output
         if result.exit_code != 0 and f"[exit code: {result.exit_code}]" not in output:
@@ -560,10 +652,10 @@ class SandboxManager:
                 ) from exc
 
         logger.info(f"Activated skill '{skill_name}' in session {session_id}")
-        result = f"Skill '{skill_name}' activated at /workspace/skills/{skill_name}/"
+        parts = [f"Skill '{skill_name}' activated at /workspace/skills/{skill_name}/"]
         if venv_msg:
-            result += f"\n{venv_msg}"
-        return result
+            parts.append(venv_msg)
+        return "\n".join(parts)
 
     async def _build_skill_venv(self, session_id: str, skill_name: str) -> None:
         """Build a skill venv inside the session container with proxy bypass.
@@ -625,7 +717,69 @@ class SandboxManager:
         lines = _line_count(content)
         return ExecResult(exit_code=0, output=f"Wrote {lines} line(s) to {path}.")
 
+    async def _file_delete_in_container(
+        self,
+        sc: SessionContainer,
+        path: str,
+        *,
+        workdir: str | None = None,
+        quote: bool = True,
+    ) -> ExecResult:
+        """Delete a file using an existing container while the exec lock is already held."""
+        shell_path = _shell_path(path, quote=quote)
+        cmd = f"rm -f {shell_path}"
+        return await self._exec_in_container(sc, cmd, timeout=5, workdir=workdir)
+
+    async def _write_context_file_credentials(
+        self,
+        sc: SessionContainer,
+        context_file_creds: list[tuple[str, str, str]],
+    ) -> list[tuple[str, str]]:
+        """Write file-based credentials into the container, returning written ``(file_path, skill_name)`` pairs."""
+        written: list[tuple[str, str]] = []
+        for skill_name, file_path, vault_path in context_file_creds:
+            value = self.get_cached_credential(sc.session_id, vault_path)
+            if value is None:
+                logger.warning(f"Cached credential missing for {vault_path!r} (skill {skill_name!r}), skipping file")
+                continue
+            skill_dir = f"/workspace/skills/{skill_name}"
+            fw = await self._file_write_in_container(sc, file_path, value, mode=0o400, workdir=skill_dir, quote=False)
+            if fw.exit_code != 0:
+                logger.error(f"Failed to write credential file {file_path} for {skill_name}: {fw.output}")
+            else:
+                written.append((file_path, skill_name))
+        return written
+
+    async def _delete_context_file_credentials(
+        self,
+        session_id: str,
+        written_files: list[tuple[str, str]],
+    ) -> None:
+        """Delete file-based credentials that were written for an exec."""
+        sc = self._sessions.get(session_id)
+        if sc is None:
+            return
+        for file_path, skill_name in written_files:
+            skill_dir = f"/workspace/skills/{skill_name}"
+            try:
+                dr = await self._file_delete_in_container(sc, file_path, workdir=skill_dir, quote=False)
+            except Exception as exc:
+                # Never let cleanup failures replace the exec's original exception (finally runs during unwind).
+                logger.warning(f"Could not delete credential file {file_path} (skill {skill_name!r}) after exec: {exc}")
+                continue
+            if dr.exit_code != 0:
+                logger.warning(
+                    f"Failed to delete credential file {file_path} (skill {skill_name!r}) after exec: "
+                    f"{dr.output or '(no output)'}"
+                )
+
     async def _reinject_credential_files(self, sc: SessionContainer, skill_name: str) -> None:
+        """Re-inject file-based credentials after container recreation.
+
+        With context-scoped grants, file credentials are normally injected
+        per-exec.  This method is kept as a fallback for container rebuilds
+        that happen outside an exec context (e.g. venv rebuild).
+        """
         if not self._reinject_credentials_cb:
             return
         credentials = await self._reinject_credentials_cb(sc.session_id, skill_name)
@@ -732,10 +886,16 @@ class SandboxManager:
             self._token_to_session.pop(token, None)
         self._allowed_domains.pop(session_id, None)
         self._exec_temp_domains.pop(session_id, None)
+        self._exec_context_skill_domains.pop(session_id, None)
         self._session_current_command.pop(session_id, None)
         self._domain_approval_cbs.pop(session_id, None)
+        self._domain_notify_cbs.pop(session_id, None)
         self._exec_locks.pop(session_id, None)
         self._proxy_bypass_sessions.discard(session_id)
+        self._credential_cache.pop(session_id, None)
+        self._session_current_contexts.pop(session_id, None)
+        self._exec_notified_domains.pop(session_id, None)
+        self._exec_notified_credentials.pop(session_id, None)
 
     async def reset_session(self, session_id: str) -> None:
         """Full sandbox reset: destroy and let ``ensure_session`` create a fresh one."""
@@ -839,6 +999,78 @@ class SandboxManager:
         return domains
 
     # ------------------------------------------------------------------
+    # Credential cache (per-exec injection, not session_env)
+    # ------------------------------------------------------------------
+
+    def cache_credential(self, session_id: str, vault_path: str, value: str) -> None:
+        """Store a credential value in memory for later per-exec injection."""
+        self._credential_cache.setdefault(session_id, {})[vault_path] = value
+
+    def get_cached_credential(self, session_id: str, vault_path: str) -> str | None:
+        """Return a cached credential value, or *None* if not cached."""
+        return self._credential_cache.get(session_id, {}).get(vault_path)
+
+    def get_current_contexts(self, session_id: str) -> list[str]:
+        """Return the contexts active for the current exec, if any."""
+        return self._session_current_contexts.get(session_id, [])
+
+    def is_domain_skill_granted(self, session_id: str, domain: str) -> bool:
+        """Return True if *domain* is in the exec-scoped skill-granted set."""
+        from carapace.sandbox.proxy import domain_matches
+
+        skill_domains = self._exec_context_skill_domains.get(session_id, set())
+        domain_lower = domain.lower()
+        return any(domain_matches(domain_lower, p.lower()) for p in skill_domains)
+
+    def is_domain_bypass(self, session_id: str) -> bool:
+        """Return True if the session is currently in proxy bypass mode."""
+        return session_id in self._proxy_bypass_sessions
+
+    def mark_credential_notified(self, session_id: str, vault_path: str) -> bool:
+        """Return True if *vault_path* was already notified in this exec; otherwise mark it."""
+        notified = self._exec_notified_credentials.get(session_id)
+        if notified is None:
+            return False
+        if vault_path in notified:
+            return True
+        notified.add(vault_path)
+        return False
+
+    def notify_domain_access(self, session_id: str, domain: str, allowed: bool) -> None:
+        """Called by the proxy for silently allowed/denied domain accesses.
+
+        Determines the approval source (skill, bypass, permanent allowlist)
+        and fires the session's domain info callback.  Skill-granted and
+        bypass domains are notified at most once per exec to avoid UI spam.
+        """
+        cb = self._domain_notify_cbs.get(session_id)
+        if cb is None:
+            return
+
+        if allowed:
+            if self.is_domain_bypass(session_id):
+                notified = self._exec_notified_domains.get(session_id)
+                if notified is not None and domain in notified:
+                    return
+                if notified is not None:
+                    notified.add(domain)
+                cb(domain, f"[bypass] {domain}", "bypass", "allow", "proxy bypass active")
+            elif self.is_domain_skill_granted(session_id, domain):
+                notified = self._exec_notified_domains.get(session_id)
+                if notified is not None and domain in notified:
+                    return
+                if notified is not None:
+                    notified.add(domain)
+                cb(domain, f"[skill] {domain}", "skill", "allow", "skill-declared domain")
+            else:
+                # Permanently allowed or exec-temp sentinel-approved (already notified by sentinel)
+                # Don't double-notify for sentinel-approved domains
+                pass
+        else:
+            # Denied without sentinel evaluation (no approval callback set)
+            cb(domain, f"[denied] {domain}", "unknown", "deny", "no approval callback configured")
+
+    # ------------------------------------------------------------------
     # Proxy domain approval
     # ------------------------------------------------------------------
 
@@ -848,6 +1080,20 @@ class SandboxManager:
             self._domain_approval_cbs.pop(session_id, None)
         else:
             self._domain_approval_cbs[session_id] = cb
+
+    def set_domain_notify_callback(
+        self,
+        session_id: str,
+        cb: Callable[[str, str, ApprovalSource | None, ApprovalVerdict | None, str | None], None] | None,
+    ) -> None:
+        """Register or remove a per-session domain access notification callback.
+
+        Signature: ``cb(domain, detail, approval_source, approval_verdict, approval_explanation)``.
+        """
+        if cb is None:
+            self._domain_notify_cbs.pop(session_id, None)
+        else:
+            self._domain_notify_cbs[session_id] = cb
 
     async def request_domain_approval(self, session_id: str, domain: str) -> bool:
         """Called by the proxy when a domain is not in the allowlist.
@@ -892,6 +1138,12 @@ class SandboxManager:
         token file is not removed — it lives in the session directory and
         will be overwritten on the next attempt or deleted when the session
         is permanently removed.
+
+        Credential cache entries are **not** cleared: values are tied to the
+        session (``use_skill``), not to a specific container, and must survive
+        a transient create failure so the next ``ensure_session`` can inject
+        them on ``exec``.  ``destroy_session`` clears the cache when all
+        session tracking is purged.
         """
         self._sessions.pop(session_id, None)
         self._stashed_session_env.pop(session_id, None)
@@ -900,7 +1152,12 @@ class SandboxManager:
             self._token_to_session.pop(token, None)
         self._allowed_domains.pop(session_id, None)
         self._exec_temp_domains.pop(session_id, None)
+        self._exec_context_skill_domains.pop(session_id, None)
         self._session_current_command.pop(session_id, None)
         self._proxy_bypass_sessions.discard(session_id)
+        self._session_current_contexts.pop(session_id, None)
         self._exec_locks.pop(session_id, None)
         self._domain_approval_cbs.pop(session_id, None)
+        self._domain_notify_cbs.pop(session_id, None)
+        self._exec_notified_domains.pop(session_id, None)
+        self._exec_notified_credentials.pop(session_id, None)

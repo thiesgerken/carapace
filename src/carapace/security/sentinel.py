@@ -12,6 +12,7 @@ from carapace.security.context import (
     ActionLogEntry,
     AgentResponseEntry,
     ApprovalEntry,
+    ContextGrantEntry,
     CredentialAccessEntry,
     GitPushEntry,
     SentinelVerdict,
@@ -85,6 +86,13 @@ def _format_entry(entry: ActionLogEntry) -> str:
             if explanation:
                 line += f" ({explanation})"
             return line
+        case ContextGrantEntry(skill_name=name, domains=domains, vault_paths=vault_paths):
+            parts = [f"[context_grant]: {name}"]
+            if domains:
+                parts.append(f"domains={sorted(domains)}")
+            if vault_paths:
+                parts.append(f"credentials={sorted(vault_paths)}")
+            return " ".join(parts)
         case _:
             return f"[unknown]: {entry}"
 

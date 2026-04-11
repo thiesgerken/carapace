@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from carapace.memory import MemoryStore
-from carapace.models import Deps
+from carapace.models import Deps, context_grants_session_summary
 from carapace.security.context import UserVouchedEntry
 from carapace.ws_models import CommandResult
 
@@ -47,12 +47,17 @@ def handle_matrix_slash_command(
 
     if cmd == "/session":
         session_id = deps.session_state.session_id
+        grants_summary = context_grants_session_summary(
+            session_id,
+            deps.session_state.context_grants,
+            deps.sandbox.get_cached_credential,
+        )
         return CommandResult(
             command="session",
             data={
                 "session_id": session_id,
                 "channel_type": deps.session_state.channel_type,
-                "approved_credentials": deps.session_state.approved_credentials,
+                "context_grants": grants_summary,
                 "allowed_domains": deps.sandbox.get_domain_info(session_id),
             },
         )

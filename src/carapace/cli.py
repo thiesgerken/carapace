@@ -86,13 +86,6 @@ def _replay_history(server: str, session_id: str, headers: dict[str, str], limit
 # --- Rendering helpers for server responses ---
 
 
-def _format_credentials(creds: list[dict[str, str]] | None) -> str:
-    """Format approved credentials for display."""
-    if not creds:
-        return "(none)"
-    return ", ".join(c["name"] if isinstance(c, dict) else str(c) for c in creds)
-
-
 def _render_command_result(data: dict[str, Any]) -> None:
     cmd = data.get("command", "")
     payload: Any = data.get("data", {})
@@ -131,11 +124,26 @@ def _render_command_result(data: dict[str, Any]) -> None:
                 domains_str = f"\n{domain_lines}"
             else:
                 domains_str = " (none)"
+            grants: dict[str, dict[str, Any]] = payload.get("context_grants") or {}
+            if grants:
+                grant_lines: list[str] = []
+                for skill, info in grants.items():
+                    parts_g = [f"  [bold]{skill}[/bold]"]
+                    if info.get("domains"):
+                        parts_g.append(f"    domains: {', '.join(info['domains'])}")
+                    vps = info.get("vault_paths") or []
+                    cached = info.get("cached_credentials", 0)
+                    if vps:
+                        parts_g.append(f"    credentials: {len(vps)} declared, {cached} cached")
+                    grant_lines.append("\n".join(parts_g))
+                grants_str = "\n" + "\n".join(grant_lines)
+            else:
+                grants_str = " (none)"
             console.print(
                 Panel(
                     f"[bold]Session ID:[/bold] {payload['session_id']}\n"
                     f"[bold]Channel:[/bold] {payload['channel_type']}\n"
-                    f"[bold]Approved credentials:[/bold] {_format_credentials(payload.get('approved_credentials'))}\n"
+                    f"[bold]Context grants:[/bold]{grants_str}\n"
                     f"[bold]Allowed domains:[/bold]{domains_str}",
                     title="Session State",
                 )

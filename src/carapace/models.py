@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -45,9 +45,9 @@ class SessionState(BaseModel):
     channel_type: str = "cli"
     channel_ref: str | None = None
     title: str | None = None
-    approved_credentials: list[CredentialMetadata] = []
     approved_operations: list[str] = []
     activated_skills: list[str] = []
+    context_grants: dict[str, ContextGrant] = {}
     created_at: datetime
     last_active: datetime
 
@@ -59,7 +59,6 @@ class SessionState(BaseModel):
         channel_type: str = "cli",
         channel_ref: str | None = None,
         title: str | None = None,
-        approved_credentials: list[CredentialMetadata] | None = None,
         approved_operations: list[str] | None = None,
     ) -> SessionState:
         ts = datetime.now(tz=UTC)
@@ -68,7 +67,6 @@ class SessionState(BaseModel):
             channel_type=channel_type,
             channel_ref=channel_ref,
             title=title,
-            approved_credentials=approved_credentials or [],
             approved_operations=approved_operations or [],
             created_at=ts,
             last_active=ts,
@@ -390,6 +388,39 @@ class SkillCarapaceConfig(BaseModel):
     network: SkillNetworkConfig = SkillNetworkConfig()
     credentials: list[SkillCredentialDecl] = []
     hints: dict[str, str] = {}
+
+
+class ContextGrant(BaseModel):
+    """Context-scoped grant for a skill's declared domains and credentials.
+
+    Registered at ``use_skill`` time, keyed by skill name.  The agent must pass
+    matching ``contexts`` on ``exec`` for these grants to take effect.
+    """
+
+    skill_name: str
+    domains: set[str] = set()
+    credential_decls: list[SkillCredentialDecl] = []
+
+    @property
+    def vault_paths(self) -> set[str]:
+        return {c.vault_path for c in self.credential_decls}
+
+
+def context_grants_session_summary(
+    session_id: str,
+    context_grants: Mapping[str, ContextGrant],
+    get_cached_credential: Callable[[str, str], str | None],
+) -> dict[str, dict[str, Any]]:
+    """Build per-skill ``context_grants`` payload for ``/session`` (all channels)."""
+    summary: dict[str, dict[str, Any]] = {}
+    for skill, grant in context_grants.items():
+        cached = sum(1 for vp in grant.vault_paths if get_cached_credential(session_id, vp) is not None)
+        summary[skill] = {
+            "domains": sorted(grant.domains),
+            "vault_paths": sorted(grant.vault_paths),
+            "cached_credentials": cached,
+        }
+    return summary
 
 
 class SkillInfo(BaseModel):
