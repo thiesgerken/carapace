@@ -113,6 +113,7 @@ export function Message({
           tool={message.tool}
           args={message.args}
           detail={message.detail}
+          contexts={message.contexts}
           approvalSource={message.approvalSource}
           approvalVerdict={message.approvalVerdict}
           approvalExplanation={message.approvalExplanation}

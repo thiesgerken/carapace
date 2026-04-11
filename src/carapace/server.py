@@ -568,11 +568,14 @@ class WebSocketSubscriber:
         approval_verdict: ApprovalVerdict | None = None,
         approval_explanation: str | None = None,
     ) -> None:
+        contexts_raw = args.get("contexts")
+        contexts = list(contexts_raw) if isinstance(contexts_raw, list) else []
         await self._safe_send(
             ToolCallInfo(
                 tool=tool,
                 args=args,
                 detail=detail,
+                contexts=contexts,
                 approval_source=approval_source,
                 approval_verdict=approval_verdict,
                 approval_explanation=approval_explanation,

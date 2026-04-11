@@ -73,11 +73,13 @@ export function ChatView({
           if (h.role === "user") {
             msgs.push({ kind: "user", content: h.content });
           } else if (h.role === "tool_call") {
+            const rawContexts = h.contexts ?? h.args?.contexts;
             msgs.push({
               kind: "tool_call",
               tool: h.tool ?? "",
               args: h.args ?? {},
               detail: h.detail ?? "",
+              contexts: Array.isArray(rawContexts) ? rawContexts as string[] : undefined,
               approvalSource: h.approval_source,
               approvalVerdict: h.approval_verdict,
               approvalExplanation: h.approval_explanation,
@@ -280,6 +282,7 @@ export function ChatView({
           const verdict = msg.approval_verdict;
           const isLoading =
             msg.tool !== "proxy_domain" && !isGitPush && verdict === "allow";
+          const rawContexts = msg.contexts ?? msg.args?.contexts;
           setMessages((prev) => [
             ...prev,
             {
@@ -287,6 +290,7 @@ export function ChatView({
               tool: msg.tool,
               args: msg.args,
               detail: msg.detail,
+              contexts: Array.isArray(rawContexts) ? rawContexts as string[] : undefined,
               approvalSource: msg.approval_source,
               approvalVerdict: msg.approval_verdict,
               approvalExplanation: msg.approval_explanation,

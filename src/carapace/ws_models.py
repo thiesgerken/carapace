@@ -98,6 +98,7 @@ class ToolCallInfo(BaseModel):
     tool: str
     args: dict[str, Any]
     detail: str
+    contexts: list[str] = []
     approval_source: ApprovalSource | None = None
     approval_verdict: ApprovalVerdict | None = None
     approval_explanation: str | None = None

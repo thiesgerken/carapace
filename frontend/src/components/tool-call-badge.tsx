@@ -23,6 +23,7 @@ interface ToolCallBadgeProps {
   tool: string;
   args: Record<string, unknown>;
   detail: string;
+  contexts?: string[];
   approvalSource?: ApprovalSource;
   approvalVerdict?: ApprovalVerdict;
   approvalExplanation?: string;
@@ -295,6 +296,7 @@ export function ToolCallBadge({
   tool,
   args,
   detail: _detail,
+  contexts,
   approvalSource,
   approvalVerdict,
   approvalExplanation,
@@ -448,6 +450,21 @@ export function ToolCallBadge({
             <div className="text-muted-foreground leading-relaxed">
               <span className="font-medium text-foreground/70">Sentinel: </span>
               {explanation}
+            </div>
+          )}
+
+          {contexts && contexts.length > 0 && (
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="text-[11px] font-medium text-muted-foreground">Contexts:</span>
+              {contexts.map((ctx) => (
+                <span
+                  key={ctx}
+                  className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium bg-teal-500/10 text-teal-600 dark:text-teal-400 font-mono"
+                >
+                  <Puzzle className="h-2.5 w-2.5" />
+                  {ctx}
+                </span>
+              ))}
             </div>
           )}
 
