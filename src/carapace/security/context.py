@@ -178,6 +178,7 @@ class SessionSecurity:
         self._credential_info_callback: (
             Callable[[str, str, ApprovalSource | None, ApprovalVerdict | None, str | None], None] | None
         ) = None
+        self._credential_notify_suppress: Callable[[str], bool] | None = None
 
     def append(self, entry: ActionLogEntry) -> None:
         self.action_log.append(entry)
@@ -282,7 +283,21 @@ class SessionSecurity:
         """
         self._credential_info_callback = callback
 
-    def notify_credential_decision(
+    def set_credential_notify_suppress(
+        self,
+        suppress: Callable[[str], bool] | None,
+    ) -> None:
+        """Set per-exec duplicate suppression for credential UI + logs.
+
+        When set, *suppress* is called with the same vault-path key used for UI
+        (single path or ``\"<list>\"`` for batched list operations). If it
+        returns True, ``record_credential_access`` and ``notify_credential_decision``
+        skip all side effects for that key (action log, audit, session events,
+        websocket). Typically wired to ``SandboxManager.mark_credential_notified``.
+        """
+        self._credential_notify_suppress = suppress
+
+    def _emit_credential_ui(
         self,
         vault_path: str,
         detail: str,
@@ -292,6 +307,18 @@ class SessionSecurity:
     ) -> None:
         if self._credential_info_callback is not None:
             self._credential_info_callback(vault_path, detail, approval_source, approval_verdict, approval_explanation)
+
+    def notify_credential_decision(
+        self,
+        vault_path: str,
+        detail: str,
+        approval_source: ApprovalSource | None = None,
+        approval_verdict: ApprovalVerdict | None = None,
+        approval_explanation: str | None = None,
+    ) -> None:
+        if self._credential_notify_suppress is not None and self._credential_notify_suppress(vault_path):
+            return
+        self._emit_credential_ui(vault_path, detail, approval_source, approval_verdict, approval_explanation)
 
     def record_credential_access(
         self,
@@ -307,6 +334,9 @@ class SessionSecurity:
         sentinel_verdict: SentinelVerdict | None = None,
     ) -> None:
         """Record a credential access in action log, audit log, and UI notification."""
+        display_path = vault_paths[0] if len(vault_paths) == 1 else "<list>"
+        if self._credential_notify_suppress is not None and self._credential_notify_suppress(display_path):
+            return
         self.append(CredentialAccessEntry(vault_paths=vault_paths, decision=decision, explanation=explanation))
         self.write_audit(
             AuditEntry.now(
@@ -317,8 +347,7 @@ class SessionSecurity:
                 explanation=explanation,
             ),
         )
-        display_path = vault_paths[0] if len(vault_paths) == 1 else "<list>"
-        self.notify_credential_decision(
+        self._emit_credential_ui(
             display_path,
             ui_label,
             approval_source=approval_source,

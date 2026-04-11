@@ -331,6 +331,9 @@ class SessionEngine:
         security.set_domain_info_callback(self._make_domain_info_cb(active))
         security.set_push_info_callback(self._make_push_info_cb(active))
         security.set_credential_info_callback(self._make_credential_info_cb(active))
+        security.set_credential_notify_suppress(
+            lambda vp: self._sandbox_mgr.mark_credential_notified(state.session_id, vp),
+        )
 
         # Register a domain-approval callback so the sandbox proxy can
         # evaluate domain requests through the per-session sentinel.
@@ -1382,10 +1385,6 @@ class SessionEngine:
             approval_verdict: ApprovalVerdict | None = None,
             approval_explanation: str | None = None,
         ) -> None:
-            # Dedupe: skip if this vault_path was already notified in the current exec
-            if self._sandbox_mgr.mark_credential_notified(session_id, vault_path):
-                return
-
             self._session_mgr.append_events(
                 session_id,
                 [
