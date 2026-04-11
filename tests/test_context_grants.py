@@ -185,3 +185,83 @@ class TestApprovalSource:
         for v in valid:
             source: ApprovalSource = v  # type: ignore[assignment]
             assert source in valid
+
+
+# ── Per-exec notification dedupe ─────────────────────────────────────
+
+
+class TestExecNotificationDedupe:
+    def _make_manager(self, tmp_path: Path) -> SandboxManager:
+        runtime = MagicMock(spec=ContainerRuntime)
+        return SandboxManager(runtime=runtime, data_dir=tmp_path, knowledge_dir=tmp_path)
+
+    # -- domain dedupe --
+
+    def test_domain_dedupe_outside_exec(self, tmp_path: Path):
+        """Without an active exec, domain notifications always fire."""
+        mgr = self._make_manager(tmp_path)
+        calls: list[tuple] = []
+        mgr._domain_notify_cbs["s1"] = lambda *a: calls.append(a)
+        mgr._proxy_bypass_sessions.add("s1")
+        mgr.notify_domain_access("s1", "a.com", True)
+        mgr.notify_domain_access("s1", "a.com", True)
+        # No exec → no notified set → both fire
+        assert len(calls) == 2
+
+    def test_domain_dedupe_bypass_during_exec(self, tmp_path: Path):
+        """During an exec, repeated bypass domain notifications are deduped."""
+        mgr = self._make_manager(tmp_path)
+        calls: list[tuple] = []
+        mgr._domain_notify_cbs["s1"] = lambda *a: calls.append(a)
+        mgr._proxy_bypass_sessions.add("s1")
+        mgr._exec_notified_domains["s1"] = set()
+        mgr.notify_domain_access("s1", "a.com", True)
+        mgr.notify_domain_access("s1", "a.com", True)
+        mgr.notify_domain_access("s1", "b.com", True)
+        assert len(calls) == 2  # a.com once, b.com once
+
+    def test_domain_dedupe_skill_during_exec(self, tmp_path: Path):
+        """During an exec, repeated skill-granted domain notifications are deduped."""
+        mgr = self._make_manager(tmp_path)
+        calls: list[tuple] = []
+        mgr._domain_notify_cbs["s1"] = lambda *a: calls.append(a)
+        mgr._exec_context_skill_domains["s1"] = {"api.example.com"}
+        mgr._exec_notified_domains["s1"] = set()
+        mgr.notify_domain_access("s1", "api.example.com", True)
+        mgr.notify_domain_access("s1", "api.example.com", True)
+        assert len(calls) == 1
+
+    def test_domain_denied_not_deduped(self, tmp_path: Path):
+        """Denied domain notifications are never deduped."""
+        mgr = self._make_manager(tmp_path)
+        calls: list[tuple] = []
+        mgr._domain_notify_cbs["s1"] = lambda *a: calls.append(a)
+        mgr._exec_notified_domains["s1"] = set()
+        mgr.notify_domain_access("s1", "evil.com", False)
+        mgr.notify_domain_access("s1", "evil.com", False)
+        assert len(calls) == 2
+
+    # -- credential dedupe --
+
+    def test_mark_credential_notified_outside_exec(self, tmp_path: Path):
+        """Outside an exec, mark_credential_notified returns False (no-op)."""
+        mgr = self._make_manager(tmp_path)
+        assert mgr.mark_credential_notified("s1", "dev/token") is False
+        assert mgr.mark_credential_notified("s1", "dev/token") is False
+
+    def test_mark_credential_notified_during_exec(self, tmp_path: Path):
+        """During an exec, first call returns False, subsequent True."""
+        mgr = self._make_manager(tmp_path)
+        mgr._exec_notified_credentials["s1"] = set()
+        assert mgr.mark_credential_notified("s1", "dev/token") is False
+        assert mgr.mark_credential_notified("s1", "dev/token") is True
+        # Different path still works
+        assert mgr.mark_credential_notified("s1", "dev/other") is False
+
+    def test_cleanup_clears_notified_sets(self, tmp_path: Path):
+        mgr = self._make_manager(tmp_path)
+        mgr._exec_notified_domains["s1"] = {"a.com"}
+        mgr._exec_notified_credentials["s1"] = {"dev/token"}
+        mgr._cleanup_tracking("s1")
+        assert "s1" not in mgr._exec_notified_domains
+        assert "s1" not in mgr._exec_notified_credentials

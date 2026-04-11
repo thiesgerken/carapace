@@ -185,6 +185,7 @@ async def _cache_skill_credentials(
 
     # Fetch values and cache (not inject)
     cached = 0
+    cached_paths: list[str] = []
     fetch_errors: list[str] = []
     for decl in cred_decls:
         if decl.vault_path in failed_vault_paths:
@@ -202,6 +203,17 @@ async def _cache_skill_credentials(
             continue
         ctx.deps.sandbox.cache_credential(session_id, decl.vault_path, value)
         cached += 1
+        cached_paths.append(decl.vault_path)
+
+    # Notify live subscribers (dedupe handled by the per-exec notified set)
+    for vp in cached_paths:
+        ctx.deps.security.notify_credential_decision(
+            vp,
+            f"[skill] {vp}",
+            approval_source="skill",
+            approval_verdict="allow",
+            approval_explanation=f"skill-declared credential ({skill_name})",
+        )
 
     parts: list[str] = []
     if cached:
