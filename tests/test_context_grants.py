@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock
 
-from carapace.models import ContextGrant, SessionState, SkillCredentialDecl
+from carapace.models import ContextGrant, SessionState, SkillCredentialDecl, context_grants_session_summary
 from carapace.sandbox.manager import SandboxManager
 from carapace.sandbox.runtime import ContainerRuntime
 from carapace.security.context import ApprovalSource, ContextGrantEntry
@@ -45,6 +45,29 @@ class TestContextGrantModel:
         assert restored.domains == {"a.com"}
         assert restored.vault_paths == {"dev/key"}
         assert restored.credential_decls[0].file == "/tmp/key"
+
+
+def test_context_grants_session_summary():
+    grants = {
+        "moneydb": ContextGrant(
+            skill_name="moneydb",
+            domains={"b.com", "a.com"},
+            credential_decls=[
+                SkillCredentialDecl(vault_path="v/p2"),
+                SkillCredentialDecl(vault_path="v/p1"),
+            ],
+        ),
+    }
+    cached = {"v/p1"}
+
+    def get_cached(session_id: str, vault_path: str) -> str | None:
+        assert session_id == "sess-x"
+        return "secret" if vault_path in cached else None
+
+    summary = context_grants_session_summary("sess-x", grants, get_cached)
+    assert summary["moneydb"]["domains"] == ["a.com", "b.com"]
+    assert summary["moneydb"]["vault_paths"] == ["v/p1", "v/p2"]
+    assert summary["moneydb"]["cached_credentials"] == 1
 
 
 # ── ContextGrantEntry (action log) ──────────────────────────────────
@@ -130,11 +153,8 @@ class TestSandboxManagerCredentialCache:
     def test_cache_cleared_on_destroy(self, tmp_path: Path):
         mgr = self._make_manager(tmp_path)
         mgr.cache_credential("sess-1", "dev/token", "secret-value")
-        # _credential_cache survives _cleanup_tracking (error-path cleanup)
+        # _cleanup_tracking rolls back all in-memory session tracking, including cache
         mgr._cleanup_tracking("sess-1")
-        assert mgr.get_cached_credential("sess-1", "dev/token") == "secret-value"
-        # but is cleared when the credential cache itself is popped (destroy_session)
-        mgr._credential_cache.pop("sess-1", None)
         assert mgr.get_cached_credential("sess-1", "dev/token") is None
 
 

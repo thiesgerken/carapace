@@ -37,6 +37,7 @@ from carapace.models import (
     ToolCallCallback,
     ToolResult,
     agent_available_model_entries,
+    context_grants_session_summary,
 )
 from carapace.sandbox.manager import SandboxManager
 from carapace.security.context import ApprovalSource, ApprovalVerdict, SessionSecurity, UserVouchedEntry
@@ -572,16 +573,11 @@ class SessionEngine:
             }
 
         if cmd == "/session":
-            grants_summary: dict[str, dict[str, Any]] = {}
-            for skill, grant in active.state.context_grants.items():
-                cached = sum(
-                    1 for vp in grant.vault_paths if self._sandbox_mgr.get_cached_credential(session_id, vp) is not None
-                )
-                grants_summary[skill] = {
-                    "domains": sorted(grant.domains),
-                    "vault_paths": sorted(grant.vault_paths),
-                    "cached_credentials": cached,
-                }
+            grants_summary = context_grants_session_summary(
+                session_id,
+                active.state.context_grants,
+                self._sandbox_mgr.get_cached_credential,
+            )
             return {
                 "command": "session",
                 "data": {

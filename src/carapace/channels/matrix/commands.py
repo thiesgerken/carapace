@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 from carapace.memory import MemoryStore
-from carapace.models import Deps
+from carapace.models import Deps, context_grants_session_summary
 from carapace.security.context import UserVouchedEntry
 from carapace.ws_models import CommandResult
 
@@ -49,16 +47,11 @@ def handle_matrix_slash_command(
 
     if cmd == "/session":
         session_id = deps.session_state.session_id
-        grants_summary: dict[str, dict[str, Any]] = {}
-        for skill, grant in deps.session_state.context_grants.items():
-            cached = sum(
-                1 for vp in grant.vault_paths if deps.sandbox.get_cached_credential(session_id, vp) is not None
-            )
-            grants_summary[skill] = {
-                "domains": sorted(grant.domains),
-                "vault_paths": sorted(grant.vault_paths),
-                "cached_credentials": cached,
-            }
+        grants_summary = context_grants_session_summary(
+            session_id,
+            deps.session_state.context_grants,
+            deps.sandbox.get_cached_credential,
+        )
         return CommandResult(
             command="session",
             data={
