@@ -121,6 +121,8 @@ class SandboxManager:
         self._stashed_session_env: dict[str, dict[str, str]] = {}
         self._credential_cache: dict[str, dict[str, str]] = {}  # session_id -> {vault_path: value}
         self._session_current_contexts: dict[str, list[str]] = {}
+        self._exec_notified_domains: dict[str, set[str]] = {}  # dedupe silent-allow domain UI notifications
+        self._exec_notified_credentials: dict[str, set[str]] = {}  # dedupe credential UI notifications
         self._get_activated_skills_cb: Callable[[str], list[str]] | None = None
         self._reinject_credentials_cb: Callable[[str, str], Awaitable[list[tuple[str, str]]]] | None = None
         logger.info(
@@ -469,6 +471,8 @@ class SandboxManager:
                 self._session_current_contexts[session_id] = contexts
                 self._exec_temp_domains[session_id] = set()
                 self._exec_context_skill_domains[session_id] = set()
+                self._exec_notified_domains[session_id] = set()
+                self._exec_notified_credentials[session_id] = set()
 
                 # Add context-scoped domains to exec-temp allowlist
                 if context_domains:
@@ -504,6 +508,8 @@ class SandboxManager:
                 self._session_current_contexts.pop(session_id, None)
                 self._exec_temp_domains.pop(session_id, None)
                 self._exec_context_skill_domains.pop(session_id, None)
+                self._exec_notified_domains.pop(session_id, None)
+                self._exec_notified_credentials.pop(session_id, None)
 
                 # Delete file-based credentials written for this exec
                 if written_files:
@@ -866,6 +872,8 @@ class SandboxManager:
         self._proxy_bypass_sessions.discard(session_id)
         self._credential_cache.pop(session_id, None)
         self._session_current_contexts.pop(session_id, None)
+        self._exec_notified_domains.pop(session_id, None)
+        self._exec_notified_credentials.pop(session_id, None)
 
     async def reset_session(self, session_id: str) -> None:
         """Full sandbox reset: destroy and let ``ensure_session`` create a fresh one."""
@@ -996,11 +1004,22 @@ class SandboxManager:
         """Return True if the session is currently in proxy bypass mode."""
         return session_id in self._proxy_bypass_sessions
 
+    def mark_credential_notified(self, session_id: str, vault_path: str) -> bool:
+        """Return True if *vault_path* was already notified in this exec; otherwise mark it."""
+        notified = self._exec_notified_credentials.get(session_id)
+        if notified is None:
+            return False
+        if vault_path in notified:
+            return True
+        notified.add(vault_path)
+        return False
+
     def notify_domain_access(self, session_id: str, domain: str, allowed: bool) -> None:
         """Called by the proxy for silently allowed/denied domain accesses.
 
         Determines the approval source (skill, bypass, permanent allowlist)
-        and fires the session's domain info callback.
+        and fires the session's domain info callback.  Skill-granted and
+        bypass domains are notified at most once per exec to avoid UI spam.
         """
         cb = self._domain_notify_cbs.get(session_id)
         if cb is None:
@@ -1008,8 +1027,18 @@ class SandboxManager:
 
         if allowed:
             if self.is_domain_bypass(session_id):
+                notified = self._exec_notified_domains.get(session_id)
+                if notified is not None and domain in notified:
+                    return
+                if notified is not None:
+                    notified.add(domain)
                 cb(domain, f"[bypass] {domain}", "bypass", "allow", "proxy bypass active")
             elif self.is_domain_skill_granted(session_id, domain):
+                notified = self._exec_notified_domains.get(session_id)
+                if notified is not None and domain in notified:
+                    return
+                if notified is not None:
+                    notified.add(domain)
                 cb(domain, f"[skill] {domain}", "skill", "allow", "skill-declared domain")
             else:
                 # Permanently allowed or exec-temp sentinel-approved (already notified by sentinel)
@@ -1101,3 +1130,5 @@ class SandboxManager:
         self._exec_locks.pop(session_id, None)
         self._domain_approval_cbs.pop(session_id, None)
         self._domain_notify_cbs.pop(session_id, None)
+        self._exec_notified_domains.pop(session_id, None)
+        self._exec_notified_credentials.pop(session_id, None)

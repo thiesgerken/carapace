@@ -1389,6 +1389,10 @@ class SessionEngine:
             approval_verdict: ApprovalVerdict | None = None,
             approval_explanation: str | None = None,
         ) -> None:
+            # Dedupe: skip if this vault_path was already notified in the current exec
+            if self._sandbox_mgr.mark_credential_notified(session_id, vault_path):
+                return
+
             self._session_mgr.append_events(
                 session_id,
                 [
