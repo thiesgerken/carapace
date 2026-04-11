@@ -644,7 +644,7 @@ class SandboxManager:
         parts = [f"Skill '{skill_name}' activated at /workspace/skills/{skill_name}/"]
         if venv_msg:
             parts.append(venv_msg)
-        return " ".join(parts)
+        return "\n".join(parts)
 
     async def _build_skill_venv(self, session_id: str, skill_name: str) -> None:
         """Build a skill venv inside the session container with proxy bypass.

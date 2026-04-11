@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { CircleCheckBig } from "lucide-react";
+import { GitBranch } from "lucide-react";
 import type { EscalationDecision, GitPushApprovalRequest } from "@/lib/types";
 
 interface GitPushApprovalCardProps {
@@ -32,7 +32,7 @@ export function GitPushApprovalCard({
       )}
     >
       <div className="mb-2 flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-warning-foreground/70">
-        <CircleCheckBig className="h-3.5 w-3.5" />
+        <GitBranch className="h-3.5 w-3.5" />
         Git Push Request
       </div>
 

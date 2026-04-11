@@ -3,13 +3,20 @@
 import { useState } from "react";
 import {
   ChevronRight,
+  FileText,
+  FilePen,
+  Globe,
+  KeyRound,
   Loader2,
-  ShieldCheck,
-  ShieldAlert,
-  UserCheck,
   Puzzle,
+  Replace,
+  ShieldAlert,
+  ShieldCheck,
+  Terminal,
+  UserCheck,
   Zap,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { diffLines } from "diff";
 import { MarkdownContent } from "./markdown-content";
 import {
@@ -34,6 +41,16 @@ interface ToolCallBadgeProps {
 
 type ApprovalSource = "safe-list" | "sentinel" | "user" | "skill" | "bypass" | "unknown";
 type ApprovalVerdict = "allow" | "deny" | "escalate";
+
+const TOOL_ICONS: Record<string, LucideIcon> = {
+  exec: Terminal,
+  read: FileText,
+  write: FilePen,
+  str_replace: Replace,
+  use_skill: Puzzle,
+  credential_access: KeyRound,
+  proxy_domain: Globe,
+};
 
 const SHORT_KEYS: Record<string, string> = {
   command: "cmd",
@@ -425,6 +442,12 @@ export function ToolCallBadge({
             open && "rotate-90",
           )}
         />
+        {(() => {
+          const ToolIcon = TOOL_ICONS[tool];
+          return ToolIcon ? (
+            <ToolIcon className="h-3 w-3 shrink-0 text-muted-foreground" />
+          ) : null;
+        })()}
         <span className="shrink-0 font-mono font-medium text-foreground/80">
           {toolLabel}
         </span>
