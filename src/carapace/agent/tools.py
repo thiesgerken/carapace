@@ -291,8 +291,9 @@ def build_system_prompt(deps: Deps) -> str:
         "For LaTeX math, use $...$ inline and $$...$$ on their own lines for display equations."
     )
 
+    today = date.today()
     parts.append(
-        f"# Session Info\nToday's date: {date.today().isoformat()}\nSession ID: {deps.session_state.session_id}"
+        f"# Session Info\nToday's date: {today:%A}, {today:%Y-%m-%d}\nSession ID: {deps.session_state.session_id}"
     )
 
     return "\n\n---\n\n".join(parts)
