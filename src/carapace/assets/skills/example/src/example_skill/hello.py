@@ -1,9 +1,7 @@
-"""Example skill script demonstrating the sandbox environment.
+"""Example skill demonstrating the sandbox environment.
 
-Run with:  uv run --directory /workspace/skills/example scripts/hello.py
+Run with:  uv run --directory /workspace/skills/example hello
 """
-
-from __future__ import annotations
 
 import json
 import os
