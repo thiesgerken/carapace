@@ -1,6 +1,36 @@
 # CHANGELOG
 
 
+## v0.78.0 (2026-04-12)
+
+
+### 🐛 Bug Fixes
+
+
+- 🐛 Include weekday in agent session date.
+  ([`442f448`](https://github.com/thiesgerken/carapace/commit/442f448f5b8f70fa1c9e2e50e48e8a75783bcf33))
+
+  Session Info now shows the locale weekday with the ISO calendar date. Tests assert the formatted date string appears in the built prompt.
+
+  Made-with: Cursor
+
+### ✨ Features
+
+
+- ✨ feat: configurable limit for tool outputs
+  ([`898942c`](https://github.com/thiesgerken/carapace/commit/898942c66d4dbbf1f0479cde17864abe5187f8bf))
+
+  Add agent.tool_output_max_chars (default 16_000; 0 disables). Truncate before returning to the model and mirroring to tool_result_callback.
+
+  Made-with: Cursor
+
+- ✨ Include today's date in the agent system prompt.
+  ([`e0c3f54`](https://github.com/thiesgerken/carapace/commit/e0c3f5434c5b6d921f446adf13c269d5200e18e4))
+
+  Session Info now lists the server-local calendar date (ISO YYYY-MM-DD) so the model can reason about recency without a time component. Tests assert the current date appears in the built prompt.
+
+  Made-with: Cursor
+
 ## v0.77.0 (2026-04-12)
 
 
