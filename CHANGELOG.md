@@ -1,6 +1,23 @@
 # CHANGELOG
 
 
+## v0.80.0 (2026-04-12)
+
+
+### ✨ Features
+
+
+- ✨ feat: stream LLM thinking/reasoning content to web UI
+  ([`3418e12`](https://github.com/thiesgerken/carapace/commit/3418e125561cfa6af3a9e953537f22f3c55a6b13))
+
+  - Add ThinkingChunk WS message type and Done.thinking field
+  - Capture ThinkingPart/ThinkingPartDelta events in agent loop
+  - Broadcast thinking tokens via SessionSubscriber protocol
+  - Persist thinking as separate history event per turn
+  - Render thinking as collapsible badge in frontend (auto-collapse on finish)
+  - Make thinking capability configurable per model (default: enabled)
+  - No-op for Matrix/CLI channels
+
 ## v0.79.1 (2026-04-12)
 
 
