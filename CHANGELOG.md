@@ -1,6 +1,23 @@
 # CHANGELOG
 
 
+## v0.82.0 (2026-04-12)
+
+
+### ✨ Features
+
+
+- ✨ feat: base64 decoding for skill credential injection
+  ([`ad492e9`](https://github.com/thiesgerken/carapace/commit/ad492e9c2e688a42cbac9af0f329246e100fa66b))
+
+  - Add `base64` field to SkillCredentialDecl (default: false)
+  - Decode base64-encoded vault values before env_var and file injection
+  - Pass decoded value directly in context_file_creds tuple instead of
+    re-fetching from cache, ensuring single decode per exec
+  - Document field in model, docs/skills.md, docs/credentials.md,
+    and create-skill SKILL.md
+  - Add tests for base64 flag serialization roundtrip
+
 ## v0.81.0 (2026-04-12)
 
 
