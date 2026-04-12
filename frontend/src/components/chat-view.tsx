@@ -301,7 +301,10 @@ export function ChatView({
           if (!isGitPush) setWaiting(true); // agent is active (may restore after reconnect)
           const verdict = msg.approval_verdict;
           const isLoading =
-            msg.tool !== "proxy_domain" && !isGitPush && verdict === "allow";
+            msg.tool !== "proxy_domain" &&
+            msg.tool !== "credential_access" &&
+            !isGitPush &&
+            verdict === "allow";
           const rawContexts = msg.contexts ?? msg.args?.contexts;
           setMessages((prev) => [
             ...prev,
