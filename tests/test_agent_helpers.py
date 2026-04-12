@@ -1,5 +1,6 @@
 """Tests for agent helper functions (no LLM tokens needed)."""
 
+from datetime import date
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -33,6 +34,7 @@ def test_build_system_prompt_minimal(tmp_path: Path):
         credential_registry=CredentialRegistry(),
     )
     prompt = build_system_prompt(deps)
+    assert date.today().isoformat() in prompt
     assert "test-123" in prompt
 
 
@@ -55,5 +57,6 @@ def test_build_system_prompt_with_agents_md(tmp_path: Path):
         credential_registry=CredentialRegistry(),
     )
     prompt = build_system_prompt(deps)
+    assert date.today().isoformat() in prompt
     assert "Agent Instructions" in prompt
     assert "Be helpful" in prompt
