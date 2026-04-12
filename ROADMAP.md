@@ -4,7 +4,6 @@
 
 - [ ] Proper Icon + Logo, rewrite README to be more ... advertising
 - [ ] warm-up a sandbox as soon as the session is created? (or keep a warmed sandbox for the next session?) would need to be configurable + maybe we should even delete old PVCs after a while if they are not used?
-- [ ] tool outputs need a max output length
 - [ ] would be nice to be able to give the session a budget in dollars / tokens
 - [ ] compaction
 - [ ] image input ([plan](docs/plans/images.md))

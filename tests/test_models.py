@@ -26,6 +26,7 @@ def test_config_defaults():
     cfg = Config()
     assert cfg.carapace.log_level == "info"
     assert cfg.agent.model == "anthropic:claude-sonnet-4-6"
+    assert cfg.agent.tool_output_max_chars == 16_000
     assert cfg.sandbox.network_name == "carapace-sandbox"
     ids = {e.model_id for e in cfg.agent.available_models}
     assert ids == {"anthropic:claude-sonnet-4-6", "anthropic:claude-haiku-4-5"}

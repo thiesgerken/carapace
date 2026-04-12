@@ -16,10 +16,12 @@ def test_load_config_defaults(tmp_path: Path):
 def test_load_config_from_yaml(tmp_path: Path):
     (tmp_path / "config.yaml").write_text(
         "agent:\n  model: anthropic:claude-sonnet-4-6\n  sentinel_model: anthropic:claude-haiku-4-5\n"
+        "  tool_output_max_chars: 5000\n"
     )
     cfg = load_config(tmp_path)
     assert cfg.agent.model == "anthropic:claude-sonnet-4-6"
     assert cfg.agent.sentinel_model == "anthropic:claude-haiku-4-5"
+    assert cfg.agent.tool_output_max_chars == 5000
 
 
 def test_load_workspace_file_missing(tmp_path: Path):

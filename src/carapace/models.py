@@ -218,6 +218,9 @@ class AgentConfig(BaseModel):
 
     max_parallel_llm: int = 2
 
+    # Cap string length returned to the model (and mirrored to tool_result_callback). 0 = no limit.
+    tool_output_max_chars: int = 16_000
+
     @model_validator(mode="after")
     def _defaults_listed_in_available_models(self) -> AgentConfig:
         catalog_ids = {e.model_id for e in self.available_models}

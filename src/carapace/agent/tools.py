@@ -112,6 +112,26 @@ def _notify_result(ctx: RunContext[Deps], tool_name: str, result: str, exit_code
         ctx.deps.tool_result_callback(ToolResult(tool=tool_name, output=result, exit_code=exit_code))
 
 
+def truncate_tool_output(text: str, max_chars: int) -> str:
+    """Return ``text`` unchanged when ``max_chars`` is 0 or the string is shorter; else truncate with a footer."""
+    if max_chars <= 0 or len(text) <= max_chars:
+        return text
+    suffix = f"\n\n[Output truncated: {len(text)} characters total, limit {max_chars}.]"
+    return text[:max_chars] + suffix
+
+
+def _emit_tool_result(
+    ctx: RunContext[Deps],
+    tool_name: str,
+    result: str,
+    exit_code: int = 0,
+) -> str:
+    """Apply configured output limit, notify subscribers, and return the string passed to the model."""
+    limited = truncate_tool_output(result, ctx.deps.config.agent.tool_output_max_chars)
+    _notify_result(ctx, tool_name, limited, exit_code)
+    return limited
+
+
 def _log_sandbox_tool_exception(tool: str, session_id: str) -> None:
     """Log full traceback for sandbox tool failures (must run inside ``except``)."""
     logger.exception(f"Sandbox tool {tool!r} failed (session {session_id})")
@@ -301,8 +321,7 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
             return "No skills available."
         lines = [f"- {s.name}: {s.description.strip()}" for s in catalog]
         result = "Available skills:\n" + "\n".join(lines)
-        _notify_result(ctx, "list_skills", result)
-        return result
+        return _emit_tool_result(ctx, "list_skills", result)
 
     @agent.tool
     async def use_skill(ctx: RunContext[Deps], skill_name: str) -> str | ToolDenied:
@@ -386,8 +405,7 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
 
         result = "\n".join(f"- {line}" for line in status_lines)
         result += f"\n\nInstructions:\n\n{instructions}"
-        _notify_result(ctx, "use_skill", result)
-        return result
+        return _emit_tool_result(ctx, "use_skill", result)
 
     # --- Filesystem (sandboxed — runs inside the Docker container) ---
 
@@ -428,8 +446,7 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
                     "deny",
                     "skill not activated",
                 )
-            _notify_result(ctx, "read", denied_message, exit_code=1)
-            return denied_message
+            return _emit_tool_result(ctx, "read", denied_message, exit_code=1)
 
         if not ctx.tool_call_approved and (
             denied := await _gate(ctx, "read", {"path": path, "offset": offset, "limit": limit})
@@ -444,8 +461,7 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
             _log_sandbox_tool_exception("read", session_id)
             result = f"Error: {exc}"
             exit_code = -1
-        _notify_result(ctx, "read", result, exit_code)
-        return result
+        return _emit_tool_result(ctx, "read", result, exit_code)
 
     @agent.tool
     async def write(ctx: RunContext[Deps], path: str, content: str) -> str | ToolDenied:
@@ -463,8 +479,7 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
             _log_sandbox_tool_exception("write", session_id)
             result = f"Error: {exc}"
             exit_code = -1
-        _notify_result(ctx, "write", result, exit_code)
-        return result
+        return _emit_tool_result(ctx, "write", result, exit_code)
 
     @agent.tool
     async def str_replace(
@@ -510,8 +525,7 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
             _log_sandbox_tool_exception("str_replace", session_id)
             result = f"Error: {exc}"
             exit_code = -1
-        _notify_result(ctx, "str_replace", result, exit_code)
-        return result
+        return _emit_tool_result(ctx, "str_replace", result, exit_code)
 
     # --- Runtime ---
 
@@ -615,7 +629,6 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
             ToolResultEntry(tool="exec", status="error" if exit_code != 0 else "success"),
         )
 
-        _notify_result(ctx, "exec", result, exit_code)
-        return result
+        return _emit_tool_result(ctx, "exec", result, exit_code)
 
     return agent
