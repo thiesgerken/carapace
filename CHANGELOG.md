@@ -1,6 +1,17 @@
 # CHANGELOG
 
 
+## v0.79.1 (2026-04-12)
+
+
+### ⚡ Performance
+
+
+- ⚡ perf: use granular HTTP timeouts for LLM requests
+  ([`c4a41f4`](https://github.com/thiesgerken/carapace/commit/c4a41f40f531a2830e72074439b3581e2e4b9bff))
+
+  Set connect=15s, read=300s, write=15s, pool=60s instead of a blanket 60s timeout.  This avoids premature read timeouts on slow reasoning models while detecting dead hosts faster.
+
 ## v0.79.0 (2026-04-12)
 
 
