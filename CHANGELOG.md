@@ -1,6 +1,27 @@
 # CHANGELOG
 
 
+## v0.79.0 (2026-04-12)
+
+
+### ✨ Features
+
+
+- ✨ feat: clarify skill credential/domain grants in sentinel prompt
+  ([`7273a8e`](https://github.com/thiesgerken/carapace/commit/7273a8e9648c7756dc1665e27630ce4f3d2e9693))
+
+  - Add paragraph to sentinel system prompt explaining that use_skill
+    declared_domains and declared_creds come from the skill's carapace.yaml
+    manifest, not from the agent itself
+  - Rename requested_creds/requested_domains → declared_creds/declared_domains
+    in use_skill gate args for clearer sentinel presentation
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix: clear loading spinner for credential_access tool calls
+  ([`f309326`](https://github.com/thiesgerken/carapace/commit/f30932655a54060ea32bdff17c01a5e320592d5a))
+
 ## v0.78.0 (2026-04-12)
 
 
