@@ -1106,12 +1106,13 @@ class SessionEngine:
     async def _generate_title(self, active: ActiveSession, events: list[dict[str, Any]]) -> str:
         session_id = active.state.session_id
         try:
-            title = await generate_title(
-                events,
-                model=active.title_model_name or self._config.agent.title_model,
-                usage_tracker=active.usage_tracker,
-                model_factory=self._model_factory,
-            )
+            async with self._llm_semaphore:
+                title = await generate_title(
+                    events,
+                    model=active.title_model_name or self._config.agent.title_model,
+                    usage_tracker=active.usage_tracker,
+                    model_factory=self._model_factory,
+                )
             if title:
                 active.state.title = title
                 self._session_mgr.save_state(active.state)

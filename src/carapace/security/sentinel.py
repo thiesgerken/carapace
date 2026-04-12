@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -127,6 +128,7 @@ class Sentinel:
         self._model_factory = model_factory
         self._agent = self._create_agent()
         self._message_history: list[Any] = []
+        self._lock = asyncio.Lock()
 
     def set_model(self, model: str) -> None:
         """Switch the sentinel model, recreating the internal agent."""
@@ -188,37 +190,38 @@ class Sentinel:
         *,
         usage_tracker: UsageTracker | None = None,
     ) -> SentinelVerdict:
-        if self._should_reset(session):
-            self._reset(session)
+        async with self._lock:
+            if self._should_reset(session):
+                self._reset(session)
 
-        new_entries = session.new_entries_since_sync()
-        tool_calls_since_user = session.tool_calls_since_last_user_message()
+            new_entries = session.new_entries_since_sync()
+            tool_calls_since_user = session.tool_calls_since_last_user_message()
 
-        prompt_parts: list[str] = []
-        if not self._message_history:
-            prompt_parts.append("Session started. Action log so far:")
-            prompt_parts.append(_format_action_log(session.action_log))
-        elif new_entries:
-            prompt_parts.append("New entries since last evaluation:")
-            prompt_parts.append(_format_action_log(new_entries))
+            prompt_parts: list[str] = []
+            if not self._message_history:
+                prompt_parts.append("Session started. Action log so far:")
+                prompt_parts.append(_format_action_log(session.action_log))
+            elif new_entries:
+                prompt_parts.append("New entries since last evaluation:")
+                prompt_parts.append(_format_action_log(new_entries))
 
-        args_str = ", ".join(f"{k}={_truncate(v)}" for k, v in args.items())
-        prompt_parts.append(f"\nEVALUATE tool_call:\n{tool_name}({args_str})")
-        prompt_parts.append(f"Last user message was {tool_calls_since_user} tool calls ago.")
+            args_str = ", ".join(f"{k}={_truncate(v)}" for k, v in args.items())
+            prompt_parts.append(f"\nEVALUATE tool_call:\n{tool_name}({args_str})")
+            prompt_parts.append(f"Last user message was {tool_calls_since_user} tool calls ago.")
 
-        prompt = "\n".join(prompt_parts)
-        result = await self._agent.run(
-            prompt,
-            deps=self._skills_dir,
-            message_history=self._message_history or None,
-        )
-        self._message_history = result.all_messages()
-        session.sentinel_eval_count += 1
+            prompt = "\n".join(prompt_parts)
+            result = await self._agent.run(
+                prompt,
+                deps=self._skills_dir,
+                message_history=self._message_history or None,
+            )
+            self._message_history = result.all_messages()
+            session.sentinel_eval_count += 1
 
-        if usage_tracker:
-            usage_tracker.record(self._model, "sentinel", result.usage())
+            if usage_tracker:
+                usage_tracker.record(self._model, "sentinel", result.usage())
 
-        return result.output
+            return result.output
 
     async def evaluate_domain_access(
         self,
@@ -228,34 +231,35 @@ class Sentinel:
         *,
         usage_tracker: UsageTracker | None = None,
     ) -> SentinelVerdict:
-        if self._should_reset(session):
-            self._reset(session)
+        async with self._lock:
+            if self._should_reset(session):
+                self._reset(session)
 
-        new_entries = session.new_entries_since_sync()
+            new_entries = session.new_entries_since_sync()
 
-        prompt_parts: list[str] = []
-        if not self._message_history:
-            prompt_parts.append("Session started. Action log so far:")
-            prompt_parts.append(_format_action_log(session.action_log))
-        elif new_entries:
-            prompt_parts.append("New entries since last evaluation:")
-            prompt_parts.append(_format_action_log(new_entries))
+            prompt_parts: list[str] = []
+            if not self._message_history:
+                prompt_parts.append("Session started. Action log so far:")
+                prompt_parts.append(_format_action_log(session.action_log))
+            elif new_entries:
+                prompt_parts.append("New entries since last evaluation:")
+                prompt_parts.append(_format_action_log(new_entries))
 
-        prompt_parts.append(f"\nEVALUATE domain_access_request:\nDomain: {domain}\nTriggered by: {command}")
+            prompt_parts.append(f"\nEVALUATE domain_access_request:\nDomain: {domain}\nTriggered by: {command}")
 
-        prompt = "\n".join(prompt_parts)
-        result = await self._agent.run(
-            prompt,
-            deps=self._skills_dir,
-            message_history=self._message_history or None,
-        )
-        self._message_history = result.all_messages()
-        session.sentinel_eval_count += 1
+            prompt = "\n".join(prompt_parts)
+            result = await self._agent.run(
+                prompt,
+                deps=self._skills_dir,
+                message_history=self._message_history or None,
+            )
+            self._message_history = result.all_messages()
+            session.sentinel_eval_count += 1
 
-        if usage_tracker:
-            usage_tracker.record(self._model, "sentinel", result.usage())
+            if usage_tracker:
+                usage_tracker.record(self._model, "sentinel", result.usage())
 
-        return result.output
+            return result.output
 
     async def evaluate_credential_access(
         self,
@@ -267,37 +271,38 @@ class Sentinel:
         *,
         usage_tracker: UsageTracker | None = None,
     ) -> SentinelVerdict:
-        if self._should_reset(session):
-            self._reset(session)
+        async with self._lock:
+            if self._should_reset(session):
+                self._reset(session)
 
-        new_entries = session.new_entries_since_sync()
+            new_entries = session.new_entries_since_sync()
 
-        prompt_parts: list[str] = []
-        if not self._message_history:
-            prompt_parts.append("Session started. Action log so far:")
-            prompt_parts.append(_format_action_log(session.action_log))
-        elif new_entries:
-            prompt_parts.append("New entries since last evaluation:")
-            prompt_parts.append(_format_action_log(new_entries))
+            prompt_parts: list[str] = []
+            if not self._message_history:
+                prompt_parts.append("Session started. Action log so far:")
+                prompt_parts.append(_format_action_log(session.action_log))
+            elif new_entries:
+                prompt_parts.append("New entries since last evaluation:")
+                prompt_parts.append(_format_action_log(new_entries))
 
-        prompt_parts.append(f"\nEVALUATE credential_access_request:\nVault path: {vault_path}\nName: {name}")
-        if description:
-            prompt_parts.append(f"Description: {description}")
-        prompt_parts.append(f"Triggered by: {trigger}")
+            prompt_parts.append(f"\nEVALUATE credential_access_request:\nVault path: {vault_path}\nName: {name}")
+            if description:
+                prompt_parts.append(f"Description: {description}")
+            prompt_parts.append(f"Triggered by: {trigger}")
 
-        prompt = "\n".join(prompt_parts)
-        result = await self._agent.run(
-            prompt,
-            deps=self._skills_dir,
-            message_history=self._message_history or None,
-        )
-        self._message_history = result.all_messages()
-        session.sentinel_eval_count += 1
+            prompt = "\n".join(prompt_parts)
+            result = await self._agent.run(
+                prompt,
+                deps=self._skills_dir,
+                message_history=self._message_history or None,
+            )
+            self._message_history = result.all_messages()
+            session.sentinel_eval_count += 1
 
-        if usage_tracker:
-            usage_tracker.record(self._model, "sentinel", result.usage())
+            if usage_tracker:
+                usage_tracker.record(self._model, "sentinel", result.usage())
 
-        return result.output
+            return result.output
 
     def _should_reset(self, session: SessionSecurity) -> bool:
         return self._reset_threshold > 0 and session.sentinel_eval_count >= self._reset_threshold
@@ -322,38 +327,39 @@ class Sentinel:
         usage_tracker: UsageTracker | None = None,
     ) -> SentinelVerdict:
         """Evaluate a Git push from the pre-receive hook."""
-        if self._should_reset(session):
-            self._reset(session)
+        async with self._lock:
+            if self._should_reset(session):
+                self._reset(session)
 
-        new_entries = session.new_entries_since_sync()
+            new_entries = session.new_entries_since_sync()
 
-        prompt_parts: list[str] = []
-        if not self._message_history:
-            prompt_parts.append("Session started. Action log so far:")
-            prompt_parts.append(_format_action_log(session.action_log))
-        elif new_entries:
-            prompt_parts.append("New entries since last evaluation:")
-            prompt_parts.append(_format_action_log(new_entries))
+            prompt_parts: list[str] = []
+            if not self._message_history:
+                prompt_parts.append("Session started. Action log so far:")
+                prompt_parts.append(_format_action_log(session.action_log))
+            elif new_entries:
+                prompt_parts.append("New entries since last evaluation:")
+                prompt_parts.append(_format_action_log(new_entries))
 
-        prompt_parts.append("\nEVALUATE git_push:")
-        prompt_parts.append(f"Ref: {ref}")
-        prompt_parts.append(f"Is default branch: {is_default_branch}")
-        prompt_parts.append(f"Commits:\n{commits}")
-        # Truncate large diffs to avoid exceeding context limits
-        if len(diff) > 8192:
-            diff = diff[:8192] + "\n... (diff truncated)"
-        prompt_parts.append(f"Diff:\n{diff}")
+            prompt_parts.append("\nEVALUATE git_push:")
+            prompt_parts.append(f"Ref: {ref}")
+            prompt_parts.append(f"Is default branch: {is_default_branch}")
+            prompt_parts.append(f"Commits:\n{commits}")
+            # Truncate large diffs to avoid exceeding context limits
+            if len(diff) > 8192:
+                diff = diff[:8192] + "\n... (diff truncated)"
+            prompt_parts.append(f"Diff:\n{diff}")
 
-        prompt = "\n".join(prompt_parts)
-        result = await self._agent.run(
-            prompt,
-            deps=self._skills_dir,
-            message_history=self._message_history or None,
-        )
-        self._message_history = result.all_messages()
-        session.sentinel_eval_count += 1
+            prompt = "\n".join(prompt_parts)
+            result = await self._agent.run(
+                prompt,
+                deps=self._skills_dir,
+                message_history=self._message_history or None,
+            )
+            self._message_history = result.all_messages()
+            session.sentinel_eval_count += 1
 
-        if usage_tracker:
-            usage_tracker.record(self._model, "sentinel", result.usage())
+            if usage_tracker:
+                usage_tracker.record(self._model, "sentinel", result.usage())
 
-        return result.output
+            return result.output
