@@ -528,6 +528,7 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
             contexts: Optional list of activated skill names whose declared network domains
                 and credentials should be available for this command. Each entry must match
                 an activated skill; unknown names are rejected.
+                Always set this to the list of skills that are needed for the command.
         """
         contexts = contexts or []
 
