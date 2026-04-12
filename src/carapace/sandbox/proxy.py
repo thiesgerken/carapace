@@ -8,6 +8,12 @@ from collections.abc import Awaitable, Callable
 from loguru import logger
 
 _CONNECT_OK = b"HTTP/1.1 200 Connection Established\r\n\r\n"
+_PROXY_AUTH_REQUIRED = (
+    b"HTTP/1.1 407 Proxy Authentication Required\r\n"
+    b'Proxy-Authenticate: Basic realm="carapace"\r\n'
+    b"Content-Length: 19\r\nConnection: close\r\n\r\n"
+    b"Proxy auth required"
+)
 _FORBIDDEN_RESPONSE = (
     b"HTTP/1.1 403 Forbidden\r\nContent-Length: 30\r\nConnection: close\r\n\r\nDomain blocked by proxy policy"
 )
@@ -105,8 +111,12 @@ class ProxyServer:
                 if self._verify_session_token(sid, token):
                     session_id = sid
             if session_id is None:
-                logger.warning(f"Proxy: no valid token from {client_ip}, rejecting")
-                writer.write(_FORBIDDEN_RESPONSE)
+                if proxy_auth:
+                    logger.warning(f"Proxy: invalid token from {client_ip}, rejecting")
+                    writer.write(_FORBIDDEN_RESPONSE)
+                else:
+                    logger.debug(f"Proxy: no credentials from {client_ip}, sending 407 challenge")
+                    writer.write(_PROXY_AUTH_REQUIRED)
                 await writer.drain()
                 return
 
