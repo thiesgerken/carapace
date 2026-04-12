@@ -1,6 +1,21 @@
 # CHANGELOG
 
 
+## v0.77.0 (2026-04-12)
+
+
+### ✨ Features
+
+
+- ✨ feat: bundle web and wikipedia skills as built-in assets
+  ([`fd49b5a`](https://github.com/thiesgerken/carapace/commit/fd49b5af1f8d74f82c6a12023a3b101e48c1c489))
+
+### Other
+
+
+- 📝 docs: clarify context parameter usage in create_agent function
+  ([`df1e0b2`](https://github.com/thiesgerken/carapace/commit/df1e0b2f01fcf85bda007243ab042bf0b215a251))
+
 ## v0.76.1 (2026-04-12)
 
 
