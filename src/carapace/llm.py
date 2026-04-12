@@ -27,7 +27,7 @@ def retry_http_client() -> AsyncClient:
         ),
         validate_response=lambda r: r.raise_for_status() if r.status_code in (429, 502, 503, 504) else None,
     )
-    return AsyncClient(transport=transport, timeout=Timeout(60.0))
+    return AsyncClient(transport=transport, timeout=Timeout(connect=15.0, read=300.0, write=15.0, pool=60.0))
 
 
 def infer_model_with_retry_transport(model_name: str) -> Model:
