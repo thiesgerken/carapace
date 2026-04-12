@@ -1,6 +1,15 @@
 # CHANGELOG
 
 
+## v0.81.0 (2026-04-12)
+
+
+### ✨ Features
+
+
+- ✨ add kubectl to sandbox image, use trixie image directly
+  ([`391172b`](https://github.com/thiesgerken/carapace/commit/391172b99ec2e8b08451578b1ae2308754edfb60))
+
 ## v0.80.0 (2026-04-12)
 
 
