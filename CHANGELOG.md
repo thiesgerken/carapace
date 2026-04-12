@@ -1,6 +1,20 @@
 # CHANGELOG
 
 
+## v0.82.1 (2026-04-12)
+
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix: proxy auth for git clone in sandbox
+  ([`a066115`](https://github.com/thiesgerken/carapace/commit/a0661159eb151967980e23589734d581124fc8ac))
+
+  - Return 407 with Proxy-Authenticate header when no credentials are
+    provided, so curl/git retries with embedded proxy credentials
+  - Replace invalid https.proxy git config with http.proxyAuthMethod=basic
+    to send Proxy-Authorization immediately without anyauth negotiation
+
 ## v0.82.0 (2026-04-12)
 
 
