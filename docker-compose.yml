@@ -25,6 +25,7 @@ services:
 
   # Bitwarden CLI sidecar — shares carapace's network namespace so bw serve
   # is reachable at 127.0.0.1:8087 from the carapace container.
+  # Scaled to 0 by default; enable with: docker compose up -d --scale bw=1
   bw:
     build: ./bitwarden-cli
     image: carapace-bitwarden-cli:latest
@@ -42,7 +43,7 @@ services:
     depends_on:
       - carapace
     restart: unless-stopped
-    scale: 1
+    scale: 0
 
   frontend:
     build: ./frontend
