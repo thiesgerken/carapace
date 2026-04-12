@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import secrets
 from datetime import date
 from pathlib import Path, PurePosixPath
@@ -582,7 +583,7 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
         # Build per-exec injection data from matching context grants
         extra_env: dict[str, str] = {}
         context_domains: set[str] = set()
-        context_file_creds: list[tuple[str, str, str]] = []  # (skill_name, file_path, vault_path)
+        context_file_creds: list[tuple[str, str, str]] = []  # (skill_name, file_path, value)
         missing_cached: list[tuple[str, str]] = []
         injected_creds: list[tuple[str, str]] = []  # (ctx_name, vault_path)
         for ctx_name in contexts:
@@ -595,11 +596,13 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
                 if cached is None:
                     missing_cached.append((ctx_name, decl.vault_path))
                     continue
+                if decl.base64:
+                    cached = base64.b64decode(cached).decode()
                 injected_creds.append((ctx_name, decl.vault_path))
                 if decl.env_var:
                     extra_env[decl.env_var] = cached
                 if decl.file:
-                    context_file_creds.append((ctx_name, decl.file, decl.vault_path))
+                    context_file_creds.append((ctx_name, decl.file, cached))
 
         def _notify_injected_skill_creds() -> None:
             for ctx_name, vp in injected_creds:

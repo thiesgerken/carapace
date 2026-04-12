@@ -48,6 +48,17 @@ class TestContextGrantModel:
         assert restored.vault_paths == {"dev/key"}
         assert restored.credential_decls[0].file == "/tmp/key"
 
+    def test_base64_flag_defaults_false(self):
+        decl = SkillCredentialDecl(vault_path="dev/key", file="kube.yaml")
+        assert decl.base64 is False
+
+    def test_base64_flag_roundtrip(self):
+        decl = SkillCredentialDecl(vault_path="dev/key", file="kube.yaml", base64=True)
+        grant = ContextGrant(skill_name="k3s", credential_decls=[decl])
+        data = grant.model_dump()
+        restored = ContextGrant.model_validate(data)
+        assert restored.credential_decls[0].base64 is True
+
 
 def test_context_grants_session_summary():
     grants = {

@@ -95,12 +95,12 @@ Carapace reads `skills/<name>/carapace.yaml` when the agent calls `use_skill("<n
 
 **Top-level keys** (all optional):
 
-| Key               | Type            | Purpose                                                                                               |
-| ----------------- | --------------- | ----------------------------------------------------------------------------------------------------- |
-| `network`         | object          | Must contain `domains` — not a bare list under `network`.                                             |
-| `network.domains` | list of strings | Hostnames added to the session allowlist (wildcards like `*.cdn.example.com` allowed).                |
-| `credentials`     | list of objects | Each entry: `vault_path` (required), `description`, and either `env_var` and/or `file` for injection. |
-| `hints`           | string map      | Extra metadata for tooling (does not replace `network` / `credentials`).                              |
+| Key               | Type            | Purpose                                                                                                                                                   |
+| ----------------- | --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `network`         | object          | Must contain `domains` — not a bare list under `network`.                                                                                                 |
+| `network.domains` | list of strings | Hostnames added to the session allowlist (wildcards like `*.cdn.example.com` allowed).                                                                    |
+| `credentials`     | list of objects | Each entry: `vault_path` (required), `description`, and either `env_var` and/or `file` for injection. Optional `base64: true` to decode before injection. |
+| `hints`           | string map      | Extra metadata for tooling (does not replace `network` / `credentials`).                                                                                  |
 
 **Valid example** (shape matters):
 

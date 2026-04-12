@@ -83,6 +83,7 @@ When the agent runs `exec(command, contexts=["skill-name"])`:
 
 - `env_var` entries are injected as environment variables for that single command.
 - `file` entries are written inside the sandbox with mode `0400` before the command, then deleted immediately after it completes (in a `finally` block).
+- If `base64: true` is set on a credential, the stored value is base64-decoded before injection (for either `env_var` or `file`).
 
 ### Container restart
 

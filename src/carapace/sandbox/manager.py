@@ -455,7 +455,7 @@ class SandboxManager:
         *contexts*: activated skill names active for this exec.
         *extra_env*: per-exec env vars (credential values).
         *context_domains*: skill-declared domains to add to exec-scoped temp allowlist.
-        *context_file_creds*: ``(skill_name, file_path, vault_path)`` tuples; files
+        *context_file_creds*: ``(skill_name, file_path, value)`` tuples; files
             are written before the command and deleted in the ``finally`` block.
         *after_exec_credential_notify*: optional sync hook invoked after the container
             command finishes but **before** per-exec notification state is torn down,
@@ -546,7 +546,7 @@ class SandboxManager:
         *contexts*: activated skill names active for this exec.
         *extra_env*: per-exec env vars (credential values) — merged on top of session env.
         *context_domains*: domains to add to exec-scoped temp allowlist.
-        *context_file_creds*: ``(skill_name, file_path, vault_path)`` tuples for file-based
+        *context_file_creds*: ``(skill_name, file_path, value)`` tuples for file-based
             credentials to be written before exec and deleted after.
         *after_exec_credential_notify*: passed through to `_exec` (see there).
         """
@@ -737,11 +737,7 @@ class SandboxManager:
     ) -> list[tuple[str, str]]:
         """Write file-based credentials into the container, returning written ``(file_path, skill_name)`` pairs."""
         written: list[tuple[str, str]] = []
-        for skill_name, file_path, vault_path in context_file_creds:
-            value = self.get_cached_credential(sc.session_id, vault_path)
-            if value is None:
-                logger.warning(f"Cached credential missing for {vault_path!r} (skill {skill_name!r}), skipping file")
-                continue
+        for skill_name, file_path, value in context_file_creds:
             skill_dir = f"/workspace/skills/{skill_name}"
             fw = await self._file_write_in_container(sc, file_path, value, mode=0o400, workdir=skill_dir, quote=False)
             if fw.exit_code != 0:

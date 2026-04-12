@@ -383,6 +383,9 @@ class SkillCredentialDecl(BaseModel):
     description: str = ""
     env_var: str | None = None
     file: str | None = None
+    base64: Annotated[
+        bool, Field(description="If true, the stored value is base64-encoded and will be decoded before injection.")
+    ] = False
 
 
 class SkillNetworkConfig(BaseModel):

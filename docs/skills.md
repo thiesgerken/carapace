@@ -88,6 +88,7 @@ credentials:
 - `description` — human-readable explanation shown in approval prompts
 - `env_var` — environment variable name for per-exec injection (optional)
 - `file` — file path for per-exec injection with mode `0400` (optional)
+- `base64` — if `true`, the stored value is base64-decoded before injection (optional, default `false`). Useful for multi-line secrets (e.g. kubeconfig) that cannot be stored verbatim in a single-line password field.
 
 > **Note**: Credential declarations are implemented. See [credentials.md](credentials.md) for approval flow, backend config, and `ccred` usage.
 
