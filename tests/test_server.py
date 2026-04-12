@@ -126,6 +126,7 @@ def test_sandbox_list_credentials_audit(client, auth_headers, monkeypatch):
     mock_reg.list = AsyncMock(return_value=[CredentialMetadata(vault_path="dev/key", name="key", description="test")])
     monkeypatch.setattr(srv, "_credential_registry", mock_reg, raising=False)
     srv._engine.sandbox_mgr.verify_session_token.side_effect = lambda s, t: s == sid and t == "secret"
+    srv._engine.sandbox_mgr.mark_credential_notified.return_value = False
 
     basic = base64.b64encode(b"wrong-id:secret").decode()
     sb_client = TestClient(sandbox_app)
