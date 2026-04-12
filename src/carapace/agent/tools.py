@@ -333,15 +333,15 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
         registry = SkillRegistry(ctx.deps.knowledge_dir / "skills")
 
         carapace_cfg = registry.get_carapace_config(skill_name)
-        requested_domains = carapace_cfg.network.domains if carapace_cfg else []
-        requested_creds = carapace_cfg.credentials if carapace_cfg else []
-        requested_creds_payload = [decl.model_dump(mode="json") for decl in requested_creds]
+        declared_domains = carapace_cfg.network.domains if carapace_cfg else []
+        declared_creds = carapace_cfg.credentials if carapace_cfg else []
+        declared_creds_payload = [decl.model_dump(mode="json") for decl in declared_creds]
 
         if not ctx.tool_call_approved:
             gate_args: dict[str, Any] = {
                 "skill_name": skill_name,
-                "requested_creds": requested_creds_payload,
-                "requested_domains": requested_domains,
+                "declared_creds": declared_creds_payload,
+                "declared_domains": declared_domains,
             }
 
             if denied := await _gate(ctx, "use_skill", gate_args):
@@ -366,20 +366,20 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
         # Register context grant (replaces permanent allow_domains + session env injection)
         grant = ContextGrant(
             skill_name=skill_name,
-            domains=set(requested_domains),
-            credential_decls=list(requested_creds),
+            domains=set(declared_domains),
+            credential_decls=list(declared_creds),
         )
         ctx.deps.session_state.context_grants[skill_name] = grant
         ctx.deps.security.append(
             ContextGrantEntry(
                 skill_name=skill_name,
-                domains=requested_domains,
-                vault_paths=[c.vault_path for c in requested_creds],
+                domains=declared_domains,
+                vault_paths=[c.vault_path for c in declared_creds],
             ),
         )
 
         # Cache credential values for per-exec injection
-        cred_msg = await _cache_skill_credentials(ctx, requested_creds, skill_name)
+        cred_msg = await _cache_skill_credentials(ctx, declared_creds, skill_name)
 
         ctx.deps.activated_skills.append(skill_name)
         if skill_name not in ctx.deps.session_state.activated_skills:
@@ -390,7 +390,7 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
             SkillActivatedEntry(
                 skill_name=skill_name,
                 description=skill_info.description if skill_info else "",
-                declared_domains=requested_domains,
+                declared_domains=declared_domains,
             ),
         )
 
@@ -399,8 +399,8 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
             status_lines.extend(sandbox_msg.splitlines())
         else:
             status_lines.append(f"Skill '{skill_name}' activated.")
-        if requested_domains:
-            status_lines.append(f"Network access granted for: {', '.join(requested_domains)}")
+        if declared_domains:
+            status_lines.append(f"Network access granted for: {', '.join(declared_domains)}")
         if cred_msg:
             status_lines.extend(cred_msg.splitlines())
 
