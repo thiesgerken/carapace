@@ -7,7 +7,8 @@
 - [ ] tool outputs need a max output length
 - [ ] would be nice to be able to give the session a budget in dollars / tokens
 - [ ] compaction
-- [ ] image input
+- [ ] image input ([plan](docs/plans/images.md))
+- [ ] image output — agent tools producing images (screenshots, charts, renders)
 - [ ] custom sentinel instructions for skills, e.g. moneydb: make sure that the agent only does mutations based on user approval
 
 ## UI Improvements
