@@ -99,7 +99,8 @@ class SessionSubscriber(Protocol):
     ) -> None: ...
     async def on_tool_result(self, result: ToolResult) -> None: ...
     async def on_token(self, content: str) -> None: ...
-    async def on_done(self, content: str, usage: TurnUsage) -> None: ...
+    async def on_thinking_token(self, content: str) -> None: ...
+    async def on_done(self, content: str, usage: TurnUsage, *, thinking: str | None = None) -> None: ...
     async def on_error(self, detail: str) -> None: ...
     async def on_cancelled(self) -> None: ...
     async def on_approval_request(self, req: ApprovalRequest) -> None: ...
@@ -968,15 +969,19 @@ class SessionEngine:
                 async def _on_token(chunk: str) -> None:
                     await self._broadcast(active, "on_token", chunk)
 
+                async def _on_thinking_token(chunk: str) -> None:
+                    await self._broadcast(active, "on_thinking_token", chunk)
+
                 async with self._llm_semaphore:
                     with self.llm_request_recording(active):
-                        messages, output = await run_agent_turn(
+                        messages, output, thinking = await run_agent_turn(
                             user_input,
                             deps,
                             message_history,
                             send_approval_request=_send_approval,
                             collect_approvals=_collect_approvals,
                             on_token=_on_token,
+                            on_thinking_token=_on_thinking_token,
                             on_messages_snapshot=lambda snapshot: _set_latest_messages(snapshot),
                         )
 
@@ -984,10 +989,11 @@ class SessionEngine:
                 self._session_mgr.save_state(active.state)
                 self._session_mgr.save_usage(session_id, active.usage_tracker)
                 self._session_mgr.save_llm_request_log(session_id, active.llm_request_log)
-                self._session_mgr.append_events(
-                    session_id,
-                    [{"role": "assistant", "content": output}],
-                )
+                events_to_append: list[dict[str, Any]] = []
+                if thinking:
+                    events_to_append.append({"role": "thinking", "content": thinking})
+                events_to_append.append({"role": "assistant", "content": output})
+                self._session_mgr.append_events(session_id, events_to_append)
 
                 if output.startswith("Unexpected agent output type:"):
                     await self._broadcast(active, "on_error", output)
@@ -1005,6 +1011,7 @@ class SessionEngine:
                             model=self.agent_model_id_for_gauge(active),
                             context_cap_tokens=self.agent_context_cap_for_gauge(active),
                         ),
+                        thinking=thinking or None,
                     )
 
                 # Generate a title after the 1st and 3rd non-slash user message

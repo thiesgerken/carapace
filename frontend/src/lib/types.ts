@@ -53,6 +53,11 @@ export interface TokenChunk {
   content: string;
 }
 
+export interface ThinkingChunk {
+  type: "thinking";
+  content: string;
+}
+
 export interface ToolCallInfo {
   type: "tool_call";
   tool: string;
@@ -134,6 +139,7 @@ export interface TurnUsage {
 export interface Done {
   type: "done";
   content: string;
+  thinking?: string;
   usage?: TurnUsage;
 }
 
@@ -171,6 +177,7 @@ export interface UserMessageNotification {
 
 export type ServerMessage =
   | TokenChunk
+  | ThinkingChunk
   | ToolCallInfo
   | ToolResultInfo
   | ApprovalRequest
@@ -222,6 +229,8 @@ export type ChatMessage =
   | { kind: "user"; content: string }
   | { kind: "assistant"; content: string }
   | { kind: "streaming"; content: string }
+  | { kind: "thinking"; content: string }
+  | { kind: "thinking_streaming"; content: string }
   | {
       kind: "tool_call";
       tool: string;

@@ -105,7 +105,10 @@ class MatrixSubscriber:
         else:
             await self._channel._edit_message(self._room_id, self._stream_event_id, text)
 
-    async def on_done(self, content: str, usage: TurnUsage) -> None:
+    async def on_thinking_token(self, content: str) -> None:
+        pass  # Thinking content not displayed in Matrix
+
+    async def on_done(self, content: str, usage: TurnUsage, *, thinking: str | None = None) -> None:
         if self._stream_event_id is not None:
             await self._channel._edit_message(
                 self._room_id,

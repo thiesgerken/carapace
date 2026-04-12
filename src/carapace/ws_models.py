@@ -93,6 +93,11 @@ class TokenChunk(BaseModel):
     content: str
 
 
+class ThinkingChunk(BaseModel):
+    type: Literal["thinking"] = "thinking"
+    content: str
+
+
 class ToolCallInfo(BaseModel):
     type: Literal["tool_call"] = "tool_call"
     tool: str
@@ -175,6 +180,7 @@ class TurnUsage(BaseModel):
 class Done(BaseModel):
     type: Literal["done"] = "done"
     content: str
+    thinking: str | None = None
     usage: TurnUsage | None = None
 
 
@@ -220,6 +226,7 @@ class UserMessageNotification(BaseModel):
 
 ServerEnvelope = (
     TokenChunk
+    | ThinkingChunk
     | ToolCallInfo
     | ToolResultInfo
     | ApprovalRequest

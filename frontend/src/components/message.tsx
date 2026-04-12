@@ -1,7 +1,7 @@
 "use client";
 
-import { Check, Copy } from "lucide-react";
-import { useCallback, useState } from "react";
+import { Brain, Check, ChevronRight, Copy, Loader2 } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
 
 import type { ChatMessage, EscalationDecision } from "@/lib/types";
 import { MarkdownContent } from "./markdown-content";
@@ -51,6 +51,61 @@ function MessageCopyButton({
         <Copy className="size-3.5" strokeWidth={2} />
       )}
     </button>
+  );
+}
+
+function ThinkingBadge({
+  content,
+  streaming,
+}: {
+  content: string;
+  streaming: boolean;
+}) {
+  const [open, setOpen] = useState(streaming);
+
+  // Auto-collapse when streaming finishes
+  useEffect(() => {
+    if (!streaming) setOpen(false);
+  }, [streaming]);
+
+  return (
+    <div className="my-1 w-full min-w-0">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className={cn(
+          "flex w-full min-w-0 items-center gap-1.5 rounded-md px-2 py-1 text-xs text-left",
+          "bg-muted/60 text-muted-foreground",
+          "hover:bg-accent transition-colors",
+        )}
+      >
+        <ChevronRight
+          className={cn(
+            "h-3 w-3 shrink-0 transition-transform",
+            open && "rotate-90",
+          )}
+        />
+        {streaming ? (
+          <Loader2 className="h-3 w-3 shrink-0 animate-spin text-muted-foreground" />
+        ) : (
+          <Brain className="h-3 w-3 shrink-0 text-muted-foreground" />
+        )}
+        <span className="shrink-0 font-mono font-medium text-foreground/80">
+          {streaming ? "thinking…" : "thought"}
+        </span>
+        {!streaming && content.length > 0 && (
+          <span className="min-w-0 truncate font-mono text-[11px] text-foreground/65 dark:text-foreground/70">
+            {content.length.toLocaleString()} chars
+          </span>
+        )}
+      </button>
+
+      {open && (
+        <div className="ml-5 mt-1.5 rounded-lg border border-border/60 bg-muted/30 p-3 text-xs text-muted-foreground">
+          <MarkdownContent content={content} />
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -106,6 +161,12 @@ export function Message({
           <MessageCopyButton text={message.content} className="shrink-0" />
         </div>
       );
+
+    case "thinking":
+      return <ThinkingBadge content={message.content} streaming={false} />;
+
+    case "thinking_streaming":
+      return <ThinkingBadge content={message.content} streaming />;
 
     case "tool_call":
       return (

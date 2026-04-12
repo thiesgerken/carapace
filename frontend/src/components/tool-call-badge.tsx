@@ -5,6 +5,7 @@ import {
   ChevronRight,
   FileText,
   FilePen,
+  GitBranch,
   Globe,
   KeyRound,
   Loader2,
@@ -50,6 +51,7 @@ const TOOL_ICONS: Record<string, LucideIcon> = {
   use_skill: Puzzle,
   credential_access: KeyRound,
   proxy_domain: Globe,
+  git_push: GitBranch,
 };
 
 const SHORT_KEYS: Record<string, string> = {
@@ -172,6 +174,7 @@ function formatArgsSummary(
   if (tool === "str_replace") return formatStrReplaceSummary(args);
   if (tool === "credential_access") return formatCredentialAccessSummary(args);
   if (tool === "proxy_domain") return formatProxyDomainSummary(args);
+  if (tool === "git_push") return stringArg(args, "ref");
 
   const omit = OMIT_ARG_LABEL[tool];
   const parts: string[] = [];
@@ -335,7 +338,8 @@ export function ToolCallBadge({
   const isStrReplaceTool = tool === "str_replace";
   const isCredentialAccessTool = tool === "credential_access";
   const isProxyDomainTool = tool === "proxy_domain";
-  const isAuxiliaryTool = isCredentialAccessTool || isProxyDomainTool;
+  const isGitPushTool = tool === "git_push";
+  const isAuxiliaryTool = isCredentialAccessTool || isProxyDomainTool || isGitPushTool;
   const readPath = isReadTool && typeof args.path === "string" ? args.path : "";
   const readSplit =
     isReadTool && result != null ? splitReadToolResult(result) : null;
@@ -388,7 +392,9 @@ export function ToolCallBadge({
                 ? verdict === "deny"
                   ? "domain denied"
                   : "accessed domain"
-                : tool
+                : isGitPushTool
+                  ? "git push"
+                  : tool
     : isUseSkillTool
       ? "activate skill"
       : isExecTool
@@ -399,9 +405,11 @@ export function ToolCallBadge({
             : "access credential"
           : isProxyDomainTool
             ? "access domain"
-            : isStrReplaceTool
-              ? "replace"
-              : tool;
+            : isGitPushTool
+              ? "git push"
+              : isStrReplaceTool
+                ? "replace"
+                : tool;
   const argsSummary =
     isExecTool && execTitle
       ? execTitle

@@ -234,6 +234,8 @@ export function ChatView({
               command: h.command ?? "",
               data: h.data,
             });
+          } else if (h.role === "thinking" && h.content) {
+            msgs.push({ kind: "thinking", content: h.content });
           } else {
             msgs.push({ kind: "assistant", content: h.content });
           }
@@ -284,14 +286,31 @@ export function ChatView({
       switch (msg.type) {
         case "done":
           setMessages((prev) => {
-            // Replace trailing streaming message with the final content
-            if (prev.length > 0 && prev[prev.length - 1].kind === "streaming") {
-              return [
-                ...prev.slice(0, -1),
-                { kind: "assistant", content: msg.content },
-              ];
+            const updated = [...prev];
+            // Finalize thinking: update thinking_streaming or existing thinking with authoritative content
+            const thinkStreamIdx = updated.findIndex((m) => m.kind === "thinking_streaming");
+            if (thinkStreamIdx !== -1) {
+              updated[thinkStreamIdx] = {
+                kind: "thinking",
+                content: msg.thinking ?? (updated[thinkStreamIdx] as { content: string }).content,
+              };
+            } else if (msg.thinking) {
+              // Update already-finalized thinking with authoritative content, or insert if missing
+              const thinkIdx = updated.findLastIndex((m) => m.kind === "thinking");
+              if (thinkIdx !== -1) {
+                updated[thinkIdx] = { kind: "thinking", content: msg.thinking };
+              } else {
+                updated.push({ kind: "thinking", content: msg.thinking });
+              }
             }
-            return [...prev, { kind: "assistant", content: msg.content }];
+            // Replace streaming message with the final content
+            const streamIdx = updated.findLastIndex((m) => m.kind === "streaming");
+            if (streamIdx !== -1) {
+              updated[streamIdx] = { kind: "assistant", content: msg.content };
+            } else {
+              updated.push({ kind: "assistant", content: msg.content });
+            }
+            return updated;
           });
           if (msg.usage) setUsage(msg.usage);
           finishWaiting();
@@ -411,17 +430,41 @@ export function ChatView({
         case "token":
           setWaiting(true);
           setMessages((prev) => {
-            if (prev.length > 0 && prev[prev.length - 1].kind === "streaming") {
+            const updated = [...prev];
+            // Finalize any open thinking_streaming → thinking when text tokens arrive
+            const thinkIdx = updated.findIndex((m) => m.kind === "thinking_streaming");
+            if (thinkIdx !== -1) {
+              updated[thinkIdx] = {
+                kind: "thinking",
+                content: (updated[thinkIdx] as { content: string }).content,
+              };
+            }
+            const lastIdx = updated.length - 1;
+            if (lastIdx >= 0 && updated[lastIdx].kind === "streaming") {
+              updated[lastIdx] = {
+                kind: "streaming",
+                content: (updated[lastIdx] as { content: string }).content + msg.content,
+              };
+            } else {
+              updated.push({ kind: "streaming", content: msg.content });
+            }
+            return updated;
+          });
+          break;
+        case "thinking":
+          setWaiting(true);
+          setMessages((prev) => {
+            if (prev.length > 0 && prev[prev.length - 1].kind === "thinking_streaming") {
               const last = prev[prev.length - 1] as {
-                kind: "streaming";
+                kind: "thinking_streaming";
                 content: string;
               };
               return [
                 ...prev.slice(0, -1),
-                { kind: "streaming", content: last.content + msg.content },
+                { kind: "thinking_streaming", content: last.content + msg.content },
               ];
             }
-            return [...prev, { kind: "streaming", content: msg.content }];
+            return [...prev, { kind: "thinking_streaming", content: msg.content }];
           });
           break;
       }
@@ -566,7 +609,7 @@ export function ChatView({
           {waiting && (
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              <span>Thinking…</span>
+              <span>Working…</span>
             </div>
           )}
           <div ref={bottomRef} />

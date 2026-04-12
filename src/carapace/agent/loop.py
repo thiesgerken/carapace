@@ -17,7 +17,14 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from pydantic_ai import DeferredToolRequests, DeferredToolResults, ToolDenied
-from pydantic_ai.messages import PartDeltaEvent, PartStartEvent, TextPart, TextPartDelta
+from pydantic_ai.messages import (
+    PartDeltaEvent,
+    PartStartEvent,
+    TextPart,
+    TextPartDelta,
+    ThinkingPart,
+    ThinkingPartDelta,
+)
 
 from carapace.agent.tools import create_agent
 from carapace.models import Deps
@@ -38,11 +45,12 @@ async def run_agent_turn(
     send_approval_request: Callable[[ApprovalRequest], Awaitable[None]],
     collect_approvals: Callable[[set[str]], Awaitable[dict[str, bool | ToolDenied]]],
     on_token: Callable[[str], Awaitable[None]] | None = None,
+    on_thinking_token: Callable[[str], Awaitable[None]] | None = None,
     on_messages_snapshot: Callable[[list[Any]], None] | None = None,
-) -> tuple[list[Any], str]:
+) -> tuple[list[Any], str, str]:
     """Run one full agent turn, handling approval loops.
 
-    Returns ``(updated_message_history, output_text)``.
+    Returns ``(updated_message_history, output_text, thinking_text)``.
     The caller is responsible for persisting history and delivering the output
     to the user.
     """
@@ -50,15 +58,28 @@ async def run_agent_turn(
 
     agent = create_agent(deps)
     usage_model_key = deps.agent_model_id
+    thinking_parts: list[str] = []
 
     async def _stream_handler(_ctx: Any, events: Any) -> None:
         async for event in events:
-            if on_token is None:
-                continue
-            if isinstance(event, PartStartEvent) and isinstance(event.part, TextPart) and event.part.content:
-                await on_token(event.part.content)
+            if isinstance(event, PartStartEvent) and isinstance(event.part, ThinkingPart) and event.part.content:
+                thinking_parts.append(event.part.content)
+                if on_thinking_token is not None:
+                    await on_thinking_token(event.part.content)
+            elif (
+                isinstance(event, PartDeltaEvent)
+                and isinstance(event.delta, ThinkingPartDelta)
+                and event.delta.content_delta
+            ):
+                thinking_parts.append(event.delta.content_delta)
+                if on_thinking_token is not None:
+                    await on_thinking_token(event.delta.content_delta)
+            elif isinstance(event, PartStartEvent) and isinstance(event.part, TextPart) and event.part.content:
+                if on_token is not None:
+                    await on_token(event.part.content)
             elif isinstance(event, PartDeltaEvent) and isinstance(event.delta, TextPartDelta):
-                await on_token(event.delta.content_delta)
+                if on_token is not None:
+                    await on_token(event.delta.content_delta)
 
     result = await agent.run(
         user_input,
@@ -133,7 +154,7 @@ async def run_agent_turn(
         last_usage = result.usage()
         token_count = (last_usage.output_tokens or 0) + (last_usage.input_tokens or 0)
         deps.security.append(AgentResponseEntry(token_count=token_count))
-        return messages, result.output
+        return messages, result.output, "".join(thinking_parts)
 
     output = f"Unexpected agent output type: {type(result.output).__name__}"
-    return messages, output
+    return messages, output, "".join(thinking_parts)

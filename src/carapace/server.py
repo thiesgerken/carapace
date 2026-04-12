@@ -63,6 +63,7 @@ from carapace.ws_models import (
     ServerEnvelope,
     SessionTitleUpdate,
     StatusUpdate,
+    ThinkingChunk,
     TokenChunk,
     ToolCallInfo,
     ToolResultInfo,
@@ -450,6 +451,7 @@ async def delete_session(session_id: str, _token: str = Depends(_verify_token)) 
 _HistoryRole = Literal[
     "user",
     "assistant",
+    "thinking",
     "tool_call",
     "tool_result",
     "command",
@@ -519,7 +521,7 @@ async def get_session_history(
 
 def _history_from_messages(session_id: str) -> list[HistoryMessage]:
     """Fallback: build history from Pydantic AI messages for sessions without events."""
-    from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, ToolCallPart, UserPromptPart
+    from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, ThinkingPart, ToolCallPart, UserPromptPart
 
     raw_messages = _engine.session_mgr.load_history(session_id)
     result: list[HistoryMessage] = []
@@ -545,6 +547,8 @@ def _history_from_messages(session_id: str) -> list[HistoryMessage]:
                     )
                 elif isinstance(part, TextPart):
                     result.append(HistoryMessage(role="assistant", content=part.content))
+                elif isinstance(part, ThinkingPart) and part.content:
+                    result.append(HistoryMessage(role="thinking", content=part.content))
     return result
 
 
@@ -609,8 +613,11 @@ class WebSocketSubscriber:
     async def on_token(self, content: str) -> None:
         await self._safe_send(TokenChunk(content=content))
 
-    async def on_done(self, content: str, usage: TurnUsage) -> None:
-        await self._safe_send(Done(content=content, usage=usage))
+    async def on_thinking_token(self, content: str) -> None:
+        await self._safe_send(ThinkingChunk(content=content))
+
+    async def on_done(self, content: str, usage: TurnUsage, *, thinking: str | None = None) -> None:
+        await self._safe_send(Done(content=content, thinking=thinking, usage=usage))
 
     async def on_error(self, detail: str) -> None:
         await self._safe_send(ErrorMessage(detail=detail))

@@ -166,6 +166,10 @@ class AvailableModelEntry(BaseModel):
         description="Stable id for this row (slash commands, API). Defaults to provider:name.",
     )
     max_input_tokens: int | None = None
+    thinking: bool | Literal["minimal", "low", "medium", "high", "xhigh"] | None = Field(
+        default=None,
+        description="Enable model thinking/reasoning. true/false to toggle, or an effort level.",
+    )
     base_url: str | None = Field(
         default=None,
         description="OpenAI-compatible API base URL (openai / openai-chat rows only).",
