@@ -1,6 +1,32 @@
 # CHANGELOG
 
 
+## v0.76.0 (2026-04-12)
+
+
+### ✨ Features
+
+
+- ✨ feat: update bundled skills to package layout with entrypoints
+  ([`7c01eb3`](https://github.com/thiesgerken/carapace/commit/7c01eb3c7ca537aa75c46661490f3484041a5f6f))
+
+  - create-skill: add carapace.yaml schema docs, teach src-layout with
+    [project.scripts] entrypoints instead of scripts/ flat files
+  - example: convert from scripts/hello.py to src/example_skill/ package
+    with CLI entrypoint, update pyproject.toml with build config
+
+### Other
+
+
+- scale to 0 again
+  ([`9dd16ac`](https://github.com/thiesgerken/carapace/commit/9dd16ac2ec3e64f69fb9686542bc8817ec96ae60))
+
+- 📋 docs: plan image handling
+  ([`1e0b777`](https://github.com/thiesgerken/carapace/commit/1e0b7772837402966cabc9d9e99528d7019ba524))
+
+- 📋 docs: dev docker compose changes
+  ([`27236e5`](https://github.com/thiesgerken/carapace/commit/27236e53f5e7546e12f99e8dfc975be72f183582))
+
 ## v0.75.2 (2026-04-11)
 
 
