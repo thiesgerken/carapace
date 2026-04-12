@@ -1,8 +1,32 @@
 # CHANGELOG
 
 
+## v0.76.1 (2026-04-12)
+
+
+### Other
+
+
+- Merge remote-tracking branch 'refs/remotes/origin/main'
+  ([`4a8441f`](https://github.com/thiesgerken/carapace/commit/4a8441f28acce8084a4ede693c48d4c409a273c0))
+
 ## v0.76.0 (2026-04-12)
 
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix: mock mark_credential_notified in sandbox credentials audit test
+  ([`425b342`](https://github.com/thiesgerken/carapace/commit/425b342195da7b7b97bb5e2fbf49c7b17ab547d9))
+
+  The MagicMock default (truthy) caused the credential notify suppress callback to skip logging, making the test always fail.
+
+- 🐛 fix: serialize sentinel evaluations and gate title generation behind LLM semaphore
+  ([`1d9a2e6`](https://github.com/thiesgerken/carapace/commit/1d9a2e61f248704718811be3680f8188b2998aae))
+
+  Add asyncio.Lock to Sentinel so concurrent tool calls are evaluated one at a time, preventing LLM flooding and _message_history races.
+
+  Gate _generate_title behind _llm_semaphore so fire-and-forget title generation doesn't overlap with agent turns.
 
 ### ✨ Features
 
