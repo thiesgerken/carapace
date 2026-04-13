@@ -183,6 +183,101 @@ def test_file_comments_and_blanks(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
+# FileVaultBackend YAML tests
+# ---------------------------------------------------------------------------
+
+
+def _write_yaml(tmp_path: Path, content: str) -> Path:
+    p = tmp_path / "secrets.yaml"
+    p.write_text(content)
+    return p
+
+
+@pytest.fixture()
+def yaml_backend(tmp_path: Path) -> FileVaultBackend:
+    path = _write_yaml(
+        tmp_path,
+        "- id: gmail\n  name: Gmail App Password\n  value: myapppassword\n"
+        "- id: github-token\n  name: GitHub API Token\n  value: ghp_xxx\n"
+        "- id: ssh-key\n  value: secretkey\n",
+    )
+    return FileVaultBackend(name="dev", path=path, cfg=FileCredentialBackendConfig())
+
+
+@pytest.mark.asyncio
+async def test_yaml_fetch(yaml_backend: FileVaultBackend) -> None:
+    assert await yaml_backend.fetch("gmail") == "myapppassword"
+
+
+@pytest.mark.asyncio
+async def test_yaml_fetch_missing(yaml_backend: FileVaultBackend) -> None:
+    with pytest.raises(KeyError):
+        await yaml_backend.fetch("nonexistent")
+
+
+@pytest.mark.asyncio
+async def test_yaml_fetch_metadata_with_name(yaml_backend: FileVaultBackend) -> None:
+    meta = await yaml_backend.fetch_metadata("gmail")
+    assert meta.vault_path == "dev/gmail"
+    assert meta.name == "Gmail App Password"
+
+
+@pytest.mark.asyncio
+async def test_yaml_fetch_metadata_without_name(yaml_backend: FileVaultBackend) -> None:
+    meta = await yaml_backend.fetch_metadata("ssh-key")
+    assert meta.vault_path == "dev/ssh-key"
+    assert meta.name == "ssh-key"
+
+
+@pytest.mark.asyncio
+async def test_yaml_list_all(yaml_backend: FileVaultBackend) -> None:
+    items = await yaml_backend.list()
+    assert len(items) == 3
+    paths = {i.vault_path for i in items}
+    assert paths == {"dev/gmail", "dev/github-token", "dev/ssh-key"}
+    names = {i.name for i in items}
+    assert "Gmail App Password" in names
+    assert "GitHub API Token" in names
+
+
+@pytest.mark.asyncio
+async def test_yaml_list_query_matches_name(yaml_backend: FileVaultBackend) -> None:
+    items = await yaml_backend.list("Gmail")
+    assert len(items) == 1
+    assert items[0].name == "Gmail App Password"
+
+
+@pytest.mark.asyncio
+async def test_yaml_list_query_matches_id(yaml_backend: FileVaultBackend) -> None:
+    items = await yaml_backend.list("github")
+    assert len(items) == 1
+    assert items[0].name == "GitHub API Token"
+
+
+@pytest.mark.asyncio
+async def test_yaml_exposure_filter(tmp_path: Path) -> None:
+    path = _write_yaml(
+        tmp_path,
+        "- id: gmail\n  name: Gmail\n  value: pw\n- id: banking\n  name: Banking Secret\n  value: secret\n",
+    )
+    backend = FileVaultBackend(name="dev", path=path, cfg=FileCredentialBackendConfig(hide=["banking"]))
+    items = await backend.list()
+    assert len(items) == 1
+    assert items[0].name == "Gmail"
+
+
+def test_yaml_missing_file(tmp_path: Path) -> None:
+    backend = FileVaultBackend(name="dev", path=tmp_path / "missing.yaml", cfg=FileCredentialBackendConfig())
+    assert backend._secrets == {}
+
+
+def test_yaml_invalid_structure(tmp_path: Path) -> None:
+    path = _write_yaml(tmp_path, "key: value\n")
+    backend = FileVaultBackend(name="dev", path=path, cfg=FileCredentialBackendConfig())
+    assert len(backend._secrets) == 0
+
+
+# ---------------------------------------------------------------------------
 # CredentialRegistry tests
 # ---------------------------------------------------------------------------
 
