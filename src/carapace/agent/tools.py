@@ -350,6 +350,16 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
         declared_creds = carapace_cfg.credentials if carapace_cfg else []
         declared_creds_payload = [decl.model_dump(mode="json") for decl in declared_creds]
 
+        # Resolve human-readable names from the vault for UI display
+        cred_registry = ctx.deps.credential_registry
+        for entry in declared_creds_payload:
+            vp = entry.get("vault_path", "")
+            try:
+                meta = await cred_registry.fetch_metadata(vp)
+                entry["name"] = meta.name
+            except Exception:
+                entry["name"] = vp
+
         if not ctx.tool_call_approved:
             gate_args: dict[str, Any] = {
                 "skill_name": skill_name,

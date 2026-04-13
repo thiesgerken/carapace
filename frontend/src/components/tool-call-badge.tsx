@@ -225,6 +225,20 @@ function formatUseSkillResult(result: string): string {
   );
 }
 
+/** Split use_skill result into status lines and instructions body. */
+function splitUseSkillResult(result: string): {
+  status: string;
+  instructions: string;
+} {
+  const marker = "\n\nInstructions:\n\n";
+  const idx = result.indexOf(marker);
+  if (idx === -1) return { status: result, instructions: "" };
+  return {
+    status: result.slice(0, idx),
+    instructions: result.slice(idx + marker.length),
+  };
+}
+
 function buildUnifiedDiff(oldText: string, newText: string): string {
   const changes = diffLines(oldText, newText);
   const lines: string[] = [];
@@ -327,6 +341,7 @@ export function ToolCallBadge({
   loading,
 }: ToolCallBadgeProps) {
   const [open, setOpen] = useState(false);
+  const [skillInstructionsOpen, setSkillInstructionsOpen] = useState(false);
   void _detail;
   const source = approvalSource;
   const verdict = approvalVerdict ?? "allow";
@@ -354,6 +369,13 @@ export function ToolCallBadge({
     ? buildShellTranscript(execCommand, result)
     : "";
   const useSkillName = isUseSkillTool ? getUseSkillName(args) : "";
+  const useSkillSplit =
+    isUseSkillTool && result != null ? splitUseSkillResult(result) : null;
+  const useSkillStatus = useSkillSplit?.status ?? "";
+  const useSkillInstructions =
+    useSkillSplit?.instructions
+      ? formatUseSkillResult(useSkillSplit.instructions)
+      : "";
   const useSkillResult =
     isUseSkillTool && result != null ? formatUseSkillResult(result) : "";
   const writePath = isWriteTool ? stringArg(args, "path") : "";
@@ -479,8 +501,18 @@ export function ToolCallBadge({
 
       {open && (
         <div className="ml-5 mt-1.5 rounded-lg border border-border/60 bg-muted/30 p-3 space-y-2 text-xs">
+          {isUseSkillTool && (
+            <div className="text-muted-foreground">
+              Agent wants to activate the{" "}
+              <span className="font-mono text-foreground/85">
+                {useSkillName}
+              </span>{" "}
+              skill.
+            </div>
+          )}
+
           {explanation && (
-            <div className="text-muted-foreground leading-relaxed">
+            <div className="text-[11px] text-muted-foreground leading-relaxed">
               <span className="font-medium text-foreground/70">Sentinel: </span>
               {explanation}
             </div>
@@ -513,42 +545,87 @@ export function ToolCallBadge({
               </div>
             </>
           ) : isUseSkillTool ? (
-            <>
-              <div className="text-muted-foreground">
-                Agent wants to activate the{" "}
-                <span className="font-mono text-foreground/85">
-                  {useSkillName}
-                </span>{" "}
-                skill.
-              </div>
+            <div className="space-y-3">
 
-              {Array.isArray(args.requested_domains) && args.requested_domains.length > 0 && (
-                <div className="text-[11px] text-muted-foreground">
-                  <span className="font-medium text-foreground/70">Domains: </span>
-                  {(args.requested_domains as string[]).map((d, i) => (
-                    <span key={d}>
-                      {i > 0 && ", "}
-                      <span className="font-mono">{d}</span>
-                    </span>
-                  ))}
+              {(() => {
+                const domains = (
+                  Array.isArray(args.declared_domains) ? args.declared_domains : []
+                ) as string[];
+                return domains.length > 0 ? (
+                  <div className="text-[11px] text-muted-foreground">
+                    <span className="font-medium text-foreground/70">Domains: </span>
+                    {domains.map((d, i) => (
+                      <span key={d}>
+                        {i > 0 && ", "}
+                        <span className="font-mono">{d}</span>
+                      </span>
+                    ))}
+                  </div>
+                ) : null;
+              })()}
+
+              {(() => {
+                const creds = (
+                  Array.isArray(args.declared_creds) ? args.declared_creds : []
+                ) as Array<{ vault_path: string; name?: string; description?: string }>;
+                return creds.length > 0 ? (
+                  <div>
+                    <div className="text-[11px] font-medium text-foreground/70 mb-1">Credentials</div>
+                    <table className="text-[11px] w-full border-collapse">
+                      <thead>
+                        <tr className="text-left text-muted-foreground/70">
+                          <th className="font-medium pr-3 pb-0.5">Name</th>
+                          <th className="font-medium pr-3 pb-0.5">Path</th>
+                          <th className="font-medium pb-0.5">Description</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {creds.map((c) => (
+                          <tr key={c.vault_path} className="text-muted-foreground">
+                            <td className="pr-3 py-0.5 font-mono text-foreground/85">{c.name || c.vault_path}</td>
+                            <td className="pr-3 py-0.5 font-mono text-muted-foreground/70">{c.name ? c.vault_path : ""}</td>
+                            <td className="py-0.5">{c.description ?? ""}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : null;
+              })()}
+
+              {useSkillStatus && (
+                <div>
+                  <div className="text-[11px] font-medium text-foreground/70 mb-1">Activation</div>
+                  <div className="text-[11px] text-muted-foreground whitespace-pre-wrap">
+                    {useSkillStatus}
+                  </div>
                 </div>
               )}
 
-              {Array.isArray(args.declared_creds) && args.declared_creds.length > 0 && (
-                <div className="text-[11px] text-muted-foreground">
-                  <span className="font-medium text-foreground/70">Credentials: </span>
-                  {(args.declared_creds as Array<{ vault_path: string; name?: string; description?: string }>).map((c, i) => (
-                    <span key={c.vault_path}>
-                      {i > 0 && ", "}
-                      <span className="font-mono">{c.name || c.vault_path}</span>
-                      {c.name && <span className="text-muted-foreground/70"> ({c.vault_path})</span>}
-                      {c.description && <span className="text-muted-foreground/70"> {c.description}</span>}
-                    </span>
-                  ))}
+              {useSkillInstructions && (
+                <div className="rounded-md border border-border/40 overflow-hidden">
+                  <button
+                    type="button"
+                    onClick={() => setSkillInstructionsOpen(!skillInstructionsOpen)}
+                    className="flex w-full items-center gap-1.5 px-2.5 py-1.5 text-xs text-left hover:bg-accent/50 transition-colors"
+                  >
+                    <ChevronRight
+                      className={cn(
+                        "h-3 w-3 shrink-0 transition-transform",
+                        skillInstructionsOpen && "rotate-90",
+                      )}
+                    />
+                    <span className="font-medium text-foreground/70">Skill Instructions</span>
+                  </button>
+                  {skillInstructionsOpen && (
+                    <div className="border-t border-border/40">
+                      <MarkdownContent content={useSkillInstructions} />
+                    </div>
+                  )}
                 </div>
               )}
 
-              {result != null && (
+              {result != null && !useSkillSplit && (
                 <div
                   className={cn(
                     "rounded-md border overflow-hidden",
@@ -560,7 +637,7 @@ export function ToolCallBadge({
                   <MarkdownContent content={useSkillResult} />
                 </div>
               )}
-            </>
+            </div>
           ) : isReadTool && readSplit?.hasSplit ? (
             <>
               <div
