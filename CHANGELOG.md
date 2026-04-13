@@ -1,8 +1,38 @@
 # CHANGELOG
 
 
+## v0.83.0 (2026-04-13)
+
+
+### Other
+
+
+- more small improvements to tool call badge
+  ([`b62f1ed`](https://github.com/thiesgerken/carapace/commit/b62f1ed8e88bf4b5f4f1460924e8867ef8c47629))
+
+- Merge remote-tracking branch 'refs/remotes/origin/main'
+  ([`138a9f5`](https://github.com/thiesgerken/carapace/commit/138a9f5d1b83d7beccd523cf8ad569cbeba936dc))
+
+### ✨ Features
+
+
+- ✨ feat: improve skill activation display
+  ([`731ca74`](https://github.com/thiesgerken/carapace/commit/731ca746635a32015a96319acf370fc750c9f977))
+
+- ✨ feat: support yaml secret files
+  ([`cfed72c`](https://github.com/thiesgerken/carapace/commit/cfed72cd429d9f7d1dcc8935529a904a2e854bfd))
+
+- ✨ feat: show credential names in UI
+  ([`b9d6191`](https://github.com/thiesgerken/carapace/commit/b9d619151b39ca865fe6cc2532ea3bebd3cd358d))
+
 ## v0.82.1 (2026-04-12)
 
+
+### Other
+
+
+- todo
+  ([`ace8b98`](https://github.com/thiesgerken/carapace/commit/ace8b9803f963ffea472a70b96f5af4b58ddbe35))
 
 ### 🐛 Bug Fixes
 
