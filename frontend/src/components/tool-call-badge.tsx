@@ -256,9 +256,11 @@ function buildUnifiedDiff(oldText: string, newText: string): string {
 function ApprovalBadge({
   source,
   verdict,
+  tooltip,
 }: {
   source: ApprovalSource;
   verdict: ApprovalVerdict;
+  tooltip?: string;
 }) {
   if (source === "safe-list") {
     return (
@@ -282,6 +284,7 @@ function ApprovalBadge({
           "inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium",
           colorClass,
         )}
+        title={tooltip || undefined}
       >
         <ShieldAlert className="h-2.5 w-2.5" />
         sentinel
@@ -491,8 +494,32 @@ export function ToolCallBadge({
             {argsSummary}
           </span>
         ) : null}
-        <span className="ml-auto inline-flex shrink-0 items-center gap-1">
-          {source && <ApprovalBadge source={source} verdict={verdict} />}
+        <span className="ml-auto inline-flex shrink-0 items-center gap-1.5">
+          {isUseSkillTool && (() => {
+            const domainCount = Array.isArray(args.declared_domains) ? args.declared_domains.length : 0;
+            const credCount = Array.isArray(args.declared_creds) ? args.declared_creds.length : 0;
+            return (
+              <>
+                {credCount > 0 && (
+                  <span
+                    className="inline-flex items-center gap-0.5 rounded bg-blue-500/15 px-1.5 py-0.5 text-[10px] text-blue-600 dark:text-blue-400"
+                    title={(args.declared_creds as Array<{ vault_path: string; name?: string }>).map(c => c.name || c.vault_path).join("\n")}
+                  >
+                    <KeyRound className="h-2.5 w-2.5" />{credCount}
+                  </span>
+                )}
+                {domainCount > 0 && (
+                  <span
+                    className="inline-flex items-center gap-0.5 rounded bg-blue-500/15 px-1.5 py-0.5 text-[10px] text-blue-600 dark:text-blue-400"
+                    title={(args.declared_domains as string[]).join("\n")}
+                  >
+                    <Globe className="h-2.5 w-2.5" />{domainCount}
+                  </span>
+                )}
+              </>
+            );
+          })()}
+          {source && <ApprovalBadge source={source} verdict={verdict} tooltip={explanation || undefined} />}
           {loading && (
             <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
           )}
@@ -513,7 +540,7 @@ export function ToolCallBadge({
 
           {explanation && (
             <div className="text-[11px] text-muted-foreground leading-relaxed">
-              <span className="font-medium text-foreground/70">Sentinel: </span>
+              <span className="font-medium text-foreground/70"><ShieldCheck className="inline h-3 w-3 -translate-y-px mr-1" />Sentinel: </span>
               {explanation}
             </div>
           )}
@@ -553,7 +580,7 @@ export function ToolCallBadge({
                 ) as string[];
                 return domains.length > 0 ? (
                   <div className="text-[11px] text-muted-foreground">
-                    <span className="font-medium text-foreground/70">Domains: </span>
+                    <span className="font-medium text-foreground/70"><Globe className="inline h-3 w-3 -translate-y-px mr-1" />Domains: </span>
                     {domains.map((d, i) => (
                       <span key={d}>
                         {i > 0 && ", "}
@@ -570,7 +597,7 @@ export function ToolCallBadge({
                 ) as Array<{ vault_path: string; name?: string; description?: string }>;
                 return creds.length > 0 ? (
                   <div>
-                    <div className="text-[11px] font-medium text-foreground/70 mb-1">Credentials</div>
+                    <div className="text-[11px] font-medium text-foreground/70 mb-1"><KeyRound className="inline h-3 w-3 -translate-y-px mr-1" />Credentials</div>
                     <table className="text-[11px] w-full border-collapse">
                       <thead>
                         <tr className="text-left text-muted-foreground/70">
@@ -595,7 +622,7 @@ export function ToolCallBadge({
 
               {useSkillStatus && (
                 <div>
-                  <div className="text-[11px] font-medium text-foreground/70 mb-1">Activation</div>
+                  <div className="text-[11px] font-medium text-foreground/70 mb-1"><Zap className="inline h-3 w-3 -translate-y-px mr-1" />Activation</div>
                   <div className="text-[11px] text-muted-foreground whitespace-pre-wrap">
                     {useSkillStatus}
                   </div>
