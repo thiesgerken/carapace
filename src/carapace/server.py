@@ -683,6 +683,7 @@ class WebSocketSubscriber:
     async def on_credential_info(
         self,
         vault_path: str,
+        name: str,
         detail: str,
         approval_source: ApprovalSource | None = None,
         approval_verdict: ApprovalVerdict | None = None,
@@ -691,7 +692,7 @@ class WebSocketSubscriber:
         await self._safe_send(
             ToolCallInfo(
                 tool="credential_access",
-                args={"vault_path": vault_path},
+                args={"vault_path": vault_path, "name": name},
                 detail=detail,
                 approval_source=approval_source,
                 approval_verdict=approval_verdict,
@@ -1062,9 +1063,11 @@ async def list_credentials(request: Request, q: str = "") -> list[dict[str, str]
 
     items = await _credential_registry.list(q)
     paths = [i.vault_path for i in items]
+    names = [i.name for i in items]
     explanation = f"Sandbox listed credential metadata (query={q!r}, {len(paths)} item(s))"
     active.security.record_credential_access(
         vault_paths=paths,
+        names=names,
         decision="approved",
         explanation=explanation,
         ui_label=f"[sandbox: list metadata] {explanation}",
@@ -1114,6 +1117,7 @@ async def fetch_credential(request: Request, vault_path: str) -> Response:
         explanation = "skill-declared credential under active context"
         active.security.record_credential_access(
             vault_paths=[vault_path],
+            names=[meta.name],
             decision="approved",
             explanation=explanation,
             ui_label=f"[skill] {meta.name}",

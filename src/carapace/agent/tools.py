@@ -143,17 +143,18 @@ async def _cache_skill_credentials(
     ctx: RunContext[Deps],
     cred_decls: list[SkillCredentialDecl],
     skill_name: str,
-) -> str:
+) -> tuple[str, dict[str, str]]:
     """Fetch declared skill credentials and cache them for per-exec injection.
 
     Values are stored in ``SandboxManager._credential_cache`` — **not** in
     ``session_env``.  They will be injected (env vars) or written (files) only
     for ``exec`` calls that carry a matching context.
 
-    Returns a human-readable summary for the agent (never includes values).
+    Returns a human-readable summary for the agent (never includes values) and
+    a mapping of vault_path → human-readable name for UI display.
     """
     if not cred_decls:
-        return ""
+        return "", {}
 
     cred_registry = ctx.deps.credential_registry
     session_id = ctx.deps.session_state.session_id
@@ -233,7 +234,8 @@ async def _cache_skill_credentials(
         parts.append("Credential vault unavailable for some declarations (not cached): " + "; ".join(meta_errors))
     if fetch_errors:
         parts.append("Credential errors: " + "; ".join(fetch_errors))
-    return "\n".join(parts)
+    names_map = {m.vault_path: m.name for m in metas}
+    return "\n".join(parts), names_map
 
 
 def build_system_prompt(deps: Deps) -> str:
@@ -390,7 +392,8 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
         )
 
         # Cache credential values for per-exec injection
-        cred_msg = await _cache_skill_credentials(ctx, declared_creds, skill_name)
+        cred_msg, cred_names = await _cache_skill_credentials(ctx, declared_creds, skill_name)
+        grant.credential_names = cred_names
 
         ctx.deps.activated_skills.append(skill_name)
         if skill_name not in ctx.deps.session_state.activated_skills:
@@ -606,9 +609,13 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
 
         def _notify_injected_skill_creds() -> None:
             for ctx_name, vp in injected_creds:
+                grant = grants[ctx_name]
+                cred_name = grant.credential_names.get(vp, "")
+                display = cred_name or vp
                 ctx.deps.security.notify_credential_decision(
                     vp,
-                    f"[skill] {vp}",
+                    f"[skill] {display}",
+                    name=cred_name,
                     approval_source="skill",
                     approval_verdict="allow",
                     approval_explanation=f"skill-declared credential ({ctx_name})",

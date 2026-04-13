@@ -129,6 +129,7 @@ class SessionSubscriber(Protocol):
     async def on_credential_info(
         self,
         vault_path: str,
+        name: str,
         detail: str,
         approval_source: ApprovalSource | None = None,
         approval_verdict: ApprovalVerdict | None = None,
@@ -1377,6 +1378,7 @@ class SessionEngine:
         [
             str,
             str,
+            str,
             ApprovalSource | None,
             ApprovalVerdict | None,
             str | None,
@@ -1388,6 +1390,7 @@ class SessionEngine:
 
         def _notify(
             vault_path: str,
+            name: str,
             detail: str,
             approval_source: ApprovalSource | None = None,
             approval_verdict: ApprovalVerdict | None = None,
@@ -1399,7 +1402,7 @@ class SessionEngine:
                     {
                         "role": "tool_call",
                         "tool": "credential_access",
-                        "args": {"vault_path": vault_path},
+                        "args": {"vault_path": vault_path, "name": name},
                         "detail": detail,
                         "approval_source": approval_source,
                         "approval_verdict": approval_verdict,
@@ -1412,6 +1415,7 @@ class SessionEngine:
                     active,
                     "on_credential_info",
                     vault_path,
+                    name,
                     detail,
                     approval_source,
                     approval_verdict,

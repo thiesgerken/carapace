@@ -158,7 +158,8 @@ function formatStrReplaceSummary(args: Record<string, unknown>): string {
 function formatCredentialAccessSummary(args: Record<string, unknown>): string {
   const vaultPath = stringArg(args, "vault_path");
   if (!vaultPath || vaultPath === "<list>") return "";
-  return vaultPath;
+  const name = stringArg(args, "name");
+  return name || vaultPath;
 }
 
 function formatProxyDomainSummary(args: Record<string, unknown>): string {
@@ -533,14 +534,15 @@ export function ToolCallBadge({
                 </div>
               )}
 
-              {Array.isArray(args.requested_creds) && args.requested_creds.length > 0 && (
+              {Array.isArray(args.declared_creds) && args.declared_creds.length > 0 && (
                 <div className="text-[11px] text-muted-foreground">
                   <span className="font-medium text-foreground/70">Credentials: </span>
-                  {(args.requested_creds as Array<{ vault_path: string; description?: string }>).map((c, i) => (
+                  {(args.declared_creds as Array<{ vault_path: string; name?: string; description?: string }>).map((c, i) => (
                     <span key={c.vault_path}>
                       {i > 0 && ", "}
-                      <span className="font-mono">{c.vault_path}</span>
-                      {c.description && <span className="text-muted-foreground/70"> ({c.description})</span>}
+                      <span className="font-mono">{c.name || c.vault_path}</span>
+                      {c.name && <span className="text-muted-foreground/70"> ({c.vault_path})</span>}
+                      {c.description && <span className="text-muted-foreground/70"> {c.description}</span>}
                     </span>
                   ))}
                 </div>

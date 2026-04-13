@@ -178,6 +178,7 @@ class MatrixSubscriber:
     async def on_credential_info(
         self,
         vault_path: str,
+        name: str,
         detail: str,
         approval_source: str | None = None,
         approval_verdict: str | None = None,
@@ -185,7 +186,8 @@ class MatrixSubscriber:
     ) -> None:
         logger.debug(f"Matrix [{self._room_id}] credential: {vault_path} {detail}")
         if self._channel._verbose.get(self._room_id, True):
-            notice = f"🔑 `{vault_path}` {detail}"
+            display = name or vault_path
+            notice = f"🔑 `{display}` {detail}"
             await self._channel._send_notice(self._room_id, notice)
 
     async def on_credential_approval_request(

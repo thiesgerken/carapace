@@ -410,6 +410,7 @@ class ContextGrant(BaseModel):
     skill_name: str
     domains: set[str] = set()
     credential_decls: list[SkillCredentialDecl] = []
+    credential_names: dict[str, str] = {}  # vault_path → human-readable name
 
     @property
     def vault_paths(self) -> set[str]:

@@ -176,7 +176,7 @@ class SessionSecurity:
             Callable[[str, str, str, ApprovalSource | None, ApprovalVerdict | None, str | None], Awaitable[None]] | None
         ) = None
         self._credential_info_callback: (
-            Callable[[str, str, ApprovalSource | None, ApprovalVerdict | None, str | None], None] | None
+            Callable[[str, str, str, ApprovalSource | None, ApprovalVerdict | None, str | None], None] | None
         ) = None
         self._credential_notify_suppress: Callable[[str], bool] | None = None
 
@@ -275,11 +275,11 @@ class SessionSecurity:
 
     def set_credential_info_callback(
         self,
-        callback: Callable[[str, str, ApprovalSource | None, ApprovalVerdict | None, str | None], None] | None,
+        callback: Callable[[str, str, str, ApprovalSource | None, ApprovalVerdict | None, str | None], None] | None,
     ) -> None:
         """Set callback to notify the UI about credential access decisions.
 
-        Signature: ``callback(vault_path, detail, approval_source, approval_verdict, approval_explanation)``.
+        Signature: ``callback(vault_path, name, detail, approval_source, approval_verdict, approval_explanation)``.
         """
         self._credential_info_callback = callback
 
@@ -301,29 +301,48 @@ class SessionSecurity:
         self,
         vault_path: str,
         detail: str,
+        *,
+        name: str = "",
         approval_source: ApprovalSource | None = None,
         approval_verdict: ApprovalVerdict | None = None,
         approval_explanation: str | None = None,
     ) -> None:
         if self._credential_info_callback is not None:
-            self._credential_info_callback(vault_path, detail, approval_source, approval_verdict, approval_explanation)
+            self._credential_info_callback(
+                vault_path,
+                name,
+                detail,
+                approval_source,
+                approval_verdict,
+                approval_explanation,
+            )
 
     def notify_credential_decision(
         self,
         vault_path: str,
         detail: str,
+        *,
+        name: str = "",
         approval_source: ApprovalSource | None = None,
         approval_verdict: ApprovalVerdict | None = None,
         approval_explanation: str | None = None,
     ) -> None:
         if self._credential_notify_suppress is not None and self._credential_notify_suppress(vault_path):
             return
-        self._emit_credential_ui(vault_path, detail, approval_source, approval_verdict, approval_explanation)
+        self._emit_credential_ui(
+            vault_path,
+            detail,
+            name=name,
+            approval_source=approval_source,
+            approval_verdict=approval_verdict,
+            approval_explanation=approval_explanation,
+        )
 
     def record_credential_access(
         self,
         *,
         vault_paths: list[str],
+        names: list[str] | None = None,
         decision: Literal["approved", "escalated", "denied"],
         explanation: str,
         ui_label: str,
@@ -347,9 +366,11 @@ class SessionSecurity:
                 explanation=explanation,
             ),
         )
+        display_name = names[0] if names and len(names) == 1 else ""
         self._emit_credential_ui(
             display_path,
             ui_label,
+            name=display_name,
             approval_source=approval_source,
             approval_verdict=approval_verdict,
             approval_explanation=explanation,
