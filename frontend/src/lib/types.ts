@@ -44,6 +44,8 @@ export interface HistoryMessage {
   names?: string[];
   descriptions?: string[];
   skill_name?: string;
+  tool_id?: string;
+  parent_tool_id?: string;
 }
 
 // WebSocket protocol — Server → Client
