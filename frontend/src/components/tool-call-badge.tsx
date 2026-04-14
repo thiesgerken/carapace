@@ -13,7 +13,7 @@ import {
   Replace,
   ShieldAlert,
   ShieldCheck,
-  Terminal,
+  SquareTerminal,
   UserCheck,
   Zap,
 } from "lucide-react";
@@ -38,13 +38,14 @@ interface ToolCallBadgeProps {
   result?: string;
   exitCode?: number;
   loading?: boolean;
+  children?: ToolCallBadgeProps[];
 }
 
 type ApprovalSource = "safe-list" | "sentinel" | "user" | "skill" | "bypass" | "unknown";
 type ApprovalVerdict = "allow" | "deny" | "escalate";
 
 const TOOL_ICONS: Record<string, LucideIcon> = {
-  exec: Terminal,
+  exec: SquareTerminal,
   read: FileText,
   write: FilePen,
   str_replace: Replace,
@@ -342,6 +343,7 @@ export function ToolCallBadge({
   result,
   exitCode,
   loading,
+  children,
 }: ToolCallBadgeProps) {
   const [open, setOpen] = useState(false);
   const [skillInstructionsOpen, setSkillInstructionsOpen] = useState(false);
@@ -468,7 +470,6 @@ export function ToolCallBadge({
           "flex w-full min-w-0 items-center gap-1.5 rounded-md px-2 py-1 text-xs text-left",
           "bg-muted/60 text-muted-foreground",
           "hover:bg-accent transition-colors",
-          isAuxiliaryTool && "ml-4 w-[calc(100%-1rem)] bg-muted/40",
         )}
       >
         <ChevronRight
@@ -495,15 +496,35 @@ export function ToolCallBadge({
           </span>
         ) : null}
         <span className="ml-auto inline-flex shrink-0 items-center gap-1.5">
-          {isUseSkillTool && (() => {
-            const domainCount = Array.isArray(args.declared_domains) ? args.declared_domains.length : 0;
-            const credCount = Array.isArray(args.declared_creds) ? args.declared_creds.length : 0;
+          {(() => {
+            // Count credentials: from use_skill declared_creds + child credential_access events
+            const declaredCredCount = isUseSkillTool && Array.isArray(args.declared_creds)
+              ? args.declared_creds.length : 0;
+            const childCredCount = children?.filter(c => c.tool === "credential_access").length ?? 0;
+            const credCount = declaredCredCount || childCredCount;
+            const credTooltip = isUseSkillTool && Array.isArray(args.declared_creds)
+              ? (args.declared_creds as Array<{ vault_path: string; name?: string }>).map(c => c.name || c.vault_path).join("\n")
+              : children?.filter(c => c.tool === "credential_access").map(c => {
+                  const name = c.args.name as string | undefined;
+                  const vp = c.args.vault_path as string | undefined;
+                  return name || vp || "credential";
+                }).join("\n") ?? "";
+
+            // Count domains: from use_skill declared_domains + child proxy_domain events
+            const declaredDomainCount = isUseSkillTool && Array.isArray(args.declared_domains)
+              ? args.declared_domains.length : 0;
+            const childDomainCount = children?.filter(c => c.tool === "proxy_domain").length ?? 0;
+            const domainCount = declaredDomainCount || childDomainCount;
+            const domainTooltip = isUseSkillTool && Array.isArray(args.declared_domains)
+              ? (args.declared_domains as string[]).join("\n")
+              : children?.filter(c => c.tool === "proxy_domain").map(c => c.args.domain as string ?? "").join("\n") ?? "";
+
             return (
               <>
                 {credCount > 0 && (
                   <span
                     className="inline-flex items-center gap-0.5 rounded bg-blue-500/15 px-1.5 py-0.5 text-[10px] text-blue-600 dark:text-blue-400"
-                    title={(args.declared_creds as Array<{ vault_path: string; name?: string }>).map(c => c.name || c.vault_path).join("\n")}
+                    title={credTooltip}
                   >
                     <KeyRound className="h-2.5 w-2.5" />{credCount}
                   </span>
@@ -511,7 +532,7 @@ export function ToolCallBadge({
                 {domainCount > 0 && (
                   <span
                     className="inline-flex items-center gap-0.5 rounded bg-blue-500/15 px-1.5 py-0.5 text-[10px] text-blue-600 dark:text-blue-400"
-                    title={(args.declared_domains as string[]).join("\n")}
+                    title={domainTooltip}
                   >
                     <Globe className="h-2.5 w-2.5" />{domainCount}
                   </span>
@@ -793,6 +814,14 @@ export function ToolCallBadge({
                 </details>
               )}
             </>
+          )}
+
+          {children && children.length > 0 && (
+            <div className="space-y-1">
+              {children.map((child, i) => (
+                <ToolCallBadge key={child.tool + i} {...child} />
+              ))}
+            </div>
           )}
         </div>
       )}

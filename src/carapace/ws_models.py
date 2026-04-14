@@ -107,6 +107,8 @@ class ToolCallInfo(BaseModel):
     approval_source: ApprovalSource | None = None
     approval_verdict: ApprovalVerdict | None = None
     approval_explanation: str | None = None
+    tool_id: str | None = None
+    parent_tool_id: str | None = None
 
 
 class ToolResultInfo(BaseModel):

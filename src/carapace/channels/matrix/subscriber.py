@@ -76,6 +76,8 @@ class MatrixSubscriber:
         approval_source: str | None = None,
         approval_verdict: str | None = None,
         approval_explanation: str | None = None,
+        tool_id: str | None = None,
+        parent_tool_id: str | None = None,
     ) -> None:
         logger.debug(f"Matrix [{self._room_id}] tool call: {tool}({args}) — {detail}")
         if self._channel._verbose.get(self._room_id, True):
@@ -183,6 +185,7 @@ class MatrixSubscriber:
         approval_source: str | None = None,
         approval_verdict: str | None = None,
         approval_explanation: str | None = None,
+        parent_tool_id: str | None = None,
     ) -> None:
         logger.debug(f"Matrix [{self._room_id}] credential: {vault_path} {detail}")
         if self._channel._verbose.get(self._room_id, True):
@@ -228,6 +231,7 @@ class MatrixSubscriber:
         approval_source: str | None = None,
         approval_verdict: str | None = None,
         approval_explanation: str | None = None,
+        parent_tool_id: str | None = None,
     ) -> None:
         logger.debug(f"Matrix [{self._room_id}] domain: {domain} {detail}")
         if self._channel._verbose.get(self._room_id, True):
@@ -242,6 +246,7 @@ class MatrixSubscriber:
         approval_source: str | None = None,
         approval_verdict: str | None = None,
         approval_explanation: str | None = None,
+        parent_tool_id: str | None = None,
     ) -> None:
         logger.debug(f"Matrix [{self._room_id}] git_push: {ref} {decision} {detail}")
         if self._channel._verbose.get(self._room_id, True):

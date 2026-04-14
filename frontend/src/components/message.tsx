@@ -181,6 +181,18 @@ export function Message({
           result={message.result}
           exitCode={message.exitCode}
           loading={message.loading}
+          children={message.children?.map((c) => ({
+            tool: c.tool,
+            args: c.args,
+            detail: c.detail,
+            contexts: c.contexts,
+            approvalSource: c.approvalSource,
+            approvalVerdict: c.approvalVerdict,
+            approvalExplanation: c.approvalExplanation,
+            result: c.result,
+            exitCode: c.exitCode,
+            loading: c.loading,
+          }))}
         />
       );
 

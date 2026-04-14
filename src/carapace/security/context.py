@@ -179,6 +179,7 @@ class SessionSecurity:
             Callable[[str, str, str, ApprovalSource | None, ApprovalVerdict | None, str | None], None] | None
         ) = None
         self._credential_notify_suppress: Callable[[str], bool] | None = None
+        self.current_parent_tool_id: str | None = None
 
     def append(self, entry: ActionLogEntry) -> None:
         self.action_log.append(entry)

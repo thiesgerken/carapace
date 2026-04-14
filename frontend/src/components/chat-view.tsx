@@ -100,6 +100,8 @@ export function ChatView({
               approvalSource: h.approval_source,
               approvalVerdict: h.approval_verdict,
               approvalExplanation: h.approval_explanation,
+              toolId: h.tool_id as string | undefined,
+              parentToolId: h.parent_tool_id as string | undefined,
             });
             const toolName = h.tool ?? "";
             const idx = msgs.length - 1;
@@ -227,6 +229,8 @@ export function ChatView({
               approvalSource: h.approval_source,
               approvalVerdict: h.approval_verdict,
               approvalExplanation: h.approval_explanation,
+              toolId: h.tool_id as string | undefined,
+              parentToolId: h.parent_tool_id as string | undefined,
             });
           } else if (h.role === "command") {
             msgs.push({
@@ -240,7 +244,31 @@ export function ChatView({
             msgs.push({ kind: "assistant", content: h.content });
           }
         }
-        setMessages(msgs);
+        // Group auxiliary tool calls (credential_access, proxy_domain, git_push)
+        // under their parent tool call by matching parentToolId → toolId.
+        const parentIndex = new Map<string, number>();
+        for (let i = 0; i < msgs.length; i++) {
+          const m = msgs[i];
+          if (m.kind === "tool_call" && m.toolId) {
+            parentIndex.set(m.toolId, i);
+          }
+        }
+        const childIndices = new Set<number>();
+        for (let i = 0; i < msgs.length; i++) {
+          const m = msgs[i];
+          if (m.kind !== "tool_call" || !m.parentToolId) continue;
+          const pi = parentIndex.get(m.parentToolId);
+          if (pi == null) continue;
+          const parent = msgs[pi];
+          if (parent.kind !== "tool_call") continue;
+          if (!parent.children) parent.children = [];
+          parent.children.push(m);
+          childIndices.add(i);
+        }
+        const grouped = childIndices.size > 0
+          ? msgs.filter((_, i) => !childIndices.has(i))
+          : msgs;
+        setMessages(grouped);
         setApprovalState(approvals);
       })
       .catch(() => {
@@ -325,22 +353,41 @@ export function ChatView({
             !isGitPush &&
             verdict === "allow";
           const rawContexts = msg.contexts ?? msg.args?.contexts;
-          setMessages((prev) => [
-            ...prev,
-            {
-              kind: "tool_call",
-              tool: msg.tool,
-              args: msg.args,
-              detail: msg.detail,
-              contexts: Array.isArray(rawContexts)
-                ? (rawContexts as string[])
-                : undefined,
-              approvalSource: msg.approval_source,
-              approvalVerdict: msg.approval_verdict,
-              approvalExplanation: msg.approval_explanation,
-              loading: isLoading,
-            },
-          ]);
+          const newMsg: ChatMessage = {
+            kind: "tool_call",
+            tool: msg.tool,
+            args: msg.args,
+            detail: msg.detail,
+            contexts: Array.isArray(rawContexts)
+              ? (rawContexts as string[])
+              : undefined,
+            approvalSource: msg.approval_source,
+            approvalVerdict: msg.approval_verdict,
+            approvalExplanation: msg.approval_explanation,
+            loading: isLoading,
+            toolId: msg.tool_id,
+            parentToolId: msg.parent_tool_id,
+          };
+          if (msg.parent_tool_id) {
+            // Attach to parent tool call
+            setMessages((prev) => {
+              const updated = [...prev];
+              for (let i = updated.length - 1; i >= 0; i--) {
+                const m = updated[i];
+                if (m.kind === "tool_call" && m.toolId === msg.parent_tool_id) {
+                  updated[i] = {
+                    ...m,
+                    children: [...(m.children ?? []), newMsg],
+                  };
+                  return updated;
+                }
+              }
+              // Parent not found — render top-level
+              return [...prev, newMsg];
+            });
+          } else {
+            setMessages((prev) => [...prev, newMsg]);
+          }
           if (isGitPush) finishWaiting();
           break;
         }

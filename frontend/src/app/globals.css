@@ -160,6 +160,7 @@ body {
   .md-code-block-shell
   > pre {
   font-size: 0.9rem !important;
+  max-height: 20rem;
 }
 /* Line numbers (rehype-pretty-code + showLineNumbers in meta via filterMetaString) */
 .prose .md-code-block-shell > pre code[data-line-numbers] {

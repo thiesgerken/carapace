@@ -73,6 +73,8 @@ export interface ToolCallInfo {
     | "unknown";
   approval_verdict?: "allow" | "deny" | "escalate";
   approval_explanation?: string;
+  tool_id?: string;
+  parent_tool_id?: string;
 }
 
 export interface ToolResultInfo {
@@ -249,6 +251,29 @@ export type ChatMessage =
       result?: string;
       exitCode?: number;
       loading?: boolean;
+      toolId?: string;
+      parentToolId?: string;
+      children?: Array<{
+        kind: "tool_call";
+        tool: string;
+        args: Record<string, unknown>;
+        detail: string;
+        contexts?: string[];
+        approvalSource?:
+          | "safe-list"
+          | "sentinel"
+          | "user"
+          | "skill"
+          | "bypass"
+          | "unknown";
+        approvalVerdict?: "allow" | "deny" | "escalate";
+        approvalExplanation?: string;
+        result?: string;
+        exitCode?: number;
+        loading?: boolean;
+        toolId?: string;
+        parentToolId?: string;
+      }>;
     }
   | { kind: "approval"; request: ApprovalRequest }
   | {

@@ -4,6 +4,7 @@ import asyncio
 import contextlib
 import secrets
 import traceback
+import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -96,6 +97,8 @@ class SessionSubscriber(Protocol):
         approval_source: ApprovalSource | None = None,
         approval_verdict: ApprovalVerdict | None = None,
         approval_explanation: str | None = None,
+        tool_id: str | None = None,
+        parent_tool_id: str | None = None,
     ) -> None: ...
     async def on_tool_result(self, result: ToolResult) -> None: ...
     async def on_token(self, content: str) -> None: ...
@@ -116,6 +119,7 @@ class SessionSubscriber(Protocol):
         approval_source: ApprovalSource | None = None,
         approval_verdict: ApprovalVerdict | None = None,
         approval_explanation: str | None = None,
+        parent_tool_id: str | None = None,
     ) -> None: ...
     async def on_git_push_info(
         self,
@@ -125,6 +129,7 @@ class SessionSubscriber(Protocol):
         approval_source: ApprovalSource | None = None,
         approval_verdict: ApprovalVerdict | None = None,
         approval_explanation: str | None = None,
+        parent_tool_id: str | None = None,
     ) -> None: ...
     async def on_credential_info(
         self,
@@ -134,6 +139,7 @@ class SessionSubscriber(Protocol):
         approval_source: ApprovalSource | None = None,
         approval_verdict: ApprovalVerdict | None = None,
         approval_explanation: str | None = None,
+        parent_tool_id: str | None = None,
     ) -> None: ...
     async def on_credential_approval_request(
         self,
@@ -866,6 +872,9 @@ class SessionEngine:
             approval_verdict: ApprovalVerdict | None = None,
             approval_explanation: str | None = None,
         ) -> None:
+            tool_id = str(uuid.uuid4())
+            if active.security:
+                active.security.current_parent_tool_id = tool_id
             event: dict[str, Any] = {
                 "role": "tool_call",
                 "tool": tool,
@@ -874,6 +883,7 @@ class SessionEngine:
                 "approval_source": approval_source,
                 "approval_verdict": approval_verdict,
                 "approval_explanation": approval_explanation,
+                "tool_id": tool_id,
             }
             contexts_raw = args.get("contexts")
             if isinstance(contexts_raw, list):
@@ -889,6 +899,7 @@ class SessionEngine:
                     approval_source,
                     approval_verdict,
                     approval_explanation,
+                    tool_id,
                 )
             )
             active._pending_sends.add(task)
@@ -1289,6 +1300,8 @@ class SessionEngine:
             approval_verdict: ApprovalVerdict | None = None,
             approval_explanation: str | None = None,
         ) -> None:
+            parent_id = active.security.current_parent_tool_id if active.security else None
+            tool_id = str(uuid.uuid4())
             self._session_mgr.append_events(
                 session_id,
                 [
@@ -1300,6 +1313,8 @@ class SessionEngine:
                         "approval_source": approval_source,
                         "approval_verdict": approval_verdict,
                         "approval_explanation": approval_explanation,
+                        "tool_id": tool_id,
+                        "parent_tool_id": parent_id,
                     }
                 ],
             )
@@ -1312,6 +1327,7 @@ class SessionEngine:
                     approval_source,
                     approval_verdict,
                     approval_explanation,
+                    parent_id,
                 )
             )
             active._pending_sends.add(task)
@@ -1344,6 +1360,8 @@ class SessionEngine:
             approval_verdict: ApprovalVerdict | None = None,
             approval_explanation: str | None = None,
         ) -> None:
+            parent_id = active.security.current_parent_tool_id if active.security else None
+            tool_id = str(uuid.uuid4())
             self._session_mgr.append_events(
                 session_id,
                 [
@@ -1355,6 +1373,8 @@ class SessionEngine:
                         "approval_source": approval_source,
                         "approval_verdict": approval_verdict,
                         "approval_explanation": approval_explanation,
+                        "tool_id": tool_id,
+                        "parent_tool_id": parent_id,
                     }
                 ],
             )
@@ -1367,6 +1387,7 @@ class SessionEngine:
                 approval_source,
                 approval_verdict,
                 approval_explanation,
+                parent_id,
             )
 
         return _notify
@@ -1396,6 +1417,8 @@ class SessionEngine:
             approval_verdict: ApprovalVerdict | None = None,
             approval_explanation: str | None = None,
         ) -> None:
+            parent_id = active.security.current_parent_tool_id if active.security else None
+            tool_id = str(uuid.uuid4())
             self._session_mgr.append_events(
                 session_id,
                 [
@@ -1407,6 +1430,8 @@ class SessionEngine:
                         "approval_source": approval_source,
                         "approval_verdict": approval_verdict,
                         "approval_explanation": approval_explanation,
+                        "tool_id": tool_id,
+                        "parent_tool_id": parent_id,
                     }
                 ],
             )
@@ -1420,6 +1445,7 @@ class SessionEngine:
                     approval_source,
                     approval_verdict,
                     approval_explanation,
+                    parent_id,
                 )
             )
             active._pending_sends.add(task)

@@ -490,6 +490,9 @@ class HistoryMessage(BaseModel):
     names: list[str] | None = None
     descriptions: list[str] | None = None
     skill_name: str | None = None
+    tool_id: str | None = None
+    parent_tool_id: str | None = None
+    exit_code: int | None = None
 
     @model_validator(mode="after")
     def _contexts_from_args_when_missing(self) -> Self:
@@ -592,6 +595,8 @@ class WebSocketSubscriber:
         approval_source: ApprovalSource | None = None,
         approval_verdict: ApprovalVerdict | None = None,
         approval_explanation: str | None = None,
+        tool_id: str | None = None,
+        parent_tool_id: str | None = None,
     ) -> None:
         contexts_raw = args.get("contexts")
         contexts = list(contexts_raw) if isinstance(contexts_raw, list) else []
@@ -604,6 +609,8 @@ class WebSocketSubscriber:
                 approval_source=approval_source,
                 approval_verdict=approval_verdict,
                 approval_explanation=approval_explanation,
+                tool_id=tool_id,
+                parent_tool_id=parent_tool_id,
             )
         )
 
@@ -648,6 +655,7 @@ class WebSocketSubscriber:
         approval_source: ApprovalSource | None = None,
         approval_verdict: ApprovalVerdict | None = None,
         approval_explanation: str | None = None,
+        parent_tool_id: str | None = None,
     ) -> None:
         await self._safe_send(
             ToolCallInfo(
@@ -657,6 +665,7 @@ class WebSocketSubscriber:
                 approval_source=approval_source,
                 approval_verdict=approval_verdict,
                 approval_explanation=approval_explanation,
+                parent_tool_id=parent_tool_id,
             )
         )
 
@@ -668,6 +677,7 @@ class WebSocketSubscriber:
         approval_source: ApprovalSource | None = None,
         approval_verdict: ApprovalVerdict | None = None,
         approval_explanation: str | None = None,
+        parent_tool_id: str | None = None,
     ) -> None:
         await self._safe_send(
             ToolCallInfo(
@@ -677,6 +687,7 @@ class WebSocketSubscriber:
                 approval_source=approval_source,
                 approval_verdict=approval_verdict,
                 approval_explanation=approval_explanation,
+                parent_tool_id=parent_tool_id,
             )
         )
 
@@ -688,6 +699,7 @@ class WebSocketSubscriber:
         approval_source: ApprovalSource | None = None,
         approval_verdict: ApprovalVerdict | None = None,
         approval_explanation: str | None = None,
+        parent_tool_id: str | None = None,
     ) -> None:
         await self._safe_send(
             ToolCallInfo(
@@ -697,6 +709,7 @@ class WebSocketSubscriber:
                 approval_source=approval_source,
                 approval_verdict=approval_verdict,
                 approval_explanation=approval_explanation,
+                parent_tool_id=parent_tool_id,
             )
         )
 
