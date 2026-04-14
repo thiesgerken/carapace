@@ -1,6 +1,23 @@
 # CHANGELOG
 
 
+## v0.84.0 (2026-04-14)
+
+
+### ✨ Features
+
+
+- ✨ feat: nest auxiliary tool calls under parent tool in UI
+  ([`ecb9048`](https://github.com/thiesgerken/carapace/commit/ecb9048a0e1bcf66192fd4f97a060b9233f53b06))
+
+  - Add tool_id/parent_tool_id to ToolCallInfo and HistoryMessage
+  - Track current_parent_tool_id in SessionSecurity context
+  - Generate UUIDs per tool call, thread parent ID to credential/domain/push callbacks
+  - Frontend groups child events under parent in both history and real-time
+  - Render nested auxiliary badges (credential_access, proxy_domain, git_push) inside parent
+  - Add max-height constraint to exec terminal output block
+  - Update ROADMAP (credential access entry completed)
+
 ## v0.83.0 (2026-04-13)
 
 
