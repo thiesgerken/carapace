@@ -1,6 +1,15 @@
 # CHANGELOG
 
 
+## v0.84.1 (2026-04-14)
+
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix: add missing tool_id/parent_tool_id to frontend HistoryMessage type
+  ([`ae617dd`](https://github.com/thiesgerken/carapace/commit/ae617dd6a4c5479fb39b23f2c5f722fc733f815c))
+
 ## v0.84.0 (2026-04-14)
 
 
