@@ -1,6 +1,23 @@
 # CHANGELOG
 
 
+## v0.84.2 (2026-04-15)
+
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix: re-fetch skill credentials from vault on cache miss
+  ([`78079f9`](https://github.com/thiesgerken/carapace/commit/78079f959a368a5dd29c8a9308f3194547d360c6))
+
+  After a backend restart the in-memory credential cache is empty, causing exec with skill contexts to skip credential injection. Instead of warning and giving up, re-fetch from the vault and repopulate the cache on the spot.
+
+### Other
+
+
+- 📝 docs: update carapace.yaml section in SKILL.md for clarity and optionality
+  ([`a137257`](https://github.com/thiesgerken/carapace/commit/a1372570eb522f6a7b228533e296f0043e412af7))
+
 ## v0.84.1 (2026-04-14)
 
 
