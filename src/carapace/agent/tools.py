@@ -607,8 +607,16 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
                     continue
                 cached = ctx.deps.sandbox.get_cached_credential(session_id, decl.vault_path)
                 if cached is None:
-                    missing_cached.append((ctx_name, decl.vault_path))
-                    continue
+                    # Cache miss (e.g. after backend restart) — re-fetch from vault
+                    logger.info(
+                        f"Credential cache miss for {decl.vault_path!r} (skill {ctx_name!r}), re-fetching from vault"
+                    )
+                    try:
+                        cached = await ctx.deps.credential_registry.fetch(decl.vault_path)
+                        ctx.deps.sandbox.cache_credential(session_id, decl.vault_path, cached)
+                    except Exception:
+                        missing_cached.append((ctx_name, decl.vault_path))
+                        continue
                 if decl.base64:
                     cached = base64.b64decode(cached).decode()
                 injected_creds.append((ctx_name, decl.vault_path))
