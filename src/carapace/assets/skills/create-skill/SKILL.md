@@ -82,25 +82,18 @@ Keep `SKILL.md` under 500 lines. Move detailed reference material to separate fi
 See [the API reference](references/api.md) for endpoint details.
 ```
 
-## Carapace-specific conventions
+## Carapace-specific carapace.yaml
 
-### Security rules that apply
-
-- **`skill-modification`** (always active): creating, editing, or deleting any file under `skills/` requires user approval. The user will be prompted automatically.
-- **`no-exfil-after-skill-read`**: after activating a skill (reading its instructions), outbound communication is blocked without approval. Keep this in mind -- skills may contain sensitive workflow details.
-
-### carapace.yaml (optional)
-
-Carapace reads `skills/<name>/carapace.yaml` when the agent calls `use_skill("<name>")`. It declares **which hostnames the sandbox proxy may reach** and **which vault credentials to inject** (after user approval). Omit the file if the skill needs neither.
+Optional. If present, Carapace reads `skills/<name>/carapace.yaml` when the agent calls `use_skill("<name>")`. It declares **which hostnames the sandbox proxy may reach** and **which vault credentials to inject** (after user approval). Omit the file if the skill needs neither.
 
 **Top-level keys** (all optional):
 
-| Key               | Type            | Purpose                                                                                                                                                   |
-| ----------------- | --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `network`         | object          | Must contain `domains` — not a bare list under `network`.                                                                                                 |
-| `network.domains` | list of strings | Hostnames added to the session allowlist (wildcards like `*.cdn.example.com` allowed).                                                                    |
+| Key               | Type            | Purpose                                                                                               |
+| ----------------- | --------------- | ----------------------------------------------------------------------------------------------------- |
+| `network`         | object          | Must contain `domains` — not a bare list under `network`.                                             |
+| `network.domains` | list of strings | Hostnames added to the session allowlist (wildcards like `*.cdn.example.com` allowed).                |
 | `credentials`     | list of objects | Each entry: `vault_path` (required), `description`, and either `env_var` and/or `file` for injection. Optional `base64: true` to decode before injection. |
-| `hints`           | string map      | Extra metadata for tooling (does not replace `network` / `credentials`).                                                                                  |
+| `hints`           | string map      | Extra metadata for tooling (does not replace `network` / `credentials`).                              |
 
 **Valid example** (shape matters):
 
