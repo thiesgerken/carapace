@@ -1,6 +1,15 @@
 # CHANGELOG
 
 
+## v0.84.3 (2026-04-16)
+
+
+### ⬆️ Dependencies
+
+
+- ⬆️ chore: relock backend
+  ([`839d3a7`](https://github.com/thiesgerken/carapace/commit/839d3a772ca0903914fa8bbe78622326a9cda167))
+
 ## v0.84.2 (2026-04-15)
 
 
