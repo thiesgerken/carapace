@@ -36,6 +36,14 @@ export interface HistoryMessage {
   domain?: string;
   decision?: string;
   tool_call_id?: string;
+  decision_source?:
+    | "safe-list"
+    | "sentinel"
+    | "user"
+    | "skill"
+    | "bypass"
+    | "unknown";
+  message?: string;
   explanation?: string;
   risk_level?: string;
   ref?: string;
@@ -207,6 +215,7 @@ export interface ApprovalResponse {
   type: "approval_response";
   tool_call_id: string;
   approved: boolean;
+  message?: string;
 }
 
 export type EscalationDecision = "allow" | "deny";
@@ -215,6 +224,7 @@ export interface EscalationResponse {
   type: "escalation_response";
   request_id: string;
   decision: EscalationDecision;
+  message?: string;
 }
 
 export interface CancelRequest {
@@ -250,6 +260,7 @@ export type ChatMessage =
         | "unknown";
       approvalVerdict?: "allow" | "deny" | "escalate";
       approvalExplanation?: string;
+      decisionMessage?: string;
       result?: string;
       exitCode?: number;
       loading?: boolean;
@@ -270,6 +281,7 @@ export type ChatMessage =
           | "unknown";
         approvalVerdict?: "allow" | "deny" | "escalate";
         approvalExplanation?: string;
+        decisionMessage?: string;
         result?: string;
         exitCode?: number;
         loading?: boolean;

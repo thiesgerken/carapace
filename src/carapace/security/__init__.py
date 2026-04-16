@@ -18,6 +18,8 @@ from carapace.security.context import (
     SentinelVerdict,
     SessionSecurity,
     ToolCallEntry,
+    format_denial_message,
+    normalize_optional_message,
 )
 from carapace.security.context import (
     CredentialAccessEntry as CredentialAccessEntry,
@@ -112,7 +114,7 @@ async def evaluate_with(
                 explanation=verdict.explanation,
             )
         )
-        raise SecurityDeniedError(verdict.explanation)
+        raise SecurityDeniedError(format_denial_message("sentinel", verdict.explanation))
 
     if verdict.decision == "escalate":
         raise ApprovalRequired(
@@ -161,6 +163,7 @@ async def evaluate_domain_with(
 
     allowed: bool
     final_decision: str
+    user_message: str | None = None
 
     if verdict.decision == "allow":
         allowed = True
@@ -171,12 +174,14 @@ async def evaluate_domain_with(
         final_decision = "denied"
         detail = f"[sentinel: deny] {verdict.explanation}"
     else:
-        allowed = await session.escalate_to_user(
+        user_decision = await session.escalate_to_user(
             domain,
             {"command": command, "explanation": verdict.explanation, "kind": "domain_access"},
         )
+        allowed = user_decision.allowed
+        user_message = user_decision.message
         final_decision = "allowed" if allowed else "denied"
-        detail = f"[sentinel: escalate \u2192 {final_decision}] {verdict.explanation}"
+        detail = format_denial_message("user", user_message) if not allowed else "[user: allow]"
 
     source: ApprovalSource = "sentinel" if verdict.decision != "escalate" else "user"
     approval_verdict: ApprovalVerdict = "allow" if allowed else "deny"
@@ -185,7 +190,7 @@ async def evaluate_domain_with(
         detail,
         approval_source=source,
         approval_verdict=approval_verdict,
-        approval_explanation=verdict.explanation,
+        approval_explanation=verdict.explanation if source == "sentinel" else normalize_optional_message(user_message),
     )
 
     session.write_audit(
@@ -225,6 +230,7 @@ async def evaluate_push_with(
     )
 
     decision = _verdict_to_decision(verdict)
+    user_message: str | None = None
 
     if verdict.decision == "allow":
         allowed = True
@@ -237,7 +243,7 @@ async def evaluate_push_with(
         changed_files = sorted(
             {m.group(1) for m in re.finditer(r"^\+\+\+ b/(.+)$", diff, re.MULTILINE) if m.group(1) != "/dev/null"}
         )
-        allowed = await session.escalate_to_user(
+        user_decision = await session.escalate_to_user(
             f"git push {ref}",
             {
                 "command": f"git push ({ref})",
@@ -247,8 +253,10 @@ async def evaluate_push_with(
                 "changed_files": changed_files,
             },
         )
+        allowed = user_decision.allowed
+        user_message = user_decision.message
         decision = "allowed" if allowed else "denied"
-        detail = f"[sentinel: escalate \u2192 {decision}] {verdict.explanation}"
+        detail = format_denial_message("user", user_message) if not allowed else "[user: allow]"
 
     entry = GitPushEntry(ref=ref, decision=decision, explanation=verdict.explanation)
     session.append(entry)
@@ -261,7 +269,7 @@ async def evaluate_push_with(
         detail,
         approval_source=source,
         approval_verdict=approval_verdict,
-        approval_explanation=verdict.explanation,
+        approval_explanation=verdict.explanation if source == "sentinel" else normalize_optional_message(user_message),
     )
 
     session.write_audit(
@@ -321,11 +329,13 @@ async def evaluate_credential_with(
     if verdict.decision == "allow":
         allowed = True
         detail = f"[sentinel: allow] {verdict.explanation}"
+        user_message: str | None = None
     elif verdict.decision == "deny":
         allowed = False
         detail = f"[sentinel: deny] {verdict.explanation}"
+        user_message = None
     else:
-        allowed = await session.escalate_to_user(
+        user_decision = await session.escalate_to_user(
             vault_path,
             {
                 "kind": "credential_access",
@@ -336,8 +346,10 @@ async def evaluate_credential_with(
                 "trigger": trigger,
             },
         )
+        allowed = user_decision.allowed
+        user_message = user_decision.message
         decision = "allowed" if allowed else "denied"
-        detail = f"[sentinel: escalate → {decision}] {verdict.explanation}"
+        detail = format_denial_message("user", user_message) if not allowed else "[user: allow]"
 
     cred_decision: Literal["approved", "escalated", "denied"] = (
         "approved" if decision == "allowed" else "denied" if decision == "denied" else "escalated"
@@ -352,6 +364,7 @@ async def evaluate_credential_with(
         ui_label=detail,
         approval_source=source,
         approval_verdict=approval_verdict,
+        ui_explanation=verdict.explanation if source == "sentinel" else normalize_optional_message(user_message),
         audit_final=decision,
         sentinel_verdict=verdict,
     )

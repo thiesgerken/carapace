@@ -482,6 +482,8 @@ class HistoryMessage(BaseModel):
     domain: str | None = None
     decision: str | None = None
     tool_call_id: str | None = None
+    decision_source: ApprovalSource | None = None
+    message: str | None = None
     explanation: str | None = None
     risk_level: str | None = None
     ref: str | None = None

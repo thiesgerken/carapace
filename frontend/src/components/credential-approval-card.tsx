@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+
 import { cn } from "@/lib/utils";
 import { KeyRound } from "lucide-react";
 import type {
@@ -9,7 +11,7 @@ import type {
 
 interface CredentialApprovalCardProps {
   request: CredentialApprovalRequest;
-  onRespond: (decision: EscalationDecision) => void;
+  onRespond: (decision: EscalationDecision, message?: string) => void;
   decision?: EscalationDecision;
 }
 
@@ -23,6 +25,7 @@ export function CredentialApprovalCard({
   onRespond,
   decision,
 }: CredentialApprovalCardProps) {
+  const [message, setMessage] = useState("");
   const resolved = decision !== undefined;
 
   return (
@@ -73,7 +76,25 @@ export function CredentialApprovalCard({
       </div>
 
       {!resolved && (
-        <div className="mt-3 flex flex-wrap gap-2">
+        <div className="mt-3 space-y-3">
+          <label className="block space-y-1">
+            <span className="text-xs text-muted-foreground">
+              Optional message when denying
+            </span>
+            <textarea
+              value={message}
+              onChange={(event) => setMessage(event.target.value)}
+              rows={2}
+              className={cn(
+                "w-full rounded-md border border-border bg-background px-3 py-2 text-xs",
+                "text-foreground outline-none transition-colors",
+                "focus:border-warning/60 focus:ring-2 focus:ring-warning/20",
+              )}
+              placeholder="Why should this credential access be blocked?"
+            />
+          </label>
+
+          <div className="flex flex-wrap gap-2">
           <button
             onClick={() => onRespond("allow")}
             className={cn(
@@ -84,7 +105,7 @@ export function CredentialApprovalCard({
             Allow
           </button>
           <button
-            onClick={() => onRespond("deny")}
+            onClick={() => onRespond("deny", message.trim() || undefined)}
             className={cn(
               "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
               "border border-destructive/50 text-destructive hover:bg-destructive/10",
@@ -92,6 +113,7 @@ export function CredentialApprovalCard({
           >
             Deny
           </button>
+          </div>
         </div>
       )}
     </div>

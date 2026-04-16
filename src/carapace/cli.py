@@ -347,7 +347,7 @@ def _render_usage(payload: dict[str, Any]) -> None:
         console.print(lr)
 
 
-async def _render_escalation_request(data: dict[str, Any]) -> str:
+async def _render_escalation_request(data: dict[str, Any]) -> tuple[str, str | None]:
     """Render a sentinel escalation (domain access or git push) and return the decision."""
     command = data.get("command", "")
 
@@ -375,11 +375,19 @@ async def _render_escalation_request(data: dict[str, Any]) -> str:
         lambda: console.input("[bold]\\[a]llow / \\[d]eny?[/bold] ").strip().lower(),
     )
     if choice in ("a", "allow", "y", "yes"):
-        return "allow"
-    return "deny"
+        return "allow", None
+    return "deny", await _render_optional_deny_message()
 
 
-async def _render_credential_escalation(data: dict[str, Any]) -> str:
+async def _render_optional_deny_message() -> str | None:
+    message = await asyncio.get_event_loop().run_in_executor(
+        None,
+        lambda: console.input("[dim]Optional deny message:[/dim] ").strip(),
+    )
+    return message or None
+
+
+async def _render_credential_escalation(data: dict[str, Any]) -> tuple[str, str | None]:
     """Render a sentinel-escalated credential request and return the decision."""
     names = data.get("names", [])
     descriptions = data.get("descriptions", [])
@@ -407,11 +415,11 @@ async def _render_credential_escalation(data: dict[str, Any]) -> str:
         lambda: console.input("[bold]\\[a]llow / \\[d]eny?[/bold] ").strip().lower(),
     )
     if choice in ("a", "allow", "y", "yes"):
-        return "allow"
-    return "deny"
+        return "allow", None
+    return "deny", await _render_optional_deny_message()
 
 
-async def _render_approval_request(data: dict[str, Any]) -> bool:
+async def _render_approval_request(data: dict[str, Any]) -> tuple[bool, str | None]:
     """Render an approval request and return True if approved."""
     panel_lines = [
         f"[bold]Tool:[/bold] {data.get('tool', '?')}",
@@ -437,7 +445,9 @@ async def _render_approval_request(data: dict[str, Any]) -> bool:
         None,
         lambda: console.input("[bold]\\[a]pprove / \\[d]eny?[/bold] ").strip().lower(),
     )
-    return choice in ("a", "approve", "y", "yes")
+    if choice in ("a", "approve", "y", "yes"):
+        return True, None
+    return False, await _render_optional_deny_message()
 
 
 # --- WebSocket chat loop ---
@@ -591,9 +601,10 @@ async def _read_server_responses(ws) -> None:
                 case "approval_request":
                     _stop_live()
                     try:
-                        approved = await _render_approval_request(msg)
+                        approved, message = await _render_approval_request(msg)
                     except (KeyboardInterrupt, EOFError):
                         approved = False
+                        message = None
                         console.print("\n[dim]Denied (interrupted).[/dim]")
                     await ws.send(
                         json.dumps(
@@ -601,6 +612,7 @@ async def _read_server_responses(ws) -> None:
                                 "type": "approval_response",
                                 "tool_call_id": msg["tool_call_id"],
                                 "approved": approved,
+                                "message": message,
                             }
                         )
                     )
@@ -608,9 +620,10 @@ async def _read_server_responses(ws) -> None:
                 case "proxy_approval_request" | "domain_access_approval_request":
                     _stop_live()
                     try:
-                        decision = await _render_escalation_request(msg)
+                        decision, message = await _render_escalation_request(msg)
                     except (KeyboardInterrupt, EOFError):
                         decision = "deny"
+                        message = None
                         console.print("\n[dim]Denied (interrupted).[/dim]")
                     await ws.send(
                         json.dumps(
@@ -618,6 +631,7 @@ async def _read_server_responses(ws) -> None:
                                 "type": "escalation_response",
                                 "request_id": msg["request_id"],
                                 "decision": decision,
+                                "message": message,
                             }
                         )
                     )
@@ -625,9 +639,10 @@ async def _read_server_responses(ws) -> None:
                 case "credential_approval_request":
                     _stop_live()
                     try:
-                        decision = await _render_credential_escalation(msg)
+                        decision, message = await _render_credential_escalation(msg)
                     except (KeyboardInterrupt, EOFError):
                         decision = "deny"
+                        message = None
                         console.print("\n[dim]Denied (interrupted).[/dim]")
                     await ws.send(
                         json.dumps(
@@ -635,6 +650,7 @@ async def _read_server_responses(ws) -> None:
                                 "type": "escalation_response",
                                 "request_id": msg["request_id"],
                                 "decision": decision,
+                                "message": message,
                             }
                         )
                     )

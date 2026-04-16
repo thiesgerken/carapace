@@ -315,6 +315,7 @@ async def test_on_reaction_denies_pending(tmp_path: Path):
     call_args = ch._engine.submit_approval.call_args
     assert call_args[0][0] == session_id
     assert call_args[0][1].approved is False
+    assert call_args[0][1].message is None
 
 
 @pytest.mark.anyio
@@ -367,6 +368,27 @@ async def test_deny_command_resolves_via_engine(tmp_path: Path):
     ch._engine.submit_approval.assert_called_once()
     call_args = ch._engine.submit_approval.call_args
     assert call_args[0][1].approved is False
+    assert call_args[0][1].message is None
+
+
+@pytest.mark.anyio
+async def test_deny_command_passes_optional_message(tmp_path: Path):
+    ch = _make_channel(tmp_path)
+    room_id = "!room:example.com"
+    sid = ch._get_or_create_session(room_id)
+    ch._client.room_send = AsyncMock(return_value=MagicMock(event_id="$evt"))
+
+    sub = MatrixSubscriber(ch, room_id)
+    sub._approval_events["$approval"] = "call-1"
+    ch._room_subscribers[room_id] = sub
+    ch._pending_approvals["$approval"] = _PendingApproval("$approval", "call-1")
+
+    await ch._handle_command(room_id, sid, "/deny not safe enough", "@alice:example.com")
+
+    ch._engine.submit_approval.assert_called_once()
+    call_args = ch._engine.submit_approval.call_args
+    assert call_args[0][1].approved is False
+    assert call_args[0][1].message == "not safe enough"
 
 
 @pytest.mark.anyio

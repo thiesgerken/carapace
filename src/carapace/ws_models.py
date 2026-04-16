@@ -48,6 +48,7 @@ class ApprovalResponse(BaseModel):
     type: Literal["approval_response"] = "approval_response"
     tool_call_id: str
     approved: bool
+    message: str | None = None
 
 
 EscalationDecision = Literal["allow", "deny"]
@@ -59,6 +60,7 @@ class EscalationResponse(BaseModel):
     type: Literal["escalation_response"] = "escalation_response"
     request_id: str
     decision: EscalationDecision
+    message: str | None = None
 
 
 class CancelRequest(BaseModel):

@@ -35,10 +35,11 @@ interface ToolCallBadgeProps {
   approvalSource?: ApprovalSource;
   approvalVerdict?: ApprovalVerdict;
   approvalExplanation?: string;
+  decisionMessage?: string;
   result?: string;
   exitCode?: number;
   loading?: boolean;
-  children?: ToolCallBadgeProps[];
+  childCalls?: ToolCallBadgeProps[];
 }
 
 type ApprovalSource = "safe-list" | "sentinel" | "user" | "skill" | "bypass" | "unknown";
@@ -340,17 +341,26 @@ export function ToolCallBadge({
   approvalSource,
   approvalVerdict,
   approvalExplanation,
+  decisionMessage,
   result,
   exitCode,
   loading,
-  children,
+  childCalls,
 }: ToolCallBadgeProps) {
   const [open, setOpen] = useState(false);
   const [skillInstructionsOpen, setSkillInstructionsOpen] = useState(false);
   void _detail;
   const source = approvalSource;
   const verdict = approvalVerdict ?? "allow";
-  const explanation = source === "sentinel" ? (approvalExplanation ?? "") : "";
+  const explanation = approvalExplanation ?? "";
+  const hasExplicitDecisionMessage = decisionMessage !== undefined;
+  const sentinelExplanation =
+    source === "sentinel" || hasExplicitDecisionMessage ? explanation : "";
+  const finalDecisionMessage = hasExplicitDecisionMessage
+    ? decisionMessage ?? ""
+    : source === "user"
+      ? explanation
+      : "";
   const isError = exitCode != null && exitCode !== 0;
   const isExecTool = tool === "exec";
   const isUseSkillTool = tool === "use_skill";
@@ -500,11 +510,11 @@ export function ToolCallBadge({
             // Count credentials: from use_skill declared_creds + child credential_access events
             const declaredCredCount = isUseSkillTool && Array.isArray(args.declared_creds)
               ? args.declared_creds.length : 0;
-            const childCredCount = children?.filter(c => c.tool === "credential_access").length ?? 0;
+            const childCredCount = childCalls?.filter(c => c.tool === "credential_access").length ?? 0;
             const credCount = declaredCredCount || childCredCount;
             const credTooltip = isUseSkillTool && Array.isArray(args.declared_creds)
               ? (args.declared_creds as Array<{ vault_path: string; name?: string }>).map(c => c.name || c.vault_path).join("\n")
-              : children?.filter(c => c.tool === "credential_access").map(c => {
+              : childCalls?.filter(c => c.tool === "credential_access").map(c => {
                   const name = c.args.name as string | undefined;
                   const vp = c.args.vault_path as string | undefined;
                   return name || vp || "credential";
@@ -513,11 +523,11 @@ export function ToolCallBadge({
             // Count domains: from use_skill declared_domains + child proxy_domain events
             const declaredDomainCount = isUseSkillTool && Array.isArray(args.declared_domains)
               ? args.declared_domains.length : 0;
-            const childDomainCount = children?.filter(c => c.tool === "proxy_domain").length ?? 0;
+            const childDomainCount = childCalls?.filter(c => c.tool === "proxy_domain").length ?? 0;
             const domainCount = declaredDomainCount || childDomainCount;
             const domainTooltip = isUseSkillTool && Array.isArray(args.declared_domains)
               ? (args.declared_domains as string[]).join("\n")
-              : children?.filter(c => c.tool === "proxy_domain").map(c => c.args.domain as string ?? "").join("\n") ?? "";
+              : childCalls?.filter(c => c.tool === "proxy_domain").map(c => c.args.domain as string ?? "").join("\n") ?? "";
 
             return (
               <>
@@ -540,7 +550,7 @@ export function ToolCallBadge({
               </>
             );
           })()}
-          {source && <ApprovalBadge source={source} verdict={verdict} tooltip={explanation || undefined} />}
+          {source && <ApprovalBadge source={source} verdict={verdict} tooltip={finalDecisionMessage || sentinelExplanation || undefined} />}
           {loading && (
             <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
           )}
@@ -559,10 +569,17 @@ export function ToolCallBadge({
             </div>
           )}
 
-          {explanation && (
+          {sentinelExplanation && (
             <div className="text-[11px] text-muted-foreground leading-relaxed">
               <span className="font-medium text-foreground/70"><ShieldCheck className="inline h-3 w-3 -translate-y-px mr-1" />Sentinel: </span>
-              {explanation}
+              {sentinelExplanation}
+            </div>
+          )}
+
+          {finalDecisionMessage && (
+            <div className="text-[11px] text-muted-foreground leading-relaxed">
+              <span className="font-medium text-foreground/70"><UserCheck className="inline h-3 w-3 -translate-y-px mr-1" />User: </span>
+              {finalDecisionMessage}
             </div>
           )}
 
@@ -816,9 +833,9 @@ export function ToolCallBadge({
             </>
           )}
 
-          {children && children.length > 0 && (
+          {childCalls && childCalls.length > 0 && (
             <div className="space-y-1">
-              {children.map((child, i) => (
+              {childCalls.map((child, i) => (
                 <ToolCallBadge key={child.tool + i} {...child} />
               ))}
             </div>

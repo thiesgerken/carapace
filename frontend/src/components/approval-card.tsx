@@ -1,27 +1,26 @@
 "use client";
 
+import { useState } from "react";
+
 import { cn } from "@/lib/utils";
 import { AlertCircle } from "lucide-react";
 import type { ApprovalRequest } from "@/lib/types";
 
 interface ApprovalCardProps {
   request: ApprovalRequest;
-  onRespond: (approved: boolean) => void;
-  resolved?: boolean;
+  onRespond: (approved: boolean, message?: string) => void;
 }
 
 export function ApprovalCard({
   request,
   onRespond,
-  resolved,
 }: ApprovalCardProps) {
+  const [message, setMessage] = useState("");
+
   return (
     <div
       className={cn(
-        "my-2 rounded-lg border-2 p-3 text-sm",
-        resolved === undefined
-          ? "border-warning/60 bg-warning/5"
-          : "border-border bg-muted/30 opacity-60",
+        "my-2 rounded-lg border-2 border-warning/60 bg-warning/5 p-3 text-sm",
       )}
     >
       <div className="mb-2 flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-warning-foreground/70">
@@ -65,28 +64,43 @@ export function ApprovalCard({
         </details>
       </div>
 
-      {resolved === undefined && (
-        <div className="mt-3 flex gap-2">
-          <button
-            onClick={() => onRespond(true)}
-            className={cn(
-              "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-              "bg-foreground text-background hover:bg-foreground/90",
-            )}
-          >
-            Approve
-          </button>
-          <button
-            onClick={() => onRespond(false)}
-            className={cn(
-              "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-              "border border-border hover:bg-muted",
-            )}
-          >
-            Deny
-          </button>
-        </div>
-      )}
+      <label className="mt-3 block space-y-1">
+        <span className="text-xs text-muted-foreground">
+          Optional message when denying
+        </span>
+        <textarea
+          value={message}
+          onChange={(event) => setMessage(event.target.value)}
+          rows={2}
+          className={cn(
+            "w-full rounded-md border border-border bg-background px-3 py-2 text-xs",
+            "text-foreground outline-none transition-colors",
+            "focus:border-warning/60 focus:ring-2 focus:ring-warning/20",
+          )}
+          placeholder="Why should this be blocked?"
+        />
+      </label>
+
+      <div className="mt-3 flex gap-2">
+        <button
+          onClick={() => onRespond(true)}
+          className={cn(
+            "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+            "bg-foreground text-background hover:bg-foreground/90",
+          )}
+        >
+          Approve
+        </button>
+        <button
+          onClick={() => onRespond(false, message.trim() || undefined)}
+          className={cn(
+            "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+            "border border-border hover:bg-muted",
+          )}
+        >
+          Deny
+        </button>
+      </div>
     </div>
   );
 }
