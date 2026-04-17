@@ -69,7 +69,6 @@ class ApprovalEntry(BaseModel):
     tool: str
     args_summary: str = ""
     decision: Literal["approved", "denied"] = "approved"
-    message: str | None = None
 
 
 class SkillActivatedEntry(BaseModel):
