@@ -124,7 +124,7 @@ class SessionSubscriber(Protocol):
     async def on_git_push_approval_request(
         self, request_id: str, ref: str, explanation: str, changed_files: list[str]
     ) -> None: ...
-    async def on_title_update(self, title: str) -> None: ...
+    async def on_title_update(self, title: str, usage: TurnUsage | None = None) -> None: ...
     async def on_domain_info(
         self,
         domain: str,
@@ -1313,7 +1313,8 @@ class SessionEngine:
             if title:
                 active.state.title = title
                 self._session_mgr.save_state(active.state)
-                await self._broadcast(active, "on_title_update", title)
+                self._session_mgr.save_usage(session_id, active.usage_tracker)
+                await self._broadcast(active, "on_title_update", title, self._turn_usage_payload(active))
                 return title
         except Exception as exc:
             logger.warning(f"Title generation failed for {session_id}: {exc}")

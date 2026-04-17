@@ -650,8 +650,8 @@ class WebSocketSubscriber:
             GitPushApprovalRequest(request_id=request_id, ref=ref, explanation=explanation, changed_files=changed_files)
         )
 
-    async def on_title_update(self, title: str) -> None:
-        await self._safe_send(SessionTitleUpdate(title=title))
+    async def on_title_update(self, title: str, usage: TurnUsage | None = None) -> None:
+        await self._safe_send(SessionTitleUpdate(title=title, usage=usage))
 
     async def on_domain_info(
         self,

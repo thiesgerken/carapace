@@ -221,7 +221,7 @@ class MatrixSubscriber:
             self._channel._pending_credential_approvals[event_id] = pending
             self._channel._room_pending[self._room_id] = pending
 
-    async def on_title_update(self, title: str) -> None:
+    async def on_title_update(self, title: str, usage: TurnUsage | None = None) -> None:
         pass  # Matrix rooms have their own titles
 
     async def on_domain_info(

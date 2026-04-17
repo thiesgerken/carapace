@@ -217,6 +217,7 @@ class SessionTitleUpdate(BaseModel):
 
     type: Literal["session_title"] = "session_title"
     title: str
+    usage: TurnUsage | None = None
 
 
 class StatusUpdate(BaseModel):

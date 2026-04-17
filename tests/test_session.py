@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, ToolCallPart, ToolReturnPart, UserPromptPart
 from pydantic_ai.models.test import TestModel
+from pydantic_ai.usage import RunUsage
 
 from carapace.bootstrap import ensure_data_dir
 from carapace.config import load_config
@@ -176,6 +177,7 @@ class _FakeSubscriber:
         self.user_messages: list[tuple[str, bool]] = []
         self.errors: list[str] = []
         self.cancelled: int = 0
+        self.title_updates: list[tuple[str, TurnUsage | None]] = []
 
     async def on_user_message(self, content: str, *, from_self: bool) -> None:
         self.user_messages.append((content, from_self))
@@ -201,8 +203,8 @@ class _FakeSubscriber:
     async def on_proxy_approval_request(self, request_id: str, domain: str, command: str) -> None:
         pass
 
-    async def on_title_update(self, title: str) -> None:
-        pass
+    async def on_title_update(self, title: str, usage: TurnUsage | None = None) -> None:
+        self.title_updates.append((title, usage))
 
     async def on_domain_info(self, domain: str, detail: str) -> None:
         pass
@@ -677,6 +679,38 @@ def test_generate_title_skips_when_budget_exhausted(tmp_path: Path):
 
         assert title == ""
         mocked.assert_not_awaited()
+
+    with _patch_sentinel():
+        asyncio.run(_run())
+
+
+def test_generate_title_persists_usage_and_broadcasts_usage(tmp_path: Path):
+    async def _run() -> None:
+        engine = _make_engine(tmp_path)
+        state = engine.session_mgr.create_session(budget=SessionBudget(cost_usd=Decimal("5.00")))
+        sid = state.session_id
+        active = engine.get_or_activate(sid)
+        sub = _FakeSubscriber()
+        engine.subscribe(sid, sub)
+
+        async def _fake_generate_title(*_args: Any, usage_tracker, **_kwargs: Any) -> str:
+            usage_tracker.record(
+                "anthropic:claude-haiku-4-5",
+                "title",
+                RunUsage(input_tokens=10, output_tokens=5, requests=1),
+            )
+            return "📌 hello"
+
+        with patch("carapace.session.engine.generate_title", new=AsyncMock(side_effect=_fake_generate_title)):
+            title = await engine._generate_title(active, [{"role": "user", "content": "hello"}])
+
+        assert title == "📌 hello"
+        stored_usage = engine.session_mgr.load_usage(sid)
+        assert stored_usage.categories["title"].input_tokens == 10
+        assert sub.title_updates
+        assert sub.title_updates[0][0] == "📌 hello"
+        assert sub.title_updates[0][1] is not None
+        assert sub.title_updates[0][1].budget_gauges[0].key == "cost"
 
     with _patch_sentinel():
         asyncio.run(_run())

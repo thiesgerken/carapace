@@ -188,6 +188,7 @@ export interface Cancelled {
 export interface SessionTitleUpdate {
   type: "session_title";
   title: string;
+  usage?: TurnUsage | null;
 }
 
 export interface StatusUpdate {
