@@ -400,7 +400,7 @@ class SessionSecurity:
             name=display_name,
             approval_source=approval_source,
             approval_verdict=approval_verdict,
-            approval_explanation=ui_explanation if ui_explanation is not None else explanation,
+            approval_explanation=(explanation if approval_source == "sentinel" else ui_explanation),
         )
 
     async def escalate_to_user(self, subject: str, context: dict[str, Any]) -> UserEscalationDecision:
