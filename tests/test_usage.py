@@ -82,7 +82,7 @@ def test_usage_budget_gauges_include_tokens_and_cost() -> None:
     assert gauges[2].current_amount is not None
 
 
-def test_usage_budget_exceeded_error_blocks_unknown_cost_pricing() -> None:
+def test_usage_budget_exceeded_error_treats_unknown_cost_pricing_as_zero() -> None:
     tracker = UsageTracker()
     tracker.record(
         "local:unknown-model",
@@ -95,6 +95,11 @@ def test_usage_budget_exceeded_error_blocks_unknown_cost_pricing() -> None:
         total_cost_limit=Decimal("5.00"),
     )
 
-    assert error is not None
-    assert "Pricing unavailable" in str(error)
-    assert error.gauges[0].unavailable_reason is not None
+    assert error is None
+
+    gauges = usage_budget_gauges(
+        tracker,
+        total_cost_limit=Decimal("5.00"),
+    )
+    assert gauges[0].current_value == "$0.0000"
+    assert gauges[0].current_amount == 0.0

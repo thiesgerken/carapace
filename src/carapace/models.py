@@ -44,7 +44,7 @@ class CredentialRegistryProtocol(Protocol):
 class SessionBudget(BaseModel):
     input_tokens: int | None = None
     output_tokens: int | None = None
-    total_cost_usd: Decimal | None = None
+    cost_usd: Decimal | None = None
 
     @model_validator(mode="after")
     def _normalize_limits(self) -> SessionBudget:
@@ -58,16 +58,16 @@ class SessionBudget(BaseModel):
                 raise ValueError("budget.output_tokens must be >= 0")
             if self.output_tokens == 0:
                 self.output_tokens = None
-        if self.total_cost_usd is not None:
-            if self.total_cost_usd < 0:
-                raise ValueError("budget.total_cost_usd must be >= 0")
-            if self.total_cost_usd == 0:
-                self.total_cost_usd = None
+        if self.cost_usd is not None:
+            if self.cost_usd < 0:
+                raise ValueError("budget.cost_usd must be >= 0")
+            if self.cost_usd == 0:
+                self.cost_usd = None
         return self
 
     @property
     def has_any_limit(self) -> bool:
-        return any(limit is not None for limit in (self.input_tokens, self.output_tokens, self.total_cost_usd))
+        return any(limit is not None for limit in (self.input_tokens, self.output_tokens, self.cost_usd))
 
 
 class SessionState(BaseModel):

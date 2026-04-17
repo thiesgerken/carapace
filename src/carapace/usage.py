@@ -176,16 +176,6 @@ def _format_usd(value: Decimal) -> str:
     return f"${value:.4f}"
 
 
-def usage_unknown_pricing_models(tracker: UsageTracker) -> list[str]:
-    unknown: list[str] = []
-    for model_key, usage in tracker.models.items():
-        if not _has_usage(usage):
-            continue
-        if _price_for_usage(model_key, usage) is None:
-            unknown.append(model_key)
-    return sorted(unknown)
-
-
 def usage_budget_gauges(
     tracker: UsageTracker,
     *,
@@ -230,37 +220,21 @@ def usage_budget_gauges(
         )
 
     if total_cost_limit is not None:
-        unknown_models = usage_unknown_pricing_models(tracker)
-        if unknown_models:
-            gauges.append(
-                BudgetGauge(
-                    key="cost",
-                    label="Cost",
-                    current_value="unknown",
-                    current_amount=None,
-                    limit_value=_format_usd(total_cost_limit),
-                    remaining_value=None,
-                    fill_pct=100.0,
-                    reached=True,
-                    unavailable_reason=("Pricing unavailable for: " + ", ".join(unknown_models)),
-                )
+        total_cost = tracker.estimated_cost().get("total", Decimal(0))
+        remaining = max(Decimal(0), total_cost_limit - total_cost)
+        fill_pct = min(100.0, float(Decimal(100) * total_cost / total_cost_limit)) if total_cost_limit > 0 else 0.0
+        gauges.append(
+            BudgetGauge(
+                key="cost",
+                label="Cost",
+                current_value=_format_usd(total_cost),
+                current_amount=float(total_cost),
+                limit_value=_format_usd(total_cost_limit),
+                remaining_value=_format_usd(remaining),
+                fill_pct=round(fill_pct, 1),
+                reached=total_cost >= total_cost_limit,
             )
-        else:
-            total_cost = tracker.estimated_cost().get("total", Decimal(0))
-            remaining = max(Decimal(0), total_cost_limit - total_cost)
-            fill_pct = min(100.0, float(Decimal(100) * total_cost / total_cost_limit)) if total_cost_limit > 0 else 0.0
-            gauges.append(
-                BudgetGauge(
-                    key="cost",
-                    label="Cost",
-                    current_value=_format_usd(total_cost),
-                    current_amount=float(total_cost),
-                    limit_value=_format_usd(total_cost_limit),
-                    remaining_value=_format_usd(remaining),
-                    fill_pct=round(fill_pct, 1),
-                    reached=total_cost >= total_cost_limit,
-                )
-            )
+        )
 
     return gauges
 

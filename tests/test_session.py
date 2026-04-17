@@ -43,13 +43,13 @@ def test_create_session(tmp_path: Path):
 
 def test_create_session_persists_budget(tmp_path: Path):
     mgr = SessionManager(tmp_path)
-    budget = SessionBudget(input_tokens=1_000, total_cost_usd=Decimal("5.00"))
+    budget = SessionBudget(input_tokens=1_000, cost_usd=Decimal("5.00"))
     state = mgr.create_session(budget=budget)
 
     resumed = mgr.resume_session(state.session_id)
     assert resumed is not None
     assert resumed.budget.input_tokens == 1_000
-    assert resumed.budget.total_cost_usd == Decimal("5.00")
+    assert resumed.budget.cost_usd == Decimal("5.00")
 
 
 def test_resume_session(tmp_path: Path):

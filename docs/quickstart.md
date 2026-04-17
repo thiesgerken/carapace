@@ -64,7 +64,7 @@ agent:
   # default_session_budget:
   #   input_tokens: 100000
   #   output_tokens: 50000
-  #   total_cost_usd: 5.00
+  #   cost_usd: 5.00
 ```
 
 ## 5. Connect Matrix (optional)

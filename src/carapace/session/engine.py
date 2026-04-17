@@ -317,7 +317,7 @@ class SessionEngine:
             active.usage_tracker,
             input_tokens_limit=budget.input_tokens,
             output_tokens_limit=budget.output_tokens,
-            total_cost_limit=budget.total_cost_usd,
+            total_cost_limit=budget.cost_usd,
         )
 
     def _budget_exceeded_error(self, active: ActiveSession) -> SessionBudgetExceededError | None:
@@ -326,7 +326,7 @@ class SessionEngine:
             active.usage_tracker,
             input_tokens_limit=budget.input_tokens,
             output_tokens_limit=budget.output_tokens,
-            total_cost_limit=budget.total_cost_usd,
+            total_cost_limit=budget.cost_usd,
         )
 
     def _assert_llm_budget_available(self, active: ActiveSession) -> None:
@@ -422,14 +422,14 @@ class SessionEngine:
             if budget.output_tokens is None:
                 return "Cleared output token budget."
             return f"Set output token budget to {budget.output_tokens:,} tokens."
-        budget.total_cost_usd = Decimal(value)
-        if budget.total_cost_usd == 0:
-            budget.total_cost_usd = None
+        budget.cost_usd = Decimal(value)
+        if budget.cost_usd == 0:
+            budget.cost_usd = None
         active.state.budget = budget
         self._session_mgr.save_state(active.state)
-        if budget.total_cost_usd is None:
+        if budget.cost_usd is None:
             return "Cleared cost budget."
-        return f"Set cost budget to ${budget.total_cost_usd:.4f}."
+        return f"Set cost budget to ${budget.cost_usd:.4f}."
 
     def _resolve_model(self, name: str) -> Model:
         """Create a Model from a name, using the model_factory if available."""
