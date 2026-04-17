@@ -73,6 +73,58 @@ function applyDeniedApprovalToMessages(
   return updated;
 }
 
+function applyApprovedApprovalToMessages(
+  messages: ChatMessage[],
+  request: {
+    tool: string;
+    args: Record<string, unknown>;
+  },
+  loading = false,
+): ChatMessage[] {
+  const updated = [...messages];
+  for (let index = updated.length - 1; index >= 0; index--) {
+    const entry = updated[index];
+    if (
+      entry.kind === "tool_call" &&
+      entry.tool === request.tool &&
+      entry.approvalVerdict === "escalate" &&
+      argsMatch(entry.args, request.args)
+    ) {
+      updated[index] = {
+        ...entry,
+        approvalSource: "user",
+        approvalVerdict: "allow",
+        approvalExplanation: undefined,
+        decisionMessage: undefined,
+        loading,
+      };
+      break;
+    }
+  }
+  return updated;
+}
+
+function isUserApprovedReplay(
+  tool: string,
+  detail: string | undefined,
+  approvalSource: ChatMessage extends never ? never :
+    | "safe-list"
+    | "sentinel"
+    | "user"
+    | "skill"
+    | "bypass"
+    | "unknown"
+    | undefined,
+  approvalVerdict: "allow" | "deny" | "escalate" | undefined,
+): boolean {
+  return (
+    approvalSource === "user" &&
+    approvalVerdict === "allow" &&
+    detail === "[user approved]" &&
+    (tool === "exec" || tool === "use_skill")
+  );
+}
+
 export function ChatView({
   server,
   token,
@@ -130,6 +182,25 @@ export function ChatView({
             msgs.push({ kind: "user", content: h.content });
           } else if (h.role === "tool_call") {
             const rawContexts = h.contexts ?? h.args?.contexts;
+            if (
+              isUserApprovedReplay(
+                h.tool ?? "",
+                h.detail,
+                h.approval_source,
+                h.approval_verdict,
+              )
+            ) {
+              const patched = applyApprovedApprovalToMessages(
+                msgs,
+                {
+                  tool: h.tool ?? "",
+                  args: (h.args ?? {}) as Record<string, unknown>,
+                },
+              );
+              msgs.length = 0;
+              msgs.push(...patched);
+              continue;
+            }
             msgs.push({
               kind: "tool_call",
               tool: h.tool ?? "",
@@ -182,6 +253,10 @@ export function ChatView({
             );
             if (!response) {
               msgs.push({ kind: "approval", request });
+            } else if (response.decision === "approved") {
+              const patched = applyApprovedApprovalToMessages(msgs, request);
+              msgs.length = 0;
+              msgs.push(...patched);
             } else if (response.decision === "denied") {
               const patched = applyDeniedApprovalToMessages(
                 msgs,
@@ -412,6 +487,23 @@ export function ChatView({
             toolId: msg.tool_id,
             parentToolId: msg.parent_tool_id,
           };
+          if (
+            isUserApprovedReplay(
+              msg.tool,
+              msg.detail,
+              msg.approval_source,
+              msg.approval_verdict,
+            )
+          ) {
+            setMessages((prev) =>
+              applyApprovedApprovalToMessages(
+                prev,
+                { tool: msg.tool, args: msg.args },
+                isLoading,
+              ),
+            );
+            break;
+          }
           if (msg.parent_tool_id) {
             // Attach to parent tool call
             setMessages((prev) => {
@@ -633,6 +725,9 @@ export function ChatView({
             request,
             normalizedMessage,
           );
+        }
+        if (approved && request) {
+          return applyApprovedApprovalToMessages(withoutApproval, request);
         }
         return withoutApproval;
       });
