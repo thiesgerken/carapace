@@ -14,7 +14,7 @@ from carapace.bootstrap import ensure_data_dir
 from carapace.config import load_config
 from carapace.credentials import CredentialRegistry
 from carapace.git.store import GitStore
-from carapace.models import CredentialMetadata
+from carapace.models import CredentialMetadata, SessionBudget
 from carapace.sandbox.manager import SandboxManager
 from carapace.security.context import CredentialAccessEntry
 from carapace.server import app, sandbox_app
@@ -215,6 +215,34 @@ def test_ws_session_command(client, auth_headers, bearer):
         assert msg["type"] == "command_result"
         assert msg["command"] == "session"
         assert msg["data"]["session_id"] == sid
+
+
+def test_ws_status_includes_budget_gauges_for_configured_defaults(client, auth_headers, bearer):
+    srv._engine.config.agent.default_session_budget = SessionBudget(input_tokens=1_000)
+    create_resp = client.post("/api/sessions", headers=auth_headers)
+    sid = create_resp.json()["session_id"]
+
+    with client.websocket_connect(f"/api/chat/{sid}?token={bearer}") as ws:
+        status = _consume_status(ws)
+        assert status["usage"]["budget_gauges"][0]["key"] == "input"
+        assert status["usage"]["budget_gauges"][0]["current_value"] == "0 tokens"
+
+
+def test_ws_budget_command_emits_status_refresh(client, auth_headers, bearer):
+    create_resp = client.post("/api/sessions", headers=auth_headers)
+    sid = create_resp.json()["session_id"]
+
+    with client.websocket_connect(f"/api/chat/{sid}?token={bearer}") as ws:
+        _consume_status(ws)
+        ws.send_json({"type": "message", "content": "/budget input 1000"})
+        echo = ws.receive_json()
+        assert echo["type"] == "user_message"
+        msg = ws.receive_json()
+        assert msg["type"] == "command_result"
+        assert msg["command"] == "budget"
+        status = ws.receive_json()
+        assert status["type"] == "status"
+        assert status["usage"]["budget_gauges"][0]["key"] == "input"
 
 
 def test_ws_skills_command(client, auth_headers, bearer):

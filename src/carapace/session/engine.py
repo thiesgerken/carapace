@@ -7,6 +7,7 @@ import traceback
 import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Literal, Protocol, runtime_checkable
 
@@ -55,13 +56,17 @@ from carapace.session.manager import SessionManager
 from carapace.session.titler import generate_title
 from carapace.skills import SkillRegistry
 from carapace.usage import (
+    BudgetGauge,
     LlmRequestLog,
     LlmRequestRecord,
     LlmSource,
+    SessionBudgetExceededError,
     UsageTracker,
     gauge_breakdown_pct_dict,
     last_record_for_source,
     llm_request_sink_scope,
+    usage_budget_exceeded_error,
+    usage_budget_gauges,
     usage_last_request_row,
 )
 from carapace.ws_models import (
@@ -306,6 +311,126 @@ class SessionEngine:
         model_id = self.agent_model_id_for_gauge(active)
         return self._max_input_tokens_for_model_id(model_id) or _DEFAULT_CONTEXT_CAP_TOKENS
 
+    def _budget_gauges(self, active: ActiveSession) -> list[BudgetGauge]:
+        budget = active.state.budget
+        return usage_budget_gauges(
+            active.usage_tracker,
+            input_tokens_limit=budget.input_tokens,
+            output_tokens_limit=budget.output_tokens,
+            total_cost_limit=budget.total_cost_usd,
+        )
+
+    def _budget_exceeded_error(self, active: ActiveSession) -> SessionBudgetExceededError | None:
+        budget = active.state.budget
+        return usage_budget_exceeded_error(
+            active.usage_tracker,
+            input_tokens_limit=budget.input_tokens,
+            output_tokens_limit=budget.output_tokens,
+            total_cost_limit=budget.total_cost_usd,
+        )
+
+    def _assert_llm_budget_available(self, active: ActiveSession) -> None:
+        error = self._budget_exceeded_error(active)
+        if error is not None:
+            raise error
+
+    def _turn_usage_payload(self, active: ActiveSession) -> TurnUsage | None:
+        rec_agent = last_record_for_source(active.llm_request_log, "agent")
+        budget_gauges = self._budget_gauges(active)
+        if rec_agent is None and not budget_gauges:
+            return None
+        bd = gauge_breakdown_pct_dict(rec_agent)
+        return TurnUsage(
+            input_tokens=rec_agent.input_tokens if rec_agent else 0,
+            output_tokens=rec_agent.output_tokens if rec_agent else 0,
+            breakdown_pct=TurnUsageBreakdownPct.model_validate(bd) if bd else None,
+            model=self.agent_model_id_for_gauge(active),
+            context_cap_tokens=self.agent_context_cap_for_gauge(active),
+            budget_gauges=budget_gauges,
+        )
+
+    def _budget_command_payload(self, active: ActiveSession, *, message: str | None = None) -> dict[str, Any]:
+        gauges = self._budget_gauges(active)
+        usage_hint = "Set budgets with /budget input N, /budget output N, or /budget cost N. Use 0 to clear a limit."
+        payload: dict[str, Any] = {
+            "gauges": [g.model_dump(mode="json") for g in gauges],
+            "usage_hint": usage_hint,
+        }
+        if message is not None:
+            payload["message"] = message
+        if not gauges and message is None:
+            payload["message"] = "No session budgets configured."
+        return payload
+
+    def _parse_budget_limit_value(self, metric: Literal["input", "output", "cost"], raw: str) -> int | Decimal:
+        cleaned = raw.replace(",", "").replace("_", "")
+        if metric in ("input", "output"):
+            lowered = cleaned.lower()
+            multiplier = 1
+            if lowered.endswith("k"):
+                multiplier = 1_000
+                lowered = lowered[:-1]
+            elif lowered.endswith("m"):
+                multiplier = 1_000_000
+                lowered = lowered[:-1]
+
+            if not lowered:
+                raise ValueError(f"Invalid token budget: {raw}")
+
+            try:
+                scaled = Decimal(lowered) * multiplier
+            except InvalidOperation as exc:
+                raise ValueError(f"Invalid token budget: {raw}") from exc
+
+            if scaled != scaled.to_integral_value():
+                raise ValueError(f"Invalid token budget: {raw}")
+
+            value = int(scaled)
+            if value < 0:
+                raise ValueError("Budget value must be >= 0")
+            return value
+        try:
+            value = Decimal(cleaned)
+        except InvalidOperation as exc:
+            raise ValueError(f"Invalid cost budget: {raw}") from exc
+        if value < 0:
+            raise ValueError("Budget value must be >= 0")
+        return value
+
+    def _set_budget_metric(
+        self,
+        active: ActiveSession,
+        metric: Literal["input", "output", "cost"],
+        value: int | Decimal,
+    ) -> str:
+        budget = active.state.budget.model_copy(deep=True)
+        if metric == "input":
+            budget.input_tokens = int(value)
+            if budget.input_tokens == 0:
+                budget.input_tokens = None
+            active.state.budget = budget
+            self._session_mgr.save_state(active.state)
+            if budget.input_tokens is None:
+                return "Cleared input token budget."
+            return f"Set input token budget to {budget.input_tokens:,} tokens."
+        if metric == "output":
+            budget.output_tokens = int(value)
+            if budget.output_tokens == 0:
+                budget.output_tokens = None
+            active.state.budget = budget
+            self._session_mgr.save_state(active.state)
+            if budget.output_tokens is None:
+                return "Cleared output token budget."
+            return f"Set output token budget to {budget.output_tokens:,} tokens."
+        budget.total_cost_usd = Decimal(value)
+        if budget.total_cost_usd == 0:
+            budget.total_cost_usd = None
+        active.state.budget = budget
+        self._session_mgr.save_state(active.state)
+        if budget.total_cost_usd is None:
+            return "Cleared cost budget."
+        return f"Set cost budget to ${budget.total_cost_usd:.4f}."
+
     def _resolve_model(self, name: str) -> Model:
         """Create a Model from a name, using the model_factory if available."""
         return self._model_factory(name) if self._model_factory else infer_model(name)
@@ -499,6 +624,7 @@ class SessionEngine:
             tool_result_callback=tool_result_callback,
             append_session_events=_append_session_events,
             usage_tracker=active.usage_tracker,
+            assert_llm_budget_available=lambda: self._assert_llm_budget_available(active),
             sandbox=self._sandbox_mgr,
             activated_skills=[],
             credential_registry=self._credential_registry,
@@ -668,9 +794,38 @@ class SessionEngine:
                     "total_output": tracker.total_output,
                     "costs": {k: str(v) for k, v in costs.items()},
                     "category_costs": {k: str(v) for k, v in cat_costs.items()},
+                    "budget_gauges": [g.model_dump(mode="json") for g in self._budget_gauges(active)],
                     "last_llm_agent": self._usage_last_llm_payload_row(active, "agent"),
                     "last_llm_sentinel": self._usage_last_llm_payload_row(active, "sentinel"),
                 },
+            }
+
+        if cmd == "/budget":
+            if len(parts) == 1:
+                return {"command": "budget", "data": self._budget_command_payload(active)}
+
+            args = parts[1].strip().split(maxsplit=1)
+            if len(args) != 2 or args[0] not in ("input", "output", "cost"):
+                return {
+                    "command": "budget",
+                    "data": {
+                        **self._budget_command_payload(active),
+                        "error": "Usage: /budget, /budget input N, /budget output N, or /budget cost N",
+                    },
+                }
+
+            metric = args[0]
+            try:
+                value = self._parse_budget_limit_value(metric, args[1].strip())
+            except ValueError as exc:
+                return {
+                    "command": "budget",
+                    "data": {**self._budget_command_payload(active), "error": str(exc)},
+                }
+            message = self._set_budget_metric(active, metric, value)
+            return {
+                "command": "budget",
+                "data": self._budget_command_payload(active, message=message),
             }
 
         if cmd == "/pull":
@@ -1007,6 +1162,7 @@ class SessionEngine:
 
                 async with self._llm_semaphore:
                     with self.llm_request_recording(active):
+                        self._assert_llm_budget_available(active)
                         messages, output, thinking = await run_agent_turn(
                             user_input,
                             deps,
@@ -1016,6 +1172,7 @@ class SessionEngine:
                             on_token=_on_token,
                             on_thinking_token=_on_thinking_token,
                             on_messages_snapshot=lambda snapshot: _set_latest_messages(snapshot),
+                            before_llm_call=lambda: self._assert_llm_budget_available(active),
                         )
 
                 self._session_mgr.save_history(session_id, messages)
@@ -1031,19 +1188,12 @@ class SessionEngine:
                 if output.startswith("Unexpected agent output type:"):
                     await self._broadcast(active, "on_error", output)
                 else:
-                    rec_agent = last_record_for_source(active.llm_request_log, "agent")
-                    bd = gauge_breakdown_pct_dict(rec_agent)
+                    usage_payload = self._turn_usage_payload(active) or TurnUsage()
                     await self._broadcast(
                         active,
                         "on_done",
                         output,
-                        TurnUsage(
-                            input_tokens=rec_agent.input_tokens if rec_agent else 0,
-                            output_tokens=rec_agent.output_tokens if rec_agent else 0,
-                            breakdown_pct=TurnUsageBreakdownPct.model_validate(bd) if bd else None,
-                            model=self.agent_model_id_for_gauge(active),
-                            context_cap_tokens=self.agent_context_cap_for_gauge(active),
-                        ),
+                        usage_payload,
                         thinking=thinking or None,
                     )
 
@@ -1063,6 +1213,11 @@ class SessionEngine:
             self._session_mgr.save_llm_request_log(session_id, active.llm_request_log)
             self._save_user_message_on_failure(session_id, user_input, latest_messages=latest_messages)
             await self._broadcast(active, "on_cancelled")
+        except SessionBudgetExceededError as exc:
+            logger.info(f"Session budget blocked LLM call for {session_id}: {exc}")
+            self._session_mgr.save_usage(session_id, active.usage_tracker)
+            self._session_mgr.save_llm_request_log(session_id, active.llm_request_log)
+            await self._broadcast(active, "on_error", str(exc))
         except Exception:
             logger.exception("Agent error")
             self._save_user_message_on_failure(session_id, user_input, latest_messages=latest_messages)
@@ -1147,10 +1302,12 @@ class SessionEngine:
         session_id = active.state.session_id
         try:
             async with self._llm_semaphore:
+                self._assert_llm_budget_available(active)
                 title = await generate_title(
                     events,
                     model=active.title_model_name or self._config.agent.title_model,
                     usage_tracker=active.usage_tracker,
+                    before_llm_call=lambda: self._assert_llm_budget_available(active),
                     model_factory=self._model_factory,
                 )
             if title:
@@ -1489,12 +1646,17 @@ class SessionEngine:
 
         async def _eval(domain: str, command: str) -> bool:
             with self.llm_request_recording(active):
-                return await security_mod.evaluate_domain_with(
-                    security,
-                    sentinel,
-                    domain,
-                    command,
-                    usage_tracker=active.usage_tracker,
-                )
+                try:
+                    return await security_mod.evaluate_domain_with(
+                        security,
+                        sentinel,
+                        domain,
+                        command,
+                        usage_tracker=active.usage_tracker,
+                        assert_llm_budget_available=lambda: self._assert_llm_budget_available(active),
+                    )
+                except SessionBudgetExceededError as exc:
+                    logger.info(f"Session budget blocked domain evaluation for {active.state.session_id}: {exc}")
+                    return False
 
         return _eval

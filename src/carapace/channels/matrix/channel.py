@@ -240,7 +240,11 @@ class MatrixChannel:
             self._room_sessions[room_id] = existing
             logger.debug(f"Matrix: resuming session {existing} for room {room_id}")
         else:
-            state = self._session_mgr.create_session("matrix", room_id)
+            state = self._session_mgr.create_session(
+                "matrix",
+                room_id,
+                budget=self._engine.config.agent.default_session_budget,
+            )
             self._room_sessions[room_id] = state.session_id
             logger.info(f"Matrix: created session {state.session_id} for room {room_id}")
         return self._room_sessions[room_id]
@@ -479,6 +483,8 @@ class MatrixChannel:
                     "- `/skills` — List available skills\n"
                     "- `/memory` — List memory files\n"
                     "- `/retitle` — Regenerate title, or `/retitle My title` to set it\n"
+                    "- `/budget` — Show current budgets; set with `/budget input N`, "
+                    "`/budget output N`, or `/budget cost N`\n"
                     "- `/usage` — Show token usage\n"
                     "- `/model` — View or switch agent, sentinel, and title models together\n"
                     "- `/model-agent` — View or switch the agent model only\n"
@@ -508,7 +514,11 @@ class MatrixChannel:
         if sub:
             self._engine.unsubscribe(old_session_id, sub)
         await self._sandbox_mgr.cleanup_session(old_session_id)
-        new_state = self._session_mgr.create_session("matrix", room_id)
+        new_state = self._session_mgr.create_session(
+            "matrix",
+            room_id,
+            budget=self._engine.config.agent.default_session_budget,
+        )
         self._room_sessions[room_id] = new_state.session_id
         # Clear any stale room-level pending approval
         self._room_pending.pop(room_id, None)

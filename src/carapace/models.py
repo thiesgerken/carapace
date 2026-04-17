@@ -4,6 +4,7 @@ import os
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from decimal import Decimal
 from pathlib import Path
 from typing import Annotated, Any, Literal, Protocol, runtime_checkable
 
@@ -40,6 +41,35 @@ class CredentialRegistryProtocol(Protocol):
 # --- Session State ---
 
 
+class SessionBudget(BaseModel):
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    total_cost_usd: Decimal | None = None
+
+    @model_validator(mode="after")
+    def _normalize_limits(self) -> SessionBudget:
+        if self.input_tokens is not None:
+            if self.input_tokens < 0:
+                raise ValueError("budget.input_tokens must be >= 0")
+            if self.input_tokens == 0:
+                self.input_tokens = None
+        if self.output_tokens is not None:
+            if self.output_tokens < 0:
+                raise ValueError("budget.output_tokens must be >= 0")
+            if self.output_tokens == 0:
+                self.output_tokens = None
+        if self.total_cost_usd is not None:
+            if self.total_cost_usd < 0:
+                raise ValueError("budget.total_cost_usd must be >= 0")
+            if self.total_cost_usd == 0:
+                self.total_cost_usd = None
+        return self
+
+    @property
+    def has_any_limit(self) -> bool:
+        return any(limit is not None for limit in (self.input_tokens, self.output_tokens, self.total_cost_usd))
+
+
 class SessionState(BaseModel):
     session_id: str
     channel_type: str = "cli"
@@ -48,6 +78,7 @@ class SessionState(BaseModel):
     approved_operations: list[str] = []
     activated_skills: list[str] = []
     context_grants: dict[str, ContextGrant] = {}
+    budget: SessionBudget = Field(default_factory=SessionBudget)
     created_at: datetime
     last_active: datetime
 
@@ -217,6 +248,7 @@ class AgentConfig(BaseModel):
     model: str = "anthropic:claude-sonnet-4-6"
     sentinel_model: str = "anthropic:claude-haiku-4-5"
     title_model: str = "anthropic:claude-haiku-4-5"
+    default_session_budget: SessionBudget = Field(default_factory=SessionBudget)
 
     available_models: list[AvailableModelEntry] = Field(default_factory=_default_agent_available_models)
 
@@ -471,4 +503,5 @@ class Deps(BaseModel):
     tool_result_callback: Callable[[ToolResult], None] | None = None
     append_session_events: Callable[[list[dict[str, Any]]], None] | None = None
     usage_tracker: UsageTracker
+    assert_llm_budget_available: Callable[[], None] | None = None
     credential_registry: CredentialRegistryProtocol

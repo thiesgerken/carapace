@@ -166,6 +166,9 @@ def _render_command_result(data: dict[str, Any]) -> None:
         case "usage":
             _render_usage(payload)
 
+        case "budget":
+            _render_budget(payload)
+
         case "models":
             if "models" in payload:
                 for model_type, info in payload["models"].items():
@@ -226,8 +229,9 @@ def _render_usage(payload: dict[str, Any]) -> None:
     categories: dict[str, dict[str, int]] = payload.get("categories", {})
     costs: dict[str, str] = payload.get("costs", {})
     category_costs: dict[str, str] = payload.get("category_costs", {})
+    budget_gauges: list[dict[str, Any]] = payload.get("budget_gauges", [])
 
-    if not models and not categories:
+    if not models and not categories and not budget_gauges:
         console.print("[dim]No token usage recorded yet.[/dim]")
         return
 
@@ -282,6 +286,9 @@ def _render_usage(payload: dict[str, Any]) -> None:
     cost_str = f" | {_styled_cost(total_cost)}" if total_cost != "0" else ""
     tokens_str = f"{total_in + total_out:,} tokens ({total_in:,} in + {total_out:,} out)"
     console.print(f"[bold]Total:[/bold] {tokens_str}{cost_str}")
+
+    if budget_gauges:
+        console.print(_make_budget_table(budget_gauges))
 
     if models:
         console.print(_make_table("Usage by Model", models, show_cost=True))
@@ -345,6 +352,43 @@ def _render_usage(payload: dict[str, Any]) -> None:
                 cells.append(_fmt_pct_cell(b.get("other")))
             lr.add_row(*cells)
         console.print(lr)
+
+
+def _make_budget_table(gauges: list[dict[str, Any]]) -> Table:
+    table = Table(title="Session Budgets")
+    table.add_column("Metric", style="bold")
+    table.add_column("Current", justify="right")
+    table.add_column("Limit", justify="right")
+    table.add_column("Remaining", justify="right")
+    table.add_column("Used", justify="right")
+    for gauge in gauges:
+        used = "blocked" if gauge.get("unavailable_reason") else f"{float(gauge.get('fill_pct', 0)):.1f}%"
+        style = "red" if gauge.get("reached") else "none"
+        table.add_row(
+            str(gauge.get("label", "?")),
+            str(gauge.get("current_value", "-")),
+            str(gauge.get("limit_value", "-")),
+            str(gauge.get("remaining_value") or "—"),
+            f"[{style}]{used}[/{style}]" if style != "none" else used,
+        )
+    return table
+
+
+def _render_budget(payload: dict[str, Any]) -> None:
+    if payload.get("error"):
+        console.print(f"[red]{payload['error']}[/red]")
+        return
+    gauges: list[dict[str, Any]] = payload.get("gauges", [])
+    usage_hint = payload.get("usage_hint")
+    if payload.get("message"):
+        console.print(f"[dim]{payload['message']}[/dim]")
+    if usage_hint:
+        console.print(f"[dim]{usage_hint}[/dim]")
+    if not gauges:
+        if not payload.get("message"):
+            console.print("[dim]No session budgets configured.[/dim]")
+        return
+    console.print(_make_budget_table(gauges))
 
 
 async def _render_escalation_request(data: dict[str, Any]) -> tuple[str, str | None]:

@@ -5,6 +5,7 @@ from typing import Any, Literal
 from pydantic import BaseModel
 
 from carapace.security.context import ApprovalSource, ApprovalVerdict
+from carapace.usage import BudgetGauge
 
 SLASH_COMMANDS: list[dict[str, str]] = [
     {"command": "/security", "description": "Show security policy summary"},
@@ -26,6 +27,10 @@ SLASH_COMMANDS: list[dict[str, str]] = [
     {
         "command": "/model",
         "description": "View or switch agent, sentinel, and title models together (e.g. /model openai:gpt-4o)",
+    },
+    {
+        "command": "/budget",
+        "description": "Show current budgets. Set with /budget input N, /budget output N, or /budget cost N",
     },
     {"command": "/model-agent", "description": "View or switch the agent model only"},
     {"command": "/model-sentinel", "description": "View or switch the sentinel model"},
@@ -179,6 +184,7 @@ class TurnUsage(BaseModel):
     breakdown_pct: TurnUsageBreakdownPct | None = None
     model: str | None = None
     context_cap_tokens: int | None = None
+    budget_gauges: list[BudgetGauge] = []
 
 
 class Done(BaseModel):

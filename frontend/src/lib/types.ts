@@ -138,6 +138,18 @@ export interface TurnUsageBreakdownPct {
   other: number;
 }
 
+export interface BudgetGauge {
+  key: "input" | "output" | "cost";
+  label: string;
+  current_value: string;
+  current_amount?: number | null;
+  limit_value: string;
+  remaining_value?: string | null;
+  fill_pct: number;
+  reached: boolean;
+  unavailable_reason?: string | null;
+}
+
 export interface TurnUsage {
   input_tokens: number;
   output_tokens: number;
@@ -146,6 +158,8 @@ export interface TurnUsage {
   model?: string | null;
   /** Backend-resolved context window for this usage row. */
   context_cap_tokens?: number | null;
+  /** Session budget gauges rendered below the context gauge. */
+  budget_gauges?: BudgetGauge[];
 }
 
 export interface Done {

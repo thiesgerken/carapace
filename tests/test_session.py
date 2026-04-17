@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -15,7 +16,7 @@ from carapace.bootstrap import ensure_data_dir
 from carapace.config import load_config
 from carapace.credentials import CredentialRegistry
 from carapace.git.store import GitStore
-from carapace.models import ContextGrant, CredentialRegistryProtocol, SkillCredentialDecl, ToolResult
+from carapace.models import ContextGrant, CredentialRegistryProtocol, SessionBudget, SkillCredentialDecl, ToolResult
 from carapace.sandbox.manager import SandboxManager
 from carapace.security.context import UserEscalationDecision, format_denial_message, normalize_optional_message
 from carapace.security.sentinel import Sentinel
@@ -38,6 +39,17 @@ def test_create_session(tmp_path: Path):
     state = mgr.create_session()
     assert len(state.session_id) == 25  # 2026-03-08-10-22-abcd1234
     assert state.channel_type == "cli"
+
+
+def test_create_session_persists_budget(tmp_path: Path):
+    mgr = SessionManager(tmp_path)
+    budget = SessionBudget(input_tokens=1_000, total_cost_usd=Decimal("5.00"))
+    state = mgr.create_session(budget=budget)
+
+    resumed = mgr.resume_session(state.session_id)
+    assert resumed is not None
+    assert resumed.budget.input_tokens == 1_000
+    assert resumed.budget.total_cost_usd == Decimal("5.00")
 
 
 def test_resume_session(tmp_path: Path):
@@ -544,6 +556,129 @@ def test_handle_slash_command_retitle_regenerates(tmp_path: Path):
             assert "Cats chat" in result["data"]["message"]
             assert active.state.title == "📌 Cats chat"
 
+        asyncio.run(_run())
+
+
+def test_handle_slash_command_budget_sets_and_clears(tmp_path: Path):
+    with _patch_sentinel():
+        engine = _make_engine(tmp_path)
+        state = engine.session_mgr.create_session()
+        sid = state.session_id
+        engine.get_or_activate(sid)
+
+        async def _run() -> None:
+            initial = await engine.handle_slash_command(sid, "/budget")
+            assert initial is not None
+            assert "usage_hint" in initial["data"]
+            assert "/budget input N" in initial["data"]["usage_hint"]
+
+            set_result = await engine.handle_slash_command(sid, "/budget input 1000")
+            assert set_result is not None
+            assert set_result["command"] == "budget"
+            assert set_result["data"]["message"] == "Set input token budget to 1,000 tokens."
+            assert set_result["data"]["gauges"][0]["key"] == "input"
+
+            cleared = await engine.handle_slash_command(sid, "/budget input 0")
+            assert cleared is not None
+            assert cleared["data"]["message"] == "Cleared input token budget."
+            assert cleared["data"]["gauges"] == []
+
+            reloaded = engine.session_mgr.load_state(sid)
+            assert reloaded is not None
+            assert reloaded.budget.input_tokens is None
+
+        asyncio.run(_run())
+
+
+def test_handle_slash_command_budget_accepts_k_and_m_suffixes(tmp_path: Path):
+    with _patch_sentinel():
+        engine = _make_engine(tmp_path)
+        state = engine.session_mgr.create_session()
+        sid = state.session_id
+        engine.get_or_activate(sid)
+
+        async def _run() -> None:
+            input_result = await engine.handle_slash_command(sid, "/budget input 100k")
+            assert input_result is not None
+            assert input_result["data"]["message"] == "Set input token budget to 100,000 tokens."
+
+            output_result = await engine.handle_slash_command(sid, "/budget output 2M")
+            assert output_result is not None
+            assert output_result["data"]["message"] == "Set output token budget to 2,000,000 tokens."
+
+            reloaded = engine.session_mgr.load_state(sid)
+            assert reloaded is not None
+            assert reloaded.budget.input_tokens == 100_000
+            assert reloaded.budget.output_tokens == 2_000_000
+
+        asyncio.run(_run())
+
+
+def test_handle_slash_command_help_lists_budget(tmp_path: Path):
+    with _patch_sentinel():
+        engine = _make_engine(tmp_path)
+        state = engine.session_mgr.create_session()
+        sid = state.session_id
+        engine.get_or_activate(sid)
+
+        async def _run() -> None:
+            result = await engine.handle_slash_command(sid, "/help")
+            assert result is not None
+            commands = result["data"]["commands"]
+            assert any(item["command"] == "/budget" for item in commands)
+
+        asyncio.run(_run())
+
+
+def test_turn_usage_payload_contains_budget_gauges_without_agent_usage(tmp_path: Path):
+    with _patch_sentinel():
+        engine = _make_engine(tmp_path)
+        state = engine.session_mgr.create_session(budget=SessionBudget(input_tokens=1_000))
+        active = engine.get_or_activate(state.session_id)
+
+        payload = engine._turn_usage_payload(active)
+
+        assert payload is not None
+        assert payload.budget_gauges[0].key == "input"
+        assert payload.budget_gauges[0].current_value == "0 tokens"
+
+
+def test_submit_message_budget_exhausted_broadcasts_error(tmp_path: Path):
+    async def _run() -> None:
+        engine = _make_engine(tmp_path)
+        state = engine.session_mgr.create_session(budget=SessionBudget(input_tokens=100))
+        sid = state.session_id
+        sub = _FakeSubscriber()
+        engine.subscribe(sid, sub)
+        active = engine.get_active(sid)
+        assert active is not None
+        active.usage_tracker.models["test-model"] = ModelUsage(input_tokens=120)
+
+        with patch("carapace.session.engine.run_agent_turn", new=AsyncMock()) as mocked_turn:
+            await engine.submit_message(sid, "hello")
+            await asyncio.sleep(0.1)
+
+        mocked_turn.assert_not_awaited()
+        assert any("Session budget reached" in err for err in sub.errors)
+
+    with _patch_sentinel():
+        asyncio.run(_run())
+
+
+def test_generate_title_skips_when_budget_exhausted(tmp_path: Path):
+    async def _run() -> None:
+        engine = _make_engine(tmp_path)
+        state = engine.session_mgr.create_session(budget=SessionBudget(input_tokens=100))
+        active = engine.get_or_activate(state.session_id)
+        active.usage_tracker.models["test-model"] = ModelUsage(input_tokens=120)
+
+        with patch("carapace.session.engine.generate_title", new=AsyncMock(return_value="ignored")) as mocked:
+            title = await engine._generate_title(active, [{"role": "user", "content": "hello"}])
+
+        assert title == ""
+        mocked.assert_not_awaited()
+
+    with _patch_sentinel():
         asyncio.run(_run())
 
 

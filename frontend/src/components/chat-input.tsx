@@ -4,12 +4,47 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowUp, Clock, Square } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { AvailableModelInfo, SlashCommand } from "@/lib/api";
-import type { TurnUsage, TurnUsageBreakdownPct } from "@/lib/types";
+import type { BudgetGauge, TurnUsage, TurnUsageBreakdownPct } from "@/lib/types";
 
 function formatTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
   return String(n);
+}
+
+function budgetGauges(u: TurnUsage): BudgetGauge[] {
+  return Array.isArray(u.budget_gauges) ? u.budget_gauges : [];
+}
+
+function budgetGaugeCurrentAmount(gauge: BudgetGauge): number | null {
+  if (
+    typeof gauge.current_amount === "number" &&
+    Number.isFinite(gauge.current_amount)
+  ) {
+    return gauge.current_amount;
+  }
+
+  const value = gauge.current_value.trim();
+  if (gauge.key === "cost") {
+    const match = value.match(/^\$(\d+(?:\.\d+)?)$/);
+    return match ? Number(match[1]) : null;
+  }
+
+  const match = value.match(/^(\d+(?:\.\d+)?)([kKmM]?) tokens$/);
+  if (!match) return null;
+
+  const amount = Number(match[1]);
+  if (!Number.isFinite(amount)) return null;
+  if (match[2] === "k" || match[2] === "K") return amount * 1_000;
+  if (match[2] === "m" || match[2] === "M") return amount * 1_000_000;
+  return amount;
+}
+
+function visibleBudgetGauges(u: TurnUsage): BudgetGauge[] {
+  return budgetGauges(u).filter((gauge) => {
+    const current = budgetGaugeCurrentAmount(gauge);
+    return current !== null && current > 0;
+  });
 }
 
 const MODEL_COMMANDS = [
@@ -330,9 +365,9 @@ export function ChatInput({
           </button>
         </div>
 
-        {/* Token usage gauge */}
-        {usage && turnGaugeTokens(usage) > 0 && (
-          <TokenGauge
+        {/* Context and session budget gauges */}
+        {usage && (turnGaugeTokens(usage) > 0 || visibleBudgetGauges(usage).length > 0) && (
+          <UsageGaugeStack
             usage={usage}
             availableModelEntries={availableModelEntries}
             onClickUsage={
@@ -403,8 +438,108 @@ function contextTokenCap(
   return DEFAULT_CONTEXT_CAP;
 }
 
-/** Compact context-window gauge rendered below the input box. */
-function TokenGauge({
+function gaugeStress(fillPct: number, reached: boolean): "high" | "mid" | "low" {
+  if (reached || fillPct > 75) return "high";
+  if (fillPct > 50) return "mid";
+  return "low";
+}
+
+function GaugeRow({
+  fillPct,
+  tooltip,
+  label,
+  fillClassName,
+  onClick,
+  reached = false,
+}: {
+  fillPct: number;
+  tooltip: string;
+  label: string;
+  fillClassName: string;
+  onClick?: () => void;
+  reached?: boolean;
+}) {
+  const stress = gaugeStress(fillPct, reached);
+  const trackRing =
+    stress === "high"
+      ? "ring-1 ring-destructive/35"
+      : stress === "mid"
+        ? "ring-1 ring-warning/30"
+        : "";
+
+  return (
+    <div className="flex items-center gap-2">
+      <div
+        title={tooltip}
+        className="flex min-h-6 flex-1 cursor-default items-center py-2 -my-2"
+      >
+        <div
+          className={cn(
+            "relative h-1 w-full overflow-hidden rounded-full bg-muted",
+            trackRing,
+          )}
+        >
+          <div
+            className={cn(
+              "absolute left-0 top-0 h-full transition-[width]",
+              fillClassName,
+            )}
+            style={{ width: `${Math.max(0, Math.min(fillPct, 100))}%` }}
+          />
+        </div>
+      </div>
+      <button
+        type="button"
+        onClick={onClick}
+        disabled={!onClick}
+        title={tooltip}
+        className={cn(
+          "shrink-0 text-[10px] tabular-nums text-muted-foreground",
+          onClick &&
+            "cursor-pointer transition-colors hover:text-foreground",
+          !onClick && "cursor-default",
+        )}
+      >
+        {label}
+      </button>
+    </div>
+  );
+}
+
+/** Compact usage gauge stack rendered below the input box. */
+function UsageGaugeStack({
+  usage,
+  availableModelEntries,
+  onClickUsage,
+}: {
+  usage: TurnUsage;
+  availableModelEntries: AvailableModelInfo[];
+  onClickUsage?: () => void;
+}) {
+  const budgets = visibleBudgetGauges(usage);
+  const showContextGauge = turnGaugeTokens(usage) > 0;
+
+  return (
+    <div className="mt-1.5 space-y-1 px-1">
+      {showContextGauge ? (
+        <ContextGauge
+          usage={usage}
+          availableModelEntries={availableModelEntries}
+          onClickUsage={onClickUsage}
+        />
+      ) : null}
+      {budgets.map((gauge) => (
+        <BudgetGaugeRow
+          key={gauge.key}
+          gauge={gauge}
+          onClickUsage={onClickUsage}
+        />
+      ))}
+    </div>
+  );
+}
+
+function ContextGauge({
   usage,
   availableModelEntries,
   onClickUsage,
@@ -418,13 +553,7 @@ function TokenGauge({
   const fillPct = Math.min((ctx / cap) * 100, 100);
   const bp = usage.breakdown_pct;
 
-  const stress = fillPct > 75 ? "high" : fillPct > 50 ? "mid" : "low";
-  const trackRing =
-    stress === "high"
-      ? "ring-1 ring-destructive/35"
-      : stress === "mid"
-        ? "ring-1 ring-warning/30"
-        : "";
+  const stress = gaugeStress(fillPct, false);
 
   const matched = findModelEntryForGauge(usage.model, availableModelEntries);
   const limitFromConfig = matched?.max_input_tokens != null;
@@ -444,7 +573,7 @@ function TokenGauge({
   const tooltip = tooltipLines.join("\n");
 
   return (
-    <div className="mt-1.5 flex items-center gap-2 px-1">
+    <div className="flex items-center gap-2">
       <div
         title={tooltip}
         className="flex min-h-6 flex-1 cursor-default items-center py-2 -my-2"
@@ -452,7 +581,11 @@ function TokenGauge({
         <div
           className={cn(
             "relative h-1 w-full rounded-full bg-muted overflow-hidden",
-            trackRing,
+            stress === "high"
+              ? "ring-1 ring-destructive/35"
+              : stress === "mid"
+                ? "ring-1 ring-warning/30"
+                : "",
           )}
         >
           <div
@@ -501,5 +634,46 @@ function TokenGauge({
         {formatTokens(ctx)} tokens
       </button>
     </div>
+  );
+}
+
+function BudgetGaugeRow({
+  gauge,
+  onClickUsage,
+}: {
+  gauge: BudgetGauge;
+  onClickUsage?: () => void;
+}) {
+  const fillClassName =
+    gauge.key === "input"
+      ? "rounded-l-full bg-emerald-500/75"
+      : gauge.key === "output"
+        ? "rounded-l-full bg-sky-500/75"
+        : "rounded-l-full bg-amber-500/80";
+
+  const tooltipLines = [
+    `${gauge.label} budget`,
+    `Current: ${gauge.current_value}`,
+    `Max: ${gauge.limit_value}`,
+  ];
+  if (gauge.remaining_value) {
+    tooltipLines.push(`Remaining: ${gauge.remaining_value}`);
+  }
+  if (gauge.unavailable_reason) {
+    tooltipLines.push(gauge.unavailable_reason);
+  }
+  if (gauge.reached) {
+    tooltipLines.push("Budget exhausted.");
+  }
+
+  return (
+    <GaugeRow
+      fillPct={gauge.fill_pct}
+      tooltip={tooltipLines.join("\n")}
+      label={gauge.current_value}
+      fillClassName={fillClassName}
+      onClick={onClickUsage}
+      reached={gauge.reached}
+    />
   );
 }
