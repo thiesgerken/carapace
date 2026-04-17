@@ -15,6 +15,7 @@ import {
   ShieldCheck,
   SquareTerminal,
   UserCheck,
+  UserX,
   Zap,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -295,9 +296,22 @@ function ApprovalBadge({
   }
 
   if (source === "user") {
+    const isDenied = verdict === "deny";
     return (
-      <span className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium bg-purple-500/10 text-purple-600 dark:text-purple-400">
-        <UserCheck className="h-2.5 w-2.5" />
+      <span
+        className={cn(
+          "inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium",
+          isDenied
+            ? "bg-red-500/10 text-red-600 dark:text-red-400"
+            : "bg-purple-500/10 text-purple-600 dark:text-purple-400",
+        )}
+        title={tooltip || undefined}
+      >
+        {isDenied ? (
+          <UserX className="h-2.5 w-2.5" />
+        ) : (
+          <UserCheck className="h-2.5 w-2.5" />
+        )}
         user
       </span>
     );
@@ -361,6 +375,7 @@ export function ToolCallBadge({
     : source === "user"
       ? explanation
       : "";
+  const showUserDecision = source === "user" && (verdict === "deny" || finalDecisionMessage.length > 0);
   const isError = exitCode != null && exitCode !== 0;
   const isExecTool = tool === "exec";
   const isUseSkillTool = tool === "use_skill";
@@ -576,10 +591,10 @@ export function ToolCallBadge({
             </div>
           )}
 
-          {finalDecisionMessage && (
+          {showUserDecision && (
             <div className="text-[11px] text-muted-foreground leading-relaxed">
-              <span className="font-medium text-foreground/70"><UserCheck className="inline h-3 w-3 -translate-y-px mr-1" />User: </span>
-              {finalDecisionMessage}
+              <span className="font-medium text-foreground/70">{verdict === "deny" ? <UserX className="inline h-3 w-3 -translate-y-px mr-1" /> : <UserCheck className="inline h-3 w-3 -translate-y-px mr-1" />}User: </span>
+              {finalDecisionMessage || "Denied by user."}
             </div>
           )}
 

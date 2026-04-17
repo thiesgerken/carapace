@@ -49,7 +49,7 @@ function applyDeniedApprovalToMessages(
   },
   message?: string,
 ): ChatMessage[] {
-  const decisionMessage = message ?? "";
+  const decisionMessage = normalizedDecisionMessage(message);
   const updated = [...messages];
   for (let index = updated.length - 1; index >= 0; index--) {
     const entry = updated[index];
@@ -63,6 +63,7 @@ function applyDeniedApprovalToMessages(
         ...entry,
         approvalSource: "user",
         approvalVerdict: "deny",
+        approvalExplanation: decisionMessage ? entry.approvalExplanation : undefined,
         decisionMessage,
         loading: false,
       };
@@ -185,7 +186,7 @@ export function ChatView({
               const patched = applyDeniedApprovalToMessages(
                 msgs,
                 request,
-                response.message ?? "",
+                response.message,
               );
               msgs.length = 0;
               msgs.push(...patched);
@@ -630,7 +631,7 @@ export function ChatView({
           return applyDeniedApprovalToMessages(
             withoutApproval,
             request,
-            normalizedMessage ?? "",
+            normalizedMessage,
           );
         }
         return withoutApproval;

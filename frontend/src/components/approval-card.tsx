@@ -16,6 +16,14 @@ export function ApprovalCard({
   onRespond,
 }: ApprovalCardProps) {
   const [message, setMessage] = useState("");
+  const [showNote, setShowNote] = useState(false);
+
+  function toggleNote(): void {
+    if (showNote) {
+      setMessage("");
+    }
+    setShowNote(!showNote);
+  }
 
   return (
     <div
@@ -64,24 +72,7 @@ export function ApprovalCard({
         </details>
       </div>
 
-      <label className="mt-3 block space-y-1">
-        <span className="text-xs text-muted-foreground">
-          Optional message when denying
-        </span>
-        <textarea
-          value={message}
-          onChange={(event) => setMessage(event.target.value)}
-          rows={2}
-          className={cn(
-            "w-full rounded-md border border-border bg-background px-3 py-2 text-xs",
-            "text-foreground outline-none transition-colors",
-            "focus:border-warning/60 focus:ring-2 focus:ring-warning/20",
-          )}
-          placeholder="Why should this be blocked?"
-        />
-      </label>
-
-      <div className="mt-3 flex gap-2">
+      <div className="mt-3 flex flex-wrap items-center gap-2">
         <button
           onClick={() => onRespond(true)}
           className={cn(
@@ -92,7 +83,7 @@ export function ApprovalCard({
           Approve
         </button>
         <button
-          onClick={() => onRespond(false, message.trim() || undefined)}
+          onClick={() => onRespond(false, showNote ? message.trim() || undefined : undefined)}
           className={cn(
             "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
             "border border-border hover:bg-muted",
@@ -100,7 +91,33 @@ export function ApprovalCard({
         >
           Deny
         </button>
+        <button
+          type="button"
+          onClick={toggleNote}
+          className="text-xs text-muted-foreground transition-colors hover:text-foreground"
+        >
+          {showNote ? "Hide note" : "Add note"}
+        </button>
       </div>
+
+      {showNote && (
+        <label className="mt-3 block space-y-1">
+          <span className="text-xs text-muted-foreground">
+            Optional note for the agent
+          </span>
+          <textarea
+            value={message}
+            onChange={(event) => setMessage(event.target.value)}
+            rows={2}
+            className={cn(
+              "w-full rounded-md border border-border bg-background px-3 py-2 text-xs",
+              "text-foreground outline-none transition-colors",
+              "focus:border-warning/60 focus:ring-2 focus:ring-warning/20",
+            )}
+            placeholder="Why should this be blocked?"
+          />
+        </label>
+      )}
     </div>
   );
 }
