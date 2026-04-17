@@ -1,6 +1,53 @@
 # CHANGELOG
 
 
+## v0.85.0 (2026-04-17)
+
+
+### ✨ Features
+
+
+- ✨Merge pull request #65 from thiesgerken/feat/approval-denial-messages
+  ([`3800e31`](https://github.com/thiesgerken/carapace/commit/3800e31c7adbcb71c8401f5d01f82406313b9405))
+
+  ✨ Add denial messages to approval flows
+
+- ✨ improve system prompt for testing
+  ([`d047028`](https://github.com/thiesgerken/carapace/commit/d04702840f3a7019420f98bda162f5d54230acb1))
+
+- ✨ feat: add approval denial messages
+  ([`b509cf8`](https://github.com/thiesgerken/carapace/commit/b509cf8fd0496ec2d57097b66325a16941199e08))
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix: preserve credential denial attribution
+  ([`1609be2`](https://github.com/thiesgerken/carapace/commit/1609be26c4544b51dfd53c4beb8422d66a1a55ba))
+
+### Other
+
+
+- 🧹 chore: remove unused approval message field
+  ([`20ca63e`](https://github.com/thiesgerken/carapace/commit/20ca63ef35cea68310d7f4d7602fc6c7166f9ab4))
+
+### ♻️ Refactoring
+
+
+- ♻️ refactor: unify approval note handling
+  ([`b290672`](https://github.com/thiesgerken/carapace/commit/b290672cfb030625082b99a0efb918e6e561843d))
+
+### 💄 UI/UX
+
+
+- 💄 polish: refine denial approval UI
+  ([`4487d72`](https://github.com/thiesgerken/carapace/commit/4487d7239303471f939789604fafd06762fc6903))
+
+### 🩹 Patches
+
+
+- 🩹 fix: restore pytest suite
+  ([`b75cd93`](https://github.com/thiesgerken/carapace/commit/b75cd9386c594415a0deb01204630019bda2d4c9))
+
 ## v0.84.3 (2026-04-16)
 
 
