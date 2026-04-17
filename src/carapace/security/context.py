@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, Any, Literal
@@ -12,6 +13,28 @@ from pydantic import BaseModel, Field
 
 class SecurityDeniedError(Exception):
     """Raised when the sentinel denies a tool call."""
+
+
+@dataclass(frozen=True, slots=True)
+class UserEscalationDecision:
+    allowed: bool
+    message: str | None = None
+
+
+def normalize_optional_message(message: str | None) -> str | None:
+    if message is None:
+        return None
+    stripped = message.strip()
+    return stripped or None
+
+
+def format_denial_message(source: Literal["sentinel", "user"], message: str | None = None) -> str:
+    normalized = normalize_optional_message(message)
+    actor = "Sentinel" if source == "sentinel" else "User"
+    base = f"{actor} denied this operation."
+    if normalized is None:
+        return base
+    return f"{base} {normalized}"
 
 
 # --- Action Log Entry Types ---
@@ -168,7 +191,9 @@ class SessionSecurity:
         self.sentinel_eval_count: int = 0
         self._last_synced_idx: int = 0
         self._audit_dir = audit_dir
-        self._user_escalation_callback: Callable[[str, str, dict[str, Any]], Awaitable[bool]] | None = None
+        self._user_escalation_callback: (
+            Callable[[str, str, dict[str, Any]], Awaitable[UserEscalationDecision]] | None
+        ) = None
         self._domain_info_callback: (
             Callable[[str, str, ApprovalSource | None, ApprovalVerdict | None, str | None], None] | None
         ) = None
@@ -223,7 +248,7 @@ class SessionSecurity:
 
     def set_user_escalation_callback(
         self,
-        callback: Callable[[str, str, dict[str, Any]], Awaitable[bool]] | None,
+        callback: Callable[[str, str, dict[str, Any]], Awaitable[UserEscalationDecision]] | None,
     ) -> None:
         self._user_escalation_callback = callback
 
@@ -349,6 +374,7 @@ class SessionSecurity:
         ui_label: str,
         approval_source: ApprovalSource,
         approval_verdict: ApprovalVerdict,
+        ui_explanation: str | None = None,
         audit_final: Literal["auto_allowed", "allowed", "escalated", "denied"],
         audit_args: dict[str, Any] | None = None,
         sentinel_verdict: SentinelVerdict | None = None,
@@ -374,13 +400,13 @@ class SessionSecurity:
             name=display_name,
             approval_source=approval_source,
             approval_verdict=approval_verdict,
-            approval_explanation=explanation,
+            approval_explanation=(explanation if approval_source == "sentinel" else ui_explanation),
         )
 
-    async def escalate_to_user(self, subject: str, context: dict[str, Any]) -> bool:
+    async def escalate_to_user(self, subject: str, context: dict[str, Any]) -> UserEscalationDecision:
         if self._user_escalation_callback is None:
             logger.warning(f"No user escalation callback for session {self.session_id}, denying {subject}")
-            return False
+            return UserEscalationDecision(allowed=False)
         return await self._user_escalation_callback(self.session_id, subject, context)
 
     def reset_sentinel(self) -> None:

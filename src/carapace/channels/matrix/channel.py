@@ -441,6 +441,7 @@ class MatrixChannel:
         """Dispatch a slash command."""
         parts = text.strip().split(maxsplit=1)
         cmd = parts[0].lower()
+        arg = parts[1].strip() if len(parts) > 1 else ""
 
         match cmd:
             case "/reset":
@@ -450,7 +451,7 @@ class MatrixChannel:
                 await self._resolve_pending(room_id, session_id, approve=True)
                 return
             case _ if cmd in DENY_COMMANDS:
-                await self._resolve_pending(room_id, session_id, approve=False)
+                await self._resolve_pending(room_id, session_id, approve=False, message=arg or None)
                 return
             case "/verbose":
                 verbose = not self._verbose.get(room_id, False)
@@ -485,7 +486,7 @@ class MatrixChannel:
                     "- `/model-title` — View or switch the title model\n"
                     "- `/verbose` — Toggle tool call notifications\n"
                     "- `/allow` / `/yes` — Approve tool call or allow domain\n"
-                    "- `/deny` / `/no` — Deny tool call or block domain\n"
+                    "- `/deny [reason]` / `/no [reason]` — Deny tool call or block domain\n"
                     "- `/help` — Show this help"
                 )
                 await self._send_text(room_id, reply)
@@ -518,18 +519,31 @@ class MatrixChannel:
             "History and approved credentials have been cleared.",
         )
 
-    async def _resolve_pending(self, room_id: str, session_id: str, *, approve: bool) -> None:
+    async def _resolve_pending(
+        self,
+        room_id: str,
+        session_id: str,
+        *,
+        approve: bool,
+        message: str | None = None,
+    ) -> None:
         """Resolve the oldest pending approval (tool or domain) for a room."""
         sub = self._room_subscribers.get(room_id)
         if sub is None:
             await self._send_text(room_id, "No pending approval request.")
             return
 
+        normalized_message = message.strip() if message else None
+
         if sub._approval_events:
             event_id, tool_call_id = next(iter(sub._approval_events.items()))
             await self._engine.submit_approval(
                 session_id,
-                ApprovalResponse(tool_call_id=tool_call_id, approved=approve),
+                ApprovalResponse(
+                    tool_call_id=tool_call_id,
+                    approved=approve,
+                    message=normalized_message,
+                ),
             )
             sub._approval_events.pop(event_id, None)
             self._pending_approvals.pop(event_id, None)
@@ -541,7 +555,11 @@ class MatrixChannel:
             decision = "allow" if approve else "deny"
             await self._engine.submit_approval(
                 session_id,
-                EscalationResponse(request_id=request_id, decision=decision),
+                EscalationResponse(
+                    request_id=request_id,
+                    decision=decision,
+                    message=normalized_message,
+                ),
             )
             sub._domain_events.pop(event_id, None)
             self._pending_domain_approvals.pop(event_id, None)
@@ -553,7 +571,11 @@ class MatrixChannel:
             decision = "allow" if approve else "deny"
             await self._engine.submit_approval(
                 session_id,
-                EscalationResponse(request_id=request_id, decision=decision),
+                EscalationResponse(
+                    request_id=request_id,
+                    decision=decision,
+                    message=normalized_message,
+                ),
             )
             sub._credential_events.pop(event_id, None)
             self._pending_credential_approvals.pop(event_id, None)

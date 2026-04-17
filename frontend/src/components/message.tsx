@@ -1,7 +1,7 @@
 "use client";
 
 import { Brain, Check, ChevronRight, Copy, Loader2 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 
 import type { ChatMessage, EscalationDecision } from "@/lib/types";
 import { MarkdownContent } from "./markdown-content";
@@ -61,18 +61,14 @@ function ThinkingBadge({
   content: string;
   streaming: boolean;
 }) {
-  const [open, setOpen] = useState(streaming);
-
-  // Auto-collapse when streaming finishes
-  useEffect(() => {
-    if (!streaming) setOpen(false);
-  }, [streaming]);
+  const [manualOpen, setManualOpen] = useState(false);
+  const open = streaming || manualOpen;
 
   return (
     <div className="my-1 w-full min-w-0">
       <button
         type="button"
-        onClick={() => setOpen(!open)}
+        onClick={() => setManualOpen((prev) => !prev)}
         className={cn(
           "flex w-full min-w-0 items-center gap-1.5 rounded-md px-2 py-1 text-xs text-left",
           "bg-muted/60 text-muted-foreground",
@@ -111,19 +107,22 @@ function ThinkingBadge({
 
 interface MessageProps {
   message: ChatMessage;
-  onApproval?: (toolCallId: string, approved: boolean) => void;
-  approvalResolved?: boolean;
-  onEscalation?: (requestId: string, decision: EscalationDecision) => void;
+  onApproval?: (toolCallId: string, approved: boolean, message?: string) => void;
+  onEscalation?: (
+    requestId: string,
+    decision: EscalationDecision,
+    message?: string,
+  ) => void;
   onCredentialApproval?: (
     requestId: string,
     decision: EscalationDecision,
+    message?: string,
   ) => void;
 }
 
 export function Message({
   message,
   onApproval,
-  approvalResolved,
   onEscalation,
   onCredentialApproval,
 }: MessageProps) {
@@ -178,10 +177,11 @@ export function Message({
           approvalSource={message.approvalSource}
           approvalVerdict={message.approvalVerdict}
           approvalExplanation={message.approvalExplanation}
+          decisionMessage={message.decisionMessage}
           result={message.result}
           exitCode={message.exitCode}
           loading={message.loading}
-          children={message.children?.map((c) => ({
+          childCalls={message.children?.map((c) => ({
             tool: c.tool,
             args: c.args,
             detail: c.detail,
@@ -189,6 +189,7 @@ export function Message({
             approvalSource: c.approvalSource,
             approvalVerdict: c.approvalVerdict,
             approvalExplanation: c.approvalExplanation,
+            decisionMessage: c.decisionMessage,
             result: c.result,
             exitCode: c.exitCode,
             loading: c.loading,
@@ -200,9 +201,8 @@ export function Message({
       return (
         <ApprovalCard
           request={message.request}
-          resolved={approvalResolved}
-          onRespond={(approved) =>
-            onApproval?.(message.request.tool_call_id, approved)
+          onRespond={(approved, responseMessage) =>
+            onApproval?.(message.request.tool_call_id, approved, responseMessage)
           }
         />
       );
@@ -212,8 +212,8 @@ export function Message({
         <DomainAccessApprovalCard
           request={message.request}
           decision={message.decision}
-          onRespond={(decision) =>
-            onEscalation?.(message.request.request_id, decision)
+          onRespond={(decision, responseMessage) =>
+            onEscalation?.(message.request.request_id, decision, responseMessage)
           }
         />
       );
@@ -223,8 +223,8 @@ export function Message({
         <GitPushApprovalCard
           request={message.request}
           decision={message.decision}
-          onRespond={(decision) =>
-            onEscalation?.(message.request.request_id, decision)
+          onRespond={(decision, responseMessage) =>
+            onEscalation?.(message.request.request_id, decision, responseMessage)
           }
         />
       );
@@ -234,8 +234,12 @@ export function Message({
         <CredentialApprovalCard
           request={message.request}
           decision={message.decision}
-          onRespond={(decision) =>
-            onCredentialApproval?.(message.request.request_id, decision)
+          onRespond={(decision, responseMessage) =>
+            onCredentialApproval?.(
+              message.request.request_id,
+              decision,
+              responseMessage,
+            )
           }
         />
       );

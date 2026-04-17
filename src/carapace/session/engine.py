@@ -41,7 +41,15 @@ from carapace.models import (
     context_grants_session_summary,
 )
 from carapace.sandbox.manager import SandboxManager
-from carapace.security.context import ApprovalSource, ApprovalVerdict, SessionSecurity, UserVouchedEntry
+from carapace.security.context import (
+    ApprovalSource,
+    ApprovalVerdict,
+    SessionSecurity,
+    UserEscalationDecision,
+    UserVouchedEntry,
+    format_denial_message,
+    normalize_optional_message,
+)
 from carapace.security.sentinel import Sentinel
 from carapace.session.manager import SessionManager
 from carapace.session.titler import generate_title
@@ -956,6 +964,7 @@ class SessionEngine:
                     pending: set[str],
                 ) -> dict[str, bool | ToolDenied]:
                     results: dict[str, bool | ToolDenied] = {}
+                    responses: dict[str, ApprovalResponse] = {}
                     remaining = set(pending)
                     while remaining:
                         msg = await active.tool_approval_queue.get()
@@ -964,16 +973,28 @@ class SessionEngine:
                                 results[tid] = ToolDenied("Agent cancelled.")
                             break
                         if msg.tool_call_id in remaining:
+                            responses[msg.tool_call_id] = msg
                             results[msg.tool_call_id] = (
-                                True if msg.approved else ToolDenied("User denied this operation.")
+                                True if msg.approved else ToolDenied(format_denial_message("user", msg.message))
                             )
                             remaining.discard(msg.tool_call_id)
                     # Store approval decisions in events for history reconstruction
                     for tool_call_id, decision in results.items():
+                        response = responses.get(tool_call_id)
                         user_decision = "approved" if decision is True else "denied"
                         self._session_mgr.append_events(
                             session_id,
-                            [{"role": "approval_response", "tool_call_id": tool_call_id, "decision": user_decision}],
+                            [
+                                {
+                                    "role": "approval_response",
+                                    "tool_call_id": tool_call_id,
+                                    "decision": user_decision,
+                                    "decision_source": "user",
+                                    "message": normalize_optional_message(response.message)
+                                    if response is not None
+                                    else None,
+                                }
+                            ],
                         )
                     active.pending_approval_requests.clear()
                     return results
@@ -1144,10 +1165,10 @@ class SessionEngine:
     def _make_escalation_cb(
         self,
         active: ActiveSession,
-    ) -> Callable[[str, str, dict[str, Any]], Awaitable[bool]]:
+    ) -> Callable[[str, str, dict[str, Any]], Awaitable[UserEscalationDecision]]:
         """Build a callback that broadcasts sentinel escalations (proxy domain or git push) to subscribers."""
 
-        async def _escalate(session_id: str, subject: str, context: dict[str, Any]) -> bool:
+        async def _escalate(session_id: str, subject: str, context: dict[str, Any]) -> UserEscalationDecision:
             request_id = secrets.token_hex(8)
             cmd = context.get("command", "")
             kind = context.get("kind", "domain_access")
@@ -1245,9 +1266,10 @@ class SessionEngine:
                 msg = await active.escalation_queue.get()
                 if msg is None:
                     active.pending_escalations.clear()
-                    return False
+                    return UserEscalationDecision(allowed=False)
                 if msg.request_id == request_id:
                     decision = msg.decision
+                    message = normalize_optional_message(msg.message)
                     event_roles = {
                         "git_push": "git_push_approval",
                         "credential_access": "credential_approval",
@@ -1260,6 +1282,8 @@ class SessionEngine:
                             "request_id": request_id,
                             "vault_paths": [vp],
                             "decision": decision,
+                            "decision_source": "user",
+                            "message": message,
                         }
                     else:
                         response_event = {
@@ -1268,12 +1292,14 @@ class SessionEngine:
                             "domain": subject,
                             "command": cmd,
                             "decision": decision,
+                            "decision_source": "user",
+                            "message": message,
                         }
                     self._session_mgr.append_events(session_id, [response_event])
                     active.pending_escalations = [
                         p for p in active.pending_escalations if p["request_id"] != request_id
                     ]
-                    return decision != "deny"
+                    return UserEscalationDecision(allowed=decision != "deny", message=message)
 
         return _escalate
 

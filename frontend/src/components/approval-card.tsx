@@ -1,27 +1,21 @@
-"use client";
-
 import { cn } from "@/lib/utils";
 import { AlertCircle } from "lucide-react";
 import type { ApprovalRequest } from "@/lib/types";
+import { DenialNoteActions } from "./denial-note-actions";
 
 interface ApprovalCardProps {
   request: ApprovalRequest;
-  onRespond: (approved: boolean) => void;
-  resolved?: boolean;
+  onRespond: (approved: boolean, message?: string) => void;
 }
 
 export function ApprovalCard({
   request,
   onRespond,
-  resolved,
 }: ApprovalCardProps) {
   return (
     <div
       className={cn(
-        "my-2 rounded-lg border-2 p-3 text-sm",
-        resolved === undefined
-          ? "border-warning/60 bg-warning/5"
-          : "border-border bg-muted/30 opacity-60",
+        "my-2 rounded-lg border-2 border-warning/60 bg-warning/5 p-3 text-sm",
       )}
     >
       <div className="mb-2 flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-warning-foreground/70">
@@ -65,28 +59,13 @@ export function ApprovalCard({
         </details>
       </div>
 
-      {resolved === undefined && (
-        <div className="mt-3 flex gap-2">
-          <button
-            onClick={() => onRespond(true)}
-            className={cn(
-              "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-              "bg-foreground text-background hover:bg-foreground/90",
-            )}
-          >
-            Approve
-          </button>
-          <button
-            onClick={() => onRespond(false)}
-            className={cn(
-              "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-              "border border-border hover:bg-muted",
-            )}
-          >
-            Deny
-          </button>
-        </div>
-      )}
+      <DenialNoteActions
+        allowLabel="Approve"
+        denyButtonClassName="border border-border text-foreground hover:bg-muted"
+        notePlaceholder="Why should this be blocked?"
+        onAllow={() => onRespond(true)}
+        onDeny={(message) => onRespond(false, message)}
+      />
     </div>
   );
 }

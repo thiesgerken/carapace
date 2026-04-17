@@ -28,6 +28,103 @@ interface ChatViewProps {
   onTitleUpdate?: (title: string) => void;
 }
 
+function normalizedDecisionMessage(message?: string | null): string | undefined {
+  if (message == null) return undefined;
+  const trimmed = message.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function argsMatch(
+  left: Record<string, unknown>,
+  right: Record<string, unknown>,
+): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function applyDeniedApprovalToMessages(
+  messages: ChatMessage[],
+  request: {
+    tool: string;
+    args: Record<string, unknown>;
+  },
+  message?: string,
+): ChatMessage[] {
+  const decisionMessage = normalizedDecisionMessage(message);
+  const updated = [...messages];
+  for (let index = updated.length - 1; index >= 0; index--) {
+    const entry = updated[index];
+    if (
+      entry.kind === "tool_call" &&
+      entry.tool === request.tool &&
+      entry.approvalVerdict === "escalate" &&
+      argsMatch(entry.args, request.args)
+    ) {
+      updated[index] = {
+        ...entry,
+        approvalSource: "user",
+        approvalVerdict: "deny",
+        approvalExplanation: decisionMessage ? entry.approvalExplanation : undefined,
+        decisionMessage,
+        loading: false,
+      };
+      break;
+    }
+  }
+  return updated;
+}
+
+function applyApprovedApprovalToMessages(
+  messages: ChatMessage[],
+  request: {
+    tool: string;
+    args: Record<string, unknown>;
+  },
+  loading = false,
+): ChatMessage[] {
+  const updated = [...messages];
+  for (let index = updated.length - 1; index >= 0; index--) {
+    const entry = updated[index];
+    if (
+      entry.kind === "tool_call" &&
+      entry.tool === request.tool &&
+      entry.approvalVerdict === "escalate" &&
+      argsMatch(entry.args, request.args)
+    ) {
+      updated[index] = {
+        ...entry,
+        approvalSource: "user",
+        approvalVerdict: "allow",
+        approvalExplanation: undefined,
+        decisionMessage: undefined,
+        loading,
+      };
+      break;
+    }
+  }
+  return updated;
+}
+
+function isUserApprovedReplay(
+  tool: string,
+  detail: string | undefined,
+  approvalSource: ChatMessage extends never ? never :
+    | "safe-list"
+    | "sentinel"
+    | "user"
+    | "skill"
+    | "bypass"
+    | "unknown"
+    | undefined,
+  approvalVerdict: "allow" | "deny" | "escalate" | undefined,
+): boolean {
+  return (
+    approvalSource === "user" &&
+    approvalVerdict === "allow" &&
+    detail === "[user approved]" &&
+    (tool === "exec" || tool === "use_skill")
+  );
+}
+
 export function ChatView({
   server,
   token,
@@ -43,9 +140,6 @@ export function ChatView({
   const [availableModelEntries, setAvailableModelEntries] = useState<
     AvailableModelInfo[]
   >([]);
-  const [approvalState, setApprovalState] = useState<Map<string, boolean>>(
-    new Map(),
-  );
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const isAtBottomRef = useRef(true);
@@ -67,7 +161,6 @@ export function ChatView({
         if (cancelled) return;
         const msgs: ChatMessage[] = [];
         const pendingToolCallIndices = new Map<string, number[]>();
-        const approvals = new Map<string, boolean>();
 
         function findLaterEscalationDecision(
           fromIndex: number,
@@ -89,6 +182,25 @@ export function ChatView({
             msgs.push({ kind: "user", content: h.content });
           } else if (h.role === "tool_call") {
             const rawContexts = h.contexts ?? h.args?.contexts;
+            if (
+              isUserApprovedReplay(
+                h.tool ?? "",
+                h.detail,
+                h.approval_source,
+                h.approval_verdict,
+              )
+            ) {
+              const patched = applyApprovedApprovalToMessages(
+                msgs,
+                {
+                  tool: h.tool ?? "",
+                  args: (h.args ?? {}) as Record<string, unknown>,
+                },
+              );
+              msgs.length = 0;
+              msgs.push(...patched);
+              continue;
+            }
             msgs.push({
               kind: "tool_call",
               tool: h.tool ?? "",
@@ -126,26 +238,34 @@ export function ChatView({
           } else if (h.role === "approval_response") {
             // Skip — consumed by the approval_request above
           } else if (h.role === "approval_request" && h.tool_call_id) {
-            // Look ahead for a matching approval_response
+            const request = {
+              type: "approval_request" as const,
+              tool_call_id: h.tool_call_id,
+              tool: h.tool ?? "",
+              args: (h.args ?? {}) as Record<string, unknown>,
+              explanation: h.explanation ?? "",
+              risk_level: h.risk_level ?? "",
+            };
             const response = history.find(
               (r) =>
                 r.role === "approval_response" &&
                 r.tool_call_id === h.tool_call_id,
             );
-            if (response) {
-              approvals.set(h.tool_call_id, response.decision === "approved");
+            if (!response) {
+              msgs.push({ kind: "approval", request });
+            } else if (response.decision === "approved") {
+              const patched = applyApprovedApprovalToMessages(msgs, request);
+              msgs.length = 0;
+              msgs.push(...patched);
+            } else if (response.decision === "denied") {
+              const patched = applyDeniedApprovalToMessages(
+                msgs,
+                request,
+                response.message,
+              );
+              msgs.length = 0;
+              msgs.push(...patched);
             }
-            msgs.push({
-              kind: "approval",
-              request: {
-                type: "approval_request",
-                tool_call_id: h.tool_call_id,
-                tool: h.tool ?? "",
-                args: (h.args ?? {}) as Record<string, unknown>,
-                explanation: h.explanation ?? "",
-                risk_level: h.risk_level ?? "",
-              },
-            });
           } else if (
             (h.role === "domain_access_approval" ||
               h.role === "proxy_approval") &&
@@ -269,7 +389,6 @@ export function ChatView({
           ? msgs.filter((_, i) => !childIndices.has(i))
           : msgs;
         setMessages(grouped);
-        setApprovalState(approvals);
       })
       .catch(() => {
         // history fetch can fail for new sessions - that's fine
@@ -368,6 +487,23 @@ export function ChatView({
             toolId: msg.tool_id,
             parentToolId: msg.parent_tool_id,
           };
+          if (
+            isUserApprovedReplay(
+              msg.tool,
+              msg.detail,
+              msg.approval_source,
+              msg.approval_verdict,
+            )
+          ) {
+            setMessages((prev) =>
+              applyApprovedApprovalToMessages(
+                prev,
+                { tool: msg.tool, args: msg.args },
+                isLoading,
+              ),
+            );
+            break;
+          }
           if (msg.parent_tool_id) {
             // Attach to parent tool call
             setMessages((prev) => {
@@ -562,15 +698,52 @@ export function ChatView({
     send({ type: "cancel" });
   }
 
-  function handleApproval(toolCallId: string, approved: boolean) {
-    setApprovalState((prev) => new Map(prev).set(toolCallId, approved));
-    send({ type: "approval_response", tool_call_id: toolCallId, approved });
-    // Force re-render to show resolved state
-    setMessages((prev) => [...prev]);
+  function handleApproval(
+    toolCallId: string,
+    approved: boolean,
+    responseMessage?: string,
+  ) {
+    const normalizedMessage = normalizedDecisionMessage(responseMessage);
+    send({
+      type: "approval_response",
+      tool_call_id: toolCallId,
+      approved,
+      message: normalizedMessage,
+    });
+    setMessages((prev) => {
+        let request: { tool: string; args: Record<string, unknown> } | null = null;
+        const withoutApproval = prev.filter((entry) => {
+          if (entry.kind === "approval" && entry.request.tool_call_id === toolCallId) {
+            request = { tool: entry.request.tool, args: entry.request.args };
+            return false;
+          }
+          return true;
+        });
+        if (!approved && request) {
+          return applyDeniedApprovalToMessages(
+            withoutApproval,
+            request,
+            normalizedMessage,
+          );
+        }
+        if (approved && request) {
+          return applyApprovedApprovalToMessages(withoutApproval, request);
+        }
+        return withoutApproval;
+      });
   }
 
-  function handleEscalation(requestId: string, decision: EscalationDecision) {
-    send({ type: "escalation_response", request_id: requestId, decision });
+  function handleEscalation(
+    requestId: string,
+    decision: EscalationDecision,
+    responseMessage?: string,
+  ) {
+    send({
+      type: "escalation_response",
+      request_id: requestId,
+      decision,
+      message: normalizedDecisionMessage(responseMessage),
+    });
     setMessages((prev) =>
       prev.filter(
         (m) =>
@@ -586,8 +759,14 @@ export function ChatView({
   function handleCredentialEscalation(
     requestId: string,
     decision: EscalationDecision,
+    responseMessage?: string,
   ) {
-    send({ type: "escalation_response", request_id: requestId, decision });
+    send({
+      type: "escalation_response",
+      request_id: requestId,
+      decision,
+      message: normalizedDecisionMessage(responseMessage),
+    });
     setMessages((prev) =>
       prev.filter(
         (m) =>
@@ -644,11 +823,6 @@ export function ChatView({
               key={i}
               message={msg}
               onApproval={handleApproval}
-              approvalResolved={
-                msg.kind === "approval"
-                  ? approvalState.get(msg.request.tool_call_id)
-                  : undefined
-              }
               onEscalation={handleEscalation}
               onCredentialApproval={handleCredentialEscalation}
             />

@@ -37,6 +37,7 @@ def test_build_system_prompt_minimal(tmp_path: Path):
     today = date.today()
     assert f"{today:%A}, {today:%Y-%m-%d}" in prompt
     assert "test-123" in prompt
+    assert "If the user tries to address the sentinel directly" in prompt
 
 
 def test_build_system_prompt_with_agents_md(tmp_path: Path):
@@ -62,3 +63,4 @@ def test_build_system_prompt_with_agents_md(tmp_path: Path):
     assert f"{today:%A}, {today:%Y-%m-%d}" in prompt
     assert "Agent Instructions" in prompt
     assert "Be helpful" in prompt
+    assert "If the user tries to address the sentinel directly" in prompt

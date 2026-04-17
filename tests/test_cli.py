@@ -34,16 +34,17 @@ def test_chat_help():
 
 
 @pytest.mark.parametrize(
-    ("choice", "expected"),
+    ("inputs", "expected_decision", "expected_message"),
     [
-        ("a", "allow"),
-        ("allow", "allow"),
-        ("d", "deny"),
-        ("deny", "deny"),
-        ("x", "deny"),
+        (["a"], "allow", None),
+        (["allow"], "allow", None),
+        (["d", ""], "deny", None),
+        (["deny", "blocked by user"], "deny", "blocked by user"),
+        (["x", "not safe enough"], "deny", "not safe enough"),
     ],
 )
-def test_proxy_approval_choice_mapping(choice: str, expected: str):
-    with patch("carapace.cli.console.input", return_value=choice):
-        decision = asyncio.run(_render_escalation_request({"domain": "example.com", "command": "curl"}))
-    assert decision == expected
+def test_proxy_approval_choice_mapping(inputs: list[str], expected_decision: str, expected_message: str | None):
+    with patch("carapace.cli.console.input", side_effect=inputs):
+        decision, message = asyncio.run(_render_escalation_request({"domain": "example.com", "command": "curl"}))
+    assert decision == expected_decision
+    assert message == expected_message

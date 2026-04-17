@@ -17,6 +17,7 @@ from carapace.credentials import CredentialRegistry
 from carapace.git.store import GitStore
 from carapace.models import ContextGrant, CredentialRegistryProtocol, SkillCredentialDecl, ToolResult
 from carapace.sandbox.manager import SandboxManager
+from carapace.security.context import UserEscalationDecision, format_denial_message, normalize_optional_message
 from carapace.security.sentinel import Sentinel
 from carapace.session import SessionEngine, SessionManager
 from carapace.session.engine import _non_slash_user_message_count
@@ -77,6 +78,27 @@ def test_save_and_resume_state(tmp_path: Path):
     assert resumed is not None
     assert "my-skill" in resumed.context_grants
     assert "dev/test" in resumed.context_grants["my-skill"].vault_paths
+
+
+def test_normalize_optional_message_strips_blank_values() -> None:
+    assert normalize_optional_message(None) is None
+    assert normalize_optional_message("   ") is None
+    assert normalize_optional_message("  blocked by user  ") == "blocked by user"
+
+
+def test_format_denial_message_includes_source_and_message() -> None:
+    assert format_denial_message("sentinel", "dangerous command") == (
+        "Sentinel denied this operation. dangerous command"
+    )
+    assert format_denial_message("user", None) == "User denied this operation."
+
+
+def test_missing_user_escalation_callback_denies() -> None:
+    from carapace.security.context import SessionSecurity
+
+    security = SessionSecurity("session-1")
+    result = asyncio.run(security.escalate_to_user("example.com", {"kind": "domain_access"}))
+    assert result == UserEscalationDecision(allowed=False)
 
 
 @pytest.mark.anyio

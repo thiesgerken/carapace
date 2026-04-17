@@ -1,12 +1,11 @@
-"use client";
-
 import { cn } from "@/lib/utils";
 import { GitBranch } from "lucide-react";
 import type { EscalationDecision, GitPushApprovalRequest } from "@/lib/types";
+import { DenialNoteActions } from "./denial-note-actions";
 
 interface GitPushApprovalCardProps {
   request: GitPushApprovalRequest;
-  onRespond: (decision: EscalationDecision) => void;
+  onRespond: (decision: EscalationDecision, message?: string) => void;
   decision?: EscalationDecision;
 }
 
@@ -68,26 +67,12 @@ export function GitPushApprovalCard({
       </div>
 
       {!resolved && (
-        <div className="mt-3 flex flex-wrap gap-2">
-          <button
-            onClick={() => onRespond("allow")}
-            className={cn(
-              "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-              "bg-foreground text-background hover:bg-foreground/90",
-            )}
-          >
-            Allow Push
-          </button>
-          <button
-            onClick={() => onRespond("deny")}
-            className={cn(
-              "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-              "border border-destructive/50 text-destructive hover:bg-destructive/10",
-            )}
-          >
-            Deny
-          </button>
-        </div>
+        <DenialNoteActions
+          allowLabel="Allow Push"
+          notePlaceholder="Why should this push be blocked?"
+          onAllow={() => onRespond("allow")}
+          onDeny={(message) => onRespond("deny", message)}
+        />
       )}
     </div>
   );
