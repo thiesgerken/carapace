@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import base64
-import re
 from pathlib import Path
 from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock
@@ -11,8 +10,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from carapace.models import SkillCarapaceConfig
-from carapace.sandbox import manager as sandbox_manager
-from carapace.sandbox.manager import SandboxManager
+from carapace.sandbox.manager import _CONTEXT_TUNNEL_HELPER, SandboxManager
 from carapace.sandbox.proxy import ProxyServer, domain_matches
 from carapace.sandbox.runtime import (
     ContainerGoneError,
@@ -506,15 +504,9 @@ class TestCarapaceYamlParsing:
 
     @pytest.mark.anyio
     async def test_context_tunnel_helper_accepts_minimal_connect_response(self):
-        helper_source_match = re.search(
-            r'_CONTEXT_TUNNEL_HELPER = """(.*?)"""',
-            Path(sandbox_manager.__file__).read_text(),
-            re.DOTALL,
-        )
-        assert helper_source_match is not None
-
         namespace: dict[str, Any] = {"__name__": "test_context_tunnel_helper"}
-        exec(helper_source_match.group(1), namespace)
+        compile(_CONTEXT_TUNNEL_HELPER, "carapace_tunnel_helper.py", "exec")
+        exec(_CONTEXT_TUNNEL_HELPER, namespace)
         open_proxy_tunnel = cast(Any, namespace["_open_proxy_tunnel"])
         helper_asyncio = cast(Any, namespace["asyncio"])
 

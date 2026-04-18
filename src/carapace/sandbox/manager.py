@@ -33,7 +33,7 @@ MAX_READ_OUTPUT_CHARS = file_ops.MAX_READ_OUTPUT_CHARS
 SANDBOX_READ_BODY_SEPARATOR = file_ops.SANDBOX_READ_BODY_SEPARATOR
 READ_TOOL_MAX_LINE_WINDOW = file_ops.READ_TOOL_MAX_LINE_WINDOW
 
-_CONTEXT_TUNNEL_HELPER = """#!/usr/bin/env python3
+_CONTEXT_TUNNEL_HELPER = r"""#!/usr/bin/env python3
 from __future__ import annotations
 
 import argparse
