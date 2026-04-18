@@ -347,7 +347,7 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
 
     @agent.tool
     async def use_skill(ctx: RunContext[Deps], skill_name: str) -> str | ToolDenied:
-        """Activate a skill: copies it to the sandbox, builds its venv, and loads instructions.
+        """Activate a skill: copies it to the sandbox, runs automatic setup, and loads instructions.
 
         Call before using a skill.
         """

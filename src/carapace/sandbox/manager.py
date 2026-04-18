@@ -221,7 +221,7 @@ class SandboxManager:
             command,
             timeout=timeout,
             ensure_session=lambda sid: self.ensure_session(sid),
-            rebuild_skill_venvs=lambda sid: self._rebuild_skill_venvs(sid),
+            rerun_skill_setup=lambda sid: self._rerun_activated_skill_setup(sid),
             log_container_tail=lambda container_id, sid: self._log_container_tail(container_id, sid),
             prepare_session_recreate=lambda sid: self._prepare_session_recreate(sid),
             exec_in_container=lambda sc, cmd, cmd_timeout=30, **kwargs: self._exec_in_container(
@@ -406,35 +406,35 @@ class SandboxManager:
     ) -> None:
         await self._sandbox_file_ops.delete_context_file_credentials(session_id, written_files)
 
-    async def _sync_skill_venv(self, sc: SessionContainer, skill_name: str) -> str:
+    async def _rerun_skill_setup(self, sc: SessionContainer, skill_name: str) -> str:
         """Restore trusted skill files from git and rerun automatic setup providers."""
         master = self._knowledge_dir / "skills" / skill_name
         lines = await self._skill_activation_runner.restore_and_run_detected_providers(sc, skill_name, master)
         return "\n".join(lines)
 
-    async def rebuild_skill_venvs(self, session_id: str, activated_skills: list[str]) -> None:
-        """Restore trusted config and rebuild venvs for activated skills.
+    async def rerun_skill_setup(self, session_id: str, activated_skills: list[str]) -> None:
+        """Restore trusted config and rerun automatic setup for activated skills.
 
         Called by SessionEngine after container recreation.
         """
         sc = self._sessions.get(session_id)
         if sc is None:
-            logger.warning(f"Cannot rebuild skill venvs: missing container state for session {session_id}")
+            logger.warning(f"Cannot rerun skill setup: missing container state for session {session_id}")
             return
         for skill_name in activated_skills:
-            logger.info(f"Syncing skill '{skill_name}' after container recreation")
+            logger.info(f"Rerunning automatic setup for skill '{skill_name}' after container recreation")
             try:
-                await self._sync_skill_venv(sc, skill_name)
+                await self._rerun_skill_setup(sc, skill_name)
             except SkillActivationError as exc:
                 logger.error(f"Failed to rerun automatic setup for '{skill_name}': {exc}")
 
-    async def _rebuild_skill_venvs(self, session_id: str) -> None:
-        """Internal: rebuild venvs using the activated_skills callback (for _exec recreation)."""
+    async def _rerun_activated_skill_setup(self, session_id: str) -> None:
+        """Internal: rerun automatic setup for activated skills during session recreation."""
         if not self._get_activated_skills_cb:
             return
         activated = self._get_activated_skills_cb(session_id)
         if activated:
-            await self.rebuild_skill_venvs(session_id, activated)
+            await self.rerun_skill_setup(session_id, activated)
 
     async def cleanup_session(self, session_id: str) -> None:
         await self._session_lifecycle.cleanup_session(session_id)

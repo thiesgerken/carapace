@@ -23,10 +23,6 @@ class SkillActivationInputs(BaseModel):
     file_credentials: list[SkillFileCredential] = []
 
 
-class SkillVenvError(SkillActivationError):
-    """Backward-compatible alias for skill activation/setup failures."""
-
-
 class Mount(BaseModel):
     source: str
     target: str

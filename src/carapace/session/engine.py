@@ -235,7 +235,7 @@ class SessionEngine:
         self._active: dict[str, ActiveSession] = {}
         self._llm_semaphore = asyncio.Semaphore(config.agent.max_parallel_llm)
 
-        # Let SandboxManager retrieve activated skills for venv rebuild on container recreation
+        # Let SandboxManager retrieve activated skills so automatic setup can rerun on recreation
         sandbox_mgr.set_activated_skills_callback(self._get_activated_skills)
         sandbox_mgr.set_skill_activation_inputs_callback(self._skill_activation_inputs)
 

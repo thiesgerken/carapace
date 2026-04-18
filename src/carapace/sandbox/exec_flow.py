@@ -16,7 +16,7 @@ type DomainApprovalCallback = Callable[[str, str], Awaitable[bool]]
 type DomainNotifyCallback = Callable[[str, str, ApprovalSource | None, ApprovalVerdict | None, str | None], None]
 type AfterExecCredentialNotify = Callable[[], None]
 type EnsureSessionCallback = Callable[[str], Awaitable[tuple[SessionContainer, bool]]]
-type RebuildSkillVenvsCallback = Callable[[str], Awaitable[None]]
+type RerunSkillSetupCallback = Callable[[str], Awaitable[None]]
 type LogContainerTailCallback = Callable[[str, str], Awaitable[None]]
 type PrepareSessionRecreateCallback = Callable[[str], None]
 type ExecInContainerCallback = Callable[..., Awaitable[ExecResult]]
@@ -90,7 +90,7 @@ class SandboxExecCoordinator:
         timeout: int = 30,
         *,
         ensure_session: EnsureSessionCallback,
-        rebuild_skill_venvs: RebuildSkillVenvsCallback,
+        rerun_skill_setup: RerunSkillSetupCallback,
         log_container_tail: LogContainerTailCallback,
         prepare_session_recreate: PrepareSessionRecreateCallback,
         exec_in_container: ExecInContainerCallback,
@@ -115,7 +115,7 @@ class SandboxExecCoordinator:
             try:
                 sc, was_created = await ensure_session(session_id)
                 if was_created:
-                    await rebuild_skill_venvs(session_id)
+                    await rerun_skill_setup(session_id)
                 sc.last_used = time.time()
                 logger.debug(f"Exec in session {session_id}: {command}")
 
@@ -146,7 +146,7 @@ class SandboxExecCoordinator:
                     await log_container_tail(sc.container_id, session_id)
                     prepare_session_recreate(session_id)
                     sc, _ = await ensure_session(session_id)
-                    await rebuild_skill_venvs(session_id)
+                    await rerun_skill_setup(session_id)
 
                     written_files.clear()
                     if context_file_creds:
