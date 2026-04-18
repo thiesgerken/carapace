@@ -1,81 +1,32 @@
 from __future__ import annotations
 
 import asyncio
-import base64
 import re
-import secrets
-import shlex
-import time
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
 from pathlib import Path
 
 from loguru import logger
-from pydantic import BaseModel
 
-from carapace.sandbox.container_scripts import (
-    SANDBOX_STR_REPLACE_SCRIPT as _STR_REPLACE_SCRIPT,
-)
-from carapace.sandbox.container_scripts import (
-    build_file_read_script,
-)
+from carapace.sandbox import file_ops
+from carapace.sandbox.exec_flow import SandboxExecCoordinator, SandboxExecState
+from carapace.sandbox.file_ops import SandboxFileOps
 from carapace.sandbox.runtime import (
-    ContainerGoneError,
     ContainerRuntime,
     ExecResult,
-    SandboxConfig,
     SkillActivationError,
     SkillActivationInputs,
     SkillFileCredential,
 )
+from carapace.sandbox.session_lifecycle import (
+    SandboxSessionLifecycle,
+    SandboxSessionLifecycleState,
+    SessionContainer,
+)
+from carapace.sandbox.skill_activation import SkillActivationRunner
 from carapace.security.context import ApprovalSource, ApprovalVerdict
 
 _SKILL_NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]*$")
-
-# Maximum characters returned for a single text file read (body only; headers are extra).
-MAX_READ_OUTPUT_CHARS = 65536
-# Maximum ``limit`` (line window) accepted by the agent read tool.
-READ_TOOL_MAX_LINE_WINDOW = 1000
-# Printed between read-tool metadata and file body (agents/UI can split on this line).
-SANDBOX_READ_BODY_SEPARATOR = "-" * 24
-
-
-def _shell_path(path: str, *, quote: bool) -> str:
-    """Return a shell-safe path, expanding ``~/`` inside the shell when needed."""
-    if path.startswith("~/"):
-        suffix = path[2:]
-        if quote:
-            # Keep $HOME unquoted so shell expands it; quote only the suffix.
-            return "$HOME/" if not suffix else f"$HOME/{shlex.quote(suffix)}"
-        return f'"$HOME/{suffix}"'
-    return shlex.quote(path) if quote else f'"{path}"'
-
-
-def _file_write_shell_command(path: str, content: str, *, mode: int | None, quote: bool) -> str:
-    shell_path = _shell_path(path, quote=quote)
-    content_b64 = base64.b64encode(content.encode()).decode()
-    cmd = f'mkdir -p "$(dirname {shell_path})" && printf %s {content_b64} | base64 -d > {shell_path}'
-    if mode is not None:
-        cmd += f" && chmod {mode:04o} {shell_path}"
-    return cmd
-
-
-def _line_count(content: str) -> int:
-    if not content:
-        return 0
-    return content.count("\n") + 1
-
-
-FILE_READ_SCRIPT = build_file_read_script(SANDBOX_READ_BODY_SEPARATOR)
-
-
-class SessionContainer(BaseModel):
-    container_id: str
-    session_id: str
-    ip_address: str | None = None
-    created_at: float
-    last_used: float
-    session_env: dict[str, str] = {}
+READ_TOOL_MAX_LINE_WINDOW = file_ops.READ_TOOL_MAX_LINE_WINDOW
 
 
 def _validate_skill_name(skill_name: str) -> str | None:
@@ -87,70 +38,6 @@ def _validate_skill_name(skill_name: str) -> str | None:
     if not skill_name or not _SKILL_NAME_RE.match(skill_name):
         return f"Invalid skill name: {skill_name!r}"
     return None
-
-
-@dataclass(frozen=True)
-class SkillActivationProvider:
-    name: str
-    trusted_files: tuple[str, ...]
-    status_message: str
-    command: str
-    timeout: int = 120
-    bypass_proxy: bool = True
-    needs_activation_inputs: bool = False
-    matcher: Callable[[Path], bool] | None = None
-
-    def matches(self, skill_dir: Path) -> bool:
-        if self.matcher is None:
-            return False
-        return self.matcher(skill_dir)
-
-
-def _has_all_files(*names: str) -> Callable[[Path], bool]:
-    def _matcher(skill_dir: Path) -> bool:
-        return all((skill_dir / name).exists() for name in names)
-
-    return _matcher
-
-
-_SKILL_ACTIVATION_PROVIDERS: tuple[SkillActivationProvider, ...] = (
-    SkillActivationProvider(
-        name="uv",
-        trusted_files=("pyproject.toml", "uv.lock"),
-        status_message="Python dependencies synced.",
-        command="uv sync --locked",
-        matcher=_has_all_files("pyproject.toml", "uv.lock"),
-    ),
-    SkillActivationProvider(
-        name="npm",
-        trusted_files=("package.json", "package-lock.json"),
-        status_message="npm dependencies installed.",
-        command="npm ci",
-        matcher=_has_all_files("package.json", "package-lock.json"),
-    ),
-    SkillActivationProvider(
-        name="pnpm",
-        trusted_files=("package.json", "pnpm-lock.yaml"),
-        status_message="pnpm dependencies installed.",
-        command="pnpm install --frozen-lockfile",
-        matcher=_has_all_files("package.json", "pnpm-lock.yaml"),
-    ),
-    SkillActivationProvider(
-        name="yarn",
-        trusted_files=("package.json", "yarn.lock"),
-        status_message="yarn dependencies installed.",
-        command="yarn install --immutable",
-        matcher=_has_all_files("package.json", "yarn.lock"),
-    ),
-    SkillActivationProvider(
-        name="setup.sh",
-        trusted_files=("setup.sh",),
-        status_message="setup.sh completed.",
-        command="sh ./setup.sh",
-        matcher=_has_all_files("setup.sh"),
-        needs_activation_inputs=True,
-    ),
-)
 
 
 class SandboxManager:
@@ -195,7 +82,67 @@ class SandboxManager:
         self._exec_notified_domains: dict[str, set[str]] = {}  # dedupe silent-allow domain UI notifications
         self._exec_notified_credentials: dict[str, set[str]] = {}  # dedupe credential UI notifications
         self._get_activated_skills_cb: Callable[[str], list[str]] | None = None
+        self._reinject_credentials_cb: Callable[[str, str], Awaitable[list[tuple[str, str]]]] | None = None
         self._skill_activation_inputs_cb: Callable[[str, str], Awaitable[SkillActivationInputs]] | None = None
+        self._session_lifecycle = SandboxSessionLifecycle(
+            runtime=runtime,
+            state=SandboxSessionLifecycleState(
+                sessions=self._sessions,
+                token_to_session=self._token_to_session,
+                session_tokens=self._session_tokens,
+                allowed_domains=self._allowed_domains,
+                exec_temp_domains=self._exec_temp_domains,
+                exec_context_skill_domains=self._exec_context_skill_domains,
+                session_current_command=self._session_current_command,
+                domain_approval_cbs=self._domain_approval_cbs,
+                domain_notify_cbs=self._domain_notify_cbs,
+                exec_locks=self._exec_locks,
+                proxy_bypass_sessions=self._proxy_bypass_sessions,
+                stashed_session_env=self._stashed_session_env,
+                credential_cache=self._credential_cache,
+                session_current_contexts=self._session_current_contexts,
+                exec_notified_domains=self._exec_notified_domains,
+                exec_notified_credentials=self._exec_notified_credentials,
+            ),
+            data_dir=data_dir,
+            knowledge_dir=knowledge_dir,
+            base_image=base_image,
+            network_name=network_name,
+            idle_timeout=self._idle_timeout,
+            proxy_port=proxy_port,
+            sandbox_port=sandbox_port,
+            git_author=git_author,
+        )
+        self._exec_coordinator = SandboxExecCoordinator(
+            runtime=runtime,
+            state=SandboxExecState(
+                sessions=self._sessions,
+                allowed_domains=self._allowed_domains,
+                exec_temp_domains=self._exec_temp_domains,
+                exec_context_skill_domains=self._exec_context_skill_domains,
+                session_current_command=self._session_current_command,
+                domain_approval_cbs=self._domain_approval_cbs,
+                domain_notify_cbs=self._domain_notify_cbs,
+                exec_locks=self._exec_locks,
+                proxy_bypass_sessions=self._proxy_bypass_sessions,
+                session_current_contexts=self._session_current_contexts,
+                exec_notified_domains=self._exec_notified_domains,
+                exec_notified_credentials=self._exec_notified_credentials,
+            ),
+        )
+        self._sandbox_file_ops = SandboxFileOps(
+            exec_in_session=self._exec,
+            exec_in_container=self._exec_in_container,
+            get_session=self._sessions.get,
+        )
+        self._skill_activation_runner = SkillActivationRunner(
+            knowledge_workdir=self._KNOWLEDGE_WORKDIR,
+            get_activation_inputs=self._get_skill_activation_inputs,
+            exec_in_session=self._exec,
+            exec_in_container=self._exec_in_container,
+            write_context_file_credentials=self._sandbox_file_ops.write_context_file_credentials,
+            delete_context_file_credentials=self._sandbox_file_ops.delete_context_file_credentials,
+        )
         logger.info(
             f"SandboxManager initialized (image={base_image}, "
             + f"network={network_name}, proxy_port={proxy_port}, idle_timeout={idle_timeout_minutes}m)"
@@ -214,6 +161,7 @@ class SandboxManager:
 
     def set_reinject_credentials_callback(self, cb: Callable[[str, str], Awaitable[list[tuple[str, str]]]]) -> None:
         """Backward-compatible adapter for file-only activation inputs."""
+        self._reinject_credentials_cb = cb
 
         async def _adapter(session_id: str, skill_name: str) -> SkillActivationInputs:
             file_credentials = [
@@ -229,255 +177,22 @@ class SandboxManager:
         return await self._skill_activation_inputs_cb(session_id, skill_name)
 
     def _get_or_create_token(self, session_id: str) -> str:
-        """Return the proxy token for *session_id*, loading or creating as needed.
-
-        Order: in-memory → on-disk file → generate new.
-        The result is always written back to memory and disk.
-        """
-        token = self._session_tokens.get(session_id)
-        if token:
-            return token
-
-        token_path = self._data_dir / "sessions" / session_id / "token"
-        if token_path.exists():
-            token = token_path.read_text().strip()
-            logger.debug(f"Restored token for session {session_id} from disk")
-        else:
-            token = secrets.token_hex(16)
-            token_path.parent.mkdir(parents=True, exist_ok=True)
-            token_path.write_text(token)
-
-        self._session_tokens[session_id] = token
-        self._token_to_session[token] = session_id
-        return token
+        return self._session_lifecycle.get_or_create_token(session_id)
 
     async def _log_container_tail(self, container_id: str, session_id: str) -> None:
-        """Log the last lines of a dead/stopped container for troubleshooting."""
-        try:
-            tail = await self._runtime.logs(container_id)
-            if tail and tail.strip():
-                logger.info(f"Last logs from container {container_id[:12]} (session {session_id}):\n{tail}")
-        except Exception:
-            logger.opt(exception=True).warning(f"Could not retrieve logs from container {container_id[:12]}")
+        await self._session_lifecycle.log_container_tail(container_id, session_id)
 
     def _get_exec_lock(self, session_id: str) -> asyncio.Lock:
-        if session_id not in self._exec_locks:
-            self._exec_locks[session_id] = asyncio.Lock()
-        return self._exec_locks[session_id]
+        return self._exec_coordinator.get_exec_lock(session_id)
 
     async def ensure_session(self, session_id: str) -> tuple[SessionContainer, bool]:
-        """Return ``(container, was_created)`` — *was_created* is True when a new container was spun up."""
-        sandbox_name = self._sandbox_name(session_id)
-
-        if session_id in self._sessions:
-            sc = self._sessions[session_id]
-            if await self._runtime.is_running(sc.container_id):
-                logger.debug(f"Reusing existing container {sc.container_id[:12]} for session {session_id}")
-                sc.last_used = time.time()
-                return sc, False
-            # Container not running — try to resume (K8s scales up, Docker raises)
-            try:
-                await self._runtime.resume_sandbox(sandbox_name)
-                sc.last_used = time.time()
-                await self._wait_for_ready(sc.container_id, session_id)
-                logger.info(f"Resumed sandbox {sandbox_name} for session {session_id}")
-                return sc, False
-            except Exception:
-                logger.opt(exception=True).debug(f"Resume failed for {sandbox_name}, will recreate")
-            await self._log_container_tail(sc.container_id, session_id)
-            self._prepare_session_recreate(session_id)
-        else:
-            # No in-memory state (e.g. after server restart) — check if the
-            # sandbox resource still exists in the runtime and try to resume it.
-            existing_id = await self._runtime.sandbox_exists(sandbox_name)
-            if existing_id:
-                try:
-                    if await self._runtime.is_running(existing_id):
-                        logger.info(f"Re-attached to running sandbox {sandbox_name} for session {session_id}")
-                    else:
-                        await self._runtime.resume_sandbox(sandbox_name)
-                        await self._wait_for_ready(existing_id, session_id)
-                        logger.info(f"Resumed orphaned sandbox {sandbox_name} for session {session_id}")
-                    ip = await self._runtime.get_ip(existing_id, self._network_name)
-                    sc = SessionContainer(
-                        container_id=existing_id,
-                        session_id=session_id,
-                        ip_address=ip,
-                        created_at=time.time(),
-                        last_used=time.time(),
-                    )
-                    self._sessions[session_id] = sc
-                    return sc, False
-                except Exception:
-                    logger.opt(exception=True).debug(
-                        f"Failed to re-attach/resume orphaned sandbox {sandbox_name}, will recreate"
-                    )
-
-        proxy_token = self._get_or_create_token(session_id)
-        try:
-            host_ip = await self._runtime.get_host_ip(self._network_name)
-            if not host_ip:
-                raise RuntimeError(
-                    f"Cannot create sandbox for session {session_id}: "
-                    f"no IP found on network '{self._network_name}'. "
-                    "Is the proxy network configured correctly?"
-                )
-            proxy_url = f"http://{host_ip}:{self._proxy_port}"
-            logger.info(f"Proxy URL for session {session_id}: {proxy_url}")
-
-            env = self._build_proxy_env(session_id, proxy_token, proxy_url)
-            command: list[str] = [
-                "sh",
-                "-c",
-                "setup-proxy.sh && echo 'carapace sandbox ready' && exec sleep infinity",
-            ]
-
-            sandbox_config = SandboxConfig(
-                name=sandbox_name,
-                session_id=session_id,
-                image=self._base_image,
-                labels={"carapace.session": session_id, "carapace.managed": "true"},
-                environment=env,
-                command=command,
-            )
-            container_id = await self._runtime.create_sandbox(sandbox_config)
-
-            ip = await self._runtime.get_ip(container_id, self._network_name)
-
-            # Wait for the container to finish setup (proxy config etc.)
-            # before running the git clone as a separate exec.
-            await self._wait_for_ready(container_id, session_id)
-            await self._clone_knowledge_repo(container_id, session_id)
-        except BaseException:
-            self._cleanup_tracking(session_id)
-            raise
-
-        sc = SessionContainer(
-            container_id=container_id,
-            session_id=session_id,
-            ip_address=ip,
-            created_at=time.time(),
-            last_used=time.time(),
-        )
-        stashed_env = self._stashed_session_env.pop(session_id, None)
-        if stashed_env:
-            sc.session_env.update(stashed_env)
-        self._sessions[session_id] = sc
-        logger.info(f"Created sandbox container {container_id[:12]} for session {session_id} (IP: {ip})")
-        return sc, True
+        return await self._session_lifecycle.ensure_session(session_id)
 
     def _sandbox_name(self, session_id: str) -> str:
-        """Derive the sandbox resource name for a session."""
-        return f"carapace-sandbox-{session_id}"
-
-    _READY_MARKER = "carapace sandbox ready"
-
-    async def _wait_for_ready(self, container_id: str, session_id: str) -> None:
-        """Poll container logs until the ready marker appears (up to 30s)."""
-        for _ in range(30):
-            log_output = await self._runtime.logs(container_id, tail=10)
-            if self._READY_MARKER in log_output:
-                return
-            await asyncio.sleep(1)
-        logger.warning(f"Sandbox for {session_id} did not become ready within 30s")
-
-    async def _clone_knowledge_repo(self, container_id: str, session_id: str) -> None:
-        """Clone the knowledge repo into the sandbox if not already present."""
-        probe = await self._runtime.exec(
-            container_id,
-            "test -d /workspace/.git",
-            timeout=5,
-        )
-        if probe.exit_code == 0:
-            logger.debug(f"Knowledge repo already present in sandbox for {session_id}")
-            return
-        result = await self._runtime.exec(
-            container_id,
-            "git clone $GIT_REPO_URL /workspace",
-            timeout=60,
-        )
-        if result.exit_code != 0:
-            raise RuntimeError(
-                f"Git clone failed in sandbox for {session_id} (exit {result.exit_code}): {result.output}"
-            )
-
-        await self._setup_git_identity(container_id, session_id)
-        await self._install_commit_msg_hook(container_id, session_id)
-
-    async def _setup_git_identity(self, container_id: str, session_id: str) -> None:
-        """Configure git user.name and user.email inside the sandbox.
-
-        Placeholders ``%s`` (session ID) are resolved server-side;
-        ``%h`` is resolved inside the container via ``$(hostname)``.
-        """
-        # Resolve %s server-side, leave %h for shell expansion
-        name_tpl = self._git_author.replace("%s", session_id)
-        # Parse "Name <email>" format
-        if "<" in name_tpl and name_tpl.endswith(">"):
-            name, _, email = name_tpl.rpartition("<")
-            name, email = name.strip(), email.rstrip(">").strip()
-        else:
-            name, email = name_tpl, f"{session_id}@carapace"
-        # Shell-expand %h via $(hostname) inside the container
-        name_sh = name.replace("%h", "$(hostname)")
-        email_sh = email.replace("%h", "$(hostname)")
-        cmd = f'git -C /workspace config user.name "{name_sh}" && git -C /workspace config user.email "{email_sh}"'
-        await self._runtime.exec(container_id, cmd, timeout=10)
-
-    _COMMIT_TRAILER_KEY = "Carapace-Session"
-
-    async def _install_commit_msg_hook(self, container_id: str, session_id: str) -> None:
-        """Install a commit-msg hook that appends a session trailer to commits."""
-        key = self._COMMIT_TRAILER_KEY
-        # The hook appends the trailer only if not already present.
-        hook = (
-            "#!/bin/sh\n"
-            f'if ! grep -q "^{key}:" "$1"; then\n'
-            f'  echo "" >> "$1"\n'
-            f'  echo "{key}: $CARAPACE_SESSION_ID" >> "$1"\n'
-            "fi\n"
-        )
-        cmd = (
-            "mkdir -p /workspace/.git/hooks && "
-            f"printf '%s' '{hook}' > /workspace/.git/hooks/commit-msg && "
-            "chmod +x /workspace/.git/hooks/commit-msg"
-        )
-        await self._runtime.exec(container_id, cmd, timeout=10)
+        return self._session_lifecycle.sandbox_name(session_id)
 
     def _build_proxy_env(self, session_id: str, proxy_token: str, proxy_url: str) -> dict[str, str]:
-        """Build HTTP_PROXY / NO_PROXY env vars for session containers."""
-        if not proxy_url:
-            return {}
-        # Embed credentials as session_id:token (standard Basic Auth)
-        scheme, rest = proxy_url.split("://", 1)
-        authed_url = f"{scheme}://{session_id}:{proxy_token}@{rest}"
-        # Extract host (without scheme/port/auth) for NO_PROXY
-        no_proxy_host = rest.rsplit(":", 1)[0]
-        no_proxy = ",".join([no_proxy_host, "localhost", "127.0.0.1"])
-        # Git clone URL — points at the API server (Basic Auth)
-        git_url = (
-            f"{scheme}://{session_id}:{proxy_token}@{no_proxy_host}:{self._sandbox_port}/git/{self._knowledge_dir.name}"
-        )
-        return {
-            "HTTP_PROXY": authed_url,
-            "HTTPS_PROXY": authed_url,
-            "http_proxy": authed_url,
-            "https_proxy": authed_url,
-            "ALL_PROXY": authed_url,
-            "NO_PROXY": no_proxy,
-            "no_proxy": no_proxy,
-            # pip: explicit proxy (maps to pip --proxy)
-            "PIP_PROXY": authed_url,
-            # npm / node-based tools
-            "npm_config_proxy": authed_url,
-            "npm_config_https_proxy": authed_url,
-            # Git knowledge repo URL (cloned during sandbox setup)
-            "GIT_REPO_URL": git_url,
-            # Carapace API base URL (used by ccred and other sandbox-side tools)
-            "CARAPACE_API_URL": f"{scheme}://{session_id}:{proxy_token}@{no_proxy_host}:{self._sandbox_port}",
-            # Session ID (used by the commit-msg hook for trailers)
-            "CARAPACE_SESSION_ID": session_id,
-        }
+        return self._session_lifecycle.build_proxy_env(session_id, proxy_token, proxy_url)
 
     async def _exec_in_container(
         self,
@@ -489,33 +204,14 @@ class SandboxManager:
         workdir: str | None = None,
         extra_env: dict[str, str] | None = None,
     ) -> ExecResult:
-        """Run *command* in *sc* without acquiring the exec lock.
-
-        When *bypass_proxy* is True, the bypass window covers only this call.
-        Callers running under ``_exec`` with bypass already enabled must pass
-        ``bypass_proxy=False`` so the session is not added to the set twice.
-
-        *extra_env* is merged on top of the session env for this single exec
-        (used for per-exec credential injection via contexts).
-        """
-        if bypass_proxy:
-            self._proxy_bypass_sessions.add(sc.session_id)
-            logger.info(f"Proxy bypass ENABLED for session {sc.session_id}")
-        try:
-            env = sc.session_env or None
-            if extra_env:
-                env = {**(sc.session_env or {}), **extra_env}
-            return await self._runtime.exec(
-                sc.container_id,
-                command,
-                timeout=timeout,
-                workdir=workdir,
-                env=env,
-            )
-        finally:
-            if bypass_proxy:
-                self._proxy_bypass_sessions.discard(sc.session_id)
-                logger.info(f"Proxy bypass DISABLED for session {sc.session_id}")
+        return await self._exec_coordinator.exec_in_container(
+            sc,
+            command,
+            timeout=timeout,
+            bypass_proxy=bypass_proxy,
+            workdir=workdir,
+            extra_env=extra_env,
+        )
 
     async def _exec(
         self,
@@ -531,87 +227,30 @@ class SandboxManager:
         context_file_creds: list[tuple[str, str, str]] | None = None,
         after_exec_credential_notify: Callable[[], None] | None = None,
     ) -> ExecResult:
-        """Run a command in the sandbox and return the raw ExecResult.
-
-        When *bypass_proxy* is True, all proxy domains are temporarily allowed
-        for the duration of this exec (used during venv builds).  The bypass
-        flag is set/cleared **under the exec lock** so no concurrent command
-        can exploit the open window.
-
-        *contexts*: activated skill names active for this exec.
-        *extra_env*: per-exec env vars (credential values).
-        *context_domains*: skill-declared domains to add to exec-scoped temp allowlist.
-        *context_file_creds*: ``(skill_name, file_path, value)`` tuples; files
-            are written before the command and deleted in the ``finally`` block.
-        *after_exec_credential_notify*: optional sync hook invoked after the container
-            command finishes but **before** per-exec notification state is torn down,
-            so UI dedupe via `mark_credential_notified` still applies.
-        """
-        contexts = contexts or []
-        written_files: list[tuple[str, str]] = []  # (file_path, skill_name)
-
-        async with self._get_exec_lock(session_id):
-            if bypass_proxy:
-                self._proxy_bypass_sessions.add(session_id)
-                logger.info(f"Proxy bypass ENABLED for session {session_id}")
-            try:
-                sc, was_created = await self.ensure_session(session_id)
-                if was_created:
-                    await self._rebuild_skill_venvs(session_id)
-                sc.last_used = time.time()
-                logger.debug(f"Exec in session {session_id}: {command}")
-
-                self._session_current_command[session_id] = command
-                self._session_current_contexts[session_id] = contexts
-                self._exec_temp_domains[session_id] = set()
-                self._exec_context_skill_domains[session_id] = set()
-                self._exec_notified_domains[session_id] = set()
-                self._exec_notified_credentials[session_id] = set()
-
-                # Add context-scoped domains to exec-temp allowlist
-                if context_domains:
-                    self._exec_temp_domains[session_id].update(context_domains)
-                    self._exec_context_skill_domains[session_id].update(context_domains)
-
-                try:
-                    # Write file-based credentials + run the command
-                    if context_file_creds:
-                        written_files = await self._write_context_file_credentials(sc, context_file_creds)
-                    exec_result = await self._exec_in_container(
-                        sc, command, timeout, workdir=workdir, bypass_proxy=False, extra_env=extra_env
-                    )
-                except ContainerGoneError:
-                    logger.warning(f"Container gone for session {session_id}, recreating sandbox")
-                    await self._log_container_tail(sc.container_id, session_id)
-                    self._prepare_session_recreate(session_id)
-                    sc, _ = await self.ensure_session(session_id)
-                    await self._rebuild_skill_venvs(session_id)
-
-                    # Re-write file credentials after container recreation
-                    written_files.clear()
-                    if context_file_creds:
-                        written_files = await self._write_context_file_credentials(sc, context_file_creds)
-                    exec_result = await self._exec_in_container(
-                        sc, command, timeout, workdir=workdir, bypass_proxy=False, extra_env=extra_env
-                    )
-
-                if after_exec_credential_notify is not None:
-                    after_exec_credential_notify()
-                return exec_result
-            finally:
-                if bypass_proxy:
-                    self._proxy_bypass_sessions.discard(session_id)
-                    logger.info(f"Proxy bypass DISABLED for session {session_id}")
-                self._session_current_command.pop(session_id, None)
-                self._session_current_contexts.pop(session_id, None)
-                self._exec_temp_domains.pop(session_id, None)
-                self._exec_context_skill_domains.pop(session_id, None)
-                self._exec_notified_domains.pop(session_id, None)
-                self._exec_notified_credentials.pop(session_id, None)
-
-                # Delete file-based credentials written for this exec
-                if written_files:
-                    await self._delete_context_file_credentials(session_id, written_files)
+        return await self._exec_coordinator.exec(
+            session_id,
+            command,
+            timeout=timeout,
+            ensure_session=lambda sid: self.ensure_session(sid),
+            rebuild_skill_venvs=lambda sid: self._rebuild_skill_venvs(sid),
+            log_container_tail=lambda container_id, sid: self._log_container_tail(container_id, sid),
+            prepare_session_recreate=lambda sid: self._prepare_session_recreate(sid),
+            exec_in_container=lambda sc, cmd, cmd_timeout=30, **kwargs: self._exec_in_container(
+                sc,
+                cmd,
+                timeout=cmd_timeout,
+                **kwargs,
+            ),
+            write_context_file_credentials=lambda sc, creds: self._write_context_file_credentials(sc, creds),
+            delete_context_file_credentials=lambda sid, written: self._delete_context_file_credentials(sid, written),
+            bypass_proxy=bypass_proxy,
+            workdir=workdir,
+            contexts=contexts,
+            extra_env=extra_env,
+            context_domains=context_domains,
+            context_file_creds=context_file_creds,
+            after_exec_credential_notify=after_exec_credential_notify,
+        )
 
     _KNOWLEDGE_WORKDIR = "/workspace"
 
@@ -660,16 +299,7 @@ class SandboxManager:
     # ------------------------------------------------------------------
 
     async def file_read(self, session_id: str, path: str, *, offset: int = 0, limit: int = 100) -> str:
-        """Read a text file (windowed), summarize a binary file, or list a directory inside the sandbox."""
-        pq = shlex.quote(path)
-        cmd = f"python3 -c {shlex.quote(FILE_READ_SCRIPT)} {pq} {int(offset)} {int(limit)} {MAX_READ_OUTPUT_CHARS}"
-        result = await self._exec(session_id, cmd, timeout=30)
-        if result.exit_code != 0:
-            return result.output or f"Error: cannot read {path}"
-        output = result.output
-        if output.startswith("::DIR::\n"):
-            return f"Directory listing of {path}/:\n" + output[len("::DIR::\n") :]
-        return output or "(empty file)"
+        return await self._sandbox_file_ops.file_read(session_id, path, offset=offset, limit=limit)
 
     async def file_write(
         self,
@@ -681,14 +311,14 @@ class SandboxManager:
         workdir: str | None = None,
         quote: bool = True,
     ) -> ExecResult:
-        """Write content to a file inside the sandbox."""
-        cmd = _file_write_shell_command(path, content, mode=mode, quote=quote)
-        result = await self._exec(session_id, cmd, timeout=10, workdir=workdir)
-        if result.exit_code != 0:
-            output = result.output or f"Error: cannot write {path} (exit {result.exit_code})."
-            return ExecResult(exit_code=result.exit_code, output=output)
-        lines = _line_count(content)
-        return ExecResult(exit_code=0, output=f"Wrote {lines} line(s) to {path}.")
+        return await self._sandbox_file_ops.file_write(
+            session_id,
+            path,
+            content,
+            mode=mode,
+            workdir=workdir,
+            quote=quote,
+        )
 
     async def file_str_replace(
         self,
@@ -699,15 +329,13 @@ class SandboxManager:
         *,
         replace_all: bool = False,
     ) -> ExecResult:
-        """Replace text in a file inside the sandbox, optionally replacing all matches."""
-        pq = shlex.quote(path)
-        old_b64 = base64.b64encode(old_string.encode()).decode()
-        new_b64 = base64.b64encode(new_string.encode()).decode()
-        replace_all_flag = "1" if replace_all else "0"
-        cmd = f"python3 -c {shlex.quote(_STR_REPLACE_SCRIPT)} {pq} {old_b64} {new_b64} {replace_all_flag}"
-        result = await self._exec(session_id, cmd, timeout=10)
-        output = result.output or f"Error: cannot replace in {path}"
-        return ExecResult(exit_code=result.exit_code, output=output)
+        return await self._sandbox_file_ops.file_str_replace(
+            session_id,
+            path,
+            old_string,
+            new_string,
+            replace_all=replace_all,
+        )
 
     async def activate_skill(self, session_id: str, skill_name: str) -> str:
         if err := _validate_skill_name(skill_name):
@@ -722,137 +350,29 @@ class SandboxManager:
             logger.warning(f"Skill '{skill_name}' not found for session {session_id}")
             return f"Skill '{skill_name}' not found."
 
-        providers = self._matching_skill_activation_providers(master_skill_dir)
         activation_msg = ""
-        if providers:
-            activation_inputs = await self._get_skill_activation_inputs(session_id, skill_name)
-            trusted_files = {"carapace.yaml"}
-            for provider in providers:
-                trusted_files.update(provider.trusted_files)
-            await self._restore_skill_trusted_files(sc, skill_name, trusted_files)
-
-            try:
-                activation_lines = await self._run_skill_activation_providers(
-                    skill_name,
-                    providers,
-                    activation_inputs,
-                    session_id=session_id,
-                )
-                activation_msg = "\n".join(activation_lines)
-            except SkillActivationError as exc:
-                logger.info(f"Activated skill '{skill_name}' in session {session_id} (with errors)")
-                raise SkillActivationError(
-                    f"Skill '{skill_name}' activated at /workspace/skills/{skill_name}/ but "
-                    f"automatic setup failed: {exc}\n"
-                    "The skill is available but automatic setup did not complete. "
-                    "You may need to fix the committed provider files and reactivate the skill."
-                ) from exc
+        try:
+            activation_lines = await self._skill_activation_runner.restore_and_run_detected_providers(
+                sc,
+                skill_name,
+                master_skill_dir,
+                run_session_id=session_id,
+            )
+            activation_msg = "\n".join(activation_lines)
+        except SkillActivationError as exc:
+            logger.info(f"Activated skill '{skill_name}' in session {session_id} (with errors)")
+            raise SkillActivationError(
+                f"Skill '{skill_name}' activated at /workspace/skills/{skill_name}/ but "
+                f"automatic setup failed: {exc}\n"
+                "The skill is available but automatic setup did not complete. "
+                "You may need to fix the committed provider files and reactivate the skill."
+            ) from exc
 
         logger.info(f"Activated skill '{skill_name}' in session {session_id}")
         parts = [f"Skill '{skill_name}' activated at /workspace/skills/{skill_name}/"]
         if activation_msg:
             parts.extend(activation_msg.splitlines())
         return "\n".join(parts)
-
-    def _matching_skill_activation_providers(self, skill_dir: Path) -> list[SkillActivationProvider]:
-        return [provider for provider in _SKILL_ACTIVATION_PROVIDERS if provider.matches(skill_dir)]
-
-    async def _restore_skill_trusted_files(
-        self,
-        sc: SessionContainer,
-        skill_name: str,
-        trusted_files: set[str],
-    ) -> None:
-        skill_path = f"skills/{shlex.quote(skill_name)}"
-        for fname in sorted(trusted_files):
-            await self._exec_in_container(
-                sc,
-                f"git checkout @{{upstream}} -- {skill_path}/{fname} 2>/dev/null || true",
-                timeout=10,
-                workdir=self._KNOWLEDGE_WORKDIR,
-            )
-
-    def _activation_file_credentials(
-        self,
-        skill_name: str,
-        activation_inputs: SkillActivationInputs,
-    ) -> list[tuple[str, str, str]]:
-        return [(skill_name, cred.path, cred.value) for cred in activation_inputs.file_credentials]
-
-    async def _run_skill_activation_command(
-        self,
-        skill_name: str,
-        provider: SkillActivationProvider,
-        activation_inputs: SkillActivationInputs,
-        *,
-        session_id: str | None = None,
-        sc: SessionContainer | None = None,
-    ) -> ExecResult:
-        if (session_id is None) == (sc is None):
-            raise ValueError("Exactly one of session_id and sc must be set")
-
-        skill_dir = f"/workspace/skills/{skill_name}"
-        extra_env = activation_inputs.environment or None
-        file_creds = self._activation_file_credentials(skill_name, activation_inputs)
-        if session_id is not None:
-            return await self._exec(
-                session_id,
-                provider.command,
-                timeout=provider.timeout,
-                bypass_proxy=provider.bypass_proxy,
-                workdir=skill_dir,
-                extra_env=extra_env,
-                context_file_creds=file_creds or None,
-            )
-
-        assert sc is not None
-        written_files: list[tuple[str, str]] = []
-        try:
-            if file_creds:
-                written_files = await self._write_context_file_credentials(sc, file_creds)
-            return await self._exec_in_container(
-                sc,
-                provider.command,
-                timeout=provider.timeout,
-                workdir=skill_dir,
-                bypass_proxy=provider.bypass_proxy,
-                extra_env=extra_env,
-            )
-        finally:
-            if written_files:
-                await self._delete_context_file_credentials(sc.session_id, written_files)
-
-    async def _run_skill_activation_providers(
-        self,
-        skill_name: str,
-        providers: list[SkillActivationProvider],
-        activation_inputs: SkillActivationInputs,
-        *,
-        session_id: str | None = None,
-        sc: SessionContainer | None = None,
-    ) -> list[str]:
-        if (session_id is None) == (sc is None):
-            raise ValueError("Exactly one of session_id and sc must be set")
-
-        status_lines: list[str] = []
-        for provider in providers:
-            logger.info(f"Running skill activation provider '{provider.name}' for skill '{skill_name}'")
-            result = await self._run_skill_activation_command(
-                skill_name,
-                provider,
-                activation_inputs,
-                session_id=session_id,
-                sc=sc,
-            )
-            if result.exit_code != 0:
-                logger.error(
-                    f"Skill activation provider '{provider.name}' failed for '{skill_name}' "
-                    + f"(exit {result.exit_code}): {result.output[:300]}"
-                )
-                raise SkillActivationError(f"{provider.name} exit {result.exit_code}: {result.output[:500]}")
-            status_lines.append(provider.status_message)
-
-        return status_lines
 
     async def _build_skill_venv(self, session_id: str, skill_name: str) -> None:
         """Backward-compatible wrapper for Python provider execution."""
@@ -873,12 +393,9 @@ class SandboxManager:
         if err := _validate_skill_name(skill_name):
             raise SkillActivationError(err)
 
-        provider = next(provider for provider in _SKILL_ACTIVATION_PROVIDERS if provider.name == "uv")
-        activation_inputs = await self._get_skill_activation_inputs(session_id or sc.session_id, skill_name)
-        result = await self._run_skill_activation_command(
+        result = await self._skill_activation_runner.run_named_provider(
             skill_name,
-            provider,
-            activation_inputs,
+            "uv",
             session_id=session_id,
             sc=sc,
         )
@@ -895,14 +412,14 @@ class SandboxManager:
         workdir: str | None = None,
         quote: bool = True,
     ) -> ExecResult:
-        """Write a file using an existing container while the exec lock is already held."""
-        cmd = _file_write_shell_command(path, content, mode=mode, quote=quote)
-        result = await self._exec_in_container(sc, cmd, timeout=10, workdir=workdir)
-        if result.exit_code != 0:
-            output = result.output or f"Error: cannot write {path} (exit {result.exit_code})."
-            return ExecResult(exit_code=result.exit_code, output=output)
-        lines = _line_count(content)
-        return ExecResult(exit_code=0, output=f"Wrote {lines} line(s) to {path}.")
+        return await self._sandbox_file_ops.file_write_in_container(
+            sc,
+            path,
+            content,
+            mode=mode,
+            workdir=workdir,
+            quote=quote,
+        )
 
     async def _file_delete_in_container(
         self,
@@ -912,49 +429,21 @@ class SandboxManager:
         workdir: str | None = None,
         quote: bool = True,
     ) -> ExecResult:
-        """Delete a file using an existing container while the exec lock is already held."""
-        shell_path = _shell_path(path, quote=quote)
-        cmd = f"rm -f {shell_path}"
-        return await self._exec_in_container(sc, cmd, timeout=5, workdir=workdir)
+        return await self._sandbox_file_ops.file_delete_in_container(sc, path, workdir=workdir, quote=quote)
 
     async def _write_context_file_credentials(
         self,
         sc: SessionContainer,
         context_file_creds: list[tuple[str, str, str]],
     ) -> list[tuple[str, str]]:
-        """Write file-based credentials into the container, returning written ``(file_path, skill_name)`` pairs."""
-        written: list[tuple[str, str]] = []
-        for skill_name, file_path, value in context_file_creds:
-            skill_dir = f"/workspace/skills/{skill_name}"
-            fw = await self._file_write_in_container(sc, file_path, value, mode=0o400, workdir=skill_dir, quote=False)
-            if fw.exit_code != 0:
-                logger.error(f"Failed to write credential file {file_path} for {skill_name}: {fw.output}")
-            else:
-                written.append((file_path, skill_name))
-        return written
+        return await self._sandbox_file_ops.write_context_file_credentials(sc, context_file_creds)
 
     async def _delete_context_file_credentials(
         self,
         session_id: str,
         written_files: list[tuple[str, str]],
     ) -> None:
-        """Delete file-based credentials that were written for an exec."""
-        sc = self._sessions.get(session_id)
-        if sc is None:
-            return
-        for file_path, skill_name in written_files:
-            skill_dir = f"/workspace/skills/{skill_name}"
-            try:
-                dr = await self._file_delete_in_container(sc, file_path, workdir=skill_dir, quote=False)
-            except Exception as exc:
-                # Never let cleanup failures replace the exec's original exception (finally runs during unwind).
-                logger.warning(f"Could not delete credential file {file_path} (skill {skill_name!r}) after exec: {exc}")
-                continue
-            if dr.exit_code != 0:
-                logger.warning(
-                    f"Failed to delete credential file {file_path} (skill {skill_name!r}) after exec: "
-                    f"{dr.output or '(no output)'}"
-                )
+        await self._sandbox_file_ops.delete_context_file_credentials(session_id, written_files)
 
     async def _reinject_credential_files(self, sc: SessionContainer, skill_name: str) -> None:
         """Re-inject file-based credentials after container recreation.
@@ -988,17 +477,7 @@ class SandboxManager:
     async def _sync_skill_venv(self, sc: SessionContainer, skill_name: str) -> str:
         """Restore trusted skill files from git and rerun automatic setup providers."""
         master = self._knowledge_dir / "skills" / skill_name
-        providers = self._matching_skill_activation_providers(master)
-        if not providers:
-            return ""
-
-        trusted_files = {"carapace.yaml"}
-        for provider in providers:
-            trusted_files.update(provider.trusted_files)
-        await self._restore_skill_trusted_files(sc, skill_name, trusted_files)
-
-        activation_inputs = await self._get_skill_activation_inputs(sc.session_id, skill_name)
-        lines = await self._run_skill_activation_providers(skill_name, providers, activation_inputs, sc=sc)
+        lines = await self._skill_activation_runner.restore_and_run_detected_providers(sc, skill_name, master)
         return "\n".join(lines)
 
     async def rebuild_skill_venvs(self, session_id: str, activated_skills: list[str]) -> None:
@@ -1026,153 +505,43 @@ class SandboxManager:
             await self.rebuild_skill_venvs(session_id, activated)
 
     async def cleanup_session(self, session_id: str) -> None:
-        """Suspend the sandbox — the runtime decides how (scale to 0 or remove).
-
-        The entry is removed from ``self._sessions`` so ``cleanup_idle``
-        does not re-suspend it every cycle.  ``ensure_session`` will
-        rediscover the sandbox via ``sandbox_exists`` and resume it.
-        """
-        sc = self._sessions.pop(session_id, None)
-        if sc:
-            await self._runtime.suspend_sandbox(
-                self._sandbox_name(session_id),
-                sc.container_id,
-            )
-            logger.info(f"Suspended sandbox for session {session_id}")
+        await self._session_lifecycle.cleanup_session(session_id)
 
     async def destroy_session(self, session_id: str) -> None:
-        """Permanently remove the sandbox and all tracking state.
-
-        The runtime decides how to destroy (delete STS + PVC, or remove
-        container).  Unlike ``cleanup_session``, this purges tokens, domain
-        allowlists, locks and other per-session bookkeeping.
-        """
-        sc = self._sessions.pop(session_id, None)
-        sandbox_name = self._sandbox_name(session_id)
-        if sc:
-            await self._runtime.destroy_sandbox(sandbox_name, sc.container_id)
-            logger.info(f"Destroyed sandbox for session {session_id}")
-        else:
-            existing_id = await self._runtime.sandbox_exists(sandbox_name)
-            if existing_id:
-                await self._runtime.destroy_sandbox(sandbox_name, existing_id)
-                logger.info(f"Destroyed orphaned sandbox for session {session_id}")
-        token = self._session_tokens.pop(session_id, None)
-        if token:
-            self._token_to_session.pop(token, None)
-        self._allowed_domains.pop(session_id, None)
-        self._exec_temp_domains.pop(session_id, None)
-        self._exec_context_skill_domains.pop(session_id, None)
-        self._session_current_command.pop(session_id, None)
-        self._domain_approval_cbs.pop(session_id, None)
-        self._domain_notify_cbs.pop(session_id, None)
-        self._exec_locks.pop(session_id, None)
-        self._proxy_bypass_sessions.discard(session_id)
-        self._credential_cache.pop(session_id, None)
-        self._session_current_contexts.pop(session_id, None)
-        self._exec_notified_domains.pop(session_id, None)
-        self._exec_notified_credentials.pop(session_id, None)
+        await self._session_lifecycle.destroy_session(session_id)
 
     async def reset_session(self, session_id: str) -> None:
-        """Full sandbox reset: destroy and let ``ensure_session`` create a fresh one."""
-        sc = self._sessions.pop(session_id, None)
-        sandbox_name = self._sandbox_name(session_id)
-        if sc:
-            await self._runtime.destroy_sandbox(sandbox_name, sc.container_id)
-            logger.info(f"Reset sandbox for session {session_id}")
-        else:
-            existing_id = await self._runtime.sandbox_exists(sandbox_name)
-            if existing_id:
-                await self._runtime.destroy_sandbox(sandbox_name, existing_id)
-                logger.info(f"Reset orphaned sandbox for session {session_id}")
+        await self._session_lifecycle.reset_session(session_id)
 
     async def cleanup_idle(self) -> None:
-        """Remove containers that have been idle longer than the timeout.
-
-        Only the container is destroyed; session state (tokens, domains)
-        is preserved so the sandbox can be re-created on the next
-        ``ensure_session`` call.
-        """
-        now = time.time()
-        to_remove = [sid for sid, sc in self._sessions.items() if now - sc.last_used > self._idle_timeout]
-        if to_remove:
-            logger.info(f"Cleaning up {len(to_remove)} idle sandbox session(s)")
-        for sid in to_remove:
-            await self.cleanup_session(sid)
+        await self._session_lifecycle.cleanup_idle()
 
     async def cleanup_all(self) -> None:
-        """Remove all sandbox containers (e.g. on server shutdown).
-
-        Session state is preserved so sandboxes can be re-created after
-        a restart.
-        """
-        count = len(self._sessions)
-        if count:
-            logger.info(f"Cleaning up all {count} sandbox session(s)")
-        for sid in list(self._sessions):
-            await self.cleanup_session(sid)
+        await self._session_lifecycle.cleanup_all()
 
     async def cleanup_orphaned_sandboxes(self, known_sessions: set[str]) -> int:
-        """Destroy sandbox resources whose session no longer exists on disk.
-
-        Returns the number of orphans removed.
-        """
-        live = await self._runtime.list_sandboxes()
-        orphans = {sid: cid for sid, cid in live.items() if sid not in known_sessions}
-        for sid, container_id in orphans.items():
-            sandbox_name = self._sandbox_name(sid)
-            await self._runtime.destroy_sandbox(sandbox_name, container_id)
-            logger.info(f"Removed orphaned sandbox for deleted session {sid}")
-        return len(orphans)
+        return await self._session_lifecycle.cleanup_orphaned_sandboxes(known_sessions)
 
     def set_session_env(self, session_id: str, env: dict[str, str]) -> None:
-        """Merge *env* into the persistent session environment.
-
-        Values are passed as ``env`` to every subsequent ``_exec()`` call
-        so that credential-injected variables survive across commands.
-        """
-        sc = self._sessions.get(session_id)
-        if sc:
-            sc.session_env.update(env)
+        self._session_lifecycle.set_session_env(session_id, env)
 
     def get_session_env(self, session_id: str) -> dict[str, str]:
-        """Return a copy of the current session environment."""
-        sc = self._sessions.get(session_id)
-        return dict(sc.session_env) if sc else {}
+        return self._session_lifecycle.get_session_env(session_id)
 
     def verify_session_token(self, session_id: str, token: str) -> bool:
-        """Return True if *token* is valid for *session_id*."""
-        return self._token_to_session.get(token) == session_id
+        return self._session_lifecycle.verify_session_token(session_id, token)
 
     def allow_domains(self, session_id: str, domains: set[str]) -> None:
-        """Add *domains* to the proxy allowlist for *session_id*."""
-        existing = self._allowed_domains.setdefault(session_id, set())
-        existing.update(domains)
-        logger.info(f"Allowed domains for session {session_id}: {existing}")
+        self._exec_coordinator.allow_domains(session_id, domains)
 
     def get_allowed_domains(self, session_id: str) -> set[str]:
-        return self._allowed_domains.get(session_id, set())
+        return self._exec_coordinator.get_allowed_domains(session_id)
 
     def get_domain_info(self, session_id: str) -> list[dict[str, str]]:
-        """Return a list of allowed domain entries with their scope/expiry for display.
-
-        Each entry has ``domain`` and ``scope``, where scope is one of:
-        ``"permanent"`` or ``"exec"`` (current tool call only).
-        """
-        entries: list[dict[str, str]] = []
-        for d in sorted(self._allowed_domains.get(session_id, set())):
-            entries.append({"domain": d, "scope": "permanent"})
-        for d in sorted(self._exec_temp_domains.get(session_id, set())):
-            entries.append({"domain": d, "scope": "this exec only"})
-        return entries
+        return self._exec_coordinator.get_domain_info(session_id)
 
     def get_effective_domains(self, session_id: str) -> set[str]:
-        """Return the union of permanent and current exec-scoped temp domains."""
-        if session_id in self._proxy_bypass_sessions:
-            return {"*"}
-        domains = set(self._allowed_domains.get(session_id, set()))
-        domains.update(self._exec_temp_domains.get(session_id, set()))
-        return domains
+        return self._exec_coordinator.get_effective_domains(session_id)
 
     # ------------------------------------------------------------------
     # Credential cache (per-exec injection, not session_env)
@@ -1187,153 +556,43 @@ class SandboxManager:
         return self._credential_cache.get(session_id, {}).get(vault_path)
 
     def get_current_contexts(self, session_id: str) -> list[str]:
-        """Return the contexts active for the current exec, if any."""
-        return self._session_current_contexts.get(session_id, [])
+        return self._exec_coordinator.get_current_contexts(session_id)
 
     def is_domain_skill_granted(self, session_id: str, domain: str) -> bool:
-        """Return True if *domain* is in the exec-scoped skill-granted set."""
-        from carapace.sandbox.proxy import domain_matches
-
-        skill_domains = self._exec_context_skill_domains.get(session_id, set())
-        domain_lower = domain.lower()
-        return any(domain_matches(domain_lower, p.lower()) for p in skill_domains)
+        return self._exec_coordinator.is_domain_skill_granted(session_id, domain)
 
     def is_domain_bypass(self, session_id: str) -> bool:
-        """Return True if the session is currently in proxy bypass mode."""
-        return session_id in self._proxy_bypass_sessions
+        return self._exec_coordinator.is_domain_bypass(session_id)
 
     def mark_credential_notified(self, session_id: str, vault_path: str) -> bool:
-        """Return True if *vault_path* was already notified in this exec; otherwise mark it."""
-        notified = self._exec_notified_credentials.get(session_id)
-        if notified is None:
-            return False
-        if vault_path in notified:
-            return True
-        notified.add(vault_path)
-        return False
+        return self._exec_coordinator.mark_credential_notified(session_id, vault_path)
 
     def notify_domain_access(self, session_id: str, domain: str, allowed: bool) -> None:
-        """Called by the proxy for silently allowed/denied domain accesses.
-
-        Determines the approval source (skill, bypass, permanent allowlist)
-        and fires the session's domain info callback.  Skill-granted and
-        bypass domains are notified at most once per exec to avoid UI spam.
-        """
-        cb = self._domain_notify_cbs.get(session_id)
-        if cb is None:
-            return
-
-        if allowed:
-            if self.is_domain_bypass(session_id):
-                notified = self._exec_notified_domains.get(session_id)
-                if notified is not None and domain in notified:
-                    return
-                if notified is not None:
-                    notified.add(domain)
-                cb(domain, f"[bypass] {domain}", "bypass", "allow", "proxy bypass active")
-            elif self.is_domain_skill_granted(session_id, domain):
-                notified = self._exec_notified_domains.get(session_id)
-                if notified is not None and domain in notified:
-                    return
-                if notified is not None:
-                    notified.add(domain)
-                cb(domain, f"[skill] {domain}", "skill", "allow", "skill-declared domain")
-            else:
-                # Permanently allowed or exec-temp sentinel-approved (already notified by sentinel)
-                # Don't double-notify for sentinel-approved domains
-                pass
-        else:
-            # Denied without sentinel evaluation (no approval callback set)
-            cb(domain, f"[denied] {domain}", "unknown", "deny", "no approval callback configured")
+        self._exec_coordinator.notify_domain_access(session_id, domain, allowed)
 
     # ------------------------------------------------------------------
     # Proxy domain approval
     # ------------------------------------------------------------------
 
     def set_domain_approval_callback(self, session_id: str, cb: Callable[[str, str], Awaitable[bool]] | None) -> None:
-        """Register or remove a per-session callback for proxy domain approval."""
-        if cb is None:
-            self._domain_approval_cbs.pop(session_id, None)
-        else:
-            self._domain_approval_cbs[session_id] = cb
+        self._exec_coordinator.set_domain_approval_callback(session_id, cb)
 
     def set_domain_notify_callback(
         self,
         session_id: str,
         cb: Callable[[str, str, ApprovalSource | None, ApprovalVerdict | None, str | None], None] | None,
     ) -> None:
-        """Register or remove a per-session domain access notification callback.
-
-        Signature: ``cb(domain, detail, approval_source, approval_verdict, approval_explanation)``.
-        """
-        if cb is None:
-            self._domain_notify_cbs.pop(session_id, None)
-        else:
-            self._domain_notify_cbs[session_id] = cb
+        self._exec_coordinator.set_domain_notify_callback(session_id, cb)
 
     async def request_domain_approval(self, session_id: str, domain: str) -> bool:
-        """Called by the proxy when a domain is not in the allowlist.
-
-        Delegates to the per-session callback registered by SessionEngine.
-        """
-        cb = self._domain_approval_cbs.get(session_id)
-        if cb is None:
-            logger.warning(f"No domain approval callback for session {session_id}, denying {domain}")
-            return False
-
-        command = self._session_current_command.get(session_id, "")
-        allowed = await cb(domain, command)
-        if allowed:
-            self._exec_temp_domains.setdefault(session_id, set()).add(domain)
-            logger.info(f"Security approved {domain} for session {session_id}")
-        else:
-            logger.info(f"Security denied {domain} for session {session_id}")
-        return allowed
+        return await self._exec_coordinator.request_domain_approval(session_id, domain)
 
     def _prepare_session_recreate(self, session_id: str) -> None:
-        """Drop container reference while keeping all session state.
-
-        Called when a container is detected as stopped/gone and will be
-        replaced immediately.  Token and domain state survive because
-        ``ensure_session`` reuses the same credentials and the domain
-        allowlist is session-scoped.  The session_env is stashed so it
-        can be restored onto the replacement container.
-        """
-        sc = self._sessions.pop(session_id, None)
-        if sc and sc.session_env:
-            self._stashed_session_env[session_id] = dict(sc.session_env)
+        self._session_lifecycle.prepare_session_recreate(session_id)
 
     def _cleanup_tracking(
         self,
         session_id: str,
     ) -> None:
-        """Roll back all in-memory tracking for a session.
-
-        Only called from the ``ensure_session`` error path when container
-        creation fails and we need to undo the partial setup.  The on-disk
-        token file is not removed — it lives in the session directory and
-        will be overwritten on the next attempt or deleted when the session
-        is permanently removed.
-
-        Credential cache entries are **not** cleared: values are tied to the
-        session (``use_skill``), not to a specific container, and must survive
-        a transient create failure so the next ``ensure_session`` can inject
-        them on ``exec``.  ``destroy_session`` clears the cache when all
-        session tracking is purged.
-        """
-        self._sessions.pop(session_id, None)
-        self._stashed_session_env.pop(session_id, None)
-        token = self._session_tokens.pop(session_id, None)
-        if token:
-            self._token_to_session.pop(token, None)
-        self._allowed_domains.pop(session_id, None)
-        self._exec_temp_domains.pop(session_id, None)
-        self._exec_context_skill_domains.pop(session_id, None)
-        self._session_current_command.pop(session_id, None)
-        self._proxy_bypass_sessions.discard(session_id)
-        self._session_current_contexts.pop(session_id, None)
-        self._exec_locks.pop(session_id, None)
-        self._domain_approval_cbs.pop(session_id, None)
-        self._domain_notify_cbs.pop(session_id, None)
-        self._exec_notified_domains.pop(session_id, None)
-        self._exec_notified_credentials.pop(session_id, None)
+        self._session_lifecycle.cleanup_tracking(session_id)
+        self._exec_coordinator.cleanup_tracking(session_id)
