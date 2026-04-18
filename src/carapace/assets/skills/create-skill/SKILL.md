@@ -306,6 +306,8 @@ This is the right place to do deterministic local post-processing such as:
 
 `setup.sh` should be idempotent and must not print raw secret values. Treat it like executable code: only the pushed upstream copy is run automatically.
 
+`setup.sh` runs under the same temporary proxy-bypass window as the other automatic setup providers. That is intentional: Carapace treats this committed, human-authored setup hook as more trustworthy and auditable than arbitrary third-party package installation behavior.
+
 #### Credential ordering
 
 During `use_skill`, Carapace approves and caches declared skill credentials before automatic setup runs. That means `setup.sh` can rely on approved env vars and file credentials being available when it needs to materialize the final config files for the tool.

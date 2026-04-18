@@ -72,7 +72,7 @@ Each session maintains a domain allowlist. Domains are added when:
 
 1. **Skill activation**: Domains declared in a skill's `carapace.yaml` (`network.domains`) are registered when the skill is activated and applied to commands that explicitly use that skill's context
 2. **Sentinel approval**: Unknown domains are evaluated by the sentinel. If allowed, they're added for the current exec call. If escalated, the user decides.
-3. **Proxy bypass**: During automatic dependency installation (`uv sync --locked`, `npm ci`, `pnpm install --frozen-lockfile`), the proxy is temporarily bypassed to allow package downloads
+3. **Proxy bypass**: During trusted automatic setup providers (`uv sync --locked`, `npm ci`, `pnpm install --frozen-lockfile`, and `setup.sh`), the proxy is temporarily bypassed. This is intentional: these providers are restored from the pushed upstream revision before execution, and `setup.sh` is treated as the most intentional, reviewable local setup hook rather than something less trustworthy than third-party package install scripts.
 
 The proxy supports exact domain matching (`example.com`) and wildcard matching (`*.example.com`).
 

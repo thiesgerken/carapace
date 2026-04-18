@@ -130,6 +130,8 @@ When `use_skill` activates a skill, Carapace checks a fixed provider chain and r
 
 The provider files above are security-sensitive. Carapace restores them from the skill's **pushed upstream revision** before running them, so local uncommitted or merely local committed sandbox edits are not executed automatically.
 
+All automatic setup providers run with the proxy temporarily bypassed. This includes `setup.sh` by design: it is a committed, human-authored setup hook restored from upstream, and is treated as more intentional and reviewable than arbitrary lifecycle scripts inside third-party package installs.
+
 ### Credential ordering
 
 Skill-declared credentials are approved and cached before any automatic setup provider runs. This is important for `setup.sh`, whose main use case is often to transform injected secrets into the local config files a tool actually expects.
@@ -196,6 +198,8 @@ Use it for local, deterministic post-processing such as:
 Keep `setup.sh` idempotent. It runs on first activation and again after sandbox recreation.
 
 Because it runs automatically and may execute with approved credentials available, `setup.sh` should be treated like code, not documentation. Only the pushed upstream copy is executed.
+
+Like the dependency providers above, `setup.sh` runs under the temporary proxy-bypass window. The trust model here is deliberate: `setup.sh` is the explicit, committed setup hook for the skill, so Carapace treats it as more trustworthy than transitive package installation behavior.
 
 ## Discovery (progressive disclosure)
 
