@@ -315,6 +315,39 @@ async def test_activate_skill_runs_setup_provider_with_activation_inputs(tmp_pat
     assert "git checkout @{upstream} -- skills/cred-setup/setup.sh" in restore_call.args[1]
 
 
+@pytest.mark.anyio
+async def test_activate_skill_recovers_if_trusted_restore_hits_gone_container(tmp_path: Path):
+    runtime = MagicMock(spec=ContainerRuntime)
+    runtime.get_host_ip = AsyncMock(return_value="172.18.0.1")
+    runtime.create_sandbox = AsyncMock(side_effect=["container-1", "container-2"])
+    runtime.get_ip = AsyncMock(return_value="172.18.0.22")
+    runtime.logs = AsyncMock(return_value="carapace sandbox ready")
+    runtime.exec = AsyncMock(
+        side_effect=[
+            ExecResult(exit_code=0, output=""),  # _clone_knowledge_repo probe after first create
+            ContainerGoneError(),  # trusted restore triggers recreate
+            ExecResult(exit_code=0, output=""),  # _clone_knowledge_repo probe after recreate
+            ExecResult(exit_code=0, output=""),  # retried git checkout carapace.yaml
+            ExecResult(exit_code=0, output=""),  # git checkout setup.sh
+            ExecResult(exit_code=0, output=""),  # setup.sh execution
+        ]
+    )
+
+    skill_dir = tmp_path / "skills" / "restore-retry"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text("---\nname: restore-retry\n---\nBody.\n")
+    (skill_dir / "setup.sh").write_text("#!/bin/sh\n")
+
+    mgr = SandboxManager(runtime=runtime, data_dir=tmp_path, knowledge_dir=tmp_path)
+
+    result = await mgr.activate_skill("sess-1", "restore-retry")
+    assert "setup.sh completed." in result
+    assert runtime.create_sandbox.await_count == 2
+
+    restore_retry_call = runtime.exec.call_args_list[3]
+    assert "git checkout @{upstream} -- skills/restore-retry/carapace.yaml" in restore_retry_call.args[1]
+
+
 # ── carapace.yaml parsing ───────────────────────────────────────────
 
 

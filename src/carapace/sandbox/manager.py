@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from asyncio import Lock
+from asyncio.locks import Lock
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 
@@ -15,7 +15,6 @@ from carapace.sandbox.runtime import (
     ExecResult,
     SkillActivationError,
     SkillActivationInputs,
-    SkillFileCredential,
 )
 from carapace.sandbox.session_lifecycle import (
     SandboxSessionLifecycle,
@@ -85,7 +84,6 @@ class SandboxManager:
         self._exec_notified_domains: dict[str, set[str]] = {}  # dedupe silent-allow domain UI notifications
         self._exec_notified_credentials: dict[str, set[str]] = {}  # dedupe credential UI notifications
         self._get_activated_skills_cb: Callable[[str], list[str]] | None = None
-        self._reinject_credentials_cb: Callable[[str, str], Awaitable[list[tuple[str, str]]]] | None = None
         self._skill_activation_inputs_cb: Callable[[str, str], Awaitable[SkillActivationInputs]] | None = None
         self._session_lifecycle = SandboxSessionLifecycle(
             runtime=runtime,
@@ -161,18 +159,6 @@ class SandboxManager:
     ) -> None:
         """Register a callback to retrieve activation inputs for a skill."""
         self._skill_activation_inputs_cb = cb
-
-    def set_reinject_credentials_callback(self, cb: Callable[[str, str], Awaitable[list[tuple[str, str]]]]) -> None:
-        """Backward-compatible adapter for file-only activation inputs."""
-        self._reinject_credentials_cb = cb
-
-        async def _adapter(session_id: str, skill_name: str) -> SkillActivationInputs:
-            file_credentials = [
-                SkillFileCredential(path=path, value=value) for path, value in await cb(session_id, skill_name)
-            ]
-            return SkillActivationInputs(file_credentials=file_credentials)
-
-        self.set_skill_activation_inputs_callback(_adapter)
 
     async def _get_skill_activation_inputs(self, session_id: str, skill_name: str) -> SkillActivationInputs:
         if self._skill_activation_inputs_cb is None:
@@ -447,35 +433,6 @@ class SandboxManager:
         written_files: list[tuple[str, str]],
     ) -> None:
         await self._sandbox_file_ops.delete_context_file_credentials(session_id, written_files)
-
-    async def _reinject_credential_files(self, sc: SessionContainer, skill_name: str) -> None:
-        """Re-inject file-based credentials after container recreation.
-
-        With context-scoped grants, file credentials are normally injected
-        per-exec.  This method is kept as a fallback for container rebuilds
-        that happen outside an exec context (e.g. venv rebuild).
-        """
-        if not self._reinject_credentials_cb:
-            return
-        credentials = await self._reinject_credentials_cb(sc.session_id, skill_name)
-        if not credentials:
-            return
-        skill_dir = f"/workspace/skills/{skill_name}"
-        for credential_file, credential_value in credentials:
-            result = await self._file_write_in_container(
-                sc,
-                credential_file,
-                credential_value,
-                mode=0o400,
-                workdir=skill_dir,
-                quote=False,
-            )
-            if result.exit_code != 0:
-                logger.error(
-                    f"Failed to re-inject credential file {credential_file} for skill {skill_name}: {result.output}"
-                )
-                continue
-            logger.info(f"Re-injected credential file {credential_file} for skill {skill_name}")
 
     async def _sync_skill_venv(self, sc: SessionContainer, skill_name: str) -> str:
         """Restore trusted skill files from git and rerun automatic setup providers."""

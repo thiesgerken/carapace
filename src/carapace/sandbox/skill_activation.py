@@ -104,15 +104,31 @@ class SkillActivationRunner:
 
     async def restore_trusted_files(
         self,
-        sc: SessionContainerLike,
         skill_name: str,
         trusted_files: set[str],
+        *,
+        session_id: str | None = None,
+        sc: SessionContainerLike | None = None,
     ) -> None:
+        if (session_id is None) == (sc is None):
+            raise ValueError("Exactly one of session_id and sc must be set")
+
         skill_path = f"skills/{shlex.quote(skill_name)}"
         for fname in sorted(trusted_files):
+            command = f"git checkout @{{upstream}} -- {skill_path}/{fname} 2>/dev/null || true"
+            if session_id is not None:
+                await self._exec_in_session(
+                    session_id,
+                    command,
+                    timeout=10,
+                    workdir=self._knowledge_workdir,
+                )
+                continue
+
+            assert sc is not None
             await self._exec_in_container(
                 sc,
-                f"git checkout @{{upstream}} -- {skill_path}/{fname} 2>/dev/null || true",
+                command,
                 timeout=10,
                 workdir=self._knowledge_workdir,
             )
@@ -130,7 +146,12 @@ class SkillActivationRunner:
             return []
 
         trusted_files = self.trusted_files_for(providers)
-        await self.restore_trusted_files(sc, skill_name, trusted_files)
+        await self.restore_trusted_files(
+            skill_name,
+            trusted_files,
+            session_id=run_session_id,
+            sc=None if run_session_id is not None else sc,
+        )
 
         activation_inputs = await self._get_activation_inputs(run_session_id or sc.session_id, skill_name)
         if run_session_id is not None:
