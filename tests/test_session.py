@@ -115,14 +115,18 @@ def test_missing_user_escalation_callback_denies() -> None:
 
 
 @pytest.mark.anyio
-async def test_reinject_skill_credentials_uses_context_grant(tmp_path: Path):
-    """Venv/container rebuild re-fetches file creds when the skill has a persisted context grant."""
+async def test_skill_activation_inputs_use_context_grant(tmp_path: Path):
+    """Automatic skill setup reuses approved env/file credentials from the persisted context grant."""
     skill_name = "reinject-skill"
     skill_dir = tmp_path / "skills" / skill_name
     skill_dir.mkdir(parents=True)
     (skill_dir / "SKILL.md").write_text(f"---\nname: {skill_name}\n---\n")
     (skill_dir / "carapace.yaml").write_text(
-        "credentials:\n  - vault_path: vault/secret\n    description: API key\n    file: .secrets/key.txt\n"
+        "credentials:\n"
+        "  - vault_path: vault/secret\n"
+        "    description: API key\n"
+        "    env_var: API_KEY\n"
+        "    file: .secrets/key.txt\n"
     )
 
     with _patch_sentinel():
@@ -134,7 +138,12 @@ async def test_reinject_skill_credentials_uses_context_grant(tmp_path: Path):
     active.state.context_grants[skill_name] = ContextGrant(
         skill_name=skill_name,
         credential_decls=[
-            SkillCredentialDecl(vault_path="vault/secret", description="API key", file=".secrets/key.txt"),
+            SkillCredentialDecl(
+                vault_path="vault/secret",
+                description="API key",
+                env_var="API_KEY",
+                file=".secrets/key.txt",
+            ),
         ],
     )
 
@@ -142,27 +151,37 @@ async def test_reinject_skill_credentials_uses_context_grant(tmp_path: Path):
     mock_reg.fetch = AsyncMock(return_value="secret-value")
     engine._credential_registry = mock_reg
 
-    result = await engine._reinject_skill_credentials(sid, skill_name)
-    assert result == [(".secrets/key.txt", "secret-value")]
+    result = await engine._skill_activation_inputs(sid, skill_name)
+    assert result.environment == {"API_KEY": "secret-value"}
+    assert [(cred.path, cred.value) for cred in result.file_credentials] == [(".secrets/key.txt", "secret-value")]
     mock_reg.fetch.assert_awaited_once_with("vault/secret")
 
     active.state.context_grants.pop(skill_name, None)
     mock_reg.fetch.reset_mock()
-    assert await engine._reinject_skill_credentials(sid, skill_name) == []
+    empty = await engine._skill_activation_inputs(sid, skill_name)
+    assert empty.environment == {}
+    assert empty.file_credentials == []
     mock_reg.fetch.assert_not_called()
 
     # Reload from disk when session is not active (same path as idle resume + venv sync)
     active.state.context_grants[skill_name] = ContextGrant(
         skill_name=skill_name,
         credential_decls=[
-            SkillCredentialDecl(vault_path="vault/secret", description="API key", file=".secrets/key.txt"),
+            SkillCredentialDecl(
+                vault_path="vault/secret",
+                description="API key",
+                env_var="API_KEY",
+                file=".secrets/key.txt",
+            ),
         ],
     )
     engine.session_mgr.save_state(active.state)
     engine.deactivate(sid)
     mock_reg.fetch.reset_mock()
     mock_reg.fetch = AsyncMock(return_value="from-disk")
-    assert await engine._reinject_skill_credentials(sid, skill_name) == [(".secrets/key.txt", "from-disk")]
+    result = await engine._skill_activation_inputs(sid, skill_name)
+    assert result.environment == {"API_KEY": "from-disk"}
+    assert [(cred.path, cred.value) for cred in result.file_credentials] == [(".secrets/key.txt", "from-disk")]
 
 
 # ---------------------------------------------------------------------------

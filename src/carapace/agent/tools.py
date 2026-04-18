@@ -22,7 +22,7 @@ from carapace.models import (
     ToolResult,
 )
 from carapace.sandbox.manager import READ_TOOL_MAX_LINE_WINDOW
-from carapace.sandbox.runtime import SkillVenvError
+from carapace.sandbox.runtime import SkillActivationError
 from carapace.security.context import (
     ContextGrantEntry,
     CredentialAccessEntry,
@@ -261,7 +261,8 @@ def build_system_prompt(deps: Deps) -> str:
         catalog_lines.append("")
         catalog_lines.append(
             "Use `use_skill` to activate a skill before using it. "
-            + "That will copy the skill to your sandbox environment and if needed setup a virtual environment for it."
+            + "That copies the skill into the sandbox and runs any committed "
+            + "automatic setup providers it declares."
         )
         parts.append("\n".join(catalog_lines))
 
@@ -278,8 +279,12 @@ def build_system_prompt(deps: Deps) -> str:
         "- `/workspace/memory/` — memory files\n"
         "- `/workspace/skills/` — activated skills (populated by `use_skill`)\n"
         "Call `use_skill(skill_name)` to activate a skill before running its scripts.\n"
-        "`uv` is pre-installed; skill dependencies are managed via `pyproject.toml` + `uv.lock`.\n"
-        "Run skill scripts with `uv run --directory /workspace/skills/<name> scripts/<script>.py`.\n\n"
+        "Automatic skill setup can use committed provider files such as "
+        "`pyproject.toml` + `uv.lock`, `package.json` + a lockfile, and `setup.sh`.\n"
+        "Provider setup runs from the pushed skill revision and only after approved "
+        "skill credentials have been activated for the session.\n"
+        "Use `uv run --directory /workspace/skills/<name> ...` for Python entrypoints "
+        "and the matching package manager or shell command for Node/setup-based skills.\n\n"
         "## Network Access\n"
         "The sandbox has internet access. Outgoing requests are allowed but subject to "
         "security review by the sentinel — like all tool calls, network activity is evaluated "
@@ -379,16 +384,6 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
         if instructions is None:
             return f"Skill '{skill_name}' not found."
 
-        sandbox_msg = ""
-        try:
-            sandbox_msg = await ctx.deps.sandbox.activate_skill(
-                ctx.deps.session_state.session_id,
-                skill_name,
-            )
-        except SkillVenvError as exc:
-            logger.exception(f"Error activating skill {skill_name}: {exc}")
-            sandbox_msg = f"ERROR: {exc}"
-
         # Register context grant (replaces permanent allow_domains + session env injection)
         grant = ContextGrant(
             skill_name=skill_name,
@@ -407,6 +402,16 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
         # Cache credential values for per-exec injection
         cred_msg, cred_names = await _cache_skill_credentials(ctx, declared_creds, skill_name)
         grant.credential_names = cred_names
+
+        sandbox_msg = ""
+        try:
+            sandbox_msg = await ctx.deps.sandbox.activate_skill(
+                ctx.deps.session_state.session_id,
+                skill_name,
+            )
+        except SkillActivationError as exc:
+            logger.exception(f"Error activating skill {skill_name}: {exc}")
+            sandbox_msg = f"ERROR: {exc}"
 
         ctx.deps.activated_skills.append(skill_name)
         if skill_name not in ctx.deps.session_state.activated_skills:

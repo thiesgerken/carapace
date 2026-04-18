@@ -11,7 +11,13 @@ import pytest
 from carapace.models import SkillCarapaceConfig
 from carapace.sandbox.manager import SandboxManager
 from carapace.sandbox.proxy import ProxyServer, domain_matches
-from carapace.sandbox.runtime import ContainerGoneError, ContainerRuntime, ExecResult
+from carapace.sandbox.runtime import (
+    ContainerGoneError,
+    ContainerRuntime,
+    ExecResult,
+    SkillActivationInputs,
+    SkillFileCredential,
+)
 from carapace.skills import SkillRegistry
 
 # ── domain_matches ──────────────────────────────────────────────────
@@ -202,7 +208,7 @@ async def test_exec_recreate_preserves_domains(tmp_path: Path):
 
 @pytest.mark.anyio
 async def test_exec_recreate_reinjects_credential_files(tmp_path: Path):
-    """After container recreation, _rebuild_skill_venvs re-injects file credentials."""
+    """After container recreation, activation providers re-materialize file credentials."""
     runtime = MagicMock(spec=ContainerRuntime)
     runtime.get_host_ip = AsyncMock(return_value="172.18.0.1")
     runtime.create_sandbox = AsyncMock(side_effect=["container-1", "container-2"])
@@ -216,42 +222,97 @@ async def test_exec_recreate_reinjects_credential_files(tmp_path: Path):
             ContainerGoneError(),  # exec_command triggers recreate
             _ok,  # _clone_knowledge_repo probe after recreate
             _ok,  # git checkout carapace.yaml
-            _ok,  # git checkout pyproject.toml
-            _ok,  # git checkout uv.lock
-            _ok,  # _file_write_in_container (credential re-injection)
+            _ok,  # git checkout setup.sh
+            _ok,  # _file_write_in_container (credential materialization)
+            _ok,  # setup.sh execution
+            _ok,  # credential file cleanup
             ExecResult(exit_code=0, output="ok"),  # actual command retry
         ]
     )
 
-    # Create a skill dir without pyproject.toml so venv build is skipped
+    # Create a skill dir with setup.sh so provider rebuild runs after recreation.
     skill_dir = tmp_path / "skills" / "moneydb"
     skill_dir.mkdir(parents=True)
     (skill_dir / "SKILL.md").write_text("---\nname: moneydb\n---\nBody.\n")
+    (skill_dir / "setup.sh").write_text("#!/bin/sh\n")
 
     mgr = SandboxManager(runtime=runtime, data_dir=tmp_path, knowledge_dir=tmp_path)
     session_id = "sess-1"
 
     # Register callbacks — the activated-skills callback returns "moneydb",
-    # and the reinject callback returns one file credential to write.
+    # and the activation callback returns one file credential to materialize.
     mgr.set_activated_skills_callback(lambda sid: ["moneydb"])
-    reinject_cb = AsyncMock(return_value=[("/tmp/creds/api_key.json", "secret-key-value")])
-    mgr.set_reinject_credentials_callback(reinject_cb)
+    activation_cb = AsyncMock(
+        return_value=SkillActivationInputs(
+            file_credentials=[SkillFileCredential(path="/tmp/creds/api_key.json", value="secret-key-value")]
+        )
+    )
+    mgr.set_skill_activation_inputs_callback(activation_cb)
 
     await mgr.ensure_session(session_id)
     output = await mgr.exec_command(session_id, "run-moneydb")
     assert output.output == "ok"
 
-    # Verify the reinject callback was called for the right session + skill
-    reinject_cb.assert_awaited_once_with(session_id, "moneydb")
+    # Verify the activation callback was called for the right session + skill.
+    activation_cb.assert_awaited_once_with(session_id, "moneydb")
+
+    # Verify upstream restore is used for trusted provider files.
+    restore_call = runtime.exec.call_args_list[4]
+    assert "git checkout @{upstream} -- skills/moneydb/setup.sh" in restore_call.args[1]
 
     # Verify the credential file was written into the new container via exec.
-    # The 7th exec call (index 6) is the _file_write_in_container for the
+    # The 6th exec call (index 5) is the _file_write_in_container for the
     # credential — check that it targeted the correct workdir.
-    write_call = runtime.exec.call_args_list[6]
+    write_call = runtime.exec.call_args_list[5]
     shell_cmd = write_call.args[1]
     assert "/tmp/creds/api_key.json" in shell_cmd
     assert base64.b64encode(b"secret-key-value").decode() in shell_cmd
     assert write_call.kwargs.get("workdir") == "/workspace/skills/moneydb"
+
+
+@pytest.mark.anyio
+async def test_activate_skill_runs_setup_provider_with_activation_inputs(tmp_path: Path):
+    runtime = MagicMock(spec=ContainerRuntime)
+    runtime.get_host_ip = AsyncMock(return_value="172.18.0.1")
+    runtime.create_sandbox = AsyncMock(return_value="container-1")
+    runtime.get_ip = AsyncMock(return_value="172.18.0.22")
+    runtime.logs = AsyncMock(return_value="carapace sandbox ready")
+    runtime.exec = AsyncMock(
+        side_effect=[
+            ExecResult(exit_code=0, output=""),  # _clone_knowledge_repo probe after create
+            ExecResult(exit_code=0, output=""),  # git checkout carapace.yaml
+            ExecResult(exit_code=0, output=""),  # git checkout setup.sh
+            ExecResult(exit_code=0, output=""),  # credential file write
+            ExecResult(exit_code=0, output=""),  # setup.sh execution
+            ExecResult(exit_code=0, output=""),  # credential file cleanup
+        ]
+    )
+
+    skill_dir = tmp_path / "skills" / "cred-setup"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text("---\nname: cred-setup\n---\nBody.\n")
+    (skill_dir / "setup.sh").write_text("#!/bin/sh\n")
+
+    mgr = SandboxManager(runtime=runtime, data_dir=tmp_path, knowledge_dir=tmp_path)
+    mgr.set_skill_activation_inputs_callback(
+        AsyncMock(
+            return_value=SkillActivationInputs(
+                environment={"API_TOKEN": "secret-token"},
+                file_credentials=[SkillFileCredential(path=".config/token.txt", value="secret-token")],
+            )
+        )
+    )
+
+    result = await mgr.activate_skill("sess-1", "cred-setup")
+    assert "setup.sh completed." in result
+
+    setup_call = runtime.exec.call_args_list[4]
+    assert setup_call.args[1] == "sh ./setup.sh"
+    assert setup_call.kwargs.get("workdir") == "/workspace/skills/cred-setup"
+    assert setup_call.kwargs.get("env") == {"API_TOKEN": "secret-token"}
+
+    restore_call = runtime.exec.call_args_list[2]
+    assert "git checkout @{upstream} -- skills/cred-setup/setup.sh" in restore_call.args[1]
 
 
 # ── carapace.yaml parsing ───────────────────────────────────────────

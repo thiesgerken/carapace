@@ -7,6 +7,7 @@ import secrets
 import shlex
 import time
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from pathlib import Path
 
 from loguru import logger
@@ -23,7 +24,9 @@ from carapace.sandbox.runtime import (
     ContainerRuntime,
     ExecResult,
     SandboxConfig,
-    SkillVenvError,
+    SkillActivationError,
+    SkillActivationInputs,
+    SkillFileCredential,
 )
 from carapace.security.context import ApprovalSource, ApprovalVerdict
 
@@ -86,6 +89,70 @@ def _validate_skill_name(skill_name: str) -> str | None:
     return None
 
 
+@dataclass(frozen=True)
+class SkillActivationProvider:
+    name: str
+    trusted_files: tuple[str, ...]
+    status_message: str
+    command: str
+    timeout: int = 120
+    bypass_proxy: bool = True
+    needs_activation_inputs: bool = False
+    matcher: Callable[[Path], bool] | None = None
+
+    def matches(self, skill_dir: Path) -> bool:
+        if self.matcher is None:
+            return False
+        return self.matcher(skill_dir)
+
+
+def _has_all_files(*names: str) -> Callable[[Path], bool]:
+    def _matcher(skill_dir: Path) -> bool:
+        return all((skill_dir / name).exists() for name in names)
+
+    return _matcher
+
+
+_SKILL_ACTIVATION_PROVIDERS: tuple[SkillActivationProvider, ...] = (
+    SkillActivationProvider(
+        name="uv",
+        trusted_files=("pyproject.toml", "uv.lock"),
+        status_message="Python dependencies synced.",
+        command="uv sync --locked",
+        matcher=_has_all_files("pyproject.toml", "uv.lock"),
+    ),
+    SkillActivationProvider(
+        name="npm",
+        trusted_files=("package.json", "package-lock.json"),
+        status_message="npm dependencies installed.",
+        command="npm ci",
+        matcher=_has_all_files("package.json", "package-lock.json"),
+    ),
+    SkillActivationProvider(
+        name="pnpm",
+        trusted_files=("package.json", "pnpm-lock.yaml"),
+        status_message="pnpm dependencies installed.",
+        command="pnpm install --frozen-lockfile",
+        matcher=_has_all_files("package.json", "pnpm-lock.yaml"),
+    ),
+    SkillActivationProvider(
+        name="yarn",
+        trusted_files=("package.json", "yarn.lock"),
+        status_message="yarn dependencies installed.",
+        command="yarn install --immutable",
+        matcher=_has_all_files("package.json", "yarn.lock"),
+    ),
+    SkillActivationProvider(
+        name="setup.sh",
+        trusted_files=("setup.sh",),
+        status_message="setup.sh completed.",
+        command="sh ./setup.sh",
+        matcher=_has_all_files("setup.sh"),
+        needs_activation_inputs=True,
+    ),
+)
+
+
 class SandboxManager:
     def __init__(
         self,
@@ -128,7 +195,7 @@ class SandboxManager:
         self._exec_notified_domains: dict[str, set[str]] = {}  # dedupe silent-allow domain UI notifications
         self._exec_notified_credentials: dict[str, set[str]] = {}  # dedupe credential UI notifications
         self._get_activated_skills_cb: Callable[[str], list[str]] | None = None
-        self._reinject_credentials_cb: Callable[[str, str], Awaitable[list[tuple[str, str]]]] | None = None
+        self._skill_activation_inputs_cb: Callable[[str, str], Awaitable[SkillActivationInputs]] | None = None
         logger.info(
             f"SandboxManager initialized (image={base_image}, "
             + f"network={network_name}, proxy_port={proxy_port}, idle_timeout={idle_timeout_minutes}m)"
@@ -138,9 +205,28 @@ class SandboxManager:
         """Register a callback to retrieve activated skills for a session (from persisted state)."""
         self._get_activated_skills_cb = cb
 
+    def set_skill_activation_inputs_callback(
+        self,
+        cb: Callable[[str, str], Awaitable[SkillActivationInputs]],
+    ) -> None:
+        """Register a callback to retrieve activation inputs for a skill."""
+        self._skill_activation_inputs_cb = cb
+
     def set_reinject_credentials_callback(self, cb: Callable[[str, str], Awaitable[list[tuple[str, str]]]]) -> None:
-        """Register a callback to retrieve file credentials for re-injection."""
-        self._reinject_credentials_cb = cb
+        """Backward-compatible adapter for file-only activation inputs."""
+
+        async def _adapter(session_id: str, skill_name: str) -> SkillActivationInputs:
+            file_credentials = [
+                SkillFileCredential(path=path, value=value) for path, value in await cb(session_id, skill_name)
+            ]
+            return SkillActivationInputs(file_credentials=file_credentials)
+
+        self.set_skill_activation_inputs_callback(_adapter)
+
+    async def _get_skill_activation_inputs(self, session_id: str, skill_name: str) -> SkillActivationInputs:
+        if self._skill_activation_inputs_cb is None:
+            return SkillActivationInputs()
+        return await self._skill_activation_inputs_cb(session_id, skill_name)
 
     def _get_or_create_token(self, session_id: str) -> str:
         """Return the proxy token for *session_id*, loading or creating as needed.
@@ -627,7 +713,7 @@ class SandboxManager:
         if err := _validate_skill_name(skill_name):
             return err
 
-        await self.ensure_session(session_id)
+        sc, _ = await self.ensure_session(session_id)
 
         # Check that the skill exists in the server-side knowledge store.
         # The sandbox already has it at /workspace/skills/{name} via git clone.
@@ -636,33 +722,141 @@ class SandboxManager:
             logger.warning(f"Skill '{skill_name}' not found for session {session_id}")
             return f"Skill '{skill_name}' not found."
 
-        has_pyproject = (master_skill_dir / "pyproject.toml").exists()
-        venv_msg = ""
-        if has_pyproject:
+        providers = self._matching_skill_activation_providers(master_skill_dir)
+        activation_msg = ""
+        if providers:
+            activation_inputs = await self._get_skill_activation_inputs(session_id, skill_name)
+            trusted_files = {"carapace.yaml"}
+            for provider in providers:
+                trusted_files.update(provider.trusted_files)
+            await self._restore_skill_trusted_files(sc, skill_name, trusted_files)
+
             try:
-                await self._build_skill_venv(session_id, skill_name)
-                venv_msg = "Venv built successfully."
-            except SkillVenvError as exc:
+                activation_lines = await self._run_skill_activation_providers(
+                    skill_name,
+                    providers,
+                    activation_inputs,
+                    session_id=session_id,
+                )
+                activation_msg = "\n".join(activation_lines)
+            except SkillActivationError as exc:
                 logger.info(f"Activated skill '{skill_name}' in session {session_id} (with errors)")
-                raise SkillVenvError(
+                raise SkillActivationError(
                     f"Skill '{skill_name}' activated at /workspace/skills/{skill_name}/ but "
-                    f"dependency install failed: {exc}\n"
-                    "The skill is available but its Python dependencies are NOT installed. "
-                    "You may need to install them manually inside the sandbox."
+                    f"automatic setup failed: {exc}\n"
+                    "The skill is available but automatic setup did not complete. "
+                    "You may need to fix the committed provider files and reactivate the skill."
                 ) from exc
 
         logger.info(f"Activated skill '{skill_name}' in session {session_id}")
         parts = [f"Skill '{skill_name}' activated at /workspace/skills/{skill_name}/"]
-        if venv_msg:
-            parts.append(venv_msg)
+        if activation_msg:
+            parts.extend(activation_msg.splitlines())
         return "\n".join(parts)
 
-    async def _build_skill_venv(self, session_id: str, skill_name: str) -> None:
-        """Build a skill venv inside the session container with proxy bypass.
+    def _matching_skill_activation_providers(self, skill_dir: Path) -> list[SkillActivationProvider]:
+        return [provider for provider in _SKILL_ACTIVATION_PROVIDERS if provider.matches(skill_dir)]
 
-        Runs ``uv sync`` inside the session container.  The proxy is temporarily
-        bypassed (all domains allowed) for the duration of the install.
-        """
+    async def _restore_skill_trusted_files(
+        self,
+        sc: SessionContainer,
+        skill_name: str,
+        trusted_files: set[str],
+    ) -> None:
+        skill_path = f"skills/{shlex.quote(skill_name)}"
+        for fname in sorted(trusted_files):
+            await self._exec_in_container(
+                sc,
+                f"git checkout @{{upstream}} -- {skill_path}/{fname} 2>/dev/null || true",
+                timeout=10,
+                workdir=self._KNOWLEDGE_WORKDIR,
+            )
+
+    def _activation_file_credentials(
+        self,
+        skill_name: str,
+        activation_inputs: SkillActivationInputs,
+    ) -> list[tuple[str, str, str]]:
+        return [(skill_name, cred.path, cred.value) for cred in activation_inputs.file_credentials]
+
+    async def _run_skill_activation_command(
+        self,
+        skill_name: str,
+        provider: SkillActivationProvider,
+        activation_inputs: SkillActivationInputs,
+        *,
+        session_id: str | None = None,
+        sc: SessionContainer | None = None,
+    ) -> ExecResult:
+        if (session_id is None) == (sc is None):
+            raise ValueError("Exactly one of session_id and sc must be set")
+
+        skill_dir = f"/workspace/skills/{skill_name}"
+        extra_env = activation_inputs.environment or None
+        file_creds = self._activation_file_credentials(skill_name, activation_inputs)
+        if session_id is not None:
+            return await self._exec(
+                session_id,
+                provider.command,
+                timeout=provider.timeout,
+                bypass_proxy=provider.bypass_proxy,
+                workdir=skill_dir,
+                extra_env=extra_env,
+                context_file_creds=file_creds or None,
+            )
+
+        assert sc is not None
+        written_files: list[tuple[str, str]] = []
+        try:
+            if file_creds:
+                written_files = await self._write_context_file_credentials(sc, file_creds)
+            return await self._exec_in_container(
+                sc,
+                provider.command,
+                timeout=provider.timeout,
+                workdir=skill_dir,
+                bypass_proxy=provider.bypass_proxy,
+                extra_env=extra_env,
+            )
+        finally:
+            if written_files:
+                await self._delete_context_file_credentials(sc.session_id, written_files)
+
+    async def _run_skill_activation_providers(
+        self,
+        skill_name: str,
+        providers: list[SkillActivationProvider],
+        activation_inputs: SkillActivationInputs,
+        *,
+        session_id: str | None = None,
+        sc: SessionContainer | None = None,
+    ) -> list[str]:
+        if (session_id is None) == (sc is None):
+            raise ValueError("Exactly one of session_id and sc must be set")
+
+        status_lines: list[str] = []
+        for provider in providers:
+            logger.info(f"Running skill activation provider '{provider.name}' for skill '{skill_name}'")
+            result = await self._run_skill_activation_command(
+                skill_name,
+                provider,
+                activation_inputs,
+                session_id=session_id,
+                sc=sc,
+            )
+            if result.exit_code != 0:
+                logger.error(
+                    f"Skill activation provider '{provider.name}' failed for '{skill_name}' "
+                    + f"(exit {result.exit_code}): {result.output[:300]}"
+                )
+                raise SkillActivationError(f"{provider.name} exit {result.exit_code}: {result.output[:500]}")
+            status_lines.append(provider.status_message)
+
+        return status_lines
+
+    async def _build_skill_venv(self, session_id: str, skill_name: str) -> None:
+        """Backward-compatible wrapper for Python provider execution."""
+
         await self._build_skill_venv_in_session(skill_name, session_id=session_id)
 
     async def _build_skill_venv_in_session(
@@ -672,31 +866,24 @@ class SandboxManager:
         session_id: str | None = None,
         sc: SessionContainer | None = None,
     ) -> None:
-        """Shared venv build: either via ``_exec`` (lock + ensure_session) or on a known *sc*."""
+        """Backward-compatible wrapper for the Python activation provider."""
         if (session_id is None) == (sc is None):
             raise ValueError("Exactly one of session_id and sc must be set")
 
         if err := _validate_skill_name(skill_name):
-            raise SkillVenvError(err)
+            raise SkillActivationError(err)
 
-        if session_id is not None:
-            sid = session_id
-        else:
-            assert sc is not None
-            sid = sc.session_id
-
-        logger.info(f"Building venv for skill '{skill_name}' (session {sid})")
-        skill_dir = f"/workspace/skills/{shlex.quote(skill_name)}"
-        cmd = f"uv sync --directory {skill_dir}"
-        if session_id is not None:
-            result = await self._exec(session_id, cmd, timeout=120, bypass_proxy=True)
-        else:
-            assert sc is not None
-            result = await self._exec_in_container(sc, cmd, timeout=120, bypass_proxy=True)
+        provider = next(provider for provider in _SKILL_ACTIVATION_PROVIDERS if provider.name == "uv")
+        activation_inputs = await self._get_skill_activation_inputs(session_id or sc.session_id, skill_name)
+        result = await self._run_skill_activation_command(
+            skill_name,
+            provider,
+            activation_inputs,
+            session_id=session_id,
+            sc=sc,
+        )
         if result.exit_code != 0:
-            logger.error(f"Venv build failed for skill '{skill_name}' (exit {result.exit_code}): {result.output[:300]}")
-            raise SkillVenvError(f"exit {result.exit_code}: {result.output[:500]}")
-        logger.info(f"Venv built successfully for skill '{skill_name}'")
+            raise SkillActivationError(f"uv exit {result.exit_code}: {result.output[:500]}")
 
     async def _file_write_in_container(
         self,
@@ -799,27 +986,20 @@ class SandboxManager:
             logger.info(f"Re-injected credential file {credential_file} for skill {skill_name}")
 
     async def _sync_skill_venv(self, sc: SessionContainer, skill_name: str) -> str:
-        """Restore trusted skill config from git and rebuild the venv if needed."""
+        """Restore trusted skill files from git and rerun automatic setup providers."""
         master = self._knowledge_dir / "skills" / skill_name
-        skill_path = f"skills/{shlex.quote(skill_name)}"
+        providers = self._matching_skill_activation_providers(master)
+        if not providers:
+            return ""
 
-        # Restore committed config files inside the sandbox, preventing
-        # the sandbox from tampering with credential/network declarations.
-        for fname in ("carapace.yaml", "pyproject.toml", "uv.lock"):
-            await self._exec_in_container(
-                sc,
-                f"git checkout HEAD -- {skill_path}/{fname} 2>/dev/null || true",
-                timeout=10,
-                workdir=self._KNOWLEDGE_WORKDIR,
-            )
+        trusted_files = {"carapace.yaml"}
+        for provider in providers:
+            trusted_files.update(provider.trusted_files)
+        await self._restore_skill_trusted_files(sc, skill_name, trusted_files)
 
-        venv_msg = ""
-        if (master / "pyproject.toml").exists():
-            await self._build_skill_venv_in_session(skill_name, sc=sc)
-            venv_msg = "Venv rebuilt successfully."
-
-        await self._reinject_credential_files(sc, skill_name)
-        return venv_msg
+        activation_inputs = await self._get_skill_activation_inputs(sc.session_id, skill_name)
+        lines = await self._run_skill_activation_providers(skill_name, providers, activation_inputs, sc=sc)
+        return "\n".join(lines)
 
     async def rebuild_skill_venvs(self, session_id: str, activated_skills: list[str]) -> None:
         """Restore trusted config and rebuild venvs for activated skills.
@@ -834,8 +1014,8 @@ class SandboxManager:
             logger.info(f"Syncing skill '{skill_name}' after container recreation")
             try:
                 await self._sync_skill_venv(sc, skill_name)
-            except SkillVenvError as exc:
-                logger.error(f"Failed to rebuild venv for '{skill_name}': {exc}")
+            except SkillActivationError as exc:
+                logger.error(f"Failed to rerun automatic setup for '{skill_name}': {exc}")
 
     async def _rebuild_skill_venvs(self, session_id: str) -> None:
         """Internal: rebuild venvs using the activated_skills callback (for _exec recreation)."""
