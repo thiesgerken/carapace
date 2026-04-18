@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import base64
+import re
 from pathlib import Path
+from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from carapace.models import SkillCarapaceConfig
+from carapace.sandbox import manager as sandbox_manager
 from carapace.sandbox.manager import SandboxManager
 from carapace.sandbox.proxy import ProxyServer, domain_matches
 from carapace.sandbox.runtime import (
@@ -501,6 +504,63 @@ class TestCarapaceYamlParsing:
                 }
             )
 
+    @pytest.mark.anyio
+    async def test_context_tunnel_helper_accepts_minimal_connect_response(self):
+        helper_source_match = re.search(
+            r'_CONTEXT_TUNNEL_HELPER = """(.*?)"""',
+            Path(sandbox_manager.__file__).read_text(),
+            re.DOTALL,
+        )
+        assert helper_source_match is not None
+
+        namespace: dict[str, Any] = {"__name__": "test_context_tunnel_helper"}
+        exec(helper_source_match.group(1), namespace)
+        open_proxy_tunnel = cast(Any, namespace["_open_proxy_tunnel"])
+        helper_asyncio = cast(Any, namespace["asyncio"])
+
+        class FakeReader:
+            def __init__(self, chunks: list[bytes]):
+                self._chunks = list(chunks)
+
+            async def read(self, _size: int) -> bytes:
+                if self._chunks:
+                    return self._chunks.pop(0)
+                return b""
+
+        class FakeWriter:
+            def __init__(self):
+                self.writes: list[bytes] = []
+
+            def write(self, data: bytes) -> None:
+                self.writes.append(data)
+
+            async def drain(self) -> None:
+                return None
+
+        reader = FakeReader([b"HTTP/1.1 200 Connection Established\r\n\r\n"])
+        writer = FakeWriter()
+
+        async def fake_open_connection(host: str, port: int):
+            assert host == "proxy.internal"
+            assert port == 8080
+            return reader, writer
+
+        original_open_connection = helper_asyncio.open_connection
+        helper_asyncio.open_connection = fake_open_connection
+        try:
+            prebuffer, upstream_reader, upstream_writer = await open_proxy_tunnel(
+                "http://proxy.internal:8080",
+                "imap.zoho.eu",
+                993,
+            )
+        finally:
+            helper_asyncio.open_connection = original_open_connection
+
+        assert prebuffer == b""
+        assert upstream_reader is reader
+        assert upstream_writer is writer
+        assert writer.writes == [b"CONNECT imap.zoho.eu:993 HTTP/1.1\r\nHost: imap.zoho.eu:993\r\n\r\n"]
+
 
 @pytest.mark.anyio
 async def test_exec_command_sets_up_and_cleans_up_tunnels(tmp_path: Path):
@@ -550,6 +610,42 @@ async def test_exec_command_rejects_conflicting_tunnel_local_ports(tmp_path: Pat
                 NetworkTunnel(host="smtp.zoho.eu", remote_port=465, local_port=1993),
             ],
         )
+
+
+@pytest.mark.anyio
+async def test_exec_command_allows_duplicate_tunnel_with_different_descriptions(tmp_path: Path):
+    runtime = MagicMock(spec=ContainerRuntime)
+    runtime.get_host_ip = AsyncMock(return_value="172.18.0.1")
+    runtime.create_sandbox = AsyncMock(return_value="container-1")
+    runtime.get_ip = AsyncMock(return_value="172.18.0.22")
+    runtime.logs = AsyncMock(return_value="carapace sandbox ready")
+    runtime.exec = AsyncMock(return_value=ExecResult(exit_code=0, output="ok"))
+
+    mgr = SandboxManager(runtime=runtime, data_dir=tmp_path, knowledge_dir=tmp_path)
+
+    result = await mgr.exec_command(
+        "sess-1",
+        "run-mail-sync",
+        context_tunnels=[
+            NetworkTunnel(
+                host="imap.zoho.eu",
+                remote_port=993,
+                local_port=1993,
+                description="Primary IMAP tunnel",
+            ),
+            NetworkTunnel(
+                host="imap.zoho.eu",
+                remote_port=993,
+                local_port=1993,
+                description="Same tunnel from another skill",
+            ),
+        ],
+    )
+
+    assert result.output == "ok"
+
+    commands = [call.args[1] for call in runtime.exec.call_args_list]
+    assert sum("nohup python3 /tmp/carapace-tunnel-helper-sess-1.py" in command for command in commands) == 1
 
 
 @pytest.mark.anyio

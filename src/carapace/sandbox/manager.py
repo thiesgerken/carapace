@@ -94,11 +94,11 @@ async def _open_proxy_tunnel(
         if len(response) > 65536:
             raise RuntimeError("proxy CONNECT response too large")
 
-    status_line, remainder = response.split(b"\r\n", 1)
+    header_block, prebuffer = response.split(b"\r\n\r\n", 1)
+    status_line = header_block.split(b"\r\n", 1)[0]
     status = status_line.decode("latin-1", errors="replace")
     if not status.startswith("HTTP/1.1 200") and not status.startswith("HTTP/1.0 200"):
         raise RuntimeError(f"proxy CONNECT failed: {status}")
-    prebuffer = remainder.split(b"\r\n\r\n", 1)[1]
     return prebuffer, reader, writer
 
 
@@ -579,7 +579,7 @@ class SandboxManager:
         unique: dict[tuple[str, int, int], NetworkTunnel] = {}
         for tunnel in tunnels:
             existing = by_local_port.get(tunnel.local_port)
-            if existing is not None and existing.model_dump(mode="json") != tunnel.model_dump(mode="json"):
+            if existing is not None and (existing.host, existing.remote_port) != (tunnel.host, tunnel.remote_port):
                 raise ValueError(
                     "Conflicting network.tunnels declarations for local_port "
                     + f"{tunnel.local_port}: {existing.display} vs {tunnel.display}"
