@@ -578,8 +578,10 @@ async def test_exec_command_sets_up_and_cleans_up_tunnels(tmp_path: Path):
     assert any("cp /etc/hosts /tmp/carapace-tunnel-hosts-sess-1.bak" in command for command in commands)
     assert any("{ nohup python3 /tmp/carapace-tunnel-helper-sess-1.py" in command for command in commands)
     assert any("--listen-port 1993" in command and "--target-port 993" in command for command in commands)
+    assert any("--ready-file /tmp/carapace-tunnel-sess-1-1993.ready" in command for command in commands)
     assert any(command == "run-mail-sync" for command in commands)
     assert any("echo $! > /tmp/carapace-tunnel-sess-1-1993.pid; } && kill -0" in command for command in commands)
+    assert any("while [ ! -f /tmp/carapace-tunnel-sess-1-1993.ready ]" in command for command in commands)
     assert any('kill "$(cat /tmp/carapace-tunnel-sess-1-1993.pid)"' in command for command in commands)
 
 

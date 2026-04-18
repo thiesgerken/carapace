@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import shlex
+import textwrap
 from asyncio.locks import Lock
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -39,6 +40,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import base64
+from pathlib import Path
 import sys
 from urllib.parse import unquote, urlsplit
 
@@ -134,6 +136,7 @@ async def _run() -> None:
     parser.add_argument("--target-host", required=True)
     parser.add_argument("--target-port", type=int, required=True)
     parser.add_argument("--proxy", default="")
+    parser.add_argument("--ready-file", default="")
     args = parser.parse_args()
 
     proxy_url = args.proxy or ""
@@ -145,6 +148,8 @@ async def _run() -> None:
         args.listen_host,
         args.listen_port,
     )
+    if args.ready_file:
+        Path(args.ready_file).write_text("ready\n")
     async with server:
         await server.serve_forever()
 
@@ -160,6 +165,7 @@ class _TunnelPaths:
     hosts_backup_path: str
     pid_path: str
     log_path: str
+    ready_path: str
 
 
 def _validate_skill_name(skill_name: str) -> str | None:
@@ -594,6 +600,7 @@ class SandboxManager:
             hosts_backup_path=f"/tmp/carapace-tunnel-hosts-{session_id}.bak",
             pid_path=f"/tmp/carapace-tunnel-{session_id}-{tunnel.local_port}.pid",
             log_path=f"/tmp/carapace-tunnel-{session_id}-{tunnel.local_port}.log",
+            ready_path=f"/tmp/carapace-tunnel-{session_id}-{tunnel.local_port}.ready",
         )
 
     async def _prepare_context_tunnels(self, sc: SessionContainer, tunnels: list[NetworkTunnel]) -> None:
@@ -624,8 +631,25 @@ class SandboxManager:
 
         for tunnel in normalized:
             paths = self._context_tunnel_paths(sc.session_id, tunnel)
+            wait_cmd = (
+                textwrap.dedent(
+                    f"""
+                i=0
+                while [ ! -f {shlex.quote(paths.ready_path)} ]; do
+                    i=$((i+1))
+                    if [ "$i" -ge 10 ]; then
+                        exit 1
+                    fi
+                    kill -0 "$(cat {shlex.quote(paths.pid_path)})" 2>/dev/null || exit 1
+                    sleep 1
+                done
+                """
+                )
+                .strip()
+                .replace("\n", "; ")
+            )
             start_cmd = (
-                f"rm -f {shlex.quote(paths.pid_path)} {shlex.quote(paths.log_path)} && "
+                f"rm -f {shlex.quote(paths.pid_path)} {shlex.quote(paths.log_path)} {shlex.quote(paths.ready_path)} && "
                 "{ "
                 f"nohup python3 {shlex.quote(paths.helper_path)} "
                 "--listen-host 127.0.0.1 "
@@ -633,10 +657,12 @@ class SandboxManager:
                 f"--target-host {shlex.quote(tunnel.host)} "
                 f"--target-port {tunnel.remote_port} "
                 '--proxy "$HTTP_PROXY" '
+                f"--ready-file {shlex.quote(paths.ready_path)} "
                 f">{shlex.quote(paths.log_path)} 2>&1 & "
                 f"echo $! > {shlex.quote(paths.pid_path)}; "
                 "} && "
-                f'kill -0 "$(cat {shlex.quote(paths.pid_path)})"'
+                f'kill -0 "$(cat {shlex.quote(paths.pid_path)})" && '
+                f"{wait_cmd}"
             )
             start_result = await self._exec_in_container(sc, start_cmd, timeout=10)
             if start_result.exit_code != 0:
@@ -649,6 +675,7 @@ class SandboxManager:
 
         pid_paths = [self._context_tunnel_paths(sc.session_id, tunnel).pid_path for tunnel in tunnels]
         log_paths = [self._context_tunnel_paths(sc.session_id, tunnel).log_path for tunnel in tunnels]
+        ready_paths = [self._context_tunnel_paths(sc.session_id, tunnel).ready_path for tunnel in tunnels]
         helper_path = self._context_tunnel_paths(sc.session_id, tunnels[0]).helper_path
         hosts_backup = self._context_tunnel_paths(sc.session_id, tunnels[0]).hosts_backup_path
 
@@ -666,7 +693,7 @@ class SandboxManager:
         cleanup_parts = [
             *pid_cleanup,
             restore_hosts_cmd,
-            "rm -f " + " ".join(shlex.quote(path) for path in sorted(set([helper_path, *log_paths]))),
+            "rm -f " + " ".join(shlex.quote(path) for path in sorted(set([helper_path, *log_paths, *ready_paths]))),
         ]
         cleanup_cmd = " && ".join(cleanup_parts)
         result = await self._exec_in_container(sc, cleanup_cmd, timeout=10)

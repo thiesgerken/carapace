@@ -495,6 +495,47 @@ def test_submit_cancel_stops_task(tmp_path: Path):
         asyncio.run(_run())
 
 
+def test_submit_cancel_persists_interruption_marker(tmp_path: Path):
+    """Cancelled turns are persisted with a terminal assistant message."""
+
+    async def _run() -> None:
+        engine = _make_engine(tmp_path)
+        state = engine.session_mgr.create_session()
+        sid = state.session_id
+
+        sub = _FakeSubscriber()
+        engine.subscribe(sid, sub)
+
+        async def _hanging_turn(*_args: Any, **_kwargs: Any) -> str:
+            await asyncio.sleep(999)
+            return "unreachable"
+
+        with patch("carapace.session.engine.run_agent_turn", new=_hanging_turn):
+            await engine.submit_message(sid, "hello")
+            await asyncio.sleep(0.05)
+            await engine.submit_cancel(sid)
+
+        history = engine.session_mgr.load_history(sid)
+        assert len(history) == 2
+        assert isinstance(history[0], ModelRequest)
+        assert any(isinstance(part, UserPromptPart) and part.content == "hello" for part in history[0].parts)
+        assert isinstance(history[1], ModelResponse)
+        assert any(
+            isinstance(part, TextPart) and part.content == "The previous turn was interrupted before completion."
+            for part in history[1].parts
+        )
+
+        events = engine.session_mgr.load_events(sid)
+        assert events[-2:] == [
+            {"role": "user", "content": "hello"},
+            {"role": "assistant", "content": "The previous turn was interrupted before completion."},
+        ]
+        assert sub.cancelled == 1
+
+    with _patch_sentinel():
+        asyncio.run(_run())
+
+
 def test_submit_cancel_noop_when_inactive(tmp_path: Path):
     """submit_cancel is a no-op when session is not active."""
 
@@ -708,6 +749,17 @@ def test_submit_message_budget_exceeded_persists_history(tmp_path: Path):
         assert history
         assert isinstance(history[0], ModelRequest)
         assert any(isinstance(part, UserPromptPart) and part.content == "hello" for part in history[0].parts)
+        assert isinstance(history[-1], ModelResponse)
+        assert any(
+            isinstance(part, TextPart) and part.content == "Session budget reached: input 1.0k tokens / 1.0k tokens"
+            for part in history[-1].parts
+        )
+
+        events = engine.session_mgr.load_events(sid)
+        assert events[-1] == {
+            "role": "assistant",
+            "content": "Session budget reached: input 1.0k tokens / 1.0k tokens",
+        }
         assert any("Session budget reached" in err for err in sub.errors)
 
     with _patch_sentinel():
