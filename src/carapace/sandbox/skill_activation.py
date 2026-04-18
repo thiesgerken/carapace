@@ -18,8 +18,6 @@ class SkillActivationProvider:
     status_message: str
     command: str
     timeout: int = 120
-    bypass_proxy: bool = True
-    needs_activation_inputs: bool = False
     matcher: Callable[[Path], bool] | None = None
 
     def matches(self, skill_dir: Path) -> bool:
@@ -70,7 +68,6 @@ SKILL_ACTIVATION_PROVIDERS: tuple[SkillActivationProvider, ...] = (
         status_message="setup.sh completed.",
         command="sh ./setup.sh",
         matcher=_has_all_files("setup.sh"),
-        needs_activation_inputs=True,
     ),
 )
 
@@ -157,7 +154,12 @@ class SkillActivationRunner:
         if (session_id is None) == (sc is None):
             raise ValueError("Exactly one of session_id and sc must be set")
 
-        activation_inputs = await self._get_activation_inputs(session_id or sc.session_id, skill_name)
+        target_session_id = session_id
+        if target_session_id is None:
+            assert sc is not None
+            target_session_id = sc.session_id
+
+        activation_inputs = await self._get_activation_inputs(target_session_id, skill_name)
         provider = self.provider_named(provider_name)
         return await self.run_provider(
             skill_name,
@@ -194,7 +196,7 @@ class SkillActivationRunner:
                 session_id,
                 provider.command,
                 timeout=provider.timeout,
-                bypass_proxy=provider.bypass_proxy,
+                bypass_proxy=True,
                 workdir=skill_dir,
                 extra_env=extra_env,
                 context_file_creds=file_creds or None,
@@ -210,7 +212,7 @@ class SkillActivationRunner:
                 provider.command,
                 timeout=provider.timeout,
                 workdir=skill_dir,
-                bypass_proxy=provider.bypass_proxy,
+                bypass_proxy=True,
                 extra_env=extra_env,
             )
         finally:
