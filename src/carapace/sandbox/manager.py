@@ -626,6 +626,7 @@ class SandboxManager:
             paths = self._context_tunnel_paths(sc.session_id, tunnel)
             start_cmd = (
                 f"rm -f {shlex.quote(paths.pid_path)} {shlex.quote(paths.log_path)} && "
+                "{ "
                 f"nohup python3 {shlex.quote(paths.helper_path)} "
                 "--listen-host 127.0.0.1 "
                 f"--listen-port {tunnel.local_port} "
@@ -633,7 +634,8 @@ class SandboxManager:
                 f"--target-port {tunnel.remote_port} "
                 '--proxy "$HTTP_PROXY" '
                 f">{shlex.quote(paths.log_path)} 2>&1 & "
-                f"echo $! > {shlex.quote(paths.pid_path)} && "
+                f"echo $! > {shlex.quote(paths.pid_path)}; "
+                "} && "
                 f'kill -0 "$(cat {shlex.quote(paths.pid_path)})"'
             )
             start_result = await self._exec_in_container(sc, start_cmd, timeout=10)
