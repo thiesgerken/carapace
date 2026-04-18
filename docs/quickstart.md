@@ -59,6 +59,12 @@ A minimal config:
 agent:
   model: anthropic:claude-sonnet-4-6
   sentinel_model: anthropic:claude-haiku-4-5
+  # Optional defaults for every new session.
+  # Omit a field, or set it to 0, to keep that budget unlimited.
+  # default_session_budget:
+  #   input_tokens: 100000
+  #   output_tokens: 50000
+  #   cost_usd: 5.00
 ```
 
 ## 5. Connect Matrix (optional)

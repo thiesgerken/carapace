@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from decimal import Decimal
+
 from pydantic_ai.usage import RunUsage
 
-from carapace.usage import UsageTracker
+from carapace.usage import UsageTracker, usage_budget_exceeded_error, usage_budget_gauges
 
 
 def test_record_accumulates_tokens_across_events() -> None:
@@ -54,3 +56,50 @@ def test_estimated_category_cost_sums_to_model_costs_when_disjoint() -> None:
         return
     cats = t.estimated_category_cost()
     assert sum(cats.values()) == total
+
+
+def test_usage_budget_gauges_include_tokens_and_cost() -> None:
+    tracker = UsageTracker()
+    tracker.record(
+        "anthropic:claude-haiku-4-5",
+        "agent",
+        RunUsage(input_tokens=1_000, output_tokens=250, requests=1),
+    )
+
+    gauges = usage_budget_gauges(
+        tracker,
+        input_tokens_limit=2_000,
+        output_tokens_limit=500,
+        total_cost_limit=Decimal("1.00"),
+    )
+
+    assert [g.key for g in gauges] == ["input", "output", "cost"]
+    assert gauges[0].current_value == "1.0k tokens"
+    assert gauges[0].current_amount == 1_000.0
+    assert gauges[1].current_value == "250 tokens"
+    assert gauges[1].current_amount == 250.0
+    assert gauges[2].limit_value == "$1.0000"
+    assert gauges[2].current_amount is not None
+
+
+def test_usage_budget_exceeded_error_treats_unknown_cost_pricing_as_zero() -> None:
+    tracker = UsageTracker()
+    tracker.record(
+        "local:unknown-model",
+        "agent",
+        RunUsage(input_tokens=100, output_tokens=50, requests=1),
+    )
+
+    error = usage_budget_exceeded_error(
+        tracker,
+        total_cost_limit=Decimal("5.00"),
+    )
+
+    assert error is None
+
+    gauges = usage_budget_gauges(
+        tracker,
+        total_cost_limit=Decimal("5.00"),
+    )
+    assert gauges[0].current_value == "$0.0000"
+    assert gauges[0].current_amount == 0.0

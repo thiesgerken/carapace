@@ -1,5 +1,6 @@
 """Tests for pydantic models (no LLM tokens needed)."""
 
+from decimal import Decimal
 from unittest.mock import MagicMock
 
 import pytest
@@ -11,6 +12,7 @@ from carapace.models import (
     AgentConfig,
     AvailableModelEntry,
     Config,
+    SessionBudget,
     SessionState,
     agent_available_model_entries,
 )
@@ -26,10 +28,26 @@ def test_config_defaults():
     cfg = Config()
     assert cfg.carapace.log_level == "info"
     assert cfg.agent.model == "anthropic:claude-sonnet-4-6"
+    assert cfg.agent.default_session_budget.has_any_limit is False
     assert cfg.agent.tool_output_max_chars == 16_000
     assert cfg.sandbox.network_name == "carapace-sandbox"
     ids = {e.model_id for e in cfg.agent.available_models}
     assert ids == {"anthropic:claude-sonnet-4-6", "anthropic:claude-haiku-4-5"}
+
+
+def test_session_budget_zero_values_normalize_to_unlimited() -> None:
+    budget = SessionBudget.model_validate(
+        {"input_tokens": 0, "output_tokens": 0, "cost_usd": "0"},
+    )
+    assert budget.input_tokens is None
+    assert budget.output_tokens is None
+    assert budget.cost_usd is None
+    assert budget.has_any_limit is False
+
+
+def test_session_budget_accepts_decimal_cost() -> None:
+    budget = SessionBudget(cost_usd=Decimal("1.25"))
+    assert budget.cost_usd == Decimal("1.25")
 
 
 def test_available_model_entry_shorthand_string():

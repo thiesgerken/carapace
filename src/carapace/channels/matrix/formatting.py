@@ -91,11 +91,12 @@ def format_command_result_text(result: CommandResult) -> str:
             categories: dict[str, dict] = data.get("categories", {})
             costs: dict[str, str] = data.get("costs", {})
             category_costs: dict[str, str] = data.get("category_costs", {})
+            budget_gauges: list[dict] = data.get("budget_gauges", [])
             total_input = data.get("total_input", 0)
             total_output = data.get("total_output", 0)
             total_cost = float(costs.get("total", 0))
 
-            if not models and not categories:
+            if not models and not categories and not budget_gauges:
                 return "No token usage recorded yet."
 
             has_cache = any(
@@ -142,6 +143,28 @@ def format_command_result_text(result: CommandResult) -> str:
             parts.append(
                 f"**Total:** {total_tokens:,} tokens ({total_input:,} in + {total_output:,} out){cost_str}",
             )
+            if budget_gauges:
+                lines = [
+                    "**Session Budgets**\n",
+                    "| Metric | Current | Limit | Remaining | Used |",
+                    "|---|---:|---:|---:|---:|",
+                ]
+                for gauge in budget_gauges:
+                    used = "blocked" if gauge.get("unavailable_reason") else f"{float(gauge.get('fill_pct', 0)):.1f}%"
+                    lines.append(
+                        "| "
+                        + " | ".join(
+                            [
+                                str(gauge.get("label", "?")),
+                                str(gauge.get("current_value", "-")),
+                                str(gauge.get("limit_value", "-")),
+                                str(gauge.get("remaining_value") or "—"),
+                                used,
+                            ]
+                        )
+                        + " |"
+                    )
+                parts.append("\n".join(lines))
             if models:
                 parts.append(_table("By Model", models, show_cost=True))
             if categories:
@@ -201,6 +224,46 @@ def format_command_result_text(result: CommandResult) -> str:
                 parts.append("\n".join(lines))
 
             return "\n\n".join(parts)
+
+        case "budget":
+            if data.get("error"):
+                return f"Error: {data['error']}"
+            gauges: list[dict] = data.get("gauges", [])
+            message = data.get("message")
+            usage_hint = data.get("usage_hint")
+            if not gauges:
+                parts = [message or "No session budgets configured."]
+                if usage_hint:
+                    parts.append(usage_hint)
+                return "\n".join(parts)
+            lines = []
+            if message:
+                lines.append(message)
+            if usage_hint:
+                lines.append(usage_hint)
+            lines.extend(
+                [
+                    "**Session Budgets**\n",
+                    "| Metric | Current | Limit | Remaining | Used |",
+                    "|---|---:|---:|---:|---:|",
+                ]
+            )
+            for gauge in gauges:
+                used = "blocked" if gauge.get("unavailable_reason") else f"{float(gauge.get('fill_pct', 0)):.1f}%"
+                lines.append(
+                    "| "
+                    + " | ".join(
+                        [
+                            str(gauge.get("label", "?")),
+                            str(gauge.get("current_value", "-")),
+                            str(gauge.get("limit_value", "-")),
+                            str(gauge.get("remaining_value") or "—"),
+                            used,
+                        ]
+                    )
+                    + " |"
+                )
+            return "\n".join(lines)
 
         case "models":
             if "models" in data:

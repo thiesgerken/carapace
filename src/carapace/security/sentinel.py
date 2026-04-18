@@ -198,6 +198,7 @@ class Sentinel:
         args: dict[str, Any],
         *,
         usage_tracker: UsageTracker | None = None,
+        assert_llm_budget_available: Callable[[], None] | None = None,
     ) -> SentinelVerdict:
         async with self._lock:
             if self._should_reset(session):
@@ -219,6 +220,8 @@ class Sentinel:
             prompt_parts.append(f"Last user message was {tool_calls_since_user} tool calls ago.")
 
             prompt = "\n".join(prompt_parts)
+            if assert_llm_budget_available is not None:
+                assert_llm_budget_available()
             result = await self._agent.run(
                 prompt,
                 deps=self._skills_dir,
@@ -239,6 +242,7 @@ class Sentinel:
         command: str,
         *,
         usage_tracker: UsageTracker | None = None,
+        assert_llm_budget_available: Callable[[], None] | None = None,
     ) -> SentinelVerdict:
         async with self._lock:
             if self._should_reset(session):
@@ -257,6 +261,8 @@ class Sentinel:
             prompt_parts.append(f"\nEVALUATE domain_access_request:\nDomain: {domain}\nTriggered by: {command}")
 
             prompt = "\n".join(prompt_parts)
+            if assert_llm_budget_available is not None:
+                assert_llm_budget_available()
             result = await self._agent.run(
                 prompt,
                 deps=self._skills_dir,
@@ -279,6 +285,7 @@ class Sentinel:
         trigger: str,
         *,
         usage_tracker: UsageTracker | None = None,
+        assert_llm_budget_available: Callable[[], None] | None = None,
     ) -> SentinelVerdict:
         async with self._lock:
             if self._should_reset(session):
@@ -300,6 +307,8 @@ class Sentinel:
             prompt_parts.append(f"Triggered by: {trigger}")
 
             prompt = "\n".join(prompt_parts)
+            if assert_llm_budget_available is not None:
+                assert_llm_budget_available()
             result = await self._agent.run(
                 prompt,
                 deps=self._skills_dir,
@@ -334,6 +343,7 @@ class Sentinel:
         diff: str,
         *,
         usage_tracker: UsageTracker | None = None,
+        assert_llm_budget_available: Callable[[], None] | None = None,
     ) -> SentinelVerdict:
         """Evaluate a Git push from the pre-receive hook."""
         async with self._lock:
@@ -360,6 +370,8 @@ class Sentinel:
             prompt_parts.append(f"Diff:\n{diff}")
 
             prompt = "\n".join(prompt_parts)
+            if assert_llm_budget_available is not None:
+                assert_llm_budget_available()
             result = await self._agent.run(
                 prompt,
                 deps=self._skills_dir,

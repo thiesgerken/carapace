@@ -218,6 +218,10 @@ export function CommandResultView({ command, data }: CommandResultViewProps) {
     return <UsageView data={data} />;
   }
 
+  if (command === "budget" && isBudgetData(data)) {
+    return <BudgetView data={data} />;
+  }
+
   if (isPlainMessagePayload(data)) {
     if (data.error) {
       return <p className="my-1 text-sm text-destructive">{data.error}</p>;
@@ -295,6 +299,17 @@ interface UsageBucket {
   requests: number;
 }
 
+interface BudgetGaugeData {
+  key: "input" | "output" | "cost";
+  label: string;
+  current_value: string;
+  limit_value: string;
+  remaining_value?: string | null;
+  fill_pct: number;
+  reached: boolean;
+  unavailable_reason?: string | null;
+}
+
 /** % of tiktoken mass over the prompt only (sum 100); unrelated to API billing tokens. */
 interface LastLlmBreakdownPct {
   system: number | null;
@@ -324,12 +339,24 @@ interface UsagePayload {
   total_output: number;
   costs?: Record<string, string>;
   category_costs?: Record<string, string>;
+  budget_gauges?: BudgetGaugeData[];
   last_llm_agent?: LastLlmRequestRow | null;
   last_llm_sentinel?: LastLlmRequestRow | null;
 }
 
+interface BudgetPayload {
+  gauges: BudgetGaugeData[];
+  message?: string;
+  error?: string;
+  usage_hint?: string;
+}
+
 function isUsageData(d: unknown): d is UsagePayload {
   return !!d && typeof d === "object" && "models" in d && "categories" in d;
+}
+
+function isBudgetData(d: unknown): d is BudgetPayload {
+  return !!d && typeof d === "object" && "gauges" in d;
 }
 
 function fmt(n: number): string {
@@ -357,6 +384,7 @@ function lastRequestRowsShowOtherPct(rows: LastLlmRequestRow[]): boolean {
 }
 
 function UsageView({ data }: { data: UsagePayload }) {
+  const budgetGauges = Array.isArray(data.budget_gauges) ? data.budget_gauges : [];
   const allBuckets = [
     ...Object.values(data.models),
     ...Object.values(data.categories),
@@ -371,7 +399,8 @@ function UsageView({ data }: { data: UsagePayload }) {
   );
   const isEmpty =
     Object.keys(data.models).length === 0 &&
-    Object.keys(data.categories).length === 0;
+    Object.keys(data.categories).length === 0 &&
+    budgetGauges.length === 0;
   if (isEmpty) {
     return (
       <p className="my-1 text-sm text-muted-foreground">
@@ -472,6 +501,7 @@ function UsageView({ data }: { data: UsagePayload }) {
         Total: {fmt(total)} tokens ({fmt(data.total_input)} in +{" "}
         {fmt(data.total_output)} out){costStr}
       </p>
+      {budgetGauges.length > 0 ? <BudgetTable gauges={budgetGauges} /> : null}
       {Object.keys(data.models).length > 0 &&
         renderTable("By Model", data.models, true)}
       {Object.keys(data.categories).length > 0 &&
@@ -544,6 +574,75 @@ function UsageView({ data }: { data: UsagePayload }) {
           </table>
         </div>
       ) : null}
+    </div>
+  );
+}
+
+function BudgetView({ data }: { data: BudgetPayload }) {
+  if (data.error) {
+    return <p className="my-1 text-sm text-destructive">{data.error}</p>;
+  }
+  if (data.gauges.length === 0) {
+    return (
+      <div className="my-1 text-sm text-muted-foreground">
+        <p>{data.message ?? "No session budgets configured."}</p>
+        {data.usage_hint ? <p className="mt-1 text-xs">{data.usage_hint}</p> : null}
+      </div>
+    );
+  }
+  return (
+    <div className="my-2 text-sm">
+      {data.message ? (
+        <p className="mb-2 text-sm text-muted-foreground">{data.message}</p>
+      ) : null}
+      {data.usage_hint ? (
+        <p className="mb-2 text-xs text-muted-foreground">{data.usage_hint}</p>
+      ) : null}
+      <BudgetTable gauges={data.gauges} />
+    </div>
+  );
+}
+
+function BudgetTable({ gauges }: { gauges: BudgetGaugeData[] }) {
+  return (
+    <div className="my-2 text-sm">
+      <p className="mb-1 text-xs font-medium text-muted-foreground">
+        Session Budgets
+      </p>
+      <table className="w-full">
+        <thead>
+          <tr className="border-b border-border text-left text-xs text-muted-foreground">
+            <th className="pb-1 pr-3 font-medium">Metric</th>
+            <th className="pb-1 pr-3 font-medium text-right">Current</th>
+            <th className="pb-1 pr-3 font-medium text-right">Limit</th>
+            <th className="pb-1 pr-3 font-medium text-right">Remaining</th>
+            <th className="pb-1 font-medium text-right">Used</th>
+          </tr>
+        </thead>
+        <tbody>
+          {gauges.map((gauge) => (
+            <tr key={gauge.key} className="border-b border-border/50">
+              <td className="py-1 pr-3 text-xs font-medium">{gauge.label}</td>
+              <td className="py-1 pr-3 text-xs text-right tabular-nums">
+                {gauge.current_value}
+              </td>
+              <td className="py-1 pr-3 text-xs text-right tabular-nums">
+                {gauge.limit_value}
+              </td>
+              <td className="py-1 pr-3 text-xs text-right tabular-nums">
+                {gauge.remaining_value ?? "—"}
+              </td>
+              <td className="py-1 text-xs text-right tabular-nums">
+                {gauge.unavailable_reason ? (
+                  <span className="text-destructive">blocked</span>
+                ) : (
+                  `${gauge.fill_pct.toFixed(1)}%`
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

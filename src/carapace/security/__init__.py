@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -44,6 +45,7 @@ async def evaluate_with(
     args: dict[str, Any],
     *,
     usage_tracker: UsageTracker | None = None,
+    assert_llm_budget_available: Callable[[], None] | None = None,
     verbose: bool = True,
     tool_call_callback: Any = None,
 ) -> None:
@@ -79,6 +81,7 @@ async def evaluate_with(
         tool_name,
         args,
         usage_tracker=usage_tracker,
+        assert_llm_budget_available=assert_llm_budget_available,
     )
 
     decision_str = _verdict_to_decision(verdict)
@@ -148,6 +151,7 @@ async def evaluate_domain_with(
     command: str,
     *,
     usage_tracker: UsageTracker | None = None,
+    assert_llm_budget_available: Callable[[], None] | None = None,
 ) -> bool:
     """Evaluate a proxy domain request. Returns True to allow, False to deny.
 
@@ -159,6 +163,7 @@ async def evaluate_domain_with(
         domain,
         command,
         usage_tracker=usage_tracker,
+        assert_llm_budget_available=assert_llm_budget_available,
     )
 
     allowed: bool
@@ -215,6 +220,7 @@ async def evaluate_push_with(
     diff: str,
     *,
     usage_tracker: UsageTracker | None = None,
+    assert_llm_budget_available: Callable[[], None] | None = None,
 ) -> bool:
     """Evaluate a Git push. Returns True to allow, False to deny.
 
@@ -227,6 +233,7 @@ async def evaluate_push_with(
         commits,
         diff,
         usage_tracker=usage_tracker,
+        assert_llm_budget_available=assert_llm_budget_available,
     )
 
     decision = _verdict_to_decision(verdict)
@@ -307,6 +314,7 @@ async def evaluate_credential_with(
     trigger: str,
     *,
     usage_tracker: UsageTracker | None = None,
+    assert_llm_budget_available: Callable[[], None] | None = None,
 ) -> CredentialAccessEvaluation:
     """Evaluate a credential access request.
 
@@ -321,6 +329,7 @@ async def evaluate_credential_with(
         description,
         trigger,
         usage_tracker=usage_tracker,
+        assert_llm_budget_available=assert_llm_budget_available,
     )
 
     decision = _verdict_to_decision(verdict)

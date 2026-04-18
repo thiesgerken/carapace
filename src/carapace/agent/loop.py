@@ -47,6 +47,7 @@ async def run_agent_turn(
     on_token: Callable[[str], Awaitable[None]] | None = None,
     on_thinking_token: Callable[[str], Awaitable[None]] | None = None,
     on_messages_snapshot: Callable[[list[Any]], None] | None = None,
+    before_llm_call: Callable[[], None] | None = None,
 ) -> tuple[list[Any], str, str]:
     """Run one full agent turn, handling approval loops.
 
@@ -81,6 +82,8 @@ async def run_agent_turn(
                 if on_token is not None:
                     await on_token(event.delta.content_delta)
 
+    if before_llm_call is not None:
+        before_llm_call()
     result = await agent.run(
         user_input,
         deps=deps,
@@ -139,6 +142,8 @@ async def run_agent_turn(
                     ),
                 )
 
+        if before_llm_call is not None:
+            before_llm_call()
         result = await agent.run(
             deps=deps,
             message_history=messages,

@@ -12,7 +12,7 @@ from loguru import logger
 from pydantic import BaseModel
 from pydantic_ai import ModelMessage, ModelMessagesTypeAdapter
 
-from carapace.models import SessionState
+from carapace.models import SessionBudget, SessionState
 from carapace.usage import LlmRequestLog, UsageTracker
 
 
@@ -44,13 +44,19 @@ class SessionManager:
         self.sessions_dir = data_dir / "sessions"
         self.sessions_dir.mkdir(parents=True, exist_ok=True)
 
-    def create_session(self, channel_type: str = "cli", channel_ref: str = "") -> SessionState:
+    def create_session(
+        self,
+        channel_type: str = "cli",
+        channel_ref: str = "",
+        budget: SessionBudget | None = None,
+    ) -> SessionState:
         now = datetime.now(tz=UTC)
         session_id = f"{now:%Y-%m-%d-%H-%M}-{secrets.token_hex(4)}"
         state = SessionState(
             session_id=session_id,
             channel_type=channel_type,
             channel_ref=channel_ref or None,
+            budget=budget.model_copy(deep=True) if budget is not None else SessionBudget(),
             created_at=now,
             last_active=now,
         )

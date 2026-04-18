@@ -594,6 +594,7 @@ export function ChatView({
           break;
         case "session_title":
           onTitleUpdate?.(msg.title);
+          if (msg.usage) setUsage(msg.usage);
           break;
         case "status":
           if (msg.agent_running) setWaiting(true);

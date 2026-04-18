@@ -46,7 +46,7 @@ from carapace.sandbox.runtime import ContainerRuntime
 from carapace.security.context import ApprovalSource, ApprovalVerdict
 from carapace.session import SessionEngine, SessionManager
 from carapace.skills import SkillRegistry
-from carapace.usage import gauge_breakdown_pct_dict, last_record_for_source
+from carapace.usage import SessionBudgetExceededError
 from carapace.ws_models import (
     SLASH_COMMANDS,
     ApprovalRequest,
@@ -68,7 +68,6 @@ from carapace.ws_models import (
     ToolCallInfo,
     ToolResultInfo,
     TurnUsage,
-    TurnUsageBreakdownPct,
     UserMessage,
     UserMessageNotification,
     parse_client_message,
@@ -416,7 +415,11 @@ async def create_session(
     _token: str = Depends(_verify_token),
 ) -> SessionInfo:
     body = body or SessionCreateRequest()
-    state = _engine.session_mgr.create_session(body.channel_type, body.channel_ref)
+    state = _engine.session_mgr.create_session(
+        body.channel_type,
+        body.channel_ref,
+        budget=_engine.config.agent.default_session_budget,
+    )
     return SessionInfo.from_state(state)
 
 
@@ -647,8 +650,8 @@ class WebSocketSubscriber:
             GitPushApprovalRequest(request_id=request_id, ref=ref, explanation=explanation, changed_files=changed_files)
         )
 
-    async def on_title_update(self, title: str) -> None:
-        await self._safe_send(SessionTitleUpdate(title=title))
+    async def on_title_update(self, title: str, usage: TurnUsage | None = None) -> None:
+        await self._safe_send(SessionTitleUpdate(title=title, usage=usage))
 
     async def on_domain_info(
         self,
@@ -755,17 +758,7 @@ async def chat_ws(
 
     # Tell the client whether an agent turn is in progress.
     agent_running = active.agent_task is not None and not active.agent_task.done()
-    usage: TurnUsage | None = None
-    rec_agent = last_record_for_source(active.llm_request_log, "agent")
-    if rec_agent:
-        bd = gauge_breakdown_pct_dict(rec_agent)
-        usage = TurnUsage(
-            input_tokens=rec_agent.input_tokens,
-            output_tokens=rec_agent.output_tokens,
-            breakdown_pct=TurnUsageBreakdownPct.model_validate(bd) if bd else None,
-            model=_engine.agent_model_id_for_gauge(active),
-            context_cap_tokens=_engine.agent_context_cap_for_gauge(active),
-        )
+    usage = _engine._turn_usage_payload(active)
     with contextlib.suppress(Exception):
         await _send(websocket, StatusUpdate(agent_running=agent_running, usage=usage))
 
@@ -884,6 +877,14 @@ async def chat_ws(
                             {"role": "command", "command": result.command, "data": result.data},
                         ],
                     )
+                    if result.command == "budget":
+                        await _send(
+                            websocket,
+                            StatusUpdate(
+                                agent_running=active.agent_task is not None and not active.agent_task.done(),
+                                usage=_engine._turn_usage_payload(active),
+                            ),
+                        )
                     continue
 
                 await _send(websocket, ErrorMessage(detail=f"Unknown command: {user_input.split()[0]}"))
@@ -999,15 +1000,19 @@ async def evaluate_push(req: PushEvalRequest) -> dict[str, str]:
     from carapace.security import evaluate_push_with
 
     with _engine.llm_request_recording(active):
-        allowed = await evaluate_push_with(
-            active.security,
-            active.sentinel,
-            req.ref,
-            req.is_default_branch,
-            req.commits,
-            req.diff,
-            usage_tracker=active.usage_tracker,
-        )
+        try:
+            allowed = await evaluate_push_with(
+                active.security,
+                active.sentinel,
+                req.ref,
+                req.is_default_branch,
+                req.commits,
+                req.diff,
+                usage_tracker=active.usage_tracker,
+                assert_llm_budget_available=lambda: _engine._assert_llm_budget_available(active),
+            )
+        except SessionBudgetExceededError as exc:
+            return {"verdict": "deny", "reason": str(exc)}
     if allowed:
         return {"verdict": "allow"}
     return {"verdict": "deny", "reason": "Denied by sentinel"}
@@ -1149,15 +1154,19 @@ async def fetch_credential(request: Request, vault_path: str) -> Response:
         from carapace.security import evaluate_credential_with
 
         with _engine.llm_request_recording(active):
-            cred_eval = await evaluate_credential_with(
-                active.security,
-                active.sentinel,
-                vault_path,
-                meta.name,
-                meta.description,
-                f"Sandbox requested credential: {meta.name}",
-                usage_tracker=active.usage_tracker,
-            )
+            try:
+                cred_eval = await evaluate_credential_with(
+                    active.security,
+                    active.sentinel,
+                    vault_path,
+                    meta.name,
+                    meta.description,
+                    f"Sandbox requested credential: {meta.name}",
+                    usage_tracker=active.usage_tracker,
+                    assert_llm_budget_available=lambda: _engine._assert_llm_budget_available(active),
+                )
+            except SessionBudgetExceededError as exc:
+                return Response(status_code=403, content=str(exc))
         if not cred_eval.allowed:
             return Response(status_code=403, content="Credential access denied")
 

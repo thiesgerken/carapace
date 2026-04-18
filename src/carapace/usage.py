@@ -130,6 +130,127 @@ class UsageTracker(BaseModel):
         return costs
 
 
+class BudgetGauge(BaseModel):
+    key: Literal["input", "output", "cost"]
+    label: str
+    current_value: str
+    current_amount: float | None = None
+    limit_value: str
+    remaining_value: str | None = None
+    fill_pct: float
+    reached: bool
+    unavailable_reason: str | None = None
+
+
+class SessionBudgetExceededError(RuntimeError):
+    def __init__(self, message: str, *, gauges: list[BudgetGauge]) -> None:
+        super().__init__(message)
+        self.gauges = gauges
+
+
+def _format_token_count(value: int) -> str:
+    if value >= 1_000_000:
+        return f"{value / 1_000_000:.1f}M tokens"
+    if value >= 1_000:
+        return f"{value / 1_000:.1f}k tokens"
+    return f"{value} tokens"
+
+
+def _format_usd(value: Decimal) -> str:
+    return f"${value:.4f}"
+
+
+def usage_budget_gauges(
+    tracker: UsageTracker,
+    *,
+    input_tokens_limit: int | None = None,
+    output_tokens_limit: int | None = None,
+    total_cost_limit: Decimal | None = None,
+) -> list[BudgetGauge]:
+    gauges: list[BudgetGauge] = []
+
+    if input_tokens_limit is not None:
+        current = tracker.total_input
+        remaining = max(0, input_tokens_limit - current)
+        fill_pct = min(100.0, (100.0 * current / input_tokens_limit)) if input_tokens_limit > 0 else 0.0
+        gauges.append(
+            BudgetGauge(
+                key="input",
+                label="Input",
+                current_value=_format_token_count(current),
+                current_amount=float(current),
+                limit_value=_format_token_count(input_tokens_limit),
+                remaining_value=_format_token_count(remaining),
+                fill_pct=round(fill_pct, 1),
+                reached=current >= input_tokens_limit,
+            )
+        )
+
+    if output_tokens_limit is not None:
+        current = tracker.total_output
+        remaining = max(0, output_tokens_limit - current)
+        fill_pct = min(100.0, (100.0 * current / output_tokens_limit)) if output_tokens_limit > 0 else 0.0
+        gauges.append(
+            BudgetGauge(
+                key="output",
+                label="Output",
+                current_value=_format_token_count(current),
+                current_amount=float(current),
+                limit_value=_format_token_count(output_tokens_limit),
+                remaining_value=_format_token_count(remaining),
+                fill_pct=round(fill_pct, 1),
+                reached=current >= output_tokens_limit,
+            )
+        )
+
+    if total_cost_limit is not None:
+        total_cost = tracker.estimated_cost().get("total", Decimal(0))
+        remaining = max(Decimal(0), total_cost_limit - total_cost)
+        fill_pct = min(100.0, float(Decimal(100) * total_cost / total_cost_limit)) if total_cost_limit > 0 else 0.0
+        gauges.append(
+            BudgetGauge(
+                key="cost",
+                label="Cost",
+                current_value=_format_usd(total_cost),
+                current_amount=float(total_cost),
+                limit_value=_format_usd(total_cost_limit),
+                remaining_value=_format_usd(remaining),
+                fill_pct=round(fill_pct, 1),
+                reached=total_cost >= total_cost_limit,
+            )
+        )
+
+    return gauges
+
+
+def usage_budget_exceeded_error(
+    tracker: UsageTracker,
+    *,
+    input_tokens_limit: int | None = None,
+    output_tokens_limit: int | None = None,
+    total_cost_limit: Decimal | None = None,
+) -> SessionBudgetExceededError | None:
+    gauges = usage_budget_gauges(
+        tracker,
+        input_tokens_limit=input_tokens_limit,
+        output_tokens_limit=output_tokens_limit,
+        total_cost_limit=total_cost_limit,
+    )
+    offenders = [gauge for gauge in gauges if gauge.reached]
+    if not offenders:
+        return None
+    parts: list[str] = []
+    for gauge in offenders:
+        if gauge.unavailable_reason:
+            parts.append(f"{gauge.label.lower()}: {gauge.unavailable_reason}")
+        else:
+            parts.append(f"{gauge.label.lower()} {gauge.current_value} / {gauge.limit_value}")
+    return SessionBudgetExceededError(
+        "Session budget reached: " + "; ".join(parts),
+        gauges=gauges,
+    )
+
+
 LlmSource = Literal["agent", "sentinel"]
 
 _llm_request_sink: ContextVar[Callable[[LlmRequestRecord], None] | None] = ContextVar(

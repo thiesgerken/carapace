@@ -24,6 +24,7 @@ async def generate_title(
     *,
     model: str,
     usage_tracker: UsageTracker | None = None,
+    before_llm_call: Callable[[], None] | None = None,
     model_factory: Callable[[str], Model] | None = None,
 ) -> str:
     """Build a short emoji-prefixed title from conversation events.
@@ -56,6 +57,8 @@ async def generate_title(
     resolved = model_factory(model) if model_factory is not None else infer_model(model)
     agent: Agent[None, str] = Agent(resolved, output_type=str, instructions=_SYSTEM_PROMPT, retries=1, output_retries=3)
     try:
+        if before_llm_call is not None:
+            before_llm_call()
         result = await agent.run(prompt)
         if usage_tracker:
             usage_tracker.record(model, "title", result.usage())

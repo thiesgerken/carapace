@@ -21,7 +21,7 @@ from carapace.channels.matrix import (
 )
 from carapace.channels.matrix.subscriber import MatrixSubscriber
 from carapace.config import load_config
-from carapace.models import MatrixChannelConfig, MatrixTokenFile, Secret
+from carapace.models import MatrixChannelConfig, MatrixTokenFile, Secret, SessionBudget
 from carapace.sandbox.manager import SandboxManager
 from carapace.session import SessionEngine, SessionManager
 from carapace.ws_models import ApprovalRequest, CommandResult
@@ -52,6 +52,7 @@ def _make_engine_mock() -> MagicMock:
     engine.subscribe = MagicMock()
     engine.unsubscribe = MagicMock()
     engine.deactivate = MagicMock()
+    engine.config.agent.default_session_budget = SessionBudget()
     return engine
 
 
