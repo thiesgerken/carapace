@@ -363,34 +363,6 @@ class SandboxManager:
             parts.extend(activation_msg.splitlines())
         return "\n".join(parts)
 
-    async def _build_skill_venv(self, session_id: str, skill_name: str) -> None:
-        """Backward-compatible wrapper for Python provider execution."""
-
-        await self._build_skill_venv_in_session(skill_name, session_id=session_id)
-
-    async def _build_skill_venv_in_session(
-        self,
-        skill_name: str,
-        *,
-        session_id: str | None = None,
-        sc: SessionContainer | None = None,
-    ) -> None:
-        """Backward-compatible wrapper for the Python activation provider."""
-        if (session_id is None) == (sc is None):
-            raise ValueError("Exactly one of session_id and sc must be set")
-
-        if err := _validate_skill_name(skill_name):
-            raise SkillActivationError(err)
-
-        result = await self._skill_activation_runner.run_named_provider(
-            skill_name,
-            "uv",
-            session_id=session_id,
-            sc=sc,
-        )
-        if result.exit_code != 0:
-            raise SkillActivationError(f"uv exit {result.exit_code}: {result.output[:500]}")
-
     async def _file_write_in_container(
         self,
         sc: SessionContainer,

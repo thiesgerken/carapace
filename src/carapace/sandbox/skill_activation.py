@@ -92,9 +92,6 @@ class SkillActivationRunner:
     def matching_providers(self, skill_dir: Path) -> list[SkillActivationProvider]:
         return [provider for provider in SKILL_ACTIVATION_PROVIDERS if provider.matches(skill_dir)]
 
-    def provider_named(self, name: str) -> SkillActivationProvider:
-        return next(provider for provider in SKILL_ACTIVATION_PROVIDERS if provider.name == name)
-
     def trusted_files_for(self, providers: list[SkillActivationProvider]) -> set[str]:
         trusted_files = {"carapace.yaml"}
         for provider in providers:
@@ -162,32 +159,6 @@ class SkillActivationRunner:
             )
 
         return await self.run_providers(skill_name, providers, activation_inputs, sc=sc)
-
-    async def run_named_provider(
-        self,
-        skill_name: str,
-        provider_name: str,
-        *,
-        session_id: str | None = None,
-        sc: SessionContainerLike | None = None,
-    ) -> ExecResult:
-        if (session_id is None) == (sc is None):
-            raise ValueError("Exactly one of session_id and sc must be set")
-
-        target_session_id = session_id
-        if target_session_id is None:
-            assert sc is not None
-            target_session_id = sc.session_id
-
-        activation_inputs = await self._get_activation_inputs(target_session_id, skill_name)
-        provider = self.provider_named(provider_name)
-        return await self.run_provider(
-            skill_name,
-            provider,
-            activation_inputs,
-            session_id=session_id,
-            sc=sc,
-        )
 
     def _activation_file_credentials(
         self,
