@@ -1,6 +1,41 @@
 # CHANGELOG
 
 
+## v0.86.0 (2026-04-18)
+
+
+### ✨ Features
+
+
+- ✨Merge pull request #66 from thiesgerken/feat/session-budgets
+  ([`a87a26e`](https://github.com/thiesgerken/carapace/commit/a87a26e1e98d7ff7ecf41bb579d53ca20b611a3a))
+
+  ✨ feat: Add session budgets and budget gauges
+
+- ✨ feat: add session budgets and gauges
+  ([`33d059f`](https://github.com/thiesgerken/carapace/commit/33d059f1067f72c908266611316f1633f1c31426))
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix: address budget review comments
+  ([`6063faf`](https://github.com/thiesgerken/carapace/commit/6063fafc9dbbee24acfa7427050aa183c914db38))
+
+- 🐛 fix: refresh usage after title generation
+  ([`87c514e`](https://github.com/thiesgerken/carapace/commit/87c514ec8b33072be201288aa0ee8690787d344e))
+
+- 🐛 fix: use cost_usd for session budgets
+  ([`6386a64`](https://github.com/thiesgerken/carapace/commit/6386a646582ee72c7b90038de777d8527cc7177b))
+
+### Other
+
+
+- remove item from roadmap
+  ([`de6011b`](https://github.com/thiesgerken/carapace/commit/de6011bd2ddc8dcf75a67bc3dc4c92a3ba9c1a3a))
+
+- ✅ test: configure matrix budget mock
+  ([`16baedc`](https://github.com/thiesgerken/carapace/commit/16baedc91422d9f35b0b2e751508d7fd82ac507f))
+
 ## v0.85.0 (2026-04-17)
 
 
