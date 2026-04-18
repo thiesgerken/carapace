@@ -1,6 +1,67 @@
 # CHANGELOG
 
 
+## v0.87.0 (2026-04-18)
+
+
+### ✨ Features
+
+
+- ✨Merge pull request #67 from thiesgerken/feat/skill-activation-providers
+  ([`d459314`](https://github.com/thiesgerken/carapace/commit/d459314ffb7a0fd47e8972c53f574bd54925bb73))
+
+  ✨ feat: add provider-based skill activation
+
+- ✨ feat: add provider-based skill activation
+  ([`0441d7b`](https://github.com/thiesgerken/carapace/commit/0441d7ba91591e653c0bda37f104a51ec3dbe367))
+
+### Other
+
+
+- 📝 docs: clarify setup.sh proxy bypass
+  ([`2ed8453`](https://github.com/thiesgerken/carapace/commit/2ed8453bb9ae1d468e344d69e09110c934da9150))
+
+- 🔥 remove dead code
+  ([`63f8907`](https://github.com/thiesgerken/carapace/commit/63f89072b450e2e351310082b2ee8b70f0c2b7d4))
+
+- Revert "🐛 fix: keep usage shape estimation offline"
+  ([`54f77aa`](https://github.com/thiesgerken/carapace/commit/54f77aa2628ef0f96ec51dcce6c5b15c2333e3e1))
+
+  This reverts commit 88d39316ce14d940ac6c9023b9c9112b15c7c1ca.
+
+- 📝 docs: extend example skill providers
+  ([`5991089`](https://github.com/thiesgerken/carapace/commit/5991089c4b31538ce0fc155bb47b9a1f69cff1cf))
+
+- 📝 docs: document skill activation providers
+  ([`bba1f5d`](https://github.com/thiesgerken/carapace/commit/bba1f5da129893690f0566a10d8eb4e0beecf115))
+
+### ♻️ Refactoring
+
+
+- ♻️ refactor: clean legacy skill setup paths
+  ([`b477e01`](https://github.com/thiesgerken/carapace/commit/b477e013d8cac0b46ab9387c5817fd468f1cb4ed))
+
+- ♻️ refactor: simplify node skill activation selection
+  ([`96afdc5`](https://github.com/thiesgerken/carapace/commit/96afdc539d77b82483b489c5a16c333981806c60))
+
+- ♻️ refactor: update asyncio usage in SandboxManager
+  ([`cf5d55a`](https://github.com/thiesgerken/carapace/commit/cf5d55abfbacbbd0c6cd6a659057625a45eafb7f))
+
+- ♻️ refactor: simplify activation providers
+  ([`e5b6066`](https://github.com/thiesgerken/carapace/commit/e5b6066c1435fdf0adfa2aa0f4da0febd553b646))
+
+- ♻️ refactor: split sandbox manager internals
+  ([`20f13e5`](https://github.com/thiesgerken/carapace/commit/20f13e5e3b9ecccd62c35a5f6c2a1d867e046780))
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix: harden skill activation restore
+  ([`aa54ce8`](https://github.com/thiesgerken/carapace/commit/aa54ce89c7972c482b292d7d9b5213824ea863dc))
+
+- 🐛 fix: keep usage shape estimation offline
+  ([`88d3931`](https://github.com/thiesgerken/carapace/commit/88d39316ce14d940ac6c9023b9c9112b15c7c1ca))
+
 ## v0.86.0 (2026-04-18)
 
 
