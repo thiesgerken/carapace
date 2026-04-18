@@ -88,16 +88,17 @@ See [the API reference](references/api.md) for endpoint details.
 
 ## Carapace-specific carapace.yaml
 
-Optional. If present, Carapace reads `skills/<name>/carapace.yaml` when the agent calls `use_skill("<name>")`. It declares **which hostnames the sandbox proxy may reach** and **which vault credentials to inject** (after user approval). Omit the file if the skill needs neither.
+Optional. If present, Carapace reads `skills/<name>/carapace.yaml` when the agent calls `use_skill("<name>")`. It declares **which hostnames the sandbox proxy may reach**, **which exec-scoped TCP tunnels Carapace should manage**, and **which vault credentials to inject** (after user approval). Omit the file if the skill needs none of these.
 
 **Top-level keys** (all optional):
 
-| Key               | Type            | Purpose                                                                                               |
-| ----------------- | --------------- | ----------------------------------------------------------------------------------------------------- |
-| `network`         | object          | Must contain `domains` — not a bare list under `network`.                                             |
-| `network.domains` | list of strings | Hostnames added to the session allowlist (wildcards like `*.cdn.example.com` allowed).                |
+| Key               | Type            | Purpose                                                                                                                                                   |
+| ----------------- | --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `network`         | object          | Container for `domains` and/or `tunnels` — not a bare list under `network`.                                                                               |
+| `network.domains` | list of strings | Hostnames added to the proxy allowlist (wildcards like `*.cdn.example.com` allowed).                                                                      |
+| `network.tunnels` | list of objects | Exec-scoped TCP tunnels managed by Carapace. Each entry needs `host`, `remote_port`, and `local_port`; optional `description`.                            |
 | `credentials`     | list of objects | Each entry: `vault_path` (required), `description`, and either `env_var` and/or `file` for injection. Optional `base64: true` to decode before injection. |
-| `hints`           | string map      | Extra metadata for tooling (does not replace `network` / `credentials`).                              |
+| `hints`           | string map      | Extra metadata for tooling (does not replace `network` / `credentials`).                                                                                  |
 
 **Valid example** (shape matters):
 
@@ -106,6 +107,11 @@ network:
   domains:
     - api.example.com
     - "*.cdn.example.com"
+  tunnels:
+    - host: imap.zoho.eu
+      remote_port: 993
+      local_port: 1993
+      description: Zoho IMAP over the Carapace CONNECT proxy
 
 credentials:
   - vault_path: my-backend/some-secret-id
@@ -129,6 +135,12 @@ That parses as a list assigned to `network`, Pydantic validation fails, and **th
 **Rules:**
 
 - Paths are resolved from the skill directory next to `SKILL.md` in the knowledge repo (under `skills/<name>/carapace.yaml`).
+- `network.tunnels[].host` must be an exact hostname. Wildcards are not allowed for tunnels.
+- `network.tunnels[].host` must not be an IP literal, loopback target, Docker special hostname, or Kubernetes/internal service name such as `*.svc` / `*.cluster.local`.
+- `network.tunnels[].local_port` must be an unprivileged local port (`1024-65535`) and must be unique within the skill.
+- `network.tunnels` are exec-scoped. Carapace starts them only for commands that request the matching skill via `contexts=[...]`, then tears them down afterwards.
+- `network.domains` and `network.tunnels` may mention the same hostname. That is valid: proxy-aware HTTP/HTTPS still works through the normal proxy path, while direct socket connections to the tunneled hostname are shadowed for that exec.
+- Tunnels preserve TLS only if the client keeps using the original hostname. Do not configure IMAP/SMTP clients against `localhost`; use the real hostname together with the declared `local_port`.
 - Credential values are never echoed to the user; env vars and files are set inside the sandbox after approval.
 - For full detail, see bundled `credentials` skill and project `docs/skills.md`.
 
@@ -351,6 +363,6 @@ description: <What it does and when to use it.>
 <Things to watch out for.>
 ```
 
-If the skill needs outbound HTTP or credentials, add `carapace.yaml` with `network.domains` and/or `credentials` as in the section above.
+If the skill needs outbound HTTP, TCP tunnels, or credentials, add `carapace.yaml` with `network.domains`, `network.tunnels`, and/or `credentials` as in the section above.
 
 If the skill needs Python code, structure it as a package with `[project.scripts]` entrypoints — see the **Python projects** section above for the full layout and `pyproject.toml` template.

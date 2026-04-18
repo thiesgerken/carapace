@@ -1,10 +1,6 @@
-# Illustrative Carapace extension — replace with real vault paths and domains for your skill.
-# Parsed on use_skill(); invalid YAML or wrong shapes cause the whole file to be ignored.
 network:
-  domains:
-    - httpbin.org
-
-credentials:
-  - vault_path: example/illustrative-api-token
-    description: Made-up credential for documentation (the example commands do not use it)
-    env_var: EXAMPLE_ILLUSTRATIVE_API_KEY
+  tunnels:
+    - host: imap.gmail.com
+      remote_port: 993
+      local_port: 1993
+      description: Unauthenticated IMAP CAPABILITY probe over a Carapace-managed tunnel

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import re
+import shlex
 from asyncio.locks import Lock
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from pathlib import Path
 
 from loguru import logger
@@ -13,6 +15,7 @@ from carapace.sandbox.file_ops import SandboxFileOps
 from carapace.sandbox.runtime import (
     ContainerRuntime,
     ExecResult,
+    NetworkTunnel,
     SkillActivationError,
     SkillActivationInputs,
 )
@@ -29,6 +32,134 @@ FILE_READ_SCRIPT = file_ops.FILE_READ_SCRIPT
 MAX_READ_OUTPUT_CHARS = file_ops.MAX_READ_OUTPUT_CHARS
 SANDBOX_READ_BODY_SEPARATOR = file_ops.SANDBOX_READ_BODY_SEPARATOR
 READ_TOOL_MAX_LINE_WINDOW = file_ops.READ_TOOL_MAX_LINE_WINDOW
+
+_CONTEXT_TUNNEL_HELPER = """#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import asyncio
+import base64
+import sys
+from urllib.parse import unquote, urlsplit
+
+
+async def _close_writer(writer: asyncio.StreamWriter) -> None:
+    writer.close()
+    try:
+        await writer.wait_closed()
+    except Exception:
+        pass
+
+
+async def _pipe(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+    try:
+        while True:
+            chunk = await reader.read(65536)
+            if not chunk:
+                break
+            writer.write(chunk)
+            await writer.drain()
+    except (BrokenPipeError, ConnectionResetError):
+        pass
+    finally:
+        await _close_writer(writer)
+
+
+async def _open_proxy_tunnel(
+    proxy_url: str,
+    target_host: str,
+    target_port: int,
+) -> tuple[bytes, asyncio.StreamReader, asyncio.StreamWriter]:
+    parsed = urlsplit(proxy_url)
+    if not parsed.hostname:
+        raise RuntimeError("HTTP_PROXY does not include a hostname")
+    proxy_port = parsed.port or 80
+    reader, writer = await asyncio.open_connection(parsed.hostname, proxy_port)
+
+    headers = [f"CONNECT {target_host}:{target_port} HTTP/1.1", f"Host: {target_host}:{target_port}"]
+    if parsed.username or parsed.password:
+        creds = f"{unquote(parsed.username or '')}:{unquote(parsed.password or '')}"
+        encoded = base64.b64encode(creds.encode()).decode()
+        headers.append(f"Proxy-Authorization: Basic {encoded}")
+    request = "\r\n".join(headers) + "\r\n\r\n"
+    writer.write(request.encode("latin-1"))
+    await writer.drain()
+
+    response = b""
+    while b"\r\n\r\n" not in response:
+        chunk = await reader.read(4096)
+        if not chunk:
+            raise RuntimeError("proxy closed CONNECT response early")
+        response += chunk
+        if len(response) > 65536:
+            raise RuntimeError("proxy CONNECT response too large")
+
+    status_line, remainder = response.split(b"\r\n", 1)
+    status = status_line.decode("latin-1", errors="replace")
+    if not status.startswith("HTTP/1.1 200") and not status.startswith("HTTP/1.0 200"):
+        raise RuntimeError(f"proxy CONNECT failed: {status}")
+    prebuffer = remainder.split(b"\r\n\r\n", 1)[1]
+    return prebuffer, reader, writer
+
+
+async def _handle_client(
+    client_reader: asyncio.StreamReader,
+    client_writer: asyncio.StreamWriter,
+    proxy_url: str,
+    target_host: str,
+    target_port: int,
+) -> None:
+    upstream_reader: asyncio.StreamReader | None = None
+    upstream_writer: asyncio.StreamWriter | None = None
+    try:
+        prebuffer, upstream_reader, upstream_writer = await _open_proxy_tunnel(proxy_url, target_host, target_port)
+        if prebuffer:
+            client_writer.write(prebuffer)
+            await client_writer.drain()
+        await asyncio.gather(
+            _pipe(client_reader, upstream_writer),
+            _pipe(upstream_reader, client_writer),
+        )
+    except Exception as exc:
+        print(f"tunnel error for {target_host}:{target_port}: {exc}", file=sys.stderr)
+        await _close_writer(client_writer)
+        if upstream_writer is not None:
+            await _close_writer(upstream_writer)
+
+
+async def _run() -> None:
+    parser = argparse.ArgumentParser(description="Carapace CONNECT tunnel helper")
+    parser.add_argument("--listen-host", default="127.0.0.1")
+    parser.add_argument("--listen-port", type=int, required=True)
+    parser.add_argument("--target-host", required=True)
+    parser.add_argument("--target-port", type=int, required=True)
+    parser.add_argument("--proxy", default="")
+    args = parser.parse_args()
+
+    proxy_url = args.proxy or ""
+    if not proxy_url:
+        raise RuntimeError("HTTP_PROXY is required for the tunnel helper")
+
+    server = await asyncio.start_server(
+        lambda r, w: _handle_client(r, w, proxy_url, args.target_host, args.target_port),
+        args.listen_host,
+        args.listen_port,
+    )
+    async with server:
+        await server.serve_forever()
+
+
+if __name__ == "__main__":
+    asyncio.run(_run())
+"""
+
+
+@dataclass(frozen=True, slots=True)
+class _TunnelPaths:
+    helper_path: str
+    hosts_backup_path: str
+    pid_path: str
+    log_path: str
 
 
 def _validate_skill_name(skill_name: str) -> str | None:
@@ -213,6 +344,7 @@ class SandboxManager:
         contexts: list[str] | None = None,
         extra_env: dict[str, str] | None = None,
         context_domains: set[str] | None = None,
+        context_tunnels: list[NetworkTunnel] | None = None,
         context_file_creds: list[tuple[str, str, str]] | None = None,
         after_exec_credential_notify: Callable[[], None] | None = None,
     ) -> ExecResult:
@@ -230,6 +362,8 @@ class SandboxManager:
                 timeout=cmd_timeout,
                 **kwargs,
             ),
+            prepare_context_tunnels=lambda sc, tunnels: self._prepare_context_tunnels(sc, tunnels),
+            cleanup_context_tunnels=lambda sc, tunnels: self._cleanup_context_tunnels(sc, tunnels),
             write_context_file_credentials=lambda sc, creds: self._write_context_file_credentials(sc, creds),
             delete_context_file_credentials=lambda sid, written: self._delete_context_file_credentials(sid, written),
             bypass_proxy=bypass_proxy,
@@ -237,6 +371,7 @@ class SandboxManager:
             contexts=contexts,
             extra_env=extra_env,
             context_domains=context_domains,
+            context_tunnels=context_tunnels,
             context_file_creds=context_file_creds,
             after_exec_credential_notify=after_exec_credential_notify,
         )
@@ -252,6 +387,7 @@ class SandboxManager:
         contexts: list[str] | None = None,
         extra_env: dict[str, str] | None = None,
         context_domains: set[str] | None = None,
+        context_tunnels: list[NetworkTunnel] | None = None,
         context_file_creds: list[tuple[str, str, str]] | None = None,
         after_exec_credential_notify: Callable[[], None] | None = None,
     ) -> ExecResult:
@@ -260,6 +396,7 @@ class SandboxManager:
         *contexts*: activated skill names active for this exec.
         *extra_env*: per-exec env vars (credential values) — merged on top of session env.
         *context_domains*: domains to add to exec-scoped temp allowlist.
+        *context_tunnels*: declarative exec-scoped TCP tunnels to establish for this command.
         *context_file_creds*: ``(skill_name, file_path, value)`` tuples for file-based
             credentials to be written before exec and deleted after.
         *after_exec_credential_notify*: passed through to `_exec` (see there).
@@ -272,6 +409,7 @@ class SandboxManager:
             contexts=contexts,
             extra_env=extra_env,
             context_domains=context_domains,
+            context_tunnels=context_tunnels,
             context_file_creds=context_file_creds,
             after_exec_credential_notify=after_exec_credential_notify,
         )
@@ -435,6 +573,103 @@ class SandboxManager:
         activated = self._get_activated_skills_cb(session_id)
         if activated:
             await self.rerun_skill_setup(session_id, activated)
+
+    def _normalize_context_tunnels(self, tunnels: list[NetworkTunnel]) -> list[NetworkTunnel]:
+        by_local_port: dict[int, NetworkTunnel] = {}
+        unique: dict[tuple[str, int, int], NetworkTunnel] = {}
+        for tunnel in tunnels:
+            existing = by_local_port.get(tunnel.local_port)
+            if existing is not None and existing.model_dump(mode="json") != tunnel.model_dump(mode="json"):
+                raise ValueError(
+                    "Conflicting network.tunnels declarations for local_port "
+                    + f"{tunnel.local_port}: {existing.display} vs {tunnel.display}"
+                )
+            by_local_port[tunnel.local_port] = tunnel
+            unique[(tunnel.host, tunnel.remote_port, tunnel.local_port)] = tunnel
+        return sorted(unique.values(), key=lambda tunnel: (tunnel.local_port, tunnel.host, tunnel.remote_port))
+
+    def _context_tunnel_paths(self, session_id: str, tunnel: NetworkTunnel) -> _TunnelPaths:
+        return _TunnelPaths(
+            helper_path=f"/tmp/carapace-tunnel-helper-{session_id}.py",
+            hosts_backup_path=f"/tmp/carapace-tunnel-hosts-{session_id}.bak",
+            pid_path=f"/tmp/carapace-tunnel-{session_id}-{tunnel.local_port}.pid",
+            log_path=f"/tmp/carapace-tunnel-{session_id}-{tunnel.local_port}.log",
+        )
+
+    async def _prepare_context_tunnels(self, sc: SessionContainer, tunnels: list[NetworkTunnel]) -> None:
+        normalized = self._normalize_context_tunnels(tunnels)
+        if not normalized:
+            return
+
+        await self._cleanup_context_tunnels(sc, normalized)
+
+        helper_path = self._context_tunnel_paths(sc.session_id, normalized[0]).helper_path
+        write_result = await self._file_write_in_container(
+            sc,
+            helper_path,
+            _CONTEXT_TUNNEL_HELPER,
+            mode=0o700,
+            workdir=self._KNOWLEDGE_WORKDIR,
+        )
+        if write_result.exit_code != 0:
+            raise RuntimeError(f"Failed to materialize tunnel helper: {write_result.output}")
+
+        hosts_backup = self._context_tunnel_paths(sc.session_id, normalized[0]).hosts_backup_path
+        host_lines = "\n".join(f"127.0.0.1 {host}" for host in sorted({tunnel.host for tunnel in normalized}))
+        hosts_cmd = f"cp /etc/hosts {shlex.quote(hosts_backup)} && cat <<'EOF' >> /etc/hosts\n{host_lines}\nEOF"
+        hosts_result = await self._exec_in_container(sc, hosts_cmd, timeout=10)
+        if hosts_result.exit_code != 0:
+            await self._cleanup_context_tunnels(sc, normalized)
+            raise RuntimeError(f"Failed to install temporary tunnel hosts: {hosts_result.output}")
+
+        for tunnel in normalized:
+            paths = self._context_tunnel_paths(sc.session_id, tunnel)
+            start_cmd = (
+                f"rm -f {shlex.quote(paths.pid_path)} {shlex.quote(paths.log_path)} && "
+                f"nohup python3 {shlex.quote(paths.helper_path)} "
+                "--listen-host 127.0.0.1 "
+                f"--listen-port {tunnel.local_port} "
+                f"--target-host {shlex.quote(tunnel.host)} "
+                f"--target-port {tunnel.remote_port} "
+                '--proxy "$HTTP_PROXY" '
+                f">{shlex.quote(paths.log_path)} 2>&1 & "
+                f"echo $! > {shlex.quote(paths.pid_path)} && "
+                f'kill -0 "$(cat {shlex.quote(paths.pid_path)})"'
+            )
+            start_result = await self._exec_in_container(sc, start_cmd, timeout=10)
+            if start_result.exit_code != 0:
+                await self._cleanup_context_tunnels(sc, normalized)
+                raise RuntimeError(f"Failed to start tunnel {tunnel.display}: {start_result.output}")
+
+    async def _cleanup_context_tunnels(self, sc: SessionContainer, tunnels: list[NetworkTunnel]) -> None:
+        if not tunnels:
+            return
+
+        pid_paths = [self._context_tunnel_paths(sc.session_id, tunnel).pid_path for tunnel in tunnels]
+        log_paths = [self._context_tunnel_paths(sc.session_id, tunnel).log_path for tunnel in tunnels]
+        helper_path = self._context_tunnel_paths(sc.session_id, tunnels[0]).helper_path
+        hosts_backup = self._context_tunnel_paths(sc.session_id, tunnels[0]).hosts_backup_path
+
+        pid_cleanup = []
+        for pid_path in sorted(set(pid_paths)):
+            quoted = shlex.quote(pid_path)
+            pid_cleanup.append(
+                f'if [ -f {quoted} ]; then kill "$(cat {quoted})" 2>/dev/null || true; rm -f {quoted}; fi'
+            )
+        quoted_hosts_backup = shlex.quote(hosts_backup)
+        restore_hosts_cmd = (
+            f"if [ -f {quoted_hosts_backup} ]; then "
+            + f"cp {quoted_hosts_backup} /etc/hosts && rm -f {quoted_hosts_backup}; fi"
+        )
+        cleanup_parts = [
+            *pid_cleanup,
+            restore_hosts_cmd,
+            "rm -f " + " ".join(shlex.quote(path) for path in sorted(set([helper_path, *log_paths]))),
+        ]
+        cleanup_cmd = " && ".join(cleanup_parts)
+        result = await self._exec_in_container(sc, cleanup_cmd, timeout=10)
+        if result.exit_code != 0:
+            logger.warning(f"Failed to clean up context tunnels for session {sc.session_id}: {result.output}")
 
     async def cleanup_session(self, session_id: str) -> None:
         await self._session_lifecycle.cleanup_session(session_id)

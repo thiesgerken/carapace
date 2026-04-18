@@ -71,13 +71,18 @@ Summarize the top results for the user.
 
 ## carapace.yaml (Carapace extension)
 
-Optional file that declares network domains the skill needs and credentials it uses.
+Optional file that declares network domains, exec-scoped TCP tunnels, and credentials the skill needs.
 
 ```yaml
 network:
   domains:
     - "api.searxng.example.com"
     - "*.search.example.com"
+  tunnels:
+    - host: imap.zoho.eu
+      remote_port: 993
+      local_port: 1993
+      description: Zoho IMAP over the Carapace CONNECT proxy
 
 credentials:
   - vault_path: "dev/searxng-url"
@@ -91,6 +96,17 @@ credentials:
 ### Fields
 
 **`network.domains`** — list of domains the skill needs to access. These are registered as a **context grant** when the skill is activated. The domains are only allowed during commands that explicitly request the skill's context (see [Context-scoped access](#context-scoped-access) below). Supports wildcard matching (`*.example.com`).
+
+**`network.tunnels`** — list of exec-scoped TCP tunnels the skill needs. Each tunnel declaration has:
+
+- `host` — exact remote hostname. Wildcards, IP literals, loopback names, Docker special hostnames, and Kubernetes/internal service names (`*.svc`, `*.cluster.local`, etc.) are not allowed.
+- `remote_port` — target port on the remote host.
+- `local_port` — unprivileged local port inside the sandbox used for the duration of the exec.
+- `description` — optional human-readable explanation for approvals and docs.
+
+Carapace manages these tunnels itself during `exec(..., contexts=[...])`. Skills do not start background processes. Tunnel setup is temporary and is re-established if the sandbox has to be recreated before the command retry.
+
+`network.domains` and `network.tunnels` may refer to the same hostname. That is intentional: HTTP and HTTPS through the proxy still work normally, while direct socket connections to the tunneled hostname are shadowed during that exec.
 
 **`credentials`** — list of credentials the skill needs. Each entry has:
 
@@ -111,6 +127,7 @@ Skill-declared domains and credentials are **not globally available** in the ses
 1. **Activation** creates a context grant: `use_skill("moneydb")` registers the skill's declared domains and credential vault paths as a grant keyed by `"moneydb"`.
 2. **Exec requests contexts**: The agent passes `contexts=["moneydb"]` when running commands that need the skill's resources.
 3. **Per-exec injection**: Domains are temporarily allowed in the proxy. Credential values are injected as env vars or written as files for the duration of that single exec. File-based credentials are deleted immediately after the command completes.
+   Tunnel declarations are also applied here: Carapace temporarily shadows the declared hostnames inside the sandbox, starts trusted CONNECT-backed tunnel helpers, and tears them down again after the exec.
 4. **No context = no access**: An exec without `contexts` (or with unrelated contexts) does not get the skill's domains or credentials. The sentinel evaluates any credential access without a matching context.
 
 ### Matching semantics

@@ -1,16 +1,16 @@
-"""Example skill demonstrating the sandbox environment.
+"""Example skill demonstrating provider setup and exec-scoped tunnel usage.
 
-Run with:  uv run --directory /workspace/skills/example hello
+Run with: uv run --directory /workspace/skills/example hello
 """
 
+import imaplib
 import json
 import os
 import sys
 from pathlib import Path
 
-import httpx
-
 WORKSPACE = Path("/workspace")
+CONFIG_PATH = WORKSPACE / "skills" / "example" / ".example-skill" / "imap-demo.json"
 
 
 def main() -> None:
@@ -30,19 +30,32 @@ def main() -> None:
         files = list(memory.rglob("*"))
         print(f"  /workspace/memory/: {len(files)} file(s)")
 
-    # HTTP request (tests network access and httpx dependency)
-    print("\nFetching https://httpbin.org/get ...")
+    print(f"\nReading tunnel config from {CONFIG_PATH} ...")
     try:
-        resp = httpx.get("https://httpbin.org/get", timeout=10)
-        print(f"  Status: {resp.status_code}")
-        print(f"  Origin: {resp.json().get('origin', 'unknown')}")
-    except httpx.HTTPError as exc:
-        print(f"  Request failed: {exc}")
+        config = json.loads(CONFIG_PATH.read_text())
+    except OSError as exc:
+        print(f"  Could not read config: {exc}")
+        return
+
+    host = str(config.get("host", "imap.gmail.com"))
+    port = int(config.get("port", 1993))
+    print(f"  Connecting to {host}:{port} via Carapace-managed tunnel ...")
+
+    try:
+        client = imaplib.IMAP4_SSL(host=host, port=port)
+        _tag, capabilities = client.capability()
+        client.logout()
+    except OSError as exc:
+        print(f"  IMAP capability probe failed: {exc}")
+    else:
+        capability_text = " ".join(part.decode("utf-8", errors="replace") for part in capabilities)
+        print("  CAPABILITY succeeded")
+        print(f"  {capability_text}")
 
     # Writable scratch space
     tmp = WORKSPACE / "tmp"
     tmp.mkdir(parents=True, exist_ok=True)
-    result = {"message": "Hello from example skill", "python": sys.version}
+    result = {"message": "Hello from example skill", "python": sys.version, "imap_host": host, "imap_port": port}
     output_file = tmp / "example-output.json"
     output_file.write_text(json.dumps(result, indent=2))
     print(f"\nWrote result to {output_file}")

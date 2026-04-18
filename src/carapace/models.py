@@ -14,6 +14,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from carapace.git.store import GitStore
 from carapace.sandbox.manager import SandboxManager
+from carapace.sandbox.runtime import NetworkTunnel
 from carapace.security.context import ApprovalSource, ApprovalVerdict, SessionSecurity
 from carapace.security.sentinel import Sentinel
 from carapace.usage import UsageTracker
@@ -422,6 +423,23 @@ class SkillCredentialDecl(BaseModel):
 
 class SkillNetworkConfig(BaseModel):
     domains: list[str] = []
+    tunnels: list[NetworkTunnel] = []
+
+    @model_validator(mode="after")
+    def _validate_tunnels(self) -> SkillNetworkConfig:
+        seen_local_ports: set[int] = set()
+        seen_endpoints: set[tuple[str, int]] = set()
+        for tunnel in self.tunnels:
+            if tunnel.local_port in seen_local_ports:
+                raise ValueError(f"network.tunnels local_port {tunnel.local_port} must be unique within a skill")
+            endpoint = (tunnel.host, tunnel.remote_port)
+            if endpoint in seen_endpoints:
+                raise ValueError(
+                    f"network.tunnels duplicate endpoint {tunnel.host}:{tunnel.remote_port} is not allowed"
+                )
+            seen_local_ports.add(tunnel.local_port)
+            seen_endpoints.add(endpoint)
+        return self
 
 
 class SkillCarapaceConfig(BaseModel):
@@ -433,7 +451,7 @@ class SkillCarapaceConfig(BaseModel):
 
 
 class ContextGrant(BaseModel):
-    """Context-scoped grant for a skill's declared domains and credentials.
+    """Context-scoped grant for a skill's declared domains, tunnels, and credentials.
 
     Registered at ``use_skill`` time, keyed by skill name.  The agent must pass
     matching ``contexts`` on ``exec`` for these grants to take effect.
@@ -441,6 +459,7 @@ class ContextGrant(BaseModel):
 
     skill_name: str
     domains: set[str] = set()
+    tunnels: list[NetworkTunnel] = []
     credential_decls: list[SkillCredentialDecl] = []
     credential_names: dict[str, str] = {}  # vault_path → human-readable name
 
@@ -460,6 +479,7 @@ def context_grants_session_summary(
         cached = sum(1 for vp in grant.vault_paths if get_cached_credential(session_id, vp) is not None)
         summary[skill] = {
             "domains": sorted(grant.domains),
+            "tunnels": [tunnel.display for tunnel in grant.tunnels],
             "vault_paths": sorted(grant.vault_paths),
             "cached_credentials": cached,
         }

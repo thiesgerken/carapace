@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from typing import Protocol
+import ipaddress
+from typing import ClassVar, Protocol
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 
 
 class ContainerGoneError(Exception):
@@ -21,6 +22,60 @@ class SkillFileCredential(BaseModel):
 class SkillActivationInputs(BaseModel):
     environment: dict[str, str] = {}
     file_credentials: list[SkillFileCredential] = []
+
+
+class NetworkTunnel(BaseModel):
+    host: str
+    remote_port: int = Field(ge=1, le=65535)
+    local_port: int = Field(ge=1024, le=65535)
+    description: str = ""
+
+    _BLOCKED_HOSTS: ClassVar[set[str]] = {
+        "localhost",
+        "host.docker.internal",
+        "gateway.docker.internal",
+        "kubernetes.default.svc",
+        "kubernetes.default.svc.cluster.local",
+    }
+    _BLOCKED_SUFFIXES: ClassVar[tuple[str, ...]] = (
+        ".localhost",
+        ".local",
+        ".internal",
+        ".home.arpa",
+        ".localdomain",
+        ".svc",
+        ".cluster.local",
+    )
+
+    @field_validator("host")
+    @classmethod
+    def _validate_host(cls, value: str) -> str:
+        host = value.strip().lower()
+        if not host:
+            raise ValueError("network tunnel host must not be empty")
+        if "*" in host:
+            raise ValueError("network tunnel host must be exact; wildcards are not allowed")
+        if any(ch in host for ch in ("/", ":", " ", "\t", "\n", "\r")):
+            raise ValueError("network tunnel host must be a plain hostname")
+        try:
+            ipaddress.ip_address(host)
+        except ValueError:
+            pass
+        else:
+            raise ValueError("network tunnel host must not be an IP literal")
+        if host in cls._BLOCKED_HOSTS or host in {"127.0.0.1", "::1", "0.0.0.0"}:
+            raise ValueError("network tunnel host must not target loopback or wildcard addresses")
+        if any(host.endswith(suffix) for suffix in cls._BLOCKED_SUFFIXES):
+            raise ValueError("network tunnel host must not target internal-only service names")
+        return host
+
+    @property
+    def endpoint(self) -> str:
+        return f"{self.host}:{self.remote_port}"
+
+    @property
+    def display(self) -> str:
+        return f"{self.host}:{self.remote_port} via :{self.local_port}"
 
 
 class Mount(BaseModel):

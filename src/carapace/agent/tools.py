@@ -355,8 +355,10 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
 
         carapace_cfg = registry.get_carapace_config(skill_name)
         declared_domains = carapace_cfg.network.domains if carapace_cfg else []
+        declared_tunnels = carapace_cfg.network.tunnels if carapace_cfg else []
         declared_creds = carapace_cfg.credentials if carapace_cfg else []
         declared_creds_payload = [decl.model_dump(mode="json") for decl in declared_creds]
+        declared_tunnels_payload = [decl.model_dump(mode="json") for decl in declared_tunnels]
 
         # Resolve human-readable names from the vault for UI display
         cred_registry = ctx.deps.credential_registry
@@ -373,6 +375,7 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
                 "skill_name": skill_name,
                 "declared_creds": declared_creds_payload,
                 "declared_domains": declared_domains,
+                "declared_tunnels": declared_tunnels_payload,
             }
 
             if denied := await _gate(ctx, "use_skill", gate_args):
@@ -388,6 +391,7 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
         grant = ContextGrant(
             skill_name=skill_name,
             domains=set(declared_domains),
+            tunnels=list(declared_tunnels),
             credential_decls=list(declared_creds),
         )
         ctx.deps.session_state.context_grants[skill_name] = grant
@@ -395,6 +399,7 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
             ContextGrantEntry(
                 skill_name=skill_name,
                 domains=declared_domains,
+                tunnels=[tunnel.display for tunnel in declared_tunnels],
                 vault_paths=[c.vault_path for c in declared_creds],
             ),
         )
@@ -423,6 +428,7 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
                 skill_name=skill_name,
                 description=skill_info.description if skill_info else "",
                 declared_domains=declared_domains,
+                declared_tunnels=[tunnel.display for tunnel in declared_tunnels],
             ),
         )
 
@@ -433,6 +439,10 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
             status_lines.append(f"Skill '{skill_name}' activated.")
         if declared_domains:
             status_lines.append(f"Network access granted for: {', '.join(declared_domains)}")
+        if declared_tunnels:
+            status_lines.append(
+                "Network tunnels available for: " + ", ".join(tunnel.display for tunnel in declared_tunnels)
+            )
         if cred_msg:
             status_lines.extend(cred_msg.splitlines())
 
@@ -604,12 +614,15 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
         # Build per-exec injection data from matching context grants
         extra_env: dict[str, str] = {}
         context_domains: set[str] = set()
+        context_tunnels = []
         context_file_creds: list[tuple[str, str, str]] = []  # (skill_name, file_path, value)
         missing_cached: list[tuple[str, str]] = []
         injected_creds: list[tuple[str, str]] = []  # (ctx_name, vault_path)
         for ctx_name in contexts:
             grant = grants[ctx_name]
             context_domains.update(grant.domains)
+            context_tunnels.extend(grant.tunnels)
+            context_domains.update(tunnel.host for tunnel in grant.tunnels)
             for decl in grant.credential_decls:
                 if not (decl.env_var or decl.file):
                     continue
@@ -654,6 +667,7 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
                 contexts=contexts,
                 extra_env=extra_env or None,
                 context_domains=context_domains or None,
+                context_tunnels=context_tunnels or None,
                 context_file_creds=context_file_creds or None,
                 after_exec_credential_notify=_notify_injected_skill_creds if injected_creds else None,
             )

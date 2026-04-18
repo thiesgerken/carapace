@@ -42,17 +42,17 @@ When a session container is created, the following mounts are configured:
 
 ### Docker mode
 
-| Host source | Container path | Mode | Purpose |
-| --- | --- | --- | --- |
-| `sessions/{sid}/workspace/` | `/workspace/` | read-write | Persistent session workspace |
+| Host source                 | Container path | Mode       | Purpose                      |
+| --------------------------- | -------------- | ---------- | ---------------------------- |
+| `sessions/{sid}/workspace/` | `/workspace/`  | read-write | Persistent session workspace |
 
 ### Kubernetes mode (StatefulSet)
 
 Each session gets its own PVC via the StatefulSet's `volumeClaimTemplates`:
 
-| Volume | Container path | Mode | Purpose |
-| --- | --- | --- | --- |
-| `session-data` (per-session PVC) | `/workspace/` | read-write | Persistent session workspace |
+| Volume                           | Container path | Mode       | Purpose                      |
+| -------------------------------- | -------------- | ---------- | ---------------------------- |
+| `session-data` (per-session PVC) | `/workspace/`  | read-write | Persistent session workspace |
 
 No shared PVC access — the server's data PVC is `ReadWriteOnce`.
 
@@ -75,6 +75,24 @@ Each session maintains a domain allowlist. Domains are added when:
 3. **Proxy bypass**: During trusted automatic setup providers (`uv sync --locked`, `npm ci`, `pnpm install --frozen-lockfile`, and `setup.sh`), the proxy is temporarily bypassed. This is intentional: these providers are restored from the pushed upstream revision before execution, and `setup.sh` is treated as the most intentional, reviewable local setup hook rather than something less trustworthy than third-party package install scripts.
 
 The proxy supports exact domain matching (`example.com`) and wildcard matching (`*.example.com`).
+
+### Exec-scoped TCP tunnels
+
+Skills may also declare `network.tunnels` in `carapace.yaml`. These are not long-running session daemons. Instead, Carapace manages them around a single `exec` call:
+
+1. Before the command runs, Carapace temporarily shadows the declared hostnames inside the sandbox.
+2. It starts trusted TCP forwarders inside the sandbox that use the existing HTTP CONNECT proxy to reach the remote `host:remote_port` endpoints.
+3. The user command runs.
+4. In `finally`, Carapace stops the forwarders and restores the original host resolution.
+
+Important semantics:
+
+- Tunnels are exec-scoped, not session-scoped.
+- Tunnel hosts must be exact hostnames; wildcards are not allowed.
+- The client should keep using the original hostname so TLS validation and SNI continue to work.
+- `network.domains` and `network.tunnels` may overlap on the same hostname.
+- Proxy-aware HTTP and HTTPS to the same hostname still work through the normal proxy path.
+- Direct socket connections to the tunneled hostname are shadowed for the duration of that exec, even on other ports.
 
 ## Container lifecycle
 
