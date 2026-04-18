@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import sys
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -178,6 +179,8 @@ class SandboxExecCoordinator:
                     after_exec_credential_notify()
                 return exec_result
             finally:
+                original_exc = sys.exc_info()[1]
+                cleanup_exc: Exception | None = None
                 if bypass_proxy:
                     self._state.proxy_bypass_sessions.discard(session_id)
                     logger.info(f"Proxy bypass DISABLED for session {session_id}")
@@ -189,10 +192,19 @@ class SandboxExecCoordinator:
                 self._state.exec_notified_credentials.pop(session_id, None)
 
                 if sc is not None and tunnels_prepared and context_tunnels:
-                    await cleanup_context_tunnels(sc, context_tunnels)
+                    try:
+                        await cleanup_context_tunnels(sc, context_tunnels)
+                    except Exception as exc:
+                        cleanup_exc = exc
+                        logger.opt(exception=True).warning(
+                            f"Failed to clean up context tunnels for session {session_id}"
+                        )
 
                 if written_files:
                     await delete_context_file_credentials(session_id, written_files)
+
+                if cleanup_exc is not None and original_exc is None:
+                    raise cleanup_exc
 
     def allow_domains(self, session_id: str, domains: set[str]) -> None:
         existing = self._state.allowed_domains.setdefault(session_id, set())

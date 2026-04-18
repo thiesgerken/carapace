@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from carapace.models import SkillCarapaceConfig
+from carapace.sandbox.exec_flow import SandboxExecCoordinator, SandboxExecState
 from carapace.sandbox.manager import _CONTEXT_TUNNEL_HELPER, SandboxManager
 from carapace.sandbox.proxy import ProxyServer, domain_matches
 from carapace.sandbox.runtime import (
@@ -20,6 +21,7 @@ from carapace.sandbox.runtime import (
     SkillActivationInputs,
     SkillFileCredential,
 )
+from carapace.sandbox.session_lifecycle import SessionContainer
 from carapace.skills import SkillRegistry
 
 # ── domain_matches ──────────────────────────────────────────────────
@@ -462,6 +464,17 @@ class TestCarapaceYamlParsing:
         registry = SkillRegistry(tmp_path)
         assert registry.get_carapace_config("bad-tunnel-svc") is None
 
+    def test_invalid_tunnel_trailing_dot_blocked_host_rejects_config(self, tmp_path: Path):
+        skill_dir = tmp_path / "bad-tunnel-dot"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text("Body.\n")
+        (skill_dir / "carapace.yaml").write_text(
+            "network:\n  tunnels:\n    - host: localhost.\n      remote_port: 443\n      local_port: 1443\n"
+        )
+
+        registry = SkillRegistry(tmp_path)
+        assert registry.get_carapace_config("bad-tunnel-dot") is None
+
     def test_empty_network_section(self, tmp_path: Path):
         skill_dir = tmp_path / "minimal"
         skill_dir.mkdir()
@@ -721,6 +734,58 @@ async def test_exec_command_cleans_up_tunnels_after_command_failure(tmp_path: Pa
     cleanup_command = runtime.exec.call_args_list[-1].args[1]
     assert 'kill "$(cat /tmp/carapace-tunnel-sess-1-1993.pid)"' in cleanup_command
     assert "cp /tmp/carapace-tunnel-hosts-sess-1.bak /etc/hosts" in cleanup_command
+
+
+@pytest.mark.anyio
+async def test_exec_cleanup_tunnel_error_does_not_mask_command_error_or_skip_credential_cleanup():
+    runtime = MagicMock(spec=ContainerRuntime)
+    state = SandboxExecState(
+        sessions={},
+        allowed_domains={},
+        exec_temp_domains={},
+        exec_context_skill_domains={},
+        session_current_command={},
+        domain_approval_cbs={},
+        domain_notify_cbs={},
+        exec_locks={},
+        proxy_bypass_sessions=set(),
+        session_current_contexts={},
+        exec_notified_domains={},
+        exec_notified_credentials={},
+    )
+    coordinator = SandboxExecCoordinator(runtime=runtime, state=state)
+    sc1 = SessionContainer(container_id="container-1", session_id="sess-1", created_at=0, last_used=0)
+    sc2 = SessionContainer(container_id="container-2", session_id="sess-1", created_at=0, last_used=0)
+    written_files = [("example", "/workspace/skills/example/.secrets/token.txt")]
+
+    ensure_session = AsyncMock(side_effect=[(sc1, False), (sc2, False)])
+    rerun_skill_setup = AsyncMock()
+    log_container_tail = AsyncMock()
+    prepare_session_recreate = MagicMock()
+    exec_in_container = AsyncMock(side_effect=[ContainerGoneError("gone"), RuntimeError("command failed")])
+    prepare_context_tunnels = AsyncMock()
+    cleanup_context_tunnels = AsyncMock(side_effect=ContainerGoneError("cleanup failed"))
+    write_context_file_credentials = AsyncMock(side_effect=[list(written_files), list(written_files)])
+    delete_context_file_credentials = AsyncMock()
+
+    with pytest.raises(RuntimeError, match="command failed"):
+        await coordinator.exec(
+            "sess-1",
+            "run-mail-sync",
+            ensure_session=ensure_session,
+            rerun_skill_setup=rerun_skill_setup,
+            log_container_tail=log_container_tail,
+            prepare_session_recreate=prepare_session_recreate,
+            exec_in_container=exec_in_container,
+            prepare_context_tunnels=prepare_context_tunnels,
+            cleanup_context_tunnels=cleanup_context_tunnels,
+            write_context_file_credentials=write_context_file_credentials,
+            delete_context_file_credentials=delete_context_file_credentials,
+            context_tunnels=[NetworkTunnel(host="imap.zoho.eu", remote_port=993, local_port=1993)],
+            context_file_creds=[("example", ".secrets/token.txt", "secret")],
+        )
+
+    delete_context_file_credentials.assert_awaited_once_with("sess-1", written_files)
 
 
 # ── Proxy token extraction ───────────────────────────────────────────

@@ -50,7 +50,7 @@ class NetworkTunnel(BaseModel):
     @field_validator("host")
     @classmethod
     def _validate_host(cls, value: str) -> str:
-        host = value.strip().lower()
+        host = value.strip().lower().rstrip(".")
         if not host:
             raise ValueError("network tunnel host must not be empty")
         if "*" in host:
