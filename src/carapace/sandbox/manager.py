@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import asyncio
 import re
+from asyncio import Lock
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 
@@ -26,6 +26,9 @@ from carapace.sandbox.skill_activation import SkillActivationRunner
 from carapace.security.context import ApprovalSource, ApprovalVerdict
 
 _SKILL_NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]*$")
+FILE_READ_SCRIPT = file_ops.FILE_READ_SCRIPT
+MAX_READ_OUTPUT_CHARS = file_ops.MAX_READ_OUTPUT_CHARS
+SANDBOX_READ_BODY_SEPARATOR = file_ops.SANDBOX_READ_BODY_SEPARATOR
 READ_TOOL_MAX_LINE_WINDOW = file_ops.READ_TOOL_MAX_LINE_WINDOW
 
 
@@ -74,7 +77,7 @@ class SandboxManager:
             str,
             Callable[[str, str, ApprovalSource | None, ApprovalVerdict | None, str | None], None],
         ] = {}
-        self._exec_locks: dict[str, asyncio.Lock] = {}
+        self._exec_locks: dict[str, Lock] = {}
         self._proxy_bypass_sessions: set[str] = set()
         self._stashed_session_env: dict[str, dict[str, str]] = {}
         self._credential_cache: dict[str, dict[str, str]] = {}  # session_id -> {vault_path: value}
@@ -182,7 +185,7 @@ class SandboxManager:
     async def _log_container_tail(self, container_id: str, session_id: str) -> None:
         await self._session_lifecycle.log_container_tail(container_id, session_id)
 
-    def _get_exec_lock(self, session_id: str) -> asyncio.Lock:
+    def _get_exec_lock(self, session_id: str) -> Lock:
         return self._exec_coordinator.get_exec_lock(session_id)
 
     async def ensure_session(self, session_id: str) -> tuple[SessionContainer, bool]:
