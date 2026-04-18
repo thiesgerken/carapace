@@ -10,7 +10,7 @@ Carapace extends the format with optional files:
 
 - **`carapace.yaml`** — security metadata: network domain declarations, credential needs
 - **`pyproject.toml`** + **`uv.lock`** — Python dependencies installed via `uv sync --locked`
-- **`package.json`** + one of **`package-lock.json`**, **`pnpm-lock.yaml`**, **`yarn.lock`** — Node dependencies installed with the matching package manager
+- **`package.json`** + **`package-lock.json`** or **`pnpm-lock.yaml`** — Node dependencies installed with the matching package manager
 - **`setup.sh`** — optional post-activation setup script for local config generation or other derived artifacts
 
 ```text
@@ -124,10 +124,9 @@ Skill-declared domains and credentials are **not globally available** in the ses
 When `use_skill` activates a skill, Carapace checks a fixed provider chain and runs every matching provider in order:
 
 1. `pyproject.toml` + `uv.lock` → `uv sync --locked`
-2. `package.json` + `package-lock.json` → `npm ci`
+2. `package.json` + `package-lock.json` (without `pnpm-lock.yaml`) → `npm ci`
 3. `package.json` + `pnpm-lock.yaml` → `pnpm install --frozen-lockfile`
-4. `package.json` + `yarn.lock` → `yarn install --immutable`
-5. `setup.sh` → `sh ./setup.sh`
+4. `setup.sh` → `sh ./setup.sh`
 
 The provider files above are security-sensitive. Carapace restores them from the skill's **pushed upstream revision** before running them, so local uncommitted or merely local committed sandbox edits are not executed automatically.
 
@@ -139,7 +138,7 @@ Examples:
 
 - Write an API token from an env var into `~/.config/<tool>/config.toml`
 - Decode a base64 kubeconfig into a file under the skill directory
-- Generate a `.npmrc`, `.yarnrc.yml`, or other tool config from approved credentials
+- Generate a `.npmrc` or other tool config from approved credentials
 
 Providers must never print raw secret values. Treat them as internal setup steps only.
 
@@ -173,13 +172,14 @@ Always commit a `uv.lock` alongside `pyproject.toml` to ensure reproducible inst
 
 ## Node dependencies
 
-Skills can also use Node-based tooling. The sandbox image includes `npm`, `pnpm`, and `yarn`.
+Skills can also use Node-based tooling. The sandbox image includes `npm` and `pnpm` for skill activation.
 
 ### Supported lockfile workflows
 
 - `package.json` + `package-lock.json` → `npm ci`
 - `package.json` + `pnpm-lock.yaml` → `pnpm install --frozen-lockfile`
-- `package.json` + `yarn.lock` → `yarn install --immutable`
+
+If both `package-lock.json` and `pnpm-lock.yaml` are present, Carapace treats the skill as pnpm-based and skips `npm ci`.
 
 As with Python skills, commit the lockfile alongside the manifest so activation is reproducible.
 

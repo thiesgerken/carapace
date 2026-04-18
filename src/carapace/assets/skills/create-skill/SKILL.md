@@ -21,7 +21,6 @@ skills/
     package.json          # optional: Node project manifest
     package-lock.json     # npm lockfile
     pnpm-lock.yaml        # pnpm lockfile
-    yarn.lock             # yarn lockfile
     setup.sh              # optional: post-activation setup script
     src/my_skill/         # optional: Python package (use underscores in package name)
       __init__.py
@@ -284,13 +283,14 @@ See the **example** skill (`skills/example/`) for a complete working reference t
 
 ### Node projects
 
-Node-based skills are also supported. The sandbox image includes `npm`, `pnpm`, and `yarn`.
+Node-based skills are also supported. The sandbox image includes `npm` and `pnpm` for skill activation.
 
 Use exactly one lockfile workflow:
 
 - `package.json` + `package-lock.json` → `npm ci`
 - `package.json` + `pnpm-lock.yaml` → `pnpm install --frozen-lockfile`
-- `package.json` + `yarn.lock` → `yarn install --immutable`
+
+If both `package-lock.json` and `pnpm-lock.yaml` are present, Carapace treats the skill as pnpm-based and skips `npm ci`.
 
 Always commit the lockfile. Activation only runs from the pushed upstream copy of the provider files, so unpushed local edits to `package.json`, lockfiles, or `setup.sh` are ignored by automatic setup.
 

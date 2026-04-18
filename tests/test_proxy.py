@@ -348,6 +348,37 @@ async def test_activate_skill_recovers_if_trusted_restore_hits_gone_container(tm
     assert "git checkout @{upstream} -- skills/restore-retry/carapace.yaml" in restore_retry_call.args[1]
 
 
+@pytest.mark.anyio
+async def test_activate_skill_prefers_pnpm_when_package_and_pnpm_lockfiles_exist(tmp_path: Path):
+    runtime = MagicMock(spec=ContainerRuntime)
+    runtime.get_host_ip = AsyncMock(return_value="172.18.0.1")
+    runtime.create_sandbox = AsyncMock(return_value="container-1")
+    runtime.get_ip = AsyncMock(return_value="172.18.0.22")
+    runtime.logs = AsyncMock(return_value="carapace sandbox ready")
+    runtime.exec = AsyncMock(return_value=ExecResult(exit_code=0, output=""))
+
+    skill_dir = tmp_path / "skills" / "multi-node-lock"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text("---\nname: multi-node-lock\n---\nBody.\n")
+    (skill_dir / "package.json").write_text("{}\n")
+    (skill_dir / "package-lock.json").write_text("{}\n")
+    (skill_dir / "pnpm-lock.yaml").write_text("lockfileVersion: '9.0'\n")
+
+    mgr = SandboxManager(runtime=runtime, data_dir=tmp_path, knowledge_dir=tmp_path)
+
+    result = await mgr.activate_skill("sess-1", "multi-node-lock")
+    commands = [call.args[1] for call in runtime.exec.call_args_list]
+    result_lines = result.splitlines()
+
+    assert "pnpm dependencies installed." in result_lines
+    assert "npm dependencies installed." not in result_lines
+    assert "pnpm install --frozen-lockfile" in commands
+    assert "npm ci" not in commands
+    assert not any(
+        command.startswith("git checkout @{upstream} --") and "package-lock.json" in command for command in commands
+    )
+
+
 # ── carapace.yaml parsing ───────────────────────────────────────────
 
 

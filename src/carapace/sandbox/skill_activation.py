@@ -33,6 +33,12 @@ def _has_all_files(*names: str) -> Callable[[Path], bool]:
     return _matcher
 
 
+def _matches_npm_provider(skill_dir: Path) -> bool:
+    return (
+        _has_all_files("package.json", "package-lock.json")(skill_dir) and not (skill_dir / "pnpm-lock.yaml").exists()
+    )
+
+
 SKILL_ACTIVATION_PROVIDERS: tuple[SkillActivationProvider, ...] = (
     SkillActivationProvider(
         name="uv",
@@ -46,7 +52,7 @@ SKILL_ACTIVATION_PROVIDERS: tuple[SkillActivationProvider, ...] = (
         trusted_files=("package.json", "package-lock.json"),
         status_message="npm dependencies installed.",
         command="npm ci",
-        matcher=_has_all_files("package.json", "package-lock.json"),
+        matcher=_matches_npm_provider,
     ),
     SkillActivationProvider(
         name="pnpm",
@@ -54,13 +60,6 @@ SKILL_ACTIVATION_PROVIDERS: tuple[SkillActivationProvider, ...] = (
         status_message="pnpm dependencies installed.",
         command="pnpm install --frozen-lockfile",
         matcher=_has_all_files("package.json", "pnpm-lock.yaml"),
-    ),
-    SkillActivationProvider(
-        name="yarn",
-        trusted_files=("package.json", "yarn.lock"),
-        status_message="yarn dependencies installed.",
-        command="yarn install --immutable",
-        matcher=_has_all_files("package.json", "yarn.lock"),
     ),
     SkillActivationProvider(
         name="setup.sh",

@@ -44,12 +44,6 @@ node_modules/
 .pnpm-store/
 pnpm-debug.log*
 npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-.yarn/cache/
-.yarn/unplugged/
-.yarn/build-state.yml
-.yarn/install-state.gz
 
 # OS
 .DS_Store
