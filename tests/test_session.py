@@ -24,7 +24,7 @@ from carapace.security.sentinel import Sentinel
 from carapace.session import SessionEngine, SessionManager
 from carapace.session.engine import _non_slash_user_message_count
 from carapace.skills import SkillRegistry
-from carapace.usage import ModelUsage
+from carapace.usage import ModelUsage, SessionBudgetExceededError
 from carapace.ws_models import ApprovalRequest, TurnUsage
 
 
@@ -661,6 +661,34 @@ def test_submit_message_budget_exhausted_broadcasts_error(tmp_path: Path):
             await asyncio.sleep(0.1)
 
         mocked_turn.assert_not_awaited()
+        assert any("Session budget reached" in err for err in sub.errors)
+
+    with _patch_sentinel():
+        asyncio.run(_run())
+
+
+def test_submit_message_budget_exceeded_persists_history(tmp_path: Path):
+    async def _run() -> None:
+        engine = _make_engine(tmp_path)
+        state = engine.session_mgr.create_session(budget=SessionBudget(input_tokens=1_000))
+        sid = state.session_id
+        sub = _FakeSubscriber()
+        engine.subscribe(sid, sub)
+
+        async def _fail_run_agent_turn(*_args: Any, on_messages_snapshot=None, **_kwargs: Any):
+            snapshot = [ModelRequest(parts=[UserPromptPart(content="hello")])]
+            if on_messages_snapshot is not None:
+                on_messages_snapshot(snapshot)
+            raise SessionBudgetExceededError("Session budget reached: input 1.0k tokens / 1.0k tokens", gauges=[])
+
+        with patch("carapace.session.engine.run_agent_turn", new=_fail_run_agent_turn):
+            await engine.submit_message(sid, "hello")
+            await asyncio.sleep(0.1)
+
+        history = engine.session_mgr.load_history(sid)
+        assert history
+        assert isinstance(history[0], ModelRequest)
+        assert any(isinstance(part, UserPromptPart) and part.content == "hello" for part in history[0].parts)
         assert any("Session budget reached" in err for err in sub.errors)
 
     with _patch_sentinel():

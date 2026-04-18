@@ -1217,6 +1217,7 @@ class SessionEngine:
             logger.info(f"Session budget blocked LLM call for {session_id}: {exc}")
             self._session_mgr.save_usage(session_id, active.usage_tracker)
             self._session_mgr.save_llm_request_log(session_id, active.llm_request_log)
+            self._save_user_message_on_failure(session_id, user_input, latest_messages=latest_messages)
             await self._broadcast(active, "on_error", str(exc))
         except Exception:
             logger.exception("Agent error")

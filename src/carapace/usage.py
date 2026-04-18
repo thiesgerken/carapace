@@ -148,22 +148,6 @@ class SessionBudgetExceededError(RuntimeError):
         self.gauges = gauges
 
 
-def _has_usage(u: ModelUsage) -> bool:
-    return any(
-        value > 0
-        for value in (
-            u.input_tokens,
-            u.output_tokens,
-            u.cache_read_tokens,
-            u.cache_write_tokens,
-            u.input_audio_tokens,
-            u.output_audio_tokens,
-            u.cache_audio_read_tokens,
-            u.requests,
-        )
-    )
-
-
 def _format_token_count(value: int) -> str:
     if value >= 1_000_000:
         return f"{value / 1_000_000:.1f}M tokens"
