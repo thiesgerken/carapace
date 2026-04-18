@@ -13,7 +13,7 @@ flowchart LR
         Proxy[HTTP Forward Proxy]
     end
 
-    subgraph container ["Session Container (Alpine + Python + uv)"]
+    subgraph container ["Session Container (Debian + Python + Node tooling)"]
         Workspace["/workspace/ (git clone, persistent mount)"]
         Skills["/workspace/skills/"]
         Memory["/workspace/memory/"]
@@ -33,7 +33,7 @@ flowchart LR
 - **Shell access**: The agent runs commands via `exec` (equivalent to `docker exec` / `kubectl exec`)
 - **File operations**: `read`, `write`, `str_replace` work directly on the container filesystem
 - **Network access**: All outbound traffic goes through the HTTP forward proxy, which enforces per-session domain allowlisting
-- **Skills**: Activated skills are available in the cloned knowledge repo; venvs are built via `uv sync`
+- **Skills**: Activated skills are available in the cloned knowledge repo; automatic setup can run Python, Node, and `setup.sh` providers
 - **Workspace files**: `SOUL.md`, `USER.md`, `SECURITY.md` etc. live in the knowledge repo at `/workspace/`. Changes are persisted via `git commit` and `git push`.
 
 ## Mounts
@@ -70,9 +70,9 @@ All outbound traffic from sandbox containers is routed through the Carapace serv
 
 Each session maintains a domain allowlist. Domains are added when:
 
-1. **Skill activation**: Domains declared in a skill's `carapace.yaml` (`network.domains`) are automatically added when the skill is activated
+1. **Skill activation**: Domains declared in a skill's `carapace.yaml` (`network.domains`) are registered when the skill is activated and applied to commands that explicitly use that skill's context
 2. **Sentinel approval**: Unknown domains are evaluated by the sentinel. If allowed, they're added for the current exec call. If escalated, the user decides.
-3. **Proxy bypass**: During skill venv builds (`uv sync`), the proxy is temporarily bypassed to allow package downloads
+3. **Proxy bypass**: During automatic dependency installation (`uv sync --locked`, `npm ci`, `pnpm install --frozen-lockfile`, `yarn install --immutable`), the proxy is temporarily bypassed to allow package downloads
 
 The proxy supports exact domain matching (`example.com`) and wildcard matching (`*.example.com`).
 
@@ -81,7 +81,7 @@ The proxy supports exact domain matching (`example.com`) and wildcard matching (
 - **Creation**: A container is created (or ensured running) when a session needs it — typically on the first tool call
 - **Reuse**: The container stays running for the session's duration. Multiple tool calls reuse the same container.
 - **Idle timeout**: Configurable (default: 15 min). In Docker mode, idle containers are destroyed. In Kubernetes mode, the StatefulSet is scaled to 0 replicas — the PVC is retained, so venvs and workspace state survive.
-- **Re-warming**: When the user sends a new message after the container expired, a new container is created (Docker: fresh container with same bind mounts; Kubernetes: StatefulSet scaled back to 1 replica, PVC still attached). In Docker mode, activated skill venvs are rebuilt automatically. In Kubernetes mode, the existing PVC already contains the venvs — no rebuild needed.
+- **Re-warming**: When the user sends a new message after the container expired, a new container is created (Docker: fresh container with same bind mounts; Kubernetes: StatefulSet scaled back to 1 replica, PVC still attached). Carapace restores committed provider files from the pushed upstream revision and reruns the matching automatic setup providers for activated skills. Approved skill credentials are made available before that setup runs so `setup.sh` can materialize local config files if needed.
 - **Reset** (`/reload`): Fully destroys the container and workspace (including the PVC in Kubernetes mode) and creates a fresh sandbox with a new git clone on the next command.
 
 ## Runtimes

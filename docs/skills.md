@@ -9,7 +9,9 @@ A skill is a directory with a `SKILL.md` file (Markdown instructions with YAML f
 Carapace extends the format with optional files:
 
 - **`carapace.yaml`** — security metadata: network domain declarations, credential needs
-- **`pyproject.toml`** — Python project with dependencies; Carapace automatically creates a venv via `uv sync` on activation
+- **`pyproject.toml`** + **`uv.lock`** — Python dependencies installed via `uv sync --locked`
+- **`package.json`** + one of **`package-lock.json`**, **`pnpm-lock.yaml`**, **`yarn.lock`** — Node dependencies installed with the matching package manager
+- **`setup.sh`** — optional post-activation setup script for local config generation or other derived artifacts
 
 ```text
 skills/
@@ -17,8 +19,16 @@ skills/
     SKILL.md             # required: AgentSkills standard
     carapace.yaml        # optional: Carapace extensions
     pyproject.toml       # optional: Python dependencies
+    uv.lock              # optional: required alongside pyproject.toml
     scripts/
       search.py
+  node-tool/
+    SKILL.md
+    package.json
+    package-lock.json
+    setup.sh
+    scripts/
+      run.mjs
     references/
       api-docs.md
   expense-tracker/
@@ -109,13 +119,37 @@ Skill-declared domains and credentials are **not globally available** in the ses
 - **Validation**: Every context string must correspond to an activated skill. Unknown context names are rejected.
 - **Piping**: When piping output between skill scripts, pass all relevant contexts: `contexts=["moneydb", "web-search"]`.
 
-## pyproject.toml-based dependencies
+## Automatic setup providers
 
-A skill can include a `pyproject.toml` to declare its Python dependencies. Dependency management uses **uv** exclusively — it is pre-installed in every sandbox container.
+When `use_skill` activates a skill, Carapace checks a fixed provider chain and runs every matching provider in order:
+
+1. `pyproject.toml` + `uv.lock` → `uv sync --locked`
+2. `package.json` + `package-lock.json` → `npm ci`
+3. `package.json` + `pnpm-lock.yaml` → `pnpm install --frozen-lockfile`
+4. `package.json` + `yarn.lock` → `yarn install --immutable`
+5. `setup.sh` → `sh ./setup.sh`
+
+The provider files above are security-sensitive. Carapace restores them from the skill's **pushed upstream revision** before running them, so local uncommitted or merely local committed sandbox edits are not executed automatically.
+
+### Credential ordering
+
+Skill-declared credentials are approved and cached before any automatic setup provider runs. This is important for `setup.sh`, whose main use case is often to transform injected secrets into the local config files a tool actually expects.
+
+Examples:
+
+- Write an API token from an env var into `~/.config/<tool>/config.toml`
+- Decode a base64 kubeconfig into a file under the skill directory
+- Generate a `.npmrc`, `.yarnrc.yml`, or other tool config from approved credentials
+
+Providers must never print raw secret values. Treat them as internal setup steps only.
+
+## Python dependencies
+
+A skill can include a `pyproject.toml` plus `uv.lock` to declare its Python dependencies. Dependency management uses **uv** exclusively — it is pre-installed in every sandbox container.
 
 ### Lifecycle
 
-1. **Activation** (`use_skill`): Carapace copies the skill into the sandbox at `/workspace/skills/<name>/`. If a `pyproject.toml` is present, it runs `uv sync --directory /workspace/skills/<name>` to create a `.venv` with all declared dependencies. The proxy is temporarily bypassed during install.
+1. **Activation** (`use_skill`): Carapace copies the skill into the sandbox at `/workspace/skills/<name>/`. If `pyproject.toml` and `uv.lock` are present, it runs `uv sync --locked` in that directory. The proxy is temporarily bypassed during install.
 2. **Runtime**: Scripts should be invoked with `uv run --directory /workspace/skills/<name> scripts/<script>.py` so they run inside the venv.
 3. **Persistence**: Skills are persisted via Git — changes in `/workspace/skills/` are committed and pushed to the workspace repository.
 4. **Container restart**: Venvs are rebuilt for all activated skills automatically when a container is recreated after idle timeout.
@@ -136,6 +170,32 @@ uv sync --directory /workspace/skills/my-skill
 ```
 
 Always commit a `uv.lock` alongside `pyproject.toml` to ensure reproducible installs.
+
+## Node dependencies
+
+Skills can also use Node-based tooling. The sandbox image includes `npm`, `pnpm`, and `yarn`.
+
+### Supported lockfile workflows
+
+- `package.json` + `package-lock.json` → `npm ci`
+- `package.json` + `pnpm-lock.yaml` → `pnpm install --frozen-lockfile`
+- `package.json` + `yarn.lock` → `yarn install --immutable`
+
+As with Python skills, commit the lockfile alongside the manifest so activation is reproducible.
+
+## setup.sh
+
+If `setup.sh` exists, Carapace runs it after the dependency providers above.
+
+Use it for local, deterministic post-processing such as:
+
+- Materializing approved credentials into config files consumed by a CLI or SDK
+- Generating derived files that depend on injected secrets
+- Finalizing a tool-specific workspace layout after dependency installation
+
+Keep `setup.sh` idempotent. It runs on first activation and again after sandbox recreation.
+
+Because it runs automatically and may execute with approved credentials available, `setup.sh` should be treated like code, not documentation. Only the pushed upstream copy is executed.
 
 ## Discovery (progressive disclosure)
 
@@ -158,7 +218,7 @@ The agent can create new skills by writing files to `/workspace/skills/` in the 
 The workflow for the agent to create a skill via chat:
 
 1. User asks for a new skill (or the agent proposes one)
-2. Agent plans the skill (SKILL.md, scripts, optional pyproject.toml, optional carapace.yaml)
+2. Agent plans the skill (SKILL.md, scripts, optional provider files such as pyproject/package.json/setup.sh, optional carapace.yaml)
 3. Agent writes the files in the sandbox at `/workspace/skills/<skill-name>/`
 4. Agent tests the skill in the sandbox
 5. Agent commits and pushes via Git — the sentinel evaluates the push via the pre-receive hook
