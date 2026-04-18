@@ -1,0 +1,9 @@
+{
+    "name": "example-skill",
+    "version": "0.1.0",
+    "private": true,
+    "packageManager": "pnpm@10.12.1",
+    "scripts": {
+        "hello:node": "node scripts/hello-node.mjs"
+    }
+}
