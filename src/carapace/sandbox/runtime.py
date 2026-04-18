@@ -9,8 +9,18 @@ class ContainerGoneError(Exception):
     """Raised when a container no longer exists."""
 
 
-class SkillVenvError(Exception):
-    """Raised when building a skill's virtualenv fails."""
+class SkillActivationError(Exception):
+    """Raised when automatic skill activation/setup fails."""
+
+
+class SkillFileCredential(BaseModel):
+    path: str
+    value: str
+
+
+class SkillActivationInputs(BaseModel):
+    environment: dict[str, str] = {}
+    file_credentials: list[SkillFileCredential] = []
 
 
 class Mount(BaseModel):

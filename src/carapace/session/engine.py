@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import contextlib
 import secrets
 import traceback
@@ -42,6 +43,7 @@ from carapace.models import (
     context_grants_session_summary,
 )
 from carapace.sandbox.manager import SandboxManager
+from carapace.sandbox.runtime import SkillActivationInputs, SkillFileCredential
 from carapace.security.context import (
     ApprovalSource,
     ApprovalVerdict,
@@ -233,9 +235,9 @@ class SessionEngine:
         self._active: dict[str, ActiveSession] = {}
         self._llm_semaphore = asyncio.Semaphore(config.agent.max_parallel_llm)
 
-        # Let SandboxManager retrieve activated skills for venv rebuild on container recreation
+        # Let SandboxManager retrieve activated skills so automatic setup can rerun on recreation
         sandbox_mgr.set_activated_skills_callback(self._get_activated_skills)
-        sandbox_mgr.set_reinject_credentials_callback(self._reinject_skill_credentials)
+        sandbox_mgr.set_skill_activation_inputs_callback(self._skill_activation_inputs)
 
     # -- public access to file I/O manager --
 
@@ -501,25 +503,37 @@ class SessionEngine:
             return list(state.activated_skills)
         return []
 
-    async def _reinject_skill_credentials(self, session_id: str, skill_name: str) -> list[tuple[str, str]]:
-        """Return approved file credentials that should be re-injected for a skill."""
+    async def _skill_activation_inputs(self, session_id: str, skill_name: str) -> SkillActivationInputs:
+        """Return approved env/file inputs for automatic skill activation providers."""
         registry = SkillRegistry(self._knowledge_dir / "skills")
         carapace_cfg = registry.get_carapace_config(skill_name)
         if not carapace_cfg or not carapace_cfg.credentials:
-            return []
+            return SkillActivationInputs()
 
         approved_paths = self._credential_vault_paths_for_skill(session_id, skill_name)
-        reinject: list[tuple[str, str]] = []
+        env: dict[str, str] = {}
+        file_credentials: list[SkillFileCredential] = []
         for decl in carapace_cfg.credentials:
-            if decl.vault_path not in approved_paths or not decl.file:
+            if decl.vault_path not in approved_paths or not (decl.env_var or decl.file):
                 continue
+
+            value = self._sandbox_mgr.get_cached_credential(session_id, decl.vault_path)
+            if not isinstance(value, str):
+                value = None
             try:
-                value = await self._credential_registry.fetch(decl.vault_path)
+                if value is None:
+                    value = await self._credential_registry.fetch(decl.vault_path)
+                    self._sandbox_mgr.cache_credential(session_id, decl.vault_path, value)
             except KeyError:
                 logger.warning(f"Credential {decl.vault_path} not found in vault during re-injection")
                 continue
-            reinject.append((decl.file, value))
-        return reinject
+            if decl.base64:
+                value = base64.b64decode(value).decode()
+            if decl.env_var:
+                env[decl.env_var] = value
+            if decl.file:
+                file_credentials.append(SkillFileCredential(path=decl.file, value=value))
+        return SkillActivationInputs(environment=env, file_credentials=file_credentials)
 
     def _credential_vault_paths_for_skill(self, session_id: str, skill_name: str) -> set[str]:
         """Vault paths allowed for file re-injection: that skill's context grant (from ``use_skill``)."""

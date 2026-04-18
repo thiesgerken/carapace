@@ -40,6 +40,10 @@ venv/
 
 # Node
 node_modules/
+.npm/
+.pnpm-store/
+pnpm-debug.log*
+npm-debug.log*
 
 # OS
 .DS_Store

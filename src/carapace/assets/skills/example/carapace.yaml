@@ -6,5 +6,5 @@ network:
 
 credentials:
   - vault_path: example/illustrative-api-token
-    description: Made-up credential for documentation (hello.py does not use it)
+    description: Made-up credential for documentation (the example commands do not use it)
     env_var: EXAMPLE_ILLUSTRATIVE_API_KEY
