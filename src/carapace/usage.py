@@ -9,7 +9,6 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any, Literal, TypedDict, assert_never
 
-import tiktoken
 from genai_prices import Usage as PriceUsage
 from genai_prices import calc_price
 from loguru import logger
@@ -269,7 +268,7 @@ def llm_request_sink_scope(sink: Callable[[LlmRequestRecord], None] | None) -> A
 
 
 class InputShapeRatios(BaseModel):
-    """Relative shares of estimated tiktoken mass per bucket (sum ≈ 1). Not billing tokens."""
+    """Relative shares of estimated prompt text mass per bucket (sum ≈ 1). Not billing tokens."""
 
     system: float = 0.0
     user: float = 0.0
@@ -320,7 +319,7 @@ class UsageLastRequestRow(TypedDict):
 
 
 def usage_last_request_row(rec: LlmRequestRecord | None) -> UsageLastRequestRow | None:
-    """API fields from provider; breakdown_pct = tiktoken input-shape ratios as percentages (sum 100)."""
+    """API fields from provider; breakdown_pct = prompt-shape ratios as percentages (sum 100)."""
     if rec is None:
         return None
     inp, out = rec.input_tokens, rec.output_tokens
@@ -353,7 +352,7 @@ def usage_last_request_row(rec: LlmRequestRecord | None) -> UsageLastRequestRow 
 
 
 def gauge_breakdown_pct_dict(rec: LlmRequestRecord | None) -> dict[str, float] | None:
-    """Shape percents for the web token gauge (all six keys, sum 100). ``None`` if no tiktoken shape."""
+    """Shape percents for the web token gauge (all six keys, sum 100). ``None`` if no shape is available."""
     row = usage_last_request_row(rec)
     if row is None:
         return None
@@ -363,17 +362,13 @@ def gauge_breakdown_pct_dict(rec: LlmRequestRecord | None) -> dict[str, float] |
     return {k: float(v) for k, v in b.items() if isinstance(v, (int, float))}
 
 
-def _encoding_for_model(model_name: str | None) -> tiktoken.Encoding:
-    key = (model_name or "").lower()
-    if any(x in key for x in ("gpt-4o", "gpt-5", "o1", "o3", "o4")):
-        return tiktoken.get_encoding("o200k_base")
-    return tiktoken.get_encoding("cl100k_base")
-
-
-def _count_text(enc: tiktoken.Encoding, text: str) -> int:
+def _count_text(text: str) -> int:
     if not text:
         return 0
-    return len(enc.encode(text))
+    # This prompt-shape estimate is only used for relative gauge percentages.
+    # Keep it fully offline and deterministic rather than depending on tokenizer
+    # assets that may require a network fetch on first use.
+    return len(text.encode("utf-8"))
 
 
 def _blob(x: Any) -> str:
@@ -445,8 +440,7 @@ def input_shape_ratios_from_messages(
             for p in msg.parts:
                 _accumulate_response_part(p, buckets)
 
-    enc = _encoding_for_model(model_name)
-    counts = {k: _count_text(enc, v) for k, v in buckets.items()}
+    counts = {k: _count_text(v) for k, v in buckets.items()}
     total = sum(counts.values())
     if total <= 0:
         return None
