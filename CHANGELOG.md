@@ -1,6 +1,30 @@
 # CHANGELOG
 
 
+## v1.0.1 (2026-04-19)
+
+
+### ⬆️ Dependencies
+
+
+- ⬆️ chore: Lock file maintenance
+  ([`5ef05b6`](https://github.com/thiesgerken/carapace/commit/5ef05b694304771a29c7376fa1b3f242ef802368))
+
+- ⬆️ chore: Lock file maintenance
+  ([`5ef05b6`](https://github.com/thiesgerken/carapace/commit/5ef05b694304771a29c7376fa1b3f242ef802368))
+
+### 🐛 Bug Fixes
+
+
+- 🐛 make linter happy
+  ([`5ef05b6`](https://github.com/thiesgerken/carapace/commit/5ef05b694304771a29c7376fa1b3f242ef802368))
+
+  ---------
+
+  Co-authored-by: renovate[bot] <29139614+renovate[bot]@users.noreply.github.com>
+
+  Co-authored-by: Thies Gerken <thies.gerken@lector.ai>
+
 ## v1.0.0 (2026-04-19)
 
 
