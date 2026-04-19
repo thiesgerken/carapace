@@ -1,6 +1,15 @@
 # CHANGELOG
 
 
+## v0.88.8 (2026-04-19)
+
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix: trace sentinel tool calls
+  ([`05a4640`](https://github.com/thiesgerken/carapace/commit/05a464031e22cd3a5f1032bd4e3446cef8d8160a))
+
 ## v0.88.7 (2026-04-19)
 
 
