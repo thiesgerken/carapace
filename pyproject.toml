@@ -45,6 +45,7 @@ version_pattern = [
     'charts/carapace/Chart.yaml:^version: (?P<version>.+)$',
     'charts/carapace/Chart.yaml:^appVersion: "(?P<version>.+)"$',
 ]
+allow_zero_version = true
 commit_parser = "emoji"
 build_command = """
     pip install uv
