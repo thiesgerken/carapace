@@ -1,6 +1,15 @@
 # CHANGELOG
 
 
+## v0.88.4 (2026-04-19)
+
+
+### 🐛 Bug Fixes
+
+
+- 🐛 prevent sentinel from going into an endless loop reading the same files over and over again
+  ([`b0b9146`](https://github.com/thiesgerken/carapace/commit/b0b9146e3517ec4d035b16a8f570e9ae6f950339))
+
 ## v0.88.3 (2026-04-19)
 
 
