@@ -76,6 +76,7 @@ class SkillActivatedEntry(BaseModel):
     skill_name: str
     description: str = ""
     declared_domains: list[str] = []
+    declared_tunnels: list[str] = []
 
 
 class UserVouchedEntry(BaseModel):
@@ -100,6 +101,7 @@ class ContextGrantEntry(BaseModel):
     type: Literal["context_grant"] = "context_grant"
     skill_name: str
     domains: list[str] = []
+    tunnels: list[str] = []
     vault_paths: list[str] = []
 
 

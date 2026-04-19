@@ -1,31 +1,38 @@
 ---
 name: example
-description: A template skill showing the AgentSkills format with provider-based activation, Python and Node entrypoints, and post-activation setup.
+description: A template skill showing provider-based activation, a Python entrypoint, a Node entrypoint, post-activation setup, and an exec-scoped TCP tunnel.
 ---
 
 # Example Skill
 
 This is a template skill that demonstrates the [AgentSkills](https://agentskills.io/) format
-with a Python package, a pnpm-managed Node entrypoint, provider-based activation, and post-activation setup.
+with a Python package, a pnpm-managed Node entrypoint, provider-based activation, post-activation setup,
+and an exec-scoped TCP tunnel declared in `carapace.yaml`.
 
 ## Instructions
 
-When this skill is activated, run the example commands to verify the sandbox environment:
+When this skill is activated, run the example commands to verify the sandbox environment and tunnel support:
 
 ```text
 uv run --directory /workspace/skills/example hello
 pnpm --dir /workspace/skills/example run hello:node
 ```
 
-`setup.sh` is intentionally minimal in this template and just prints `hello world` during
-activation to show where post-activation hooks run.
+The Python command performs an unauthenticated IMAP `CAPABILITY` request against `imap.gmail.com`
+through a Carapace-managed tunnel. That demonstrates the important path for non-HTTP protocols:
+
+- `carapace.yaml` declares `network.tunnels`
+- `setup.sh` materializes a tiny local config file consumed by the Python command
+- `hello` connects to the real hostname on the declared local port so TLS/SNI still work
+
+No mailbox credentials are required for this demo because `CAPABILITY` works before login.
 
 ## Skill Structure
 
 ```text
 skills/example/
   SKILL.md              # This file — metadata + instructions for the agent
-  carapace.yaml         # Optional — network allowlist + credential declarations for Carapace
+  carapace.yaml         # Optional — network allowlist, tunnel declarations, + credential declarations
   pyproject.toml        # Python project with dependencies and CLI entrypoints
   uv.lock               # Locked dependency versions
   package.json          # Node project manifest using the pnpm workflow
@@ -41,18 +48,19 @@ skills/example/
 
 - **`SKILL.md`** — YAML frontmatter provides `name` and `description` for the catalog.
   The body contains instructions the agent follows when the skill is activated.
-- **`carapace.yaml`** — Optional. Declares outbound domains under `network.domains` and
+- **`carapace.yaml`** — Optional. Declares outbound domains, exec-scoped tunnels, and
   vault-backed credentials for auto-injection when the skill is activated (`use_skill`).
-  This repo copy uses a fictional credential path and `httpbin.org` so `hello` can
-  reach https://httpbin.org/get after approval; replace with your real entries.
+  This repo copy uses a tunnel to `imap.gmail.com:993` and no credentials so the example
+  stays runnable in a fresh sandbox.
 - **`pyproject.toml`** — Declares dependencies, CLI entrypoints (`[project.scripts]`),
   and build config. When present with `uv.lock`, `use_skill` runs `uv sync --locked` automatically.
 - **`uv.lock`** — Lock file for reproducible installs. Always commit alongside `pyproject.toml`.
 - **`package.json`** — Declares the Node-side entrypoint. When present with `pnpm-lock.yaml`,
   `use_skill` runs `pnpm install --frozen-lockfile` automatically.
 - **`pnpm-lock.yaml`** — Lock file for reproducible pnpm installs. Always commit it with `package.json`.
-- **`setup.sh`** — Runs after dependency installation. This example keeps it intentionally minimal
-  and just prints `hello world` so the hook remains easy to understand. Only the pushed upstream copy is executed automatically.
+- **`setup.sh`** — Runs after dependency installation. This example writes a small local JSON
+  config file that tells the Python entrypoint which hostname and local tunnel port to use.
+  Only the pushed upstream copy is executed automatically.
 - **`scripts/hello-node.mjs`** — Simple Node entrypoint invoked via `pnpm run hello:node`.
 - **`src/example_skill/`** — Python package. Modules with `main()` functions are
   wired as CLI commands via `[project.scripts]` in `pyproject.toml`.

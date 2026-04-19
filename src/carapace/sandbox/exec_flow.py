@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import sys
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -8,7 +9,7 @@ from dataclasses import dataclass
 from loguru import logger
 
 from carapace.sandbox.file_ops import ContextFileCredential, WrittenContextFile
-from carapace.sandbox.runtime import ContainerGoneError, ContainerRuntime, ExecResult
+from carapace.sandbox.runtime import ContainerGoneError, ContainerRuntime, ExecResult, NetworkTunnel
 from carapace.sandbox.session_lifecycle import SessionContainer
 from carapace.security.context import ApprovalSource, ApprovalVerdict
 
@@ -20,6 +21,8 @@ type RerunSkillSetupCallback = Callable[[str], Awaitable[None]]
 type LogContainerTailCallback = Callable[[str, str], Awaitable[None]]
 type PrepareSessionRecreateCallback = Callable[[str], None]
 type ExecInContainerCallback = Callable[..., Awaitable[ExecResult]]
+type PrepareContextTunnelsCallback = Callable[[SessionContainer, list[NetworkTunnel]], Awaitable[None]]
+type CleanupContextTunnelsCallback = Callable[[SessionContainer, list[NetworkTunnel]], Awaitable[None]]
 type WriteContextFileCredentialsCallback = Callable[
     [SessionContainer, list[ContextFileCredential]],
     Awaitable[list[WrittenContextFile]],
@@ -94,6 +97,8 @@ class SandboxExecCoordinator:
         log_container_tail: LogContainerTailCallback,
         prepare_session_recreate: PrepareSessionRecreateCallback,
         exec_in_container: ExecInContainerCallback,
+        prepare_context_tunnels: PrepareContextTunnelsCallback,
+        cleanup_context_tunnels: CleanupContextTunnelsCallback,
         write_context_file_credentials: WriteContextFileCredentialsCallback,
         delete_context_file_credentials: DeleteContextFileCredentialsCallback,
         bypass_proxy: bool = False,
@@ -101,12 +106,15 @@ class SandboxExecCoordinator:
         contexts: list[str] | None = None,
         extra_env: dict[str, str] | None = None,
         context_domains: set[str] | None = None,
+        context_tunnels: list[NetworkTunnel] | None = None,
         context_file_creds: list[ContextFileCredential] | None = None,
         after_exec_credential_notify: AfterExecCredentialNotify | None = None,
     ) -> ExecResult:
         """Run a command in the sandbox and return the raw ExecResult."""
         contexts = contexts or []
         written_files: list[WrittenContextFile] = []
+        sc: SessionContainer | None = None
+        tunnels_prepared = False
 
         async with self.get_exec_lock(session_id):
             if bypass_proxy:
@@ -131,6 +139,9 @@ class SandboxExecCoordinator:
                     self._state.exec_context_skill_domains[session_id].update(context_domains)
 
                 try:
+                    if context_tunnels:
+                        await prepare_context_tunnels(sc, context_tunnels)
+                        tunnels_prepared = True
                     if context_file_creds:
                         written_files = await write_context_file_credentials(sc, context_file_creds)
                     exec_result = await exec_in_container(
@@ -143,12 +154,16 @@ class SandboxExecCoordinator:
                     )
                 except ContainerGoneError:
                     logger.warning(f"Container gone for session {session_id}, recreating sandbox")
+                    tunnels_prepared = False
                     await log_container_tail(sc.container_id, session_id)
                     prepare_session_recreate(session_id)
                     sc, _ = await ensure_session(session_id)
                     await rerun_skill_setup(session_id)
 
                     written_files.clear()
+                    if context_tunnels:
+                        await prepare_context_tunnels(sc, context_tunnels)
+                        tunnels_prepared = True
                     if context_file_creds:
                         written_files = await write_context_file_credentials(sc, context_file_creds)
                     exec_result = await exec_in_container(
@@ -164,6 +179,8 @@ class SandboxExecCoordinator:
                     after_exec_credential_notify()
                 return exec_result
             finally:
+                original_exc = sys.exc_info()[1]
+                cleanup_exc: Exception | None = None
                 if bypass_proxy:
                     self._state.proxy_bypass_sessions.discard(session_id)
                     logger.info(f"Proxy bypass DISABLED for session {session_id}")
@@ -174,8 +191,20 @@ class SandboxExecCoordinator:
                 self._state.exec_notified_domains.pop(session_id, None)
                 self._state.exec_notified_credentials.pop(session_id, None)
 
+                if sc is not None and tunnels_prepared and context_tunnels:
+                    try:
+                        await cleanup_context_tunnels(sc, context_tunnels)
+                    except Exception as exc:
+                        cleanup_exc = exc
+                        logger.opt(exception=True).warning(
+                            f"Failed to clean up context tunnels for session {session_id}"
+                        )
+
                 if written_files:
                     await delete_context_file_credentials(session_id, written_files)
+
+                if cleanup_exc is not None and original_exc is None:
+                    raise cleanup_exc
 
     def allow_domains(self, session_id: str, domains: set[str]) -> None:
         existing = self._state.allowed_domains.setdefault(session_id, set())

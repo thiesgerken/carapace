@@ -20,6 +20,7 @@ from pydantic_ai.messages import (
     ModelMessage,
     ModelRequest,
     ModelResponse,
+    TextPart,
     ToolCallPart,
     ToolReturnPart,
     UserPromptPart,
@@ -1225,17 +1226,32 @@ class SessionEngine:
             logger.info(f"Agent turn cancelled for session {session_id}")
             self._session_mgr.save_usage(session_id, active.usage_tracker)
             self._session_mgr.save_llm_request_log(session_id, active.llm_request_log)
-            self._save_user_message_on_failure(session_id, user_input, latest_messages=latest_messages)
+            self._save_user_message_on_failure(
+                session_id,
+                user_input,
+                latest_messages=latest_messages,
+                terminal_message="The previous turn was interrupted before completion.",
+            )
             await self._broadcast(active, "on_cancelled")
         except SessionBudgetExceededError as exc:
             logger.info(f"Session budget blocked LLM call for {session_id}: {exc}")
             self._session_mgr.save_usage(session_id, active.usage_tracker)
             self._session_mgr.save_llm_request_log(session_id, active.llm_request_log)
-            self._save_user_message_on_failure(session_id, user_input, latest_messages=latest_messages)
+            self._save_user_message_on_failure(
+                session_id,
+                user_input,
+                latest_messages=latest_messages,
+                terminal_message=str(exc),
+            )
             await self._broadcast(active, "on_error", str(exc))
         except Exception:
             logger.exception("Agent error")
-            self._save_user_message_on_failure(session_id, user_input, latest_messages=latest_messages)
+            self._save_user_message_on_failure(
+                session_id,
+                user_input,
+                latest_messages=latest_messages,
+                terminal_message="The previous turn failed before completion.",
+            )
             await self._broadcast(active, "on_error", traceback.format_exc())
         finally:
             active.agent_task = None
@@ -1246,6 +1262,7 @@ class SessionEngine:
         user_input: str,
         *,
         latest_messages: list[ModelMessage] | None = None,
+        terminal_message: str | None = None,
     ) -> None:
         """Persist the user message to history even when the agent turn fails.
 
@@ -1257,10 +1274,15 @@ class SessionEngine:
         else:
             history = self._session_mgr.load_history(session_id)
             history.append(ModelRequest(parts=[UserPromptPart(content=user_input)]))
-        self._session_mgr.save_history(session_id, self._truncate_incomplete_model_history(history))
-        self._session_mgr.save_events(
-            session_id, self._truncate_incomplete_events(self._session_mgr.load_events(session_id))
-        )
+        history = self._truncate_incomplete_model_history(history)
+        if terminal_message:
+            history.append(ModelResponse(parts=[TextPart(content=terminal_message)]))
+        self._session_mgr.save_history(session_id, history)
+
+        events = self._truncate_incomplete_events(self._session_mgr.load_events(session_id))
+        if terminal_message:
+            events.append({"role": "assistant", "content": terminal_message})
+        self._session_mgr.save_events(session_id, events)
 
     def _truncate_incomplete_model_history(self, messages: list[ModelMessage]) -> list[ModelMessage]:
         pending_tool_calls: set[str] = set()

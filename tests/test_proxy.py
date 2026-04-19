@@ -4,20 +4,24 @@ from __future__ import annotations
 
 import base64
 from pathlib import Path
+from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from carapace.models import SkillCarapaceConfig
-from carapace.sandbox.manager import SandboxManager
+from carapace.sandbox.exec_flow import SandboxExecCoordinator, SandboxExecState
+from carapace.sandbox.manager import _CONTEXT_TUNNEL_HELPER, SandboxManager
 from carapace.sandbox.proxy import ProxyServer, domain_matches
 from carapace.sandbox.runtime import (
     ContainerGoneError,
     ContainerRuntime,
     ExecResult,
+    NetworkTunnel,
     SkillActivationInputs,
     SkillFileCredential,
 )
+from carapace.sandbox.session_lifecycle import SessionContainer
 from carapace.skills import SkillRegistry
 
 # ── domain_matches ──────────────────────────────────────────────────
@@ -396,6 +400,20 @@ class TestCarapaceYamlParsing:
         assert cfg is not None
         assert cfg.network.domains == ["api.example.com", "*.cdn.example.com"]
 
+    def test_parse_network_tunnels(self, tmp_path: Path):
+        skill_dir = tmp_path / "zoho-mail"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text("---\nname: zoho-mail\n---\nBody.\n")
+        (skill_dir / "carapace.yaml").write_text(
+            "network:\n  tunnels:\n    - host: imap.zoho.eu\n      remote_port: 993\n      local_port: 1993\n"
+        )
+
+        registry = SkillRegistry(tmp_path)
+        cfg = registry.get_carapace_config("zoho-mail")
+        assert cfg is not None
+        assert len(cfg.network.tunnels) == 1
+        assert cfg.network.tunnels[0].display == "imap.zoho.eu:993 via :1993"
+
     def test_no_carapace_yaml(self, tmp_path: Path):
         skill_dir = tmp_path / "plain"
         skill_dir.mkdir()
@@ -413,6 +431,50 @@ class TestCarapaceYamlParsing:
         registry = SkillRegistry(tmp_path)
         assert registry.get_carapace_config("bad") is None
 
+    def test_invalid_tunnel_host_rejects_config(self, tmp_path: Path):
+        skill_dir = tmp_path / "bad-tunnel"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text("Body.\n")
+        (skill_dir / "carapace.yaml").write_text(
+            "network:\n  tunnels:\n    - host: '*.zoho.eu'\n      remote_port: 993\n      local_port: 1993\n"
+        )
+
+        registry = SkillRegistry(tmp_path)
+        assert registry.get_carapace_config("bad-tunnel") is None
+
+    def test_invalid_tunnel_ip_literal_rejects_config(self, tmp_path: Path):
+        skill_dir = tmp_path / "bad-tunnel-ip"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text("Body.\n")
+        (skill_dir / "carapace.yaml").write_text(
+            "network:\n  tunnels:\n    - host: 10.0.0.1\n      remote_port: 993\n      local_port: 1993\n"
+        )
+
+        registry = SkillRegistry(tmp_path)
+        assert registry.get_carapace_config("bad-tunnel-ip") is None
+
+    def test_invalid_tunnel_internal_service_rejects_config(self, tmp_path: Path):
+        skill_dir = tmp_path / "bad-tunnel-svc"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text("Body.\n")
+        (skill_dir / "carapace.yaml").write_text(
+            "network:\n  tunnels:\n    - host: kubernetes.default.svc\n      remote_port: 443\n      local_port: 1443\n"
+        )
+
+        registry = SkillRegistry(tmp_path)
+        assert registry.get_carapace_config("bad-tunnel-svc") is None
+
+    def test_invalid_tunnel_trailing_dot_blocked_host_rejects_config(self, tmp_path: Path):
+        skill_dir = tmp_path / "bad-tunnel-dot"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text("Body.\n")
+        (skill_dir / "carapace.yaml").write_text(
+            "network:\n  tunnels:\n    - host: localhost.\n      remote_port: 443\n      local_port: 1443\n"
+        )
+
+        registry = SkillRegistry(tmp_path)
+        assert registry.get_carapace_config("bad-tunnel-dot") is None
+
     def test_empty_network_section(self, tmp_path: Path):
         skill_dir = tmp_path / "minimal"
         skill_dir.mkdir()
@@ -427,14 +489,303 @@ class TestCarapaceYamlParsing:
     def test_model_validation(self):
         cfg = SkillCarapaceConfig.model_validate(
             {
-                "network": {"domains": ["a.com"]},
+                "network": {
+                    "domains": ["a.com"],
+                    "tunnels": [{"host": "imap.a.com", "remote_port": 993, "local_port": 1993}],
+                },
                 "credentials": [{"vault_path": "x/y", "description": "Test cred", "env_var": "FOO"}],
             }
         )
         assert cfg.network.domains == ["a.com"]
+        assert cfg.network.tunnels[0].display == "imap.a.com:993 via :1993"
         assert len(cfg.credentials) == 1
         assert cfg.credentials[0].vault_path == "x/y"
         assert cfg.credentials[0].env_var == "FOO"
+
+    def test_model_validation_rejects_duplicate_local_ports(self):
+        with pytest.raises(ValueError, match="local_port 1993"):
+            SkillCarapaceConfig.model_validate(
+                {
+                    "network": {
+                        "tunnels": [
+                            {"host": "imap.a.com", "remote_port": 993, "local_port": 1993},
+                            {"host": "imap.b.com", "remote_port": 993, "local_port": 1993},
+                        ]
+                    }
+                }
+            )
+
+    @pytest.mark.anyio
+    async def test_context_tunnel_helper_accepts_minimal_connect_response(self):
+        namespace: dict[str, Any] = {"__name__": "test_context_tunnel_helper"}
+        compile(_CONTEXT_TUNNEL_HELPER, "carapace_tunnel_helper.py", "exec")
+        exec(_CONTEXT_TUNNEL_HELPER, namespace)
+        open_proxy_tunnel = cast(Any, namespace["_open_proxy_tunnel"])
+        helper_asyncio = cast(Any, namespace["asyncio"])
+
+        class FakeReader:
+            def __init__(self, chunks: list[bytes]):
+                self._chunks = list(chunks)
+
+            async def read(self, _size: int) -> bytes:
+                if self._chunks:
+                    return self._chunks.pop(0)
+                return b""
+
+        class FakeWriter:
+            def __init__(self):
+                self.writes: list[bytes] = []
+
+            def write(self, data: bytes) -> None:
+                self.writes.append(data)
+
+            async def drain(self) -> None:
+                return None
+
+        reader = FakeReader([b"HTTP/1.1 200 Connection Established\r\n\r\n"])
+        writer = FakeWriter()
+
+        async def fake_open_connection(host: str, port: int):
+            assert host == "proxy.internal"
+            assert port == 8080
+            return reader, writer
+
+        original_open_connection = helper_asyncio.open_connection
+        helper_asyncio.open_connection = fake_open_connection
+        try:
+            prebuffer, upstream_reader, upstream_writer = await open_proxy_tunnel(
+                "http://proxy.internal:8080",
+                "imap.zoho.eu",
+                993,
+            )
+        finally:
+            helper_asyncio.open_connection = original_open_connection
+
+        assert prebuffer == b""
+        assert upstream_reader is reader
+        assert upstream_writer is writer
+        assert writer.writes == [b"CONNECT imap.zoho.eu:993 HTTP/1.1\r\nHost: imap.zoho.eu:993\r\n\r\n"]
+
+
+@pytest.mark.anyio
+async def test_exec_command_sets_up_and_cleans_up_tunnels(tmp_path: Path):
+    runtime = MagicMock(spec=ContainerRuntime)
+    runtime.get_host_ip = AsyncMock(return_value="172.18.0.1")
+    runtime.create_sandbox = AsyncMock(return_value="container-1")
+    runtime.get_ip = AsyncMock(return_value="172.18.0.22")
+    runtime.logs = AsyncMock(return_value="carapace sandbox ready")
+    runtime.exec = AsyncMock(return_value=ExecResult(exit_code=0, output="ok"))
+
+    mgr = SandboxManager(runtime=runtime, data_dir=tmp_path, knowledge_dir=tmp_path)
+
+    result = await mgr.exec_command(
+        "sess-1",
+        "run-mail-sync",
+        context_tunnels=[NetworkTunnel(host="imap.zoho.eu", remote_port=993, local_port=1993)],
+    )
+
+    assert result.output == "ok"
+
+    commands = [call.args[1] for call in runtime.exec.call_args_list]
+    assert any("carapace-tunnel-helper-sess-1.py" in command for command in commands)
+    assert any("cp /etc/hosts /tmp/carapace-tunnel-hosts-sess-1.bak" in command for command in commands)
+    assert any("{ nohup python3 /tmp/carapace-tunnel-helper-sess-1.py" in command for command in commands)
+    assert any("--listen-port 1993" in command and "--target-port 993" in command for command in commands)
+    assert any("--ready-file /tmp/carapace-tunnel-sess-1-1993.ready" in command for command in commands)
+    assert any(command == "run-mail-sync" for command in commands)
+    assert any("echo $! > /tmp/carapace-tunnel-sess-1-1993.pid; } && kill -0" in command for command in commands)
+    assert any("while [ ! -f /tmp/carapace-tunnel-sess-1-1993.ready ]" in command for command in commands)
+    assert any('kill "$(cat /tmp/carapace-tunnel-sess-1-1993.pid)"' in command for command in commands)
+
+
+@pytest.mark.anyio
+async def test_exec_command_rejects_conflicting_tunnel_local_ports(tmp_path: Path):
+    runtime = MagicMock(spec=ContainerRuntime)
+    runtime.get_host_ip = AsyncMock(return_value="172.18.0.1")
+    runtime.create_sandbox = AsyncMock(return_value="container-1")
+    runtime.get_ip = AsyncMock(return_value="172.18.0.22")
+    runtime.logs = AsyncMock(return_value="carapace sandbox ready")
+    runtime.exec = AsyncMock(return_value=ExecResult(exit_code=0, output="ok"))
+
+    mgr = SandboxManager(runtime=runtime, data_dir=tmp_path, knowledge_dir=tmp_path)
+
+    with pytest.raises(ValueError, match=r"Conflicting network\.tunnels declarations"):
+        await mgr.exec_command(
+            "sess-1",
+            "run-mail-sync",
+            context_tunnels=[
+                NetworkTunnel(host="imap.zoho.eu", remote_port=993, local_port=1993),
+                NetworkTunnel(host="smtp.zoho.eu", remote_port=465, local_port=1993),
+            ],
+        )
+
+
+@pytest.mark.anyio
+async def test_exec_command_allows_duplicate_tunnel_with_different_descriptions(tmp_path: Path):
+    runtime = MagicMock(spec=ContainerRuntime)
+    runtime.get_host_ip = AsyncMock(return_value="172.18.0.1")
+    runtime.create_sandbox = AsyncMock(return_value="container-1")
+    runtime.get_ip = AsyncMock(return_value="172.18.0.22")
+    runtime.logs = AsyncMock(return_value="carapace sandbox ready")
+    runtime.exec = AsyncMock(return_value=ExecResult(exit_code=0, output="ok"))
+
+    mgr = SandboxManager(runtime=runtime, data_dir=tmp_path, knowledge_dir=tmp_path)
+
+    result = await mgr.exec_command(
+        "sess-1",
+        "run-mail-sync",
+        context_tunnels=[
+            NetworkTunnel(
+                host="imap.zoho.eu",
+                remote_port=993,
+                local_port=1993,
+                description="Primary IMAP tunnel",
+            ),
+            NetworkTunnel(
+                host="imap.zoho.eu",
+                remote_port=993,
+                local_port=1993,
+                description="Same tunnel from another skill",
+            ),
+        ],
+    )
+
+    assert result.output == "ok"
+
+    commands = [call.args[1] for call in runtime.exec.call_args_list]
+    assert sum("nohup python3 /tmp/carapace-tunnel-helper-sess-1.py" in command for command in commands) == 1
+
+
+@pytest.mark.anyio
+async def test_exec_command_recreates_tunnels_before_retry(tmp_path: Path):
+    runtime = MagicMock(spec=ContainerRuntime)
+    runtime.get_host_ip = AsyncMock(return_value="172.18.0.1")
+    runtime.sandbox_exists = AsyncMock(return_value=None)
+    runtime.create_sandbox = AsyncMock(side_effect=["container-1", "container-2"])
+    runtime.get_ip = AsyncMock(return_value="172.18.0.22")
+    runtime.logs = AsyncMock(return_value="carapace sandbox ready")
+
+    _ok = ExecResult(exit_code=0, output="")
+    runtime.exec = AsyncMock(
+        side_effect=[
+            _ok,
+            _ok,
+            _ok,
+            _ok,
+            _ok,
+            ContainerGoneError(),
+            _ok,
+            _ok,
+            _ok,
+            _ok,
+            _ok,
+            ExecResult(exit_code=0, output="ok"),
+            _ok,
+        ]
+    )
+
+    mgr = SandboxManager(runtime=runtime, data_dir=tmp_path, knowledge_dir=tmp_path)
+
+    result = await mgr.exec_command(
+        "sess-1",
+        "run-mail-sync",
+        context_tunnels=[NetworkTunnel(host="imap.zoho.eu", remote_port=993, local_port=1993)],
+    )
+
+    assert result.output == "ok"
+    assert runtime.create_sandbox.await_count == 2
+
+    commands = [call.args[1] for call in runtime.exec.call_args_list]
+    assert sum("carapace-tunnel-helper-sess-1.py" in command for command in commands) >= 2
+    assert sum("--listen-port 1993" in command and "--target-port 993" in command for command in commands) == 2
+
+
+@pytest.mark.anyio
+async def test_exec_command_cleans_up_tunnels_after_command_failure(tmp_path: Path):
+    runtime = MagicMock(spec=ContainerRuntime)
+    runtime.get_host_ip = AsyncMock(return_value="172.18.0.1")
+    runtime.create_sandbox = AsyncMock(return_value="container-1")
+    runtime.get_ip = AsyncMock(return_value="172.18.0.22")
+    runtime.logs = AsyncMock(return_value="carapace sandbox ready")
+    runtime.exec = AsyncMock(
+        side_effect=[
+            ExecResult(exit_code=0, output=""),
+            ExecResult(exit_code=0, output=""),
+            ExecResult(exit_code=0, output=""),
+            ExecResult(exit_code=0, output=""),
+            ExecResult(exit_code=0, output=""),
+            ExecResult(exit_code=5, output="mail failed"),
+            ExecResult(exit_code=0, output=""),
+        ]
+    )
+
+    mgr = SandboxManager(runtime=runtime, data_dir=tmp_path, knowledge_dir=tmp_path)
+
+    result = await mgr.exec_command(
+        "sess-1",
+        "run-mail-sync",
+        context_tunnels=[NetworkTunnel(host="imap.zoho.eu", remote_port=993, local_port=1993)],
+    )
+
+    assert result.exit_code == 5
+    assert "mail failed" in result.output
+    assert "[exit code: 5]" in result.output
+
+    cleanup_command = runtime.exec.call_args_list[-1].args[1]
+    assert 'kill "$(cat /tmp/carapace-tunnel-sess-1-1993.pid)"' in cleanup_command
+    assert "cp /tmp/carapace-tunnel-hosts-sess-1.bak /etc/hosts" in cleanup_command
+
+
+@pytest.mark.anyio
+async def test_exec_cleanup_tunnel_error_does_not_mask_command_error_or_skip_credential_cleanup():
+    runtime = MagicMock(spec=ContainerRuntime)
+    state = SandboxExecState(
+        sessions={},
+        allowed_domains={},
+        exec_temp_domains={},
+        exec_context_skill_domains={},
+        session_current_command={},
+        domain_approval_cbs={},
+        domain_notify_cbs={},
+        exec_locks={},
+        proxy_bypass_sessions=set(),
+        session_current_contexts={},
+        exec_notified_domains={},
+        exec_notified_credentials={},
+    )
+    coordinator = SandboxExecCoordinator(runtime=runtime, state=state)
+    sc1 = SessionContainer(container_id="container-1", session_id="sess-1", created_at=0, last_used=0)
+    sc2 = SessionContainer(container_id="container-2", session_id="sess-1", created_at=0, last_used=0)
+    written_files = [("example", "/workspace/skills/example/.secrets/token.txt")]
+
+    ensure_session = AsyncMock(side_effect=[(sc1, False), (sc2, False)])
+    rerun_skill_setup = AsyncMock()
+    log_container_tail = AsyncMock()
+    prepare_session_recreate = MagicMock()
+    exec_in_container = AsyncMock(side_effect=[ContainerGoneError("gone"), RuntimeError("command failed")])
+    prepare_context_tunnels = AsyncMock()
+    cleanup_context_tunnels = AsyncMock(side_effect=ContainerGoneError("cleanup failed"))
+    write_context_file_credentials = AsyncMock(side_effect=[list(written_files), list(written_files)])
+    delete_context_file_credentials = AsyncMock()
+
+    with pytest.raises(RuntimeError, match="command failed"):
+        await coordinator.exec(
+            "sess-1",
+            "run-mail-sync",
+            ensure_session=ensure_session,
+            rerun_skill_setup=rerun_skill_setup,
+            log_container_tail=log_container_tail,
+            prepare_session_recreate=prepare_session_recreate,
+            exec_in_container=exec_in_container,
+            prepare_context_tunnels=prepare_context_tunnels,
+            cleanup_context_tunnels=cleanup_context_tunnels,
+            write_context_file_credentials=write_context_file_credentials,
+            delete_context_file_credentials=delete_context_file_credentials,
+            context_tunnels=[NetworkTunnel(host="imap.zoho.eu", remote_port=993, local_port=1993)],
+            context_file_creds=[("example", ".secrets/token.txt", "secret")],
+        )
+
+    delete_context_file_credentials.assert_awaited_once_with("sess-1", written_files)
 
 
 # ── Proxy token extraction ───────────────────────────────────────────
