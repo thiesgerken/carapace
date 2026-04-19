@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Menu, X } from "lucide-react";
 import { ConnectForm } from "@/components/connect-form";
@@ -18,6 +18,28 @@ import type { SessionInfo } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { useSwipeDrawer } from "@/hooks/use-swipe-drawer";
 
+type ConnectionState = {
+  connected: boolean;
+  server: string;
+  token: string;
+};
+
+function loadStoredConnection(): ConnectionState {
+  if (!hasConnection()) {
+    return {
+      connected: false,
+      server: "",
+      token: "",
+    };
+  }
+
+  return {
+    connected: true,
+    server: getServer(),
+    token: getToken(),
+  };
+}
+
 export default function Home() {
   return (
     <Suspense>
@@ -29,15 +51,22 @@ export default function Home() {
 function HomeContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [connected, setConnected] = useState(false);
-  const [server, setServer] = useState("");
-  const [token, setToken] = useState("");
+  const [connection, setConnection] = useState<ConnectionState>({
+    connected: false,
+    server: "",
+    token: "",
+  });
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(
     searchParams.get("session"),
   );
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [creatingSession, setCreatingSession] = useState(false);
+  const [refreshingSessions, setRefreshingSessions] = useState(false);
+  const refreshRequestIdRef = useRef(0);
+
+  const { connected, server, token } = connection;
+  const loading = creatingSession || refreshingSessions;
 
   useSwipeDrawer(sidebarOpen, setSidebarOpen);
 
@@ -52,51 +81,79 @@ function HomeContent() {
     }
   }, [activeSessionId, router]);
 
-  // Restore connection on mount
   useEffect(() => {
-    if (hasConnection()) {
-      setServer(getServer());
-      setToken(getToken());
-      setConnected(true);
-    }
+    // Defer to avoid synchronous setState in effect body.
+    const timer = setTimeout(() => {
+      const nextConnection = loadStoredConnection();
+      setConnection((current) => {
+        if (
+          current.connected === nextConnection.connected
+          && current.server === nextConnection.server
+          && current.token === nextConnection.token
+        ) {
+          return current;
+        }
+
+        return nextConnection;
+      });
+    }, 0);
+
+    return () => {
+      clearTimeout(timer);
+    };
   }, []);
 
   // Fetch sessions when connected
-  const refreshSessions = useCallback(async () => {
-    if (!server || !token) return;
-    setLoading(true);
+  const refreshSessions = useCallback(async (srv: string, tok: string) => {
+    if (!srv || !tok) return;
+
+    const requestId = ++refreshRequestIdRef.current;
+    setRefreshingSessions(true);
+
     try {
-      const list = await listSessions(server, token);
+      const list = await listSessions(srv, tok);
+
+      if (requestId !== refreshRequestIdRef.current) return;
+
       setSessions(list);
     } catch {
       // If sessions fail to load, connection might be stale
     } finally {
-      setLoading(false);
+      if (requestId === refreshRequestIdRef.current) {
+        setRefreshingSessions(false);
+      }
     }
-  }, [server, token]);
+  }, []);
 
   useEffect(() => {
-    if (connected) refreshSessions();
-  }, [connected, refreshSessions]);
+    if (!connected) return;
+
+    // Defer to avoid synchronous setState in effect body.
+    const timer = setTimeout(() => {
+      void refreshSessions(server, token);
+    }, 0);
+
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [connected, refreshSessions, server, token]);
 
   function handleConnect(srv: string, tok: string) {
     saveConnection(srv, tok);
-    setServer(srv);
-    setToken(tok);
-    setConnected(true);
+    setConnection({ connected: true, server: srv, token: tok });
   }
 
   function handleDisconnect() {
+    refreshRequestIdRef.current += 1;
     clearConnection();
-    setConnected(false);
-    setServer("");
-    setToken("");
+    setRefreshingSessions(false);
+    setConnection({ connected: false, server: "", token: "" });
     setSessions([]);
     setActiveSessionId(null);
   }
 
   async function handleNewSession() {
-    setLoading(true);
+    setCreatingSession(true);
     try {
       const session = await createSession(server, token);
       setSessions((prev) => [session, ...prev]);
@@ -105,7 +162,7 @@ function HomeContent() {
     } catch {
       // handled in UI
     } finally {
-      setLoading(false);
+      setCreatingSession(false);
     }
   }
 
