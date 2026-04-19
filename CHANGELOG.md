@@ -1,6 +1,15 @@
 # CHANGELOG
 
 
+## v0.88.7 (2026-04-19)
+
+
+### 🐛 Bug Fixes
+
+
+- 🐛 force a tool output for sentinel
+  ([`d39a3f7`](https://github.com/thiesgerken/carapace/commit/d39a3f780d16a55262abcc96182d270118f79ec1))
+
 ## v0.88.6 (2026-04-19)
 
 
