@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from loguru import logger
-from pydantic_ai import Agent, RunContext
+from pydantic_ai import Agent, RunContext, ToolOutput
 from pydantic_ai.models import Model, infer_model
 
 from carapace.security.context import (
@@ -278,7 +278,7 @@ class Sentinel:
         agent: Agent[Path, SentinelVerdict] = Agent(
             resolved,
             deps_type=Path,
-            output_type=SentinelVerdict,
+            output_type=ToolOutput(SentinelVerdict, name="judge"),
             instructions=self._load_system_prompt,
             capabilities=[LlmRequestLogCapability(source="sentinel")],
             output_retries=3,
