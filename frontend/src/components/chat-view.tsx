@@ -125,6 +125,79 @@ function isUserApprovedReplay(
   );
 }
 
+type ToolCallMessage = Extract<ChatMessage, { kind: "tool_call" }>;
+type ToolCallChildMessage = NonNullable<ToolCallMessage["children"]>[number];
+
+function isToolCallLoading(
+  tool: string,
+  approvalSource?:
+    | "safe-list"
+    | "sentinel"
+    | "user"
+    | "skill"
+    | "bypass"
+    | "unknown",
+  approvalVerdict?: "allow" | "deny" | "escalate",
+): boolean {
+  const isGitPush = tool === "git_push";
+  if (
+    tool === "proxy_domain" ||
+    tool === "credential_access" ||
+    isGitPush
+  ) {
+    return false;
+  }
+  if (approvalSource === "sentinel" && approvalVerdict == null) {
+    return true;
+  }
+  return approvalVerdict === "allow";
+}
+
+function updateToolCallMessageById(
+  messages: ChatMessage[],
+  toolId: string,
+  updater: (message: ToolCallMessage | ToolCallChildMessage) =>
+    | ToolCallMessage
+    | ToolCallChildMessage,
+): { messages: ChatMessage[]; found: boolean } {
+  let found = false;
+  const updated = messages.map((entry) => {
+    if (entry.kind !== "tool_call") return entry;
+
+    if (entry.toolId === toolId) {
+      found = true;
+      return updater(entry) as ToolCallMessage;
+    }
+
+    if (!entry.children?.length) return entry;
+
+    let childChanged = false;
+    const children = entry.children.map((child) => {
+      if (child.toolId !== toolId) return child;
+      found = true;
+      childChanged = true;
+      return updater(child) as ToolCallChildMessage;
+    });
+
+    return childChanged ? { ...entry, children } : entry;
+  });
+
+  return { messages: found ? updated : messages, found };
+}
+
+function updateToolResultById(
+  messages: ChatMessage[],
+  toolId: string,
+  result: { result: string; exitCode?: number },
+): { messages: ChatMessage[]; found: boolean } {
+  return updateToolCallMessageById(messages, toolId, (entry) => ({
+    ...entry,
+    result: result.result,
+    exitCode: result.exitCode,
+    loading: false,
+  }));
+}
+
 export function ChatView({
   server,
   token,
@@ -182,6 +255,11 @@ export function ChatView({
             msgs.push({ kind: "user", content: h.content });
           } else if (h.role === "tool_call") {
             const rawContexts = h.contexts ?? h.args?.contexts;
+            const isLoading = isToolCallLoading(
+              h.tool ?? "",
+              h.approval_source,
+              h.approval_verdict,
+            );
             if (
               isUserApprovedReplay(
                 h.tool ?? "",
@@ -196,6 +274,7 @@ export function ChatView({
                   tool: h.tool ?? "",
                   args: (h.args ?? {}) as Record<string, unknown>,
                 },
+                isLoading,
               );
               msgs.length = 0;
               msgs.push(...patched);
@@ -212,6 +291,7 @@ export function ChatView({
               approvalSource: h.approval_source,
               approvalVerdict: h.approval_verdict,
               approvalExplanation: h.approval_explanation,
+              loading: isLoading,
               toolId: h.tool_id as string | undefined,
               parentToolId: h.parent_tool_id as string | undefined,
             });
@@ -221,6 +301,19 @@ export function ChatView({
             queue.push(idx);
             pendingToolCallIndices.set(toolName, queue);
           } else if (h.role === "tool_result") {
+            const toolResultId = h.tool_id as string | undefined;
+            if (toolResultId) {
+              const updated = updateToolResultById(msgs, toolResultId, {
+                result: h.result ?? "",
+                exitCode: h.exit_code,
+              });
+              if (updated.found) {
+                msgs.length = 0;
+                msgs.push(...updated.messages);
+                continue;
+              }
+            }
+
             const toolName = h.tool ?? "";
             const queue = pendingToolCallIndices.get(toolName);
             const idx = queue?.shift();
@@ -465,12 +558,11 @@ export function ChatView({
         case "tool_call": {
           const isGitPush = msg.tool === "git_push";
           if (!isGitPush) setWaiting(true); // agent is active (may restore after reconnect)
-          const verdict = msg.approval_verdict;
-          const isLoading =
-            msg.tool !== "proxy_domain" &&
-            msg.tool !== "credential_access" &&
-            !isGitPush &&
-            verdict === "allow";
+          const isLoading = isToolCallLoading(
+            msg.tool,
+            msg.approval_source,
+            msg.approval_verdict,
+          );
           const rawContexts = msg.contexts ?? msg.args?.contexts;
           const newMsg: ChatMessage = {
             kind: "tool_call",
@@ -504,6 +596,33 @@ export function ChatView({
             );
             break;
           }
+          if (msg.tool_id) {
+            setMessages((prev) => {
+              const updated = updateToolCallMessageById(prev, msg.tool_id!, (entry) => ({
+                ...entry,
+                ...newMsg,
+              }));
+              if (updated.found) return updated.messages;
+
+              if (msg.parent_tool_id) {
+                for (let i = prev.length - 1; i >= 0; i--) {
+                  const m = prev[i];
+                  if (m.kind === "tool_call" && m.toolId === msg.parent_tool_id) {
+                    const next = [...prev];
+                    next[i] = {
+                      ...m,
+                      children: [...(m.children ?? []), newMsg],
+                    };
+                    return next;
+                  }
+                }
+              }
+
+              return [...prev, newMsg];
+            });
+            if (isGitPush) finishWaiting();
+            break;
+          }
           if (msg.parent_tool_id) {
             // Attach to parent tool call
             setMessages((prev) => {
@@ -530,6 +649,14 @@ export function ChatView({
         case "tool_result":
           setWaiting(true);
           setMessages((prev) => {
+            if (msg.tool_id) {
+              const updatedById = updateToolResultById(prev, msg.tool_id, {
+                result: msg.result,
+                exitCode: msg.exit_code,
+              });
+              if (updatedById.found) return updatedById.messages;
+            }
+
             const updated = [...prev];
             for (let i = updated.length - 1; i >= 0; i--) {
               const m = updated[i];

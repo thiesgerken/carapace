@@ -167,6 +167,7 @@ class SessionSubscriber(Protocol):
         approval_source: ApprovalSource | None = None,
         approval_verdict: ApprovalVerdict | None = None,
         approval_explanation: str | None = None,
+        tool_id: str | None = None,
         parent_tool_id: str | None = None,
     ) -> None: ...
     async def on_git_push_info(
@@ -177,6 +178,7 @@ class SessionSubscriber(Protocol):
         approval_source: ApprovalSource | None = None,
         approval_verdict: ApprovalVerdict | None = None,
         approval_explanation: str | None = None,
+        tool_id: str | None = None,
         parent_tool_id: str | None = None,
     ) -> None: ...
     async def on_credential_info(
@@ -187,6 +189,7 @@ class SessionSubscriber(Protocol):
         approval_source: ApprovalSource | None = None,
         approval_verdict: ApprovalVerdict | None = None,
         approval_explanation: str | None = None,
+        tool_id: str | None = None,
         parent_tool_id: str | None = None,
     ) -> None: ...
     async def on_credential_approval_request(
@@ -1057,6 +1060,56 @@ class SessionEngine:
         if events:
             await self._generate_title(active, events)
 
+    def _record_tool_call_event(
+        self,
+        session_id: str,
+        *,
+        tool: str,
+        args: dict[str, Any],
+        detail: str,
+        approval_source: ApprovalSource | None = None,
+        approval_verdict: ApprovalVerdict | None = None,
+        approval_explanation: str | None = None,
+        parent_tool_id: str | None = None,
+    ) -> str:
+        contexts_raw = args.get("contexts")
+        event: dict[str, Any] = {
+            "role": "tool_call",
+            "tool": tool,
+            "args": args,
+            "detail": detail,
+            "approval_source": approval_source,
+            "approval_verdict": approval_verdict,
+            "approval_explanation": approval_explanation,
+        }
+        if parent_tool_id is not None:
+            event["parent_tool_id"] = parent_tool_id
+        if isinstance(contexts_raw, list):
+            event["contexts"] = list(contexts_raw)
+
+        should_update_pending = approval_source == "sentinel" and approval_verdict is not None
+        if should_update_pending:
+            events = self._session_mgr.load_events(session_id)
+            for index in range(len(events) - 1, -1, -1):
+                existing = events[index]
+                if existing.get("role") != "tool_call":
+                    continue
+                if existing.get("tool") != tool or existing.get("args") != args:
+                    continue
+                if existing.get("parent_tool_id") != parent_tool_id:
+                    continue
+                if existing.get("approval_source") != "sentinel" or existing.get("approval_verdict") is not None:
+                    continue
+
+                tool_id = str(existing.get("tool_id") or uuid.uuid4())
+                events[index] = {**existing, **event, "tool_id": tool_id}
+                self._session_mgr.save_events(session_id, events)
+                return tool_id
+
+        tool_id = str(uuid.uuid4())
+        self._session_mgr.append_events(session_id, [{**event, "tool_id": tool_id}])
+        return tool_id
+
     # -- internal turn runner --
 
     async def _run_turn(
@@ -1082,23 +1135,17 @@ class SessionEngine:
             approval_verdict: ApprovalVerdict | None = None,
             approval_explanation: str | None = None,
         ) -> None:
-            tool_id = str(uuid.uuid4())
+            tool_id = self._record_tool_call_event(
+                session_id,
+                tool=tool,
+                args=args,
+                detail=detail,
+                approval_source=approval_source,
+                approval_verdict=approval_verdict,
+                approval_explanation=approval_explanation,
+            )
             if active.security:
                 active.security.current_parent_tool_id = tool_id
-            event: dict[str, Any] = {
-                "role": "tool_call",
-                "tool": tool,
-                "args": args,
-                "detail": detail,
-                "approval_source": approval_source,
-                "approval_verdict": approval_verdict,
-                "approval_explanation": approval_explanation,
-                "tool_id": tool_id,
-            }
-            contexts_raw = args.get("contexts")
-            if isinstance(contexts_raw, list):
-                event["contexts"] = list(contexts_raw)
-            self._session_mgr.append_events(session_id, [event])
             logger.info(
                 f"Tool call session={session_id} tool={tool} "
                 + f"approval={approval_source or '-'}:{approval_verdict or '-'} "
@@ -1123,7 +1170,15 @@ class SessionEngine:
         def _tool_result_cb(tr: ToolResult) -> None:
             self._session_mgr.append_events(
                 session_id,
-                [{"role": "tool_result", "tool": tr.tool, "result": tr.output, "exit_code": tr.exit_code}],
+                [
+                    {
+                        "role": "tool_result",
+                        "tool": tr.tool,
+                        "result": tr.output,
+                        "exit_code": tr.exit_code,
+                        "tool_id": tr.tool_id,
+                    }
+                ],
             )
             logger.info(
                 f"Tool result session={session_id} tool={tr.tool} exit_code={tr.exit_code} "
@@ -1587,22 +1642,15 @@ class SessionEngine:
             approval_explanation: str | None = None,
         ) -> None:
             parent_id = active.security.current_parent_tool_id if active.security else None
-            tool_id = str(uuid.uuid4())
-            self._session_mgr.append_events(
+            tool_id = self._record_tool_call_event(
                 session_id,
-                [
-                    {
-                        "role": "tool_call",
-                        "tool": "proxy_domain",
-                        "args": {"domain": domain},
-                        "detail": detail,
-                        "approval_source": approval_source,
-                        "approval_verdict": approval_verdict,
-                        "approval_explanation": approval_explanation,
-                        "tool_id": tool_id,
-                        "parent_tool_id": parent_id,
-                    }
-                ],
+                tool="proxy_domain",
+                args={"domain": domain},
+                detail=detail,
+                approval_source=approval_source,
+                approval_verdict=approval_verdict,
+                approval_explanation=approval_explanation,
+                parent_tool_id=parent_id,
             )
             task = asyncio.ensure_future(
                 self._broadcast(
@@ -1613,6 +1661,7 @@ class SessionEngine:
                     approval_source,
                     approval_verdict,
                     approval_explanation,
+                    tool_id,
                     parent_id,
                 )
             )
@@ -1647,22 +1696,15 @@ class SessionEngine:
             approval_explanation: str | None = None,
         ) -> None:
             parent_id = active.security.current_parent_tool_id if active.security else None
-            tool_id = str(uuid.uuid4())
-            self._session_mgr.append_events(
+            tool_id = self._record_tool_call_event(
                 session_id,
-                [
-                    {
-                        "role": "git_push",
-                        "ref": ref,
-                        "decision": decision,
-                        "detail": detail,
-                        "approval_source": approval_source,
-                        "approval_verdict": approval_verdict,
-                        "approval_explanation": approval_explanation,
-                        "tool_id": tool_id,
-                        "parent_tool_id": parent_id,
-                    }
-                ],
+                tool="git_push",
+                args={"ref": ref, "decision": decision},
+                detail=detail,
+                approval_source=approval_source,
+                approval_verdict=approval_verdict,
+                approval_explanation=approval_explanation,
+                parent_tool_id=parent_id,
             )
             await self._broadcast(
                 active,
@@ -1673,6 +1715,7 @@ class SessionEngine:
                 approval_source,
                 approval_verdict,
                 approval_explanation,
+                tool_id,
                 parent_id,
             )
 
@@ -1704,22 +1747,15 @@ class SessionEngine:
             approval_explanation: str | None = None,
         ) -> None:
             parent_id = active.security.current_parent_tool_id if active.security else None
-            tool_id = str(uuid.uuid4())
-            self._session_mgr.append_events(
+            tool_id = self._record_tool_call_event(
                 session_id,
-                [
-                    {
-                        "role": "tool_call",
-                        "tool": "credential_access",
-                        "args": {"vault_path": vault_path, "name": name},
-                        "detail": detail,
-                        "approval_source": approval_source,
-                        "approval_verdict": approval_verdict,
-                        "approval_explanation": approval_explanation,
-                        "tool_id": tool_id,
-                        "parent_tool_id": parent_id,
-                    }
-                ],
+                tool="credential_access",
+                args={"vault_path": vault_path, "name": name},
+                detail=detail,
+                approval_source=approval_source,
+                approval_verdict=approval_verdict,
+                approval_explanation=approval_explanation,
+                parent_tool_id=parent_id,
             )
             task = asyncio.ensure_future(
                 self._broadcast(
@@ -1731,6 +1767,7 @@ class SessionEngine:
                     approval_source,
                     approval_verdict,
                     approval_explanation,
+                    tool_id,
                     parent_id,
                 )
             )

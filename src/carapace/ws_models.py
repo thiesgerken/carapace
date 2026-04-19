@@ -123,6 +123,7 @@ class ToolResultInfo(BaseModel):
     tool: str
     result: str
     exit_code: int = 0
+    tool_id: str | None = None
 
 
 class ApprovalRequest(BaseModel):

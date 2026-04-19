@@ -76,6 +76,15 @@ async def evaluate_with(
             )
         return
 
+    if verbose:
+        _log_tool_call(
+            tool_name,
+            args,
+            "[sentinel] reviewing",
+            tool_call_callback,
+            approval_source="sentinel",
+        )
+
     verdict = await sentinel.evaluate_tool_call(
         session,
         tool_name,
@@ -158,6 +167,8 @@ async def evaluate_domain_with(
     If the sentinel escalates, delegates to the session's user escalation callback.
     """
 
+    session.notify_domain_decision(domain, "[sentinel] reviewing", approval_source="sentinel")
+
     verdict = await sentinel.evaluate_domain_access(
         session,
         domain,
@@ -226,6 +237,8 @@ async def evaluate_push_with(
 
     If the sentinel escalates, delegates to the session's user escalation callback.
     """
+    await session.notify_push_decision(ref, "reviewing", "[sentinel] reviewing", approval_source="sentinel")
+
     verdict = await sentinel.evaluate_push(
         session,
         ref,
@@ -322,6 +335,8 @@ async def evaluate_credential_with(
     ``user_was_prompted`` is False when the sentinel allowed or denied without escalation
     (the engine's escalation callback already persists UI events when escalation runs).
     """
+    session.notify_credential_review(vault_path, "[sentinel] reviewing", name=name, approval_source="sentinel")
+
     verdict = await sentinel.evaluate_credential_access(
         session,
         vault_path,

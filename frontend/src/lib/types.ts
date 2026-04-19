@@ -92,6 +92,7 @@ export interface ToolResultInfo {
   tool: string;
   result: string;
   exit_code?: number;
+  tool_id?: string;
 }
 
 export interface ApprovalRequest {

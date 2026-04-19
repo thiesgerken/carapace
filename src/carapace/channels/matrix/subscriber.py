@@ -185,6 +185,7 @@ class MatrixSubscriber:
         approval_source: str | None = None,
         approval_verdict: str | None = None,
         approval_explanation: str | None = None,
+        tool_id: str | None = None,
         parent_tool_id: str | None = None,
     ) -> None:
         logger.debug(f"Matrix [{self._room_id}] credential: {vault_path} {detail}")
@@ -231,6 +232,7 @@ class MatrixSubscriber:
         approval_source: str | None = None,
         approval_verdict: str | None = None,
         approval_explanation: str | None = None,
+        tool_id: str | None = None,
         parent_tool_id: str | None = None,
     ) -> None:
         logger.debug(f"Matrix [{self._room_id}] domain: {domain} {detail}")
@@ -246,6 +248,7 @@ class MatrixSubscriber:
         approval_source: str | None = None,
         approval_verdict: str | None = None,
         approval_explanation: str | None = None,
+        tool_id: str | None = None,
         parent_tool_id: str | None = None,
     ) -> None:
         logger.debug(f"Matrix [{self._room_id}] git_push: {ref} {decision} {detail}")
