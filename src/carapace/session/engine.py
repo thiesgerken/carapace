@@ -14,6 +14,7 @@ from typing import Any, Literal, Protocol, runtime_checkable
 
 from loguru import logger
 from pydantic_ai import ToolDenied
+from pydantic_ai.exceptions import UsageLimitExceeded
 from pydantic_ai.messages import (
     BuiltinToolCallPart,
     BuiltinToolReturnPart,
@@ -93,6 +94,37 @@ def _non_slash_user_message_count(events: list[dict[str, Any]]) -> int:
         for e in events
         if e.get("role") == "user" and isinstance(c := e.get("content"), str) and not c.startswith("/")
     )
+
+
+def _truncate_for_log(text: str, limit: int = 160) -> str:
+    collapsed = " ".join(text.split())
+    if len(collapsed) <= limit:
+        return collapsed
+    return collapsed[: limit - 3] + "..."
+
+
+def _summarize_tool_args_for_log(args: dict[str, Any]) -> str:
+    parts: list[str] = []
+    for idx, key in enumerate(sorted(args)):
+        if idx >= 4:
+            parts.append("...")
+            break
+        value = args[key]
+        if key == "command" and isinstance(value, str):
+            parts.append(f"command={_truncate_for_log(value, 100)}")
+        elif key == "contexts" and isinstance(value, list):
+            parts.append(f"contexts={','.join(str(v) for v in value[:4])}")
+        else:
+            parts.append(f"{key}={_truncate_for_log(str(value), 60)}")
+    return ", ".join(parts) if parts else "-"
+
+
+def _summarize_tool_result_for_log(result: ToolResult) -> str:
+    if not result.output:
+        return "(no output)"
+    output = result.output if isinstance(result.output, str) else str(result.output)
+    first_line = output.splitlines()[0] if output.splitlines() else output
+    return _truncate_for_log(first_line, 140)
 
 
 # security_mod is still imported for evaluate_domain_with (used in domain approval callback)
@@ -1067,6 +1099,11 @@ class SessionEngine:
             if isinstance(contexts_raw, list):
                 event["contexts"] = list(contexts_raw)
             self._session_mgr.append_events(session_id, [event])
+            logger.info(
+                f"Tool call session={session_id} tool={tool} "
+                + f"approval={approval_source or '-'}:{approval_verdict or '-'} "
+                + f"args={_summarize_tool_args_for_log(args)}"
+            )
             task = asyncio.ensure_future(
                 self._broadcast(
                     active,
@@ -1087,6 +1124,10 @@ class SessionEngine:
             self._session_mgr.append_events(
                 session_id,
                 [{"role": "tool_result", "tool": tr.tool, "result": tr.output, "exit_code": tr.exit_code}],
+            )
+            logger.info(
+                f"Tool result session={session_id} tool={tr.tool} exit_code={tr.exit_code} "
+                + f"summary={_summarize_tool_result_for_log(tr)}"
             )
             task = asyncio.ensure_future(self._broadcast(active, "on_tool_result", tr))
             active._pending_sends.add(task)
@@ -1112,6 +1153,10 @@ class SessionEngine:
                     except Exception as exc:
                         logger.warning(f"Subscriber on_user_message failed: {exc}")
                 message_history = self._session_mgr.load_history(session_id)
+                logger.info(
+                    f"Turn start session={session_id} model={active.agent_model_name or self._config.agent.model} "
+                    + f"history_messages={len(message_history)} prompt={_truncate_for_log(user_input)}"
+                )
 
                 async def _send_approval(req: ApprovalRequest) -> None:
                     self._session_mgr.append_events(
@@ -1204,6 +1249,12 @@ class SessionEngine:
                     await self._broadcast(active, "on_error", output)
                 else:
                     usage_payload = self._turn_usage_payload(active) or TurnUsage()
+                    logger.info(
+                        f"Turn done session={session_id} "
+                        + f"model={usage_payload.model or active.agent_model_name or self._config.agent.model} "
+                        + f"input_tokens={usage_payload.input_tokens} output_tokens={usage_payload.output_tokens} "
+                        + f"thinking_chars={len(thinking)} output_chars={len(output)}"
+                    )
                     await self._broadcast(
                         active,
                         "on_done",
@@ -1244,8 +1295,22 @@ class SessionEngine:
                 terminal_message=str(exc),
             )
             await self._broadcast(active, "on_error", str(exc))
+        except UsageLimitExceeded as exc:
+            sentinel_evals = active.security.sentinel_eval_count if active.security else 0
+            logger.error(
+                f"Turn usage-limit failure session={session_id} error={exc} "
+                + f"llm_requests={len(active.llm_request_log.records)} "
+                + f"sentinel_evals={sentinel_evals} prompt={_truncate_for_log(user_input)}"
+            )
+            self._save_user_message_on_failure(
+                session_id,
+                user_input,
+                latest_messages=latest_messages,
+                terminal_message="The previous turn failed before completion.",
+            )
+            await self._broadcast(active, "on_error", str(exc))
         except Exception:
-            logger.exception("Agent error")
+            logger.exception(f"Agent error session={session_id} prompt={_truncate_for_log(user_input)}")
             self._save_user_message_on_failure(
                 session_id,
                 user_input,

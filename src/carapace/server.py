@@ -919,7 +919,7 @@ class _InterceptHandler(logging.Handler):
         logger.opt(depth=depth, exception=record.exc_info).log(level, record.getMessage())
 
 
-def _setup_logging() -> None:
+def _setup_logging(level: str = "INFO") -> None:
     logging.root.handlers = [_InterceptHandler()]
     logging.root.setLevel(logging.DEBUG)
     for name in ("uvicorn", "uvicorn.error", "uvicorn.access", "fastapi"):
@@ -932,6 +932,8 @@ def _setup_logging() -> None:
         "httpx",
         "docker",
         "anthropic",
+        "openai",
+        "openai._base_client",
         "websockets",
         "websockets.server",
         "urllib3",
@@ -945,18 +947,30 @@ def _setup_logging() -> None:
             record["name"] = record["name"].replace("carapace.", "cp.").replace("sandbox.", "sndbx.")
 
     logger.remove()
-    logger.add(sys.stderr, colorize=True)
+    logger.add(
+        sys.stderr,
+        colorize=True,
+        level=level.upper(),
+        backtrace=True,
+        diagnose=True,
+        format=(
+            "<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | "
+            "<level>{level: <8}</level> | "
+            "<cyan>{name}:{function}:{line}</cyan> | "
+            "<level>{message}</level>"
+        ),
+    )
     logger.configure(patcher=_abbrev_patcher)
 
 
 def main() -> None:
     """Entry point for `python -m carapace` / `carapace-server`."""
     load_dotenv()
-    _setup_logging()
 
     data_dir = get_data_dir()
     ensure_data_dir(data_dir)
     config = load_config(data_dir)
+    _setup_logging(config.carapace.log_level)
     token = get_token()
 
     logger.info(f"Starting Carapace server on {config.server.host}:{config.server.port}")

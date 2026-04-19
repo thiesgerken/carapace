@@ -139,6 +139,10 @@ class Sentinel:
         self._agent = self._create_agent()
         self._message_history: list[Any] = []
         self._skill_file_cache: dict[tuple[str, str], tuple[int, int, str]] = {}
+        self._eval_skill_reads: int = 0
+        self._eval_cache_hits: int = 0
+        self._eval_cache_misses: int = 0
+        self._eval_paths: list[str] = []
         self._lock = asyncio.Lock()
 
     def set_model(self, model: str) -> None:
@@ -168,6 +172,7 @@ class Sentinel:
         cached = self._skill_file_cache.get(cache_key)
         fingerprint = self._fingerprint_file_stat(stat)
         if cached is not None and cached[:2] == fingerprint:
+            self._record_skill_file_read(skill_name, path, cache_hit=True)
             return (
                 f"File '{path}' for skill '{skill_name}' was already provided earlier in this sentinel conversation "
                 + "and has not changed. Reuse the previous tool result instead of reading it again."
@@ -175,10 +180,98 @@ class Sentinel:
 
         content = full_path.read_text()
         self._skill_file_cache[cache_key] = (*fingerprint, content)
+        self._record_skill_file_read(skill_name, path, cache_hit=False)
         return content
 
     def _fingerprint_file_stat(self, stat: stat_result) -> tuple[int, int]:
         return (stat.st_mtime_ns, stat.st_size)
+
+    def _record_skill_file_read(self, skill_name: str, path: str, *, cache_hit: bool) -> None:
+        self._eval_skill_reads += 1
+        if cache_hit:
+            self._eval_cache_hits += 1
+        else:
+            self._eval_cache_misses += 1
+        label = f"{skill_name}/{path}"
+        if label not in self._eval_paths and len(self._eval_paths) < 5:
+            self._eval_paths.append(label)
+
+    def _begin_eval_logging(self, _session_id: str) -> None:
+        self._eval_skill_reads = 0
+        self._eval_cache_hits = 0
+        self._eval_cache_misses = 0
+        self._eval_paths = []
+
+    def _end_eval_logging(self) -> dict[str, Any]:
+        stats = {
+            "skill_reads": self._eval_skill_reads,
+            "cache_hits": self._eval_cache_hits,
+            "cache_misses": self._eval_cache_misses,
+            "paths": list(self._eval_paths),
+        }
+        self._eval_skill_reads = 0
+        self._eval_cache_hits = 0
+        self._eval_cache_misses = 0
+        self._eval_paths = []
+        return stats
+
+    def _format_eval_stats(self, stats: dict[str, Any]) -> str:
+        paths = stats.get("paths") or []
+        path_text = f" files=[{', '.join(paths)}]" if paths else ""
+        return (
+            f"skill_reads={stats['skill_reads']} cache_hits={stats['cache_hits']} "
+            + f"cache_misses={stats['cache_misses']}{path_text}"
+        )
+
+    async def _run_evaluation(
+        self,
+        session: SessionSecurity,
+        prompt: str,
+        *,
+        kind: str,
+        subject: str,
+        new_entries_count: int,
+        usage_tracker: UsageTracker | None = None,
+        assert_llm_budget_available: Callable[[], None] | None = None,
+    ) -> SentinelVerdict:
+        eval_no = session.sentinel_eval_count + 1
+        logger.info(
+            f"Sentinel eval start session={session.session_id} seq={eval_no} kind={kind} subject={subject} "
+            + f"history_messages={len(self._message_history)} new_entries={new_entries_count}"
+        )
+        self._begin_eval_logging(session.session_id)
+
+        try:
+            if assert_llm_budget_available is not None:
+                assert_llm_budget_available()
+            result = await self._agent.run(
+                prompt,
+                deps=self._skills_dir,
+                message_history=self._message_history or None,
+            )
+        except Exception as exc:
+            stats = self._end_eval_logging()
+            logger.error(
+                f"Sentinel eval failed session={session.session_id} seq={eval_no} kind={kind} subject={subject} "
+                + f"error={type(exc).__name__}: {exc} {self._format_eval_stats(stats)}"
+            )
+            raise
+
+        stats = self._end_eval_logging()
+        self._message_history = result.all_messages()
+        session.sentinel_eval_count += 1
+
+        if usage_tracker:
+            usage_tracker.record(self._model, "sentinel", result.usage())
+
+        usage = result.usage()
+        logger.info(
+            f"Sentinel eval done session={session.session_id} seq={eval_no} kind={kind} subject={subject} "
+            + f"decision={result.output.decision} risk={result.output.risk_level} "
+            + f"input_tokens={usage.input_tokens or 0} output_tokens={usage.output_tokens or 0} "
+            + self._format_eval_stats(stats)
+        )
+        return result.output
 
     def _create_agent(self) -> Agent[Path, SentinelVerdict]:
         resolved = self._model_factory(self._model) if self._model_factory is not None else infer_model(self._model)
@@ -241,20 +334,15 @@ class Sentinel:
             prompt_parts.append(f"Last user message was {tool_calls_since_user} tool calls ago.")
 
             prompt = "\n".join(prompt_parts)
-            if assert_llm_budget_available is not None:
-                assert_llm_budget_available()
-            result = await self._agent.run(
+            return await self._run_evaluation(
+                session,
                 prompt,
-                deps=self._skills_dir,
-                message_history=self._message_history or None,
+                kind="tool_call",
+                subject=f"{tool_name}({_truncate(args_str, 120)})",
+                new_entries_count=len(new_entries),
+                usage_tracker=usage_tracker,
+                assert_llm_budget_available=assert_llm_budget_available,
             )
-            self._message_history = result.all_messages()
-            session.sentinel_eval_count += 1
-
-            if usage_tracker:
-                usage_tracker.record(self._model, "sentinel", result.usage())
-
-            return result.output
 
     async def evaluate_domain_access(
         self,
@@ -282,20 +370,15 @@ class Sentinel:
             prompt_parts.append(f"\nEVALUATE domain_access_request:\nDomain: {domain}\nTriggered by: {command}")
 
             prompt = "\n".join(prompt_parts)
-            if assert_llm_budget_available is not None:
-                assert_llm_budget_available()
-            result = await self._agent.run(
+            return await self._run_evaluation(
+                session,
                 prompt,
-                deps=self._skills_dir,
-                message_history=self._message_history or None,
+                kind="domain_access",
+                subject=f"{domain} via {_truncate(command, 100)}",
+                new_entries_count=len(new_entries),
+                usage_tracker=usage_tracker,
+                assert_llm_budget_available=assert_llm_budget_available,
             )
-            self._message_history = result.all_messages()
-            session.sentinel_eval_count += 1
-
-            if usage_tracker:
-                usage_tracker.record(self._model, "sentinel", result.usage())
-
-            return result.output
 
     async def evaluate_credential_access(
         self,
@@ -328,20 +411,15 @@ class Sentinel:
             prompt_parts.append(f"Triggered by: {trigger}")
 
             prompt = "\n".join(prompt_parts)
-            if assert_llm_budget_available is not None:
-                assert_llm_budget_available()
-            result = await self._agent.run(
+            return await self._run_evaluation(
+                session,
                 prompt,
-                deps=self._skills_dir,
-                message_history=self._message_history or None,
+                kind="credential_access",
+                subject=f"{vault_path} ({name})",
+                new_entries_count=len(new_entries),
+                usage_tracker=usage_tracker,
+                assert_llm_budget_available=assert_llm_budget_available,
             )
-            self._message_history = result.all_messages()
-            session.sentinel_eval_count += 1
-
-            if usage_tracker:
-                usage_tracker.record(self._model, "sentinel", result.usage())
-
-            return result.output
 
     def _should_reset(self, session: SessionSecurity) -> bool:
         return self._reset_threshold > 0 and session.sentinel_eval_count >= self._reset_threshold
@@ -354,6 +432,7 @@ class Sentinel:
         self._agent = self._create_agent()
         self._message_history.clear()
         self._skill_file_cache.clear()
+        self._end_eval_logging()
         session.reset_sentinel()
 
     async def evaluate_push(
@@ -392,17 +471,12 @@ class Sentinel:
             prompt_parts.append(f"Diff:\n{diff}")
 
             prompt = "\n".join(prompt_parts)
-            if assert_llm_budget_available is not None:
-                assert_llm_budget_available()
-            result = await self._agent.run(
+            return await self._run_evaluation(
+                session,
                 prompt,
-                deps=self._skills_dir,
-                message_history=self._message_history or None,
+                kind="git_push",
+                subject=ref,
+                new_entries_count=len(new_entries),
+                usage_tracker=usage_tracker,
+                assert_llm_budget_available=assert_llm_budget_available,
             )
-            self._message_history = result.all_messages()
-            session.sentinel_eval_count += 1
-
-            if usage_tracker:
-                usage_tracker.record(self._model, "sentinel", result.usage())
-
-            return result.output
