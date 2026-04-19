@@ -4,5 +4,9 @@
     "config:recommended"
   ],
   "prHourlyLimit": 0,
-  "prConcurrentLimit": 0
+  "prConcurrentLimit": 0,
+  "commitMessagePrefix": "⬆️ chore: ",
+  "commitMessageAction": "upgrade",
+  "commitMessageTopic": "{{depName}}",
+  "commitMessageExtra": "to {{newVersion}}"
 }
