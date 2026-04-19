@@ -1,28 +1,83 @@
 # CHANGELOG
 
 
+## v1.0.0 (2026-04-19)
+
+
+### ⬆️ Dependencies
+
+
+- ⬆️ chore: upgrade azure/setup-helm action to v5
+  ([`7d20f92`](https://github.com/thiesgerken/carapace/commit/7d20f927ea9fb50d32f2fd450065384636d96e94))
+
+  Co-authored-by: renovate[bot] <29139614+renovate[bot]@users.noreply.github.com>
+
+- ⬆️ chore: upgrade alpine Docker tag to v3.23
+  ([`3c47814`](https://github.com/thiesgerken/carapace/commit/3c47814b4f27f45e9536407f953693d6bfab424b))
+
+  Co-authored-by: renovate[bot] <29139614+renovate[bot]@users.noreply.github.com>
+
+### Other
+
+
+- Update ghcr.io/astral-sh/uv Docker digest to 240fb85
+  ([`78b2af3`](https://github.com/thiesgerken/carapace/commit/78b2af3cf3162276c0f00cdab9ca23114e3d7a99))
+
+  Co-authored-by: renovate[bot] <29139614+renovate[bot]@users.noreply.github.com>
+
+- Update dependency node to v24
+  ([`88726b5`](https://github.com/thiesgerken/carapace/commit/88726b56befc219191dfb14abc7985d6c5e5538f))
+
+  Co-authored-by: renovate[bot] <29139614+renovate[bot]@users.noreply.github.com>
+
+- Update pnpm to v10.33.0
+  ([`022657a`](https://github.com/thiesgerken/carapace/commit/022657a2e82dfc8481eb9977aee3f8a325feabf9))
+
+  Co-authored-by: renovate[bot] <29139614+renovate[bot]@users.noreply.github.com>
+
+- Update debian Docker tag to trixie-20260406
+  ([`357c501`](https://github.com/thiesgerken/carapace/commit/357c5019c47ba72d3e4bacc2676262b3f8402398))
+
+  Co-authored-by: renovate[bot] <29139614+renovate[bot]@users.noreply.github.com>
+
+- Update dependency diff to v9
+  ([`17c6487`](https://github.com/thiesgerken/carapace/commit/17c648702c5ea90c82b0204e5b1f352df4674c80))
+
+  Co-authored-by: renovate[bot] <29139614+renovate[bot]@users.noreply.github.com>
+
+- Update dependency rich to v15
+  ([`a3fc394`](https://github.com/thiesgerken/carapace/commit/a3fc39448919c06b6a7f057624619e0b170d6457))
+
+  Co-authored-by: renovate[bot] <29139614+renovate[bot]@users.noreply.github.com>
+
+- Update pnpm/action-setup action to v6
+  ([`6ae46a6`](https://github.com/thiesgerken/carapace/commit/6ae46a6abf5ed20540f36f86fb54c6e532ba6e90))
+
+  Co-authored-by: renovate[bot] <29139614+renovate[bot]@users.noreply.github.com>
+
+- Update python-semantic-release/python-semantic-release action to v10
+  ([`15b3bd4`](https://github.com/thiesgerken/carapace/commit/15b3bd480744dc3e29d3be59d4ce6fd42f84ae54))
+
 ## v0.88.2 (2026-04-19)
 
+
+### Other
+
+
+- chore: update renovate configuration to extend best practices and enable lock file maintenance
+  ([`b203daf`](https://github.com/thiesgerken/carapace/commit/b203daf3940bfbe5fe4cb58f059891772a10ed21))
+
+- chore: update renovate configuration to set PR limits
+  ([`ffdd4d3`](https://github.com/thiesgerken/carapace/commit/ffdd4d315280c9e4711547d7189ae38011454a44))
+
+- Add renovate.json
+  ([`9b64da6`](https://github.com/thiesgerken/carapace/commit/9b64da6d8be935dc2d8fb20845e6df47b2f3ab2e))
 
 ### ⬆️ Dependencies
 
 
 - ⬆️ chore: configure renovate gitmoji commits
   ([`6c9dfdd`](https://github.com/thiesgerken/carapace/commit/6c9dfddb3f817dbb7ea5550807eb696d4e3505f8))
-
-### Other
-
-
-- chore: update renovate configuration to set PR limits
-  ([`ffdd4d3`](https://github.com/thiesgerken/carapace/commit/ffdd4d315280c9e4711547d7189ae38011454a44))
-
-- Merge pull request #69 from thiesgerken/renovate/configure
-  ([`75c5432`](https://github.com/thiesgerken/carapace/commit/75c5432bd80980851148744d8c4aaf1c2b34bc98))
-
-  Configure Renovate
-
-- Add renovate.json
-  ([`9b64da6`](https://github.com/thiesgerken/carapace/commit/9b64da6d8be935dc2d8fb20845e6df47b2f3ab2e))
 
 ## v0.88.1 (2026-04-19)
 
@@ -35,17 +90,6 @@
 
 ## v0.88.0 (2026-04-19)
 
-
-### ✨ Features
-
-
-- ✨Merge pull request #68 from thiesgerken/feat/exec-scoped-network-tunnels
-  ([`6ffbcd4`](https://github.com/thiesgerken/carapace/commit/6ffbcd46e000a2fcc295c3640050c2d00b9201a3))
-
-  ✨Add exec-scoped network tunnels for skill contexts
-
-- ✨ feat: add exec-scoped network tunnels
-  ([`05655ce`](https://github.com/thiesgerken/carapace/commit/05655ce56a827c0bde93b0b81eb8cc424b267b1d))
 
 ### 🐛 Bug Fixes
 
@@ -65,19 +109,14 @@
 - 🐛 fix: address tunnel review issues
   ([`507fda4`](https://github.com/thiesgerken/carapace/commit/507fda4afdab4fe2aef2da4ffd12c3749b25c1dd))
 
-## v0.87.0 (2026-04-18)
-
-
 ### ✨ Features
 
 
-- ✨Merge pull request #67 from thiesgerken/feat/skill-activation-providers
-  ([`d459314`](https://github.com/thiesgerken/carapace/commit/d459314ffb7a0fd47e8972c53f574bd54925bb73))
+- ✨ feat: add exec-scoped network tunnels
+  ([`05655ce`](https://github.com/thiesgerken/carapace/commit/05655ce56a827c0bde93b0b81eb8cc424b267b1d))
 
-  ✨ feat: add provider-based skill activation
+## v0.87.0 (2026-04-18)
 
-- ✨ feat: add provider-based skill activation
-  ([`0441d7b`](https://github.com/thiesgerken/carapace/commit/0441d7ba91591e653c0bda37f104a51ec3dbe367))
 
 ### Other
 
@@ -126,19 +165,14 @@
 - 🐛 fix: keep usage shape estimation offline
   ([`88d3931`](https://github.com/thiesgerken/carapace/commit/88d39316ce14d940ac6c9023b9c9112b15c7c1ca))
 
-## v0.86.0 (2026-04-18)
-
-
 ### ✨ Features
 
 
-- ✨Merge pull request #66 from thiesgerken/feat/session-budgets
-  ([`a87a26e`](https://github.com/thiesgerken/carapace/commit/a87a26e1e98d7ff7ecf41bb579d53ca20b611a3a))
+- ✨ feat: add provider-based skill activation
+  ([`0441d7b`](https://github.com/thiesgerken/carapace/commit/0441d7ba91591e653c0bda37f104a51ec3dbe367))
 
-  ✨ feat: Add session budgets and budget gauges
+## v0.86.0 (2026-04-18)
 
-- ✨ feat: add session budgets and gauges
-  ([`33d059f`](https://github.com/thiesgerken/carapace/commit/33d059f1067f72c908266611316f1633f1c31426))
 
 ### 🐛 Bug Fixes
 
@@ -161,22 +195,14 @@
 - ✅ test: configure matrix budget mock
   ([`16baedc`](https://github.com/thiesgerken/carapace/commit/16baedc91422d9f35b0b2e751508d7fd82ac507f))
 
-## v0.85.0 (2026-04-17)
-
-
 ### ✨ Features
 
 
-- ✨Merge pull request #65 from thiesgerken/feat/approval-denial-messages
-  ([`3800e31`](https://github.com/thiesgerken/carapace/commit/3800e31c7adbcb71c8401f5d01f82406313b9405))
+- ✨ feat: add session budgets and gauges
+  ([`33d059f`](https://github.com/thiesgerken/carapace/commit/33d059f1067f72c908266611316f1633f1c31426))
 
-  ✨ Add denial messages to approval flows
+## v0.85.0 (2026-04-17)
 
-- ✨ improve system prompt for testing
-  ([`d047028`](https://github.com/thiesgerken/carapace/commit/d04702840f3a7019420f98bda162f5d54230acb1))
-
-- ✨ feat: add approval denial messages
-  ([`b509cf8`](https://github.com/thiesgerken/carapace/commit/b509cf8fd0496ec2d57097b66325a16941199e08))
 
 ### 🐛 Bug Fixes
 
@@ -201,6 +227,15 @@
 
 - 💄 polish: refine denial approval UI
   ([`4487d72`](https://github.com/thiesgerken/carapace/commit/4487d7239303471f939789604fafd06762fc6903))
+
+### ✨ Features
+
+
+- ✨ improve system prompt for testing
+  ([`d047028`](https://github.com/thiesgerken/carapace/commit/d04702840f3a7019420f98bda162f5d54230acb1))
+
+- ✨ feat: add approval denial messages
+  ([`b509cf8`](https://github.com/thiesgerken/carapace/commit/b509cf8fd0496ec2d57097b66325a16941199e08))
 
 ### 🩹 Patches
 
@@ -268,9 +303,6 @@
 
 - more small improvements to tool call badge
   ([`b62f1ed`](https://github.com/thiesgerken/carapace/commit/b62f1ed8e88bf4b5f4f1460924e8867ef8c47629))
-
-- Merge remote-tracking branch 'refs/remotes/origin/main'
-  ([`138a9f5`](https://github.com/thiesgerken/carapace/commit/138a9f5d1b83d7beccd523cf8ad569cbeba936dc))
 
 ### ✨ Features
 
@@ -356,7 +388,7 @@
 - ⚡ perf: use granular HTTP timeouts for LLM requests
   ([`c4a41f4`](https://github.com/thiesgerken/carapace/commit/c4a41f40f531a2830e72074439b3581e2e4b9bff))
 
-  Set connect=15s, read=300s, write=15s, pool=60s instead of a blanket 60s timeout.  This avoids premature read timeouts on slow reasoning models while detecting dead hosts faster.
+  Set connect=15s, read=300s, write=15s, pool=60s instead of a blanket 60s timeout. This avoids premature read timeouts on slow reasoning models while detecting dead hosts faster.
 
 ## v0.79.0 (2026-04-12)
 
@@ -427,12 +459,6 @@
 ## v0.76.1 (2026-04-12)
 
 
-### Other
-
-
-- Merge remote-tracking branch 'refs/remotes/origin/main'
-  ([`4a8441f`](https://github.com/thiesgerken/carapace/commit/4a8441f28acce8084a4ede693c48d4c409a273c0))
-
 ## v0.76.0 (2026-04-12)
 
 
@@ -498,9 +524,6 @@
   - Updated click from 8.3.1 to 8.3.2
   - Updated cohere from 5.21.1 to 6.1.0
   - Updated cryptography from 46.0.6 to 46.0.7
-
-- Merge remote-tracking branch 'refs/remotes/origin/main'
-  ([`babb304`](https://github.com/thiesgerken/carapace/commit/babb3045b27e298cf359c81dbe48e092b0ef0fc7))
 
 ## v0.75.0 (2026-04-11)
 
@@ -656,11 +679,6 @@
 ### ✨ Features
 
 
-- ✨Merge pull request #64 from thiesgerken/feat/context-scoped-skill-allowlists
-  ([`c258670`](https://github.com/thiesgerken/carapace/commit/c258670bfa5169e68b6e3955615729067c95920f))
-
-  ✨ Context-scoped skill allowlists
-
 - ✨ feat: show skill domains and credentials in expanded use_skill card, clean up summary
   ([`0a34122`](https://github.com/thiesgerken/carapace/commit/0a341222b2d19e88f7df0c79ab392f8e5358f3cd))
 
@@ -746,12 +764,6 @@
 
 ## v0.74.0 (2026-04-09)
 
-
-### Other
-
-
-- Merge remote-tracking branch 'refs/remotes/origin/main'
-  ([`cea60ea`](https://github.com/thiesgerken/carapace/commit/cea60eab785623c86cc640a52916bfc24cf20380))
 
 ## v0.73.0 (2026-04-09)
 
@@ -907,28 +919,6 @@
 ## v0.68.8 (2026-04-07)
 
 
-### ♻️ Refactoring
-
-
-- ♻️Merge pull request #62 from thiesgerken/refactor/structured-tool-approval-metadata
-  ([`081cb57`](https://github.com/thiesgerken/carapace/commit/081cb57fe0d1c90a3c826c70e3d84f33c1d3d3df))
-
-  ♻️ refactor: use structured tool approval metadata
-
-- ♻️ refactor(frontend): resolve remaining eslint warnings
-  ([`b3627bf`](https://github.com/thiesgerken/carapace/commit/b3627bff14924126e21ed86f72c53bd822a3c8e6))
-
-  Stabilize callback dependencies and remove unused values in chat and code-rendering components so frontend lint passes cleanly without suppressing rules.
-
-  Made-with: Cursor
-
-- ♻️ refactor(ui): use structured tool approval metadata
-  ([`c1e449b`](https://github.com/thiesgerken/carapace/commit/c1e449b4e427f1c2e6720254135afc97c3b96d53))
-
-  Pass approval source/verdict/explanation as typed fields from security evaluation through websocket/history into the UI, and render badges strictly from structured metadata instead of parsing detail strings.
-
-  Made-with: Cursor
-
 ### 💄 UI/UX
 
 
@@ -983,8 +973,22 @@
 
   Made-with: Cursor
 
-- Merge branch 'main' into refactor/structured-tool-approval-metadata
-  ([`66fb6fb`](https://github.com/thiesgerken/carapace/commit/66fb6fb8d965633a47a49e888a12f487e47a426f))
+### ♻️ Refactoring
+
+
+- ♻️ refactor(frontend): resolve remaining eslint warnings
+  ([`b3627bf`](https://github.com/thiesgerken/carapace/commit/b3627bff14924126e21ed86f72c53bd822a3c8e6))
+
+  Stabilize callback dependencies and remove unused values in chat and code-rendering components so frontend lint passes cleanly without suppressing rules.
+
+  Made-with: Cursor
+
+- ♻️ refactor(ui): use structured tool approval metadata
+  ([`c1e449b`](https://github.com/thiesgerken/carapace/commit/c1e449b4e427f1c2e6720254135afc97c3b96d53))
+
+  Pass approval source/verdict/explanation as typed fields from security evaluation through websocket/history into the UI, and render badges strictly from structured metadata instead of parsing detail strings.
+
+  Made-with: Cursor
 
 ## v0.68.7 (2026-04-07)
 
@@ -1001,12 +1005,6 @@
 
 ## v0.68.6 (2026-04-07)
 
-
-### Other
-
-
-- Merge remote-tracking branch 'refs/remotes/origin/main'
-  ([`4843128`](https://github.com/thiesgerken/carapace/commit/48431280a64283ae56786a1082467176d53e87f8))
 
 ## v0.68.5 (2026-04-07)
 
@@ -1033,12 +1031,6 @@
 
 ## v0.68.4 (2026-04-07)
 
-
-### Other
-
-
-- Merge remote-tracking branch 'refs/remotes/origin/main'
-  ([`8ea5f66`](https://github.com/thiesgerken/carapace/commit/8ea5f66243d792183461aee044ac33743676ad8e))
 
 ## v0.68.3 (2026-04-07)
 
@@ -1135,7 +1127,7 @@
   ([`b4cd7c9`](https://github.com/thiesgerken/carapace/commit/b4cd7c9826ef57de69502ac0afb153e805ac9b27))
 
   - Make read/write/replace one-liners more natural-language and less key-value style.
-  - Show  label instead of  and avoid duplicated wording.
+  - Show label instead of and avoid duplicated wording.
   - Use line-based summaries (including equal-line compact form) and inclusive read ranges.
   - Keep highlighted write/replace payload views with tool output blocks where useful.
 
@@ -1295,21 +1287,6 @@
 ## v0.61.0 (2026-04-06)
 
 
-### ✨ Features
-
-
-- ✨Merge pull request #61 from thiesgerken/feat/sandbox-collection-owner
-  ([`859774f`](https://github.com/thiesgerken/carapace/commit/859774fff972eca2c367631f17e8748aa4deca1b))
-
-  ✨ feat: prefer SandboxCollection owner for sandbox StatefulSets
-
-- ✨ feat: prefer SandboxCollection owner for sandbox StatefulSets
-  ([`f9ffb84`](https://github.com/thiesgerken/carapace/commit/f9ffb84d442691d78290efc4a6ccec12774930c7))
-
-  Introduce a SandboxCollection CRD as the preferred ownerReference anchor for runtime sandboxes while preserving Deployment fallback for safe rollout, and remove Argo Application owner lookup. Update Helm, RBAC, tests, and docs to reflect ownership-only CRD usage with no operator yet.
-
-  Made-with: Cursor
-
 ### ♻️ Refactoring
 
 
@@ -1318,20 +1295,21 @@
 
   Made-with: Cursor
 
-### Other
-
-
-- Merge branch 'main' into feat/sandbox-collection-owner
-  ([`90c2690`](https://github.com/thiesgerken/carapace/commit/90c2690a10ad517906cfe909c30802f3a5b5ff91))
-
-- Merge remote-tracking branch 'origin/main' into feat/sandbox-collection-owner
-  ([`bb395d4`](https://github.com/thiesgerken/carapace/commit/bb395d43f0759390520bd13989cf52573ec4a306))
-
 ### 🐛 Bug Fixes
 
 
 - 🐛 fix: add unified as explicit dependency
   ([`13043c7`](https://github.com/thiesgerken/carapace/commit/13043c73a847f87ea888506083f9f4bd08ce317d))
+
+### ✨ Features
+
+
+- ✨ feat: prefer SandboxCollection owner for sandbox StatefulSets
+  ([`f9ffb84`](https://github.com/thiesgerken/carapace/commit/f9ffb84d442691d78290efc4a6ccec12774930c7))
+
+  Introduce a SandboxCollection CRD as the preferred ownerReference anchor for runtime sandboxes while preserving Deployment fallback for safe rollout, and remove Argo Application owner lookup. Update Helm, RBAC, tests, and docs to reflect ownership-only CRD usage with no operator yet.
+
+  Made-with: Cursor
 
 ## v0.60.1 (2026-04-06)
 
@@ -1344,12 +1322,6 @@
 
 ## v0.60.0 (2026-04-06)
 
-
-### Other
-
-
-- Merge remote-tracking branch 'refs/remotes/origin/main'
-  ([`81a4173`](https://github.com/thiesgerken/carapace/commit/81a41738ebf00fc7dd2cfc358242cc95d76c799f))
 
 ## v0.59.1 (2026-04-06)
 
@@ -1370,12 +1342,6 @@
   Show a concise skill activation intent line and render use_skill output as markdown with YAML front matter highlighted for better readability.
 
   Made-with: Cursor
-
-### Other
-
-
-- Merge remote-tracking branch 'refs/remotes/origin/main'
-  ([`2b54c69`](https://github.com/thiesgerken/carapace/commit/2b54c69b84a477e5a07e0677cec1a368e1f291f5))
 
 ## v0.59.0 (2026-04-06)
 
@@ -1427,18 +1393,6 @@
 ## v0.56.0 (2026-04-06)
 
 
-### Other
-
-
-- Merge remote-tracking branch 'refs/remotes/origin/main'
-  ([`9ad9f90`](https://github.com/thiesgerken/carapace/commit/9ad9f9082d07b0ce9c9e6ef4099cc5b9960e6910))
-
-- dev: add more ports to cors
-  ([`802a352`](https://github.com/thiesgerken/carapace/commit/802a35248eeab0d548b25dff0da4f220a5ff72bd))
-
-- Merge remote-tracking branch 'refs/remotes/origin/main'
-  ([`daebdc0`](https://github.com/thiesgerken/carapace/commit/daebdc0316680a18fb490404ca81a383a39a022d))
-
 ### ✨ Features
 
 
@@ -1449,6 +1403,12 @@
   - Web UsageView Tokens column: show pct next to token count; CLI Context table matches
 
   Made-with: Cursor
+
+### Other
+
+
+- dev: add more ports to cors
+  ([`802a352`](https://github.com/thiesgerken/carapace/commit/802a35248eeab0d548b25dff0da4f220a5ff72bd))
 
 ### 💄 UI/UX
 
@@ -1486,12 +1446,6 @@
 ## v0.54.2 (2026-04-06)
 
 
-### Other
-
-
-- Merge remote-tracking branch 'refs/remotes/origin/main'
-  ([`da513a1`](https://github.com/thiesgerken/carapace/commit/da513a134636b000cdfa2b760424b1991d4dae30))
-
 ## v0.54.1 (2026-04-06)
 
 
@@ -1510,21 +1464,6 @@
 ## v0.54.0 (2026-04-06)
 
 
-### ✨ Features
-
-
-- ✨Merge pull request #60 from thiesgerken/feature/context-breakdown
-  ([`74e5ca8`](https://github.com/thiesgerken/carapace/commit/74e5ca85b1c64a7ab2d35ab1d8a14674ae1bfde2))
-
-  ✨ feat: LLM request log with tiktoken context breakdown
-
-- ✨ feat: LLM request log with tiktoken context breakdown
-  ([`1e0d90f`](https://github.com/thiesgerken/carapace/commit/1e0d90f6bc80a2cd532951c25b9ba29a48aa7be9))
-
-  Persist per-request API token counts and prompt-bucket percentages (system/user/assistant/tool calls/tool outputs) via LlmRequestLog; show Context section in web, CLI, and Matrix /usage; remove context_tokens; add tiktoken dependency.
-
-  Made-with: Cursor
-
 ### Other
 
 
@@ -1533,6 +1472,16 @@
 
 - styling
   ([`64a24f1`](https://github.com/thiesgerken/carapace/commit/64a24f1e5b81431bf29a6b2d3546c5716ccdec53))
+
+### ✨ Features
+
+
+- ✨ feat: LLM request log with tiktoken context breakdown
+  ([`1e0d90f`](https://github.com/thiesgerken/carapace/commit/1e0d90f6bc80a2cd532951c25b9ba29a48aa7be9))
+
+  Persist per-request API token counts and prompt-bucket percentages (system/user/assistant/tool calls/tool outputs) via LlmRequestLog; show Context section in web, CLI, and Matrix /usage; remove context_tokens; add tiktoken dependency.
+
+  Made-with: Cursor
 
 ## v0.53.0 (2026-04-05)
 
@@ -1593,12 +1542,6 @@
 
   Made-with: Cursor
 
-### Other
-
-
-- Merge remote-tracking branch 'refs/remotes/origin/main'
-  ([`5b4cab0`](https://github.com/thiesgerken/carapace/commit/5b4cab0af576720b3b78d5e4411f38fc9b80b504))
-
 ## v0.52.0 (2026-04-03)
 
 
@@ -1645,163 +1588,6 @@
 
 ## v0.50.0 (2026-04-03)
 
-
-### ✨ Features
-
-
-- ✨ Merge pull request #59 from thiesgerken/feature/credentials
-  ([`360155d`](https://github.com/thiesgerken/carapace/commit/360155de7648d46d6aadc02d888648ae73afcaa5))
-
-  ✨ feat: credential management system
-
-- ✨ feat: log sandbox tool exceptions for better error tracking
-  ([`fe91b2e`](https://github.com/thiesgerken/carapace/commit/fe91b2e4964ccf53ccc87c0b24b7fc90b4bc5e68))
-
-  - Introduced a new function `_log_sandbox_tool_exception` to log full tracebacks for sandbox tool failures.
-  - Integrated this logging function into the error handling of file read, write, edit, apply patch, and exec operations to enhance debugging capabilities.
-
-  Made-with: Cursor
-
-- ✨ feat: context_tokens for usage bar and breakdown
-  ([`4d8fd9d`](https://github.com/thiesgerken/carapace/commit/4d8fd9d9bae5d05e82df28b539cac8a88e38bb9e))
-
-  Track last-LLM slice on ModelUsage; expose TurnUsage.context_tokens over WS. Web gauge uses it; /usage shows a Context column for categories only. CLI and Matrix usage tables match.
-
-  Made-with: Cursor
-
-- ✨ feat: show per-category usage cost
-  ([`0da2b45`](https://github.com/thiesgerken/carapace/commit/0da2b45c465a0763fd2fdf7109abffe13adc1357))
-
-  Track tokens per category and model for pricing, expose category_costs in /usage payload, and render Cost in By Category (web, CLI, Matrix).
-
-  Made-with: Cursor
-
-- ✨ feat: enhance skill management and asset synchronization
-  ([`92d6072`](https://github.com/thiesgerken/carapace/commit/92d607236eaf668fec6bb2c6738e85a0ea419d33))
-
-  Introduced a new function to recursively gather file paths from bundled skills and updated the knowledge directory synchronization process to copy these skills into the target directory when missing. Removed the previous seeding logic for skills in favor of this more dynamic approach.
-
-  Made-with: Cursor
-
-- ✨ feat: Matrix channel support for credential approvals
-  ([`692fdb5`](https://github.com/thiesgerken/carapace/commit/692fdb5756b163defb175ad85f526556646cdab3))
-
-  Phase 8 of credential management.
-
-  - PendingCredentialApproval class in approval.py
-  - MatrixSubscriber.on_credential_approval_request sends formatted
-    credential request message (key icon, names, descriptions)
-  - _on_reaction handles credential approval via emoji reactions
-  - _resolve_pending handles /allow and /deny commands for credentials
-  - CredentialApprovalResponse wired through submit_approval
-
-  Made-with: Cursor
-
-- ✨ feat: Vaultwarden backend and bw serve process management
-  ([`9aef3a4`](https://github.com/thiesgerken/carapace/commit/9aef3a42199da1dd5c29eb6371b9a6e42d26957c))
-
-  Phase 7 of credential management.
-
-  - BwServeManager: handles bw login, unlock, serve lifecycle, periodic
-    vault sync, and auto-restart; managed as a child process
-  - VaultwardenBackend: talks to bw serve via httpx — fetch password by
-    UUID, fetch item metadata, list/search items with exposure filtering
-  - build_credential_registry is now async to support bw serve startup
-  - Server lifespan calls shutdown_credential_registry on exit
-  - Added bw_serve_port config field to CredentialBackendConfig
-
-  Made-with: Cursor
-
-- ✨ feat: ccred CLI helper and built-in credentials skill
-  ([`fb5b623`](https://github.com/thiesgerken/carapace/commit/fb5b623d6954ec7d4aac1cfdc4ac3d1d527bcc63))
-
-  Phase 6 of credential management.
-
-  - ccred: stdlib-only Python CLI baked into sandbox image
-    - `ccred list [-q query]`: list credential metadata
-    - `ccred get <vault_path> [-o file]`: fetch value (blocks until approved)
-    - Uses CARAPACE_API_URL for auth, no extra dependencies
-  - Built-in credentials skill (SKILL.md) teaches the agent:
-    - Auto-injection via carapace.yaml (env_var + file)
-    - On-demand fetch with ccred
-    - Security rules (never echo/log/return values)
-  - Updated sandbox Dockerfile to include ccred
-
-  Made-with: Cursor
-
-- ✨ feat: credential approval card in frontend
-  ([`2b9d253`](https://github.com/thiesgerken/carapace/commit/2b9d253ea6c3168edca406cb613104e31f33b835))
-
-  Phase 5 of credential management: frontend UI integration.
-
-  - CredentialApprovalRequest/Response types in types.ts
-  - CredentialApprovalCard component (key icon, name/description list,
-    approve/deny buttons — follows existing escalation card pattern)
-  - chat-view.tsx handles credential_approval_request WS messages,
-    sends credential_approval_response on user action
-  - History loading supports credential approval events
-  - Message component renders credential_approval chat messages
-
-  Made-with: Cursor
-
-- ✨ feat: wire credential auto-injection into use_skill tool
-  ([`4733d55`](https://github.com/thiesgerken/carapace/commit/4733d55849ba42c5294615a6d7ac0bb531824815))
-
-  Phase 4 of credential management: skill activation credential gating.
-
-  - use_skill includes credential vault_paths in sentinel gate args
-  - After approval, credentials are fetched from vault and injected:
-    - env_var entries → session_env (persists across exec calls)
-    - file entries → written to sandbox with mode 0400
-  - CredentialRegistry added to Deps and wired through SessionEngine
-  - Approved credentials recorded in session state and action log
-  - Agent never sees credential values — only injection summary
-
-  Made-with: Cursor
-
-- ✨ feat: add credential REST endpoints, approval flow, and WS messages
-  ([`34f5347`](https://github.com/thiesgerken/carapace/commit/34f5347bf100f9203c84de2cde92ec072236f6fc))
-
-  Phase 3 of credential management: server endpoints and approval wiring.
-
-  - GET /credentials (list/search) and GET /credentials/{vault_path} (fetch)
-    on sandbox API with blocking approval flow
-  - CredentialApprovalRequest/Response WebSocket messages
-  - CredentialAccessEntry in security action log
-  - SessionEngine.request_credential_approval() with queue-based blocking
-  - on_credential_approval_request added to SessionSubscriber protocol
-  - WebSocketSubscriber wired for credential approval + reconnect re-send
-  - CredentialRegistry built in server lifespan
-
-  Made-with: Cursor
-
-- ✨ feat: add file vault backend, exposure filter, and credential registry
-  ([`ab29fb1`](https://github.com/thiesgerken/carapace/commit/ab29fb198183b02cceccd4d39aa1c26ca302dee2))
-
-  Phase 2 of credential management: vault backend implementation.
-
-  - FileVaultBackend reads .env-format files, caches in memory
-  - Exposure filter (expose allowlist / hide blocklist) per backend
-  - CredentialRegistry dispatches vault_path prefixes to backends
-  - build_credential_registry() factory from config
-  - CredentialBackendConfig + CredentialsConfig added to Config model
-  - Comprehensive tests for file backend, exposure, and registry
-
-  Made-with: Cursor
-
-- ✨ feat: add credential models, vault protocol, and session_env plumbing
-  ([`12e6bcc`](https://github.com/thiesgerken/carapace/commit/12e6bcc8ef16293279016bf7d49502d81ba215a5))
-
-  Phase 1 of credential management: models and wiring.
-
-  - Add CredentialMetadata and SkillCredentialDecl models
-  - Upgrade SessionState.approved_credentials to list[CredentialMetadata]
-  - Replace MockCredentialBroker with VaultBackend protocol
-  - Add session_env to SessionContainer, wired into every _exec() call
-  - Inject CARAPACE_API_URL into sandbox environment
-  - Update all callers and tests for the new types
-
-  Made-with: Cursor
 
 ### 🐛 Bug Fixes
 
@@ -2096,12 +1882,6 @@
 
   Made-with: Cursor
 
-- Merge remote-tracking branch 'origin/main' into feature/credentials
-  ([`6946114`](https://github.com/thiesgerken/carapace/commit/6946114fb7faa83879aab31bb73de17739b59f92))
-
-- Merge branch 'main' into feature/credentials
-  ([`77433bc`](https://github.com/thiesgerken/carapace/commit/77433bc21aa9c2c73d6fc44d98e5e0a5e4b1f941))
-
 ### 🔒 Security
 
 
@@ -2145,6 +1925,158 @@
   file_write now uses shlex.quote by default, preventing shell injection from LLM-provided paths. A quote=False escape hatch preserves $HOME expansion for trusted carapace.yaml file declarations.
 
   _sync_skill_venv restores carapace.yaml alongside pyproject.toml and uv.lock, preventing the sandbox from tampering with credential or network declarations.
+
+  Made-with: Cursor
+
+### ✨ Features
+
+
+- ✨ feat: log sandbox tool exceptions for better error tracking
+  ([`fe91b2e`](https://github.com/thiesgerken/carapace/commit/fe91b2e4964ccf53ccc87c0b24b7fc90b4bc5e68))
+
+  - Introduced a new function `_log_sandbox_tool_exception` to log full tracebacks for sandbox tool failures.
+  - Integrated this logging function into the error handling of file read, write, edit, apply patch, and exec operations to enhance debugging capabilities.
+
+  Made-with: Cursor
+
+- ✨ feat: context_tokens for usage bar and breakdown
+  ([`4d8fd9d`](https://github.com/thiesgerken/carapace/commit/4d8fd9d9bae5d05e82df28b539cac8a88e38bb9e))
+
+  Track last-LLM slice on ModelUsage; expose TurnUsage.context_tokens over WS. Web gauge uses it; /usage shows a Context column for categories only. CLI and Matrix usage tables match.
+
+  Made-with: Cursor
+
+- ✨ feat: show per-category usage cost
+  ([`0da2b45`](https://github.com/thiesgerken/carapace/commit/0da2b45c465a0763fd2fdf7109abffe13adc1357))
+
+  Track tokens per category and model for pricing, expose category_costs in /usage payload, and render Cost in By Category (web, CLI, Matrix).
+
+  Made-with: Cursor
+
+- ✨ feat: enhance skill management and asset synchronization
+  ([`92d6072`](https://github.com/thiesgerken/carapace/commit/92d607236eaf668fec6bb2c6738e85a0ea419d33))
+
+  Introduced a new function to recursively gather file paths from bundled skills and updated the knowledge directory synchronization process to copy these skills into the target directory when missing. Removed the previous seeding logic for skills in favor of this more dynamic approach.
+
+  Made-with: Cursor
+
+- ✨ feat: Matrix channel support for credential approvals
+  ([`692fdb5`](https://github.com/thiesgerken/carapace/commit/692fdb5756b163defb175ad85f526556646cdab3))
+
+  Phase 8 of credential management.
+
+  - PendingCredentialApproval class in approval.py
+  - MatrixSubscriber.on_credential_approval_request sends formatted
+    credential request message (key icon, names, descriptions)
+  - _on_reaction handles credential approval via emoji reactions
+  - _resolve_pending handles /allow and /deny commands for credentials
+  - CredentialApprovalResponse wired through submit_approval
+
+  Made-with: Cursor
+
+- ✨ feat: Vaultwarden backend and bw serve process management
+  ([`9aef3a4`](https://github.com/thiesgerken/carapace/commit/9aef3a42199da1dd5c29eb6371b9a6e42d26957c))
+
+  Phase 7 of credential management.
+
+  - BwServeManager: handles bw login, unlock, serve lifecycle, periodic
+    vault sync, and auto-restart; managed as a child process
+  - VaultwardenBackend: talks to bw serve via httpx — fetch password by
+    UUID, fetch item metadata, list/search items with exposure filtering
+  - build_credential_registry is now async to support bw serve startup
+  - Server lifespan calls shutdown_credential_registry on exit
+  - Added bw_serve_port config field to CredentialBackendConfig
+
+  Made-with: Cursor
+
+- ✨ feat: ccred CLI helper and built-in credentials skill
+  ([`fb5b623`](https://github.com/thiesgerken/carapace/commit/fb5b623d6954ec7d4aac1cfdc4ac3d1d527bcc63))
+
+  Phase 6 of credential management.
+
+  - ccred: stdlib-only Python CLI baked into sandbox image
+    - `ccred list [-q query]`: list credential metadata
+    - `ccred get <vault_path> [-o file]`: fetch value (blocks until approved)
+    - Uses CARAPACE_API_URL for auth, no extra dependencies
+  - Built-in credentials skill (SKILL.md) teaches the agent:
+    - Auto-injection via carapace.yaml (env_var + file)
+    - On-demand fetch with ccred
+    - Security rules (never echo/log/return values)
+  - Updated sandbox Dockerfile to include ccred
+
+  Made-with: Cursor
+
+- ✨ feat: credential approval card in frontend
+  ([`2b9d253`](https://github.com/thiesgerken/carapace/commit/2b9d253ea6c3168edca406cb613104e31f33b835))
+
+  Phase 5 of credential management: frontend UI integration.
+
+  - CredentialApprovalRequest/Response types in types.ts
+  - CredentialApprovalCard component (key icon, name/description list,
+    approve/deny buttons — follows existing escalation card pattern)
+  - chat-view.tsx handles credential_approval_request WS messages,
+    sends credential_approval_response on user action
+  - History loading supports credential approval events
+  - Message component renders credential_approval chat messages
+
+  Made-with: Cursor
+
+- ✨ feat: wire credential auto-injection into use_skill tool
+  ([`4733d55`](https://github.com/thiesgerken/carapace/commit/4733d55849ba42c5294615a6d7ac0bb531824815))
+
+  Phase 4 of credential management: skill activation credential gating.
+
+  - use_skill includes credential vault_paths in sentinel gate args
+  - After approval, credentials are fetched from vault and injected:
+    - env_var entries → session_env (persists across exec calls)
+    - file entries → written to sandbox with mode 0400
+  - CredentialRegistry added to Deps and wired through SessionEngine
+  - Approved credentials recorded in session state and action log
+  - Agent never sees credential values — only injection summary
+
+  Made-with: Cursor
+
+- ✨ feat: add credential REST endpoints, approval flow, and WS messages
+  ([`34f5347`](https://github.com/thiesgerken/carapace/commit/34f5347bf100f9203c84de2cde92ec072236f6fc))
+
+  Phase 3 of credential management: server endpoints and approval wiring.
+
+  - GET /credentials (list/search) and GET /credentials/{vault_path} (fetch)
+    on sandbox API with blocking approval flow
+  - CredentialApprovalRequest/Response WebSocket messages
+  - CredentialAccessEntry in security action log
+  - SessionEngine.request_credential_approval() with queue-based blocking
+  - on_credential_approval_request added to SessionSubscriber protocol
+  - WebSocketSubscriber wired for credential approval + reconnect re-send
+  - CredentialRegistry built in server lifespan
+
+  Made-with: Cursor
+
+- ✨ feat: add file vault backend, exposure filter, and credential registry
+  ([`ab29fb1`](https://github.com/thiesgerken/carapace/commit/ab29fb198183b02cceccd4d39aa1c26ca302dee2))
+
+  Phase 2 of credential management: vault backend implementation.
+
+  - FileVaultBackend reads .env-format files, caches in memory
+  - Exposure filter (expose allowlist / hide blocklist) per backend
+  - CredentialRegistry dispatches vault_path prefixes to backends
+  - build_credential_registry() factory from config
+  - CredentialBackendConfig + CredentialsConfig added to Config model
+  - Comprehensive tests for file backend, exposure, and registry
+
+  Made-with: Cursor
+
+- ✨ feat: add credential models, vault protocol, and session_env plumbing
+  ([`12e6bcc`](https://github.com/thiesgerken/carapace/commit/12e6bcc8ef16293279016bf7d49502d81ba215a5))
+
+  Phase 1 of credential management: models and wiring.
+
+  - Add CredentialMetadata and SkillCredentialDecl models
+  - Upgrade SessionState.approved_credentials to list[CredentialMetadata]
+  - Replace MockCredentialBroker with VaultBackend protocol
+  - Add session_env to SessionContainer, wired into every _exec() call
+  - Inject CARAPACE_API_URL into sandbox environment
+  - Update all callers and tests for the new types
 
   Made-with: Cursor
 
@@ -2256,9 +2188,9 @@
 - ♻️ refactor: local knowledge repo always uses main branch
   ([`8e2b44e`](https://github.com/thiesgerken/carapace/commit/8e2b44e585dabfc7fbaa5e34160c70180be43301))
 
-  The git.branch config now only controls the remote branch to fetch from and push to.  Locally the knowledge repo is always initialised as 'main', and push uses a main:<remote_branch> refspec.  Sandboxes see 'main' as the default branch regardless of the remote config.
+  The git.branch config now only controls the remote branch to fetch from and push to. Locally the knowledge repo is always initialised as 'main', and push uses a main:<remote_branch> refspec. Sandboxes see 'main' as the default branch regardless of the remote config.
 
-  Rename GitStore.branch → GitStore.remote_branch to make the distinction explicit.  Update docs/git.md accordingly.
+  Rename GitStore.branch → GitStore.remote_branch to make the distinction explicit. Update docs/git.md accordingly.
 
 ## v0.48.1 (2026-03-29)
 
@@ -2282,7 +2214,7 @@
 - 🔥 remove: legacy env-var fallbacks for Secret fields
   ([`f96022f`](https://github.com/thiesgerken/carapace/commit/f96022f0023e24628890d527e0bb7a6717a2c449))
 
-  Drop CARAPACE_GIT_TOKEN, CARAPACE_MATRIX_TOKEN, and CARAPACE_MATRIX_PASSWORD environment-variable fallbacks.  If no Secret is configured the feature is simply unavailable.
+  Drop CARAPACE_GIT_TOKEN, CARAPACE_MATRIX_TOKEN, and CARAPACE_MATRIX_PASSWORD environment-variable fallbacks. If no Secret is configured the feature is simply unavailable.
 
   Add docs/git.md documenting upstream remote setup, branch requirements, first-start behaviour, and sandbox Git workflow.
 
@@ -2303,7 +2235,7 @@
 - ✨ feat: add Secret model for flexible credential sourcing
   ([`c6fa9b4`](https://github.com/thiesgerken/carapace/commit/c6fa9b4ac65fcc662f0a7c826cf5e03576aded8c))
 
-  Introduce a Secret BaseModel that resolves credentials from a raw value, an environment variable, or a file path.  Accepts plain strings as shorthand for raw values.  resolve() returns SecretStr and raises ValueError when the configured source is missing.
+  Introduce a Secret BaseModel that resolves credentials from a raw value, an environment variable, or a file path. Accepts plain strings as shorthand for raw values. resolve() returns SecretStr and raises ValueError when the configured source is missing.
 
   Config fields (MatrixChannelConfig.password/token, GitConfig.token) are Secret | None — existing env-var fallbacks are preserved when no Secret is configured.
 
@@ -2335,12 +2267,6 @@
 
   kr8s.asyncio.get() returns an async generator, not an awaitable list.
 
-### Other
-
-
-- Merge remote-tracking branch 'refs/remotes/origin/main'
-  ([`9cca306`](https://github.com/thiesgerken/carapace/commit/9cca3063274e8bb32f57053dbdbfd3fd1ec8a0e6))
-
 ## v0.47.0 (2026-03-29)
 
 
@@ -2350,7 +2276,7 @@
 - 🔥 refactor: remove unused MemoryConfig / MemorySearchConfig
   ([`75db61d`](https://github.com/thiesgerken/carapace/commit/75db61d16796fd2e3bd198645b63fb0794a65175))
 
-  These models were placeholders for a planned vector-search feature that was never implemented.  No code reads the config values.
+  These models were placeholders for a planned vector-search feature that was never implemented. No code reads the config values.
 
 ### ✨ Features
 
@@ -2358,9 +2284,9 @@
 - ✨ feat: clean up orphaned sandboxes on server startup
   ([`fe644ff`](https://github.com/thiesgerken/carapace/commit/fe644ff46b4c646b87714c3331a5e3e62a030eb5))
 
-  Add list_sandboxes() to the ContainerRuntime protocol.  Docker lists containers by the carapace.managed label; Kubernetes lists StatefulSets by app.kubernetes.io/managed-by=carapace-server.
+  Add list_sandboxes() to the ContainerRuntime protocol. Docker lists containers by the carapace.managed label; Kubernetes lists StatefulSets by app.kubernetes.io/managed-by=carapace-server.
 
-  At startup the SandboxManager diffs live sandbox resources against sessions on disk and destroys anything that no longer has a matching session directory.  Controlled by the new cleanup_orphans_on_startup config flag (default: true, env: CARAPACE_SANDBOX_CLEANUP_ORPHANS_ON_STARTUP).
+  At startup the SandboxManager diffs live sandbox resources against sessions on disk and destroys anything that no longer has a matching session directory. Controlled by the new cleanup_orphans_on_startup config flag (default: true, env: CARAPACE_SANDBOX_CLEANUP_ORPHANS_ON_STARTUP).
 
 ## v0.46.1 (2026-03-29)
 
@@ -2371,7 +2297,7 @@
 - 🐛 fix: destroy sandbox on session delete even after idle suspend
   ([`7fa2678`](https://github.com/thiesgerken/carapace/commit/7fa2678fa7de511599bd1901fd4744d7da0efb7c))
 
-  destroy_session and reset_session only called the runtime when the session had an in-memory entry.  After idle downscaling pops the entry, deleting from the UI silently skipped StatefulSet deletion, leaving orphaned resources in Kubernetes.
+  destroy_session and reset_session only called the runtime when the session had an in-memory entry. After idle downscaling pops the entry, deleting from the UI silently skipped StatefulSet deletion, leaving orphaned resources in Kubernetes.
 
   Fall back to sandbox_exists() runtime probe when no in-memory state is found, matching the pattern already used by ensure_session.
 
@@ -2384,7 +2310,7 @@
 - ✨ feat: allow separate priorityClassName for sandbox pods
   ([`92ab9c1`](https://github.com/thiesgerken/carapace/commit/92ab9c1d9b18ce71e070e76ab487bb6dc361a408))
 
-  Add sandbox.priorityClassName to the Helm chart values.  When set it overrides the global priorityClassName for sandbox StatefulSets/Pods, letting operators assign a lower priority to sandboxes than to the server and frontend.
+  Add sandbox.priorityClassName to the Helm chart values. When set it overrides the global priorityClassName for sandbox StatefulSets/Pods, letting operators assign a lower priority to sandboxes than to the server and frontend.
 
 ## v0.45.0 (2026-03-29)
 
@@ -2395,7 +2321,7 @@
 - ✨ feat: add resource limits for sandbox, frontend and backend containers
   ([`9065878`](https://github.com/thiesgerken/carapace/commit/9065878c872ff977a4ea5562cf338be57153f6d6))
 
-  The Helm chart was missing a way to specify CPU/memory requests and limits for sandbox containers.  Frontend and backend already had resources blocks in values.yaml and their templates.
+  The Helm chart was missing a way to specify CPU/memory requests and limits for sandbox containers. Frontend and backend already had resources blocks in values.yaml and their templates.
 
   Add sandbox.resources to values.yaml with sensible defaults, pass them as CARAPACE_SANDBOX_K8S_RESOURCE_* env vars to the server, and wire them through SandboxConfig → KubernetesRuntime into both Pod and StatefulSet container specs.
 
@@ -2425,27 +2351,6 @@
 ## v0.44.1 (2026-03-29)
 
 
-### ♻️ Refactoring
-
-
-- ♻️Merge pull request #58 from thiesgerken/refactor/migrate-to-kr8s
-  ([`7f7be5b`](https://github.com/thiesgerken/carapace/commit/7f7be5b971ae4092afd06d91a801699f4cc45db5))
-
-  ♻️ refactor: migrate Kubernetes runtime from official client to kr8s
-
-- ♻️ refactor: migrate Kubernetes runtime from official client to kr8s
-  ([`f1550e6`](https://github.com/thiesgerken/carapace/commit/f1550e6d1271ff0395bced6b9e12523a6c36c141))
-
-  Replace the kubernetes Python client with kr8s, a modern async-native typed Kubernetes client. Key changes:
-
-  - All K8s operations are now natively async (no asyncio.to_thread wrappers)
-  - Pod/StatefulSet specs built as plain dicts instead of V1* model objects
-  - API client lazily initialized via kr8s.asyncio.api()
-  - Owner references via dict instead of V1OwnerReference
-  - Exceptions: kr8s.NotFoundError/ServerError/ExecError replace ApiException
-  - exec uses kr8s CompletedExec (subprocess.run-like API)
-  - Tests simplified: no more sys.modules hacking to mock kubernetes package
-
 ### 🐛 Bug Fixes
 
 
@@ -2462,22 +2367,38 @@
 
   Use try/except around the delete call instead of check-then-act (exists + delete). The resource could be deleted between the two calls by GC, an operator, or another process.
 
-### Other
+### ♻️ Refactoring
 
 
-- Merge remote-tracking branch 'origin/main' into refactor/migrate-to-kr8s
-  ([`b5b0963`](https://github.com/thiesgerken/carapace/commit/b5b0963c2505c4cd03c5715aecc67971c2d253e4))
+- ♻️ refactor: migrate Kubernetes runtime from official client to kr8s
+  ([`f1550e6`](https://github.com/thiesgerken/carapace/commit/f1550e6d1271ff0395bced6b9e12523a6c36c141))
+
+  Replace the kubernetes Python client with kr8s, a modern async-native typed Kubernetes client. Key changes:
+
+  - All K8s operations are now natively async (no asyncio.to_thread wrappers)
+  - Pod/StatefulSet specs built as plain dicts instead of V1* model objects
+  - API client lazily initialized via kr8s.asyncio.api()
+  - Owner references via dict instead of V1OwnerReference
+  - Exceptions: kr8s.NotFoundError/ServerError/ExecError replace ApiException
+  - exec uses kr8s CompletedExec (subprocess.run-like API)
+  - Tests simplified: no more sys.modules hacking to mock kubernetes package
 
 ## v0.44.0 (2026-03-29)
 
 
+### 🐛 Bug Fixes
+
+
+- 🐛 fix: update tests for exec_command and on_tool_result signature changes
+  ([`f99e66f`](https://github.com/thiesgerken/carapace/commit/f99e66f862577f383dd49046f57211a1b7e1f369))
+
+  - Fix test_exec_recreate_preserves_domains to check output.output instead of comparing ExecResult to string
+  - Update _FakeSubscriber.on_tool_result signature to match SessionSubscriber protocol (accepts ToolResult instead of tool, result)
+
+  Applied via @cursor push command
+
 ### ✨ Features
 
-
-- ✨ Merge pull request #57 from thiesgerken/feat/tool-result-exit-code
-  ([`1c14b43`](https://github.com/thiesgerken/carapace/commit/1c14b437985abf0aef1caf470e1c2419e2d367b4))
-
-  ✨ Structured tool results with exit codes
 
 - ✨ feat: structured tool results with exit codes
   ([`870bdd0`](https://github.com/thiesgerken/carapace/commit/870bdd008222d24250a094f1f9efcad51cd0cfda))
@@ -2500,17 +2421,6 @@
   - Clear stale tool-call spinners on error, cancel, and WS disconnect
   - exit_code persisted in session events and restored on reload
 
-### 🐛 Bug Fixes
-
-
-- 🐛 fix: update tests for exec_command and on_tool_result signature changes
-  ([`f99e66f`](https://github.com/thiesgerken/carapace/commit/f99e66f862577f383dd49046f57211a1b7e1f369))
-
-  - Fix test_exec_recreate_preserves_domains to check output.output instead of comparing ExecResult to string
-  - Update _FakeSubscriber.on_tool_result signature to match SessionSubscriber protocol (accepts ToolResult instead of tool, result)
-
-  Applied via @cursor push command
-
 ## v0.43.4 (2026-03-29)
 
 
@@ -2520,7 +2430,7 @@
 - 🐛 fix: clear tool-call spinners on error, cancel, and disconnect
   ([`31ae55a`](https://github.com/thiesgerken/carapace/commit/31ae55a8945ef75e89dd8bd9121e17e168b25e84))
 
-  When an agent turn ends with an error or cancellation, or the WebSocket disconnects, any tool_call messages still showing a loading spinner are now cleared.  Previously the global waiting indicator stopped but individual tool badges kept spinning.
+  When an agent turn ends with an error or cancellation, or the WebSocket disconnects, any tool_call messages still showing a loading spinner are now cleared. Previously the global waiting indicator stopped but individual tool badges kept spinning.
 
 ## v0.43.3 (2026-03-29)
 
@@ -2545,12 +2455,6 @@
 ## v0.43.1 (2026-03-29)
 
 
-### Other
-
-
-- Merge remote-tracking branch 'refs/remotes/origin/main'
-  ([`ce7a45e`](https://github.com/thiesgerken/carapace/commit/ce7a45e6dd2ee42327fd2784fdcc165839c96850))
-
 ## v0.43.0 (2026-03-29)
 
 
@@ -2564,39 +2468,34 @@
 
   Add globals.css.d.ts for TS 6 strict CSS import checking. Update Dockerfile, README, AGENTS.md to reference pnpm.
 
-### ✨ Features
-
-
-- ✨Merge pull request #56 from thiesgerken/feature/sts
-  ([`4624b58`](https://github.com/thiesgerken/carapace/commit/4624b58ca7a441baaef22c65d953d5c1c4e9b54b))
-
-  ✨ Separate RWO PVCs for sessions, use StatefulSets
-
-- ✨ feat: StatefulSet sandboxes with unified runtime abstraction
-  ([`272a777`](https://github.com/thiesgerken/carapace/commit/272a777658dfadb57dd9fb25c45c1841ec919856))
-
-  Migrate Kubernetes sandboxes from bare Pods to StatefulSets with per-session PVCs (volumeClaimTemplates, RWO).  Idle sessions scale to 0 (PVC retained), resume scales back to 1.  PVC cleanup via persistentVolumeClaimRetentionPolicy (K8s 1.27+).
-
-  Introduce a clean sandbox lifecycle protocol on ContainerRuntime (create_sandbox / resume_sandbox / suspend_sandbox / destroy_sandbox) so the SandboxManager no longer branches on Docker vs Kubernetes. Mount-building, host-path rewriting, and workspace dir creation move into DockerRuntime; PVC size, storage class, service account and priority class move into KubernetesRuntime.
-
-  Add /reload slash command for full sandbox reset (delete + fresh clone).
-
-  Helm chart: RBAC for StatefulSets + PVCs, RWX to RWO on shared PVC, new sessionPvc values, env vars for PVC config.
-
 ### 🐛 Bug Fixes
 
 
 - 🐛 fix: stop repeated suspend calls on already-suspended sandboxes
   ([`26b975c`](https://github.com/thiesgerken/carapace/commit/26b975c07138d2e175a445582055c6465e49303a))
 
-  Restore the self._sessions.pop() in cleanup_session so cleanup_idle no longer rediscovers the same idle entries every cycle.  Resume after suspend now relies on the sandbox_exists() runtime probe added in the previous commit.
+  Restore the self._sessions.pop() in cleanup_session so cleanup_idle no longer rediscovers the same idle entries every cycle. Resume after suspend now relies on the sandbox_exists() runtime probe added in the previous commit.
 
 - 🐛 fix: preserve session tracking on suspend and re-attach after restart
   ([`6c6c241`](https://github.com/thiesgerken/carapace/commit/6c6c2414fd899c0c5df7ab4a59de8acad87e5d3b))
 
-  cleanup_session no longer pops the SessionContainer from self._sessions after suspending.  This lets ensure_session find the entry and call resume_sandbox instead of create_sandbox (which deletes the existing StatefulSet and its PVC).
+  cleanup_session no longer pops the SessionContainer from self._sessions after suspending. This lets ensure_session find the entry and call resume_sandbox instead of create_sandbox (which deletes the existing StatefulSet and its PVC).
 
-  Add sandbox_exists() to the ContainerRuntime protocol so ensure_session can detect orphaned sandboxes after a server restart (self._sessions is empty but the StatefulSet/container still exists in the runtime).  When found, the sandbox is re-attached or resumed rather than destroyed and recreated.
+  Add sandbox_exists() to the ContainerRuntime protocol so ensure_session can detect orphaned sandboxes after a server restart (self._sessions is empty but the StatefulSet/container still exists in the runtime). When found, the sandbox is re-attached or resumed rather than destroyed and recreated.
+
+### ✨ Features
+
+
+- ✨ feat: StatefulSet sandboxes with unified runtime abstraction
+  ([`272a777`](https://github.com/thiesgerken/carapace/commit/272a777658dfadb57dd9fb25c45c1841ec919856))
+
+  Migrate Kubernetes sandboxes from bare Pods to StatefulSets with per-session PVCs (volumeClaimTemplates, RWO). Idle sessions scale to 0 (PVC retained), resume scales back to 1. PVC cleanup via persistentVolumeClaimRetentionPolicy (K8s 1.27+).
+
+  Introduce a clean sandbox lifecycle protocol on ContainerRuntime (create_sandbox / resume_sandbox / suspend_sandbox / destroy_sandbox) so the SandboxManager no longer branches on Docker vs Kubernetes. Mount-building, host-path rewriting, and workspace dir creation move into DockerRuntime; PVC size, storage class, service account and priority class move into KubernetesRuntime.
+
+  Add /reload slash command for full sandbox reset (delete + fresh clone).
+
+  Helm chart: RBAC for StatefulSets + PVCs, RWX to RWO on shared PVC, new sessionPvc values, env vars for PVC config.
 
 ## v0.42.6 (2026-03-28)
 
@@ -2616,7 +2515,7 @@
 - 🐛 fix: add safe.directory for /workspace in sandbox image
   ([`299e504`](https://github.com/thiesgerken/carapace/commit/299e504ad2a5d6fbbeca0c985275f231e7717acc))
 
-  Git 2.35.2+ rejects operations when the repo owner differs from the current user.  The sandbox runs as root while the PVC workspace dir is owned by UID 999 (server fsGroup), triggering the dubious-ownership error on every git command.
+  Git 2.35.2+ rejects operations when the repo owner differs from the current user. The sandbox runs as root while the PVC workspace dir is owned by UID 999 (server fsGroup), triggering the dubious-ownership error on every git command.
 
 ## v0.42.4 (2026-03-27)
 
@@ -2627,7 +2526,7 @@
 - 🐛 fix: run sandbox containers as root for package installs
   ([`b75b837`](https://github.com/thiesgerken/carapace/commit/b75b837d49db87ace67c3a98882921d89bd42381))
 
-  Remove run_as_non_root / run_as_user=1000 from the K8s sandbox pod security context so the container can write to /etc/apt, /etc/pip and run apt-get install.  Privilege escalation and all capabilities remain blocked.  Revert setup-proxy.sh to the simpler root-level config writes.
+  Remove run_as_non_root / run_as_user=1000 from the K8s sandbox pod security context so the container can write to /etc/apt, /etc/pip and run apt-get install. Privilege escalation and all capabilities remain blocked. Revert setup-proxy.sh to the simpler root-level config writes.
 
 ## v0.42.3 (2026-03-27)
 
@@ -2649,9 +2548,6 @@
   ([`1a7141a`](https://github.com/thiesgerken/carapace/commit/1a7141a17d4d4955fc471e1c89f7e61ddcd1666b))
 
   This reverts commit 0cc7f973370826938d4f4a7aff003d93d86383e0.
-
-- Merge remote-tracking branch 'refs/remotes/origin/main'
-  ([`53e6959`](https://github.com/thiesgerken/carapace/commit/53e6959274274b447591a43452870f3e0c349554))
 
 ## v0.42.2 (2026-03-26)
 
@@ -2688,83 +2584,6 @@
 
 ## v0.42.0 (2026-03-26)
 
-
-### ✨ Features
-
-
-- ✨Merge pull request #52 from thiesgerken/feat/git-knowledge-store
-  ([`086ba39`](https://github.com/thiesgerken/carapace/commit/086ba39cc4301b87b8fbaf1cb2193b6a56c8b301))
-
-  ✨ feat: git-backed knowledge store
-
-- ✨ feat: dedicated GitPushApprovalRequest with changed files and sentinel explanation
-  ([`c8f7d6c`](https://github.com/thiesgerken/carapace/commit/c8f7d6c53233d584b3d3a3295563819aa1dc3343))
-
-  - Split git push escalation out of ProxyApprovalRequest into its own
-    GitPushApprovalRequest WS model (ref, explanation, changed_files)
-  - New GitPushApprovalCard frontend component with collapsible file list
-  - Rename ProxyApprovalResponse → EscalationResponse (shared escalation
-    response for both proxy domain and git push)
-  - Rename proxy_approval_queue → escalation_queue,
-    pending_proxy_approvals → pending_escalations,
-    _make_domain_escalation_cb → _make_escalation_cb
-  - Extract changed file names from unified diff in evaluate_push_with
-
-- ✨ feat: sentinel push evaluation with UI notifications and escalation
-  ([`8062d71`](https://github.com/thiesgerken/carapace/commit/8062d717df3681243d0408170bceb3330e1c1f6b))
-
-  - Add GitPushEntry to action log and 'git_push' kind to audit log.
-  - Add evaluate_push_with() security gate (allow/deny/escalate) for
-    git pushes, analogous to evaluate_domain_with().
-  - Broadcast push decisions to all session subscribers via
-    on_git_push_info callback.
-  - Add 'kind' field to ProxyApprovalRequest so escalated git pushes
-    render as 'Git Push Request' in frontend, CLI, and Matrix.
-  - Update docs/security.md and docs/sessions-and-channels.md.
-
-- ✨ feat: auto-push to remote after sandbox push & /push slash command
-  ([`060b3b4`](https://github.com/thiesgerken/carapace/commit/060b3b484c1ad5dd84ed96787558caacf0192f3e))
-
-  - Make on_push_success callback async and wire git_store.push_to_remote
-    when an external remote is configured.
-  - Add /push slash command to manually trigger a push to the remote.
-
-- ✨ feat: set git identity in sandbox containers
-  ([`d2cff63`](https://github.com/thiesgerken/carapace/commit/d2cff631f4f03d095de13b74b2383886e9b7edd0))
-
-  Pass GIT_AUTHOR_NAME, GIT_COMMITTER_NAME, GIT_AUTHOR_EMAIL and GIT_COMMITTER_EMAIL env vars so the agent can commit and push without first running git config.  The identity is derived from the configurable git.author template (default: 'Carapace Session %s <%s@carapace.local>').
-
-- ✨ feat: add workdir parameter to ContainerRuntime.exec
-  ([`e46d1fc`](https://github.com/thiesgerken/carapace/commit/e46d1fc03154826ba7d9615c663d8abf929d6dcd))
-
-  Docker passes it natively to exec_run(); Kubernetes prepends 'cd <dir> &&' since its exec API has no workdir support.
-
-  exec_command and skill venv sync now use workdir=/workspace/knowledge so the agent's cwd is the knowledge repo clone.
-
-- ✨ feat: log container tail on sandbox recreation for troubleshooting
-  ([`fd18303`](https://github.com/thiesgerken/carapace/commit/fd183039f66f8a8fe455a7f445b40d22a4d9dda0))
-
-  When a sandbox container is detected as stopped or gone, fetch and log the last 40 lines of its output before spinning up a replacement. Adds a logs() method to the ContainerRuntime protocol with Docker and Kubernetes implementations.
-
-- ✨ feat: git-backed knowledge store
-  ([`f76a1be`](https://github.com/thiesgerken/carapace/commit/f76a1bec837b5023a1ced7449cfe3cc3fd7848b0))
-
-  Split data directory into persistent data/ (config, sessions) and knowledge/ (memory, skills, SOUL.md, USER.md, SECURITY.md) backed by a Git repository.
-
-  New modules:
-  - git_store.py: async Git CLI wrapper (init, commit, push, pull)
-  - git_http.py: Git HTTP handler via git-http-backend CGI on proxy port
-
-  Key changes:
-  - Config: CARAPACE_CONFIG env var, data_dir/knowledge_dir/git fields
-  - Bootstrap: split into ensure_data_dir() and ensure_knowledge_dir()
-  - Agent: removed write tools (write_memory, save_skill, save_workspace_file),
-    sandbox uses git commit/push instead
-  - Sentinel: added evaluate_push() for pre-receive hook security gating
-  - Sandbox: mount knowledge repo as /workspace, git HTTP on proxy port
-  - Server: full lifespan rewrite with GitStore init, remote pull, bootstrap
-  - Helm: two PVCs (data RWX, knowledge RWO)
-  - Dockerfile: added git, jq, curl
 
 ### 🐛 Bug Fixes
 
@@ -2816,14 +2635,6 @@
 
 - 🐛 fix: use TestModel in session tests to avoid requiring API keys in CI
   ([`5e3dc3f`](https://github.com/thiesgerken/carapace/commit/5e3dc3f56b5f9ddb9ec551a0859499c255057a08))
-
-- 🐛 fix: address security and configuration bugs
-  ([`c55d421`](https://github.com/thiesgerken/carapace/commit/c55d42128ce667234d0756b645f861a9750a5179))
-
-  - Fix shell error suppression in _sync_skill_venv that masked pyproject.toml restore failures
-  - Change default api_port in GitHttpHandler from 8321 (public API) to 8320 (internal API)
-
-  Applied via @cursor push command
 
 - 🐛 fix: address security and configuration bugs
   ([`6ee6347`](https://github.com/thiesgerken/carapace/commit/6ee6347a15417a180accffc5a30390a3e6882ac1))
@@ -2893,14 +2704,14 @@
 - ♻️ refactor: wait for log readiness then exec git clone
   ([`f43388b`](https://github.com/thiesgerken/carapace/commit/f43388b62fc0ce076e7e769c600869c46ec8df07))
 
-  Instead of running git clone inside the container entrypoint and polling for /workspace/knowledge/.git, the container now starts with only setup-proxy.sh + sleep infinity.  After 'carapace sandbox ready' appears in the container logs, an exec runs the git clone.
+  Instead of running git clone inside the container entrypoint and polling for /workspace/knowledge/.git, the container now starts with only setup-proxy.sh + sleep infinity. After 'carapace sandbox ready' appears in the container logs, an exec runs the git clone.
 
   This gives direct visibility into clone errors (exit code + output) and cleanly separates container readiness from repo setup.
 
 - ♻️ refactor: mount whole workspace dir, clone knowledge repo into subdirectory
   ([`5c8eb1c`](https://github.com/thiesgerken/carapace/commit/5c8eb1c118ccd9285abb12ce6572467cc2e9033e))
 
-  Replace the /workspace/tmp bind mount with a full /workspace/ mount (host: sessions/{sid}/workspace/, k8s: PVC subPath).  The knowledge repo is now cloned into /workspace/knowledge/ on first container start; existing clones are left untouched on restart.
+  Replace the /workspace/tmp bind mount with a full /workspace/ mount (host: sessions/{sid}/workspace/, k8s: PVC subPath). The knowledge repo is now cloned into /workspace/knowledge/ on first container start; existing clones are left untouched on restart.
 
   This fixes 'destination path already exists' from git clone (the previous tmp sub-mount caused Docker to pre-create /workspace/) and gives the agent a persistent scratch area outside the git tree.
 
@@ -3002,6 +2813,78 @@
 
   Also fixes master skill paths to use knowledge_dir instead of data_dir.
 
+### ✨ Features
+
+
+- ✨ feat: dedicated GitPushApprovalRequest with changed files and sentinel explanation
+  ([`c8f7d6c`](https://github.com/thiesgerken/carapace/commit/c8f7d6c53233d584b3d3a3295563819aa1dc3343))
+
+  - Split git push escalation out of ProxyApprovalRequest into its own
+    GitPushApprovalRequest WS model (ref, explanation, changed_files)
+  - New GitPushApprovalCard frontend component with collapsible file list
+  - Rename ProxyApprovalResponse → EscalationResponse (shared escalation
+    response for both proxy domain and git push)
+  - Rename proxy_approval_queue → escalation_queue,
+    pending_proxy_approvals → pending_escalations,
+    _make_domain_escalation_cb → _make_escalation_cb
+  - Extract changed file names from unified diff in evaluate_push_with
+
+- ✨ feat: sentinel push evaluation with UI notifications and escalation
+  ([`8062d71`](https://github.com/thiesgerken/carapace/commit/8062d717df3681243d0408170bceb3330e1c1f6b))
+
+  - Add GitPushEntry to action log and 'git_push' kind to audit log.
+  - Add evaluate_push_with() security gate (allow/deny/escalate) for
+    git pushes, analogous to evaluate_domain_with().
+  - Broadcast push decisions to all session subscribers via
+    on_git_push_info callback.
+  - Add 'kind' field to ProxyApprovalRequest so escalated git pushes
+    render as 'Git Push Request' in frontend, CLI, and Matrix.
+  - Update docs/security.md and docs/sessions-and-channels.md.
+
+- ✨ feat: auto-push to remote after sandbox push & /push slash command
+  ([`060b3b4`](https://github.com/thiesgerken/carapace/commit/060b3b484c1ad5dd84ed96787558caacf0192f3e))
+
+  - Make on_push_success callback async and wire git_store.push_to_remote
+    when an external remote is configured.
+  - Add /push slash command to manually trigger a push to the remote.
+
+- ✨ feat: set git identity in sandbox containers
+  ([`d2cff63`](https://github.com/thiesgerken/carapace/commit/d2cff631f4f03d095de13b74b2383886e9b7edd0))
+
+  Pass GIT_AUTHOR_NAME, GIT_COMMITTER_NAME, GIT_AUTHOR_EMAIL and GIT_COMMITTER_EMAIL env vars so the agent can commit and push without first running git config. The identity is derived from the configurable git.author template (default: 'Carapace Session %s <%s@carapace.local>').
+
+- ✨ feat: add workdir parameter to ContainerRuntime.exec
+  ([`e46d1fc`](https://github.com/thiesgerken/carapace/commit/e46d1fc03154826ba7d9615c663d8abf929d6dcd))
+
+  Docker passes it natively to exec_run(); Kubernetes prepends 'cd <dir> &&' since its exec API has no workdir support.
+
+  exec_command and skill venv sync now use workdir=/workspace/knowledge so the agent's cwd is the knowledge repo clone.
+
+- ✨ feat: log container tail on sandbox recreation for troubleshooting
+  ([`fd18303`](https://github.com/thiesgerken/carapace/commit/fd183039f66f8a8fe455a7f445b40d22a4d9dda0))
+
+  When a sandbox container is detected as stopped or gone, fetch and log the last 40 lines of its output before spinning up a replacement. Adds a logs() method to the ContainerRuntime protocol with Docker and Kubernetes implementations.
+
+- ✨ feat: git-backed knowledge store
+  ([`f76a1be`](https://github.com/thiesgerken/carapace/commit/f76a1bec837b5023a1ced7449cfe3cc3fd7848b0))
+
+  Split data directory into persistent data/ (config, sessions) and knowledge/ (memory, skills, SOUL.md, USER.md, SECURITY.md) backed by a Git repository.
+
+  New modules:
+  - git_store.py: async Git CLI wrapper (init, commit, push, pull)
+  - git_http.py: Git HTTP handler via git-http-backend CGI on proxy port
+
+  Key changes:
+  - Config: CARAPACE_CONFIG env var, data_dir/knowledge_dir/git fields
+  - Bootstrap: split into ensure_data_dir() and ensure_knowledge_dir()
+  - Agent: removed write tools (write_memory, save_skill, save_workspace_file),
+    sandbox uses git commit/push instead
+  - Sentinel: added evaluate_push() for pre-receive hook security gating
+  - Sandbox: mount knowledge repo as /workspace, git HTTP on proxy port
+  - Server: full lifespan rewrite with GitStore init, remote pull, bootstrap
+  - Helm: two PVCs (data RWX, knowledge RWO)
+  - Dockerfile: added git, jq, curl
+
 ### 🔧 Configuration
 
 
@@ -3037,9 +2920,6 @@
 - 📝 docs: add pre-commit workflow note to AGENTS.md
   ([`116be57`](https://github.com/thiesgerken/carapace/commit/116be57126733efd45e6e31d2e9f3f8572afcf2e))
 
-- Merge remote-tracking branch 'refs/remotes/origin/feat/git-knowledge-store' into feat/git-knowledge-store
-  ([`522ed4e`](https://github.com/thiesgerken/carapace/commit/522ed4e9c049e9fba4e81235463ab4eab9a0b757))
-
 - 🔥 refactor: remove config.yaml bootstrapping
   ([`87c99d7`](https://github.com/thiesgerken/carapace/commit/87c99d79bc5d349e781822e89c802b8421addf4b))
 
@@ -3048,18 +2928,8 @@
 - 📝 docs: align architecture.md and memory.md with git-backed knowledge store
   ([`10eb22a`](https://github.com/thiesgerken/carapace/commit/10eb22a1f9a48c4b4769f7f7e8bcb7e3388dea62))
 
-- Merge pull request #53 from thiesgerken/copilot/sub-pr-52
-  ([`82d5ebd`](https://github.com/thiesgerken/carapace/commit/82d5ebd8d5a4684602751147599375d0e59b421f))
-
-  Fix PATH_INFO path traversal in GitHttpHandler
-
 - Initial plan
   ([`02f9300`](https://github.com/thiesgerken/carapace/commit/02f93003a04fabc4fe818c5b64ca595d3698cf64))
-
-- Merge pull request #54 from thiesgerken/copilot/sub-pr-52-again
-  ([`d6e2944`](https://github.com/thiesgerken/carapace/commit/d6e2944ae9ed254b3f3f866e87424ccc025d0fe0))
-
-  fix: use 127.0.0.1 and --fail in pre-receive hook curl call
 
 - Initial plan
   ([`7922c55`](https://github.com/thiesgerken/carapace/commit/7922c55d5a7d43d8a0f61c6388fb12652220d1b7))
@@ -3099,22 +2969,6 @@
 ## v0.41.0 (2026-03-21)
 
 
-### ✨ Features
-
-
-- ✨Merge pull request #51 from thiesgerken/feature/model-switching
-  ([`8239715`](https://github.com/thiesgerken/carapace/commit/823971555ea1275e272953f62c2e1de588503afb))
-
-  ✨ feat: add /model slash command for per-session model switching
-
-- ✨ feat: add available models list
-  ([`39bf195`](https://github.com/thiesgerken/carapace/commit/39bf1958a963613aebdd0fc6da81e499cfcbc5ae))
-
-- ✨ feat: add /model slash command for per-session model switching
-  ([`1129d4f`](https://github.com/thiesgerken/carapace/commit/1129d4fd2d2125b4c4e828e1d131ac6dd2392877))
-
-  Support switching agent, sentinel, and title models on the fly within a session via /model [--type agent|sentinel|title] [model | reset]. No args shows all three models in a table. Usage tracking correctly buckets tokens under the actual model used.
-
 ### 🐛 Bug Fixes
 
 
@@ -3139,14 +2993,19 @@
 ### Other
 
 
-- Merge remote-tracking branch 'origin/main' into feature/model-switching
-  ([`796a358`](https://github.com/thiesgerken/carapace/commit/796a35887a1c7310d0e6ac31095aab99e5671294))
-
 - fix to model autocomplete
   ([`5c80563`](https://github.com/thiesgerken/carapace/commit/5c805634e4f1224c76ef9feb3d749df302d47231))
 
-- Merge remote-tracking branch 'refs/remotes/origin/main'
-  ([`a46cfa9`](https://github.com/thiesgerken/carapace/commit/a46cfa93cdadc3d74478096996f92d470ef11e24))
+### ✨ Features
+
+
+- ✨ feat: add available models list
+  ([`39bf195`](https://github.com/thiesgerken/carapace/commit/39bf1958a963613aebdd0fc6da81e499cfcbc5ae))
+
+- ✨ feat: add /model slash command for per-session model switching
+  ([`1129d4f`](https://github.com/thiesgerken/carapace/commit/1129d4fd2d2125b4c4e828e1d131ac6dd2392877))
+
+  Support switching agent, sentinel, and title models on the fly within a session via /model [--type agent|sentinel|title] [model | reset]. No args shows all three models in a table. Usage tracking correctly buckets tokens under the actual model used.
 
 ## v0.40.2 (2026-03-21)
 
@@ -3257,12 +3116,6 @@
 ## v0.38.5 (2026-03-16)
 
 
-### Other
-
-
-- Merge remote-tracking branch 'refs/remotes/origin/main'
-  ([`8d2c3b7`](https://github.com/thiesgerken/carapace/commit/8d2c3b76a1c6efd360d3a7988894cfd7484631f4))
-
 ## v0.38.4 (2026-03-16)
 
 
@@ -3296,12 +3149,6 @@
 
 ## v0.38.2 (2026-03-16)
 
-
-### Other
-
-
-- Merge remote-tracking branch 'refs/remotes/origin/main'
-  ([`78ddea0`](https://github.com/thiesgerken/carapace/commit/78ddea0947bf8433748493f2434ecc721c052d66))
 
 ## v0.38.1 (2026-03-16)
 
@@ -3404,12 +3251,6 @@
 ## v0.34.1 (2026-03-15)
 
 
-### Other
-
-
-- Merge remote-tracking branch 'refs/remotes/origin/main'
-  ([`18ff1cf`](https://github.com/thiesgerken/carapace/commit/18ff1cf74ca91cad072cb9f5bf0d59fb76e84bd1))
-
 ## v0.34.0 (2026-03-15)
 
 
@@ -3438,12 +3279,6 @@
 
 ## v0.33.3 (2026-03-15)
 
-
-### Other
-
-
-- Merge remote-tracking branch 'refs/remotes/origin/main'
-  ([`bfff432`](https://github.com/thiesgerken/carapace/commit/bfff432f5533d710c021b11870f41d447f011daf))
 
 ## v0.33.2 (2026-03-15)
 
@@ -3507,12 +3342,6 @@
 ## v0.32.0 (2026-03-15)
 
 
-### Other
-
-
-- Merge remote-tracking branch 'refs/remotes/origin/main'
-  ([`0249cb0`](https://github.com/thiesgerken/carapace/commit/0249cb007d705636301b3cf1e858af6816936692))
-
 ## v0.31.0 (2026-03-15)
 
 
@@ -3552,12 +3381,6 @@
 ## v0.30.0 (2026-03-15)
 
 
-### Other
-
-
-- Merge remote-tracking branch 'refs/remotes/origin/main'
-  ([`97d9cb6`](https://github.com/thiesgerken/carapace/commit/97d9cb6dbbf7779613362eaafee95f8b93b08182))
-
 ## v0.29.0 (2026-03-15)
 
 
@@ -3596,12 +3419,6 @@
 
 ## v0.27.0 (2026-03-15)
 
-
-### Other
-
-
-- Merge remote-tracking branch 'refs/remotes/origin/main'
-  ([`9c3e094`](https://github.com/thiesgerken/carapace/commit/9c3e0941f6915cee642ea52c47ca953d3f22f42b))
 
 ## v0.26.0 (2026-03-15)
 
@@ -3666,9 +3483,6 @@
 - lint
   ([`f4262a9`](https://github.com/thiesgerken/carapace/commit/f4262a91c59261825fffa6e2a53c8e046ec6c9d7))
 
-- Merge remote-tracking branch 'refs/remotes/origin/main'
-  ([`49694a9`](https://github.com/thiesgerken/carapace/commit/49694a98a7e5ced9e60f15f5d4ab8738e5e64f2c))
-
 ## v0.25.0 (2026-03-14)
 
 
@@ -3701,15 +3515,6 @@
 ## v0.24.0 (2026-03-14)
 
 
-### Other
-
-
-- Merge remote-tracking branch 'refs/remotes/origin/main'
-  ([`d733ba2`](https://github.com/thiesgerken/carapace/commit/d733ba2f6206245e4a457ca2d6d39693bab36956))
-
-- Merge remote-tracking branch 'refs/remotes/origin/main'
-  ([`7959a5e`](https://github.com/thiesgerken/carapace/commit/7959a5e710c1839a01b4af71a11f29297127460b))
-
 ## v0.23.0 (2026-03-14)
 
 
@@ -3719,7 +3524,7 @@
 - ✨ feat: build skill venvs inside session container
   ([`b6cab4f`](https://github.com/thiesgerken/carapace/commit/b6cab4f2a76f8b35c5d2fcb38de98cd01eaf22f8))
 
-  Replace the ephemeral build container (_build_skill_venv with network=None) with uv sync executed inside the session's own sandbox container.  A per-session exec lock serializes all container commands; the proxy bypass flag is set/cleared atomically under that lock so no concurrent command can exploit the window.
+  Replace the ephemeral build container (_build_skill_venv with network=None) with uv sync executed inside the session's own sandbox container. A per-session exec lock serializes all container commands; the proxy bypass flag is set/cleared atomically under that lock so no concurrent command can exploit the window.
 
   - Add per-session asyncio.Lock for exec serialization
   - Proxy bypass (wildcard "*") scoped to locked _exec calls only
@@ -3767,12 +3572,6 @@
 ## v0.22.0 (2026-03-14)
 
 
-### Other
-
-
-- Merge remote-tracking branch 'refs/remotes/origin/main'
-  ([`2966b0d`](https://github.com/thiesgerken/carapace/commit/2966b0de7d9cb61aae9e0622a1c555ebb2581ecc))
-
 ## v0.21.0 (2026-03-14)
 
 
@@ -3802,9 +3601,6 @@
 
 - igns plans
   ([`d0c8b30`](https://github.com/thiesgerken/carapace/commit/d0c8b307ab8b9d3f4e3e312b0efbd2a07f311e58))
-
-- Merge remote-tracking branch 'refs/remotes/origin/main'
-  ([`7ece752`](https://github.com/thiesgerken/carapace/commit/7ece752ec76ef05a1a248b2dc0da4351359001d3))
 
 ### ⚡ Performance
 
@@ -3917,16 +3713,22 @@
 ### ✨ Features
 
 
-- ✨ refactor session handling (#45)
+- ✨ refactor session handling
   ([`d07cd03`](https://github.com/thiesgerken/carapace/commit/d07cd0370f0567e4aec2164e09070a5cd2bb3fcf))
 
-  * ✨ refactor session handling
+- ✨ refactor session handling
+  ([`d07cd03`](https://github.com/thiesgerken/carapace/commit/d07cd0370f0567e4aec2164e09070a5cd2bb3fcf))
 
-  * 🐛 remove bad session / security fallbacks
+### 🐛 Bug Fixes
+
+
+- 🐛 remove bad session / security fallbacks
+  ([`d07cd03`](https://github.com/thiesgerken/carapace/commit/d07cd0370f0567e4aec2164e09070a5cd2bb3fcf))
 
   * avoid double websocket subs
 
-  * 🐛 fix read method to check for file existence correctly
+- 🐛 fix read method to check for file existence correctly
+  ([`d07cd03`](https://github.com/thiesgerken/carapace/commit/d07cd0370f0567e4aec2164e09070a5cd2bb3fcf))
 
   * ca certs in sandbox
 
@@ -3942,7 +3744,11 @@
 
   * fix tests without anthropic key
 
-  * ♻️  refactor matrix.py into multiple files
+### ♻️ Refactoring
+
+
+- ♻️ refactor matrix.py into multiple files
+  ([`d07cd03`](https://github.com/thiesgerken/carapace/commit/d07cd0370f0567e4aec2164e09070a5cd2bb3fcf))
 
   * adjust style guide
 
@@ -3969,12 +3775,6 @@
 ## v0.18.2 (2026-03-08)
 
 
-### Other
-
-
-- Merge remote-tracking branch 'refs/remotes/origin/main'
-  ([`16346e8`](https://github.com/thiesgerken/carapace/commit/16346e8139abf3a787bdf4ab742d1f122bcf7b3e))
-
 ## v0.18.1 (2026-03-08)
 
 
@@ -3992,12 +3792,6 @@
 
 ## v0.18.0 (2026-03-08)
 
-
-### Other
-
-
-- Merge remote-tracking branch 'refs/remotes/origin/main'
-  ([`85d8e88`](https://github.com/thiesgerken/carapace/commit/85d8e88413d85851663caab528af31a95f93b048))
 
 ## v0.17.1 (2026-03-08)
 
@@ -4017,20 +3811,8 @@
 ## v0.17.0 (2026-03-08)
 
 
-### Other
-
-
-- Merge remote-tracking branch 'refs/remotes/origin/main'
-  ([`06df22e`](https://github.com/thiesgerken/carapace/commit/06df22ef29d1443374f9d5f870f47a078a2fc920))
-
 ## v0.16.0 (2026-03-08)
 
-
-### Other
-
-
-- Merge remote-tracking branch 'refs/remotes/origin/main'
-  ([`abfab2e`](https://github.com/thiesgerken/carapace/commit/abfab2e299d3004fad5a211a4b89295e04f11e7c))
 
 ## v0.15.0 (2026-03-08)
 
@@ -4080,12 +3862,6 @@
 - 🐛 escalation for eicar.com did not work
   ([`364125f`](https://github.com/thiesgerken/carapace/commit/364125f84b1ee4ddfcaf43c588213a716a2ed57f))
 
-### Other
-
-
-- Merge remote-tracking branch 'refs/remotes/origin/main'
-  ([`f3de4df`](https://github.com/thiesgerken/carapace/commit/f3de4dfdb42d697f7b32ca7086466b30df040d52))
-
 ## v0.12.1 (2026-03-08)
 
 
@@ -4106,9 +3882,6 @@
 
 - document linting in agents.md
   ([`4c40804`](https://github.com/thiesgerken/carapace/commit/4c4080413d5ecf963c7a15edcd917adf5c0c2388))
-
-- Merge remote-tracking branch 'refs/remotes/origin/main'
-  ([`bb722fc`](https://github.com/thiesgerken/carapace/commit/bb722fc9fef0269f5cd81d003e167988d1075928))
 
 ### ✨ Features
 
@@ -4176,10 +3949,11 @@
 ### ✨ Features
 
 
-- ✨ Tool/Proxy Approval via Shadow-Agent  (#39)
+- ✨ Tool/Proxy Approval via Shadow-Agent
   ([`463f10e`](https://github.com/thiesgerken/carapace/commit/463f10ed7daf095c82ad34666f3862eccf8f77cb))
 
-  * ✨ Security v2
+- ✨ Security v2
+  ([`463f10e`](https://github.com/thiesgerken/carapace/commit/463f10ed7daf095c82ad34666f3862eccf8f77cb))
 
   * 🛡️ Update SECURITY.md to enhance security guidelines and clarify agent behavior regarding prompt injection and accidental rogue actions. Added detailed sections on command scrutiny, sandbox operations, and user escalation protocols.
 
@@ -4249,10 +4023,11 @@
 ### ✨ Features
 
 
-- ✨ Matrix as additional frontend (#37)
+- ✨ Matrix as additional frontend
   ([`bb92183`](https://github.com/thiesgerken/carapace/commit/bb92183d2d3711d76c462275ff7c742a48099c24))
 
-  * ✨ Matrix as additional frontend
+- ✨ Matrix as additional frontend
+  ([`bb92183`](https://github.com/thiesgerken/carapace/commit/bb92183d2d3711d76c462275ff7c742a48099c24))
 
   * pass-through matrix pw
 
@@ -4273,7 +4048,7 @@
 ### Other
 
 
-- 💚 add docker builds to the ci (#38)
+- 💚 add docker builds to the ci
   ([`fcb36f6`](https://github.com/thiesgerken/carapace/commit/fcb36f62ccc5cd0d22bf9d4bc6bf67bf92314fff))
 
 ## v0.7.1 (2026-02-22)
@@ -4291,12 +4066,14 @@
 ### ✨ Features
 
 
-- ✨ route sandbox http calls through the backend using a CONNECT proxy (#36)
+- ✨ route sandbox http calls through the backend using a CONNECT proxy
   ([`58b96e8`](https://github.com/thiesgerken/carapace/commit/58b96e88329a7184a7cdf4263e96216eaa52336b))
 
-  * ✨ route sandbox http calls through the backend using a CONNECT proxy
+- ✨ route sandbox http calls through the backend using a CONNECT proxy
+  ([`58b96e8`](https://github.com/thiesgerken/carapace/commit/58b96e88329a7184a7cdf4263e96216eaa52336b))
 
-  * ✨ Enhance Docker configuration and logging for sandbox environment
+- ✨ Enhance Docker configuration and logging for sandbox environment
+  ([`58b96e8`](https://github.com/thiesgerken/carapace/commit/58b96e88329a7184a7cdf4263e96216eaa52336b))
 
   - Added `tty` support in `docker-compose.yml` for the carapace service.
   - Updated volume mappings to include the source directory for carapace.
@@ -4306,7 +4083,8 @@
   - Improved `DockerRuntime` to manage network names and ensure correct network connections for containers.
   - Updated `SandboxManager` to dynamically resolve and log proxy URLs based on the container's network settings.
 
-  * ✨ Implement proxy domain approval mechanism in sandbox
+- ✨ Implement proxy domain approval mechanism in sandbox
+  ([`58b96e8`](https://github.com/thiesgerken/carapace/commit/58b96e88329a7184a7cdf4263e96216eaa52336b))
 
   - Added support for proxy domain approval requests in the chat view and message components.
   - Introduced `handleProxyApproval` function to manage user decisions on proxy access.
@@ -4364,12 +4142,14 @@
 ### ✨ Features
 
 
-- ✨ Docker sandboxing for sessions (#35)
+- ✨ Docker sandboxing for sessions
   ([`ce5ca5b`](https://github.com/thiesgerken/carapace/commit/ce5ca5bcc4a7e94e89c5e09c01088e46dedc6e6c))
 
-  * ✨ Docker sandboxing for sessions
+- ✨ Docker sandboxing for sessions
+  ([`ce5ca5b`](https://github.com/thiesgerken/carapace/commit/ce5ca5bcc4a7e94e89c5e09c01088e46dedc6e6c))
 
-  * ✨ Update logging guidelines in AGENTS.md and python-style.mdc
+- ✨ Update logging guidelines in AGENTS.md and python-style.mdc
+  ([`ce5ca5b`](https://github.com/thiesgerken/carapace/commit/ce5ca5bcc4a7e94e89c5e09c01088e46dedc6e6c))
 
   - Added a section on logging best practices, specifying the exclusive use of `loguru` over stdlib `logging`.
   - Included instructions for importing `loguru` and using f-strings in log calls for improved readability and performance.
@@ -4383,7 +4163,8 @@
   - Removed the `enabled` field from `SandboxConfig` as it is no longer needed.
   - Enhanced error handling and logging in the Docker runtime and sandbox manager for better debugging and maintenance.
 
-  * ✨ Enhance Docker runtime with network management
+- ✨ Enhance Docker runtime with network management
+  ([`ce5ca5b`](https://github.com/thiesgerken/carapace/commit/ce5ca5bcc4a7e94e89c5e09c01088e46dedc6e6c))
 
   - Added a method to ensure the existence of Docker networks before container creation.
   - Improved the DockerRuntime class to manage and log network creation, enhancing the overall functionality of the sandbox environment.
@@ -4481,10 +4262,11 @@
 ### ✨ Features
 
 
-- ✨ Implement token usage tracking and reporting (#34)
+- ✨ Implement token usage tracking and reporting
   ([`00fbd8e`](https://github.com/thiesgerken/carapace/commit/00fbd8eab83a2906cb6902064ce06e1ab65a15f8))
 
-  * ✨ Implement token usage tracking and reporting
+- ✨ Implement token usage tracking and reporting
+  ([`00fbd8e`](https://github.com/thiesgerken/carapace/commit/00fbd8eab83a2906cb6902064ce06e1ab65a15f8))
 
   - Added a new `UsageTracker` class to monitor token usage across models and categories.
   - Introduced a `/usage` command in the CLI to display token usage statistics.
@@ -4492,7 +4274,8 @@
   - Updated the frontend to visualize usage data with a new `UsageView` component.
   - Bumped `carapace` version to 0.4.0 to reflect these changes.
 
-  * ✨ Enhance usage tracking and reporting features
+- ✨ Enhance usage tracking and reporting features
+  ([`00fbd8e`](https://github.com/thiesgerken/carapace/commit/00fbd8eab83a2906cb6902064ce06e1ab65a15f8))
 
   - Updated `pyproject.toml` to specify version constraints for dependencies.
   - Added new `costs` field to `UsagePayload` for tracking costs associated with token usage.
@@ -4509,7 +4292,7 @@
 ### ✨ Features
 
 
-- ✨ Add a web frontend (#31)
+- ✨ Add a web frontend
   ([`4d7e028`](https://github.com/thiesgerken/carapace/commit/4d7e0281acdb0fef1c252d0ce818fe6afc98ba6e))
 
 ## v0.3.0 (2026-02-19)
@@ -4518,10 +4301,11 @@
 ### ✨ Features
 
 
-- ✨ Revamp Carapace architecture with server and CLI client integration (#30)
+- ✨ Revamp Carapace architecture with server and CLI client integration
   ([`6644bfe`](https://github.com/thiesgerken/carapace/commit/6644bfe8bca5e79801320c76fed669e1775fa4f5))
 
-  * ✨ Revamp Carapace architecture with server and CLI client integration
+- ✨ Revamp Carapace architecture with server and CLI client integration
+  ([`6644bfe`](https://github.com/thiesgerken/carapace/commit/6644bfe8bca5e79801320c76fed669e1775fa4f5))
 
   - Introduced a FastAPI server for handling requests and WebSocket connections.
   - Updated CLI to connect to the server, replacing the previous interactive model.
@@ -4530,7 +4314,8 @@
   - Updated project dependencies to include FastAPI, Uvicorn, and WebSockets.
   - Version bump to 0.2.0 to signify major architectural changes.
 
-  * ✨ Implement session locking in WebSocket chat handler
+- ✨ Implement session locking in WebSocket chat handler
+  ([`6644bfe`](https://github.com/thiesgerken/carapace/commit/6644bfe8bca5e79801320c76fed669e1775fa4f5))
 
   - Added asyncio locks to manage concurrent access to session data, ensuring serialized agent turns.
   - Refactored chat_ws function to utilize session locks for loading and saving message history and session state.
@@ -4541,7 +4326,8 @@
   - Removed the `_server_url` function as it was no longer needed in the updated architecture.
   - Streamlined the code for better readability and maintenance.
 
-  * ✨ Improve error handling for approval requests in CLI and server
+- ✨ Improve error handling for approval requests in CLI and server
+  ([`6644bfe`](https://github.com/thiesgerken/carapace/commit/6644bfe8bca5e79801320c76fed669e1775fa4f5))
 
   - Added exception handling for keyboard interruptions during approval requests in the CLI, ensuring a graceful denial message is displayed.
   - Updated server logic to handle interrupted approvals by marking them as denied and clearing pending requests, enhancing overall robustness.
@@ -4628,7 +4414,7 @@
   - Introduced `--prev` option in the `chat` command to specify the number of previous turns to replay.
   - Updated response validation logic for improved readability.
 
-- ✨ Add bootstrap module and initial asset files for Carapace (#28)
+- ✨ Add bootstrap module and initial asset files for Carapace
   ([`655e154`](https://github.com/thiesgerken/carapace/commit/655e154612384688fa5c25d6c20600de78ec1bd4))
 
   - Introduced `bootstrap.py` to ensure the creation of critical files and directories.
@@ -4647,10 +4433,7 @@
 - update readme
   ([`2f1daa1`](https://github.com/thiesgerken/carapace/commit/2f1daa15813b60241506afde11931881fd7d1e66))
 
-- Merge remote-tracking branch 'refs/remotes/origin/main'
-  ([`85552db`](https://github.com/thiesgerken/carapace/commit/85552db18aa94bd696bc879fefca3801aecc3f34))
-
-- 📝 Add MIT LICENSE file (#3)
+- 📝 Add MIT LICENSE file
   ([`1226e36`](https://github.com/thiesgerken/carapace/commit/1226e3622ac8a65335b3eb16367104af3cdfa7a2))
 
   Co-authored-by: Cursor Agent <cursoragent@cursor.com>
@@ -4658,7 +4441,7 @@
 - fix url in readme
   ([`f2ece16`](https://github.com/thiesgerken/carapace/commit/f2ece16e3f29036c1b85d95b2c3fa39ab88fc564))
 
-- 📝 Enrich README with getting started guide and demo output (#1)
+- 📝 Enrich README with getting started guide and demo output
   ([`593d395`](https://github.com/thiesgerken/carapace/commit/593d3952b870e44ebd94f5f376ca2cb31b5b5318))
 
   * 📝 Enrich README with getting started guide and demo output
@@ -4671,7 +4454,7 @@
 
   ---------
 
-- 💚 Fix CI: add pytest dev dep and gitmoji PR title check (#2)
+- 💚 Fix CI: add pytest dev dep and gitmoji PR title check
   ([`7e0ba76`](https://github.com/thiesgerken/carapace/commit/7e0ba766fd6b13f7c68b191236fce903c06bb48f))
 
   * 💚 Fix CI: add pytest dev dep and gitmoji PR title check
