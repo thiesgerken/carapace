@@ -1,6 +1,29 @@
 # CHANGELOG
 
 
+## v0.88.2 (2026-04-19)
+
+
+### ⬆️ Dependencies
+
+
+- ⬆️ chore: configure renovate gitmoji commits
+  ([`6c9dfdd`](https://github.com/thiesgerken/carapace/commit/6c9dfddb3f817dbb7ea5550807eb696d4e3505f8))
+
+### Other
+
+
+- chore: update renovate configuration to set PR limits
+  ([`ffdd4d3`](https://github.com/thiesgerken/carapace/commit/ffdd4d315280c9e4711547d7189ae38011454a44))
+
+- Merge pull request #69 from thiesgerken/renovate/configure
+  ([`75c5432`](https://github.com/thiesgerken/carapace/commit/75c5432bd80980851148744d8c4aaf1c2b34bc98))
+
+  Configure Renovate
+
+- Add renovate.json
+  ([`9b64da6`](https://github.com/thiesgerken/carapace/commit/9b64da6d8be935dc2d8fb20845e6df47b2f3ab2e))
+
 ## v0.88.1 (2026-04-19)
 
 
