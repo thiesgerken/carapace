@@ -1,6 +1,15 @@
 # CHANGELOG
 
 
+## v0.88.6 (2026-04-19)
+
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix: improve agent loop diagnostics
+  ([`011c404`](https://github.com/thiesgerken/carapace/commit/011c404ae7d77913fff9467516363ad5f714ee71))
+
 ## v0.88.5 (2026-04-19)
 
 
