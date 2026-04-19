@@ -1,6 +1,15 @@
 # CHANGELOG
 
 
+## v0.88.1 (2026-04-19)
+
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix tunneling wait cmd
+  ([`450ae2e`](https://github.com/thiesgerken/carapace/commit/450ae2ee8c8bd260abd9b8b030ac0f74e6175722))
+
 ## v0.88.0 (2026-04-19)
 
 
