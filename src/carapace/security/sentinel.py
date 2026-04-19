@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable
+from os import stat_result
 from pathlib import Path
 from typing import Any
 
@@ -137,6 +138,7 @@ class Sentinel:
         self._model_factory = model_factory
         self._agent = self._create_agent()
         self._message_history: list[Any] = []
+        self._skill_file_cache: dict[tuple[str, str], tuple[int, int, str]] = {}
         self._lock = asyncio.Lock()
 
     def set_model(self, model: str) -> None:
@@ -152,6 +154,31 @@ class Sentinel:
         if path.exists():
             return path.read_text()
         return ""
+
+    def _read_skill_file_cached(self, skills_dir: Path, skill_name: str, path: str) -> str:
+        skill_dir = skills_dir / skill_name
+        full_path = (skill_dir / path).resolve()
+        if not str(full_path).startswith(str(skill_dir.resolve())):
+            return "Error: path escapes skill directory"
+        if not full_path.exists():
+            return f"File not found: {path}"
+
+        stat = full_path.stat()
+        cache_key = (skill_name, path)
+        cached = self._skill_file_cache.get(cache_key)
+        fingerprint = self._fingerprint_file_stat(stat)
+        if cached is not None and cached[:2] == fingerprint:
+            return (
+                f"File '{path}' for skill '{skill_name}' was already provided earlier in this sentinel conversation "
+                + "and has not changed. Reuse the previous tool result instead of reading it again."
+            )
+
+        content = full_path.read_text()
+        self._skill_file_cache[cache_key] = (*fingerprint, content)
+        return content
+
+    def _fingerprint_file_stat(self, stat: stat_result) -> tuple[int, int]:
+        return (stat.st_mtime_ns, stat.st_size)
 
     def _create_agent(self) -> Agent[Path, SentinelVerdict]:
         resolved = self._model_factory(self._model) if self._model_factory is not None else infer_model(self._model)
@@ -181,13 +208,7 @@ class Sentinel:
         @agent.tool
         async def read_skill_file(ctx: RunContext[Path], skill_name: str, path: str) -> str:
             """Read a file from a skill directory. Skills are trusted user-authored content."""
-            skill_dir = ctx.deps / skill_name
-            full_path = (skill_dir / path).resolve()
-            if not str(full_path).startswith(str(skill_dir.resolve())):
-                return "Error: path escapes skill directory"
-            if not full_path.exists():
-                return f"File not found: {path}"
-            return full_path.read_text()
+            return self._read_skill_file_cached(ctx.deps, skill_name, path)
 
         return agent
 
@@ -332,6 +353,7 @@ class Sentinel:
         )
         self._agent = self._create_agent()
         self._message_history.clear()
+        self._skill_file_cache.clear()
         session.reset_sentinel()
 
     async def evaluate_push(
