@@ -596,6 +596,8 @@ async def test_exec_command_sets_up_and_cleans_up_tunnels(tmp_path: Path):
     assert any("echo $! > /tmp/carapace-tunnel-sess-1-1993.pid; } && kill -0" in command for command in commands)
     assert any("while [ ! -f /tmp/carapace-tunnel-sess-1-1993.ready ]" in command for command in commands)
     assert any('kill "$(cat /tmp/carapace-tunnel-sess-1-1993.pid)"' in command for command in commands)
+    assert not any("do;" in command for command in commands)
+    assert not any("then;" in command for command in commands)
 
 
 @pytest.mark.anyio

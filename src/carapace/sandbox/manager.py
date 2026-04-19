@@ -631,9 +631,8 @@ class SandboxManager:
 
         for tunnel in normalized:
             paths = self._context_tunnel_paths(sc.session_id, tunnel)
-            wait_cmd = (
-                textwrap.dedent(
-                    f"""
+            wait_cmd = textwrap.dedent(
+                f"""
                 i=0
                 while [ ! -f {shlex.quote(paths.ready_path)} ]; do
                     i=$((i+1))
@@ -644,10 +643,7 @@ class SandboxManager:
                     sleep 1
                 done
                 """
-                )
-                .strip()
-                .replace("\n", "; ")
-            )
+            ).strip()
             start_cmd = (
                 f"rm -f {shlex.quote(paths.pid_path)} {shlex.quote(paths.log_path)} {shlex.quote(paths.ready_path)} && "
                 "{ "
