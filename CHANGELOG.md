@@ -1,6 +1,38 @@
 # CHANGELOG
 
 
+## v0.88.0 (2026-04-19)
+
+
+### ✨ Features
+
+
+- ✨Merge pull request #68 from thiesgerken/feat/exec-scoped-network-tunnels
+  ([`6ffbcd4`](https://github.com/thiesgerken/carapace/commit/6ffbcd46e000a2fcc295c3640050c2d00b9201a3))
+
+  ✨Add exec-scoped network tunnels for skill contexts
+
+- ✨ feat: add exec-scoped network tunnels
+  ([`05655ce`](https://github.com/thiesgerken/carapace/commit/05655ce56a827c0bde93b0b81eb8cc424b267b1d))
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix: address remaining tunnel review issues
+  ([`a76ebc5`](https://github.com/thiesgerken/carapace/commit/a76ebc510be6d2b688158cd4cb12233a05760127))
+
+- 🐛 fix: harden tunnel startup and cancelled turn persistence
+  ([`766951a`](https://github.com/thiesgerken/carapace/commit/766951aee9ac57cc0d1c6417e263eafce441eb08))
+
+- 🐛 fix: preserve tunnel helper escapes
+  ([`3f9f622`](https://github.com/thiesgerken/carapace/commit/3f9f622ab97aa6df732883ef06b127c3081ec00a))
+
+- 🐛 fix: stabilize tunnel startup pid handling
+  ([`8002c59`](https://github.com/thiesgerken/carapace/commit/8002c59ec4ee599bb560cdd295a9efd4b74b4a1c))
+
+- 🐛 fix: address tunnel review issues
+  ([`507fda4`](https://github.com/thiesgerken/carapace/commit/507fda4afdab4fe2aef2da4ffd12c3749b25c1dd))
+
 ## v0.87.0 (2026-04-18)
 
 
