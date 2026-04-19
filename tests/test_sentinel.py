@@ -66,3 +66,20 @@ def test_reset_clears_skill_file_cache(tmp_path: Path) -> None:
     sentinel._reset(session)
 
     assert sentinel._read_skill_file_cached(skills_dir, "moneydb", "SKILL.md") == "# MoneyDB\n"
+
+
+def test_eval_tool_logging_includes_context(tmp_path: Path, monkeypatch) -> None:
+    sentinel, _skills_dir = _make_sentinel(tmp_path)
+    messages: list[str] = []
+    monkeypatch.setattr("carapace.security.sentinel.logger.info", messages.append)
+
+    sentinel._begin_eval_logging("session-1", 7)
+    tool_seq = sentinel._log_tool_call("read_skill_file", skill_name="moneydb", path="SKILL.md")
+    sentinel._log_tool_result("read_skill_file", tool_seq, "cache_hit=true reuse_previous_result=true")
+
+    assert messages == [
+        "Sentinel tool call session=session-1 eval=7 step=1 tool=read_skill_file "
+        + "args=skill_name='moneydb', path='SKILL.md'",
+        "Sentinel tool result session=session-1 eval=7 step=1 tool=read_skill_file "
+        + "summary=cache_hit=true reuse_previous_result=true",
+    ]

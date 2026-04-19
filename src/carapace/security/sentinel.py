@@ -113,6 +113,11 @@ def _truncate(v: Any, limit: int = 80) -> str:
     return s[: limit - 3] + "..." if len(s) > limit else s
 
 
+def _truncate_text(text: str, limit: int = 80) -> str:
+    collapsed = " ".join(text.split())
+    return collapsed[: limit - 3] + "..." if len(collapsed) > limit else collapsed
+
+
 def _format_action_log(entries: list[Any]) -> str:
     if not entries:
         return "(empty session)"
@@ -143,6 +148,9 @@ class Sentinel:
         self._eval_cache_hits: int = 0
         self._eval_cache_misses: int = 0
         self._eval_paths: list[str] = []
+        self._eval_session_id: str | None = None
+        self._eval_no: int | None = None
+        self._eval_tool_seq: int = 0
         self._lock = asyncio.Lock()
 
     def set_model(self, model: str) -> None:
@@ -196,11 +204,63 @@ class Sentinel:
         if label not in self._eval_paths and len(self._eval_paths) < 5:
             self._eval_paths.append(label)
 
-    def _begin_eval_logging(self, _session_id: str) -> None:
+    def _log_tool_call(self, tool_name: str, **kwargs: Any) -> int:
+        self._eval_tool_seq += 1
+        args_text = ", ".join(f"{key}={_truncate(value, 60)}" for key, value in kwargs.items()) or "-"
+        session_id = self._eval_session_id or "-"
+        eval_no = self._eval_no if self._eval_no is not None else -1
+        logger.info(
+            f"Sentinel tool call session={session_id} eval={eval_no} step={self._eval_tool_seq} "
+            + f"tool={tool_name} args={args_text}"
+        )
+        return self._eval_tool_seq
+
+    def _log_tool_result(self, tool_name: str, tool_seq: int, summary: str) -> None:
+        session_id = self._eval_session_id or "-"
+        eval_no = self._eval_no if self._eval_no is not None else -1
+        logger.info(
+            f"Sentinel tool result session={session_id} eval={eval_no} step={tool_seq} "
+            + f"tool={tool_name} summary={summary}"
+        )
+
+    def _log_tool_failure(self, tool_name: str, tool_seq: int, exc: Exception) -> None:
+        session_id = self._eval_session_id or "-"
+        eval_no = self._eval_no if self._eval_no is not None else -1
+        logger.error(
+            f"Sentinel tool failure session={session_id} eval={eval_no} step={tool_seq} tool={tool_name} "
+            + f"error={type(exc).__name__}: {exc}"
+        )
+
+    def _summarize_list_skill_files_result(self, result: str) -> str:
+        if result == "No files.":
+            return "files=0"
+        if result.startswith("Skill '") and result.endswith("' not found."):
+            return _truncate_text(result, 120)
+        files = result.splitlines()
+        preview = ", ".join(files[:3])
+        if len(files) > 3:
+            preview += ", ..."
+        return f"files={len(files)} preview={_truncate_text(preview, 120)}"
+
+    def _summarize_read_skill_file_result(self, result: str) -> str:
+        if result == "Error: path escapes skill directory":
+            return "error=path escapes skill directory"
+        if result.startswith("File not found:"):
+            return _truncate_text(result, 120)
+        if "already provided earlier in this sentinel conversation" in result:
+            return "cache_hit=true reuse_previous_result=true"
+        lines = result.splitlines()
+        first_line = lines[0] if lines else result
+        return f"cache_hit=false lines={len(lines) or 1} " + f"first_line={_truncate_text(first_line, 100)}"
+
+    def _begin_eval_logging(self, session_id: str, eval_no: int) -> None:
         self._eval_skill_reads = 0
         self._eval_cache_hits = 0
         self._eval_cache_misses = 0
         self._eval_paths = []
+        self._eval_session_id = session_id
+        self._eval_no = eval_no
+        self._eval_tool_seq = 0
 
     def _end_eval_logging(self) -> dict[str, Any]:
         stats = {
@@ -213,6 +273,9 @@ class Sentinel:
         self._eval_cache_hits = 0
         self._eval_cache_misses = 0
         self._eval_paths = []
+        self._eval_session_id = None
+        self._eval_no = None
+        self._eval_tool_seq = 0
         return stats
 
     def _format_eval_stats(self, stats: dict[str, Any]) -> str:
@@ -239,7 +302,7 @@ class Sentinel:
             f"Sentinel eval start session={session.session_id} seq={eval_no} kind={kind} subject={subject} "
             + f"history_messages={len(self._message_history)} new_entries={new_entries_count}"
         )
-        self._begin_eval_logging(session.session_id)
+        self._begin_eval_logging(session.session_id, eval_no)
 
         try:
             if assert_llm_budget_available is not None:
@@ -288,20 +351,45 @@ class Sentinel:
         @agent.tool
         async def list_skill_files(ctx: RunContext[Path], skill_name: str) -> str:
             """List files in a skill's master directory. Skills are trusted user-authored content."""
-            skill_dir = ctx.deps / skill_name
-            if not skill_dir.exists() or not skill_dir.is_dir():
-                return f"Skill '{skill_name}' not found."
-            entries = sorted(skill_dir.rglob("*"))
-            lines = []
-            for e in entries:
-                if e.is_file() and "__pycache__" not in str(e) and ".venv" not in str(e):
-                    lines.append(str(e.relative_to(skill_dir)))
-            return "\n".join(lines) if lines else "No files."
+            tool_seq = self._log_tool_call("list_skill_files", skill_name=skill_name)
+            try:
+                skill_dir = ctx.deps / skill_name
+                if not skill_dir.exists() or not skill_dir.is_dir():
+                    result = f"Skill '{skill_name}' not found."
+                else:
+                    entries = sorted(skill_dir.rglob("*"))
+                    lines = []
+                    for e in entries:
+                        if e.is_file() and "__pycache__" not in str(e) and ".venv" not in str(e):
+                            lines.append(str(e.relative_to(skill_dir)))
+                    result = "\n".join(lines) if lines else "No files."
+            except Exception as exc:
+                self._log_tool_failure("list_skill_files", tool_seq, exc)
+                raise
+
+            self._log_tool_result(
+                "list_skill_files",
+                tool_seq,
+                self._summarize_list_skill_files_result(result),
+            )
+            return result
 
         @agent.tool
         async def read_skill_file(ctx: RunContext[Path], skill_name: str, path: str) -> str:
             """Read a file from a skill directory. Skills are trusted user-authored content."""
-            return self._read_skill_file_cached(ctx.deps, skill_name, path)
+            tool_seq = self._log_tool_call("read_skill_file", skill_name=skill_name, path=path)
+            try:
+                result = self._read_skill_file_cached(ctx.deps, skill_name, path)
+            except Exception as exc:
+                self._log_tool_failure("read_skill_file", tool_seq, exc)
+                raise
+
+            self._log_tool_result(
+                "read_skill_file",
+                tool_seq,
+                self._summarize_read_skill_file_result(result),
+            )
+            return result
 
         return agent
 
