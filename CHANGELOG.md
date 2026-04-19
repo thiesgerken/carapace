@@ -1,6 +1,15 @@
 # CHANGELOG
 
 
+## v0.88.5 (2026-04-19)
+
+
+### ⬆️ Dependencies
+
+
+- ⬆️ chore: relock
+  ([`7e8e806`](https://github.com/thiesgerken/carapace/commit/7e8e806f555c44d5761284833fc6d5b0499f38a9))
+
 ## v0.88.4 (2026-04-19)
 
 
