@@ -1,8 +1,13 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
-    "config:recommended"
+    "config:best-practices",
+    ":preserveSemverRanges"
   ],
+  "lockFileMaintenance": {
+    "enabled": true,
+    "automerge": false
+  },
   "prHourlyLimit": 0,
   "prConcurrentLimit": 0,
   "commitMessagePrefix": "⬆️ chore: ",
