@@ -16,6 +16,7 @@ from carapace.channels.matrix.approval import (
 )
 from carapace.channels.matrix.formatting import format_approval_request, format_domain_escalation
 from carapace.models import ToolResult
+from carapace.usage import LlmRequestState
 from carapace.ws_models import ApprovalRequest, TurnUsage
 
 if TYPE_CHECKING:
@@ -109,6 +110,9 @@ class MatrixSubscriber:
 
     async def on_thinking_token(self, content: str) -> None:
         pass  # Thinking content not displayed in Matrix
+
+    async def on_llm_activity(self, activity: LlmRequestState | None) -> None:
+        pass
 
     async def on_done(self, content: str, usage: TurnUsage, *, thinking: str | None = None) -> None:
         if self._stream_event_id is not None:

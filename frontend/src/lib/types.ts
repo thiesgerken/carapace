@@ -68,6 +68,24 @@ export interface ThinkingChunk {
   content: string;
 }
 
+export type LlmActivityPhase = "processing_prompt" | "thinking" | "generating";
+
+export interface LlmActivity {
+  request_id: string;
+  source: "agent" | "sentinel";
+  model?: string | null;
+  phase: LlmActivityPhase;
+  started_at: string;
+  first_thinking_at?: string | null;
+  last_thinking_at?: string | null;
+  first_text_at?: string | null;
+}
+
+export interface LlmActivityUpdate {
+  type: "llm_activity";
+  activity?: LlmActivity | null;
+}
+
 export interface ToolCallInfo {
   type: "tool_call";
   tool: string;
@@ -159,6 +177,15 @@ export interface TurnUsage {
   model?: string | null;
   /** Backend-resolved context window for this usage row. */
   context_cap_tokens?: number | null;
+  ttft_ms?: number | null;
+  total_duration_ms?: number | null;
+  reasoning_duration_ms?: number | null;
+  reasoning_tokens?: number | null;
+  started_at?: string | null;
+  first_thinking_at?: string | null;
+  last_thinking_at?: string | null;
+  first_text_at?: string | null;
+  completed_at?: string | null;
   /** Session budget gauges rendered below the context gauge. */
   budget_gauges?: BudgetGauge[];
 }
@@ -196,6 +223,7 @@ export interface StatusUpdate {
   type: "status";
   agent_running: boolean;
   usage?: TurnUsage;
+  llm_activity?: LlmActivity | null;
 }
 
 export interface UserMessageNotification {
@@ -217,6 +245,7 @@ export type ServerMessage =
   | ErrorMessage
   | Cancelled
   | SessionTitleUpdate
+  | LlmActivityUpdate
   | StatusUpdate
   | UserMessageNotification;
 
@@ -259,8 +288,18 @@ export type ChatMessage =
   | { kind: "user"; content: string }
   | { kind: "assistant"; content: string }
   | { kind: "streaming"; content: string }
-  | { kind: "thinking"; content: string }
-  | { kind: "thinking_streaming"; content: string }
+  | {
+      kind: "thinking";
+      content: string;
+      reasoningDurationMs?: number;
+      reasoningTokens?: number;
+    }
+  | {
+      kind: "thinking_streaming";
+      content: string;
+      reasoningDurationMs?: number;
+      reasoningTokens?: number;
+    }
   | {
       kind: "tool_call";
       tool: string;

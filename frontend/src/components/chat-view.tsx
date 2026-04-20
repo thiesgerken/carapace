@@ -15,6 +15,7 @@ import type {
   ChatMessage,
   ClientMessage,
   EscalationDecision,
+  LlmActivity,
   ServerMessage,
   TurnUsage,
 } from "@/lib/types";
@@ -26,6 +27,23 @@ interface ChatViewProps {
   token: string;
   sessionId: string;
   onTitleUpdate?: (title: string) => void;
+}
+
+function thinkingUsageMeta(usage?: TurnUsage | null): {
+  reasoningDurationMs?: number;
+  reasoningTokens?: number;
+} {
+  const meta: {
+    reasoningDurationMs?: number;
+    reasoningTokens?: number;
+  } = {};
+  if (typeof usage?.reasoning_duration_ms === "number") {
+    meta.reasoningDurationMs = usage.reasoning_duration_ms;
+  }
+  if (typeof usage?.reasoning_tokens === "number") {
+    meta.reasoningTokens = usage.reasoning_tokens;
+  }
+  return meta;
 }
 
 function normalizedDecisionMessage(message?: string | null): string | undefined {
@@ -208,6 +226,7 @@ export function ChatView({
   const [waiting, setWaiting] = useState(false);
   const [queuedMessage, setQueuedMessage] = useState<string | null>(null);
   const [usage, setUsage] = useState<TurnUsage | null>(null);
+  const [llmActivity, setLlmActivity] = useState<LlmActivity | null>(null);
   const [loadingHistory, setLoadingHistory] = useState(true);
   const [commands, setCommands] = useState<SlashCommand[]>([]);
   const [availableModelEntries, setAvailableModelEntries] = useState<
@@ -216,6 +235,7 @@ export function ChatView({
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const isAtBottomRef = useRef(true);
+  const lastThinkingStartedAtRef = useRef<string | null>(null);
   const queueRef = useRef<string | null>(null);
   const sendRef = useRef<(msg: ClientMessage) => void>(() => {});
 
@@ -522,17 +542,29 @@ export function ChatView({
     }
   }, [clearToolLoading]);
 
+  const snapshotThinkingDurationMs = useCallback((): number | undefined => {
+    const startedAt = lastThinkingStartedAtRef.current;
+    if (!startedAt) return undefined;
+    const parsed = Date.parse(startedAt);
+    if (Number.isNaN(parsed)) return undefined;
+    return Math.max(0, Date.now() - parsed);
+  }, []);
+
   const finalizeThinkingMessages = useCallback((messages: ChatMessage[]): ChatMessage[] => {
     const updated = [...messages];
     const thinkIdx = updated.findIndex((m) => m.kind === "thinking_streaming");
     if (thinkIdx !== -1) {
+      const thinking = updated[thinkIdx] as Extract<ChatMessage, { kind: "thinking_streaming" }>;
       updated[thinkIdx] = {
         kind: "thinking",
-        content: (updated[thinkIdx] as { content: string }).content,
+        content: thinking.content,
+        reasoningDurationMs:
+          thinking.reasoningDurationMs ?? snapshotThinkingDurationMs(),
+        reasoningTokens: thinking.reasoningTokens,
       };
     }
     return updated;
-  }, []);
+  }, [snapshotThinkingDurationMs]);
 
   const onMessage = useCallback(
     (msg: ServerMessage) => {
@@ -540,20 +572,22 @@ export function ChatView({
         case "done":
           setMessages((prev) => {
             const updated = [...prev];
+            const thinkingMeta = thinkingUsageMeta(msg.usage);
             // Finalize thinking: update thinking_streaming or existing thinking with authoritative content
             const thinkStreamIdx = updated.findIndex((m) => m.kind === "thinking_streaming");
             if (thinkStreamIdx !== -1) {
               updated[thinkStreamIdx] = {
                 kind: "thinking",
                 content: msg.thinking ?? (updated[thinkStreamIdx] as { content: string }).content,
+                ...thinkingMeta,
               };
             } else if (msg.thinking) {
               // Update already-finalized thinking with authoritative content, or insert if missing
               const thinkIdx = updated.findLastIndex((m) => m.kind === "thinking");
               if (thinkIdx !== -1) {
-                updated[thinkIdx] = { kind: "thinking", content: msg.thinking };
+                updated[thinkIdx] = { kind: "thinking", content: msg.thinking, ...thinkingMeta };
               } else {
-                updated.push({ kind: "thinking", content: msg.thinking });
+                updated.push({ kind: "thinking", content: msg.thinking, ...thinkingMeta });
               }
             }
             // Replace streaming message with the final content
@@ -566,6 +600,8 @@ export function ChatView({
             return updated;
           });
           if (msg.usage) setUsage(msg.usage);
+          setLlmActivity(null);
+          lastThinkingStartedAtRef.current = null;
           finishWaiting();
           break;
         case "tool_call": {
@@ -717,6 +753,8 @@ export function ChatView({
             ...prev,
             { kind: "command", command: msg.command, data: msg.data },
           ]);
+          setLlmActivity(null);
+          lastThinkingStartedAtRef.current = null;
           finishWaiting();
           break;
         case "error":
@@ -724,6 +762,8 @@ export function ChatView({
             ...prev,
             { kind: "error", detail: msg.detail },
           ]);
+          setLlmActivity(null);
+          lastThinkingStartedAtRef.current = null;
           finishWaiting();
           break;
         case "cancelled":
@@ -731,7 +771,17 @@ export function ChatView({
             ...prev,
             { kind: "error", detail: msg.detail },
           ]);
+          setLlmActivity(null);
+          lastThinkingStartedAtRef.current = null;
           finishWaiting();
+          break;
+        case "llm_activity":
+          setLlmActivity(msg.activity ?? null);
+          if (typeof msg.activity?.first_thinking_at === "string") {
+            lastThinkingStartedAtRef.current = msg.activity.first_thinking_at;
+          } else if (msg.activity?.phase === "processing_prompt") {
+            lastThinkingStartedAtRef.current = null;
+          }
           break;
         case "session_title":
           onTitleUpdate?.(msg.title);
@@ -740,6 +790,12 @@ export function ChatView({
         case "status":
           if (msg.agent_running) setWaiting(true);
           if (msg.usage) setUsage(msg.usage);
+          setLlmActivity(msg.llm_activity ?? null);
+          if (typeof msg.llm_activity?.first_thinking_at === "string") {
+            lastThinkingStartedAtRef.current = msg.llm_activity.first_thinking_at;
+          } else if (msg.llm_activity?.phase === "processing_prompt") {
+            lastThinkingStartedAtRef.current = null;
+          }
           break;
         case "user_message":
           // Slash commands end with command_result (no agent); echo must not re-arm waiting
@@ -775,10 +831,17 @@ export function ChatView({
               const last = prev[prev.length - 1] as {
                 kind: "thinking_streaming";
                 content: string;
+                reasoningDurationMs?: number;
+                reasoningTokens?: number;
               };
               return [
                 ...prev.slice(0, -1),
-                { kind: "thinking_streaming", content: last.content + msg.content },
+                {
+                  kind: "thinking_streaming",
+                  content: last.content + msg.content,
+                  reasoningDurationMs: last.reasoningDurationMs,
+                  reasoningTokens: last.reasoningTokens,
+                },
               ];
             }
             return [...prev, { kind: "thinking_streaming", content: msg.content }];
@@ -791,6 +854,7 @@ export function ChatView({
 
   const onWsDisconnect = useCallback(() => {
     queueRef.current = null;
+    lastThinkingStartedAtRef.current = null;
     setQueuedMessage(null);
     clearToolLoading();
     setWaiting(false);
@@ -821,6 +885,7 @@ export function ChatView({
       queueRef.current = content;
       setQueuedMessage(content);
     } else {
+      lastThinkingStartedAtRef.current = null;
       send({ type: "message", content });
       setWaiting(true);
     }
@@ -917,6 +982,14 @@ export function ChatView({
   }
 
   const connected = status === "connected";
+  const waitingLabel =
+    waiting && llmActivity?.source === "agent"
+      ? llmActivity.phase === "processing_prompt"
+        ? "Processing Prompt..."
+        : llmActivity.phase === "generating"
+          ? "Generating..."
+          : null
+      : null;
 
   return (
     <div className="flex flex-1 min-h-0 flex-col">
@@ -956,15 +1029,16 @@ export function ChatView({
             <Message
               key={i}
               message={msg}
+              activeLlmActivity={llmActivity}
               onApproval={handleApproval}
               onEscalation={handleEscalation}
               onCredentialApproval={handleCredentialEscalation}
             />
           ))}
-          {waiting && (
+          {waitingLabel && (
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              <span>Working…</span>
+              <span>{waitingLabel}</span>
             </div>
           )}
           <div ref={bottomRef} />

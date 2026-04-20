@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel
 
 from carapace.security.context import ApprovalSource, ApprovalVerdict
-from carapace.usage import BudgetGauge
+from carapace.usage import BudgetGauge, LlmRequestPhase, LlmSource
 
 SLASH_COMMANDS: list[dict[str, str]] = [
     {"command": "/security", "description": "Show security policy summary"},
@@ -177,6 +178,17 @@ class TurnUsageBreakdownPct(BaseModel):
     other: float
 
 
+class LlmActivity(BaseModel):
+    request_id: str
+    source: LlmSource
+    model: str | None = None
+    phase: LlmRequestPhase
+    started_at: datetime
+    first_thinking_at: datetime | None = None
+    last_thinking_at: datetime | None = None
+    first_text_at: datetime | None = None
+
+
 class TurnUsage(BaseModel):
     """Token counts from the last LLM request of a turn."""
 
@@ -185,6 +197,15 @@ class TurnUsage(BaseModel):
     breakdown_pct: TurnUsageBreakdownPct | None = None
     model: str | None = None
     context_cap_tokens: int | None = None
+    ttft_ms: int | None = None
+    total_duration_ms: int | None = None
+    reasoning_duration_ms: int | None = None
+    reasoning_tokens: int | None = None
+    started_at: datetime | None = None
+    first_thinking_at: datetime | None = None
+    last_thinking_at: datetime | None = None
+    first_text_at: datetime | None = None
+    completed_at: datetime | None = None
     budget_gauges: list[BudgetGauge] = []
 
 
@@ -221,12 +242,20 @@ class SessionTitleUpdate(BaseModel):
     usage: TurnUsage | None = None
 
 
+class LlmActivityUpdate(BaseModel):
+    """Server → Client: current in-flight LLM activity changed."""
+
+    type: Literal["llm_activity"] = "llm_activity"
+    activity: LlmActivity | None = None
+
+
 class StatusUpdate(BaseModel):
     """Server → Client: session status on connect (includes last agent-turn usage for the context bar)."""
 
     type: Literal["status"] = "status"
     agent_running: bool
     usage: TurnUsage | None = None
+    llm_activity: LlmActivity | None = None
 
 
 class UserMessageNotification(BaseModel):
@@ -250,6 +279,7 @@ ServerEnvelope = (
     | ErrorMessage
     | Cancelled
     | SessionTitleUpdate
+    | LlmActivityUpdate
     | StatusUpdate
     | UserMessageNotification
 )

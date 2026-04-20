@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from pydantic_ai import ModelMessage
 from pydantic_ai.messages import ModelRequest, ModelResponse, SystemPromptPart, TextPart, UserPromptPart
@@ -100,6 +100,61 @@ def test_usage_last_request_row_tiktoken_pct_independent_of_api_output() -> None
     assert bp["assistant"] == 0.0
     total_pct = sum(v for v in bp.values() if isinstance(v, float))
     assert abs(total_pct - 100.0) < 1e-6
+
+
+def test_usage_last_request_row_includes_timing_and_reasoning_tokens() -> None:
+    started_at = datetime.now(tz=UTC)
+    rec = LlmRequestRecord(
+        ts=started_at,
+        source="agent",
+        input_tokens=100,
+        output_tokens=50,
+        started_at=started_at,
+        first_thinking_at=started_at + timedelta(seconds=1),
+        last_thinking_at=started_at + timedelta(seconds=2),
+        first_text_at=started_at + timedelta(seconds=3),
+        completed_at=started_at + timedelta(seconds=4),
+        reasoning_tokens=64,
+        input_shape=InputShapeRatios(
+            system=0.5,
+            user=0.5,
+            assistant=0,
+            tool_calls=0,
+            tool_returns=0,
+            other=0,
+        ),
+    )
+    row = usage_last_request_row(rec)
+    assert row is not None
+    assert row["reasoning_tokens"] == 64
+    assert row["ttft_ms"] == 3000
+
+
+def test_usage_last_request_row_calculates_durations() -> None:
+    started_at = datetime.now(tz=UTC)
+    rec = LlmRequestRecord(
+        ts=started_at,
+        source="agent",
+        input_tokens=100,
+        output_tokens=50,
+        started_at=started_at,
+        first_thinking_at=started_at + timedelta(seconds=1),
+        first_text_at=started_at + timedelta(seconds=3),
+        completed_at=started_at + timedelta(seconds=5),
+        input_shape=InputShapeRatios(
+            system=0.5,
+            user=0.5,
+            assistant=0,
+            tool_calls=0,
+            tool_returns=0,
+            other=0,
+        ),
+    )
+    row = usage_last_request_row(rec)
+    assert row is not None
+    assert row["ttft_ms"] == 3000
+    assert row["reasoning_duration_ms"] == 2000
+    assert row["total_duration_ms"] == 5000
 
 
 def test_gauge_breakdown_pct_dict_none_without_shape() -> None:
