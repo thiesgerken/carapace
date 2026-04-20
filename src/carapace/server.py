@@ -620,7 +620,14 @@ class WebSocketSubscriber:
         )
 
     async def on_tool_result(self, result: ToolResult) -> None:
-        await self._safe_send(ToolResultInfo(tool=result.tool, result=result.output, exit_code=result.exit_code))
+        await self._safe_send(
+            ToolResultInfo(
+                tool=result.tool,
+                result=result.output,
+                exit_code=result.exit_code,
+                tool_id=result.tool_id,
+            )
+        )
 
     async def on_token(self, content: str) -> None:
         await self._safe_send(TokenChunk(content=content))
@@ -660,6 +667,7 @@ class WebSocketSubscriber:
         approval_source: ApprovalSource | None = None,
         approval_verdict: ApprovalVerdict | None = None,
         approval_explanation: str | None = None,
+        tool_id: str | None = None,
         parent_tool_id: str | None = None,
     ) -> None:
         await self._safe_send(
@@ -670,6 +678,7 @@ class WebSocketSubscriber:
                 approval_source=approval_source,
                 approval_verdict=approval_verdict,
                 approval_explanation=approval_explanation,
+                tool_id=tool_id,
                 parent_tool_id=parent_tool_id,
             )
         )
@@ -682,6 +691,7 @@ class WebSocketSubscriber:
         approval_source: ApprovalSource | None = None,
         approval_verdict: ApprovalVerdict | None = None,
         approval_explanation: str | None = None,
+        tool_id: str | None = None,
         parent_tool_id: str | None = None,
     ) -> None:
         await self._safe_send(
@@ -692,6 +702,7 @@ class WebSocketSubscriber:
                 approval_source=approval_source,
                 approval_verdict=approval_verdict,
                 approval_explanation=approval_explanation,
+                tool_id=tool_id,
                 parent_tool_id=parent_tool_id,
             )
         )
@@ -704,6 +715,7 @@ class WebSocketSubscriber:
         approval_source: ApprovalSource | None = None,
         approval_verdict: ApprovalVerdict | None = None,
         approval_explanation: str | None = None,
+        tool_id: str | None = None,
         parent_tool_id: str | None = None,
     ) -> None:
         await self._safe_send(
@@ -714,6 +726,7 @@ class WebSocketSubscriber:
                 approval_source=approval_source,
                 approval_verdict=approval_verdict,
                 approval_explanation=approval_explanation,
+                tool_id=tool_id,
                 parent_tool_id=parent_tool_id,
             )
         )

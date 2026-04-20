@@ -112,7 +112,14 @@ def _notify_approved_start(ctx: RunContext[Deps], tool_name: str, args: dict[str
 
 def _notify_result(ctx: RunContext[Deps], tool_name: str, result: str, exit_code: int = 0) -> None:
     if ctx.deps.tool_result_callback:
-        ctx.deps.tool_result_callback(ToolResult(tool=tool_name, output=result, exit_code=exit_code))
+        ctx.deps.tool_result_callback(
+            ToolResult(
+                tool=tool_name,
+                output=result,
+                exit_code=exit_code,
+                tool_id=ctx.deps.security.current_parent_tool_id,
+            )
+        )
 
 
 def truncate_tool_output(text: str, max_chars: int) -> str:

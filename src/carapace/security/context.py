@@ -366,6 +366,26 @@ class SessionSecurity:
             approval_explanation=approval_explanation,
         )
 
+    def notify_credential_review(
+        self,
+        vault_path: str,
+        detail: str,
+        *,
+        name: str = "",
+        approval_source: ApprovalSource | None = None,
+        approval_verdict: ApprovalVerdict | None = None,
+        approval_explanation: str | None = None,
+    ) -> None:
+        """Emit a provisional credential UI event without triggering duplicate suppression."""
+        self._emit_credential_ui(
+            vault_path,
+            detail,
+            name=name,
+            approval_source=approval_source,
+            approval_verdict=approval_verdict,
+            approval_explanation=approval_explanation,
+        )
+
     def record_credential_access(
         self,
         *,

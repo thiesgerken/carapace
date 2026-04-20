@@ -3,8 +3,10 @@ from __future__ import annotations
 import json
 import secrets
 import shutil
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
+from threading import RLock
 from typing import Any
 
 import yaml
@@ -43,6 +45,7 @@ class SessionManager:
     def __init__(self, data_dir: Path):
         self.sessions_dir = data_dir / "sessions"
         self.sessions_dir.mkdir(parents=True, exist_ok=True)
+        self._events_lock = RLock()
 
     def create_session(
         self,
@@ -183,7 +186,7 @@ class SessionManager:
 
     # --- Event log (ordered display history including slash commands) ---
 
-    def load_events(self, session_id: str) -> list[dict[str, Any]]:
+    def _load_events_unlocked(self, session_id: str) -> list[dict[str, Any]]:
         events_path = self.sessions_dir / session_id / "events.yaml"
         if not events_path.exists():
             # fallback to legacy JSON
@@ -214,7 +217,11 @@ class SessionManager:
                     logger.warning(f"Skipped {skipped_docs} invalid event document(s) in session {session_id}")
         return result
 
-    def append_events(self, session_id: str, events: list[dict[str, Any]]) -> None:
+    def load_events(self, session_id: str) -> list[dict[str, Any]]:
+        with self._events_lock:
+            return self._load_events_unlocked(session_id)
+
+    def _append_events_unlocked(self, session_id: str, events: list[dict[str, Any]]) -> None:
         session_dir = self.sessions_dir / session_id
         session_dir.mkdir(parents=True, exist_ok=True)
         events_path = session_dir / "events.yaml"
@@ -223,7 +230,11 @@ class SessionManager:
                 f.write("---\n")
                 yaml.dump(_to_yaml_safe(event), f, default_flow_style=False, allow_unicode=True, sort_keys=False)
 
-    def save_events(self, session_id: str, events: list[dict[str, Any]]) -> None:
+    def append_events(self, session_id: str, events: list[dict[str, Any]]) -> None:
+        with self._events_lock:
+            self._append_events_unlocked(session_id, events)
+
+    def _save_events_unlocked(self, session_id: str, events: list[dict[str, Any]]) -> None:
         session_dir = self.sessions_dir / session_id
         session_dir.mkdir(parents=True, exist_ok=True)
         events_path = session_dir / "events.yaml"
@@ -231,3 +242,18 @@ class SessionManager:
             for event in events:
                 f.write("---\n")
                 yaml.dump(_to_yaml_safe(event), f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+
+    def save_events(self, session_id: str, events: list[dict[str, Any]]) -> None:
+        with self._events_lock:
+            self._save_events_unlocked(session_id, events)
+
+    def update_events(
+        self,
+        session_id: str,
+        updater: Callable[[list[dict[str, Any]]], Any],
+    ) -> Any:
+        with self._events_lock:
+            events = self._load_events_unlocked(session_id)
+            result = updater(events)
+            self._save_events_unlocked(session_id, events)
+            return result

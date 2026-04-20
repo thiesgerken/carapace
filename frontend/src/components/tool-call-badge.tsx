@@ -262,7 +262,7 @@ function ApprovalBadge({
   tooltip,
 }: {
   source: ApprovalSource;
-  verdict: ApprovalVerdict;
+  verdict?: ApprovalVerdict;
   tooltip?: string;
 }) {
   if (source === "safe-list") {
@@ -275,6 +275,17 @@ function ApprovalBadge({
   }
 
   if (source === "sentinel") {
+    if (verdict == null) {
+      return (
+        <span
+          className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium bg-slate-500/10 text-slate-600 dark:text-slate-400"
+          title={tooltip || undefined}
+        >
+          <Loader2 className="h-2.5 w-2.5 animate-spin" />
+          review
+        </span>
+      );
+    }
     const colorClass =
       verdict === "allow"
         ? "bg-green-500/10 text-green-600 dark:text-green-400"
@@ -365,17 +376,21 @@ export function ToolCallBadge({
   const [skillInstructionsOpen, setSkillInstructionsOpen] = useState(false);
   void _detail;
   const source = approvalSource;
-  const verdict = approvalVerdict ?? "allow";
+  const verdict = approvalVerdict;
   const explanation = approvalExplanation ?? "";
   const hasExplicitDecisionMessage = decisionMessage !== undefined;
+  const isSentinelReviewPending = source === "sentinel" && verdict == null;
   const sentinelExplanation =
-    source === "sentinel" || hasExplicitDecisionMessage ? explanation : "";
+    ((source === "sentinel" && verdict != null) || hasExplicitDecisionMessage)
+      ? explanation
+      : "";
   const finalDecisionMessage = hasExplicitDecisionMessage
     ? decisionMessage ?? ""
     : source === "user"
       ? explanation
       : "";
-  const showUserDecision = source === "user" && (verdict === "deny" || finalDecisionMessage.length > 0);
+  const showUserDecision =
+    source === "user" && (verdict === "deny" || finalDecisionMessage.length > 0);
   const isError = exitCode != null && exitCode !== 0;
   const isExecTool = tool === "exec";
   const isUseSkillTool = tool === "use_skill";
@@ -581,6 +596,16 @@ export function ToolCallBadge({
                 {useSkillName}
               </span>{" "}
               skill.
+            </div>
+          )}
+
+          {isSentinelReviewPending && (
+            <div className="text-[11px] text-muted-foreground leading-relaxed">
+              <span className="font-medium text-foreground/70">
+                <Loader2 className="inline h-3 w-3 -translate-y-px mr-1 animate-spin" />
+                Sentinel:
+              </span>
+              Reviewing this tool call.
             </div>
           )}
 
