@@ -323,6 +323,7 @@ export function ChatView({
                 ...toolCall,
                 result: h.result,
                 exitCode: h.exit_code,
+                loading: false,
               };
             }
             if (queue && queue.length === 0) {

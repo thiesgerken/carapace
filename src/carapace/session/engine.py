@@ -1071,8 +1071,10 @@ class SessionEngine:
         approval_verdict: ApprovalVerdict | None = None,
         approval_explanation: str | None = None,
         parent_tool_id: str | None = None,
+        match_args: dict[str, Any] | None = None,
     ) -> str:
         contexts_raw = args.get("contexts")
+        matching_args = match_args if match_args is not None else args
         event: dict[str, Any] = {
             "role": "tool_call",
             "tool": tool,
@@ -1094,11 +1096,16 @@ class SessionEngine:
                 existing = events[index]
                 if existing.get("role") != "tool_call":
                     continue
-                if existing.get("tool") != tool or existing.get("args") != args:
+                if existing.get("tool") != tool:
                     continue
                 if existing.get("parent_tool_id") != parent_tool_id:
                     continue
                 if existing.get("approval_source") != "sentinel" or existing.get("approval_verdict") is not None:
+                    continue
+                existing_args = existing.get("args")
+                if not isinstance(existing_args, dict):
+                    continue
+                if any(existing_args.get(key) != value for key, value in matching_args.items()):
                     continue
 
                 tool_id = str(existing.get("tool_id") or uuid.uuid4())
@@ -1705,6 +1712,7 @@ class SessionEngine:
                 approval_verdict=approval_verdict,
                 approval_explanation=approval_explanation,
                 parent_tool_id=parent_id,
+                match_args={"ref": ref},
             )
             await self._broadcast(
                 active,
@@ -1756,6 +1764,7 @@ class SessionEngine:
                 approval_verdict=approval_verdict,
                 approval_explanation=approval_explanation,
                 parent_tool_id=parent_id,
+                match_args={"vault_path": vault_path},
             )
             task = asyncio.ensure_future(
                 self._broadcast(

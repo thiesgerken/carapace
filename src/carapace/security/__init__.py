@@ -383,6 +383,7 @@ async def evaluate_credential_with(
 
     session.record_credential_access(
         vault_paths=[vault_path],
+        names=[name],
         decision=cred_decision,
         explanation=verdict.explanation,
         ui_label=detail,
