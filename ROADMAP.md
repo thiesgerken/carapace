@@ -51,5 +51,4 @@
 ## Workspace Files
 
 - [ ] **`HEARTBEAT.md` support** — cron reads this for periodic task definitions
-- [ ] **Gated workspace writes** — writes to `SOUL.md`, `USER.md`, etc. go through the pending-write approval mechanism
 - [ ] **`TOOLS.md` read gating** — optionally treat reading tool definitions as a security-sensitive operation
