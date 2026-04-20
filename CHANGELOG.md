@@ -1,6 +1,27 @@
 # CHANGELOG
 
 
+## v0.89.0 (2026-04-20)
+
+
+### ✨ Features
+
+
+- ✨ Improve tool-call feedback during sentinel review
+  ([`c46346d`](https://github.com/thiesgerken/carapace/commit/c46346df841ea0f0b70201e613fc7ff5f68710cb))
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix: stream tool activity before sentinel decisions
+  ([`c46346d`](https://github.com/thiesgerken/carapace/commit/c46346df841ea0f0b70201e613fc7ff5f68710cb))
+
+- 🐛 fix: address tool feedback review comments
+  ([`c46346d`](https://github.com/thiesgerken/carapace/commit/c46346df841ea0f0b70201e613fc7ff5f68710cb))
+
+- 🐛 fix: stabilize tool and thinking feedback
+  ([`c46346d`](https://github.com/thiesgerken/carapace/commit/c46346df841ea0f0b70201e613fc7ff5f68710cb))
+
 ## v0.88.9 (2026-04-20)
 
 
