@@ -1089,33 +1089,37 @@ class SessionEngine:
         if isinstance(contexts_raw, list):
             event["contexts"] = list(contexts_raw)
 
-        should_update_pending = approval_source == "sentinel" and approval_verdict is not None
-        if should_update_pending:
-            events = self._session_mgr.load_events(session_id)
-            for index in range(len(events) - 1, -1, -1):
-                existing = events[index]
-                if existing.get("role") != "tool_call":
-                    continue
-                if existing.get("tool") != tool:
-                    continue
-                if existing.get("parent_tool_id") != parent_tool_id:
-                    continue
-                if existing.get("approval_source") != "sentinel" or existing.get("approval_verdict") is not None:
-                    continue
-                existing_args = existing.get("args")
-                if not isinstance(existing_args, dict):
-                    continue
-                if any(existing_args.get(key) != value for key, value in matching_args.items()):
-                    continue
+        should_update_existing = approval_verdict is not None and approval_source in {"sentinel", "user"}
 
-                tool_id = str(existing.get("tool_id") or uuid.uuid4())
-                events[index] = {**existing, **event, "tool_id": tool_id}
-                self._session_mgr.save_events(session_id, events)
-                return tool_id
+        def _mutate(events: list[dict[str, Any]]) -> str:
+            if should_update_existing:
+                for index in range(len(events) - 1, -1, -1):
+                    existing = events[index]
+                    if existing.get("role") != "tool_call":
+                        continue
+                    if existing.get("tool") != tool:
+                        continue
+                    if existing.get("parent_tool_id") != parent_tool_id:
+                        continue
+                    if existing.get("approval_source") != "sentinel":
+                        continue
+                    if existing.get("approval_verdict") not in (None, "escalate"):
+                        continue
+                    existing_args = existing.get("args")
+                    if not isinstance(existing_args, dict):
+                        continue
+                    if any(existing_args.get(key) != value for key, value in matching_args.items()):
+                        continue
 
-        tool_id = str(uuid.uuid4())
-        self._session_mgr.append_events(session_id, [{**event, "tool_id": tool_id}])
-        return tool_id
+                    tool_id = str(existing.get("tool_id") or uuid.uuid4())
+                    events[index] = {**existing, **event, "tool_id": tool_id}
+                    return tool_id
+
+            tool_id = str(uuid.uuid4())
+            events.append({**event, "tool_id": tool_id})
+            return tool_id
+
+        return self._session_mgr.update_events(session_id, _mutate)
 
     # -- internal turn runner --
 

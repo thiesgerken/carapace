@@ -522,6 +522,18 @@ export function ChatView({
     }
   }, [clearToolLoading]);
 
+  const finalizeThinkingMessages = useCallback((messages: ChatMessage[]): ChatMessage[] => {
+    const updated = [...messages];
+    const thinkIdx = updated.findIndex((m) => m.kind === "thinking_streaming");
+    if (thinkIdx !== -1) {
+      updated[thinkIdx] = {
+        kind: "thinking",
+        content: (updated[thinkIdx] as { content: string }).content,
+      };
+    }
+    return updated;
+  }, []);
+
   const onMessage = useCallback(
     (msg: ServerMessage) => {
       switch (msg.type) {
@@ -590,7 +602,7 @@ export function ChatView({
           ) {
             setMessages((prev) =>
               applyApprovedApprovalToMessages(
-                prev,
+                finalizeThinkingMessages(prev),
                 { tool: msg.tool, args: msg.args },
                 isLoading,
               ),
@@ -599,17 +611,18 @@ export function ChatView({
           }
           if (msg.tool_id) {
             setMessages((prev) => {
-              const updated = updateToolCallMessageById(prev, msg.tool_id!, (entry) => ({
+              const withThinkingFinalized = finalizeThinkingMessages(prev);
+              const updated = updateToolCallMessageById(withThinkingFinalized, msg.tool_id!, (entry) => ({
                 ...entry,
                 ...newMsg,
               }));
               if (updated.found) return updated.messages;
 
               if (msg.parent_tool_id) {
-                for (let i = prev.length - 1; i >= 0; i--) {
-                  const m = prev[i];
+                for (let i = withThinkingFinalized.length - 1; i >= 0; i--) {
+                  const m = withThinkingFinalized[i];
                   if (m.kind === "tool_call" && m.toolId === msg.parent_tool_id) {
-                    const next = [...prev];
+                    const next = [...withThinkingFinalized];
                     next[i] = {
                       ...m,
                       children: [...(m.children ?? []), newMsg],
@@ -619,7 +632,7 @@ export function ChatView({
                 }
               }
 
-              return [...prev, newMsg];
+              return [...withThinkingFinalized, newMsg];
             });
             if (isGitPush) finishWaiting();
             break;
@@ -627,7 +640,7 @@ export function ChatView({
           if (msg.parent_tool_id) {
             // Attach to parent tool call
             setMessages((prev) => {
-              const updated = [...prev];
+              const updated = finalizeThinkingMessages(prev);
               for (let i = updated.length - 1; i >= 0; i--) {
                 const m = updated[i];
                 if (m.kind === "tool_call" && m.toolId === msg.parent_tool_id) {
@@ -639,10 +652,10 @@ export function ChatView({
                 }
               }
               // Parent not found — render top-level
-              return [...prev, newMsg];
+              return [...updated, newMsg];
             });
           } else {
-            setMessages((prev) => [...prev, newMsg]);
+            setMessages((prev) => [...finalizeThinkingMessages(prev), newMsg]);
           }
           if (isGitPush) finishWaiting();
           break;
@@ -742,15 +755,7 @@ export function ChatView({
         case "token":
           setWaiting(true);
           setMessages((prev) => {
-            const updated = [...prev];
-            // Finalize any open thinking_streaming → thinking when text tokens arrive
-            const thinkIdx = updated.findIndex((m) => m.kind === "thinking_streaming");
-            if (thinkIdx !== -1) {
-              updated[thinkIdx] = {
-                kind: "thinking",
-                content: (updated[thinkIdx] as { content: string }).content,
-              };
-            }
+            const updated = finalizeThinkingMessages(prev);
             const lastIdx = updated.length - 1;
             if (lastIdx >= 0 && updated[lastIdx].kind === "streaming") {
               updated[lastIdx] = {
@@ -781,7 +786,7 @@ export function ChatView({
           break;
       }
     },
-    [finishWaiting, onTitleUpdate],
+    [finalizeThinkingMessages, finishWaiting, onTitleUpdate],
   );
 
   const onWsDisconnect = useCallback(() => {

@@ -251,6 +251,123 @@ def _make_engine(tmp_path: Path) -> SessionEngine:
     )
 
 
+def test_record_tool_call_event_reuses_sentinel_row_for_user_decision(tmp_path: Path) -> None:
+    with _patch_sentinel():
+        engine = _make_engine(tmp_path)
+
+    sid = engine.session_mgr.create_session().session_id
+
+    initial_tool_id = engine._record_tool_call_event(
+        sid,
+        tool="proxy_domain",
+        args={"domain": "example.com", "command": "curl https://example.com"},
+        detail="[sentinel] reviewing",
+        approval_source="sentinel",
+    )
+    updated_tool_id = engine._record_tool_call_event(
+        sid,
+        tool="proxy_domain",
+        args={"domain": "example.com", "command": "curl https://example.com"},
+        detail="[user: allow]",
+        approval_source="user",
+        approval_verdict="allow",
+    )
+
+    assert updated_tool_id == initial_tool_id
+    assert engine.session_mgr.load_events(sid) == [
+        {
+            "role": "tool_call",
+            "tool": "proxy_domain",
+            "args": {"domain": "example.com", "command": "curl https://example.com"},
+            "detail": "[user: allow]",
+            "approval_source": "user",
+            "approval_verdict": "allow",
+            "approval_explanation": None,
+            "tool_id": initial_tool_id,
+        }
+    ]
+
+
+def test_truncate_incomplete_events_keeps_completed_user_approved_exec(tmp_path: Path) -> None:
+    with _patch_sentinel():
+        engine = _make_engine(tmp_path)
+
+    sid = engine.session_mgr.create_session().session_id
+
+    reviewing_tool_id = engine._record_tool_call_event(
+        sid,
+        tool="exec",
+        args={"command": "ls"},
+        detail="[sentinel] reviewing",
+        approval_source="sentinel",
+    )
+    escalated_tool_id = engine._record_tool_call_event(
+        sid,
+        tool="exec",
+        args={"command": "ls"},
+        detail="[sentinel: escalate] needs approval",
+        approval_source="sentinel",
+        approval_verdict="escalate",
+        approval_explanation="needs approval",
+    )
+    approved_tool_id = engine._record_tool_call_event(
+        sid,
+        tool="exec",
+        args={"command": "ls"},
+        detail="[user approved]",
+        approval_source="user",
+        approval_verdict="allow",
+        approval_explanation="user approved",
+    )
+
+    assert reviewing_tool_id == escalated_tool_id == approved_tool_id
+
+    engine.session_mgr.append_events(
+        sid,
+        [
+            {
+                "role": "tool_result",
+                "tool": "exec",
+                "result": "ok",
+                "exit_code": 0,
+                "tool_id": approved_tool_id,
+            },
+            {
+                "role": "tool_call",
+                "tool": "exec",
+                "args": {"command": "pwd"},
+                "detail": "[safe-list] auto-allowed",
+                "approval_source": "safe-list",
+                "approval_verdict": "allow",
+                "approval_explanation": "auto-allowed",
+                "tool_id": "later-exec",
+            },
+        ],
+    )
+
+    truncated = engine._truncate_incomplete_events(engine.session_mgr.load_events(sid))
+
+    assert truncated == [
+        {
+            "role": "tool_call",
+            "tool": "exec",
+            "args": {"command": "ls"},
+            "detail": "[user approved]",
+            "approval_source": "user",
+            "approval_verdict": "allow",
+            "approval_explanation": "user approved",
+            "tool_id": approved_tool_id,
+        },
+        {
+            "role": "tool_result",
+            "tool": "exec",
+            "result": "ok",
+            "exit_code": 0,
+            "tool_id": approved_tool_id,
+        },
+    ]
+
+
 def test_available_model_entries_override_default_with_metadata(tmp_path: Path):
     """``available_models`` lists every selectable model; duplicate id in YAML keeps last row metadata."""
     (tmp_path / "config.yaml").write_text(
