@@ -1,6 +1,30 @@
 # CHANGELOG
 
 
+## v0.88.9 (2026-04-20)
+
+
+### ⬆️ Dependencies
+
+
+- ⬆️ chore: Lock file maintenance
+  ([`8dbd1ab`](https://github.com/thiesgerken/carapace/commit/8dbd1ab3567e1efb10d32e0c50a646e40971482c))
+
+- ⬆️ chore: Lock file maintenance
+  ([`8dbd1ab`](https://github.com/thiesgerken/carapace/commit/8dbd1ab3567e1efb10d32e0c50a646e40971482c))
+
+### 🐛 Bug Fixes
+
+
+- 🐛 make linter happy
+  ([`8dbd1ab`](https://github.com/thiesgerken/carapace/commit/8dbd1ab3567e1efb10d32e0c50a646e40971482c))
+
+  ---------
+
+  Co-authored-by: renovate[bot] <29139614+renovate[bot]@users.noreply.github.com>
+
+  Co-authored-by: Thies Gerken <thies.gerken@lector.ai>
+
 ## v0.88.8 (2026-04-19)
 
 
