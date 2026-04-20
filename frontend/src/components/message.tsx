@@ -1,7 +1,7 @@
 "use client";
 
 import { Brain, Check, ChevronRight, Copy, Loader2 } from "lucide-react";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import type { ChatMessage, EscalationDecision, LlmActivity } from "@/lib/types";
 import { MarkdownContent } from "./markdown-content";
@@ -74,14 +74,47 @@ function ThinkingBadge({
   activeLlmActivity?: LlmActivity | null;
 }) {
   const [manualOpen, setManualOpen] = useState(false);
+  const [liveReasoningDuration, setLiveReasoningDuration] = useState<{
+    startedAt: string;
+    durationMs: number;
+  } | null>(null);
   const open = streaming || manualOpen;
-  const liveReasoningDurationMs =
+  const liveThinkingStartedAt =
     streaming &&
     activeLlmActivity?.phase === "thinking" &&
     typeof activeLlmActivity.first_thinking_at === "string"
-      ? Math.max(0, Date.now() - Date.parse(activeLlmActivity.first_thinking_at))
-      : undefined;
-  const shownDurationMs = liveReasoningDurationMs ?? reasoningDurationMs;
+      ? activeLlmActivity.first_thinking_at
+      : null;
+
+  useEffect(() => {
+    if (!liveThinkingStartedAt) {
+      return;
+    }
+
+    const startedAt = Date.parse(liveThinkingStartedAt);
+    if (Number.isNaN(startedAt)) {
+      return;
+    }
+
+    const updateDuration = () => {
+      setLiveReasoningDuration({
+        startedAt: liveThinkingStartedAt,
+        durationMs: Math.max(0, Date.now() - startedAt),
+      });
+    };
+
+    const timeoutId = window.setTimeout(updateDuration, 0);
+    const intervalId = window.setInterval(updateDuration, 100);
+    return () => {
+      window.clearTimeout(timeoutId);
+      window.clearInterval(intervalId);
+    };
+  }, [liveThinkingStartedAt]);
+
+  const shownDurationMs =
+    liveThinkingStartedAt && liveReasoningDuration?.startedAt === liveThinkingStartedAt
+      ? liveReasoningDuration.durationMs
+      : reasoningDurationMs;
   const meta: string[] = [];
   if (typeof shownDurationMs === "number") {
     meta.push(`for ${formatDuration(shownDurationMs)}`);
