@@ -1,6 +1,15 @@
 # CHANGELOG
 
 
+## v0.90.2 (2026-04-21)
+
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix: lazily restore sandbox session tokens
+  ([`dd2a209`](https://github.com/thiesgerken/carapace/commit/dd2a209b57be5f107a1b8810d591ebc025419153))
+
 ## v0.90.1 (2026-04-21)
 
 
