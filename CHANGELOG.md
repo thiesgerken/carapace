@@ -1,6 +1,36 @@
 # CHANGELOG
 
 
+## v0.90.0 (2026-04-21)
+
+
+### 💄 UI/UX
+
+
+- 💄 style: label thinking phase
+  ([`69667eb`](https://github.com/thiesgerken/carapace/commit/69667eb852f6c2d9222a1c7cadffeff2ca274d70))
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix: restore waiting fallback
+  ([`77cfa3c`](https://github.com/thiesgerken/carapace/commit/77cfa3c860dde7d6fc11eaf8fb25167edf1a8072))
+
+- 🐛 fix: satisfy React purity lint
+  ([`537859a`](https://github.com/thiesgerken/carapace/commit/537859a1421eeca8465957a2fb06f1c2aa9e06a9))
+
+### Other
+
+
+- cleanup roadmap
+  ([`226fc73`](https://github.com/thiesgerken/carapace/commit/226fc7393094481f904edbf569802f92b5700bfb))
+
+### ✨ Features
+
+
+- ✨ feat: track persisted LLM activity
+  ([`6a35e68`](https://github.com/thiesgerken/carapace/commit/6a35e68adb541a5b5de1afaf5c57dbd7c15ba5e1))
+
 ## v0.89.0 (2026-04-20)
 
 
