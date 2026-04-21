@@ -175,6 +175,16 @@ class TestSandboxManagerAllowlists:
         assert mgr.verify_session_token("sess-1", "wrong") is False
         assert mgr.verify_session_token("wrong-session", "abc123") is False
 
+    def test_token_lookup_restores_persisted_token(self, tmp_path: Path):
+        mgr = self._make_manager(tmp_path)
+        token_path = tmp_path / "sessions" / "sess-1" / "token"
+        token_path.parent.mkdir(parents=True, exist_ok=True)
+        token_path.write_text("persisted-token")
+
+        assert mgr.verify_session_token("sess-1", "persisted-token") is True
+        assert mgr._session_tokens["sess-1"] == "persisted-token"
+        assert mgr._token_to_session["persisted-token"] == "sess-1"
+
     def test_cleanup_clears_tokens(self, tmp_path: Path):
         mgr = self._make_manager(tmp_path)
         mgr._token_to_session["tok"] = "sess-1"

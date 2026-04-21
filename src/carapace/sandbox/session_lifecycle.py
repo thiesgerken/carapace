@@ -75,21 +75,36 @@ class SandboxSessionLifecycle:
         self._sandbox_port = sandbox_port
         self._git_author = git_author
 
+    def _token_path(self, session_id: str) -> Path:
+        return self._data_dir / "sessions" / session_id / "token"
+
+    def _load_persisted_token(self, session_id: str) -> str | None:
+        token_path = self._token_path(session_id)
+        if not token_path.exists():
+            return None
+        token = token_path.read_text().strip()
+        if not token:
+            logger.warning(f"Ignoring empty persisted token for session {session_id}")
+            return None
+        self._state.session_tokens[session_id] = token
+        self._state.token_to_session[token] = session_id
+        logger.debug(f"Restored token for session {session_id} from disk")
+        return token
+
     def get_or_create_token(self, session_id: str) -> str:
         """Return the proxy token for *session_id*, loading or creating as needed."""
         token = self._state.session_tokens.get(session_id)
         if token:
             return token
 
-        token_path = self._data_dir / "sessions" / session_id / "token"
-        if token_path.exists():
-            token = token_path.read_text().strip()
-            logger.debug(f"Restored token for session {session_id} from disk")
-        else:
-            token = secrets.token_hex(16)
-            token_path.parent.mkdir(parents=True, exist_ok=True)
-            token_path.write_text(token)
+        token = self._load_persisted_token(session_id)
+        if token is not None:
+            return token
 
+        token = secrets.token_hex(16)
+        token_path = self._token_path(session_id)
+        token_path.parent.mkdir(parents=True, exist_ok=True)
+        token_path.write_text(token)
         self._state.session_tokens[session_id] = token
         self._state.token_to_session[token] = session_id
         return token
@@ -394,4 +409,6 @@ class SandboxSessionLifecycle:
 
     def verify_session_token(self, session_id: str, token: str) -> bool:
         """Return True if *token* is valid for *session_id*."""
+        if session_id not in self._state.session_tokens:
+            self._load_persisted_token(session_id)
         return self._state.token_to_session.get(token) == session_id
