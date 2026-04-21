@@ -59,12 +59,13 @@ async def run_agent_turn(
 
     agent = create_agent(deps)
     usage_model_key = deps.agent_model_id
-    thinking_parts: list[str] = []
+    current_thinking_parts: list[str] = []
+    last_thinking = ""
 
     async def _stream_handler(_ctx: Any, events: Any) -> None:
         async for event in events:
             if isinstance(event, PartStartEvent) and isinstance(event.part, ThinkingPart) and event.part.content:
-                thinking_parts.append(event.part.content)
+                current_thinking_parts.append(event.part.content)
                 if on_thinking_token is not None:
                     await on_thinking_token(event.part.content)
             elif (
@@ -72,7 +73,7 @@ async def run_agent_turn(
                 and isinstance(event.delta, ThinkingPartDelta)
                 and event.delta.content_delta
             ):
-                thinking_parts.append(event.delta.content_delta)
+                current_thinking_parts.append(event.delta.content_delta)
                 if on_thinking_token is not None:
                     await on_thinking_token(event.delta.content_delta)
             elif isinstance(event, PartStartEvent) and isinstance(event.part, TextPart) and event.part.content:
@@ -84,12 +85,14 @@ async def run_agent_turn(
 
     if before_llm_call is not None:
         before_llm_call()
+    current_thinking_parts.clear()
     result = await agent.run(
         user_input,
         deps=deps,
         message_history=message_history or None,
         event_stream_handler=_stream_handler,
     )
+    last_thinking = "".join(current_thinking_parts)
     deps.usage_tracker.record(usage_model_key, "agent", result.usage())
     messages = result.all_messages()
     if on_messages_snapshot is not None:
@@ -144,12 +147,14 @@ async def run_agent_turn(
 
         if before_llm_call is not None:
             before_llm_call()
+        current_thinking_parts.clear()
         result = await agent.run(
             deps=deps,
             message_history=messages,
             deferred_tool_results=deferred_results,
             event_stream_handler=_stream_handler,
         )
+        last_thinking = "".join(current_thinking_parts)
         deps.usage_tracker.record(usage_model_key, "agent", result.usage())
         messages = result.all_messages()
         if on_messages_snapshot is not None:
@@ -159,7 +164,7 @@ async def run_agent_turn(
         last_usage = result.usage()
         token_count = (last_usage.output_tokens or 0) + (last_usage.input_tokens or 0)
         deps.security.append(AgentResponseEntry(token_count=token_count))
-        return messages, result.output, "".join(thinking_parts)
+        return messages, result.output, last_thinking
 
     output = f"Unexpected agent output type: {type(result.output).__name__}"
-    return messages, output, "".join(thinking_parts)
+    return messages, output, last_thinking

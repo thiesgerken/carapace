@@ -225,6 +225,7 @@ class ActiveSession:
     usage_tracker: UsageTracker = field(default_factory=UsageTracker)
     llm_request_log: LlmRequestLog = field(default_factory=LlmRequestLog)
     llm_request_state: LlmRequestState | None = None
+    llm_request_thinking: dict[str, str] = field(default_factory=dict)
     verbose: bool = True
     agent_model: Model | None = None
     agent_model_name: str | None = None
@@ -652,9 +653,24 @@ class SessionEngine:
 
         class Sink:
             async def on_request_started(self, state: LlmRequestState) -> None:
+                active.llm_request_thinking.pop(state.request_id, None)
                 await engine._set_llm_request_state(active, state)
 
             async def on_request_completed(self, rec: LlmRequestRecord) -> None:
+                thinking_content = active.llm_request_thinking.pop(rec.request_id or "", "")
+                if thinking_content:
+                    thinking_event: dict[str, Any] = {
+                        "role": "thinking",
+                        "content": thinking_content,
+                    }
+                    if rec.request_id:
+                        thinking_event["request_id"] = rec.request_id
+                    row = usage_last_request_row(rec)
+                    if row is not None and row["reasoning_duration_ms"] is not None:
+                        thinking_event["reasoning_duration_ms"] = row["reasoning_duration_ms"]
+                    if row is not None and row["reasoning_tokens"] is not None:
+                        thinking_event["reasoning_tokens"] = row["reasoning_tokens"]
+                    engine._session_mgr.append_events(session_id, [thinking_event])
                 active.llm_request_log.records.append(rec)
                 engine._session_mgr.save_llm_request_log(session_id, active.llm_request_log)
                 await engine._clear_llm_request_state(active)
@@ -1333,7 +1349,12 @@ class SessionEngine:
                     await self._broadcast(active, "on_token", chunk)
 
                 async def _on_thinking_token(chunk: str) -> None:
-                    await self._maybe_promote_llm_request_state(active, note_llm_request_thinking())
+                    state = note_llm_request_thinking()
+                    if state is not None:
+                        active.llm_request_thinking[state.request_id] = (
+                            active.llm_request_thinking.get(state.request_id, "") + chunk
+                        )
+                    await self._maybe_promote_llm_request_state(active, state)
                     await self._broadcast(active, "on_thinking_token", chunk)
 
                 async with self._llm_semaphore:
@@ -1355,10 +1376,7 @@ class SessionEngine:
                 self._session_mgr.save_state(active.state)
                 self._session_mgr.save_usage(session_id, active.usage_tracker)
                 self._session_mgr.save_llm_request_log(session_id, active.llm_request_log)
-                events_to_append: list[dict[str, Any]] = []
-                if thinking:
-                    events_to_append.append({"role": "thinking", "content": thinking})
-                events_to_append.append({"role": "assistant", "content": output})
+                events_to_append = [{"role": "assistant", "content": output}]
                 self._session_mgr.append_events(session_id, events_to_append)
 
                 if output.startswith("Unexpected agent output type:"):
@@ -1391,6 +1409,7 @@ class SessionEngine:
 
         except asyncio.CancelledError:
             logger.info(f"Agent turn cancelled for session {session_id}")
+            active.llm_request_thinking.clear()
             self._session_mgr.save_usage(session_id, active.usage_tracker)
             self._session_mgr.save_llm_request_log(session_id, active.llm_request_log)
             await self._clear_llm_request_state(active)
@@ -1403,6 +1422,7 @@ class SessionEngine:
             await self._broadcast(active, "on_cancelled")
         except SessionBudgetExceededError as exc:
             logger.info(f"Session budget blocked LLM call for {session_id}: {exc}")
+            active.llm_request_thinking.clear()
             self._session_mgr.save_usage(session_id, active.usage_tracker)
             self._session_mgr.save_llm_request_log(session_id, active.llm_request_log)
             await self._clear_llm_request_state(active)
@@ -1420,6 +1440,7 @@ class SessionEngine:
                 + f"llm_requests={len(active.llm_request_log.records)} "
                 + f"sentinel_evals={sentinel_evals} prompt={_truncate_for_log(user_input)}"
             )
+            active.llm_request_thinking.clear()
             await self._clear_llm_request_state(active)
             self._save_user_message_on_failure(
                 session_id,
@@ -1430,6 +1451,7 @@ class SessionEngine:
             await self._broadcast(active, "on_error", str(exc))
         except Exception:
             logger.exception(f"Agent error session={session_id} prompt={_truncate_for_log(user_input)}")
+            active.llm_request_thinking.clear()
             await self._clear_llm_request_state(active)
             self._save_user_message_on_failure(
                 session_id,

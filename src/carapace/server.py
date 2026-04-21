@@ -473,6 +473,8 @@ _HistoryRole = Literal[
 class HistoryMessage(BaseModel):
     role: _HistoryRole
     content: str = ""
+    reasoning_duration_ms: int | None = None
+    reasoning_tokens: int | None = None
     tool: str | None = None
     args: dict[str, Any] | None = None
     detail: str | None = None

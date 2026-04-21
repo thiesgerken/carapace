@@ -9,6 +9,7 @@
 - [ ] image output — agent tools producing images (screenshots, charts, renders)
 - [ ] custom sentinel instructions for skills, e.g. moneydb: make sure that the agent only does mutations based on user approval
 - [ ] option to remove the sandbox without removing the session
+- [ ] links in the UI (markdown) should open in a new tab
 
 ## UI Improvements
 
@@ -18,6 +19,7 @@
 - [ ] replace pull / push slash commands (that aren't really tied to the session anyway) with a global indicator how many commits ahead/behind the backend's global repo is compared to the remote repo
 - [ ] show which sessions have sandboxes, size of the PVCs, is the sandbox in standby
 - [ ] tell the user what exactly is happening in the exec — sandbox creation, sentinel, execution? where is the command right now?
+- [ ] conversation history niceties (retry message, fork session, ...)
 
 ## Authentication & Multi-User
 

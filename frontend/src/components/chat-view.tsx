@@ -473,7 +473,12 @@ export function ChatView({
               data: h.data,
             });
           } else if (h.role === "thinking" && h.content) {
-            msgs.push({ kind: "thinking", content: h.content });
+            msgs.push({
+              kind: "thinking",
+              content: h.content,
+              reasoningDurationMs: h.reasoning_duration_ms,
+              reasoningTokens: h.reasoning_tokens,
+            });
           } else {
             msgs.push({ kind: "assistant", content: h.content });
           }
@@ -573,6 +578,7 @@ export function ChatView({
           setMessages((prev) => {
             const updated = [...prev];
             const thinkingMeta = thinkingUsageMeta(msg.usage);
+            const currentStreamIdx = updated.findLastIndex((m) => m.kind === "streaming");
             // Finalize thinking: update thinking_streaming or existing thinking with authoritative content
             const thinkStreamIdx = updated.findIndex((m) => m.kind === "thinking_streaming");
             if (thinkStreamIdx !== -1) {
@@ -582,10 +588,20 @@ export function ChatView({
                 ...thinkingMeta,
               };
             } else if (msg.thinking) {
-              // Update already-finalized thinking with authoritative content, or insert if missing
-              const thinkIdx = updated.findLastIndex((m) => m.kind === "thinking");
+              const thinkIdx =
+                currentStreamIdx > 0 && updated[currentStreamIdx - 1].kind === "thinking"
+                  ? currentStreamIdx - 1
+                  : updated.length > 0 && updated[updated.length - 1].kind === "thinking"
+                    ? updated.length - 1
+                    : -1;
               if (thinkIdx !== -1) {
                 updated[thinkIdx] = { kind: "thinking", content: msg.thinking, ...thinkingMeta };
+              } else if (currentStreamIdx !== -1) {
+                updated.splice(currentStreamIdx, 0, {
+                  kind: "thinking",
+                  content: msg.thinking,
+                  ...thinkingMeta,
+                });
               } else {
                 updated.push({ kind: "thinking", content: msg.thinking, ...thinkingMeta });
               }

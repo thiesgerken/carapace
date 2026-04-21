@@ -15,6 +15,8 @@ export interface SessionInfo {
 export interface HistoryMessage {
   role: string;
   content: string;
+  reasoning_duration_ms?: number;
+  reasoning_tokens?: number;
   tool?: string;
   args?: Record<string, unknown>;
   detail?: string;

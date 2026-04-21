@@ -251,6 +251,31 @@ def test_ws_status_includes_live_llm_activity_when_running(client, auth_headers,
         assert status["llm_activity"]["source"] == "agent"
 
 
+def test_history_includes_thinking_reasoning_metadata(client, auth_headers):
+    create_resp = client.post("/api/sessions", headers=auth_headers)
+    sid = create_resp.json()["session_id"]
+    srv._engine.session_mgr.append_events(
+        sid,
+        [
+            {
+                "role": "thinking",
+                "content": "first thought",
+                "reasoning_duration_ms": 1200,
+                "reasoning_tokens": 42,
+            },
+            {"role": "assistant", "content": "done"},
+        ],
+    )
+
+    resp = client.get(f"/api/sessions/{sid}/history", headers=auth_headers)
+
+    assert resp.status_code == 200
+    history = resp.json()
+    assert history[0]["role"] == "thinking"
+    assert history[0]["reasoning_duration_ms"] == 1200
+    assert history[0]["reasoning_tokens"] == 42
+
+
 def test_ws_budget_command_emits_status_refresh(client, auth_headers, bearer):
     create_resp = client.post("/api/sessions", headers=auth_headers)
     sid = create_resp.json()["session_id"]

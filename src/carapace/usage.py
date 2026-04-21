@@ -326,6 +326,7 @@ class InputShapeRatios(BaseModel):
 
 class LlmRequestRecord(BaseModel):
     ts: datetime
+    request_id: str | None = None
     source: LlmSource
     model_name: str | None = None
     input_tokens: int = 0
@@ -592,6 +593,7 @@ class LlmRequestLogCapability(AbstractCapability[AgentDepsT]):
             )
         record = LlmRequestRecord(
             ts=completed_at,
+            request_id=state.request_id,
             source=self.source,
             model_name=state.model_name or stored_model_name,
             input_tokens=usage.input_tokens or 0,
