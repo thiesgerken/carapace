@@ -9,7 +9,6 @@
 - [ ] image output — agent tools producing images (screenshots, charts, renders)
 - [ ] custom sentinel instructions for skills, e.g. moneydb: make sure that the agent only does mutations based on user approval
 - [ ] option to remove the sandbox without removing the session
-- [ ] links in the UI (markdown) should open in a new tab
 
 ## UI Improvements
 

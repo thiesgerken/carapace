@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import Markdown, { MarkdownHooks } from "react-markdown";
+import Markdown, { MarkdownHooks, type Components } from "react-markdown";
 import rehypeKatex from "rehype-katex";
 import rehypePrettyCode, {
   type Options as RehypePrettyCodeOptions,
@@ -40,7 +40,15 @@ export function MarkdownContent({ content }: { content: string }) {
     return [[rehypeKatex, KATEX_OPTIONS]];
   }, []);
 
-  const components = useMemo(() => ({ pre: MarkdownPre }), []);
+  const components = useMemo<Components>(
+    () => ({
+      a: ({ node: _node, ...props }) => (
+        <a {...props} target="_blank" rel="noreferrer noopener" />
+      ),
+      pre: MarkdownPre,
+    }),
+    [],
+  );
 
   return (
     <div className="prose">
