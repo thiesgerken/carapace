@@ -1,6 +1,15 @@
 # CHANGELOG
 
 
+## v0.90.3 (2026-04-21)
+
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix thinking timing for tool call only responses
+  ([`1ff4cd0`](https://github.com/thiesgerken/carapace/commit/1ff4cd0679887c1161a8daaee105e4cfd8beb327))
+
 ## v0.90.2 (2026-04-21)
 
 
