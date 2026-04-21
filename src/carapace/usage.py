@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
+import secrets
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Any, Literal, TypedDict, assert_never
+from typing import Any, Literal, Protocol, TypedDict, assert_never
 
 import tiktoken
 from genai_prices import Usage as PriceUsage
@@ -252,20 +252,65 @@ def usage_budget_exceeded_error(
 
 
 LlmSource = Literal["agent", "sentinel"]
+LlmRequestPhase = Literal["processing_prompt", "thinking", "generating"]
 
-_llm_request_sink: ContextVar[Callable[[LlmRequestRecord], None] | None] = ContextVar(
+_llm_request_sink: ContextVar[LlmRequestObserver | None] = ContextVar(
     "llm_request_sink",
+    default=None,
+)
+_current_llm_request_state: ContextVar[LlmRequestState | None] = ContextVar(
+    "current_llm_request_state",
     default=None,
 )
 
 
+class LlmRequestState(BaseModel):
+    request_id: str
+    source: LlmSource
+    model_name: str | None = None
+    started_at: datetime
+    phase: LlmRequestPhase = "processing_prompt"
+    first_thinking_at: datetime | None = None
+    last_thinking_at: datetime | None = None
+    first_text_at: datetime | None = None
+
+
+class LlmRequestObserver(Protocol):
+    async def on_request_started(self, state: LlmRequestState) -> None: ...
+
+    async def on_request_completed(self, record: LlmRequestRecord) -> None: ...
+
+
 @contextmanager
-def llm_request_sink_scope(sink: Callable[[LlmRequestRecord], None] | None) -> Any:
+def llm_request_sink_scope(sink: LlmRequestObserver | None) -> Any:
     token = _llm_request_sink.set(sink)
     try:
         yield
     finally:
         _llm_request_sink.reset(token)
+
+
+def note_llm_request_thinking(ts: datetime | None = None) -> LlmRequestState | None:
+    state = _current_llm_request_state.get()
+    if state is None:
+        return None
+    when = ts or datetime.now(tz=UTC)
+    if state.first_thinking_at is None:
+        state.first_thinking_at = when
+    state.last_thinking_at = when
+    state.phase = "thinking"
+    return state
+
+
+def note_llm_request_text(ts: datetime | None = None) -> LlmRequestState | None:
+    state = _current_llm_request_state.get()
+    if state is None:
+        return None
+    when = ts or datetime.now(tz=UTC)
+    if state.first_text_at is None:
+        state.first_text_at = when
+    state.phase = "generating"
+    return state
 
 
 class InputShapeRatios(BaseModel):
@@ -285,6 +330,12 @@ class LlmRequestRecord(BaseModel):
     model_name: str | None = None
     input_tokens: int = 0
     output_tokens: int = 0
+    started_at: datetime | None = None
+    first_thinking_at: datetime | None = None
+    last_thinking_at: datetime | None = None
+    first_text_at: datetime | None = None
+    completed_at: datetime | None = None
+    reasoning_tokens: int | None = None
     usage_details: dict[str, int] = Field(default_factory=dict)
     input_shape: InputShapeRatios | None = None
 
@@ -316,7 +367,31 @@ class UsageLastRequestRow(TypedDict):
     input_tokens: int
     output_tokens: int
     context_size: int
+    ttft_ms: int | None
+    total_duration_ms: int | None
+    reasoning_duration_ms: int | None
+    reasoning_tokens: int | None
     breakdown_pct: _BreakdownPct
+
+
+def _duration_ms(start: datetime | None, end: datetime | None) -> int | None:
+    if start is None or end is None:
+        return None
+    return max(0, int((end - start).total_seconds() * 1000))
+
+
+def _normalize_reasoning_tokens(details: dict[str, int]) -> int | None:
+    exact = details.get("reasoning_tokens")
+    if isinstance(exact, int):
+        return exact
+    for key in sorted(details):
+        value = details[key]
+        if not isinstance(value, int):
+            continue
+        normalized = key.lower().replace(".", "_")
+        if "reasoning" in normalized and "token" in normalized:
+            return value
+    return None
 
 
 def usage_last_request_row(rec: LlmRequestRecord | None) -> UsageLastRequestRow | None:
@@ -348,6 +423,10 @@ def usage_last_request_row(rec: LlmRequestRecord | None) -> UsageLastRequestRow 
         "input_tokens": inp,
         "output_tokens": out,
         "context_size": inp + out,
+        "ttft_ms": _duration_ms(rec.started_at, rec.first_text_at),
+        "total_duration_ms": _duration_ms(rec.started_at, rec.completed_at),
+        "reasoning_duration_ms": _duration_ms(rec.first_thinking_at, rec.first_text_at),
+        "reasoning_tokens": rec.reasoning_tokens,
         "breakdown_pct": breakdown_pct,
     }
 
@@ -466,17 +545,34 @@ class LlmRequestLogCapability(AbstractCapability[AgentDepsT]):
 
     source: LlmSource
 
+    async def before_model_request(
+        self,
+        ctx: RunContext[AgentDepsT],
+        request_context: ModelRequestContext,
+    ) -> ModelRequestContext:
+        sink = _llm_request_sink.get()
+        api_model_name = request_context.model.model_name
+        carapace_id = getattr(ctx.deps, "agent_model_id", None)
+        stored_model_name = carapace_id if isinstance(carapace_id, str) and carapace_id else api_model_name
+        state = LlmRequestState(
+            request_id=secrets.token_hex(8),
+            source=self.source,
+            model_name=stored_model_name,
+            started_at=datetime.now(tz=UTC),
+        )
+        _current_llm_request_state.set(state)
+        if sink is not None:
+            await sink.on_request_started(state.model_copy(deep=True))
+        return request_context
+
     async def after_model_request(
         self,
         ctx: RunContext[AgentDepsT],
-        *,
         request_context: ModelRequestContext,
         response: ModelResponse,
     ) -> ModelResponse:
         sink = _llm_request_sink.get()
-        if sink is None:
-            return response
-
+        state = _current_llm_request_state.get()
         usage = response.usage
         details = {k: int(v) for k, v in (usage.details or {}).items() if isinstance(v, int)}
         api_model_name = response.model_name or request_context.model.model_name
@@ -486,14 +582,30 @@ class LlmRequestLogCapability(AbstractCapability[AgentDepsT]):
         )
         carapace_id = getattr(ctx.deps, "agent_model_id", None)
         stored_model_name = carapace_id if isinstance(carapace_id, str) and carapace_id else api_model_name
+        completed_at = datetime.now(tz=UTC)
+        if state is None:
+            state = LlmRequestState(
+                request_id=secrets.token_hex(8),
+                source=self.source,
+                model_name=stored_model_name,
+                started_at=completed_at,
+            )
         record = LlmRequestRecord(
-            ts=datetime.now(tz=UTC),
+            ts=completed_at,
             source=self.source,
-            model_name=stored_model_name,
+            model_name=state.model_name or stored_model_name,
             input_tokens=usage.input_tokens or 0,
             output_tokens=usage.output_tokens or 0,
+            started_at=state.started_at,
+            first_thinking_at=state.first_thinking_at,
+            last_thinking_at=state.last_thinking_at,
+            first_text_at=state.first_text_at,
+            completed_at=completed_at,
+            reasoning_tokens=_normalize_reasoning_tokens(details),
             usage_details=details,
             input_shape=shape,
         )
-        sink(record)
+        _current_llm_request_state.set(None)
+        if sink is not None:
+            await sink.on_request_completed(record)
         return response

@@ -46,7 +46,7 @@ from carapace.sandbox.runtime import ContainerRuntime
 from carapace.security.context import ApprovalSource, ApprovalVerdict
 from carapace.session import SessionEngine, SessionManager
 from carapace.skills import SkillRegistry
-from carapace.usage import SessionBudgetExceededError
+from carapace.usage import LlmRequestState, SessionBudgetExceededError
 from carapace.ws_models import (
     SLASH_COMMANDS,
     ApprovalRequest,
@@ -60,6 +60,8 @@ from carapace.ws_models import (
     ErrorMessage,
     EscalationResponse,
     GitPushApprovalRequest,
+    LlmActivity,
+    LlmActivityUpdate,
     ServerEnvelope,
     SessionTitleUpdate,
     StatusUpdate,
@@ -564,7 +566,22 @@ def _history_from_messages(session_id: str) -> list[HistoryMessage]:
 
 
 async def _send(ws: WebSocket, msg: ServerEnvelope) -> None:
-    await ws.send_json(msg.model_dump())
+    await ws.send_json(msg.model_dump(mode="json"))
+
+
+def _llm_activity_payload(activity: LlmRequestState | None) -> LlmActivity | None:
+    if activity is None:
+        return None
+    return LlmActivity(
+        request_id=activity.request_id,
+        source=activity.source,
+        model=activity.model_name,
+        phase=activity.phase,
+        started_at=activity.started_at,
+        first_thinking_at=activity.first_thinking_at,
+        last_thinking_at=activity.last_thinking_at,
+        first_text_at=activity.first_text_at,
+    )
 
 
 @router.get("/commands")
@@ -634,6 +651,9 @@ class WebSocketSubscriber:
 
     async def on_thinking_token(self, content: str) -> None:
         await self._safe_send(ThinkingChunk(content=content))
+
+    async def on_llm_activity(self, activity: LlmRequestState | None) -> None:
+        await self._safe_send(LlmActivityUpdate(activity=_llm_activity_payload(activity)))
 
     async def on_done(self, content: str, usage: TurnUsage, *, thinking: str | None = None) -> None:
         await self._safe_send(Done(content=content, thinking=thinking, usage=usage))
@@ -773,7 +793,14 @@ async def chat_ws(
     agent_running = active.agent_task is not None and not active.agent_task.done()
     usage = _engine._turn_usage_payload(active)
     with contextlib.suppress(Exception):
-        await _send(websocket, StatusUpdate(agent_running=agent_running, usage=usage))
+        await _send(
+            websocket,
+            StatusUpdate(
+                agent_running=agent_running,
+                usage=usage,
+                llm_activity=_llm_activity_payload(active.llm_request_state if agent_running else None),
+            ),
+        )
 
     # If agent is already running (e.g. reconnect), the subscriber will
     # start receiving events immediately.  If there are pending approvals,
@@ -896,6 +923,7 @@ async def chat_ws(
                             StatusUpdate(
                                 agent_running=active.agent_task is not None and not active.agent_task.done(),
                                 usage=_engine._turn_usage_payload(active),
+                                llm_activity=_llm_activity_payload(active.llm_request_state),
                             ),
                         )
                     continue

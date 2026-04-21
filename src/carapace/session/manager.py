@@ -15,7 +15,7 @@ from pydantic import BaseModel
 from pydantic_ai import ModelMessage, ModelMessagesTypeAdapter
 
 from carapace.models import SessionBudget, SessionState
-from carapace.usage import LlmRequestLog, UsageTracker
+from carapace.usage import LlmRequestLog, LlmRequestState, UsageTracker
 
 
 def _to_yaml_safe(value: Any) -> Any:
@@ -183,6 +183,29 @@ class SessionManager:
         path = session_dir / "llm_requests.yaml"
         with open(path, "w") as f:
             yaml.dump(log.model_dump(mode="json"), f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+
+    # --- In-flight LLM request activity ---
+
+    def load_llm_request_state(self, session_id: str) -> LlmRequestState | None:
+        path = self.sessions_dir / session_id / "llm_activity.yaml"
+        if not path.exists():
+            return None
+        with open(path) as f:
+            raw = yaml.safe_load(f)
+        if not raw:
+            return None
+        return LlmRequestState.model_validate(raw)
+
+    def save_llm_request_state(self, session_id: str, state: LlmRequestState) -> None:
+        session_dir = self.sessions_dir / session_id
+        session_dir.mkdir(parents=True, exist_ok=True)
+        path = session_dir / "llm_activity.yaml"
+        with open(path, "w") as f:
+            yaml.dump(state.model_dump(mode="json"), f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+
+    def clear_llm_request_state(self, session_id: str) -> None:
+        path = self.sessions_dir / session_id / "llm_activity.yaml"
+        path.unlink(missing_ok=True)
 
     # --- Event log (ordered display history including slash commands) ---
 

@@ -63,12 +63,15 @@ from carapace.usage import (
     BudgetGauge,
     LlmRequestLog,
     LlmRequestRecord,
+    LlmRequestState,
     LlmSource,
     SessionBudgetExceededError,
     UsageTracker,
     gauge_breakdown_pct_dict,
     last_record_for_source,
     llm_request_sink_scope,
+    note_llm_request_text,
+    note_llm_request_thinking,
     usage_budget_exceeded_error,
     usage_budget_gauges,
     usage_last_request_row,
@@ -151,6 +154,7 @@ class SessionSubscriber(Protocol):
     async def on_tool_result(self, result: ToolResult) -> None: ...
     async def on_token(self, content: str) -> None: ...
     async def on_thinking_token(self, content: str) -> None: ...
+    async def on_llm_activity(self, activity: LlmRequestState | None) -> None: ...
     async def on_done(self, content: str, usage: TurnUsage, *, thinking: str | None = None) -> None: ...
     async def on_error(self, detail: str) -> None: ...
     async def on_cancelled(self) -> None: ...
@@ -220,6 +224,7 @@ class ActiveSession:
     escalation_queue: asyncio.Queue[EscalationResponse | None] = field(default_factory=asyncio.Queue)
     usage_tracker: UsageTracker = field(default_factory=UsageTracker)
     llm_request_log: LlmRequestLog = field(default_factory=LlmRequestLog)
+    llm_request_state: LlmRequestState | None = None
     verbose: bool = True
     agent_model: Model | None = None
     agent_model_name: str | None = None
@@ -377,6 +382,7 @@ class SessionEngine:
         budget_gauges = self._budget_gauges(active)
         if rec_agent is None and not budget_gauges:
             return None
+        row = usage_last_request_row(rec_agent) if rec_agent else None
         bd = gauge_breakdown_pct_dict(rec_agent)
         return TurnUsage(
             input_tokens=rec_agent.input_tokens if rec_agent else 0,
@@ -384,8 +390,38 @@ class SessionEngine:
             breakdown_pct=TurnUsageBreakdownPct.model_validate(bd) if bd else None,
             model=self.agent_model_id_for_gauge(active),
             context_cap_tokens=self.agent_context_cap_for_gauge(active),
+            ttft_ms=row["ttft_ms"] if row else None,
+            total_duration_ms=row["total_duration_ms"] if row else None,
+            reasoning_duration_ms=row["reasoning_duration_ms"] if row else None,
+            reasoning_tokens=row["reasoning_tokens"] if row else None,
+            started_at=rec_agent.started_at if rec_agent else None,
+            first_thinking_at=rec_agent.first_thinking_at if rec_agent else None,
+            last_thinking_at=rec_agent.last_thinking_at if rec_agent else None,
+            first_text_at=rec_agent.first_text_at if rec_agent else None,
+            completed_at=rec_agent.completed_at if rec_agent else None,
             budget_gauges=budget_gauges,
         )
+
+    async def _set_llm_request_state(self, active: ActiveSession, state: LlmRequestState) -> None:
+        active.llm_request_state = state.model_copy(deep=True)
+        self._session_mgr.save_llm_request_state(active.state.session_id, active.llm_request_state)
+        await self._broadcast(active, "on_llm_activity", active.llm_request_state.model_copy(deep=True))
+
+    async def _clear_llm_request_state(self, active: ActiveSession) -> None:
+        if active.llm_request_state is None:
+            self._session_mgr.clear_llm_request_state(active.state.session_id)
+            return
+        active.llm_request_state = None
+        self._session_mgr.clear_llm_request_state(active.state.session_id)
+        await self._broadcast(active, "on_llm_activity", None)
+
+    async def _maybe_promote_llm_request_state(self, active: ActiveSession, state: LlmRequestState | None) -> None:
+        if state is None:
+            return
+        current = active.llm_request_state
+        if current is not None and current.phase == state.phase and current.first_text_at == state.first_text_at:
+            return
+        await self._set_llm_request_state(active, state)
 
     def _budget_command_payload(self, active: ActiveSession, *, message: str | None = None) -> dict[str, Any]:
         gauges = self._budget_gauges(active)
@@ -494,6 +530,10 @@ class SessionEngine:
         )
         usage_tracker = self._session_mgr.load_usage(session_id)
         llm_log = self._session_mgr.load_llm_request_log(session_id)
+        stale_llm_state = self._session_mgr.load_llm_request_state(session_id)
+        if stale_llm_state is not None:
+            logger.warning(f"Clearing stale in-flight LLM activity for session {session_id}")
+            self._session_mgr.clear_llm_request_state(session_id)
 
         active = ActiveSession(
             state=state,
@@ -607,13 +647,19 @@ class SessionEngine:
 
     @contextlib.contextmanager
     def llm_request_recording(self, active: ActiveSession):
+        engine = self
         session_id = active.state.session_id
 
-        def sink(rec: LlmRequestRecord) -> None:
-            active.llm_request_log.records.append(rec)
-            self._session_mgr.save_llm_request_log(session_id, active.llm_request_log)
+        class Sink:
+            async def on_request_started(self, state: LlmRequestState) -> None:
+                await engine._set_llm_request_state(active, state)
 
-        with llm_request_sink_scope(sink):
+            async def on_request_completed(self, rec: LlmRequestRecord) -> None:
+                active.llm_request_log.records.append(rec)
+                engine._session_mgr.save_llm_request_log(session_id, active.llm_request_log)
+                await engine._clear_llm_request_state(active)
+
+        with llm_request_sink_scope(Sink()):
             yield
 
     def unsubscribe(self, session_id: str, sub: SessionSubscriber) -> None:
@@ -627,6 +673,8 @@ class SessionEngine:
             if not active.subscribers and (active.agent_task is None or active.agent_task.done()):
                 self._session_mgr.save_usage(session_id, active.usage_tracker)
                 self._session_mgr.save_llm_request_log(session_id, active.llm_request_log)
+                if active.llm_request_state is not None:
+                    self._session_mgr.save_llm_request_state(session_id, active.llm_request_state)
 
     # -- broadcasting helpers --
 
@@ -1281,9 +1329,11 @@ class SessionEngine:
                     return results
 
                 async def _on_token(chunk: str) -> None:
+                    await self._maybe_promote_llm_request_state(active, note_llm_request_text())
                     await self._broadcast(active, "on_token", chunk)
 
                 async def _on_thinking_token(chunk: str) -> None:
+                    await self._maybe_promote_llm_request_state(active, note_llm_request_thinking())
                     await self._broadcast(active, "on_thinking_token", chunk)
 
                 async with self._llm_semaphore:
@@ -1343,6 +1393,7 @@ class SessionEngine:
             logger.info(f"Agent turn cancelled for session {session_id}")
             self._session_mgr.save_usage(session_id, active.usage_tracker)
             self._session_mgr.save_llm_request_log(session_id, active.llm_request_log)
+            await self._clear_llm_request_state(active)
             self._save_user_message_on_failure(
                 session_id,
                 user_input,
@@ -1354,6 +1405,7 @@ class SessionEngine:
             logger.info(f"Session budget blocked LLM call for {session_id}: {exc}")
             self._session_mgr.save_usage(session_id, active.usage_tracker)
             self._session_mgr.save_llm_request_log(session_id, active.llm_request_log)
+            await self._clear_llm_request_state(active)
             self._save_user_message_on_failure(
                 session_id,
                 user_input,
@@ -1368,6 +1420,7 @@ class SessionEngine:
                 + f"llm_requests={len(active.llm_request_log.records)} "
                 + f"sentinel_evals={sentinel_evals} prompt={_truncate_for_log(user_input)}"
             )
+            await self._clear_llm_request_state(active)
             self._save_user_message_on_failure(
                 session_id,
                 user_input,
@@ -1377,6 +1430,7 @@ class SessionEngine:
             await self._broadcast(active, "on_error", str(exc))
         except Exception:
             logger.exception(f"Agent error session={session_id} prompt={_truncate_for_log(user_input)}")
+            await self._clear_llm_request_state(active)
             self._save_user_message_on_failure(
                 session_id,
                 user_input,

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -20,6 +21,7 @@ from carapace.security.context import CredentialAccessEntry
 from carapace.server import app, sandbox_app
 from carapace.session import SessionEngine, SessionManager
 from carapace.skills import SkillRegistry
+from carapace.usage import LlmRequestState
 
 _TEST_TOKEN = "test-bearer-token-for-server-tests"
 
@@ -226,6 +228,27 @@ def test_ws_status_includes_budget_gauges_for_configured_defaults(client, auth_h
         status = _consume_status(ws)
         assert status["usage"]["budget_gauges"][0]["key"] == "input"
         assert status["usage"]["budget_gauges"][0]["current_value"] == "0 tokens"
+
+
+def test_ws_status_includes_live_llm_activity_when_running(client, auth_headers, bearer):
+    create_resp = client.post("/api/sessions", headers=auth_headers)
+    sid = create_resp.json()["session_id"]
+    active = srv._engine.get_or_activate(sid)
+    active.llm_request_state = LlmRequestState(
+        request_id="req-1",
+        source="agent",
+        model_name="anthropic:claude-haiku-4-5",
+        started_at=datetime.now(tz=UTC),
+        phase="thinking",
+    )
+    active.agent_task = MagicMock()
+    active.agent_task.done.return_value = False
+
+    with client.websocket_connect(f"/api/chat/{sid}?token={bearer}") as ws:
+        status = _consume_status(ws)
+        assert status["llm_activity"]["request_id"] == "req-1"
+        assert status["llm_activity"]["phase"] == "thinking"
+        assert status["llm_activity"]["source"] == "agent"
 
 
 def test_ws_budget_command_emits_status_refresh(client, auth_headers, bearer):

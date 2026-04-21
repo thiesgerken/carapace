@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -24,7 +25,7 @@ from carapace.security.sentinel import Sentinel
 from carapace.session import SessionEngine, SessionManager
 from carapace.session.engine import _non_slash_user_message_count
 from carapace.skills import SkillRegistry
-from carapace.usage import ModelUsage, SessionBudgetExceededError
+from carapace.usage import LlmRequestRecord, LlmRequestState, ModelUsage, SessionBudgetExceededError
 from carapace.ws_models import ApprovalRequest, TurnUsage
 
 
@@ -91,6 +92,28 @@ def test_save_and_resume_state(tmp_path: Path):
     assert resumed is not None
     assert "my-skill" in resumed.context_grants
     assert "dev/test" in resumed.context_grants["my-skill"].vault_paths
+
+
+def test_save_and_load_llm_request_state(tmp_path: Path) -> None:
+    mgr = SessionManager(tmp_path)
+    state = mgr.create_session()
+    activity = LlmRequestState(
+        request_id="req-1",
+        source="agent",
+        model_name="anthropic:claude-haiku-4-5",
+        started_at=datetime.now(tz=UTC),
+        phase="processing_prompt",
+    )
+
+    mgr.save_llm_request_state(state.session_id, activity)
+
+    reloaded = mgr.load_llm_request_state(state.session_id)
+    assert reloaded is not None
+    assert reloaded.request_id == "req-1"
+    assert reloaded.phase == "processing_prompt"
+
+    mgr.clear_llm_request_state(state.session_id)
+    assert mgr.load_llm_request_state(state.session_id) is None
 
 
 def test_normalize_optional_message_strips_blank_values() -> None:
@@ -197,6 +220,7 @@ class _FakeSubscriber:
         self.errors: list[str] = []
         self.cancelled: int = 0
         self.title_updates: list[tuple[str, TurnUsage | None]] = []
+        self.llm_activity_updates: list[LlmRequestState | None] = []
 
     async def on_user_message(self, content: str, *, from_self: bool) -> None:
         self.user_messages.append((content, from_self))
@@ -224,6 +248,9 @@ class _FakeSubscriber:
 
     async def on_title_update(self, title: str, usage: TurnUsage | None = None) -> None:
         self.title_updates.append((title, usage))
+
+    async def on_llm_activity(self, activity: LlmRequestState | None) -> None:
+        self.llm_activity_updates.append(activity)
 
     async def on_domain_info(self, domain: str, detail: str) -> None:
         pass
@@ -820,6 +847,58 @@ def test_turn_usage_payload_contains_budget_gauges_without_agent_usage(tmp_path:
         assert payload is not None
         assert payload.budget_gauges[0].key == "input"
         assert payload.budget_gauges[0].current_value == "0 tokens"
+
+
+def test_turn_usage_payload_includes_reasoning_metrics(tmp_path: Path) -> None:
+    with _patch_sentinel():
+        engine = _make_engine(tmp_path)
+        state = engine.session_mgr.create_session()
+        active = engine.get_or_activate(state.session_id)
+        started_at = datetime.now(tz=UTC)
+        active.llm_request_log.records.append(
+            LlmRequestRecord(
+                ts=started_at + timedelta(seconds=5),
+                source="agent",
+                model_name="anthropic:claude-haiku-4-5",
+                input_tokens=100,
+                output_tokens=20,
+                started_at=started_at,
+                first_thinking_at=started_at + timedelta(seconds=1),
+                last_thinking_at=started_at + timedelta(seconds=2),
+                first_text_at=started_at + timedelta(seconds=3),
+                completed_at=started_at + timedelta(seconds=5),
+                reasoning_tokens=42,
+            )
+        )
+
+        payload = engine._turn_usage_payload(active)
+
+        assert payload is not None
+        assert payload.ttft_ms == 3000
+        assert payload.reasoning_duration_ms == 2000
+        assert payload.total_duration_ms == 5000
+        assert payload.reasoning_tokens == 42
+
+
+def test_activate_clears_stale_llm_request_state(tmp_path: Path) -> None:
+    with _patch_sentinel():
+        engine = _make_engine(tmp_path)
+        state = engine.session_mgr.create_session()
+        engine.session_mgr.save_llm_request_state(
+            state.session_id,
+            LlmRequestState(
+                request_id="stale",
+                source="agent",
+                model_name="anthropic:claude-haiku-4-5",
+                started_at=datetime.now(tz=UTC),
+                phase="thinking",
+            ),
+        )
+
+        active = engine.get_or_activate(state.session_id)
+
+        assert active.llm_request_state is None
+        assert engine.session_mgr.load_llm_request_state(state.session_id) is None
 
 
 def test_submit_message_budget_exhausted_broadcasts_error(tmp_path: Path):

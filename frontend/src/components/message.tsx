@@ -1,9 +1,9 @@
 "use client";
 
 import { Brain, Check, ChevronRight, Copy, Loader2 } from "lucide-react";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
-import type { ChatMessage, EscalationDecision } from "@/lib/types";
+import type { ChatMessage, EscalationDecision, LlmActivity } from "@/lib/types";
 import { MarkdownContent } from "./markdown-content";
 import { ToolCallBadge } from "./tool-call-badge";
 import { ApprovalCard } from "./approval-card";
@@ -12,6 +12,12 @@ import { DomainAccessApprovalCard } from "./domain-access-approval-card";
 import { GitPushApprovalCard } from "./git-push-approval-card";
 import { CommandResultView } from "./command-result";
 import { cn } from "@/lib/utils";
+
+function formatDuration(ms: number): string {
+  if (ms < 1_000) return `${ms}ms`;
+  if (ms < 10_000) return `${(ms / 1_000).toFixed(1)}s`;
+  return `${Math.round(ms / 1_000)}s`;
+}
 
 function MessageCopyButton({
   text,
@@ -57,12 +63,65 @@ function MessageCopyButton({
 function ThinkingBadge({
   content,
   streaming,
+  reasoningDurationMs,
+  reasoningTokens,
+  activeLlmActivity,
 }: {
   content: string;
   streaming: boolean;
+  reasoningDurationMs?: number;
+  reasoningTokens?: number;
+  activeLlmActivity?: LlmActivity | null;
 }) {
   const [manualOpen, setManualOpen] = useState(false);
+  const [liveReasoningDuration, setLiveReasoningDuration] = useState<{
+    startedAt: string;
+    durationMs: number;
+  } | null>(null);
   const open = streaming || manualOpen;
+  const liveThinkingStartedAt =
+    streaming &&
+    activeLlmActivity?.phase === "thinking" &&
+    typeof activeLlmActivity.first_thinking_at === "string"
+      ? activeLlmActivity.first_thinking_at
+      : null;
+
+  useEffect(() => {
+    if (!liveThinkingStartedAt) {
+      return;
+    }
+
+    const startedAt = Date.parse(liveThinkingStartedAt);
+    if (Number.isNaN(startedAt)) {
+      return;
+    }
+
+    const updateDuration = () => {
+      setLiveReasoningDuration({
+        startedAt: liveThinkingStartedAt,
+        durationMs: Math.max(0, Date.now() - startedAt),
+      });
+    };
+
+    const timeoutId = window.setTimeout(updateDuration, 0);
+    const intervalId = window.setInterval(updateDuration, 100);
+    return () => {
+      window.clearTimeout(timeoutId);
+      window.clearInterval(intervalId);
+    };
+  }, [liveThinkingStartedAt]);
+
+  const shownDurationMs =
+    liveThinkingStartedAt && liveReasoningDuration?.startedAt === liveThinkingStartedAt
+      ? liveReasoningDuration.durationMs
+      : reasoningDurationMs;
+  const meta: string[] = [];
+  if (typeof shownDurationMs === "number") {
+    meta.push(`for ${formatDuration(shownDurationMs)}`);
+  }
+  if (typeof reasoningTokens === "number" && reasoningTokens > 0) {
+    meta.push(`${reasoningTokens.toLocaleString()} reasoning`);
+  }
 
   return (
     <div className="my-1 w-full min-w-0">
@@ -87,11 +146,11 @@ function ThinkingBadge({
           <Brain className="h-3 w-3 shrink-0 text-muted-foreground" />
         )}
         <span className="shrink-0 font-mono font-medium text-foreground/80">
-          {streaming ? "thinking…" : "thought"}
+          {streaming ? "thinking" : "thought"}
         </span>
-        {!streaming && content.length > 0 && (
+        {meta.length > 0 && (
           <span className="min-w-0 truncate font-mono text-[11px] text-foreground/65 dark:text-foreground/70">
-            {content.length.toLocaleString()} chars
+            {meta.join(", ")}
           </span>
         )}
       </button>
@@ -107,6 +166,7 @@ function ThinkingBadge({
 
 interface MessageProps {
   message: ChatMessage;
+  activeLlmActivity?: LlmActivity | null;
   onApproval?: (toolCallId: string, approved: boolean, message?: string) => void;
   onEscalation?: (
     requestId: string,
@@ -122,6 +182,7 @@ interface MessageProps {
 
 export function Message({
   message,
+  activeLlmActivity,
   onApproval,
   onEscalation,
   onCredentialApproval,
@@ -162,10 +223,25 @@ export function Message({
       );
 
     case "thinking":
-      return <ThinkingBadge content={message.content} streaming={false} />;
+      return (
+        <ThinkingBadge
+          content={message.content}
+          streaming={false}
+          reasoningDurationMs={message.reasoningDurationMs}
+          reasoningTokens={message.reasoningTokens}
+        />
+      );
 
     case "thinking_streaming":
-      return <ThinkingBadge content={message.content} streaming />;
+      return (
+        <ThinkingBadge
+          content={message.content}
+          streaming
+          reasoningDurationMs={message.reasoningDurationMs}
+          reasoningTokens={message.reasoningTokens}
+          activeLlmActivity={activeLlmActivity}
+        />
+      );
 
     case "tool_call":
       return (
