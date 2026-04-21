@@ -948,6 +948,51 @@ def test_llm_request_recording_persists_request_level_thinking_event(tmp_path: P
     asyncio.run(_run())
 
 
+def test_llm_request_recording_persists_timing_for_tool_only_thinking_event(tmp_path: Path) -> None:
+    async def _run() -> None:
+        with _patch_sentinel():
+            engine = _make_engine(tmp_path)
+            state = engine.session_mgr.create_session()
+            active = engine.get_or_activate(state.session_id)
+            started_at = datetime.now(tz=UTC)
+            request_state = LlmRequestState(
+                request_id="req-tool",
+                source="agent",
+                model_name="anthropic:claude-haiku-4-5",
+                started_at=started_at,
+                phase="thinking",
+                first_thinking_at=started_at,
+            )
+            record = LlmRequestRecord(
+                ts=started_at + timedelta(seconds=3),
+                request_id="req-tool",
+                source="agent",
+                model_name="anthropic:claude-haiku-4-5",
+                started_at=started_at,
+                first_thinking_at=started_at,
+                completed_at=started_at + timedelta(seconds=3),
+                reasoning_tokens=9,
+            )
+
+            with engine.llm_request_recording(active):
+                observer = usage_mod._llm_request_sink.get()
+                assert observer is not None
+                await observer.on_request_started(request_state)
+                active.llm_request_thinking["req-tool"] = "tool-only thought"
+                await observer.on_request_completed(record)
+
+            events = engine.session_mgr.load_events(state.session_id)
+            assert events[-1] == {
+                "role": "thinking",
+                "content": "tool-only thought",
+                "request_id": "req-tool",
+                "reasoning_duration_ms": 3000,
+                "reasoning_tokens": 9,
+            }
+
+    asyncio.run(_run())
+
+
 def test_submit_message_budget_exhausted_broadcasts_error(tmp_path: Path):
     async def _run() -> None:
         engine = _make_engine(tmp_path)

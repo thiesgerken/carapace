@@ -400,6 +400,7 @@ def usage_last_request_row(rec: LlmRequestRecord | None) -> UsageLastRequestRow 
     if rec is None:
         return None
     inp, out = rec.input_tokens, rec.output_tokens
+    reasoning_end = rec.first_text_at or rec.completed_at
     if rec.input_shape is not None:
         s = rec.input_shape
         breakdown_pct: _BreakdownPct = {
@@ -426,7 +427,7 @@ def usage_last_request_row(rec: LlmRequestRecord | None) -> UsageLastRequestRow 
         "context_size": inp + out,
         "ttft_ms": _duration_ms(rec.started_at, rec.first_text_at),
         "total_duration_ms": _duration_ms(rec.started_at, rec.completed_at),
-        "reasoning_duration_ms": _duration_ms(rec.first_thinking_at, rec.first_text_at),
+        "reasoning_duration_ms": _duration_ms(rec.first_thinking_at, reasoning_end),
         "reasoning_tokens": rec.reasoning_tokens,
         "breakdown_pct": breakdown_pct,
     }

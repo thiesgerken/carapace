@@ -157,6 +157,33 @@ def test_usage_last_request_row_calculates_durations() -> None:
     assert row["total_duration_ms"] == 5000
 
 
+def test_usage_last_request_row_falls_back_to_completion_for_tool_only_request() -> None:
+    started_at = datetime.now(tz=UTC)
+    rec = LlmRequestRecord(
+        ts=started_at,
+        source="agent",
+        input_tokens=100,
+        output_tokens=0,
+        started_at=started_at,
+        first_thinking_at=started_at + timedelta(seconds=1),
+        completed_at=started_at + timedelta(seconds=4),
+        input_shape=InputShapeRatios(
+            system=0.5,
+            user=0.5,
+            assistant=0,
+            tool_calls=0,
+            tool_returns=0,
+            other=0,
+        ),
+    )
+
+    row = usage_last_request_row(rec)
+    assert row is not None
+    assert row["ttft_ms"] is None
+    assert row["reasoning_duration_ms"] == 3000
+    assert row["total_duration_ms"] == 4000
+
+
 def test_gauge_breakdown_pct_dict_none_without_shape() -> None:
     rec = LlmRequestRecord(
         ts=datetime.now(tz=UTC),
