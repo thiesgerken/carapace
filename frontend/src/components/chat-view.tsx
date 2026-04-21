@@ -982,14 +982,15 @@ export function ChatView({
   }
 
   const connected = status === "connected";
-  const waitingLabel =
-    waiting && llmActivity?.source === "agent"
+  const waitingLabel = !waiting
+    ? null
+    : llmActivity?.source === "agent"
       ? llmActivity.phase === "processing_prompt"
         ? "Processing Prompt..."
         : llmActivity.phase === "generating"
           ? "Generating..."
-          : null
-      : null;
+          : "Working..."
+      : "Working...";
 
   return (
     <div className="flex flex-1 min-h-0 flex-col">
