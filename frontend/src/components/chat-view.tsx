@@ -987,6 +987,8 @@ export function ChatView({
     : llmActivity?.source === "agent"
       ? llmActivity.phase === "processing_prompt"
         ? "Processing Prompt..."
+        : llmActivity.phase === "thinking"
+          ? "Thinking..."
         : llmActivity.phase === "generating"
           ? "Generating..."
           : "Working..."
