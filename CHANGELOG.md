@@ -1,6 +1,15 @@
 # CHANGELOG
 
 
+## v0.90.1 (2026-04-21)
+
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix: regressions that were introduced during the thinking refactor
+  ([`b8d1163`](https://github.com/thiesgerken/carapace/commit/b8d11630084b0528025f8a66d2d43ce4cb70017a))
+
 ## v0.90.0 (2026-04-21)
 
 
