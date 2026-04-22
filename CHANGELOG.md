@@ -1,6 +1,15 @@
 # CHANGELOG
 
 
+## v0.90.4 (2026-04-22)
+
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix: ensure links in markdown open in a new tab
+  ([`c753695`](https://github.com/thiesgerken/carapace/commit/c753695023eb316e9238d6b27972f22e6edf1500))
+
 ## v0.90.3 (2026-04-21)
 
 
