@@ -20,7 +20,6 @@ from carapace.sandbox.runtime import (
     ContainerRuntime,
     ExecResult,
     NetworkTunnel,
-    SandboxInspection,
     SkillActivationError,
     SkillActivationInputs,
 )
@@ -356,48 +355,22 @@ class SandboxManager:
                 existing_id = await self._runtime.sandbox_exists(sandbox_name)
                 resolved_container_id = existing_id if isinstance(existing_id, str) and existing_id else None
 
-        inspection = SandboxInspection(
-            exists=resolved_container_id is not None,
-            status="running" if resolved_container_id is not None else "missing",
-            resource_id=resolved_container_id,
-        )
-        inspect_sandbox = getattr(self._runtime, "inspect_sandbox", None)
-        if callable(inspect_sandbox):
-            try:
-                inspected = await inspect_sandbox(session_id, sandbox_name, resolved_container_id)
-                if isinstance(inspected, SandboxInspection):
-                    inspection = inspected
-                else:
-                    inspection = SandboxInspection.model_validate(inspected)
-            except Exception:
-                logger.debug(
-                    f"Sandbox inspection unavailable for session {session_id}; falling back to cached/basic state"
-                )
-
+        inspection = await self._runtime.inspect_sandbox(session_id, sandbox_name, resolved_container_id)
         existing = load_sandbox_snapshot(self._sandbox_snapshot_path(session_id))
         measured_used_bytes = existing.last_measured_used_bytes if existing is not None else None
         measured_at = existing.last_measured_at if existing is not None else None
         if measure_usage:
-            measure_workspace_usage = getattr(self._runtime, "measure_workspace_usage", None)
-            if callable(measure_workspace_usage):
-                try:
-                    current_used_bytes = await measure_workspace_usage(session_id, resolved_container_id)
-                except Exception:
-                    current_used_bytes = None
-                if isinstance(current_used_bytes, int):
-                    measured_used_bytes = current_used_bytes
-                    measured_at = datetime.now(tz=UTC)
+            current_used_bytes = await self._runtime.measure_workspace_usage(session_id, resolved_container_id)
+            if current_used_bytes is not None:
+                measured_used_bytes = current_used_bytes
+                measured_at = datetime.now(tz=UTC)
         if not inspection.storage_present:
             measured_used_bytes = None
             measured_at = None
 
-        runtime_kind = getattr(self._runtime, "runtime_kind", None)
-        if runtime_kind not in ("docker", "kubernetes"):
-            runtime_kind = None
-
         snapshot = SessionSandboxSnapshot(
             exists=inspection.exists,
-            runtime=runtime_kind,
+            runtime=self._runtime.runtime_kind,
             status=inspection.status,
             resource_id=inspection.resource_id,
             resource_kind=inspection.resource_kind,

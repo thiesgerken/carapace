@@ -15,7 +15,6 @@ from carapace.sandbox.manager import _CONTEXT_TUNNEL_HELPER, SandboxManager
 from carapace.sandbox.proxy import ProxyServer, domain_matches
 from carapace.sandbox.runtime import (
     ContainerGoneError,
-    ContainerRuntime,
     ExecResult,
     NetworkTunnel,
     SkillActivationInputs,
@@ -23,6 +22,7 @@ from carapace.sandbox.runtime import (
 )
 from carapace.sandbox.session_lifecycle import SessionContainer
 from carapace.skills import SkillRegistry
+from tests.runtime_mocks import make_runtime_mock
 
 # ── domain_matches ──────────────────────────────────────────────────
 
@@ -118,7 +118,7 @@ class TestProxyParsing:
 
 class TestSandboxManagerAllowlists:
     def _make_manager(self, tmp_path: Path):
-        runtime = MagicMock(spec=ContainerRuntime)
+        runtime = make_runtime_mock()
         return SandboxManager(runtime=runtime, data_dir=tmp_path, knowledge_dir=tmp_path)
 
     def test_empty_by_default(self, tmp_path: Path):
@@ -195,7 +195,7 @@ class TestSandboxManagerAllowlists:
 
 @pytest.mark.anyio
 async def test_exec_recreate_preserves_domains(tmp_path: Path):
-    runtime = MagicMock(spec=ContainerRuntime)
+    runtime = make_runtime_mock()
     runtime.get_host_ip = AsyncMock(return_value="172.18.0.1")
     runtime.create_sandbox = AsyncMock(side_effect=["container-1", "container-2"])
     runtime.get_ip = AsyncMock(return_value="172.18.0.22")
@@ -223,7 +223,7 @@ async def test_exec_recreate_preserves_domains(tmp_path: Path):
 @pytest.mark.anyio
 async def test_exec_recreate_reinjects_credential_files(tmp_path: Path):
     """After container recreation, activation providers re-materialize file credentials."""
-    runtime = MagicMock(spec=ContainerRuntime)
+    runtime = make_runtime_mock()
     runtime.get_host_ip = AsyncMock(return_value="172.18.0.1")
     runtime.create_sandbox = AsyncMock(side_effect=["container-1", "container-2"])
     runtime.get_ip = AsyncMock(return_value="172.18.0.22")
@@ -286,7 +286,7 @@ async def test_exec_recreate_reinjects_credential_files(tmp_path: Path):
 
 @pytest.mark.anyio
 async def test_activate_skill_runs_setup_provider_with_activation_inputs(tmp_path: Path):
-    runtime = MagicMock(spec=ContainerRuntime)
+    runtime = make_runtime_mock()
     runtime.get_host_ip = AsyncMock(return_value="172.18.0.1")
     runtime.create_sandbox = AsyncMock(return_value="container-1")
     runtime.get_ip = AsyncMock(return_value="172.18.0.22")
@@ -331,7 +331,7 @@ async def test_activate_skill_runs_setup_provider_with_activation_inputs(tmp_pat
 
 @pytest.mark.anyio
 async def test_activate_skill_recovers_if_trusted_restore_hits_gone_container(tmp_path: Path):
-    runtime = MagicMock(spec=ContainerRuntime)
+    runtime = make_runtime_mock()
     runtime.get_host_ip = AsyncMock(return_value="172.18.0.1")
     runtime.create_sandbox = AsyncMock(side_effect=["container-1", "container-2"])
     runtime.get_ip = AsyncMock(return_value="172.18.0.22")
@@ -364,7 +364,7 @@ async def test_activate_skill_recovers_if_trusted_restore_hits_gone_container(tm
 
 @pytest.mark.anyio
 async def test_activate_skill_prefers_pnpm_when_package_and_pnpm_lockfiles_exist(tmp_path: Path):
-    runtime = MagicMock(spec=ContainerRuntime)
+    runtime = make_runtime_mock()
     runtime.get_host_ip = AsyncMock(return_value="172.18.0.1")
     runtime.create_sandbox = AsyncMock(return_value="container-1")
     runtime.get_ip = AsyncMock(return_value="172.18.0.22")
@@ -579,7 +579,7 @@ class TestCarapaceYamlParsing:
 
 @pytest.mark.anyio
 async def test_exec_command_sets_up_and_cleans_up_tunnels(tmp_path: Path):
-    runtime = MagicMock(spec=ContainerRuntime)
+    runtime = make_runtime_mock()
     runtime.get_host_ip = AsyncMock(return_value="172.18.0.1")
     runtime.create_sandbox = AsyncMock(return_value="container-1")
     runtime.get_ip = AsyncMock(return_value="172.18.0.22")
@@ -612,7 +612,7 @@ async def test_exec_command_sets_up_and_cleans_up_tunnels(tmp_path: Path):
 
 @pytest.mark.anyio
 async def test_exec_command_rejects_conflicting_tunnel_local_ports(tmp_path: Path):
-    runtime = MagicMock(spec=ContainerRuntime)
+    runtime = make_runtime_mock()
     runtime.get_host_ip = AsyncMock(return_value="172.18.0.1")
     runtime.create_sandbox = AsyncMock(return_value="container-1")
     runtime.get_ip = AsyncMock(return_value="172.18.0.22")
@@ -634,7 +634,7 @@ async def test_exec_command_rejects_conflicting_tunnel_local_ports(tmp_path: Pat
 
 @pytest.mark.anyio
 async def test_exec_command_allows_duplicate_tunnel_with_different_descriptions(tmp_path: Path):
-    runtime = MagicMock(spec=ContainerRuntime)
+    runtime = make_runtime_mock()
     runtime.get_host_ip = AsyncMock(return_value="172.18.0.1")
     runtime.create_sandbox = AsyncMock(return_value="container-1")
     runtime.get_ip = AsyncMock(return_value="172.18.0.22")
@@ -670,7 +670,7 @@ async def test_exec_command_allows_duplicate_tunnel_with_different_descriptions(
 
 @pytest.mark.anyio
 async def test_exec_command_recreates_tunnels_before_retry(tmp_path: Path):
-    runtime = MagicMock(spec=ContainerRuntime)
+    runtime = make_runtime_mock()
     runtime.get_host_ip = AsyncMock(return_value="172.18.0.1")
     runtime.sandbox_exists = AsyncMock(return_value=None)
     runtime.create_sandbox = AsyncMock(side_effect=["container-1", "container-2"])
@@ -714,7 +714,7 @@ async def test_exec_command_recreates_tunnels_before_retry(tmp_path: Path):
 
 @pytest.mark.anyio
 async def test_exec_command_cleans_up_tunnels_after_command_failure(tmp_path: Path):
-    runtime = MagicMock(spec=ContainerRuntime)
+    runtime = make_runtime_mock()
     runtime.get_host_ip = AsyncMock(return_value="172.18.0.1")
     runtime.create_sandbox = AsyncMock(return_value="container-1")
     runtime.get_ip = AsyncMock(return_value="172.18.0.22")
@@ -750,7 +750,7 @@ async def test_exec_command_cleans_up_tunnels_after_command_failure(tmp_path: Pa
 
 @pytest.mark.anyio
 async def test_exec_cleanup_tunnel_error_does_not_mask_command_error_or_skip_credential_cleanup():
-    runtime = MagicMock(spec=ContainerRuntime)
+    runtime = make_runtime_mock()
     state = SandboxExecState(
         sessions={},
         allowed_domains={},

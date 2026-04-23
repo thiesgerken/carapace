@@ -9,9 +9,10 @@ import pytest
 
 from carapace.models import ContextGrant, SessionState, SkillCredentialDecl, context_grants_session_summary
 from carapace.sandbox.manager import SandboxManager
-from carapace.sandbox.runtime import ContainerRuntime, ExecResult
+from carapace.sandbox.runtime import ExecResult
 from carapace.security.context import ApprovalSource, ContextGrantEntry, CredentialAccessEntry, SessionSecurity
 from carapace.security.sentinel import _format_entry
+from tests.runtime_mocks import make_runtime_mock
 
 # ── ContextGrant model ──────────────────────────────────────────────
 
@@ -151,7 +152,7 @@ class TestSessionStateContextGrants:
 
 class TestSandboxManagerCredentialCache:
     def _make_manager(self, tmp_path: Path) -> SandboxManager:
-        runtime = MagicMock(spec=ContainerRuntime)
+        runtime = make_runtime_mock()
         return SandboxManager(runtime=runtime, data_dir=tmp_path, knowledge_dir=tmp_path)
 
     def test_cache_and_retrieve(self, tmp_path: Path):
@@ -172,7 +173,7 @@ class TestSandboxManagerCredentialCache:
 
     @pytest.mark.anyio
     async def test_credential_cache_cleared_on_destroy_session(self, tmp_path: Path):
-        runtime = MagicMock(spec=ContainerRuntime)
+        runtime = make_runtime_mock()
         runtime.destroy_sandbox = AsyncMock()
         mgr = SandboxManager(runtime=runtime, data_dir=tmp_path, knowledge_dir=tmp_path)
         mgr.cache_credential("sess-1", "dev/token", "secret-value")
@@ -186,7 +187,7 @@ class TestSandboxManagerCredentialCache:
 
 class TestSandboxManagerContextTracking:
     def _make_manager(self, tmp_path: Path) -> SandboxManager:
-        runtime = MagicMock(spec=ContainerRuntime)
+        runtime = make_runtime_mock()
         return SandboxManager(runtime=runtime, data_dir=tmp_path, knowledge_dir=tmp_path)
 
     def test_no_contexts_by_default(self, tmp_path: Path):
@@ -248,7 +249,7 @@ class TestApprovalSource:
 
 class TestExecNotificationDedupe:
     def _make_manager(self, tmp_path: Path) -> SandboxManager:
-        runtime = MagicMock(spec=ContainerRuntime)
+        runtime = make_runtime_mock()
         return SandboxManager(runtime=runtime, data_dir=tmp_path, knowledge_dir=tmp_path)
 
     # -- domain dedupe --
