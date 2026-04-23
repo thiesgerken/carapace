@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import re
 import secrets
 from datetime import date
 from pathlib import Path, PurePosixPath
@@ -34,6 +35,7 @@ from carapace.usage import LlmRequestLogCapability
 
 _WORKSPACE_ROOT = PurePosixPath("/workspace")
 _SKILLS_ROOT = PurePosixPath("skills")
+_SKILL_PATH_PATTERN = re.compile(r"(?<![\w.-])(?:/workspace/)?skills/(?P<skill>[A-Za-z0-9][A-Za-z0-9._-]*)")
 
 
 def _normalize_workspace_path(path: str) -> PurePosixPath:
@@ -73,6 +75,46 @@ def _read_skill_access_denial(path: str, knowledge_dir: Path, activated_skills: 
     if not _skill_file_exists_in_backend_knowledge(knowledge_dir, rel_path):
         return None
     return f"Please activate the {skill_name} skill using the use_skill tool before accessing the skill's files"
+
+
+def _iter_backend_skills_in_text(text: str, knowledge_dir: Path) -> list[str]:
+    seen: set[str] = set()
+    skills: list[str] = []
+    for match in _SKILL_PATH_PATTERN.finditer(text):
+        skill_name = match.group("skill")
+        if skill_name in seen:
+            continue
+        if not _skill_file_exists_in_backend_knowledge(knowledge_dir, _SKILLS_ROOT / skill_name):
+            continue
+        seen.add(skill_name)
+        skills.append(skill_name)
+    return skills
+
+
+def _exec_skill_access_warning(
+    command: str,
+    knowledge_dir: Path,
+    activated_skills: list[str],
+    contexts: list[str],
+) -> str | None:
+    warnings: list[str] = []
+    for skill_name in _iter_backend_skills_in_text(command, knowledge_dir):
+        if skill_name not in activated_skills:
+            warnings.append(
+                f"- `{skill_name}` is referenced in this command but is not activated. Use `use_skill('{skill_name}')` "
+                f"first, then rerun `exec` with `contexts=['{skill_name}']` if you need that skill's context."
+            )
+            continue
+        if skill_name not in contexts:
+            warnings.append(
+                f"- `{skill_name}` is referenced in this command but missing from `contexts`. Rerun `exec` with "
+                f"`contexts=['{skill_name}']` if you need that skill's injected credentials, tunnels, or domains."
+            )
+    if not warnings:
+        return None
+    return "Warning: this command references skill directories without the matching skill context:\n" + "\n".join(
+        warnings
+    )
 
 
 async def _gate(ctx: RunContext[Deps], tool_name: str, args: dict[str, Any]) -> ToolDenied | None:
@@ -598,6 +640,12 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
                 Always set this to the list of skills that are needed for the command.
         """
         contexts = contexts or []
+        skill_warning = _exec_skill_access_warning(
+            command,
+            ctx.deps.knowledge_dir,
+            ctx.deps.session_state.activated_skills,
+            contexts,
+        )
 
         # Validate contexts against activated skills
         grants = ctx.deps.session_state.context_grants
@@ -692,6 +740,9 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
                 "(re-run use_skill for the skill if you need them):\n"
                 f"{lines}\n\n"
             ) + result
+
+        if skill_warning:
+            result = f"{result}\n\n{skill_warning}" if result else skill_warning
 
         ctx.deps.security.append(
             ToolResultEntry(tool="exec", status="error" if exit_code != 0 else "success"),
