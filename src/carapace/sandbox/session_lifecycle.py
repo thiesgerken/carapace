@@ -163,7 +163,7 @@ class SandboxSessionLifecycle:
             self.prepare_session_recreate(session_id)
         else:
             existing_id = await self._runtime.sandbox_exists(sandbox_name)
-            if existing_id:
+            if isinstance(existing_id, str) and existing_id:
                 try:
                     if await self._runtime.is_running(existing_id):
                         logger.info(f"Re-attached to running sandbox {sandbox_name} for session {session_id}")
