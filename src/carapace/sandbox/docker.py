@@ -289,7 +289,7 @@ class DockerRuntime(ContainerRuntime):
             except NotFound:
                 return SandboxInspection(
                     exists=False,
-                    status="missing",
+                    status="scaled_down" if storage_present else "missing",
                     storage_present=storage_present,
                 )
 

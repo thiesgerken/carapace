@@ -36,13 +36,13 @@ function sandboxSummary(session: SessionInfo): SessionSandboxSnapshot | null {
 }
 
 function sandboxSummaryLabel(sandbox: SessionSandboxSnapshot): string {
-  const parts: string[] = [sandboxStatusLabel(sandbox.status)];
   if (typeof sandbox.last_measured_used_bytes === "number") {
-    parts.push(formatBytes(sandbox.last_measured_used_bytes));
-  } else if (sandbox.storage_present) {
-    parts.push("storage");
+    return formatBytes(sandbox.last_measured_used_bytes);
   }
-  return parts.join(" · ");
+  if (sandbox.storage_present) {
+    return "storage";
+  }
+  return "";
 }
 
 export function Sidebar({
@@ -117,6 +117,19 @@ export function Sidebar({
                     )}
                   </div>
                   <div className="text-xs text-muted-foreground">
+                    {sandbox ? (
+                      <span className="mr-1 inline-flex items-center gap-1.5 align-middle">
+                        <span
+                          title={sandboxStatusLabel(sandbox.status)}
+                          className={cn(
+                            "h-1.5 w-1.5 shrink-0 rounded-full",
+                            sandboxStatusIndicatorClass(sandbox.status),
+                          )}
+                        />
+                        <span>{sandboxSummaryLabel(sandbox)}</span>
+                        <span aria-hidden="true">·</span>
+                      </span>
+                    ) : null}
                     {[
                       formatTime(s.last_active),
                       s.channel_type !== "web" && s.channel_type !== "cli"
@@ -126,17 +139,6 @@ export function Sidebar({
                       .filter(Boolean)
                       .join(" · ")}
                   </div>
-                  {sandbox ? (
-                    <div className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
-                      <span
-                        className={cn(
-                          "h-1.5 w-1.5 shrink-0 rounded-full",
-                          sandboxStatusIndicatorClass(sandbox.status),
-                        )}
-                      />
-                      <span>{sandboxSummaryLabel(sandbox)}</span>
-                    </div>
-                  ) : null}
                 </div>
               </button>
               <button
