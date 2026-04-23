@@ -2,13 +2,11 @@ from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
-from typing import Literal
 
 import yaml
 from pydantic import BaseModel
 
-SandboxRuntimeKind = Literal["docker", "kubernetes"]
-SandboxStatus = Literal["running", "scaled_down", "stopped", "missing", "pending", "error"]
+from carapace.sandbox.runtime import SandboxRuntimeKind, SandboxStatus
 
 
 class SessionSandboxSnapshot(BaseModel):

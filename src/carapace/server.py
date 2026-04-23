@@ -461,7 +461,8 @@ async def get_session_sandbox(session_id: str, _token: str = Depends(_verify_tok
     state = _engine.session_mgr.load_state(session_id)
     if state is None:
         raise HTTPException(status_code=404, detail="Session not found")
-    return await _engine.sandbox_mgr.refresh_sandbox_snapshot(session_id, measure_usage=True)
+    snapshot = _engine.session_mgr.load_sandbox_snapshot(session_id)
+    return snapshot or SessionSandboxSnapshot()
 
 
 @router.post("/sessions/{session_id}/sandbox/wipe", response_model=SessionSandboxSnapshot)

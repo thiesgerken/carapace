@@ -383,9 +383,6 @@ class SandboxManager:
         save_sandbox_snapshot(self._sandbox_snapshot_path(session_id), snapshot)
         return snapshot
 
-    def get_cached_sandbox_snapshot(self, session_id: str) -> SessionSandboxSnapshot | None:
-        return load_sandbox_snapshot(self._sandbox_snapshot_path(session_id))
-
     async def _exec_in_container(
         self,
         sc: SessionContainer,
