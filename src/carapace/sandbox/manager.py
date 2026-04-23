@@ -11,7 +11,6 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-import yaml
 from loguru import logger
 
 from carapace.sandbox import file_ops
@@ -30,7 +29,12 @@ from carapace.sandbox.session_lifecycle import (
     SessionContainer,
 )
 from carapace.sandbox.skill_activation import SkillActivationRunner
-from carapace.sandbox.state import SessionSandboxSnapshot
+from carapace.sandbox.state import (
+    SessionSandboxSnapshot,
+    clear_sandbox_snapshot,
+    load_sandbox_snapshot,
+    save_sandbox_snapshot,
+)
 from carapace.security.context import ApprovalSource, ApprovalVerdict
 
 _SKILL_NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]*$")
@@ -328,27 +332,6 @@ class SandboxManager:
     def _sandbox_snapshot_path(self, session_id: str) -> Path:
         return self._data_dir / "sessions" / session_id / "sandbox.yaml"
 
-    def _load_sandbox_snapshot(self, session_id: str) -> SessionSandboxSnapshot | None:
-        path = self._sandbox_snapshot_path(session_id)
-        if not path.exists():
-            return None
-        with open(path) as f:
-            raw = yaml.safe_load(f)
-        if not raw:
-            return None
-        return SessionSandboxSnapshot.model_validate(raw)
-
-    def _save_sandbox_snapshot(self, session_id: str, snapshot: SessionSandboxSnapshot) -> None:
-        path = self._sandbox_snapshot_path(session_id)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with open(path, "w") as f:
-            yaml.dump(
-                snapshot.model_dump(mode="json"), f, default_flow_style=False, allow_unicode=True, sort_keys=False
-            )
-
-    def _clear_sandbox_snapshot(self, session_id: str) -> None:
-        self._sandbox_snapshot_path(session_id).unlink(missing_ok=True)
-
     def _workspace_path(self, session_id: str) -> Path:
         return self._data_dir / "sessions" / session_id / "workspace"
 
@@ -372,7 +355,7 @@ class SandboxManager:
                 resolved_container_id = await self._runtime.sandbox_exists(sandbox_name)
 
         inspection = await self._runtime.inspect_sandbox(session_id, sandbox_name, resolved_container_id)
-        existing = self._load_sandbox_snapshot(session_id)
+        existing = load_sandbox_snapshot(self._sandbox_snapshot_path(session_id))
         measured_used_bytes = existing.last_measured_used_bytes if existing is not None else None
         measured_at = existing.last_measured_at if existing is not None else None
         if measure_usage:
@@ -396,11 +379,11 @@ class SandboxManager:
             last_measured_at=measured_at,
             updated_at=datetime.now(tz=UTC),
         )
-        self._save_sandbox_snapshot(session_id, snapshot)
+        save_sandbox_snapshot(self._sandbox_snapshot_path(session_id), snapshot)
         return snapshot
 
     def get_cached_sandbox_snapshot(self, session_id: str) -> SessionSandboxSnapshot | None:
-        return self._load_sandbox_snapshot(session_id)
+        return load_sandbox_snapshot(self._sandbox_snapshot_path(session_id))
 
     async def _exec_in_container(
         self,
@@ -515,9 +498,7 @@ class SandboxManager:
     # ------------------------------------------------------------------
 
     async def file_read(self, session_id: str, path: str, *, offset: int = 0, limit: int = 100) -> str:
-        result = await self._sandbox_file_ops.file_read(session_id, path, offset=offset, limit=limit)
-        await self.refresh_sandbox_snapshot(session_id, measure_usage=True)
-        return result
+        return await self._sandbox_file_ops.file_read(session_id, path, offset=offset, limit=limit)
 
     async def file_write(
         self,
@@ -795,13 +776,13 @@ class SandboxManager:
 
     async def destroy_session(self, session_id: str) -> None:
         await self._session_lifecycle.destroy_session(session_id)
-        self._clear_sandbox_snapshot(session_id)
+        clear_sandbox_snapshot(self._sandbox_snapshot_path(session_id))
 
     async def reset_session(self, session_id: str) -> None:
         await self._session_lifecycle.reset_session(session_id)
         self._clear_workspace_storage(session_id)
-        self._save_sandbox_snapshot(
-            session_id,
+        save_sandbox_snapshot(
+            self._sandbox_snapshot_path(session_id),
             SessionSandboxSnapshot(runtime=self._runtime.runtime_kind, updated_at=datetime.now(tz=UTC)),
         )
 

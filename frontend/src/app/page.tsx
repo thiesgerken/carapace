@@ -193,6 +193,16 @@ function HomeContent() {
     );
   }
 
+  const handleActiveSessionTitleUpdate = useCallback((title: string) => {
+    if (!activeSessionId) return;
+    handleTitleUpdate(activeSessionId, title);
+  }, [activeSessionId]);
+
+  const handleActiveSessionSandboxUpdate = useCallback((sandbox: SessionInfo["sandbox"]) => {
+    if (!activeSessionId) return;
+    handleSandboxUpdate(activeSessionId, sandbox);
+  }, [activeSessionId]);
+
   const activeSession = sessions.find((session) => session.session_id === activeSessionId) ?? null;
 
   if (!connected) {
@@ -252,8 +262,8 @@ function HomeContent() {
             token={token}
             sessionId={activeSessionId}
             initialSandbox={activeSession?.sandbox ?? null}
-            onTitleUpdate={(title) => handleTitleUpdate(activeSessionId, title)}
-            onSandboxUpdate={(sandbox) => handleSandboxUpdate(activeSessionId, sandbox)}
+            onTitleUpdate={handleActiveSessionTitleUpdate}
+            onSandboxUpdate={handleActiveSessionSandboxUpdate}
           />
         ) : (
           <div className="flex flex-1 items-center justify-center">

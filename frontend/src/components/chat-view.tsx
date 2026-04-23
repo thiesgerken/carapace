@@ -22,6 +22,7 @@ import type {
   SessionSandboxSnapshot,
   TurnUsage,
 } from "@/lib/types";
+import { formatBytes } from "@/lib/utils";
 import { Message } from "./message";
 import { ChatInput } from "./chat-input";
 
@@ -32,18 +33,6 @@ interface ChatViewProps {
   initialSandbox?: SessionSandboxSnapshot | null;
   onTitleUpdate?: (title: string) => void;
   onSandboxUpdate?: (sandbox: SessionSandboxSnapshot) => void;
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  const units = ["KB", "MB", "GB", "TB"];
-  let value = bytes / 1024;
-  let unitIndex = 0;
-  while (value >= 1024 && unitIndex < units.length - 1) {
-    value /= 1024;
-    unitIndex += 1;
-  }
-  return `${value.toFixed(value >= 10 ? 0 : 1)} ${units[unitIndex]}`;
 }
 
 function sandboxStatusLabel(snapshot: SessionSandboxSnapshot | null): string {
@@ -289,6 +278,11 @@ export function ChatView({
   const lastThinkingStartedAtRef = useRef<string | null>(null);
   const queueRef = useRef<string | null>(null);
   const sendRef = useRef<(msg: ClientMessage) => void>(() => {});
+  const onSandboxUpdateRef = useRef(onSandboxUpdate);
+
+  useEffect(() => {
+    onSandboxUpdateRef.current = onSandboxUpdate;
+  }, [onSandboxUpdate]);
 
   // Fetch available slash commands and models on mount
   useEffect(() => {
@@ -301,11 +295,11 @@ export function ChatView({
     try {
       const nextSandbox = await fetchSandbox(server, token, sessionId);
       setSandbox(nextSandbox);
-      onSandboxUpdate?.(nextSandbox);
+      onSandboxUpdateRef.current?.(nextSandbox);
     } finally {
       setSandboxLoading(false);
     }
-  }, [onSandboxUpdate, server, sessionId, token]);
+  }, [server, sessionId, token]);
 
   useEffect(() => {
     let cancelled = false;
@@ -316,7 +310,7 @@ export function ChatView({
         const nextSandbox = await fetchSandbox(server, token, sessionId);
         if (cancelled) return;
         setSandbox(nextSandbox);
-        onSandboxUpdate?.(nextSandbox);
+        onSandboxUpdateRef.current?.(nextSandbox);
       } finally {
         if (!cancelled) setSandboxLoading(false);
       }
@@ -327,7 +321,7 @@ export function ChatView({
     return () => {
       cancelled = true;
     };
-  }, [onSandboxUpdate, server, sessionId, token]);
+  }, [server, sessionId, token]);
 
   // Load history on mount
   useEffect(() => {
@@ -1008,7 +1002,7 @@ export function ChatView({
     try {
       const nextSandbox = await wipeSandbox(server, token, sessionId);
       setSandbox(nextSandbox);
-      onSandboxUpdate?.(nextSandbox);
+      onSandboxUpdateRef.current?.(nextSandbox);
     } finally {
       setWipingSandbox(false);
     }

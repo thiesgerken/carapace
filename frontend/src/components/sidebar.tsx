@@ -2,7 +2,7 @@
 
 import { Plus, LogOut, MessageSquare, Trash2 } from "lucide-react";
 import type { SessionInfo } from "@/lib/types";
-import { cn } from "@/lib/utils";
+import { cn, formatBytes } from "@/lib/utils";
 
 interface SidebarProps {
   sessions: SessionInfo[];
@@ -27,18 +27,6 @@ function formatTime(iso: string): string {
     month: "2-digit",
     year: "numeric",
   });
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  const units = ["KB", "MB", "GB", "TB"];
-  let value = bytes / 1024;
-  let unitIndex = 0;
-  while (value >= 1024 && unitIndex < units.length - 1) {
-    value /= 1024;
-    unitIndex += 1;
-  }
-  return `${value.toFixed(value >= 10 ? 0 : 1)} ${units[unitIndex]}`;
 }
 
 function sandboxSummary(session: SessionInfo): string | null {
