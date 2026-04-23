@@ -1,6 +1,15 @@
 # CHANGELOG
 
 
+## v0.91.0 (2026-04-23)
+
+
+### ✨ Features
+
+
+- ✨ feat: warn when exec references skill dirs without context
+  ([`692c6be`](https://github.com/thiesgerken/carapace/commit/692c6be934a5f62605f78da710b500422c8bb34a))
+
 ## v0.90.4 (2026-04-22)
 
 
