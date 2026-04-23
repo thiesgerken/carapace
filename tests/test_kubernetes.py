@@ -14,7 +14,7 @@ from carapace.sandbox.kubernetes import (
     _sanitize_pod_name,
     _standard_labels,
 )
-from carapace.sandbox.runtime import ContainerConfig, Mount, SandboxConfig
+from carapace.sandbox.runtime import ContainerConfig, ExecResult, Mount, SandboxConfig
 
 # --- Helpers ---
 
@@ -304,6 +304,37 @@ async def test_get_ip():
         mock_pod_cls.get = AsyncMock(return_value=mock_pod)
         ip = await rt.get_ip("test-pod", "any-network")
     assert ip == "10.42.0.5"
+
+
+# --- measure_workspace_usage ---
+
+
+@pytest.mark.asyncio
+async def test_measure_workspace_usage_uses_df_used_bytes():
+    rt = _make_runtime()
+    rt.is_running = AsyncMock(return_value=True)
+    rt.exec = AsyncMock(return_value=ExecResult(exit_code=0, output="1048576\n"))
+
+    used_bytes = await rt.measure_workspace_usage("sess-1", "test-pod")
+
+    assert used_bytes == 1_048_576
+    rt.exec.assert_awaited_once_with(
+        "test-pod",
+        "df -B1 --output=used /workspace 2>/dev/null | tail -n 1",
+        timeout=30,
+    )
+
+
+@pytest.mark.asyncio
+async def test_measure_workspace_usage_returns_none_when_not_running():
+    rt = _make_runtime()
+    rt.is_running = AsyncMock(return_value=False)
+    rt.exec = AsyncMock()
+
+    used_bytes = await rt.measure_workspace_usage("sess-1", "test-pod")
+
+    assert used_bytes is None
+    rt.exec.assert_not_awaited()
 
 
 # --- remove ---

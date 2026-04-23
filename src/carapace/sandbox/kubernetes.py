@@ -610,7 +610,7 @@ class KubernetesRuntime(ContainerRuntime):
     async def measure_workspace_usage(self, session_id: str, container_id: str | None = None) -> int | None:
         if not container_id or not await self.is_running(container_id):
             return None
-        result = await self.exec(container_id, "du -sb /workspace 2>/dev/null | awk '{print $1}'", timeout=30)
+        result = await self.exec(container_id, "df -B1 --output=used /workspace 2>/dev/null | tail -n 1", timeout=30)
         if result.exit_code != 0:
             return None
         first_line = result.output.strip().splitlines()
