@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Loader2 } from "lucide-react";
+import { Loader2, RotateCcw, Trash2 } from "lucide-react";
 import { useWebSocket } from "@/hooks/use-websocket";
 import {
   type AvailableModelInfo,
@@ -22,7 +22,7 @@ import type {
   SessionSandboxSnapshot,
   TurnUsage,
 } from "@/lib/types";
-import { formatBytes } from "@/lib/utils";
+import { cn, formatBytes, sandboxStatusIndicatorClass, sandboxStatusLabel } from "@/lib/utils";
 import { Message } from "./message";
 import { ChatInput } from "./chat-input";
 
@@ -33,15 +33,12 @@ interface ChatViewProps {
   initialSandbox?: SessionSandboxSnapshot | null;
   onTitleUpdate?: (title: string) => void;
   onSandboxUpdate?: (sandbox: SessionSandboxSnapshot) => void;
-}
-
-function sandboxStatusLabel(snapshot: SessionSandboxSnapshot | null): string {
-  if (!snapshot) return "Checking sandbox…";
-  return snapshot.status.replace("_", " ");
+  onDeleteSession?: () => Promise<void>;
 }
 
 function sandboxStorageLabel(snapshot: SessionSandboxSnapshot | null): string {
   if (!snapshot) return "";
+  if (snapshot.status === "missing" && !snapshot.storage_present) return "";
   const details: string[] = [];
   if (typeof snapshot.last_measured_used_bytes === "number") {
     details.push(`${formatBytes(snapshot.last_measured_used_bytes)} used`);
@@ -55,9 +52,6 @@ function sandboxStorageLabel(snapshot: SessionSandboxSnapshot | null): string {
     && typeof snapshot.provisioned_bytes === "number"
   ) {
     details.push(`${formatBytes(snapshot.provisioned_bytes)} allocated`);
-  }
-  if (snapshot.last_measured_at) {
-    details.push(`measured ${new Date(snapshot.last_measured_at).toLocaleTimeString()}`);
   }
   return details.join(" · ");
 }
@@ -256,6 +250,7 @@ export function ChatView({
   initialSandbox,
   onTitleUpdate,
   onSandboxUpdate,
+  onDeleteSession,
 }: ChatViewProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [waiting, setWaiting] = useState(false);
@@ -272,6 +267,7 @@ export function ChatView({
   );
   const [sandboxLoading, setSandboxLoading] = useState(false);
   const [wipingSandbox, setWipingSandbox] = useState(false);
+  const [deletingSession, setDeletingSession] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const isAtBottomRef = useRef(true);
@@ -694,6 +690,7 @@ export function ChatView({
             return updated;
           });
           if (msg.usage) setUsage(msg.usage);
+          void refreshSandbox();
           setLlmActivity(null);
           lastThinkingStartedAtRef.current = null;
           finishWaiting();
@@ -816,7 +813,6 @@ export function ChatView({
             }
             return updated;
           });
-          void refreshSandbox();
           break;
         case "approval_request":
           setWaiting(true);
@@ -848,7 +844,6 @@ export function ChatView({
             ...prev,
             { kind: "command", command: msg.command, data: msg.data },
           ]);
-          void refreshSandbox();
           setLlmActivity(null);
           lastThinkingStartedAtRef.current = null;
           finishWaiting();
@@ -994,7 +989,7 @@ export function ChatView({
   }
 
   async function handleWipeSandbox() {
-    if (waiting || wipingSandbox) return;
+    if (waiting || wipingSandbox || deletingSession) return;
     if (!window.confirm("Wipe the sandbox and its storage for this session? Chat history will stay.")) {
       return;
     }
@@ -1005,6 +1000,19 @@ export function ChatView({
       onSandboxUpdateRef.current?.(nextSandbox);
     } finally {
       setWipingSandbox(false);
+    }
+  }
+
+  async function handleDeleteSession() {
+    if (waiting || wipingSandbox || deletingSession || !onDeleteSession) return;
+    if (!window.confirm("Delete this session? Chat history and sandbox state will be removed.")) {
+      return;
+    }
+    setDeletingSession(true);
+    try {
+      await onDeleteSession();
+    } finally {
+      setDeletingSession(false);
     }
   }
 
@@ -1123,20 +1131,54 @@ export function ChatView({
             <div className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">
               Sandbox
             </div>
-            <div className="mt-1 text-sm font-medium text-foreground">
-              {sandboxLoading ? "Refreshing…" : sandboxStatusLabel(sandbox)}
+            <div className="mt-1 flex items-center gap-2 text-sm font-medium text-foreground">
+              <span
+                className={cn(
+                  "h-2 w-2 shrink-0 rounded-full",
+                  sandboxLoading
+                    ? "bg-amber-500 animate-pulse"
+                    : sandbox
+                      ? sandboxStatusIndicatorClass(sandbox.status)
+                      : "bg-slate-300",
+                )}
+              />
+              <span>{sandboxLoading ? "Refreshing…" : sandbox ? sandboxStatusLabel(sandbox.status) : "Checking sandbox…"}</span>
             </div>
             <div className="mt-1 text-xs text-muted-foreground">
               {sandboxStorageLabel(sandbox)}
             </div>
           </div>
-          <button
-            onClick={() => void handleWipeSandbox()}
-            disabled={waiting || wipingSandbox}
-            className="shrink-0 rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {wipingSandbox ? "Wiping…" : "Wipe sandbox"}
-          </button>
+          <div className="flex shrink-0 items-center gap-2">
+            <button
+              onClick={() => void handleWipeSandbox()}
+              disabled={waiting || wipingSandbox || deletingSession}
+              className="rounded-md border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-900 transition-colors hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {wipingSandbox ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  Reset sandbox
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1.5">
+                  <RotateCcw className="h-3.5 w-3.5" />
+                  Reset sandbox
+                </span>
+              )}
+            </button>
+            <button
+              onClick={() => void handleDeleteSession()}
+              disabled={waiting || wipingSandbox || deletingSession || !onDeleteSession}
+              title="Delete session"
+              className="rounded-md p-1.5 text-destructive transition-colors hover:bg-destructive/10 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {deletingSession ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Trash2 className="h-3.5 w-3.5" />
+              )}
+            </button>
+          </div>
         </div>
       </div>
 

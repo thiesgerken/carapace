@@ -18,6 +18,31 @@ import type { SessionInfo } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { useSwipeDrawer } from "@/hooks/use-swipe-drawer";
 
+function sandboxTimestampValue(sandbox: SessionInfo["sandbox"] | null | undefined): number {
+  const updatedAt = sandbox?.updated_at;
+  if (!updatedAt) return 0;
+  const value = Date.parse(updatedAt);
+  return Number.isNaN(value) ? 0 : value;
+}
+
+function mergeSessionsWithNewerSandbox(
+  current: SessionInfo[],
+  incoming: SessionInfo[],
+  pending: Map<string, SessionInfo["sandbox"]>,
+): SessionInfo[] {
+  const currentById = new Map(current.map((session) => [session.session_id, session]));
+  return incoming.map((session) => {
+    const existing = currentById.get(session.session_id);
+    const pendingSandbox = pending.get(session.session_id);
+    const freshestSandbox = [session.sandbox, existing?.sandbox, pendingSandbox].reduce<SessionInfo["sandbox"]>(
+      (freshest, candidate) =>
+        sandboxTimestampValue(candidate) > sandboxTimestampValue(freshest) ? candidate : freshest,
+      session.sandbox,
+    );
+    return freshestSandbox === session.sandbox ? session : { ...session, sandbox: freshestSandbox };
+  });
+}
+
 type ConnectionState = {
   connected: boolean;
   server: string;
@@ -64,6 +89,7 @@ function HomeContent() {
   const [creatingSession, setCreatingSession] = useState(false);
   const [refreshingSessions, setRefreshingSessions] = useState(false);
   const refreshRequestIdRef = useRef(0);
+  const pendingSandboxUpdatesRef = useRef(new Map<string, SessionInfo["sandbox"]>());
 
   const { connected, server, token } = connection;
   const loading = creatingSession || refreshingSessions;
@@ -115,7 +141,7 @@ function HomeContent() {
 
       if (requestId !== refreshRequestIdRef.current) return;
 
-      setSessions(list);
+      setSessions((current) => mergeSessionsWithNewerSandbox(current, list, pendingSandboxUpdatesRef.current));
     } catch {
       // If sessions fail to load, connection might be stale
     } finally {
@@ -145,6 +171,7 @@ function HomeContent() {
 
   function handleDisconnect() {
     refreshRequestIdRef.current += 1;
+    pendingSandboxUpdatesRef.current.clear();
     clearConnection();
     setRefreshingSessions(false);
     setConnection({ connected: false, server: "", token: "" });
@@ -166,15 +193,16 @@ function HomeContent() {
     }
   }
 
-  async function handleDeleteSession(id: string) {
+  const handleDeleteSession = useCallback(async (id: string) => {
     try {
       await deleteSession(server, token, id);
+      pendingSandboxUpdatesRef.current.delete(id);
       setSessions((prev) => prev.filter((s) => s.session_id !== id));
       if (activeSessionId === id) setActiveSessionId(null);
     } catch {
       // deletion failed silently
     }
-  }
+  }, [activeSessionId, server, token]);
 
   function handleSelectSession(id: string) {
     setActiveSessionId(id);
@@ -188,6 +216,7 @@ function HomeContent() {
   }
 
   function handleSandboxUpdate(sessionId: string, sandbox: SessionInfo["sandbox"]) {
+    pendingSandboxUpdatesRef.current.set(sessionId, sandbox);
     setSessions((prev) =>
       prev.map((s) => (s.session_id === sessionId ? { ...s, sandbox } : s)),
     );
@@ -202,6 +231,11 @@ function HomeContent() {
     if (!activeSessionId) return;
     handleSandboxUpdate(activeSessionId, sandbox);
   }, [activeSessionId]);
+
+  const handleActiveSessionDelete = useCallback(async () => {
+    if (!activeSessionId) return;
+    await handleDeleteSession(activeSessionId);
+  }, [activeSessionId, handleDeleteSession]);
 
   const activeSession = sessions.find((session) => session.session_id === activeSessionId) ?? null;
 
@@ -264,6 +298,7 @@ function HomeContent() {
             initialSandbox={activeSession?.sandbox ?? null}
             onTitleUpdate={handleActiveSessionTitleUpdate}
             onSandboxUpdate={handleActiveSessionSandboxUpdate}
+            onDeleteSession={handleActiveSessionDelete}
           />
         ) : (
           <div className="flex flex-1 items-center justify-center">

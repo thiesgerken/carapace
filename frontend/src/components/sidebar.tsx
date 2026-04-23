@@ -1,8 +1,8 @@
 "use client";
 
 import { Plus, LogOut, MessageSquare, Trash2 } from "lucide-react";
-import type { SessionInfo } from "@/lib/types";
-import { cn, formatBytes } from "@/lib/utils";
+import type { SessionInfo, SessionSandboxSnapshot } from "@/lib/types";
+import { cn, formatBytes, sandboxStatusIndicatorClass, sandboxStatusLabel } from "@/lib/utils";
 
 interface SidebarProps {
   sessions: SessionInfo[];
@@ -29,10 +29,14 @@ function formatTime(iso: string): string {
   });
 }
 
-function sandboxSummary(session: SessionInfo): string | null {
+function sandboxSummary(session: SessionInfo): SessionSandboxSnapshot | null {
   const sandbox = session.sandbox;
-  if (!sandbox) return null;
-  const parts: string[] = [sandbox.status.replace("_", " ")];
+  if (!sandbox || sandbox.status === "missing") return null;
+  return sandbox;
+}
+
+function sandboxSummaryLabel(sandbox: SessionSandboxSnapshot): string {
+  const parts: string[] = [sandboxStatusLabel(sandbox.status)];
   if (typeof sandbox.last_measured_used_bytes === "number") {
     parts.push(formatBytes(sandbox.last_measured_used_bytes));
   } else if (sandbox.storage_present) {
@@ -84,6 +88,9 @@ export function Sidebar({
       <div className="flex-1 overflow-y-auto px-3 py-2">
         <div className="space-y-0.5">
           {sessions.map((s) => (
+            (() => {
+              const sandbox = sandboxSummary(s);
+              return (
             <div
               key={s.session_id}
               className={cn(
@@ -115,11 +122,21 @@ export function Sidebar({
                       s.channel_type !== "web" && s.channel_type !== "cli"
                         ? s.channel_type
                         : null,
-                      sandboxSummary(s),
                     ]
                       .filter(Boolean)
                       .join(" · ")}
                   </div>
+                  {sandbox ? (
+                    <div className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <span
+                        className={cn(
+                          "h-1.5 w-1.5 shrink-0 rounded-full",
+                          sandboxStatusIndicatorClass(sandbox.status),
+                        )}
+                      />
+                      <span>{sandboxSummaryLabel(sandbox)}</span>
+                    </div>
+                  ) : null}
                 </div>
               </button>
               <button
@@ -137,6 +154,8 @@ export function Sidebar({
                 <Trash2 className="h-3.5 w-3.5" />
               </button>
             </div>
+              );
+            })()
           ))}
           {sessions.length === 0 && !loading && (
             <p className="px-3 py-4 text-center text-xs text-muted-foreground">
