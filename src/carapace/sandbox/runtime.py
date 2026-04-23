@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import ipaddress
-from typing import ClassVar, Protocol
+from typing import ClassVar, Literal, Protocol
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -114,7 +114,22 @@ class ExecResult(BaseModel):
     output: str
 
 
+SandboxRuntimeKind = Literal["docker", "kubernetes"]
+SandboxStatus = Literal["running", "scaled_down", "stopped", "missing", "pending", "error"]
+
+
+class SandboxInspection(BaseModel):
+    exists: bool
+    status: SandboxStatus
+    resource_id: str | None = None
+    resource_kind: str | None = None
+    storage_present: bool = False
+    provisioned_bytes: int | None = None
+
+
 class ContainerRuntime(Protocol):
+    runtime_kind: SandboxRuntimeKind
+
     # -- Sandbox lifecycle (runtime decides Docker vs K8s details) --
     async def create_sandbox(self, config: SandboxConfig) -> str: ...
     async def resume_sandbox(self, name: str) -> None: ...
@@ -127,6 +142,15 @@ class ContainerRuntime(Protocol):
     async def list_sandboxes(self) -> dict[str, str]:
         """Return ``{session_id: container_or_pod_id}`` for all managed sandboxes."""
         ...
+
+    async def inspect_sandbox(
+        self,
+        session_id: str,
+        name: str,
+        container_id: str | None = None,
+    ) -> SandboxInspection: ...
+
+    async def measure_workspace_usage(self, session_id: str, container_id: str | None = None) -> int | None: ...
 
     # -- Low-level operations --
     async def exec(

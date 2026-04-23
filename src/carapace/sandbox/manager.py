@@ -2,12 +2,16 @@ from __future__ import annotations
 
 import re
 import shlex
+import shutil
 import textwrap
+import time
 from asyncio.locks import Lock
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 
+import yaml
 from loguru import logger
 
 from carapace.sandbox import file_ops
@@ -26,6 +30,7 @@ from carapace.sandbox.session_lifecycle import (
     SessionContainer,
 )
 from carapace.sandbox.skill_activation import SkillActivationRunner
+from carapace.sandbox.state import SessionSandboxSnapshot
 from carapace.security.context import ApprovalSource, ApprovalVerdict
 
 _SKILL_NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]*$")
@@ -320,6 +325,83 @@ class SandboxManager:
     def _build_proxy_env(self, session_id: str, proxy_token: str, proxy_url: str) -> dict[str, str]:
         return self._session_lifecycle.build_proxy_env(session_id, proxy_token, proxy_url)
 
+    def _sandbox_snapshot_path(self, session_id: str) -> Path:
+        return self._data_dir / "sessions" / session_id / "sandbox.yaml"
+
+    def _load_sandbox_snapshot(self, session_id: str) -> SessionSandboxSnapshot | None:
+        path = self._sandbox_snapshot_path(session_id)
+        if not path.exists():
+            return None
+        with open(path) as f:
+            raw = yaml.safe_load(f)
+        if not raw:
+            return None
+        return SessionSandboxSnapshot.model_validate(raw)
+
+    def _save_sandbox_snapshot(self, session_id: str, snapshot: SessionSandboxSnapshot) -> None:
+        path = self._sandbox_snapshot_path(session_id)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "w") as f:
+            yaml.dump(
+                snapshot.model_dump(mode="json"), f, default_flow_style=False, allow_unicode=True, sort_keys=False
+            )
+
+    def _clear_sandbox_snapshot(self, session_id: str) -> None:
+        self._sandbox_snapshot_path(session_id).unlink(missing_ok=True)
+
+    def _workspace_path(self, session_id: str) -> Path:
+        return self._data_dir / "sessions" / session_id / "workspace"
+
+    def _clear_workspace_storage(self, session_id: str) -> None:
+        shutil.rmtree(self._workspace_path(session_id), ignore_errors=True)
+
+    async def refresh_sandbox_snapshot(
+        self,
+        session_id: str,
+        *,
+        measure_usage: bool = False,
+        container_id: str | None = None,
+    ) -> SessionSandboxSnapshot:
+        sandbox_name = self._sandbox_name(session_id)
+        resolved_container_id = container_id
+        if resolved_container_id is None:
+            sc = self._sessions.get(session_id)
+            if sc is not None:
+                resolved_container_id = sc.container_id
+            else:
+                resolved_container_id = await self._runtime.sandbox_exists(sandbox_name)
+
+        inspection = await self._runtime.inspect_sandbox(session_id, sandbox_name, resolved_container_id)
+        existing = self._load_sandbox_snapshot(session_id)
+        measured_used_bytes = existing.last_measured_used_bytes if existing is not None else None
+        measured_at = existing.last_measured_at if existing is not None else None
+        if measure_usage:
+            current_used_bytes = await self._runtime.measure_workspace_usage(session_id, resolved_container_id)
+            if current_used_bytes is not None:
+                measured_used_bytes = current_used_bytes
+                measured_at = datetime.now(tz=UTC)
+        if not inspection.storage_present:
+            measured_used_bytes = None
+            measured_at = None
+
+        snapshot = SessionSandboxSnapshot(
+            exists=inspection.exists,
+            runtime=self._runtime.runtime_kind,
+            status=inspection.status,
+            resource_id=inspection.resource_id,
+            resource_kind=inspection.resource_kind,
+            storage_present=inspection.storage_present,
+            provisioned_bytes=inspection.provisioned_bytes,
+            last_measured_used_bytes=measured_used_bytes,
+            last_measured_at=measured_at,
+            updated_at=datetime.now(tz=UTC),
+        )
+        self._save_sandbox_snapshot(session_id, snapshot)
+        return snapshot
+
+    def get_cached_sandbox_snapshot(self, session_id: str) -> SessionSandboxSnapshot | None:
+        return self._load_sandbox_snapshot(session_id)
+
     async def _exec_in_container(
         self,
         sc: SessionContainer,
@@ -423,6 +505,7 @@ class SandboxManager:
         if result.exit_code != 0 and f"[exit code: {result.exit_code}]" not in output:
             logger.debug(f"Command failed in session {session_id} (exit {result.exit_code}): {command}")
             output += f"\n[exit code: {result.exit_code}]"
+        await self.refresh_sandbox_snapshot(session_id, measure_usage=True)
         return ExecResult(exit_code=result.exit_code, output=output or "(no output)")
 
     # ------------------------------------------------------------------
@@ -432,7 +515,9 @@ class SandboxManager:
     # ------------------------------------------------------------------
 
     async def file_read(self, session_id: str, path: str, *, offset: int = 0, limit: int = 100) -> str:
-        return await self._sandbox_file_ops.file_read(session_id, path, offset=offset, limit=limit)
+        result = await self._sandbox_file_ops.file_read(session_id, path, offset=offset, limit=limit)
+        await self.refresh_sandbox_snapshot(session_id, measure_usage=True)
+        return result
 
     async def file_write(
         self,
@@ -444,7 +529,7 @@ class SandboxManager:
         workdir: str | None = None,
         quote: bool = True,
     ) -> ExecResult:
-        return await self._sandbox_file_ops.file_write(
+        result = await self._sandbox_file_ops.file_write(
             session_id,
             path,
             content,
@@ -452,6 +537,8 @@ class SandboxManager:
             workdir=workdir,
             quote=quote,
         )
+        await self.refresh_sandbox_snapshot(session_id, measure_usage=True)
+        return result
 
     async def file_str_replace(
         self,
@@ -462,13 +549,15 @@ class SandboxManager:
         *,
         replace_all: bool = False,
     ) -> ExecResult:
-        return await self._sandbox_file_ops.file_str_replace(
+        result = await self._sandbox_file_ops.file_str_replace(
             session_id,
             path,
             old_string,
             new_string,
             replace_all=replace_all,
         )
+        await self.refresh_sandbox_snapshot(session_id, measure_usage=True)
+        return result
 
     async def activate_skill(self, session_id: str, skill_name: str) -> str:
         if err := _validate_skill_name(skill_name):
@@ -505,6 +594,7 @@ class SandboxManager:
         parts = [f"Skill '{skill_name}' activated at /workspace/skills/{skill_name}/"]
         if activation_msg:
             parts.extend(activation_msg.splitlines())
+        await self.refresh_sandbox_snapshot(session_id, measure_usage=True, container_id=sc.container_id)
         return "\n".join(parts)
 
     async def _file_write_in_container(
@@ -697,19 +787,38 @@ class SandboxManager:
             logger.warning(f"Failed to clean up context tunnels for session {sc.session_id}: {result.output}")
 
     async def cleanup_session(self, session_id: str) -> None:
+        sc = self._sessions.get(session_id)
+        if sc is not None:
+            await self.refresh_sandbox_snapshot(session_id, measure_usage=True, container_id=sc.container_id)
         await self._session_lifecycle.cleanup_session(session_id)
+        await self.refresh_sandbox_snapshot(session_id)
 
     async def destroy_session(self, session_id: str) -> None:
         await self._session_lifecycle.destroy_session(session_id)
+        self._clear_sandbox_snapshot(session_id)
 
     async def reset_session(self, session_id: str) -> None:
         await self._session_lifecycle.reset_session(session_id)
+        self._clear_workspace_storage(session_id)
+        self._save_sandbox_snapshot(
+            session_id,
+            SessionSandboxSnapshot(runtime=self._runtime.runtime_kind, updated_at=datetime.now(tz=UTC)),
+        )
 
     async def cleanup_idle(self) -> None:
-        await self._session_lifecycle.cleanup_idle()
+        now = time.time()
+        to_remove = [sid for sid, sc in self._sessions.items() if now - sc.last_used > self._idle_timeout]
+        if to_remove:
+            logger.info(f"Cleaning up {len(to_remove)} idle sandbox session(s)")
+        for sid in to_remove:
+            await self.cleanup_session(sid)
 
     async def cleanup_all(self) -> None:
-        await self._session_lifecycle.cleanup_all()
+        session_ids = list(self._sessions)
+        if session_ids:
+            logger.info(f"Cleaning up all {len(session_ids)} sandbox session(s)")
+        for sid in session_ids:
+            await self.cleanup_session(sid)
 
     async def cleanup_orphaned_sandboxes(self, known_sessions: set[str]) -> int:
         return await self._session_lifecycle.cleanup_orphaned_sandboxes(known_sessions)

@@ -7,8 +7,10 @@ import {
   type AvailableModelInfo,
   fetchCommands,
   fetchHistory,
+  fetchSandbox,
   fetchModels,
   type SlashCommand,
+  wipeSandbox,
   wsUrl,
 } from "@/lib/api";
 import type {
@@ -17,6 +19,7 @@ import type {
   EscalationDecision,
   LlmActivity,
   ServerMessage,
+  SessionSandboxSnapshot,
   TurnUsage,
 } from "@/lib/types";
 import { Message } from "./message";
@@ -26,7 +29,48 @@ interface ChatViewProps {
   server: string;
   token: string;
   sessionId: string;
+  initialSandbox?: SessionSandboxSnapshot | null;
   onTitleUpdate?: (title: string) => void;
+  onSandboxUpdate?: (sandbox: SessionSandboxSnapshot) => void;
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  const units = ["KB", "MB", "GB", "TB"];
+  let value = bytes / 1024;
+  let unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+  return `${value.toFixed(value >= 10 ? 0 : 1)} ${units[unitIndex]}`;
+}
+
+function sandboxStatusLabel(snapshot: SessionSandboxSnapshot | null): string {
+  if (!snapshot) return "Checking sandbox…";
+  return snapshot.status.replace("_", " ");
+}
+
+function sandboxStorageLabel(snapshot: SessionSandboxSnapshot | null): string {
+  if (!snapshot) return "";
+  const details: string[] = [];
+  if (typeof snapshot.last_measured_used_bytes === "number") {
+    details.push(`${formatBytes(snapshot.last_measured_used_bytes)} used`);
+  } else if (snapshot.storage_present) {
+    details.push("storage present");
+  } else {
+    details.push("no sandbox storage");
+  }
+  if (
+    snapshot.runtime === "kubernetes"
+    && typeof snapshot.provisioned_bytes === "number"
+  ) {
+    details.push(`${formatBytes(snapshot.provisioned_bytes)} allocated`);
+  }
+  if (snapshot.last_measured_at) {
+    details.push(`measured ${new Date(snapshot.last_measured_at).toLocaleTimeString()}`);
+  }
+  return details.join(" · ");
 }
 
 function thinkingUsageMeta(usage?: TurnUsage | null): {
@@ -220,7 +264,9 @@ export function ChatView({
   server,
   token,
   sessionId,
+  initialSandbox,
   onTitleUpdate,
+  onSandboxUpdate,
 }: ChatViewProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [waiting, setWaiting] = useState(false);
@@ -232,6 +278,11 @@ export function ChatView({
   const [availableModelEntries, setAvailableModelEntries] = useState<
     AvailableModelInfo[]
   >([]);
+  const [sandbox, setSandbox] = useState<SessionSandboxSnapshot | null>(
+    initialSandbox ?? null,
+  );
+  const [sandboxLoading, setSandboxLoading] = useState(false);
+  const [wipingSandbox, setWipingSandbox] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const isAtBottomRef = useRef(true);
@@ -244,6 +295,39 @@ export function ChatView({
     fetchCommands(server, token).then(setCommands);
     fetchModels(server, token).then(setAvailableModelEntries);
   }, [server, token]);
+
+  const refreshSandbox = useCallback(async () => {
+    setSandboxLoading(true);
+    try {
+      const nextSandbox = await fetchSandbox(server, token, sessionId);
+      setSandbox(nextSandbox);
+      onSandboxUpdate?.(nextSandbox);
+    } finally {
+      setSandboxLoading(false);
+    }
+  }, [onSandboxUpdate, server, sessionId, token]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadSandbox() {
+      setSandboxLoading(true);
+      try {
+        const nextSandbox = await fetchSandbox(server, token, sessionId);
+        if (cancelled) return;
+        setSandbox(nextSandbox);
+        onSandboxUpdate?.(nextSandbox);
+      } finally {
+        if (!cancelled) setSandboxLoading(false);
+      }
+    }
+
+    void loadSandbox();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [onSandboxUpdate, server, sessionId, token]);
 
   // Load history on mount
   useEffect(() => {
@@ -738,6 +822,7 @@ export function ChatView({
             }
             return updated;
           });
+          void refreshSandbox();
           break;
         case "approval_request":
           setWaiting(true);
@@ -769,6 +854,7 @@ export function ChatView({
             ...prev,
             { kind: "command", command: msg.command, data: msg.data },
           ]);
+          void refreshSandbox();
           setLlmActivity(null);
           lastThinkingStartedAtRef.current = null;
           finishWaiting();
@@ -865,7 +951,7 @@ export function ChatView({
           break;
       }
     },
-    [finalizeThinkingMessages, finishWaiting, onTitleUpdate],
+    [finalizeThinkingMessages, finishWaiting, onTitleUpdate, refreshSandbox],
   );
 
   const onWsDisconnect = useCallback(() => {
@@ -911,6 +997,21 @@ export function ChatView({
     queueRef.current = content;
     setQueuedMessage(content);
     send({ type: "cancel" });
+  }
+
+  async function handleWipeSandbox() {
+    if (waiting || wipingSandbox) return;
+    if (!window.confirm("Wipe the sandbox and its storage for this session? Chat history will stay.")) {
+      return;
+    }
+    setWipingSandbox(true);
+    try {
+      const nextSandbox = await wipeSandbox(server, token, sessionId);
+      setSandbox(nextSandbox);
+      onSandboxUpdate?.(nextSandbox);
+    } finally {
+      setWipingSandbox(false);
+    }
   }
 
   function handleApproval(
@@ -1021,6 +1122,29 @@ export function ChatView({
           {status === "connecting" ? "Connecting…" : "Disconnected"}
         </div>
       )}
+
+      <div className="border-b border-border px-4 py-3">
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <div className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">
+              Sandbox
+            </div>
+            <div className="mt-1 text-sm font-medium text-foreground">
+              {sandboxLoading ? "Refreshing…" : sandboxStatusLabel(sandbox)}
+            </div>
+            <div className="mt-1 text-xs text-muted-foreground">
+              {sandboxStorageLabel(sandbox)}
+            </div>
+          </div>
+          <button
+            onClick={() => void handleWipeSandbox()}
+            disabled={waiting || wipingSandbox}
+            className="shrink-0 rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {wipingSandbox ? "Wiping…" : "Wipe sandbox"}
+          </button>
+        </div>
+      </div>
 
       {/* Messages */}
       <div

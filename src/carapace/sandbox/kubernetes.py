@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import shlex
 import socket
 from dataclasses import dataclass
@@ -20,10 +21,33 @@ from carapace.sandbox.runtime import (
     ExecResult,
     Mount,
     SandboxConfig,
+    SandboxInspection,
 )
 
 # kr8s defaults plural to kind.lower() + "s" → "sandboxess" for kind Sandboxes; CRD plural is "sandboxes".
 _Sandboxes = new_class("Sandboxes", "carapace.dev/v1alpha1", asyncio=True, plural="sandboxes")
+_PersistentVolumeClaim = new_class(
+    "PersistentVolumeClaim",
+    "v1",
+    asyncio=True,
+    plural="persistentvolumeclaims",
+)
+
+_QUANTITY_SUFFIXES: dict[str, int] = {
+    "": 1,
+    "Ki": 1024,
+    "Mi": 1024**2,
+    "Gi": 1024**3,
+    "Ti": 1024**4,
+    "Pi": 1024**5,
+    "Ei": 1024**6,
+    "K": 1000,
+    "M": 1000**2,
+    "G": 1000**3,
+    "T": 1000**4,
+    "P": 1000**5,
+    "E": 1000**6,
+}
 
 
 def _sanitize_pod_name(name: str) -> str:
@@ -52,6 +76,20 @@ def _standard_labels(app_instance: str) -> dict[str, str]:
     }
 
 
+def _parse_quantity_to_bytes(value: str | None) -> int | None:
+    if not value:
+        return None
+    match = re.fullmatch(r"([0-9]+(?:\.[0-9]+)?)([A-Za-z]*)", value.strip())
+    if match is None:
+        return None
+    number = float(match.group(1))
+    suffix = match.group(2)
+    multiplier = _QUANTITY_SUFFIXES.get(suffix)
+    if multiplier is None:
+        return None
+    return int(number * multiplier)
+
+
 @dataclass(frozen=True, slots=True)
 class _SandboxOwner:
     """Kubernetes object to set as ownerReferences on sandbox workloads."""
@@ -74,6 +112,8 @@ class _SandboxOwner:
 
 class KubernetesRuntime(ContainerRuntime):
     """ContainerRuntime backed by Kubernetes pods (using kr8s)."""
+
+    runtime_kind = "kubernetes"
 
     def __init__(
         self,
@@ -499,6 +539,87 @@ class KubernetesRuntime(ContainerRuntime):
             if session_id:
                 result[session_id] = f"{sts.name}-0"
         return result
+
+    def _session_pvc_name(self, name: str) -> str:
+        return f"session-data-{_sanitize_pod_name(name)}-0"
+
+    async def _load_pvc_info(self, name: str) -> tuple[bool, int | None]:
+        pvc_name = self._session_pvc_name(name)
+        api = await self._ensure_api()
+        try:
+            pvc = await _PersistentVolumeClaim.get(pvc_name, namespace=self._namespace, api=api)
+        except kr8s.NotFoundError:
+            return False, None
+        storage = pvc.raw.get("spec", {}).get("resources", {}).get("requests", {}).get("storage")
+        return True, _parse_quantity_to_bytes(storage)
+
+    async def inspect_sandbox(
+        self,
+        session_id: str,
+        name: str,
+        container_id: str | None = None,
+    ) -> SandboxInspection:
+        sts_name = _sanitize_pod_name(name)
+        pod_name = container_id or f"{sts_name}-0"
+        api = await self._ensure_api()
+        storage_present, provisioned_bytes = await self._load_pvc_info(name)
+
+        try:
+            sts = await StatefulSet.get(sts_name, namespace=self._namespace, api=api)
+        except kr8s.NotFoundError:
+            return SandboxInspection(
+                exists=False,
+                status="missing",
+                storage_present=storage_present,
+                provisioned_bytes=provisioned_bytes,
+            )
+
+        replicas = sts.raw.get("spec", {}).get("replicas", 1) or 0
+        if replicas == 0:
+            return SandboxInspection(
+                exists=True,
+                status="scaled_down",
+                resource_id=sts_name,
+                resource_kind="statefulset",
+                storage_present=storage_present,
+                provisioned_bytes=provisioned_bytes,
+            )
+
+        try:
+            pod = await Pod.get(pod_name, namespace=self._namespace, api=api)
+            phase = pod.status.phase or "Unknown"
+        except kr8s.NotFoundError:
+            phase = "Pending"
+
+        status = {
+            "Running": "running",
+            "Pending": "pending",
+            "Unknown": "pending",
+            "Succeeded": "stopped",
+            "Failed": "error",
+        }.get(phase, "error")
+        return SandboxInspection(
+            exists=True,
+            status=status,
+            resource_id=pod_name,
+            resource_kind="pod",
+            storage_present=storage_present,
+            provisioned_bytes=provisioned_bytes,
+        )
+
+    async def measure_workspace_usage(self, session_id: str, container_id: str | None = None) -> int | None:
+        if not container_id or not await self.is_running(container_id):
+            return None
+        result = await self.exec(container_id, "du -sb /workspace 2>/dev/null | awk '{print $1}'", timeout=30)
+        if result.exit_code != 0:
+            return None
+        first_line = result.output.strip().splitlines()
+        if not first_line:
+            return None
+        try:
+            return int(first_line[0].strip())
+        except ValueError:
+            return None
 
     async def _delete_sts_if_exists(self, sts_name: str) -> None:
         api = await self._ensure_api()

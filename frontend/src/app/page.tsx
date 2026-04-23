@@ -187,6 +187,14 @@ function HomeContent() {
     );
   }
 
+  function handleSandboxUpdate(sessionId: string, sandbox: SessionInfo["sandbox"]) {
+    setSessions((prev) =>
+      prev.map((s) => (s.session_id === sessionId ? { ...s, sandbox } : s)),
+    );
+  }
+
+  const activeSession = sessions.find((session) => session.session_id === activeSessionId) ?? null;
+
   if (!connected) {
     return <ConnectForm onConnect={handleConnect} />;
   }
@@ -243,7 +251,9 @@ function HomeContent() {
             server={server}
             token={token}
             sessionId={activeSessionId}
+            initialSandbox={activeSession?.sandbox ?? null}
             onTitleUpdate={(title) => handleTitleUpdate(activeSessionId, title)}
+            onSandboxUpdate={(sandbox) => handleSandboxUpdate(activeSessionId, sandbox)}
           />
         ) : (
           <div className="flex flex-1 items-center justify-center">

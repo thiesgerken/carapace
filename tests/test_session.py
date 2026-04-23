@@ -19,8 +19,15 @@ from carapace.bootstrap import ensure_data_dir
 from carapace.config import load_config
 from carapace.credentials import CredentialRegistry
 from carapace.git.store import GitStore
-from carapace.models import ContextGrant, CredentialRegistryProtocol, SessionBudget, SkillCredentialDecl, ToolResult
+from carapace.models import (
+    ContextGrant,
+    CredentialRegistryProtocol,
+    SessionBudget,
+    SkillCredentialDecl,
+    ToolResult,
+)
 from carapace.sandbox.manager import SandboxManager
+from carapace.sandbox.state import SessionSandboxSnapshot
 from carapace.security.context import UserEscalationDecision, format_denial_message, normalize_optional_message
 from carapace.security.sentinel import Sentinel
 from carapace.session import SessionEngine, SessionManager
@@ -115,6 +122,34 @@ def test_save_and_load_llm_request_state(tmp_path: Path) -> None:
 
     mgr.clear_llm_request_state(state.session_id)
     assert mgr.load_llm_request_state(state.session_id) is None
+
+
+def test_save_and_load_sandbox_snapshot(tmp_path: Path) -> None:
+    mgr = SessionManager(tmp_path)
+    state = mgr.create_session()
+    snapshot = SessionSandboxSnapshot(
+        exists=True,
+        runtime="kubernetes",
+        status="scaled_down",
+        resource_id="carapace-sandbox-abc-0",
+        resource_kind="statefulset",
+        storage_present=True,
+        provisioned_bytes=1_073_741_824,
+        last_measured_used_bytes=123_456,
+        last_measured_at=datetime.now(tz=UTC),
+        updated_at=datetime.now(tz=UTC),
+    )
+
+    mgr.save_sandbox_snapshot(state.session_id, snapshot)
+
+    reloaded = mgr.load_sandbox_snapshot(state.session_id)
+    assert reloaded is not None
+    assert reloaded.runtime == "kubernetes"
+    assert reloaded.status == "scaled_down"
+    assert reloaded.last_measured_used_bytes == 123_456
+
+    mgr.clear_sandbox_snapshot(state.session_id)
+    assert mgr.load_sandbox_snapshot(state.session_id) is None
 
 
 def test_normalize_optional_message_strips_blank_values() -> None:

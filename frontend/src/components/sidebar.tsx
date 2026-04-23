@@ -29,6 +29,30 @@ function formatTime(iso: string): string {
   });
 }
 
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  const units = ["KB", "MB", "GB", "TB"];
+  let value = bytes / 1024;
+  let unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+  return `${value.toFixed(value >= 10 ? 0 : 1)} ${units[unitIndex]}`;
+}
+
+function sandboxSummary(session: SessionInfo): string | null {
+  const sandbox = session.sandbox;
+  if (!sandbox) return null;
+  const parts: string[] = [sandbox.status.replace("_", " ")];
+  if (typeof sandbox.last_measured_used_bytes === "number") {
+    parts.push(formatBytes(sandbox.last_measured_used_bytes));
+  } else if (sandbox.storage_present) {
+    parts.push("storage");
+  }
+  return parts.join(" · ");
+}
+
 export function Sidebar({
   sessions,
   activeSessionId,
@@ -98,10 +122,15 @@ export function Sidebar({
                     )}
                   </div>
                   <div className="text-xs text-muted-foreground">
-                    {formatTime(s.last_active)}
-                    {s.channel_type !== "web" && s.channel_type !== "cli"
-                      ? ` · ${s.channel_type}`
-                      : ""}
+                    {[
+                      formatTime(s.last_active),
+                      s.channel_type !== "web" && s.channel_type !== "cli"
+                        ? s.channel_type
+                        : null,
+                      sandboxSummary(s),
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
                   </div>
                 </div>
               </button>

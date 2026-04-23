@@ -625,6 +625,10 @@ class SessionEngine:
         """Return the ``ActiveSession`` if loaded, else ``None``."""
         return self._active.get(session_id)
 
+    def is_agent_running(self, session_id: str) -> bool:
+        active = self._active.get(session_id)
+        return active is not None and active.agent_task is not None and not active.agent_task.done()
+
     def get_or_activate(self, session_id: str) -> ActiveSession:
         """Return (or load) the ``ActiveSession``."""
         return self._ensure_active(session_id)

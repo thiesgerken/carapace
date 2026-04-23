@@ -15,6 +15,7 @@ from pydantic import BaseModel
 from pydantic_ai import ModelMessage, ModelMessagesTypeAdapter
 
 from carapace.models import SessionBudget, SessionState
+from carapace.sandbox.state import SessionSandboxSnapshot
 from carapace.usage import LlmRequestLog, LlmRequestState, UsageTracker
 
 
@@ -205,6 +206,31 @@ class SessionManager:
 
     def clear_llm_request_state(self, session_id: str) -> None:
         path = self.sessions_dir / session_id / "llm_activity.yaml"
+        path.unlink(missing_ok=True)
+
+    # --- Sandbox snapshot persistence ---
+
+    def load_sandbox_snapshot(self, session_id: str) -> SessionSandboxSnapshot | None:
+        path = self.sessions_dir / session_id / "sandbox.yaml"
+        if not path.exists():
+            return None
+        with open(path) as f:
+            raw = yaml.safe_load(f)
+        if not raw:
+            return None
+        return SessionSandboxSnapshot.model_validate(raw)
+
+    def save_sandbox_snapshot(self, session_id: str, snapshot: SessionSandboxSnapshot) -> None:
+        session_dir = self.sessions_dir / session_id
+        session_dir.mkdir(parents=True, exist_ok=True)
+        path = session_dir / "sandbox.yaml"
+        with open(path, "w") as f:
+            yaml.dump(
+                snapshot.model_dump(mode="json"), f, default_flow_style=False, allow_unicode=True, sort_keys=False
+            )
+
+    def clear_sandbox_snapshot(self, session_id: str) -> None:
+        path = self.sessions_dir / session_id / "sandbox.yaml"
         path.unlink(missing_ok=True)
 
     # --- Event log (ordered display history including slash commands) ---
