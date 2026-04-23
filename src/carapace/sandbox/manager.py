@@ -486,7 +486,6 @@ class SandboxManager:
         if result.exit_code != 0 and f"[exit code: {result.exit_code}]" not in output:
             logger.debug(f"Command failed in session {session_id} (exit {result.exit_code}): {command}")
             output += f"\n[exit code: {result.exit_code}]"
-        await self.refresh_sandbox_snapshot(session_id, measure_usage=True)
         return ExecResult(exit_code=result.exit_code, output=output or "(no output)")
 
     # ------------------------------------------------------------------
@@ -516,7 +515,6 @@ class SandboxManager:
             workdir=workdir,
             quote=quote,
         )
-        await self.refresh_sandbox_snapshot(session_id, measure_usage=True)
         return result
 
     async def file_str_replace(
@@ -535,7 +533,6 @@ class SandboxManager:
             new_string,
             replace_all=replace_all,
         )
-        await self.refresh_sandbox_snapshot(session_id, measure_usage=True)
         return result
 
     async def activate_skill(self, session_id: str, skill_name: str) -> str:
@@ -573,7 +570,6 @@ class SandboxManager:
         parts = [f"Skill '{skill_name}' activated at /workspace/skills/{skill_name}/"]
         if activation_msg:
             parts.extend(activation_msg.splitlines())
-        await self.refresh_sandbox_snapshot(session_id, measure_usage=True, container_id=sc.container_id)
         return "\n".join(parts)
 
     async def _file_write_in_container(

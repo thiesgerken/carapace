@@ -1050,6 +1050,27 @@ def test_submit_message_budget_exhausted_broadcasts_error(tmp_path: Path):
         asyncio.run(_run())
 
 
+def test_submit_message_refreshes_sandbox_once_after_completed_turn(tmp_path: Path):
+    async def _run() -> None:
+        engine = _make_engine(tmp_path)
+        state = engine.session_mgr.create_session()
+        sid = state.session_id
+        sub = _FakeSubscriber()
+        engine.subscribe(sid, sub)
+
+        async def _complete_turn(*_args: Any, **_kwargs: Any):
+            return [], "done", "thinking"
+
+        with patch("carapace.session.engine.run_agent_turn", new=_complete_turn):
+            await engine.submit_message(sid, "hello")
+            await asyncio.sleep(0.1)
+
+        engine._sandbox_mgr.refresh_sandbox_snapshot.assert_awaited_once_with(sid, measure_usage=True)
+
+    with _patch_sentinel():
+        asyncio.run(_run())
+
+
 def test_submit_message_budget_exceeded_persists_history(tmp_path: Path):
     async def _run() -> None:
         engine = _make_engine(tmp_path)
