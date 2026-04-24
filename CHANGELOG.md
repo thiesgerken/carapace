@@ -1,6 +1,23 @@
 # CHANGELOG
 
 
+## v0.93.2 (2026-04-24)
+
+
+### ⬆️ Dependencies
+
+
+- ⬆️ chore: Pin dependencies
+  ([`f1d8766`](https://github.com/thiesgerken/carapace/commit/f1d876611a72c819a0759311fe00241a11dcab64))
+
+### Other
+
+
+- chore: add package rules to disable digest pinning for Helm chart values
+  ([`74a9d6a`](https://github.com/thiesgerken/carapace/commit/74a9d6ada7cfbeb67b54aa0ad3e21c2392168683))
+
+  Co-authored-by: Copilot <copilot@github.com>
+
 ## v0.93.1 (2026-04-24)
 
 
