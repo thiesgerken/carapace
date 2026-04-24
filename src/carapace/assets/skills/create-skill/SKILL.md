@@ -12,30 +12,38 @@ Create or update skills under `skills/<name>/` for Carapace.
 Produce a skill that is easy for another agent to activate and follow.
 
 - `SKILL.md` is the agent-facing workflow document
-- Keep it concise, task-oriented, and specific to the skill's runtime behavior
-- Move implementation details, provider setup, long examples, and maintenance notes into a sidecar doc such as `REFERENCE.md`, `CONFIG.md`, or files under `references/`
+- Keep it complete enough for normal use without extra lookup
+- Move only details that are genuinely on-demand, such as provider internals, build setup, exhaustive references, or maintainer notes, into a sidecar doc such as `REFERENCE.md`, `CONFIG.md`, or files under `references/`
 
 ## What Belongs In `SKILL.md`
 
-Keep only the information an activated agent should need during normal use:
+Keep the information an activated agent should know before acting:
 
 - what the skill does and when to use it
 - hard constraints and safety rules
 - the normal workflow or command entrypoints
+- how the skill CLI is supposed to be invoked
+- domain facts the agent needs to act correctly, such as project names, folder names, common labels, IDs, account context, or user-specific conventions
+- common command examples and syntax traps that prevent mistakes
 - a short note that credentials or setup are handled automatically, if applicable
 - links to sidecar docs when deeper implementation detail exists
 
-Do not turn `SKILL.md` into developer documentation for the skill itself.
+The guiding question is: would the agent make worse decisions, run the wrong command, or need to pause and load another file during normal use without this? If yes, keep it in `SKILL.md`.
+
+Do not turn `SKILL.md` into developer documentation for the skill itself, but do keep the operational knowledge that a runtime agent needs in the moment.
 
 ## What Belongs Elsewhere
 
-Prefer a sidecar markdown file for:
+Prefer a sidecar markdown file only for content that can safely be loaded on demand:
 
 - provider file layouts and lockfile rules
 - full `carapace.yaml` schemas and examples
-- authentication wiring and credential internals
+- authentication wiring and credential internals, beyond a short activation note
 - packaging details for Python or Node helpers
-- long templates, API references, and maintainer troubleshooting notes
+- implementation internals of wrappers and setup hooks
+- exhaustive API references and maintainer troubleshooting notes
+
+Do not move runtime-critical facts out of `SKILL.md` just because they are long, tabular, or user-specific.
 
 Good filenames are `REFERENCE.md`, `CONFIG.md`, or `references/*.md`.
 
@@ -47,9 +55,9 @@ Good filenames are `REFERENCE.md`, `CONFIG.md`, or `references/*.md`.
 4. Write tight frontmatter:
    - `name` matches the folder name exactly.
    - `description` says what the skill does and when to use it.
-5. Write the body for the agent, not the maintainer.
-6. If the skill needs network access, credentials, code, or setup hooks, add the supporting files next to it, but keep `SKILL.md` brief.
-7. If setup is non-trivial, add a sidecar markdown file and link it from `SKILL.md`.
+5. Write the body for the agent who will use the skill, including the operational facts needed for safe normal use.
+6. If the skill needs network access, credentials, code, or setup hooks, add the supporting files next to it and summarize the activation behavior in `SKILL.md`.
+7. If setup, implementation, or reference material is not needed for normal use, add a sidecar markdown file and link it from `SKILL.md`.
 8. Tell the user the skill will show up in `/skills` and be available in new sessions.
 
 ## Setup Guidance

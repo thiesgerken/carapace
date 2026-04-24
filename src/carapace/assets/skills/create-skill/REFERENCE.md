@@ -6,12 +6,12 @@ Read this file before creating or heavily editing a skill. `SKILL.md` is for the
 
 ## Core Rule
 
-Keep the split strict:
+Keep the split practical:
 
 - `SKILL.md` explains how to use the skill at runtime
 - `REFERENCE.md`, `CONFIG.md`, and `references/*.md` explain how the skill is built, configured, or maintained
 
-If a paragraph helps the maintainer more than the future runtime agent, it probably does not belong in `SKILL.md`.
+If a paragraph helps the future runtime agent act correctly during normal use, it belongs in `SKILL.md`. If it mainly helps a maintainer understand build, packaging, provider setup, or rare troubleshooting details, move it to a sidecar doc.
 
 ## Authoring Checklist
 
@@ -19,12 +19,13 @@ Use this checklist when writing or reviewing a skill:
 
 1. Confirm the folder name, frontmatter `name`, and skill identity all match.
 2. Make sure the `description` contains the strongest trigger phrases a routing agent will search for.
-3. Keep `SKILL.md` focused on runtime workflow, guardrails, and expected commands.
-4. Move schemas, dependency setup, auth internals, and long examples into sidecar docs.
-5. Link any sidecar docs from `SKILL.md` when the runtime agent may need to know they exist.
-6. If the skill exposes commands, show the real entrypoints the agent should run.
-7. If the skill performs risky actions, add explicit safety rules near the top of `SKILL.md`.
-8. If activation handles credentials or setup automatically, say that briefly in `SKILL.md` and stop there.
+3. Keep `SKILL.md` focused on runtime workflow, guardrails, expected commands, and domain facts needed for safe use.
+4. Keep domain facts in `SKILL.md` when the agent needs them to act correctly, even if they are user-specific.
+5. Move schemas, dependency setup, auth internals, wrapper internals, and maintainer troubleshooting into sidecar docs.
+6. Link any sidecar docs from `SKILL.md` when the runtime agent may need to know they exist.
+7. If the skill exposes commands, show the real entrypoints the agent should run.
+8. If the skill performs risky actions, add explicit safety rules near the top of `SKILL.md`.
+9. If activation handles credentials or setup automatically, say that briefly in `SKILL.md` and stop there.
 
 ## What Good `SKILL.md` Files Usually Contain
 
@@ -34,10 +35,12 @@ Most good skills in this repo converge on the same shape:
 - one short opening paragraph that sets scope
 - a `When To Use` or equivalent section
 - the normal workflow or command entrypoints
+- enough CLI usage detail to run the skill without guessing
+- user-specific domain maps that prevent mistakes, such as folder names, project IDs, label names, account conventions, or preferred filters
 - important safety or behavior constraints
 - a short setup note when automatic activation behavior matters
 
-They do not try to be complete technical documentation.
+They do not try to be complete technical documentation, but they may be detailed when the detail is needed during ordinary use.
 
 ## What To Move Out Of `SKILL.md`
 
@@ -46,11 +49,20 @@ Move content into a sidecar doc when it is mainly about:
 - package structure and source layout
 - lockfiles and dependency management
 - full config schemas or validation edge cases
-- secret sourcing, vault paths, or authentication mechanics
-- long command catalogs where only a few commands are common
+- secret sourcing, vault paths, or authentication mechanics beyond the activation behavior
+- exhaustive command catalogs where the common commands are already represented in `SKILL.md`
 - troubleshooting intended for maintainers rather than runtime usage
 
+Keep content in `SKILL.md` when it is mainly about:
+
+- how to invoke the skill's CLI correctly
+- common commands the agent should use often
+- user-specific categories, folders, projects, labels, accounts, or IDs needed for correct action
+- safety rules and syntax traps that prevent accidental side effects
+
 Use `CONFIG.md` when the document is mostly runtime configuration detail. Use `REFERENCE.md` when it is general maintainer guidance. Use `references/*.md` when the detail is large enough to merit topic-specific documents.
+
+Do not use file length as the deciding factor. Use load timing: if the agent should know it immediately after skill activation, it belongs in `SKILL.md`; if the agent can intentionally open it only for uncommon setup, development, or deep reference work, it can live in a sidecar file.
 
 ## Common Failure Modes
 
@@ -59,7 +71,8 @@ These mistakes make skills harder to discover or use:
 - vague descriptions such as `Helps with email`
 - putting provider setup docs before the actual workflow
 - embedding credential-handling procedures in `SKILL.md`
-- documenting every implementation detail instead of the small set of actions the agent should take
+- moving operational facts out of `SKILL.md` just because they look like data tables
+- documenting every implementation detail instead of the actions and domain facts the agent needs
 - forgetting to link the sidecar doc after moving detail out of `SKILL.md`
 - showing example commands that do not match the actual entrypoints shipped by the skill
 
@@ -281,7 +294,7 @@ Recommended sequence:
 
 1. Choose the folder name first.
 2. Draft the `description` next, because discovery quality matters more than polish in the long body.
-3. Write the smallest useful `SKILL.md` that a runtime agent could follow.
+3. Write a `SKILL.md` that a runtime agent can follow without guessing or immediately loading sidecar files.
 4. Add sidecar docs only where complexity is real.
 5. Add provider files and command entrypoints.
 6. Re-read the skill from the perspective of a fresh agent with no maintainer context.
@@ -291,7 +304,7 @@ Recommended sequence:
 When reshaping an existing skill:
 
 1. Preserve the established command names unless there is a strong reason to change them.
-2. Remove maintainer-heavy prose from `SKILL.md` before adding new sections.
+2. Separate maintainer-heavy prose from runtime-critical instructions before adding new sections.
 3. Prefer moving text into `REFERENCE.md` over deleting useful operational knowledge.
 4. Keep links between `SKILL.md` and sidecar docs accurate.
 5. Check neighboring skills for naming and section conventions before introducing a new structure.
