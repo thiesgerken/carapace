@@ -79,6 +79,13 @@ function normalizedDecisionMessage(message?: string | null): string | undefined 
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
+function errorDetail(error: unknown): string {
+  if (error instanceof Error && error.message.trim().length > 0) {
+    return error.message;
+  }
+  return "Unexpected error";
+}
+
 function argsMatch(
   left: Record<string, unknown>,
   right: Record<string, unknown>,
@@ -275,10 +282,19 @@ export function ChatView({
   const queueRef = useRef<string | null>(null);
   const sendRef = useRef<(msg: ClientMessage) => void>(() => {});
   const onSandboxUpdateRef = useRef(onSandboxUpdate);
+  const sandboxRefreshParamsRef = useRef({ server, token, sessionId });
+  const sandboxRefreshPendingRef = useRef(false);
+  const sandboxRefreshRunningRef = useRef(false);
+  const sandboxRefreshEpochRef = useRef(0);
 
   useEffect(() => {
     onSandboxUpdateRef.current = onSandboxUpdate;
   }, [onSandboxUpdate]);
+
+  useEffect(() => {
+    sandboxRefreshParamsRef.current = { server, token, sessionId };
+    sandboxRefreshEpochRef.current += 1;
+  }, [server, sessionId, token]);
 
   // Fetch available slash commands and models on mount
   useEffect(() => {
@@ -286,38 +302,52 @@ export function ChatView({
     fetchModels(server, token).then(setAvailableModelEntries);
   }, [server, token]);
 
+  const applySandboxSnapshot = useCallback((nextSandbox: SessionSandboxSnapshot) => {
+    setSandbox(nextSandbox);
+    onSandboxUpdateRef.current?.(nextSandbox);
+  }, []);
+
   const refreshSandbox = useCallback(async () => {
-    setSandboxLoading(true);
+    sandboxRefreshPendingRef.current = true;
+    if (sandboxRefreshRunningRef.current) return;
+
+    sandboxRefreshRunningRef.current = true;
     try {
-      const nextSandbox = await fetchSandbox(server, token, sessionId);
-      setSandbox(nextSandbox);
-      onSandboxUpdateRef.current?.(nextSandbox);
+      while (sandboxRefreshPendingRef.current) {
+        sandboxRefreshPendingRef.current = false;
+        const refreshEpoch = sandboxRefreshEpochRef.current;
+        const {
+          server: currentServer,
+          token: currentToken,
+          sessionId: currentSessionId,
+        } = sandboxRefreshParamsRef.current;
+
+        setSandboxLoading(true);
+        try {
+          const nextSandbox = await fetchSandbox(currentServer, currentToken, currentSessionId);
+          if (refreshEpoch !== sandboxRefreshEpochRef.current) {
+            continue;
+          }
+          applySandboxSnapshot(nextSandbox);
+        } catch (error) {
+          if (refreshEpoch === sandboxRefreshEpochRef.current) {
+            console.error("Failed to refresh sandbox", error);
+          }
+        } finally {
+          if (refreshEpoch === sandboxRefreshEpochRef.current && !sandboxRefreshPendingRef.current) {
+            setSandboxLoading(false);
+          }
+        }
+      }
     } finally {
+      sandboxRefreshRunningRef.current = false;
       setSandboxLoading(false);
     }
-  }, [server, sessionId, token]);
+  }, [applySandboxSnapshot]);
 
   useEffect(() => {
-    let cancelled = false;
-
-    async function loadSandbox() {
-      setSandboxLoading(true);
-      try {
-        const nextSandbox = await fetchSandbox(server, token, sessionId);
-        if (cancelled) return;
-        setSandbox(nextSandbox);
-        onSandboxUpdateRef.current?.(nextSandbox);
-      } finally {
-        if (!cancelled) setSandboxLoading(false);
-      }
-    }
-
-    void loadSandbox();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [server, sessionId, token]);
+    void refreshSandbox();
+  }, [refreshSandbox, sessionId, server, token]);
 
   // Load history on mount
   useEffect(() => {
@@ -997,8 +1027,10 @@ export function ChatView({
     setWipingSandbox(true);
     try {
       const nextSandbox = await wipeSandbox(server, token, sessionId);
-      setSandbox(nextSandbox);
-      onSandboxUpdateRef.current?.(nextSandbox);
+      applySandboxSnapshot(nextSandbox);
+    } catch (error) {
+      console.error("Failed to wipe sandbox", error);
+      setMessages((prev) => [...prev, { kind: "error", detail: errorDetail(error) }]);
     } finally {
       setWipingSandbox(false);
     }

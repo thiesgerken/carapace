@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
@@ -186,11 +187,16 @@ class TestSandboxManagerCredentialCache:
     @pytest.mark.anyio
     async def test_reset_session_preserves_token(self, tmp_path: Path):
         runtime = make_runtime_mock()
-        runtime.destroy_sandbox = AsyncMock()
+        workspace = tmp_path / "sessions" / "sess-1" / "workspace"
+
+        async def destroy_sandbox(_session_id: str, _name: str, _container_id: str) -> None:
+            if workspace.exists():
+                shutil.rmtree(workspace)
+
+        runtime.destroy_sandbox = AsyncMock(side_effect=destroy_sandbox)
         mgr = SandboxManager(runtime=runtime, data_dir=tmp_path, knowledge_dir=tmp_path)
         token = mgr._session_lifecycle.get_or_create_token("sess-1")
         mgr._sessions["sess-1"] = MagicMock(container_id="c1", session_env={})
-        workspace = tmp_path / "sessions" / "sess-1" / "workspace"
         workspace.mkdir(parents=True)
         (workspace / "note.txt").write_text("hello")
 

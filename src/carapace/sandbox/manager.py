@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import re
 import shlex
-import shutil
 import textwrap
 from asyncio.locks import Lock
 from collections.abc import Awaitable, Callable
@@ -380,9 +379,6 @@ class SandboxManager:
 
     def _workspace_path(self, session_id: str) -> Path:
         return self._data_dir / "sessions" / session_id / "workspace"
-
-    def _clear_workspace_storage(self, session_id: str) -> None:
-        shutil.rmtree(self._workspace_path(session_id), ignore_errors=True)
 
     async def refresh_sandbox_snapshot(
         self,
@@ -824,7 +820,6 @@ class SandboxManager:
 
     async def reset_session(self, session_id: str) -> None:
         await self._session_lifecycle.reset_session(session_id)
-        self._clear_workspace_storage(session_id)
         save_sandbox_snapshot(
             self._sandbox_snapshot_path(session_id),
             SessionSandboxSnapshot(runtime=self._runtime.runtime_kind, updated_at=datetime.now(tz=UTC)),

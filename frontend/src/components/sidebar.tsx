@@ -35,14 +35,14 @@ function sandboxSummary(session: SessionInfo): SessionSandboxSnapshot | null {
   return sandbox;
 }
 
-function sandboxSummaryLabel(sandbox: SessionSandboxSnapshot): string {
+function sandboxSummaryLabel(sandbox: SessionSandboxSnapshot): string | null {
   if (typeof sandbox.last_measured_used_bytes === "number") {
     return formatBytes(sandbox.last_measured_used_bytes);
   }
   if (sandbox.storage_present) {
     return "storage";
   }
-  return "";
+  return null;
 }
 
 export function Sidebar({
@@ -90,6 +90,7 @@ export function Sidebar({
           {sessions.map((s) => (
             (() => {
               const sandbox = sandboxSummary(s);
+              const sandboxLabel = sandbox ? sandboxSummaryLabel(sandbox) : null;
               return (
             <div
               key={s.session_id}
@@ -126,8 +127,12 @@ export function Sidebar({
                             sandboxStatusIndicatorClass(sandbox.status),
                           )}
                         />
-                        <span>{sandboxSummaryLabel(sandbox)}</span>
-                        <span aria-hidden="true">·</span>
+                        {sandboxLabel ? (
+                          <>
+                            <span>{sandboxLabel}</span>
+                            <span aria-hidden="true">·</span>
+                          </>
+                        ) : null}
                       </span>
                     ) : null}
                     {[
