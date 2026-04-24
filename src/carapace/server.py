@@ -470,6 +470,30 @@ async def get_session_sandbox(session_id: str, _token: str = Depends(_verify_tok
     return snapshot or SessionSandboxSnapshot()
 
 
+@router.post("/sessions/{session_id}/sandbox/up", response_model=SessionSandboxSnapshot)
+async def start_session_sandbox(session_id: str, _token: str = Depends(_verify_token)) -> SessionSandboxSnapshot:
+    state = _engine.session_mgr.load_state(session_id)
+    if state is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+    if _engine.is_agent_running(session_id):
+        raise HTTPException(status_code=409, detail="Cannot start sandbox while an agent turn is running")
+    await _engine.sandbox_mgr.ensure_session(session_id)
+    snapshot = _engine.session_mgr.load_sandbox_snapshot(session_id)
+    return snapshot or SessionSandboxSnapshot()
+
+
+@router.post("/sessions/{session_id}/sandbox/down", response_model=SessionSandboxSnapshot)
+async def stop_session_sandbox(session_id: str, _token: str = Depends(_verify_token)) -> SessionSandboxSnapshot:
+    state = _engine.session_mgr.load_state(session_id)
+    if state is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+    if _engine.is_agent_running(session_id):
+        raise HTTPException(status_code=409, detail="Cannot scale down sandbox while an agent turn is running")
+    await _engine.sandbox_mgr.cleanup_session(session_id)
+    snapshot = _engine.session_mgr.load_sandbox_snapshot(session_id)
+    return snapshot or SessionSandboxSnapshot()
+
+
 @router.post("/sessions/{session_id}/sandbox/wipe", response_model=SessionSandboxSnapshot)
 async def wipe_session_sandbox(session_id: str, _token: str = Depends(_verify_token)) -> SessionSandboxSnapshot:
     state = _engine.session_mgr.load_state(session_id)

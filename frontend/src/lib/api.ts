@@ -59,6 +59,32 @@ export async function fetchSandbox(
   return res.json();
 }
 
+export async function startSandbox(
+  server: string,
+  token: string,
+  sessionId: string,
+): Promise<SessionSandboxSnapshot> {
+  const res = await fetch(`${server}/api/sessions/${sessionId}/sandbox/up`, {
+    method: "POST",
+    headers: headers(token),
+  });
+  if (!res.ok) throw new Error(`Failed to start sandbox: ${res.status}`);
+  return res.json();
+}
+
+export async function stopSandbox(
+  server: string,
+  token: string,
+  sessionId: string,
+): Promise<SessionSandboxSnapshot> {
+  const res = await fetch(`${server}/api/sessions/${sessionId}/sandbox/down`, {
+    method: "POST",
+    headers: headers(token),
+  });
+  if (!res.ok) throw new Error(`Failed to scale down sandbox: ${res.status}`);
+  return res.json();
+}
+
 export async function wipeSandbox(
   server: string,
   token: string,
