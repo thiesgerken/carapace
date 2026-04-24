@@ -1,6 +1,18 @@
 # CHANGELOG
 
 
+## v0.93.1 (2026-04-24)
+
+
+### ⬆️ Dependencies
+
+
+- ⬆️ chore: upgrade debian Docker tag to trixie-20260421
+  ([`f2064ef`](https://github.com/thiesgerken/carapace/commit/f2064eff706748a2ffcc83b5b8fc1ef9006cb6df))
+
+- ⬆️ chore: upgrade astral-sh/setup-uv action to v8.1.0
+  ([`f3184ab`](https://github.com/thiesgerken/carapace/commit/f3184ab3561bb3aa8c1c23cf0f7dc65ee2247bee))
+
 ## v0.93.0 (2026-04-24)
 
 

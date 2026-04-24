@@ -8,6 +8,14 @@
     "enabled": true,
     "automerge": false
   },
+  "packageRules": [
+    {
+      "description": "Disable digest pinning for the Helm chart values file",
+      "matchManagers": ["helm-values"],
+      "matchFileNames": ["charts/carapace/values.yaml"],
+      "pinDigests": false
+    }
+  ],
   "prHourlyLimit": 0,
   "prConcurrentLimit": 0,
   "commitMessagePrefix": "⬆️ chore: ",
