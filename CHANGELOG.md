@@ -1,6 +1,66 @@
 # CHANGELOG
 
 
+## v0.92.0 (2026-04-24)
+
+
+### ♻️ Refactoring
+
+
+- ♻️ refactor: remove unused _workspace_path method from SandboxManager
+  ([`65e9737`](https://github.com/thiesgerken/carapace/commit/65e9737af65c1c34222997a2fce5daedfa5409e4))
+
+- ♻️ refactor: simplify sandbox file ops
+  ([`42d67dc`](https://github.com/thiesgerken/carapace/commit/42d67dc4bfb395d5ba2083aec6e9c045086cc76c))
+
+- ♻️ refactor: delegate sandbox cleanup selection
+  ([`729af84`](https://github.com/thiesgerken/carapace/commit/729af84b934ef215045da6aac65e4adf6dd873ee))
+
+- ♻️ refactor: refresh sandbox once per turn
+  ([`573b4f7`](https://github.com/thiesgerken/carapace/commit/573b4f7076c42a04f9cdebc9b7c73de9714fbad0))
+
+- ♻️ refactor: keep sandbox runtime contract strict
+  ([`cb1f11d`](https://github.com/thiesgerken/carapace/commit/cb1f11d98bb5e30f7349f14a628a277fead0818b))
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix: harden sandbox refresh follow-ups
+  ([`e1b52de`](https://github.com/thiesgerken/carapace/commit/e1b52de249486fc52a318ed6f32839fac3da081f))
+
+- 🐛 fix: avoid blocking on sandbox snapshot refresh
+  ([`fe690e1`](https://github.com/thiesgerken/carapace/commit/fe690e118683ae8b33c7bae43cf3ae15e5fe13ae))
+
+- 🐛 fix: fully clear sandbox storage on reset
+  ([`216775a`](https://github.com/thiesgerken/carapace/commit/216775ae45a2f96aa9abc3e14118369735d6e395))
+
+- 🐛 fix: polish sandbox status display
+  ([`4411247`](https://github.com/thiesgerken/carapace/commit/4411247c12c224f2f1dfd42bc46d821bf140419f))
+
+- 🐛 bugfixes
+  ([`768ad9e`](https://github.com/thiesgerken/carapace/commit/768ad9e894376505d05c5f83d0737da7873b4de5))
+
+- 🐛 fix: use df for sandbox volume usage
+  ([`c608b95`](https://github.com/thiesgerken/carapace/commit/c608b951bea618255a9746b4f2eb8d58a7c51fac))
+
+- 🐛 fix: stop sandbox live remeasurement
+  ([`92d5c01`](https://github.com/thiesgerken/carapace/commit/92d5c01e46f5c83876dfb256ec5bfea028614852))
+
+- 🐛 fix: restore sandbox test compatibility
+  ([`d4ec04d`](https://github.com/thiesgerken/carapace/commit/d4ec04de5f9827d04046688ef74998a285d8c7ab))
+
+- 🐛 fix: address sandbox PR review comments
+  ([`acada52`](https://github.com/thiesgerken/carapace/commit/acada52023d8749f8e2679ccea8477058ec3847f))
+
+### ✨ Features
+
+
+- ✨ feat: persist sandbox startup state
+  ([`3062af8`](https://github.com/thiesgerken/carapace/commit/3062af8dca0c7397cc07f4d728880a5ab04f40e7))
+
+- ✨ feat: add sandbox status and wipe controls
+  ([`2cffd6f`](https://github.com/thiesgerken/carapace/commit/2cffd6fa28a6e782bcfdd8a62c097d9dd3b76e42))
+
 ## v0.91.0 (2026-04-23)
 
 
