@@ -1,6 +1,33 @@
 # CHANGELOG
 
 
+## v0.94.0 (2026-04-24)
+
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix: avoid false no-storage sandbox label
+  ([`7686e53`](https://github.com/thiesgerken/carapace/commit/7686e533dcf2f7fed3c3d97706c566e8d3b8fc05))
+
+### Other
+
+
+- fix: remove unnecessary storage presence message in sandboxStorageLabel
+  ([`5b13f23`](https://github.com/thiesgerken/carapace/commit/5b13f236eea2ea2a9fc9a68363832bc7d2f990e1))
+
+- fix alignment
+  ([`01c6016`](https://github.com/thiesgerken/carapace/commit/01c601630d5fb5bcfb2d2939919c45ebd267a8a4))
+
+- remove fallback label
+  ([`b74e5b9`](https://github.com/thiesgerken/carapace/commit/b74e5b92c93d654da3f8d531de7650f75b617425))
+
+### ✨ Features
+
+
+- ✨ feat: add sandbox start and scale-down controls
+  ([`0cac29f`](https://github.com/thiesgerken/carapace/commit/0cac29fa73ee4599b64697b6fb644c93fb9fc6cf))
+
 ## v0.93.2 (2026-04-24)
 
 
