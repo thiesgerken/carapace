@@ -1,6 +1,21 @@
 # CHANGELOG
 
 
+## v0.93.0 (2026-04-24)
+
+
+### ✨ Features
+
+
+- ✨ feat: show pending sandbox state during startup
+  ([`ec39ed8`](https://github.com/thiesgerken/carapace/commit/ec39ed85da484bf0942182eb5c6795695100856c))
+
+### ⚡ Performance
+
+
+- ⚡ perf: cache sandbox snapshots and skip message counts by default
+  ([`c488d96`](https://github.com/thiesgerken/carapace/commit/c488d96a115e0a8920cd913243aa7ccd86e0a2da))
+
 ## v0.92.0 (2026-04-24)
 
 
