@@ -1,6 +1,21 @@
 # CHANGELOG
 
 
+## v0.94.3 (2026-04-24)
+
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix: require explicit sandbox owner in k8s
+  ([`5642e20`](https://github.com/thiesgerken/carapace/commit/5642e203e5293f3cef86b0a83408152223415d7e))
+
+### Other
+
+
+- docs: better bundled example skill
+  ([`f845b70`](https://github.com/thiesgerken/carapace/commit/f845b701278dab52e8f99c30ac3ba372b5ab83e1))
+
 ## v0.94.2 (2026-04-24)
 
 
