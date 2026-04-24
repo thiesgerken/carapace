@@ -1,14 +1,16 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Loader2 } from "lucide-react";
+import { Loader2, RotateCcw, Trash2 } from "lucide-react";
 import { useWebSocket } from "@/hooks/use-websocket";
 import {
   type AvailableModelInfo,
   fetchCommands,
   fetchHistory,
+  fetchSandbox,
   fetchModels,
   type SlashCommand,
+  wipeSandbox,
   wsUrl,
 } from "@/lib/api";
 import type {
@@ -17,8 +19,10 @@ import type {
   EscalationDecision,
   LlmActivity,
   ServerMessage,
+  SessionSandboxSnapshot,
   TurnUsage,
 } from "@/lib/types";
+import { cn, formatBytes, sandboxStatusIndicatorClass, sandboxStatusLabel } from "@/lib/utils";
 import { Message } from "./message";
 import { ChatInput } from "./chat-input";
 
@@ -26,7 +30,30 @@ interface ChatViewProps {
   server: string;
   token: string;
   sessionId: string;
+  initialSandbox?: SessionSandboxSnapshot | null;
   onTitleUpdate?: (title: string) => void;
+  onSandboxUpdate?: (sandbox: SessionSandboxSnapshot) => void;
+  onDeleteSession?: () => Promise<void>;
+}
+
+function sandboxStorageLabel(snapshot: SessionSandboxSnapshot | null): string {
+  if (!snapshot) return "";
+  if (snapshot.status === "missing" && !snapshot.storage_present) return "";
+  const details: string[] = [];
+  if (typeof snapshot.last_measured_used_bytes === "number") {
+    details.push(`${formatBytes(snapshot.last_measured_used_bytes)} used`);
+  } else if (snapshot.storage_present) {
+    details.push("storage present");
+  } else {
+    details.push("no sandbox storage");
+  }
+  if (
+    snapshot.runtime === "kubernetes"
+    && typeof snapshot.provisioned_bytes === "number"
+  ) {
+    details.push(`${formatBytes(snapshot.provisioned_bytes)} allocated`);
+  }
+  return details.join(" · ");
 }
 
 function thinkingUsageMeta(usage?: TurnUsage | null): {
@@ -50,6 +77,13 @@ function normalizedDecisionMessage(message?: string | null): string | undefined 
   if (message == null) return undefined;
   const trimmed = message.trim();
   return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function errorDetail(error: unknown): string {
+  if (error instanceof Error && error.message.trim().length > 0) {
+    return error.message;
+  }
+  return "Unexpected error";
 }
 
 function argsMatch(
@@ -220,7 +254,10 @@ export function ChatView({
   server,
   token,
   sessionId,
+  initialSandbox,
   onTitleUpdate,
+  onSandboxUpdate,
+  onDeleteSession,
 }: ChatViewProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [waiting, setWaiting] = useState(false);
@@ -232,18 +269,85 @@ export function ChatView({
   const [availableModelEntries, setAvailableModelEntries] = useState<
     AvailableModelInfo[]
   >([]);
+  const [sandbox, setSandbox] = useState<SessionSandboxSnapshot | null>(
+    initialSandbox ?? null,
+  );
+  const [sandboxLoading, setSandboxLoading] = useState(false);
+  const [wipingSandbox, setWipingSandbox] = useState(false);
+  const [deletingSession, setDeletingSession] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const isAtBottomRef = useRef(true);
   const lastThinkingStartedAtRef = useRef<string | null>(null);
   const queueRef = useRef<string | null>(null);
   const sendRef = useRef<(msg: ClientMessage) => void>(() => {});
+  const onSandboxUpdateRef = useRef(onSandboxUpdate);
+  const sandboxRefreshParamsRef = useRef({ server, token, sessionId });
+  const sandboxRefreshPendingRef = useRef(false);
+  const sandboxRefreshRunningRef = useRef(false);
+  const sandboxRefreshEpochRef = useRef(0);
+
+  useEffect(() => {
+    onSandboxUpdateRef.current = onSandboxUpdate;
+  }, [onSandboxUpdate]);
+
+  useEffect(() => {
+    sandboxRefreshParamsRef.current = { server, token, sessionId };
+    sandboxRefreshEpochRef.current += 1;
+  }, [server, sessionId, token]);
 
   // Fetch available slash commands and models on mount
   useEffect(() => {
     fetchCommands(server, token).then(setCommands);
     fetchModels(server, token).then(setAvailableModelEntries);
   }, [server, token]);
+
+  const applySandboxSnapshot = useCallback((nextSandbox: SessionSandboxSnapshot) => {
+    setSandbox(nextSandbox);
+    onSandboxUpdateRef.current?.(nextSandbox);
+  }, []);
+
+  const refreshSandbox = useCallback(async () => {
+    sandboxRefreshPendingRef.current = true;
+    if (sandboxRefreshRunningRef.current) return;
+
+    sandboxRefreshRunningRef.current = true;
+    try {
+      while (sandboxRefreshPendingRef.current) {
+        sandboxRefreshPendingRef.current = false;
+        const refreshEpoch = sandboxRefreshEpochRef.current;
+        const {
+          server: currentServer,
+          token: currentToken,
+          sessionId: currentSessionId,
+        } = sandboxRefreshParamsRef.current;
+
+        setSandboxLoading(true);
+        try {
+          const nextSandbox = await fetchSandbox(currentServer, currentToken, currentSessionId);
+          if (refreshEpoch !== sandboxRefreshEpochRef.current) {
+            continue;
+          }
+          applySandboxSnapshot(nextSandbox);
+        } catch (error) {
+          if (refreshEpoch === sandboxRefreshEpochRef.current) {
+            console.error("Failed to refresh sandbox", error);
+          }
+        } finally {
+          if (refreshEpoch === sandboxRefreshEpochRef.current && !sandboxRefreshPendingRef.current) {
+            setSandboxLoading(false);
+          }
+        }
+      }
+    } finally {
+      sandboxRefreshRunningRef.current = false;
+      setSandboxLoading(false);
+    }
+  }, [applySandboxSnapshot]);
+
+  useEffect(() => {
+    void refreshSandbox();
+  }, [refreshSandbox, sessionId, server, token]);
 
   // Load history on mount
   useEffect(() => {
@@ -616,6 +720,7 @@ export function ChatView({
             return updated;
           });
           if (msg.usage) setUsage(msg.usage);
+          void refreshSandbox();
           setLlmActivity(null);
           lastThinkingStartedAtRef.current = null;
           finishWaiting();
@@ -623,6 +728,7 @@ export function ChatView({
         case "tool_call": {
           const isGitPush = msg.tool === "git_push";
           if (!isGitPush) setWaiting(true); // agent is active (may restore after reconnect)
+          void refreshSandbox();
           const isLoading = isToolCallLoading(
             msg.tool,
             msg.approval_source,
@@ -865,7 +971,7 @@ export function ChatView({
           break;
       }
     },
-    [finalizeThinkingMessages, finishWaiting, onTitleUpdate],
+    [finalizeThinkingMessages, finishWaiting, onTitleUpdate, refreshSandbox],
   );
 
   const onWsDisconnect = useCallback(() => {
@@ -911,6 +1017,36 @@ export function ChatView({
     queueRef.current = content;
     setQueuedMessage(content);
     send({ type: "cancel" });
+  }
+
+  async function handleWipeSandbox() {
+    if (waiting || wipingSandbox || deletingSession) return;
+    if (!window.confirm("Wipe the sandbox and its storage for this session? Chat history will stay.")) {
+      return;
+    }
+    setWipingSandbox(true);
+    try {
+      const nextSandbox = await wipeSandbox(server, token, sessionId);
+      applySandboxSnapshot(nextSandbox);
+    } catch (error) {
+      console.error("Failed to wipe sandbox", error);
+      setMessages((prev) => [...prev, { kind: "error", detail: errorDetail(error) }]);
+    } finally {
+      setWipingSandbox(false);
+    }
+  }
+
+  async function handleDeleteSession() {
+    if (waiting || wipingSandbox || deletingSession || !onDeleteSession) return;
+    if (!window.confirm("Delete this session? Chat history and sandbox state will be removed.")) {
+      return;
+    }
+    setDeletingSession(true);
+    try {
+      await onDeleteSession();
+    } finally {
+      setDeletingSession(false);
+    }
   }
 
   function handleApproval(
@@ -1021,6 +1157,63 @@ export function ChatView({
           {status === "connecting" ? "Connecting…" : "Disconnected"}
         </div>
       )}
+
+      <div className="border-b border-border px-4 py-3">
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <div className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">
+              Sandbox
+            </div>
+            <div className="mt-1 flex items-center gap-2 text-sm font-medium text-foreground">
+              <span
+                className={cn(
+                  "h-2 w-2 shrink-0 rounded-full",
+                  sandboxLoading
+                    ? "bg-amber-500 animate-pulse"
+                    : sandbox
+                      ? sandboxStatusIndicatorClass(sandbox.status)
+                      : "bg-slate-300",
+                )}
+              />
+              <span>{sandboxLoading ? "Refreshing…" : sandbox ? sandboxStatusLabel(sandbox.status) : "Checking sandbox…"}</span>
+            </div>
+            <div className="mt-1 text-xs text-muted-foreground">
+              {sandboxStorageLabel(sandbox)}
+            </div>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <button
+              onClick={() => void handleWipeSandbox()}
+              disabled={waiting || wipingSandbox || deletingSession}
+              className="rounded-md border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-900 transition-colors hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {wipingSandbox ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  Reset sandbox
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1.5">
+                  <RotateCcw className="h-3.5 w-3.5" />
+                  Reset sandbox
+                </span>
+              )}
+            </button>
+            <button
+              onClick={() => void handleDeleteSession()}
+              disabled={waiting || wipingSandbox || deletingSession || !onDeleteSession}
+              title="Delete session"
+              className="rounded-md p-1.5 text-destructive transition-colors hover:bg-destructive/10 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {deletingSession ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Trash2 className="h-3.5 w-3.5" />
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
 
       {/* Messages */}
       <div

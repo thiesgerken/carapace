@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import kr8s
 import pytest
 
 from carapace.sandbox.kubernetes import (
@@ -14,7 +15,7 @@ from carapace.sandbox.kubernetes import (
     _sanitize_pod_name,
     _standard_labels,
 )
-from carapace.sandbox.runtime import ContainerConfig, Mount, SandboxConfig
+from carapace.sandbox.runtime import ContainerConfig, ExecResult, Mount, SandboxConfig
 
 # --- Helpers ---
 
@@ -306,6 +307,37 @@ async def test_get_ip():
     assert ip == "10.42.0.5"
 
 
+# --- measure_workspace_usage ---
+
+
+@pytest.mark.asyncio
+async def test_measure_workspace_usage_uses_df_used_bytes():
+    rt = _make_runtime()
+    rt.is_running = AsyncMock(return_value=True)
+    rt.exec = AsyncMock(return_value=ExecResult(exit_code=0, output="1048576\n"))
+
+    used_bytes = await rt.measure_workspace_usage("sess-1", "test-pod")
+
+    assert used_bytes == 1_048_576
+    rt.exec.assert_awaited_once_with(
+        "test-pod",
+        "df -B1 --output=used /workspace 2>/dev/null | tail -n 1",
+        timeout=30,
+    )
+
+
+@pytest.mark.asyncio
+async def test_measure_workspace_usage_returns_none_when_not_running():
+    rt = _make_runtime()
+    rt.is_running = AsyncMock(return_value=False)
+    rt.exec = AsyncMock()
+
+    used_bytes = await rt.measure_workspace_usage("sess-1", "test-pod")
+
+    assert used_bytes is None
+    rt.exec.assert_not_awaited()
+
+
 # --- remove ---
 
 
@@ -393,16 +425,52 @@ async def test_resume_sandbox():
 async def test_destroy_sandbox():
     rt = _make_runtime()
     rt._delete_sts_if_exists = AsyncMock()
-    await rt.destroy_sandbox("carapace-sandbox-abc", "carapace-sandbox-abc-0")
+    rt._delete_session_pvc_if_exists = AsyncMock()
+    await rt.destroy_sandbox("abc", "carapace-sandbox-abc", "carapace-sandbox-abc-0")
     rt._delete_sts_if_exists.assert_called_once_with("carapace-sandbox-abc")
+    rt._delete_session_pvc_if_exists.assert_called_once_with("carapace-sandbox-abc")
 
 
 @pytest.mark.asyncio
 async def test_destroy_sandbox_not_found():
     rt = _make_runtime()
     rt._delete_sts_if_exists = AsyncMock()
+    rt._delete_session_pvc_if_exists = AsyncMock()
     # Should not raise
-    await rt.destroy_sandbox("carapace-sandbox-abc", "carapace-sandbox-abc-0")
+    await rt.destroy_sandbox("abc", "carapace-sandbox-abc", "carapace-sandbox-abc-0")
+
+
+@pytest.mark.asyncio
+async def test_delete_session_pvc_if_exists() -> None:
+    rt = _make_runtime()
+    rt._ensure_api = AsyncMock()
+
+    mock_pvc = AsyncMock()
+
+    async def _fake_pvc(*args, **kwargs):
+        return mock_pvc
+
+    with patch("carapace.sandbox.kubernetes._PersistentVolumeClaim", side_effect=_fake_pvc):
+        await rt._delete_session_pvc_if_exists("carapace-sandbox-abc")
+
+    mock_pvc.delete.assert_called_once_with(force=True)
+
+
+@pytest.mark.asyncio
+async def test_delete_session_pvc_if_exists_ignores_not_found() -> None:
+    rt = _make_runtime()
+    rt._ensure_api = AsyncMock()
+
+    mock_pvc = AsyncMock()
+    mock_pvc.delete.side_effect = kr8s.NotFoundError("gone")
+
+    async def _fake_pvc(*args, **kwargs):
+        return mock_pvc
+
+    with patch("carapace.sandbox.kubernetes._PersistentVolumeClaim", side_effect=_fake_pvc):
+        await rt._delete_session_pvc_if_exists("carapace-sandbox-abc")
+
+    mock_pvc.delete.assert_called_once_with(force=True)
 
 
 # --- owner resolution ---

@@ -1,8 +1,8 @@
 "use client";
 
 import { Plus, LogOut, MessageSquare, Trash2 } from "lucide-react";
-import type { SessionInfo } from "@/lib/types";
-import { cn } from "@/lib/utils";
+import type { SessionInfo, SessionSandboxSnapshot } from "@/lib/types";
+import { cn, formatBytes, sandboxStatusIndicatorClass, sandboxStatusLabel } from "@/lib/utils";
 
 interface SidebarProps {
   sessions: SessionInfo[];
@@ -27,6 +27,22 @@ function formatTime(iso: string): string {
     month: "2-digit",
     year: "numeric",
   });
+}
+
+function sandboxSummary(session: SessionInfo): SessionSandboxSnapshot | null {
+  const sandbox = session.sandbox;
+  if (!sandbox || sandbox.status === "missing") return null;
+  return sandbox;
+}
+
+function sandboxSummaryLabel(sandbox: SessionSandboxSnapshot): string | null {
+  if (typeof sandbox.last_measured_used_bytes === "number") {
+    return formatBytes(sandbox.last_measured_used_bytes);
+  }
+  if (sandbox.storage_present) {
+    return "storage";
+  }
+  return null;
 }
 
 export function Sidebar({
@@ -72,6 +88,10 @@ export function Sidebar({
       <div className="flex-1 overflow-y-auto px-3 py-2">
         <div className="space-y-0.5">
           {sessions.map((s) => (
+            (() => {
+              const sandbox = sandboxSummary(s);
+              const sandboxLabel = sandbox ? sandboxSummaryLabel(sandbox) : null;
+              return (
             <div
               key={s.session_id}
               className={cn(
@@ -98,10 +118,31 @@ export function Sidebar({
                     )}
                   </div>
                   <div className="text-xs text-muted-foreground">
-                    {formatTime(s.last_active)}
-                    {s.channel_type !== "web" && s.channel_type !== "cli"
-                      ? ` · ${s.channel_type}`
-                      : ""}
+                    {sandbox ? (
+                      <span className="mr-1 inline-flex items-center gap-1.5 align-middle">
+                        <span
+                          title={sandboxStatusLabel(sandbox.status)}
+                          className={cn(
+                            "h-1.5 w-1.5 shrink-0 rounded-full",
+                            sandboxStatusIndicatorClass(sandbox.status),
+                          )}
+                        />
+                        {sandboxLabel ? (
+                          <>
+                            <span>{sandboxLabel}</span>
+                            <span aria-hidden="true">·</span>
+                          </>
+                        ) : null}
+                      </span>
+                    ) : null}
+                    {[
+                      formatTime(s.last_active),
+                      s.channel_type !== "web" && s.channel_type !== "cli"
+                        ? s.channel_type
+                        : null,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
                   </div>
                 </div>
               </button>
@@ -120,6 +161,8 @@ export function Sidebar({
                 <Trash2 className="h-3.5 w-3.5" />
               </button>
             </div>
+              );
+            })()
           ))}
           {sessions.length === 0 && !loading && (
             <p className="px-3 py-4 text-center text-xs text-muted-foreground">

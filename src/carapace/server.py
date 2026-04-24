@@ -43,6 +43,7 @@ from carapace.models import Config, SessionState, ToolResult
 from carapace.sandbox.manager import SandboxManager
 from carapace.sandbox.proxy import ProxyServer
 from carapace.sandbox.runtime import ContainerRuntime
+from carapace.sandbox.state import SessionSandboxSnapshot
 from carapace.security.context import ApprovalSource, ApprovalVerdict
 from carapace.session import SessionEngine, SessionManager
 from carapace.skills import SkillRegistry
@@ -397,9 +398,16 @@ class SessionInfo(BaseModel):
     last_active: str
     title: str | None = None
     message_count: int = 0
+    sandbox: SessionSandboxSnapshot | None = None
 
     @classmethod
-    def from_state(cls, state: SessionState, *, message_count: int = 0) -> SessionInfo:
+    def from_state(
+        cls,
+        state: SessionState,
+        *,
+        message_count: int = 0,
+        sandbox: SessionSandboxSnapshot | None = None,
+    ) -> SessionInfo:
         return cls(
             session_id=state.session_id,
             channel_type=state.channel_type,
@@ -408,6 +416,7 @@ class SessionInfo(BaseModel):
             last_active=state.last_active.isoformat(),
             title=state.title,
             message_count=message_count,
+            sandbox=sandbox,
         )
 
 
@@ -433,7 +442,8 @@ async def list_sessions(_token: str = Depends(_verify_token)) -> list[SessionInf
         if state:
             events = _engine.session_mgr.load_events(sid)
             message_count = sum(1 for e in events if e.get("role") == "user")
-            results.append(SessionInfo.from_state(state, message_count=message_count))
+            sandbox = _engine.session_mgr.load_sandbox_snapshot(sid)
+            results.append(SessionInfo.from_state(state, message_count=message_count, sandbox=sandbox))
     return results
 
 
@@ -442,7 +452,29 @@ async def get_session(session_id: str, _token: str = Depends(_verify_token)) -> 
     state = _engine.session_mgr.load_state(session_id)
     if state is None:
         raise HTTPException(status_code=404, detail="Session not found")
-    return SessionInfo.from_state(state)
+    sandbox = _engine.session_mgr.load_sandbox_snapshot(session_id)
+    return SessionInfo.from_state(state, sandbox=sandbox)
+
+
+@router.get("/sessions/{session_id}/sandbox", response_model=SessionSandboxSnapshot)
+async def get_session_sandbox(session_id: str, _token: str = Depends(_verify_token)) -> SessionSandboxSnapshot:
+    state = _engine.session_mgr.load_state(session_id)
+    if state is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+    snapshot = _engine.session_mgr.load_sandbox_snapshot(session_id)
+    return snapshot or SessionSandboxSnapshot()
+
+
+@router.post("/sessions/{session_id}/sandbox/wipe", response_model=SessionSandboxSnapshot)
+async def wipe_session_sandbox(session_id: str, _token: str = Depends(_verify_token)) -> SessionSandboxSnapshot:
+    state = _engine.session_mgr.load_state(session_id)
+    if state is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+    if _engine.is_agent_running(session_id):
+        raise HTTPException(status_code=409, detail="Cannot wipe sandbox while an agent turn is running")
+    await _engine.sandbox_mgr.reset_session(session_id)
+    snapshot = _engine.session_mgr.load_sandbox_snapshot(session_id)
+    return snapshot or SessionSandboxSnapshot()
 
 
 @router.delete("/sessions/{session_id}", status_code=204)

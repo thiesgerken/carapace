@@ -6,6 +6,7 @@ import textwrap
 from asyncio.locks import Lock
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 
 from loguru import logger
@@ -17,6 +18,7 @@ from carapace.sandbox.runtime import (
     ContainerRuntime,
     ExecResult,
     NetworkTunnel,
+    SandboxStatus,
     SkillActivationError,
     SkillActivationInputs,
 )
@@ -26,6 +28,12 @@ from carapace.sandbox.session_lifecycle import (
     SessionContainer,
 )
 from carapace.sandbox.skill_activation import SkillActivationRunner
+from carapace.sandbox.state import (
+    SessionSandboxSnapshot,
+    clear_sandbox_snapshot,
+    load_sandbox_snapshot,
+    save_sandbox_snapshot,
+)
 from carapace.security.context import ApprovalSource, ApprovalVerdict
 
 _SKILL_NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]*$")
@@ -311,14 +319,108 @@ class SandboxManager:
     def _get_exec_lock(self, session_id: str) -> Lock:
         return self._exec_coordinator.get_exec_lock(session_id)
 
+    def _save_transient_sandbox_snapshot(
+        self,
+        session_id: str,
+        status: SandboxStatus,
+        *,
+        last_error: str | None = None,
+    ) -> None:
+        existing = load_sandbox_snapshot(self._sandbox_snapshot_path(session_id))
+        snapshot = SessionSandboxSnapshot(
+            exists=existing.exists if existing is not None else False,
+            runtime=self._runtime.runtime_kind,
+            status=status,
+            resource_id=existing.resource_id if existing is not None else None,
+            resource_kind=existing.resource_kind if existing is not None else None,
+            storage_present=existing.storage_present if existing is not None else False,
+            provisioned_bytes=existing.provisioned_bytes if existing is not None else None,
+            last_measured_used_bytes=existing.last_measured_used_bytes if existing is not None else None,
+            last_measured_at=existing.last_measured_at if existing is not None else None,
+            updated_at=datetime.now(tz=UTC),
+            last_error=last_error,
+        )
+        save_sandbox_snapshot(self._sandbox_snapshot_path(session_id), snapshot)
+
     async def ensure_session(self, session_id: str) -> tuple[SessionContainer, bool]:
-        return await self._session_lifecycle.ensure_session(session_id)
+        sc = self._sessions.get(session_id)
+        needs_startup = sc is None or not await self._runtime.is_running(sc.container_id)
+        if needs_startup:
+            self._save_transient_sandbox_snapshot(session_id, "pending")
+
+        try:
+            ensured_sc, was_created = await self._session_lifecycle.ensure_session(session_id)
+        except BaseException as exc:
+            if needs_startup:
+                try:
+                    await self.refresh_sandbox_snapshot(session_id)
+                except Exception:
+                    logger.exception(
+                        f"Failed to refresh sandbox snapshot after startup failure for session {session_id}"
+                    )
+                    self._save_transient_sandbox_snapshot(session_id, "error", last_error=str(exc))
+            raise
+
+        if needs_startup:
+            try:
+                await self.refresh_sandbox_snapshot(session_id, container_id=ensured_sc.container_id)
+            except Exception:
+                logger.exception(f"Failed to refresh sandbox snapshot after startup for session {session_id}")
+        return ensured_sc, was_created
 
     def _sandbox_name(self, session_id: str) -> str:
         return self._session_lifecycle.sandbox_name(session_id)
 
     def _build_proxy_env(self, session_id: str, proxy_token: str, proxy_url: str) -> dict[str, str]:
         return self._session_lifecycle.build_proxy_env(session_id, proxy_token, proxy_url)
+
+    def _sandbox_snapshot_path(self, session_id: str) -> Path:
+        return self._data_dir / "sessions" / session_id / "sandbox.yaml"
+
+    async def refresh_sandbox_snapshot(
+        self,
+        session_id: str,
+        *,
+        measure_usage: bool = False,
+        container_id: str | None = None,
+    ) -> SessionSandboxSnapshot:
+        sandbox_name = self._sandbox_name(session_id)
+        resolved_container_id = container_id
+        if resolved_container_id is None:
+            sc = self._sessions.get(session_id)
+            if sc is not None:
+                resolved_container_id = sc.container_id
+            else:
+                existing_id = await self._runtime.sandbox_exists(sandbox_name)
+                resolved_container_id = existing_id if isinstance(existing_id, str) and existing_id else None
+
+        inspection = await self._runtime.inspect_sandbox(session_id, sandbox_name, resolved_container_id)
+        existing = load_sandbox_snapshot(self._sandbox_snapshot_path(session_id))
+        measured_used_bytes = existing.last_measured_used_bytes if existing is not None else None
+        measured_at = existing.last_measured_at if existing is not None else None
+        if measure_usage:
+            current_used_bytes = await self._runtime.measure_workspace_usage(session_id, resolved_container_id)
+            if current_used_bytes is not None:
+                measured_used_bytes = current_used_bytes
+                measured_at = datetime.now(tz=UTC)
+        if not inspection.storage_present:
+            measured_used_bytes = None
+            measured_at = None
+
+        snapshot = SessionSandboxSnapshot(
+            exists=inspection.exists,
+            runtime=self._runtime.runtime_kind,
+            status=inspection.status,
+            resource_id=inspection.resource_id,
+            resource_kind=inspection.resource_kind,
+            storage_present=inspection.storage_present,
+            provisioned_bytes=inspection.provisioned_bytes,
+            last_measured_used_bytes=measured_used_bytes,
+            last_measured_at=measured_at,
+            updated_at=datetime.now(tz=UTC),
+        )
+        save_sandbox_snapshot(self._sandbox_snapshot_path(session_id), snapshot)
+        return snapshot
 
     async def _exec_in_container(
         self,
@@ -697,19 +799,34 @@ class SandboxManager:
             logger.warning(f"Failed to clean up context tunnels for session {sc.session_id}: {result.output}")
 
     async def cleanup_session(self, session_id: str) -> None:
+        sc = self._sessions.get(session_id)
+        if sc is not None:
+            try:
+                await self.refresh_sandbox_snapshot(session_id, measure_usage=True, container_id=sc.container_id)
+            except Exception:
+                logger.exception(f"Failed to refresh sandbox snapshot before cleanup for session {session_id}")
         await self._session_lifecycle.cleanup_session(session_id)
+        try:
+            await self.refresh_sandbox_snapshot(session_id)
+        except Exception:
+            logger.exception(f"Failed to refresh sandbox snapshot after cleanup for session {session_id}")
 
     async def destroy_session(self, session_id: str) -> None:
         await self._session_lifecycle.destroy_session(session_id)
+        clear_sandbox_snapshot(self._sandbox_snapshot_path(session_id))
 
     async def reset_session(self, session_id: str) -> None:
         await self._session_lifecycle.reset_session(session_id)
+        save_sandbox_snapshot(
+            self._sandbox_snapshot_path(session_id),
+            SessionSandboxSnapshot(runtime=self._runtime.runtime_kind, updated_at=datetime.now(tz=UTC)),
+        )
 
     async def cleanup_idle(self) -> None:
-        await self._session_lifecycle.cleanup_idle()
+        await self._session_lifecycle.cleanup_idle(self.cleanup_session)
 
     async def cleanup_all(self) -> None:
-        await self._session_lifecycle.cleanup_all()
+        await self._session_lifecycle.cleanup_all(self.cleanup_session)
 
     async def cleanup_orphaned_sandboxes(self, known_sessions: set[str]) -> int:
         return await self._session_lifecycle.cleanup_orphaned_sandboxes(known_sessions)

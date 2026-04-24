@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import os
+import shutil
 from pathlib import Path
 
 import docker
@@ -16,6 +18,7 @@ from carapace.sandbox.runtime import (
     ExecResult,
     Mount,
     SandboxConfig,
+    SandboxInspection,
 )
 
 _FALLBACK_SOCKETS = (Path.home() / ".docker/run/docker.sock",)
@@ -45,6 +48,8 @@ def _connect() -> docker.DockerClient:
 
 
 class DockerRuntime(ContainerRuntime):
+    runtime_kind = "docker"
+
     def __init__(
         self,
         *,
@@ -197,6 +202,28 @@ class DockerRuntime(ContainerRuntime):
             ),
         ]
 
+    def _workspace_path(self, session_id: str) -> Path | None:
+        if self._data_dir is None:
+            return None
+        return self._data_dir / "sessions" / session_id / "workspace"
+
+    def _clear_workspace(self, session_id: str) -> None:
+        workspace = self._workspace_path(session_id)
+        if workspace is not None:
+            shutil.rmtree(workspace, ignore_errors=True)
+
+    def _measure_path_size(self, path: Path) -> int:
+        total = 0
+        for root, _, files in os.walk(path):
+            root_path = Path(root)
+            for name in files:
+                file_path = root_path / name
+                try:
+                    total += file_path.lstat().st_size
+                except FileNotFoundError:
+                    continue
+        return total
+
     async def create_sandbox(self, config: SandboxConfig) -> str:
         """Create a Docker container with bind mounts for the session workspace."""
         if self._data_dir is not None:
@@ -224,9 +251,10 @@ class DockerRuntime(ContainerRuntime):
         """Suspend == remove in Docker (no persistent volume to keep)."""
         await self.remove(container_id)
 
-    async def destroy_sandbox(self, name: str, container_id: str) -> None:
-        """Destroy == remove in Docker."""
+    async def destroy_sandbox(self, session_id: str, name: str, container_id: str) -> None:
+        """Destroy the container and its bind-mounted workspace in Docker."""
         await self.remove(container_id)
+        await asyncio.to_thread(self._clear_workspace, session_id)
 
     async def sandbox_exists(self, name: str) -> str | None:
         """Return the container ID if a container with this name exists, else None."""
@@ -251,6 +279,43 @@ class DockerRuntime(ContainerRuntime):
             return {c.labels["carapace.session"]: c.id or "" for c in containers if "carapace.session" in c.labels}
 
         return await asyncio.to_thread(_list)
+
+    async def inspect_sandbox(
+        self,
+        session_id: str,
+        name: str,
+        container_id: str | None = None,
+    ) -> SandboxInspection:
+        def _inspect() -> SandboxInspection:
+            workspace = self._workspace_path(session_id)
+            storage_present = workspace.exists() if workspace is not None else False
+            target = container_id or name
+            try:
+                container = self._client.containers.get(target)
+                container.reload()
+            except NotFound:
+                return SandboxInspection(
+                    exists=False,
+                    status="scaled_down" if storage_present else "missing",
+                    storage_present=storage_present,
+                )
+
+            status = "running" if container.status == "running" else "stopped"
+            return SandboxInspection(
+                exists=True,
+                status=status,
+                resource_id=container.id,
+                resource_kind="container",
+                storage_present=storage_present,
+            )
+
+        return await asyncio.to_thread(_inspect)
+
+    async def measure_workspace_usage(self, session_id: str, container_id: str | None = None) -> int | None:
+        workspace = self._workspace_path(session_id)
+        if workspace is None or not workspace.exists():
+            return None
+        return await asyncio.to_thread(self._measure_path_size, workspace)
 
     def _remove_stale(self, name: str) -> None:
         try:

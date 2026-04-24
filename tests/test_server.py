@@ -17,6 +17,7 @@ from carapace.credentials import CredentialRegistry
 from carapace.git.store import GitStore
 from carapace.models import CredentialMetadata, SessionBudget
 from carapace.sandbox.manager import SandboxManager
+from carapace.sandbox.state import SessionSandboxSnapshot
 from carapace.security.context import CredentialAccessEntry
 from carapace.server import app, sandbox_app
 from carapace.session import SessionEngine, SessionManager
@@ -40,6 +41,7 @@ def _setup_server(tmp_path, monkeypatch):
     skill_catalog = registry.scan()
     sandbox_mgr = MagicMock(spec=SandboxManager)
     sandbox_mgr.get_domain_info.return_value = []
+    sandbox_mgr.reset_session = AsyncMock()
 
     cred_reg = CredentialRegistry()
     srv._data_dir = tmp_path
@@ -112,6 +114,80 @@ def test_get_session(client, auth_headers):
     resp = client.get(f"/api/sessions/{sid}", headers=auth_headers)
     assert resp.status_code == 200
     assert resp.json()["session_id"] == sid
+
+
+def test_get_session_includes_cached_sandbox_snapshot(client, auth_headers):
+    create_resp = client.post("/api/sessions", headers=auth_headers)
+    sid = create_resp.json()["session_id"]
+    srv._engine.session_mgr.save_sandbox_snapshot(
+        sid,
+        SessionSandboxSnapshot(
+            runtime="kubernetes",
+            status="scaled_down",
+            storage_present=True,
+            last_measured_used_bytes=1234,
+        ),
+    )
+
+    resp = client.get(f"/api/sessions/{sid}", headers=auth_headers)
+
+    assert resp.status_code == 200
+    assert resp.json()["sandbox"]["status"] == "scaled_down"
+    assert resp.json()["sandbox"]["last_measured_used_bytes"] == 1234
+
+
+def test_get_session_sandbox_returns_cached_snapshot(client, auth_headers):
+    create_resp = client.post("/api/sessions", headers=auth_headers)
+    sid = create_resp.json()["session_id"]
+    srv._engine.session_mgr.save_sandbox_snapshot(
+        sid,
+        SessionSandboxSnapshot(
+            runtime="kubernetes",
+            status="running",
+            storage_present=True,
+            last_measured_used_bytes=4096,
+        ),
+    )
+
+    resp = client.get(f"/api/sessions/{sid}/sandbox", headers=auth_headers)
+
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "running"
+    assert resp.json()["last_measured_used_bytes"] == 4096
+
+
+def test_get_session_sandbox_returns_default_snapshot_when_missing(client, auth_headers):
+    create_resp = client.post("/api/sessions", headers=auth_headers)
+    sid = create_resp.json()["session_id"]
+
+    resp = client.get(f"/api/sessions/{sid}/sandbox", headers=auth_headers)
+
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "missing"
+    assert resp.json()["exists"] is False
+
+
+def test_wipe_session_sandbox_resets_when_idle(client, auth_headers):
+    create_resp = client.post("/api/sessions", headers=auth_headers)
+    sid = create_resp.json()["session_id"]
+    srv._engine.session_mgr.save_sandbox_snapshot(sid, SessionSandboxSnapshot(runtime="docker"))
+
+    resp = client.post(f"/api/sessions/{sid}/sandbox/wipe", headers=auth_headers)
+
+    assert resp.status_code == 200
+    srv._engine.sandbox_mgr.reset_session.assert_awaited_once_with(sid)
+
+
+def test_wipe_session_sandbox_rejects_running_agent(client, auth_headers):
+    create_resp = client.post("/api/sessions", headers=auth_headers)
+    sid = create_resp.json()["session_id"]
+    active = srv._engine.get_or_activate(sid)
+    active.agent_task = MagicMock()
+    active.agent_task.done.return_value = False
+
+    resp = client.post(f"/api/sessions/{sid}/sandbox/wipe", headers=auth_headers)
+
+    assert resp.status_code == 409
 
 
 def test_get_nonexistent_session(client, auth_headers):

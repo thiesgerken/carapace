@@ -1,15 +1,39 @@
 // Session
 
+export type SandboxRuntimeKind = "docker" | "kubernetes";
+export type SandboxStatus =
+  | "running"
+  | "scaled_down"
+  | "stopped"
+  | "missing"
+  | "pending"
+  | "error";
+
+export interface SessionSandboxSnapshot {
+  exists: boolean;
+  runtime?: SandboxRuntimeKind | null;
+  status: SandboxStatus;
+  resource_id?: string | null;
+  resource_kind?: string | null;
+  storage_present: boolean;
+  provisioned_bytes?: number | null;
+  last_measured_used_bytes?: number | null;
+  last_measured_at?: string | null;
+  updated_at?: string | null;
+  last_error?: string | null;
+}
+
 export interface SessionInfo {
   session_id: string;
   channel_type: string;
-  channel_ref: string;
+  channel_ref: string | null;
   created_at: string;
   last_active: string;
   title?: string;
   activated_rules: string[];
   disabled_rules: string[];
   message_count: number;
+  sandbox?: SessionSandboxSnapshot | null;
 }
 
 export interface HistoryMessage {

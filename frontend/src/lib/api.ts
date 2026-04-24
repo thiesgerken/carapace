@@ -1,4 +1,8 @@
-import type { HistoryMessage, SessionInfo } from "./types";
+import type {
+  HistoryMessage,
+  SessionInfo,
+  SessionSandboxSnapshot,
+} from "./types";
 
 function headers(token: string): HeadersInit {
   return {
@@ -41,6 +45,31 @@ export async function deleteSession(
     headers: headers(token),
   });
   if (!res.ok) throw new Error(`Failed to delete session: ${res.status}`);
+}
+
+export async function fetchSandbox(
+  server: string,
+  token: string,
+  sessionId: string,
+): Promise<SessionSandboxSnapshot> {
+  const res = await fetch(`${server}/api/sessions/${sessionId}/sandbox`, {
+    headers: headers(token),
+  });
+  if (!res.ok) throw new Error(`Failed to fetch sandbox: ${res.status}`);
+  return res.json();
+}
+
+export async function wipeSandbox(
+  server: string,
+  token: string,
+  sessionId: string,
+): Promise<SessionSandboxSnapshot> {
+  const res = await fetch(`${server}/api/sessions/${sessionId}/sandbox/wipe`, {
+    method: "POST",
+    headers: headers(token),
+  });
+  if (!res.ok) throw new Error(`Failed to wipe sandbox: ${res.status}`);
+  return res.json();
 }
 
 export async function fetchHistory(

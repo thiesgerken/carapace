@@ -19,8 +19,15 @@ from carapace.bootstrap import ensure_data_dir
 from carapace.config import load_config
 from carapace.credentials import CredentialRegistry
 from carapace.git.store import GitStore
-from carapace.models import ContextGrant, CredentialRegistryProtocol, SessionBudget, SkillCredentialDecl, ToolResult
+from carapace.models import (
+    ContextGrant,
+    CredentialRegistryProtocol,
+    SessionBudget,
+    SkillCredentialDecl,
+    ToolResult,
+)
 from carapace.sandbox.manager import SandboxManager
+from carapace.sandbox.state import SessionSandboxSnapshot
 from carapace.security.context import UserEscalationDecision, format_denial_message, normalize_optional_message
 from carapace.security.sentinel import Sentinel
 from carapace.session import SessionEngine, SessionManager
@@ -115,6 +122,34 @@ def test_save_and_load_llm_request_state(tmp_path: Path) -> None:
 
     mgr.clear_llm_request_state(state.session_id)
     assert mgr.load_llm_request_state(state.session_id) is None
+
+
+def test_save_and_load_sandbox_snapshot(tmp_path: Path) -> None:
+    mgr = SessionManager(tmp_path)
+    state = mgr.create_session()
+    snapshot = SessionSandboxSnapshot(
+        exists=True,
+        runtime="kubernetes",
+        status="scaled_down",
+        resource_id="carapace-sandbox-abc-0",
+        resource_kind="statefulset",
+        storage_present=True,
+        provisioned_bytes=1_073_741_824,
+        last_measured_used_bytes=123_456,
+        last_measured_at=datetime.now(tz=UTC),
+        updated_at=datetime.now(tz=UTC),
+    )
+
+    mgr.save_sandbox_snapshot(state.session_id, snapshot)
+
+    reloaded = mgr.load_sandbox_snapshot(state.session_id)
+    assert reloaded is not None
+    assert reloaded.runtime == "kubernetes"
+    assert reloaded.status == "scaled_down"
+    assert reloaded.last_measured_used_bytes == 123_456
+
+    mgr.clear_sandbox_snapshot(state.session_id)
+    assert mgr.load_sandbox_snapshot(state.session_id) is None
 
 
 def test_normalize_optional_message_strips_blank_values() -> None:
@@ -220,6 +255,7 @@ class _FakeSubscriber:
         self.user_messages: list[tuple[str, bool]] = []
         self.errors: list[str] = []
         self.cancelled: int = 0
+        self.done_messages: list[tuple[str, TurnUsage]] = []
         self.title_updates: list[tuple[str, TurnUsage | None]] = []
         self.llm_activity_updates: list[LlmRequestState | None] = []
 
@@ -233,7 +269,7 @@ class _FakeSubscriber:
         pass
 
     async def on_done(self, content: str, usage: TurnUsage) -> None:
-        pass
+        self.done_messages.append((content, usage))
 
     async def on_error(self, detail: str) -> None:
         self.errors.append(detail)
@@ -1010,6 +1046,51 @@ def test_submit_message_budget_exhausted_broadcasts_error(tmp_path: Path):
 
         mocked_turn.assert_not_awaited()
         assert any("Session budget reached" in err for err in sub.errors)
+
+    with _patch_sentinel():
+        asyncio.run(_run())
+
+
+def test_submit_message_refreshes_sandbox_once_after_completed_turn(tmp_path: Path):
+    async def _run() -> None:
+        engine = _make_engine(tmp_path)
+        state = engine.session_mgr.create_session()
+        sid = state.session_id
+        sub = _FakeSubscriber()
+        engine.subscribe(sid, sub)
+
+        async def _complete_turn(*_args: Any, **_kwargs: Any):
+            return [], "done", "thinking"
+
+        with patch("carapace.session.engine.run_agent_turn", new=_complete_turn):
+            await engine.submit_message(sid, "hello")
+            await asyncio.sleep(0.1)
+
+        engine._sandbox_mgr.refresh_sandbox_snapshot.assert_awaited_once_with(sid, measure_usage=True)
+
+    with _patch_sentinel():
+        asyncio.run(_run())
+
+
+def test_submit_message_refresh_failure_does_not_block_completed_turn(tmp_path: Path):
+    async def _run() -> None:
+        engine = _make_engine(tmp_path)
+        state = engine.session_mgr.create_session()
+        sid = state.session_id
+        sub = _FakeSubscriber()
+        engine.subscribe(sid, sub)
+
+        async def _complete_turn(*_args: Any, **_kwargs: Any):
+            return [], "done", "thinking"
+
+        engine._sandbox_mgr.refresh_sandbox_snapshot.side_effect = RuntimeError("snapshot refresh failed")
+
+        with patch("carapace.session.engine.run_agent_turn", new=_complete_turn):
+            await engine.submit_message(sid, "hello")
+            await asyncio.sleep(0.1)
+
+        assert sub.errors == []
+        assert engine.session_mgr.load_events(sid)[-1] == {"role": "assistant", "content": "done"}
 
     with _patch_sentinel():
         asyncio.run(_run())

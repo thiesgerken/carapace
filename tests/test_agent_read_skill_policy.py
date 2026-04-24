@@ -92,7 +92,7 @@ def test_warns_when_context_missing(tmp_path: Path, command: str) -> None:
     assert result == (
         "Warning: this command references skill directories without the matching skill context:\n"
         "- `demo` is referenced in this command but missing from `contexts`. Rerun `exec` with "
-        "`contexts=['demo']` if you need that skill's injected credentials, files, tunnels, or domains."
+        "`contexts=['demo']` if you need that skill's injected credentials, tunnels, or domains."
     )
 
 

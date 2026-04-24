@@ -625,6 +625,10 @@ class SessionEngine:
         """Return the ``ActiveSession`` if loaded, else ``None``."""
         return self._active.get(session_id)
 
+    def is_agent_running(self, session_id: str) -> bool:
+        active = self._active.get(session_id)
+        return active is not None and active.agent_task is not None and not active.agent_task.done()
+
     def get_or_activate(self, session_id: str) -> ActiveSession:
         """Return (or load) the ``ActiveSession``."""
         return self._ensure_active(session_id)
@@ -1376,6 +1380,12 @@ class SessionEngine:
                 self._session_mgr.save_state(active.state)
                 self._session_mgr.save_usage(session_id, active.usage_tracker)
                 self._session_mgr.save_llm_request_log(session_id, active.llm_request_log)
+                try:
+                    await self._sandbox_mgr.refresh_sandbox_snapshot(session_id, measure_usage=True)
+                except Exception:
+                    logger.exception(
+                        f"Failed to refresh sandbox snapshot after completed turn for session {session_id}"
+                    )
                 events_to_append = [{"role": "assistant", "content": output}]
                 self._session_mgr.append_events(session_id, events_to_append)
 
