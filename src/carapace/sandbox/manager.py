@@ -19,6 +19,7 @@ from carapace.sandbox.runtime import (
     ContainerRuntime,
     ExecResult,
     NetworkTunnel,
+    SandboxStatus,
     SkillActivationError,
     SkillActivationInputs,
 )
@@ -319,8 +320,54 @@ class SandboxManager:
     def _get_exec_lock(self, session_id: str) -> Lock:
         return self._exec_coordinator.get_exec_lock(session_id)
 
+    def _save_transient_sandbox_snapshot(
+        self,
+        session_id: str,
+        status: SandboxStatus,
+        *,
+        last_error: str | None = None,
+    ) -> None:
+        existing = load_sandbox_snapshot(self._sandbox_snapshot_path(session_id))
+        snapshot = SessionSandboxSnapshot(
+            exists=existing.exists if existing is not None else False,
+            runtime=self._runtime.runtime_kind,
+            status=status,
+            resource_id=existing.resource_id if existing is not None else None,
+            resource_kind=existing.resource_kind if existing is not None else None,
+            storage_present=existing.storage_present if existing is not None else False,
+            provisioned_bytes=existing.provisioned_bytes if existing is not None else None,
+            last_measured_used_bytes=existing.last_measured_used_bytes if existing is not None else None,
+            last_measured_at=existing.last_measured_at if existing is not None else None,
+            updated_at=datetime.now(tz=UTC),
+            last_error=last_error,
+        )
+        save_sandbox_snapshot(self._sandbox_snapshot_path(session_id), snapshot)
+
     async def ensure_session(self, session_id: str) -> tuple[SessionContainer, bool]:
-        return await self._session_lifecycle.ensure_session(session_id)
+        sc = self._sessions.get(session_id)
+        needs_startup = sc is None or not await self._runtime.is_running(sc.container_id)
+        if needs_startup:
+            self._save_transient_sandbox_snapshot(session_id, "pending")
+
+        try:
+            ensured_sc, was_created = await self._session_lifecycle.ensure_session(session_id)
+        except BaseException as exc:
+            if needs_startup:
+                try:
+                    await self.refresh_sandbox_snapshot(session_id)
+                except Exception:
+                    logger.exception(
+                        f"Failed to refresh sandbox snapshot after startup failure for session {session_id}"
+                    )
+                    self._save_transient_sandbox_snapshot(session_id, "error", last_error=str(exc))
+            raise
+
+        if needs_startup:
+            try:
+                await self.refresh_sandbox_snapshot(session_id, container_id=ensured_sc.container_id)
+            except Exception:
+                logger.exception(f"Failed to refresh sandbox snapshot after startup for session {session_id}")
+        return ensured_sc, was_created
 
     def _sandbox_name(self, session_id: str) -> str:
         return self._session_lifecycle.sandbox_name(session_id)

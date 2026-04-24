@@ -698,6 +698,7 @@ export function ChatView({
         case "tool_call": {
           const isGitPush = msg.tool === "git_push";
           if (!isGitPush) setWaiting(true); // agent is active (may restore after reconnect)
+          void refreshSandbox();
           const isLoading = isToolCallLoading(
             msg.tool,
             msg.approval_source,

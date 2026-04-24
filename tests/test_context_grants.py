@@ -10,6 +10,8 @@ import pytest
 from carapace.models import ContextGrant, SessionState, SkillCredentialDecl, context_grants_session_summary
 from carapace.sandbox.manager import SandboxManager
 from carapace.sandbox.runtime import ExecResult
+from carapace.sandbox.session_lifecycle import SessionContainer
+from carapace.sandbox.state import load_sandbox_snapshot
 from carapace.security.context import ApprovalSource, ContextGrantEntry, CredentialAccessEntry, SessionSecurity
 from carapace.security.sentinel import _format_entry
 from tests.runtime_mocks import make_runtime_mock
@@ -233,6 +235,53 @@ class TestSandboxManagerCredentialCache:
         cleanup_fn = mgr._session_lifecycle.cleanup_all.await_args.args[0]
         assert cleanup_fn.__self__ is mgr
         assert cleanup_fn.__func__ is SandboxManager.cleanup_session
+
+    @pytest.mark.anyio
+    async def test_ensure_session_persists_pending_snapshot_during_startup(self, tmp_path: Path):
+        mgr = self._make_manager(tmp_path)
+
+        async def fake_ensure(session_id: str) -> tuple[SessionContainer, bool]:
+            snapshot = load_sandbox_snapshot(mgr._sandbox_snapshot_path(session_id))
+            assert snapshot is not None
+            assert snapshot.status == "pending"
+            return (
+                SessionContainer(
+                    container_id="container-1",
+                    session_id=session_id,
+                    ip_address="172.18.0.22",
+                    created_at=1.0,
+                    last_used=1.0,
+                ),
+                True,
+            )
+
+        mgr._session_lifecycle.ensure_session = AsyncMock(side_effect=fake_ensure)
+
+        await mgr.ensure_session("sess-1")
+
+        snapshot = load_sandbox_snapshot(mgr._sandbox_snapshot_path("sess-1"))
+        assert snapshot is not None
+        assert snapshot.status == "running"
+        assert snapshot.runtime == "docker"
+
+    @pytest.mark.anyio
+    async def test_ensure_session_clears_pending_snapshot_when_startup_fails(self, tmp_path: Path):
+        mgr = self._make_manager(tmp_path)
+
+        async def fake_ensure(session_id: str) -> tuple[SessionContainer, bool]:
+            snapshot = load_sandbox_snapshot(mgr._sandbox_snapshot_path(session_id))
+            assert snapshot is not None
+            assert snapshot.status == "pending"
+            raise RuntimeError("boom")
+
+        mgr._session_lifecycle.ensure_session = AsyncMock(side_effect=fake_ensure)
+
+        with pytest.raises(RuntimeError, match="boom"):
+            await mgr.ensure_session("sess-1")
+
+        snapshot = load_sandbox_snapshot(mgr._sandbox_snapshot_path("sess-1"))
+        assert snapshot is not None
+        assert snapshot.status == "missing"
 
 
 # ── SandboxManager context tracking ─────────────────────────────────

@@ -28,7 +28,7 @@ export function sandboxStatusLabel(status: SandboxStatus): string {
     case "scaled_down":
       return "Spun Down";
     case "pending":
-      return "Pending";
+      return "Starting Up";
     case "stopped":
       return "Stopped";
     case "error":
