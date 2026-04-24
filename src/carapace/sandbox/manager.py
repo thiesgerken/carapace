@@ -377,9 +377,6 @@ class SandboxManager:
     def _sandbox_snapshot_path(self, session_id: str) -> Path:
         return self._data_dir / "sessions" / session_id / "sandbox.yaml"
 
-    def _workspace_path(self, session_id: str) -> Path:
-        return self._data_dir / "sessions" / session_id / "workspace"
-
     async def refresh_sandbox_snapshot(
         self,
         session_id: str,
