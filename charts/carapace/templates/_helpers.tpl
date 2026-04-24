@@ -30,6 +30,17 @@ Sandbox image with tag defaulting to appVersion
 {{- end }}
 
 {{/*
+Sandbox owner name. Nil means use the release default, empty string means Deployment fallback.
+*/}}
+{{- define "carapace.sandboxesName" -}}
+{{- if eq .Values.sandbox.sandboxesName nil -}}
+{{ printf "%s-sandboxes" .Release.Name }}
+{{- else -}}
+{{ .Values.sandbox.sandboxesName }}
+{{- end -}}
+{{- end }}
+
+{{/*
 Bitwarden CLI sidecar image with tag defaulting to appVersion
 */}}
 {{- define "carapace.bitwardenImage" -}}

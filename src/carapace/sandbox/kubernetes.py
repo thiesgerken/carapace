@@ -125,7 +125,7 @@ class KubernetesRuntime(ContainerRuntime):
         priority_class: str | None = None,
         owner_ref: bool = True,
         server_deployment_name: str = "carapace",
-        sandboxes_name: str = "carapace-sandboxes",
+        sandboxes_name: str | None = "carapace-sandboxes",
         app_instance: str = "carapace",
         session_pvc_size: str = "1Gi",
         session_pvc_storage_class: str = "",
@@ -152,7 +152,6 @@ class KubernetesRuntime(ContainerRuntime):
         self._server_deployment_name = server_deployment_name
         self._sandboxes_name = sandboxes_name
         self._sandbox_owner: _SandboxOwner | None = None
-        self._sandbox_owner_lookup_done = False
 
         logger.info(f"KubernetesRuntime initialized (namespace={namespace}, pvc={pvc_claim}, data_dir={data_dir})")
 
@@ -247,30 +246,36 @@ class KubernetesRuntime(ContainerRuntime):
         )
 
     async def _get_sandbox_owner(self) -> _SandboxOwner | None:
-        """Resolve owner for sandbox ownerReferences once (Sandboxes preferred, else Deployment)."""
+        """Resolve the configured owner for sandbox ownerReferences."""
         if not self._want_owner_ref:
             return None
         if self._sandbox_owner is not None:
             return self._sandbox_owner
-        if self._sandbox_owner_lookup_done:
-            return None
-        self._sandbox_owner_lookup_done = True
         api = await self._ensure_api()
-        owner = await self._try_sandboxes_owner(api)
-        if owner is None:
-            logger.warning(
-                f"Could not resolve Sandboxes {self._sandboxes_name!r}; "
-                f"falling back to Deployment {self._server_deployment_name!r}"
-            )
-            owner = await self._try_server_deployment_owner(api)
-        if owner is None:
-            logger.warning(
-                "Could not resolve sandbox owner (Sandboxes / Deployment) — sandbox resources will lack ownerRef"
-            )
-            self._want_owner_ref = False
-            return None
-        self._sandbox_owner = owner
-        return owner
+
+        if self._sandboxes_name:
+            owner = await self._try_sandboxes_owner(api)
+            if owner is None:
+                raise RuntimeError(
+                    f"Configured Sandboxes owner {self._sandboxes_name!r} could not be resolved "
+                    f"in namespace {self._namespace!r}"
+                )
+            self._sandbox_owner = owner
+            return owner
+
+        logger.warning(
+            "CARAPACE_SANDBOX_K8S_SANDBOXES_NAME is unset or empty; "
+            f"using Deployment {self._server_deployment_name!r} as sandbox owner"
+        )
+        owner = await self._try_server_deployment_owner(api)
+        if owner is not None:
+            self._sandbox_owner = owner
+            return owner
+
+        logger.warning(
+            "Could not resolve sandbox owner Deployment for this sandbox create — sandbox resources will lack ownerRef"
+        )
+        return None
 
     def _mount_to_subpath(self, mount: Mount) -> str:
         """Convert a Mount.source path to a PVC subPath."""

@@ -193,7 +193,7 @@ Multiple instances are supported — just add more entries with different names 
 | `frontend.enabled`                       | `true`                           | Deploy the Next.js frontend                                        |
 | `frontend.image.tag`                     | `""` (appVersion)                | Frontend image tag                                                 |
 | `sandbox.image.tag`                      | `""` (appVersion)                | Sandbox base image tag                                             |
-| `sandbox.sandboxesName`                  | `""` (`<release>-sandboxes`)     | Preferred `Sandboxes` CR name for sandbox `ownerReferences`        |
+| `sandbox.sandboxesName`                  | `null` (`<release>-sandboxes`)   | `Sandboxes` CR name; set `""` to use the Deployment as owner       |
 | `ingress.enabled`                        | `true`                           | Create a Gateway API HTTPRoute                                     |
 | `ingress.hostname`                       | `carapace.example.com`           | Ingress hostname                                                   |
 | `ingress.parentRefs`                     | `[{name: default-gateway}]`      | Gateway parent references                                          |

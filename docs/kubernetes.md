@@ -65,7 +65,9 @@ The server pod manages sandbox StatefulSets directly via the Kubernetes API. Eac
 
 Sandbox StatefulSets get an `ownerReference` so they show under the owning object in Argo CD and are garbage-collected when that object is deleted.
 
-The server prefers a namespaced **`Sandboxes`** custom resource (name from `CARAPACE_SANDBOX_K8S_SANDBOXES_NAME`, Helm default `<release>-sandboxes`) as owner. If that CR is missing or unavailable, it falls back to the server `Deployment` (`CARAPACE_SANDBOX_K8S_SERVER_DEPLOYMENT_NAME`).
+When `CARAPACE_SANDBOX_K8S_SANDBOXES_NAME` is set, the server requires that namespaced **`Sandboxes`** custom resource to exist and uses it as owner. If the named CR is missing or unavailable, sandbox creation fails.
+
+Set `CARAPACE_SANDBOX_K8S_SANDBOXES_NAME` to `null` or an empty string to use the server `Deployment` (`CARAPACE_SANDBOX_K8S_SERVER_DEPLOYMENT_NAME`) as owner instead.
 
 The `Sandboxes` CR is currently an ownership/metadata anchor only. There is no operator/controller reconciling sandbox resources yet; the Carapace server still creates/scales/deletes sandbox StatefulSets directly.
 
@@ -107,21 +109,21 @@ When the server runs inside Kubernetes (the `KUBERNETES_SERVICE_HOST` env var is
 
 ### Environment variable reference
 
-| Env var                                          | Default                   | Description                                               |
-| ------------------------------------------------ | ------------------------- | --------------------------------------------------------- |
-| `CARAPACE_SANDBOX_RUNTIME`                       | `docker`                  | `docker` or `kubernetes`                                  |
-| `CARAPACE_SANDBOX_BASE_IMAGE`                    | `carapace-sandbox:latest` | Sandbox container image (pin version)                     |
-| `CARAPACE_SANDBOX_IDLE_TIMEOUT_MINUTES`          | `15`                      | Idle sandbox cleanup interval                             |
-| `CARAPACE_SANDBOX_PROXY_PORT`                    | `3128`                    | HTTP proxy port for domain filtering                      |
-| `CARAPACE_SANDBOX_K8S_NAMESPACE`                 | `carapace`                | Namespace for sandbox pods                                |
-| `CARAPACE_SANDBOX_K8S_PVC_CLAIM`                 | `carapace-data`           | Server data PVC claim name                                |
-| `CARAPACE_SANDBOX_K8S_SESSION_PVC_SIZE`          | `1Gi`                     | Per-session PVC size                                      |
-| `CARAPACE_SANDBOX_K8S_SESSION_PVC_STORAGE_CLASS` | (cluster default)         | StorageClass for session PVCs                             |
-| `CARAPACE_SANDBOX_K8S_SERVICE_ACCOUNT`           | `null`                    | ServiceAccount for sandbox pods                           |
-| `CARAPACE_SANDBOX_K8S_OWNER_REF`                 | `true`                    | Attach `ownerReferences` to sandboxes                     |
-| `CARAPACE_SANDBOX_K8S_SANDBOXES_NAME`          | `carapace-sandboxes`      | Preferred `Sandboxes` owner in workload namespace         |
-| `CARAPACE_SANDBOX_K8S_SERVER_DEPLOYMENT_NAME`    | `carapace`                | Server Deployment name (Helm sets to release name)        |
-| `CARAPACE_SANDBOX_NETWORK_NAME`                  | `carapace-sandbox`        | Docker network name (Docker only)                         |
+| Env var                                          | Default                   | Description                                                |
+| ------------------------------------------------ | ------------------------- | ---------------------------------------------------------- |
+| `CARAPACE_SANDBOX_RUNTIME`                       | `docker`                  | `docker` or `kubernetes`                                   |
+| `CARAPACE_SANDBOX_BASE_IMAGE`                    | `carapace-sandbox:latest` | Sandbox container image (pin version)                      |
+| `CARAPACE_SANDBOX_IDLE_TIMEOUT_MINUTES`          | `15`                      | Idle sandbox cleanup interval                              |
+| `CARAPACE_SANDBOX_PROXY_PORT`                    | `3128`                    | HTTP proxy port for domain filtering                       |
+| `CARAPACE_SANDBOX_K8S_NAMESPACE`                 | `carapace`                | Namespace for sandbox pods                                 |
+| `CARAPACE_SANDBOX_K8S_PVC_CLAIM`                 | `carapace-data`           | Server data PVC claim name                                 |
+| `CARAPACE_SANDBOX_K8S_SESSION_PVC_SIZE`          | `1Gi`                     | Per-session PVC size                                       |
+| `CARAPACE_SANDBOX_K8S_SESSION_PVC_STORAGE_CLASS` | (cluster default)         | StorageClass for session PVCs                              |
+| `CARAPACE_SANDBOX_K8S_SERVICE_ACCOUNT`           | `null`                    | ServiceAccount for sandbox pods                            |
+| `CARAPACE_SANDBOX_K8S_OWNER_REF`                 | `true`                    | Attach `ownerReferences` to sandboxes                      |
+| `CARAPACE_SANDBOX_K8S_SANDBOXES_NAME`            | `carapace-sandboxes`      | Required `Sandboxes` owner; set `null`/`""` for Deployment |
+| `CARAPACE_SANDBOX_K8S_SERVER_DEPLOYMENT_NAME`    | `carapace`                | Server Deployment name (Helm sets to release name)         |
+| `CARAPACE_SANDBOX_NETWORK_NAME`                  | `carapace-sandbox`        | Docker network name (Docker only)                          |
 
 ## Storage
 

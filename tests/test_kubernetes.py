@@ -504,14 +504,47 @@ async def test_get_sandbox_owner_prefers_sandboxes():
 async def test_get_sandbox_owner_falls_back_to_deployment():
     rt = _make_runtime()
     rt._want_owner_ref = True
+    rt._sandboxes_name = None
     rt._ensure_api = AsyncMock(return_value=object())
     deploy_owner = MagicMock()
     deploy_owner.kind = "Deployment"
     deploy_owner.name = "carapace"
-    rt._try_sandboxes_owner = AsyncMock(return_value=None)
     rt._try_server_deployment_owner = AsyncMock(return_value=deploy_owner)
     owner = await rt._get_sandbox_owner()
 
     assert owner is not None
     assert owner.kind == "Deployment"
     assert owner.name == "carapace"
+    rt._try_server_deployment_owner.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_get_sandbox_owner_empty_string_uses_deployment():
+    rt = _make_runtime()
+    rt._want_owner_ref = True
+    rt._sandboxes_name = ""
+    rt._ensure_api = AsyncMock(return_value=object())
+
+    deploy_owner = MagicMock()
+    deploy_owner.kind = "Deployment"
+    deploy_owner.name = "carapace"
+    rt._try_server_deployment_owner = AsyncMock(return_value=deploy_owner)
+
+    owner = await rt._get_sandbox_owner()
+
+    assert owner is deploy_owner
+    rt._try_server_deployment_owner.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_get_sandbox_owner_raises_if_configured_sandboxes_missing():
+    rt = _make_runtime()
+    rt._want_owner_ref = True
+    rt._ensure_api = AsyncMock(return_value=object())
+    rt._try_sandboxes_owner = AsyncMock(return_value=None)
+    rt._try_server_deployment_owner = AsyncMock()
+
+    with pytest.raises(RuntimeError, match="Configured Sandboxes owner"):
+        await rt._get_sandbox_owner()
+
+    rt._try_server_deployment_owner.assert_not_called()

@@ -305,8 +305,9 @@ class SandboxConfig(BaseSettings):
     # Server Deployment name for ownerReference fallback (Helm: release name).
     k8s_server_deployment_name: str = "carapace"
     # Preferred owner for sandbox resources (namespaced Sandboxes CRD singleton).
-    # If missing/unavailable, the runtime falls back to k8s_server_deployment_name.
-    k8s_sandboxes_name: str = "carapace-sandboxes"
+    # Set to null or an empty string to use k8s_server_deployment_name instead.
+    # When set, the named Sandboxes object must exist.
+    k8s_sandboxes_name: str | None = "carapace-sandboxes"
     # ArgoCD application / Helm release name. Used for the app.kubernetes.io/instance
     # label and the argocd.argoproj.io/tracking-id annotation so that sandbox pods
     # appear in the ArgoCD resource tree even without an ownerReference.
