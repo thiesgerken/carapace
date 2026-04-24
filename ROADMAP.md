@@ -3,22 +3,19 @@
 > This roadmap outlines planned features and improvements. Items are grouped by area and roughly ordered by priority within each section.
 
 - [ ] Proper Icon + Logo, rewrite README to be more ... advertising
-- [ ] warm-up a sandbox as soon as the session is created? (or keep a warmed sandbox for the next session?) would need to be configurable + maybe we should even delete old PVCs after a while if they are not used?
-- [ ] compaction
+- [ ] Compaction
 - [ ] image input ([plan](docs/plans/images.md))
 - [ ] image output — agent tools producing images (screenshots, charts, renders)
 - [ ] custom sentinel instructions for skills, e.g. moneydb: make sure that the agent only does mutations based on user approval
-- [ ] option to remove the sandbox without removing the session
+- [ ] conversation history niceties (retry message, fork session, ...)
+- [ ] "daily" session that is recreated every day and that should persist some of its memories during the night
+- [ ] should the chat histories become a part of the knowledge repo automatically? at least by pressing a "save" button for the session?
 
-## UI Improvements
+## Knowledge Repo Handling
 
-- [ ] browser for the current session's workspace + preview (no need to support manual editing though)
 - [ ] indicator how many commits ahead/behind the session's knowledge repo is + the ability to pull/push inside the sandbox without telling the agent
 - [ ] warn user if deleting a session that has commits not pushed
 - [ ] replace pull / push slash commands (that aren't really tied to the session anyway) with a global indicator how many commits ahead/behind the backend's global repo is compared to the remote repo
-- [ ] show which sessions have sandboxes, size of the PVCs, is the sandbox in standby
-- [ ] tell the user what exactly is happening in the exec — sandbox creation, sentinel, execution? where is the command right now?
-- [ ] conversation history niceties (retry message, fork session, ...)
 
 ## Authentication & Multi-User
 
