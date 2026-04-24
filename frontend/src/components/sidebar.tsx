@@ -39,9 +39,6 @@ function sandboxSummaryLabel(sandbox: SessionSandboxSnapshot): string | null {
   if (typeof sandbox.last_measured_used_bytes === "number") {
     return formatBytes(sandbox.last_measured_used_bytes);
   }
-  if (sandbox.storage_present) {
-    return "storage";
-  }
   return null;
 }
 
