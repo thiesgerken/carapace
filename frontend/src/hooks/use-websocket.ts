@@ -25,6 +25,7 @@ export function useWebSocket(
 
   const connect = useCallback(() => {
     if (!url || unmountedRef.current) return;
+    let opened = false;
 
     // Close any existing connection before opening a new one
     if (wsRef.current) {
@@ -45,6 +46,7 @@ export function useWebSocket(
 
     ws.onopen = () => {
       if (wsRef.current !== ws) return; // stale
+      opened = true;
       setStatus("connected");
       retriesRef.current = 0;
     };
@@ -53,10 +55,12 @@ export function useWebSocket(
       // Ignore if a newer connection already replaced this one
       if (wsRef.current !== ws) return;
       wsRef.current = null;
-      setStatus("disconnected");
-      onDisconnectRef.current?.();
+      if (opened) {
+        onDisconnectRef.current?.();
+      }
 
       if (unmountedRef.current) return;
+      setStatus("connecting");
       const delay =
         RECONNECT_DELAYS[
           Math.min(retriesRef.current, RECONNECT_DELAYS.length - 1)
