@@ -181,6 +181,23 @@ class TestSandboxManagerCredentialCache:
         await mgr.destroy_session("sess-1")
         assert mgr.get_cached_credential("sess-1", "dev/token") is None
 
+    @pytest.mark.anyio
+    async def test_reset_session_preserves_token(self, tmp_path: Path):
+        runtime = make_runtime_mock()
+        runtime.destroy_sandbox = AsyncMock()
+        mgr = SandboxManager(runtime=runtime, data_dir=tmp_path, knowledge_dir=tmp_path)
+        token = mgr._session_lifecycle.get_or_create_token("sess-1")
+        mgr._sessions["sess-1"] = MagicMock(container_id="c1", session_env={})
+        workspace = tmp_path / "sessions" / "sess-1" / "workspace"
+        workspace.mkdir(parents=True)
+        (workspace / "note.txt").write_text("hello")
+
+        await mgr.reset_session("sess-1")
+
+        runtime.destroy_sandbox.assert_awaited_once_with("sess-1", "carapace-sandbox-sess-1", "c1")
+        assert mgr.verify_session_token("sess-1", token)
+        assert not workspace.exists()
+
 
 # ── SandboxManager context tracking ─────────────────────────────────
 

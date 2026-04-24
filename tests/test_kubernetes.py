@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import kr8s
 import pytest
 
 from carapace.sandbox.kubernetes import (
@@ -424,16 +425,52 @@ async def test_resume_sandbox():
 async def test_destroy_sandbox():
     rt = _make_runtime()
     rt._delete_sts_if_exists = AsyncMock()
-    await rt.destroy_sandbox("carapace-sandbox-abc", "carapace-sandbox-abc-0")
+    rt._delete_session_pvc_if_exists = AsyncMock()
+    await rt.destroy_sandbox("abc", "carapace-sandbox-abc", "carapace-sandbox-abc-0")
     rt._delete_sts_if_exists.assert_called_once_with("carapace-sandbox-abc")
+    rt._delete_session_pvc_if_exists.assert_called_once_with("carapace-sandbox-abc")
 
 
 @pytest.mark.asyncio
 async def test_destroy_sandbox_not_found():
     rt = _make_runtime()
     rt._delete_sts_if_exists = AsyncMock()
+    rt._delete_session_pvc_if_exists = AsyncMock()
     # Should not raise
-    await rt.destroy_sandbox("carapace-sandbox-abc", "carapace-sandbox-abc-0")
+    await rt.destroy_sandbox("abc", "carapace-sandbox-abc", "carapace-sandbox-abc-0")
+
+
+@pytest.mark.asyncio
+async def test_delete_session_pvc_if_exists() -> None:
+    rt = _make_runtime()
+    rt._ensure_api = AsyncMock()
+
+    mock_pvc = AsyncMock()
+
+    async def _fake_pvc(*args, **kwargs):
+        return mock_pvc
+
+    with patch("carapace.sandbox.kubernetes._PersistentVolumeClaim", side_effect=_fake_pvc):
+        await rt._delete_session_pvc_if_exists("carapace-sandbox-abc")
+
+    mock_pvc.delete.assert_called_once_with(force=True)
+
+
+@pytest.mark.asyncio
+async def test_delete_session_pvc_if_exists_ignores_not_found() -> None:
+    rt = _make_runtime()
+    rt._ensure_api = AsyncMock()
+
+    mock_pvc = AsyncMock()
+    mock_pvc.delete.side_effect = kr8s.NotFoundError("gone")
+
+    async def _fake_pvc(*args, **kwargs):
+        return mock_pvc
+
+    with patch("carapace.sandbox.kubernetes._PersistentVolumeClaim", side_effect=_fake_pvc):
+        await rt._delete_session_pvc_if_exists("carapace-sandbox-abc")
+
+    mock_pvc.delete.assert_called_once_with(force=True)
 
 
 # --- owner resolution ---

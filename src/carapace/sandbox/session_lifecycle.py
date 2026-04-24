@@ -332,12 +332,12 @@ class SandboxSessionLifecycle:
         sc = self._state.sessions.pop(session_id, None)
         sandbox_name = self.sandbox_name(session_id)
         if sc:
-            await self._runtime.destroy_sandbox(sandbox_name, sc.container_id)
+            await self._runtime.destroy_sandbox(session_id, sandbox_name, sc.container_id)
             logger.info(f"Destroyed sandbox for session {session_id}")
         else:
             existing_id = await self._runtime.sandbox_exists(sandbox_name)
             if existing_id:
-                await self._runtime.destroy_sandbox(sandbox_name, existing_id)
+                await self._runtime.destroy_sandbox(session_id, sandbox_name, existing_id)
                 logger.info(f"Destroyed orphaned sandbox for session {session_id}")
 
         token = self._state.session_tokens.pop(session_id, None)
@@ -361,12 +361,12 @@ class SandboxSessionLifecycle:
         sc = self._state.sessions.pop(session_id, None)
         sandbox_name = self.sandbox_name(session_id)
         if sc:
-            await self._runtime.destroy_sandbox(sandbox_name, sc.container_id)
+            await self._runtime.destroy_sandbox(session_id, sandbox_name, sc.container_id)
             logger.info(f"Reset sandbox for session {session_id}")
         else:
             existing_id = await self._runtime.sandbox_exists(sandbox_name)
             if existing_id:
-                await self._runtime.destroy_sandbox(sandbox_name, existing_id)
+                await self._runtime.destroy_sandbox(session_id, sandbox_name, existing_id)
                 logger.info(f"Reset orphaned sandbox for session {session_id}")
 
     async def cleanup_idle(self) -> None:
@@ -392,7 +392,7 @@ class SandboxSessionLifecycle:
         orphans = {sid: cid for sid, cid in live.items() if sid not in known_sessions}
         for sid, container_id in orphans.items():
             sandbox_name = self.sandbox_name(sid)
-            await self._runtime.destroy_sandbox(sandbox_name, container_id)
+            await self._runtime.destroy_sandbox(sid, sandbox_name, container_id)
             logger.info(f"Removed orphaned sandbox for deleted session {sid}")
         return len(orphans)
 

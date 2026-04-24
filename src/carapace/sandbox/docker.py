@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import shutil
 from pathlib import Path
 
 import docker
@@ -206,6 +207,11 @@ class DockerRuntime(ContainerRuntime):
             return None
         return self._data_dir / "sessions" / session_id / "workspace"
 
+    def _clear_workspace(self, session_id: str) -> None:
+        workspace = self._workspace_path(session_id)
+        if workspace is not None:
+            shutil.rmtree(workspace, ignore_errors=True)
+
     def _measure_path_size(self, path: Path) -> int:
         total = 0
         for root, _, files in os.walk(path):
@@ -245,9 +251,10 @@ class DockerRuntime(ContainerRuntime):
         """Suspend == remove in Docker (no persistent volume to keep)."""
         await self.remove(container_id)
 
-    async def destroy_sandbox(self, name: str, container_id: str) -> None:
-        """Destroy == remove in Docker."""
+    async def destroy_sandbox(self, session_id: str, name: str, container_id: str) -> None:
+        """Destroy the container and its bind-mounted workspace in Docker."""
         await self.remove(container_id)
+        await asyncio.to_thread(self._clear_workspace, session_id)
 
     async def sandbox_exists(self, name: str) -> str | None:
         """Return the container ID if a container with this name exists, else None."""

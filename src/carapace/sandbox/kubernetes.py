@@ -505,9 +505,10 @@ class KubernetesRuntime(ContainerRuntime):
             logger.opt(exception=True).warning(f"Scale-down failed for {name}, deleting pod")
             await self._delete_pod_if_exists(container_id)
 
-    async def destroy_sandbox(self, name: str, container_id: str) -> None:
-        """Delete the StatefulSet entirely (PVC cleaned up by retention policy)."""
+    async def destroy_sandbox(self, session_id: str, name: str, container_id: str) -> None:
+        """Delete the StatefulSet and its per-session PVC."""
         await self._delete_sts_if_exists(_sanitize_pod_name(name))
+        await self._delete_session_pvc_if_exists(name)
 
     async def sandbox_exists(self, name: str) -> str | None:
         """Return the pod name if the StatefulSet exists, else None."""
@@ -636,6 +637,23 @@ class KubernetesRuntime(ContainerRuntime):
             logger.info(f"Deleted StatefulSet {sts_name}")
         except kr8s.NotFoundError:
             logger.debug(f"StatefulSet {sts_name} already gone, skip delete")
+
+    async def _delete_session_pvc_if_exists(self, name: str) -> None:
+        pvc_name = self._session_pvc_name(name)
+        api = await self._ensure_api()
+        pvc = await _PersistentVolumeClaim(
+            {
+                "apiVersion": "v1",
+                "kind": "PersistentVolumeClaim",
+                "metadata": {"name": pvc_name, "namespace": self._namespace},
+            },
+            api=api,
+        )
+        try:
+            await pvc.delete(force=True)
+            logger.info(f"Deleted PVC {pvc_name}")
+        except kr8s.NotFoundError:
+            logger.debug(f"PVC {pvc_name} already gone, skip delete")
 
     # ------------------------------------------------------------------
     # Pod helpers
