@@ -1,368 +1,94 @@
 ---
 name: create-skill
-description: Create and edit AgentSkills for Carapace. Use when the user wants to add a new skill, edit an existing one, or asks about the skill format.
+description: Create and refine Carapace AgentSkills. Use when the user wants to add a new skill, reshape an existing one, or asks how a skill should be structured.
 ---
 
 # Create Skill
 
-Guide for creating and maintaining Carapace skills that follow the open [AgentSkills](https://agentskills.io/) format.
+Create or update skills under `skills/<name>/` for Carapace.
 
-## Skill location
+## Goal
 
-Skills live under `skills/` in the data directory. Each skill is a directory containing at minimum a `SKILL.md` file:
+Produce a skill that is easy for another agent to activate and follow.
 
-```
-skills/
-  my-skill/
-    SKILL.md              # required
-    carapace.yaml         # optional: proxy domains + credential declarations
-    pyproject.toml        # optional: Python project with dependencies and CLI entrypoints
-    uv.lock               # required alongside pyproject.toml
-    package.json          # optional: Node project manifest
-    package-lock.json     # npm lockfile
-    pnpm-lock.yaml        # pnpm lockfile
-    setup.sh              # optional: post-activation setup script
-    src/my_skill/         # optional: Python package (use underscores in package name)
-      __init__.py
-      cli.py              # CLI entrypoint(s)
-    references/           # optional: additional docs
-    assets/               # optional: templates, data files
-```
-
-## SKILL.md format
-
-### Frontmatter (required)
+- `SKILL.md` is the agent-facing workflow document
+- Keep it concise, task-oriented, and specific to the skill's runtime behavior
+- Move implementation details, provider setup, long examples, and maintenance notes into a sidecar doc such as `REFERENCE.md`, `CONFIG.md`, or files under `references/`
 
-```yaml
----
-name: my-skill
-description: What this skill does and when to use it. Be specific -- this is what the agent reads at startup to decide whether to activate the skill.
----
-```
-
-**`name` rules:**
-
-- Must match the parent directory name exactly
-- Lowercase letters, numbers, and hyphens only
-- No consecutive hyphens (`--`), no leading/trailing hyphens
-- Max 64 characters
-
-**`description` rules:**
-
-- Include keywords that help identify relevant tasks
-- Describe both _what_ the skill does and _when_ to use it
-- Max 1024 characters
-
-Optional frontmatter fields:
-
-| Field           | Purpose                                             |
-| --------------- | --------------------------------------------------- |
-| `license`       | License name or reference to a bundled LICENSE file |
-| `compatibility` | Environment requirements (tools, network, etc.)     |
-| `metadata`      | Arbitrary key-value pairs (author, version, etc.)   |
-
-### Body (instructions)
-
-The markdown body after the frontmatter is the actual skill content. There are no format restrictions. Write whatever helps perform the task effectively.
-
-Recommended sections:
-
-- When to use / when not to use
-- Step-by-step instructions
-- Common edge cases
-- Input/output examples
-
-## Progressive disclosure
-
-Carapace loads skills in three tiers:
-
-1. **Discovery** (~100 tokens): `name` + `description` loaded at startup for all skills
-2. **Activation** (< 5000 tokens recommended): full `SKILL.md` body loaded via `activate_skill`
-3. **Resources** (on demand): Python source in `src/`, files in `references/`, `assets/` loaded only when referenced
-
-Keep `SKILL.md` under 500 lines. Move detailed reference material to separate files and reference them with relative paths:
-
-```markdown
-See [the API reference](references/api.md) for endpoint details.
-```
-
-## Carapace-specific carapace.yaml
-
-Optional. If present, Carapace reads `skills/<name>/carapace.yaml` when the agent calls `use_skill("<name>")`. It declares **which hostnames the sandbox proxy may reach**, **which exec-scoped TCP tunnels Carapace should manage**, and **which vault credentials to inject** (after user approval). Omit the file if the skill needs none of these.
-
-**Top-level keys** (all optional):
-
-| Key               | Type            | Purpose                                                                                                                                                   |
-| ----------------- | --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `network`         | object          | Container for `domains` and/or `tunnels` — not a bare list under `network`.                                                                               |
-| `network.domains` | list of strings | Hostnames added to the proxy allowlist (wildcards like `*.cdn.example.com` allowed).                                                                      |
-| `network.tunnels` | list of objects | Exec-scoped TCP tunnels managed by Carapace. Each entry needs `host`, `remote_port`, and `local_port`; optional `description`.                            |
-| `credentials`     | list of objects | Each entry: `vault_path` (required), `description`, and either `env_var` and/or `file` for injection. Optional `base64: true` to decode before injection. |
-| `hints`           | string map      | Extra metadata for tooling (does not replace `network` / `credentials`).                                                                                  |
-
-**Valid example** (shape matters):
-
-```yaml
-network:
-  domains:
-    - api.example.com
-    - "*.cdn.example.com"
-  tunnels:
-    - host: imap.zoho.eu
-      remote_port: 993
-      local_port: 1993
-      description: Zoho IMAP over the Carapace CONNECT proxy
-
-credentials:
-  - vault_path: my-backend/some-secret-id
-    description: API key for Example service
-    env_var: EXAMPLE_API_KEY
-  - vault_path: my-backend/deploy-key
-    description: SSH private key for deploys
-    file: ~/.ssh/id_example_deploy
-```
-
-**Common mistake — invalid YAML for Carapace:**
-
-```yaml
-# WRONG: `network` must be an object with a `domains` key, not a YAML list.
-network:
-  - api.example.com
-```
-
-That parses as a list assigned to `network`, Pydantic validation fails, and **the entire `carapace.yaml` is ignored** (no domains, no credentials). Check server logs for a parse/validation warning if nothing applies.
-
-**Rules:**
-
-- Paths are resolved from the skill directory next to `SKILL.md` in the knowledge repo (under `skills/<name>/carapace.yaml`).
-- `network.tunnels[].host` must be an exact hostname. Wildcards are not allowed for tunnels.
-- `network.tunnels[].host` must not be an IP literal, loopback target, Docker special hostname, or Kubernetes/internal service name such as `*.svc` / `*.cluster.local`.
-- `network.tunnels[].local_port` must be an unprivileged local port (`1024-65535`) and must be unique within the skill.
-- `network.tunnels` are exec-scoped. Carapace starts them only for commands that request the matching skill via `contexts=[...]`, then tears them down afterwards.
-- `network.domains` and `network.tunnels` may mention the same hostname. That is valid: proxy-aware HTTP/HTTPS still works through the normal proxy path, while direct socket connections to the tunneled hostname are shadowed for that exec.
-- Tunnels preserve TLS only if the client keeps using the original hostname. Do not configure IMAP/SMTP clients against `localhost`; use the real hostname together with the declared `local_port`.
-- Credential values are never echoed to the user; env vars and files are set inside the sandbox after approval.
-- For full detail, see bundled `credentials` skill and project `docs/skills.md`.
-
-### Creating a skill step by step
-
-1. Choose a name: lowercase, hyphenated, descriptive (e.g. `email-summary`, `git-changelog`)
-2. Create the directory and `SKILL.md` using the `write` tool:
-   - Path: `skills/<name>/SKILL.md`
-   - The `skill-modification` rule will trigger approval
-3. Write clear frontmatter with a good `description`
-4. Write concise instructions in the body
-5. Optionally add `carapace.yaml` if the skill needs outbound domains or vault-backed secrets
-6. If the skill needs code or setup, add the matching provider files: Python (`pyproject.toml` + `uv.lock`), Node (`package.json` + one lockfile), and/or `setup.sh`
-7. Optionally add `references/` or `assets/` directories
-8. Tell the user the skill will appear in `/skills` and be available in new sessions
+## What Belongs In `SKILL.md`
 
-### Python projects
-
-Skills with Python code should be structured as proper Python packages with CLI entrypoints. Dependency management uses **uv** exclusively — it is pre-installed in every sandbox container.
+Keep only the information an activated agent should need during normal use:
 
-#### Project layout
+- what the skill does and when to use it
+- hard constraints and safety rules
+- the normal workflow or command entrypoints
+- a short note that credentials or setup are handled automatically, if applicable
+- links to sidecar docs when deeper implementation detail exists
 
-Put code in `src/<package_name>/` (use underscores for the package name, hyphens for the skill/project name). Define CLI commands as `[project.scripts]` entrypoints.
+Do not turn `SKILL.md` into developer documentation for the skill itself.
 
-```
-skills/my-skill/
-  SKILL.md
-  carapace.yaml
-  pyproject.toml
-  uv.lock
-  src/my_skill/
-    __init__.py          # empty file (required)
-    cli.py               # module with main() function → CLI entrypoint
-    another.py           # another CLI entrypoint
-    _helpers.py          # shared internal module (underscore prefix = not a CLI)
-```
+## What Belongs Elsewhere
 
-#### pyproject.toml
+Prefer a sidecar markdown file for:
 
-```toml
-[project]
-name = "my-skill"
-version = "0.1.0"
-requires-python = ">=3.12"
-dependencies = [
-    "httpx>=0.28,<1",
-]
+- provider file layouts and lockfile rules
+- full `carapace.yaml` schemas and examples
+- authentication wiring and credential internals
+- packaging details for Python or Node helpers
+- long templates, API references, and maintainer troubleshooting notes
 
-[project.scripts]
-my-cli = "my_skill.cli:main"
-my-other = "my_skill.another:main"
+Good filenames are `REFERENCE.md`, `CONFIG.md`, or `references/*.md`.
 
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+## Workflow
 
-[tool.hatch.build.targets.wheel]
-packages = ["src/my_skill"]
-```
+1. Read `REFERENCE.md` before writing or restructuring any skill. Treat it as required context, not optional background.
+2. Inspect nearby skills for tone, structure, and command style before inventing a new pattern.
+3. Create or edit `skills/<name>/SKILL.md`.
+4. Write tight frontmatter:
+   - `name` matches the folder name exactly.
+   - `description` says what the skill does and when to use it.
+5. Write the body for the agent, not the maintainer.
+6. If the skill needs network access, credentials, code, or setup hooks, add the supporting files next to it, but keep `SKILL.md` brief.
+7. If setup is non-trivial, add a sidecar markdown file and link it from `SKILL.md`.
+8. Tell the user the skill will show up in `/skills` and be available in new sessions.
 
-**Key sections:**
+## Setup Guidance
 
-- `[project.scripts]` maps CLI command names to `package.module:function`. Each entrypoint calls a `main()` function.
-- `[build-system]` uses hatchling (uv's default).
-- `[tool.hatch.build.targets.wheel]` tells hatchling where to find the package. This is required because the code lives in `src/` (src layout).
+If a skill needs credentials or network access, note that activation handles them automatically after approval. Do not inline credential wiring, secret-handling procedures, or large `carapace.yaml` walkthroughs in `SKILL.md`.
 
-#### Running commands
-
-Entrypoints are invoked as commands via `uv run`:
-
-```
-uv run --directory /workspace/skills/my-skill my-cli 'some argument'
-uv run --directory /workspace/skills/my-skill my-other --flag value
-```
-
-Do **not** run Python files directly (e.g. `uv run src/my_skill/cli.py`) — always use the entrypoint command names.
-
-#### Creating a new Python skill
-
-1. Create the directory structure: `skills/<name>/src/<package>/`
-2. Create `pyproject.toml` with dependencies, `[project.scripts]`, build-system, and wheel config
-3. Create `src/<package>/__init__.py` (empty file)
-4. Create Python modules with `main()` functions for each CLI command
-5. Generate the lock file:
-
-   ```
-   uv lock --directory /workspace/skills/my-skill
-   ```
-
-6. Commit and push so `pyproject.toml` and `uv.lock` are persisted:
-
-   ```
-   git add /workspace/skills/my-skill && git commit -m "Add my-skill" && git push
-   ```
-
-#### Adding or removing dependencies later
-
-Use `uv add` / `uv remove` inside the sandbox — they update both `pyproject.toml` and `uv.lock` in one step:
-
-```
-uv add --directory /workspace/skills/my-skill beautifulsoup4
-uv remove --directory /workspace/skills/my-skill httpx
-```
-
-Then commit and push to persist changes.
-
-#### How it works at activation
-
-When `use_skill` copies a skill into the sandbox and finds `pyproject.toml` plus `uv.lock`, it automatically runs `uv sync --locked` to create a `.venv` and install the package with its dependencies. Commands defined in `[project.scripts]` become available via `uv run`.
-
-#### Quick demo
-
-A minimal entrypoint module looks like this:
-
-```python
-import argparse
-import json
-import sys
-
-
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Do something useful.")
-    parser.add_argument("query", help="Search query")
-    args = parser.parse_args()
-
-    result = {"query": args.query, "answer": 42}
-    json.dump(result, sys.stdout, ensure_ascii=False, indent=2)
-    print()
-
-
-if __name__ == "__main__":
-    main()
-```
-
-Run it:
-
-```
-uv run --directory /workspace/skills/my-skill my-cli 'hello world'
-```
-
-See the **example** skill (`skills/example/`) for a complete working reference that demonstrates the package layout, entrypoints, network access, and sandbox environment.
-
-#### Key rules
-
-- Always include a `uv.lock` alongside `pyproject.toml` — it ensures reproducible installs
-- Never create or manage venvs manually; `uv sync` and `uv run` handle everything
-- The venv is ephemeral (per session) — it is rebuilt on each activation
-- Use `httpx` for HTTP requests (not `requests`)
-- Use modern Python typing: `str | None` instead of `Optional[str]`, `list[str]` instead of `List[str]`
-- Output structured JSON to stdout for machine-readable results
-- Print errors to stderr and exit with code 1 on failure
-
-### Node projects
-
-Node-based skills are also supported. The sandbox image includes `npm` and `pnpm` for skill activation.
-
-Use exactly one lockfile workflow:
-
-- `package.json` + `package-lock.json` → `npm ci`
-- `package.json` + `pnpm-lock.yaml` → `pnpm install --frozen-lockfile`
-
-If both `package-lock.json` and `pnpm-lock.yaml` are present, Carapace treats the skill as pnpm-based and skips `npm ci`.
-
-Always commit the lockfile. Activation only runs from the pushed upstream copy of the provider files, so unpushed local edits to `package.json`, lockfiles, or `setup.sh` are ignored by automatic setup.
-
-### setup.sh
-
-If `setup.sh` exists, Carapace runs it after the dependency providers above.
-
-This is the right place to do deterministic local post-processing such as:
-
-- Turning approved credential env vars into tool-specific config files
-- Writing decoded secrets to local files consumed by CLIs or SDKs
-- Generating derived workspace files that depend on already-approved credentials
-
-`setup.sh` should be idempotent and must not print raw secret values. Treat it like executable code: only the pushed upstream copy is run automatically.
-
-`setup.sh` runs under the same temporary proxy-bypass window as the other automatic setup providers. That is intentional: Carapace treats this committed, human-authored setup hook as more trustworthy and auditable than arbitrary third-party package installation behavior.
-
-#### Credential ordering
-
-During `use_skill`, Carapace approves and caches declared skill credentials before automatic setup runs. That means `setup.sh` can rely on approved env vars and file credentials being available when it needs to materialize the final config files for the tool.
-
-### Editing an existing skill
-
-Use the `edit` tool on `skills/<name>/SKILL.md`. The same approval rule applies.
-
-### Good description examples
-
-```yaml
-# Good -- specific, mentions triggers
-description: Summarise email threads and draft replies. Use when the user mentions email, inbox, or wants to compose a message.
-
-# Bad -- too vague
-description: Helps with email.
-```
-
-### Template
-
-When creating a new skill, start from this template and adapt it:
+## Template
 
 ```markdown
 ---
 name: <skill-name>
-description: <What it does and when to use it.>
+description: <What the skill does and when to use it.>
 ---
 
 # <Skill Title>
 
-## When to use
+One short paragraph describing the skill.
 
-<Describe the situations where this skill applies.>
+## When To Use
 
-## Instructions
+- <Concrete trigger or task>
+- <Concrete trigger or task>
 
-<Step-by-step guidance for the agent.>
+## Workflow
 
-## Edge cases
+1. <Primary step>
+2. <Primary step>
+3. <Primary step>
 
-<Things to watch out for.>
+## Guardrails
+
+- <Important limit or safety rule>
+- <Important limit or safety rule>
+
+## Setup
+
+If this skill needs extra setup, note that activation handles it automatically and point to `REFERENCE.md` or `CONFIG.md`.
 ```
 
-If the skill needs outbound HTTP, TCP tunnels, or credentials, add `carapace.yaml` with `network.domains`, `network.tunnels`, and/or `credentials` as in the section above.
+## Reference
 
-If the skill needs Python code, structure it as a package with `[project.scripts]` entrypoints — see the **Python projects** section above for the full layout and `pyproject.toml` template.
+IMPORTANT: Read [REFERENCE.md](REFERENCE.md) before authoring a skill. It contains the required maintainer guidance for file layout, frontmatter, sidecar docs, provider manifests, and common failure modes.
