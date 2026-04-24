@@ -369,22 +369,32 @@ class SandboxSessionLifecycle:
                 await self._runtime.destroy_sandbox(session_id, sandbox_name, existing_id)
                 logger.info(f"Reset orphaned sandbox for session {session_id}")
 
-    async def cleanup_idle(self) -> None:
-        """Remove containers that have been idle longer than the timeout."""
+    async def _cleanup_many(
+        self,
+        session_ids: list[str],
+        cleanup_fn: Callable[[str], Awaitable[None]] | None = None,
+    ) -> None:
+        cleanup = cleanup_fn or self.cleanup_session
+        for sid in session_ids:
+            await cleanup(sid)
+
+    def _idle_session_ids(self) -> list[str]:
         now = time.time()
-        to_remove = [sid for sid, sc in self._state.sessions.items() if now - sc.last_used > self._idle_timeout]
+        return [sid for sid, sc in self._state.sessions.items() if now - sc.last_used > self._idle_timeout]
+
+    async def cleanup_idle(self, cleanup_fn: Callable[[str], Awaitable[None]] | None = None) -> None:
+        """Remove containers that have been idle longer than the timeout."""
+        to_remove = self._idle_session_ids()
         if to_remove:
             logger.info(f"Cleaning up {len(to_remove)} idle sandbox session(s)")
-        for sid in to_remove:
-            await self.cleanup_session(sid)
+        await self._cleanup_many(to_remove, cleanup_fn)
 
-    async def cleanup_all(self) -> None:
+    async def cleanup_all(self, cleanup_fn: Callable[[str], Awaitable[None]] | None = None) -> None:
         """Remove all sandbox containers while preserving restartable session state."""
-        count = len(self._state.sessions)
-        if count:
-            logger.info(f"Cleaning up all {count} sandbox session(s)")
-        for sid in list(self._state.sessions):
-            await self.cleanup_session(sid)
+        session_ids = list(self._state.sessions)
+        if session_ids:
+            logger.info(f"Cleaning up all {len(session_ids)} sandbox session(s)")
+        await self._cleanup_many(session_ids, cleanup_fn)
 
     async def cleanup_orphaned_sandboxes(self, known_sessions: set[str]) -> int:
         """Destroy sandbox resources whose session no longer exists on disk."""

@@ -4,7 +4,6 @@ import re
 import shlex
 import shutil
 import textwrap
-import time
 from asyncio.locks import Lock
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -787,19 +786,10 @@ class SandboxManager:
         )
 
     async def cleanup_idle(self) -> None:
-        now = time.time()
-        to_remove = [sid for sid, sc in self._sessions.items() if now - sc.last_used > self._idle_timeout]
-        if to_remove:
-            logger.info(f"Cleaning up {len(to_remove)} idle sandbox session(s)")
-        for sid in to_remove:
-            await self.cleanup_session(sid)
+        await self._session_lifecycle.cleanup_idle(self.cleanup_session)
 
     async def cleanup_all(self) -> None:
-        session_ids = list(self._sessions)
-        if session_ids:
-            logger.info(f"Cleaning up all {len(session_ids)} sandbox session(s)")
-        for sid in session_ids:
-            await self.cleanup_session(sid)
+        await self._session_lifecycle.cleanup_all(self.cleanup_session)
 
     async def cleanup_orphaned_sandboxes(self, known_sessions: set[str]) -> int:
         return await self._session_lifecycle.cleanup_orphaned_sandboxes(known_sessions)

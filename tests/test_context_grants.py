@@ -210,6 +210,30 @@ class TestSandboxManagerCredentialCache:
         runtime.suspend_sandbox.assert_awaited_once_with("carapace-sandbox-sess-1", "c1")
         assert "sess-1" not in mgr._sessions
 
+    @pytest.mark.anyio
+    async def test_cleanup_idle_delegates_to_lifecycle(self, tmp_path: Path):
+        mgr = self._make_manager(tmp_path)
+        mgr._session_lifecycle.cleanup_idle = AsyncMock()
+
+        await mgr.cleanup_idle()
+
+        mgr._session_lifecycle.cleanup_idle.assert_awaited_once()
+        cleanup_fn = mgr._session_lifecycle.cleanup_idle.await_args.args[0]
+        assert cleanup_fn.__self__ is mgr
+        assert cleanup_fn.__func__ is SandboxManager.cleanup_session
+
+    @pytest.mark.anyio
+    async def test_cleanup_all_delegates_to_lifecycle(self, tmp_path: Path):
+        mgr = self._make_manager(tmp_path)
+        mgr._session_lifecycle.cleanup_all = AsyncMock()
+
+        await mgr.cleanup_all()
+
+        mgr._session_lifecycle.cleanup_all.assert_awaited_once()
+        cleanup_fn = mgr._session_lifecycle.cleanup_all.await_args.args[0]
+        assert cleanup_fn.__self__ is mgr
+        assert cleanup_fn.__func__ is SandboxManager.cleanup_session
+
 
 # ── SandboxManager context tracking ─────────────────────────────────
 
