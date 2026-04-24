@@ -1,6 +1,24 @@
 # CHANGELOG
 
 
+## v0.94.2 (2026-04-24)
+
+
+### 🐛 Bug Fixes
+
+
+- 🐛 docs: tell agent to put less docs into SKILL.md
+  ([`b76fa55`](https://github.com/thiesgerken/carapace/commit/b76fa55a2972ddb917fb8333bed2bf677b5d6ebc))
+
+### Other
+
+
+- remove depends from docker-compose
+  ([`4c90f29`](https://github.com/thiesgerken/carapace/commit/4c90f2909da4cb95c5a05144cba5b882fe2128b2))
+
+- refactor roadmap: reorganize sections and remove outdated items
+  ([`3a7bfe0`](https://github.com/thiesgerken/carapace/commit/3a7bfe069a5a0728fdcd2dc496bc21859b99cc97))
+
 ## v0.94.1 (2026-04-24)
 
 
