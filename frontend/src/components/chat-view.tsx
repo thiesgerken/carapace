@@ -46,7 +46,7 @@ function sandboxStorageLabel(snapshot: SessionSandboxSnapshot | null): string {
   const details: string[] = [];
   if (typeof snapshot.last_measured_used_bytes === "number") {
     details.push(`${formatBytes(snapshot.last_measured_used_bytes)} used`);
-  } else {
+  } else if (!snapshot.storage_present) {
     details.push("no sandbox storage");
   }
   if (
