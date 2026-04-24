@@ -724,7 +724,7 @@ def chat(
     headers = _auth_headers(bearer)
 
     if list_sessions:
-        resp = httpx.get(f"{server}/api/sessions", headers=headers)
+        resp = httpx.get(f"{server}/api/sessions?include_message_count=true", headers=headers)
         resp.raise_for_status()
         sessions = resp.json()
         if not sessions:

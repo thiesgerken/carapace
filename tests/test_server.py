@@ -10,6 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 # We patch the server module globals directly for testing
+import carapace.sandbox.state as sandbox_state
 import carapace.server as srv
 from carapace.bootstrap import ensure_data_dir
 from carapace.config import load_config
@@ -108,6 +109,39 @@ def test_list_sessions(client, auth_headers):
     assert len(sessions) >= 2
 
 
+def test_list_sessions_skips_message_count_by_default(client, auth_headers, monkeypatch):
+    create_resp = client.post("/api/sessions", headers=auth_headers)
+    sid = create_resp.json()["session_id"]
+
+    load_events = MagicMock(side_effect=AssertionError("load_events should not be called"))
+    monkeypatch.setattr(srv._engine.session_mgr, "load_events", load_events)
+
+    resp = client.get("/api/sessions", headers=auth_headers)
+
+    assert resp.status_code == 200
+    session = next(item for item in resp.json() if item["session_id"] == sid)
+    assert session["message_count"] == 0
+
+
+def test_list_sessions_can_include_message_count(client, auth_headers):
+    create_resp = client.post("/api/sessions", headers=auth_headers)
+    sid = create_resp.json()["session_id"]
+    srv._engine.session_mgr.append_events(
+        sid,
+        [
+            {"role": "user", "content": "first"},
+            {"role": "assistant", "content": "reply"},
+            {"role": "user", "content": "second"},
+        ],
+    )
+
+    resp = client.get("/api/sessions?include_message_count=true", headers=auth_headers)
+
+    assert resp.status_code == 200
+    session = next(item for item in resp.json() if item["session_id"] == sid)
+    assert session["message_count"] == 2
+
+
 def test_get_session(client, auth_headers):
     create_resp = client.post("/api/sessions", headers=auth_headers)
     sid = create_resp.json()["session_id"]
@@ -134,6 +168,34 @@ def test_get_session_includes_cached_sandbox_snapshot(client, auth_headers):
     assert resp.status_code == 200
     assert resp.json()["sandbox"]["status"] == "scaled_down"
     assert resp.json()["sandbox"]["last_measured_used_bytes"] == 1234
+
+
+def test_get_session_uses_in_process_sandbox_snapshot_cache(client, auth_headers, monkeypatch):
+    create_resp = client.post("/api/sessions", headers=auth_headers)
+    sid = create_resp.json()["session_id"]
+    srv._engine.session_mgr.save_sandbox_snapshot(
+        sid,
+        SessionSandboxSnapshot(
+            runtime="kubernetes",
+            status="scaled_down",
+            storage_present=True,
+            last_measured_used_bytes=1234,
+        ),
+    )
+
+    monkeypatch.setattr(
+        sandbox_state.SessionSandboxSnapshot,
+        "model_validate",
+        MagicMock(side_effect=AssertionError("sandbox snapshot should be served from cache")),
+    )
+
+    first = client.get(f"/api/sessions/{sid}", headers=auth_headers)
+    second = client.get(f"/api/sessions/{sid}", headers=auth_headers)
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert first.json()["sandbox"]["status"] == "scaled_down"
+    assert second.json()["sandbox"]["status"] == "scaled_down"
 
 
 def test_get_session_sandbox_returns_cached_snapshot(client, auth_headers):

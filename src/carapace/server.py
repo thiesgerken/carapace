@@ -435,13 +435,18 @@ async def create_session(
 
 
 @router.get("/sessions", response_model=list[SessionInfo])
-async def list_sessions(_token: str = Depends(_verify_token)) -> list[SessionInfo]:
+async def list_sessions(
+    include_message_count: bool = False,
+    _token: str = Depends(_verify_token),
+) -> list[SessionInfo]:
     results: list[SessionInfo] = []
     for sid in _engine.session_mgr.list_sessions():
         state = _engine.session_mgr.load_state(sid)
         if state:
-            events = _engine.session_mgr.load_events(sid)
-            message_count = sum(1 for e in events if e.get("role") == "user")
+            message_count = 0
+            if include_message_count:
+                events = _engine.session_mgr.load_events(sid)
+                message_count = sum(1 for e in events if e.get("role") == "user")
             sandbox = _engine.session_mgr.load_sandbox_snapshot(sid)
             results.append(SessionInfo.from_state(state, message_count=message_count, sandbox=sandbox))
     return results
