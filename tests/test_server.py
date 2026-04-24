@@ -229,6 +229,93 @@ def test_get_session_sandbox_returns_default_snapshot_when_missing(client, auth_
     assert resp.json()["exists"] is False
 
 
+def test_start_session_sandbox_starts_when_idle(client, auth_headers):
+    create_resp = client.post("/api/sessions", headers=auth_headers)
+    sid = create_resp.json()["session_id"]
+
+    async def _ensure_session(session_id: str) -> tuple[MagicMock, bool]:
+        assert session_id == sid
+        srv._engine.session_mgr.save_sandbox_snapshot(
+            sid,
+            SessionSandboxSnapshot(
+                exists=True,
+                runtime="kubernetes",
+                status="running",
+                storage_present=True,
+                updated_at=datetime.now(tz=UTC),
+            ),
+        )
+        return MagicMock(), True
+
+    srv._engine.sandbox_mgr.ensure_session = AsyncMock(side_effect=_ensure_session)
+
+    resp = client.post(f"/api/sessions/{sid}/sandbox/up", headers=auth_headers)
+
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "running"
+    srv._engine.sandbox_mgr.ensure_session.assert_awaited_once_with(sid)
+
+
+def test_start_session_sandbox_rejects_running_agent(client, auth_headers):
+    create_resp = client.post("/api/sessions", headers=auth_headers)
+    sid = create_resp.json()["session_id"]
+    active = srv._engine.get_or_activate(sid)
+    active.agent_task = MagicMock()
+    active.agent_task.done.return_value = False
+
+    resp = client.post(f"/api/sessions/{sid}/sandbox/up", headers=auth_headers)
+
+    assert resp.status_code == 409
+
+
+def test_stop_session_sandbox_scales_down_when_idle(client, auth_headers):
+    create_resp = client.post("/api/sessions", headers=auth_headers)
+    sid = create_resp.json()["session_id"]
+    srv._engine.session_mgr.save_sandbox_snapshot(
+        sid,
+        SessionSandboxSnapshot(
+            exists=True,
+            runtime="kubernetes",
+            status="running",
+            storage_present=True,
+            updated_at=datetime.now(tz=UTC),
+        ),
+    )
+
+    async def _cleanup_session(session_id: str) -> None:
+        assert session_id == sid
+        srv._engine.session_mgr.save_sandbox_snapshot(
+            sid,
+            SessionSandboxSnapshot(
+                exists=True,
+                runtime="kubernetes",
+                status="scaled_down",
+                storage_present=True,
+                updated_at=datetime.now(tz=UTC),
+            ),
+        )
+
+    srv._engine.sandbox_mgr.cleanup_session = AsyncMock(side_effect=_cleanup_session)
+
+    resp = client.post(f"/api/sessions/{sid}/sandbox/down", headers=auth_headers)
+
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "scaled_down"
+    srv._engine.sandbox_mgr.cleanup_session.assert_awaited_once_with(sid)
+
+
+def test_stop_session_sandbox_rejects_running_agent(client, auth_headers):
+    create_resp = client.post("/api/sessions", headers=auth_headers)
+    sid = create_resp.json()["session_id"]
+    active = srv._engine.get_or_activate(sid)
+    active.agent_task = MagicMock()
+    active.agent_task.done.return_value = False
+
+    resp = client.post(f"/api/sessions/{sid}/sandbox/down", headers=auth_headers)
+
+    assert resp.status_code == 409
+
+
 def test_wipe_session_sandbox_resets_when_idle(client, auth_headers):
     create_resp = client.post("/api/sessions", headers=auth_headers)
     sid = create_resp.json()["session_id"]

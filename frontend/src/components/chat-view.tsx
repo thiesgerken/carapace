@@ -10,6 +10,8 @@ import {
   fetchSandbox,
   fetchModels,
   type SlashCommand,
+  startSandbox,
+  stopSandbox,
   wipeSandbox,
   wsUrl,
 } from "@/lib/api";
@@ -44,9 +46,7 @@ function sandboxStorageLabel(snapshot: SessionSandboxSnapshot | null): string {
   const details: string[] = [];
   if (typeof snapshot.last_measured_used_bytes === "number") {
     details.push(`${formatBytes(snapshot.last_measured_used_bytes)} used`);
-  } else if (snapshot.storage_present) {
-    details.push("storage present");
-  } else {
+  } else if (!snapshot.storage_present) {
     details.push("no sandbox storage");
   }
   if (
@@ -114,6 +114,14 @@ function shouldOptimisticallyShowPendingSandbox(
     return false;
   }
   return snapshot?.status !== "running" && snapshot?.status !== "pending";
+}
+
+function shouldShowStartSandbox(snapshot: SessionSandboxSnapshot | null): boolean {
+  if (!snapshot) return true;
+  return snapshot.status === "missing"
+    || snapshot.status === "scaled_down"
+    || snapshot.status === "stopped"
+    || snapshot.status === "error";
 }
 
 function argsMatch(
@@ -303,6 +311,7 @@ export function ChatView({
     initialSandbox ?? null,
   );
   const [sandboxLoading, setSandboxLoading] = useState(false);
+  const [sandboxPowerAction, setSandboxPowerAction] = useState<"starting" | "stopping" | null>(null);
   const [wipingSandbox, setWipingSandbox] = useState(false);
   const [deletingSession, setDeletingSession] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -1058,7 +1067,7 @@ export function ChatView({
   }
 
   async function handleWipeSandbox() {
-    if (waiting || wipingSandbox || deletingSession) return;
+    if (waiting || sandboxPowerAction || wipingSandbox || deletingSession) return;
     if (!window.confirm("Wipe the sandbox and its storage for this session? Chat history will stay.")) {
       return;
     }
@@ -1074,8 +1083,36 @@ export function ChatView({
     }
   }
 
+  async function handleSandboxPowerAction() {
+    if (waiting || sandboxPowerAction || wipingSandbox || deletingSession) return;
+
+    const currentSandbox = sandboxRef.current;
+    const shouldStart = shouldShowStartSandbox(currentSandbox);
+    if (!shouldStart && !window.confirm("Scale down the sandbox for this session? Storage will be kept.")) {
+      return;
+    }
+
+    setSandboxPowerAction(shouldStart ? "starting" : "stopping");
+    try {
+      if (shouldStart) {
+        applySandboxSnapshot(optimisticPendingSandbox(currentSandbox));
+        const nextSandbox = await startSandbox(server, token, sessionId);
+        applySandboxSnapshot(nextSandbox);
+      } else {
+        const nextSandbox = await stopSandbox(server, token, sessionId);
+        applySandboxSnapshot(nextSandbox);
+      }
+    } catch (error) {
+      console.error(`Failed to ${shouldStart ? "start" : "scale down"} sandbox`, error);
+      setMessages((prev) => [...prev, { kind: "error", detail: errorDetail(error) }]);
+      void refreshSandbox();
+    } finally {
+      setSandboxPowerAction(null);
+    }
+  }
+
   async function handleDeleteSession() {
-    if (waiting || wipingSandbox || deletingSession || !onDeleteSession) return;
+    if (waiting || sandboxPowerAction || wipingSandbox || deletingSession || !onDeleteSession) return;
     if (!window.confirm("Delete this session? Chat history and sandbox state will be removed.")) {
       return;
     }
@@ -1183,6 +1220,22 @@ export function ChatView({
           ? "Generating..."
           : "Working..."
       : "Working...";
+    const showsStartSandbox = shouldShowStartSandbox(sandbox);
+    const sandboxActionDisabled = waiting
+      || sandboxLoading
+      || !!sandboxPowerAction
+      || wipingSandbox
+      || deletingSession
+      || sandbox?.status === "pending";
+    const sandboxPowerButtonLabel = sandboxPowerAction === "starting"
+      ? "Starting sandbox"
+      : sandboxPowerAction === "stopping"
+        ? "Scaling down sandbox"
+        : sandbox?.status === "pending"
+          ? "Starting sandbox"
+        : showsStartSandbox
+          ? "Start sandbox"
+          : "Scale down sandbox";
 
   return (
     <div className="flex flex-1 min-h-0 flex-col">
@@ -1221,8 +1274,18 @@ export function ChatView({
           </div>
           <div className="flex shrink-0 items-center gap-2">
             <button
+              onClick={() => void handleSandboxPowerAction()}
+              disabled={sandboxActionDisabled}
+              className="rounded-md border border-sky-300 bg-sky-50 px-3 py-1.5 text-xs font-medium text-sky-900 transition-colors hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <span className="inline-flex items-center gap-1.5">
+                {sandboxPowerAction ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                {sandboxPowerButtonLabel}
+              </span>
+            </button>
+            <button
               onClick={() => void handleWipeSandbox()}
-              disabled={waiting || wipingSandbox || deletingSession}
+              disabled={waiting || !!sandboxPowerAction || wipingSandbox || deletingSession}
               className="rounded-md border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-900 transition-colors hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {wipingSandbox ? (
@@ -1239,7 +1302,7 @@ export function ChatView({
             </button>
             <button
               onClick={() => void handleDeleteSession()}
-              disabled={waiting || wipingSandbox || deletingSession || !onDeleteSession}
+              disabled={waiting || !!sandboxPowerAction || wipingSandbox || deletingSession || !onDeleteSession}
               title="Delete session"
               className="rounded-md p-1.5 text-destructive transition-colors hover:bg-destructive/10 disabled:cursor-not-allowed disabled:opacity-50"
             >

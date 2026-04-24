@@ -39,9 +39,6 @@ function sandboxSummaryLabel(sandbox: SessionSandboxSnapshot): string | null {
   if (typeof sandbox.last_measured_used_bytes === "number") {
     return formatBytes(sandbox.last_measured_used_bytes);
   }
-  if (sandbox.storage_present) {
-    return "storage";
-  }
   return null;
 }
 
@@ -91,6 +88,14 @@ export function Sidebar({
             (() => {
               const sandbox = sandboxSummary(s);
               const sandboxLabel = sandbox ? sandboxSummaryLabel(sandbox) : null;
+              const activityLabel = [
+                formatTime(s.last_active),
+                s.channel_type !== "web" && s.channel_type !== "cli"
+                  ? s.channel_type
+                  : null,
+              ]
+                .filter(Boolean)
+                .join(" · ");
               return (
             <div
               key={s.session_id}
@@ -117,9 +122,9 @@ export function Sidebar({
                       </span>
                     )}
                   </div>
-                  <div className="text-xs text-muted-foreground">
+                  <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-muted-foreground">
                     {sandbox ? (
-                      <span className="mr-1 inline-flex items-center gap-1.5 align-middle">
+                      <span className="inline-flex items-center gap-1.5">
                         <span
                           title={sandboxStatusLabel(sandbox.status)}
                           className={cn(
@@ -127,22 +132,11 @@ export function Sidebar({
                             sandboxStatusIndicatorClass(sandbox.status),
                           )}
                         />
-                        {sandboxLabel ? (
-                          <>
-                            <span>{sandboxLabel}</span>
-                            <span aria-hidden="true">·</span>
-                          </>
-                        ) : null}
+                        {sandboxLabel ? <span>{sandboxLabel}</span> : null}
                       </span>
                     ) : null}
-                    {[
-                      formatTime(s.last_active),
-                      s.channel_type !== "web" && s.channel_type !== "cli"
-                        ? s.channel_type
-                        : null,
-                    ]
-                      .filter(Boolean)
-                      .join(" · ")}
+                    {sandbox && sandboxLabel ? <span aria-hidden="true">·</span> : null}
+                    <span>{activityLabel}</span>
                   </div>
                 </div>
               </button>
