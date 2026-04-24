@@ -36,6 +36,8 @@ interface ChatViewProps {
   onDeleteSession?: () => Promise<void>;
 }
 
+const SANDBOX_STARTUP_TOOL_NAMES = new Set(["use_skill", "read", "write", "str_replace", "exec"]);
+
 function sandboxStorageLabel(snapshot: SessionSandboxSnapshot | null): string {
   if (!snapshot) return "";
   if (snapshot.status === "missing" && !snapshot.storage_present) return "";
@@ -84,6 +86,34 @@ function errorDetail(error: unknown): string {
     return error.message;
   }
   return "Unexpected error";
+}
+
+function optimisticPendingSandbox(
+  snapshot: SessionSandboxSnapshot | null,
+): SessionSandboxSnapshot {
+  return {
+    exists: snapshot?.exists ?? false,
+    runtime: snapshot?.runtime,
+    status: "pending",
+    resource_id: snapshot?.resource_id,
+    resource_kind: snapshot?.resource_kind,
+    storage_present: snapshot?.storage_present ?? false,
+    provisioned_bytes: snapshot?.provisioned_bytes,
+    last_measured_used_bytes: snapshot?.last_measured_used_bytes,
+    last_measured_at: snapshot?.last_measured_at,
+    updated_at: new Date().toISOString(),
+    last_error: null,
+  };
+}
+
+function shouldOptimisticallyShowPendingSandbox(
+  tool: string,
+  snapshot: SessionSandboxSnapshot | null,
+): boolean {
+  if (!SANDBOX_STARTUP_TOOL_NAMES.has(tool)) {
+    return false;
+  }
+  return snapshot?.status !== "running" && snapshot?.status !== "pending";
 }
 
 function argsMatch(
@@ -282,6 +312,7 @@ export function ChatView({
   const queueRef = useRef<string | null>(null);
   const sendRef = useRef<(msg: ClientMessage) => void>(() => {});
   const onSandboxUpdateRef = useRef(onSandboxUpdate);
+  const sandboxRef = useRef(sandbox);
   const sandboxRefreshParamsRef = useRef({ server, token, sessionId });
   const sandboxRefreshPendingRef = useRef(false);
   const sandboxRefreshRunningRef = useRef(false);
@@ -290,6 +321,10 @@ export function ChatView({
   useEffect(() => {
     onSandboxUpdateRef.current = onSandboxUpdate;
   }, [onSandboxUpdate]);
+
+  useEffect(() => {
+    sandboxRef.current = sandbox;
+  }, [sandbox]);
 
   useEffect(() => {
     sandboxRefreshParamsRef.current = { server, token, sessionId };
@@ -728,7 +763,10 @@ export function ChatView({
         case "tool_call": {
           const isGitPush = msg.tool === "git_push";
           if (!isGitPush) setWaiting(true); // agent is active (may restore after reconnect)
-          void refreshSandbox();
+          const currentSandbox = sandboxRef.current;
+          if (shouldOptimisticallyShowPendingSandbox(msg.tool, currentSandbox)) {
+            applySandboxSnapshot(optimisticPendingSandbox(currentSandbox));
+          }
           const isLoading = isToolCallLoading(
             msg.tool,
             msg.approval_source,
@@ -971,7 +1009,7 @@ export function ChatView({
           break;
       }
     },
-    [finalizeThinkingMessages, finishWaiting, onTitleUpdate, refreshSandbox],
+    [applySandboxSnapshot, finalizeThinkingMessages, finishWaiting, onTitleUpdate, refreshSandbox],
   );
 
   const onWsDisconnect = useCallback(() => {
