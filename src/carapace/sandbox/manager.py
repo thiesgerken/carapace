@@ -506,7 +506,7 @@ class SandboxManager:
         workdir: str | None = None,
         quote: bool = True,
     ) -> ExecResult:
-        result = await self._sandbox_file_ops.file_write(
+        return await self._sandbox_file_ops.file_write(
             session_id,
             path,
             content,
@@ -514,7 +514,6 @@ class SandboxManager:
             workdir=workdir,
             quote=quote,
         )
-        return result
 
     async def file_str_replace(
         self,
@@ -525,14 +524,13 @@ class SandboxManager:
         *,
         replace_all: bool = False,
     ) -> ExecResult:
-        result = await self._sandbox_file_ops.file_str_replace(
+        return await self._sandbox_file_ops.file_str_replace(
             session_id,
             path,
             old_string,
             new_string,
             replace_all=replace_all,
         )
-        return result
 
     async def activate_skill(self, session_id: str, skill_name: str) -> str:
         if err := _validate_skill_name(skill_name):
