@@ -1380,7 +1380,12 @@ class SessionEngine:
                 self._session_mgr.save_state(active.state)
                 self._session_mgr.save_usage(session_id, active.usage_tracker)
                 self._session_mgr.save_llm_request_log(session_id, active.llm_request_log)
-                await self._sandbox_mgr.refresh_sandbox_snapshot(session_id, measure_usage=True)
+                try:
+                    await self._sandbox_mgr.refresh_sandbox_snapshot(session_id, measure_usage=True)
+                except Exception:
+                    logger.exception(
+                        f"Failed to refresh sandbox snapshot after completed turn for session {session_id}"
+                    )
                 events_to_append = [{"role": "assistant", "content": output}]
                 self._session_mgr.append_events(session_id, events_to_append)
 

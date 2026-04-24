@@ -198,6 +198,18 @@ class TestSandboxManagerCredentialCache:
         assert mgr.verify_session_token("sess-1", token)
         assert not workspace.exists()
 
+    @pytest.mark.anyio
+    async def test_cleanup_session_continues_when_snapshot_refresh_fails(self, tmp_path: Path):
+        runtime = make_runtime_mock()
+        mgr = SandboxManager(runtime=runtime, data_dir=tmp_path, knowledge_dir=tmp_path)
+        mgr._sessions["sess-1"] = MagicMock(container_id="c1", session_env={})
+        mgr.refresh_sandbox_snapshot = AsyncMock(side_effect=[RuntimeError("before"), RuntimeError("after")])
+
+        await mgr.cleanup_session("sess-1")
+
+        runtime.suspend_sandbox.assert_awaited_once_with("carapace-sandbox-sess-1", "c1")
+        assert "sess-1" not in mgr._sessions
+
 
 # ── SandboxManager context tracking ─────────────────────────────────
 

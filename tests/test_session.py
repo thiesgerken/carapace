@@ -255,6 +255,7 @@ class _FakeSubscriber:
         self.user_messages: list[tuple[str, bool]] = []
         self.errors: list[str] = []
         self.cancelled: int = 0
+        self.done_messages: list[tuple[str, TurnUsage]] = []
         self.title_updates: list[tuple[str, TurnUsage | None]] = []
         self.llm_activity_updates: list[LlmRequestState | None] = []
 
@@ -268,7 +269,7 @@ class _FakeSubscriber:
         pass
 
     async def on_done(self, content: str, usage: TurnUsage) -> None:
-        pass
+        self.done_messages.append((content, usage))
 
     async def on_error(self, detail: str) -> None:
         self.errors.append(detail)
@@ -1066,6 +1067,30 @@ def test_submit_message_refreshes_sandbox_once_after_completed_turn(tmp_path: Pa
             await asyncio.sleep(0.1)
 
         engine._sandbox_mgr.refresh_sandbox_snapshot.assert_awaited_once_with(sid, measure_usage=True)
+
+    with _patch_sentinel():
+        asyncio.run(_run())
+
+
+def test_submit_message_refresh_failure_does_not_block_completed_turn(tmp_path: Path):
+    async def _run() -> None:
+        engine = _make_engine(tmp_path)
+        state = engine.session_mgr.create_session()
+        sid = state.session_id
+        sub = _FakeSubscriber()
+        engine.subscribe(sid, sub)
+
+        async def _complete_turn(*_args: Any, **_kwargs: Any):
+            return [], "done", "thinking"
+
+        engine._sandbox_mgr.refresh_sandbox_snapshot.side_effect = RuntimeError("snapshot refresh failed")
+
+        with patch("carapace.session.engine.run_agent_turn", new=_complete_turn):
+            await engine.submit_message(sid, "hello")
+            await asyncio.sleep(0.1)
+
+        assert sub.errors == []
+        assert engine.session_mgr.load_events(sid)[-1] == {"role": "assistant", "content": "done"}
 
     with _patch_sentinel():
         asyncio.run(_run())

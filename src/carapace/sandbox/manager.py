@@ -764,9 +764,15 @@ class SandboxManager:
     async def cleanup_session(self, session_id: str) -> None:
         sc = self._sessions.get(session_id)
         if sc is not None:
-            await self.refresh_sandbox_snapshot(session_id, measure_usage=True, container_id=sc.container_id)
+            try:
+                await self.refresh_sandbox_snapshot(session_id, measure_usage=True, container_id=sc.container_id)
+            except Exception:
+                logger.exception(f"Failed to refresh sandbox snapshot before cleanup for session {session_id}")
         await self._session_lifecycle.cleanup_session(session_id)
-        await self.refresh_sandbox_snapshot(session_id)
+        try:
+            await self.refresh_sandbox_snapshot(session_id)
+        except Exception:
+            logger.exception(f"Failed to refresh sandbox snapshot after cleanup for session {session_id}")
 
     async def destroy_session(self, session_id: str) -> None:
         await self._session_lifecycle.destroy_session(session_id)
