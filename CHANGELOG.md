@@ -1,6 +1,21 @@
 # CHANGELOG
 
 
+## v0.94.1 (2026-04-24)
+
+
+### Other
+
+
+- fix lint errors
+  ([`b23086f`](https://github.com/thiesgerken/carapace/commit/b23086f495b822c9e7867a917390fe733f369f75))
+
+### ⬆️ Dependencies
+
+
+- ⬆️ chore: upgrade eslint to 10.2.1
+  ([`d0f2cd9`](https://github.com/thiesgerken/carapace/commit/d0f2cd9ab194e9b589658bc2ae6e71549d364fcd))
+
 ## v0.94.0 (2026-04-24)
 
 
