@@ -109,8 +109,94 @@ class TestProxyParsing:
         assert port == 80
         assert path == "/"
 
+    def test_parse_absolute_https_url(self):
+        host, port, path = ProxyServer._parse_absolute_url("https://example.com/foo/bar")
+        assert host == "example.com"
+        assert port == 443
+        assert path == "/foo/bar"
+
+    def test_parse_absolute_https_url_with_query_and_port(self):
+        host, port, path = ProxyServer._parse_absolute_url("https://example.com:8443/api?x=1")
+        assert host == "example.com"
+        assert port == 8443
+        assert path == "/api?x=1"
+
     def test_parse_non_absolute(self):
         assert ProxyServer._parse_absolute_url("/relative") == ("", 0, "")
+
+
+@pytest.mark.anyio
+async def test_handle_http_supports_absolute_https_urls(monkeypatch: pytest.MonkeyPatch):
+    proxy = ProxyServer(
+        verify_session_token=lambda sid, tok: True,
+        get_allowed_domains=lambda sid: {"paperless.gerken.haus"},
+    )
+
+    class FakeReader:
+        async def readexactly(self, _size: int) -> bytes:
+            raise AssertionError("body should not be read for GET requests without content-length")
+
+    class FakeWriter:
+        def __init__(self) -> None:
+            self.writes: list[bytes] = []
+
+        def write(self, data: bytes) -> None:
+            self.writes.append(data)
+
+        async def drain(self) -> None:
+            return None
+
+    class FakeRemoteReader:
+        def __init__(self) -> None:
+            self._chunks = [b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok", b""]
+
+        async def read(self, _size: int) -> bytes:
+            return self._chunks.pop(0)
+
+    class FakeRemoteWriter:
+        def __init__(self) -> None:
+            self.writes: list[bytes] = []
+
+        def write(self, data: bytes) -> None:
+            self.writes.append(data)
+
+        async def drain(self) -> None:
+            return None
+
+        def close(self) -> None:
+            return None
+
+    opened: dict[str, Any] = {}
+    remote_reader = FakeRemoteReader()
+    remote_writer = FakeRemoteWriter()
+
+    async def fake_open_connection(host: str, port: int, **kwargs: Any):
+        opened["host"] = host
+        opened["port"] = port
+        opened["kwargs"] = kwargs
+        return remote_reader, remote_writer
+
+    monkeypatch.setattr("carapace.sandbox.proxy.asyncio.open_connection", fake_open_connection)
+
+    client_reader = FakeReader()
+    client_writer = FakeWriter()
+    await proxy._handle_http(
+        client_reader,  # type: ignore[arg-type]
+        client_writer,  # type: ignore[arg-type]
+        "sess-1",
+        "127.0.0.1",
+        "GET",
+        "https://paperless.gerken.haus/api/tags/?page_size=1",
+        "HTTP/1.1",
+        [b"Host: paperless.gerken.haus\r\n"],
+    )
+
+    assert opened["host"] == "paperless.gerken.haus"
+    assert opened["port"] == 443
+    assert opened["kwargs"].get("server_hostname") == "paperless.gerken.haus"
+    assert opened["kwargs"].get("ssl") is not None
+    assert remote_writer.writes[0] == b"GET /api/tags/?page_size=1 HTTP/1.1\r\n"
+    assert client_writer.writes == [b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok"]
 
 
 # ── SandboxManager allowlists ───────────────────────────────────────

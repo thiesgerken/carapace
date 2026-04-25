@@ -3,7 +3,9 @@ from __future__ import annotations
 import asyncio
 import base64
 import contextlib
+import ssl
 from collections.abc import Awaitable, Callable
+from urllib.parse import urlsplit
 
 from loguru import logger
 
@@ -216,6 +218,7 @@ class ProxyServer:
         http_version: str,
         raw_headers: list[bytes],
     ) -> None:
+        use_tls = url.lower().startswith("https://")
         domain, port, path = self._parse_absolute_url(url)
         if not domain:
             writer.write(_BAD_REQUEST)
@@ -249,8 +252,14 @@ class ProxyServer:
             body = await asyncio.wait_for(reader.readexactly(content_length), timeout=30)
 
         try:
+            connect_kwargs: dict[str, object] = {}
+            if use_tls:
+                connect_kwargs = {
+                    "ssl": ssl.create_default_context(),
+                    "server_hostname": domain,
+                }
             remote_reader, remote_writer = await asyncio.wait_for(
-                asyncio.open_connection(domain, port),
+                asyncio.open_connection(domain, port, **connect_kwargs),
                 timeout=30,
             )
         except Exception as exc:
@@ -371,23 +380,16 @@ class ProxyServer:
 
     @staticmethod
     def _parse_absolute_url(url: str) -> tuple[str, int, str]:
-        """Parse ``http://host:port/path`` -> ``(host, port, path)``.
+        """Parse ``http(s)://host:port/path`` -> ``(host, port, path)``.
 
         Returns ``("", 0, "")`` when the URL is not absolute.
         """
-        if not url.lower().startswith("http://"):
+        parsed = urlsplit(url)
+        if parsed.scheme not in {"http", "https"} or not parsed.hostname:
             return "", 0, ""
-        rest = url[7:]  # strip "http://"
-        slash_idx = rest.find("/")
-        if slash_idx == -1:
-            host_part, path = rest, "/"
-        else:
-            host_part, path = rest[:slash_idx], rest[slash_idx:]
 
-        if ":" in host_part:
-            host, port_str = host_part.rsplit(":", 1)
-            try:
-                return host, int(port_str), path
-            except ValueError:
-                return host_part, 80, path
-        return host_part, 80, path
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        path = parsed.path or "/"
+        if parsed.query:
+            path = f"{path}?{parsed.query}"
+        return parsed.hostname, port, path
