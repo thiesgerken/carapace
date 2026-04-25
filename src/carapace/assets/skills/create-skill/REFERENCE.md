@@ -26,6 +26,7 @@ Use this checklist when writing or reviewing a skill:
 7. If the skill exposes commands, show the real entrypoints the agent should run.
 8. If the skill performs risky actions, add explicit safety rules near the top of `SKILL.md`.
 9. If activation handles credentials or setup automatically, say that briefly in `SKILL.md` and stop there.
+10. If `carapace.yaml` injects a credential into a local file, add that generated file path to the skill-local `.gitignore`.
 
 ## What Good `SKILL.md` Files Usually Contain
 
@@ -206,6 +207,21 @@ network:
 When credentials are declared here, activation handles approval and injection automatically. Keep those details out of `SKILL.md` unless the runtime behavior itself depends on them.
 
 The usual sentence in `SKILL.md` is enough: setup or credential injection happens automatically on activation.
+
+If a credential is materialized into a local file, treat that path as generated secret state and ignore it in the skill-local `.gitignore`.
+
+Pattern:
+
+```yaml
+credentials:
+  - vault_path: vault/<uuid>
+    description: Password for Example service
+    file: config/example-password.txt
+```
+
+```gitignore
+config/example-password.txt
+```
 
 ## Python Provider Files
 
