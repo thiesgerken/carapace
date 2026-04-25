@@ -1,6 +1,23 @@
 # CHANGELOG
 
 
+## v0.95.0 (2026-04-25)
+
+
+### ✨ Features
+
+
+- ✨ feat: support absolute https proxy requests
+  ([`2773231`](https://github.com/thiesgerken/carapace/commit/2773231d7e78ca63e7da1fc06e418d859344c6a0))
+
+### Other
+
+
+- docs: update skill documentation for clarity and practical guidance
+  ([`926329b`](https://github.com/thiesgerken/carapace/commit/926329b7b1b10c82f2303bf2b77ef6fe041a50c9))
+
+  Co-authored-by: Copilot <copilot@github.com>
+
 ## v0.94.3 (2026-04-24)
 
 
