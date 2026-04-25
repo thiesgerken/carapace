@@ -1,10 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Loader2, RotateCcw, Trash2 } from "lucide-react";
+import { Archive, Loader2, Lock, RotateCcw, Trash2, Unlock } from "lucide-react";
 import { useWebSocket } from "@/hooks/use-websocket";
 import {
   type AvailableModelInfo,
+  commitSessionKnowledge,
   fetchCommands,
   fetchHistory,
   fetchSandbox,
@@ -12,6 +13,7 @@ import {
   type SlashCommand,
   startSandbox,
   stopSandbox,
+  updateSession,
   wipeSandbox,
   wsUrl,
 } from "@/lib/api";
@@ -21,6 +23,7 @@ import type {
   EscalationDecision,
   LlmActivity,
   ServerMessage,
+  SessionInfo,
   SessionSandboxSnapshot,
   TurnUsage,
 } from "@/lib/types";
@@ -32,8 +35,10 @@ interface ChatViewProps {
   server: string;
   token: string;
   sessionId: string;
+  session: SessionInfo | null;
   initialSandbox?: SessionSandboxSnapshot | null;
   onTitleUpdate?: (title: string) => void;
+  onSessionUpdate?: (session: SessionInfo) => void;
   onSandboxUpdate?: (sandbox: SessionSandboxSnapshot) => void;
   onDeleteSession?: () => Promise<void>;
 }
@@ -86,6 +91,18 @@ function errorDetail(error: unknown): string {
     return error.message;
   }
   return "Unexpected error";
+}
+
+function formatArchiveTimestamp(iso?: string | null): string {
+  if (!iso) return "Not committed yet";
+  const value = new Date(iso);
+  if (Number.isNaN(value.getTime())) return "Committed";
+  return `Saved ${value.toLocaleString("de-DE", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  })}`;
 }
 
 function optimisticPendingSandbox(
@@ -292,8 +309,10 @@ export function ChatView({
   server,
   token,
   sessionId,
+  session,
   initialSandbox,
   onTitleUpdate,
+  onSessionUpdate,
   onSandboxUpdate,
   onDeleteSession,
 }: ChatViewProps) {
@@ -314,6 +333,12 @@ export function ChatView({
   const [sandboxPowerAction, setSandboxPowerAction] = useState<"starting" | "stopping" | null>(null);
   const [wipingSandbox, setWipingSandbox] = useState(false);
   const [deletingSession, setDeletingSession] = useState(false);
+  const [savingKnowledge, setSavingKnowledge] = useState(false);
+  const [togglingPrivacy, setTogglingPrivacy] = useState(false);
+  const [knowledgeNotice, setKnowledgeNotice] = useState<{
+    tone: "neutral" | "success" | "error";
+    message: string;
+  } | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const isAtBottomRef = useRef(true);
@@ -1127,6 +1152,59 @@ export function ChatView({
     }
   }
 
+  async function handleCommitKnowledge() {
+    if (!session || session.private || waiting || savingKnowledge || deletingSession) return;
+
+    setSavingKnowledge(true);
+    setKnowledgeNotice(null);
+    try {
+      const result = await commitSessionKnowledge(server, token, sessionId);
+      onSessionUpdate?.(result.session);
+      setKnowledgeNotice({
+        tone: result.committed ? "success" : "neutral",
+        message:
+          result.reason
+          ?? (result.committed_at ? formatArchiveTimestamp(result.committed_at) : "Committed to knowledge"),
+      });
+    } catch (error) {
+      setKnowledgeNotice({ tone: "error", message: errorDetail(error) });
+    } finally {
+      setSavingKnowledge(false);
+    }
+  }
+
+  async function handleTogglePrivacy() {
+    if (!session || togglingPrivacy || deletingSession) return;
+
+    const nextPrivate = !session.private;
+    if (
+      nextPrivate
+      && session.knowledge_last_committed_at
+      && !window.confirm("Mark this session private? Existing knowledge commits will remain in git history.")
+    ) {
+      return;
+    }
+
+    setTogglingPrivacy(true);
+    setKnowledgeNotice(null);
+    try {
+      const updated = await updateSession(server, token, sessionId, { private: nextPrivate });
+      onSessionUpdate?.(updated);
+      setKnowledgeNotice({
+        tone: "neutral",
+        message: nextPrivate
+          ? updated.knowledge_last_committed_at
+            ? "Session is private. Existing knowledge commits remain unchanged."
+            : "Session is private and will not be archived."
+          : "Session is public and eligible for knowledge commits.",
+      });
+    } catch (error) {
+      setKnowledgeNotice({ tone: "error", message: errorDetail(error) });
+    } finally {
+      setTogglingPrivacy(false);
+    }
+  }
+
   function handleApproval(
     toolCallId: string,
     approved: boolean,
@@ -1239,6 +1317,9 @@ export function ChatView({
         : showsStartSandbox
           ? "Start sandbox"
           : "Scale down sandbox";
+          const archiveStatusLabel = formatArchiveTimestamp(session?.knowledge_last_committed_at);
+          const commitButtonLabel = session?.knowledge_last_committed_at ? "Commit changes" : "Commit to knowledge";
+          const archiveButtonDisabled = !session || session.private || waiting || savingKnowledge || deletingSession;
 
   return (
     <div className="flex flex-1 min-h-0 flex-col">
@@ -1274,8 +1355,64 @@ export function ChatView({
             <div className="mt-1 text-xs text-muted-foreground">
               {sandboxStorageLabel(sandbox)}
             </div>
+            <div className="mt-3 text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">
+              Knowledge
+            </div>
+            <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+              <span
+                className={cn(
+                  "rounded-full border px-2 py-0.5 font-medium uppercase tracking-[0.08em]",
+                  session?.private
+                    ? "border-zinc-300 bg-zinc-100 text-zinc-700"
+                    : "border-emerald-300 bg-emerald-50 text-emerald-700",
+                )}
+              >
+                {session?.private ? "private" : "public"}
+              </span>
+              <span>{archiveStatusLabel}</span>
+            </div>
+            {knowledgeNotice ? (
+              <div
+                className={cn(
+                  "mt-1 text-xs",
+                  knowledgeNotice.tone === "error"
+                    ? "text-destructive"
+                    : knowledgeNotice.tone === "success"
+                      ? "text-emerald-700"
+                      : "text-muted-foreground",
+                )}
+              >
+                {knowledgeNotice.message}
+              </div>
+            ) : null}
           </div>
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+            <button
+              onClick={() => void handleCommitKnowledge()}
+              disabled={archiveButtonDisabled}
+              className="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-900 transition-colors hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <span className="inline-flex items-center gap-1.5">
+                {savingKnowledge ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Archive className="h-3.5 w-3.5" />}
+                {commitButtonLabel}
+              </span>
+            </button>
+            <button
+              onClick={() => void handleTogglePrivacy()}
+              disabled={!session || togglingPrivacy || deletingSession}
+              className="rounded-md border border-zinc-300 bg-zinc-50 px-3 py-1.5 text-xs font-medium text-zinc-900 transition-colors hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <span className="inline-flex items-center gap-1.5">
+                {togglingPrivacy ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : session?.private ? (
+                  <Unlock className="h-3.5 w-3.5" />
+                ) : (
+                  <Lock className="h-3.5 w-3.5" />
+                )}
+                {session?.private ? "Make public" : "Make private"}
+              </span>
+            </button>
             <button
               onClick={() => void handleSandboxPowerAction()}
               disabled={sandboxActionDisabled}

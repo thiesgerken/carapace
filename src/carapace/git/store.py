@@ -182,7 +182,7 @@ class GitStore:
     async def commit(self, paths: list[str], message: str, *, session_id: str = "server") -> bool:
         """Stage the given paths and commit. Returns True if a commit was made."""
         for p in paths:
-            await self._run("add", "--", p)
+            await self._run("add", "-A", "--", p)
 
         # Check if there's anything staged
         code, _ = await self._run("diff", "--cached", "--quiet")

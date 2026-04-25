@@ -215,6 +215,17 @@ function HomeContent() {
     );
   }
 
+  function handleSessionUpdate(session: SessionInfo) {
+    setSessions((prev) => {
+      const next = prev.map((entry) =>
+        entry.session_id === session.session_id ? { ...entry, ...session } : entry,
+      );
+      return next.some((entry) => entry.session_id === session.session_id)
+        ? next
+        : [session, ...next];
+    });
+  }
+
   function handleSandboxUpdate(sessionId: string, sandbox: SessionInfo["sandbox"]) {
     pendingSandboxUpdatesRef.current.set(sessionId, sandbox);
     setSessions((prev) =>
@@ -231,6 +242,10 @@ function HomeContent() {
     if (!activeSessionId) return;
     handleSandboxUpdate(activeSessionId, sandbox);
   }, [activeSessionId]);
+
+  const handleActiveSessionUpdate = useCallback((session: SessionInfo) => {
+    handleSessionUpdate(session);
+  }, []);
 
   const handleActiveSessionDelete = useCallback(async () => {
     if (!activeSessionId) return;
@@ -295,8 +310,10 @@ function HomeContent() {
             server={server}
             token={token}
             sessionId={activeSessionId}
+            session={activeSession}
             initialSandbox={activeSession?.sandbox ?? null}
             onTitleUpdate={handleActiveSessionTitleUpdate}
+            onSessionUpdate={handleActiveSessionUpdate}
             onSandboxUpdate={handleActiveSessionSandboxUpdate}
             onDeleteSession={handleActiveSessionDelete}
           />

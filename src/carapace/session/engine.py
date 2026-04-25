@@ -8,6 +8,7 @@ import traceback
 import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Literal, Protocol, runtime_checkable
@@ -1498,7 +1499,13 @@ class SessionEngine:
 
         events = self._truncate_incomplete_events(self._session_mgr.load_events(session_id))
         if terminal_message:
-            events.append({"role": "assistant", "content": terminal_message})
+            events.append(
+                {
+                    "role": "assistant",
+                    "content": terminal_message,
+                    "timestamp": datetime.now(tz=UTC).isoformat(),
+                }
+            )
         self._session_mgr.save_events(session_id, events)
 
     def _truncate_incomplete_model_history(self, messages: list[ModelMessage]) -> list[ModelMessage]:

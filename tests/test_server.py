@@ -23,6 +23,7 @@ from carapace.sandbox.state import SessionSandboxSnapshot
 from carapace.security.context import CredentialAccessEntry
 from carapace.server import app, sandbox_app
 from carapace.session import SessionEngine, SessionManager
+from carapace.session.archive import SessionArchiveService
 from carapace.skills import SkillRegistry
 from carapace.usage import LlmRequestState
 
@@ -44,8 +45,11 @@ def _setup_server(tmp_path, monkeypatch):
     sandbox_mgr = MagicMock(spec=SandboxManager)
     sandbox_mgr.get_domain_info.return_value = []
     sandbox_mgr.reset_session = AsyncMock()
+    sandbox_mgr.destroy_session = AsyncMock()
 
     cred_reg = CredentialRegistry()
+    git_store = MagicMock(spec=GitStore)
+    git_store.commit = AsyncMock(return_value=True)
     srv._data_dir = tmp_path
     srv._config = config
     srv._credential_registry = cred_reg
@@ -53,12 +57,18 @@ def _setup_server(tmp_path, monkeypatch):
         config=config,
         data_dir=tmp_path,
         knowledge_dir=tmp_path,
-        git_store=MagicMock(spec=GitStore),
+        git_store=git_store,
         session_mgr=session_mgr,
         skill_catalog=skill_catalog,
         agent_model=None,
         sandbox_mgr=sandbox_mgr,
         credential_registry=cred_reg,
+    )
+    srv._session_archive = SessionArchiveService(
+        knowledge_dir=tmp_path,
+        git_store=git_store,
+        session_mgr=session_mgr,
+        config=config.sessions.archive,
     )
 
 
@@ -99,6 +109,16 @@ def test_create_session(client, auth_headers):
     data = resp.json()
     assert "session_id" in data
     assert data["channel_type"] == "cli"
+    assert data["private"] is False
+
+
+def test_create_session_uses_configured_default_privacy(client, auth_headers):
+    srv._config.sessions.default_private = True
+
+    resp = client.post("/api/sessions", headers=auth_headers)
+
+    assert resp.status_code == 200
+    assert resp.json()["private"] is True
 
 
 def test_list_sessions(client, auth_headers):
@@ -168,6 +188,70 @@ def test_get_session(client, auth_headers):
     resp = client.get(f"/api/sessions/{sid}", headers=auth_headers)
     assert resp.status_code == 200
     assert resp.json()["session_id"] == sid
+
+
+def test_update_session_privacy(client, auth_headers):
+    create_resp = client.post("/api/sessions", headers=auth_headers)
+    sid = create_resp.json()["session_id"]
+
+    resp = client.patch(f"/api/sessions/{sid}", headers=auth_headers, json={"private": True})
+
+    assert resp.status_code == 200
+    assert resp.json()["private"] is True
+    assert srv._engine.session_mgr.load_state(sid).private is True
+
+
+def test_commit_session_knowledge_writes_archive(client, auth_headers, tmp_path):
+    create_resp = client.post("/api/sessions", headers=auth_headers)
+    sid = create_resp.json()["session_id"]
+    srv._engine.session_mgr.append_events(
+        sid,
+        [
+            {"role": "user", "content": "hello"},
+            {"role": "assistant", "content": "world"},
+        ],
+    )
+
+    resp = client.post(f"/api/sessions/{sid}/knowledge/commit", headers=auth_headers)
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["committed"] is True
+    archive_path = data["archive_path"]
+    assert archive_path is not None
+    archive_file = tmp_path / archive_path
+    assert archive_file.is_file()
+    payload = archive_file.read_text()
+    assert sid in payload
+    assert '"history"' in payload
+    assert '"timestamp"' in payload
+
+
+def test_commit_session_knowledge_rejects_private_sessions(client, auth_headers):
+    create_resp = client.post("/api/sessions", headers=auth_headers, json={"private": True})
+    sid = create_resp.json()["session_id"]
+    srv._engine.session_mgr.append_events(sid, [{"role": "user", "content": "secret"}])
+
+    resp = client.post(f"/api/sessions/{sid}/knowledge/commit", headers=auth_headers)
+
+    assert resp.status_code == 409
+
+
+def test_delete_session_removes_archived_knowledge(client, auth_headers, tmp_path):
+    create_resp = client.post("/api/sessions", headers=auth_headers)
+    sid = create_resp.json()["session_id"]
+    srv._engine.session_mgr.append_events(sid, [{"role": "user", "content": "hello"}])
+    commit_resp = client.post(f"/api/sessions/{sid}/knowledge/commit", headers=auth_headers)
+    archive_path = commit_resp.json()["archive_path"]
+    assert archive_path is not None
+    archive_file = tmp_path / archive_path
+    assert archive_file.exists()
+
+    resp = client.delete(f"/api/sessions/{sid}", headers=auth_headers)
+
+    assert resp.status_code == 204
+    assert not archive_file.exists()
+    assert srv._engine.sandbox_mgr.destroy_session.await_count == 1
 
 
 def test_get_session_includes_cached_sandbox_snapshot(client, auth_headers):
