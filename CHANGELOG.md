@@ -1,6 +1,15 @@
 # CHANGELOG
 
 
+## v0.97.1 (2026-04-25)
+
+
+### ⬆️ Dependencies
+
+
+- ⬆️ chore: upgrade pnpm to 10.33.1
+  ([`2915e20`](https://github.com/thiesgerken/carapace/commit/2915e20b4ad5f2682c3581c5b7dd651e577b5798))
+
 ## v0.97.0 (2026-04-25)
 
 
