@@ -1,6 +1,15 @@
 # CHANGELOG
 
 
+## v0.96.1 (2026-04-25)
+
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix: refresh sandbox state after first tool call
+  ([`eb1f175`](https://github.com/thiesgerken/carapace/commit/eb1f1752c67f084d9feddf86084304ed07312744))
+
 ## v0.96.0 (2026-04-25)
 
 
