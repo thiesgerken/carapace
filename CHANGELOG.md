@@ -1,6 +1,23 @@
 # CHANGELOG
 
 
+## v0.96.0 (2026-04-25)
+
+
+### ✨ Features
+
+
+- ✨ feat: install node v24 in sandbox image
+  ([`47cbc02`](https://github.com/thiesgerken/carapace/commit/47cbc02175e6298e5418ffd96fa01da1544d5d4b))
+
+  Co-authored-by: Copilot <copilot@github.com>
+
+### Other
+
+
+- docs: add guidance for handling generated credential files in .gitignore
+  ([`d940bdf`](https://github.com/thiesgerken/carapace/commit/d940bdf0b86ae175f0aa7ab66a83a092f7b918f2))
+
 ## v0.95.0 (2026-04-25)
 
 
