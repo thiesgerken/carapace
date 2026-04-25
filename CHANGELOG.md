@@ -1,6 +1,15 @@
 # CHANGELOG
 
 
+## v0.97.0 (2026-04-25)
+
+
+### ✨ Features
+
+
+- ✨ feat: show session message counts in sidebar
+  ([`e397a37`](https://github.com/thiesgerken/carapace/commit/e397a3710610186d85fdb74690588283b2aa648c))
+
 ## v0.96.1 (2026-04-25)
 
 
