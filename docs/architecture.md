@@ -254,6 +254,16 @@ channels:
     allowed_users:
       - "@me:example.com"
 
+sessions:
+  default_private: false
+  archive:
+    enabled: true
+    path_prefix: sessions
+    autosave_enabled: true
+    autosave_interval_minutes: 15
+    autosave_inactivity_hours: 6
+    delete_from_knowledge_on_session_delete: true
+
 git:
   remote: https://gitea.example.com/user/knowledge.git
   token:
@@ -269,6 +279,16 @@ sandbox:
   # k8s_session_pvc_size: 1Gi
   # k8s_session_pvc_storage_class: ""
 ```
+
+Session archive settings control how conversation histories are copied into the knowledge repo:
+
+- `sessions.default_private`: whether new sessions start private and therefore ineligible for archival
+- `sessions.archive.enabled`: master switch for the feature
+- `sessions.archive.path_prefix`: subtree inside the knowledge repo where `conversation.json` files are written
+- `sessions.archive.autosave_enabled`: enable the background inactivity-based archive sweep
+- `sessions.archive.autosave_interval_minutes`: how often the server checks for eligible sessions
+- `sessions.archive.autosave_inactivity_hours`: inactivity threshold before a public session is auto-archived
+- `sessions.archive.delete_from_knowledge_on_session_delete`: whether deleting a session also removes its current archive directory from the knowledge repo
 
 LLM API keys are provided as standard environment variables (`ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`, etc.) — not through the config file.
 
