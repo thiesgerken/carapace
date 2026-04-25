@@ -891,6 +891,9 @@ export function ChatView({
             }
             return updated;
           });
+          if (sandboxRef.current?.status === "pending") {
+            void refreshSandbox();
+          }
           break;
         case "approval_request":
           setWaiting(true);

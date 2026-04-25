@@ -10,6 +10,7 @@
 - [ ] conversation history niceties (retry message, fork session, ...)
 - [ ] "daily" session that is recreated every day and that should persist some of its memories during the night
 - [ ] should the chat histories become a part of the knowledge repo automatically? at least by pressing a "save" button for the session?
+- [ ] instead of carapace.yaml, use the Skill.md frontmatter metadata field, that's how openclaw does it
 
 ## Knowledge Repo Handling
 
