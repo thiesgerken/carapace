@@ -42,6 +42,10 @@ function sandboxSummaryLabel(sandbox: SessionSandboxSnapshot): string | null {
   return null;
 }
 
+function formatMessageCount(count: number): string {
+  return `${count} ${count === 1 ? "msg" : "msgs"}`;
+}
+
 export function Sidebar({
   sessions,
   activeSessionId,
@@ -88,6 +92,7 @@ export function Sidebar({
             (() => {
               const sandbox = sandboxSummary(s);
               const sandboxLabel = sandbox ? sandboxSummaryLabel(sandbox) : null;
+              const messageCountLabel = formatMessageCount(s.message_count);
               const activityLabel = [
                 formatTime(s.last_active),
                 s.channel_type !== "web" && s.channel_type !== "cli"
@@ -136,6 +141,8 @@ export function Sidebar({
                       </span>
                     ) : null}
                     {sandbox && sandboxLabel ? <span aria-hidden="true">·</span> : null}
+                    <span>{messageCountLabel}</span>
+                    <span aria-hidden="true">·</span>
                     <span>{activityLabel}</span>
                   </div>
                 </div>

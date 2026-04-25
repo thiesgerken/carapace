@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
+from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, UserPromptPart
 
 # We patch the server module globals directly for testing
 import carapace.sandbox.state as sandbox_state
@@ -139,7 +140,26 @@ def test_list_sessions_can_include_message_count(client, auth_headers):
 
     assert resp.status_code == 200
     session = next(item for item in resp.json() if item["session_id"] == sid)
-    assert session["message_count"] == 2
+    assert session["message_count"] == 3
+
+
+def test_list_sessions_can_include_message_count_from_history_fallback(client, auth_headers):
+    create_resp = client.post("/api/sessions", headers=auth_headers)
+    sid = create_resp.json()["session_id"]
+    srv._engine.session_mgr.save_history(
+        sid,
+        [
+            ModelRequest(parts=[UserPromptPart(content="first")]),
+            ModelResponse(parts=[TextPart(content="reply")]),
+            ModelRequest(parts=[UserPromptPart(content="second")]),
+        ],
+    )
+
+    resp = client.get("/api/sessions?include_message_count=true", headers=auth_headers)
+
+    assert resp.status_code == 200
+    session = next(item for item in resp.json() if item["session_id"] == sid)
+    assert session["message_count"] == 3
 
 
 def test_get_session(client, auth_headers):

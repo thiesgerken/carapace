@@ -15,7 +15,7 @@ export async function listSessions(
   server: string,
   token: string,
 ): Promise<SessionInfo[]> {
-  const res = await fetch(`${server}/api/sessions`, {
+  const res = await fetch(`${server}/api/sessions?include_message_count=true`, {
     headers: headers(token),
   });
   if (!res.ok) throw new Error(`Failed to list sessions: ${res.status}`);

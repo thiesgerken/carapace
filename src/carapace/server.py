@@ -420,6 +420,15 @@ class SessionInfo(BaseModel):
         )
 
 
+def _session_message_count(session_id: str) -> int:
+    events = _engine.session_mgr.load_events(session_id)
+    if events:
+        return sum(1 for event in events if event.get("role") in {"user", "assistant"})
+
+    history = _history_from_messages(session_id)
+    return sum(1 for message in history if message.role in {"user", "assistant"})
+
+
 @router.post("/sessions", response_model=SessionInfo)
 async def create_session(
     body: SessionCreateRequest | None = None,
@@ -445,8 +454,7 @@ async def list_sessions(
         if state:
             message_count = 0
             if include_message_count:
-                events = _engine.session_mgr.load_events(sid)
-                message_count = sum(1 for e in events if e.get("role") == "user")
+                message_count = _session_message_count(sid)
             sandbox = _engine.session_mgr.load_sandbox_snapshot(sid)
             results.append(SessionInfo.from_state(state, message_count=message_count, sandbox=sandbox))
     return results
