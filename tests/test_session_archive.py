@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from carapace.git.store import GitStore
-from carapace.models import SessionArchiveConfig
+from carapace.models import SessionCommitConfig
 from carapace.session.archive import SessionArchiveService
 from carapace.session.manager import SessionManager
 
@@ -39,7 +39,7 @@ async def test_archive_service_commits_snapshot(tmp_path) -> None:
         knowledge_dir=tmp_path,
         git_store=git_store,
         session_mgr=mgr,
-        config=SessionArchiveConfig(),
+        config=SessionCommitConfig(),
     )
 
     result = await service.commit_session(state.session_id, trigger="manual")
@@ -65,7 +65,7 @@ async def test_archive_service_skips_private_sessions(tmp_path) -> None:
         knowledge_dir=tmp_path,
         git_store=git_store,
         session_mgr=mgr,
-        config=SessionArchiveConfig(),
+        config=SessionCommitConfig(),
     )
 
     result = await service.commit_session(state.session_id, trigger="manual")

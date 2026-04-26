@@ -341,23 +341,20 @@ class GitConfig(BaseModel):
     token: Secret | None = None
 
 
-class SessionArchiveConfig(BaseModel):
+class SessionCommitConfig(BaseModel):
     enabled: bool = True
     path_prefix: str = "sessions"
     autosave_enabled: bool = True
-    autosave_interval_minutes: int = 15
-    autosave_inactivity_hours: int = 6
+    autosave_inactivity_hours: int = 4
     delete_from_knowledge_on_session_delete: bool = True
 
     @model_validator(mode="after")
-    def _validate_archive_settings(self) -> SessionArchiveConfig:
-        if self.autosave_interval_minutes <= 0:
-            raise ValueError("sessions.archive.autosave_interval_minutes must be > 0")
+    def _validate_commit_settings(self) -> SessionCommitConfig:
         if self.autosave_inactivity_hours <= 0:
-            raise ValueError("sessions.archive.autosave_inactivity_hours must be > 0")
+            raise ValueError("sessions.commit.autosave_inactivity_hours must be > 0")
         prefix = Path(self.path_prefix)
         if prefix.is_absolute() or ".." in prefix.parts:
-            raise ValueError("sessions.archive.path_prefix must stay inside the knowledge directory")
+            raise ValueError("sessions.commit.path_prefix must stay inside the knowledge directory")
         normalized = str(prefix).strip("/")
         self.path_prefix = normalized or "sessions"
         return self
@@ -365,7 +362,7 @@ class SessionArchiveConfig(BaseModel):
 
 class SessionsConfig(BaseModel):
     default_private: bool = False
-    archive: SessionArchiveConfig = SessionArchiveConfig()
+    commit: SessionCommitConfig = SessionCommitConfig()
 
 
 class ServerConfig(BaseSettings):

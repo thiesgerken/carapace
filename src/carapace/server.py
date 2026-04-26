@@ -89,6 +89,8 @@ _git_handler: GitHttpHandler
 _credential_registry: CredentialRegistry
 _session_archive: SessionArchiveService
 
+_SESSION_COMMIT_SWEEP_SECONDS = 15 * 60
+
 
 def _create_sandbox_runtime(config: Config, data_dir: Path) -> ContainerRuntime:
     """Instantiate the sandbox container runtime based on config."""
@@ -136,11 +138,11 @@ async def _idle_cleanup_loop(sandbox_mgr: SandboxManager) -> None:
 async def _session_archive_loop() -> None:
     """Periodically archive inactive sessions into the knowledge repo."""
     while True:
-        await asyncio.sleep(max(60, int(_config.sessions.archive.autosave_interval_minutes * 60)))
-        if not _session_archive.enabled or not _config.sessions.archive.autosave_enabled:
+        await asyncio.sleep(_SESSION_COMMIT_SWEEP_SECONDS)
+        if not _session_archive.enabled or not _config.sessions.commit.autosave_enabled:
             continue
 
-        cutoff = datetime.now(tz=UTC) - timedelta(hours=_config.sessions.archive.autosave_inactivity_hours)
+        cutoff = datetime.now(tz=UTC) - timedelta(hours=_config.sessions.commit.autosave_inactivity_hours)
         for session_id in _engine.session_mgr.list_sessions():
             state = _engine.session_mgr.load_state(session_id)
             if state is None or state.private or state.last_active > cutoff:
@@ -275,7 +277,7 @@ async def lifespan(app: FastAPI):
         knowledge_dir=knowledge_dir,
         git_store=git_store,
         session_mgr=session_mgr,
-        config=_config.sessions.archive,
+        config=_config.sessions.commit,
     )
 
     # Git HTTP handler — serves the knowledge repo on the sandbox API
@@ -625,7 +627,7 @@ async def delete_session(session_id: str, _token: str = Depends(_verify_token)) 
         raise HTTPException(status_code=404, detail="Session not found")
     _engine.deactivate(session_id)
     await _engine.sandbox_mgr.destroy_session(session_id)
-    if _session_archive.enabled and _config.sessions.archive.delete_from_knowledge_on_session_delete:
+    if _session_archive.enabled and _config.sessions.commit.delete_from_knowledge_on_session_delete:
         await _session_archive.delete_session_archive(state)
     if not _engine.session_mgr.delete_session(session_id):
         raise HTTPException(status_code=404, detail="Session not found")

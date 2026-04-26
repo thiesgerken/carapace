@@ -68,7 +68,7 @@ def _setup_server(tmp_path, monkeypatch):
         knowledge_dir=tmp_path,
         git_store=git_store,
         session_mgr=session_mgr,
-        config=config.sessions.archive,
+        config=config.sessions.commit,
     )
 
 

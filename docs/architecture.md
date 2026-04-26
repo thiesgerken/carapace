@@ -89,13 +89,13 @@ Orchestrates a single agent turn: streams tokens to subscribers, handles the def
 
 The main agent, built on [Pydantic AI](https://ai.pydantic.dev/). It receives messages from sessions, decides which tools/skills to invoke, and produces responses. Registered tools:
 
-| Tool          | Description                                                      |
-| ------------- | ---------------------------------------------------------------- |
-| `list_skills` | List available skills (names + descriptions)                     |
+| Tool          | Description                                                               |
+| ------------- | ------------------------------------------------------------------------- |
+| `list_skills` | List available skills (names + descriptions)                              |
 | `use_skill`   | Activate a skill: copy to sandbox, run automatic setup, load instructions |
-| `read`        | Read a file or list a directory inside the sandbox               |
-| `write`       | Write content to a file in the sandbox                           |
-| `str_replace` | Search-and-replace edit of a file in the sandbox                 |
+| `read`        | Read a file or list a directory inside the sandbox                        |
+| `write`       | Write content to a file in the sandbox                                    |
+| `str_replace` | Search-and-replace edit of a file in the sandbox                          |
 
 | `exec` | Run a shell command in the sandbox (default timeout: 30s) |
 
@@ -256,12 +256,11 @@ channels:
 
 sessions:
   default_private: false
-  archive:
+  commit:
     enabled: true
     path_prefix: sessions
     autosave_enabled: true
-    autosave_interval_minutes: 15
-    autosave_inactivity_hours: 6
+    autosave_inactivity_hours: 4
     delete_from_knowledge_on_session_delete: true
 
 git:
@@ -280,15 +279,14 @@ sandbox:
   # k8s_session_pvc_storage_class: ""
 ```
 
-Session archive settings control how conversation histories are copied into the knowledge repo:
+Session commit settings control how conversation histories are copied into the knowledge repo:
 
-- `sessions.default_private`: whether new sessions start private and therefore ineligible for archival
-- `sessions.archive.enabled`: master switch for the feature
-- `sessions.archive.path_prefix`: subtree inside the knowledge repo where `conversation.json` files are written
-- `sessions.archive.autosave_enabled`: enable the background inactivity-based archive sweep
-- `sessions.archive.autosave_interval_minutes`: how often the server checks for eligible sessions
-- `sessions.archive.autosave_inactivity_hours`: inactivity threshold before a public session is auto-archived
-- `sessions.archive.delete_from_knowledge_on_session_delete`: whether deleting a session also removes its current archive directory from the knowledge repo
+- `sessions.default_private`: whether new sessions start private and therefore ineligible for knowledge commits
+- `sessions.commit.enabled`: master switch for the feature
+- `sessions.commit.path_prefix`: subtree inside the knowledge repo where `conversation.json` files are written
+- `sessions.commit.autosave_enabled`: enable the background inactivity-based commit sweep
+- `sessions.commit.autosave_inactivity_hours`: inactivity threshold before a public session is auto-committed
+- `sessions.commit.delete_from_knowledge_on_session_delete`: whether deleting a session also removes its current committed snapshot directory from the knowledge repo
 
 LLM API keys are provided as standard environment variables (`ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`, etc.) — not through the config file.
 

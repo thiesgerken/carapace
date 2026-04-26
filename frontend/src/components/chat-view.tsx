@@ -1195,7 +1195,7 @@ export function ChatView({
         message: nextPrivate
           ? updated.knowledge_last_committed_at
             ? "Session is private. Existing knowledge commits remain unchanged."
-            : "Session is private and will not be archived."
+            : "Session is private and will not be committed to knowledge."
           : "Session is public and eligible for knowledge commits.",
       });
     } catch (error) {

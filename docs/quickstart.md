@@ -70,18 +70,17 @@ sessions:
   # New sessions start public by default. Set to true if you want explicit
   # opt-in before histories can be committed into the knowledge repo.
   default_private: false
-  archive:
+  commit:
     enabled: true
     # Histories are written to data/knowledge/sessions/YYYY/MM/<session_id>/conversation.json
     path_prefix: sessions
     autosave_enabled: true
-    autosave_interval_minutes: 15
-    autosave_inactivity_hours: 6
-    # When true, deleting a session also removes its current archive path from the knowledge repo.
+    autosave_inactivity_hours: 4
+    # When true, deleting a session also removes its current committed snapshot from the knowledge repo.
     delete_from_knowledge_on_session_delete: true
 ```
 
-Session histories always live primarily under `data/sessions/<session_id>/`. The `sessions.archive.*` settings control a secondary archival flow into the Git-backed knowledge repo so the agent can refer back to past conversations later.
+Session histories always live primarily under `data/sessions/<session_id>/`. The `sessions.commit.*` settings control a secondary commit flow into the Git-backed knowledge repo so the agent can refer back to past conversations later.
 
 In the web UI, public sessions expose a "Commit to knowledge" action. Private sessions do not. Autosave uses the same privacy rule: only public, inactive sessions are eligible.
 

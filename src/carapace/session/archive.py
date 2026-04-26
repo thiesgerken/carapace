@@ -11,7 +11,7 @@ from loguru import logger
 from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, ThinkingPart, ToolCallPart, UserPromptPart
 
 from carapace.git.store import GitStore
-from carapace.models import SessionArchiveConfig, SessionState
+from carapace.models import SessionCommitConfig, SessionState
 from carapace.session.manager import SessionManager
 
 ArchiveTrigger = Literal["manual", "autosave"]
@@ -35,7 +35,7 @@ class SessionArchiveService:
         knowledge_dir: Path,
         git_store: GitStore,
         session_mgr: SessionManager,
-        config: SessionArchiveConfig,
+        config: SessionCommitConfig,
     ) -> None:
         self._knowledge_dir = knowledge_dir
         self._git_store = git_store
