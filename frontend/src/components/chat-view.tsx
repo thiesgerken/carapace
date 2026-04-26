@@ -1339,15 +1339,15 @@ export function ChatView({
         : showsStartSandbox
           ? "Start sandbox"
           : "Scale down sandbox";
-          const archiveStatusLabel = formatArchiveTimestamp(session?.knowledge_last_committed_at);
-          const commitButtonLabel = !hasKnowledgeContent
-            ? "Nothing to commit"
-            : session?.knowledge_last_committed_at
-              ? hasKnowledgeChanges
-                ? "Commit changes"
-                : "All changes committed"
-              : "Commit to knowledge";
-          const archiveButtonDisabled = !canCommitKnowledge || waiting || savingKnowledge || deletingSession;
+        const archiveStatusLabel = formatArchiveTimestamp(session?.knowledge_last_committed_at);
+        const commitButtonLabel = !hasKnowledgeContent
+          ? "Nothing to commit"
+          : session?.knowledge_last_committed_at
+            ? hasKnowledgeChanges
+              ? "Commit changes"
+              : "All changes committed"
+            : "Commit to knowledge";
+        const archiveButtonDisabled = !canCommitKnowledge || waiting || savingKnowledge || deletingSession;
 
   return (
     <div className="flex flex-1 min-h-0 flex-col">
