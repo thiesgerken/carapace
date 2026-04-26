@@ -137,19 +137,6 @@ export function Sidebar({
                     )}
                   </div>
                   <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-muted-foreground">
-                    {showKnowledgeIndicator ? (
-                      <span
-                        className={cn(
-                          "inline-flex items-center",
-                          showPrivateIcon ? "text-zinc-600" : "text-emerald-700",
-                        )}
-                        title={showPrivateIcon ? "Private session" : (s.knowledge_last_archive_path ?? "All changes committed to knowledge")}
-                      >
-                        {showPrivateIcon ? <Lock className="h-3 w-3" /> : <Save className="h-3 w-3" />}
-                        <span className="sr-only">{showPrivateIcon ? "Private session" : "All changes committed to knowledge"}</span>
-                      </span>
-                    ) : null}
-                    {showKnowledgeIndicator ? <span aria-hidden="true">·</span> : null}
                     {sandbox ? (
                       <span className="inline-flex items-center gap-1.5">
                         <span
@@ -166,6 +153,19 @@ export function Sidebar({
                     <span>{messageCountLabel}</span>
                     <span aria-hidden="true">·</span>
                     <span>{activityLabel}</span>
+                    {showKnowledgeIndicator ? <span aria-hidden="true">·</span> : null}
+                    {showKnowledgeIndicator ? (
+                      <span
+                        className={cn(
+                          "inline-flex items-center",
+                          showPrivateIcon ? "text-zinc-600" : "text-emerald-700",
+                        )}
+                        title={showPrivateIcon ? "Private session" : (s.knowledge_last_archive_path ?? "All changes committed to knowledge")}
+                      >
+                        {showPrivateIcon ? <Lock className="h-3 w-3" /> : <Save className="h-3 w-3" />}
+                        <span className="sr-only">{showPrivateIcon ? "Private session" : "All changes committed to knowledge"}</span>
+                      </span>
+                    ) : null}
                   </div>
                 </div>
               </button>

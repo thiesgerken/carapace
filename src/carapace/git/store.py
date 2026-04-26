@@ -215,6 +215,8 @@ class GitStore:
             return False
 
         logger.info(f"Knowledge commit: {message}")
+        if await self.has_remote():
+            await self.push_to_remote()
         return True
 
     # ------------------------------------------------------------------

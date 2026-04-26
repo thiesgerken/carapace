@@ -206,8 +206,6 @@ async def lifespan(app: FastAPI):
     seeded = ensure_knowledge_dir(knowledge_dir)
     if seeded:
         await git_store.commit(seeded, "🔧 bootstrap: seed default files")
-        if _config.git.remote:
-            await git_store.push_to_remote()
 
     if _config.carapace.logfire_token:
         logfire.configure(token=_config.carapace.logfire_token, console=False)

@@ -7,6 +7,7 @@ import os
 import stat
 import subprocess
 from pathlib import Path
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -168,6 +169,16 @@ class TestGitStoreCommit:
         assert result is True
         code, _ = await store._run("ls-files", "--error-unmatch", "gone.txt")
         assert code != 0
+
+    async def test_commit_pushes_when_remote_is_configured(self, store: GitStore):
+        (store.repo_dir / "test.md").write_text("hello")
+        store.has_remote = AsyncMock(return_value=True)
+        store.push_to_remote = AsyncMock()
+
+        result = await store.commit(["test.md"], "add test file")
+
+        assert result is True
+        store.push_to_remote.assert_awaited_once_with()
 
     async def test_has_commits(self, store: GitStore):
         assert not await store.has_commits()
