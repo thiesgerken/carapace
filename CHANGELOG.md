@@ -1,6 +1,29 @@
 # CHANGELOG
 
 
+## v0.99.0 (2026-04-26)
+
+
+### ⬆️ Dependencies
+
+
+- ⬆️ chore: upgrade pnpm to 10.33.2
+  ([`b2f1de0`](https://github.com/thiesgerken/carapace/commit/b2f1de089d2f2e2c03406945171356fcce97497a))
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix: harden twemoji rendering flow
+  ([`0980377`](https://github.com/thiesgerken/carapace/commit/09803777d18f28beeaadc2b1123f99ed7e8b4d4e))
+
+### ✨ Features
+
+
+- ✨ feat: use twemoji emojis and bundle them
+  ([`3652988`](https://github.com/thiesgerken/carapace/commit/365298847ea6de542ca15733fafd8fe8e276513f))
+
+  Co-authored-by: Copilot <copilot@github.com>
+
 ## v0.98.0 (2026-04-26)
 
 
