@@ -1080,7 +1080,9 @@ export function ChatView({
   // Auto-scroll only when already at bottom
   useEffect(() => {
     if (isAtBottomRef.current) {
-      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+      const element = scrollRef.current;
+      if (!element) return;
+      element.scrollTop = element.scrollHeight;
     }
   }, [messages]);
 
