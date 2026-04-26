@@ -27,7 +27,13 @@ import type {
   SessionSandboxSnapshot,
   TurnUsage,
 } from "@/lib/types";
-import { cn, formatBytes, sandboxStatusIndicatorClass, sandboxStatusLabel } from "@/lib/utils";
+import {
+  cn,
+  formatBytes,
+  sandboxStatusIndicatorClass,
+  sandboxStatusLabel,
+  sessionHasKnowledgeChanges,
+} from "@/lib/utils";
 import { Message } from "./message";
 import { ChatInput } from "./chat-input";
 
@@ -355,6 +361,14 @@ export function ChatView({
   useEffect(() => {
     onSandboxUpdateRef.current = onSandboxUpdate;
   }, [onSandboxUpdate]);
+
+  const markSessionKnowledgeChanged = useCallback(() => {
+    if (!session) return;
+    onSessionUpdate?.({
+      ...session,
+      last_active: new Date().toISOString(),
+    });
+  }, [onSessionUpdate, session]);
 
   useEffect(() => {
     sandboxRef.current = sandbox;
@@ -714,11 +728,12 @@ export function ChatView({
       queueRef.current = null;
       setQueuedMessage(null);
       sendRef.current({ type: "message", content: queued });
+      markSessionKnowledgeChanged();
       // stay in waiting state
     } else {
       setWaiting(false);
     }
-  }, [clearToolLoading]);
+  }, [clearToolLoading, markSessionKnowledgeChanged]);
 
   const snapshotThinkingDurationMs = useCallback((): number | undefined => {
     const startedAt = lastThinkingStartedAtRef.current;
@@ -1084,6 +1099,7 @@ export function ChatView({
     } else {
       lastThinkingStartedAtRef.current = null;
       send({ type: "message", content });
+      markSessionKnowledgeChanged();
       setWaiting(true);
     }
   }
@@ -1217,6 +1233,7 @@ export function ChatView({
       approved,
       message: normalizedMessage,
     });
+    markSessionKnowledgeChanged();
     setMessages((prev) => {
         let request: { tool: string; args: Record<string, unknown> } | null = null;
         const withoutApproval = prev.filter((entry) => {
@@ -1251,6 +1268,7 @@ export function ChatView({
       decision,
       message: normalizedDecisionMessage(responseMessage),
     });
+    markSessionKnowledgeChanged();
     setMessages((prev) =>
       prev.filter(
         (m) =>
@@ -1274,6 +1292,7 @@ export function ChatView({
       decision,
       message: normalizedDecisionMessage(responseMessage),
     });
+    markSessionKnowledgeChanged();
     setMessages((prev) =>
       prev.filter(
         (m) =>
@@ -1290,6 +1309,9 @@ export function ChatView({
   }
 
   const connected = status === "connected";
+  const hasKnowledgeContent = messages.length > 0;
+  const hasKnowledgeChanges = sessionHasKnowledgeChanges(session);
+  const canCommitKnowledge = !!session && !session.private && hasKnowledgeContent && hasKnowledgeChanges;
   const waitingLabel = !waiting
     ? null
     : llmActivity?.source === "agent"
@@ -1318,8 +1340,14 @@ export function ChatView({
           ? "Start sandbox"
           : "Scale down sandbox";
           const archiveStatusLabel = formatArchiveTimestamp(session?.knowledge_last_committed_at);
-          const commitButtonLabel = session?.knowledge_last_committed_at ? "Commit changes" : "Commit to knowledge";
-          const archiveButtonDisabled = !session || session.private || waiting || savingKnowledge || deletingSession;
+          const commitButtonLabel = !hasKnowledgeContent
+            ? "Nothing to commit"
+            : session?.knowledge_last_committed_at
+              ? hasKnowledgeChanges
+                ? "Commit changes"
+                : "All changes committed"
+              : "Commit to knowledge";
+          const archiveButtonDisabled = !canCommitKnowledge || waiting || savingKnowledge || deletingSession;
 
   return (
     <div className="flex flex-1 min-h-0 flex-col">
@@ -1390,6 +1418,7 @@ export function ChatView({
             <button
               onClick={() => void handleCommitKnowledge()}
               disabled={archiveButtonDisabled}
+              title={!hasKnowledgeContent ? "This session has no conversation history yet." : !hasKnowledgeChanges ? "There are no new changes to commit." : undefined}
               className="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-900 transition-colors hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <span className="inline-flex items-center gap-1.5">

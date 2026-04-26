@@ -1,8 +1,14 @@
 "use client";
 
-import { Plus, LogOut, MessageSquare, Trash2 } from "lucide-react";
+import { Lock, LogOut, MessageSquare, Plus, Save, Trash2 } from "lucide-react";
 import type { SessionInfo, SessionSandboxSnapshot } from "@/lib/types";
-import { cn, formatBytes, sandboxStatusIndicatorClass, sandboxStatusLabel } from "@/lib/utils";
+import {
+  cn,
+  formatBytes,
+  sandboxStatusIndicatorClass,
+  sandboxStatusLabel,
+  sessionHasKnowledgeChanges,
+} from "@/lib/utils";
 
 interface SidebarProps {
   sessions: SessionInfo[];
@@ -44,12 +50,6 @@ function sandboxSummaryLabel(sandbox: SessionSandboxSnapshot): string | null {
 
 function formatMessageCount(count: number): string {
   return `${count} ${count === 1 ? "msg" : "msgs"}`;
-}
-
-function archiveBadgeLabel(session: SessionInfo): string | null {
-  if (session.private) return "private";
-  if (session.knowledge_last_committed_at) return "saved";
-  return null;
 }
 
 export function Sidebar({
@@ -98,7 +98,9 @@ export function Sidebar({
             (() => {
               const sandbox = sandboxSummary(s);
               const sandboxLabel = sandbox ? sandboxSummaryLabel(sandbox) : null;
-              const archiveBadge = archiveBadgeLabel(s);
+              const showPrivateIcon = s.private;
+              const showSavedIcon = !s.private && !!s.knowledge_last_committed_at && !sessionHasKnowledgeChanges(s);
+              const showKnowledgeIndicator = showPrivateIcon || showSavedIcon;
               const messageCountLabel = formatMessageCount(s.message_count);
               const activityLabel = [
                 formatTime(s.last_active),
@@ -135,20 +137,19 @@ export function Sidebar({
                     )}
                   </div>
                   <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-muted-foreground">
-                    {archiveBadge ? (
+                    {showKnowledgeIndicator ? (
                       <span
                         className={cn(
-                          "rounded-full border px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-[0.08em]",
-                          s.private
-                            ? "border-zinc-300 bg-zinc-100 text-zinc-700"
-                            : "border-emerald-300 bg-emerald-50 text-emerald-700",
+                          "inline-flex items-center",
+                          showPrivateIcon ? "text-zinc-600" : "text-emerald-700",
                         )}
-                        title={s.knowledge_last_archive_path ?? undefined}
+                        title={showPrivateIcon ? "Private session" : (s.knowledge_last_archive_path ?? "All changes committed to knowledge")}
                       >
-                        {archiveBadge}
+                        {showPrivateIcon ? <Lock className="h-3 w-3" /> : <Save className="h-3 w-3" />}
+                        <span className="sr-only">{showPrivateIcon ? "Private session" : "All changes committed to knowledge"}</span>
                       </span>
                     ) : null}
-                    {archiveBadge ? <span aria-hidden="true">·</span> : null}
+                    {showKnowledgeIndicator ? <span aria-hidden="true">·</span> : null}
                     {sandbox ? (
                       <span className="inline-flex items-center gap-1.5">
                         <span
