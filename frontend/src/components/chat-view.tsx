@@ -112,6 +112,41 @@ function formatArchiveTimestamp(iso?: string | null): string {
   })}`;
 }
 
+function knowledgeStatusBadge(
+  session: SessionInfo | null,
+  hasKnowledgeChanges: boolean,
+): { label: string; className: string } {
+  const isInKnowledgeRepo = Boolean(
+    session?.knowledge_last_committed_at || session?.knowledge_last_archive_path,
+  );
+
+  if (session?.private && !isInKnowledgeRepo) {
+    return {
+      label: "excluded",
+      className: "border-zinc-300 bg-zinc-100 text-zinc-700",
+    };
+  }
+
+  if (!isInKnowledgeRepo) {
+    return {
+      label: "missing",
+      className: "border-slate-300 bg-slate-100 text-slate-700",
+    };
+  }
+
+  if (hasKnowledgeChanges) {
+    return {
+      label: "outdated",
+      className: "border-amber-300 bg-amber-50 text-amber-700",
+    };
+  }
+
+  return {
+    label: "up-to-date",
+    className: "border-emerald-300 bg-emerald-50 text-emerald-700",
+  };
+}
+
 function optimisticPendingSandbox(
   snapshot: SessionSandboxSnapshot | null,
 ): SessionSandboxSnapshot {
@@ -1343,6 +1378,7 @@ export function ChatView({
           ? "Start sandbox"
           : "Scale down sandbox";
     const archiveStatusLabel = formatArchiveTimestamp(session?.knowledge_last_committed_at);
+    const knowledgeBadge = knowledgeStatusBadge(session, hasKnowledgeChanges);
     const archiveButtonDisabled = !canCommitKnowledge || waiting || savingKnowledge || deletingSession;
     const commitButtonTitle = !hasKnowledgeContent
       ? "This session has no conversation history yet."
@@ -1473,12 +1509,10 @@ export function ChatView({
                     <span
                       className={cn(
                         "rounded-full border px-2 py-0.5 font-medium uppercase tracking-[0.08em]",
-                        session?.private
-                          ? "border-zinc-300 bg-zinc-100 text-zinc-700"
-                          : "border-emerald-300 bg-emerald-50 text-emerald-700",
+                        knowledgeBadge.className,
                       )}
                     >
-                      {session?.private ? "private" : "included"}
+                      {knowledgeBadge.label}
                     </span>
                     <span className="truncate">{archiveStatusLabel}</span>
                   </div>
