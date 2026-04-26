@@ -626,11 +626,14 @@ class SessionEngine:
         """Return the ``ActiveSession`` if loaded, else ``None``."""
         return self._active.get(session_id)
 
-    def replace_active_state(self, state: SessionState) -> None:
-        """Replace the in-memory state for a loaded session."""
-        active = self._active.get(state.session_id)
+    def update_active_state(self, session_id: str, **changes: Any) -> None:
+        """Apply explicit field updates to the in-memory state for a loaded session."""
+        active = self._active.get(session_id)
         if active is not None:
-            active.state = state
+            for field_name, value in changes.items():
+                if field_name not in SessionState.model_fields:
+                    raise AttributeError(f"Unknown SessionState field: {field_name}")
+                setattr(active.state, field_name, value)
 
     def is_agent_running(self, session_id: str) -> bool:
         active = self._active.get(session_id)
