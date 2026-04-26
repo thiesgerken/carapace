@@ -44,6 +44,14 @@ def _patch_sentinel():
     return patch("carapace.session.engine.Sentinel", mock_cls)
 
 
+def _without_timestamp(event: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in event.items() if key != "timestamp"}
+
+
+def _without_timestamps(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [_without_timestamp(event) for event in events]
+
+
 def test_create_session(tmp_path: Path):
     mgr = SessionManager(tmp_path)
     state = mgr.create_session()
@@ -338,7 +346,9 @@ def test_record_tool_call_event_reuses_sentinel_row_for_user_decision(tmp_path: 
     )
 
     assert updated_tool_id == initial_tool_id
-    assert engine.session_mgr.load_events(sid) == [
+    events = engine.session_mgr.load_events(sid)
+    assert all("timestamp" in event for event in events)
+    assert _without_timestamps(events) == [
         {
             "role": "tool_call",
             "tool": "proxy_domain",
@@ -411,7 +421,8 @@ def test_truncate_incomplete_events_keeps_completed_user_approved_exec(tmp_path:
 
     truncated = engine._truncate_incomplete_events(engine.session_mgr.load_events(sid))
 
-    assert truncated == [
+    assert all("timestamp" in event for event in truncated)
+    assert _without_timestamps(truncated) == [
         {
             "role": "tool_call",
             "tool": "exec",
@@ -707,7 +718,8 @@ def test_submit_cancel_persists_interruption_marker(tmp_path: Path):
         )
 
         events = engine.session_mgr.load_events(sid)
-        assert events[-2:] == [
+        assert all("timestamp" in event for event in events[-2:])
+        assert _without_timestamps(events[-2:]) == [
             {"role": "user", "content": "hello"},
             {"role": "assistant", "content": "The previous turn was interrupted before completion."},
         ]
@@ -973,7 +985,8 @@ def test_llm_request_recording_persists_request_level_thinking_event(tmp_path: P
                 await observer.on_request_completed(record)
 
             events = engine.session_mgr.load_events(state.session_id)
-            assert events[-1] == {
+            assert "timestamp" in events[-1]
+            assert _without_timestamp(events[-1]) == {
                 "role": "thinking",
                 "content": "first thought",
                 "request_id": "req-1",
@@ -1018,7 +1031,8 @@ def test_llm_request_recording_persists_timing_for_tool_only_thinking_event(tmp_
                 await observer.on_request_completed(record)
 
             events = engine.session_mgr.load_events(state.session_id)
-            assert events[-1] == {
+            assert "timestamp" in events[-1]
+            assert _without_timestamp(events[-1]) == {
                 "role": "thinking",
                 "content": "tool-only thought",
                 "request_id": "req-tool",
@@ -1090,7 +1104,9 @@ def test_submit_message_refresh_failure_does_not_block_completed_turn(tmp_path: 
             await asyncio.sleep(0.1)
 
         assert sub.errors == []
-        assert engine.session_mgr.load_events(sid)[-1] == {"role": "assistant", "content": "done"}
+        event = engine.session_mgr.load_events(sid)[-1]
+        assert "timestamp" in event
+        assert _without_timestamp(event) == {"role": "assistant", "content": "done"}
 
     with _patch_sentinel():
         asyncio.run(_run())
@@ -1125,7 +1141,8 @@ def test_submit_message_budget_exceeded_persists_history(tmp_path: Path):
         )
 
         events = engine.session_mgr.load_events(sid)
-        assert events[-1] == {
+        assert "timestamp" in events[-1]
+        assert _without_timestamp(events[-1]) == {
             "role": "assistant",
             "content": "Session budget reached: input 1.0k tokens / 1.0k tokens",
         }
