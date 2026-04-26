@@ -139,6 +139,36 @@ class TestGitStoreCommit:
         result = await store.commit(["test.md"], "second")
         assert result is False
 
+    async def test_commit_does_not_stage_unrelated_deletions(self, store: GitStore):
+        tracked = store.repo_dir / "tracked.txt"
+        unrelated = store.repo_dir / "unrelated.txt"
+        tracked.write_text("one")
+        unrelated.write_text("two")
+        await store.commit(["tracked.txt", "unrelated.txt"], "initial")
+
+        tracked.write_text("updated")
+        unrelated.unlink()
+
+        result = await store.commit(["tracked.txt"], "update tracked")
+
+        assert result is True
+        assert unrelated.exists() is False
+        code, _ = await store._run("ls-files", "--error-unmatch", "unrelated.txt")
+        assert code == 0
+
+    async def test_commit_removals_stages_deleted_file(self, store: GitStore):
+        target = store.repo_dir / "gone.txt"
+        target.write_text("bye")
+        await store.commit(["gone.txt"], "initial")
+
+        target.unlink()
+
+        result = await store.commit_removals(["gone.txt"], "remove file")
+
+        assert result is True
+        code, _ = await store._run("ls-files", "--error-unmatch", "gone.txt")
+        assert code != 0
+
     async def test_has_commits(self, store: GitStore):
         assert not await store.has_commits()
         (store.repo_dir / "f.txt").write_text("x")

@@ -254,6 +254,52 @@ def test_delete_session_removes_archived_knowledge(client, auth_headers, tmp_pat
     assert srv._engine.sandbox_mgr.destroy_session.await_count == 1
 
 
+def test_delete_private_session_keeps_committed_knowledge(client, auth_headers, tmp_path):
+    create_resp = client.post("/api/sessions", headers=auth_headers)
+    sid = create_resp.json()["session_id"]
+    srv._engine.session_mgr.append_events(sid, [{"role": "user", "content": "hello"}])
+    commit_resp = client.post(f"/api/sessions/{sid}/knowledge/commit", headers=auth_headers)
+    archive_path = commit_resp.json()["archive_path"]
+    assert archive_path is not None
+    archive_file = tmp_path / archive_path
+    assert archive_file.exists()
+
+    patch_resp = client.patch(f"/api/sessions/{sid}", headers=auth_headers, json={"private": True})
+    assert patch_resp.status_code == 200
+
+    resp = client.delete(f"/api/sessions/{sid}", headers=auth_headers)
+
+    assert resp.status_code == 204
+    assert archive_file.exists()
+
+
+@pytest.mark.asyncio
+async def test_autosave_skips_state_load_errors_and_continues(monkeypatch) -> None:
+    eligible = srv._engine.session_mgr.create_session(private=False)
+    cutoff_age = datetime.now(tz=UTC) - timedelta(hours=srv._config.sessions.commit.autosave_inactivity_hours + 1)
+
+    eligible_state = srv._engine.session_mgr.load_state(eligible.session_id)
+    eligible_state.last_active = cutoff_age
+    srv._engine.session_mgr.save_state(eligible_state)
+
+    bad_session_id = "broken-session"
+    monkeypatch.setattr(srv._engine.session_mgr, "list_sessions", lambda: [bad_session_id, eligible.session_id])
+
+    original_load_state = srv._engine.session_mgr.load_state
+
+    def flaky_load_state(session_id: str):
+        if session_id == bad_session_id:
+            raise FileNotFoundError("missing state")
+        return original_load_state(session_id)
+
+    monkeypatch.setattr(srv._engine.session_mgr, "load_state", flaky_load_state)
+    srv._session_archive.commit_session = AsyncMock()
+
+    await srv._autosave_inactive_sessions()
+
+    srv._session_archive.commit_session.assert_awaited_once_with(eligible.session_id, trigger="autosave")
+
+
 @pytest.mark.asyncio
 async def test_autosave_skips_sessions_already_committed_since_last_activity() -> None:
     stale = srv._engine.session_mgr.create_session(private=False)

@@ -139,7 +139,10 @@ async def _session_archive_loop() -> None:
     """Periodically archive inactive sessions into the knowledge repo."""
     while True:
         await asyncio.sleep(_SESSION_COMMIT_SWEEP_SECONDS)
-        await _autosave_inactive_sessions()
+        try:
+            await _autosave_inactive_sessions()
+        except Exception as exc:
+            logger.warning(f"Session archive autosave loop error: {exc}")
 
 
 async def _autosave_inactive_sessions() -> None:
@@ -147,15 +150,21 @@ async def _autosave_inactive_sessions() -> None:
         return
 
     cutoff = datetime.now(tz=UTC) - timedelta(hours=_config.sessions.commit.autosave_inactivity_hours)
-    for session_id in _engine.session_mgr.list_sessions():
-        state = _engine.session_mgr.load_state(session_id)
-        if state is None or state.private or state.last_active > cutoff:
-            continue
-        if state.knowledge_last_committed_at is not None and state.knowledge_last_committed_at >= state.last_active:
-            continue
-        if _engine.is_agent_running(session_id):
-            continue
+    try:
+        session_ids = _engine.session_mgr.list_sessions()
+    except Exception as exc:
+        logger.warning(f"Session archive autosave error while listing sessions: {exc}")
+        return
+
+    for session_id in session_ids:
         try:
+            state = _engine.session_mgr.load_state(session_id)
+            if state is None or state.private or state.last_active > cutoff:
+                continue
+            if state.knowledge_last_committed_at is not None and state.knowledge_last_committed_at >= state.last_active:
+                continue
+            if _engine.is_agent_running(session_id):
+                continue
             await _session_archive.commit_session(session_id, trigger="autosave")
         except Exception as exc:
             logger.warning(f"Session archive autosave error for {session_id}: {exc}")

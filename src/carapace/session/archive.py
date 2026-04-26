@@ -86,17 +86,29 @@ class SessionArchiveService:
                 reason="Session has no history to archive yet",
             )
 
-        archive_path = self.archive_relative_path_for_state(state)
+        current_state = self._session_mgr.load_state(session_id)
+        if current_state is None:
+            raise ValueError(f"Session {session_id!r} not found")
+        if current_state.private:
+            return SessionArchiveResult(
+                committed=False,
+                archive_path=None,
+                committed_at=None,
+                trigger=trigger,
+                reason="Private sessions cannot be committed to knowledge",
+            )
+
+        archive_path = self.archive_relative_path_for_state(current_state)
         archive_file = self._knowledge_dir / archive_path
         committed_at = datetime.now(tz=UTC)
         session_payload = {
-            "session_id": state.session_id,
-            "channel_type": state.channel_type,
-            "channel_ref": state.channel_ref,
-            "title": state.title,
-            "private": state.private,
-            "created_at": state.created_at.isoformat(),
-            "last_active": state.last_active.isoformat(),
+            "session_id": current_state.session_id,
+            "channel_type": current_state.channel_type,
+            "channel_ref": current_state.channel_ref,
+            "title": current_state.title,
+            "private": current_state.private,
+            "created_at": current_state.created_at.isoformat(),
+            "last_active": current_state.last_active.isoformat(),
         }
         payload = {
             "schema_version": _SCHEMA_VERSION,
@@ -137,12 +149,16 @@ class SessionArchiveService:
             session_id=session_id,
         )
 
-        state.knowledge_last_archive_path = archive_path
-        state.knowledge_last_export_hash = export_hash
+        latest_state = self._session_mgr.load_state(session_id)
+        if latest_state is None:
+            raise ValueError(f"Session {session_id!r} not found")
+
+        latest_state.knowledge_last_archive_path = archive_path
+        latest_state.knowledge_last_export_hash = export_hash
         if commit_made:
-            state.knowledge_last_committed_at = committed_at
-            state.knowledge_last_commit_trigger = trigger
-        self._session_mgr.save_state(state)
+            latest_state.knowledge_last_committed_at = committed_at
+            latest_state.knowledge_last_commit_trigger = trigger
+        self._session_mgr.save_state(latest_state)
 
         logger.info(
             f"Session archive {'committed' if commit_made else 'updated'} session={session_id} trigger={trigger}"
@@ -150,13 +166,15 @@ class SessionArchiveService:
         return SessionArchiveResult(
             committed=commit_made,
             archive_path=archive_path,
-            committed_at=state.knowledge_last_committed_at,
+            committed_at=latest_state.knowledge_last_committed_at,
             trigger=trigger,
             reason=None if commit_made else "No archive changes to commit",
         )
 
     async def delete_session_archive(self, state: SessionState) -> bool:
         if not self._config.enabled:
+            return False
+        if state.private:
             return False
 
         archive_path = state.knowledge_last_archive_path or self.archive_relative_path_for_state(state)
@@ -166,7 +184,7 @@ class SessionArchiveService:
 
         archive_file.unlink()
         self._prune_empty_archive_dirs(archive_file.parent)
-        commit_made = await self._git_store.commit(
+        commit_made = await self._git_store.commit_removals(
             [archive_path],
             f"🗑️ session: remove archive {state.session_id}",
             session_id=state.session_id,
@@ -192,9 +210,9 @@ class SessionArchiveService:
         ).hexdigest()
 
     def _prune_empty_archive_dirs(self, start_dir: Path) -> None:
-        stop_dir = self._knowledge_dir / self._config.path_prefix
-        current = start_dir
-        while current != stop_dir and current.is_dir():
+        stop_dir = (self._knowledge_dir / self._config.path_prefix).resolve()
+        current = start_dir.resolve()
+        while current != stop_dir and current.is_dir() and stop_dir in current.parents:
             try:
                 current.rmdir()
             except OSError:

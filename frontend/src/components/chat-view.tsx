@@ -103,7 +103,7 @@ function formatArchiveTimestamp(iso?: string | null): string {
   if (!iso) return "Not committed yet";
   const value = new Date(iso);
   if (Number.isNaN(value.getTime())) return "Committed";
-  return `Saved ${value.toLocaleString("de-DE", {
+  return `Saved ${value.toLocaleString(undefined, {
     day: "2-digit",
     month: "2-digit",
     hour: "2-digit",

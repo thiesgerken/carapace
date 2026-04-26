@@ -101,3 +101,34 @@ async def test_archive_service_skips_unchanged_snapshot_for_different_trigger(tm
     assert second.committed is False
     assert second.reason == "No archive changes to commit"
     assert git_store.commit.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_archive_service_preserves_concurrent_privacy_update(tmp_path) -> None:
+    mgr = SessionManager(tmp_path)
+    state = mgr.create_session(private=False)
+    mgr.append_events(state.session_id, [{"role": "user", "content": "hello"}])
+    git_store = MagicMock(spec=GitStore)
+
+    async def commit_with_concurrent_privacy_flip(*args, **kwargs) -> bool:
+        current = mgr.load_state(state.session_id)
+        assert current is not None
+        current.private = True
+        mgr.save_state(current)
+        return True
+
+    git_store.commit = AsyncMock(side_effect=commit_with_concurrent_privacy_flip)
+    service = SessionArchiveService(
+        knowledge_dir=tmp_path,
+        git_store=git_store,
+        session_mgr=mgr,
+        config=SessionCommitConfig(),
+    )
+
+    result = await service.commit_session(state.session_id, trigger="manual")
+    final_state = mgr.load_state(state.session_id)
+
+    assert result.committed is True
+    assert final_state is not None
+    assert final_state.private is True
+    assert final_state.knowledge_last_committed_at is not None

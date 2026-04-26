@@ -182,7 +182,19 @@ class GitStore:
     async def commit(self, paths: list[str], message: str, *, session_id: str = "server") -> bool:
         """Stage the given paths and commit. Returns True if a commit was made."""
         for p in paths:
-            await self._run("add", "-A", "--", p)
+            await self._run("add", "--", p)
+
+        return await self._commit_staged_paths(message, session_id=session_id)
+
+    async def commit_removals(self, paths: list[str], message: str, *, session_id: str = "server") -> bool:
+        """Stage tracked path removals and commit. Returns True if a commit was made."""
+        for p in paths:
+            await self._run("rm", "--ignore-unmatch", "--", p)
+
+        return await self._commit_staged_paths(message, session_id=session_id)
+
+    async def _commit_staged_paths(self, message: str, *, session_id: str = "server") -> bool:
+        """Create a commit from the current index if anything is staged."""
 
         # Check if there's anything staged
         code, _ = await self._run("diff", "--cached", "--quiet")
