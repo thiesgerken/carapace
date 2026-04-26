@@ -1,6 +1,92 @@
 # CHANGELOG
 
 
+## v0.98.0 (2026-04-26)
+
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix: preserve active session state during privacy updates
+  ([`fad5762`](https://github.com/thiesgerken/carapace/commit/fad5762462efb8190b565cb2e6e2547ec8bece4e))
+
+- 🐛 fix: harden session state updates
+  ([`a1e6284`](https://github.com/thiesgerken/carapace/commit/a1e6284e7560e3c4a6ca11be8b640ad637545ddc))
+
+- 🐛 fix: address session archive review comments
+  ([`558158b`](https://github.com/thiesgerken/carapace/commit/558158b1710b84d0c6398e39c635c51ec1e408a5))
+
+- 🐛 fix: address archive review feedback
+  ([`46910a6`](https://github.com/thiesgerken/carapace/commit/46910a692944ddd4083f59f6cfa71567cf21ae52))
+
+- 🐛 fix: avoid firefox layout break on history load
+  ([`67c437d`](https://github.com/thiesgerken/carapace/commit/67c437d431c534b66b6c0fce975a3fb2e766344a))
+
+- 🐛 fix: address PR review comments
+  ([`23006e6`](https://github.com/thiesgerken/carapace/commit/23006e6c7950c03774be048d4cb12b7fa79f2b2e))
+
+- 🐛 fix: dedupe unchanged session autosaves
+  ([`87bafe4`](https://github.com/thiesgerken/carapace/commit/87bafe4baaa97b3e78e1e8b93969061a04a4afad))
+
+### ♻️ Refactoring
+
+
+- ♻️ refactor: hide active session internals
+  ([`5be55f6`](https://github.com/thiesgerken/carapace/commit/5be55f697d0207405ff4831b40f23518f1b48d5e))
+
+- ♻️ refactor: fix chat view indentation
+  ([`842efb5`](https://github.com/thiesgerken/carapace/commit/842efb54b3bfa915b6e08a5b2e4d286d7a24a012))
+
+- ♻️ refactor: rename session archive settings to commit
+  ([`94dde65`](https://github.com/thiesgerken/carapace/commit/94dde650f2fb199dfb6ce002eb53b017d034ae92))
+
+### 💄 UI/UX
+
+
+- 💄 ui: refine knowledge archive status badge
+  ([`dfa499e`](https://github.com/thiesgerken/carapace/commit/dfa499ebc38ee8d4ed783e51fc217dec9a72ea2e))
+
+- 💄 ui: compact session header controls
+  ([`ec02201`](https://github.com/thiesgerken/carapace/commit/ec022016c82e69df29ae4b14b8237e4ea7b4bb44))
+
+- 💄 ui: show knowledge save and private state
+  ([`840e018`](https://github.com/thiesgerken/carapace/commit/840e0184c9448e3f512ada9c395f3dc878dd54bb))
+
+### Other
+
+
+- 📝 docs: explain archived session snapshots in prompt
+  ([`d1099e6`](https://github.com/thiesgerken/carapace/commit/d1099e64f92198143f03b4ac5107268bbc669ef3))
+
+- fix tests
+  ([`5240f7b`](https://github.com/thiesgerken/carapace/commit/5240f7b810bbf327472a773cbeddbde3dd7fc54b))
+
+- 📝 docs: document session archive settings
+  ([`e3ad42d`](https://github.com/thiesgerken/carapace/commit/e3ad42d91be0527cd517e745b64634f49f232a72))
+
+### ✨ Features
+
+
+- ✨ feat: add ripgrep to Dockerfile dependencies
+  ([`749dd68`](https://github.com/thiesgerken/carapace/commit/749dd68da6b161e946cc819d08cbbc344298965c))
+
+  Co-authored-by: Copilot <copilot@github.com>
+
+- ✨ feat: update session archive commit message format to reflect add/update actions
+  ([`8689e3c`](https://github.com/thiesgerken/carapace/commit/8689e3ce471b6c76a7c87cc367c996ce284a3471))
+
+- ✨ feat: push knowledge commits to remote
+  ([`aaec5ec`](https://github.com/thiesgerken/carapace/commit/aaec5ec6e7a8793fc1e8b2610e55c07229ac1114))
+
+- ✨ feat: archive sessions to knowledge repo
+  ([`86e49cb`](https://github.com/thiesgerken/carapace/commit/86e49cb0303ac5b13ef0085133296a019114c393))
+
+### 🩹 Patches
+
+
+- 🩹 fix: constrain chat layout shell
+  ([`9d072e1`](https://github.com/thiesgerken/carapace/commit/9d072e1e9e871cc3347a6fdf6d37508c9a4bf524))
+
 ## v0.97.1 (2026-04-25)
 
 
