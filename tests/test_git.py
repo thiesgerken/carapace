@@ -7,6 +7,7 @@ import os
 import stat
 import subprocess
 from pathlib import Path
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -138,6 +139,63 @@ class TestGitStoreCommit:
         # Same content, no changes
         result = await store.commit(["test.md"], "second")
         assert result is False
+
+    async def test_commit_does_not_stage_unrelated_deletions(self, store: GitStore):
+        tracked = store.repo_dir / "tracked.txt"
+        unrelated = store.repo_dir / "unrelated.txt"
+        tracked.write_text("one")
+        unrelated.write_text("two")
+        await store.commit(["tracked.txt", "unrelated.txt"], "initial")
+
+        tracked.write_text("updated")
+        unrelated.unlink()
+
+        result = await store.commit(["tracked.txt"], "update tracked")
+
+        assert result is True
+        assert unrelated.exists() is False
+        code, _ = await store._run("ls-files", "--error-unmatch", "unrelated.txt")
+        assert code == 0
+
+    async def test_commit_removals_stages_deleted_file(self, store: GitStore):
+        target = store.repo_dir / "gone.txt"
+        target.write_text("bye")
+        await store.commit(["gone.txt"], "initial")
+
+        target.unlink()
+
+        result = await store.commit_removals(["gone.txt"], "remove file")
+
+        assert result is True
+        code, _ = await store._run("ls-files", "--error-unmatch", "gone.txt")
+        assert code != 0
+
+    async def test_commit_raises_on_git_failure(self, store: GitStore):
+        (store.repo_dir / "test.md").write_text("hello")
+
+        async def fake_run(*args: str, **kwargs) -> tuple[int, str]:
+            if args[0] == "add":
+                return 0, ""
+            if args[0] == "diff":
+                return 1, ""
+            if args[0] == "commit":
+                return 1, "boom"
+            raise AssertionError(f"unexpected git command: {args!r}")
+
+        store._run = AsyncMock(side_effect=fake_run)
+
+        with pytest.raises(RuntimeError, match="git commit failed: boom"):
+            await store.commit(["test.md"], "add test file")
+
+    async def test_commit_does_not_push_when_remote_is_configured(self, store: GitStore):
+        (store.repo_dir / "test.md").write_text("hello")
+        store.has_remote = AsyncMock(return_value=True)
+        store.push_to_remote = AsyncMock()
+
+        result = await store.commit(["test.md"], "add test file")
+
+        assert result is True
+        store.push_to_remote.assert_not_awaited()
 
     async def test_has_commits(self, store: GitStore):
         assert not await store.has_commits()

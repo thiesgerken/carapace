@@ -30,10 +30,23 @@ export interface SessionInfo {
   created_at: string;
   last_active: string;
   title?: string;
+  private: boolean;
+  knowledge_last_committed_at?: string | null;
+  knowledge_last_archive_path?: string | null;
+  knowledge_last_commit_trigger?: string | null;
   activated_rules: string[];
   disabled_rules: string[];
   message_count: number;
   sandbox?: SessionSandboxSnapshot | null;
+}
+
+export interface SessionArchiveCommitResponse {
+  session: SessionInfo;
+  committed: boolean;
+  archive_path?: string | null;
+  committed_at?: string | null;
+  trigger: string;
+  reason?: string | null;
 }
 
 export interface HistoryMessage {

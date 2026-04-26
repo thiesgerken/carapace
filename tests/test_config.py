@@ -9,6 +9,9 @@ def test_load_config_defaults(tmp_path: Path):
     cfg = load_config(tmp_path)
     assert cfg.carapace.log_level == "info"
     assert cfg.agent.model == "anthropic:claude-sonnet-4-6"
+    assert cfg.sessions.default_private is False
+    assert cfg.sessions.commit.enabled is True
+    assert cfg.sessions.commit.autosave_inactivity_hours == 4
     assert cfg.sandbox.k8s_session_pvc_size == "1Gi"
     assert cfg.sandbox.k8s_session_pvc_storage_class == ""
 

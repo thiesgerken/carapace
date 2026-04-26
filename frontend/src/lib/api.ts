@@ -1,5 +1,6 @@
 import type {
   HistoryMessage,
+  SessionArchiveCommitResponse,
   SessionInfo,
   SessionSandboxSnapshot,
 } from "./types";
@@ -25,13 +26,46 @@ export async function listSessions(
 export async function createSession(
   server: string,
   token: string,
+  options?: { private?: boolean },
 ): Promise<SessionInfo> {
   const res = await fetch(`${server}/api/sessions`, {
     method: "POST",
     headers: headers(token),
-    body: JSON.stringify({ channel_type: "web" }),
+    body: JSON.stringify({ channel_type: "web", ...(options ?? {}) }),
   });
   if (!res.ok) throw new Error(`Failed to create session: ${res.status}`);
+  return res.json();
+}
+
+export async function updateSession(
+  server: string,
+  token: string,
+  sessionId: string,
+  body: { private?: boolean },
+): Promise<SessionInfo> {
+  const res = await fetch(`${server}/api/sessions/${sessionId}`, {
+    method: "PATCH",
+    headers: headers(token),
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`Failed to update session: ${res.status}`);
+  return res.json();
+}
+
+export async function commitSessionKnowledge(
+  server: string,
+  token: string,
+  sessionId: string,
+): Promise<SessionArchiveCommitResponse> {
+  const res = await fetch(
+    `${server}/api/sessions/${sessionId}/knowledge/commit`,
+    {
+      method: "POST",
+      headers: headers(token),
+    },
+  );
+  if (!res.ok)
+    throw new Error(`Failed to commit session knowledge: ${res.status}`);
   return res.json();
 }
 

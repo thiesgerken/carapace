@@ -1,8 +1,14 @@
 "use client";
 
-import { Plus, LogOut, MessageSquare, Trash2 } from "lucide-react";
+import { Lock, LogOut, MessageSquare, Plus, Save, Trash2 } from "lucide-react";
 import type { SessionInfo, SessionSandboxSnapshot } from "@/lib/types";
-import { cn, formatBytes, sandboxStatusIndicatorClass, sandboxStatusLabel } from "@/lib/utils";
+import {
+  cn,
+  formatBytes,
+  sandboxStatusIndicatorClass,
+  sandboxStatusLabel,
+  sessionHasKnowledgeChanges,
+} from "@/lib/utils";
 
 interface SidebarProps {
   sessions: SessionInfo[];
@@ -22,7 +28,7 @@ function formatTime(iso: string): string {
   if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
   if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
   if (diff < 604_800_000) return `${Math.floor(diff / 86_400_000)}d ago`;
-  return d.toLocaleDateString("de-DE", {
+  return d.toLocaleDateString(undefined, {
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
@@ -92,6 +98,9 @@ export function Sidebar({
             (() => {
               const sandbox = sandboxSummary(s);
               const sandboxLabel = sandbox ? sandboxSummaryLabel(sandbox) : null;
+              const showPrivateIcon = s.private;
+              const showSavedIcon = !s.private && !!s.knowledge_last_committed_at && !sessionHasKnowledgeChanges(s);
+              const showKnowledgeIndicator = showPrivateIcon || showSavedIcon;
               const messageCountLabel = formatMessageCount(s.message_count);
               const activityLabel = [
                 formatTime(s.last_active),
@@ -144,6 +153,16 @@ export function Sidebar({
                     <span>{messageCountLabel}</span>
                     <span aria-hidden="true">·</span>
                     <span>{activityLabel}</span>
+                    {showKnowledgeIndicator ? <span aria-hidden="true">·</span> : null}
+                    {showKnowledgeIndicator ? (
+                      <span
+                        className="inline-flex items-center"
+                        title={showPrivateIcon ? "Private session" : (s.knowledge_last_archive_path ?? "All changes committed to knowledge")}
+                      >
+                        {showPrivateIcon ? <Lock className="h-3 w-3" /> : <Save className="h-3 w-3" />}
+                        <span className="sr-only">{showPrivateIcon ? "Private session" : "All changes committed to knowledge"}</span>
+                      </span>
+                    ) : null}
                   </div>
                 </div>
               </button>

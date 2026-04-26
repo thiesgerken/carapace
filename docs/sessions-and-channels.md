@@ -12,11 +12,15 @@ class SessionState(BaseModel):
     channel_type: str           # "cli" | "matrix" | "web" | ...
     channel_ref: str | None     # channel-specific ID (room_id, etc.)
     title: str | None           # auto-generated after first messages
+    private: bool               # if true, session is excluded from knowledge commits
     approved_operations: list[str]
     activated_skills: list[str]
     context_grants: dict[str, ContextGrant]  # per-skill domain & credential grants
     created_at: datetime
     last_active: datetime
+    knowledge_last_committed_at: datetime | None
+    knowledge_last_archive_path: str | None
+    knowledge_last_commit_trigger: str | None
 ```
 
 Each session also has an `ActiveSession` in-memory object (when loaded) that holds:
@@ -31,22 +35,45 @@ Each session also has an `ActiveSession` in-memory object (when loaded) that hol
 
 Sessions are stored on disk at `$CARAPACE_DATA_DIR/sessions/<session_id>/`:
 
-| File           | Contents                                            |
-| -------------- | --------------------------------------------------- |
-| `state.yaml`   | Session metadata (SessionState)                     |
-| `history.yaml` | Full message history (agent + user messages)        |
-| `events.yaml`  | Event stream (tool calls, results, etc.)            |
-| `usage.yaml`   | Token usage breakdown by model                      |
-| `audit.yaml`   | Security audit trail (sentinel verdicts, decisions) |
+| File           | Contents                                                 |
+| -------------- | -------------------------------------------------------- |
+| `state.yaml`   | Session metadata (SessionState)                          |
+| `history.yaml` | Full message history (agent + user messages)             |
+| `events.yaml`  | Event stream (tool calls, results, etc.) with timestamps |
+| `usage.yaml`   | Token usage breakdown by model                           |
+| `audit.yaml`   | Security audit trail (sentinel verdicts, decisions)      |
 
 Sessions persist across server restarts. In-memory state (action log, sentinel conversation) is rebuilt when a session is reactivated.
+
+## Knowledge commits
+
+Carapace can optionally commit session histories into the Git-backed knowledge repository. This is a secondary persistence path for long-term recall, not the primary runtime store.
+
+- The canonical committed artifact is `conversation.json`
+- Session snapshots are written under `<knowledge_dir>/sessions/YYYY/MM/<session_id>/conversation.json` by default
+- The payload is built from the normalized session event log, so it includes user messages, assistant replies, tool calls, tool results, approvals, and event timestamps
+- Existing sessions continue to live primarily under `$CARAPACE_DATA_DIR/sessions/<session_id>/`
+
+### Privacy model
+
+- Every session has a `private` flag in `SessionState`
+- New sessions inherit `sessions.default_private` from `config.yaml`
+- Private sessions are excluded from manual commits to knowledge and from autosave commits
+- Switching a session from public to private does **not** rewrite Git history; already-committed snapshots remain in the knowledge repo history
+
+### Save triggers
+
+- **Manual**: the web UI exposes a "Commit to knowledge" action for public sessions
+- **Automatic**: when `sessions.commit.autosave_enabled` is true, the server periodically checks for inactive public sessions and commits them after `sessions.commit.autosave_inactivity_hours`
+- **Deletion**: if `sessions.commit.delete_from_knowledge_on_session_delete` is true, deleting a session also removes its current committed snapshot path from the knowledge repo and records that as a Git commit
 
 ## Session lifecycle
 
 - Sessions are **persistent** — they survive Carapace restarts
 - **Containers** are ephemeral: destroyed after an idle timeout (configurable, default 15 min). When the user sends a new message after containers expire, they are recreated. See [sandbox.md](sandbox.md).
 - **Title generation**: After the 1st and 3rd user messages, a title is auto-generated using a lightweight LLM model
-- **Deletion**: Sessions can be deleted via the REST API (`DELETE /api/sessions/{id}`), which also cleans up any running sandbox container
+- **Privacy**: Sessions start public by default, unless `sessions.default_private` is set to `true`
+- **Deletion**: Sessions can be deleted via the REST API (`DELETE /api/sessions/{id}`), which also cleans up any running sandbox container and may remove the committed `conversation.json` from the knowledge repo
 
 ---
 
@@ -60,13 +87,15 @@ The primary interactive channel. A Next.js web app connects to the Carapace serv
 
 **REST API:**
 
-| Endpoint                     | Method   | Description                               |
-| ---------------------------- | -------- | ----------------------------------------- |
-| `/api/sessions`              | `POST`   | Create a new session                      |
-| `/api/sessions`              | `GET`    | List all sessions                         |
-| `/api/sessions/{id}`         | `GET`    | Get session details                       |
-| `/api/sessions/{id}`         | `DELETE` | Delete session + cleanup sandbox          |
-| `/api/sessions/{id}/history` | `GET`    | Get chat history (optional `limit` param) |
+| Endpoint                              | Method   | Description                                         |
+| ------------------------------------- | -------- | --------------------------------------------------- |
+| `/api/sessions`                       | `POST`   | Create a new session                                |
+| `/api/sessions`                       | `GET`    | List all sessions                                   |
+| `/api/sessions/{id}`                  | `GET`    | Get session details                                 |
+| `/api/sessions/{id}`                  | `PATCH`  | Update session metadata (currently `private`)       |
+| `/api/sessions/{id}`                  | `DELETE` | Delete session + cleanup sandbox                    |
+| `/api/sessions/{id}/knowledge/commit` | `POST`   | Commit the session snapshot into the knowledge repo |
+| `/api/sessions/{id}/history`          | `GET`    | Get chat history (optional `limit` param)           |
 
 **WebSocket protocol** (`/api/chat/{session_id}`):
 

@@ -1,10 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Loader2, RotateCcw, Trash2 } from "lucide-react";
+import { Loader2, Lock, Play, RotateCcw, Save, Square, Trash2, Unlock } from "lucide-react";
 import { useWebSocket } from "@/hooks/use-websocket";
 import {
   type AvailableModelInfo,
+  commitSessionKnowledge,
   fetchCommands,
   fetchHistory,
   fetchSandbox,
@@ -12,6 +13,7 @@ import {
   type SlashCommand,
   startSandbox,
   stopSandbox,
+  updateSession,
   wipeSandbox,
   wsUrl,
 } from "@/lib/api";
@@ -21,10 +23,17 @@ import type {
   EscalationDecision,
   LlmActivity,
   ServerMessage,
+  SessionInfo,
   SessionSandboxSnapshot,
   TurnUsage,
 } from "@/lib/types";
-import { cn, formatBytes, sandboxStatusIndicatorClass, sandboxStatusLabel } from "@/lib/utils";
+import {
+  cn,
+  formatBytes,
+  sandboxStatusIndicatorClass,
+  sandboxStatusLabel,
+  sessionHasKnowledgeChanges,
+} from "@/lib/utils";
 import { Message } from "./message";
 import { ChatInput } from "./chat-input";
 
@@ -32,8 +41,10 @@ interface ChatViewProps {
   server: string;
   token: string;
   sessionId: string;
+  session: SessionInfo | null;
   initialSandbox?: SessionSandboxSnapshot | null;
   onTitleUpdate?: (title: string) => void;
+  onSessionUpdate?: (session: SessionInfo) => void;
   onSandboxUpdate?: (sandbox: SessionSandboxSnapshot) => void;
   onDeleteSession?: () => Promise<void>;
 }
@@ -86,6 +97,54 @@ function errorDetail(error: unknown): string {
     return error.message;
   }
   return "Unexpected error";
+}
+
+function formatArchiveTimestamp(iso?: string | null): string {
+  if (!iso) return "Not committed yet";
+  const value = new Date(iso);
+  if (Number.isNaN(value.getTime())) return "Committed";
+  return `Saved ${value.toLocaleString(undefined, {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  })}`;
+}
+
+function knowledgeStatusBadge(
+  session: SessionInfo | null,
+  hasKnowledgeChanges: boolean,
+): { label: string; className: string } {
+  const isInKnowledgeRepo = Boolean(
+    session?.knowledge_last_committed_at || session?.knowledge_last_archive_path,
+  );
+
+  if (session?.private && !isInKnowledgeRepo) {
+    return {
+      label: "excluded",
+      className: "border-zinc-300 bg-zinc-100 text-zinc-700",
+    };
+  }
+
+  if (!isInKnowledgeRepo) {
+    return {
+      label: "missing",
+      className: "border-slate-300 bg-slate-100 text-slate-700",
+    };
+  }
+
+  if (hasKnowledgeChanges) {
+    return {
+      label: "outdated",
+      className: "border-amber-300 bg-amber-50 text-amber-700",
+    };
+  }
+
+  return {
+    label: "up-to-date",
+    className: "border-emerald-300 bg-emerald-50 text-emerald-700",
+  };
 }
 
 function optimisticPendingSandbox(
@@ -292,8 +351,10 @@ export function ChatView({
   server,
   token,
   sessionId,
+  session,
   initialSandbox,
   onTitleUpdate,
+  onSessionUpdate,
   onSandboxUpdate,
   onDeleteSession,
 }: ChatViewProps) {
@@ -314,6 +375,12 @@ export function ChatView({
   const [sandboxPowerAction, setSandboxPowerAction] = useState<"starting" | "stopping" | null>(null);
   const [wipingSandbox, setWipingSandbox] = useState(false);
   const [deletingSession, setDeletingSession] = useState(false);
+  const [savingKnowledge, setSavingKnowledge] = useState(false);
+  const [togglingPrivacy, setTogglingPrivacy] = useState(false);
+  const [knowledgeNotice, setKnowledgeNotice] = useState<{
+    tone: "neutral" | "success" | "error";
+    message: string;
+  } | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const isAtBottomRef = useRef(true);
@@ -330,6 +397,14 @@ export function ChatView({
   useEffect(() => {
     onSandboxUpdateRef.current = onSandboxUpdate;
   }, [onSandboxUpdate]);
+
+  const markSessionKnowledgeChanged = useCallback(() => {
+    if (!session) return;
+    onSessionUpdate?.({
+      ...session,
+      last_active: new Date().toISOString(),
+    });
+  }, [onSessionUpdate, session]);
 
   useEffect(() => {
     sandboxRef.current = sandbox;
@@ -689,11 +764,12 @@ export function ChatView({
       queueRef.current = null;
       setQueuedMessage(null);
       sendRef.current({ type: "message", content: queued });
+      markSessionKnowledgeChanged();
       // stay in waiting state
     } else {
       setWaiting(false);
     }
-  }, [clearToolLoading]);
+  }, [clearToolLoading, markSessionKnowledgeChanged]);
 
   const snapshotThinkingDurationMs = useCallback((): number | undefined => {
     const startedAt = lastThinkingStartedAtRef.current;
@@ -1040,7 +1116,9 @@ export function ChatView({
   // Auto-scroll only when already at bottom
   useEffect(() => {
     if (isAtBottomRef.current) {
-      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+      const element = scrollRef.current;
+      if (!element) return;
+      element.scrollTop = element.scrollHeight;
     }
   }, [messages]);
 
@@ -1059,6 +1137,7 @@ export function ChatView({
     } else {
       lastThinkingStartedAtRef.current = null;
       send({ type: "message", content });
+      markSessionKnowledgeChanged();
       setWaiting(true);
     }
   }
@@ -1127,6 +1206,59 @@ export function ChatView({
     }
   }
 
+  async function handleCommitKnowledge() {
+    if (!session || session.private || waiting || savingKnowledge || deletingSession) return;
+
+    setSavingKnowledge(true);
+    setKnowledgeNotice(null);
+    try {
+      const result = await commitSessionKnowledge(server, token, sessionId);
+      onSessionUpdate?.(result.session);
+      setKnowledgeNotice({
+        tone: result.committed ? "success" : "neutral",
+        message:
+          result.reason
+          ?? (result.committed_at ? formatArchiveTimestamp(result.committed_at) : "Committed to knowledge"),
+      });
+    } catch (error) {
+      setKnowledgeNotice({ tone: "error", message: errorDetail(error) });
+    } finally {
+      setSavingKnowledge(false);
+    }
+  }
+
+  async function handleTogglePrivacy() {
+    if (!session || togglingPrivacy || deletingSession) return;
+
+    const nextPrivate = !session.private;
+    if (
+      nextPrivate
+      && session.knowledge_last_committed_at
+      && !window.confirm("Mark this session private? Existing knowledge commits will remain in git history.")
+    ) {
+      return;
+    }
+
+    setTogglingPrivacy(true);
+    setKnowledgeNotice(null);
+    try {
+      const updated = await updateSession(server, token, sessionId, { private: nextPrivate });
+      onSessionUpdate?.(updated);
+      setKnowledgeNotice({
+        tone: "neutral",
+        message: nextPrivate
+          ? updated.knowledge_last_committed_at
+            ? "Session is private. Existing knowledge commits remain unchanged."
+            : "Session is private and will not be committed to knowledge."
+          : "Session is included in knowledge commits to your repo.",
+      });
+    } catch (error) {
+      setKnowledgeNotice({ tone: "error", message: errorDetail(error) });
+    } finally {
+      setTogglingPrivacy(false);
+    }
+  }
+
   function handleApproval(
     toolCallId: string,
     approved: boolean,
@@ -1139,6 +1271,7 @@ export function ChatView({
       approved,
       message: normalizedMessage,
     });
+    markSessionKnowledgeChanged();
     setMessages((prev) => {
         let request: { tool: string; args: Record<string, unknown> } | null = null;
         const withoutApproval = prev.filter((entry) => {
@@ -1173,6 +1306,7 @@ export function ChatView({
       decision,
       message: normalizedDecisionMessage(responseMessage),
     });
+    markSessionKnowledgeChanged();
     setMessages((prev) =>
       prev.filter(
         (m) =>
@@ -1196,6 +1330,7 @@ export function ChatView({
       decision,
       message: normalizedDecisionMessage(responseMessage),
     });
+    markSessionKnowledgeChanged();
     setMessages((prev) =>
       prev.filter(
         (m) =>
@@ -1212,6 +1347,9 @@ export function ChatView({
   }
 
   const connected = status === "connected";
+  const hasKnowledgeContent = messages.length > 0;
+  const hasKnowledgeChanges = sessionHasKnowledgeChanges(session);
+  const canCommitKnowledge = !!session && !session.private && hasKnowledgeContent && hasKnowledgeChanges;
   const waitingLabel = !waiting
     ? null
     : llmActivity?.source === "agent"
@@ -1239,9 +1377,19 @@ export function ChatView({
         : showsStartSandbox
           ? "Start sandbox"
           : "Scale down sandbox";
+    const archiveStatusLabel = formatArchiveTimestamp(session?.knowledge_last_committed_at);
+    const knowledgeBadge = knowledgeStatusBadge(session, hasKnowledgeChanges);
+    const archiveButtonDisabled = !canCommitKnowledge || waiting || savingKnowledge || deletingSession;
+    const commitButtonTitle = !hasKnowledgeContent
+      ? "This session has no conversation history yet."
+      : session?.knowledge_last_committed_at
+        ? hasKnowledgeChanges
+          ? archiveStatusLabel
+          : `${archiveStatusLabel}. No new changes to commit.`
+        : undefined;
 
   return (
-    <div className="flex flex-1 min-h-0 flex-col">
+    <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
       {/* Status bar */}
       {status !== "connected" && (
         <div className="flex items-center gap-2 border-b border-border px-4 py-2 text-xs text-muted-foreground">
@@ -1252,69 +1400,147 @@ export function ChatView({
         </div>
       )}
 
-      <div className="border-b border-border px-4 py-3">
-        <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0">
-            <div className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">
-              Sandbox
+      <div className="border-b border-border px-3 py-2.5 sm:px-4 sm:py-3">
+        <div className="w-full">
+          <div className="min-w-0 w-full space-y-2">
+            <div className="grid grid-cols-2 gap-2">
+              <div className="min-w-0 rounded-lg border border-border/70 bg-muted/20 px-2.5 py-2 sm:px-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
+                    Sandbox
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1">
+                    <button
+                      onClick={() => void handleSandboxPowerAction()}
+                      disabled={sandboxActionDisabled}
+                      title={sandboxPowerButtonLabel}
+                      className="rounded-md p-1.5 text-sky-900 transition-colors hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {sandboxPowerAction ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : showsStartSandbox ? (
+                        <Play className="h-3.5 w-3.5" />
+                      ) : (
+                        <Square className="h-3.5 w-3.5" />
+                      )}
+                    </button>
+                    <button
+                      onClick={() => void handleWipeSandbox()}
+                      disabled={waiting || !!sandboxPowerAction || wipingSandbox || deletingSession}
+                      title="Reset sandbox"
+                      className="rounded-md p-1.5 text-amber-900 transition-colors hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {wipingSandbox ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <RotateCcw className="h-3.5 w-3.5" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+                <div className="mt-1 min-w-0 space-y-0.5">
+                  <div className="flex min-w-0 items-center gap-2 text-sm font-medium text-foreground">
+                    <span
+                      className={cn(
+                        "h-2 w-2 shrink-0 rounded-full",
+                        sandboxLoading
+                          ? "bg-amber-500 animate-pulse"
+                          : sandbox
+                            ? sandboxStatusIndicatorClass(sandbox.status)
+                            : "bg-slate-300",
+                      )}
+                    />
+                    <span className="truncate">{sandboxLoading ? "Refreshing…" : sandbox ? sandboxStatusLabel(sandbox.status) : "Checking sandbox…"}</span>
+                  </div>
+                  <div className="truncate text-xs font-normal text-muted-foreground">
+                    {sandboxStorageLabel(sandbox)}
+                  </div>
+                </div>
+              </div>
+
+              <div className="min-w-0 rounded-lg border border-border/70 bg-muted/20 px-2.5 py-2 sm:px-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
+                    Knowledge
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1">
+                    <button
+                      onClick={() => void handleCommitKnowledge()}
+                      disabled={archiveButtonDisabled}
+                      title={commitButtonTitle ?? "Commit to repo"}
+                      className="rounded-md p-1.5 text-emerald-900 transition-colors hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {savingKnowledge ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Save className="h-3.5 w-3.5" />
+                      )}
+                    </button>
+                    <button
+                      onClick={() => void handleTogglePrivacy()}
+                      disabled={!session || togglingPrivacy || deletingSession}
+                      title={session?.private ? "Include in repo" : "Keep private"}
+                      className="rounded-md p-1.5 text-zinc-900 transition-colors hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {togglingPrivacy ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : session?.private ? (
+                        <Unlock className="h-3.5 w-3.5" />
+                      ) : (
+                        <Lock className="h-3.5 w-3.5" />
+                      )}
+                    </button>
+                    <button
+                      onClick={() => void handleDeleteSession()}
+                      disabled={waiting || !!sandboxPowerAction || wipingSandbox || deletingSession || !onDeleteSession}
+                      title="Delete session"
+                      className="rounded-md p-1.5 text-destructive transition-colors hover:bg-destructive/10 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {deletingSession ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Trash2 className="h-3.5 w-3.5" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+                <div className="mt-1 min-w-0 space-y-0.5">
+                  <div className="flex min-w-0 flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                    <span
+                      className={cn(
+                        "rounded-full border px-2 py-0.5 font-medium uppercase tracking-[0.08em]",
+                        knowledgeBadge.className,
+                      )}
+                    >
+                      {knowledgeBadge.label}
+                    </span>
+                    <span className="truncate">{archiveStatusLabel}</span>
+                  </div>
+                </div>
+                {session?.knowledge_last_archive_path ? (
+                  <div
+                    className="hidden max-w-full truncate text-xs font-mono text-muted-foreground md:block"
+                    title={session.knowledge_last_archive_path}
+                  >
+                    {session.knowledge_last_archive_path}
+                  </div>
+                ) : null}
+              </div>
             </div>
-            <div className="mt-1 flex items-center gap-2 text-sm font-medium text-foreground">
-              <span
+            {knowledgeNotice ? (
+              <div
                 className={cn(
-                  "h-2 w-2 shrink-0 rounded-full",
-                  sandboxLoading
-                    ? "bg-amber-500 animate-pulse"
-                    : sandbox
-                      ? sandboxStatusIndicatorClass(sandbox.status)
-                      : "bg-slate-300",
+                  "text-xs",
+                  knowledgeNotice.tone === "error"
+                    ? "text-destructive"
+                    : knowledgeNotice.tone === "success"
+                      ? "text-emerald-700"
+                      : "text-muted-foreground",
                 )}
-              />
-              <span>{sandboxLoading ? "Refreshing…" : sandbox ? sandboxStatusLabel(sandbox.status) : "Checking sandbox…"}</span>
-            </div>
-            <div className="mt-1 text-xs text-muted-foreground">
-              {sandboxStorageLabel(sandbox)}
-            </div>
-          </div>
-          <div className="flex shrink-0 items-center gap-2">
-            <button
-              onClick={() => void handleSandboxPowerAction()}
-              disabled={sandboxActionDisabled}
-              className="rounded-md border border-sky-300 bg-sky-50 px-3 py-1.5 text-xs font-medium text-sky-900 transition-colors hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <span className="inline-flex items-center gap-1.5">
-                {sandboxPowerAction ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-                {sandboxPowerButtonLabel}
-              </span>
-            </button>
-            <button
-              onClick={() => void handleWipeSandbox()}
-              disabled={waiting || !!sandboxPowerAction || wipingSandbox || deletingSession}
-              className="rounded-md border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-900 transition-colors hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {wipingSandbox ? (
-                <span className="inline-flex items-center gap-1.5">
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  Reset sandbox
-                </span>
-              ) : (
-                <span className="inline-flex items-center gap-1.5">
-                  <RotateCcw className="h-3.5 w-3.5" />
-                  Reset sandbox
-                </span>
-              )}
-            </button>
-            <button
-              onClick={() => void handleDeleteSession()}
-              disabled={waiting || !!sandboxPowerAction || wipingSandbox || deletingSession || !onDeleteSession}
-              title="Delete session"
-              className="rounded-md p-1.5 text-destructive transition-colors hover:bg-destructive/10 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {deletingSession ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Trash2 className="h-3.5 w-3.5" />
-              )}
-            </button>
+              >
+                {knowledgeNotice.message}
+              </div>
+            ) : null}
           </div>
         </div>
       </div>
@@ -1323,7 +1549,7 @@ export function ChatView({
       <div
         ref={scrollRef}
         onScroll={handleScroll}
-        className="flex-1 overflow-y-auto px-4 py-4"
+        className="min-h-0 flex-1 overflow-y-auto px-4 py-4"
       >
         <div className="mx-auto max-w-3xl space-y-3">
           {loadingHistory && (

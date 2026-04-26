@@ -224,6 +224,8 @@ def test_session_state_defaults():
     state = SessionState.now(session_id="abc123")
     assert state.channel_type == "cli"
     assert state.context_grants == {}
+    assert state.private is False
+    assert state.knowledge_last_committed_at is None
 
 
 def test_sentinel_verdict():

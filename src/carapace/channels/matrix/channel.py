@@ -244,6 +244,7 @@ class MatrixChannel:
                 "matrix",
                 room_id,
                 budget=self._engine.config.agent.default_session_budget,
+                private=self._engine.config.sessions.default_private,
             )
             self._room_sessions[room_id] = state.session_id
             logger.info(f"Matrix: created session {state.session_id} for room {room_id}")
@@ -518,6 +519,7 @@ class MatrixChannel:
             "matrix",
             room_id,
             budget=self._engine.config.agent.default_session_budget,
+            private=self._engine.config.sessions.default_private,
         )
         self._room_sessions[room_id] = new_state.session_id
         # Clear any stale room-level pending approval

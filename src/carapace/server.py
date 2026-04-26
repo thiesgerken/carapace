@@ -6,6 +6,7 @@ import logging  # stdlib logging used only for _InterceptHandler → loguru brid
 import os
 import sys
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Annotated, Any, Literal, Self
 
@@ -46,6 +47,7 @@ from carapace.sandbox.runtime import ContainerRuntime
 from carapace.sandbox.state import SessionSandboxSnapshot
 from carapace.security.context import ApprovalSource, ApprovalVerdict
 from carapace.session import SessionEngine, SessionManager
+from carapace.session.archive import SessionArchiveService
 from carapace.skills import SkillRegistry
 from carapace.usage import LlmRequestState, SessionBudgetExceededError
 from carapace.ws_models import (
@@ -85,6 +87,9 @@ _config: Config
 _engine: SessionEngine
 _git_handler: GitHttpHandler
 _credential_registry: CredentialRegistry
+_session_archive: SessionArchiveService
+
+_SESSION_COMMIT_SWEEP_SECONDS = 15 * 60
 
 
 def _create_sandbox_runtime(config: Config, data_dir: Path) -> ContainerRuntime:
@@ -130,9 +135,49 @@ async def _idle_cleanup_loop(sandbox_mgr: SandboxManager) -> None:
             logger.warning(f"Sandbox idle cleanup error: {exc}")
 
 
+async def _session_archive_loop() -> None:
+    """Periodically archive inactive sessions into the knowledge repo."""
+    while True:
+        await asyncio.sleep(_SESSION_COMMIT_SWEEP_SECONDS)
+        try:
+            await _autosave_inactive_sessions()
+        except Exception as exc:
+            logger.warning(f"Session archive autosave loop error: {exc}")
+
+
+async def _autosave_inactive_sessions() -> None:
+    if not _session_archive.enabled or not _config.sessions.commit.autosave_enabled:
+        return
+
+    cutoff = datetime.now(tz=UTC) - timedelta(hours=_config.sessions.commit.autosave_inactivity_hours)
+    try:
+        session_ids = _engine.session_mgr.list_sessions()
+    except Exception as exc:
+        logger.warning(f"Session archive autosave error while listing sessions: {exc}")
+        return
+
+    for session_id in session_ids:
+        try:
+            state = _engine.session_mgr.load_state(session_id)
+            if state is None or state.private or state.last_active > cutoff:
+                continue
+            if state.knowledge_last_committed_at is not None and state.knowledge_last_committed_at >= state.last_active:
+                continue
+            if _engine.is_agent_running(session_id):
+                continue
+            await _session_archive.commit_session(
+                session_id,
+                trigger="autosave",
+                autosave_cutoff=cutoff,
+                is_agent_running=lambda session_id=session_id: _engine.is_agent_running(session_id),
+            )
+        except Exception as exc:
+            logger.warning(f"Session archive autosave error for {session_id}: {exc}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _data_dir, _config, _engine, _git_handler, _credential_registry
+    global _data_dir, _config, _engine, _git_handler, _credential_registry, _session_archive
 
     # 1. Load config
     config_path = get_config_path()
@@ -165,9 +210,13 @@ async def lifespan(app: FastAPI):
     # Bootstrap knowledge files (after pull so we don't override remote content)
     seeded = ensure_knowledge_dir(knowledge_dir)
     if seeded:
-        await git_store.commit(seeded, "🔧 bootstrap: seed default files")
-        if _config.git.remote:
-            await git_store.push_to_remote()
+        try:
+            committed = await git_store.commit(seeded, "🔧 bootstrap: seed default files")
+        except RuntimeError as exc:
+            logger.warning(f"Bootstrap knowledge seed commit failed: {exc}")
+        else:
+            if committed and _config.git.remote:
+                await git_store.push_to_remote()
 
     if _config.carapace.logfire_token:
         logfire.configure(token=_config.carapace.logfire_token, console=False)
@@ -248,6 +297,12 @@ async def lifespan(app: FastAPI):
         credential_registry=_credential_registry,
         model_factory=model_factory,
     )
+    _session_archive = SessionArchiveService(
+        knowledge_dir=knowledge_dir,
+        git_store=git_store,
+        session_mgr=session_mgr,
+        config=_config.sessions.commit,
+    )
 
     # Git HTTP handler — serves the knowledge repo on the sandbox API
     _git_handler = GitHttpHandler(
@@ -300,6 +355,7 @@ async def lifespan(app: FastAPI):
     price_updater.start()
 
     cleanup_task = asyncio.create_task(_idle_cleanup_loop(_sandbox_mgr))
+    archive_task = asyncio.create_task(_session_archive_loop())
 
     matrix_channel = None
     if _config.channels.matrix.enabled:
@@ -324,6 +380,7 @@ async def lifespan(app: FastAPI):
     yield
     logger.info("Server shutting down…")
     cleanup_task.cancel()
+    archive_task.cancel()
     if matrix_channel:
         await matrix_channel.stop()
     sandbox_server.should_exit = True
@@ -388,6 +445,11 @@ async def _verify_ws_token(
 class SessionCreateRequest(BaseModel):
     channel_type: str = "cli"
     channel_ref: str = ""
+    private: bool | None = None
+
+
+class SessionUpdateRequest(BaseModel):
+    private: bool | None = None
 
 
 class SessionInfo(BaseModel):
@@ -397,6 +459,10 @@ class SessionInfo(BaseModel):
     created_at: str
     last_active: str
     title: str | None = None
+    private: bool = False
+    knowledge_last_committed_at: str | None = None
+    knowledge_last_archive_path: str | None = None
+    knowledge_last_commit_trigger: str | None = None
     message_count: int = 0
     sandbox: SessionSandboxSnapshot | None = None
 
@@ -415,9 +481,24 @@ class SessionInfo(BaseModel):
             created_at=state.created_at.isoformat(),
             last_active=state.last_active.isoformat(),
             title=state.title,
+            private=state.private,
+            knowledge_last_committed_at=(
+                state.knowledge_last_committed_at.isoformat() if state.knowledge_last_committed_at else None
+            ),
+            knowledge_last_archive_path=state.knowledge_last_archive_path,
+            knowledge_last_commit_trigger=state.knowledge_last_commit_trigger,
             message_count=message_count,
             sandbox=sandbox,
         )
+
+
+class SessionArchiveCommitResponse(BaseModel):
+    session: SessionInfo
+    committed: bool
+    archive_path: str | None = None
+    committed_at: str | None = None
+    trigger: str
+    reason: str | None = None
 
 
 def _session_message_count(session_id: str) -> int:
@@ -439,6 +520,7 @@ async def create_session(
         body.channel_type,
         body.channel_ref,
         budget=_engine.config.agent.default_session_budget,
+        private=_engine.config.sessions.default_private if body.private is None else body.private,
     )
     return SessionInfo.from_state(state)
 
@@ -466,7 +548,60 @@ async def get_session(session_id: str, _token: str = Depends(_verify_token)) -> 
     if state is None:
         raise HTTPException(status_code=404, detail="Session not found")
     sandbox = _engine.session_mgr.load_sandbox_snapshot(session_id)
-    return SessionInfo.from_state(state, sandbox=sandbox)
+    return SessionInfo.from_state(state, message_count=_session_message_count(session_id), sandbox=sandbox)
+
+
+@router.patch("/sessions/{session_id}", response_model=SessionInfo)
+async def update_session(
+    session_id: str,
+    body: SessionUpdateRequest,
+    _token: str = Depends(_verify_token),
+) -> SessionInfo:
+    state = _engine.session_mgr.load_state(session_id)
+    if state is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    if body.private is not None:
+        state.private = body.private
+        _engine.session_mgr.save_state(state)
+        _engine.update_active_state(session_id, private=body.private)
+
+    sandbox = _engine.session_mgr.load_sandbox_snapshot(session_id)
+    return SessionInfo.from_state(state, message_count=_session_message_count(session_id), sandbox=sandbox)
+
+
+@router.post("/sessions/{session_id}/knowledge/commit", response_model=SessionArchiveCommitResponse)
+async def commit_session_knowledge(
+    session_id: str,
+    _token: str = Depends(_verify_token),
+) -> SessionArchiveCommitResponse:
+    state = _engine.session_mgr.load_state(session_id)
+    if state is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+    if not _session_archive.enabled:
+        raise HTTPException(status_code=503, detail="Session archive is disabled")
+    if state.private:
+        raise HTTPException(status_code=409, detail="Private sessions cannot be committed to knowledge")
+    if _engine.is_agent_running(session_id):
+        raise HTTPException(status_code=409, detail="Cannot archive a session while an agent turn is running")
+
+    result = await _session_archive.commit_session(
+        session_id,
+        trigger="manual",
+        is_agent_running=lambda: _engine.is_agent_running(session_id),
+    )
+    fresh = _engine.session_mgr.load_state(session_id)
+    if fresh is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+    sandbox = _engine.session_mgr.load_sandbox_snapshot(session_id)
+    return SessionArchiveCommitResponse(
+        session=SessionInfo.from_state(fresh, message_count=_session_message_count(session_id), sandbox=sandbox),
+        committed=result.committed,
+        archive_path=result.archive_path,
+        committed_at=result.committed_at.isoformat() if result.committed_at else None,
+        trigger=result.trigger,
+        reason=result.reason,
+    )
 
 
 @router.get("/sessions/{session_id}/sandbox", response_model=SessionSandboxSnapshot)
@@ -516,8 +651,16 @@ async def wipe_session_sandbox(session_id: str, _token: str = Depends(_verify_to
 
 @router.delete("/sessions/{session_id}", status_code=204)
 async def delete_session(session_id: str, _token: str = Depends(_verify_token)) -> None:
+    state = _engine.session_mgr.load_state(session_id)
+    if state is None:
+        raise HTTPException(status_code=404, detail="Session not found")
     _engine.deactivate(session_id)
     await _engine.sandbox_mgr.destroy_session(session_id)
+    if _session_archive.enabled and _config.sessions.commit.delete_from_knowledge_on_session_delete:
+        try:
+            await _session_archive.delete_session_archive(state)
+        except Exception as exc:
+            logger.warning(f"Session archive delete failed for {session_id}: {exc}")
     if not _engine.session_mgr.delete_session(session_id):
         raise HTTPException(status_code=404, detail="Session not found")
 

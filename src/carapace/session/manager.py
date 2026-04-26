@@ -47,6 +47,14 @@ def _append_loaded_event(doc: Any, result: list[dict[str, Any]]) -> None:
         result.append(doc)
 
 
+def _timestamped_event(event: dict[str, Any], *, now: datetime | None = None) -> dict[str, Any]:
+    if event.get("timestamp"):
+        return event
+    stamped = dict(event)
+    stamped["timestamp"] = (now or datetime.now(tz=UTC)).isoformat()
+    return stamped
+
+
 class SessionManager:
     def __init__(self, data_dir: Path):
         self.sessions_dir = data_dir / "sessions"
@@ -58,6 +66,8 @@ class SessionManager:
         channel_type: str = "cli",
         channel_ref: str = "",
         budget: SessionBudget | None = None,
+        *,
+        private: bool = False,
     ) -> SessionState:
         now = datetime.now(tz=UTC)
         session_id = f"{now:%Y-%m-%d-%H-%M}-{secrets.token_hex(4)}"
@@ -65,6 +75,7 @@ class SessionManager:
             session_id=session_id,
             channel_type=channel_type,
             channel_ref=channel_ref or None,
+            private=private,
             budget=budget.model_copy(deep=True) if budget is not None else SessionBudget(),
             created_at=now,
             last_active=now,
@@ -268,10 +279,17 @@ class SessionManager:
         session_dir = self.sessions_dir / session_id
         session_dir.mkdir(parents=True, exist_ok=True)
         events_path = session_dir / "events.yaml"
+        ts = datetime.now(tz=UTC)
         with open(events_path, "a") as f:
             for event in events:
                 f.write("---\n")
-                yaml.dump(_to_yaml_safe(event), f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+                yaml.dump(
+                    _to_yaml_safe(_timestamped_event(event, now=ts)),
+                    f,
+                    default_flow_style=False,
+                    allow_unicode=True,
+                    sort_keys=False,
+                )
 
     def append_events(self, session_id: str, events: list[dict[str, Any]]) -> None:
         with self._events_lock:
@@ -297,6 +315,12 @@ class SessionManager:
     ) -> Any:
         with self._events_lock:
             events = self._load_events_unlocked(session_id)
+            original_ids = {id(event) for event in events}
             result = updater(events)
+            new_event_indexes = [index for index, event in enumerate(events) if id(event) not in original_ids]
+            if new_event_indexes:
+                ts = datetime.now(tz=UTC)
+                for index in new_event_indexes:
+                    events[index] = _timestamped_event(events[index], now=ts)
             self._save_events_unlocked(session_id, events)
             return result

@@ -8,6 +8,7 @@ import traceback
 import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Literal, Protocol, runtime_checkable
@@ -624,6 +625,15 @@ class SessionEngine:
     def get_active(self, session_id: str) -> ActiveSession | None:
         """Return the ``ActiveSession`` if loaded, else ``None``."""
         return self._active.get(session_id)
+
+    def update_active_state(self, session_id: str, **changes: Any) -> None:
+        """Apply explicit field updates to the in-memory state for a loaded session."""
+        active = self._active.get(session_id)
+        if active is not None:
+            for field_name, value in changes.items():
+                if field_name not in SessionState.model_fields:
+                    raise AttributeError(f"Unknown SessionState field: {field_name}")
+                setattr(active.state, field_name, value)
 
     def is_agent_running(self, session_id: str) -> bool:
         active = self._active.get(session_id)
@@ -1498,7 +1508,13 @@ class SessionEngine:
 
         events = self._truncate_incomplete_events(self._session_mgr.load_events(session_id))
         if terminal_message:
-            events.append({"role": "assistant", "content": terminal_message})
+            events.append(
+                {
+                    "role": "assistant",
+                    "content": terminal_message,
+                    "timestamp": datetime.now(tz=UTC).isoformat(),
+                }
+            )
         self._session_mgr.save_events(session_id, events)
 
     def _truncate_incomplete_model_history(self, messages: list[ModelMessage]) -> list[ModelMessage]:

@@ -76,12 +76,17 @@ class SessionState(BaseModel):
     channel_type: str = "cli"
     channel_ref: str | None = None
     title: str | None = None
+    private: bool = False
     approved_operations: list[str] = []
     activated_skills: list[str] = []
     context_grants: dict[str, ContextGrant] = {}
     budget: SessionBudget = Field(default_factory=SessionBudget)
     created_at: datetime
     last_active: datetime
+    knowledge_last_committed_at: datetime | None = None
+    knowledge_last_archive_path: str | None = None
+    knowledge_last_export_hash: str | None = None
+    knowledge_last_commit_trigger: str | None = None
 
     @classmethod
     def now(
@@ -91,6 +96,7 @@ class SessionState(BaseModel):
         channel_type: str = "cli",
         channel_ref: str | None = None,
         title: str | None = None,
+        private: bool = False,
         approved_operations: list[str] | None = None,
     ) -> SessionState:
         ts = datetime.now(tz=UTC)
@@ -99,6 +105,7 @@ class SessionState(BaseModel):
             channel_type=channel_type,
             channel_ref=channel_ref,
             title=title,
+            private=private,
             approved_operations=approved_operations or [],
             created_at=ts,
             last_active=ts,
@@ -334,6 +341,30 @@ class GitConfig(BaseModel):
     token: Secret | None = None
 
 
+class SessionCommitConfig(BaseModel):
+    enabled: bool = True
+    path_prefix: str = "sessions"
+    autosave_enabled: bool = True
+    autosave_inactivity_hours: int = 4
+    delete_from_knowledge_on_session_delete: bool = True
+
+    @model_validator(mode="after")
+    def _validate_commit_settings(self) -> SessionCommitConfig:
+        if self.autosave_inactivity_hours <= 0:
+            raise ValueError("sessions.commit.autosave_inactivity_hours must be > 0")
+        prefix = Path(self.path_prefix)
+        if prefix.is_absolute() or ".." in prefix.parts:
+            raise ValueError("sessions.commit.path_prefix must stay inside the knowledge directory")
+        normalized = str(prefix).strip("/")
+        self.path_prefix = normalized or "sessions"
+        return self
+
+
+class SessionsConfig(BaseModel):
+    default_private: bool = False
+    commit: SessionCommitConfig = SessionCommitConfig()
+
+
 class ServerConfig(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="CARAPACE_SERVER_")
 
@@ -391,6 +422,7 @@ class Config(BaseModel):
     server: ServerConfig = ServerConfig()
     channels: ChannelsConfig = ChannelsConfig()
     agent: AgentConfig = AgentConfig()
+    sessions: SessionsConfig = SessionsConfig()
     sandbox: SandboxConfig = SandboxConfig()
     git: GitConfig = GitConfig()
     credentials: CredentialsConfig = CredentialsConfig()
