@@ -53,6 +53,11 @@ async def test_archive_service_commits_snapshot(tmp_path) -> None:
     assert payload["session"]["session_id"] == state.session_id
     assert payload["history"][0]["role"] == "user"
     assert "timestamp" in payload["history"][0]
+    git_store.commit.assert_awaited_once_with(
+        [result.archive_path],
+        f"💾 session: add {state.session_id}",
+        session_id=state.session_id,
+    )
 
 
 @pytest.mark.asyncio
@@ -219,3 +224,32 @@ async def test_archive_service_does_not_persist_export_hash_on_commit_failure(tm
     assert final_state.knowledge_last_export_hash is None
     assert final_state.knowledge_last_archive_path is None
     assert final_state.knowledge_last_committed_at is None
+
+
+@pytest.mark.asyncio
+async def test_archive_service_uses_update_title_after_first_commit(tmp_path) -> None:
+    mgr = SessionManager(tmp_path)
+    state = mgr.create_session(private=False)
+    mgr.append_events(state.session_id, [{"role": "user", "content": "hello"}])
+    git_store = MagicMock(spec=GitStore)
+    git_store.commit = AsyncMock(return_value=True)
+    service = SessionArchiveService(
+        knowledge_dir=tmp_path,
+        git_store=git_store,
+        session_mgr=mgr,
+        config=SessionCommitConfig(),
+    )
+
+    first = await service.commit_session(state.session_id, trigger="manual")
+    mgr.append_events(state.session_id, [{"role": "assistant", "content": "world"}])
+    second = await service.commit_session(state.session_id, trigger="manual")
+
+    assert first.committed is True
+    assert second.committed is True
+    assert first.archive_path is not None
+    assert second.archive_path == first.archive_path
+    assert git_store.commit.await_args_list[1].args == (
+        [first.archive_path],
+        f"💾 session: update {state.session_id}",
+    )
+    assert git_store.commit.await_args_list[1].kwargs == {"session_id": state.session_id}

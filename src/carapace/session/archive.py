@@ -172,10 +172,11 @@ class SessionArchiveService:
 
             archive_file.parent.mkdir(parents=True, exist_ok=True)
             archive_file.write_text(serialized, encoding="utf-8")
+            commit_action = "add" if current_state.knowledge_last_committed_at is None else "update"
 
             commit_made = await self._git_store.commit(
                 [archive_path],
-                f"💾 session: archive {session_id}",
+                f"💾 session: {commit_action} {session_id}",
                 session_id=session_id,
             )
 
