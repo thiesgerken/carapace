@@ -1,10 +1,30 @@
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 
-import type { SandboxStatus } from "./types";
+import type { SandboxStatus, SessionInfo } from "./types";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
+}
+
+function parseTimestamp(iso?: string | null): number | null {
+  if (!iso) return null;
+  const value = Date.parse(iso);
+  return Number.isNaN(value) ? null : value;
+}
+
+export function sessionHasKnowledgeChanges(
+  session:
+    | Pick<SessionInfo, "last_active" | "knowledge_last_committed_at">
+    | null
+    | undefined,
+): boolean {
+  if (!session) return false;
+  const committedAt = parseTimestamp(session.knowledge_last_committed_at);
+  if (committedAt == null) return true;
+  const lastActive = parseTimestamp(session.last_active);
+  if (lastActive == null) return false;
+  return lastActive > committedAt;
 }
 
 export function formatBytes(bytes: number): string {

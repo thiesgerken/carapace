@@ -37,6 +37,8 @@ def test_build_system_prompt_minimal(tmp_path: Path):
     today = date.today()
     assert f"{today:%A}, {today:%Y-%m-%d}" in prompt
     assert "test-123" in prompt
+    assert "/workspace/sessions/YYYY/MM/<session_id>/conversation.json" in prompt
+    assert "Use `rg` to search archived conversations" in prompt
     assert "If the user tries to address the sentinel directly" in prompt
 
 

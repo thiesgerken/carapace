@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
+from collections.abc import Callable
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -41,6 +44,8 @@ class SessionArchiveService:
         self._git_store = git_store
         self._session_mgr = session_mgr
         self._config = config
+        self._session_locks: dict[str, asyncio.Lock] = {}
+        self._session_lock_refs: dict[str, int] = {}
 
     @property
     def enabled(self) -> bool:
@@ -54,125 +59,197 @@ class SessionArchiveService:
     def archive_absolute_path_for_state(self, state: SessionState) -> Path:
         return self._knowledge_dir / self.archive_relative_path_for_state(state)
 
-    async def commit_session(self, session_id: str, *, trigger: ArchiveTrigger) -> SessionArchiveResult:
-        if not self._config.enabled:
-            return SessionArchiveResult(
-                committed=False,
-                archive_path=None,
-                committed_at=None,
-                trigger=trigger,
-                reason="Session archive is disabled",
-            )
+    def _get_session_lock(self, session_id: str) -> asyncio.Lock:
+        lock = self._session_locks.get(session_id)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._session_locks[session_id] = lock
+        return lock
 
-        state = self._session_mgr.load_state(session_id)
-        if state is None:
-            raise ValueError(f"Session {session_id!r} not found")
-        if state.private:
-            return SessionArchiveResult(
-                committed=False,
-                archive_path=None,
-                committed_at=None,
-                trigger=trigger,
-                reason="Private sessions cannot be committed to knowledge",
-            )
+    @asynccontextmanager
+    async def _locked_session(self, session_id: str):
+        lock = self._get_session_lock(session_id)
+        self._session_lock_refs[session_id] = self._session_lock_refs.get(session_id, 0) + 1
+        try:
+            async with lock:
+                yield
+        finally:
+            remaining_refs = self._session_lock_refs[session_id] - 1
+            if remaining_refs == 0:
+                self._session_lock_refs.pop(session_id, None)
+                if self._session_locks.get(session_id) is lock:
+                    self._session_locks.pop(session_id, None)
+            else:
+                self._session_lock_refs[session_id] = remaining_refs
 
-        history = self._normalized_history(session_id)
-        if not history:
-            return SessionArchiveResult(
-                committed=False,
-                archive_path=self.archive_relative_path_for_state(state),
-                committed_at=None,
-                trigger=trigger,
-                reason="Session has no history to archive yet",
-            )
+    async def commit_session(
+        self,
+        session_id: str,
+        *,
+        trigger: ArchiveTrigger,
+        autosave_cutoff: datetime | None = None,
+        is_agent_running: Callable[[], bool] | None = None,
+    ) -> SessionArchiveResult:
+        async with self._locked_session(session_id):
+            if not self._config.enabled:
+                return SessionArchiveResult(
+                    committed=False,
+                    archive_path=None,
+                    committed_at=None,
+                    trigger=trigger,
+                    reason="Session archive is disabled",
+                )
 
-        archive_path = self.archive_relative_path_for_state(state)
-        archive_file = self._knowledge_dir / archive_path
-        committed_at = datetime.now(tz=UTC)
-        session_payload = {
-            "session_id": state.session_id,
-            "channel_type": state.channel_type,
-            "channel_ref": state.channel_ref,
-            "title": state.title,
-            "private": state.private,
-            "created_at": state.created_at.isoformat(),
-            "last_active": state.last_active.isoformat(),
-        }
-        payload = {
-            "schema_version": _SCHEMA_VERSION,
-            "session": session_payload,
-            "archive": {
-                "trigger": trigger,
-                "committed_at": committed_at.isoformat(),
-                "archive_path": archive_path,
-            },
-            "history": history,
-        }
-        serialized = json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
-        export_hash = self._content_hash(
-            session_payload=session_payload,
-            archive_path=archive_path,
-            history=history,
-        )
+            current_state = self._session_mgr.load_state(session_id)
+            if current_state is None:
+                raise ValueError(f"Session {session_id!r} not found")
+            if current_state.private:
+                return SessionArchiveResult(
+                    committed=False,
+                    archive_path=None,
+                    committed_at=None,
+                    trigger=trigger,
+                    reason="Private sessions cannot be committed to knowledge",
+                )
+            if autosave_cutoff is not None and current_state.last_active > autosave_cutoff:
+                return SessionArchiveResult(
+                    committed=False,
+                    archive_path=None,
+                    committed_at=current_state.knowledge_last_committed_at,
+                    trigger=trigger,
+                    reason="Session is still active",
+                )
+            if (
+                autosave_cutoff is not None
+                and current_state.knowledge_last_committed_at is not None
+                and current_state.knowledge_last_committed_at >= current_state.last_active
+            ):
+                return SessionArchiveResult(
+                    committed=False,
+                    archive_path=current_state.knowledge_last_archive_path,
+                    committed_at=current_state.knowledge_last_committed_at,
+                    trigger=trigger,
+                    reason="No archive changes to commit",
+                )
+            if is_agent_running is not None and is_agent_running():
+                return SessionArchiveResult(
+                    committed=False,
+                    archive_path=current_state.knowledge_last_archive_path,
+                    committed_at=current_state.knowledge_last_committed_at,
+                    trigger=trigger,
+                    reason="Cannot archive a session while an agent turn is running",
+                )
 
-        if (
-            state.knowledge_last_export_hash == export_hash
-            and state.knowledge_last_archive_path == archive_path
-            and archive_file.exists()
-        ):
-            return SessionArchiveResult(
-                committed=False,
+            history = self._normalized_history(session_id)
+            if not history:
+                return SessionArchiveResult(
+                    committed=False,
+                    archive_path=None,
+                    committed_at=None,
+                    trigger=trigger,
+                    reason="Session has no history to archive yet",
+                )
+
+            archive_path = self.archive_relative_path_for_state(current_state)
+            archive_file = self._knowledge_dir / archive_path
+            committed_at = datetime.now(tz=UTC)
+            session_payload = {
+                "session_id": current_state.session_id,
+                "channel_type": current_state.channel_type,
+                "channel_ref": current_state.channel_ref,
+                "title": current_state.title,
+                "private": current_state.private,
+                "created_at": current_state.created_at.isoformat(),
+                "last_active": current_state.last_active.isoformat(),
+            }
+            payload = {
+                "schema_version": _SCHEMA_VERSION,
+                "session": session_payload,
+                "archive": {
+                    "trigger": trigger,
+                    "committed_at": committed_at.isoformat(),
+                    "archive_path": archive_path,
+                },
+                "history": history,
+            }
+            serialized = json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
+            export_hash = self._content_hash(
+                session_payload=session_payload,
                 archive_path=archive_path,
-                committed_at=state.knowledge_last_committed_at,
-                trigger=trigger,
-                reason="No archive changes to commit",
+                history=history,
             )
 
-        archive_file.parent.mkdir(parents=True, exist_ok=True)
-        archive_file.write_text(serialized, encoding="utf-8")
+            if (
+                current_state.knowledge_last_export_hash == export_hash
+                and current_state.knowledge_last_archive_path == archive_path
+                and archive_file.exists()
+            ):
+                return SessionArchiveResult(
+                    committed=False,
+                    archive_path=archive_path,
+                    committed_at=current_state.knowledge_last_committed_at,
+                    trigger=trigger,
+                    reason="No archive changes to commit",
+                )
 
-        commit_made = await self._git_store.commit(
-            [archive_path],
-            f"💾 session: archive {session_id}",
-            session_id=session_id,
-        )
+            archive_file.parent.mkdir(parents=True, exist_ok=True)
+            archive_file.write_text(serialized, encoding="utf-8")
+            commit_action = "add" if current_state.knowledge_last_committed_at is None else "update"
 
-        state.knowledge_last_archive_path = archive_path
-        state.knowledge_last_export_hash = export_hash
-        if commit_made:
-            state.knowledge_last_committed_at = committed_at
-            state.knowledge_last_commit_trigger = trigger
-        self._session_mgr.save_state(state)
+            try:
+                commit_made = await self._git_store.commit(
+                    [archive_path],
+                    f"💾 session: {commit_action} {session_id}",
+                    session_id=session_id,
+                )
+            except RuntimeError:
+                archive_file.unlink(missing_ok=True)
+                self._prune_empty_archive_dirs(archive_file.parent)
+                raise
 
-        logger.info(
-            f"Session archive {'committed' if commit_made else 'updated'} session={session_id} trigger={trigger}"
-        )
-        return SessionArchiveResult(
-            committed=commit_made,
-            archive_path=archive_path,
-            committed_at=state.knowledge_last_committed_at,
-            trigger=trigger,
-            reason=None if commit_made else "No archive changes to commit",
-        )
+            latest_state = self._session_mgr.load_state(session_id)
+            if latest_state is None:
+                raise ValueError(f"Session {session_id!r} not found")
+
+            latest_state.knowledge_last_archive_path = archive_path
+            latest_state.knowledge_last_export_hash = export_hash
+            if commit_made:
+                latest_state.knowledge_last_committed_at = committed_at
+                latest_state.knowledge_last_commit_trigger = trigger
+            self._session_mgr.save_state(latest_state)
+
+            logger.info(
+                f"Session archive {'committed' if commit_made else 'updated'} session={session_id} trigger={trigger}"
+            )
+            return SessionArchiveResult(
+                committed=commit_made,
+                archive_path=archive_path,
+                committed_at=latest_state.knowledge_last_committed_at,
+                trigger=trigger,
+                reason=None if commit_made else "No archive changes to commit",
+            )
 
     async def delete_session_archive(self, state: SessionState) -> bool:
-        if not self._config.enabled:
-            return False
+        async with self._locked_session(state.session_id):
+            if not self._config.enabled:
+                return False
+            if state.private:
+                return False
 
-        archive_path = state.knowledge_last_archive_path or self.archive_relative_path_for_state(state)
-        archive_file = self._knowledge_dir / archive_path
-        if not archive_file.exists():
-            return False
+            archive_path = state.knowledge_last_archive_path or self.archive_relative_path_for_state(state)
+            archive_file = self._knowledge_dir / archive_path
+            if not archive_file.exists():
+                return False
 
-        archive_file.unlink()
-        self._prune_empty_archive_dirs(archive_file.parent)
-        commit_made = await self._git_store.commit(
-            [archive_path],
-            f"🗑️ session: remove archive {state.session_id}",
-            session_id=state.session_id,
-        )
-        logger.info(f"Session archive removed session={state.session_id} committed={commit_made}")
-        return commit_made
+            archive_file.unlink()
+            self._prune_empty_archive_dirs(archive_file.parent)
+            commit_made = await self._git_store.commit_removals(
+                [archive_path],
+                f"🗑️ session: remove archive {state.session_id}",
+                session_id=state.session_id,
+            )
+            logger.info(f"Session archive removed session={state.session_id} committed={commit_made}")
+            return commit_made
 
     def _content_hash(
         self,
@@ -192,9 +269,9 @@ class SessionArchiveService:
         ).hexdigest()
 
     def _prune_empty_archive_dirs(self, start_dir: Path) -> None:
-        stop_dir = self._knowledge_dir / self._config.path_prefix
-        current = start_dir
-        while current != stop_dir and current.is_dir():
+        stop_dir = (self._knowledge_dir / self._config.path_prefix).resolve()
+        current = start_dir.resolve()
+        while current != stop_dir and current.is_dir() and stop_dir in current.parents:
             try:
                 current.rmdir()
             except OSError:
