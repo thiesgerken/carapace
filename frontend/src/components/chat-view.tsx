@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Loader2, Lock, RotateCcw, Save, Trash2, Unlock } from "lucide-react";
+import { Loader2, Lock, Play, RotateCcw, Save, Square, Trash2, Unlock } from "lucide-react";
 import { useWebSocket } from "@/hooks/use-websocket";
 import {
   type AvailableModelInfo,
@@ -1214,7 +1214,7 @@ export function ChatView({
           ? updated.knowledge_last_committed_at
             ? "Session is private. Existing knowledge commits remain unchanged."
             : "Session is private and will not be committed to knowledge."
-          : "Session is public and eligible for knowledge commits.",
+          : "Session is included in knowledge commits to your repo.",
       });
     } catch (error) {
       setKnowledgeNotice({ tone: "error", message: errorDetail(error) });
@@ -1363,56 +1363,139 @@ export function ChatView({
         </div>
       )}
 
-      <div className="border-b border-border px-4 py-3">
-        <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0">
-            <div className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">
-              Sandbox
-            </div>
-            <div className="mt-1 flex items-center gap-2 text-sm font-medium text-foreground">
-              <span
-                className={cn(
-                  "h-2 w-2 shrink-0 rounded-full",
-                  sandboxLoading
-                    ? "bg-amber-500 animate-pulse"
-                    : sandbox
-                      ? sandboxStatusIndicatorClass(sandbox.status)
-                      : "bg-slate-300",
-                )}
-              />
-              <span>{sandboxLoading ? "Refreshing…" : sandbox ? sandboxStatusLabel(sandbox.status) : "Checking sandbox…"}</span>
-            </div>
-            <div className="mt-1 text-xs text-muted-foreground">
-              {sandboxStorageLabel(sandbox)}
-            </div>
-            <div className="mt-3 text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">
-              Knowledge
-            </div>
-            <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-              <span
-                className={cn(
-                  "rounded-full border px-2 py-0.5 font-medium uppercase tracking-[0.08em]",
-                  session?.private
-                    ? "border-zinc-300 bg-zinc-100 text-zinc-700"
-                    : "border-emerald-300 bg-emerald-50 text-emerald-700",
-                )}
-              >
-                {session?.private ? "private" : "public"}
-              </span>
-              <span>{archiveStatusLabel}</span>
-            </div>
-            {session?.knowledge_last_archive_path ? (
-              <div
-                className="mt-1 max-w-full truncate text-xs font-mono text-muted-foreground"
-                title={session.knowledge_last_archive_path}
-              >
-                {session.knowledge_last_archive_path}
+      <div className="border-b border-border px-3 py-2.5 sm:px-4 sm:py-3">
+        <div className="w-full">
+          <div className="min-w-0 w-full space-y-2">
+            <div className="grid grid-cols-2 gap-2">
+              <div className="min-w-0 rounded-lg border border-border/70 bg-muted/20 px-2.5 py-2 sm:px-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
+                    Sandbox
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1">
+                    <button
+                      onClick={() => void handleSandboxPowerAction()}
+                      disabled={sandboxActionDisabled}
+                      title={sandboxPowerButtonLabel}
+                      className="rounded-md p-1.5 text-sky-900 transition-colors hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {sandboxPowerAction ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : showsStartSandbox ? (
+                        <Play className="h-3.5 w-3.5" />
+                      ) : (
+                        <Square className="h-3.5 w-3.5" />
+                      )}
+                    </button>
+                    <button
+                      onClick={() => void handleWipeSandbox()}
+                      disabled={waiting || !!sandboxPowerAction || wipingSandbox || deletingSession}
+                      title="Reset sandbox"
+                      className="rounded-md p-1.5 text-amber-900 transition-colors hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {wipingSandbox ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <RotateCcw className="h-3.5 w-3.5" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+                <div className="mt-1 min-w-0 space-y-0.5">
+                  <div className="flex min-w-0 items-center gap-2 text-sm font-medium text-foreground">
+                    <span
+                      className={cn(
+                        "h-2 w-2 shrink-0 rounded-full",
+                        sandboxLoading
+                          ? "bg-amber-500 animate-pulse"
+                          : sandbox
+                            ? sandboxStatusIndicatorClass(sandbox.status)
+                            : "bg-slate-300",
+                      )}
+                    />
+                    <span className="truncate">{sandboxLoading ? "Refreshing…" : sandbox ? sandboxStatusLabel(sandbox.status) : "Checking sandbox…"}</span>
+                  </div>
+                  <div className="truncate text-xs font-normal text-muted-foreground">
+                    {sandboxStorageLabel(sandbox)}
+                  </div>
+                </div>
               </div>
-            ) : null}
+
+              <div className="min-w-0 rounded-lg border border-border/70 bg-muted/20 px-2.5 py-2 sm:px-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
+                    Knowledge
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1">
+                    <button
+                      onClick={() => void handleCommitKnowledge()}
+                      disabled={archiveButtonDisabled}
+                      title={commitButtonTitle ?? "Commit to repo"}
+                      className="rounded-md p-1.5 text-emerald-900 transition-colors hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {savingKnowledge ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Save className="h-3.5 w-3.5" />
+                      )}
+                    </button>
+                    <button
+                      onClick={() => void handleTogglePrivacy()}
+                      disabled={!session || togglingPrivacy || deletingSession}
+                      title={session?.private ? "Include in repo" : "Keep private"}
+                      className="rounded-md p-1.5 text-zinc-900 transition-colors hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {togglingPrivacy ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : session?.private ? (
+                        <Unlock className="h-3.5 w-3.5" />
+                      ) : (
+                        <Lock className="h-3.5 w-3.5" />
+                      )}
+                    </button>
+                    <button
+                      onClick={() => void handleDeleteSession()}
+                      disabled={waiting || !!sandboxPowerAction || wipingSandbox || deletingSession || !onDeleteSession}
+                      title="Delete session"
+                      className="rounded-md p-1.5 text-destructive transition-colors hover:bg-destructive/10 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {deletingSession ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Trash2 className="h-3.5 w-3.5" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+                <div className="mt-1 min-w-0 space-y-0.5">
+                  <div className="flex min-w-0 flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                    <span
+                      className={cn(
+                        "rounded-full border px-2 py-0.5 font-medium uppercase tracking-[0.08em]",
+                        session?.private
+                          ? "border-zinc-300 bg-zinc-100 text-zinc-700"
+                          : "border-emerald-300 bg-emerald-50 text-emerald-700",
+                      )}
+                    >
+                      {session?.private ? "private" : "included"}
+                    </span>
+                    <span className="truncate">{archiveStatusLabel}</span>
+                  </div>
+                </div>
+                {session?.knowledge_last_archive_path ? (
+                  <div
+                    className="hidden max-w-full truncate text-xs font-mono text-muted-foreground md:block"
+                    title={session.knowledge_last_archive_path}
+                  >
+                    {session.knowledge_last_archive_path}
+                  </div>
+                ) : null}
+              </div>
+            </div>
             {knowledgeNotice ? (
               <div
                 className={cn(
-                  "mt-1 text-xs",
+                  "text-xs",
                   knowledgeNotice.tone === "error"
                     ? "text-destructive"
                     : knowledgeNotice.tone === "success"
@@ -1423,74 +1506,6 @@ export function ChatView({
                 {knowledgeNotice.message}
               </div>
             ) : null}
-          </div>
-          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
-            <button
-              onClick={() => void handleCommitKnowledge()}
-              disabled={archiveButtonDisabled}
-              title={commitButtonTitle}
-              className="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-900 transition-colors hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <span className="inline-flex items-center gap-1.5">
-                {savingKnowledge ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-                Commit
-              </span>
-            </button>
-            <button
-              onClick={() => void handleTogglePrivacy()}
-              disabled={!session || togglingPrivacy || deletingSession}
-              className="rounded-md border border-zinc-300 bg-zinc-50 px-3 py-1.5 text-xs font-medium text-zinc-900 transition-colors hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <span className="inline-flex items-center gap-1.5">
-                {togglingPrivacy ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : session?.private ? (
-                  <Unlock className="h-3.5 w-3.5" />
-                ) : (
-                  <Lock className="h-3.5 w-3.5" />
-                )}
-                {session?.private ? "Make public" : "Make private"}
-              </span>
-            </button>
-            <button
-              onClick={() => void handleSandboxPowerAction()}
-              disabled={sandboxActionDisabled}
-              className="rounded-md border border-sky-300 bg-sky-50 px-3 py-1.5 text-xs font-medium text-sky-900 transition-colors hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <span className="inline-flex items-center gap-1.5">
-                {sandboxPowerAction ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-                {sandboxPowerButtonLabel}
-              </span>
-            </button>
-            <button
-              onClick={() => void handleWipeSandbox()}
-              disabled={waiting || !!sandboxPowerAction || wipingSandbox || deletingSession}
-              className="rounded-md border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-900 transition-colors hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {wipingSandbox ? (
-                <span className="inline-flex items-center gap-1.5">
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  Reset sandbox
-                </span>
-              ) : (
-                <span className="inline-flex items-center gap-1.5">
-                  <RotateCcw className="h-3.5 w-3.5" />
-                  Reset sandbox
-                </span>
-              )}
-            </button>
-            <button
-              onClick={() => void handleDeleteSession()}
-              disabled={waiting || !!sandboxPowerAction || wipingSandbox || deletingSession || !onDeleteSession}
-              title="Delete session"
-              className="rounded-md p-1.5 text-destructive transition-colors hover:bg-destructive/10 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {deletingSession ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Trash2 className="h-3.5 w-3.5" />
-              )}
-            </button>
           </div>
         </div>
       </div>
