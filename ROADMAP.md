@@ -11,7 +11,6 @@
 - [ ] "daily" session that is recreated every day and that should persist some of its memories during the night
 - [ ] should the chat histories become a part of the knowledge repo automatically? at least by pressing a "save" button for the session?
 - [ ] instead of carapace.yaml, use the Skill.md frontmatter metadata field, that's how openclaw does it
-- [ ] skills could register commands (e.g. uv run shortcuts) in carapace yaml, and if the agent tries to use those without the context (although the skill is active) automatically add the context and then warn the agent that this happened
 
 ## Knowledge Repo Handling
 
