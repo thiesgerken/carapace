@@ -156,10 +156,7 @@ export function Sidebar({
                     {showKnowledgeIndicator ? <span aria-hidden="true">·</span> : null}
                     {showKnowledgeIndicator ? (
                       <span
-                        className={cn(
-                          "inline-flex items-center",
-                          showPrivateIcon ? "text-zinc-600" : "text-emerald-700",
-                        )}
+                        className="inline-flex items-center"
                         title={showPrivateIcon ? "Private session" : (s.knowledge_last_archive_path ?? "All changes committed to knowledge")}
                       >
                         {showPrivateIcon ? <Lock className="h-3 w-3" /> : <Save className="h-3 w-3" />}

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Archive, Loader2, Lock, RotateCcw, Trash2, Unlock } from "lucide-react";
+import { Loader2, Lock, RotateCcw, Save, Trash2, Unlock } from "lucide-react";
 import { useWebSocket } from "@/hooks/use-websocket";
 import {
   type AvailableModelInfo,
@@ -1339,18 +1339,18 @@ export function ChatView({
         : showsStartSandbox
           ? "Start sandbox"
           : "Scale down sandbox";
-        const archiveStatusLabel = formatArchiveTimestamp(session?.knowledge_last_committed_at);
-        const commitButtonLabel = !hasKnowledgeContent
-          ? "Nothing to commit"
-          : session?.knowledge_last_committed_at
-            ? hasKnowledgeChanges
-              ? "Commit changes"
-              : "All changes committed"
-            : "Commit to knowledge";
-        const archiveButtonDisabled = !canCommitKnowledge || waiting || savingKnowledge || deletingSession;
+    const archiveStatusLabel = formatArchiveTimestamp(session?.knowledge_last_committed_at);
+    const archiveButtonDisabled = !canCommitKnowledge || waiting || savingKnowledge || deletingSession;
+    const commitButtonTitle = !hasKnowledgeContent
+      ? "This session has no conversation history yet."
+      : session?.knowledge_last_committed_at
+        ? hasKnowledgeChanges
+          ? archiveStatusLabel
+          : `${archiveStatusLabel}. No new changes to commit.`
+        : undefined;
 
   return (
-    <div className="flex flex-1 min-h-0 flex-col">
+    <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
       {/* Status bar */}
       {status !== "connected" && (
         <div className="flex items-center gap-2 border-b border-border px-4 py-2 text-xs text-muted-foreground">
@@ -1399,6 +1399,14 @@ export function ChatView({
               </span>
               <span>{archiveStatusLabel}</span>
             </div>
+            {session?.knowledge_last_archive_path ? (
+              <div
+                className="mt-1 max-w-full truncate text-xs font-mono text-muted-foreground"
+                title={session.knowledge_last_archive_path}
+              >
+                {session.knowledge_last_archive_path}
+              </div>
+            ) : null}
             {knowledgeNotice ? (
               <div
                 className={cn(
@@ -1418,12 +1426,12 @@ export function ChatView({
             <button
               onClick={() => void handleCommitKnowledge()}
               disabled={archiveButtonDisabled}
-              title={!hasKnowledgeContent ? "This session has no conversation history yet." : !hasKnowledgeChanges ? "There are no new changes to commit." : undefined}
+              title={commitButtonTitle}
               className="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-900 transition-colors hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <span className="inline-flex items-center gap-1.5">
-                {savingKnowledge ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Archive className="h-3.5 w-3.5" />}
-                {commitButtonLabel}
+                {savingKnowledge ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                Commit
               </span>
             </button>
             <button
@@ -1489,7 +1497,7 @@ export function ChatView({
       <div
         ref={scrollRef}
         onScroll={handleScroll}
-        className="flex-1 overflow-y-auto px-4 py-4"
+        className="min-h-0 flex-1 overflow-y-auto px-4 py-4"
       >
         <div className="mx-auto max-w-3xl space-y-3">
           {loadingHistory && (
