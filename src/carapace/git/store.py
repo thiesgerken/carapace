@@ -105,6 +105,7 @@ class GitStore:
         self.repo_dir = repo_dir
         self.remote_branch = remote_branch
         self.author_template = author
+        self._index_lock = asyncio.Lock()
 
     async def _run(self, *args: str, cwd: Path | None = None) -> tuple[int, str]:
         """Run a git command and return ``(exit_code, combined_output)``."""
@@ -181,17 +182,19 @@ class GitStore:
 
     async def commit(self, paths: list[str], message: str, *, session_id: str = "server") -> bool:
         """Stage the given paths and commit. Returns True if a commit was made."""
-        for p in paths:
-            await self._run("add", "--", p)
+        async with self._index_lock:
+            for p in paths:
+                await self._run("add", "--", p)
 
-        return await self._commit_staged_paths(message, session_id=session_id)
+            return await self._commit_staged_paths(message, session_id=session_id)
 
     async def commit_removals(self, paths: list[str], message: str, *, session_id: str = "server") -> bool:
         """Stage tracked path removals and commit. Returns True if a commit was made."""
-        for p in paths:
-            await self._run("rm", "--ignore-unmatch", "--", p)
+        async with self._index_lock:
+            for p in paths:
+                await self._run("rm", "--ignore-unmatch", "--", p)
 
-        return await self._commit_staged_paths(message, session_id=session_id)
+            return await self._commit_staged_paths(message, session_id=session_id)
 
     async def _commit_staged_paths(self, message: str, *, session_id: str = "server") -> bool:
         """Create a commit from the current index if anything is staged."""
@@ -211,12 +214,9 @@ class GitStore:
             f"{author_name} <{author_email}>",
         )
         if code != 0:
-            logger.warning(f"git commit failed: {out}")
-            return False
+            raise RuntimeError(f"git commit failed: {out}")
 
         logger.info(f"Knowledge commit: {message}")
-        if await self.has_remote():
-            await self.push_to_remote()
         return True
 
     # ------------------------------------------------------------------

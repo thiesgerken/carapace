@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from unittest.mock import AsyncMock, MagicMock
 
@@ -75,6 +76,26 @@ async def test_archive_service_skips_private_sessions(tmp_path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_archive_service_empty_history_returns_no_archive_path(tmp_path) -> None:
+    mgr = SessionManager(tmp_path)
+    state = mgr.create_session(private=False)
+    git_store = MagicMock(spec=GitStore)
+    git_store.commit = AsyncMock(return_value=True)
+    service = SessionArchiveService(
+        knowledge_dir=tmp_path,
+        git_store=git_store,
+        session_mgr=mgr,
+        config=SessionCommitConfig(),
+    )
+
+    result = await service.commit_session(state.session_id, trigger="manual")
+
+    assert result.committed is False
+    assert result.archive_path is None
+    assert result.reason == "Session has no history to archive yet"
+
+
+@pytest.mark.asyncio
 async def test_archive_service_skips_unchanged_snapshot_for_different_trigger(tmp_path) -> None:
     mgr = SessionManager(tmp_path)
     state = mgr.create_session(private=False)
@@ -132,3 +153,69 @@ async def test_archive_service_preserves_concurrent_privacy_update(tmp_path) -> 
     assert final_state is not None
     assert final_state.private is True
     assert final_state.knowledge_last_committed_at is not None
+
+
+@pytest.mark.asyncio
+async def test_archive_service_serializes_same_session_commits(tmp_path) -> None:
+    mgr = SessionManager(tmp_path)
+    state = mgr.create_session(private=False)
+    mgr.append_events(
+        state.session_id,
+        [
+            {"role": "user", "content": "hello"},
+            {"role": "assistant", "content": "world"},
+        ],
+    )
+    git_store = MagicMock(spec=GitStore)
+    release_commit = asyncio.Event()
+
+    async def delayed_commit(*args, **kwargs) -> bool:
+        await release_commit.wait()
+        return True
+
+    git_store.commit = AsyncMock(side_effect=delayed_commit)
+    service = SessionArchiveService(
+        knowledge_dir=tmp_path,
+        git_store=git_store,
+        session_mgr=mgr,
+        config=SessionCommitConfig(),
+    )
+
+    first_task = asyncio.create_task(service.commit_session(state.session_id, trigger="manual"))
+    await asyncio.sleep(0)
+    second_task = asyncio.create_task(service.commit_session(state.session_id, trigger="autosave"))
+    await asyncio.sleep(0)
+    release_commit.set()
+
+    first = await first_task
+    second = await second_task
+
+    assert first.committed is True
+    assert second.committed is False
+    assert second.reason == "No archive changes to commit"
+    assert git_store.commit.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_archive_service_does_not_persist_export_hash_on_commit_failure(tmp_path) -> None:
+    mgr = SessionManager(tmp_path)
+    state = mgr.create_session(private=False)
+    mgr.append_events(state.session_id, [{"role": "user", "content": "hello"}])
+    git_store = MagicMock(spec=GitStore)
+    git_store.commit = AsyncMock(side_effect=RuntimeError("git commit failed: boom"))
+    service = SessionArchiveService(
+        knowledge_dir=tmp_path,
+        git_store=git_store,
+        session_mgr=mgr,
+        config=SessionCommitConfig(),
+    )
+
+    with pytest.raises(RuntimeError, match="git commit failed: boom"):
+        await service.commit_session(state.session_id, trigger="manual")
+
+    final_state = mgr.load_state(state.session_id)
+
+    assert final_state is not None
+    assert final_state.knowledge_last_export_hash is None
+    assert final_state.knowledge_last_archive_path is None
+    assert final_state.knowledge_last_committed_at is None

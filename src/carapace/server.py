@@ -165,7 +165,12 @@ async def _autosave_inactive_sessions() -> None:
                 continue
             if _engine.is_agent_running(session_id):
                 continue
-            await _session_archive.commit_session(session_id, trigger="autosave")
+            await _session_archive.commit_session(
+                session_id,
+                trigger="autosave",
+                autosave_cutoff=cutoff,
+                is_agent_running=lambda session_id=session_id: _engine.is_agent_running(session_id),
+            )
         except Exception as exc:
             logger.warning(f"Session archive autosave error for {session_id}: {exc}")
 
@@ -206,6 +211,8 @@ async def lifespan(app: FastAPI):
     seeded = ensure_knowledge_dir(knowledge_dir)
     if seeded:
         await git_store.commit(seeded, "🔧 bootstrap: seed default files")
+        if _config.git.remote:
+            await git_store.push_to_remote()
 
     if _config.carapace.logfire_token:
         logfire.configure(token=_config.carapace.logfire_token, console=False)
@@ -537,7 +544,7 @@ async def get_session(session_id: str, _token: str = Depends(_verify_token)) -> 
     if state is None:
         raise HTTPException(status_code=404, detail="Session not found")
     sandbox = _engine.session_mgr.load_sandbox_snapshot(session_id)
-    return SessionInfo.from_state(state, sandbox=sandbox)
+    return SessionInfo.from_state(state, message_count=_session_message_count(session_id), sandbox=sandbox)
 
 
 @router.patch("/sessions/{session_id}", response_model=SessionInfo)
@@ -555,7 +562,7 @@ async def update_session(
         _engine.session_mgr.save_state(state)
 
     sandbox = _engine.session_mgr.load_sandbox_snapshot(session_id)
-    return SessionInfo.from_state(state, sandbox=sandbox)
+    return SessionInfo.from_state(state, message_count=_session_message_count(session_id), sandbox=sandbox)
 
 
 @router.post("/sessions/{session_id}/knowledge/commit", response_model=SessionArchiveCommitResponse)
@@ -579,7 +586,7 @@ async def commit_session_knowledge(
         raise HTTPException(status_code=404, detail="Session not found")
     sandbox = _engine.session_mgr.load_sandbox_snapshot(session_id)
     return SessionArchiveCommitResponse(
-        session=SessionInfo.from_state(fresh, sandbox=sandbox),
+        session=SessionInfo.from_state(fresh, message_count=_session_message_count(session_id), sandbox=sandbox),
         committed=result.committed,
         archive_path=result.archive_path,
         committed_at=result.committed_at.isoformat() if result.committed_at else None,
@@ -641,7 +648,10 @@ async def delete_session(session_id: str, _token: str = Depends(_verify_token)) 
     _engine.deactivate(session_id)
     await _engine.sandbox_mgr.destroy_session(session_id)
     if _session_archive.enabled and _config.sessions.commit.delete_from_knowledge_on_session_delete:
-        await _session_archive.delete_session_archive(state)
+        try:
+            await _session_archive.delete_session_archive(state)
+        except Exception as exc:
+            logger.warning(f"Session archive delete failed for {session_id}: {exc}")
     if not _engine.session_mgr.delete_session(session_id):
         raise HTTPException(status_code=404, detail="Session not found")
 

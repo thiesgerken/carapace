@@ -193,11 +193,19 @@ def test_get_session(client, auth_headers):
 def test_update_session_privacy(client, auth_headers):
     create_resp = client.post("/api/sessions", headers=auth_headers)
     sid = create_resp.json()["session_id"]
+    srv._engine.session_mgr.append_events(
+        sid,
+        [
+            {"role": "user", "content": "hello"},
+            {"role": "assistant", "content": "world"},
+        ],
+    )
 
     resp = client.patch(f"/api/sessions/{sid}", headers=auth_headers, json={"private": True})
 
     assert resp.status_code == 200
     assert resp.json()["private"] is True
+    assert resp.json()["message_count"] == 2
     assert srv._engine.session_mgr.load_state(sid).private is True
 
 
@@ -217,6 +225,7 @@ def test_commit_session_knowledge_writes_archive(client, auth_headers, tmp_path)
     assert resp.status_code == 200
     data = resp.json()
     assert data["committed"] is True
+    assert data["session"]["message_count"] == 2
     archive_path = data["archive_path"]
     assert archive_path is not None
     archive_file = tmp_path / archive_path
@@ -273,6 +282,17 @@ def test_delete_private_session_keeps_committed_knowledge(client, auth_headers, 
     assert archive_file.exists()
 
 
+def test_delete_session_still_succeeds_when_archive_cleanup_fails(client, auth_headers):
+    create_resp = client.post("/api/sessions", headers=auth_headers)
+    sid = create_resp.json()["session_id"]
+    srv._session_archive.delete_session_archive = AsyncMock(side_effect=RuntimeError("boom"))
+
+    resp = client.delete(f"/api/sessions/{sid}", headers=auth_headers)
+
+    assert resp.status_code == 204
+    assert srv._engine.session_mgr.load_state(sid) is None
+
+
 @pytest.mark.asyncio
 async def test_autosave_skips_state_load_errors_and_continues(monkeypatch) -> None:
     eligible = srv._engine.session_mgr.create_session(private=False)
@@ -297,7 +317,12 @@ async def test_autosave_skips_state_load_errors_and_continues(monkeypatch) -> No
 
     await srv._autosave_inactive_sessions()
 
-    srv._session_archive.commit_session.assert_awaited_once_with(eligible.session_id, trigger="autosave")
+    srv._session_archive.commit_session.assert_awaited_once()
+    _, kwargs = srv._session_archive.commit_session.await_args
+    assert kwargs["trigger"] == "autosave"
+    cutoff_delta = kwargs["autosave_cutoff"] - cutoff_age
+    assert timedelta(minutes=59) < cutoff_delta < timedelta(hours=1, minutes=1)
+    assert kwargs["is_agent_running"]() is False
 
 
 @pytest.mark.asyncio
@@ -320,7 +345,27 @@ async def test_autosave_skips_sessions_already_committed_since_last_activity() -
 
     await srv._autosave_inactive_sessions()
 
-    srv._session_archive.commit_session.assert_awaited_once_with(eligible.session_id, trigger="autosave")
+    srv._session_archive.commit_session.assert_awaited_once()
+    args, kwargs = srv._session_archive.commit_session.await_args
+    assert args == (eligible.session_id,)
+    assert kwargs["trigger"] == "autosave"
+
+
+@pytest.mark.asyncio
+async def test_autosave_passes_runtime_agent_guard(monkeypatch) -> None:
+    eligible = srv._engine.session_mgr.create_session(private=False)
+    cutoff_age = datetime.now(tz=UTC) - timedelta(hours=srv._config.sessions.commit.autosave_inactivity_hours + 1)
+
+    eligible_state = srv._engine.session_mgr.load_state(eligible.session_id)
+    eligible_state.last_active = cutoff_age
+    srv._engine.session_mgr.save_state(eligible_state)
+
+    monkeypatch.setattr(srv._engine, "is_agent_running", lambda session_id: session_id == eligible.session_id)
+    srv._session_archive.commit_session = AsyncMock()
+
+    await srv._autosave_inactive_sessions()
+
+    srv._session_archive.commit_session.assert_not_awaited()
 
 
 def test_get_session_includes_cached_sandbox_snapshot(client, auth_headers):

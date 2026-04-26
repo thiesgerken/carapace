@@ -170,7 +170,24 @@ class TestGitStoreCommit:
         code, _ = await store._run("ls-files", "--error-unmatch", "gone.txt")
         assert code != 0
 
-    async def test_commit_pushes_when_remote_is_configured(self, store: GitStore):
+    async def test_commit_raises_on_git_failure(self, store: GitStore):
+        (store.repo_dir / "test.md").write_text("hello")
+
+        async def fake_run(*args: str, **kwargs) -> tuple[int, str]:
+            if args[0] == "add":
+                return 0, ""
+            if args[0] == "diff":
+                return 1, ""
+            if args[0] == "commit":
+                return 1, "boom"
+            raise AssertionError(f"unexpected git command: {args!r}")
+
+        store._run = AsyncMock(side_effect=fake_run)
+
+        with pytest.raises(RuntimeError, match="git commit failed: boom"):
+            await store.commit(["test.md"], "add test file")
+
+    async def test_commit_does_not_push_when_remote_is_configured(self, store: GitStore):
         (store.repo_dir / "test.md").write_text("hello")
         store.has_remote = AsyncMock(return_value=True)
         store.push_to_remote = AsyncMock()
@@ -178,7 +195,7 @@ class TestGitStoreCommit:
         result = await store.commit(["test.md"], "add test file")
 
         assert result is True
-        store.push_to_remote.assert_awaited_once_with()
+        store.push_to_remote.assert_not_awaited()
 
     async def test_has_commits(self, store: GitStore):
         assert not await store.has_commits()
