@@ -1273,7 +1273,6 @@ class SessionEngine:
                 # Refresh state from disk (other channels may have updated it)
                 fresh = self._session_mgr.resume_session(session_id)
                 if fresh:
-                    self._session_mgr.save_state(fresh)
                     active.state = fresh
 
                 deps = self._build_deps(

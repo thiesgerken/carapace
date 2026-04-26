@@ -78,6 +78,32 @@ def test_resume_session(tmp_path: Path):
     assert resumed.session_id == state.session_id
 
 
+def test_update_events_timestamps_inserted_and_replaced_entries(tmp_path: Path):
+    mgr = SessionManager(tmp_path)
+    state = mgr.create_session()
+    mgr.save_events(
+        state.session_id,
+        [
+            {"role": "user", "content": "first", "timestamp": "2026-01-01T00:00:00+00:00"},
+            {"role": "assistant", "content": "second", "timestamp": "2026-01-01T00:00:01+00:00"},
+        ],
+    )
+
+    def _mutate(events: list[dict[str, Any]]) -> None:
+        events.insert(0, {"role": "thinking", "content": "inserted"})
+        events[2] = {"role": "assistant", "content": "replaced"}
+
+    mgr.update_events(state.session_id, _mutate)
+
+    events = mgr.load_events(state.session_id)
+    assert events[0]["role"] == "thinking"
+    assert "timestamp" in events[0]
+    assert events[1]["timestamp"] == "2026-01-01T00:00:00+00:00"
+    assert events[2]["role"] == "assistant"
+    assert events[2]["content"] == "replaced"
+    assert "timestamp" in events[2]
+
+
 def test_resume_nonexistent(tmp_path: Path):
     mgr = SessionManager(tmp_path)
     assert mgr.resume_session("doesnotexist") is None

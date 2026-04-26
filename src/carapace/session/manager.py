@@ -315,10 +315,12 @@ class SessionManager:
     ) -> Any:
         with self._events_lock:
             events = self._load_events_unlocked(session_id)
-            original_len = len(events)
+            original_ids = {id(event) for event in events}
             result = updater(events)
-            if len(events) > original_len:
+            new_event_indexes = [index for index, event in enumerate(events) if id(event) not in original_ids]
+            if new_event_indexes:
                 ts = datetime.now(tz=UTC)
-                events[original_len:] = [_timestamped_event(event, now=ts) for event in events[original_len:]]
+                for index in new_event_indexes:
+                    events[index] = _timestamped_event(events[index], now=ts)
             self._save_events_unlocked(session_id, events)
             return result

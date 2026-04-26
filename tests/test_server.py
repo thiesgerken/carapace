@@ -209,6 +209,18 @@ def test_update_session_privacy(client, auth_headers):
     assert srv._engine.session_mgr.load_state(sid).private is True
 
 
+def test_update_session_privacy_updates_active_session_state(client, auth_headers):
+    create_resp = client.post("/api/sessions", headers=auth_headers)
+    sid = create_resp.json()["session_id"]
+    active = srv._engine.get_or_activate(sid)
+    assert active.state.private is False
+
+    resp = client.patch(f"/api/sessions/{sid}", headers=auth_headers, json={"private": True})
+
+    assert resp.status_code == 200
+    assert active.state.private is True
+
+
 def test_commit_session_knowledge_writes_archive(client, auth_headers, tmp_path):
     create_resp = client.post("/api/sessions", headers=auth_headers)
     sid = create_resp.json()["session_id"]

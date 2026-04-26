@@ -564,6 +564,9 @@ async def update_session(
     if body.private is not None:
         state.private = body.private
         _engine.session_mgr.save_state(state)
+        active = _engine._active.get(session_id)
+        if active is not None:
+            active.state.private = body.private
 
     sandbox = _engine.session_mgr.load_sandbox_snapshot(session_id)
     return SessionInfo.from_state(state, message_count=_session_message_count(session_id), sandbox=sandbox)
