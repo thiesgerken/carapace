@@ -9,13 +9,18 @@ This is a template skill that demonstrates the [AgentSkills](https://agentskills
 with a Python package, a pnpm-managed Node entrypoint, provider-based activation, post-activation setup,
 and an exec-scoped TCP tunnel declared in `carapace.yaml`.
 
+## Exposed Commands
+
+- `example-hello`: Run the Python demo command that probes IMAP `CAPABILITY` through the Carapace-managed tunnel.
+- `example-node`: Run the Node demo command from the pnpm-managed entrypoint.
+
 ## Instructions
 
-When this skill is activated, run the example commands to verify the sandbox environment and tunnel support:
+When this skill is activated, run the exposed commands to verify the sandbox environment and tunnel support:
 
 ```text
-uv run --directory /workspace/skills/example hello
-pnpm --dir /workspace/skills/example run hello:node
+example-hello
+example-node
 ```
 
 The Python command performs an unauthenticated IMAP `CAPABILITY` request against `imap.gmail.com`

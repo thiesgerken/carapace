@@ -8,7 +8,7 @@ This file documents the maintainer-facing details for the example skill. Runtime
 skills/example/
   SKILL.md              # metadata and runtime instructions for the agent
   REFERENCE.md          # this maintainer reference
-  carapace.yaml         # network allowlist, tunnel declarations, and credential declarations
+  carapace.yaml         # network declarations and command aliases for the demo entrypoints
   pyproject.toml        # Python project with dependencies and CLI entrypoints
   uv.lock               # locked dependency versions
   package.json          # Node project manifest using the pnpm workflow
@@ -22,8 +22,8 @@ skills/example/
 
 ## Key Files
 
-- `SKILL.md`: YAML frontmatter plus the instructions the agent follows after activation.
-- `carapace.yaml`: declares the exec-scoped tunnel to `imap.gmail.com:993`; no credentials are required for this demo.
+- `SKILL.md`: YAML frontmatter plus the instructions the agent follows after activation, including the exposed command list near the top.
+- `carapace.yaml`: declares the exec-scoped tunnel to `imap.gmail.com:993` and the `example-hello` / `example-node` command aliases; no credentials are required for this demo.
 - `pyproject.toml`: declares Python dependencies, CLI entrypoints, and build config.
 - `uv.lock`: lock file for reproducible Python installs.
 - `package.json`: declares the Node-side entrypoint.
@@ -41,8 +41,9 @@ When adapting this example:
 1. Keep `SKILL.md` focused on runtime behavior.
 2. Move provider and file-layout explanations into sidecar docs.
 3. Keep lockfiles committed alongside provider manifests.
-4. Use entrypoint commands through `uv run --directory /workspace/skills/<name> <command>` or `pnpm --dir /workspace/skills/<name> run <script>`.
-5. Keep setup hooks deterministic and avoid printing secrets.
+4. If the skill exposes command aliases, list them near the top of `SKILL.md` and prefer those aliases in the runtime instructions.
+5. Keep the underlying raw `uv run --directory ...` or `pnpm --dir ... run ...` commands in `carapace.yaml`, not in frontmatter.
+6. Keep setup hooks deterministic and avoid printing secrets.
 
 ## Activation Flow
 

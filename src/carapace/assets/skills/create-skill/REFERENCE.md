@@ -23,10 +23,11 @@ Use this checklist when writing or reviewing a skill:
 4. Keep domain facts in `SKILL.md` when the agent needs them to act correctly, even if they are user-specific.
 5. Move schemas, dependency setup, auth internals, wrapper internals, and maintainer troubleshooting into sidecar docs.
 6. Link any sidecar docs from `SKILL.md` when the runtime agent may need to know they exist.
-7. If the skill exposes commands, show the real entrypoints the agent should run.
-8. If the skill performs risky actions, add explicit safety rules near the top of `SKILL.md`.
-9. If activation handles credentials or setup automatically, say that briefly in `SKILL.md` and stop there.
-10. If `carapace.yaml` injects a credential into a local file, add that generated file path to the skill-local `.gitignore`.
+7. If the skill exposes commands, add a short `Exposed Commands` list near the top of `SKILL.md` and show the real aliases there.
+8. Do not put exposed commands into frontmatter; keep them in the body where the runtime agent will read them naturally.
+9. If the skill performs risky actions, add explicit safety rules near the top of `SKILL.md`.
+10. If activation handles credentials or setup automatically, say that briefly in `SKILL.md` and stop there.
+11. If `carapace.yaml` injects a credential into a local file, add that generated file path to the skill-local `.gitignore`.
 
 ## What Good `SKILL.md` Files Usually Contain
 
@@ -35,6 +36,7 @@ Most good skills in this repo converge on the same shape:
 - a precise `description` with task keywords
 - one short opening paragraph that sets scope
 - a `When To Use` or equivalent section
+- an `Exposed Commands` section near the top when the skill ships command aliases
 - the normal workflow or command entrypoints
 - enough CLI usage detail to run the skill without guessing
 - user-specific domain maps that prevent mistakes, such as folder names, project IDs, label names, account conventions, or preferred filters
@@ -57,6 +59,7 @@ Move content into a sidecar doc when it is mainly about:
 Keep content in `SKILL.md` when it is mainly about:
 
 - how to invoke the skill's CLI correctly
+- which exposed command aliases the agent should prefer during normal use
 - common commands the agent should use often
 - user-specific categories, folders, projects, labels, accounts, or IDs needed for correct action
 - safety rules and syntax traps that prevent accidental side effects
@@ -227,6 +230,17 @@ Guidelines for command aliases:
 - Do not use multi-line commands; validation rejects them.
 
 The usual sentence in `SKILL.md` is enough: setup or credential injection happens automatically on activation.
+
+If the skill exposes commands, it is customary to list them near the top of `SKILL.md` in a short section such as:
+
+```markdown
+## Exposed Commands
+
+- `example-search`: Search the Example service.
+- `example-sync`: Run the Example sync flow.
+```
+
+Keep this in the body, not in frontmatter.
 
 If a credential is materialized into a local file, treat that path as generated secret state and ignore it in the skill-local `.gitignore`.
 

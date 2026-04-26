@@ -20,6 +20,7 @@ Produce a skill that is easy for another agent to activate and follow.
 Keep the information an activated agent should know before acting:
 
 - what the skill does and when to use it
+- a short list of exposed commands near the top of the body when the skill ships command aliases
 - hard constraints and safety rules
 - the normal workflow or command entrypoints
 - how the skill CLI is supposed to be invoked
@@ -56,9 +57,10 @@ Good filenames are `REFERENCE.md`, `CONFIG.md`, or `references/*.md`.
    - `name` matches the folder name exactly.
    - `description` says what the skill does and when to use it.
 5. Write the body for the agent who will use the skill, including the operational facts needed for safe normal use.
-6. If the skill needs network access, credentials, code, or setup hooks, add the supporting files next to it and summarize the activation behavior in `SKILL.md`.
-7. If setup, implementation, or reference material is not needed for normal use, add a sidecar markdown file and link it from `SKILL.md`.
-8. Tell the user the skill will show up in `/skills` and be available in new sessions.
+6. If the skill exposes command aliases, add an `Exposed Commands` section near the top of `SKILL.md`. List the real aliases there in the body, not in frontmatter.
+7. If the skill needs network access, credentials, code, or setup hooks, add the supporting files next to it and summarize the activation behavior in `SKILL.md`.
+8. If setup, implementation, or reference material is not needed for normal use, add a sidecar markdown file and link it from `SKILL.md`.
+9. Tell the user the skill will show up in `/skills` and be available in new sessions.
 
 ## Setup Guidance
 
@@ -80,6 +82,11 @@ One short paragraph describing the skill.
 
 - <Concrete trigger or task>
 - <Concrete trigger or task>
+
+## Exposed Commands
+
+- `<command-alias>`: <What it does>
+- `<command-alias>`: <What it does>
 
 ## Workflow
 
