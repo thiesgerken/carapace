@@ -89,17 +89,18 @@ class SessionArchiveService:
         archive_path = self.archive_relative_path_for_state(state)
         archive_file = self._knowledge_dir / archive_path
         committed_at = datetime.now(tz=UTC)
+        session_payload = {
+            "session_id": state.session_id,
+            "channel_type": state.channel_type,
+            "channel_ref": state.channel_ref,
+            "title": state.title,
+            "private": state.private,
+            "created_at": state.created_at.isoformat(),
+            "last_active": state.last_active.isoformat(),
+        }
         payload = {
             "schema_version": _SCHEMA_VERSION,
-            "session": {
-                "session_id": state.session_id,
-                "channel_type": state.channel_type,
-                "channel_ref": state.channel_ref,
-                "title": state.title,
-                "private": state.private,
-                "created_at": state.created_at.isoformat(),
-                "last_active": state.last_active.isoformat(),
-            },
+            "session": session_payload,
             "archive": {
                 "trigger": trigger,
                 "committed_at": committed_at.isoformat(),
@@ -108,7 +109,11 @@ class SessionArchiveService:
             "history": history,
         }
         serialized = json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
-        export_hash = hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+        export_hash = self._content_hash(
+            session_payload=session_payload,
+            archive_path=archive_path,
+            history=history,
+        )
 
         if (
             state.knowledge_last_export_hash == export_hash
@@ -168,6 +173,23 @@ class SessionArchiveService:
         )
         logger.info(f"Session archive removed session={state.session_id} committed={commit_made}")
         return commit_made
+
+    def _content_hash(
+        self,
+        *,
+        session_payload: dict[str, Any],
+        archive_path: str,
+        history: list[dict[str, Any]],
+    ) -> str:
+        stable_payload = {
+            "schema_version": _SCHEMA_VERSION,
+            "session": session_payload,
+            "archive_path": archive_path,
+            "history": history,
+        }
+        return hashlib.sha256(
+            json.dumps(stable_payload, sort_keys=True, ensure_ascii=False).encode("utf-8")
+        ).hexdigest()
 
     def _prune_empty_archive_dirs(self, start_dir: Path) -> None:
         stop_dir = self._knowledge_dir / self._config.path_prefix

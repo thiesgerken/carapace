@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import base64
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -252,6 +252,29 @@ def test_delete_session_removes_archived_knowledge(client, auth_headers, tmp_pat
     assert resp.status_code == 204
     assert not archive_file.exists()
     assert srv._engine.sandbox_mgr.destroy_session.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_autosave_skips_sessions_already_committed_since_last_activity() -> None:
+    stale = srv._engine.session_mgr.create_session(private=False)
+    eligible = srv._engine.session_mgr.create_session(private=False)
+    cutoff_age = datetime.now(tz=UTC) - timedelta(hours=srv._config.sessions.commit.autosave_inactivity_hours + 1)
+
+    stale_state = srv._engine.session_mgr.load_state(stale.session_id)
+    stale_state.last_active = cutoff_age
+    stale_state.knowledge_last_committed_at = cutoff_age + timedelta(minutes=5)
+    srv._engine.session_mgr.save_state(stale_state)
+
+    eligible_state = srv._engine.session_mgr.load_state(eligible.session_id)
+    eligible_state.last_active = cutoff_age
+    eligible_state.knowledge_last_committed_at = cutoff_age - timedelta(minutes=5)
+    srv._engine.session_mgr.save_state(eligible_state)
+
+    srv._session_archive.commit_session = AsyncMock()
+
+    await srv._autosave_inactive_sessions()
+
+    srv._session_archive.commit_session.assert_awaited_once_with(eligible.session_id, trigger="autosave")
 
 
 def test_get_session_includes_cached_sandbox_snapshot(client, auth_headers):
