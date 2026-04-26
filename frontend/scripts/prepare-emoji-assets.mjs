@@ -27,11 +27,12 @@ const generatedFilePath = path.join(
   "emoji.generated.ts",
 );
 
+const sourceDir = resolveSourceDir();
+
 rmSync(publicEmojiDir, { force: true, recursive: true });
 
 mkdirSync(publicEmojiDir, { recursive: true });
 
-const sourceDir = resolveSourceDir();
 const svgFiles = collectSvgFiles(sourceDir);
 const copied = new Set();
 

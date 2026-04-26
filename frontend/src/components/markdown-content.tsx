@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
+import { useMemo } from "react";
 import Markdown, { MarkdownHooks, type Components } from "react-markdown";
 import rehypeKatex from "rehype-katex";
 import rehypePrettyCode, {
@@ -27,89 +27,120 @@ const PRETTY_CODE_OPTIONS: RehypePrettyCodeOptions = {
 };
 
 const KATEX_OPTIONS = { strict: "ignore" as const };
-const EMOJI_SKIP_SELECTOR = "code, pre, script, style, textarea, input, .katex, .emoji-inline";
+const EMOJI_SKIP_TAGS = new Set([
+  "code",
+  "pre",
+  "script",
+  "style",
+  "textarea",
+  "input",
+]);
 
-function replaceEmojiTextNodes(root: HTMLElement): void {
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-  const nodes: Text[] = [];
+type HastNode = {
+  type: string;
+  value?: string;
+  tagName?: string;
+  properties?: Record<string, unknown>;
+  children?: HastNode[];
+};
 
-  let current = walker.nextNode();
-  while (current) {
-    const textNode = current as Text;
-    if (shouldReplaceTextNode(textNode)) {
-      nodes.push(textNode);
-    }
-    current = walker.nextNode();
+function rehypeBundledEmoji() {
+  return (tree: HastNode) => {
+    replaceEmojiNodes(tree);
+  };
+}
+
+function replaceEmojiNodes(node: HastNode, shouldSkip = false): void {
+  if (!node.children) {
+    return;
   }
 
-  for (const textNode of nodes) {
-    const segments = splitEmojiText(textNode.data);
-    if (segments.length === 1 && segments[0]?.kind === "text") {
-      continue;
-    }
+  const nextChildren: HastNode[] = [];
 
-    const fragment = document.createDocumentFragment();
-    for (const segment of segments) {
-      if (segment.kind === "text") {
-        fragment.append(document.createTextNode(segment.value));
+  for (const child of node.children) {
+    if (
+      child.type === "text" &&
+      typeof child.value === "string" &&
+      !shouldSkip
+    ) {
+      const segments = splitEmojiText(child.value);
+      if (segments.length === 1 && segments[0]?.kind === "text") {
+        nextChildren.push(child);
         continue;
       }
 
-      const image = document.createElement("img");
-      image.className = "emoji-inline";
-      image.src = segment.src;
-      image.alt = segment.value;
-      image.decoding = "async";
-      image.draggable = false;
-      image.addEventListener(
-        "error",
-        () => {
-          image.replaceWith(document.createTextNode(segment.value));
-        },
-        { once: true },
-      );
-      fragment.append(image);
+      for (const segment of segments) {
+        if (segment.kind === "text") {
+          nextChildren.push({ type: "text", value: segment.value });
+          continue;
+        }
+
+        nextChildren.push({
+          type: "element",
+          tagName: "img",
+          properties: {
+            alt: segment.value,
+            className: ["emoji-inline"],
+            decoding: "async",
+            draggable: false,
+            src: segment.src,
+          },
+          children: [],
+        });
+      }
+
+      continue;
     }
 
-    textNode.replaceWith(fragment);
+    replaceEmojiNodes(child, shouldSkip || shouldSkipEmojiReplacement(child));
+    nextChildren.push(child);
   }
+
+  node.children = nextChildren;
 }
 
-function shouldReplaceTextNode(textNode: Text): boolean {
-  if (!textNode.data) {
+function shouldSkipEmojiReplacement(node: HastNode): boolean {
+  if (node.type !== "element") {
     return false;
   }
 
-  const parent = textNode.parentElement;
-  if (!parent) {
-    return false;
+  if (node.tagName && EMOJI_SKIP_TAGS.has(node.tagName)) {
+    return true;
   }
 
-  if (parent.closest(EMOJI_SKIP_SELECTOR)) {
-    return false;
+  const classNames = getClassNames(node.properties?.className);
+  return classNames.includes("katex") || classNames.includes("emoji-inline");
+}
+
+function getClassNames(value: unknown): string[] {
+  if (typeof value === "string") {
+    return value.split(/\s+/).filter(Boolean);
   }
 
-  const segments = splitEmojiText(textNode.data);
-  return !(segments.length === 1 && segments[0]?.kind === "text");
+  if (Array.isArray(value)) {
+    return value.filter((item): item is string => typeof item === "string");
+  }
+
+  return [];
 }
 
 export function MarkdownContent({ content }: { content: string }) {
-  const containerRef = useRef<HTMLDivElement>(null);
   const remarkPlugins = useMemo(() => [remarkGfm, remarkMath], []);
   const rehypePluginsAsync = useMemo((): PluggableList => {
     return [
       [rehypePrettyCode, PRETTY_CODE_OPTIONS],
       [rehypeKatex, KATEX_OPTIONS],
+      rehypeBundledEmoji,
     ];
   }, []);
   /** Sync `Markdown` cannot run `rehype-pretty-code` (Shiki is async). */
   const rehypePluginsFallback = useMemo((): PluggableList => {
-    return [[rehypeKatex, KATEX_OPTIONS]];
+    return [[rehypeKatex, KATEX_OPTIONS], rehypeBundledEmoji];
   }, []);
 
   const components = useMemo<Components>(
     () => ({
-      a: (props) => (
+      a: ({ node: _node, ...props }) => (
         <a {...props} target="_blank" rel="noreferrer noopener" />
       ),
       pre: MarkdownPre,
@@ -117,41 +148,8 @@ export function MarkdownContent({ content }: { content: string }) {
     [],
   );
 
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container) {
-      return;
-    }
-
-    let rafId = 0;
-
-    const applyEmojiReplacement = () => {
-      cancelAnimationFrame(rafId);
-      rafId = requestAnimationFrame(() => {
-        replaceEmojiTextNodes(container);
-      });
-    };
-
-    applyEmojiReplacement();
-
-    const observer = new MutationObserver(() => {
-      applyEmojiReplacement();
-    });
-
-    observer.observe(container, {
-      characterData: true,
-      childList: true,
-      subtree: true,
-    });
-
-    return () => {
-      cancelAnimationFrame(rafId);
-      observer.disconnect();
-    };
-  }, [content]);
-
   return (
-    <div className="prose" ref={containerRef}>
+    <div className="prose">
       <MarkdownHooks
         remarkPlugins={remarkPlugins}
         rehypePlugins={rehypePluginsAsync}
