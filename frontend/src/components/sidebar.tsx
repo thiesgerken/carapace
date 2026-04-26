@@ -1,6 +1,7 @@
 "use client";
 
 import { Lock, LogOut, MessageSquare, Plus, Save, Trash2 } from "lucide-react";
+import { EmojiText } from "@/components/emoji-text";
 import type { SessionInfo, SessionSandboxSnapshot } from "@/lib/types";
 import {
   cn,
@@ -130,7 +131,9 @@ export function Sidebar({
                     className="truncate text-sm"
                     title={s.title || s.session_id}
                   >
-                    {s.title || (
+                    {s.title ? (
+                      <EmojiText text={s.title} />
+                    ) : (
                       <span className="font-mono break-all">
                         {s.session_id}
                       </span>

@@ -3,7 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "prepare:emoji": "node ./scripts/prepare-emoji-assets.mjs",
+    "predev": "pnpm prepare:emoji",
     "dev": "next dev",
+    "prebuild": "pnpm prepare:emoji",
     "build": "next build",
     "start": "next start",
     "lint": "eslint . --ext .js,.jsx,.ts,.tsx"
@@ -12,6 +15,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "diff": "^9.0.0",
+    "emoji-regex": "^10.6.0",
     "katex": "^0.16.45",
     "lucide-react": "^1.7.0",
     "next": "^16.2.2",
@@ -35,6 +39,7 @@
     "eslint": "^10.0.0",
     "eslint-config-next": "^16.2.2",
     "tailwindcss": "^4.2.2",
+    "jdecked-twemoji-assets": "https://github.com/jdecked/twemoji/archive/refs/tags/v17.0.2.tar.gz",
     "typescript": "^6.0.2"
   }
 }
