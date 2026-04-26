@@ -626,6 +626,12 @@ class SessionEngine:
         """Return the ``ActiveSession`` if loaded, else ``None``."""
         return self._active.get(session_id)
 
+    def replace_active_state(self, state: SessionState) -> None:
+        """Replace the in-memory state for a loaded session."""
+        active = self._active.get(state.session_id)
+        if active is not None:
+            active.state = state
+
     def is_agent_running(self, session_id: str) -> bool:
         active = self._active.get(session_id)
         return active is not None and active.agent_task is not None and not active.agent_task.done()
