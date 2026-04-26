@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -476,12 +477,49 @@ class SkillNetworkConfig(BaseModel):
         return self
 
 
+_SKILL_COMMAND_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+
+
+class SkillCommandDecl(BaseModel):
+    """A command alias declared in a skill's ``carapace.yaml``."""
+
+    name: str
+    command: str
+
+    @model_validator(mode="after")
+    def _validate(self) -> SkillCommandDecl:
+        if not _SKILL_COMMAND_NAME_RE.match(self.name):
+            raise ValueError(
+                "skill command name must start with an alphanumeric character and contain only letters, "
+                "numbers, dots, underscores, or hyphens"
+            )
+
+        command = self.command.strip()
+        if not command:
+            raise ValueError("skill command must not be empty")
+        if "\n" in command or "\r" in command:
+            raise ValueError("skill command must be a single line")
+
+        self.command = command
+        return self
+
+
 class SkillCarapaceConfig(BaseModel):
     """Parsed contents of a skill's ``carapace.yaml``."""
 
     network: SkillNetworkConfig = SkillNetworkConfig()
     credentials: list[SkillCredentialDecl] = []
+    commands: list[SkillCommandDecl] = []
     hints: dict[str, str] = {}
+
+    @model_validator(mode="after")
+    def _validate_commands(self) -> SkillCarapaceConfig:
+        seen_names: set[str] = set()
+        for command in self.commands:
+            if command.name in seen_names:
+                raise ValueError(f"duplicate skill command name {command.name!r} is not allowed")
+            seen_names.add(command.name)
+        return self
 
 
 class ContextGrant(BaseModel):

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import shlex
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -9,6 +10,8 @@ from loguru import logger
 
 from carapace.sandbox.file_ops import ContextFileCredential, SessionContainerLike, WrittenContextFile
 from carapace.sandbox.runtime import ExecResult, SkillActivationError, SkillActivationInputs
+
+SKILL_COMMAND_SHIM_DIR = "/root/.carapace/bin"
 
 
 @dataclass(frozen=True)
@@ -135,10 +138,11 @@ class SkillActivationRunner:
         skill_name: str,
         skill_dir: Path,
         *,
+        command_aliases: list[tuple[str, str]] | None = None,
         run_session_id: str | None = None,
     ) -> list[str]:
         providers = self.matching_providers(skill_dir)
-        if not providers:
+        if not providers and not command_aliases:
             return []
 
         trusted_files = self.trusted_files_for(providers)
@@ -151,14 +155,78 @@ class SkillActivationRunner:
 
         activation_inputs = await self._get_activation_inputs(run_session_id or sc.session_id, skill_name)
         if run_session_id is not None:
-            return await self.run_providers(
+            status_lines = await self.run_providers(
                 skill_name,
                 providers,
                 activation_inputs,
                 session_id=run_session_id,
             )
+            if command_aliases:
+                status_lines.extend(
+                    await self.register_command_aliases(
+                        command_aliases,
+                        session_id=run_session_id,
+                    )
+                )
+            return status_lines
 
-        return await self.run_providers(skill_name, providers, activation_inputs, sc=sc)
+        status_lines = await self.run_providers(skill_name, providers, activation_inputs, sc=sc)
+        if command_aliases:
+            status_lines.extend(await self.register_command_aliases(command_aliases, sc=sc))
+        return status_lines
+
+    def _command_shim_path(self, alias: str) -> str:
+        return f"{SKILL_COMMAND_SHIM_DIR}/{alias}"
+
+    def _command_wrapper_content(self, command: str) -> str:
+        return f'#!/bin/sh\nexec {command} "$@"\n'
+
+    async def register_command_aliases(
+        self,
+        command_aliases: list[tuple[str, str]],
+        *,
+        session_id: str | None = None,
+        sc: SessionContainerLike | None = None,
+    ) -> list[str]:
+        if (session_id is None) == (sc is None):
+            raise ValueError("Exactly one of session_id and sc must be set")
+
+        shell_commands = [f"mkdir -p {shlex.quote(SKILL_COMMAND_SHIM_DIR)}"]
+
+        for alias, command in command_aliases:
+            wrapper = self._command_wrapper_content(command)
+            wrapper_b64 = base64.b64encode(wrapper.encode()).decode()
+            shell_commands.append(
+                f"printf %s {shlex.quote(wrapper_b64)} | base64 -d > {shlex.quote(self._command_shim_path(alias))}"
+            )
+            shell_commands.append(f"chmod +x {shlex.quote(self._command_shim_path(alias))}")
+
+        command = " && ".join(shell_commands)
+        if session_id is not None:
+            result = await self._exec_in_session(
+                session_id,
+                command,
+                timeout=30,
+                bypass_proxy=True,
+                workdir=self._knowledge_workdir,
+            )
+        else:
+            assert sc is not None
+            result = await self._exec_in_container(
+                sc,
+                command,
+                timeout=30,
+                bypass_proxy=True,
+                workdir=self._knowledge_workdir,
+            )
+
+        if result.exit_code != 0:
+            raise SkillActivationError(f"command alias registration exit {result.exit_code}: {result.output[:500]}")
+
+        if not command_aliases:
+            return []
+        names = ", ".join(alias for alias, _command in command_aliases)
+        return [f"Command aliases registered: {names}."]
 
     def _activation_file_credentials(
         self,

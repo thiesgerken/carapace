@@ -167,7 +167,7 @@ As a rule of thumb, if a runtime agent can succeed without reading a section eve
 
 ## `carapace.yaml`
 
-`carapace.yaml` is optional. Use it when the skill needs outbound domains, tunnels, hints, or auto-injected credentials.
+`carapace.yaml` is optional. Use it when the skill needs outbound domains, tunnels, hints, auto-injected credentials, or command aliases.
 
 Top-level keys:
 
@@ -176,6 +176,7 @@ Top-level keys:
 | `network`         | object          | Network configuration for allowed domains or tunnels    |
 | `network.domains` | list of strings | Hostnames added to the session allowlist                |
 | `credentials`     | list of objects | Vault-backed credentials to inject as env vars or files |
+| `commands`        | list of objects | Command aliases registered on skill activation          |
 | `hints`           | map             | Extra metadata for tooling                              |
 
 Valid example:
@@ -193,6 +194,10 @@ credentials:
   - vault_path: my-backend/deploy-key
     description: SSH private key for deploys
     file: ~/.ssh/id_example_deploy
+
+commands:
+  - name: example-search
+    command: uv run --directory /workspace/skills/example scripts/search.py
 ```
 
 Common mistake:
@@ -205,6 +210,21 @@ network:
 `network` must be an object with a `domains` key. If the shape is wrong, validation fails and the file may be ignored.
 
 When credentials are declared here, activation handles approval and injection automatically. Keep those details out of `SKILL.md` unless the runtime behavior itself depends on them.
+
+When command aliases are declared here, activation generates executable wrappers in `/root/.carapace/bin/`. Authors should think of `command` as the base command line for that wrapper, not as a multi-line shell script.
+
+Each command entry has:
+
+- `name`: the alias token the agent will invoke
+- `command`: a single non-empty line that becomes `exec <command> "$@"` inside the generated `#!/bin/sh` wrapper
+
+Guidelines for command aliases:
+
+- Preserve the caller's current working directory. Do not depend on an implicit `cd` into the skill directory.
+- Use absolute paths if the command needs files under `/workspace/skills/<name>/`.
+- Assume extra arguments are forwarded with `"$@"`.
+- Keep aliases unique. If another active skill already owns the same alias, activation fails.
+- Do not use multi-line commands; validation rejects them.
 
 The usual sentence in `SKILL.md` is enough: setup or credential injection happens automatically on activation.
 

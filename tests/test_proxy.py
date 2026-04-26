@@ -468,6 +468,7 @@ async def test_activate_skill_prefers_pnpm_when_package_and_pnpm_lockfiles_exist
 
     result = await mgr.activate_skill("sess-1", "multi-node-lock")
     commands = [call.args[1] for call in runtime.exec.call_args_list]
+
     result_lines = result.splitlines()
 
     assert "pnpm dependencies installed." in result_lines
@@ -477,6 +478,44 @@ async def test_activate_skill_prefers_pnpm_when_package_and_pnpm_lockfiles_exist
     assert not any(
         command.startswith("git checkout @{upstream} --") and "package-lock.json" in command for command in commands
     )
+
+
+@pytest.mark.anyio
+async def test_activate_skill_registers_command_aliases_in_image_shim_dir(tmp_path: Path):
+    runtime = make_runtime_mock()
+    runtime.get_host_ip = AsyncMock(return_value="172.18.0.1")
+    runtime.create_sandbox = AsyncMock(return_value="container-1")
+    runtime.get_ip = AsyncMock(return_value="172.18.0.22")
+    runtime.logs = AsyncMock(return_value="carapace sandbox ready")
+    runtime.exec = AsyncMock(
+        side_effect=[
+            ExecResult(exit_code=0, output=""),  # _clone_knowledge_repo probe after create
+            ExecResult(exit_code=0, output=""),  # git checkout carapace.yaml
+            ExecResult(exit_code=0, output=""),  # command alias registration
+        ]
+    )
+
+    skill_dir = tmp_path / "skills" / "web"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text("---\nname: web\n---\nBody.\n")
+
+    mgr = SandboxManager(runtime=runtime, data_dir=tmp_path, knowledge_dir=tmp_path)
+    mgr.set_skill_command_aliases_callback(
+        lambda skill_name: (
+            [("web", "uv run --directory /workspace/skills/web web-search")] if skill_name == "web" else []
+        )
+    )
+
+    result = await mgr.activate_skill("sess-1", "web")
+
+    assert "Command aliases registered: web." in result
+    assert "PATH" not in mgr.get_session_env("sess-1")
+
+    register_call = runtime.exec.call_args_list[2]
+    shell_cmd = register_call.args[1]
+    wrapper = '#!/bin/sh\nexec uv run --directory /workspace/skills/web web-search "$@"\n'
+    assert "/root/.carapace/bin/web" in shell_cmd
+    assert base64.b64encode(wrapper.encode()).decode() in shell_cmd
 
 
 # ── carapace.yaml parsing ───────────────────────────────────────────
@@ -590,6 +629,7 @@ class TestCarapaceYamlParsing:
                     "tunnels": [{"host": "imap.a.com", "remote_port": 993, "local_port": 1993}],
                 },
                 "credentials": [{"vault_path": "x/y", "description": "Test cred", "env_var": "FOO"}],
+                "commands": [{"name": "demo", "command": "uv run demo"}],
             }
         )
         assert cfg.network.domains == ["a.com"]
@@ -597,6 +637,28 @@ class TestCarapaceYamlParsing:
         assert len(cfg.credentials) == 1
         assert cfg.credentials[0].vault_path == "x/y"
         assert cfg.credentials[0].env_var == "FOO"
+        assert len(cfg.commands) == 1
+        assert cfg.commands[0].name == "demo"
+        assert cfg.commands[0].command == "uv run demo"
+
+    def test_model_validation_rejects_multiline_command(self):
+        with pytest.raises(ValueError, match="single line"):
+            SkillCarapaceConfig.model_validate(
+                {
+                    "commands": [{"name": "demo", "command": "uv run demo\necho nope"}],
+                }
+            )
+
+    def test_model_validation_rejects_duplicate_command_names(self):
+        with pytest.raises(ValueError, match="duplicate skill command name"):
+            SkillCarapaceConfig.model_validate(
+                {
+                    "commands": [
+                        {"name": "demo", "command": "uv run demo"},
+                        {"name": "demo", "command": "uv run demo --help"},
+                    ]
+                }
+            )
 
     def test_model_validation_rejects_duplicate_local_ports(self):
         with pytest.raises(ValueError, match="local_port 1993"):
