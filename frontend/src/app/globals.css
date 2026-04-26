@@ -64,9 +64,18 @@ body {
   max-width: none;
   line-height: 1.65;
 }
+.emoji-inline {
+  display: inline-block;
+  height: 1.2em;
+  width: 1.2em;
+  vertical-align: -0.18em;
+}
 .prose p { margin: 0.5em 0; }
 .prose p:first-child { margin-top: 0; }
 .prose p:last-child { margin-bottom: 0; }
+.prose img.emoji-inline {
+  margin: 0 0.05em 0 0.1em;
+}
 .prose pre {
   background: var(--muted);
   border: 1px solid var(--border);
