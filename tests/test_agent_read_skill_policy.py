@@ -167,7 +167,7 @@ def test_resolves_exec_alias_and_auto_adds_context(tmp_path: Path) -> None:
     assert command == f"{SKILL_COMMAND_SHIM_DIR}/web search docs/skills.md"
     assert contexts == ["web"]
     assert warning == (
-        "Warning: Carapace added a skill context automatically because this command starts with the registered "
+        "Warning: adding skill context automatically because this command starts with the registered "
         "alias `web` from skill `web`. Include `contexts=['web']` next time."
     )
 
