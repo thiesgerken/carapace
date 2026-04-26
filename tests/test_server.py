@@ -23,7 +23,7 @@ from carapace.sandbox.state import SessionSandboxSnapshot
 from carapace.security.context import CredentialAccessEntry
 from carapace.server import app, sandbox_app
 from carapace.session import SessionEngine, SessionManager
-from carapace.session.archive import SessionArchiveService
+from carapace.session.archive import SessionArchiveResult, SessionArchiveService
 from carapace.skills import SkillRegistry
 from carapace.usage import LlmRequestState
 
@@ -244,6 +244,28 @@ def test_commit_session_knowledge_rejects_private_sessions(client, auth_headers)
     resp = client.post(f"/api/sessions/{sid}/knowledge/commit", headers=auth_headers)
 
     assert resp.status_code == 409
+
+
+def test_commit_session_knowledge_passes_agent_guard_inside_archive_lock(client, auth_headers):
+    create_resp = client.post("/api/sessions", headers=auth_headers)
+    sid = create_resp.json()["session_id"]
+    srv._engine.session_mgr.append_events(sid, [{"role": "user", "content": "hello"}])
+    srv._session_archive.commit_session = AsyncMock(
+        return_value=SessionArchiveResult(
+            committed=False,
+            archive_path=None,
+            committed_at=None,
+            trigger="manual",
+            reason="Cannot archive a session while an agent turn is running",
+        )
+    )
+
+    resp = client.post(f"/api/sessions/{sid}/knowledge/commit", headers=auth_headers)
+
+    assert resp.status_code == 200
+    _, kwargs = srv._session_archive.commit_session.await_args
+    assert kwargs["trigger"] == "manual"
+    assert callable(kwargs["is_agent_running"])
 
 
 def test_delete_session_removes_archived_knowledge(client, auth_headers, tmp_path):

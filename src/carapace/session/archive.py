@@ -4,6 +4,7 @@ import asyncio
 import hashlib
 import json
 from collections.abc import Callable
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -44,6 +45,7 @@ class SessionArchiveService:
         self._session_mgr = session_mgr
         self._config = config
         self._session_locks: dict[str, asyncio.Lock] = {}
+        self._session_lock_refs: dict[str, int] = {}
 
     @property
     def enabled(self) -> bool:
@@ -57,8 +59,28 @@ class SessionArchiveService:
     def archive_absolute_path_for_state(self, state: SessionState) -> Path:
         return self._knowledge_dir / self.archive_relative_path_for_state(state)
 
-    def _session_lock(self, session_id: str) -> asyncio.Lock:
-        return self._session_locks.setdefault(session_id, asyncio.Lock())
+    def _get_session_lock(self, session_id: str) -> asyncio.Lock:
+        lock = self._session_locks.get(session_id)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._session_locks[session_id] = lock
+        return lock
+
+    @asynccontextmanager
+    async def _locked_session(self, session_id: str):
+        lock = self._get_session_lock(session_id)
+        self._session_lock_refs[session_id] = self._session_lock_refs.get(session_id, 0) + 1
+        try:
+            async with lock:
+                yield
+        finally:
+            remaining_refs = self._session_lock_refs[session_id] - 1
+            if remaining_refs == 0:
+                self._session_lock_refs.pop(session_id, None)
+                if self._session_locks.get(session_id) is lock:
+                    self._session_locks.pop(session_id, None)
+            else:
+                self._session_lock_refs[session_id] = remaining_refs
 
     async def commit_session(
         self,
@@ -68,7 +90,7 @@ class SessionArchiveService:
         autosave_cutoff: datetime | None = None,
         is_agent_running: Callable[[], bool] | None = None,
     ) -> SessionArchiveResult:
-        async with self._session_lock(session_id):
+        async with self._locked_session(session_id):
             if not self._config.enabled:
                 return SessionArchiveResult(
                     committed=False,
@@ -174,11 +196,16 @@ class SessionArchiveService:
             archive_file.write_text(serialized, encoding="utf-8")
             commit_action = "add" if current_state.knowledge_last_committed_at is None else "update"
 
-            commit_made = await self._git_store.commit(
-                [archive_path],
-                f"💾 session: {commit_action} {session_id}",
-                session_id=session_id,
-            )
+            try:
+                commit_made = await self._git_store.commit(
+                    [archive_path],
+                    f"💾 session: {commit_action} {session_id}",
+                    session_id=session_id,
+                )
+            except RuntimeError:
+                archive_file.unlink(missing_ok=True)
+                self._prune_empty_archive_dirs(archive_file.parent)
+                raise
 
             latest_state = self._session_mgr.load_state(session_id)
             if latest_state is None:
@@ -203,7 +230,7 @@ class SessionArchiveService:
             )
 
     async def delete_session_archive(self, state: SessionState) -> bool:
-        async with self._session_lock(state.session_id):
+        async with self._locked_session(state.session_id):
             if not self._config.enabled:
                 return False
             if state.private:

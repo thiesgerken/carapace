@@ -224,6 +224,53 @@ async def test_archive_service_does_not_persist_export_hash_on_commit_failure(tm
     assert final_state.knowledge_last_export_hash is None
     assert final_state.knowledge_last_archive_path is None
     assert final_state.knowledge_last_committed_at is None
+    assert service._session_locks == {}
+
+
+@pytest.mark.asyncio
+async def test_archive_service_removes_written_file_after_commit_failure(tmp_path) -> None:
+    mgr = SessionManager(tmp_path)
+    state = mgr.create_session(private=False)
+    mgr.append_events(state.session_id, [{"role": "user", "content": "hello"}])
+    git_store = MagicMock(spec=GitStore)
+    git_store.commit = AsyncMock(side_effect=RuntimeError("git commit failed: boom"))
+    service = SessionArchiveService(
+        knowledge_dir=tmp_path,
+        git_store=git_store,
+        session_mgr=mgr,
+        config=SessionCommitConfig(),
+    )
+    archive_file = service.archive_absolute_path_for_state(state)
+
+    with pytest.raises(RuntimeError, match="git commit failed: boom"):
+        await service.commit_session(state.session_id, trigger="manual")
+
+    assert not archive_file.exists()
+    assert not archive_file.parent.exists()
+
+
+@pytest.mark.asyncio
+async def test_archive_service_cleans_up_lock_after_archive_delete(tmp_path) -> None:
+    mgr = SessionManager(tmp_path)
+    state = mgr.create_session(private=False)
+    mgr.append_events(state.session_id, [{"role": "user", "content": "hello"}])
+    git_store = MagicMock(spec=GitStore)
+    git_store.commit = AsyncMock(return_value=True)
+    git_store.commit_removals = AsyncMock(return_value=True)
+    service = SessionArchiveService(
+        knowledge_dir=tmp_path,
+        git_store=git_store,
+        session_mgr=mgr,
+        config=SessionCommitConfig(),
+    )
+
+    await service.commit_session(state.session_id, trigger="manual")
+    archived_state = mgr.load_state(state.session_id)
+
+    assert archived_state is not None
+    assert await service.delete_session_archive(archived_state) is True
+    assert service._session_locks == {}
+    assert service._session_lock_refs == {}
 
 
 @pytest.mark.asyncio

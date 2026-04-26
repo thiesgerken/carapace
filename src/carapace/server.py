@@ -210,9 +210,13 @@ async def lifespan(app: FastAPI):
     # Bootstrap knowledge files (after pull so we don't override remote content)
     seeded = ensure_knowledge_dir(knowledge_dir)
     if seeded:
-        await git_store.commit(seeded, "🔧 bootstrap: seed default files")
-        if _config.git.remote:
-            await git_store.push_to_remote()
+        try:
+            committed = await git_store.commit(seeded, "🔧 bootstrap: seed default files")
+        except RuntimeError as exc:
+            logger.warning(f"Bootstrap knowledge seed commit failed: {exc}")
+        else:
+            if committed and _config.git.remote:
+                await git_store.push_to_remote()
 
     if _config.carapace.logfire_token:
         logfire.configure(token=_config.carapace.logfire_token, console=False)
@@ -580,7 +584,11 @@ async def commit_session_knowledge(
     if _engine.is_agent_running(session_id):
         raise HTTPException(status_code=409, detail="Cannot archive a session while an agent turn is running")
 
-    result = await _session_archive.commit_session(session_id, trigger="manual")
+    result = await _session_archive.commit_session(
+        session_id,
+        trigger="manual",
+        is_agent_running=lambda: _engine.is_agent_running(session_id),
+    )
     fresh = _engine.session_mgr.load_state(session_id)
     if fresh is None:
         raise HTTPException(status_code=404, detail="Session not found")
