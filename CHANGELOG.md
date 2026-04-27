@@ -1,6 +1,15 @@
 # CHANGELOG
 
 
+## v0.102.1 (2026-04-27)
+
+
+### ⬆️ Dependencies
+
+
+- ⬆️ chore: Lock file maintenance
+  ([`2966b75`](https://github.com/thiesgerken/carapace/commit/2966b75fa7ace866b85c5e87fff19112a5cb7c40))
+
 ## v0.102.0 (2026-04-27)
 
 
