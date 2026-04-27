@@ -290,20 +290,16 @@ function ApprovalBadge({
     }
     const colorClass =
       verdict === "allow"
-        ? "bg-green-500/10 text-green-600 dark:text-green-400"
+        ? "text-green-600 dark:text-green-400"
         : verdict === "deny"
-          ? "bg-red-500/10 text-red-600 dark:text-red-400"
-          : "bg-yellow-500/10 text-yellow-600 dark:text-yellow-400";
+          ? "text-red-600 dark:text-red-400"
+          : "text-yellow-600 dark:text-yellow-400";
     return (
       <span
-        className={cn(
-          "inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium",
-          colorClass,
-        )}
+        className={cn("inline-flex shrink-0 items-center", colorClass)}
         title={tooltip || undefined}
       >
-        <ShieldAlert className="h-2.5 w-2.5" />
-        sentinel
+        <ShieldAlert className="h-3 w-3" />
       </span>
     );
   }
