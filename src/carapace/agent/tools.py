@@ -188,9 +188,6 @@ def _resolve_exec_command_alias(
             + f"Include `contexts=['{owning_skill}']` next time."
         )
 
-    if token.startswith(f"{SKILL_COMMAND_SHIM_DIR}/"):
-        return command, resolved_contexts, warning
-
     return command, resolved_contexts, warning
 
 
