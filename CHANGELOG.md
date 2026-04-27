@@ -1,6 +1,43 @@
 # CHANGELOG
 
 
+## v0.100.0 (2026-04-27)
+
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix: remove unnecessary check for skill command shim directory in command alias resolution
+  ([`69b2d8b`](https://github.com/thiesgerken/carapace/commit/69b2d8bfd19382a30011ae70818aa22ce0f1ebee))
+
+  Co-authored-by: Copilot <copilot@github.com>
+
+- 🐛 fix: address command alias review feedback
+  ([`2e8c49a`](https://github.com/thiesgerken/carapace/commit/2e8c49a2b3a67973cca8fc093c07d6e889cf1564))
+
+- 🐛 fix: update warning message for automatic skill context addition
+  ([`0eea34d`](https://github.com/thiesgerken/carapace/commit/0eea34d75e13acbba32c603ebc6f332b4d121414))
+
+- 🐛 fix: remove obsolete skill command registration note from roadmap
+  ([`82c6a8d`](https://github.com/thiesgerken/carapace/commit/82c6a8de8b7036ac4e441d36da36319ebc348297))
+
+### Other
+
+
+- update command alias handling to expose wrapper directory on PATH and simplify command resolution
+  ([`a4d322b`](https://github.com/thiesgerken/carapace/commit/a4d322ba2625a57fbccd0796cd7861266fd1e990))
+
+  Co-authored-by: Copilot <copilot@github.com>
+
+### ✨ Features
+
+
+- ✨ feat: enhance documentation for skill command aliases and update example skill
+  ([`30200aa`](https://github.com/thiesgerken/carapace/commit/30200aa5a2acfdb0b576604379abdd0c8697f26b))
+
+- ✨ feat: add skill command aliases
+  ([`5ac05cf`](https://github.com/thiesgerken/carapace/commit/5ac05cfbb2eaf358e3e8165a5d3a47d726b99a4f))
+
 ## v0.99.0 (2026-04-26)
 
 
