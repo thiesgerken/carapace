@@ -1227,6 +1227,52 @@ def test_generate_title_persists_usage_and_broadcasts_usage(tmp_path: Path):
         asyncio.run(_run())
 
 
+def test_generate_title_records_titler_request_log(tmp_path: Path):
+    async def _run() -> None:
+        engine = _make_engine(tmp_path)
+        state = engine.session_mgr.create_session()
+        sid = state.session_id
+        active = engine.get_or_activate(sid)
+        started_at = datetime.now(tz=UTC)
+
+        async def _fake_generate_title(*_args: Any, **_kwargs: Any) -> str:
+            observer = usage_mod._llm_request_sink.get()
+            assert observer is not None
+
+            request_state = LlmRequestState(
+                request_id="req-title",
+                source="titler",
+                model_name="anthropic:claude-haiku-4-5",
+                started_at=started_at,
+            )
+            record = LlmRequestRecord(
+                ts=started_at + timedelta(seconds=1),
+                request_id="req-title",
+                source="titler",
+                model_name="anthropic:claude-haiku-4-5",
+                started_at=started_at,
+                completed_at=started_at + timedelta(seconds=1),
+            )
+
+            await observer.on_request_started(request_state)
+            await observer.on_request_completed(record)
+            return "📌 hello"
+
+        with patch("carapace.session.engine.generate_title", new=AsyncMock(side_effect=_fake_generate_title)):
+            title = await engine._generate_title(active, [{"role": "user", "content": "hello"}])
+
+        assert title == "📌 hello"
+        assert active.llm_request_log.records[-1].request_id == "req-title"
+        assert active.llm_request_log.records[-1].source == "titler"
+
+        stored_log = engine.session_mgr.load_llm_request_log(sid)
+        assert stored_log.records[-1].request_id == "req-title"
+        assert stored_log.records[-1].source == "titler"
+
+    with _patch_sentinel():
+        asyncio.run(_run())
+
+
 def test_handle_slash_command_inactive_session(tmp_path: Path):
     """handle_slash_command returns None for a session that isn't active."""
     engine = _make_engine(tmp_path)
