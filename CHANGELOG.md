@@ -1,6 +1,30 @@
 # CHANGELOG
 
 
+## v0.102.0 (2026-04-27)
+
+
+### Other
+
+
+- 5->10
+  ([`be7a2dd`](https://github.com/thiesgerken/carapace/commit/be7a2dd2102ca9756108cc3b35a7ca52759287a8))
+
+- add test for preserving explicit thinking false in model settings
+  ([`8fd76e1`](https://github.com/thiesgerken/carapace/commit/8fd76e10f751e7befcad49edb6548a4a65a829ed))
+
+- review comment
+  ([`a1bc133`](https://github.com/thiesgerken/carapace/commit/a1bc133c9689a2a164468a5c6f48457e2eb32e84))
+
+- add LLM request logging to title generation
+  ([`e5be41a`](https://github.com/thiesgerken/carapace/commit/e5be41a8842bf3f571db305cb7cd1880df691b2e))
+
+### ✨ Features
+
+
+- ✨ feat: thinking budget tokens + enforce usage limits better + limit sentinel turns to 5
+  ([`52db42f`](https://github.com/thiesgerken/carapace/commit/52db42f7e9ae634684222960e48763d1f0345361))
+
 ## v0.101.1 (2026-04-27)
 
 
