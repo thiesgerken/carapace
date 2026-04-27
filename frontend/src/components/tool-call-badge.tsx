@@ -183,6 +183,8 @@ function formatArgsSummary(
   const omit = OMIT_ARG_LABEL[tool];
   const parts: string[] = [];
   for (const [k, v] of Object.entries(args)) {
+    if (k === "contexts") continue;
+
     let vStr = typeof v === "string" ? v : JSON.stringify(v);
     if (vStr.length > MAX_SUMMARY_VALUE_CHARS) {
       vStr = vStr.slice(0, MAX_SUMMARY_VALUE_CHARS - 1) + "…";
@@ -484,6 +486,8 @@ export function ToolCallBadge({
       : isReadTool
         ? formatReadSummaryFromSplit(args, readPath || "(missing path)", readSplit)
         : formatArgsSummary(tool, args);
+  const contextCount = contexts?.length ?? 0;
+  const contextTooltip = contexts?.join("\n") ?? "";
   const writeLang = isWriteTool ? languageFromFilePath(writePath) : "text";
   const writeContentMarkdown = isWriteTool
     ? fencedCodeBlock(writeLang, writeContent)
@@ -575,6 +579,14 @@ export function ToolCallBadge({
                     title={domainTooltip}
                   >
                     <Globe className="h-2.5 w-2.5" />{domainCount}
+                  </span>
+                )}
+                {contextCount > 0 && (
+                  <span
+                    className="inline-flex items-center gap-0.5 rounded bg-teal-500/15 px-1.5 py-0.5 text-[10px] text-teal-600 dark:text-teal-400"
+                    title={contextTooltip}
+                  >
+                    <Puzzle className="h-2.5 w-2.5" />{contextCount}
                   </span>
                 )}
               </>
