@@ -30,10 +30,10 @@ EOF
 
 # --- npm / node ---
 # npm reads npm_config_proxy / npm_config_https_proxy env vars (set in
-# _build_proxy_env), but also honours a global npmrc file.
-if command -v npm >/dev/null 2>&1; then
-  npm config set --global proxy "$HTTP_PROXY" 2>/dev/null || true
-  npm config set --global https-proxy "$HTTPS_PROXY" 2>/dev/null || true
-fi
+# _build_proxy_env), but also honours /root/.npmrc for the root user.
+cat > /root/.npmrc <<EOF
+proxy=$HTTP_PROXY
+https-proxy=$HTTPS_PROXY
+EOF
 
 echo "Proxy configured for apt, git, pip, npm"
