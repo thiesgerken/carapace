@@ -263,6 +263,31 @@ def test_model_settings_for_config_defaults_thinking_when_unset():
     assert settings == {"thinking": True}
 
 
+def test_model_settings_for_config_preserves_explicit_thinking_false():
+    cfg = Config.model_validate(
+        {
+            "agent": {
+                "model": "local:qwen",
+                "sentinel_model": "local:qwen",
+                "title_model": "local:qwen",
+                "available_models": [
+                    {
+                        "provider": "openai",
+                        "name": "qwen/qwen3-32b",
+                        "id": "local:qwen",
+                        "base_url": "http://llm/v1",
+                        "thinking": False,
+                    }
+                ],
+            }
+        }
+    )
+
+    settings = model_settings_for_config(cfg, "local:qwen", default_thinking=True)
+
+    assert settings == {"thinking": False}
+
+
 def test_agent_config_mixed_available_models():
     ac = AgentConfig.model_validate(
         {
