@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from pydantic_ai import ApprovalRequired
+from pydantic_ai.exceptions import UsageLimitExceeded
 from pydantic_ai.usage import UsageLimits
 
 from carapace.security.context import (
@@ -87,14 +88,24 @@ async def evaluate_with(
             approval_source="sentinel",
         )
 
-    verdict = await sentinel.evaluate_tool_call(
-        session,
-        tool_name,
-        args,
-        usage_tracker=usage_tracker,
-        assert_llm_budget_available=assert_llm_budget_available,
-        usage_limits=usage_limits,
-    )
+    try:
+        verdict = await sentinel.evaluate_tool_call(
+            session,
+            tool_name,
+            args,
+            usage_tracker=usage_tracker,
+            assert_llm_budget_available=assert_llm_budget_available,
+            usage_limits=usage_limits,
+        )
+    except UsageLimitExceeded:
+        verdict = SentinelVerdict(
+            decision="escalate",
+            explanation=(
+                "Automatic sentinel review hit its internal request limit and could not finish. "
+                "Please approve or deny this tool call manually."
+            ),
+            risk_level="high",
+        )
 
     decision_str = _verdict_to_decision(verdict)
 
