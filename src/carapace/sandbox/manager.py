@@ -230,6 +230,7 @@ class SandboxManager:
         self._exec_notified_credentials: dict[str, set[str]] = {}  # dedupe credential UI notifications
         self._get_activated_skills_cb: Callable[[str], list[str]] | None = None
         self._skill_activation_inputs_cb: Callable[[str, str], Awaitable[SkillActivationInputs]] | None = None
+        self._skill_command_aliases_cb: Callable[[str], list[tuple[str, str]]] | None = None
         self._session_lifecycle = SandboxSessionLifecycle(
             runtime=runtime,
             state=SandboxSessionLifecycleState(
@@ -305,10 +306,19 @@ class SandboxManager:
         """Register a callback to retrieve activation inputs for a skill."""
         self._skill_activation_inputs_cb = cb
 
+    def set_skill_command_aliases_callback(self, cb: Callable[[str], list[tuple[str, str]]]) -> None:
+        """Register a callback to retrieve command aliases for a skill."""
+        self._skill_command_aliases_cb = cb
+
     async def _get_skill_activation_inputs(self, session_id: str, skill_name: str) -> SkillActivationInputs:
         if self._skill_activation_inputs_cb is None:
             return SkillActivationInputs()
         return await self._skill_activation_inputs_cb(session_id, skill_name)
+
+    def _get_skill_command_aliases(self, skill_name: str) -> list[tuple[str, str]]:
+        if self._skill_command_aliases_cb is None:
+            return []
+        return self._skill_command_aliases_cb(skill_name)
 
     def _get_or_create_token(self, session_id: str) -> str:
         return self._session_lifecycle.get_or_create_token(session_id)
@@ -585,12 +595,15 @@ class SandboxManager:
             logger.warning(f"Skill '{skill_name}' not found for session {session_id}")
             return f"Skill '{skill_name}' not found."
 
+        command_aliases = self._get_skill_command_aliases(skill_name)
+
         activation_msg = ""
         try:
             activation_lines = await self._skill_activation_runner.restore_and_run_detected_providers(
                 sc,
                 skill_name,
                 master_skill_dir,
+                command_aliases=command_aliases,
                 run_session_id=session_id,
             )
             activation_msg = "\n".join(activation_lines)
@@ -655,7 +668,13 @@ class SandboxManager:
     async def _rerun_skill_setup(self, sc: SessionContainer, skill_name: str) -> str:
         """Restore trusted skill files from git and rerun automatic setup providers."""
         master = self._knowledge_dir / "skills" / skill_name
-        lines = await self._skill_activation_runner.restore_and_run_detected_providers(sc, skill_name, master)
+        command_aliases = self._get_skill_command_aliases(skill_name)
+        lines = await self._skill_activation_runner.restore_and_run_detected_providers(
+            sc,
+            skill_name,
+            master,
+            command_aliases=command_aliases,
+        )
         return "\n".join(lines)
 
     async def rerun_skill_setup(self, session_id: str, activated_skills: list[str]) -> None:

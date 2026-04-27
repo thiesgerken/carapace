@@ -19,11 +19,13 @@ from carapace.models import (
     ContextGrant,
     CredentialMetadata,
     Deps,
+    SkillCarapaceConfig,
     SkillCredentialDecl,
     ToolResult,
 )
 from carapace.sandbox.manager import READ_TOOL_MAX_LINE_WINDOW
 from carapace.sandbox.runtime import SkillActivationError
+from carapace.sandbox.skill_activation import SKILL_COMMAND_SHIM_DIR
 from carapace.security.context import (
     ContextGrantEntry,
     CredentialAccessEntry,
@@ -115,6 +117,78 @@ def _exec_skill_access_warning(
     return "Warning: this command references skill directories without the matching skill context:\n" + "\n".join(
         warnings
     )
+
+
+def _active_skill_command_aliases(knowledge_dir: Path, activated_skills: list[str]) -> dict[str, str]:
+    registry = SkillRegistry(knowledge_dir / "skills")
+    alias_to_skill: dict[str, str] = {}
+    for skill_name in activated_skills:
+        cfg: SkillCarapaceConfig | None = registry.get_carapace_config(skill_name)
+        if not cfg:
+            continue
+        for declared_command in cfg.commands:
+            alias_to_skill.setdefault(declared_command.name, skill_name)
+    return alias_to_skill
+
+
+def _skill_command_alias_conflict(skill_name: str, knowledge_dir: Path, activated_skills: list[str]) -> str | None:
+    registry = SkillRegistry(knowledge_dir / "skills")
+    cfg = registry.get_carapace_config(skill_name)
+    if not cfg or not cfg.commands:
+        return None
+
+    alias_to_skill = _active_skill_command_aliases(
+        knowledge_dir,
+        [active_skill for active_skill in activated_skills if active_skill != skill_name],
+    )
+    conflicts = [
+        (declared_command.name, alias_to_skill[declared_command.name])
+        for declared_command in cfg.commands
+        if declared_command.name in alias_to_skill
+    ]
+    if not conflicts:
+        return None
+
+    details = ", ".join(f"{alias!r} (already registered by {owner!r})" for alias, owner in conflicts)
+    return f"Cannot activate skill '{skill_name}' because these command aliases conflict with active skills: {details}."
+
+
+def _extract_leading_command_token(command: str) -> str | None:
+    match = re.match(
+        r"^\s*(?P<token>(?:" + re.escape(SKILL_COMMAND_SHIM_DIR) + r"/)?[A-Za-z0-9][A-Za-z0-9._-]*)", command
+    )
+    if match is None:
+        return None
+    return match.group("token")
+
+
+def _resolve_exec_command_alias(
+    command: str,
+    knowledge_dir: Path,
+    activated_skills: list[str],
+    contexts: list[str],
+) -> tuple[str, list[str], str | None]:
+    token = _extract_leading_command_token(command)
+    if token is None:
+        return command, contexts, None
+
+    alias_to_skill = _active_skill_command_aliases(knowledge_dir, activated_skills)
+    alias = token.removeprefix(f"{SKILL_COMMAND_SHIM_DIR}/")
+    owning_skill = alias_to_skill.get(alias)
+    if owning_skill is None:
+        return command, contexts, None
+
+    resolved_contexts = list(dict.fromkeys(contexts))
+    warning: str | None = None
+    if owning_skill not in resolved_contexts:
+        resolved_contexts.append(owning_skill)
+        warning = (
+            "Warning: adding skill context automatically because this command starts with "
+            f"the registered alias `{alias}` from skill `{owning_skill}`. "
+            + f"Include `contexts=['{owning_skill}']` next time."
+        )
+
+    return command, resolved_contexts, warning
 
 
 async def _gate(ctx: RunContext[Deps], tool_name: str, args: dict[str, Any]) -> ToolDenied | None:
@@ -410,8 +484,17 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
         declared_domains = carapace_cfg.network.domains if carapace_cfg else []
         declared_tunnels = carapace_cfg.network.tunnels if carapace_cfg else []
         declared_creds = carapace_cfg.credentials if carapace_cfg else []
+        declared_commands = carapace_cfg.commands if carapace_cfg else []
         declared_creds_payload = [decl.model_dump(mode="json") for decl in declared_creds]
         declared_tunnels_payload = [decl.model_dump(mode="json") for decl in declared_tunnels]
+        declared_commands_payload = [decl.model_dump(mode="json") for decl in declared_commands]
+
+        if conflict_message := _skill_command_alias_conflict(
+            skill_name,
+            ctx.deps.knowledge_dir,
+            ctx.deps.session_state.activated_skills,
+        ):
+            return conflict_message
 
         # Resolve human-readable names from the vault for UI display
         cred_registry = ctx.deps.credential_registry
@@ -429,6 +512,7 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
                 "declared_creds": declared_creds_payload,
                 "declared_domains": declared_domains,
                 "declared_tunnels": declared_tunnels_payload,
+                "declared_commands": declared_commands_payload,
             }
 
             if denied := await _gate(ctx, "use_skill", gate_args):
@@ -643,12 +727,19 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
                 an activated skill; unknown names are rejected.
                 Always set this to the list of skills that are needed for the command.
         """
-        contexts = contexts or []
-        skill_warning = _exec_skill_access_warning(
+        original_command = command
+        requested_contexts = list(contexts or [])
+        command, contexts, alias_warning = _resolve_exec_command_alias(
             command,
             ctx.deps.knowledge_dir,
             ctx.deps.session_state.activated_skills,
-            contexts,
+            requested_contexts,
+        )
+        skill_warning = _exec_skill_access_warning(
+            original_command,
+            ctx.deps.knowledge_dir,
+            ctx.deps.session_state.activated_skills,
+            requested_contexts,
         )
 
         # Validate contexts against activated skills
@@ -745,8 +836,10 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
                 f"{lines}\n\n"
             ) + result
 
-        if skill_warning:
-            result = f"{result}\n\n{skill_warning}" if result else skill_warning
+        warnings = [warning for warning in [alias_warning, skill_warning] if warning]
+        if warnings:
+            warning_block = "\n\n".join(warnings)
+            result = f"{result}\n\n{warning_block}" if result else warning_block
 
         ctx.deps.security.append(
             ToolResultEntry(tool="exec", status="error" if exit_code != 0 else "success"),

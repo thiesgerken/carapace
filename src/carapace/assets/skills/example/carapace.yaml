@@ -4,3 +4,9 @@ network:
       remote_port: 993
       local_port: 1993
       description: Unauthenticated IMAP CAPABILITY probe over a Carapace-managed tunnel
+
+commands:
+  - name: example-hello
+    command: uv run --directory /workspace/skills/example hello
+  - name: example-node
+    command: pnpm --dir /workspace/skills/example run hello:node

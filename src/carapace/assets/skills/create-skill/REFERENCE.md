@@ -23,10 +23,11 @@ Use this checklist when writing or reviewing a skill:
 4. Keep domain facts in `SKILL.md` when the agent needs them to act correctly, even if they are user-specific.
 5. Move schemas, dependency setup, auth internals, wrapper internals, and maintainer troubleshooting into sidecar docs.
 6. Link any sidecar docs from `SKILL.md` when the runtime agent may need to know they exist.
-7. If the skill exposes commands, show the real entrypoints the agent should run.
-8. If the skill performs risky actions, add explicit safety rules near the top of `SKILL.md`.
-9. If activation handles credentials or setup automatically, say that briefly in `SKILL.md` and stop there.
-10. If `carapace.yaml` injects a credential into a local file, add that generated file path to the skill-local `.gitignore`.
+7. If the skill exposes commands, add a short `Exposed Commands` list near the top of `SKILL.md` and show the real aliases there.
+8. Do not put exposed commands into frontmatter; keep them in the body where the runtime agent will read them naturally.
+9. If the skill performs risky actions, add explicit safety rules near the top of `SKILL.md`.
+10. If activation handles credentials or setup automatically, say that briefly in `SKILL.md` and stop there.
+11. If `carapace.yaml` injects a credential into a local file, add that generated file path to the skill-local `.gitignore`.
 
 ## What Good `SKILL.md` Files Usually Contain
 
@@ -35,6 +36,7 @@ Most good skills in this repo converge on the same shape:
 - a precise `description` with task keywords
 - one short opening paragraph that sets scope
 - a `When To Use` or equivalent section
+- an `Exposed Commands` section near the top when the skill ships command aliases
 - the normal workflow or command entrypoints
 - enough CLI usage detail to run the skill without guessing
 - user-specific domain maps that prevent mistakes, such as folder names, project IDs, label names, account conventions, or preferred filters
@@ -57,6 +59,7 @@ Move content into a sidecar doc when it is mainly about:
 Keep content in `SKILL.md` when it is mainly about:
 
 - how to invoke the skill's CLI correctly
+- which exposed command aliases the agent should prefer during normal use
 - common commands the agent should use often
 - user-specific categories, folders, projects, labels, accounts, or IDs needed for correct action
 - safety rules and syntax traps that prevent accidental side effects
@@ -167,7 +170,7 @@ As a rule of thumb, if a runtime agent can succeed without reading a section eve
 
 ## `carapace.yaml`
 
-`carapace.yaml` is optional. Use it when the skill needs outbound domains, tunnels, hints, or auto-injected credentials.
+`carapace.yaml` is optional. Use it when the skill needs outbound domains, tunnels, hints, auto-injected credentials, or command aliases.
 
 Top-level keys:
 
@@ -176,6 +179,7 @@ Top-level keys:
 | `network`         | object          | Network configuration for allowed domains or tunnels    |
 | `network.domains` | list of strings | Hostnames added to the session allowlist                |
 | `credentials`     | list of objects | Vault-backed credentials to inject as env vars or files |
+| `commands`        | list of objects | Command aliases registered on skill activation          |
 | `hints`           | map             | Extra metadata for tooling                              |
 
 Valid example:
@@ -193,6 +197,10 @@ credentials:
   - vault_path: my-backend/deploy-key
     description: SSH private key for deploys
     file: ~/.ssh/id_example_deploy
+
+commands:
+  - name: example-search
+    command: uv run --directory /workspace/skills/example scripts/search.py
 ```
 
 Common mistake:
@@ -206,7 +214,33 @@ network:
 
 When credentials are declared here, activation handles approval and injection automatically. Keep those details out of `SKILL.md` unless the runtime behavior itself depends on them.
 
+When command aliases are declared here, activation generates executable wrappers in `/root/.carapace/bin/` and exposes that directory on `PATH`. Runtime agents should call the plain alias token, not the absolute shim path. Authors should think of `command` as the base command line for that wrapper, not as a multi-line shell script.
+
+Each command entry has:
+
+- `name`: the alias token the agent will invoke
+- `command`: a single non-empty line that becomes `exec <command> "$@"` inside the generated `#!/bin/sh` wrapper
+
+Guidelines for command aliases:
+
+- Preserve the caller's current working directory. Do not depend on an implicit `cd` into the skill directory.
+- Use absolute paths if the command needs files under `/workspace/skills/<name>/`.
+- Assume extra arguments are forwarded with `"$@"`.
+- Keep aliases unique. If another active skill already owns the same alias, activation fails.
+- Do not use multi-line commands; validation rejects them.
+
 The usual sentence in `SKILL.md` is enough: setup or credential injection happens automatically on activation.
+
+If the skill exposes commands, it is customary to list them near the top of `SKILL.md` in a short section such as:
+
+```markdown
+## Exposed Commands
+
+- `example-search`: Search the Example service.
+- `example-sync`: Run the Example sync flow.
+```
+
+Keep this in the body, not in frontmatter.
 
 If a credential is materialized into a local file, treat that path as generated secret state and ignore it in the skill-local `.gitignore`.
 

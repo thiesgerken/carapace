@@ -8,7 +8,7 @@ A skill is a directory with a `SKILL.md` file (Markdown instructions with YAML f
 
 Carapace extends the format with optional files:
 
-- **`carapace.yaml`** — security metadata: network domain declarations, credential needs
+- **`carapace.yaml`** — security metadata: network domain declarations, credential needs, and optional command aliases
 - **`pyproject.toml`** + **`uv.lock`** — Python dependencies installed via `uv sync --locked`
 - **`package.json`** + **`package-lock.json`** or **`pnpm-lock.yaml`** — Node dependencies installed with the matching package manager
 - **`setup.sh`** — optional post-activation setup script for local config generation or other derived artifacts
@@ -71,7 +71,7 @@ Summarize the top results for the user.
 
 ## carapace.yaml (Carapace extension)
 
-Optional file that declares network domains, exec-scoped TCP tunnels, and credentials the skill needs.
+Optional file that declares network domains, exec-scoped TCP tunnels, credentials, and command aliases the skill needs.
 
 ```yaml
 network:
@@ -91,6 +91,10 @@ credentials:
   - vault_path: "dev/searxng-cert"
     description: Optional client certificate
     file: "~/.config/searxng/client.pem"
+
+commands:
+  - name: web-search
+    command: uv run --directory /workspace/skills/web-search scripts/search.py
 ```
 
 ### Fields
@@ -118,6 +122,26 @@ Carapace manages these tunnels itself during `exec(..., contexts=[...])`. Skills
 
 > **Note**: Credential declarations are implemented. See [credentials.md](credentials.md) for approval flow, backend config, and `ccred` usage.
 
+**`commands`** — optional list of command aliases the skill exposes. Each entry has:
+
+- `name` — the exact alias token, for example `web-search`
+- `command` — a single-line shell command to run for that alias
+
+When the skill is activated, Carapace writes a generated wrapper script for each alias into `/root/.carapace/bin/`, marks it executable, and exposes that directory on `PATH`. Agents should invoke the plain alias token such as `web-search`, not the absolute shim path. The wrapper looks like this conceptually:
+
+```sh
+#!/bin/sh
+exec <configured command> "$@"
+```
+
+Notes:
+
+- The wrapper preserves the caller's working directory. Do not rely on it changing cwd to the skill directory.
+- Extra arguments are forwarded with `"$@"`.
+- The wrapper uses shell `exec` so the launcher shell is replaced by the real command.
+- `command` must be a single non-empty line.
+- Alias names must be unique across active skills. If an active skill already owns an alias, activating another skill with the same alias fails.
+
 ## Context-scoped access
 
 Skill-declared domains and credentials are **not globally available** in the session. Instead, they're scoped to individual `exec` calls via the `contexts` parameter.
@@ -129,6 +153,8 @@ Skill-declared domains and credentials are **not globally available** in the ses
 3. **Per-exec injection**: Domains are temporarily allowed in the proxy. Credential values are injected as env vars or written as files for the duration of that single exec. File-based credentials are deleted immediately after the command completes.
    Tunnel declarations are also applied here: Carapace temporarily shadows the declared hostnames inside the sandbox, starts trusted CONNECT-backed tunnel helpers, and tears them down again after the exec.
 4. **No context = no access**: An exec without `contexts` (or with unrelated contexts) does not get the skill's domains or credentials. The sentinel evaluates any credential access without a matching context.
+
+For command aliases declared in `carapace.yaml`, Carapace also recognizes the alias at the start of an `exec` command. If the owning skill is already active but missing from `contexts`, Carapace adds that context automatically, resolves the command through the generated shim on `PATH`, and warns the agent to pass the context explicitly next time while continuing to use the plain alias.
 
 ### Matching semantics
 

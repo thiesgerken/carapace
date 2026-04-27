@@ -281,6 +281,7 @@ class SessionEngine:
         # Let SandboxManager retrieve activated skills so automatic setup can rerun on recreation
         sandbox_mgr.set_activated_skills_callback(self._get_activated_skills)
         sandbox_mgr.set_skill_activation_inputs_callback(self._skill_activation_inputs)
+        sandbox_mgr.set_skill_command_aliases_callback(self._skill_command_aliases)
 
     # -- public access to file I/O manager --
 
@@ -612,6 +613,14 @@ class SessionEngine:
             if decl.file:
                 file_credentials.append(SkillFileCredential(path=decl.file, value=value))
         return SkillActivationInputs(environment=env, file_credentials=file_credentials)
+
+    def _skill_command_aliases(self, skill_name: str) -> list[tuple[str, str]]:
+        """Return validated command aliases declared by a skill."""
+        registry = SkillRegistry(self._knowledge_dir / "skills")
+        carapace_cfg = registry.get_carapace_config(skill_name)
+        if not carapace_cfg:
+            return []
+        return [(command.name, command.command) for command in carapace_cfg.commands]
 
     def _credential_vault_paths_for_skill(self, session_id: str, skill_name: str) -> set[str]:
         """Vault paths allowed for file re-injection: that skill's context grant (from ``use_skill``)."""
