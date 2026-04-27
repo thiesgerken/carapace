@@ -7,7 +7,7 @@ import pytest
 from pydantic import ValidationError
 from pydantic_ai.models.openai import OpenAIChatModel
 
-from carapace.llm import make_model_factory
+from carapace.llm import make_model_factory, model_settings_for_config
 from carapace.models import (
     AgentConfig,
     AvailableModelEntry,
@@ -100,6 +100,13 @@ def test_available_model_entry_rejects_api_key_for_non_openai_provider():
     with pytest.raises(ValidationError):
         AvailableModelEntry.model_validate(
             {"provider": "google-gla", "name": "gemini-2.5-pro", "api_key": {"raw": "secret"}}
+        )
+
+
+def test_available_model_entry_rejects_thinking_budget_tokens_for_non_openai_provider():
+    with pytest.raises(ValidationError):
+        AvailableModelEntry.model_validate(
+            {"provider": "anthropic", "name": "claude-opus-4-6", "thinking_budget_tokens": 2048}
         )
 
 
@@ -201,6 +208,59 @@ def test_make_model_factory_resolves_registered_alias(monkeypatch: pytest.Monkey
     factory = make_model_factory(cfg)
     _ = factory("alias:opus")
     assert seen == ["anthropic:claude-opus-4-6"]
+
+
+def test_model_settings_for_config_uses_thinking_and_budget():
+    cfg = Config.model_validate(
+        {
+            "agent": {
+                "model": "local:qwen",
+                "sentinel_model": "local:qwen",
+                "title_model": "local:qwen",
+                "available_models": [
+                    {
+                        "provider": "openai",
+                        "name": "qwen/qwen3-32b",
+                        "id": "local:qwen",
+                        "base_url": "http://llm/v1",
+                        "thinking": "low",
+                        "thinking_budget_tokens": 2048,
+                    }
+                ],
+            }
+        }
+    )
+
+    settings = model_settings_for_config(cfg, "local:qwen", default_thinking=True)
+
+    assert settings == {
+        "thinking": "low",
+        "extra_body": {"thinking_budget_tokens": 2048},
+    }
+
+
+def test_model_settings_for_config_defaults_thinking_when_unset():
+    cfg = Config.model_validate(
+        {
+            "agent": {
+                "model": "local:qwen",
+                "sentinel_model": "local:qwen",
+                "title_model": "local:qwen",
+                "available_models": [
+                    {
+                        "provider": "openai",
+                        "name": "qwen/qwen3-32b",
+                        "id": "local:qwen",
+                        "base_url": "http://llm/v1",
+                    }
+                ],
+            }
+        }
+    )
+
+    settings = model_settings_for_config(cfg, "local:qwen", default_thinking=True)
+
+    assert settings == {"thinking": True}
 
 
 def test_agent_config_mixed_available_models():

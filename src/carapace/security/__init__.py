@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from pydantic_ai import ApprovalRequired
+from pydantic_ai.usage import UsageLimits
 
 from carapace.security.context import (
     ActionLogEntry as ActionLogEntry,
@@ -46,6 +47,7 @@ async def evaluate_with(
     *,
     usage_tracker: UsageTracker | None = None,
     assert_llm_budget_available: Callable[[], None] | None = None,
+    usage_limits: UsageLimits | None = None,
     verbose: bool = True,
     tool_call_callback: Any = None,
 ) -> None:
@@ -91,6 +93,7 @@ async def evaluate_with(
         args,
         usage_tracker=usage_tracker,
         assert_llm_budget_available=assert_llm_budget_available,
+        usage_limits=usage_limits,
     )
 
     decision_str = _verdict_to_decision(verdict)
@@ -161,6 +164,7 @@ async def evaluate_domain_with(
     *,
     usage_tracker: UsageTracker | None = None,
     assert_llm_budget_available: Callable[[], None] | None = None,
+    usage_limits: UsageLimits | None = None,
 ) -> bool:
     """Evaluate a proxy domain request. Returns True to allow, False to deny.
 
@@ -175,6 +179,7 @@ async def evaluate_domain_with(
         command,
         usage_tracker=usage_tracker,
         assert_llm_budget_available=assert_llm_budget_available,
+        usage_limits=usage_limits,
     )
 
     allowed: bool
@@ -232,6 +237,7 @@ async def evaluate_push_with(
     *,
     usage_tracker: UsageTracker | None = None,
     assert_llm_budget_available: Callable[[], None] | None = None,
+    usage_limits: UsageLimits | None = None,
 ) -> bool:
     """Evaluate a Git push. Returns True to allow, False to deny.
 
@@ -247,6 +253,7 @@ async def evaluate_push_with(
         diff,
         usage_tracker=usage_tracker,
         assert_llm_budget_available=assert_llm_budget_available,
+        usage_limits=usage_limits,
     )
 
     decision = _verdict_to_decision(verdict)
@@ -328,6 +335,7 @@ async def evaluate_credential_with(
     *,
     usage_tracker: UsageTracker | None = None,
     assert_llm_budget_available: Callable[[], None] | None = None,
+    usage_limits: UsageLimits | None = None,
 ) -> CredentialAccessEvaluation:
     """Evaluate a credential access request.
 
@@ -345,6 +353,7 @@ async def evaluate_credential_with(
         trigger,
         usage_tracker=usage_tracker,
         assert_llm_budget_available=assert_llm_budget_available,
+        usage_limits=usage_limits,
     )
 
     decision = _verdict_to_decision(verdict)

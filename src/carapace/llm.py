@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import inspect
 from collections.abc import Callable
+from typing import Literal, cast
 
 from httpx import AsyncClient, HTTPStatusError, Timeout
 from pydantic_ai.models import Model, infer_model
@@ -12,9 +13,12 @@ from pydantic_ai.providers import Provider, infer_provider, infer_provider_class
 from pydantic_ai.providers.google import GoogleProvider
 from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.retries import AsyncTenacityTransport, RetryConfig, wait_retry_after
+from pydantic_ai.settings import ModelSettings
 from tenacity import retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from carapace.models import Config, agent_available_model_entries
+
+ThinkingSetting = bool | Literal["minimal", "low", "medium", "high", "xhigh"]
 
 
 def retry_http_client() -> AsyncClient:
@@ -47,14 +51,43 @@ def infer_model_with_retry_transport(model_name: str) -> Model:
     return infer_model(model_name, provider_factory=_provider_factory)
 
 
+def resolve_available_model_entry(config: Config, model_name: str):
+    entries = {e.model_id: e for e in agent_available_model_entries(config.agent)}
+    entry = entries.get(model_name)
+    if entry is None:
+        raise ValueError(f"Model {model_name!r} is not registered in agent.available_models")
+    return entry
+
+
+def model_settings_for_entry(
+    entry,
+    *,
+    default_thinking: ThinkingSetting | None = None,
+) -> ModelSettings | None:
+    settings: dict[str, object] = {}
+    thinking = entry.thinking if entry.thinking is not None else default_thinking
+    if thinking is not None:
+        settings["thinking"] = thinking
+    if entry.thinking_budget_tokens is not None:
+        settings["extra_body"] = {"thinking_budget_tokens": entry.thinking_budget_tokens}
+    return cast(ModelSettings, settings) if settings else None
+
+
+def model_settings_for_config(
+    config: Config,
+    model_name: str,
+    *,
+    default_thinking: ThinkingSetting | None = None,
+) -> ModelSettings | None:
+    entry = resolve_available_model_entry(config, model_name)
+    return model_settings_for_entry(entry, default_thinking=default_thinking)
+
+
 def make_model_factory(config: Config) -> Callable[[str], Model]:
     """Resolve registered model ids; OpenAI-compatible overrides use ``OpenAIProvider``."""
-    entries = {e.model_id: e for e in agent_available_model_entries(config.agent)}
 
     def factory(model_name: str) -> Model:
-        entry = entries.get(model_name)
-        if entry is None:
-            raise ValueError(f"Model {model_name!r} is not registered in agent.available_models")
+        entry = resolve_available_model_entry(config, model_name)
         resolved_model_name = f"{entry.provider}:{entry.name}"
         if entry.provider in ("openai", "openai-chat"):
             api_key: str | None = None

@@ -11,6 +11,7 @@ from typing import Annotated, Any, Literal, Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_serializer, model_validator
 from pydantic_ai.models import Model
+from pydantic_ai.usage import UsageLimits
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from carapace.git.store import GitStore
@@ -210,6 +211,11 @@ class AvailableModelEntry(BaseModel):
         default=None,
         description="Enable model thinking/reasoning. true/false to toggle, or an effort level.",
     )
+    thinking_budget_tokens: int | None = Field(
+        default=None,
+        ge=0,
+        description="Optional llama.cpp reasoning budget for OpenAI-compatible rows.",
+    )
     base_url: str | None = Field(
         default=None,
         description="OpenAI-compatible API base URL (openai / openai-chat rows only).",
@@ -229,10 +235,12 @@ class AvailableModelEntry(BaseModel):
 
     @model_validator(mode="after")
     def _validate_openai_compatible_fields(self) -> AvailableModelEntry:
-        if self.base_url is None and self.api_key is None:
+        if self.base_url is None and self.api_key is None and self.thinking_budget_tokens is None:
             return self
         if self.provider not in ("openai", "openai-chat"):
-            raise ValueError("base_url/api_key are only supported for provider 'openai' or 'openai-chat'")
+            raise ValueError(
+                "base_url/api_key/thinking_budget_tokens are only supported for provider 'openai' or 'openai-chat'"
+            )
         return self
 
     @property
@@ -596,4 +604,5 @@ class Deps(BaseModel):
     append_session_events: Callable[[list[dict[str, Any]]], None] | None = None
     usage_tracker: UsageTracker
     assert_llm_budget_available: Callable[[], None] | None = None
+    llm_usage_limits: Callable[[], UsageLimits | None] | None = None
     credential_registry: CredentialRegistryProtocol

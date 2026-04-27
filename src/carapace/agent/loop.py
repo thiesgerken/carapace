@@ -25,6 +25,7 @@ from pydantic_ai.messages import (
     ThinkingPart,
     ThinkingPartDelta,
 )
+from pydantic_ai.usage import UsageLimits
 
 from carapace.agent.tools import create_agent
 from carapace.models import Deps
@@ -48,6 +49,7 @@ async def run_agent_turn(
     on_thinking_token: Callable[[str], Awaitable[None]] | None = None,
     on_messages_snapshot: Callable[[list[Any]], None] | None = None,
     before_llm_call: Callable[[], None] | None = None,
+    get_usage_limits: Callable[[], UsageLimits | None] | None = None,
 ) -> tuple[list[Any], str, str]:
     """Run one full agent turn, handling approval loops.
 
@@ -86,11 +88,13 @@ async def run_agent_turn(
     if before_llm_call is not None:
         before_llm_call()
     current_thinking_parts.clear()
+    usage_limits = get_usage_limits() if get_usage_limits is not None else None
     result = await agent.run(
         user_input,
         deps=deps,
         message_history=message_history or None,
         event_stream_handler=_stream_handler,
+        usage_limits=usage_limits,
     )
     last_thinking = "".join(current_thinking_parts)
     deps.usage_tracker.record(usage_model_key, "agent", result.usage())
@@ -148,11 +152,13 @@ async def run_agent_turn(
         if before_llm_call is not None:
             before_llm_call()
         current_thinking_parts.clear()
+        usage_limits = get_usage_limits() if get_usage_limits is not None else None
         result = await agent.run(
             deps=deps,
             message_history=messages,
             deferred_tool_results=deferred_results,
             event_stream_handler=_stream_handler,
+            usage_limits=usage_limits,
         )
         last_thinking = "".join(current_thinking_parts)
         deps.usage_tracker.record(usage_model_key, "agent", result.usage())
