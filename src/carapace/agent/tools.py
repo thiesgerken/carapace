@@ -11,10 +11,10 @@ import httpx
 from loguru import logger
 from pydantic import Field
 from pydantic_ai import Agent, DeferredToolRequests, RunContext, ToolDenied
-from pydantic_ai.capabilities import Thinking
 
 import carapace.security as security
 from carapace.config import load_workspace_file
+from carapace.llm import model_settings_for_config
 from carapace.models import (
     ContextGrant,
     CredentialMetadata,
@@ -205,6 +205,7 @@ async def _gate(ctx: RunContext[Deps], tool_name: str, args: dict[str, Any]) -> 
             args,
             usage_tracker=ctx.deps.usage_tracker,
             assert_llm_budget_available=ctx.deps.assert_llm_budget_available,
+            usage_limits=ctx.deps.llm_usage_limits() if ctx.deps.llm_usage_limits is not None else None,
             verbose=ctx.deps.verbose,
             tool_call_callback=ctx.deps.tool_call_callback,
         )
@@ -441,21 +442,13 @@ def build_system_prompt(deps: Deps) -> str:
 def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
     system_prompt = build_system_prompt(deps)
 
-    capabilities: list[Any] = [LlmRequestLogCapability(source="agent")]
-    model_entry = next(
-        (e for e in deps.config.agent.available_models if e.model_id == deps.agent_model_id),
-        None,
-    )
-    thinking = model_entry.thinking if model_entry and model_entry.thinking is not None else True
-    if thinking is not False:
-        capabilities.append(Thinking(effort=thinking))
-
     agent: Agent[Deps, str | DeferredToolRequests] = Agent(
         deps.agent_model,
         deps_type=Deps,
         output_type=[str, DeferredToolRequests],  # type: ignore[arg-type]
         instructions=system_prompt,
-        capabilities=capabilities,
+        capabilities=[LlmRequestLogCapability(source="agent")],
+        model_settings=model_settings_for_config(deps.config, deps.agent_model_id, default_thinking=True),
         retries=1,
         output_retries=3,
     )

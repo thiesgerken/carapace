@@ -10,10 +10,13 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from pydantic_ai import ApprovalRequired
+from pydantic_ai.exceptions import UsageLimitExceeded
 from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, ToolCallPart, ToolReturnPart, UserPromptPart
 from pydantic_ai.models.test import TestModel
 from pydantic_ai.usage import RunUsage
 
+import carapace.security as security_mod
 import carapace.usage as usage_mod
 from carapace.bootstrap import ensure_data_dir
 from carapace.config import load_config
@@ -28,7 +31,14 @@ from carapace.models import (
 )
 from carapace.sandbox.manager import SandboxManager
 from carapace.sandbox.state import SessionSandboxSnapshot
-from carapace.security.context import UserEscalationDecision, format_denial_message, normalize_optional_message
+from carapace.security.context import (
+    SentinelVerdict,
+    SessionSecurity,
+    ToolCallEntry,
+    UserEscalationDecision,
+    format_denial_message,
+    normalize_optional_message,
+)
 from carapace.security.sentinel import Sentinel
 from carapace.session import SessionEngine, SessionManager
 from carapace.session.engine import _non_slash_user_message_count
@@ -1178,6 +1188,40 @@ def test_submit_message_budget_exceeded_persists_history(tmp_path: Path):
         asyncio.run(_run())
 
 
+def test_evaluate_with_usage_limit_exceeded_escalates_to_user(tmp_path: Path):
+    async def _run() -> None:
+        session = SessionSecurity("test-session", audit_dir=tmp_path)
+        sentinel = MagicMock(spec=Sentinel)
+        sentinel.evaluate_tool_call = AsyncMock(
+            side_effect=UsageLimitExceeded("The next request would exceed the request_limit of 5")
+        )
+
+        with pytest.raises(ApprovalRequired) as exc_info:
+            await security_mod.evaluate_with(
+                session,
+                sentinel,
+                "use_skill",
+                {"skill_name": "paperless"},
+            )
+
+        metadata = exc_info.value.metadata
+        assert metadata["tool"] == "use_skill"
+        assert metadata["args"] == {"skill_name": "paperless"}
+        assert metadata["risk_level"] == "high"
+        assert isinstance(metadata["sentinel_verdict"], SentinelVerdict)
+        assert metadata["sentinel_verdict"].decision == "escalate"
+        assert "request limit" in metadata["explanation"].lower()
+
+        entry = session.action_log[-1]
+        assert isinstance(entry, ToolCallEntry)
+        assert entry.decision == "escalated"
+        assert entry.tool == "use_skill"
+        assert entry.explanation is not None
+        assert "request limit" in entry.explanation.lower()
+
+    asyncio.run(_run())
+
+
 def test_generate_title_skips_when_budget_exhausted(tmp_path: Path):
     async def _run() -> None:
         engine = _make_engine(tmp_path)
@@ -1222,6 +1266,52 @@ def test_generate_title_persists_usage_and_broadcasts_usage(tmp_path: Path):
         assert sub.title_updates[0][0] == "📌 hello"
         assert sub.title_updates[0][1] is not None
         assert sub.title_updates[0][1].budget_gauges[0].key == "cost"
+
+    with _patch_sentinel():
+        asyncio.run(_run())
+
+
+def test_generate_title_records_titler_request_log(tmp_path: Path):
+    async def _run() -> None:
+        engine = _make_engine(tmp_path)
+        state = engine.session_mgr.create_session()
+        sid = state.session_id
+        active = engine.get_or_activate(sid)
+        started_at = datetime.now(tz=UTC)
+
+        async def _fake_generate_title(*_args: Any, **_kwargs: Any) -> str:
+            observer = usage_mod._llm_request_sink.get()
+            assert observer is not None
+
+            request_state = LlmRequestState(
+                request_id="req-title",
+                source="titler",
+                model_name="anthropic:claude-haiku-4-5",
+                started_at=started_at,
+            )
+            record = LlmRequestRecord(
+                ts=started_at + timedelta(seconds=1),
+                request_id="req-title",
+                source="titler",
+                model_name="anthropic:claude-haiku-4-5",
+                started_at=started_at,
+                completed_at=started_at + timedelta(seconds=1),
+            )
+
+            await observer.on_request_started(request_state)
+            await observer.on_request_completed(record)
+            return "📌 hello"
+
+        with patch("carapace.session.engine.generate_title", new=AsyncMock(side_effect=_fake_generate_title)):
+            title = await engine._generate_title(active, [{"role": "user", "content": "hello"}])
+
+        assert title == "📌 hello"
+        assert active.llm_request_log.records[-1].request_id == "req-title"
+        assert active.llm_request_log.records[-1].source == "titler"
+
+        stored_log = engine.session_mgr.load_llm_request_log(sid)
+        assert stored_log.records[-1].request_id == "req-title"
+        assert stored_log.records[-1].source == "titler"
 
     with _patch_sentinel():
         asyncio.run(_run())

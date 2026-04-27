@@ -28,10 +28,13 @@ from pydantic_ai.messages import (
     UserPromptPart,
 )
 from pydantic_ai.models import Model, infer_model
+from pydantic_ai.settings import ModelSettings
+from pydantic_ai.usage import UsageLimits
 
 import carapace.security as security_mod
 from carapace.agent.loop import run_agent_turn
 from carapace.git.store import GitStore
+from carapace.llm import model_settings_for_config
 from carapace.memory import MemoryStore
 from carapace.models import (
     AvailableModelEntry,
@@ -76,6 +79,7 @@ from carapace.usage import (
     usage_budget_exceeded_error,
     usage_budget_gauges,
     usage_last_request_row,
+    usage_limits_for_remaining_budget,
 )
 from carapace.ws_models import (
     SLASH_COMMANDS,
@@ -380,6 +384,19 @@ class SessionEngine:
         if error is not None:
             raise error
 
+    def _remaining_usage_limits(self, active: ActiveSession) -> UsageLimits | None:
+        return usage_limits_for_remaining_budget(
+            active.usage_tracker,
+            output_tokens_limit=active.state.budget.output_tokens,
+        )
+
+    def _remaining_aux_usage_limits(self, active: ActiveSession) -> UsageLimits | None:
+        return usage_limits_for_remaining_budget(
+            active.usage_tracker,
+            output_tokens_limit=active.state.budget.output_tokens,
+            request_limit=10,
+        )
+
     def _turn_usage_payload(self, active: ActiveSession) -> TurnUsage | None:
         rec_agent = last_record_for_source(active.llm_request_log, "agent")
         budget_gauges = self._budget_gauges(active)
@@ -512,6 +529,10 @@ class SessionEngine:
         """Create a Model from a name, using the model_factory if available."""
         return self._model_factory(name) if self._model_factory else infer_model(name)
 
+    def _resolve_model_settings(self, name: str) -> ModelSettings | None:
+        """Build per-model request settings from the configured catalog."""
+        return model_settings_for_config(self._config, name, default_thinking=True)
+
     # -- session lifecycle --
 
     def _ensure_active(self, session_id: str) -> ActiveSession:
@@ -530,6 +551,7 @@ class SessionEngine:
             knowledge_dir=self._knowledge_dir,
             skills_dir=self._knowledge_dir / "skills",
             model_factory=self._model_factory,
+            model_settings_resolver=self._resolve_model_settings,
         )
         usage_tracker = self._session_mgr.load_usage(session_id)
         llm_log = self._session_mgr.load_llm_request_log(session_id)
@@ -762,6 +784,7 @@ class SessionEngine:
             append_session_events=_append_session_events,
             usage_tracker=active.usage_tracker,
             assert_llm_budget_available=lambda: self._assert_llm_budget_available(active),
+            llm_usage_limits=lambda: self._remaining_aux_usage_limits(active),
             sandbox=self._sandbox_mgr,
             activated_skills=[],
             credential_registry=self._credential_registry,
@@ -1393,6 +1416,7 @@ class SessionEngine:
                             on_thinking_token=_on_thinking_token,
                             on_messages_snapshot=lambda snapshot: _set_latest_messages(snapshot),
                             before_llm_call=lambda: self._assert_llm_budget_available(active),
+                            get_usage_limits=lambda: self._remaining_usage_limits(active),
                         )
 
                 self._session_mgr.save_history(session_id, messages)
@@ -1581,14 +1605,19 @@ class SessionEngine:
         session_id = active.state.session_id
         try:
             async with self._llm_semaphore:
-                self._assert_llm_budget_available(active)
-                title = await generate_title(
-                    events,
-                    model=active.title_model_name or self._config.agent.title_model,
-                    usage_tracker=active.usage_tracker,
-                    before_llm_call=lambda: self._assert_llm_budget_available(active),
-                    model_factory=self._model_factory,
-                )
+                with self.llm_request_recording(active):
+                    self._assert_llm_budget_available(active)
+                    title = await generate_title(
+                        events,
+                        model=active.title_model_name or self._config.agent.title_model,
+                        usage_tracker=active.usage_tracker,
+                        before_llm_call=lambda: self._assert_llm_budget_available(active),
+                        model_factory=self._model_factory,
+                        model_settings=self._resolve_model_settings(
+                            active.title_model_name or self._config.agent.title_model
+                        ),
+                        usage_limits=self._remaining_aux_usage_limits(active),
+                    )
             if title:
                 active.state.title = title
                 self._session_mgr.save_state(active.state)
@@ -1918,9 +1947,13 @@ class SessionEngine:
                         command,
                         usage_tracker=active.usage_tracker,
                         assert_llm_budget_available=lambda: self._assert_llm_budget_available(active),
+                        usage_limits=self._remaining_aux_usage_limits(active),
                     )
                 except SessionBudgetExceededError as exc:
                     logger.info(f"Session budget blocked domain evaluation for {active.state.session_id}: {exc}")
+                    return False
+                except UsageLimitExceeded as exc:
+                    logger.info(f"Usage limits blocked domain evaluation for {active.state.session_id}: {exc}")
                     return False
 
         return _eval

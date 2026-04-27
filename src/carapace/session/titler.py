@@ -8,8 +8,10 @@ from typing import Any
 from loguru import logger
 from pydantic_ai import Agent
 from pydantic_ai.models import Model, infer_model
+from pydantic_ai.settings import ModelSettings
+from pydantic_ai.usage import UsageLimits
 
-from carapace.usage import UsageTracker
+from carapace.usage import LlmRequestLogCapability, UsageTracker
 
 _SYSTEM_PROMPT = """\
 Generate a very short title (3-8 words) for a chat conversation.
@@ -26,6 +28,8 @@ async def generate_title(
     usage_tracker: UsageTracker | None = None,
     before_llm_call: Callable[[], None] | None = None,
     model_factory: Callable[[str], Model] | None = None,
+    model_settings: ModelSettings | None = None,
+    usage_limits: UsageLimits | None = None,
 ) -> str:
     """Build a short emoji-prefixed title from conversation events.
 
@@ -55,11 +59,19 @@ async def generate_title(
     prompt = "\n".join(lines)[:2000]
 
     resolved = model_factory(model) if model_factory is not None else infer_model(model)
-    agent: Agent[None, str] = Agent(resolved, output_type=str, instructions=_SYSTEM_PROMPT, retries=1, output_retries=3)
+    agent: Agent[None, str] = Agent(
+        resolved,
+        output_type=str,
+        instructions=_SYSTEM_PROMPT,
+        model_settings=model_settings,
+        capabilities=[LlmRequestLogCapability(source="titler")],
+        retries=1,
+        output_retries=2,
+    )
     try:
         if before_llm_call is not None:
             before_llm_call()
-        result = await agent.run(prompt)
+        result = await agent.run(prompt, usage_limits=usage_limits)
         if usage_tracker:
             usage_tracker.record(model, "title", result.usage())
         return result.output.strip()

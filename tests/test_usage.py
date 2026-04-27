@@ -4,7 +4,12 @@ from decimal import Decimal
 
 from pydantic_ai.usage import RunUsage
 
-from carapace.usage import UsageTracker, usage_budget_exceeded_error, usage_budget_gauges
+from carapace.usage import (
+    UsageTracker,
+    usage_budget_exceeded_error,
+    usage_budget_gauges,
+    usage_limits_for_remaining_budget,
+)
 
 
 def test_record_accumulates_tokens_across_events() -> None:
@@ -103,3 +108,50 @@ def test_usage_budget_exceeded_error_treats_unknown_cost_pricing_as_zero() -> No
     )
     assert gauges[0].current_value == "$0.0000"
     assert gauges[0].current_amount == 0.0
+
+
+def test_usage_limits_for_remaining_budget_uses_remaining_output_tokens() -> None:
+    tracker = UsageTracker()
+    tracker.record(
+        "anthropic:claude-haiku-4-5",
+        "agent",
+        RunUsage(input_tokens=100, output_tokens=250, requests=1),
+    )
+
+    limits = usage_limits_for_remaining_budget(tracker, output_tokens_limit=500)
+
+    assert limits is not None
+    assert limits.output_tokens_limit == 250
+
+
+def test_usage_limits_for_remaining_budget_can_include_request_limit() -> None:
+    tracker = UsageTracker()
+
+    limits = usage_limits_for_remaining_budget(tracker, request_limit=5)
+
+    assert limits is not None
+    assert limits.request_limit == 5
+    assert limits.output_tokens_limit is None
+
+
+def test_usage_limits_for_remaining_budget_combines_output_and_request_limits() -> None:
+    tracker = UsageTracker()
+    tracker.record(
+        "anthropic:claude-haiku-4-5",
+        "agent",
+        RunUsage(input_tokens=100, output_tokens=250, requests=1),
+    )
+
+    limits = usage_limits_for_remaining_budget(tracker, output_tokens_limit=500, request_limit=5)
+
+    assert limits is not None
+    assert limits.output_tokens_limit == 250
+    assert limits.request_limit == 5
+
+
+def test_usage_limits_for_remaining_budget_returns_none_without_output_limit() -> None:
+    tracker = UsageTracker()
+
+    limits = usage_limits_for_remaining_budget(tracker)
+
+    assert limits is None

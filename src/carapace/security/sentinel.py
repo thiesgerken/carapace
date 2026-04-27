@@ -9,6 +9,8 @@ from typing import Any
 from loguru import logger
 from pydantic_ai import Agent, RunContext, ToolOutput
 from pydantic_ai.models import Model, infer_model
+from pydantic_ai.settings import ModelSettings
+from pydantic_ai.usage import UsageLimits
 
 from carapace.security.context import (
     ActionLogEntry,
@@ -135,12 +137,14 @@ class Sentinel:
         skills_dir: Path,
         reset_threshold: int = _RESET_THRESHOLD_DEFAULT,
         model_factory: Callable[[str], Model] | None = None,
+        model_settings_resolver: Callable[[str], ModelSettings | None] | None = None,
     ) -> None:
         self._model = model
         self._knowledge_dir = knowledge_dir
         self._skills_dir = skills_dir
         self._reset_threshold = reset_threshold
         self._model_factory = model_factory
+        self._model_settings_resolver = model_settings_resolver
         self._agent = self._create_agent()
         self._message_history: list[Any] = []
         self._skill_file_cache: dict[tuple[str, str], tuple[int, int, str]] = {}
@@ -296,6 +300,7 @@ class Sentinel:
         new_entries_count: int,
         usage_tracker: UsageTracker | None = None,
         assert_llm_budget_available: Callable[[], None] | None = None,
+        usage_limits: UsageLimits | None = None,
     ) -> SentinelVerdict:
         eval_no = session.sentinel_eval_count + 1
         logger.info(
@@ -311,6 +316,7 @@ class Sentinel:
                 prompt,
                 deps=self._skills_dir,
                 message_history=self._message_history or None,
+                usage_limits=usage_limits,
             )
         except Exception as exc:
             stats = self._end_eval_logging()
@@ -338,13 +344,17 @@ class Sentinel:
 
     def _create_agent(self) -> Agent[Path, SentinelVerdict]:
         resolved = self._model_factory(self._model) if self._model_factory is not None else infer_model(self._model)
+        model_settings = (
+            self._model_settings_resolver(self._model) if self._model_settings_resolver is not None else None
+        )
         agent: Agent[Path, SentinelVerdict] = Agent(
             resolved,
             deps_type=Path,
             output_type=ToolOutput(SentinelVerdict, name="judge"),
             instructions=self._load_system_prompt,
             capabilities=[LlmRequestLogCapability(source="sentinel")],
-            output_retries=3,
+            model_settings=model_settings,
+            output_retries=2,
             retries=1,
         )
 
@@ -401,6 +411,7 @@ class Sentinel:
         *,
         usage_tracker: UsageTracker | None = None,
         assert_llm_budget_available: Callable[[], None] | None = None,
+        usage_limits: UsageLimits | None = None,
     ) -> SentinelVerdict:
         async with self._lock:
             if self._should_reset(session):
@@ -430,6 +441,7 @@ class Sentinel:
                 new_entries_count=len(new_entries),
                 usage_tracker=usage_tracker,
                 assert_llm_budget_available=assert_llm_budget_available,
+                usage_limits=usage_limits,
             )
 
     async def evaluate_domain_access(
@@ -440,6 +452,7 @@ class Sentinel:
         *,
         usage_tracker: UsageTracker | None = None,
         assert_llm_budget_available: Callable[[], None] | None = None,
+        usage_limits: UsageLimits | None = None,
     ) -> SentinelVerdict:
         async with self._lock:
             if self._should_reset(session):
@@ -466,6 +479,7 @@ class Sentinel:
                 new_entries_count=len(new_entries),
                 usage_tracker=usage_tracker,
                 assert_llm_budget_available=assert_llm_budget_available,
+                usage_limits=usage_limits,
             )
 
     async def evaluate_credential_access(
@@ -478,6 +492,7 @@ class Sentinel:
         *,
         usage_tracker: UsageTracker | None = None,
         assert_llm_budget_available: Callable[[], None] | None = None,
+        usage_limits: UsageLimits | None = None,
     ) -> SentinelVerdict:
         async with self._lock:
             if self._should_reset(session):
@@ -507,6 +522,7 @@ class Sentinel:
                 new_entries_count=len(new_entries),
                 usage_tracker=usage_tracker,
                 assert_llm_budget_available=assert_llm_budget_available,
+                usage_limits=usage_limits,
             )
 
     def _should_reset(self, session: SessionSecurity) -> bool:
@@ -533,6 +549,7 @@ class Sentinel:
         *,
         usage_tracker: UsageTracker | None = None,
         assert_llm_budget_available: Callable[[], None] | None = None,
+        usage_limits: UsageLimits | None = None,
     ) -> SentinelVerdict:
         """Evaluate a Git push from the pre-receive hook."""
         async with self._lock:
@@ -567,4 +584,5 @@ class Sentinel:
                 new_entries_count=len(new_entries),
                 usage_tracker=usage_tracker,
                 assert_llm_budget_available=assert_llm_budget_available,
+                usage_limits=usage_limits,
             )

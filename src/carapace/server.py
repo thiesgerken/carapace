@@ -32,6 +32,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from genai_prices import UpdatePrices
 from loguru import logger
 from pydantic import BaseModel, model_validator
+from pydantic_ai.exceptions import UsageLimitExceeded
 
 from carapace.auth import get_token
 from carapace.bootstrap import ensure_data_dir, ensure_knowledge_dir
@@ -1279,8 +1280,11 @@ async def evaluate_push(req: PushEvalRequest) -> dict[str, str]:
                 req.diff,
                 usage_tracker=active.usage_tracker,
                 assert_llm_budget_available=lambda: _engine._assert_llm_budget_available(active),
+                usage_limits=_engine._remaining_aux_usage_limits(active),
             )
         except SessionBudgetExceededError as exc:
+            return {"verdict": "deny", "reason": str(exc)}
+        except UsageLimitExceeded as exc:
             return {"verdict": "deny", "reason": str(exc)}
     if allowed:
         return {"verdict": "allow"}
@@ -1433,8 +1437,11 @@ async def fetch_credential(request: Request, vault_path: str) -> Response:
                     f"Sandbox requested credential: {meta.name}",
                     usage_tracker=active.usage_tracker,
                     assert_llm_budget_available=lambda: _engine._assert_llm_budget_available(active),
+                    usage_limits=_engine._remaining_aux_usage_limits(active),
                 )
             except SessionBudgetExceededError as exc:
+                return Response(status_code=403, content=str(exc))
+            except UsageLimitExceeded as exc:
                 return Response(status_code=403, content=str(exc))
         if not cred_eval.allowed:
             return Response(status_code=403, content="Credential access denied")

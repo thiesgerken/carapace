@@ -34,7 +34,7 @@ from pydantic_ai.messages import (
 )
 from pydantic_ai.models import ModelRequestContext
 from pydantic_ai.tools import AgentDepsT, RunContext
-from pydantic_ai.usage import RunUsage
+from pydantic_ai.usage import RunUsage, UsageLimits
 
 
 class ModelUsage(BaseModel):
@@ -251,7 +251,22 @@ def usage_budget_exceeded_error(
     )
 
 
-LlmSource = Literal["agent", "sentinel"]
+def usage_limits_for_remaining_budget(
+    tracker: UsageTracker,
+    *,
+    output_tokens_limit: int | None = None,
+    request_limit: int | None = None,
+) -> UsageLimits | None:
+    """Translate the remaining session output budget into PydanticAI usage limits."""
+
+    if output_tokens_limit is None and request_limit is None:
+        return None
+
+    remaining_output = None if output_tokens_limit is None else max(0, output_tokens_limit - tracker.total_output)
+    return UsageLimits(output_tokens_limit=remaining_output, request_limit=request_limit)
+
+
+LlmSource = Literal["agent", "sentinel", "titler"]
 LlmRequestPhase = Literal["processing_prompt", "thinking", "generating"]
 
 _llm_request_sink: ContextVar[LlmRequestObserver | None] = ContextVar(
