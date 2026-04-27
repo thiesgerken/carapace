@@ -394,7 +394,7 @@ class SessionEngine:
         return usage_limits_for_remaining_budget(
             active.usage_tracker,
             output_tokens_limit=active.state.budget.output_tokens,
-            request_limit=5,
+            request_limit=10,
         )
 
     def _turn_usage_payload(self, active: ActiveSession) -> TurnUsage | None:
