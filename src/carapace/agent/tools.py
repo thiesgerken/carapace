@@ -153,14 +153,13 @@ def _skill_command_alias_conflict(skill_name: str, knowledge_dir: Path, activate
     return f"Cannot activate skill '{skill_name}' because these command aliases conflict with active skills: {details}."
 
 
-def _extract_leading_command_token(command: str) -> tuple[str, int, int] | None:
+def _extract_leading_command_token(command: str) -> str | None:
     match = re.match(
         r"^\s*(?P<token>(?:" + re.escape(SKILL_COMMAND_SHIM_DIR) + r"/)?[A-Za-z0-9][A-Za-z0-9._-]*)", command
     )
     if match is None:
         return None
-    start, end = match.span("token")
-    return match.group("token"), start, end
+    return match.group("token")
 
 
 def _resolve_exec_command_alias(
@@ -169,11 +168,10 @@ def _resolve_exec_command_alias(
     activated_skills: list[str],
     contexts: list[str],
 ) -> tuple[str, list[str], str | None]:
-    token_info = _extract_leading_command_token(command)
-    if token_info is None:
+    token = _extract_leading_command_token(command)
+    if token is None:
         return command, contexts, None
 
-    token, start, end = token_info
     alias_to_skill = _active_skill_command_aliases(knowledge_dir, activated_skills)
     alias = token.removeprefix(f"{SKILL_COMMAND_SHIM_DIR}/")
     owning_skill = alias_to_skill.get(alias)
@@ -193,8 +191,7 @@ def _resolve_exec_command_alias(
     if token.startswith(f"{SKILL_COMMAND_SHIM_DIR}/"):
         return command, resolved_contexts, warning
 
-    rewritten = command[:start] + f"{SKILL_COMMAND_SHIM_DIR}/{alias}" + command[end:]
-    return rewritten, resolved_contexts, warning
+    return command, resolved_contexts, warning
 
 
 async def _gate(ctx: RunContext[Deps], tool_name: str, args: dict[str, Any]) -> ToolDenied | None:

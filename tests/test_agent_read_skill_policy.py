@@ -164,7 +164,7 @@ def test_resolves_exec_alias_and_auto_adds_context(tmp_path: Path) -> None:
         contexts=[],
     )
 
-    assert command == f"{SKILL_COMMAND_SHIM_DIR}/web search docs/skills.md"
+    assert command == "web search docs/skills.md"
     assert contexts == ["web"]
     assert warning == (
         "Warning: adding skill context automatically because this command starts with the registered "
