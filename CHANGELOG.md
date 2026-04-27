@@ -1,6 +1,18 @@
 # CHANGELOG
 
 
+## v0.100.1 (2026-04-27)
+
+
+### ⬆️ Dependencies
+
+
+- ⬆️ chore: upgrade ghcr.io/astral-sh/uv:python3.14-trixie-slim Docker digest to b3b7ad9
+  ([`e977ba1`](https://github.com/thiesgerken/carapace/commit/e977ba174488974b731c585e803c90b18fc604d5))
+
+- ⬆️ chore: upgrade ghcr.io/astral-sh/uv Docker digest to 3b7b60a
+  ([`834f36c`](https://github.com/thiesgerken/carapace/commit/834f36c0e55fa40ccc7311ebbe849a3befaedb3e))
+
 ## v0.100.0 (2026-04-27)
 
 
