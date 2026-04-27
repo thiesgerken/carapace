@@ -1,6 +1,15 @@
 # CHANGELOG
 
 
+## v0.101.0 (2026-04-27)
+
+
+### ✨ Features
+
+
+- ✨ feat: add context count display to exec row
+  ([`bd6e375`](https://github.com/thiesgerken/carapace/commit/bd6e375659226bee7be62b50fd7158a60151aece))
+
 ## v0.100.1 (2026-04-27)
 
 
