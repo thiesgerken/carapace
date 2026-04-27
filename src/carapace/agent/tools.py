@@ -734,18 +734,18 @@ def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
                 Always set this to the list of skills that are needed for the command.
         """
         original_command = command
-        contexts = contexts or []
+        requested_contexts = list(contexts or [])
         command, contexts, alias_warning = _resolve_exec_command_alias(
             command,
             ctx.deps.knowledge_dir,
             ctx.deps.session_state.activated_skills,
-            contexts,
+            requested_contexts,
         )
         skill_warning = _exec_skill_access_warning(
             original_command,
             ctx.deps.knowledge_dir,
             ctx.deps.session_state.activated_skills,
-            contexts,
+            requested_contexts,
         )
 
         # Validate contexts against activated skills

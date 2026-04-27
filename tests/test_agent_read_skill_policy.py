@@ -188,3 +188,34 @@ def test_resolves_exec_alias_without_warning_when_context_present(tmp_path: Path
     assert command == f"{SKILL_COMMAND_SHIM_DIR}/web search docs/skills.md"
     assert contexts == ["web"]
     assert warning is None
+
+
+def test_alias_auto_add_keeps_skill_directory_warning_on_original_contexts(tmp_path: Path) -> None:
+    skill_dir = tmp_path / "skills" / "web"
+    skill_dir.mkdir(parents=True, exist_ok=True)
+    (skill_dir / "SKILL.md").write_text("# Web")
+    (skill_dir / "carapace.yaml").write_text("commands:\n  - name: web\n    command: uv run web\n")
+
+    original_command = "web search /workspace/skills/web/data.json"
+    requested_contexts: list[str] = []
+
+    _resolved_command, resolved_contexts, alias_warning = _resolve_exec_command_alias(
+        original_command,
+        tmp_path,
+        activated_skills=["web"],
+        contexts=requested_contexts,
+    )
+    skill_warning = _exec_skill_access_warning(
+        original_command,
+        tmp_path,
+        activated_skills=["web"],
+        contexts=requested_contexts,
+    )
+
+    assert resolved_contexts == ["web"]
+    assert alias_warning is not None
+    assert skill_warning == (
+        "Warning: this command references skill directories without the matching skill context:\n"
+        "- `web` is referenced in this command but missing from `contexts`. Rerun `exec` with "
+        "`contexts=['web']` if you need that skill's injected credentials, tunnels, or domains."
+    )

@@ -188,6 +188,9 @@ class SkillActivationRunner:
         session_id: str | None = None,
         sc: SessionContainerLike | None = None,
     ) -> list[str]:
+        if not command_aliases:
+            return []
+
         if (session_id is None) == (sc is None):
             raise ValueError("Exactly one of session_id and sc must be set")
 
@@ -223,8 +226,6 @@ class SkillActivationRunner:
         if result.exit_code != 0:
             raise SkillActivationError(f"command alias registration exit {result.exit_code}: {result.output[:500]}")
 
-        if not command_aliases:
-            return []
         names = ", ".join(alias for alias, _command in command_aliases)
         return [f"Command aliases registered: {names}."]
 
