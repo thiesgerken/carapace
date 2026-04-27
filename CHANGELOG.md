@@ -1,6 +1,21 @@
 # CHANGELOG
 
 
+## v0.101.1 (2026-04-27)
+
+
+### 💄 UI/UX
+
+
+- 💄 ui: hide "sentinel" label
+  ([`0defda5`](https://github.com/thiesgerken/carapace/commit/0defda5d4297d8977aca3c5473d905b8f6322334))
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix: avoid calling npm at container startup
+  ([`75e075b`](https://github.com/thiesgerken/carapace/commit/75e075b26b8c62c45dac929403b158fd14a8471d))
+
 ## v0.101.0 (2026-04-27)
 
 
