@@ -356,12 +356,19 @@ function completedTurnMessageIndices(messages: ChatMessage[]): number[] {
   return messages.flatMap((message, index) => (isTurnTerminalMessage(message) ? [index] : []));
 }
 
-function latestTurnStartMessageIndex(messages: ChatMessage[]): number {
-  for (let index = messages.length - 1; index >= 0; index--) {
-    if (messages[index].kind === "user") {
+function latestCompletedTurnStartMessageIndex(messages: ChatMessage[]): number {
+  const latestTerminalIndex = completedTurnMessageIndices(messages).at(-1);
+  if (latestTerminalIndex == null) {
+    return messages.length;
+  }
+
+  for (let index = latestTerminalIndex; index >= 0; index--) {
+    const message = messages[index];
+    if (message.kind === "user" && !message.content.startsWith("/")) {
       return index;
     }
   }
+
   return messages.length;
 }
 
@@ -1184,7 +1191,7 @@ export function ChatView({
     setQueuedMessage(null);
     lastThinkingStartedAtRef.current = null;
     setLlmActivity(null);
-    setMessages((prev) => prev.slice(0, latestTurnStartMessageIndex(prev)));
+    setMessages((prev) => prev.slice(0, latestCompletedTurnStartMessageIndex(prev)));
     setWaiting(true);
     send({ type: "retry_latest_turn" });
   }
