@@ -1,13 +1,26 @@
 ---
 name: example
 description: A template skill showing provider-based activation, a Python entrypoint, a Node entrypoint, post-activation setup, and an exec-scoped TCP tunnel.
+metadata:
+  carapace:
+    network:
+      tunnels:
+        - host: imap.gmail.com
+          remote_port: 993
+          local_port: 1993
+          description: Unauthenticated IMAP CAPABILITY probe over a Carapace-managed tunnel
+    commands:
+      - name: example-hello
+        command: uv run --directory /workspace/skills/example hello
+      - name: example-node
+        command: pnpm --dir /workspace/skills/example run hello:node
 ---
 
 # Example Skill
 
 This is a template skill that demonstrates the [AgentSkills](https://agentskills.io/) format
 with a Python package, a pnpm-managed Node entrypoint, provider-based activation, post-activation setup,
-and an exec-scoped TCP tunnel declared in `carapace.yaml`.
+and an exec-scoped TCP tunnel declared in `metadata.carapace`.
 
 ## Exposed Commands
 
@@ -26,7 +39,7 @@ example-node
 The Python command performs an unauthenticated IMAP `CAPABILITY` request against `imap.gmail.com`
 through a Carapace-managed tunnel. That demonstrates the important path for non-HTTP protocols:
 
-- `carapace.yaml` declares `network.tunnels`
+- `metadata.carapace` declares `network.tunnels`
 - `setup.sh` materializes a tiny local config file consumed by the Python command
 - `hello` connects to the real hostname on the declared local port so TLS/SNI still work
 

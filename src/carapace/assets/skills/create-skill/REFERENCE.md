@@ -27,7 +27,7 @@ Use this checklist when writing or reviewing a skill:
 8. Do not put exposed commands into frontmatter; keep them in the body where the runtime agent will read them naturally.
 9. If the skill performs risky actions, add explicit safety rules near the top of `SKILL.md`.
 10. If activation handles credentials or setup automatically, say that briefly in `SKILL.md` and stop there.
-11. If `carapace.yaml` injects a credential into a local file, add that generated file path to the skill-local `.gitignore`.
+11. If `metadata.carapace` injects a credential into a local file, add that generated file path to the skill-local `.gitignore`.
 
 ## What Good `SKILL.md` Files Usually Contain
 
@@ -88,7 +88,6 @@ Skills live under `skills/` in the data directory. Each skill directory contains
 skills/
   my-skill/
     SKILL.md
-    carapace.yaml
     pyproject.toml
     uv.lock
     package.json
@@ -168,9 +167,9 @@ That is why `SKILL.md` should stay short and user-facing. Put the rest here or i
 
 As a rule of thumb, if a runtime agent can succeed without reading a section every time the skill is activated, that section belongs here instead of in `SKILL.md`.
 
-## `carapace.yaml`
+## Carapace metadata (`metadata.carapace`)
 
-`carapace.yaml` is optional. Use it when the skill needs outbound domains, tunnels, hints, auto-injected credentials, or command aliases.
+Preferred: declare Carapace-specific metadata inline in `SKILL.md` under `metadata.carapace`. Use legacy `carapace.yaml` only when you need a compatibility fallback.
 
 Top-level keys:
 
@@ -182,25 +181,25 @@ Top-level keys:
 | `commands`        | list of objects | Command aliases registered on skill activation          |
 | `hints`           | map             | Extra metadata for tooling                              |
 
-Valid example:
+Valid inline example:
 
 ```yaml
-network:
-  domains:
-    - api.example.com
-    - "*.cdn.example.com"
-
-credentials:
-  - vault_path: my-backend/some-secret-id
-    description: API key for Example service
-    env_var: EXAMPLE_API_KEY
-  - vault_path: my-backend/deploy-key
-    description: SSH private key for deploys
-    file: ~/.ssh/id_example_deploy
-
-commands:
-  - name: example-search
-    command: uv run --directory /workspace/skills/example scripts/search.py
+metadata:
+  carapace:
+    network:
+      domains:
+        - api.example.com
+        - "*.cdn.example.com"
+    credentials:
+      - vault_path: my-backend/some-secret-id
+        description: API key for Example service
+        env_var: EXAMPLE_API_KEY
+      - vault_path: my-backend/deploy-key
+        description: SSH private key for deploys
+        file: ~/.ssh/id_example_deploy
+    commands:
+      - name: example-search
+        command: uv run --directory /workspace/skills/example scripts/search.py
 ```
 
 Common mistake:
@@ -212,9 +211,9 @@ network:
 
 `network` must be an object with a `domains` key. If the shape is wrong, validation fails and the file may be ignored.
 
-When credentials are declared here, activation handles approval and injection automatically. Keep those details out of `SKILL.md` unless the runtime behavior itself depends on them.
+When credentials are declared there, activation handles approval and injection automatically. Keep those details out of `SKILL.md` unless the runtime behavior itself depends on them.
 
-When command aliases are declared here, activation generates executable wrappers in `/root/.carapace/bin/` and exposes that directory on `PATH`. Runtime agents should call the plain alias token, not the absolute shim path. Authors should think of `command` as the base command line for that wrapper, not as a multi-line shell script.
+When command aliases are declared there, activation generates executable wrappers in `/root/.carapace/bin/` and exposes that directory on `PATH`. Runtime agents should call the plain alias token, not the absolute shim path. Authors should think of `command` as the base command line for that wrapper, not as a multi-line shell script.
 
 Each command entry has:
 
@@ -267,7 +266,6 @@ Suggested layout:
 skills/my-skill/
   SKILL.md
   REFERENCE.md
-  carapace.yaml
   pyproject.toml
   uv.lock
   src/my_skill/

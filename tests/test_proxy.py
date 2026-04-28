@@ -21,6 +21,7 @@ from carapace.sandbox.runtime import (
     SkillFileCredential,
 )
 from carapace.sandbox.session_lifecycle import SessionContainer
+from carapace.sandbox.skill_activation import SKILL_ACTIVATION_PROVIDERS, SkillActivationRunner
 from carapace.skills import SkillRegistry
 from tests.runtime_mocks import make_runtime_mock
 
@@ -279,6 +280,21 @@ class TestSandboxManagerAllowlists:
         assert mgr.verify_session_token("sess-1", "tok") is False
 
 
+def test_skill_activation_trusted_files_include_skill_md() -> None:
+    runner = SkillActivationRunner(
+        knowledge_workdir="/workspace",
+        get_activation_inputs=AsyncMock(),
+        exec_in_session=AsyncMock(),
+        exec_in_container=AsyncMock(),
+        write_context_file_credentials=AsyncMock(),
+        delete_context_file_credentials=AsyncMock(),
+    )
+
+    providers = [provider for provider in SKILL_ACTIVATION_PROVIDERS if provider.name == "setup.sh"]
+
+    assert runner.trusted_files_for(providers) == {"SKILL.md", "carapace.yaml", "setup.sh"}
+
+
 @pytest.mark.anyio
 async def test_exec_recreate_preserves_domains(tmp_path: Path):
     runtime = make_runtime_mock()
@@ -321,6 +337,7 @@ async def test_exec_recreate_reinjects_credential_files(tmp_path: Path):
             _ok,  # _clone_knowledge_repo probe after first create
             ContainerGoneError(),  # exec_command triggers recreate
             _ok,  # _clone_knowledge_repo probe after recreate
+            _ok,  # git checkout SKILL.md
             _ok,  # git checkout carapace.yaml
             _ok,  # git checkout setup.sh
             _ok,  # _file_write_in_container (credential materialization)
@@ -357,13 +374,13 @@ async def test_exec_recreate_reinjects_credential_files(tmp_path: Path):
     activation_cb.assert_awaited_once_with(session_id, "moneydb")
 
     # Verify upstream restore is used for trusted provider files.
-    restore_call = runtime.exec.call_args_list[4]
+    restore_call = runtime.exec.call_args_list[5]
     assert "git checkout @{upstream} -- skills/moneydb/setup.sh" in restore_call.args[1]
 
     # Verify the credential file was written into the new container via exec.
-    # The 6th exec call (index 5) is the _file_write_in_container for the
+    # The 7th exec call (index 6) is the _file_write_in_container for the
     # credential — check that it targeted the correct workdir.
-    write_call = runtime.exec.call_args_list[5]
+    write_call = runtime.exec.call_args_list[6]
     shell_cmd = write_call.args[1]
     assert "/tmp/creds/api_key.json" in shell_cmd
     assert base64.b64encode(b"secret-key-value").decode() in shell_cmd
@@ -380,6 +397,7 @@ async def test_activate_skill_runs_setup_provider_with_activation_inputs(tmp_pat
     runtime.exec = AsyncMock(
         side_effect=[
             ExecResult(exit_code=0, output=""),  # _clone_knowledge_repo probe after create
+            ExecResult(exit_code=0, output=""),  # git checkout SKILL.md
             ExecResult(exit_code=0, output=""),  # git checkout carapace.yaml
             ExecResult(exit_code=0, output=""),  # git checkout setup.sh
             ExecResult(exit_code=0, output=""),  # credential file write
@@ -406,12 +424,12 @@ async def test_activate_skill_runs_setup_provider_with_activation_inputs(tmp_pat
     result = await mgr.activate_skill("sess-1", "cred-setup")
     assert "setup.sh completed." in result
 
-    setup_call = runtime.exec.call_args_list[4]
+    setup_call = runtime.exec.call_args_list[5]
     assert setup_call.args[1] == "sh ./setup.sh"
     assert setup_call.kwargs.get("workdir") == "/workspace/skills/cred-setup"
     assert setup_call.kwargs.get("env") == {"API_TOKEN": "secret-token"}
 
-    restore_call = runtime.exec.call_args_list[2]
+    restore_call = runtime.exec.call_args_list[3]
     assert "git checkout @{upstream} -- skills/cred-setup/setup.sh" in restore_call.args[1]
 
 
@@ -427,6 +445,7 @@ async def test_activate_skill_recovers_if_trusted_restore_hits_gone_container(tm
             ExecResult(exit_code=0, output=""),  # _clone_knowledge_repo probe after first create
             ContainerGoneError(),  # trusted restore triggers recreate
             ExecResult(exit_code=0, output=""),  # _clone_knowledge_repo probe after recreate
+            ExecResult(exit_code=0, output=""),  # retried git checkout SKILL.md
             ExecResult(exit_code=0, output=""),  # retried git checkout carapace.yaml
             ExecResult(exit_code=0, output=""),  # git checkout setup.sh
             ExecResult(exit_code=0, output=""),  # setup.sh execution
@@ -444,7 +463,7 @@ async def test_activate_skill_recovers_if_trusted_restore_hits_gone_container(tm
     assert "setup.sh completed." in result
     assert runtime.create_sandbox.await_count == 2
 
-    restore_retry_call = runtime.exec.call_args_list[3]
+    restore_retry_call = runtime.exec.call_args_list[4]
     assert "git checkout @{upstream} -- skills/restore-retry/carapace.yaml" in restore_retry_call.args[1]
 
 
@@ -490,6 +509,7 @@ async def test_activate_skill_registers_command_aliases_in_image_shim_dir(tmp_pa
     runtime.exec = AsyncMock(
         side_effect=[
             ExecResult(exit_code=0, output=""),  # _clone_knowledge_repo probe after create
+            ExecResult(exit_code=0, output=""),  # git checkout SKILL.md
             ExecResult(exit_code=0, output=""),  # git checkout carapace.yaml
             ExecResult(exit_code=0, output=""),  # command alias registration
         ]
@@ -511,7 +531,7 @@ async def test_activate_skill_registers_command_aliases_in_image_shim_dir(tmp_pa
     assert "Command aliases registered: web." in result
     assert "PATH" not in mgr.get_session_env("sess-1")
 
-    register_call = runtime.exec.call_args_list[2]
+    register_call = runtime.exec.call_args_list[3]
     shell_cmd = register_call.args[1]
     wrapper = '#!/bin/sh\nexec uv run --directory /workspace/skills/web web-search "$@"\n'
     assert "/root/.carapace/bin/web" in shell_cmd
@@ -522,6 +542,31 @@ async def test_activate_skill_registers_command_aliases_in_image_shim_dir(tmp_pa
 
 
 class TestCarapaceYamlParsing:
+    def test_parse_frontmatter_carapace_metadata(self, tmp_path: Path):
+        skill_dir = tmp_path / "inline"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text(
+            "---\n"
+            "name: inline\n"
+            "metadata:\n"
+            "  carapace:\n"
+            "    network:\n"
+            "      domains:\n"
+            "        - api.example.com\n"
+            "    commands:\n"
+            "      - name: inline-search\n"
+            "        command: uv run inline-search\n"
+            "---\n"
+            "Body.\n"
+        )
+
+        registry = SkillRegistry(tmp_path)
+        cfg = registry.get_carapace_config("inline")
+        assert cfg is not None
+        assert cfg.network.domains == ["api.example.com"]
+        assert len(cfg.commands) == 1
+        assert cfg.commands[0].name == "inline-search"
+
     def test_parse_network_domains(self, tmp_path: Path):
         skill_dir = tmp_path / "web-search"
         skill_dir.mkdir()
@@ -549,6 +594,27 @@ class TestCarapaceYamlParsing:
         assert len(cfg.network.tunnels) == 1
         assert cfg.network.tunnels[0].display == "imap.zoho.eu:993 via :1993"
 
+    def test_frontmatter_carapace_metadata_takes_precedence(self, tmp_path: Path):
+        skill_dir = tmp_path / "precedence"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text(
+            "---\n"
+            "name: precedence\n"
+            "metadata:\n"
+            "  carapace:\n"
+            "    network:\n"
+            "      domains:\n"
+            "        - inline.example.com\n"
+            "---\n"
+            "Body.\n"
+        )
+        (skill_dir / "carapace.yaml").write_text("network:\n  domains:\n    - file.example.com\n")
+
+        registry = SkillRegistry(tmp_path)
+        cfg = registry.get_carapace_config("precedence")
+        assert cfg is not None
+        assert cfg.network.domains == ["inline.example.com"]
+
     def test_no_carapace_yaml(self, tmp_path: Path):
         skill_dir = tmp_path / "plain"
         skill_dir.mkdir()
@@ -565,6 +631,25 @@ class TestCarapaceYamlParsing:
 
         registry = SkillRegistry(tmp_path)
         assert registry.get_carapace_config("bad") is None
+
+    def test_invalid_frontmatter_carapace_does_not_fallback_to_file(self, tmp_path: Path):
+        skill_dir = tmp_path / "bad-inline"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text(
+            "---\n"
+            "name: bad-inline\n"
+            "metadata:\n"
+            "  carapace:\n"
+            "    commands:\n"
+            "      - name: bad command\n"
+            "        command: uv run ok\n"
+            "---\n"
+            "Body.\n"
+        )
+        (skill_dir / "carapace.yaml").write_text("network:\n  domains:\n    - file.example.com\n")
+
+        registry = SkillRegistry(tmp_path)
+        assert registry.get_carapace_config("bad-inline") is None
 
     def test_invalid_tunnel_host_rejects_config(self, tmp_path: Path):
         skill_dir = tmp_path / "bad-tunnel"

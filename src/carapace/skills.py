@@ -1,11 +1,20 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import yaml
 from loguru import logger
 
 from carapace.models import SkillCarapaceConfig, SkillInfo
+
+
+@dataclass(frozen=True)
+class _SkillFrontmatter:
+    name: str
+    description: str
+    metadata: dict[str, Any]
 
 
 class SkillRegistry:
@@ -45,8 +54,20 @@ class SkillRegistry:
         return skill_md.read_text()
 
     def get_carapace_config(self, skill_name: str) -> SkillCarapaceConfig | None:
-        """Parse ``carapace.yaml`` for *skill_name*.  Returns ``None`` if absent."""
-        cfg_path = self.skills_dir / skill_name / "carapace.yaml"
+        """Load Carapace skill config from SKILL.md frontmatter or ``carapace.yaml``."""
+        skill_dir = self.skills_dir / skill_name
+        skill_md = skill_dir / "SKILL.md"
+        if skill_md.exists():
+            frontmatter = self._load_frontmatter(skill_md, skill_dir)
+            raw_metadata = frontmatter.metadata.get("carapace")
+            if raw_metadata is not None:
+                try:
+                    return SkillCarapaceConfig.model_validate(raw_metadata)
+                except Exception as exc:
+                    logger.warning(f"Failed to parse metadata.carapace in SKILL.md for skill '{skill_name}': {exc}")
+                    return None
+
+        cfg_path = skill_dir / "carapace.yaml"
         if not cfg_path.exists():
             return None
         try:
@@ -59,24 +80,42 @@ class SkillRegistry:
             return None
 
     def _parse_frontmatter(self, skill_md: Path, skill_dir: Path) -> SkillInfo | None:
+        frontmatter = self._load_frontmatter(skill_md, skill_dir)
+
+        return SkillInfo(
+            name=frontmatter.name,
+            description=frontmatter.description,
+            path=skill_dir,
+        )
+
+    def _load_frontmatter(self, skill_md: Path, skill_dir: Path) -> _SkillFrontmatter:
         text = skill_md.read_text()
+        fallback = _SkillFrontmatter(name=skill_dir.name, description="", metadata={})
         if not text.startswith("---"):
-            return SkillInfo(name=skill_dir.name, path=skill_dir)
+            return fallback
 
         parts = text.split("---", 2)
         if len(parts) < 3:
-            return SkillInfo(name=skill_dir.name, path=skill_dir)
+            return fallback
 
         try:
-            fm = yaml.safe_load(parts[1])
+            raw = yaml.safe_load(parts[1])
         except yaml.YAMLError:
-            return SkillInfo(name=skill_dir.name, path=skill_dir)
+            return fallback
 
-        if not isinstance(fm, dict):
-            return SkillInfo(name=skill_dir.name, path=skill_dir)
+        if not isinstance(raw, dict):
+            return fallback
 
-        return SkillInfo(
-            name=fm.get("name", skill_dir.name),
-            description=fm.get("description", ""),
-            path=skill_dir,
-        )
+        metadata = raw.get("metadata")
+        if not isinstance(metadata, dict):
+            metadata = {}
+
+        name = raw.get("name")
+        if not isinstance(name, str) or not name:
+            name = skill_dir.name
+
+        description = raw.get("description")
+        if not isinstance(description, str):
+            description = ""
+
+        return _SkillFrontmatter(name=name, description=description, metadata=metadata)

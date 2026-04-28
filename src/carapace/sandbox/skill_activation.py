@@ -96,7 +96,7 @@ class SkillActivationRunner:
         return [provider for provider in SKILL_ACTIVATION_PROVIDERS if provider.matches(skill_dir)]
 
     def trusted_files_for(self, providers: list[SkillActivationProvider]) -> set[str]:
-        trusted_files = {"carapace.yaml"}
+        trusted_files = {"SKILL.md", "carapace.yaml"}
         for provider in providers:
             trusted_files.update(provider.trusted_files)
         return trusted_files

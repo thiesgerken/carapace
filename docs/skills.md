@@ -6,9 +6,10 @@ Carapace uses the open [AgentSkills](https://agentskills.io/) format for skills.
 
 A skill is a directory with a `SKILL.md` file (Markdown instructions with YAML frontmatter) plus optional `scripts/`, `references/`, and `assets/` directories.
 
-Carapace extends the format with optional files:
+Carapace extends the format with optional files and metadata:
 
-- **`carapace.yaml`** — security metadata: network domain declarations, credential needs, and optional command aliases
+- **`SKILL.md` frontmatter `metadata.carapace`** — preferred place for Carapace-specific metadata: network domain declarations, credential needs, and command aliases
+- **`carapace.yaml`** — legacy fallback for the same Carapace-specific metadata
 - **`pyproject.toml`** + **`uv.lock`** — Python dependencies installed via `uv sync --locked`
 - **`package.json`** + **`package-lock.json`** or **`pnpm-lock.yaml`** — Node dependencies installed with the matching package manager
 - **`setup.sh`** — optional post-activation setup script for local config generation or other derived artifacts
@@ -16,8 +17,7 @@ Carapace extends the format with optional files:
 ```text
 skills/
   web-search/
-    SKILL.md             # required: AgentSkills standard
-    carapace.yaml        # optional: Carapace extensions
+    SKILL.md             # required: AgentSkills standard + optional metadata.carapace
     pyproject.toml       # optional: Python dependencies
     uv.lock              # optional: required alongside pyproject.toml
     scripts/
@@ -69,9 +69,39 @@ Returns JSON with title, URL, and snippet for each result.
 Summarize the top results for the user.
 ```
 
-## carapace.yaml (Carapace extension)
+## Carapace metadata
 
-Optional file that declares network domains, exec-scoped TCP tunnels, credentials, and command aliases the skill needs.
+Preferred location: `SKILL.md` frontmatter under `metadata.carapace`. Legacy `carapace.yaml` is still supported with the same schema when inline metadata is absent.
+
+```yaml
+---
+name: web-search
+description: Search the web.
+metadata:
+  carapace:
+    network:
+      domains:
+        - api.searxng.example.com
+        - "*.search.example.com"
+      tunnels:
+        - host: imap.zoho.eu
+          remote_port: 993
+          local_port: 1993
+          description: Zoho IMAP over the Carapace CONNECT proxy
+    credentials:
+      - vault_path: dev/searxng-url
+        description: Base URL for the SearXNG instance
+        env_var: SEARXNG_URL
+      - vault_path: dev/searxng-cert
+        description: Optional client certificate
+        file: ~/.config/searxng/client.pem
+    commands:
+      - name: web-search
+        command: uv run --directory /workspace/skills/web-search scripts/search.py
+---
+```
+
+Legacy fallback file:
 
 ```yaml
 network:

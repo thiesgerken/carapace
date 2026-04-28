@@ -2,11 +2,27 @@
 name: wikipedia
 description: >-
   Suche und Lese-Funktion für Wikipedia-Artikel (Deutsch als Standard). Nutze diesen Skill, um nach Artikeln zu suchen oder deren Inhalt abzurufen. Unterstützt Deutsch und Englisch via --lang Flag.
+metadata:
+  carapace:
+    network:
+      domains:
+        - de.wikipedia.org
+        - en.wikipedia.org
+    commands:
+      - name: wiki-search
+        command: uv run --directory /workspace/skills/wikipedia wiki-search
+      - name: wiki-fetch
+        command: uv run --directory /workspace/skills/wikipedia wiki-fetch
 ---
 
 # Wikipedia Search & Fetch
 
 Zwei Kommandos für Wikipedia-Zugriff über die offizielle API: **wiki-search** (Artikelsuche) und **wiki-fetch** (Artikelinhalt abrufen).
+
+## Exposed Commands
+
+- `wiki-search`: Sucht Wikipedia-Artikel über die offizielle API.
+- `wiki-fetch`: Lädt den Klartext eines Wikipedia-Artikels.
 
 ## When to use
 
@@ -26,13 +42,13 @@ Suche nach Wikipedia-Artikeln:
 
 ```bash
 # Suche auf Deutsch (Standard)
-uv run --directory /workspace/skills/wikipedia wiki-search 'Künstliche Intelligenz'
+wiki-search 'Künstliche Intelligenz'
 
 # Suche auf Englisch
-uv run --directory /workspace/skills/wikipedia wiki-search 'machine learning' --lang en
+wiki-search 'machine learning' --lang en
 
 # Max 5 Treffer
-uv run --directory /workspace/skills/wikipedia wiki-search 'Quantencomputer' -n 5
+wiki-search 'Quantencomputer' -n 5
 ```
 
 | Parameter                          | Beschreibung                          |
@@ -65,13 +81,13 @@ Lade den Volltext eines Wikipedia-Artikels als Klartext:
 
 ```bash
 # Deutschen Artikel lesen
-uv run --directory /workspace/skills/wikipedia wiki-fetch 'Künstliche Intelligenz'
+wiki-fetch 'Künstliche Intelligenz'
 
 # Englischen Artikel lesen
-uv run --directory /workspace/skills/wikipedia wiki-fetch 'Artificial intelligence' --lang en
+wiki-fetch 'Artificial intelligence' --lang en
 
 # Inhalt auf 5000 Zeichen kürzen
-uv run --directory /workspace/skills/wikipedia wiki-fetch 'Philosophie' -c 5000
+wiki-fetch 'Philosophie' -c 5000
 ```
 
 | Parameter                         | Beschreibung                               |

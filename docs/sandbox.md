@@ -71,6 +71,7 @@ All outbound traffic from sandbox containers is routed through the Carapace serv
 Each session maintains a domain allowlist. Domains are added when:
 
 1. **Skill activation**: Domains declared in a skill's `carapace.yaml` (`network.domains`) are registered when the skill is activated and applied to commands that explicitly use that skill's context
+   The preferred source is `SKILL.md` frontmatter under `metadata.carapace`; `carapace.yaml` remains a legacy fallback.
 2. **Sentinel approval**: Unknown domains are evaluated by the sentinel. If allowed, they're added for the current exec call. If escalated, the user decides.
 3. **Proxy bypass**: During trusted automatic setup providers (`uv sync --locked`, `npm ci`, `pnpm install --frozen-lockfile`, and `setup.sh`), the proxy is temporarily bypassed. This is intentional: these providers are restored from the pushed upstream revision before execution, and `setup.sh` is treated as the most intentional, reviewable local setup hook rather than something less trustworthy than third-party package install scripts.
 
@@ -78,7 +79,7 @@ The proxy supports exact domain matching (`example.com`) and wildcard matching (
 
 ### Exec-scoped TCP tunnels
 
-Skills may also declare `network.tunnels` in `carapace.yaml`. These are not long-running session daemons. Instead, Carapace manages them around a single `exec` call:
+Skills may also declare `network.tunnels` in their Carapace metadata (`metadata.carapace` or legacy `carapace.yaml`). These are not long-running session daemons. Instead, Carapace manages them around a single `exec` call:
 
 1. Before the command runs, Carapace temporarily shadows the declared hostnames inside the sandbox.
 2. It starts trusted TCP forwarders inside the sandbox that use the existing HTTP CONNECT proxy to reach the remote `host:remote_port` endpoints.

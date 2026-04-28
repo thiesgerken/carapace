@@ -204,6 +204,33 @@ def test_resolves_exec_alias_without_warning_when_context_present(tmp_path: Path
     assert warning is None
 
 
+def test_resolves_exec_alias_from_frontmatter_metadata(tmp_path: Path) -> None:
+    skill_dir = tmp_path / "skills" / "web"
+    skill_dir.mkdir(parents=True, exist_ok=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\n"
+        "name: web\n"
+        "metadata:\n"
+        "  carapace:\n"
+        "    commands:\n"
+        "      - name: web\n"
+        "        command: uv run web\n"
+        "---\n"
+        "# Web\n"
+    )
+
+    command, contexts, warning = _resolve_exec_command_alias(
+        f"{SKILL_COMMAND_SHIM_DIR}/web search docs/skills.md",
+        tmp_path,
+        activated_skills=["web"],
+        contexts=["web"],
+    )
+
+    assert command == f"{SKILL_COMMAND_SHIM_DIR}/web search docs/skills.md"
+    assert contexts == ["web"]
+    assert warning is None
+
+
 def test_alias_auto_add_keeps_skill_directory_warning_on_original_contexts(tmp_path: Path) -> None:
     skill_dir = tmp_path / "skills" / "web"
     skill_dir.mkdir(parents=True, exist_ok=True)
