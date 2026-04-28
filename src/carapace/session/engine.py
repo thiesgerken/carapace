@@ -1,38 +1,32 @@
+"""Public session engine and cross-cutting session orchestration.
+
+This module owns the long-lived SessionEngine that wires together session
+state, security, sandbox integration, subscriber broadcasting, slash-command
+handling, and model selection. Turn execution itself lives in session.turns;
+ this file remains the integration point that provides the concrete host
+ behavior for that turn runner.
+"""
+
 from __future__ import annotations
 
 import asyncio
 import base64
 import contextlib
 import secrets
-import traceback
 import uuid
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass, field
-from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
-from typing import Any, Literal, Protocol, runtime_checkable
+from typing import Any, Literal
 
 from loguru import logger
-from pydantic_ai import ToolDenied
 from pydantic_ai.exceptions import UsageLimitExceeded
-from pydantic_ai.messages import (
-    BuiltinToolCallPart,
-    BuiltinToolReturnPart,
-    ModelMessage,
-    ModelRequest,
-    ModelResponse,
-    TextPart,
-    ToolCallPart,
-    ToolReturnPart,
-    UserPromptPart,
-)
 from pydantic_ai.models import Model, infer_model
 from pydantic_ai.settings import ModelSettings
 from pydantic_ai.usage import UsageLimits
 
 import carapace.security as security_mod
-from carapace.agent.loop import run_agent_turn
+from carapace.agent.loop import run_agent_turn as _run_agent_turn
 from carapace.git.store import GitStore
 from carapace.llm import model_settings_for_config
 from carapace.memory import MemoryStore
@@ -56,34 +50,36 @@ from carapace.security.context import (
     SessionSecurity,
     UserEscalationDecision,
     UserVouchedEntry,
-    format_denial_message,
     normalize_optional_message,
 )
 from carapace.security.sentinel import Sentinel
 from carapace.session.manager import SessionManager
 from carapace.session.titler import generate_title
+from carapace.session.turns import SessionTurnMixin
+from carapace.session.types import ActiveSession, SessionSubscriber
 from carapace.skills import SkillRegistry
 from carapace.usage import (
     BudgetGauge,
-    LlmRequestLog,
     LlmRequestRecord,
     LlmRequestState,
     LlmSource,
     SessionBudgetExceededError,
-    UsageTracker,
     gauge_breakdown_pct_dict,
     last_record_for_source,
     llm_request_sink_scope,
-    note_llm_request_text,
-    note_llm_request_thinking,
     usage_budget_exceeded_error,
     usage_budget_gauges,
     usage_last_request_row,
     usage_limits_for_remaining_budget,
 )
+from carapace.usage import (
+    note_llm_request_text as _note_llm_request_text,
+)
+from carapace.usage import (
+    note_llm_request_thinking as _note_llm_request_thinking,
+)
 from carapace.ws_models import (
     SLASH_COMMANDS,
-    ApprovalRequest,
     ApprovalResponse,
     EscalationResponse,
     TurnUsage,
@@ -95,164 +91,35 @@ ModelType = Literal["agent", "sentinel", "title"]
 _DEFAULT_CONTEXT_CAP_TOKENS = 200_000
 
 
-def _non_slash_user_message_count(events: list[dict[str, Any]]) -> int:
-    """Count user lines that are not slash commands (matches server slash-command routing)."""
-    return sum(
-        1
-        for e in events
-        if e.get("role") == "user" and isinstance(c := e.get("content"), str) and not c.startswith("/")
-    )
+# Compatibility shims for tests that patch helpers on carapace.session.engine.
+def run_agent_turn(*args: Any, **kwargs: Any) -> Any:
+    return _run_agent_turn(*args, **kwargs)
 
 
-def _truncate_for_log(text: str, limit: int = 160) -> str:
-    collapsed = " ".join(text.split())
-    if len(collapsed) <= limit:
-        return collapsed
-    return collapsed[: limit - 3] + "..."
+def note_llm_request_text() -> LlmRequestState | None:
+    return _note_llm_request_text()
 
 
-def _summarize_tool_args_for_log(args: dict[str, Any]) -> str:
-    parts: list[str] = []
-    for idx, key in enumerate(sorted(args)):
-        if idx >= 4:
-            parts.append("...")
-            break
-        value = args[key]
-        if key == "command" and isinstance(value, str):
-            parts.append(f"command={_truncate_for_log(value, 100)}")
-        elif key == "contexts" and isinstance(value, list):
-            parts.append(f"contexts={','.join(str(v) for v in value[:4])}")
-        else:
-            parts.append(f"{key}={_truncate_for_log(str(value), 60)}")
-    return ", ".join(parts) if parts else "-"
-
-
-def _summarize_tool_result_for_log(result: ToolResult) -> str:
-    if not result.output:
-        return "(no output)"
-    output = result.output if isinstance(result.output, str) else str(result.output)
-    first_line = output.splitlines()[0] if output.splitlines() else output
-    return _truncate_for_log(first_line, 140)
+def note_llm_request_thinking() -> LlmRequestState | None:
+    return _note_llm_request_thinking()
 
 
 # security_mod is still imported for evaluate_domain_with (used in domain approval callback)
 
-# ---------------------------------------------------------------------------
-# Subscriber protocol — channels (WebSocket, Matrix, …) implement this
-# ---------------------------------------------------------------------------
 
-
-@runtime_checkable
-class SessionSubscriber(Protocol):
-    async def on_user_message(self, content: str, *, from_self: bool) -> None: ...
-    async def on_tool_call(
-        self,
-        tool: str,
-        args: dict[str, Any],
-        detail: str,
-        approval_source: ApprovalSource | None = None,
-        approval_verdict: ApprovalVerdict | None = None,
-        approval_explanation: str | None = None,
-        tool_id: str | None = None,
-        parent_tool_id: str | None = None,
-    ) -> None: ...
-    async def on_tool_result(self, result: ToolResult) -> None: ...
-    async def on_token(self, content: str) -> None: ...
-    async def on_thinking_token(self, content: str) -> None: ...
-    async def on_llm_activity(self, activity: LlmRequestState | None) -> None: ...
-    async def on_done(self, content: str, usage: TurnUsage, *, thinking: str | None = None) -> None: ...
-    async def on_error(self, detail: str) -> None: ...
-    async def on_cancelled(self) -> None: ...
-    async def on_approval_request(self, req: ApprovalRequest) -> None: ...
-    async def on_domain_access_approval_request(self, request_id: str, domain: str, command: str) -> None: ...
-    async def on_git_push_approval_request(
-        self, request_id: str, ref: str, explanation: str, changed_files: list[str]
-    ) -> None: ...
-    async def on_title_update(self, title: str, usage: TurnUsage | None = None) -> None: ...
-    async def on_domain_info(
-        self,
-        domain: str,
-        detail: str,
-        approval_source: ApprovalSource | None = None,
-        approval_verdict: ApprovalVerdict | None = None,
-        approval_explanation: str | None = None,
-        tool_id: str | None = None,
-        parent_tool_id: str | None = None,
-    ) -> None: ...
-    async def on_git_push_info(
-        self,
-        ref: str,
-        decision: str,
-        detail: str,
-        approval_source: ApprovalSource | None = None,
-        approval_verdict: ApprovalVerdict | None = None,
-        approval_explanation: str | None = None,
-        tool_id: str | None = None,
-        parent_tool_id: str | None = None,
-    ) -> None: ...
-    async def on_credential_info(
-        self,
-        vault_path: str,
-        name: str,
-        detail: str,
-        approval_source: ApprovalSource | None = None,
-        approval_verdict: ApprovalVerdict | None = None,
-        approval_explanation: str | None = None,
-        tool_id: str | None = None,
-        parent_tool_id: str | None = None,
-    ) -> None: ...
-    async def on_credential_approval_request(
-        self,
-        request_id: str,
-        vault_paths: list[str],
-        names: list[str],
-        descriptions: list[str],
-        skill_name: str | None,
-        explanation: str,
-    ) -> None: ...
-
-
-# ---------------------------------------------------------------------------
-# ActiveSession — in-memory state for a session that is currently loaded
-# ---------------------------------------------------------------------------
-
-
-@dataclass
-class ActiveSession:
-    state: SessionState
-    lock: asyncio.Lock = field(default_factory=asyncio.Lock)
-    security: SessionSecurity | None = None
-    sentinel: Sentinel | None = None
-    agent_task: asyncio.Task[None] | None = None
-    subscribers: list[SessionSubscriber] = field(default_factory=list)
-    tool_approval_queue: asyncio.Queue[ApprovalResponse | None] = field(default_factory=asyncio.Queue)
-    escalation_queue: asyncio.Queue[EscalationResponse | None] = field(default_factory=asyncio.Queue)
-    usage_tracker: UsageTracker = field(default_factory=UsageTracker)
-    llm_request_log: LlmRequestLog = field(default_factory=LlmRequestLog)
-    llm_request_state: LlmRequestState | None = None
-    llm_request_thinking: dict[str, str] = field(default_factory=dict)
-    verbose: bool = True
-    agent_model: Model | None = None
-    agent_model_name: str | None = None
-    sentinel_model_name: str | None = None
-    title_model_name: str | None = None
-    pending_approval_requests: list[dict[str, Any]] = field(default_factory=list)
-    pending_escalations: list[dict[str, Any]] = field(default_factory=list)
-    _pending_sends: set[asyncio.Task[Any]] = field(default_factory=set)
-
-
-# ---------------------------------------------------------------------------
-# SessionEngine — central owner of session lifecycle and agent execution
-# ---------------------------------------------------------------------------
-
-
-class SessionEngine:
+class SessionEngine(SessionTurnMixin):
     """Central session lifecycle manager.
 
     Owns all in-memory session state, security sessions, and agent execution.
     Channels (WebSocket, Matrix, …) subscribe to events and submit messages
-    through this class.  Agent turns survive transport disconnects, and LLM
-    concurrency is bounded by a shared semaphore.
+        through this class. Agent turns survive transport disconnects, and LLM
+        concurrency is bounded by a shared semaphore.
+
+        Responsibility split:
+        - session.types: shared session datatypes and subscriber protocol
+        - session.turns: turn execution flow and failure/finalization helpers
+        - this module: dependency wiring, lifecycle, approvals, broadcasts, and
+            public session APIs
     """
 
     def __init__(
@@ -701,22 +568,22 @@ class SessionEngine:
                 active.llm_request_thinking.pop(state.request_id, None)
                 await engine._set_llm_request_state(active, state)
 
-            async def on_request_completed(self, rec: LlmRequestRecord) -> None:
-                thinking_content = active.llm_request_thinking.pop(rec.request_id or "", "")
+            async def on_request_completed(self, record: LlmRequestRecord) -> None:
+                thinking_content = active.llm_request_thinking.pop(record.request_id or "", "")
                 if thinking_content:
                     thinking_event: dict[str, Any] = {
                         "role": "thinking",
                         "content": thinking_content,
                     }
-                    if rec.request_id:
-                        thinking_event["request_id"] = rec.request_id
-                    row = usage_last_request_row(rec)
+                    if record.request_id:
+                        thinking_event["request_id"] = record.request_id
+                    row = usage_last_request_row(record)
                     if row is not None and row["reasoning_duration_ms"] is not None:
                         thinking_event["reasoning_duration_ms"] = row["reasoning_duration_ms"]
                     if row is not None and row["reasoning_tokens"] is not None:
                         thinking_event["reasoning_tokens"] = row["reasoning_tokens"]
                     engine._session_mgr.append_events(session_id, [thinking_event])
-                active.llm_request_log.records.append(rec)
+                active.llm_request_log.records.append(record)
                 engine._session_mgr.save_llm_request_log(session_id, active.llm_request_log)
                 await engine._clear_llm_request_state(active)
 
@@ -1230,376 +1097,6 @@ class SessionEngine:
             return tool_id
 
         return self._session_mgr.update_events(session_id, _mutate)
-
-    # -- internal turn runner --
-
-    async def _run_turn(
-        self,
-        active: ActiveSession,
-        user_input: str,
-        *,
-        origin: SessionSubscriber | None = None,
-    ) -> None:
-        """Execute a single agent turn with semaphore-bounded LLM access."""
-        session_id = active.state.session_id
-        latest_messages: list[ModelMessage] | None = None
-
-        def _set_latest_messages(snapshot: list[Any]) -> None:
-            nonlocal latest_messages
-            latest_messages = [m for m in snapshot if isinstance(m, (ModelRequest, ModelResponse))]
-
-        def _tool_call_cb(
-            tool: str,
-            args: dict[str, Any],
-            detail: str,
-            approval_source: ApprovalSource | None = None,
-            approval_verdict: ApprovalVerdict | None = None,
-            approval_explanation: str | None = None,
-        ) -> None:
-            tool_id = self._record_tool_call_event(
-                session_id,
-                tool=tool,
-                args=args,
-                detail=detail,
-                approval_source=approval_source,
-                approval_verdict=approval_verdict,
-                approval_explanation=approval_explanation,
-            )
-            if active.security:
-                active.security.current_parent_tool_id = tool_id
-            logger.info(
-                f"Tool call session={session_id} tool={tool} "
-                + f"approval={approval_source or '-'}:{approval_verdict or '-'} "
-                + f"args={_summarize_tool_args_for_log(args)}"
-            )
-            task = asyncio.ensure_future(
-                self._broadcast(
-                    active,
-                    "on_tool_call",
-                    tool,
-                    args,
-                    detail,
-                    approval_source,
-                    approval_verdict,
-                    approval_explanation,
-                    tool_id,
-                )
-            )
-            active._pending_sends.add(task)
-            task.add_done_callback(active._pending_sends.discard)
-
-        def _tool_result_cb(tr: ToolResult) -> None:
-            self._session_mgr.append_events(
-                session_id,
-                [
-                    {
-                        "role": "tool_result",
-                        "tool": tr.tool,
-                        "result": tr.output,
-                        "exit_code": tr.exit_code,
-                        "tool_id": tr.tool_id,
-                    }
-                ],
-            )
-            logger.info(
-                f"Tool result session={session_id} tool={tr.tool} exit_code={tr.exit_code} "
-                + f"summary={_summarize_tool_result_for_log(tr)}"
-            )
-            task = asyncio.ensure_future(self._broadcast(active, "on_tool_result", tr))
-            active._pending_sends.add(task)
-            task.add_done_callback(active._pending_sends.discard)
-
-        try:
-            async with active.lock:
-                # Refresh state from disk (other channels may have updated it)
-                fresh = self._session_mgr.resume_session(session_id)
-                if fresh:
-                    active.state = fresh
-
-                deps = self._build_deps(
-                    active,
-                    tool_call_callback=_tool_call_cb,
-                    tool_result_callback=_tool_result_cb,
-                )
-
-                self._session_mgr.append_events(session_id, [{"role": "user", "content": user_input}])
-                for sub in list(active.subscribers):
-                    try:
-                        await sub.on_user_message(user_input, from_self=(sub is origin))
-                    except Exception as exc:
-                        logger.warning(f"Subscriber on_user_message failed: {exc}")
-                message_history = self._session_mgr.load_history(session_id)
-                logger.info(
-                    f"Turn start session={session_id} model={active.agent_model_name or self._config.agent.model} "
-                    + f"history_messages={len(message_history)} prompt={_truncate_for_log(user_input)}"
-                )
-
-                async def _send_approval(req: ApprovalRequest) -> None:
-                    self._session_mgr.append_events(
-                        session_id,
-                        [
-                            {
-                                "role": "approval_request",
-                                "tool_call_id": req.tool_call_id,
-                                "tool": req.tool,
-                                "args": req.args,
-                                "explanation": req.explanation,
-                                "risk_level": req.risk_level,
-                            }
-                        ],
-                    )
-                    active.pending_approval_requests.append(req.model_dump())
-                    await self._broadcast(active, "on_approval_request", req)
-
-                async def _collect_approvals(
-                    pending: set[str],
-                ) -> dict[str, bool | ToolDenied]:
-                    results: dict[str, bool | ToolDenied] = {}
-                    responses: dict[str, ApprovalResponse] = {}
-                    remaining = set(pending)
-                    while remaining:
-                        msg = await active.tool_approval_queue.get()
-                        if msg is None:
-                            for tid in remaining:
-                                results[tid] = ToolDenied("Agent cancelled.")
-                            break
-                        if msg.tool_call_id in remaining:
-                            responses[msg.tool_call_id] = msg
-                            results[msg.tool_call_id] = (
-                                True if msg.approved else ToolDenied(format_denial_message("user", msg.message))
-                            )
-                            remaining.discard(msg.tool_call_id)
-                    # Store approval decisions in events for history reconstruction
-                    for tool_call_id, decision in results.items():
-                        response = responses.get(tool_call_id)
-                        user_decision = "approved" if decision is True else "denied"
-                        self._session_mgr.append_events(
-                            session_id,
-                            [
-                                {
-                                    "role": "approval_response",
-                                    "tool_call_id": tool_call_id,
-                                    "decision": user_decision,
-                                    "decision_source": "user",
-                                    "message": normalize_optional_message(response.message)
-                                    if response is not None
-                                    else None,
-                                }
-                            ],
-                        )
-                    active.pending_approval_requests.clear()
-                    return results
-
-                async def _on_token(chunk: str) -> None:
-                    await self._maybe_promote_llm_request_state(active, note_llm_request_text())
-                    await self._broadcast(active, "on_token", chunk)
-
-                async def _on_thinking_token(chunk: str) -> None:
-                    state = note_llm_request_thinking()
-                    if state is not None:
-                        active.llm_request_thinking[state.request_id] = (
-                            active.llm_request_thinking.get(state.request_id, "") + chunk
-                        )
-                    await self._maybe_promote_llm_request_state(active, state)
-                    await self._broadcast(active, "on_thinking_token", chunk)
-
-                async with self._llm_semaphore:
-                    with self.llm_request_recording(active):
-                        self._assert_llm_budget_available(active)
-                        messages, output, thinking = await run_agent_turn(
-                            user_input,
-                            deps,
-                            message_history,
-                            send_approval_request=_send_approval,
-                            collect_approvals=_collect_approvals,
-                            on_token=_on_token,
-                            on_thinking_token=_on_thinking_token,
-                            on_messages_snapshot=lambda snapshot: _set_latest_messages(snapshot),
-                            before_llm_call=lambda: self._assert_llm_budget_available(active),
-                            get_usage_limits=lambda: self._remaining_usage_limits(active),
-                        )
-
-                self._session_mgr.save_history(session_id, messages)
-                self._session_mgr.save_state(active.state)
-                self._session_mgr.save_usage(session_id, active.usage_tracker)
-                self._session_mgr.save_llm_request_log(session_id, active.llm_request_log)
-                try:
-                    await self._sandbox_mgr.refresh_sandbox_snapshot(session_id, measure_usage=True)
-                except Exception:
-                    logger.exception(
-                        f"Failed to refresh sandbox snapshot after completed turn for session {session_id}"
-                    )
-                events_to_append = [{"role": "assistant", "content": output}]
-                self._session_mgr.append_events(session_id, events_to_append)
-
-                if output.startswith("Unexpected agent output type:"):
-                    await self._broadcast(active, "on_error", output)
-                else:
-                    usage_payload = self._turn_usage_payload(active) or TurnUsage()
-                    logger.info(
-                        f"Turn done session={session_id} "
-                        + f"model={usage_payload.model or active.agent_model_name or self._config.agent.model} "
-                        + f"input_tokens={usage_payload.input_tokens} output_tokens={usage_payload.output_tokens} "
-                        + f"thinking_chars={len(thinking)} output_chars={len(output)}"
-                    )
-                    await self._broadcast(
-                        active,
-                        "on_done",
-                        output,
-                        usage_payload,
-                        thinking=thinking or None,
-                    )
-
-                # Generate a title after the 1st and 3rd non-slash user message
-                events = self._session_mgr.load_events(session_id)
-                if _non_slash_user_message_count(events) in (1, 3):
-                    t = asyncio.create_task(
-                        self._generate_title(active, events),
-                        name=f"title-{session_id}",
-                    )
-                    active._pending_sends.add(t)
-                    t.add_done_callback(active._pending_sends.discard)
-
-        except asyncio.CancelledError:
-            logger.info(f"Agent turn cancelled for session {session_id}")
-            active.llm_request_thinking.clear()
-            self._session_mgr.save_usage(session_id, active.usage_tracker)
-            self._session_mgr.save_llm_request_log(session_id, active.llm_request_log)
-            await self._clear_llm_request_state(active)
-            self._save_user_message_on_failure(
-                session_id,
-                user_input,
-                latest_messages=latest_messages,
-                terminal_message="The previous turn was interrupted before completion.",
-            )
-            await self._broadcast(active, "on_cancelled")
-        except SessionBudgetExceededError as exc:
-            logger.info(f"Session budget blocked LLM call for {session_id}: {exc}")
-            active.llm_request_thinking.clear()
-            self._session_mgr.save_usage(session_id, active.usage_tracker)
-            self._session_mgr.save_llm_request_log(session_id, active.llm_request_log)
-            await self._clear_llm_request_state(active)
-            self._save_user_message_on_failure(
-                session_id,
-                user_input,
-                latest_messages=latest_messages,
-                terminal_message=str(exc),
-            )
-            await self._broadcast(active, "on_error", str(exc))
-        except UsageLimitExceeded as exc:
-            sentinel_evals = active.security.sentinel_eval_count if active.security else 0
-            logger.error(
-                f"Turn usage-limit failure session={session_id} error={exc} "
-                + f"llm_requests={len(active.llm_request_log.records)} "
-                + f"sentinel_evals={sentinel_evals} prompt={_truncate_for_log(user_input)}"
-            )
-            active.llm_request_thinking.clear()
-            await self._clear_llm_request_state(active)
-            self._save_user_message_on_failure(
-                session_id,
-                user_input,
-                latest_messages=latest_messages,
-                terminal_message="The previous turn failed before completion.",
-            )
-            await self._broadcast(active, "on_error", str(exc))
-        except Exception:
-            logger.exception(f"Agent error session={session_id} prompt={_truncate_for_log(user_input)}")
-            active.llm_request_thinking.clear()
-            await self._clear_llm_request_state(active)
-            self._save_user_message_on_failure(
-                session_id,
-                user_input,
-                latest_messages=latest_messages,
-                terminal_message="The previous turn failed before completion.",
-            )
-            await self._broadcast(active, "on_error", traceback.format_exc())
-        finally:
-            active.agent_task = None
-
-    def _save_user_message_on_failure(
-        self,
-        session_id: str,
-        user_input: str,
-        *,
-        latest_messages: list[ModelMessage] | None = None,
-        terminal_message: str | None = None,
-    ) -> None:
-        """Persist the user message to history even when the agent turn fails.
-
-        Without this the next turn would load stale history and the agent would
-        have no memory of what the user said before the error.
-        """
-        if latest_messages is not None:
-            history = list(latest_messages)
-        else:
-            history = self._session_mgr.load_history(session_id)
-            history.append(ModelRequest(parts=[UserPromptPart(content=user_input)]))
-        history = self._truncate_incomplete_model_history(history)
-        if terminal_message:
-            history.append(ModelResponse(parts=[TextPart(content=terminal_message)]))
-        self._session_mgr.save_history(session_id, history)
-
-        events = self._truncate_incomplete_events(self._session_mgr.load_events(session_id))
-        if terminal_message:
-            events.append(
-                {
-                    "role": "assistant",
-                    "content": terminal_message,
-                    "timestamp": datetime.now(tz=UTC).isoformat(),
-                }
-            )
-        self._session_mgr.save_events(session_id, events)
-
-    def _truncate_incomplete_model_history(self, messages: list[ModelMessage]) -> list[ModelMessage]:
-        pending_tool_calls: set[str] = set()
-        safe_prefix_end = 0
-
-        for idx, message in enumerate(messages):
-            if isinstance(message, ModelResponse):
-                for part in message.parts:
-                    if isinstance(part, ToolCallPart | BuiltinToolCallPart):
-                        tool_call_id = getattr(part, "tool_call_id", None)
-                        if isinstance(tool_call_id, str) and tool_call_id:
-                            pending_tool_calls.add(tool_call_id)
-            elif isinstance(message, ModelRequest):
-                for part in message.parts:
-                    if isinstance(part, ToolReturnPart | BuiltinToolReturnPart):
-                        tool_call_id = getattr(part, "tool_call_id", None)
-                        if isinstance(tool_call_id, str) and tool_call_id in pending_tool_calls:
-                            pending_tool_calls.remove(tool_call_id)
-
-            if not pending_tool_calls:
-                safe_prefix_end = idx + 1
-
-        return messages[:safe_prefix_end]
-
-    def _truncate_incomplete_events(self, events: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        tools_with_results = {
-            e.get("tool") for e in events if e.get("role") == "tool_result" and isinstance(e.get("tool"), str)
-        }
-        pending_by_tool: dict[str, int] = {}
-        safe_prefix_end = 0
-
-        for idx, event in enumerate(events):
-            role = event.get("role")
-            tool = event.get("tool")
-            if not isinstance(tool, str):
-                tool = ""
-
-            if role == "tool_call" and tool in tools_with_results:
-                pending_by_tool[tool] = pending_by_tool.get(tool, 0) + 1
-            elif role == "tool_result" and tool in tools_with_results:
-                outstanding = pending_by_tool.get(tool, 0)
-                if outstanding > 0:
-                    if outstanding == 1:
-                        pending_by_tool.pop(tool, None)
-                    else:
-                        pending_by_tool[tool] = outstanding - 1
-
-            if not pending_by_tool:
-                safe_prefix_end = idx + 1
-
-        return events[:safe_prefix_end]
 
     async def _generate_title(self, active: ActiveSession, events: list[dict[str, Any]]) -> str:
         session_id = active.state.session_id
