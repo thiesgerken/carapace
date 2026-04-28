@@ -1,6 +1,23 @@
 # CHANGELOG
 
 
+## v0.102.2 (2026-04-28)
+
+
+### 💄 UI/UX
+
+
+- 💄 ui: enhance message count display in sidebar with icon and accessibility improvements
+  ([`bfb4225`](https://github.com/thiesgerken/carapace/commit/bfb422501e720b125034ba7f0408732852d6e7b7))
+
+  Co-authored-by: Copilot <copilot@github.com>
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix: add validation for skill path length in access denial check
+  ([`815c39f`](https://github.com/thiesgerken/carapace/commit/815c39f50f6bc32dee4566dd49c5917feb13ba12))
+
 ## v0.102.1 (2026-04-27)
 
 
