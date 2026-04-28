@@ -1626,11 +1626,19 @@ class SessionEngine:
             )
             if not has_user_prompt:
                 continue
-            if current_turn_start is not None:
+            if (
+                current_turn_start is not None
+                and index - 1 > current_turn_start
+                and isinstance(messages[index - 1], ModelResponse)
+            ):
                 turn_end_indexes.append(index - 1)
             current_turn_start = index
 
-        if current_turn_start is not None:
+        if (
+            current_turn_start is not None
+            and len(messages) - 1 > current_turn_start
+            and isinstance(messages[-1], ModelResponse)
+        ):
             turn_end_indexes.append(len(messages) - 1)
 
         return turn_end_indexes
