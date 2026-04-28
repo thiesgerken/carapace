@@ -1,6 +1,15 @@
 # CHANGELOG
 
 
+## v0.103.1 (2026-04-28)
+
+
+### ♻️ Refactoring
+
+
+- ♻️ refactor: small linter changes
+  ([`fe52812`](https://github.com/thiesgerken/carapace/commit/fe528128a0aa157783a40223f84673f6d05f5f9b))
+
 ## v0.103.0 (2026-04-28)
 
 
