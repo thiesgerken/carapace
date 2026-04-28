@@ -1,6 +1,6 @@
 "use client";
 
-import { Brain, Check, ChevronRight, Copy, Loader2 } from "lucide-react";
+import { Brain, Check, ChevronRight, Copy, Loader2, RotateCcw } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
 import type { ChatMessage, EscalationDecision, LlmActivity } from "@/lib/types";
@@ -164,9 +164,62 @@ function ThinkingBadge({
   );
 }
 
+function TurnActionButton({
+  label,
+  disabled,
+  onClick,
+}: {
+  label: string;
+  disabled?: boolean;
+  onClick?: () => void;
+}) {
+  if (!onClick) return null;
+
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      className={cn(
+        "inline-flex items-center gap-1 rounded-md border border-border/70 px-2 py-1 text-xs text-muted-foreground transition-colors",
+        "hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50",
+      )}
+    >
+      <RotateCcw className="size-3" />
+      <span>{label}</span>
+    </button>
+  );
+}
+
+function TurnActions({
+  canRetry,
+  canReset,
+  disabled,
+  onRetry,
+  onReset,
+}: {
+  canRetry?: boolean;
+  canReset?: boolean;
+  disabled?: boolean;
+  onRetry?: () => void;
+  onReset?: () => void;
+}) {
+  if (!canRetry && !canReset) return null;
+
+  return (
+    <div className="mt-2 flex items-center gap-2">
+      <TurnActionButton label="Retry" disabled={disabled} onClick={canRetry ? onRetry : undefined} />
+      <TurnActionButton label="Reset" disabled={disabled} onClick={canReset ? onReset : undefined} />
+    </div>
+  );
+}
+
 interface MessageProps {
   message: ChatMessage;
   activeLlmActivity?: LlmActivity | null;
+  canRetry?: boolean;
+  canReset?: boolean;
+  actionDisabled?: boolean;
   onApproval?: (toolCallId: string, approved: boolean, message?: string) => void;
   onEscalation?: (
     requestId: string,
@@ -178,14 +231,21 @@ interface MessageProps {
     decision: EscalationDecision,
     message?: string,
   ) => void;
+  onRetry?: () => void;
+  onReset?: () => void;
 }
 
 export function Message({
   message,
   activeLlmActivity,
+  canRetry,
+  canReset,
+  actionDisabled,
   onApproval,
   onEscalation,
   onCredentialApproval,
+  onRetry,
+  onReset,
 }: MessageProps) {
   switch (message.kind) {
     case "user":
@@ -204,11 +264,20 @@ export function Message({
 
     case "assistant":
       return (
-        <div className="group flex max-w-[85%] items-start gap-1.5 text-sm">
-          <div className="min-w-0 flex-1">
-            <MarkdownContent content={message.content} />
+        <div className="group max-w-[85%] text-sm">
+          <div className="flex items-start gap-1.5">
+            <div className="min-w-0 flex-1">
+              <MarkdownContent content={message.content} />
+            </div>
+            <MessageCopyButton text={message.content} className="shrink-0" />
           </div>
-          <MessageCopyButton text={message.content} className="shrink-0" />
+          <TurnActions
+            canRetry={canRetry}
+            canReset={canReset}
+            disabled={actionDisabled}
+            onRetry={onRetry}
+            onReset={onReset}
+          />
         </div>
       );
 
@@ -327,10 +396,15 @@ export function Message({
 
     case "error":
       return (
-        <div className="my-1 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-          <pre className="whitespace-pre-wrap font-mono text-xs">
-            {message.detail}
-          </pre>
+        <div className="my-1 max-w-[85%] rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+          <pre className="whitespace-pre-wrap font-mono text-xs">{message.detail}</pre>
+          <TurnActions
+            canRetry={canRetry}
+            canReset={canReset}
+            disabled={actionDisabled}
+            onRetry={onRetry}
+            onReset={onReset}
+          />
         </div>
       );
   }
