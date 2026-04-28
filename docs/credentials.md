@@ -56,18 +56,20 @@ credentials:
 
 Hidden credentials are treated as not found.
 
-## Skill-declared credentials (`carapace.yaml`)
+## Skill-declared credentials (`metadata.carapace` or legacy `carapace.yaml`)
 
 Skills can declare credentials for auto-injection:
 
 ```yaml
-credentials:
-  - vault_path: personal/9742101e-68b8-4a07-b5b1-9578b5f88e6f
-    description: Gmail app password
-    env_var: GMAIL_APP_PASSWORD
-  - vault_path: personal/7063feab-4b10-472e-b64c-785e2b870b92
-    description: SSH deploy key
-    file: ~/.ssh/id_ed25519
+metadata:
+  carapace:
+    credentials:
+      - vault_path: personal/9742101e-68b8-4a07-b5b1-9578b5f88e6f
+        description: Gmail app password
+        env_var: GMAIL_APP_PASSWORD
+      - vault_path: personal/7063feab-4b10-472e-b64c-785e2b870b92
+        description: SSH deploy key
+        file: ~/.ssh/id_ed25519
 ```
 
 On `use_skill`:

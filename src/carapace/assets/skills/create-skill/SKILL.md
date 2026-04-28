@@ -38,7 +38,7 @@ Do not turn `SKILL.md` into developer documentation for the skill itself, but do
 Prefer a sidecar markdown file only for content that can safely be loaded on demand:
 
 - provider file layouts and lockfile rules
-- full `carapace.yaml` schemas and examples
+- full `metadata.carapace` schemas and examples
 - authentication wiring and credential internals, beyond a short activation note
 - packaging details for Python or Node helpers
 - implementation internals of wrappers and setup hooks
@@ -64,7 +64,7 @@ Good filenames are `REFERENCE.md`, `CONFIG.md`, or `references/*.md`.
 
 ## Setup Guidance
 
-If a skill needs credentials or network access, note that activation handles them automatically after approval. Do not inline credential wiring, secret-handling procedures, or large `carapace.yaml` walkthroughs in `SKILL.md`.
+If a skill needs credentials or network access, note that activation handles them automatically after approval. Do not inline credential wiring, secret-handling procedures, or large `metadata.carapace` / legacy `carapace.yaml` walkthroughs in `SKILL.md`.
 
 ## Template
 

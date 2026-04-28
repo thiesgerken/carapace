@@ -5,6 +5,20 @@ description: >-
   across the web via Brave Search. Use web_fetch to retrieve and extract
   readable content from a specific URL. Activate when the user asks to look
   something up online, find recent information, or read a webpage.
+metadata:
+  carapace:
+    network:
+      domains:
+        - api.search.brave.com
+    credentials:
+      - vault_path: vault/7720115d-7e6a-47b8-af1e-f4eaec0b23b9
+        description: Brave Search Lumi API Key
+        env_var: BRAVE_API_KEY
+    commands:
+      - name: web_search
+        command: uv run --directory /workspace/skills/web web_search
+      - name: web_fetch
+        command: uv run --directory /workspace/skills/web web_fetch
 ---
 
 # Web Skill
@@ -12,6 +26,11 @@ description: >-
 Two tools for accessing web content: **web_search** (search engine queries) and **web_fetch** (fetch and extract a single URL).
 
 Both tools are lightweight HTTP-based — they do **not** execute JavaScript. For JS-heavy pages, SPAs, or sites requiring login, these tools will not work.
+
+## Exposed Commands
+
+- `web_search`: Search the web through the configured search backend.
+- `web_fetch`: Fetch a specific URL and extract readable content.
 
 ## When to use which
 
@@ -33,16 +52,16 @@ Search the web using a configurable backend (default: Brave Search API).
 
 ```bash
 # Basic search
-uv run --directory /workspace/skills/web web_search 'pancake recipes'
+web_search 'pancake recipes'
 
 # Limit results
-uv run --directory /workspace/skills/web web_search -n 3 'python async tutorial'
+web_search -n 3 'python async tutorial'
 
 # Filter by country and language
-uv run --directory /workspace/skills/web web_search --country DE --language de 'Wetter Bremen'
+web_search --country DE --language de 'Wetter Bremen'
 
 # Recent results only
-uv run --directory /workspace/skills/web web_search --freshness week 'AI news'
+web_search --freshness week 'AI news'
 ```
 
 ### Parameters
@@ -92,13 +111,13 @@ Fetch a URL via HTTP GET and extract readable content. Converts HTML to markdown
 
 ```bash
 # Fetch and extract as markdown
-uv run --directory /workspace/skills/web web_fetch 'https://example.com/article'
+web_fetch 'https://example.com/article'
 
 # Extract as plain text
-uv run --directory /workspace/skills/web web_fetch -m text 'https://example.com/article'
+web_fetch -m text 'https://example.com/article'
 
 # Limit output length
-uv run --directory /workspace/skills/web web_fetch -c 5000 'https://example.com/long-article'
+web_fetch -c 5000 'https://example.com/long-article'
 ```
 
 ### Parameters

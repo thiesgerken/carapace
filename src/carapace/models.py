@@ -453,7 +453,7 @@ class ToolResult:
 
 
 class SkillCredentialDecl(BaseModel):
-    """A credential requirement declared in a skill's ``carapace.yaml``."""
+    """A credential requirement declared in a skill's Carapace metadata."""
 
     vault_path: str
     description: str = ""
@@ -489,7 +489,7 @@ _SKILL_COMMAND_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
 
 class SkillCommandDecl(BaseModel):
-    """A command alias declared in a skill's ``carapace.yaml``."""
+    """A command alias declared in a skill's Carapace metadata."""
 
     name: str
     command: str
@@ -513,7 +513,7 @@ class SkillCommandDecl(BaseModel):
 
 
 class SkillCarapaceConfig(BaseModel):
-    """Parsed contents of a skill's ``carapace.yaml``."""
+    """Parsed Carapace config declared inline in SKILL.md or in ``carapace.yaml``."""
 
     network: SkillNetworkConfig = SkillNetworkConfig()
     credentials: list[SkillCredentialDecl] = []

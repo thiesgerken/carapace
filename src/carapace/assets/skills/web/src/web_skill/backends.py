@@ -44,7 +44,7 @@ class BraveBackend:
         if not self._api_key:
             print(
                 "Error: BRAVE_API_KEY is not set.\n"
-                "Get a key at https://brave.com/search/api/ and declare it in carapace.yaml "
+                "Get a key at https://brave.com/search/api/ and declare it in metadata.carapace "
                 "or export BRAVE_API_KEY in your environment.",
                 file=sys.stderr,
             )

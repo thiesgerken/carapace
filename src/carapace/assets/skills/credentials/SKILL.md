@@ -7,24 +7,26 @@ description: Documents the credential system — how to list, fetch, and use sec
 
 Carapace provides a pull-based credential system. Credentials live in an
 external vault (password manager or file) and are fetched on demand.
-Auto-injected credentials (via `carapace.yaml`) are placed directly into the
+Auto-injected credentials (via `metadata.carapace` or legacy `carapace.yaml`) are placed directly into the
 sandbox as env vars or files — **you must not read, echo, or return their
 values**. On-demand credentials fetched with `ccred get` pass through the
 sandbox shell; wire them into commands via `-o` or subshell capture so that
 values are consumed by tools without being exposed.
 
-## Auto-injection via `carapace.yaml`
+## Auto-injection via Carapace metadata
 
-Skills that need credentials declare them in their `carapace.yaml`:
+Skills that need credentials declare them in `SKILL.md` frontmatter under `metadata.carapace` (or in `carapace.yaml`):
 
 ```yaml
-credentials:
-  - vault_path: <backend>/9742101e-...
-    description: Gmail app password
-    env_var: GMAIL_APP_PASSWORD
-  - vault_path: <backend>/ssh-deploy-key
-    description: SSH deploy key
-    file: ~/.ssh/id_ed25519
+metadata:
+  carapace:
+    credentials:
+      - vault_path: <backend>/9742101e-...
+        description: Gmail app password
+        env_var: GMAIL_APP_PASSWORD
+      - vault_path: <backend>/ssh-deploy-key
+        description: SSH deploy key
+        file: ~/.ssh/id_ed25519
 ```
 
 When you activate the skill with `use_skill`, Carapace:
@@ -50,7 +52,7 @@ The list shows metadata only (name, vault path, description) — never values.
 
 ## Fetching a credential on demand
 
-For credentials not declared in `carapace.yaml`, use `ccred get`:
+For credentials not declared in `metadata.carapace` or legacy `carapace.yaml`, use `ccred get`:
 
 ```bash
 # Write to a file with restrictive permissions (0400; -o is also subject to approval)
