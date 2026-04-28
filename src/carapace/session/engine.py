@@ -161,7 +161,7 @@ class SessionSubscriber(Protocol):
     async def on_thinking_token(self, content: str) -> None: ...
     async def on_llm_activity(self, activity: LlmRequestState | None) -> None: ...
     async def on_done(self, content: str, usage: TurnUsage, *, thinking: str | None = None) -> None: ...
-    async def on_error(self, detail: str) -> None: ...
+    async def on_error(self, detail: str, *, turn_terminal: bool = False) -> None: ...
     async def on_cancelled(self) -> None: ...
     async def on_approval_request(self, req: ApprovalRequest) -> None: ...
     async def on_domain_access_approval_request(self, request_id: str, domain: str, command: str) -> None: ...
@@ -1476,7 +1476,7 @@ class SessionEngine:
                 self._session_mgr.append_events(session_id, events_to_append)
 
                 if output.startswith("Unexpected agent output type:"):
-                    await self._broadcast(active, "on_error", output)
+                    await self._broadcast(active, "on_error", output, turn_terminal=True)
                 else:
                     usage_payload = self._turn_usage_payload(active) or TurnUsage()
                     logger.info(
@@ -1528,7 +1528,7 @@ class SessionEngine:
                 latest_messages=latest_messages,
                 terminal_message=str(exc),
             )
-            await self._broadcast(active, "on_error", str(exc))
+            await self._broadcast(active, "on_error", str(exc), turn_terminal=True)
         except UsageLimitExceeded as exc:
             sentinel_evals = active.security.sentinel_eval_count if active.security else 0
             logger.error(
@@ -1544,7 +1544,7 @@ class SessionEngine:
                 latest_messages=latest_messages,
                 terminal_message="The previous turn failed before completion.",
             )
-            await self._broadcast(active, "on_error", str(exc))
+            await self._broadcast(active, "on_error", str(exc), turn_terminal=True)
         except Exception:
             logger.exception(f"Agent error session={session_id} prompt={_truncate_for_log(user_input)}")
             active.llm_request_thinking.clear()
@@ -1555,7 +1555,7 @@ class SessionEngine:
                 latest_messages=latest_messages,
                 terminal_message="The previous turn failed before completion.",
             )
-            await self._broadcast(active, "on_error", traceback.format_exc())
+            await self._broadcast(active, "on_error", traceback.format_exc(), turn_terminal=True)
         finally:
             active.agent_task = None
 

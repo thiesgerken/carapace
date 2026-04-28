@@ -244,6 +244,7 @@ class CommandResult(BaseModel):
 class ErrorMessage(BaseModel):
     type: Literal["error"] = "error"
     detail: str
+    turn_terminal: bool = False
 
 
 class Cancelled(BaseModel):

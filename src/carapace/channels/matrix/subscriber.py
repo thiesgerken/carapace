@@ -129,7 +129,7 @@ class MatrixSubscriber:
         self._stream_last_len = 0
         self._stop_typing()
 
-    async def on_error(self, detail: str) -> None:
+    async def on_error(self, detail: str, *, turn_terminal: bool = False) -> None:
         self._stream_buffer = ""
         self._stream_last_len = 0
         self._stream_event_id = None

@@ -298,6 +298,7 @@ class _FakeSubscriber:
     def __init__(self) -> None:
         self.user_messages: list[tuple[str, bool]] = []
         self.errors: list[str] = []
+        self.error_events: list[tuple[str, bool]] = []
         self.cancelled: int = 0
         self.done_messages: list[tuple[str, TurnUsage]] = []
         self.title_updates: list[tuple[str, TurnUsage | None]] = []
@@ -315,8 +316,9 @@ class _FakeSubscriber:
     async def on_done(self, content: str, usage: TurnUsage) -> None:
         self.done_messages.append((content, usage))
 
-    async def on_error(self, detail: str) -> None:
+    async def on_error(self, detail: str, *, turn_terminal: bool = False) -> None:
         self.errors.append(detail)
+        self.error_events.append((detail, turn_terminal))
 
     async def on_cancelled(self) -> None:
         self.cancelled += 1
@@ -958,6 +960,7 @@ def test_reset_to_turn_rejects_unknown_target(tmp_path: Path):
         await engine.reset_to_turn(sid, 99)
 
         assert sub.errors == ["Unknown reset target"]
+        assert sub.error_events == [("Unknown reset target", False)]
 
     with _patch_sentinel():
         asyncio.run(_run())
@@ -1371,6 +1374,9 @@ def test_submit_message_budget_exceeded_persists_history(tmp_path: Path):
             "content": "Session budget reached: input 1.0k tokens / 1.0k tokens",
         }
         assert any("Session budget reached" in err for err in sub.errors)
+        assert any(
+            detail.startswith("Session budget reached") and turn_terminal for detail, turn_terminal in sub.error_events
+        )
 
     with _patch_sentinel():
         asyncio.run(_run())

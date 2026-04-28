@@ -246,6 +246,7 @@ export interface CommandResult {
 export interface ErrorMessage {
   type: "error";
   detail: string;
+  turn_terminal?: boolean;
 }
 
 export interface Cancelled {

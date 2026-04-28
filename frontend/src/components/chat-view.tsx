@@ -1034,7 +1034,7 @@ export function ChatView({
         case "error":
           setMessages((prev) => [
             ...prev,
-            { kind: "error", detail: msg.detail, turnTerminal: true },
+            { kind: "error", detail: msg.detail, turnTerminal: msg.turn_terminal === true },
           ]);
           setLlmActivity(null);
           lastThinkingStartedAtRef.current = null;
