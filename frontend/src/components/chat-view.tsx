@@ -674,6 +674,7 @@ export function ChatView({
   const isAtBottomRef = useRef(true);
   const lastThinkingStartedAtRef = useRef<string | null>(null);
   const queueRef = useRef<string | null>(null);
+  const resetRollbackRef = useRef<ChatMessage[] | null>(null);
   const sendRef = useRef<(msg: ClientMessage) => void>(() => {});
   const onSandboxUpdateRef = useRef(onSandboxUpdate);
   const sandboxRef = useRef(sandbox);
@@ -832,6 +833,7 @@ export function ChatView({
     (msg: ServerMessage) => {
       switch (msg.type) {
         case "done":
+          resetRollbackRef.current = null;
           setMessages((prev) => {
             const updated = [...prev];
             const thinkingMeta = thinkingUsageMeta(msg.usage);
@@ -1030,6 +1032,7 @@ export function ChatView({
           ]);
           break;
         case "command_result":
+          resetRollbackRef.current = null;
           setMessages((prev) => [
             ...prev,
             { kind: "command", command: msg.command, data: msg.data },
@@ -1039,15 +1042,26 @@ export function ChatView({
           finishWaiting();
           break;
         case "error":
-          setMessages((prev) => [
-            ...prev,
-            { kind: "error", detail: msg.detail, turnTerminal: msg.turn_terminal === true },
-          ]);
+          setMessages((prev) => {
+            const rollback = resetRollbackRef.current;
+            resetRollbackRef.current = null;
+            if (rollback !== null) {
+              return [
+                ...rollback,
+                { kind: "error", detail: msg.detail, turnTerminal: msg.turn_terminal === true },
+              ];
+            }
+            return [
+              ...prev,
+              { kind: "error", detail: msg.detail, turnTerminal: msg.turn_terminal === true },
+            ];
+          });
           setLlmActivity(null);
           lastThinkingStartedAtRef.current = null;
           finishWaiting();
           break;
         case "cancelled":
+          resetRollbackRef.current = null;
           setMessages((prev) => [
             ...prev,
             { kind: "error", detail: msg.detail, turnTerminal: true },
@@ -1079,6 +1093,7 @@ export function ChatView({
           }
           break;
         case "user_message":
+          resetRollbackRef.current = null;
           // Slash commands end with command_result (no agent); echo must not re-arm waiting
           // after command_result cleared it (message order / batching).
           if (!msg.content.startsWith("/")) {
@@ -1168,6 +1183,7 @@ export function ChatView({
   }, []);
 
   function handleSend(content: string) {
+    resetRollbackRef.current = null;
     if (waiting) {
       queueRef.current = content;
       setQueuedMessage(content);
@@ -1180,6 +1196,7 @@ export function ChatView({
   }
 
   function handleInterrupt(content: string) {
+    resetRollbackRef.current = null;
     queueRef.current = content;
     setQueuedMessage(content);
     send({ type: "cancel" });
@@ -1187,11 +1204,15 @@ export function ChatView({
 
   function handleRetry() {
     if (waiting || status !== "connected") return;
+    const startIndex = latestCompletedTurnStartMessageIndex(messages);
+    if (startIndex >= messages.length) return;
+
+    resetRollbackRef.current = null;
     queueRef.current = null;
     setQueuedMessage(null);
     lastThinkingStartedAtRef.current = null;
     setLlmActivity(null);
-    setMessages((prev) => prev.slice(0, latestCompletedTurnStartMessageIndex(prev)));
+    setMessages((prev) => prev.slice(0, startIndex));
     setWaiting(true);
     send({ type: "retry_latest_turn" });
   }
@@ -1226,6 +1247,7 @@ export function ChatView({
         return;
       }
 
+      resetRollbackRef.current = currentMessages;
       send({ type: "reset_to_turn", event_index: targetEventIndex });
       setMessages((prev) => prev.slice(0, messageIndex + 1));
     } finally {
