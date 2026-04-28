@@ -1,6 +1,23 @@
 # CHANGELOG
 
 
+## v0.103.0 (2026-04-28)
+
+
+### Other
+
+
+- fix tests
+  ([`d01a8c1`](https://github.com/thiesgerken/carapace/commit/d01a8c156223262237a04bddb0c8e705b2a07650))
+
+### ✨ Features
+
+
+- ✨ feat: support putting carapace.yaml contents into SKILL.md frontmatter
+  ([`92d7115`](https://github.com/thiesgerken/carapace/commit/92d71159c7eaafd6c924b6f6d147c6ff6bd800f8))
+
+  Co-authored-by: Copilot <copilot@github.com>
+
 ## v0.102.2 (2026-04-28)
 
 
