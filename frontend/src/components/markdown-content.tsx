@@ -140,7 +140,7 @@ export function MarkdownContent({ content }: { content: string }) {
 
   const components = useMemo<Components>(
     () => ({
-      a: ({ node: _node, ...props }) => (
+        a: (props) => (
         <a {...props} target="_blank" rel="noreferrer noopener" />
       ),
       pre: MarkdownPre,
