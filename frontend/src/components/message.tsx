@@ -1,6 +1,6 @@
 "use client";
 
-import { Brain, Check, ChevronRight, Copy, Loader2, RotateCcw } from "lucide-react";
+import { Brain, Check, ChevronRight, Copy, Loader2, RotateCcw, Undo2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
 import type { ChatMessage, EscalationDecision, LlmActivity } from "@/lib/types";
@@ -43,12 +43,11 @@ function MessageCopyButton({
     <button
       type="button"
       className={cn(
-        "rounded-md p-1 text-muted-foreground transition-[opacity,colors] hover:bg-muted hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-        "opacity-100 md:opacity-0 md:group-hover:opacity-100",
+        "rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
         className,
       )}
-      aria-label={copied ? "Copied" : "Copy original Markdown"}
-      title="Copy original Markdown"
+      aria-label={copied ? "Copied" : "Copy message"}
+      title={copied ? "Copied" : "Copy message"}
       onClick={() => void copy()}
     >
       {copied ? (
@@ -164,12 +163,14 @@ function ThinkingBadge({
   );
 }
 
-function TurnActionButton({
+function MessageActionButton({
   label,
+  icon,
   disabled,
   onClick,
 }: {
   label: string;
+  icon: React.ReactNode;
   disabled?: boolean;
   onClick?: () => void;
 }) {
@@ -180,36 +181,51 @@ function TurnActionButton({
       type="button"
       disabled={disabled}
       onClick={onClick}
+      aria-label={label}
+      title={label}
       className={cn(
-        "inline-flex items-center gap-1 rounded-md border border-border/70 px-2 py-1 text-xs text-muted-foreground transition-colors",
+        "inline-flex items-center rounded-md border border-border/70 p-1.5 text-muted-foreground transition-colors",
         "hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50",
       )}
     >
-      <RotateCcw className="size-3" />
-      <span>{label}</span>
+      {icon}
     </button>
   );
 }
 
-function TurnActions({
+function MessageActions({
+  copyText,
   canRetry,
   canReset,
   disabled,
   onRetry,
   onReset,
 }: {
+  copyText?: string;
   canRetry?: boolean;
   canReset?: boolean;
   disabled?: boolean;
   onRetry?: () => void;
   onReset?: () => void;
 }) {
-  if (!canRetry && !canReset) return null;
+  const hasCopy = typeof copyText === "string" && copyText.length > 0;
+  if (!hasCopy && !canRetry && !canReset) return null;
 
   return (
     <div className="mt-2 flex items-center gap-2">
-      <TurnActionButton label="Retry" disabled={disabled} onClick={canRetry ? onRetry : undefined} />
-      <TurnActionButton label="Reset" disabled={disabled} onClick={canReset ? onReset : undefined} />
+      <MessageCopyButton text={copyText ?? ""} className="border border-border/70 p-1.5" />
+      <MessageActionButton
+        label="Retry turn"
+        icon={<RotateCcw className="size-3.5" />}
+        disabled={disabled}
+        onClick={canRetry ? onRetry : undefined}
+      />
+      <MessageActionButton
+        label="Reset conversation to after this turn"
+        icon={<Undo2 className="size-3.5" />}
+        disabled={disabled}
+        onClick={canReset ? onReset : undefined}
+      />
     </div>
   );
 }
@@ -265,13 +281,11 @@ export function Message({
     case "assistant":
       return (
         <div className="group max-w-[85%] text-sm">
-          <div className="flex items-start gap-1.5">
-            <div className="min-w-0 flex-1">
-              <MarkdownContent content={message.content} />
-            </div>
-            <MessageCopyButton text={message.content} className="shrink-0" />
+          <div className="min-w-0 flex-1">
+            <MarkdownContent content={message.content} />
           </div>
-          <TurnActions
+          <MessageActions
+            copyText={message.content}
             canRetry={canRetry}
             canReset={canReset}
             disabled={actionDisabled}
@@ -287,7 +301,6 @@ export function Message({
           <div className="min-w-0 flex-1">
             <MarkdownContent content={message.content} />
           </div>
-          <MessageCopyButton text={message.content} className="shrink-0" />
         </div>
       );
 
@@ -398,7 +411,8 @@ export function Message({
       return (
         <div className="my-1 max-w-[85%] rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
           <pre className="whitespace-pre-wrap font-mono text-xs">{message.detail}</pre>
-          <TurnActions
+          <MessageActions
+            copyText={message.detail}
             canRetry={canRetry}
             canReset={canReset}
             disabled={actionDisabled}
