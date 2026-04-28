@@ -1,6 +1,6 @@
 "use client";
 
-import { Lock, LogOut, MessageSquare, Plus, Save, Trash2 } from "lucide-react";
+import { Lock, LogOut, Mail, MessageSquare, Plus, Save, Trash2 } from "lucide-react";
 import { EmojiText } from "@/components/emoji-text";
 import type { SessionInfo, SessionSandboxSnapshot } from "@/lib/types";
 import {
@@ -47,10 +47,6 @@ function sandboxSummaryLabel(sandbox: SessionSandboxSnapshot): string | null {
     return formatBytes(sandbox.last_measured_used_bytes);
   }
   return null;
-}
-
-function formatMessageCount(count: number): string {
-  return `${count} ${count === 1 ? "msg" : "msgs"}`;
 }
 
 export function Sidebar({
@@ -102,7 +98,6 @@ export function Sidebar({
               const showPrivateIcon = s.private;
               const showSavedIcon = !s.private && !!s.knowledge_last_committed_at && !sessionHasKnowledgeChanges(s);
               const showKnowledgeIndicator = showPrivateIcon || showSavedIcon;
-              const messageCountLabel = formatMessageCount(s.message_count);
               const activityLabel = [
                 formatTime(s.last_active),
                 s.channel_type !== "web" && s.channel_type !== "cli"
@@ -153,7 +148,16 @@ export function Sidebar({
                       </span>
                     ) : null}
                     {sandbox && sandboxLabel ? <span aria-hidden="true">·</span> : null}
-                    <span>{messageCountLabel}</span>
+                    <span
+                      className="inline-flex items-center gap-1"
+                      title={`${s.message_count} ${s.message_count === 1 ? "message" : "messages"}`}
+                    >
+                      <span>{s.message_count}</span>
+                      <Mail className="mt-px h-3 w-3 shrink-0" />
+                      <span className="sr-only">
+                        {s.message_count === 1 ? "message" : "messages"}
+                      </span>
+                    </span>
                     <span aria-hidden="true">·</span>
                     <span>{activityLabel}</span>
                     {showKnowledgeIndicator ? <span aria-hidden="true">·</span> : null}
@@ -162,7 +166,7 @@ export function Sidebar({
                         className="inline-flex items-center"
                         title={showPrivateIcon ? "Private session" : (s.knowledge_last_archive_path ?? "All changes committed to knowledge")}
                       >
-                        {showPrivateIcon ? <Lock className="h-3 w-3" /> : <Save className="h-3 w-3" />}
+                        {showPrivateIcon ? <Lock className="mt-px h-3 w-3 shrink-0" /> : <Save className="mt-px h-3 w-3 shrink-0" />}
                         <span className="sr-only">{showPrivateIcon ? "Private session" : "All changes committed to knowledge"}</span>
                       </span>
                     ) : null}
