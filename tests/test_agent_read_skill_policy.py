@@ -13,13 +13,27 @@ from carapace.agent.tools import (
 from carapace.sandbox.skill_activation import SKILL_COMMAND_SHIM_DIR
 
 
-def test_denies_read_for_backend_existing_skill_file_when_not_activated(tmp_path: Path) -> None:
+def test_allows_read_for_skill_root_file_when_not_activated(tmp_path: Path) -> None:
     skill_file = tmp_path / "skills" / "demo" / "SKILL.md"
     skill_file.parent.mkdir(parents=True, exist_ok=True)
     skill_file.write_text("# Demo")
 
     result = _read_skill_access_denial(
         "skills/demo/SKILL.md",
+        tmp_path,
+        activated_skills=[],
+    )
+
+    assert result is None
+
+
+def test_denies_read_for_backend_existing_skill_subdir_file_when_not_activated(tmp_path: Path) -> None:
+    skill_file = tmp_path / "skills" / "demo" / "config" / "settings.json"
+    skill_file.parent.mkdir(parents=True, exist_ok=True)
+    skill_file.write_text("{}")
+
+    result = _read_skill_access_denial(
+        "skills/demo/config/settings.json",
         tmp_path,
         activated_skills=[],
     )

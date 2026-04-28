@@ -72,6 +72,8 @@ def _read_skill_access_denial(path: str, knowledge_dir: Path, activated_skills: 
     if not skill_path:
         return None
     skill_name, rel_path = skill_path
+    if len(rel_path.parts) < 4:
+        return None
     if skill_name in activated_skills:
         return None
     if not _skill_file_exists_in_backend_knowledge(knowledge_dir, rel_path):
