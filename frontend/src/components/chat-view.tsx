@@ -21,12 +21,14 @@ import type {
   ChatMessage,
   ClientMessage,
   EscalationDecision,
+  HistoryMessage,
   LlmActivity,
   ServerMessage,
   SessionInfo,
   SessionSandboxSnapshot,
   TurnUsage,
 } from "@/lib/types";
+import { isRecord, readStringArray } from "@/lib/decoding";
 import {
   cn,
   formatBytes,
@@ -347,6 +349,318 @@ function updateToolResultById(
   }));
 }
 
+function normalizeOptionalString(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
+}
+
+function normalizeStringList(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  return value.filter((entry): entry is string => typeof entry === "string");
+}
+
+function normalizeToolArgs(args: unknown): Record<string, unknown> {
+  return isRecord(args) ? args : {};
+}
+
+function normalizeHistoryContexts(message: HistoryMessage): string[] | undefined {
+  const directContexts = normalizeStringList(message.contexts);
+  if (directContexts) return directContexts;
+  return readStringArray(normalizeToolArgs(message.args), "contexts");
+}
+
+function findLaterEscalationDecision(
+  history: HistoryMessage[],
+  fromIndex: number,
+  requestId: string,
+  roleMatches: (role: string) => boolean,
+): EscalationDecision | undefined {
+  for (let index = fromIndex + 1; index < history.length; index++) {
+    const entry = history[index];
+    if (entry.request_id !== requestId || !roleMatches(entry.role)) continue;
+    const decision = entry.decision;
+    if (decision === "allow" || decision === "deny") return decision;
+  }
+  return undefined;
+}
+
+function groupChildToolCalls(messages: ChatMessage[]): ChatMessage[] {
+  const parentIndex = new Map<string, number>();
+  for (let index = 0; index < messages.length; index++) {
+    const message = messages[index];
+    if (message.kind === "tool_call" && message.toolId) {
+      parentIndex.set(message.toolId, index);
+    }
+  }
+
+  const childIndices = new Set<number>();
+  for (let index = 0; index < messages.length; index++) {
+    const message = messages[index];
+    if (message.kind !== "tool_call" || !message.parentToolId) continue;
+
+    const parentMessageIndex = parentIndex.get(message.parentToolId);
+    if (parentMessageIndex == null) continue;
+
+    const parent = messages[parentMessageIndex];
+    if (parent.kind !== "tool_call") continue;
+
+    if (!parent.children) parent.children = [];
+    parent.children.push(message);
+    childIndices.add(index);
+  }
+
+  return childIndices.size > 0
+    ? messages.filter((_, index) => !childIndices.has(index))
+    : messages;
+}
+
+function replayHistory(history: HistoryMessage[]): ChatMessage[] {
+  const messages: ChatMessage[] = [];
+  const pendingToolCallIndices = new Map<string, number[]>();
+
+  for (let index = 0; index < history.length; index++) {
+    const entry = history[index];
+
+    if (entry.role === "user") {
+      messages.push({ kind: "user", content: entry.content });
+      continue;
+    }
+
+    if (entry.role === "tool_call") {
+      const tool = entry.tool ?? "";
+      const args = normalizeToolArgs(entry.args);
+      const loading = isToolCallLoading(
+        tool,
+        entry.approval_source,
+        entry.approval_verdict,
+      );
+
+      if (
+        isUserApprovedReplay(
+          tool,
+          entry.detail,
+          entry.approval_source,
+          entry.approval_verdict,
+        )
+      ) {
+        const patched = applyApprovedApprovalToMessages(
+          messages,
+          { tool, args },
+          loading,
+        );
+        messages.length = 0;
+        messages.push(...patched);
+        continue;
+      }
+
+      messages.push({
+        kind: "tool_call",
+        tool,
+        args,
+        detail: entry.detail ?? "",
+        contexts: normalizeHistoryContexts(entry),
+        approvalSource: entry.approval_source,
+        approvalVerdict: entry.approval_verdict,
+        approvalExplanation: entry.approval_explanation,
+        loading,
+        toolId: normalizeOptionalString(entry.tool_id),
+        parentToolId: normalizeOptionalString(entry.parent_tool_id),
+      });
+
+      const queue = pendingToolCallIndices.get(tool) ?? [];
+      queue.push(messages.length - 1);
+      pendingToolCallIndices.set(tool, queue);
+      continue;
+    }
+
+    if (entry.role === "tool_result") {
+      const toolResultId = normalizeOptionalString(entry.tool_id);
+      if (toolResultId) {
+        const updated = updateToolResultById(messages, toolResultId, {
+          result: entry.result ?? "",
+          exitCode: entry.exit_code,
+        });
+        if (updated.found) {
+          messages.length = 0;
+          messages.push(...updated.messages);
+          continue;
+        }
+      }
+
+      const toolName = entry.tool ?? "";
+      const queue = pendingToolCallIndices.get(toolName);
+      const toolIndex = queue?.shift();
+      if (toolIndex != null && messages[toolIndex]?.kind === "tool_call") {
+        const toolCall = messages[toolIndex];
+        messages[toolIndex] = {
+          ...toolCall,
+          result: entry.result,
+          exitCode: entry.exit_code,
+          loading: false,
+        };
+      }
+      if (queue && queue.length === 0) {
+        pendingToolCallIndices.delete(toolName);
+      }
+      continue;
+    }
+
+    if (entry.role === "approval_response") {
+      continue;
+    }
+
+    if (entry.role === "approval_request" && entry.tool_call_id) {
+      const request = {
+        type: "approval_request" as const,
+        tool_call_id: entry.tool_call_id,
+        tool: entry.tool ?? "",
+        args: normalizeToolArgs(entry.args),
+        explanation: entry.explanation ?? "",
+        risk_level: entry.risk_level ?? "",
+      };
+      const response = history.find(
+        (candidate) =>
+          candidate.role === "approval_response"
+          && candidate.tool_call_id === entry.tool_call_id,
+      );
+      if (!response) {
+        messages.push({ kind: "approval", request });
+      } else if (response.decision === "approved") {
+        const patched = applyApprovedApprovalToMessages(messages, request);
+        messages.length = 0;
+        messages.push(...patched);
+      } else if (response.decision === "denied") {
+        const patched = applyDeniedApprovalToMessages(
+          messages,
+          request,
+          response.message,
+        );
+        messages.length = 0;
+        messages.push(...patched);
+      }
+      continue;
+    }
+
+    if (
+      (entry.role === "domain_access_approval"
+        || entry.role === "proxy_approval")
+      && entry.request_id
+    ) {
+      if (!entry.decision) {
+        const decision = findLaterEscalationDecision(
+          history,
+          index,
+          entry.request_id,
+          (role) =>
+            role === "domain_access_approval" || role === "proxy_approval",
+        );
+        if (!decision) {
+          messages.push({
+            kind: "domain_access_approval",
+            request: {
+              type: "domain_access_approval_request",
+              request_id: entry.request_id,
+              domain: entry.domain ?? "",
+              command: entry.command ?? "",
+            },
+            decision,
+          });
+        }
+      }
+      continue;
+    }
+
+    if (entry.role === "git_push_approval" && entry.request_id) {
+      if (!entry.decision) {
+        const decision = findLaterEscalationDecision(
+          history,
+          index,
+          entry.request_id,
+          (role) => role === "git_push_approval",
+        );
+        if (!decision) {
+          messages.push({
+            kind: "git_push_approval",
+            request: {
+              type: "git_push_approval_request",
+              request_id: entry.request_id,
+              ref: entry.ref ?? "",
+              explanation: entry.explanation ?? "",
+              changed_files: normalizeStringList(entry.changed_files) ?? [],
+            },
+            decision,
+          });
+        }
+      }
+      continue;
+    }
+
+    if (entry.role === "credential_approval" && entry.request_id) {
+      if (!entry.decision) {
+        const decision = findLaterEscalationDecision(
+          history,
+          index,
+          entry.request_id,
+          (role) => role === "credential_approval",
+        );
+        if (!decision) {
+          messages.push({
+            kind: "credential_approval",
+            request: {
+              type: "credential_approval_request",
+              request_id: entry.request_id,
+              vault_paths: normalizeStringList(entry.vault_paths) ?? [],
+              names: normalizeStringList(entry.names) ?? [],
+              descriptions: normalizeStringList(entry.descriptions) ?? [],
+              skill_name: normalizeOptionalString(entry.skill_name),
+              explanation: entry.explanation ?? "",
+            },
+            decision,
+          });
+        }
+      }
+      continue;
+    }
+
+    if (entry.role === "git_push") {
+      messages.push({
+        kind: "tool_call",
+        tool: "git_push",
+        args: { ref: entry.ref ?? "", decision: entry.decision ?? "" },
+        detail: entry.detail ?? "",
+        approvalSource: entry.approval_source,
+        approvalVerdict: entry.approval_verdict,
+        approvalExplanation: entry.approval_explanation,
+        toolId: normalizeOptionalString(entry.tool_id),
+        parentToolId: normalizeOptionalString(entry.parent_tool_id),
+      });
+      continue;
+    }
+
+    if (entry.role === "command") {
+      messages.push({
+        kind: "command",
+        command: entry.command ?? "",
+        data: entry.data,
+      });
+      continue;
+    }
+
+    if (entry.role === "thinking" && entry.content) {
+      messages.push({
+        kind: "thinking",
+        content: entry.content,
+        reasoningDurationMs: entry.reasoning_duration_ms,
+        reasoningTokens: entry.reasoning_tokens,
+      });
+      continue;
+    }
+
+    messages.push({ kind: "assistant", content: entry.content });
+  }
+
+  return groupChildToolCalls(messages);
+}
+
 export function ChatView({
   server,
   token,
@@ -475,262 +789,7 @@ export function ChatView({
     fetchHistory(server, token, sessionId)
       .then((history) => {
         if (cancelled) return;
-        const msgs: ChatMessage[] = [];
-        const pendingToolCallIndices = new Map<string, number[]>();
-
-        function findLaterEscalationDecision(
-          fromIndex: number,
-          requestId: string,
-          roleMatches: (role: string) => boolean,
-        ): EscalationDecision | undefined {
-          for (let j = fromIndex + 1; j < history.length; j++) {
-            const e = history[j];
-            if (e.request_id !== requestId || !roleMatches(e.role)) continue;
-            const d = e.decision;
-            if (d === "allow" || d === "deny") return d;
-          }
-          return undefined;
-        }
-
-        for (let i = 0; i < history.length; i++) {
-          const h = history[i];
-          if (h.role === "user") {
-            msgs.push({ kind: "user", content: h.content });
-          } else if (h.role === "tool_call") {
-            const rawContexts = h.contexts ?? h.args?.contexts;
-            const isLoading = isToolCallLoading(
-              h.tool ?? "",
-              h.approval_source,
-              h.approval_verdict,
-            );
-            if (
-              isUserApprovedReplay(
-                h.tool ?? "",
-                h.detail,
-                h.approval_source,
-                h.approval_verdict,
-              )
-            ) {
-              const patched = applyApprovedApprovalToMessages(
-                msgs,
-                {
-                  tool: h.tool ?? "",
-                  args: (h.args ?? {}) as Record<string, unknown>,
-                },
-                isLoading,
-              );
-              msgs.length = 0;
-              msgs.push(...patched);
-              continue;
-            }
-            msgs.push({
-              kind: "tool_call",
-              tool: h.tool ?? "",
-              args: h.args ?? {},
-              detail: h.detail ?? "",
-              contexts: Array.isArray(rawContexts)
-                ? (rawContexts as string[])
-                : undefined,
-              approvalSource: h.approval_source,
-              approvalVerdict: h.approval_verdict,
-              approvalExplanation: h.approval_explanation,
-              loading: isLoading,
-              toolId: h.tool_id as string | undefined,
-              parentToolId: h.parent_tool_id as string | undefined,
-            });
-            const toolName = h.tool ?? "";
-            const idx = msgs.length - 1;
-            const queue = pendingToolCallIndices.get(toolName) ?? [];
-            queue.push(idx);
-            pendingToolCallIndices.set(toolName, queue);
-          } else if (h.role === "tool_result") {
-            const toolResultId = h.tool_id as string | undefined;
-            if (toolResultId) {
-              const updated = updateToolResultById(msgs, toolResultId, {
-                result: h.result ?? "",
-                exitCode: h.exit_code,
-              });
-              if (updated.found) {
-                msgs.length = 0;
-                msgs.push(...updated.messages);
-                continue;
-              }
-            }
-
-            const toolName = h.tool ?? "";
-            const queue = pendingToolCallIndices.get(toolName);
-            const idx = queue?.shift();
-            if (idx != null && msgs[idx]?.kind === "tool_call") {
-              const toolCall = msgs[idx];
-              msgs[idx] = {
-                ...toolCall,
-                result: h.result,
-                exitCode: h.exit_code,
-                loading: false,
-              };
-            }
-            if (queue && queue.length === 0) {
-              pendingToolCallIndices.delete(toolName);
-            }
-          } else if (h.role === "approval_response") {
-            // Skip — consumed by the approval_request above
-          } else if (h.role === "approval_request" && h.tool_call_id) {
-            const request = {
-              type: "approval_request" as const,
-              tool_call_id: h.tool_call_id,
-              tool: h.tool ?? "",
-              args: (h.args ?? {}) as Record<string, unknown>,
-              explanation: h.explanation ?? "",
-              risk_level: h.risk_level ?? "",
-            };
-            const response = history.find(
-              (r) =>
-                r.role === "approval_response" &&
-                r.tool_call_id === h.tool_call_id,
-            );
-            if (!response) {
-              msgs.push({ kind: "approval", request });
-            } else if (response.decision === "approved") {
-              const patched = applyApprovedApprovalToMessages(msgs, request);
-              msgs.length = 0;
-              msgs.push(...patched);
-            } else if (response.decision === "denied") {
-              const patched = applyDeniedApprovalToMessages(
-                msgs,
-                request,
-                response.message,
-              );
-              msgs.length = 0;
-              msgs.push(...patched);
-            }
-          } else if (
-            (h.role === "domain_access_approval" ||
-              h.role === "proxy_approval") &&
-            h.request_id
-          ) {
-            // Domain access approval: request entry, then decision (may be non-adjacent)
-            if (!h.decision) {
-              const decision = findLaterEscalationDecision(
-                i,
-                h.request_id,
-                (role) =>
-                  role === "domain_access_approval" ||
-                  role === "proxy_approval",
-              );
-              if (!decision) {
-                msgs.push({
-                  kind: "domain_access_approval",
-                  request: {
-                    type: "domain_access_approval_request",
-                    request_id: h.request_id,
-                    domain: h.domain ?? "",
-                    command: h.command ?? "",
-                  },
-                  decision,
-                });
-              }
-            }
-            // Skip decision-only events (consumed above)
-          } else if (h.role === "git_push_approval" && h.request_id) {
-            // Git push approval: request entry, then decision (may be non-adjacent)
-            if (!h.decision) {
-              const decision = findLaterEscalationDecision(
-                i,
-                h.request_id,
-                (role) => role === "git_push_approval",
-              );
-              if (!decision) {
-                msgs.push({
-                  kind: "git_push_approval",
-                  request: {
-                    type: "git_push_approval_request",
-                    request_id: h.request_id,
-                    ref: h.ref ?? "",
-                    explanation: h.explanation ?? "",
-                    changed_files:
-                      (h.changed_files as string[] | undefined) ?? [],
-                  },
-                  decision,
-                });
-              }
-            }
-          } else if (h.role === "credential_approval" && h.request_id) {
-            if (!h.decision) {
-              const decision = findLaterEscalationDecision(
-                i,
-                h.request_id,
-                (role) => role === "credential_approval",
-              );
-              if (!decision) {
-                msgs.push({
-                  kind: "credential_approval",
-                  request: {
-                    type: "credential_approval_request",
-                    request_id: h.request_id,
-                    vault_paths: h.vault_paths ?? [],
-                    names: h.names ?? [],
-                    descriptions: h.descriptions ?? [],
-                    skill_name: h.skill_name,
-                    explanation: h.explanation ?? "",
-                  },
-                  decision,
-                });
-              }
-            }
-          } else if (h.role === "git_push") {
-            msgs.push({
-              kind: "tool_call",
-              tool: "git_push",
-              args: { ref: h.ref ?? "", decision: h.decision ?? "" },
-              detail: h.detail ?? "",
-              approvalSource: h.approval_source,
-              approvalVerdict: h.approval_verdict,
-              approvalExplanation: h.approval_explanation,
-              toolId: h.tool_id as string | undefined,
-              parentToolId: h.parent_tool_id as string | undefined,
-            });
-          } else if (h.role === "command") {
-            msgs.push({
-              kind: "command",
-              command: h.command ?? "",
-              data: h.data,
-            });
-          } else if (h.role === "thinking" && h.content) {
-            msgs.push({
-              kind: "thinking",
-              content: h.content,
-              reasoningDurationMs: h.reasoning_duration_ms,
-              reasoningTokens: h.reasoning_tokens,
-            });
-          } else {
-            msgs.push({ kind: "assistant", content: h.content });
-          }
-        }
-        // Group auxiliary tool calls (credential_access, proxy_domain, git_push)
-        // under their parent tool call by matching parentToolId → toolId.
-        const parentIndex = new Map<string, number>();
-        for (let i = 0; i < msgs.length; i++) {
-          const m = msgs[i];
-          if (m.kind === "tool_call" && m.toolId) {
-            parentIndex.set(m.toolId, i);
-          }
-        }
-        const childIndices = new Set<number>();
-        for (let i = 0; i < msgs.length; i++) {
-          const m = msgs[i];
-          if (m.kind !== "tool_call" || !m.parentToolId) continue;
-          const pi = parentIndex.get(m.parentToolId);
-          if (pi == null) continue;
-          const parent = msgs[pi];
-          if (parent.kind !== "tool_call") continue;
-          if (!parent.children) parent.children = [];
-          parent.children.push(m);
-          childIndices.add(i);
-        }
-        const grouped = childIndices.size > 0
-          ? msgs.filter((_, i) => !childIndices.has(i))
-          : msgs;
-        setMessages(grouped);
+        setMessages(replayHistory(history));
       })
       .catch(() => {
         // history fetch can fail for new sessions - that's fine
