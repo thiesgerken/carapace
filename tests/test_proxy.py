@@ -337,6 +337,7 @@ async def test_exec_recreate_reinjects_credential_files(tmp_path: Path):
             _ok,  # _clone_knowledge_repo probe after first create
             ContainerGoneError(),  # exec_command triggers recreate
             _ok,  # _clone_knowledge_repo probe after recreate
+            _ok,  # git checkout SKILL.md
             _ok,  # git checkout carapace.yaml
             _ok,  # git checkout setup.sh
             _ok,  # _file_write_in_container (credential materialization)
@@ -373,13 +374,13 @@ async def test_exec_recreate_reinjects_credential_files(tmp_path: Path):
     activation_cb.assert_awaited_once_with(session_id, "moneydb")
 
     # Verify upstream restore is used for trusted provider files.
-    restore_call = runtime.exec.call_args_list[4]
+    restore_call = runtime.exec.call_args_list[5]
     assert "git checkout @{upstream} -- skills/moneydb/setup.sh" in restore_call.args[1]
 
     # Verify the credential file was written into the new container via exec.
-    # The 6th exec call (index 5) is the _file_write_in_container for the
+    # The 7th exec call (index 6) is the _file_write_in_container for the
     # credential — check that it targeted the correct workdir.
-    write_call = runtime.exec.call_args_list[5]
+    write_call = runtime.exec.call_args_list[6]
     shell_cmd = write_call.args[1]
     assert "/tmp/creds/api_key.json" in shell_cmd
     assert base64.b64encode(b"secret-key-value").decode() in shell_cmd
