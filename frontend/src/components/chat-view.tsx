@@ -1204,10 +1204,11 @@ export function ChatView({
 
   function handleRetry() {
     if (waiting || status !== "connected") return;
+    const currentMessages = messages;
     const startIndex = latestCompletedTurnStartMessageIndex(messages);
     if (startIndex >= messages.length) return;
 
-    resetRollbackRef.current = null;
+    resetRollbackRef.current = currentMessages;
     queueRef.current = null;
     setQueuedMessage(null);
     lastThinkingStartedAtRef.current = null;
