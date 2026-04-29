@@ -19,14 +19,3 @@ export function readNumber(
   const value = record[key];
   return typeof value === "number" ? value : undefined;
 }
-
-export function readStringArray(
-  record: JsonRecord,
-  key: string,
-): string[] | undefined {
-  const value = record[key];
-  return Array.isArray(value) &&
-    value.every((entry) => typeof entry === "string")
-    ? value
-    : undefined;
-}
