@@ -1,7 +1,7 @@
 "use client";
 
-import type { AvailableModelInfo } from "@/lib/api";
-import { isRecord, readNumber, readString } from "@/lib/decoding";
+import { decodeAvailableModel, type AvailableModelInfo } from "@/lib/api";
+import { isRecord, readString } from "@/lib/decoding";
 
 interface HelpData {
   commands: Array<{ command: string; description: string }>;
@@ -297,29 +297,6 @@ function decodeVerboseData(d: unknown): { message: string } | null {
   return message === undefined ? null : { message };
 }
 
-function decodeAvailableModelEntry(raw: unknown): AvailableModelInfo | null {
-  if (typeof raw === "string") {
-    const splitIndex = raw.indexOf(":");
-    return {
-      id: raw,
-      provider: splitIndex === -1 ? "" : raw.slice(0, splitIndex),
-      name: splitIndex === -1 ? raw : raw.slice(splitIndex + 1),
-      max_input_tokens: null,
-    };
-  }
-
-  if (!isRecord(raw)) return null;
-  const id = readString(raw, "id");
-  if (!id) return null;
-
-  return {
-    id,
-    provider: readString(raw, "provider") ?? "",
-    name: readString(raw, "name") ?? "",
-    max_input_tokens: readNumber(raw, "max_input_tokens") ?? null,
-  };
-}
-
 function decodeModelSelections(
   raw: unknown,
 ): Record<string, ModelSelection> | undefined {
@@ -347,7 +324,7 @@ function decodeModelData(d: unknown): ModelData | null {
 
   const available = Array.isArray(d.available)
     ? d.available
-      .map((entry) => decodeAvailableModelEntry(entry))
+      .map((entry) => decodeAvailableModel(entry))
       .filter((entry): entry is AvailableModelInfo => entry !== null)
     : undefined;
 
@@ -375,7 +352,7 @@ function decodePlainMessagePayload(
 ): { message: string; error?: string } | null {
   if (!isRecord(d)) return null;
   const message = readString(d, "message");
-  if (!message) return null;
+  if (message === undefined) return null;
   const error = readString(d, "error");
   for (const k of Object.keys(d)) {
     if (k === "message") continue;

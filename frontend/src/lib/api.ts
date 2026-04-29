@@ -163,8 +163,8 @@ function decodeSlashCommand(raw: unknown): SlashCommand | null {
 function decodeSlashCommands(raw: unknown): SlashCommand[] {
   if (!Array.isArray(raw)) return [];
   return raw
-    .filter((item): item is SlashCommand => decodeSlashCommand(item) !== null)
-    .map((item) => decodeSlashCommand(item) as SlashCommand);
+    .map((item) => decodeSlashCommand(item))
+    .filter((item): item is SlashCommand => item !== null);
 }
 
 export async function fetchCommands(
@@ -186,7 +186,7 @@ export interface AvailableModelInfo {
   max_input_tokens?: number | null;
 }
 
-function decodeAvailableModel(raw: unknown): AvailableModelInfo | null {
+export function decodeAvailableModel(raw: unknown): AvailableModelInfo | null {
   if (typeof raw === "string") {
     const splitIndex = raw.indexOf(":");
     if (splitIndex === -1) {
@@ -219,10 +219,8 @@ function decodeAvailableModel(raw: unknown): AvailableModelInfo | null {
 function decodeAvailableModels(raw: unknown): AvailableModelInfo[] {
   if (!Array.isArray(raw)) return [];
   return raw
-    .filter(
-      (item): item is AvailableModelInfo => decodeAvailableModel(item) !== null,
-    )
-    .map((item) => decodeAvailableModel(item) as AvailableModelInfo);
+    .map((item) => decodeAvailableModel(item))
+    .filter((item): item is AvailableModelInfo => item !== null);
 }
 
 export async function fetchModels(
