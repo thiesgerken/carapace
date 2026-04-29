@@ -307,7 +307,7 @@ function decodeModelSelections(
       if (!isRecord(value)) return null;
       const current = readString(value, "current");
       const fallback = readString(value, "default");
-      if (!current || fallback === undefined) return null;
+      if (current === undefined || fallback === undefined) return null;
       return [key, { current, default: fallback }] as const;
     })
     .filter(
