@@ -1152,6 +1152,7 @@ export function ChatView({
   );
 
   const onWsDisconnect = useCallback(() => {
+    resetRollbackRef.current = null;
     queueRef.current = null;
     lastThinkingStartedAtRef.current = null;
     setQueuedMessage(null);
