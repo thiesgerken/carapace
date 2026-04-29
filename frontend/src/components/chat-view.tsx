@@ -28,7 +28,7 @@ import type {
   SessionSandboxSnapshot,
   TurnUsage,
 } from "@/lib/types";
-import { isRecord, readStringArray } from "@/lib/decoding";
+import { isRecord } from "@/lib/decoding";
 import {
   cn,
   formatBytes,
@@ -365,7 +365,7 @@ function normalizeToolArgs(args: unknown): Record<string, unknown> {
 function normalizeHistoryContexts(message: HistoryMessage): string[] | undefined {
   const directContexts = normalizeStringList(message.contexts);
   if (directContexts) return directContexts;
-  return readStringArray(normalizeToolArgs(message.args), "contexts");
+  return normalizeStringList(normalizeToolArgs(message.args).contexts);
 }
 
 function findLaterEscalationDecision(
