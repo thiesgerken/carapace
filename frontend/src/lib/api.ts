@@ -4,6 +4,7 @@ import type {
   SessionInfo,
   SessionSandboxSnapshot,
 } from "./types";
+import { isRecord, readNumber, readString } from "./decoding";
 
 function headers(token: string): HeadersInit {
   return {
@@ -149,6 +150,23 @@ export interface SlashCommand {
   description: string;
 }
 
+export function decodeSlashCommand(raw: unknown): SlashCommand | null {
+  if (!isRecord(raw)) return null;
+
+  const command = readString(raw, "command");
+  const description = readString(raw, "description");
+  if (!command || description === undefined) return null;
+
+  return { command, description };
+}
+
+function decodeSlashCommands(raw: unknown): SlashCommand[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((item) => decodeSlashCommand(item))
+    .filter((item): item is SlashCommand => item !== null);
+}
+
 export async function fetchCommands(
   server: string,
   token: string,
@@ -157,7 +175,8 @@ export async function fetchCommands(
     headers: headers(token),
   });
   if (!res.ok) return [];
-  return res.json();
+  const raw: unknown = await res.json();
+  return decodeSlashCommands(raw);
 }
 
 export interface AvailableModelInfo {
@@ -167,6 +186,44 @@ export interface AvailableModelInfo {
   max_input_tokens?: number | null;
 }
 
+export function decodeAvailableModel(raw: unknown): AvailableModelInfo | null {
+  if (typeof raw === "string") {
+    if (!raw) return null;
+    const splitIndex = raw.indexOf(":");
+    if (splitIndex === -1) {
+      return { id: raw, provider: "", name: raw, max_input_tokens: null };
+    }
+
+    return {
+      id: raw,
+      provider: raw.slice(0, splitIndex),
+      name: raw.slice(splitIndex + 1),
+      max_input_tokens: null,
+    };
+  }
+
+  if (!isRecord(raw)) return null;
+
+  const rawId =
+    readString(raw, "id") ??
+    (typeof raw.id === "number" ? String(raw.id) : undefined);
+  if (!rawId) return null;
+
+  return {
+    id: rawId,
+    provider: readString(raw, "provider") ?? "",
+    name: readString(raw, "name") ?? "",
+    max_input_tokens: readNumber(raw, "max_input_tokens") ?? null,
+  };
+}
+
+function decodeAvailableModels(raw: unknown): AvailableModelInfo[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((item) => decodeAvailableModel(item))
+    .filter((item): item is AvailableModelInfo => item !== null);
+}
+
 export async function fetchModels(
   server: string,
   token: string,
@@ -174,34 +231,7 @@ export async function fetchModels(
   const res = await fetch(`${server}/api/models`, { headers: headers(token) });
   if (!res.ok) return [];
   const raw: unknown = await res.json();
-  if (!Array.isArray(raw)) return [];
-  return raw
-    .map((item): AvailableModelInfo | null => {
-      if (typeof item === "string") {
-        const i = item.indexOf(":");
-        if (i === -1)
-          return { id: item, provider: "", name: item, max_input_tokens: null };
-        return {
-          id: item,
-          provider: item.slice(0, i),
-          name: item.slice(i + 1),
-          max_input_tokens: null,
-        };
-      }
-      if (item && typeof item === "object" && "id" in item) {
-        const o = item as Record<string, unknown>;
-        const id = String(o.id ?? "");
-        return {
-          id,
-          provider: String(o.provider ?? ""),
-          name: String(o.name ?? ""),
-          max_input_tokens:
-            typeof o.max_input_tokens === "number" ? o.max_input_tokens : null,
-        };
-      }
-      return null;
-    })
-    .filter((e): e is AvailableModelInfo => e !== null && e.id.length > 0);
+  return decodeAvailableModels(raw);
 }
 
 export function wsUrl(

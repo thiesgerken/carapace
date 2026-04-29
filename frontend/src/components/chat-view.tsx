@@ -28,6 +28,7 @@ import type {
   SessionSandboxSnapshot,
   TurnUsage,
 } from "@/lib/types";
+import { isRecord } from "@/lib/decoding";
 import {
   cn,
   formatBytes,
@@ -348,6 +349,40 @@ function updateToolResultById(
   }));
 }
 
+function normalizeOptionalString(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
+}
+
+function normalizeStringList(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  return value.filter((entry): entry is string => typeof entry === "string");
+}
+
+function normalizeToolArgs(args: unknown): Record<string, unknown> {
+  return isRecord(args) ? args : {};
+}
+
+function normalizeHistoryContexts(message: HistoryMessage): string[] | undefined {
+  const directContexts = normalizeStringList(message.contexts);
+  if (directContexts) return directContexts;
+  return normalizeStringList(normalizeToolArgs(message.args).contexts);
+}
+
+function findLaterEscalationDecision(
+  history: HistoryMessage[],
+  fromIndex: number,
+  requestId: string,
+  roleMatches: (role: string) => boolean,
+): EscalationDecision | undefined {
+  for (let index = fromIndex + 1; index < history.length; index++) {
+    const entry = history[index];
+    if (entry.request_id !== requestId || !roleMatches(entry.role)) continue;
+    const decision = entry.decision;
+    if (decision === "allow" || decision === "deny") return decision;
+  }
+  return undefined;
+}
+
 function isTurnTerminalMessage(message: ChatMessage): boolean {
   return message.kind === "assistant" || (message.kind === "error" && message.turnTerminal === true);
 }
@@ -379,94 +414,115 @@ function eventIndexForMessage(message: ChatMessage): number | undefined {
   return undefined;
 }
 
-function projectHistoryToMessages(history: HistoryMessage[]): ChatMessage[] {
-  const msgs: ChatMessage[] = [];
-  const pendingToolCallIndices = new Map<string, number[]>();
-
-  function findLaterEscalationDecision(
-    fromIndex: number,
-    requestId: string,
-    roleMatches: (role: string) => boolean,
-  ): EscalationDecision | undefined {
-    for (let index = fromIndex + 1; index < history.length; index++) {
-      const entry = history[index];
-      if (entry.request_id !== requestId || !roleMatches(entry.role)) continue;
-      const decision = entry.decision;
-      if (decision === "allow" || decision === "deny") return decision;
+function groupChildToolCalls(messages: ChatMessage[]): ChatMessage[] {
+  const parentIndex = new Map<string, number>();
+  for (let index = 0; index < messages.length; index++) {
+    const message = messages[index];
+    if (message.kind === "tool_call" && message.toolId) {
+      parentIndex.set(message.toolId, index);
     }
-    return undefined;
   }
+
+  const childIndices = new Set<number>();
+  for (let index = 0; index < messages.length; index++) {
+    const message = messages[index];
+    if (message.kind !== "tool_call" || !message.parentToolId) continue;
+
+    const parentMessageIndex = parentIndex.get(message.parentToolId);
+    if (parentMessageIndex == null) continue;
+
+    const parent = messages[parentMessageIndex];
+    if (parent.kind !== "tool_call") continue;
+
+    if (!parent.children) parent.children = [];
+    parent.children.push(message);
+    childIndices.add(index);
+  }
+
+  return childIndices.size > 0
+    ? messages.filter((_, index) => !childIndices.has(index))
+    : messages;
+}
+
+function projectHistoryToMessages(history: HistoryMessage[]): ChatMessage[] {
+  const messages: ChatMessage[] = [];
+  const pendingToolCallIndices = new Map<string, number[]>();
 
   for (let index = 0; index < history.length; index++) {
     const entry = history[index];
+
     if (entry.role === "user") {
-      msgs.push({ kind: "user", content: entry.content });
-    } else if (entry.role === "tool_call") {
-      const rawContexts = entry.contexts ?? entry.args?.contexts;
-      const isLoading = isToolCallLoading(
-        entry.tool ?? "",
+      messages.push({ kind: "user", content: entry.content });
+      continue;
+    }
+
+    if (entry.role === "tool_call") {
+      const tool = entry.tool ?? "";
+      const args = normalizeToolArgs(entry.args);
+      const loading = isToolCallLoading(
+        tool,
         entry.approval_source,
         entry.approval_verdict,
       );
+
       if (
         isUserApprovedReplay(
-          entry.tool ?? "",
+          tool,
           entry.detail,
           entry.approval_source,
           entry.approval_verdict,
         )
       ) {
         const patched = applyApprovedApprovalToMessages(
-          msgs,
-          {
-            tool: entry.tool ?? "",
-            args: (entry.args ?? {}) as Record<string, unknown>,
-          },
-          isLoading,
+          messages,
+          { tool, args },
+          loading,
         );
-        msgs.length = 0;
-        msgs.push(...patched);
+        messages.length = 0;
+        messages.push(...patched);
         continue;
       }
-      msgs.push({
+
+      messages.push({
         kind: "tool_call",
-        tool: entry.tool ?? "",
-        args: entry.args ?? {},
+        tool,
+        args,
         detail: entry.detail ?? "",
-        contexts: Array.isArray(rawContexts)
-          ? (rawContexts as string[])
-          : undefined,
+        contexts: normalizeHistoryContexts(entry),
         approvalSource: entry.approval_source,
         approvalVerdict: entry.approval_verdict,
         approvalExplanation: entry.approval_explanation,
-        loading: isLoading,
-        toolId: entry.tool_id as string | undefined,
-        parentToolId: entry.parent_tool_id as string | undefined,
+        loading,
+        toolId: normalizeOptionalString(entry.tool_id),
+        parentToolId: normalizeOptionalString(entry.parent_tool_id),
       });
-      const toolName = entry.tool ?? "";
-      const queue = pendingToolCallIndices.get(toolName) ?? [];
-      queue.push(msgs.length - 1);
-      pendingToolCallIndices.set(toolName, queue);
-    } else if (entry.role === "tool_result") {
-      const toolResultId = entry.tool_id as string | undefined;
+
+      const queue = pendingToolCallIndices.get(tool) ?? [];
+      queue.push(messages.length - 1);
+      pendingToolCallIndices.set(tool, queue);
+      continue;
+    }
+
+    if (entry.role === "tool_result") {
+      const toolResultId = normalizeOptionalString(entry.tool_id);
       if (toolResultId) {
-        const updated = updateToolResultById(msgs, toolResultId, {
+        const updated = updateToolResultById(messages, toolResultId, {
           result: entry.result ?? "",
           exitCode: entry.exit_code,
         });
         if (updated.found) {
-          msgs.length = 0;
-          msgs.push(...updated.messages);
+          messages.length = 0;
+          messages.push(...updated.messages);
           continue;
         }
       }
 
       const toolName = entry.tool ?? "";
       const queue = pendingToolCallIndices.get(toolName);
-      const pendingIndex = queue?.shift();
-      if (pendingIndex != null && msgs[pendingIndex]?.kind === "tool_call") {
-        const toolCall = msgs[pendingIndex];
-        msgs[pendingIndex] = {
+      const toolIndex = queue?.shift();
+      if (toolIndex != null && messages[toolIndex]?.kind === "tool_call") {
+        const toolCall = messages[toolIndex];
+        messages[toolIndex] = {
           ...toolCall,
           result: entry.result,
           exitCode: entry.exit_code,
@@ -476,49 +532,60 @@ function projectHistoryToMessages(history: HistoryMessage[]): ChatMessage[] {
       if (queue && queue.length === 0) {
         pendingToolCallIndices.delete(toolName);
       }
-    } else if (entry.role === "approval_response") {
       continue;
-    } else if (entry.role === "approval_request" && entry.tool_call_id) {
+    }
+
+    if (entry.role === "approval_response") {
+      continue;
+    }
+
+    if (entry.role === "approval_request" && entry.tool_call_id) {
       const request = {
         type: "approval_request" as const,
         tool_call_id: entry.tool_call_id,
         tool: entry.tool ?? "",
-        args: (entry.args ?? {}) as Record<string, unknown>,
+        args: normalizeToolArgs(entry.args),
         explanation: entry.explanation ?? "",
         risk_level: entry.risk_level ?? "",
       };
       const response = history.find(
         (candidate) =>
-          candidate.role === "approval_response" &&
-          candidate.tool_call_id === entry.tool_call_id,
+          candidate.role === "approval_response"
+          && candidate.tool_call_id === entry.tool_call_id,
       );
       if (!response) {
-        msgs.push({ kind: "approval", request });
+        messages.push({ kind: "approval", request });
       } else if (response.decision === "approved") {
-        const patched = applyApprovedApprovalToMessages(msgs, request);
-        msgs.length = 0;
-        msgs.push(...patched);
+        const patched = applyApprovedApprovalToMessages(messages, request);
+        messages.length = 0;
+        messages.push(...patched);
       } else if (response.decision === "denied") {
         const patched = applyDeniedApprovalToMessages(
-          msgs,
+          messages,
           request,
           response.message,
         );
-        msgs.length = 0;
-        msgs.push(...patched);
+        messages.length = 0;
+        messages.push(...patched);
       }
-    } else if (
-      (entry.role === "domain_access_approval" || entry.role === "proxy_approval") &&
-      entry.request_id
+      continue;
+    }
+
+    if (
+      (entry.role === "domain_access_approval"
+        || entry.role === "proxy_approval")
+      && entry.request_id
     ) {
       if (!entry.decision) {
         const decision = findLaterEscalationDecision(
+          history,
           index,
           entry.request_id,
-          (role) => role === "domain_access_approval" || role === "proxy_approval",
+          (role) =>
+            role === "domain_access_approval" || role === "proxy_approval",
         );
         if (!decision) {
-          msgs.push({
+          messages.push({
             kind: "domain_access_approval",
             request: {
               type: "domain_access_approval_request",
@@ -530,52 +597,63 @@ function projectHistoryToMessages(history: HistoryMessage[]): ChatMessage[] {
           });
         }
       }
-    } else if (entry.role === "git_push_approval" && entry.request_id) {
+      continue;
+    }
+
+    if (entry.role === "git_push_approval" && entry.request_id) {
       if (!entry.decision) {
         const decision = findLaterEscalationDecision(
+          history,
           index,
           entry.request_id,
           (role) => role === "git_push_approval",
         );
         if (!decision) {
-          msgs.push({
+          messages.push({
             kind: "git_push_approval",
             request: {
               type: "git_push_approval_request",
               request_id: entry.request_id,
               ref: entry.ref ?? "",
               explanation: entry.explanation ?? "",
-              changed_files: (entry.changed_files as string[] | undefined) ?? [],
+              changed_files: normalizeStringList(entry.changed_files) ?? [],
             },
             decision,
           });
         }
       }
-    } else if (entry.role === "credential_approval" && entry.request_id) {
+      continue;
+    }
+
+    if (entry.role === "credential_approval" && entry.request_id) {
       if (!entry.decision) {
         const decision = findLaterEscalationDecision(
+          history,
           index,
           entry.request_id,
           (role) => role === "credential_approval",
         );
         if (!decision) {
-          msgs.push({
+          messages.push({
             kind: "credential_approval",
             request: {
               type: "credential_approval_request",
               request_id: entry.request_id,
-              vault_paths: entry.vault_paths ?? [],
-              names: entry.names ?? [],
-              descriptions: entry.descriptions ?? [],
-              skill_name: entry.skill_name,
+              vault_paths: normalizeStringList(entry.vault_paths) ?? [],
+              names: normalizeStringList(entry.names) ?? [],
+              descriptions: normalizeStringList(entry.descriptions) ?? [],
+              skill_name: normalizeOptionalString(entry.skill_name),
               explanation: entry.explanation ?? "",
             },
             decision,
           });
         }
       }
-    } else if (entry.role === "git_push") {
-      msgs.push({
+      continue;
+    }
+
+    if (entry.role === "git_push") {
+      messages.push({
         kind: "tool_call",
         tool: "git_push",
         args: { ref: entry.ref ?? "", decision: entry.decision ?? "" },
@@ -583,55 +661,39 @@ function projectHistoryToMessages(history: HistoryMessage[]): ChatMessage[] {
         approvalSource: entry.approval_source,
         approvalVerdict: entry.approval_verdict,
         approvalExplanation: entry.approval_explanation,
-        toolId: entry.tool_id as string | undefined,
-        parentToolId: entry.parent_tool_id as string | undefined,
+        toolId: normalizeOptionalString(entry.tool_id),
+        parentToolId: normalizeOptionalString(entry.parent_tool_id),
       });
-    } else if (entry.role === "command") {
-      msgs.push({
+      continue;
+    }
+
+    if (entry.role === "command") {
+      messages.push({
         kind: "command",
         command: entry.command ?? "",
         data: entry.data,
       });
-    } else if (entry.role === "thinking" && entry.content) {
-      msgs.push({
+      continue;
+    }
+
+    if (entry.role === "thinking" && entry.content) {
+      messages.push({
         kind: "thinking",
         content: entry.content,
         reasoningDurationMs: entry.reasoning_duration_ms,
         reasoningTokens: entry.reasoning_tokens,
       });
-    } else {
-      msgs.push({
-        kind: "assistant",
-        content: entry.content,
-        eventIndex: typeof entry.event_index === "number" ? entry.event_index : undefined,
-      });
+      continue;
     }
+
+    messages.push({
+      kind: "assistant",
+      content: entry.content,
+      eventIndex: typeof entry.event_index === "number" ? entry.event_index : undefined,
+    });
   }
 
-  const parentIndex = new Map<string, number>();
-  for (let index = 0; index < msgs.length; index++) {
-    const message = msgs[index];
-    if (message.kind === "tool_call" && message.toolId) {
-      parentIndex.set(message.toolId, index);
-    }
-  }
-
-  const childIndices = new Set<number>();
-  for (let index = 0; index < msgs.length; index++) {
-    const message = msgs[index];
-    if (message.kind !== "tool_call" || !message.parentToolId) continue;
-    const parentMessageIndex = parentIndex.get(message.parentToolId);
-    if (parentMessageIndex == null) continue;
-    const parent = msgs[parentMessageIndex];
-    if (parent.kind !== "tool_call") continue;
-    if (!parent.children) parent.children = [];
-    parent.children.push(message);
-    childIndices.add(index);
-  }
-
-  return childIndices.size > 0
-    ? msgs.filter((_, index) => !childIndices.has(index))
-    : msgs;
+  return groupChildToolCalls(messages);
 }
 
 export function ChatView({

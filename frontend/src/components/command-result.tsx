@@ -1,12 +1,51 @@
 "use client";
 
+import {
+  decodeAvailableModel,
+  decodeSlashCommand,
+  type AvailableModelInfo,
+  type SlashCommand,
+} from "@/lib/api";
+import { isRecord, readString } from "@/lib/decoding";
+
+interface HelpData {
+  commands: SlashCommand[];
+}
+
+interface RuleRow {
+  id: string;
+  trigger: string;
+  mode: string;
+  status: string;
+}
+
+interface ModelSelection {
+  current: string;
+  default: string;
+}
+
+interface ModelData {
+  current?: string;
+  default?: string;
+  message?: string;
+  error?: string;
+  models?: Record<string, ModelSelection>;
+  available?: AvailableModelInfo[];
+}
+
+interface MessageData {
+  message?: string;
+  error?: string;
+}
+
 interface CommandResultViewProps {
   command: string;
   data: unknown;
 }
 
 export function CommandResultView({ command, data }: CommandResultViewProps) {
-  if (command === "help" && isHelpData(data)) {
+  const helpData = decodeHelpData(data);
+  if (command === "help" && helpData) {
     return (
       <div className="my-2 text-sm">
         <table className="w-full">
@@ -17,7 +56,7 @@ export function CommandResultView({ command, data }: CommandResultViewProps) {
             </tr>
           </thead>
           <tbody>
-            {data.commands.map((c) => (
+            {helpData.commands.map((c) => (
               <tr key={c.command} className="border-b border-border/50">
                 <td className="py-1 pr-4 font-mono text-xs">{c.command}</td>
                 <td className="py-1 text-muted-foreground">{c.description}</td>
@@ -29,7 +68,8 @@ export function CommandResultView({ command, data }: CommandResultViewProps) {
     );
   }
 
-  if (command === "rules" && Array.isArray(data)) {
+  const rulesData = decodeRulesData(data);
+  if (command === "rules" && rulesData) {
     return (
       <div className="my-2 text-sm">
         <table className="w-full">
@@ -42,14 +82,7 @@ export function CommandResultView({ command, data }: CommandResultViewProps) {
             </tr>
           </thead>
           <tbody>
-            {(
-              data as Array<{
-                id: string;
-                trigger: string;
-                mode: string;
-                status: string;
-              }>
-            ).map((r) => (
+            {rulesData.map((r) => (
               <tr key={r.id} className="border-b border-border/50">
                 <td className="py-1 pr-3 font-mono text-xs">{r.id}</td>
                 <td className="py-1 pr-3 text-xs">{r.trigger}</td>
@@ -77,24 +110,22 @@ export function CommandResultView({ command, data }: CommandResultViewProps) {
     );
   }
 
-  if (command === "verbose" && isVerboseData(data)) {
-    return <p className="my-1 text-sm text-muted-foreground">{data.message}</p>;
+  const verboseData = decodeVerboseData(data);
+  if (command === "verbose" && verboseData) {
+    return <p className="my-1 text-sm text-muted-foreground">{verboseData.message}</p>;
   }
 
+  const modelData = decodeModelData(data);
   if (
-    isModelData(data) &&
-    data.models &&
+    modelData?.models &&
     (command === "models" || command === "model")
   ) {
-    const models = data.models as Record<
-      string,
-      { current: string; default: string }
-    >;
-    const available = Array.isArray(data.available) ? data.available : [];
+    const models = modelData.models;
+    const available = modelData.available ?? [];
     return (
       <div className="my-2 text-sm">
-        {command === "model" && data.error ? (
-          <p className="mb-2 text-sm text-destructive">{data.error}</p>
+        {command === "model" && modelData.error ? (
+          <p className="mb-2 text-sm text-destructive">{modelData.error}</p>
         ) : null}
         <table className="w-full">
           <thead>
@@ -120,23 +151,9 @@ export function CommandResultView({ command, data }: CommandResultViewProps) {
           <p className="mt-2 text-xs text-muted-foreground">
             <span className="font-medium">Available: </span>
             {available.map((entry, i) => {
-              const id =
-                typeof entry === "string"
-                  ? entry
-                  : entry &&
-                      typeof entry === "object" &&
-                      "id" in entry &&
-                      typeof (entry as { id: unknown }).id === "string"
-                    ? (entry as { id: string }).id
-                    : "";
+              const id = entry.id;
               if (!id) return null;
-              const maxTok =
-                entry &&
-                typeof entry === "object" &&
-                typeof (entry as { max_input_tokens?: unknown })
-                  .max_input_tokens === "number"
-                  ? (entry as { max_input_tokens: number }).max_input_tokens
-                  : null;
+              const maxTok = entry.max_input_tokens ?? null;
               return (
                 <span key={`${id}-${i}`}>
                   {i > 0 && ", "}
@@ -152,8 +169,8 @@ export function CommandResultView({ command, data }: CommandResultViewProps) {
             })}
           </p>
         )}
-        {command === "model" && data.message ? (
-          <p className="mt-2 text-sm text-muted-foreground">{data.message}</p>
+        {command === "model" && modelData.message ? (
+          <p className="mt-2 text-sm text-muted-foreground">{modelData.message}</p>
         ) : null}
       </div>
     );
@@ -163,55 +180,56 @@ export function CommandResultView({ command, data }: CommandResultViewProps) {
     (command === "model-agent" ||
       command === "model-sentinel" ||
       command === "model-title") &&
-    isModelData(data)
+    modelData
   ) {
-    if (data.error)
-      return <p className="my-1 text-sm text-destructive">{data.error}</p>;
-    if (data.message)
+    if (modelData.error)
+      return <p className="my-1 text-sm text-destructive">{modelData.error}</p>;
+    if (modelData.message)
       return (
-        <p className="my-1 text-sm text-muted-foreground">{data.message}</p>
+        <p className="my-1 text-sm text-muted-foreground">{modelData.message}</p>
       );
     return (
       <div className="my-1 text-sm">
         <p>
           <span className="text-muted-foreground">Current model: </span>
-          <span className="font-mono">{data.current}</span>
+          <span className="font-mono">{modelData.current}</span>
         </p>
-        {data.default && data.default !== data.current && (
+        {modelData.default && modelData.default !== modelData.current && (
           <p className="text-xs text-muted-foreground">
-            Default: {data.default}
+            Default: {modelData.default}
           </p>
         )}
       </div>
     );
   }
 
-  if (command === "model" && isModelData(data)) {
-    if (data.error)
-      return <p className="my-1 text-sm text-destructive">{data.error}</p>;
-    if (data.message)
+  if (command === "model" && modelData) {
+    if (modelData.error)
+      return <p className="my-1 text-sm text-destructive">{modelData.error}</p>;
+    if (modelData.message)
       return (
-        <p className="my-1 text-sm text-muted-foreground">{data.message}</p>
+        <p className="my-1 text-sm text-muted-foreground">{modelData.message}</p>
       );
     return (
       <div className="my-1 text-sm">
         <p>
           <span className="text-muted-foreground">Current model: </span>
-          <span className="font-mono">{data.current}</span>
+          <span className="font-mono">{modelData.current}</span>
         </p>
-        {data.default && data.default !== data.current && (
+        {modelData.default && modelData.default !== modelData.current && (
           <p className="text-xs text-muted-foreground">
-            Default: {data.default}
+            Default: {modelData.default}
           </p>
         )}
       </div>
     );
   }
 
-  if ((command === "disable" || command === "enable") && isMessageData(data)) {
-    if (data.error)
-      return <p className="my-1 text-sm text-destructive">{data.error}</p>;
-    return <p className="my-1 text-sm text-muted-foreground">{data.message}</p>;
+  const messageData = decodeMessageData(data);
+  if ((command === "disable" || command === "enable") && messageData) {
+    if (messageData.error)
+      return <p className="my-1 text-sm text-destructive">{messageData.error}</p>;
+    return <p className="my-1 text-sm text-muted-foreground">{messageData.message}</p>;
   }
 
   if (command === "usage" && isUsageData(data)) {
@@ -222,16 +240,17 @@ export function CommandResultView({ command, data }: CommandResultViewProps) {
     return <BudgetView data={data} />;
   }
 
-  if (isPlainMessagePayload(data)) {
-    if (data.error) {
-      return <p className="my-1 text-sm text-destructive">{data.error}</p>;
+  const plainMessage = decodePlainMessagePayload(data);
+  if (plainMessage) {
+    if (plainMessage.error) {
+      return <p className="my-1 text-sm text-destructive">{plainMessage.error}</p>;
     }
-    const failed = /\bfailed\b/i.test(data.message);
+    const failed = /\bfailed\b/i.test(plainMessage.message);
     return (
       <p
         className={`my-1 text-sm whitespace-pre-wrap ${failed ? "text-destructive" : "text-muted-foreground"}`}
       >
-        {data.message}
+        {plainMessage.message}
       </p>
     );
   }
@@ -243,49 +262,103 @@ export function CommandResultView({ command, data }: CommandResultViewProps) {
   );
 }
 
-function isHelpData(
-  d: unknown,
-): d is { commands: { command: string; description: string }[] } {
-  return (
-    !!d &&
-    typeof d === "object" &&
-    "commands" in d &&
-    Array.isArray((d as { commands: unknown }).commands)
-  );
+function decodeHelpData(d: unknown): HelpData | null {
+  if (!isRecord(d)) return null;
+  const commands = d.commands;
+  if (!Array.isArray(commands)) return null;
+
+  const decoded = commands
+    .map((entry) => decodeSlashCommand(entry))
+    .filter((entry): entry is SlashCommand => entry !== null);
+
+  return { commands: decoded };
 }
 
-function isVerboseData(d: unknown): d is { verbose: boolean; message: string } {
-  return !!d && typeof d === "object" && "message" in d;
+function decodeRulesData(d: unknown): RuleRow[] | null {
+  if (!Array.isArray(d)) return null;
+
+  return d
+    .map((entry) => {
+      if (!isRecord(entry)) return null;
+      const id = readString(entry, "id");
+      const trigger = readString(entry, "trigger");
+      const mode = readString(entry, "mode");
+      const status = readString(entry, "status");
+      if (!id || !trigger || !mode || !status) return null;
+      return { id, trigger, mode, status };
+    })
+    .filter((entry): entry is RuleRow => entry !== null);
 }
 
-function isModelData(d: unknown): d is {
-  current?: string;
-  default?: string;
-  message?: string;
-  error?: string;
-  models?: Record<string, { current: string; default: string }>;
-  available?: unknown[];
-} {
-  return !!d && typeof d === "object";
+function decodeVerboseData(d: unknown): { message: string } | null {
+  if (!isRecord(d)) return null;
+  const message = readString(d, "message");
+  return message === undefined ? null : { message };
 }
 
-function isMessageData(d: unknown): d is { message?: string; error?: string } {
-  return !!d && typeof d === "object";
+function decodeModelSelections(
+  raw: unknown,
+): Record<string, ModelSelection> | undefined {
+  if (!isRecord(raw)) return undefined;
+
+  const entries = Object.entries(raw)
+    .map(([key, value]) => {
+      if (!isRecord(value)) return null;
+      const current = readString(value, "current");
+      const fallback = readString(value, "default");
+      if (current === undefined || fallback === undefined) return null;
+      return [key, { current, default: fallback }] as const;
+    })
+    .filter(
+      (
+        entry,
+      ): entry is readonly [string, ModelSelection] => entry !== null,
+    );
+
+  return Object.fromEntries(entries);
+}
+
+function decodeModelData(d: unknown): ModelData | null {
+  if (!isRecord(d)) return null;
+
+  const available = Array.isArray(d.available)
+    ? d.available
+      .map((entry) => decodeAvailableModel(entry))
+      .filter((entry): entry is AvailableModelInfo => entry !== null)
+    : undefined;
+
+  return {
+    current: readString(d, "current"),
+    default: readString(d, "default"),
+    message: readString(d, "message"),
+    error: readString(d, "error"),
+    models: decodeModelSelections(d.models),
+    available,
+  };
+}
+
+function decodeMessageData(d: unknown): MessageData | null {
+  if (!isRecord(d)) return null;
+  const message = readString(d, "message");
+  const error = readString(d, "error");
+  if (message === undefined && error === undefined) return null;
+  return { message, error };
 }
 
 /** Object with only message (and optional error) — avoids JSON dump for simple slash results. */
-function isPlainMessagePayload(
+function decodePlainMessagePayload(
   d: unknown,
-): d is { message: string; error?: string } {
-  if (!d || typeof d !== "object") return false;
-  const o = d as Record<string, unknown>;
-  if (typeof o.message !== "string") return false;
-  for (const k of Object.keys(o)) {
+): { message: string; error?: string } | null {
+  if (!isRecord(d)) return null;
+  const message = readString(d, "message");
+  if (message === undefined) return null;
+  const error = readString(d, "error");
+  for (const k of Object.keys(d)) {
     if (k === "message") continue;
-    if (k === "error" && typeof o.error === "string") continue;
-    return false;
+    if (k === "error" && error !== undefined) continue;
+    return null;
   }
-  return true;
+  return error === undefined ? { message } : { message, error };
 }
 
 interface UsageBucket {

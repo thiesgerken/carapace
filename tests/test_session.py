@@ -41,7 +41,7 @@ from carapace.security.context import (
 )
 from carapace.security.sentinel import Sentinel
 from carapace.session import SessionEngine, SessionManager
-from carapace.session.engine import _non_slash_user_message_count
+from carapace.session.turns import _non_slash_user_message_count
 from carapace.skills import SkillRegistry
 from carapace.usage import LlmRequestRecord, LlmRequestState, ModelUsage, SessionBudgetExceededError
 from carapace.ws_models import ApprovalRequest, TurnUsage
@@ -297,6 +297,8 @@ class _FakeSubscriber:
 
     def __init__(self) -> None:
         self.user_messages: list[tuple[str, bool]] = []
+        self.token_chunks: list[str] = []
+        self.thinking_chunks: list[str] = []
         self.errors: list[str] = []
         self.error_events: list[tuple[str, bool]] = []
         self.cancelled: int = 0
@@ -312,6 +314,12 @@ class _FakeSubscriber:
 
     async def on_tool_result(self, result: ToolResult) -> None:
         pass
+
+    async def on_token(self, content: str) -> None:
+        self.token_chunks.append(content)
+
+    async def on_thinking_token(self, content: str) -> None:
+        self.thinking_chunks.append(content)
 
     async def on_done(self, content: str, usage: TurnUsage) -> None:
         self.done_messages.append((content, usage))
@@ -398,6 +406,81 @@ def test_record_tool_call_event_reuses_sentinel_row_for_user_decision(tmp_path: 
             "tool_id": initial_tool_id,
         }
     ]
+
+
+def test_handle_token_chunk_promotes_activity_and_broadcasts(tmp_path: Path) -> None:
+    async def _run() -> None:
+        with _patch_sentinel():
+            engine = _make_engine(tmp_path)
+
+        state = engine.session_mgr.create_session()
+        sid = state.session_id
+        active = engine.get_or_activate(sid)
+        subscriber = _FakeSubscriber()
+        engine.subscribe(sid, subscriber)
+
+        started_at = datetime.now(tz=UTC)
+        llm_state = LlmRequestState(
+            request_id="req-token",
+            source="agent",
+            model_name="anthropic:claude-haiku-4-5",
+            started_at=started_at,
+            first_text_at=started_at,
+            phase="generating",
+        )
+
+        with patch("carapace.session.engine.note_llm_request_text", return_value=llm_state):
+            await engine._handle_token_chunk(active, "hello")
+
+        assert subscriber.token_chunks == ["hello"]
+        assert active.llm_request_state is not None
+        assert active.llm_request_state.phase == "generating"
+        assert subscriber.llm_activity_updates
+        assert subscriber.llm_activity_updates[-1] is not None
+        assert subscriber.llm_activity_updates[-1].phase == "generating"
+        persisted = engine.session_mgr.load_llm_request_state(sid)
+        assert persisted is not None
+        assert persisted.phase == "generating"
+
+    asyncio.run(_run())
+
+
+def test_handle_thinking_token_chunk_updates_buffer_and_broadcasts(tmp_path: Path) -> None:
+    async def _run() -> None:
+        with _patch_sentinel():
+            engine = _make_engine(tmp_path)
+
+        state = engine.session_mgr.create_session()
+        sid = state.session_id
+        active = engine.get_or_activate(sid)
+        subscriber = _FakeSubscriber()
+        engine.subscribe(sid, subscriber)
+
+        started_at = datetime.now(tz=UTC)
+        llm_state = LlmRequestState(
+            request_id="req-thinking",
+            source="agent",
+            model_name="anthropic:claude-haiku-4-5",
+            started_at=started_at,
+            first_thinking_at=started_at,
+            phase="thinking",
+        )
+
+        with patch("carapace.session.engine.note_llm_request_thinking", return_value=llm_state):
+            await engine._handle_thinking_token_chunk(active, "ponder")
+
+        assert subscriber.thinking_chunks == ["ponder"]
+        assert active.llm_request_thinking == {"req-thinking": "ponder"}
+        assert active.llm_request_state is not None
+        assert active.llm_request_state.phase == "thinking"
+        assert subscriber.llm_activity_updates
+        assert subscriber.llm_activity_updates[-1] is not None
+        assert subscriber.llm_activity_updates[-1].phase == "thinking"
+        persisted = engine.session_mgr.load_llm_request_state(sid)
+        assert persisted is not None
+        assert persisted.phase == "thinking"
+
+    asyncio.run(_run())
 
 
 def test_truncate_incomplete_events_keeps_completed_user_approved_exec(tmp_path: Path) -> None:
@@ -1394,6 +1477,41 @@ def test_submit_message_budget_exceeded_persists_history(tmp_path: Path):
         assert any(
             detail.startswith("Session budget reached") and turn_terminal for detail, turn_terminal in sub.error_events
         )
+
+    with _patch_sentinel():
+        asyncio.run(_run())
+
+
+def test_submit_message_unexpected_output_marks_terminal_error(tmp_path: Path):
+    async def _run() -> None:
+        engine = _make_engine(tmp_path)
+        sid = engine.session_mgr.create_session().session_id
+        sub = _FakeSubscriber()
+        engine.subscribe(sid, sub)
+
+        unexpected = "Unexpected agent output type: {'message': 'bad'}"
+
+        async def _unexpected_run_agent_turn(*_args: Any, **_kwargs: Any):
+            return (
+                [
+                    ModelRequest(parts=[UserPromptPart(content="hello")]),
+                    ModelResponse(parts=[TextPart(content="placeholder")]),
+                ],
+                unexpected,
+                "",
+            )
+
+        with patch("carapace.session.engine.run_agent_turn", new=_unexpected_run_agent_turn):
+            await engine.submit_message(sid, "hello")
+            active = engine.get_active(sid)
+            assert active is not None and active.agent_task is not None
+            await active.agent_task
+
+        events = engine.session_mgr.load_events(sid)
+        assert events[-1]["role"] == "assistant"
+        assert events[-1]["content"] == unexpected
+        assert sub.done_messages == []
+        assert sub.error_events == [(unexpected, True)]
 
     with _patch_sentinel():
         asyncio.run(_run())
