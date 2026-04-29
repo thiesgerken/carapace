@@ -1033,6 +1033,9 @@ export function ChatView({
           break;
         case "command_result":
           resetRollbackRef.current = null;
+          if (msg.command === "reset_to_turn") {
+            break;
+          }
           setMessages((prev) => [
             ...prev,
             { kind: "command", command: msg.command, data: msg.data },

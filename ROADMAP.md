@@ -7,7 +7,7 @@
 - [ ] image input ([plan](docs/plans/images.md))
 - [ ] image output — agent tools producing images (screenshots, charts, renders)
 - [ ] custom sentinel instructions for skills, e.g. moneydb: make sure that the agent only does mutations based on user approval
-- [ ] conversation history niceties (retry message, fork session, ...)
+- [ ] conversation history: fork session
 - [ ] "daily" session that is recreated every day and that should persist some of its memories during the night
 
 ## Knowledge Repo Handling
