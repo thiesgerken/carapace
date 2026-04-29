@@ -1,6 +1,18 @@
 # CHANGELOG
 
 
+## v0.104.1 (2026-04-29)
+
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix: normalize replay contexts consistently
+  ([`26ad78b`](https://github.com/thiesgerken/carapace/commit/26ad78bf4b257f48ac18ccac7e96e2fc2419b76a))
+
+- 🐛 fix: mark unexpected output as terminal
+  ([`a11fe36`](https://github.com/thiesgerken/carapace/commit/a11fe360977ddbd5eaf86de98c25ea246318a17a))
+
 ## v0.104.0 (2026-04-29)
 
 
@@ -25,6 +37,12 @@
 - 🐛 fix: distinguish terminal chat errors
   ([`d5c13f8`](https://github.com/thiesgerken/carapace/commit/d5c13f8ca78ddf9aa1a9110c8a526af0fdc4a74c))
 
+- 🐛 fix: preserve empty model selection values
+  ([`e973b37`](https://github.com/thiesgerken/carapace/commit/e973b3794a9e9604a2c0d4b5a3ca09164c11527a))
+
+- 🐛 fix: address frontend decoding review comments
+  ([`7199814`](https://github.com/thiesgerken/carapace/commit/71998147244524e27dbb14df9e218bc4093dab0b))
+
 ### Other
 
 
@@ -45,6 +63,11 @@
 - polishing
   ([`6de70af`](https://github.com/thiesgerken/carapace/commit/6de70af221bb1592f0709d0d679cf27aefd3984f))
 
+- refactor engine.py
+  ([`b01626e`](https://github.com/thiesgerken/carapace/commit/b01626ef546b9dd25527afd69183c74e61d22d32))
+
+  Co-authored-by: Copilot <copilot@github.com>
+
 ### ✨ Features
 
 
@@ -52,6 +75,15 @@
   ([`93ddaa9`](https://github.com/thiesgerken/carapace/commit/93ddaa9b62389e371e77273f510aba5b91d47ec8))
 
   Co-authored-by: Copilot <copilot@github.com>
+
+### ♻️ Refactoring
+
+
+- ♻️ refactor: share command decoding helpers
+  ([`448a8c7`](https://github.com/thiesgerken/carapace/commit/448a8c7dde601aa813de0d53586fc81d9360bcb5))
+
+- ♻️ refactor: frontend typing
+  ([`cbc6913`](https://github.com/thiesgerken/carapace/commit/cbc691324ff456e913196603417dc7946a5d7771))
 
 ## v0.103.1 (2026-04-28)
 
