@@ -1,6 +1,58 @@
 # CHANGELOG
 
 
+## v0.104.0 (2026-04-29)
+
+
+### ⬆️ Dependencies
+
+
+- ⬆️ chore: upgrade j178/prek-action digest to 6ad8027
+  ([`77a6384`](https://github.com/thiesgerken/carapace/commit/77a63843e9db8d8871b9be1adc7fd1e89711fad8))
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix: clear rollback on disconnect
+  ([`4187859`](https://github.com/thiesgerken/carapace/commit/418785916e18daf08550a0cbd18d17e55c957c39))
+
+- 🐛 fix: gate reset ack on success
+  ([`471d173`](https://github.com/thiesgerken/carapace/commit/471d173245a87f32de4b4023b1cceac05523a6ec))
+
+- 🐛 fix: acknowledge reset rewind success
+  ([`4dfea52`](https://github.com/thiesgerken/carapace/commit/4dfea52df99fb69ce2bf44a31be4f3dad264d440))
+
+- 🐛 fix: distinguish terminal chat errors
+  ([`d5c13f8`](https://github.com/thiesgerken/carapace/commit/d5c13f8ca78ddf9aa1a9110c8a526af0fdc4a74c))
+
+### Other
+
+
+- fix: store current messages before resetting rollback reference in handleRetry
+  ([`496524a`](https://github.com/thiesgerken/carapace/commit/496524afc13a04d2529aa73054a7e1aa19d5bfa6))
+
+- implement reset rollback mechanism for error handling and message management
+  ([`fa85753`](https://github.com/thiesgerken/carapace/commit/fa85753a1e03d45e76b10c2c230152d6a76b689a))
+
+- update latest turn message index logic to handle completed turns
+  ([`9490fc0`](https://github.com/thiesgerken/carapace/commit/9490fc0ce26f31db402d4925008e4f0b21ad6870))
+
+- add history check for completed turn count excluding trailing requests
+  ([`93b0da9`](https://github.com/thiesgerken/carapace/commit/93b0da976a8e4463fcfb3d9377e111bfd74dab0d))
+
+  Co-authored-by: Copilot <copilot@github.com>
+
+- polishing
+  ([`6de70af`](https://github.com/thiesgerken/carapace/commit/6de70af221bb1592f0709d0d679cf27aefd3984f))
+
+### ✨ Features
+
+
+- ✨ feat: retry+reset for chat history
+  ([`93ddaa9`](https://github.com/thiesgerken/carapace/commit/93ddaa9b62389e371e77273f510aba5b91d47ec8))
+
+  Co-authored-by: Copilot <copilot@github.com>
+
 ## v0.103.1 (2026-04-28)
 
 
