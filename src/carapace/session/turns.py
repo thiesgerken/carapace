@@ -505,7 +505,7 @@ class SessionTurnMixin(SessionTurnHost):
         self._session_mgr.append_events(session_id, [{"role": "assistant", "content": output}])
 
         if output.startswith("Unexpected agent output type:"):
-            await self._broadcast(active, "on_error", output)
+            await self._broadcast(active, "on_error", output, turn_terminal=True)
         else:
             usage_payload = self._turn_usage_payload(active) or TurnUsage()
             logger.info(

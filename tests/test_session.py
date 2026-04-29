@@ -1482,6 +1482,41 @@ def test_submit_message_budget_exceeded_persists_history(tmp_path: Path):
         asyncio.run(_run())
 
 
+def test_submit_message_unexpected_output_marks_terminal_error(tmp_path: Path):
+    async def _run() -> None:
+        engine = _make_engine(tmp_path)
+        sid = engine.session_mgr.create_session().session_id
+        sub = _FakeSubscriber()
+        engine.subscribe(sid, sub)
+
+        unexpected = "Unexpected agent output type: {'message': 'bad'}"
+
+        async def _unexpected_run_agent_turn(*_args: Any, **_kwargs: Any):
+            return (
+                [
+                    ModelRequest(parts=[UserPromptPart(content="hello")]),
+                    ModelResponse(parts=[TextPart(content="placeholder")]),
+                ],
+                unexpected,
+                "",
+            )
+
+        with patch("carapace.session.engine.run_agent_turn", new=_unexpected_run_agent_turn):
+            await engine.submit_message(sid, "hello")
+            active = engine.get_active(sid)
+            assert active is not None and active.agent_task is not None
+            await active.agent_task
+
+        events = engine.session_mgr.load_events(sid)
+        assert events[-1]["role"] == "assistant"
+        assert events[-1]["content"] == unexpected
+        assert sub.done_messages == []
+        assert sub.error_events == [(unexpected, True)]
+
+    with _patch_sentinel():
+        asyncio.run(_run())
+
+
 def test_evaluate_with_usage_limit_exceeded_escalates_to_user(tmp_path: Path):
     async def _run() -> None:
         session = SessionSecurity("test-session", audit_dir=tmp_path)
