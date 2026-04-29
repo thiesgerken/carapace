@@ -293,7 +293,7 @@ class SessionTurnMixin(SessionTurnHost):
                 terminal_message=str(exc),
                 save_progress=True,
             )
-            await self._broadcast(active, "on_error", str(exc))
+            await self._broadcast(active, "on_error", str(exc), turn_terminal=True)
         except UsageLimitExceeded as exc:
             sentinel_evals = active.security.sentinel_eval_count if active.security else 0
             logger.error(
@@ -308,7 +308,7 @@ class SessionTurnMixin(SessionTurnHost):
                 latest_messages=latest_messages,
                 terminal_message="The previous turn failed before completion.",
             )
-            await self._broadcast(active, "on_error", str(exc))
+            await self._broadcast(active, "on_error", str(exc), turn_terminal=True)
         except Exception:
             logger.exception(f"Agent error session={session_id} prompt={_truncate_for_log(user_input)}")
             await self._finalize_failed_turn(
@@ -318,7 +318,7 @@ class SessionTurnMixin(SessionTurnHost):
                 latest_messages=latest_messages,
                 terminal_message="The previous turn failed before completion.",
             )
-            await self._broadcast(active, "on_error", traceback.format_exc())
+            await self._broadcast(active, "on_error", traceback.format_exc(), turn_terminal=True)
         finally:
             active.agent_task = None
 

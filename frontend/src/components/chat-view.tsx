@@ -383,6 +383,37 @@ function findLaterEscalationDecision(
   return undefined;
 }
 
+function isTurnTerminalMessage(message: ChatMessage): boolean {
+  return message.kind === "assistant" || (message.kind === "error" && message.turnTerminal === true);
+}
+
+function completedTurnMessageIndices(messages: ChatMessage[]): number[] {
+  return messages.flatMap((message, index) => (isTurnTerminalMessage(message) ? [index] : []));
+}
+
+function latestCompletedTurnStartMessageIndex(messages: ChatMessage[]): number {
+  const latestTerminalIndex = completedTurnMessageIndices(messages).at(-1);
+  if (latestTerminalIndex == null) {
+    return messages.length;
+  }
+
+  for (let index = latestTerminalIndex; index >= 0; index--) {
+    const message = messages[index];
+    if (message.kind === "user" && !message.content.startsWith("/")) {
+      return index;
+    }
+  }
+
+  return messages.length;
+}
+
+function eventIndexForMessage(message: ChatMessage): number | undefined {
+  if (message.kind === "assistant" || message.kind === "error") {
+    return typeof message.eventIndex === "number" ? message.eventIndex : undefined;
+  }
+  return undefined;
+}
+
 function groupChildToolCalls(messages: ChatMessage[]): ChatMessage[] {
   const parentIndex = new Map<string, number>();
   for (let index = 0; index < messages.length; index++) {
@@ -413,7 +444,7 @@ function groupChildToolCalls(messages: ChatMessage[]): ChatMessage[] {
     : messages;
 }
 
-function replayHistory(history: HistoryMessage[]): ChatMessage[] {
+function projectHistoryToMessages(history: HistoryMessage[]): ChatMessage[] {
   const messages: ChatMessage[] = [];
   const pendingToolCallIndices = new Map<string, number[]>();
 
@@ -655,7 +686,11 @@ function replayHistory(history: HistoryMessage[]): ChatMessage[] {
       continue;
     }
 
-    messages.push({ kind: "assistant", content: entry.content });
+    messages.push({
+      kind: "assistant",
+      content: entry.content,
+      eventIndex: typeof entry.event_index === "number" ? entry.event_index : undefined,
+    });
   }
 
   return groupChildToolCalls(messages);
@@ -691,6 +726,7 @@ export function ChatView({
   const [deletingSession, setDeletingSession] = useState(false);
   const [savingKnowledge, setSavingKnowledge] = useState(false);
   const [togglingPrivacy, setTogglingPrivacy] = useState(false);
+  const [turnActionBusyIndex, setTurnActionBusyIndex] = useState<number | null>(null);
   const [knowledgeNotice, setKnowledgeNotice] = useState<{
     tone: "neutral" | "success" | "error";
     message: string;
@@ -700,6 +736,7 @@ export function ChatView({
   const isAtBottomRef = useRef(true);
   const lastThinkingStartedAtRef = useRef<string | null>(null);
   const queueRef = useRef<string | null>(null);
+  const resetRollbackRef = useRef<ChatMessage[] | null>(null);
   const sendRef = useRef<(msg: ClientMessage) => void>(() => {});
   const onSandboxUpdateRef = useRef(onSandboxUpdate);
   const sandboxRef = useRef(sandbox);
@@ -789,7 +826,7 @@ export function ChatView({
     fetchHistory(server, token, sessionId)
       .then((history) => {
         if (cancelled) return;
-        setMessages(replayHistory(history));
+        setMessages(projectHistoryToMessages(history));
       })
       .catch(() => {
         // history fetch can fail for new sessions - that's fine
@@ -858,6 +895,7 @@ export function ChatView({
     (msg: ServerMessage) => {
       switch (msg.type) {
         case "done":
+          resetRollbackRef.current = null;
           setMessages((prev) => {
             const updated = [...prev];
             const thinkingMeta = thinkingUsageMeta(msg.usage);
@@ -1056,6 +1094,10 @@ export function ChatView({
           ]);
           break;
         case "command_result":
+          resetRollbackRef.current = null;
+          if (msg.command === "reset_to_turn") {
+            break;
+          }
           setMessages((prev) => [
             ...prev,
             { kind: "command", command: msg.command, data: msg.data },
@@ -1065,18 +1107,29 @@ export function ChatView({
           finishWaiting();
           break;
         case "error":
-          setMessages((prev) => [
-            ...prev,
-            { kind: "error", detail: msg.detail },
-          ]);
+          setMessages((prev) => {
+            const rollback = resetRollbackRef.current;
+            resetRollbackRef.current = null;
+            if (rollback !== null) {
+              return [
+                ...rollback,
+                { kind: "error", detail: msg.detail, turnTerminal: msg.turn_terminal === true },
+              ];
+            }
+            return [
+              ...prev,
+              { kind: "error", detail: msg.detail, turnTerminal: msg.turn_terminal === true },
+            ];
+          });
           setLlmActivity(null);
           lastThinkingStartedAtRef.current = null;
           finishWaiting();
           break;
         case "cancelled":
+          resetRollbackRef.current = null;
           setMessages((prev) => [
             ...prev,
-            { kind: "error", detail: msg.detail },
+            { kind: "error", detail: msg.detail, turnTerminal: true },
           ]);
           setLlmActivity(null);
           lastThinkingStartedAtRef.current = null;
@@ -1105,6 +1158,7 @@ export function ChatView({
           }
           break;
         case "user_message":
+          resetRollbackRef.current = null;
           // Slash commands end with command_result (no agent); echo must not re-arm waiting
           // after command_result cleared it (message order / batching).
           if (!msg.content.startsWith("/")) {
@@ -1160,6 +1214,7 @@ export function ChatView({
   );
 
   const onWsDisconnect = useCallback(() => {
+    resetRollbackRef.current = null;
     queueRef.current = null;
     lastThinkingStartedAtRef.current = null;
     setQueuedMessage(null);
@@ -1171,6 +1226,10 @@ export function ChatView({
   useEffect(() => {
     sendRef.current = send;
   }, [send]);
+
+  const terminalIndices = completedTurnMessageIndices(messages);
+  const latestTerminalIndex = terminalIndices.length > 0 ? terminalIndices[terminalIndices.length - 1] : -1;
+  const turnActionsDisabled = waiting || loadingHistory || status !== "connected" || turnActionBusyIndex !== null;
 
   // Auto-scroll only when already at bottom
   useEffect(() => {
@@ -1190,6 +1249,7 @@ export function ChatView({
   }, []);
 
   function handleSend(content: string) {
+    resetRollbackRef.current = null;
     if (waiting) {
       queueRef.current = content;
       setQueuedMessage(content);
@@ -1202,9 +1262,64 @@ export function ChatView({
   }
 
   function handleInterrupt(content: string) {
+    resetRollbackRef.current = null;
     queueRef.current = content;
     setQueuedMessage(content);
     send({ type: "cancel" });
+  }
+
+  function handleRetry() {
+    if (waiting || status !== "connected") return;
+    const currentMessages = messages;
+    const startIndex = latestCompletedTurnStartMessageIndex(messages);
+    if (startIndex >= messages.length) return;
+
+    resetRollbackRef.current = currentMessages;
+    queueRef.current = null;
+    setQueuedMessage(null);
+    lastThinkingStartedAtRef.current = null;
+    setLlmActivity(null);
+    setMessages((prev) => prev.slice(0, startIndex));
+    setWaiting(true);
+    send({ type: "retry_latest_turn" });
+  }
+
+  async function handleReset(messageIndex: number) {
+    if (waiting || status !== "connected") return;
+
+    const currentMessages = messages;
+    const localTerminalIndices = completedTurnMessageIndices(currentMessages);
+    const localTurnOrdinal = localTerminalIndices.indexOf(messageIndex);
+    if (localTurnOrdinal === -1) return;
+
+    setTurnActionBusyIndex(messageIndex);
+    try {
+      let targetEventIndex = eventIndexForMessage(currentMessages[messageIndex]);
+
+      if (targetEventIndex == null) {
+        const history = await fetchHistory(server, token, sessionId);
+        const canonicalMessages = projectHistoryToMessages(history);
+        const canonicalTerminalIndices = completedTurnMessageIndices(canonicalMessages);
+        const canonicalMessageIndex = canonicalTerminalIndices[localTurnOrdinal];
+        if (canonicalMessageIndex != null) {
+          targetEventIndex = eventIndexForMessage(canonicalMessages[canonicalMessageIndex]);
+        }
+      }
+
+      if (targetEventIndex == null) {
+        setMessages((prev) => [
+          ...prev,
+          { kind: "error", detail: "Could not resolve reset target." },
+        ]);
+        return;
+      }
+
+      resetRollbackRef.current = currentMessages;
+      send({ type: "reset_to_turn", event_index: targetEventIndex });
+      setMessages((prev) => prev.slice(0, messageIndex + 1));
+    } finally {
+      setTurnActionBusyIndex(null);
+    }
   }
 
   async function handleWipeSandbox() {
@@ -1631,9 +1746,14 @@ export function ChatView({
               key={i}
               message={msg}
               activeLlmActivity={llmActivity}
+              canRetry={i === latestTerminalIndex && isTurnTerminalMessage(msg)}
+              canReset={i !== latestTerminalIndex && isTurnTerminalMessage(msg)}
+              actionDisabled={turnActionsDisabled}
               onApproval={handleApproval}
               onEscalation={handleEscalation}
               onCredentialApproval={handleCredentialEscalation}
+              onRetry={i === latestTerminalIndex && isTurnTerminalMessage(msg) ? handleRetry : undefined}
+              onReset={i !== latestTerminalIndex && isTurnTerminalMessage(msg) ? () => void handleReset(i) : undefined}
             />
           ))}
           {waitingLabel && (

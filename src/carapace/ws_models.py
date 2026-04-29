@@ -75,7 +75,22 @@ class CancelRequest(BaseModel):
     type: Literal["cancel"] = "cancel"
 
 
-ClientEnvelope = UserMessage | ApprovalResponse | EscalationResponse | CancelRequest
+class RetryLatestTurnRequest(BaseModel):
+    """Client → Server: rewind the latest completed turn and run it again."""
+
+    type: Literal["retry_latest_turn"] = "retry_latest_turn"
+
+
+class ResetToTurnRequest(BaseModel):
+    """Client → Server: rewind session chat state to a completed turn boundary."""
+
+    type: Literal["reset_to_turn"] = "reset_to_turn"
+    event_index: int
+
+
+ClientEnvelope = (
+    UserMessage | ApprovalResponse | EscalationResponse | CancelRequest | RetryLatestTurnRequest | ResetToTurnRequest
+)
 
 
 def parse_client_message(raw: dict[str, Any]) -> ClientEnvelope:
@@ -88,6 +103,10 @@ def parse_client_message(raw: dict[str, Any]) -> ClientEnvelope:
             return EscalationResponse.model_validate(raw)
         case "cancel":
             return CancelRequest.model_validate(raw)
+        case "retry_latest_turn":
+            return RetryLatestTurnRequest.model_validate(raw)
+        case "reset_to_turn":
+            return ResetToTurnRequest.model_validate(raw)
         case other:
             msg = f"Unknown client message type: {other}"
             raise ValueError(msg)
@@ -225,6 +244,7 @@ class CommandResult(BaseModel):
 class ErrorMessage(BaseModel):
     type: Literal["error"] = "error"
     detail: str
+    turn_terminal: bool = False
 
 
 class Cancelled(BaseModel):

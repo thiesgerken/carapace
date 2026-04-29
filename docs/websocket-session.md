@@ -63,7 +63,7 @@ Each message is one JSON object with a `type` field.
 | `git_push_approval_request`      | Sentinel escalated **git push**                     | `request_id`, `ref`, `explanation`, `changed_files`                                              |
 | `credential_approval_request`    | Sentinel escalated **credential** access            | `request_id`, `vault_paths`, `names`, `descriptions`, optional `skill_name`, `explanation`       |
 | `done`                           | Agent turn finished                                 | `content` (final assistant text), optional `usage`                                               |
-| `command_result`                 | Slash command or `/verbose` handled                 | `command`, `data` (arbitrary)                                                                    |
+| `command_result`                 | Slash command, `/verbose`, or reset ack handled     | `command`, `data` (arbitrary)                                                                    |
 | `error`                          | Parse error, unknown command, busy agent, etc.      | `detail`                                                                                         |
 | `cancelled`                      | Turn cancelled after `cancel`                       | `detail` (default explains cancellation)                                                         |
 | `session_title`                  | Title changed                                       | `title`                                                                                          |

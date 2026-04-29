@@ -15,12 +15,14 @@ import contextlib
 import secrets
 import uuid
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Literal
 
 from loguru import logger
 from pydantic_ai.exceptions import UsageLimitExceeded
+from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, UserPromptPart
 from pydantic_ai.models import Model, infer_model
 from pydantic_ai.settings import ModelSettings
 from pydantic_ai.usage import UsageLimits
@@ -105,6 +107,13 @@ def note_llm_request_thinking() -> LlmRequestState | None:
 
 
 # security_mod is still imported for evaluate_domain_with (used in domain approval callback)
+
+
+@dataclass(frozen=True, slots=True)
+class CompletedEventTurn:
+    start_event_index: int
+    end_event_index: int
+    user_content: str
 
 
 class SessionEngine(SessionTurnMixin):
@@ -682,6 +691,43 @@ class SessionEngine(SessionTurnMixin):
             name=f"agent-turn-{session_id}",
         )
 
+    async def retry_latest_turn(
+        self,
+        session_id: str,
+        *,
+        origin: SessionSubscriber | None = None,
+    ) -> None:
+        active = self._ensure_active(session_id)
+        if active.agent_task and not active.agent_task.done():
+            await self._broadcast(active, "on_error", "Agent is busy — cancel first")
+            return
+
+        events = self._truncate_incomplete_events(self._session_mgr.load_events(session_id))
+        turns = self._completed_event_turns(events)
+        if not turns:
+            await self._broadcast(active, "on_error", "No completed turn available to retry")
+            return
+
+        target = turns[-1]
+        self._rewrite_session_transcript(session_id, events[: target.start_event_index])
+        await self.submit_message(session_id, target.user_content, origin=origin)
+
+    async def reset_to_turn(self, session_id: str, event_index: int) -> bool:
+        active = self._ensure_active(session_id)
+        if active.agent_task and not active.agent_task.done():
+            await self._broadcast(active, "on_error", "Agent is busy — cancel first")
+            return False
+
+        events = self._truncate_incomplete_events(self._session_mgr.load_events(session_id))
+        turns = self._completed_event_turns(events)
+        target = next((turn for turn in turns if turn.end_event_index == event_index), None)
+        if target is None:
+            await self._broadcast(active, "on_error", "Unknown reset target")
+            return False
+
+        self._rewrite_session_transcript(session_id, events[: target.end_event_index + 1])
+        return True
+
     async def submit_cancel(self, session_id: str) -> None:
         """Cancel the running agent turn for *session_id*."""
         active = self._active.get(session_id)
@@ -1097,6 +1143,82 @@ class SessionEngine(SessionTurnMixin):
             return tool_id
 
         return self._session_mgr.update_events(session_id, _mutate)
+
+    def _completed_event_turns(self, events: list[dict[str, Any]]) -> list[CompletedEventTurn]:
+        turns: list[CompletedEventTurn] = []
+        start_event_index: int | None = None
+        user_content: str | None = None
+
+        for index, event in enumerate(events):
+            role = event.get("role")
+            if role == "user" and isinstance(content := event.get("content"), str) and not content.startswith("/"):
+                start_event_index = index
+                user_content = content
+            elif role == "assistant" and start_event_index is not None and user_content is not None:
+                turns.append(
+                    CompletedEventTurn(
+                        start_event_index=start_event_index,
+                        end_event_index=index,
+                        user_content=user_content,
+                    )
+                )
+                start_event_index = None
+                user_content = None
+
+        return turns
+
+    def _completed_model_turn_end_indexes(self, messages: list[ModelMessage]) -> list[int]:
+        turn_end_indexes: list[int] = []
+        current_turn_start: int | None = None
+
+        for index, message in enumerate(messages):
+            has_user_prompt = isinstance(message, ModelRequest) and any(
+                isinstance(part, UserPromptPart) and isinstance(part.content, str) for part in message.parts
+            )
+            if not has_user_prompt:
+                continue
+            if (
+                current_turn_start is not None
+                and index - 1 > current_turn_start
+                and isinstance(messages[index - 1], ModelResponse)
+            ):
+                turn_end_indexes.append(index - 1)
+            current_turn_start = index
+
+        if (
+            current_turn_start is not None
+            and len(messages) - 1 > current_turn_start
+            and isinstance(messages[-1], ModelResponse)
+        ):
+            turn_end_indexes.append(len(messages) - 1)
+
+        return turn_end_indexes
+
+    def _history_for_completed_turn_count(self, messages: list[ModelMessage], turn_count: int) -> list[ModelMessage]:
+        if turn_count <= 0:
+            return []
+
+        turn_end_indexes = self._completed_model_turn_end_indexes(messages)
+        if not turn_end_indexes:
+            return []
+
+        capped_turn_count = min(turn_count, len(turn_end_indexes))
+        return messages[: turn_end_indexes[capped_turn_count - 1] + 1]
+
+    def _rewrite_session_transcript(self, session_id: str, events: list[dict[str, Any]]) -> None:
+        truncated_events = self._truncate_incomplete_events(events)
+        turn_count = len(self._completed_event_turns(truncated_events))
+        history = self._truncate_incomplete_model_history(self._session_mgr.load_history(session_id))
+        truncated_history = self._history_for_completed_turn_count(history, turn_count)
+
+        self._session_mgr.save_events(session_id, truncated_events)
+        self._session_mgr.save_history(session_id, truncated_history)
+        self._session_mgr.clear_llm_request_state(session_id)
+
+        active = self._active.get(session_id)
+        if active is not None:
+            active.llm_request_state = None
+            active.llm_request_thinking.clear()
 
     async def _generate_title(self, active: ActiveSession, events: list[dict[str, Any]]) -> str:
         session_id = active.state.session_id

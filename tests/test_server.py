@@ -700,6 +700,42 @@ def test_ws_session_command(client, auth_headers, bearer):
         assert msg["data"]["session_id"] == sid
 
 
+def test_ws_reset_to_turn_emits_ack(client, auth_headers, bearer):
+    create_resp = client.post("/api/sessions", headers=auth_headers)
+    sid = create_resp.json()["session_id"]
+    srv._engine.session_mgr.save_events(
+        sid,
+        [
+            {"role": "user", "content": "first"},
+            {"role": "assistant", "content": "first answer"},
+            {"role": "user", "content": "second"},
+            {"role": "assistant", "content": "second answer"},
+        ],
+    )
+    srv._engine.session_mgr.save_history(
+        sid,
+        [
+            ModelRequest(parts=[UserPromptPart(content="first")]),
+            ModelResponse(parts=[TextPart(content="first answer")]),
+            ModelRequest(parts=[UserPromptPart(content="second")]),
+            ModelResponse(parts=[TextPart(content="second answer")]),
+        ],
+    )
+
+    with client.websocket_connect(f"/api/chat/{sid}?token={bearer}") as ws:
+        _consume_status(ws)
+        ws.send_json({"type": "reset_to_turn", "event_index": 1})
+        msg = ws.receive_json()
+        assert msg["type"] == "command_result"
+        assert msg["command"] == "reset_to_turn"
+        assert msg["data"] == {"event_index": 1}
+
+    assert srv._engine.session_mgr.load_events(sid) == [
+        {"role": "user", "content": "first"},
+        {"role": "assistant", "content": "first answer"},
+    ]
+
+
 def test_ws_status_includes_budget_gauges_for_configured_defaults(client, auth_headers, bearer):
     srv._engine.config.agent.default_session_budget = SessionBudget(input_tokens=1_000)
     create_resp = client.post("/api/sessions", headers=auth_headers)
