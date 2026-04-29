@@ -21,6 +21,7 @@ import type {
   ChatMessage,
   ClientMessage,
   EscalationDecision,
+  HistoryMessage,
   LlmActivity,
   ServerMessage,
   SessionInfo,
@@ -347,6 +348,292 @@ function updateToolResultById(
   }));
 }
 
+function isTurnTerminalMessage(message: ChatMessage): boolean {
+  return message.kind === "assistant" || (message.kind === "error" && message.turnTerminal === true);
+}
+
+function completedTurnMessageIndices(messages: ChatMessage[]): number[] {
+  return messages.flatMap((message, index) => (isTurnTerminalMessage(message) ? [index] : []));
+}
+
+function latestCompletedTurnStartMessageIndex(messages: ChatMessage[]): number {
+  const latestTerminalIndex = completedTurnMessageIndices(messages).at(-1);
+  if (latestTerminalIndex == null) {
+    return messages.length;
+  }
+
+  for (let index = latestTerminalIndex; index >= 0; index--) {
+    const message = messages[index];
+    if (message.kind === "user" && !message.content.startsWith("/")) {
+      return index;
+    }
+  }
+
+  return messages.length;
+}
+
+function eventIndexForMessage(message: ChatMessage): number | undefined {
+  if (message.kind === "assistant" || message.kind === "error") {
+    return typeof message.eventIndex === "number" ? message.eventIndex : undefined;
+  }
+  return undefined;
+}
+
+function projectHistoryToMessages(history: HistoryMessage[]): ChatMessage[] {
+  const msgs: ChatMessage[] = [];
+  const pendingToolCallIndices = new Map<string, number[]>();
+
+  function findLaterEscalationDecision(
+    fromIndex: number,
+    requestId: string,
+    roleMatches: (role: string) => boolean,
+  ): EscalationDecision | undefined {
+    for (let index = fromIndex + 1; index < history.length; index++) {
+      const entry = history[index];
+      if (entry.request_id !== requestId || !roleMatches(entry.role)) continue;
+      const decision = entry.decision;
+      if (decision === "allow" || decision === "deny") return decision;
+    }
+    return undefined;
+  }
+
+  for (let index = 0; index < history.length; index++) {
+    const entry = history[index];
+    if (entry.role === "user") {
+      msgs.push({ kind: "user", content: entry.content });
+    } else if (entry.role === "tool_call") {
+      const rawContexts = entry.contexts ?? entry.args?.contexts;
+      const isLoading = isToolCallLoading(
+        entry.tool ?? "",
+        entry.approval_source,
+        entry.approval_verdict,
+      );
+      if (
+        isUserApprovedReplay(
+          entry.tool ?? "",
+          entry.detail,
+          entry.approval_source,
+          entry.approval_verdict,
+        )
+      ) {
+        const patched = applyApprovedApprovalToMessages(
+          msgs,
+          {
+            tool: entry.tool ?? "",
+            args: (entry.args ?? {}) as Record<string, unknown>,
+          },
+          isLoading,
+        );
+        msgs.length = 0;
+        msgs.push(...patched);
+        continue;
+      }
+      msgs.push({
+        kind: "tool_call",
+        tool: entry.tool ?? "",
+        args: entry.args ?? {},
+        detail: entry.detail ?? "",
+        contexts: Array.isArray(rawContexts)
+          ? (rawContexts as string[])
+          : undefined,
+        approvalSource: entry.approval_source,
+        approvalVerdict: entry.approval_verdict,
+        approvalExplanation: entry.approval_explanation,
+        loading: isLoading,
+        toolId: entry.tool_id as string | undefined,
+        parentToolId: entry.parent_tool_id as string | undefined,
+      });
+      const toolName = entry.tool ?? "";
+      const queue = pendingToolCallIndices.get(toolName) ?? [];
+      queue.push(msgs.length - 1);
+      pendingToolCallIndices.set(toolName, queue);
+    } else if (entry.role === "tool_result") {
+      const toolResultId = entry.tool_id as string | undefined;
+      if (toolResultId) {
+        const updated = updateToolResultById(msgs, toolResultId, {
+          result: entry.result ?? "",
+          exitCode: entry.exit_code,
+        });
+        if (updated.found) {
+          msgs.length = 0;
+          msgs.push(...updated.messages);
+          continue;
+        }
+      }
+
+      const toolName = entry.tool ?? "";
+      const queue = pendingToolCallIndices.get(toolName);
+      const pendingIndex = queue?.shift();
+      if (pendingIndex != null && msgs[pendingIndex]?.kind === "tool_call") {
+        const toolCall = msgs[pendingIndex];
+        msgs[pendingIndex] = {
+          ...toolCall,
+          result: entry.result,
+          exitCode: entry.exit_code,
+          loading: false,
+        };
+      }
+      if (queue && queue.length === 0) {
+        pendingToolCallIndices.delete(toolName);
+      }
+    } else if (entry.role === "approval_response") {
+      continue;
+    } else if (entry.role === "approval_request" && entry.tool_call_id) {
+      const request = {
+        type: "approval_request" as const,
+        tool_call_id: entry.tool_call_id,
+        tool: entry.tool ?? "",
+        args: (entry.args ?? {}) as Record<string, unknown>,
+        explanation: entry.explanation ?? "",
+        risk_level: entry.risk_level ?? "",
+      };
+      const response = history.find(
+        (candidate) =>
+          candidate.role === "approval_response" &&
+          candidate.tool_call_id === entry.tool_call_id,
+      );
+      if (!response) {
+        msgs.push({ kind: "approval", request });
+      } else if (response.decision === "approved") {
+        const patched = applyApprovedApprovalToMessages(msgs, request);
+        msgs.length = 0;
+        msgs.push(...patched);
+      } else if (response.decision === "denied") {
+        const patched = applyDeniedApprovalToMessages(
+          msgs,
+          request,
+          response.message,
+        );
+        msgs.length = 0;
+        msgs.push(...patched);
+      }
+    } else if (
+      (entry.role === "domain_access_approval" || entry.role === "proxy_approval") &&
+      entry.request_id
+    ) {
+      if (!entry.decision) {
+        const decision = findLaterEscalationDecision(
+          index,
+          entry.request_id,
+          (role) => role === "domain_access_approval" || role === "proxy_approval",
+        );
+        if (!decision) {
+          msgs.push({
+            kind: "domain_access_approval",
+            request: {
+              type: "domain_access_approval_request",
+              request_id: entry.request_id,
+              domain: entry.domain ?? "",
+              command: entry.command ?? "",
+            },
+            decision,
+          });
+        }
+      }
+    } else if (entry.role === "git_push_approval" && entry.request_id) {
+      if (!entry.decision) {
+        const decision = findLaterEscalationDecision(
+          index,
+          entry.request_id,
+          (role) => role === "git_push_approval",
+        );
+        if (!decision) {
+          msgs.push({
+            kind: "git_push_approval",
+            request: {
+              type: "git_push_approval_request",
+              request_id: entry.request_id,
+              ref: entry.ref ?? "",
+              explanation: entry.explanation ?? "",
+              changed_files: (entry.changed_files as string[] | undefined) ?? [],
+            },
+            decision,
+          });
+        }
+      }
+    } else if (entry.role === "credential_approval" && entry.request_id) {
+      if (!entry.decision) {
+        const decision = findLaterEscalationDecision(
+          index,
+          entry.request_id,
+          (role) => role === "credential_approval",
+        );
+        if (!decision) {
+          msgs.push({
+            kind: "credential_approval",
+            request: {
+              type: "credential_approval_request",
+              request_id: entry.request_id,
+              vault_paths: entry.vault_paths ?? [],
+              names: entry.names ?? [],
+              descriptions: entry.descriptions ?? [],
+              skill_name: entry.skill_name,
+              explanation: entry.explanation ?? "",
+            },
+            decision,
+          });
+        }
+      }
+    } else if (entry.role === "git_push") {
+      msgs.push({
+        kind: "tool_call",
+        tool: "git_push",
+        args: { ref: entry.ref ?? "", decision: entry.decision ?? "" },
+        detail: entry.detail ?? "",
+        approvalSource: entry.approval_source,
+        approvalVerdict: entry.approval_verdict,
+        approvalExplanation: entry.approval_explanation,
+        toolId: entry.tool_id as string | undefined,
+        parentToolId: entry.parent_tool_id as string | undefined,
+      });
+    } else if (entry.role === "command") {
+      msgs.push({
+        kind: "command",
+        command: entry.command ?? "",
+        data: entry.data,
+      });
+    } else if (entry.role === "thinking" && entry.content) {
+      msgs.push({
+        kind: "thinking",
+        content: entry.content,
+        reasoningDurationMs: entry.reasoning_duration_ms,
+        reasoningTokens: entry.reasoning_tokens,
+      });
+    } else {
+      msgs.push({
+        kind: "assistant",
+        content: entry.content,
+        eventIndex: typeof entry.event_index === "number" ? entry.event_index : undefined,
+      });
+    }
+  }
+
+  const parentIndex = new Map<string, number>();
+  for (let index = 0; index < msgs.length; index++) {
+    const message = msgs[index];
+    if (message.kind === "tool_call" && message.toolId) {
+      parentIndex.set(message.toolId, index);
+    }
+  }
+
+  const childIndices = new Set<number>();
+  for (let index = 0; index < msgs.length; index++) {
+    const message = msgs[index];
+    if (message.kind !== "tool_call" || !message.parentToolId) continue;
+    const parentMessageIndex = parentIndex.get(message.parentToolId);
+    if (parentMessageIndex == null) continue;
+    const parent = msgs[parentMessageIndex];
+    if (parent.kind !== "tool_call") continue;
+    if (!parent.children) parent.children = [];
+    parent.children.push(message);
+    childIndices.add(index);
+  }
+
+  return childIndices.size > 0
+    ? msgs.filter((_, index) => !childIndices.has(index))
+    : msgs;
+}
+
 export function ChatView({
   server,
   token,
@@ -377,6 +664,7 @@ export function ChatView({
   const [deletingSession, setDeletingSession] = useState(false);
   const [savingKnowledge, setSavingKnowledge] = useState(false);
   const [togglingPrivacy, setTogglingPrivacy] = useState(false);
+  const [turnActionBusyIndex, setTurnActionBusyIndex] = useState<number | null>(null);
   const [knowledgeNotice, setKnowledgeNotice] = useState<{
     tone: "neutral" | "success" | "error";
     message: string;
@@ -386,6 +674,7 @@ export function ChatView({
   const isAtBottomRef = useRef(true);
   const lastThinkingStartedAtRef = useRef<string | null>(null);
   const queueRef = useRef<string | null>(null);
+  const resetRollbackRef = useRef<ChatMessage[] | null>(null);
   const sendRef = useRef<(msg: ClientMessage) => void>(() => {});
   const onSandboxUpdateRef = useRef(onSandboxUpdate);
   const sandboxRef = useRef(sandbox);
@@ -475,262 +764,7 @@ export function ChatView({
     fetchHistory(server, token, sessionId)
       .then((history) => {
         if (cancelled) return;
-        const msgs: ChatMessage[] = [];
-        const pendingToolCallIndices = new Map<string, number[]>();
-
-        function findLaterEscalationDecision(
-          fromIndex: number,
-          requestId: string,
-          roleMatches: (role: string) => boolean,
-        ): EscalationDecision | undefined {
-          for (let j = fromIndex + 1; j < history.length; j++) {
-            const e = history[j];
-            if (e.request_id !== requestId || !roleMatches(e.role)) continue;
-            const d = e.decision;
-            if (d === "allow" || d === "deny") return d;
-          }
-          return undefined;
-        }
-
-        for (let i = 0; i < history.length; i++) {
-          const h = history[i];
-          if (h.role === "user") {
-            msgs.push({ kind: "user", content: h.content });
-          } else if (h.role === "tool_call") {
-            const rawContexts = h.contexts ?? h.args?.contexts;
-            const isLoading = isToolCallLoading(
-              h.tool ?? "",
-              h.approval_source,
-              h.approval_verdict,
-            );
-            if (
-              isUserApprovedReplay(
-                h.tool ?? "",
-                h.detail,
-                h.approval_source,
-                h.approval_verdict,
-              )
-            ) {
-              const patched = applyApprovedApprovalToMessages(
-                msgs,
-                {
-                  tool: h.tool ?? "",
-                  args: (h.args ?? {}) as Record<string, unknown>,
-                },
-                isLoading,
-              );
-              msgs.length = 0;
-              msgs.push(...patched);
-              continue;
-            }
-            msgs.push({
-              kind: "tool_call",
-              tool: h.tool ?? "",
-              args: h.args ?? {},
-              detail: h.detail ?? "",
-              contexts: Array.isArray(rawContexts)
-                ? (rawContexts as string[])
-                : undefined,
-              approvalSource: h.approval_source,
-              approvalVerdict: h.approval_verdict,
-              approvalExplanation: h.approval_explanation,
-              loading: isLoading,
-              toolId: h.tool_id as string | undefined,
-              parentToolId: h.parent_tool_id as string | undefined,
-            });
-            const toolName = h.tool ?? "";
-            const idx = msgs.length - 1;
-            const queue = pendingToolCallIndices.get(toolName) ?? [];
-            queue.push(idx);
-            pendingToolCallIndices.set(toolName, queue);
-          } else if (h.role === "tool_result") {
-            const toolResultId = h.tool_id as string | undefined;
-            if (toolResultId) {
-              const updated = updateToolResultById(msgs, toolResultId, {
-                result: h.result ?? "",
-                exitCode: h.exit_code,
-              });
-              if (updated.found) {
-                msgs.length = 0;
-                msgs.push(...updated.messages);
-                continue;
-              }
-            }
-
-            const toolName = h.tool ?? "";
-            const queue = pendingToolCallIndices.get(toolName);
-            const idx = queue?.shift();
-            if (idx != null && msgs[idx]?.kind === "tool_call") {
-              const toolCall = msgs[idx];
-              msgs[idx] = {
-                ...toolCall,
-                result: h.result,
-                exitCode: h.exit_code,
-                loading: false,
-              };
-            }
-            if (queue && queue.length === 0) {
-              pendingToolCallIndices.delete(toolName);
-            }
-          } else if (h.role === "approval_response") {
-            // Skip — consumed by the approval_request above
-          } else if (h.role === "approval_request" && h.tool_call_id) {
-            const request = {
-              type: "approval_request" as const,
-              tool_call_id: h.tool_call_id,
-              tool: h.tool ?? "",
-              args: (h.args ?? {}) as Record<string, unknown>,
-              explanation: h.explanation ?? "",
-              risk_level: h.risk_level ?? "",
-            };
-            const response = history.find(
-              (r) =>
-                r.role === "approval_response" &&
-                r.tool_call_id === h.tool_call_id,
-            );
-            if (!response) {
-              msgs.push({ kind: "approval", request });
-            } else if (response.decision === "approved") {
-              const patched = applyApprovedApprovalToMessages(msgs, request);
-              msgs.length = 0;
-              msgs.push(...patched);
-            } else if (response.decision === "denied") {
-              const patched = applyDeniedApprovalToMessages(
-                msgs,
-                request,
-                response.message,
-              );
-              msgs.length = 0;
-              msgs.push(...patched);
-            }
-          } else if (
-            (h.role === "domain_access_approval" ||
-              h.role === "proxy_approval") &&
-            h.request_id
-          ) {
-            // Domain access approval: request entry, then decision (may be non-adjacent)
-            if (!h.decision) {
-              const decision = findLaterEscalationDecision(
-                i,
-                h.request_id,
-                (role) =>
-                  role === "domain_access_approval" ||
-                  role === "proxy_approval",
-              );
-              if (!decision) {
-                msgs.push({
-                  kind: "domain_access_approval",
-                  request: {
-                    type: "domain_access_approval_request",
-                    request_id: h.request_id,
-                    domain: h.domain ?? "",
-                    command: h.command ?? "",
-                  },
-                  decision,
-                });
-              }
-            }
-            // Skip decision-only events (consumed above)
-          } else if (h.role === "git_push_approval" && h.request_id) {
-            // Git push approval: request entry, then decision (may be non-adjacent)
-            if (!h.decision) {
-              const decision = findLaterEscalationDecision(
-                i,
-                h.request_id,
-                (role) => role === "git_push_approval",
-              );
-              if (!decision) {
-                msgs.push({
-                  kind: "git_push_approval",
-                  request: {
-                    type: "git_push_approval_request",
-                    request_id: h.request_id,
-                    ref: h.ref ?? "",
-                    explanation: h.explanation ?? "",
-                    changed_files:
-                      (h.changed_files as string[] | undefined) ?? [],
-                  },
-                  decision,
-                });
-              }
-            }
-          } else if (h.role === "credential_approval" && h.request_id) {
-            if (!h.decision) {
-              const decision = findLaterEscalationDecision(
-                i,
-                h.request_id,
-                (role) => role === "credential_approval",
-              );
-              if (!decision) {
-                msgs.push({
-                  kind: "credential_approval",
-                  request: {
-                    type: "credential_approval_request",
-                    request_id: h.request_id,
-                    vault_paths: h.vault_paths ?? [],
-                    names: h.names ?? [],
-                    descriptions: h.descriptions ?? [],
-                    skill_name: h.skill_name,
-                    explanation: h.explanation ?? "",
-                  },
-                  decision,
-                });
-              }
-            }
-          } else if (h.role === "git_push") {
-            msgs.push({
-              kind: "tool_call",
-              tool: "git_push",
-              args: { ref: h.ref ?? "", decision: h.decision ?? "" },
-              detail: h.detail ?? "",
-              approvalSource: h.approval_source,
-              approvalVerdict: h.approval_verdict,
-              approvalExplanation: h.approval_explanation,
-              toolId: h.tool_id as string | undefined,
-              parentToolId: h.parent_tool_id as string | undefined,
-            });
-          } else if (h.role === "command") {
-            msgs.push({
-              kind: "command",
-              command: h.command ?? "",
-              data: h.data,
-            });
-          } else if (h.role === "thinking" && h.content) {
-            msgs.push({
-              kind: "thinking",
-              content: h.content,
-              reasoningDurationMs: h.reasoning_duration_ms,
-              reasoningTokens: h.reasoning_tokens,
-            });
-          } else {
-            msgs.push({ kind: "assistant", content: h.content });
-          }
-        }
-        // Group auxiliary tool calls (credential_access, proxy_domain, git_push)
-        // under their parent tool call by matching parentToolId → toolId.
-        const parentIndex = new Map<string, number>();
-        for (let i = 0; i < msgs.length; i++) {
-          const m = msgs[i];
-          if (m.kind === "tool_call" && m.toolId) {
-            parentIndex.set(m.toolId, i);
-          }
-        }
-        const childIndices = new Set<number>();
-        for (let i = 0; i < msgs.length; i++) {
-          const m = msgs[i];
-          if (m.kind !== "tool_call" || !m.parentToolId) continue;
-          const pi = parentIndex.get(m.parentToolId);
-          if (pi == null) continue;
-          const parent = msgs[pi];
-          if (parent.kind !== "tool_call") continue;
-          if (!parent.children) parent.children = [];
-          parent.children.push(m);
-          childIndices.add(i);
-        }
-        const grouped = childIndices.size > 0
-          ? msgs.filter((_, i) => !childIndices.has(i))
-          : msgs;
-        setMessages(grouped);
+        setMessages(projectHistoryToMessages(history));
       })
       .catch(() => {
         // history fetch can fail for new sessions - that's fine
@@ -799,6 +833,7 @@ export function ChatView({
     (msg: ServerMessage) => {
       switch (msg.type) {
         case "done":
+          resetRollbackRef.current = null;
           setMessages((prev) => {
             const updated = [...prev];
             const thinkingMeta = thinkingUsageMeta(msg.usage);
@@ -997,6 +1032,10 @@ export function ChatView({
           ]);
           break;
         case "command_result":
+          resetRollbackRef.current = null;
+          if (msg.command === "reset_to_turn") {
+            break;
+          }
           setMessages((prev) => [
             ...prev,
             { kind: "command", command: msg.command, data: msg.data },
@@ -1006,18 +1045,29 @@ export function ChatView({
           finishWaiting();
           break;
         case "error":
-          setMessages((prev) => [
-            ...prev,
-            { kind: "error", detail: msg.detail },
-          ]);
+          setMessages((prev) => {
+            const rollback = resetRollbackRef.current;
+            resetRollbackRef.current = null;
+            if (rollback !== null) {
+              return [
+                ...rollback,
+                { kind: "error", detail: msg.detail, turnTerminal: msg.turn_terminal === true },
+              ];
+            }
+            return [
+              ...prev,
+              { kind: "error", detail: msg.detail, turnTerminal: msg.turn_terminal === true },
+            ];
+          });
           setLlmActivity(null);
           lastThinkingStartedAtRef.current = null;
           finishWaiting();
           break;
         case "cancelled":
+          resetRollbackRef.current = null;
           setMessages((prev) => [
             ...prev,
-            { kind: "error", detail: msg.detail },
+            { kind: "error", detail: msg.detail, turnTerminal: true },
           ]);
           setLlmActivity(null);
           lastThinkingStartedAtRef.current = null;
@@ -1046,6 +1096,7 @@ export function ChatView({
           }
           break;
         case "user_message":
+          resetRollbackRef.current = null;
           // Slash commands end with command_result (no agent); echo must not re-arm waiting
           // after command_result cleared it (message order / batching).
           if (!msg.content.startsWith("/")) {
@@ -1101,6 +1152,7 @@ export function ChatView({
   );
 
   const onWsDisconnect = useCallback(() => {
+    resetRollbackRef.current = null;
     queueRef.current = null;
     lastThinkingStartedAtRef.current = null;
     setQueuedMessage(null);
@@ -1112,6 +1164,10 @@ export function ChatView({
   useEffect(() => {
     sendRef.current = send;
   }, [send]);
+
+  const terminalIndices = completedTurnMessageIndices(messages);
+  const latestTerminalIndex = terminalIndices.length > 0 ? terminalIndices[terminalIndices.length - 1] : -1;
+  const turnActionsDisabled = waiting || loadingHistory || status !== "connected" || turnActionBusyIndex !== null;
 
   // Auto-scroll only when already at bottom
   useEffect(() => {
@@ -1131,6 +1187,7 @@ export function ChatView({
   }, []);
 
   function handleSend(content: string) {
+    resetRollbackRef.current = null;
     if (waiting) {
       queueRef.current = content;
       setQueuedMessage(content);
@@ -1143,9 +1200,64 @@ export function ChatView({
   }
 
   function handleInterrupt(content: string) {
+    resetRollbackRef.current = null;
     queueRef.current = content;
     setQueuedMessage(content);
     send({ type: "cancel" });
+  }
+
+  function handleRetry() {
+    if (waiting || status !== "connected") return;
+    const currentMessages = messages;
+    const startIndex = latestCompletedTurnStartMessageIndex(messages);
+    if (startIndex >= messages.length) return;
+
+    resetRollbackRef.current = currentMessages;
+    queueRef.current = null;
+    setQueuedMessage(null);
+    lastThinkingStartedAtRef.current = null;
+    setLlmActivity(null);
+    setMessages((prev) => prev.slice(0, startIndex));
+    setWaiting(true);
+    send({ type: "retry_latest_turn" });
+  }
+
+  async function handleReset(messageIndex: number) {
+    if (waiting || status !== "connected") return;
+
+    const currentMessages = messages;
+    const localTerminalIndices = completedTurnMessageIndices(currentMessages);
+    const localTurnOrdinal = localTerminalIndices.indexOf(messageIndex);
+    if (localTurnOrdinal === -1) return;
+
+    setTurnActionBusyIndex(messageIndex);
+    try {
+      let targetEventIndex = eventIndexForMessage(currentMessages[messageIndex]);
+
+      if (targetEventIndex == null) {
+        const history = await fetchHistory(server, token, sessionId);
+        const canonicalMessages = projectHistoryToMessages(history);
+        const canonicalTerminalIndices = completedTurnMessageIndices(canonicalMessages);
+        const canonicalMessageIndex = canonicalTerminalIndices[localTurnOrdinal];
+        if (canonicalMessageIndex != null) {
+          targetEventIndex = eventIndexForMessage(canonicalMessages[canonicalMessageIndex]);
+        }
+      }
+
+      if (targetEventIndex == null) {
+        setMessages((prev) => [
+          ...prev,
+          { kind: "error", detail: "Could not resolve reset target." },
+        ]);
+        return;
+      }
+
+      resetRollbackRef.current = currentMessages;
+      send({ type: "reset_to_turn", event_index: targetEventIndex });
+      setMessages((prev) => prev.slice(0, messageIndex + 1));
+    } finally {
+      setTurnActionBusyIndex(null);
+    }
   }
 
   async function handleWipeSandbox() {
@@ -1572,9 +1684,14 @@ export function ChatView({
               key={i}
               message={msg}
               activeLlmActivity={llmActivity}
+              canRetry={i === latestTerminalIndex && isTurnTerminalMessage(msg)}
+              canReset={i !== latestTerminalIndex && isTurnTerminalMessage(msg)}
+              actionDisabled={turnActionsDisabled}
               onApproval={handleApproval}
               onEscalation={handleEscalation}
               onCredentialApproval={handleCredentialEscalation}
+              onRetry={i === latestTerminalIndex && isTurnTerminalMessage(msg) ? handleRetry : undefined}
+              onReset={i !== latestTerminalIndex && isTurnTerminalMessage(msg) ? () => void handleReset(i) : undefined}
             />
           ))}
           {waitingLabel && (

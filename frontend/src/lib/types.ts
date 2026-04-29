@@ -52,6 +52,7 @@ export interface SessionArchiveCommitResponse {
 export interface HistoryMessage {
   role: string;
   content: string;
+  event_index?: number;
   reasoning_duration_ms?: number;
   reasoning_tokens?: number;
   tool?: string;
@@ -245,6 +246,7 @@ export interface CommandResult {
 export interface ErrorMessage {
   type: "error";
   detail: string;
+  turn_terminal?: boolean;
 }
 
 export interface Cancelled {
@@ -315,17 +317,28 @@ export interface CancelRequest {
   type: "cancel";
 }
 
+export interface RetryLatestTurnRequest {
+  type: "retry_latest_turn";
+}
+
+export interface ResetToTurnRequest {
+  type: "reset_to_turn";
+  event_index: number;
+}
+
 export type ClientMessage =
   | UserMessage
   | ApprovalResponse
   | EscalationResponse
-  | CancelRequest;
+  | CancelRequest
+  | RetryLatestTurnRequest
+  | ResetToTurnRequest;
 
 // Chat UI messages
 
 export type ChatMessage =
   | { kind: "user"; content: string }
-  | { kind: "assistant"; content: string }
+  | { kind: "assistant"; content: string; eventIndex?: number }
   | { kind: "streaming"; content: string }
   | {
       kind: "thinking";
@@ -400,4 +413,9 @@ export type ChatMessage =
       decision?: EscalationDecision;
     }
   | { kind: "command"; command: string; data: unknown }
-  | { kind: "error"; detail: string };
+  | {
+      kind: "error";
+      detail: string;
+      eventIndex?: number;
+      turnTerminal?: boolean;
+    };

@@ -66,6 +66,8 @@ from carapace.ws_models import (
     GitPushApprovalRequest,
     LlmActivity,
     LlmActivityUpdate,
+    ResetToTurnRequest,
+    RetryLatestTurnRequest,
     ServerEnvelope,
     SessionTitleUpdate,
     StatusUpdate,
@@ -686,6 +688,7 @@ _HistoryRole = Literal[
 class HistoryMessage(BaseModel):
     role: _HistoryRole
     content: str = ""
+    event_index: int | None = None
     reasoning_duration_ms: int | None = None
     reasoning_tokens: int | None = None
     tool: str | None = None
@@ -737,7 +740,14 @@ async def get_session_history(
         raise HTTPException(status_code=404, detail="Session not found")
 
     events = _engine.session_mgr.load_events(session_id)
-    result = [HistoryMessage.model_validate(e) for e in events] if events else _history_from_messages(session_id)
+    result = (
+        [HistoryMessage.model_validate({**event, "event_index": index}) for index, event in enumerate(events)]
+        if events
+        else [
+            HistoryMessage.model_validate({**message.model_dump(mode="python"), "event_index": index})
+            for index, message in enumerate(_history_from_messages(session_id))
+        ]
+    )
 
     if limit > 0:
         result = result[-limit:]
@@ -873,8 +883,8 @@ class WebSocketSubscriber:
     async def on_done(self, content: str, usage: TurnUsage, *, thinking: str | None = None) -> None:
         await self._safe_send(Done(content=content, thinking=thinking, usage=usage))
 
-    async def on_error(self, detail: str) -> None:
-        await self._safe_send(ErrorMessage(detail=detail))
+    async def on_error(self, detail: str, *, turn_terminal: bool = False) -> None:
+        await self._safe_send(ErrorMessage(detail=detail, turn_terminal=turn_terminal))
 
     async def on_cancelled(self) -> None:
         await self._safe_send(Cancelled())
@@ -1078,6 +1088,22 @@ async def chat_ws(
             # --- Cancel in-flight agent turn ---
             if isinstance(client_msg, CancelRequest):
                 await _engine.submit_cancel(session_id)
+                continue
+
+            if isinstance(client_msg, RetryLatestTurnRequest):
+                await _engine.retry_latest_turn(session_id, origin=sub)
+                continue
+
+            if isinstance(client_msg, ResetToTurnRequest):
+                reset_applied = await _engine.reset_to_turn(session_id, client_msg.event_index)
+                if reset_applied:
+                    await _send(
+                        websocket,
+                        CommandResult(
+                            command="reset_to_turn",
+                            data={"event_index": client_msg.event_index},
+                        ),
+                    )
                 continue
 
             # --- Approval responses — forward to engine ---

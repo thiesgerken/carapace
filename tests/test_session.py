@@ -298,6 +298,7 @@ class _FakeSubscriber:
     def __init__(self) -> None:
         self.user_messages: list[tuple[str, bool]] = []
         self.errors: list[str] = []
+        self.error_events: list[tuple[str, bool]] = []
         self.cancelled: int = 0
         self.done_messages: list[tuple[str, TurnUsage]] = []
         self.title_updates: list[tuple[str, TurnUsage | None]] = []
@@ -315,8 +316,9 @@ class _FakeSubscriber:
     async def on_done(self, content: str, usage: TurnUsage) -> None:
         self.done_messages.append((content, usage))
 
-    async def on_error(self, detail: str) -> None:
+    async def on_error(self, detail: str, *, turn_terminal: bool = False) -> None:
         self.errors.append(detail)
+        self.error_events.append((detail, turn_terminal))
 
     async def on_cancelled(self) -> None:
         self.cancelled += 1
@@ -775,6 +777,212 @@ def test_submit_cancel_noop_when_inactive(tmp_path: Path):
     asyncio.run(_run())
 
 
+def test_retry_latest_turn_rewinds_and_restarts(tmp_path: Path):
+    async def _run() -> None:
+        engine = _make_engine(tmp_path)
+        state = engine.session_mgr.create_session()
+        sid = state.session_id
+
+        sub = _FakeSubscriber()
+        engine.subscribe(sid, sub)
+
+        engine.session_mgr.save_events(
+            sid,
+            [
+                {"role": "user", "content": "first"},
+                {"role": "assistant", "content": "first answer"},
+                {"role": "user", "content": "second"},
+                {"role": "assistant", "content": "second answer"},
+            ],
+        )
+        engine.session_mgr.save_history(
+            sid,
+            [
+                ModelRequest(parts=[UserPromptPart(content="first")]),
+                ModelResponse(parts=[TextPart(content="first answer")]),
+                ModelRequest(parts=[UserPromptPart(content="second")]),
+                ModelResponse(parts=[TextPart(content="second answer")]),
+            ],
+        )
+
+        async def _fake_run_turn(
+            user_input: str,
+            _deps: Any,
+            message_history: list[Any],
+            **_kwargs: Any,
+        ) -> tuple[list[Any], str, str]:
+            assert user_input == "second"
+            assert len(message_history) == 2
+            assert isinstance(message_history[0], ModelRequest)
+            assert isinstance(message_history[1], ModelResponse)
+            return (
+                [
+                    *message_history,
+                    ModelRequest(parts=[UserPromptPart(content=user_input)]),
+                    ModelResponse(parts=[TextPart(content="retried answer")]),
+                ],
+                "retried answer",
+                "",
+            )
+
+        with patch("carapace.session.engine.run_agent_turn", new=_fake_run_turn):
+            await engine.retry_latest_turn(sid, origin=sub)
+            active = engine.get_active(sid)
+            assert active is not None and active.agent_task is not None
+            await active.agent_task
+
+        events = engine.session_mgr.load_events(sid)
+        assert _without_timestamps(events) == [
+            {"role": "user", "content": "first"},
+            {"role": "assistant", "content": "first answer"},
+            {"role": "user", "content": "second"},
+            {"role": "assistant", "content": "retried answer"},
+        ]
+
+        history = engine.session_mgr.load_history(sid)
+        assert len(history) == 4
+        assert isinstance(history[-1], ModelResponse)
+        assert any(isinstance(part, TextPart) and part.content == "retried answer" for part in history[-1].parts)
+
+    with _patch_sentinel():
+        asyncio.run(_run())
+
+
+def test_retry_latest_turn_after_failure_uses_terminal_marker_history(tmp_path: Path):
+    async def _run() -> None:
+        engine = _make_engine(tmp_path)
+        sid = engine.session_mgr.create_session().session_id
+
+        engine.session_mgr.save_events(
+            sid,
+            [
+                {"role": "user", "content": "hello"},
+                {"role": "assistant", "content": "The previous turn failed before completion."},
+            ],
+        )
+        engine.session_mgr.save_history(
+            sid,
+            [
+                ModelRequest(parts=[UserPromptPart(content="hello")]),
+                ModelResponse(parts=[TextPart(content="The previous turn failed before completion.")]),
+            ],
+        )
+
+        async def _fake_run_turn(
+            user_input: str,
+            _deps: Any,
+            message_history: list[Any],
+            **_kwargs: Any,
+        ) -> tuple[list[Any], str, str]:
+            assert user_input == "hello"
+            assert message_history == []
+            return (
+                [
+                    ModelRequest(parts=[UserPromptPart(content=user_input)]),
+                    ModelResponse(parts=[TextPart(content="recovered")]),
+                ],
+                "recovered",
+                "",
+            )
+
+        with patch("carapace.session.engine.run_agent_turn", new=_fake_run_turn):
+            await engine.retry_latest_turn(sid)
+            active = engine.get_active(sid)
+            assert active is not None and active.agent_task is not None
+            await active.agent_task
+
+        events = engine.session_mgr.load_events(sid)
+        assert _without_timestamps(events) == [
+            {"role": "user", "content": "hello"},
+            {"role": "assistant", "content": "recovered"},
+        ]
+
+    with _patch_sentinel():
+        asyncio.run(_run())
+
+
+def test_reset_to_turn_rewinds_later_turns(tmp_path: Path):
+    async def _run() -> None:
+        engine = _make_engine(tmp_path)
+        sid = engine.session_mgr.create_session().session_id
+
+        engine.session_mgr.save_events(
+            sid,
+            [
+                {"role": "user", "content": "first"},
+                {"role": "assistant", "content": "first answer"},
+                {"role": "user", "content": "second"},
+                {"role": "assistant", "content": "second answer"},
+            ],
+        )
+        engine.session_mgr.save_history(
+            sid,
+            [
+                ModelRequest(parts=[UserPromptPart(content="first")]),
+                ModelResponse(parts=[TextPart(content="first answer")]),
+                ModelRequest(parts=[UserPromptPart(content="second")]),
+                ModelResponse(parts=[TextPart(content="second answer")]),
+            ],
+        )
+
+        reset_applied = await engine.reset_to_turn(sid, 1)
+
+        assert reset_applied is True
+
+        events = engine.session_mgr.load_events(sid)
+        assert _without_timestamps(events) == [
+            {"role": "user", "content": "first"},
+            {"role": "assistant", "content": "first answer"},
+        ]
+
+        history = engine.session_mgr.load_history(sid)
+        assert len(history) == 2
+        assert isinstance(history[0], ModelRequest)
+        assert isinstance(history[1], ModelResponse)
+
+    with _patch_sentinel():
+        asyncio.run(_run())
+
+
+def test_reset_to_turn_rejects_unknown_target(tmp_path: Path):
+    async def _run() -> None:
+        engine = _make_engine(tmp_path)
+        sid = engine.session_mgr.create_session().session_id
+        sub = _FakeSubscriber()
+        engine.subscribe(sid, sub)
+
+        engine.session_mgr.save_events(
+            sid,
+            [
+                {"role": "user", "content": "hello"},
+                {"role": "assistant", "content": "world"},
+            ],
+        )
+
+        reset_applied = await engine.reset_to_turn(sid, 99)
+
+        assert reset_applied is False
+        assert sub.errors == ["Unknown reset target"]
+        assert sub.error_events == [("Unknown reset target", False)]
+
+    with _patch_sentinel():
+        asyncio.run(_run())
+
+
+def test_history_for_completed_turn_count_excludes_trailing_incomplete_request(tmp_path: Path):
+    with _patch_sentinel():
+        engine = _make_engine(tmp_path)
+
+    history = [
+        ModelRequest(parts=[UserPromptPart(content="first")]),
+        ModelResponse(parts=[TextPart(content="first answer")]),
+        ModelRequest(parts=[UserPromptPart(content="second")]),
+    ]
+
+    assert engine._completed_model_turn_end_indexes(history) == [1]
+    assert engine._history_for_completed_turn_count(history, 2) == history[:2]
+
+
 def test_handle_slash_command_session(tmp_path: Path):
     """handle_slash_command /session returns session metadata."""
     with _patch_sentinel():
@@ -1183,6 +1391,9 @@ def test_submit_message_budget_exceeded_persists_history(tmp_path: Path):
             "content": "Session budget reached: input 1.0k tokens / 1.0k tokens",
         }
         assert any("Session budget reached" in err for err in sub.errors)
+        assert any(
+            detail.startswith("Session budget reached") and turn_terminal for detail, turn_terminal in sub.error_events
+        )
 
     with _patch_sentinel():
         asyncio.run(_run())
