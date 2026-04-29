@@ -925,7 +925,9 @@ def test_reset_to_turn_rewinds_later_turns(tmp_path: Path):
             ],
         )
 
-        await engine.reset_to_turn(sid, 1)
+        reset_applied = await engine.reset_to_turn(sid, 1)
+
+        assert reset_applied is True
 
         events = engine.session_mgr.load_events(sid)
         assert _without_timestamps(events) == [
@@ -957,8 +959,9 @@ def test_reset_to_turn_rejects_unknown_target(tmp_path: Path):
             ],
         )
 
-        await engine.reset_to_turn(sid, 99)
+        reset_applied = await engine.reset_to_turn(sid, 99)
 
+        assert reset_applied is False
         assert sub.errors == ["Unknown reset target"]
         assert sub.error_events == [("Unknown reset target", False)]
 

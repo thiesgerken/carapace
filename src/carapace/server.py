@@ -1095,14 +1095,15 @@ async def chat_ws(
                 continue
 
             if isinstance(client_msg, ResetToTurnRequest):
-                await _engine.reset_to_turn(session_id, client_msg.event_index)
-                await _send(
-                    websocket,
-                    CommandResult(
-                        command="reset_to_turn",
-                        data={"event_index": client_msg.event_index},
-                    ),
-                )
+                reset_applied = await _engine.reset_to_turn(session_id, client_msg.event_index)
+                if reset_applied:
+                    await _send(
+                        websocket,
+                        CommandResult(
+                            command="reset_to_turn",
+                            data={"event_index": client_msg.event_index},
+                        ),
+                    )
                 continue
 
             # --- Approval responses — forward to engine ---

@@ -843,20 +843,21 @@ class SessionEngine:
         self._rewrite_session_transcript(session_id, events[: target.start_event_index])
         await self.submit_message(session_id, target.user_content, origin=origin)
 
-    async def reset_to_turn(self, session_id: str, event_index: int) -> None:
+    async def reset_to_turn(self, session_id: str, event_index: int) -> bool:
         active = self._ensure_active(session_id)
         if active.agent_task and not active.agent_task.done():
             await self._broadcast(active, "on_error", "Agent is busy — cancel first")
-            return
+            return False
 
         events = self._truncate_incomplete_events(self._session_mgr.load_events(session_id))
         turns = self._completed_event_turns(events)
         target = next((turn for turn in turns if turn.end_event_index == event_index), None)
         if target is None:
             await self._broadcast(active, "on_error", "Unknown reset target")
-            return
+            return False
 
         self._rewrite_session_transcript(session_id, events[: target.end_event_index + 1])
+        return True
 
     async def submit_cancel(self, session_id: str) -> None:
         """Cancel the running agent turn for *session_id*."""
