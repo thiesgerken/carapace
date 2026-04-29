@@ -763,7 +763,7 @@ class SessionEngine(SessionTurnMixin):
                 "session_id": forked_session_id,
                 "channel_type": channel_type,
                 "channel_ref": channel_ref or None,
-                "title": f"{source_state.title} (Kopie)" if source_state.title else None,
+                "title": f"{source_state.title} (Fork)" if source_state.title else None,
                 "created_at": now,
                 "last_active": now,
                 "knowledge_last_committed_at": None,

@@ -255,7 +255,7 @@ def test_fork_session_creates_new_session_from_turn(client, auth_headers):
     assert data["session_id"] != sid
     assert data["channel_type"] == "web"
     assert data["channel_ref"] is None
-    assert data["title"] == "Fork me (Kopie)"
+    assert data["title"] == "Fork me (Fork)"
     assert data["message_count"] == 2
     forked_sid = data["session_id"]
     forked_state = srv._engine.session_mgr.load_state(forked_sid)

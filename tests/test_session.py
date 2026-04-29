@@ -456,7 +456,7 @@ def test_fork_session_copies_transcript_and_security_context(tmp_path: Path) -> 
     assert forked.session_id != sid
     assert forked.channel_type == "web"
     assert forked.channel_ref is None
-    assert forked.title == "Original title (Kopie)"
+    assert forked.title == "Original title (Fork)"
     assert forked.private is True
     assert forked.approved_operations == ["exec"]
     assert forked.activated_skills == ["web"]
