@@ -247,6 +247,12 @@ function HomeContent() {
     handleSessionUpdate(session);
   }, []);
 
+  const handleForkSession = useCallback((session: SessionInfo) => {
+    handleSessionUpdate(session);
+    setActiveSessionId(session.session_id);
+    setSidebarOpen(false);
+  }, []);
+
   const handleActiveSessionDelete = useCallback(async () => {
     if (!activeSessionId) return;
     await handleDeleteSession(activeSessionId);
@@ -315,6 +321,7 @@ function HomeContent() {
             onTitleUpdate={handleActiveSessionTitleUpdate}
             onSessionUpdate={handleActiveSessionUpdate}
             onSandboxUpdate={handleActiveSessionSandboxUpdate}
+            onForkSession={handleForkSession}
             onDeleteSession={handleActiveSessionDelete}
           />
         ) : (

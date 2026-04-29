@@ -16,6 +16,7 @@ import secrets
 import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Literal
@@ -727,6 +728,57 @@ class SessionEngine(SessionTurnMixin):
 
         self._rewrite_session_transcript(session_id, events[: target.end_event_index + 1])
         return True
+
+    def fork_session(
+        self,
+        session_id: str,
+        *,
+        event_index: int,
+        channel_type: str,
+        channel_ref: str = "",
+    ) -> SessionState:
+        active = self._ensure_active(session_id)
+        if active.agent_task and not active.agent_task.done():
+            msg = "Agent is busy — cancel first"
+            raise RuntimeError(msg)
+
+        source_state = active.state.model_copy(deep=True)
+        events = self._truncate_incomplete_events(self._session_mgr.load_events(session_id))
+        turns = self._completed_event_turns(events)
+        target = next((turn for turn in turns if turn.end_event_index == event_index), None)
+        if target is None:
+            msg = "Unknown fork target"
+            raise ValueError(msg)
+
+        forked_events = events[: target.end_event_index + 1]
+        turn_count = len(self._completed_event_turns(forked_events))
+        history = self._truncate_incomplete_model_history(self._session_mgr.load_history(session_id))
+        forked_history = self._history_for_completed_turn_count(history, turn_count)
+
+        now = datetime.now(tz=UTC)
+        forked_session_id = f"{now:%Y-%m-%d-%H-%M}-{secrets.token_hex(4)}"
+        forked_state = source_state.model_copy(
+            deep=True,
+            update={
+                "session_id": forked_session_id,
+                "channel_type": channel_type,
+                "channel_ref": channel_ref or None,
+                "title": f"{source_state.title} (Kopie)" if source_state.title else None,
+                "created_at": now,
+                "last_active": now,
+                "knowledge_last_committed_at": None,
+                "knowledge_last_archive_path": None,
+                "knowledge_last_export_hash": None,
+                "knowledge_last_commit_trigger": None,
+            },
+        )
+
+        self._session_mgr.save_state(forked_state)
+        self._session_mgr.save_events(forked_session_id, forked_events)
+        self._session_mgr.save_history(forked_session_id, forked_history)
+        self._session_mgr.clear_llm_request_state(forked_session_id)
+        self._session_mgr.clear_sandbox_snapshot(forked_session_id)
+        return forked_state
 
     async def submit_cancel(self, session_id: str) -> None:
         """Cancel the running agent turn for *session_id*."""

@@ -1,6 +1,6 @@
 "use client";
 
-import { Brain, Check, ChevronRight, Copy, Loader2, RotateCcw, Undo2 } from "lucide-react";
+import { Brain, Check, ChevronRight, Copy, GitBranch, Loader2, RotateCcw, Undo2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
 import type { ChatMessage, EscalationDecision, LlmActivity } from "@/lib/types";
@@ -195,25 +195,35 @@ function MessageActionButton({
 
 function MessageActions({
   copyText,
+  canFork,
   canRetry,
   canReset,
   disabled,
+  onFork,
   onRetry,
   onReset,
 }: {
   copyText?: string;
+  canFork?: boolean;
   canRetry?: boolean;
   canReset?: boolean;
   disabled?: boolean;
+  onFork?: () => void;
   onRetry?: () => void;
   onReset?: () => void;
 }) {
   const hasCopy = typeof copyText === "string" && copyText.length > 0;
-  if (!hasCopy && !canRetry && !canReset) return null;
+  if (!hasCopy && !canFork && !canRetry && !canReset) return null;
 
   return (
     <div className="mt-2 flex items-center gap-2">
       <MessageCopyButton text={copyText ?? ""} className="border border-border/70 p-1.5" />
+      <MessageActionButton
+        label="Fork session from here"
+        icon={<GitBranch className="size-3.5" />}
+        disabled={disabled}
+        onClick={canFork ? onFork : undefined}
+      />
       <MessageActionButton
         label="Retry turn"
         icon={<RotateCcw className="size-3.5" />}
@@ -233,6 +243,7 @@ function MessageActions({
 interface MessageProps {
   message: ChatMessage;
   activeLlmActivity?: LlmActivity | null;
+  canFork?: boolean;
   canRetry?: boolean;
   canReset?: boolean;
   actionDisabled?: boolean;
@@ -247,6 +258,7 @@ interface MessageProps {
     decision: EscalationDecision,
     message?: string,
   ) => void;
+  onFork?: () => void;
   onRetry?: () => void;
   onReset?: () => void;
 }
@@ -254,12 +266,14 @@ interface MessageProps {
 export function Message({
   message,
   activeLlmActivity,
+  canFork,
   canRetry,
   canReset,
   actionDisabled,
   onApproval,
   onEscalation,
   onCredentialApproval,
+  onFork,
   onRetry,
   onReset,
 }: MessageProps) {
@@ -286,9 +300,11 @@ export function Message({
           </div>
           <MessageActions
             copyText={message.content}
+            canFork={canFork}
             canRetry={canRetry}
             canReset={canReset}
             disabled={actionDisabled}
+            onFork={onFork}
             onRetry={onRetry}
             onReset={onReset}
           />
