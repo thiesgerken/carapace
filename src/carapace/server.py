@@ -455,6 +455,12 @@ class SessionUpdateRequest(BaseModel):
     private: bool | None = None
 
 
+class SessionForkRequest(BaseModel):
+    event_index: int
+    channel_type: str = "cli"
+    channel_ref: str = ""
+
+
 class SessionInfo(BaseModel):
     session_id: str
     channel_type: str
@@ -571,6 +577,31 @@ async def update_session(
 
     sandbox = _engine.session_mgr.load_sandbox_snapshot(session_id)
     return SessionInfo.from_state(state, message_count=_session_message_count(session_id), sandbox=sandbox)
+
+
+@router.post("/sessions/{session_id}/fork", response_model=SessionInfo)
+async def fork_session(
+    session_id: str,
+    body: SessionForkRequest,
+    _token: str = Depends(_verify_token),
+) -> SessionInfo:
+    state = _engine.session_mgr.load_state(session_id)
+    if state is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    try:
+        forked = _engine.fork_session(
+            session_id,
+            event_index=body.event_index,
+            channel_type=body.channel_type,
+            channel_ref=body.channel_ref,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return SessionInfo.from_state(forked, message_count=_session_message_count(forked.session_id))
 
 
 @router.post("/sessions/{session_id}/knowledge/commit", response_model=SessionArchiveCommitResponse)
