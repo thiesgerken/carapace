@@ -1,10 +1,15 @@
 "use client";
 
-import { decodeAvailableModel, type AvailableModelInfo } from "@/lib/api";
+import {
+  decodeAvailableModel,
+  decodeSlashCommand,
+  type AvailableModelInfo,
+  type SlashCommand,
+} from "@/lib/api";
 import { isRecord, readString } from "@/lib/decoding";
 
 interface HelpData {
-  commands: Array<{ command: string; description: string }>;
+  commands: SlashCommand[];
 }
 
 interface RuleRow {
@@ -263,14 +268,8 @@ function decodeHelpData(d: unknown): HelpData | null {
   if (!Array.isArray(commands)) return null;
 
   const decoded = commands
-    .map((entry) => {
-      if (!isRecord(entry)) return null;
-      const command = readString(entry, "command");
-      const description = readString(entry, "description");
-      if (!command || description === undefined) return null;
-      return { command, description };
-    })
-    .filter((entry): entry is HelpData["commands"][number] => entry !== null);
+    .map((entry) => decodeSlashCommand(entry))
+    .filter((entry): entry is SlashCommand => entry !== null);
 
   return { commands: decoded };
 }

@@ -150,7 +150,7 @@ export interface SlashCommand {
   description: string;
 }
 
-function decodeSlashCommand(raw: unknown): SlashCommand | null {
+export function decodeSlashCommand(raw: unknown): SlashCommand | null {
   if (!isRecord(raw)) return null;
 
   const command = readString(raw, "command");
@@ -188,6 +188,7 @@ export interface AvailableModelInfo {
 
 export function decodeAvailableModel(raw: unknown): AvailableModelInfo | null {
   if (typeof raw === "string") {
+    if (!raw) return null;
     const splitIndex = raw.indexOf(":");
     if (splitIndex === -1) {
       return { id: raw, provider: "", name: raw, max_input_tokens: null };
