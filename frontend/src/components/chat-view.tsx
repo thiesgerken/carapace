@@ -10,6 +10,7 @@ import {
   fetchHistory,
   fetchSandbox,
   fetchModels,
+  forkSession,
   type SlashCommand,
   startSandbox,
   stopSandbox,
@@ -48,6 +49,7 @@ interface ChatViewProps {
   onTitleUpdate?: (title: string) => void;
   onSessionUpdate?: (session: SessionInfo) => void;
   onSandboxUpdate?: (sandbox: SessionSandboxSnapshot) => void;
+  onForkSession?: (session: SessionInfo) => void;
   onDeleteSession?: () => Promise<void>;
 }
 
@@ -705,6 +707,7 @@ export function ChatView({
   onTitleUpdate,
   onSessionUpdate,
   onSandboxUpdate,
+  onForkSession,
   onDeleteSession,
 }: ChatViewProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -1284,27 +1287,34 @@ export function ChatView({
     send({ type: "retry_latest_turn" });
   }
 
+  async function resolveTurnTargetEventIndex(messageIndex: number): Promise<number | undefined> {
+    const currentMessages = messages;
+    const localTerminalIndices = completedTurnMessageIndices(currentMessages);
+    const localTurnOrdinal = localTerminalIndices.indexOf(messageIndex);
+    if (localTurnOrdinal === -1) return undefined;
+
+    let targetEventIndex = eventIndexForMessage(currentMessages[messageIndex]);
+
+    if (targetEventIndex == null) {
+      const history = await fetchHistory(server, token, sessionId);
+      const canonicalMessages = projectHistoryToMessages(history);
+      const canonicalTerminalIndices = completedTurnMessageIndices(canonicalMessages);
+      const canonicalMessageIndex = canonicalTerminalIndices[localTurnOrdinal];
+      if (canonicalMessageIndex != null) {
+        targetEventIndex = eventIndexForMessage(canonicalMessages[canonicalMessageIndex]);
+      }
+    }
+
+    return targetEventIndex;
+  }
+
   async function handleReset(messageIndex: number) {
     if (waiting || status !== "connected") return;
 
     const currentMessages = messages;
-    const localTerminalIndices = completedTurnMessageIndices(currentMessages);
-    const localTurnOrdinal = localTerminalIndices.indexOf(messageIndex);
-    if (localTurnOrdinal === -1) return;
-
     setTurnActionBusyIndex(messageIndex);
     try {
-      let targetEventIndex = eventIndexForMessage(currentMessages[messageIndex]);
-
-      if (targetEventIndex == null) {
-        const history = await fetchHistory(server, token, sessionId);
-        const canonicalMessages = projectHistoryToMessages(history);
-        const canonicalTerminalIndices = completedTurnMessageIndices(canonicalMessages);
-        const canonicalMessageIndex = canonicalTerminalIndices[localTurnOrdinal];
-        if (canonicalMessageIndex != null) {
-          targetEventIndex = eventIndexForMessage(canonicalMessages[canonicalMessageIndex]);
-        }
-      }
+      const targetEventIndex = await resolveTurnTargetEventIndex(messageIndex);
 
       if (targetEventIndex == null) {
         setMessages((prev) => [
@@ -1317,6 +1327,32 @@ export function ChatView({
       resetRollbackRef.current = currentMessages;
       send({ type: "reset_to_turn", event_index: targetEventIndex });
       setMessages((prev) => prev.slice(0, messageIndex + 1));
+    } finally {
+      setTurnActionBusyIndex(null);
+    }
+  }
+
+  async function handleFork(messageIndex: number) {
+    if (waiting || status !== "connected" || !onForkSession) return;
+
+    setTurnActionBusyIndex(messageIndex);
+    try {
+      const targetEventIndex = await resolveTurnTargetEventIndex(messageIndex);
+      if (targetEventIndex == null) {
+        setMessages((prev) => [
+          ...prev,
+          { kind: "error", detail: "Could not resolve fork target." },
+        ]);
+        return;
+      }
+
+      const forked = await forkSession(server, token, sessionId, {
+        eventIndex: targetEventIndex,
+        channelType: "web",
+      });
+      onForkSession(forked);
+    } catch (error) {
+      setMessages((prev) => [...prev, { kind: "error", detail: errorDetail(error) }]);
     } finally {
       setTurnActionBusyIndex(null);
     }
@@ -1746,12 +1782,14 @@ export function ChatView({
               key={i}
               message={msg}
               activeLlmActivity={llmActivity}
+              canFork={msg.kind === "assistant"}
               canRetry={i === latestTerminalIndex && isTurnTerminalMessage(msg)}
               canReset={i !== latestTerminalIndex && isTurnTerminalMessage(msg)}
               actionDisabled={turnActionsDisabled}
               onApproval={handleApproval}
               onEscalation={handleEscalation}
               onCredentialApproval={handleCredentialEscalation}
+              onFork={msg.kind === "assistant" ? () => void handleFork(i) : undefined}
               onRetry={i === latestTerminalIndex && isTurnTerminalMessage(msg) ? handleRetry : undefined}
               onReset={i !== latestTerminalIndex && isTurnTerminalMessage(msg) ? () => void handleReset(i) : undefined}
             />

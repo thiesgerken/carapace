@@ -53,6 +53,25 @@ export async function updateSession(
   return res.json();
 }
 
+export async function forkSession(
+  server: string,
+  token: string,
+  sessionId: string,
+  body: { eventIndex: number; channelType: string; channelRef?: string },
+): Promise<SessionInfo> {
+  const res = await fetch(`${server}/api/sessions/${sessionId}/fork`, {
+    method: "POST",
+    headers: headers(token),
+    body: JSON.stringify({
+      event_index: body.eventIndex,
+      channel_type: body.channelType,
+      channel_ref: body.channelRef ?? "",
+    }),
+  });
+  if (!res.ok) throw new Error(`Failed to fork session: ${res.status}`);
+  return res.json();
+}
+
 export async function commitSessionKnowledge(
   server: string,
   token: string,

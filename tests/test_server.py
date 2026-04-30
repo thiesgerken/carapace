@@ -225,6 +225,46 @@ def test_update_session_privacy_updates_active_session_state(client, auth_header
     assert active.state.activated_skills == ["demo-skill"]
 
 
+def test_fork_session_creates_new_session_from_turn(client, auth_headers):
+    create_resp = client.post("/api/sessions", headers=auth_headers)
+    sid = create_resp.json()["session_id"]
+    state = srv._engine.session_mgr.load_state(sid)
+    state.title = "Fork me"
+    state.activated_skills = ["web"]
+    state.channel_type = "matrix"
+    state.channel_ref = "!room:example.com"
+    srv._engine.session_mgr.save_state(state)
+    srv._engine.session_mgr.append_events(
+        sid,
+        [
+            {"role": "user", "content": "hello"},
+            {"role": "assistant", "content": "world"},
+            {"role": "user", "content": "follow-up"},
+            {"role": "assistant", "content": "next"},
+        ],
+    )
+
+    resp = client.post(
+        f"/api/sessions/{sid}/fork",
+        headers=auth_headers,
+        json={"event_index": 1, "channel_type": "web", "channel_ref": ""},
+    )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["session_id"] != sid
+    assert data["channel_type"] == "web"
+    assert data["channel_ref"] is None
+    assert data["title"] == "Fork me (Copy)"
+    assert data["message_count"] == 2
+    forked_sid = data["session_id"]
+    forked_state = srv._engine.session_mgr.load_state(forked_sid)
+    assert forked_state is not None
+    assert forked_state.activated_skills == ["web"]
+    assert srv._engine.session_mgr.load_events(forked_sid)[-1]["content"] == "world"
+    assert srv._engine.session_mgr.load_events(sid)[-1]["content"] == "next"
+
+
 def test_commit_session_knowledge_writes_archive(client, auth_headers, tmp_path):
     create_resp = client.post("/api/sessions", headers=auth_headers)
     sid = create_resp.json()["session_id"]

@@ -408,6 +408,78 @@ def test_record_tool_call_event_reuses_sentinel_row_for_user_decision(tmp_path: 
     ]
 
 
+def test_fork_session_copies_transcript_and_security_context(tmp_path: Path) -> None:
+    with _patch_sentinel():
+        engine = _make_engine(tmp_path)
+
+    source = engine.session_mgr.create_session(channel_type="matrix", channel_ref="!room:example.com", private=True)
+    sid = source.session_id
+    active = engine.get_or_activate(sid)
+    active.state.title = "Original title"
+    active.state.approved_operations = ["exec"]
+    active.state.activated_skills = ["web"]
+    active.state.context_grants["web"] = ContextGrant(skill_name="web", domains={"example.com"})
+    active.state.knowledge_last_archive_path = "sessions/archive.json"
+    active.state.knowledge_last_commit_trigger = "manual"
+    active.state.knowledge_last_committed_at = datetime.now(tz=UTC)
+    engine.session_mgr.save_state(active.state)
+    engine.session_mgr.save_usage(
+        sid,
+        usage_mod.UsageTracker(models={"anthropic:test": ModelUsage(input_tokens=11, output_tokens=7)}),
+    )
+    engine.session_mgr.save_sandbox_snapshot(
+        sid,
+        SessionSandboxSnapshot(runtime="kubernetes", status="scaled_down", storage_present=True),
+    )
+    engine.session_mgr.append_events(
+        sid,
+        [
+            {"role": "user", "content": "first"},
+            {"role": "tool_call", "tool": "read", "args": {"path": "README.md"}, "detail": "reading"},
+            {"role": "assistant", "content": "reply one"},
+            {"role": "user", "content": "second"},
+            {"role": "assistant", "content": "reply two"},
+        ],
+    )
+    engine.session_mgr.save_history(
+        sid,
+        [
+            ModelRequest(parts=[UserPromptPart(content="first")]),
+            ModelResponse(parts=[TextPart(content="reply one")]),
+            ModelRequest(parts=[UserPromptPart(content="second")]),
+            ModelResponse(parts=[TextPart(content="reply two")]),
+        ],
+    )
+
+    forked = engine.fork_session(sid, event_index=2, channel_type="web")
+
+    assert forked.session_id != sid
+    assert forked.channel_type == "web"
+    assert forked.channel_ref is None
+    assert forked.title == "Original title (Copy)"
+    assert forked.private is True
+    assert forked.approved_operations == ["exec"]
+    assert forked.activated_skills == ["web"]
+    assert forked.context_grants["web"].domains == {"example.com"}
+    assert forked.knowledge_last_committed_at is None
+    assert forked.knowledge_last_archive_path is None
+    assert forked.knowledge_last_commit_trigger is None
+    assert _without_timestamps(engine.session_mgr.load_events(forked.session_id)) == [
+        {"role": "user", "content": "first"},
+        {"role": "tool_call", "tool": "read", "args": {"path": "README.md"}, "detail": "reading"},
+        {"role": "assistant", "content": "reply one"},
+    ]
+    forked_history = engine.session_mgr.load_history(forked.session_id)
+    assert len(forked_history) == 2
+    assert isinstance(forked_history[0], ModelRequest)
+    assert isinstance(forked_history[1], ModelResponse)
+    assert forked_history[0].parts[0].content == "first"
+    assert forked_history[1].parts[0].content == "reply one"
+    assert engine.session_mgr.load_usage(forked.session_id).models == {}
+    assert engine.session_mgr.load_sandbox_snapshot(forked.session_id) is None
+    assert len(engine.session_mgr.load_events(sid)) == 5
+
+
 def test_handle_token_chunk_promotes_activity_and_broadcasts(tmp_path: Path) -> None:
     async def _run() -> None:
         with _patch_sentinel():
