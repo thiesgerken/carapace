@@ -1,6 +1,21 @@
 # CHANGELOG
 
 
+## v0.105.0 (2026-04-30)
+
+
+### Other
+
+
+- wording
+  ([`71c632b`](https://github.com/thiesgerken/carapace/commit/71c632b1bc2c7c2f53da5d0120bc7fdfd6dc81c4))
+
+### ✨ Features
+
+
+- ✨ feat: add session fork action
+  ([`cb9ad37`](https://github.com/thiesgerken/carapace/commit/cb9ad37911659fa46c7673bec3cf793dc0304933))
+
 ## v0.104.1 (2026-04-29)
 
 
