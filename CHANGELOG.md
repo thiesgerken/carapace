@@ -1,6 +1,15 @@
 # CHANGELOG
 
 
+## v0.105.1 (2026-04-30)
+
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix: add tree to sandbox dockerfile
+  ([`c6dedc3`](https://github.com/thiesgerken/carapace/commit/c6dedc356796387403e1858b88e42e46d83a8fa3))
+
 ## v0.105.0 (2026-04-30)
 
 
