@@ -1,6 +1,17 @@
 # CHANGELOG
 
 
+## v0.105.3 (2026-05-01)
+
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix: set git config globally
+  ([`eea4732`](https://github.com/thiesgerken/carapace/commit/eea47320d79c5a2d5808f53a7e83d2cb7d945ecc))
+
+  Co-authored-by: Copilot <copilot@github.com>
+
 ## v0.105.2 (2026-05-01)
 
 
