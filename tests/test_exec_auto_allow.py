@@ -18,6 +18,9 @@ from carapace.security.sentinel import Sentinel
         ("grep -nF -- sentinel README.md", "grep"),
         ("rg -nF -- session src tests", "rg"),
         ("head -n 20 /workspace/README.md", "head"),
+        ("tail -n 20 /workspace/README.md", "tail"),
+        ("wc -l README.md", "wc"),
+        ("file -b README.md", "file"),
     ],
 )
 async def test_exec_auto_allow_skips_sentinel_for_read_only_commands(
@@ -47,6 +50,7 @@ async def test_exec_auto_allow_skips_sentinel_for_read_only_commands(
     assert isinstance(entry, ToolCallEntry)
     assert entry.tool == "exec"
     assert entry.decision == "auto_allowed"
+    assert entry.explanation == f"Auto-allowed by read-only exec heuristic ({expected_label})."
 
     assert callback_calls == [
         (
@@ -55,7 +59,7 @@ async def test_exec_auto_allow_skips_sentinel_for_read_only_commands(
             f"[safe-list] auto-allowed read-only exec heuristic ({expected_label})",
             "safe-list",
             "allow",
-            f"auto-allowed by read-only exec heuristic ({expected_label})",
+            f"Auto-allowed by read-only exec heuristic ({expected_label}).",
         )
     ]
 
@@ -67,6 +71,10 @@ async def test_exec_auto_allow_skips_sentinel_for_read_only_commands(
         ("cat README.md && rm -f data.txt", {"command": "cat README.md && rm -f data.txt"}),
         ("grep sentinel README.md", {"command": "grep sentinel README.md"}),
         ("cat ../secrets.env", {"command": "cat ../secrets.env"}),
+        ("rg -nF --pre=python README.md", {"command": "rg -nF --pre=python README.md"}),
+        ("grep -nF --color=always README.md", {"command": "grep -nF --color=always README.md"}),
+        ("tail -f /workspace/app/server.log", {"command": "tail -f /workspace/app/server.log"}),
+        ("grep -n -- -F README.md", {"command": "grep -n -- -F README.md"}),
         ("rg -nF -- token src", {"command": "rg -nF -- token src", "contexts": ["moneydb"]}),
     ],
 )

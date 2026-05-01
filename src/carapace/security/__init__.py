@@ -82,7 +82,8 @@ async def evaluate_with(
     if tool_name == "exec":
         matched_exec = match_auto_allowed_exec(args)
         if matched_exec is not None:
-            entry = ToolCallEntry(tool=tool_name, args=args, decision="auto_allowed")
+            explanation = f"Auto-allowed by read-only exec heuristic ({matched_exec})."
+            entry = ToolCallEntry(tool=tool_name, args=args, decision="auto_allowed", explanation=explanation)
             session.append(entry)
             session.write_audit(
                 AuditEntry.now(
@@ -90,7 +91,7 @@ async def evaluate_with(
                     tool=tool_name,
                     args_summary=args,
                     final_decision="auto_allowed",
-                    explanation=f"Auto-allowed by read-only exec heuristic ({matched_exec}).",
+                    explanation=explanation,
                 )
             )
             if verbose:
@@ -101,7 +102,7 @@ async def evaluate_with(
                     tool_call_callback,
                     approval_source="safe-list",
                     approval_verdict="allow",
-                    approval_explanation=f"auto-allowed by read-only exec heuristic ({matched_exec})",
+                    approval_explanation=explanation,
                 )
             return
 

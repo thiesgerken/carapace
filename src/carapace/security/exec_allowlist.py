@@ -3,13 +3,14 @@ from __future__ import annotations
 import re
 from typing import Any
 
-_EXEC_PATH_SEGMENT = r"[A-Za-z0-9_:@%+=,-][A-Za-z0-9_:@%+=.,-]*"
+_EXEC_PATH_SEGMENT = r"[A-Za-z0-9_:@%+=,][A-Za-z0-9_:@%+=.,-]*"
 _EXEC_WORKSPACE_PATH = rf"/workspace(?:/{_EXEC_PATH_SEGMENT})+/?"
 _EXEC_RELATIVE_PATH = (
     rf"(?:\.|{_EXEC_PATH_SEGMENT}(?:/{_EXEC_PATH_SEGMENT})*|" + rf"\./{_EXEC_PATH_SEGMENT}(?:/{_EXEC_PATH_SEGMENT})*)/?"
 )
 _EXEC_PATH = rf"(?:{_EXEC_WORKSPACE_PATH}|{_EXEC_RELATIVE_PATH})"
 _EXEC_NEEDLE = r"[^\s'\";&|<>`$(){}\[\]\\\n\r*?~]+"
+_EXEC_FIXED_STRING_FLAGS = r"(?:\s+-[A-Za-z]+)*\s+-[A-Za-z]*F[A-Za-z]*(?:\s+-[A-Za-z]+)*"
 _UNSAFE_EXEC_SHELL_RE = re.compile(r"""[;&|<>`$(){}\[\]\\\n\r'\"*?~]""")
 _AUTO_ALLOWED_EXEC_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("ls", re.compile(rf"^\s*(?:/bin/ls|/usr/bin/ls|ls)(?:\s+-[A-Za-z]+)*(?:\s+{_EXEC_PATH})*\s*$")),
@@ -27,15 +28,14 @@ _AUTO_ALLOWED_EXEC_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     (
         "grep",
         re.compile(
-            r"^\s*(?:/bin/grep|/usr/bin/grep|grep)(?=.*(?:^|\s)-[A-Za-z]*F[A-Za-z]*(?:\s|$))(?:\s+-[A-Za-z]+)*"
-            + rf"(?:\s+--)?\s+{_EXEC_NEEDLE}(?:\s+{_EXEC_PATH})+\s*$"
+            rf"^\s*(?:/bin/grep|/usr/bin/grep|grep){_EXEC_FIXED_STRING_FLAGS}"
+            + rf"\s+--\s+{_EXEC_NEEDLE}(?:\s+{_EXEC_PATH})+\s*$"
         ),
     ),
     (
         "rg",
         re.compile(
-            r"^\s*(?:/usr/bin/rg|rg)(?=.*(?:^|\s)-[A-Za-z]*F[A-Za-z]*(?:\s|$))(?:\s+-[A-Za-z]+)*"
-            + rf"(?:\s+--)?\s+{_EXEC_NEEDLE}(?:\s+{_EXEC_PATH})+\s*$"
+            rf"^\s*(?:/usr/bin/rg|rg){_EXEC_FIXED_STRING_FLAGS}" + rf"\s+--\s+{_EXEC_NEEDLE}(?:\s+{_EXEC_PATH})+\s*$"
         ),
     ),
 )
