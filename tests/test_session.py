@@ -1789,6 +1789,40 @@ def test_handle_slash_command_model_agent_only(tmp_path: Path):
         asyncio.run(_run())
 
 
+def test_model_overrides_persist_across_restart(tmp_path: Path) -> None:
+    with _patch_sentinel():
+        engine = _make_engine(tmp_path)
+        state = engine.session_mgr.create_session()
+        sid = state.session_id
+        engine.get_or_activate(sid)
+
+        async def _run() -> None:
+            result = await engine.handle_slash_command(sid, "/model openai:gpt-4o")
+            assert result is not None
+            assert result["command"] == "model"
+
+        asyncio.run(_run())
+
+    persisted = engine.session_mgr.load_state(sid)
+    assert persisted is not None
+    assert persisted.agent_model_name == "openai:gpt-4o"
+    assert persisted.sentinel_model_name == "openai:gpt-4o"
+    assert persisted.title_model_name == "openai:gpt-4o"
+
+    with _patch_sentinel():
+        restarted = _make_engine(tmp_path)
+        active = restarted.get_or_activate(sid)
+        deps = restarted._build_deps(active)
+
+    assert active.agent_model_name == "openai:gpt-4o"
+    assert active.sentinel_model_name == "openai:gpt-4o"
+    assert active.title_model_name == "openai:gpt-4o"
+    assert isinstance(deps.agent_model, TestModel)
+    assert deps.agent_model_id == "openai:gpt-4o"
+    assert active.sentinel is not None
+    active.sentinel.set_model.assert_called_once_with("openai:gpt-4o")
+
+
 def test_non_slash_user_message_count_ignores_slash_lines() -> None:
     events: list[dict[str, Any]] = [
         {"role": "user", "content": "/model-agent openai:gpt-4o"},
