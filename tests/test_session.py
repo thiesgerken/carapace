@@ -1819,8 +1819,57 @@ def test_model_overrides_persist_across_restart(tmp_path: Path) -> None:
     assert active.title_model_name == "openai:gpt-4o"
     assert isinstance(deps.agent_model, TestModel)
     assert deps.agent_model_id == "openai:gpt-4o"
+    assert active.agent_model is deps.agent_model
     assert active.sentinel is not None
     active.sentinel.set_model.assert_called_once_with("openai:gpt-4o")
+
+
+def test_invalid_model_overrides_fall_back_on_restart(tmp_path: Path) -> None:
+    with _patch_sentinel():
+        engine = _make_engine(tmp_path)
+        state = engine.session_mgr.create_session()
+
+    state.agent_model_name = "openai:missing-agent"
+    state.sentinel_model_name = "openai:missing-sentinel"
+    state.title_model_name = "openai:missing-title"
+    engine.session_mgr.save_state(state)
+
+    with _patch_sentinel() as sentinel_cls, patch("carapace.session.engine.logger.warning") as warning_mock:
+        sentinel_instance = sentinel_cls.return_value
+
+        def _set_model(name: str) -> None:
+            if name == "openai:missing-sentinel":
+                raise ValueError("missing sentinel model")
+
+        sentinel_instance.set_model.side_effect = _set_model
+
+        restarted = _make_engine(tmp_path)
+        restarted._resolve_model = MagicMock(
+            side_effect=lambda name: (
+                TestModel()
+                if name == restarted._config.agent.model
+                else (_ for _ in ()).throw(ValueError("missing agent model"))
+            )
+        )
+
+        active = restarted.get_or_activate(state.session_id)
+        deps = restarted._build_deps(active)
+
+    assert active.agent_model_name is None
+    assert active.sentinel_model_name is None
+    assert active.title_model_name is None
+    assert isinstance(deps.agent_model, TestModel)
+    assert deps.agent_model_id == restarted._config.agent.model
+
+    persisted = restarted.session_mgr.load_state(state.session_id)
+    assert persisted is not None
+    assert persisted.agent_model_name is None
+    assert persisted.sentinel_model_name is None
+    assert persisted.title_model_name is None
+
+    sentinel_instance.set_model.assert_any_call("openai:missing-sentinel")
+    sentinel_instance.set_model.assert_any_call(restarted._config.agent.sentinel_model)
+    assert warning_mock.call_count == 3
 
 
 def test_non_slash_user_message_count_ignores_slash_lines() -> None:
