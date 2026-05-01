@@ -426,6 +426,7 @@ class SessionEngine(SessionTurnMixin):
             session_id,
             audit_dir=audit_dir,
             max_sentinel_calls_per_tool_call=self._config.agent.max_sentinel_calls_per_tool_call,
+            sentinel_domain_batch_window_ms=self._config.agent.sentinel_domain_batch_window_ms,
         )
         sentinel = Sentinel(
             model=self._config.agent.sentinel_model,

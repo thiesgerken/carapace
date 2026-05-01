@@ -271,9 +271,12 @@ class AgentConfig(BaseModel):
 
     max_parallel_llm: int = 2
 
-    # Maximum number of extra sentinel-backed proxy domain reviews one tool call can trigger.
+    # Maximum number of sentinel-backed proxy domain review batches one tool call can trigger.
     # 0 disables the cap.
     max_sentinel_calls_per_tool_call: int = 5
+
+    # Debounce window for coalescing proxy domain requests within a tool call.
+    sentinel_domain_batch_window_ms: int = 100
 
     # Cap string length returned to the model (and mirrored to tool_result_callback). 0 = no limit.
     tool_output_max_chars: int = 16_000
@@ -282,6 +285,8 @@ class AgentConfig(BaseModel):
     def _defaults_listed_in_available_models(self) -> AgentConfig:
         if self.max_sentinel_calls_per_tool_call < 0:
             raise ValueError("agent.max_sentinel_calls_per_tool_call must be >= 0")
+        if self.sentinel_domain_batch_window_ms < 0:
+            raise ValueError("agent.sentinel_domain_batch_window_ms must be >= 0")
         catalog_ids = {e.model_id for e in self.available_models}
         for field_name in ("model", "sentinel_model", "title_model"):
             mid = getattr(self, field_name)
