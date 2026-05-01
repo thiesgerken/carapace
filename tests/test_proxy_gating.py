@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 
 import pytest
+from pydantic_ai.exceptions import UsageLimitExceeded
 
 from carapace.security import evaluate_domain_with
 from carapace.security.context import SentinelVerdict, SessionSecurity, UserEscalationDecision
@@ -14,10 +15,12 @@ class StubSentinel:
         *,
         verdicts: list[SentinelVerdict] | None = None,
         batch_verdicts: list[dict[str, SentinelVerdict]] | None = None,
+        single_side_effects: list[SentinelVerdict | Exception] | None = None,
+        batch_side_effects: list[dict[str, SentinelVerdict] | Exception] | None = None,
         batch_blocker: asyncio.Event | None = None,
     ) -> None:
-        self._verdicts = verdicts or []
-        self._batch_verdicts = batch_verdicts or []
+        self._single_side_effects = single_side_effects or list(verdicts or [])
+        self._batch_side_effects = batch_side_effects or list(batch_verdicts or [])
         self._batch_blocker = batch_blocker
         self.calls: list[tuple[str, str]] = []
         self.batch_calls: list[dict[str, str]] = []
@@ -34,9 +37,12 @@ class StubSentinel:
     ) -> SentinelVerdict:
         del session, usage_tracker, assert_llm_budget_available, usage_limits
         self.calls.append((domain, command))
-        if len(self.calls) > len(self._verdicts):
+        if len(self.calls) > len(self._single_side_effects):
             raise AssertionError("Unexpected extra sentinel domain review")
-        return self._verdicts[len(self.calls) - 1]
+        effect = self._single_side_effects[len(self.calls) - 1]
+        if isinstance(effect, Exception):
+            raise effect
+        return effect
 
     async def evaluate_domain_access_batch(
         self,
@@ -51,9 +57,12 @@ class StubSentinel:
         self.batch_calls.append(dict(domain_commands))
         if self._batch_blocker is not None and len(self.batch_calls) == 1:
             await self._batch_blocker.wait()
-        if len(self.batch_calls) > len(self._batch_verdicts):
+        if len(self.batch_calls) > len(self._batch_side_effects):
             raise AssertionError("Unexpected extra batched sentinel domain review")
-        return self._batch_verdicts[len(self.batch_calls) - 1]
+        effect = self._batch_side_effects[len(self.batch_calls) - 1]
+        if isinstance(effect, Exception):
+            raise effect
+        return effect
 
 
 @pytest.mark.anyio
@@ -222,3 +231,68 @@ async def test_new_domain_wave_after_submission_forms_second_batch() -> None:
         {"a.example.com": "curl https://a.example.com"},
         {"b.example.com": "curl https://b.example.com"},
     ]
+
+
+@pytest.mark.anyio
+async def test_single_domain_usage_limit_falls_back_to_user_approval() -> None:
+    session = SessionSecurity("session-1")
+    user_calls: list[tuple[str, dict[str, object]]] = []
+
+    async def approve(subject: str, context: dict[str, object]) -> UserEscalationDecision:
+        user_calls.append((subject, context))
+        return UserEscalationDecision(allowed=True)
+
+    session.set_user_escalation_callback(lambda _sid, subject, context: approve(subject, context))
+    sentinel = StubSentinel(
+        single_side_effects=[UsageLimitExceeded("The next request would exceed the request_limit of 5")]
+    )
+
+    allowed = await evaluate_domain_with(session, sentinel, "solo.example.com", "curl https://solo.example.com")
+
+    assert allowed is True
+    assert user_calls == [
+        (
+            "solo.example.com",
+            {
+                "command": "curl https://solo.example.com",
+                "explanation": (
+                    "Automatic sentinel review hit its internal request limit and could not finish. "
+                    + "Please approve or deny this domain manually."
+                ),
+                "kind": "domain_access",
+            },
+        )
+    ]
+
+
+@pytest.mark.anyio
+async def test_pending_requests_fail_when_worker_errors() -> None:
+    session = SessionSecurity("session-1", sentinel_domain_batch_window_ms=0)
+    session.current_parent_tool_id = "tool-1"
+    blocker = asyncio.Event()
+    sentinel = StubSentinel(
+        batch_side_effects=[RuntimeError("sentinel batch blew up")],
+        batch_blocker=blocker,
+    )
+
+    first_task = asyncio.create_task(
+        evaluate_domain_with(session, sentinel, "a.example.com", "curl https://a.example.com")
+    )
+    for _ in range(50):
+        if sentinel.batch_calls:
+            break
+        await asyncio.sleep(0)
+
+    second_task = asyncio.create_task(
+        evaluate_domain_with(session, sentinel, "b.example.com", "curl https://b.example.com")
+    )
+    await asyncio.sleep(0)
+    blocker.set()
+
+    first = await asyncio.gather(first_task, return_exceptions=True)
+    second = await asyncio.gather(second_task, return_exceptions=True)
+
+    assert isinstance(first[0], RuntimeError)
+    assert str(first[0]) == "sentinel batch blew up"
+    assert isinstance(second[0], RuntimeError)
+    assert str(second[0]) == "sentinel batch blew up"

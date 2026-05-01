@@ -282,14 +282,18 @@ async def _evaluate_single_domain_access(
 ) -> CachedDomainApproval:
     session.notify_domain_decision(domain, "[sentinel] reviewing", approval_source="sentinel")
 
-    verdict = await sentinel.evaluate_domain_access(
-        session,
-        domain,
-        command,
-        usage_tracker=usage_tracker,
-        assert_llm_budget_available=assert_llm_budget_available,
-        usage_limits=usage_limits,
-    )
+    try:
+        verdict = await sentinel.evaluate_domain_access(
+            session,
+            domain,
+            command,
+            usage_tracker=usage_tracker,
+            assert_llm_budget_available=assert_llm_budget_available,
+            usage_limits=usage_limits,
+        )
+    except UsageLimitExceeded:
+        return await _decision_for_usage_limit(session, domain, command)
+
     return await _decision_from_verdict(session, domain, command, verdict)
 
 
@@ -472,10 +476,11 @@ async def _run_domain_batch_worker(
             raise
         except Exception as exc:
             await session.fail_domain_batch(snapshot)
+            await session.fail_pending_domain_requests(snapshot, exc)
             for request in snapshot.requests.values():
                 if not request.future.done():
                     request.future.set_exception(exc)
-            raise
+            continue
 
         await session.complete_domain_batch(snapshot, results)
         for domain, request in snapshot.requests.items():

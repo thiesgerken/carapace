@@ -299,18 +299,6 @@ class SessionSecurity:
         self.current_parent_tool_id = None
         self._sync_domain_scope()
 
-    def get_cached_domain_approval(self, domain: str) -> CachedDomainApproval | None:
-        self._sync_domain_scope()
-        if self.current_parent_tool_id is None:
-            return None
-        return self._domain_scope_approvals.get(domain)
-
-    def cache_domain_approval(self, domain: str, approval: CachedDomainApproval) -> None:
-        self._sync_domain_scope()
-        if self.current_parent_tool_id is None:
-            return
-        self._domain_scope_approvals[domain] = approval
-
     async def get_or_enqueue_domain_approval(
         self,
         domain: str,
@@ -406,6 +394,19 @@ class SessionSecurity:
             self._sync_domain_scope()
             for domain in snapshot.requests:
                 self._domain_scope_inflight_futures.pop(domain, None)
+
+    async def fail_pending_domain_requests(self, snapshot: DomainBatchSnapshot, exc: Exception) -> None:
+        async with self._domain_scope_lock:
+            self._sync_domain_scope()
+            if self.current_parent_tool_id != snapshot.scope_id:
+                return
+
+            pending_requests = self._domain_scope_pending_requests
+            self._domain_scope_pending_requests = {}
+            self._domain_scope_pending_generation += 1
+
+        for request in pending_requests.values():
+            self._cancel_domain_future(request.future, str(exc))
 
     def append(self, entry: ActionLogEntry) -> None:
         self.action_log.append(entry)
