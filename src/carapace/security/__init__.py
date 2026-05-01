@@ -416,7 +416,7 @@ async def _evaluate_domain_batch(
         session.notify_domain_decision(domain, "[sentinel] reviewing", approval_source="sentinel")
 
     try:
-        verdicts = await sentinel.evaluate_domain_access_batch(
+        verdict = await sentinel.evaluate_domain_access_batch(
             session,
             domain_commands,
             usage_tracker=usage_tracker,
@@ -429,21 +429,10 @@ async def _evaluate_domain_batch(
             for domain, command in domain_commands.items()
         }
 
-    results: dict[str, CachedDomainApproval] = {}
-    for domain, command in domain_commands.items():
-        verdict = verdicts.get(
-            domain,
-            SentinelVerdict(
-                decision="escalate",
-                explanation=(
-                    "Automatic sentinel review did not return a decision for this domain. "
-                    + "Please approve or deny it manually."
-                ),
-                risk_level="high",
-            ),
-        )
-        results[domain] = await _decision_from_verdict(session, domain, command, verdict)
-    return results
+    return {
+        domain: await _decision_from_verdict(session, domain, command, verdict)
+        for domain, command in domain_commands.items()
+    }
 
 
 async def _run_domain_batch_worker(

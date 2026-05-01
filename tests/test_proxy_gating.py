@@ -14,9 +14,9 @@ class StubSentinel:
         self,
         *,
         verdicts: list[SentinelVerdict] | None = None,
-        batch_verdicts: list[dict[str, SentinelVerdict]] | None = None,
+        batch_verdicts: list[SentinelVerdict] | None = None,
         single_side_effects: list[SentinelVerdict | Exception] | None = None,
-        batch_side_effects: list[dict[str, SentinelVerdict] | Exception] | None = None,
+        batch_side_effects: list[SentinelVerdict | Exception] | None = None,
         batch_blocker: asyncio.Event | None = None,
     ) -> None:
         self._single_side_effects = single_side_effects or list(verdicts or [])
@@ -69,9 +69,7 @@ class StubSentinel:
 async def test_reuses_sentinel_domain_approval_within_tool_call() -> None:
     session = SessionSecurity("session-1", sentinel_domain_batch_window_ms=0)
     session.current_parent_tool_id = "tool-1"
-    sentinel = StubSentinel(
-        batch_verdicts=[{"api.example.com": SentinelVerdict(decision="allow", explanation="looks fine")}]
-    )
+    sentinel = StubSentinel(batch_verdicts=[SentinelVerdict(decision="allow", explanation="looks fine")])
 
     first = await evaluate_domain_with(session, sentinel, "api.example.com", "curl https://api.example.com")
     second = await evaluate_domain_with(session, sentinel, "api.example.com", "curl https://api.example.com")
@@ -92,9 +90,7 @@ async def test_reuses_user_domain_approval_within_tool_call() -> None:
         return UserEscalationDecision(allowed=True, message="approved")
 
     session.set_user_escalation_callback(lambda _sid, subject, context: approve(subject, context))
-    sentinel = StubSentinel(
-        batch_verdicts=[{"api.example.com": SentinelVerdict(decision="escalate", explanation="needs confirmation")}]
-    )
+    sentinel = StubSentinel(batch_verdicts=[SentinelVerdict(decision="escalate", explanation="needs confirmation")])
 
     first = await evaluate_domain_with(session, sentinel, "api.example.com", "curl https://api.example.com")
     second = await evaluate_domain_with(session, sentinel, "api.example.com", "curl https://api.example.com")
@@ -118,8 +114,8 @@ async def test_domain_review_limit_falls_back_to_user_approval() -> None:
     session.set_user_escalation_callback(lambda _sid, subject, context: approve(subject, context))
     sentinel = StubSentinel(
         batch_verdicts=[
-            {"a.example.com": SentinelVerdict(decision="allow", explanation="first")},
-            {"b.example.com": SentinelVerdict(decision="allow", explanation="second")},
+            SentinelVerdict(decision="allow", explanation="first batch"),
+            SentinelVerdict(decision="allow", explanation="second batch"),
         ]
     )
 
@@ -141,8 +137,8 @@ async def test_domain_approval_cache_resets_for_new_tool_call() -> None:
     session = SessionSecurity("session-1", sentinel_domain_batch_window_ms=0)
     sentinel = StubSentinel(
         batch_verdicts=[
-            {"api.example.com": SentinelVerdict(decision="allow", explanation="tool one")},
-            {"api.example.com": SentinelVerdict(decision="allow", explanation="tool two")},
+            SentinelVerdict(decision="allow", explanation="tool one"),
+            SentinelVerdict(decision="allow", explanation="tool two"),
         ]
     )
 
@@ -159,9 +155,7 @@ async def test_domain_approval_cache_resets_for_new_tool_call() -> None:
 async def test_parallel_same_domain_requests_share_one_batch() -> None:
     session = SessionSecurity("session-1", sentinel_domain_batch_window_ms=10)
     session.current_parent_tool_id = "tool-1"
-    sentinel = StubSentinel(
-        batch_verdicts=[{"api.example.com": SentinelVerdict(decision="allow", explanation="shared")}]
-    )
+    sentinel = StubSentinel(batch_verdicts=[SentinelVerdict(decision="allow", explanation="shared")])
 
     first, second = await asyncio.gather(
         evaluate_domain_with(session, sentinel, "api.example.com", "curl https://api.example.com"),
@@ -177,15 +171,7 @@ async def test_parallel_same_domain_requests_share_one_batch() -> None:
 async def test_parallel_distinct_domains_share_one_batch() -> None:
     session = SessionSecurity("session-1", sentinel_domain_batch_window_ms=10)
     session.current_parent_tool_id = "tool-1"
-    sentinel = StubSentinel(
-        batch_verdicts=[
-            {
-                "a.example.com": SentinelVerdict(decision="allow", explanation="a"),
-                "b.example.com": SentinelVerdict(decision="allow", explanation="b"),
-                "c.example.com": SentinelVerdict(decision="allow", explanation="c"),
-            }
-        ]
-    )
+    sentinel = StubSentinel(batch_verdicts=[SentinelVerdict(decision="allow", explanation="batch allow")])
 
     results = await asyncio.gather(
         evaluate_domain_with(session, sentinel, "a.example.com", "curl https://a.example.com"),
@@ -204,8 +190,8 @@ async def test_new_domain_wave_after_submission_forms_second_batch() -> None:
     blocker = asyncio.Event()
     sentinel = StubSentinel(
         batch_verdicts=[
-            {"a.example.com": SentinelVerdict(decision="allow", explanation="first wave")},
-            {"b.example.com": SentinelVerdict(decision="allow", explanation="second wave")},
+            SentinelVerdict(decision="allow", explanation="first wave"),
+            SentinelVerdict(decision="allow", explanation="second wave"),
         ],
         batch_blocker=blocker,
     )

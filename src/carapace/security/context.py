@@ -130,17 +130,6 @@ class SentinelVerdict(BaseModel):
     risk_level: Literal["low", "medium", "high"] = "medium"
 
 
-class BatchedSentinelVerdictEntry(BaseModel):
-    domain: str
-    decision: Literal["allow", "escalate", "deny"]
-    explanation: str = ""
-    risk_level: Literal["low", "medium", "high"] = "medium"
-
-
-class BatchedSentinelVerdict(BaseModel):
-    decisions: list[BatchedSentinelVerdictEntry] = []
-
-
 ApprovalSource = Literal["safe-list", "sentinel", "user", "skill", "bypass", "unknown"]
 ApprovalVerdict = Literal["allow", "deny", "escalate"]
 
