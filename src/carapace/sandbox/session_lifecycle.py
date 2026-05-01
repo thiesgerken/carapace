@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import secrets
+import shlex
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -279,7 +280,10 @@ class SandboxSessionLifecycle:
             name, email = name_tpl, f"{session_id}@carapace"
         name_sh = name.replace("%h", "$(hostname)")
         email_sh = email.replace("%h", "$(hostname)")
-        cmd = f'git -C /workspace config user.name "{name_sh}" && git -C /workspace config user.email "{email_sh}"'
+        cmd = (
+            f"git config --global user.name {shlex.quote(name_sh)} && "
+            f"git config --global user.email {shlex.quote(email_sh)}"
+        )
         await self._runtime.exec(container_id, cmd, timeout=10)
 
     async def install_commit_msg_hook(self, container_id: str, session_id: str) -> None:
