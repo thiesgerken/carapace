@@ -410,6 +410,49 @@ class SessionEngine(SessionTurnMixin):
         """Build per-model request settings from the configured catalog."""
         return model_settings_for_config(self._config, name, default_thinking=True)
 
+    def _restore_persisted_model_overrides(self, active: ActiveSession) -> None:
+        """Validate restored overrides, falling back to defaults when they are no longer usable."""
+        state_changed = False
+
+        if active.agent_model_name is not None:
+            try:
+                active.agent_model = self._resolve_model(active.agent_model_name)
+            except Exception as exc:
+                logger.warning(
+                    f"Persisted agent model override {active.agent_model_name!r} for session "
+                    + f"{active.state.session_id} is no longer valid: {exc}. Falling back to "
+                    + f"{self._config.agent.model!r}."
+                )
+                self._apply_model_override(active, "agent", None, None)
+                state_changed = True
+
+        if active.sentinel_model_name is not None and active.sentinel is not None:
+            try:
+                active.sentinel.set_model(active.sentinel_model_name)
+            except Exception as exc:
+                logger.warning(
+                    f"Persisted sentinel model override {active.sentinel_model_name!r} for session "
+                    + f"{active.state.session_id} is no longer valid: {exc}. Falling back to "
+                    + f"{self._config.agent.sentinel_model!r}."
+                )
+                self._apply_model_override(active, "sentinel", None, None)
+                state_changed = True
+
+        if active.title_model_name is not None:
+            try:
+                self._resolve_model(active.title_model_name)
+            except Exception as exc:
+                logger.warning(
+                    f"Persisted title model override {active.title_model_name!r} for session "
+                    + f"{active.state.session_id} is no longer valid: {exc}. Falling back to "
+                    + f"{self._config.agent.title_model!r}."
+                )
+                self._apply_model_override(active, "title", None, None)
+                state_changed = True
+
+        if state_changed:
+            self._session_mgr.save_state(active.state)
+
     # -- session lifecycle --
 
     def _ensure_active(self, session_id: str) -> ActiveSession:
@@ -443,7 +486,11 @@ class SessionEngine(SessionTurnMixin):
             sentinel=sentinel,
             usage_tracker=usage_tracker,
             llm_request_log=llm_log,
+            agent_model_name=state.agent_model_name,
+            sentinel_model_name=state.sentinel_model_name,
+            title_model_name=state.title_model_name,
         )
+        self._restore_persisted_model_overrides(active)
         self._active[session_id] = active
 
         # Wire security callbacks so domain escalation / info works
@@ -640,6 +687,14 @@ class SessionEngine(SessionTurnMixin):
     ) -> Deps:
         assert active.security is not None and active.sentinel is not None
         session_id = active.state.session_id
+        agent_model_id = active.agent_model_name or self._config.agent.model
+        agent_model = active.agent_model
+        if agent_model is None:
+            if active.agent_model_name is None:
+                agent_model = self._agent_model or self._resolve_model(self._config.agent.model)
+            else:
+                agent_model = self._resolve_model(active.agent_model_name)
+                active.agent_model = agent_model
 
         def _append_session_events(events: list[dict[str, Any]]) -> None:
             self._session_mgr.append_events(session_id, events)
@@ -653,8 +708,8 @@ class SessionEngine(SessionTurnMixin):
             sentinel=active.sentinel,
             git_store=self._git_store,
             skill_catalog=self._skill_catalog,
-            agent_model=active.agent_model or self._agent_model or self._resolve_model(self._config.agent.model),
-            agent_model_id=active.agent_model_name or self._config.agent.model,
+            agent_model=agent_model,
+            agent_model_id=agent_model_id,
             verbose=active.verbose,
             tool_call_callback=tool_call_callback,
             tool_result_callback=tool_result_callback,
@@ -1040,6 +1095,7 @@ class SessionEngine(SessionTurnMixin):
         if arg == "reset":
             for mt in self._MODEL_TYPES:
                 self._apply_model_override(active, mt, None, None)
+            self._session_mgr.save_state(active.state)
             reset_view = {t: {"current": defaults[t], "default": defaults[t]} for t in self._MODEL_TYPES}
             return {
                 "command": "model",
@@ -1054,6 +1110,7 @@ class SessionEngine(SessionTurnMixin):
         self._apply_model_override(active, "agent", arg, new_model)
         self._apply_model_override(active, "sentinel", arg, None)
         self._apply_model_override(active, "title", arg, None)
+        self._session_mgr.save_state(active.state)
         switched = {t: {"current": arg, "default": defaults[t]} for t in self._MODEL_TYPES}
         return {
             "command": "model",
@@ -1088,6 +1145,7 @@ class SessionEngine(SessionTurnMixin):
         # Reset
         if arg == "reset":
             self._apply_model_override(active, model_type, None, None)
+            self._session_mgr.save_state(active.state)
             if model_type == "title":
                 await self._regenerate_title(active, pending_user_line=slash_line)
             return {
@@ -1102,6 +1160,7 @@ class SessionEngine(SessionTurnMixin):
             return {"command": cmd_name, "data": {"current": current, "default": default, "error": str(exc)}}
 
         self._apply_model_override(active, model_type, arg, new_model if model_type == "agent" else None)
+        self._session_mgr.save_state(active.state)
         if model_type == "title":
             await self._regenerate_title(active, pending_user_line=slash_line)
         return {
@@ -1115,12 +1174,15 @@ class SessionEngine(SessionTurnMixin):
         if model_type == "agent":
             active.agent_model = model_obj
             active.agent_model_name = name
+            active.state.agent_model_name = name
         elif model_type == "sentinel":
             active.sentinel_model_name = name
+            active.state.sentinel_model_name = name
             if active.sentinel:
                 active.sentinel.set_model(name or self._config.agent.sentinel_model)
         elif model_type == "title":
             active.title_model_name = name
+            active.state.title_model_name = name
 
     async def _regenerate_title(self, active: ActiveSession, *, pending_user_line: str | None = None) -> None:
         """Regenerate the session title using the current title model.
