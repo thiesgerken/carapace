@@ -609,17 +609,20 @@ export function ToolCallBadge({
 
           {isSentinelReviewPending && (
             <div className="text-[11px] text-muted-foreground leading-relaxed">
-              <span className="font-medium text-foreground/70">
-                <Loader2 className="inline h-3 w-3 -translate-y-px mr-1 animate-spin" />
-                Sentinel:
-              </span>
-              Reviewing this tool call.
+                <span className="font-medium text-foreground/70">
+                  <Loader2 className="inline h-3 w-3 -translate-y-px mr-1 animate-spin" />
+                  Sentinel:
+                </span>{" "}
+                Reviewing this tool call.
             </div>
           )}
 
           {sentinelExplanation && (
             <div className="text-[11px] text-muted-foreground leading-relaxed">
-              <span className="font-medium text-foreground/70"><ShieldCheck className="inline h-3 w-3 -translate-y-px mr-1" />Sentinel: </span>
+                <span className="font-medium text-foreground/70">
+                  <ShieldCheck className="inline h-3 w-3 -translate-y-px mr-1" />
+                  Sentinel:
+                </span>{" "}
               {sentinelExplanation}
             </div>
           )}
