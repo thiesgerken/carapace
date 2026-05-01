@@ -1,6 +1,15 @@
 # CHANGELOG
 
 
+## v0.105.5 (2026-05-01)
+
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix: add poppler-utils to Dockerfile dependencies
+  ([`5992801`](https://github.com/thiesgerken/carapace/commit/5992801dd1d3851db1dbf6e05a583f05425ac2a1))
+
 ## v0.105.4 (2026-05-01)
 
 
