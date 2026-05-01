@@ -422,7 +422,11 @@ class SessionEngine(SessionTurnMixin):
             raise KeyError(f"Session {session_id} not found on disk")
 
         audit_dir = self._data_dir / "sessions" / session_id
-        security = SessionSecurity(session_id, audit_dir=audit_dir)
+        security = SessionSecurity(
+            session_id,
+            audit_dir=audit_dir,
+            max_sentinel_calls_per_tool_call=self._config.agent.max_sentinel_calls_per_tool_call,
+        )
         sentinel = Sentinel(
             model=self._config.agent.sentinel_model,
             knowledge_dir=self._knowledge_dir,

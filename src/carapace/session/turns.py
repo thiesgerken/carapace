@@ -227,6 +227,8 @@ class SessionTurnMixin(SessionTurnHost):
                     }
                 ],
             )
+            if active.security and active.security.current_parent_tool_id == tr.tool_id:
+                active.security.clear_current_parent_tool()
             logger.info(
                 f"Tool result session={session_id} tool={tr.tool} exit_code={tr.exit_code} "
                 + f"summary={_summarize_tool_result_for_log(tr)}"
@@ -237,6 +239,8 @@ class SessionTurnMixin(SessionTurnHost):
 
         try:
             async with active.lock:
+                if active.security:
+                    active.security.clear_current_parent_tool()
                 deps, message_history = await self._prepare_turn_execution(
                     active,
                     session_id,
@@ -320,6 +324,8 @@ class SessionTurnMixin(SessionTurnHost):
             )
             await self._broadcast(active, "on_error", traceback.format_exc(), turn_terminal=True)
         finally:
+            if active.security:
+                active.security.clear_current_parent_tool()
             active.agent_task = None
 
     def _save_turn_progress(self, session_id: str, active: ActiveSession) -> None:

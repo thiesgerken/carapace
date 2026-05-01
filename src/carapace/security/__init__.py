@@ -16,6 +16,7 @@ from carapace.security.context import (
     ApprovalSource,
     ApprovalVerdict,
     AuditEntry,
+    CachedDomainApproval,
     GitPushEntry,
     SecurityDeniedError,
     SentinelVerdict,
@@ -182,30 +183,47 @@ async def evaluate_domain_with(
     If the sentinel escalates, delegates to the session's user escalation callback.
     """
 
-    session.notify_domain_decision(domain, "[sentinel] reviewing", approval_source="sentinel")
+    cached_approval = session.get_cached_domain_approval(domain)
+    if cached_approval is not None:
+        detail = (
+            f"[cached {cached_approval.approval_source}: {cached_approval.approval_verdict}] "
+            + "reused earlier decision"
+        )
+        session.notify_domain_decision(
+            domain,
+            detail,
+            approval_source=cached_approval.approval_source,
+            approval_verdict=cached_approval.approval_verdict,
+            approval_explanation=cached_approval.explanation,
+        )
+        session.write_audit(
+            AuditEntry.now(
+                kind="proxy_domain",
+                domain=domain,
+                final_decision="allowed" if cached_approval.allowed else "denied",
+                explanation="Reused earlier domain decision within the same tool call.",
+            )
+        )
+        return cached_approval.allowed
 
-    verdict = await sentinel.evaluate_domain_access(
-        session,
-        domain,
-        command,
-        usage_tracker=usage_tracker,
-        assert_llm_budget_available=assert_llm_budget_available,
-        usage_limits=usage_limits,
-    )
+    can_review, _review_no, review_limit = session.begin_domain_sentinel_review()
 
+    verdict: SentinelVerdict
     allowed: bool
     final_decision: str
     user_message: str | None = None
 
-    if verdict.decision == "allow":
-        allowed = True
-        final_decision = "allowed"
-        detail = f"[sentinel: allow] {verdict.explanation}"
-    elif verdict.decision == "deny":
-        allowed = False
-        final_decision = "denied"
-        detail = f"[sentinel: deny] {verdict.explanation}"
-    else:
+    if not can_review:
+        limit_text = (
+            "Automatic sentinel review hit the per-tool-call domain review limit"
+            + (f" ({review_limit})" if review_limit is not None else "")
+            + ". Please approve or deny this domain manually."
+        )
+        verdict = SentinelVerdict(
+            decision="escalate",
+            explanation=limit_text,
+            risk_level="high",
+        )
         user_decision = await session.escalate_to_user(
             domain,
             {"command": command, "explanation": verdict.explanation, "kind": "domain_access"},
@@ -213,16 +231,61 @@ async def evaluate_domain_with(
         allowed = user_decision.allowed
         user_message = user_decision.message
         final_decision = "allowed" if allowed else "denied"
-        detail = format_denial_message("user", user_message) if not allowed else "[user: allow]"
+        detail = (
+            "[user: allow] sentinel domain review limit reached"
+            if allowed
+            else format_denial_message("user", user_message)
+        )
+    else:
+        session.notify_domain_decision(domain, "[sentinel] reviewing", approval_source="sentinel")
+
+        verdict = await sentinel.evaluate_domain_access(
+            session,
+            domain,
+            command,
+            usage_tracker=usage_tracker,
+            assert_llm_budget_available=assert_llm_budget_available,
+            usage_limits=usage_limits,
+        )
+
+        if verdict.decision == "allow":
+            allowed = True
+            final_decision = "allowed"
+            detail = f"[sentinel: allow] {verdict.explanation}"
+        elif verdict.decision == "deny":
+            allowed = False
+            final_decision = "denied"
+            detail = f"[sentinel: deny] {verdict.explanation}"
+        else:
+            user_decision = await session.escalate_to_user(
+                domain,
+                {"command": command, "explanation": verdict.explanation, "kind": "domain_access"},
+            )
+            allowed = user_decision.allowed
+            user_message = user_decision.message
+            final_decision = "allowed" if allowed else "denied"
+            detail = format_denial_message("user", user_message) if not allowed else "[user: allow]"
 
     source: ApprovalSource = "sentinel" if verdict.decision != "escalate" else "user"
     approval_verdict: ApprovalVerdict = "allow" if allowed else "deny"
+    approval_explanation = (
+        verdict.explanation if source == "sentinel" else normalize_optional_message(user_message) or verdict.explanation
+    )
+    session.cache_domain_approval(
+        domain,
+        CachedDomainApproval(
+            allowed=allowed,
+            approval_source=source,
+            approval_verdict=approval_verdict,
+            explanation=approval_explanation,
+        ),
+    )
     session.notify_domain_decision(
         domain,
         detail,
         approval_source=source,
         approval_verdict=approval_verdict,
-        approval_explanation=verdict.explanation if source == "sentinel" else normalize_optional_message(user_message),
+        approval_explanation=approval_explanation,
     )
 
     session.write_audit(

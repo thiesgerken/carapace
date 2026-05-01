@@ -133,6 +133,14 @@ ApprovalSource = Literal["safe-list", "sentinel", "user", "skill", "bypass", "un
 ApprovalVerdict = Literal["allow", "deny", "escalate"]
 
 
+@dataclass(frozen=True, slots=True)
+class CachedDomainApproval:
+    allowed: bool
+    approval_source: ApprovalSource
+    approval_verdict: ApprovalVerdict
+    explanation: str | None = None
+
+
 # --- Audit Log ---
 
 
@@ -176,7 +184,13 @@ class AuditEntry(BaseModel):
 class SessionSecurity:
     """Mutable per-session security state managed by the security module."""
 
-    def __init__(self, session_id: str, *, audit_dir: Path | None = None) -> None:
+    def __init__(
+        self,
+        session_id: str,
+        *,
+        audit_dir: Path | None = None,
+        max_sentinel_calls_per_tool_call: int = 5,
+    ) -> None:
         self.session_id = session_id
         self.action_log: list[
             UserMessageEntry
@@ -191,6 +205,7 @@ class SessionSecurity:
             | ContextGrantEntry
         ] = []
         self.sentinel_eval_count: int = 0
+        self.max_sentinel_calls_per_tool_call = max_sentinel_calls_per_tool_call
         self._last_synced_idx: int = 0
         self._audit_dir = audit_dir
         self._user_escalation_callback: (
@@ -207,6 +222,46 @@ class SessionSecurity:
         ) = None
         self._credential_notify_suppress: Callable[[str], bool] | None = None
         self.current_parent_tool_id: str | None = None
+        self._domain_scope_parent_tool_id: str | None = None
+        self._domain_scope_approvals: dict[str, CachedDomainApproval] = {}
+        self._domain_scope_sentinel_calls: int = 0
+
+    def _reset_domain_scope(self) -> None:
+        self._domain_scope_approvals = {}
+        self._domain_scope_sentinel_calls = 0
+
+    def _sync_domain_scope(self) -> None:
+        if self.current_parent_tool_id != self._domain_scope_parent_tool_id:
+            self._domain_scope_parent_tool_id = self.current_parent_tool_id
+            self._reset_domain_scope()
+
+    def clear_current_parent_tool(self) -> None:
+        self.current_parent_tool_id = None
+        self._sync_domain_scope()
+
+    def get_cached_domain_approval(self, domain: str) -> CachedDomainApproval | None:
+        self._sync_domain_scope()
+        if self.current_parent_tool_id is None:
+            return None
+        return self._domain_scope_approvals.get(domain)
+
+    def cache_domain_approval(self, domain: str, approval: CachedDomainApproval) -> None:
+        self._sync_domain_scope()
+        if self.current_parent_tool_id is None:
+            return
+        self._domain_scope_approvals[domain] = approval
+
+    def begin_domain_sentinel_review(self) -> tuple[bool, int | None, int | None]:
+        self._sync_domain_scope()
+        if self.current_parent_tool_id is None:
+            return True, None, None
+
+        limit = self.max_sentinel_calls_per_tool_call
+        if limit > 0 and self._domain_scope_sentinel_calls >= limit:
+            return False, self._domain_scope_sentinel_calls, limit
+
+        self._domain_scope_sentinel_calls += 1
+        return True, self._domain_scope_sentinel_calls, limit if limit > 0 else None
 
     def append(self, entry: ActionLogEntry) -> None:
         self.action_log.append(entry)
