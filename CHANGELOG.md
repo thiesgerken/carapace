@@ -1,6 +1,17 @@
 # CHANGELOG
 
 
+## v0.105.2 (2026-05-01)
+
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix: improve formatting of sentinel review messages in ToolCallBadge
+  ([`4c11dc5`](https://github.com/thiesgerken/carapace/commit/4c11dc595207e12d7061618de4b395e723e7727b))
+
+  Co-authored-by: Copilot <copilot@github.com>
+
 ## v0.105.1 (2026-04-30)
 
 
