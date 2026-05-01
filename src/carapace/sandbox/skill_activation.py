@@ -20,7 +20,7 @@ class SkillActivationProvider:
     trusted_files: tuple[str, ...]
     status_message: str
     command: str
-    timeout: int = 120
+    timeout: int = 600
     matcher: Callable[[Path], bool] | None = None
 
     def matches(self, skill_dir: Path) -> bool:
