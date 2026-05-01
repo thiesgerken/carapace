@@ -70,6 +70,7 @@ async def test_exec_auto_allow_skips_sentinel_for_read_only_commands(
     [
         ("cat README.md && rm -f data.txt", {"command": "cat README.md && rm -f data.txt"}),
         ("grep sentinel README.md", {"command": "grep sentinel README.md"}),
+        ("grep -nF -- #include src/main.c", {"command": "grep -nF -- #include src/main.c"}),
         ("cat ../secrets.env", {"command": "cat ../secrets.env"}),
         ("rg -nF --pre=python README.md", {"command": "rg -nF --pre=python README.md"}),
         ("grep -nF --color=always README.md", {"command": "grep -nF --color=always README.md"}),

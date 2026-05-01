@@ -11,7 +11,7 @@ _EXEC_RELATIVE_PATH = (
 _EXEC_PATH = rf"(?:{_EXEC_WORKSPACE_PATH}|{_EXEC_RELATIVE_PATH})"
 _EXEC_NEEDLE = r"[^\s'\";&|<>`$(){}\[\]\\\n\r*?~]+"
 _EXEC_FIXED_STRING_FLAGS = r"(?:\s+-[A-Za-z]+)*\s+-[A-Za-z]*F[A-Za-z]*(?:\s+-[A-Za-z]+)*"
-_UNSAFE_EXEC_SHELL_RE = re.compile(r"""[;&|<>`$(){}\[\]\\\n\r'\"*?~]""")
+_UNSAFE_EXEC_SHELL_RE = re.compile(r"""[;&|<>`$(){}\[\]\\\n\r'\"*?~#]""")
 _AUTO_ALLOWED_EXEC_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("ls", re.compile(rf"^\s*(?:/bin/ls|/usr/bin/ls|ls)(?:\s+-[A-Za-z]+)*(?:\s+{_EXEC_PATH})*\s*$")),
     ("cat", re.compile(rf"^\s*(?:/bin/cat|/usr/bin/cat|cat)(?:\s+{_EXEC_PATH})+\s*$")),
