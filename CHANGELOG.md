@@ -1,6 +1,15 @@
 # CHANGELOG
 
 
+## v0.105.4 (2026-05-01)
+
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix: increase default timeout for SkillActivationProvider to 600 seconds
+  ([`d5a4b8d`](https://github.com/thiesgerken/carapace/commit/d5a4b8d4a4588f3f8d647a188a68345f1f84a983))
+
 ## v0.105.3 (2026-05-01)
 
 
