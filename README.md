@@ -171,22 +171,16 @@ Planned next:
 
 ## Project Notes
 
-- Heavy AI use during development: the frontend is vibecoded, the backend is reviewcoded, and the architectural and security decisions are manual.
-- carapace is pre-1.0. Expect breaking changes before `1.0.0`.
+- Mandatory AI-Disclaimer: Of course I use AI for coding. The frontend is almoste purely vibecoded, and the backend is reviewcoded. I try to not touch any files in the backend myself, but I do look at changes to critical code. The architectural and security ideas and decisions are my own.
 - Batteries are not included. The point is to use the agent to build out your own skills and workflows.
-- This is primarily a personal agent, published because other people may find it useful too.
+- I made this for me! And because making stuff is fun. I don't care if you think < Insert other project name here > is better and / or solves the same problem. Putting the code on github in case anyone is interested in using it or iterating on my design.
+- carapace is pre-1.0. Expect breaking changes before `1.0.0`.
 
 ## Contributing
 
 Issues and pull requests are welcome. Before opening a PR, run the backend tests, frontend lint, and chart linting where relevant. The repo uses `prek` hooks and CI also covers tests, frontend lint, and Helm lint.
+I guess before accepting the first PR I have to think about a Contributor Policy and who owns the contributed code.
 
 ## License
 
 MIT. See [LICENSE](LICENSE).
-
-## Disclaimer
-
-This is a pet project, born out of curiosity to:
-
-- find out what hurdles arise when trying to build a safe personal agent,
-- see how far I can get by only assuming the reviewer and architect role while letting Cursor do the rest.
