@@ -322,6 +322,25 @@ def test_update_session_archives_updates_active_session_state(client, auth_heade
     assert srv._engine.get_active(sid) is None
 
 
+def test_update_session_unarchives_without_deactivating_active_session(client, auth_headers):
+    sid = client.post("/api/sessions", headers=auth_headers).json()["session_id"]
+    active = srv._engine.get_or_activate(sid)
+    original_state = active.state
+    active.state.attributes.archived = True
+    srv._engine.session_mgr.save_state(active.state)
+
+    resp = client.patch(
+        f"/api/sessions/{sid}",
+        headers=auth_headers,
+        json={"attributes": {"archived": False}},
+    )
+
+    assert resp.status_code == 200
+    assert original_state.attributes.archived is False
+    assert srv._engine.get_active(sid) is active
+    srv._engine.sandbox_mgr.destroy_session.assert_not_awaited()
+
+
 def test_archived_session_rejects_sandbox_start(client, auth_headers):
     sid = client.post("/api/sessions", headers=auth_headers).json()["session_id"]
     client.patch(

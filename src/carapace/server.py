@@ -619,10 +619,9 @@ async def update_session(
             _engine.update_active_state(session_id, attributes=previous_attributes)
             raise
 
-        if archive_changed:
+        if archive_changed and archive_now:
             _engine.deactivate(session_id)
-            if archive_now:
-                await _engine.sandbox_mgr.destroy_session(session_id)
+            await _engine.sandbox_mgr.destroy_session(session_id)
 
     sandbox = _engine.session_mgr.load_sandbox_snapshot(session_id)
     return SessionInfo.from_state(state, message_count=_session_message_count(session_id), sandbox=sandbox)
