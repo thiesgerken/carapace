@@ -38,17 +38,24 @@ def test_config_defaults():
 
 def test_session_budget_zero_values_normalize_to_unlimited() -> None:
     budget = SessionBudget.model_validate(
-        {"input_tokens": 0, "output_tokens": 0, "cost_usd": "0"},
+        {"input_tokens": 0, "output_tokens": 0, "cost_usd": "0", "tool_calls": 0},
     )
     assert budget.input_tokens is None
     assert budget.output_tokens is None
     assert budget.cost_usd is None
+    assert budget.tool_calls is None
     assert budget.has_any_limit is False
 
 
 def test_session_budget_accepts_decimal_cost() -> None:
     budget = SessionBudget(cost_usd=Decimal("1.25"))
     assert budget.cost_usd == Decimal("1.25")
+
+
+def test_session_budget_accepts_tool_call_limit() -> None:
+    budget = SessionBudget(tool_calls=7)
+    assert budget.tool_calls == 7
+    assert budget.has_any_limit is True
 
 
 def test_available_model_entry_shorthand_string():

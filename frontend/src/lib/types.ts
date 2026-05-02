@@ -212,7 +212,7 @@ export interface TurnUsageBreakdownPct {
 }
 
 export interface BudgetGauge {
-  key: "input" | "output" | "cost";
+  key: "input" | "output" | "cost" | "tool_calls";
   label: string;
   current_value: string;
   current_amount?: number | null;

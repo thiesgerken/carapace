@@ -26,6 +26,15 @@ def test_record_accumulates_tokens_across_events() -> None:
     assert t.categories["agent"].output_tokens == 55
 
 
+def test_record_tool_call_increments_counter() -> None:
+    tracker = UsageTracker()
+
+    tracker.record_tool_call()
+    tracker.record_tool_call()
+
+    assert tracker.tool_calls == 2
+
+
 def test_category_by_model_splits_per_category() -> None:
     t = UsageTracker()
     t.record(
@@ -85,6 +94,33 @@ def test_usage_budget_gauges_include_tokens_and_cost() -> None:
     assert gauges[1].current_amount == 250.0
     assert gauges[2].limit_value == "$1.0000"
     assert gauges[2].current_amount is not None
+
+
+def test_usage_budget_gauges_include_tool_calls() -> None:
+    tracker = UsageTracker(tool_calls=3)
+
+    gauges = usage_budget_gauges(
+        tracker,
+        tool_calls_limit=5,
+    )
+
+    assert [g.key for g in gauges] == ["tool_calls"]
+    assert gauges[0].current_value == "3 tool calls"
+    assert gauges[0].limit_value == "5 tool calls"
+    assert gauges[0].remaining_value == "2 tool calls"
+    assert gauges[0].current_amount == 3.0
+
+
+def test_usage_budget_exceeded_error_includes_tool_calls() -> None:
+    tracker = UsageTracker(tool_calls=2)
+
+    error = usage_budget_exceeded_error(
+        tracker,
+        tool_calls_limit=2,
+    )
+
+    assert error is not None
+    assert str(error) == "Session budget reached: tool calls 2 tool calls / 2 tool calls"
 
 
 def test_usage_budget_exceeded_error_treats_unknown_cost_pricing_as_zero() -> None:

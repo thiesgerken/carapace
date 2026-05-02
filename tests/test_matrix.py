@@ -464,6 +464,7 @@ def test_format_command_result_usage_context_table_preceded_by_blank_line():
             "category_costs": {},
             "total_input": 1,
             "total_output": 0,
+            "total_tool_calls": 2,
             "last_llm_agent": {
                 "context_size": 100,
                 "breakdown_pct": {
@@ -477,6 +478,7 @@ def test_format_command_result_usage_context_table_preceded_by_blank_line():
         },
     )
     text = _format_command_result_text(result)
+    assert "**Tool Calls:** 2" in text
     assert "**Context**\n\n| Source |" in text
     assert "<table" in _md_to_html(text)
 

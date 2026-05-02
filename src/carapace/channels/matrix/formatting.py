@@ -94,9 +94,10 @@ def format_command_result_text(result: CommandResult) -> str:
             budget_gauges: list[dict] = data.get("budget_gauges", [])
             total_input = data.get("total_input", 0)
             total_output = data.get("total_output", 0)
+            total_tool_calls = int(data.get("total_tool_calls", 0) or 0)
             total_cost = float(costs.get("total", 0))
 
-            if not models and not categories and not budget_gauges:
+            if not models and not categories and not budget_gauges and total_tool_calls == 0:
                 return "No token usage recorded yet."
 
             has_cache = any(
@@ -143,6 +144,7 @@ def format_command_result_text(result: CommandResult) -> str:
             parts.append(
                 f"**Total:** {total_tokens:,} tokens ({total_input:,} in + {total_output:,} out){cost_str}",
             )
+            parts.append(f"**Tool Calls:** {total_tool_calls:,}")
             if budget_gauges:
                 lines = [
                     "**Session Budgets**\n",

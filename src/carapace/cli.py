@@ -230,8 +230,9 @@ def _render_usage(payload: dict[str, Any]) -> None:
     costs: dict[str, str] = payload.get("costs", {})
     category_costs: dict[str, str] = payload.get("category_costs", {})
     budget_gauges: list[dict[str, Any]] = payload.get("budget_gauges", [])
+    total_tool_calls = int(payload.get("total_tool_calls", 0) or 0)
 
-    if not models and not categories and not budget_gauges:
+    if not models and not categories and not budget_gauges and total_tool_calls == 0:
         console.print("[dim]No token usage recorded yet.[/dim]")
         return
 
@@ -286,6 +287,7 @@ def _render_usage(payload: dict[str, Any]) -> None:
     cost_str = f" | {_styled_cost(total_cost)}" if total_cost != "0" else ""
     tokens_str = f"{total_in + total_out:,} tokens ({total_in:,} in + {total_out:,} out)"
     console.print(f"[bold]Total:[/bold] {tokens_str}{cost_str}")
+    console.print(f"[bold]Tool calls:[/bold] {total_tool_calls:,}")
 
     if budget_gauges:
         console.print(_make_budget_table(budget_gauges))

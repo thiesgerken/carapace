@@ -246,6 +246,7 @@ class SessionEngine(SessionTurnMixin):
             input_tokens_limit=budget.input_tokens,
             output_tokens_limit=budget.output_tokens,
             total_cost_limit=budget.cost_usd,
+            tool_calls_limit=budget.tool_calls,
         )
 
     def _budget_exceeded_error(self, active: ActiveSession) -> SessionBudgetExceededError | None:
@@ -255,6 +256,7 @@ class SessionEngine(SessionTurnMixin):
             input_tokens_limit=budget.input_tokens,
             output_tokens_limit=budget.output_tokens,
             total_cost_limit=budget.cost_usd,
+            tool_calls_limit=budget.tool_calls,
         )
 
     def _assert_llm_budget_available(self, active: ActiveSession) -> None:
@@ -323,7 +325,10 @@ class SessionEngine(SessionTurnMixin):
 
     def _budget_command_payload(self, active: ActiveSession, *, message: str | None = None) -> dict[str, Any]:
         gauges = self._budget_gauges(active)
-        usage_hint = "Set budgets with /budget input N, /budget output N, or /budget cost N. Use 0 to clear a limit."
+        usage_hint = (
+            "Set budgets with /budget input N, /budget output N, /budget cost N, "
+            "or /budget tools N. Use 0 to clear a limit."
+        )
         payload: dict[str, Any] = {
             "gauges": [g.model_dump(mode="json") for g in gauges],
             "usage_hint": usage_hint,
@@ -334,9 +339,11 @@ class SessionEngine(SessionTurnMixin):
             payload["message"] = "No session budgets configured."
         return payload
 
-    def _parse_budget_limit_value(self, metric: Literal["input", "output", "cost"], raw: str) -> int | Decimal:
+    def _parse_budget_limit_value(
+        self, metric: Literal["input", "output", "cost", "tool_calls"], raw: str
+    ) -> int | Decimal:
         cleaned = raw.replace(",", "").replace("_", "")
-        if metric in ("input", "output"):
+        if metric in ("input", "output", "tool_calls"):
             lowered = cleaned.lower()
             multiplier = 1
             if lowered.endswith("k"):
@@ -372,7 +379,7 @@ class SessionEngine(SessionTurnMixin):
     def _set_budget_metric(
         self,
         active: ActiveSession,
-        metric: Literal["input", "output", "cost"],
+        metric: Literal["input", "output", "cost", "tool_calls"],
         value: int | Decimal,
     ) -> str:
         budget = active.state.budget.model_copy(deep=True)
@@ -394,6 +401,16 @@ class SessionEngine(SessionTurnMixin):
             if budget.output_tokens is None:
                 return "Cleared output token budget."
             return f"Set output token budget to {budget.output_tokens:,} tokens."
+        if metric == "tool_calls":
+            budget.tool_calls = int(value)
+            if budget.tool_calls == 0:
+                budget.tool_calls = None
+            active.state.budget = budget
+            self._session_mgr.save_state(active.state)
+            if budget.tool_calls is None:
+                return "Cleared tool call budget."
+            suffix = "call" if budget.tool_calls == 1 else "calls"
+            return f"Set tool call budget to {budget.tool_calls:,} tool {suffix}."
         budget.cost_usd = Decimal(value)
         if budget.cost_usd == 0:
             budget.cost_usd = None
@@ -982,6 +999,7 @@ class SessionEngine(SessionTurnMixin):
                     "categories": {k: v.model_dump() for k, v in tracker.categories.items()},
                     "total_input": tracker.total_input,
                     "total_output": tracker.total_output,
+                    "total_tool_calls": tracker.tool_calls,
                     "costs": {k: str(v) for k, v in costs.items()},
                     "category_costs": {k: str(v) for k, v in cat_costs.items()},
                     "budget_gauges": [g.model_dump(mode="json") for g in self._budget_gauges(active)],
@@ -995,16 +1013,27 @@ class SessionEngine(SessionTurnMixin):
                 return {"command": "budget", "data": self._budget_command_payload(active)}
 
             args = parts[1].strip().split(maxsplit=1)
-            if len(args) != 2 or args[0] not in ("input", "output", "cost"):
+            metric_aliases = {
+                "input": "input",
+                "output": "output",
+                "cost": "cost",
+                "tools": "tool_calls",
+                "tool": "tool_calls",
+                "tool_calls": "tool_calls",
+                "tool-calls": "tool_calls",
+            }
+            metric = metric_aliases.get(args[0].lower()) if len(args) == 2 else None
+            if len(args) != 2 or metric is None:
                 return {
                     "command": "budget",
                     "data": {
                         **self._budget_command_payload(active),
-                        "error": "Usage: /budget, /budget input N, /budget output N, or /budget cost N",
+                        "error": (
+                            "Usage: /budget, /budget input N, /budget output N, /budget cost N, or /budget tools N"
+                        ),
                     },
                 }
 
-            metric = args[0]
             try:
                 value = self._parse_budget_limit_value(metric, args[1].strip())
             except ValueError as exc:

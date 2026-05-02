@@ -485,7 +485,7 @@ class MatrixChannel:
                     "- `/memory` — List memory files\n"
                     "- `/retitle` — Regenerate title, or `/retitle My title` to set it\n"
                     "- `/budget` — Show current budgets; set with `/budget input N`, "
-                    "`/budget output N`, or `/budget cost N`\n"
+                    "`/budget output N`, `/budget cost N`, or `/budget tools N`\n"
                     "- `/usage` — Show token usage\n"
                     "- `/model` — View or switch agent, sentinel, and title models together\n"
                     "- `/model-agent` — View or switch the agent model only\n"
