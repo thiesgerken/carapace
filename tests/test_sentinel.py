@@ -1,14 +1,17 @@
 from __future__ import annotations
 
+import asyncio
+from datetime import timedelta
 from pathlib import Path
 
+import pytest
 from pydantic_ai.models.test import TestModel
 
 from carapace.security.context import SessionSecurity
 from carapace.security.sentinel import Sentinel
 
 
-def _make_sentinel(tmp_path: Path) -> tuple[Sentinel, Path]:
+def _make_sentinel(tmp_path: Path, *, timeout: timedelta = timedelta(seconds=60)) -> tuple[Sentinel, Path]:
     knowledge_dir = tmp_path / "knowledge"
     skills_dir = tmp_path / "skills"
     knowledge_dir.mkdir()
@@ -17,6 +20,7 @@ def _make_sentinel(tmp_path: Path) -> tuple[Sentinel, Path]:
         model="test:model",
         knowledge_dir=knowledge_dir,
         skills_dir=skills_dir,
+        timeout=timeout,
         model_factory=lambda _name: TestModel(),
     )
     return sentinel, skills_dir
@@ -83,3 +87,24 @@ def test_eval_tool_logging_includes_context(tmp_path: Path, monkeypatch) -> None
         "Sentinel tool result session=session-1 eval=7 step=1 tool=read_skill_file "
         + "summary=cache_hit=true reuse_previous_result=true",
     ]
+
+
+@pytest.mark.asyncio
+async def test_evaluate_tool_call_timeout_returns_deny_verdict(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    sentinel, _skills_dir = _make_sentinel(tmp_path, timeout=timedelta(seconds=0.01))
+    session = SessionSecurity("session-1")
+
+    async def _hang(*_args, **_kwargs):
+        await asyncio.sleep(1)
+
+    monkeypatch.setattr(sentinel._agent, "run", _hang)
+
+    verdict = await sentinel.evaluate_tool_call(session, "exec", {"command": "echo hi"})
+
+    assert verdict.decision == "deny"
+    assert verdict.risk_level == "high"
+    assert verdict.explanation == (
+        "Automatic sentinel review timed out after 0.01s. "
+        "The tool call was blocked so the agent can decide whether to retry."
+    )
+    assert session.sentinel_eval_count == 1
