@@ -7,9 +7,11 @@ from pydantic_ai.messages import ModelRequest, ModelResponse, SystemPromptPart, 
 
 from carapace.usage import (
     InputShapeRatios,
+    LlmRequestLog,
     LlmRequestRecord,
     gauge_breakdown_pct_dict,
     input_shape_ratios_from_messages,
+    last_record_for_source,
     usage_last_request_row,
 )
 
@@ -155,6 +157,31 @@ def test_usage_last_request_row_calculates_durations() -> None:
     assert row["ttft_ms"] == 3000
     assert row["reasoning_duration_ms"] == 2000
     assert row["total_duration_ms"] == 5000
+
+
+def test_last_record_for_source_skips_interrupted_records_by_default() -> None:
+    started_at = datetime.now(tz=UTC)
+    completed = LlmRequestRecord(
+        ts=started_at + timedelta(seconds=1),
+        request_id="req-complete",
+        source="agent",
+        outcome="completed",
+        input_tokens=100,
+        output_tokens=50,
+        started_at=started_at,
+        completed_at=started_at + timedelta(seconds=1),
+    )
+    interrupted = LlmRequestRecord(
+        ts=started_at + timedelta(seconds=2),
+        request_id="req-interrupted",
+        source="agent",
+        outcome="interrupted",
+        started_at=started_at + timedelta(seconds=2),
+    )
+    log = LlmRequestLog(records=[completed, interrupted])
+
+    assert last_record_for_source(log, "agent") == completed
+    assert last_record_for_source(log, "agent", include_interrupted=True) == interrupted
 
 
 def test_usage_last_request_row_falls_back_to_completion_for_tool_only_request() -> None:

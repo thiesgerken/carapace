@@ -268,6 +268,7 @@ def usage_limits_for_remaining_budget(
 
 LlmSource = Literal["agent", "sentinel", "titler"]
 LlmRequestPhase = Literal["processing_prompt", "thinking", "generating"]
+LlmRequestOutcome = Literal["completed", "interrupted"]
 
 _llm_request_sink: ContextVar[LlmRequestObserver | None] = ContextVar(
     "llm_request_sink",
@@ -344,6 +345,7 @@ class LlmRequestRecord(BaseModel):
     request_id: str | None = None
     source: LlmSource
     model_name: str | None = None
+    outcome: LlmRequestOutcome = "completed"
     input_tokens: int = 0
     output_tokens: int = 0
     started_at: datetime | None = None
@@ -360,9 +362,33 @@ class LlmRequestLog(BaseModel):
     records: list[LlmRequestRecord] = Field(default_factory=list)
 
 
-def last_record_for_source(log: LlmRequestLog, source: LlmSource) -> LlmRequestRecord | None:
+def interrupted_request_record(state: LlmRequestState, *, ts: datetime | None = None) -> LlmRequestRecord:
+    when = ts or datetime.now(tz=UTC)
+    return LlmRequestRecord(
+        ts=when,
+        request_id=state.request_id,
+        source=state.source,
+        model_name=state.model_name,
+        outcome="interrupted",
+        started_at=state.started_at,
+        first_thinking_at=state.first_thinking_at,
+        last_thinking_at=state.last_thinking_at,
+        first_text_at=state.first_text_at,
+    )
+
+
+def last_record_for_source(
+    log: LlmRequestLog,
+    source: LlmSource,
+    *,
+    include_interrupted: bool = False,
+) -> LlmRequestRecord | None:
     for rec in reversed(log.records):
-        if rec.source == source:
+        if rec.source != source:
+            continue
+        if include_interrupted:
+            return rec
+        if rec.outcome == "completed":
             return rec
     return None
 
