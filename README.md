@@ -7,10 +7,8 @@
 </p>
 
 <p align="center">
-  <img src="docs/assets/carapace-logo.png" alt="carapace logo" width="180">
+  <img src="docs/assets/carapace-banner.png" alt="carapace logo" width="180">
 </p>
-
-<p align="center"><big><big><strong>carapace</strong></big></big></p>
 
 <p align="center"><strong>A secure personal AI agent for DevOps engineers.</strong></p>
 
