@@ -50,6 +50,10 @@ function sandboxSummaryLabel(sandbox: SessionSandboxSnapshot): string | null {
   return null;
 }
 
+function shouldConfirmDestructiveAction(event: { shiftKey: boolean }, confirmation: string): boolean {
+  return event.shiftKey || window.confirm(confirmation);
+}
+
 export function Sidebar({
   sessions,
   activeSessionId,
@@ -220,9 +224,19 @@ export function Sidebar({
           <button
             onClick={(event) => {
               event.stopPropagation();
-              void onUpdateAttributes(session.session_id, { archived: !session.attributes.archived });
+              const nextArchived = !session.attributes.archived;
+              if (
+                nextArchived
+                && !shouldConfirmDestructiveAction(
+                  event,
+                  "Archive this session? It will leave the default list, reset its sandbox, and stay in the knowledge repo.",
+                )
+              ) {
+                return;
+              }
+              void onUpdateAttributes(session.session_id, { archived: nextArchived });
             }}
-            title={session.attributes.archived ? "Unarchive session" : "Archive session"}
+            title={session.attributes.archived ? "Unarchive session" : ["Archive session", "Shift+click to skip confirmation"].join("\n")}
             className={cn(
               "rounded-md p-1.5 transition-colors",
               session.attributes.archived
@@ -240,9 +254,12 @@ export function Sidebar({
           <button
             onClick={(event) => {
               event.stopPropagation();
+              if (!shouldConfirmDestructiveAction(event, "Delete this session? Chat history and sandbox state will be removed.")) {
+                return;
+              }
               onDelete(session.session_id);
             }}
-            title="Delete session"
+            title={["Delete session", "Shift+click to skip confirmation"].join("\n")}
             className={cn(
               "rounded-md p-1.5 transition-colors",
               "text-muted-foreground/0 group-hover:text-muted-foreground",
