@@ -312,12 +312,12 @@ class SessionSecurity:
                 future = asyncio.get_running_loop().create_future()
                 self._domain_scope_pending_requests[domain] = PendingDomainRequest(command=command, future=future)
                 should_notify_queued = True
+                self._domain_scope_pending_generation += 1
             else:
                 pending.command = command
                 future = pending.future
                 should_notify_queued = False
 
-            self._domain_scope_pending_generation += 1
             if self._domain_scope_worker_task is None or self._domain_scope_worker_task.done():
                 self._domain_scope_worker_task = worker_factory()
             return None, future, should_notify_queued

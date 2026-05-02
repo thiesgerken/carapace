@@ -52,7 +52,7 @@ class StubSentinel:
         usage_tracker: object | None = None,
         assert_llm_budget_available: object | None = None,
         usage_limits: object | None = None,
-    ) -> dict[str, SentinelVerdict]:
+    ) -> SentinelVerdict:
         del session, usage_tracker, assert_llm_budget_available, usage_limits
         self.batch_calls.append(dict(domain_commands))
         if self._batch_blocker is not None and len(self.batch_calls) == 1:
@@ -63,6 +63,30 @@ class StubSentinel:
         if isinstance(effect, Exception):
             raise effect
         return effect
+
+
+@pytest.mark.anyio
+async def test_duplicate_pending_domain_request_does_not_restart_debounce_generation() -> None:
+    session = SessionSecurity("session-1", sentinel_domain_batch_window_ms=100)
+    session.current_parent_tool_id = "tool-1"
+
+    async def worker() -> None:
+        return None
+
+    await session.get_or_enqueue_domain_approval(
+        "api.example.com",
+        "curl https://api.example.com",
+        lambda: asyncio.create_task(worker()),
+    )
+    first_generation = session._domain_scope_pending_generation
+
+    await session.get_or_enqueue_domain_approval(
+        "api.example.com",
+        "curl https://api.example.com --retry 2",
+        lambda: asyncio.create_task(worker()),
+    )
+
+    assert session._domain_scope_pending_generation == first_generation
 
 
 @pytest.mark.anyio
