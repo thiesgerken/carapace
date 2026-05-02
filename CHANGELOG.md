@@ -1,6 +1,15 @@
 # CHANGELOG
 
 
+## v0.107.0 (2026-05-02)
+
+
+### ✨ Features
+
+
+- ✨ feat: persist interrupted llm requests on cancel
+  ([`91ac779`](https://github.com/thiesgerken/carapace/commit/91ac7796362687848fcd890d413142a65d5a99ec))
+
 ## v0.106.0 (2026-05-02)
 
 
