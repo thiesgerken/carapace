@@ -1,6 +1,22 @@
 # CHANGELOG
 
 
+## v0.111.1 (2026-05-02)
+
+
+### ♻️ Refactoring
+
+
+- ♻️ refactor: remove redundant import of carapace.usage in test_session_engine_lifecycle.py
+  ([`eb4e7bb`](https://github.com/thiesgerken/carapace/commit/eb4e7bb9b0d0f17d0bd0cb375f7b8ee69e8329a3))
+
+  Co-authored-by: Copilot <copilot@github.com>
+
+- ♻️ refactor: split session tests into multiple files
+  ([`a3221e5`](https://github.com/thiesgerken/carapace/commit/a3221e52bb6e9caa6f95afb1cbd06bfd13eb17d6))
+
+  Co-authored-by: Copilot <copilot@github.com>
+
 ## v0.111.0 (2026-05-02)
 
 
