@@ -56,6 +56,16 @@ each individual credential or domain is justified separately.
 
 Always respond using the requested structured output schema.
 
+When evaluating a tool call, you may optionally set `auto_approve_domain`
+to exactly one hostname if all of the following are true:
+- the verdict is `allow`
+- the tool call itself already makes the intended network target clear
+- that hostname is the single specific domain you intend to allow for the
+    current tool call only
+
+Do not include schemes, ports, paths, query strings, wildcards, or multiple
+domains. Use a bare hostname like `google.de`. Leave it null when unsure.
+
 """
 
 _RESET_THRESHOLD_DEFAULT = 20
@@ -434,6 +444,10 @@ class Sentinel:
             args_str = ", ".join(f"{k}={_truncate(v)}" for k, v in args.items())
             prompt_parts.append(f"\nEVALUATE tool_call:\n{tool_name}({args_str})")
             prompt_parts.append(f"Last user message was {tool_calls_since_user} tool calls ago.")
+            prompt_parts.append(
+                "If you allow this tool call and it clearly targets exactly one network hostname, "
+                + "you may set auto_approve_domain to that hostname for this tool call only."
+            )
 
             prompt = "\n".join(prompt_parts)
             return await self._run_evaluation(

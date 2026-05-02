@@ -5,6 +5,7 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Literal
+from urllib.parse import urlsplit
 
 from pydantic_ai import ApprovalRequired
 from pydantic_ai.exceptions import UsageLimitExceeded
@@ -143,6 +144,9 @@ async def evaluate_with(
         explanation=verdict.explanation,
     )
     session.append(entry)
+    auto_approved_domain: str | None = None
+    if verdict.decision == "allow":
+        auto_approved_domain = _normalize_auto_approve_domain(verdict.auto_approve_domain)
 
     detail = f"[sentinel: {verdict.decision}] {verdict.explanation}"
     if verbose:
@@ -154,6 +158,25 @@ async def evaluate_with(
             approval_source="sentinel",
             approval_verdict=verdict.decision,
             approval_explanation=verdict.explanation,
+        )
+
+    if verdict.decision == "allow" and auto_approved_domain is not None:
+        await session.cache_domain_approval_for_current_tool(
+            auto_approved_domain,
+            CachedDomainApproval(
+                allowed=True,
+                approval_source="sentinel",
+                approval_verdict="allow",
+                explanation=verdict.explanation,
+                detail=f"[sentinel: allow] {verdict.explanation}",
+                final_decision="allowed",
+                audit_explanation=(
+                    f"{verdict.explanation} (auto-approved domain: {auto_approved_domain})"
+                    if verdict.explanation
+                    else f"auto-approved domain: {auto_approved_domain}"
+                ),
+                sentinel_verdict=verdict,
+            ),
         )
 
     if verdict.decision == "deny":
@@ -747,3 +770,44 @@ def _log_tool_call(
         callback(tool_name, args, detail, approval_source, approval_verdict, approval_explanation)
     else:
         print(f"  \033[2m{tool_name}({args_str}) {detail}\033[0m")
+
+
+def _normalize_auto_approve_domain(candidate: str | None) -> str | None:
+    if candidate is None:
+        return None
+
+    text = candidate.strip().lower().rstrip(".")
+    if not text:
+        return None
+    if any(char.isspace() for char in text) or "," in text:
+        return None
+
+    hostname = _extract_hostname(text)
+    if hostname is None:
+        return None
+    if "*" in hostname or "@" in hostname:
+        return None
+    if not re.fullmatch(r"[a-z0-9.-]+", hostname):
+        return None
+    if hostname.startswith(".") or hostname.endswith(".") or ".." in hostname:
+        return None
+    if "." not in hostname:
+        return None
+    return hostname
+
+
+def _extract_hostname(text: str) -> str | None:
+    if "://" in text:
+        parsed = urlsplit(text)
+        return parsed.hostname.lower() if parsed.hostname else None
+
+    if any(sep in text for sep in ("/", "?", "#")):
+        parsed = urlsplit(f"https://{text}")
+        return parsed.hostname.lower() if parsed.hostname else None
+
+    if text.count(":") == 1:
+        host, port = text.rsplit(":", 1)
+        if port.isdigit() and host:
+            return host
+
+    return text

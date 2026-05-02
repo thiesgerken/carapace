@@ -128,6 +128,7 @@ class SentinelVerdict(BaseModel):
     decision: Literal["allow", "escalate", "deny"]
     explanation: str = ""
     risk_level: Literal["low", "medium", "high"] = "medium"
+    auto_approve_domain: str | None = None
 
 
 ApprovalSource = Literal["safe-list", "sentinel", "user", "skill", "bypass", "unknown"]
@@ -287,6 +288,18 @@ class SessionSecurity:
     def clear_current_parent_tool(self) -> None:
         self.current_parent_tool_id = None
         self._sync_domain_scope()
+
+    async def cache_domain_approval_for_current_tool(
+        self,
+        domain: str,
+        approval: CachedDomainApproval,
+    ) -> bool:
+        async with self._domain_scope_lock:
+            self._sync_domain_scope()
+            if self.current_parent_tool_id is None:
+                return False
+            self._domain_scope_approvals[domain] = approval
+            return True
 
     async def get_or_enqueue_domain_approval(
         self,

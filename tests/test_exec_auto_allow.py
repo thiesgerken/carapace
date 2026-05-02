@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from carapace.security import evaluate_with
+from carapace.security import evaluate_domain_with, evaluate_with
 from carapace.security.context import SentinelVerdict, SessionSecurity, ToolCallEntry
 from carapace.security.sentinel import Sentinel
 
@@ -105,3 +105,104 @@ async def test_exec_auto_allow_falls_back_to_sentinel_for_non_matching_commands(
     assert entry.tool == "exec"
     assert entry.decision == "allowed"
     assert entry.explanation == "allowed by sentinel"
+
+
+@pytest.mark.asyncio
+async def test_allowed_tool_can_auto_approve_one_domain_for_same_tool_call(tmp_path) -> None:
+    session = SessionSecurity("test-session", audit_dir=tmp_path, sentinel_domain_batch_window_ms=0)
+    sentinel = MagicMock(spec=Sentinel)
+    sentinel.evaluate_tool_call = AsyncMock(
+        return_value=SentinelVerdict(
+            decision="allow",
+            explanation="curl target is clear",
+            auto_approve_domain="https://google.de/search?q=test",
+        )
+    )
+    sentinel.evaluate_domain_access = AsyncMock(
+        side_effect=AssertionError("tool-call auto approval should skip single-domain sentinel review")
+    )
+    sentinel.evaluate_domain_access_batch = AsyncMock(
+        side_effect=AssertionError("tool-call auto approval should skip batched sentinel review")
+    )
+
+    def record_tool_call(
+        tool: str,
+        args: dict[str, object],
+        detail: str,
+        source: str | None,
+        verdict: str | None,
+        explanation: str | None,
+    ) -> None:
+        del tool, args, detail, source, verdict, explanation
+        session.current_parent_tool_id = "tool-1"
+
+    await evaluate_with(
+        session,
+        sentinel,
+        "exec",
+        {"command": "curl https://google.de/search?q=test"},
+        tool_call_callback=record_tool_call,
+    )
+
+    allowed = await evaluate_domain_with(session, sentinel, "google.de", "curl https://google.de/search?q=test")
+
+    assert allowed is True
+    sentinel.evaluate_tool_call.assert_awaited_once()
+    sentinel.evaluate_domain_access.assert_not_awaited()
+    sentinel.evaluate_domain_access_batch.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "auto_approve_domain",
+    [
+        "https://google.de/path with spaces",
+        "*.google.de",
+        "google",
+        "google.de,example.com",
+        "user@google.de",
+    ],
+)
+async def test_invalid_auto_approved_domain_is_ignored(tmp_path, auto_approve_domain: str) -> None:
+    session = SessionSecurity("test-session", audit_dir=tmp_path, sentinel_domain_batch_window_ms=0)
+    sentinel = MagicMock(spec=Sentinel)
+    sentinel.evaluate_tool_call = AsyncMock(
+        return_value=SentinelVerdict(
+            decision="allow",
+            explanation="allowed by sentinel",
+            auto_approve_domain=auto_approve_domain,
+        )
+    )
+    sentinel.evaluate_domain_access_batch = AsyncMock(
+        return_value=SentinelVerdict(decision="allow", explanation="needs normal proxy path")
+    )
+
+    def record_tool_call(
+        tool: str,
+        args: dict[str, object],
+        detail: str,
+        source: str | None,
+        verdict: str | None,
+        explanation: str | None,
+    ) -> None:
+        del tool, args, detail, source, verdict, explanation
+        session.current_parent_tool_id = "tool-1"
+
+    await evaluate_with(
+        session,
+        sentinel,
+        "exec",
+        {"command": "curl https://google.de"},
+        tool_call_callback=record_tool_call,
+    )
+
+    allowed = await evaluate_domain_with(session, sentinel, "google.de", "curl https://google.de")
+
+    assert allowed is True
+    sentinel.evaluate_domain_access_batch.assert_awaited_once_with(
+        session,
+        {"google.de": "curl https://google.de"},
+        usage_tracker=None,
+        assert_llm_budget_available=None,
+        usage_limits=None,
+    )
