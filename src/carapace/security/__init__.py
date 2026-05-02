@@ -223,14 +223,12 @@ async def evaluate_domain_with(
         ),
     )
     if cached_approval is not None:
-        detail = (
-            f"[cached {cached_approval.approval_source}: {cached_approval.approval_verdict}] "
-            + "reused earlier decision"
-        )
+        display_source: ApprovalSource = "safe-list" if cached_approval.allowed else cached_approval.approval_source
+        detail = f"[cached {display_source}: {cached_approval.approval_verdict}] " + "reused earlier decision"
         session.notify_domain_decision(
             domain,
             detail,
-            approval_source=cached_approval.approval_source,
+            approval_source=display_source,
             approval_verdict=cached_approval.approval_verdict,
             approval_explanation=cached_approval.explanation,
         )

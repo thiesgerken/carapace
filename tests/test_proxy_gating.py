@@ -104,6 +104,31 @@ async def test_reuses_sentinel_domain_approval_within_tool_call() -> None:
 
 
 @pytest.mark.anyio
+async def test_reused_allowed_domain_reports_auto_source() -> None:
+    session = SessionSecurity("session-1", sentinel_domain_batch_window_ms=0)
+    session.current_parent_tool_id = "tool-1"
+    domain_updates: list[tuple[str, str, str | None, str | None, str | None]] = []
+    sentinel = StubSentinel(batch_verdicts=[SentinelVerdict(decision="allow", explanation="looks fine")])
+
+    session.set_domain_info_callback(
+        lambda domain, detail, source, verdict, explanation: domain_updates.append(
+            (domain, detail, source, verdict, explanation)
+        )
+    )
+
+    assert await evaluate_domain_with(session, sentinel, "api.example.com", "curl https://api.example.com") is True
+    assert await evaluate_domain_with(session, sentinel, "api.example.com", "curl https://api.example.com") is True
+
+    assert domain_updates[-1] == (
+        "api.example.com",
+        "[cached safe-list: allow] reused earlier decision",
+        "safe-list",
+        "allow",
+        "looks fine",
+    )
+
+
+@pytest.mark.anyio
 async def test_reuses_user_domain_approval_within_tool_call() -> None:
     session = SessionSecurity("session-1", sentinel_domain_batch_window_ms=0)
     session.current_parent_tool_id = "tool-1"
