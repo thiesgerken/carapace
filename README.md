@@ -28,18 +28,18 @@ carapace is a self-hosted AI agent with a web UI, CLI, and Matrix channel for op
 
 ## Highlights
 
-- Sentinel-gated execution. Every non-trivial action is reviewed by a dedicated security agent that keeps session context, not a static allowlist spreadsheet.
-- Kubernetes-ready sandboxes. Docker and Kubernetes runtimes are both supported, with StatefulSet-backed sandbox sessions, per-session PVCs, and idle-to-zero scaling already in place.
-- Git-native knowledge repo. `SOUL.md`, `USER.md`, `SECURITY.md`, skills, memory, and archived sessions live in files you can inspect, diff, sync, and push upstream.
-- No-direct-internet sandboxes. Sandbox workloads do not get ambient internet access; outbound traffic is forced through the proxy path.
-- Proxy system with tunnels. HTTP traffic is mediated by the proxy, and exec-scoped tunnels cover non-HTTP protocols without leaving long-lived daemons behind.
-- Context-scoped credentials. Secrets stay in your vault, with native Bitwarden and Vaultwarden support, and are only injected or fetched on demand for exec calls that have the matching approved skill context.
+- 🛡️ Sentinel-gated execution. Every non-trivial action is reviewed by a dedicated security agent that keeps session context, not a static allowlist spreadsheet.
+- ☸️ Kubernetes-ready sandboxes. Docker and Kubernetes runtimes are both supported, with StatefulSet-backed sandbox sessions, per-session PVCs, and idle-to-zero scaling already in place.
+- 🗃️ Git-native knowledge repo. `SOUL.md`, `USER.md`, `SECURITY.md`, skills, memory, and archived sessions live in files you can inspect, diff, sync, and push upstream.
+- 🚫 No-direct-internet sandboxes. Sandbox workloads do not get ambient internet access; outbound traffic is forced through the proxy path.
+- 🌐 Proxy system with tunnels. HTTP traffic is mediated by the proxy, and exec-scoped tunnels cover non-HTTP protocols without leaving long-lived daemons behind.
+- 🔑 Context-scoped credentials. Secrets stay in your vault, with native Bitwarden and Vaultwarden support, and are only injected or fetched on demand for exec calls that have the matching approved skill context.
 
 ## Project Notes
 
 - Mandatory AI-Disclaimer: Of course I use AI for coding. Everything else just doesn't make sense. The frontend is almost purely vibe-coded, and the backend is review-coded. I try to not touch any files in the backend myself, but I do look at changes to critical code. The architectural and security ideas and decisions are my own. I do have over 20 years of experience in coding without AI.
 - Batteries are not included. The point is to use the agent to build out your own skills and workflows.
-- I made this for me! And because making stuff is fun. I don't care if you think < Insert other project name here > is better and / or solves the same problem. Putting the code on github in case anyone is interested in using it or iterating on my design.
+- I made this for me! And because making stuff is fun. And sharing stuff is fun. I don't care if you think < Insert other project name here > is better and / or solves the same problem.
 - carapace is pre-1.0. Expect breaking changes before `1.0.0`.
 
 ## Knowledge Repo, Not Hidden State
