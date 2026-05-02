@@ -1,6 +1,15 @@
 # CHANGELOG
 
 
+## v0.108.1 (2026-05-02)
+
+
+### 💄 UI/UX
+
+
+- 💄 ui: update ApprovalBadge styles and icon sizes for improved UI consistency
+  ([`058111d`](https://github.com/thiesgerken/carapace/commit/058111dc9913988e4539b4451ccd8837954a2e2d))
+
 ## v0.108.0 (2026-05-02)
 
 
