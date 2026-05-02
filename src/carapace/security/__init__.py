@@ -26,6 +26,7 @@ from carapace.security.context import (
     normalize_optional_message,
 )
 from carapace.security.context import CredentialAccessEntry as CredentialAccessEntry
+from carapace.security.exec_allowlist import match_auto_allowed_exec
 from carapace.security.sentinel import Sentinel
 from carapace.usage import UsageTracker
 
@@ -77,6 +78,33 @@ async def evaluate_with(
                 approval_explanation="auto-allowed",
             )
         return
+
+    if tool_name == "exec":
+        matched_exec = match_auto_allowed_exec(args)
+        if matched_exec is not None:
+            explanation = f"Auto-allowed by read-only exec heuristic ({matched_exec})."
+            entry = ToolCallEntry(tool=tool_name, args=args, decision="auto_allowed", explanation=explanation)
+            session.append(entry)
+            session.write_audit(
+                AuditEntry.now(
+                    kind="tool_call",
+                    tool=tool_name,
+                    args_summary=args,
+                    final_decision="auto_allowed",
+                    explanation=explanation,
+                )
+            )
+            if verbose:
+                _log_tool_call(
+                    tool_name,
+                    args,
+                    f"[safe-list] auto-allowed read-only exec heuristic ({matched_exec})",
+                    tool_call_callback,
+                    approval_source="safe-list",
+                    approval_verdict="allow",
+                    approval_explanation=explanation,
+                )
+            return
 
     if verbose:
         _log_tool_call(
