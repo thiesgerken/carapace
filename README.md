@@ -6,13 +6,11 @@
   <a href="charts/carapace/README.md"><img alt="Helm chart" src="https://img.shields.io/badge/helm-chart-0F766E?logo=helm&logoColor=white"></a>
 </p>
 
-<hr>
-
 <p align="center">
   <img src="docs/assets/carapace-logo.png" alt="carapace logo" width="180">
 </p>
 
-<h2 align="center">carapace</h2>
+<p align="center"><big><big><strong>carapace</strong></big></big></p>
 
 <p align="center"><strong>A secure personal AI agent for DevOps engineers.</strong></p>
 
