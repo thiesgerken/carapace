@@ -1,6 +1,42 @@
 # CHANGELOG
 
 
+## v0.106.0 (2026-05-02)
+
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix: reject shell comments in exec allowlist
+  ([`c7f5772`](https://github.com/thiesgerken/carapace/commit/c7f577241f882f8ae4dcfdb30558d96ea41a9747))
+
+- 🐛 fix: tighten read-only exec allowlist matching
+  ([`585f664`](https://github.com/thiesgerken/carapace/commit/585f664beaf9e0a958d12f60b7a77de25bf9f1ea))
+
+### ✨ Features
+
+
+- ✨ feat: auto-allow some read-only exec ops
+  ([`fb010c1`](https://github.com/thiesgerken/carapace/commit/fb010c1395e742e7b333789a5cd8c5c9c6e9a2ce))
+
+### ⬆️ Dependencies
+
+
+- ⬆️ chore: upgrade pnpm/action-setup digest to 26f6d4f
+  ([`165779d`](https://github.com/thiesgerken/carapace/commit/165779d3936ce664a2c106bb0da61b467a5eab5c))
+
+### Other
+
+
+- Fix proxy gating race and budget refund
+  ([`7437bfe`](https://github.com/thiesgerken/carapace/commit/7437bfe73e0bfd823b28e5a3aa16e0fd6ea4778c))
+
+- Show auto badge for reused domains
+  ([`d87d5e9`](https://github.com/thiesgerken/carapace/commit/d87d5e9981008ea437a00b9716f9a3005f62394f))
+
+- Deduplicate proxy domain UI rows
+  ([`447d85d`](https://github.com/thiesgerken/carapace/commit/447d85dd4949a8be8a30ad6905c92fe47b6ab896))
+
 ## v0.105.6 (2026-05-01)
 
 
@@ -12,6 +48,24 @@
 
 - 🐛 fix: persist model overrides across restarts
   ([`f2d4f8f`](https://github.com/thiesgerken/carapace/commit/f2d4f8fc5bf2858ba51a4becf4754b7bb04b9f8e))
+
+### Other
+
+
+- Fix proxy gating review follow-ups
+  ([`33250be`](https://github.com/thiesgerken/carapace/commit/33250be2684af111df11a2d1e69da44918490c10))
+
+- Simplify batched sentinel verdicts
+  ([`1a6c75d`](https://github.com/thiesgerken/carapace/commit/1a6c75dd547993a2a37c7204bc01f596465a41ed))
+
+- Fix proxy gating review feedback
+  ([`6fa49e4`](https://github.com/thiesgerken/carapace/commit/6fa49e48a1182b801553573d408e910a9b8c3bc7))
+
+- Batch proxy sentinel domain reviews
+  ([`efc6ada`](https://github.com/thiesgerken/carapace/commit/efc6ada98d552df878d5ac947f9d72ae69d893c5))
+
+- Fix proxy sentinel domain approval reuse and limits
+  ([`72b3bf2`](https://github.com/thiesgerken/carapace/commit/72b3bf292302f1d29340809a15e2cf20cfca98bd))
 
 ## v0.105.5 (2026-05-01)
 
