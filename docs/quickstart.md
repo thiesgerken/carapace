@@ -1,6 +1,6 @@
 # Quickstart
 
-This guide walks you through deploying Carapace with Docker Compose. For Kubernetes, see the [Helm chart README](../charts/carapace/README.md).
+This guide walks you through deploying carapace with Docker Compose. For Kubernetes, see the [Helm chart README](../charts/carapace/README.md).
 
 ## Prerequisites
 
@@ -86,7 +86,7 @@ In the web UI, public sessions expose a "Commit to knowledge" action. Private se
 
 ## 5. Connect Matrix (optional)
 
-Create a Matrix account for Carapace on your homeserver, then add to `data/config.yaml`:
+Create a Matrix account for carapace on your homeserver, then add to `data/config.yaml`:
 
 ```yaml
 channels:
@@ -102,13 +102,13 @@ channels:
       - "@you:example.com"
 ```
 
-Set `CARAPACE_MATRIX_PASSWORD` in your `.env` and restart. Carapace will join the allowed rooms and respond to messages from allowed users. Sessions are created per-room.
+Set `CARAPACE_MATRIX_PASSWORD` in your `.env` and restart. carapace will join the allowed rooms and respond to messages from allowed users. Sessions are created per-room.
 
 `allowed_rooms` and `allowed_users` are mandatory — without them the bot ignores all messages. This prevents accidental exposure if someone invites the bot to a public room.
 
 ## 6. Set up credentials
 
-Carapace can fetch credentials from a password manager on demand. The agent does not have blanket access — every credential request is evaluated by the sentinel agent and requires explicit user approval the first time it is used in a session. Credentials are intended to be consumed inside the sandbox (auto-injected via skill config or fetched with `ccred`) and must never be echoed or logged. Two backends are available.
+carapace can fetch credentials from a password manager on demand. The agent does not have blanket access — every credential request is evaluated by the sentinel agent and requires explicit user approval the first time it is used in a session. Credentials are intended to be consumed inside the sandbox (auto-injected via skill config or fetched with `ccred`) and must never be echoed or logged. Two backends are available.
 
 ### File backend (simple)
 
@@ -133,7 +133,7 @@ Credentials are accessible as `dev/github-token`, `dev/smtp-password`, etc.
 
 ### Bitwarden / Vaultwarden backend (optional)
 
-This uses a `bw serve` sidecar container that shares the server's network namespace. Carapace never sees your vault credentials — they stay in the sidecar.
+This uses a `bw serve` sidecar container that shares the server's network namespace. carapace never sees your vault credentials — they stay in the sidecar.
 
 1. Add your Bitwarden credentials to `.env`:
 
@@ -177,7 +177,7 @@ Credentials are accessible by their Bitwarden UUID: `personal/9742101e-68b8-4a07
 
 ### Exposure control
 
-By default, all credentials in a backend are accessible (subject to sentinel + user approval). To restrict which credentials Carapace can see:
+By default, all credentials in a backend are accessible (subject to sentinel + user approval). To restrict which credentials carapace can see:
 
 ```yaml
 credentials:
@@ -194,7 +194,7 @@ credentials:
 
 ## 7. Personalise
 
-Edit the files in `data/` to shape Carapace's behaviour:
+Edit the files in `data/` to shape carapace's behaviour:
 
 | File          | Purpose                                                   |
 | ------------- | --------------------------------------------------------- |

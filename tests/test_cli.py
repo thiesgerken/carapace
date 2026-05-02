@@ -21,7 +21,7 @@ def _strip_ansi(text: str) -> str:
 def test_help():
     result = runner.invoke(app, ["--help"])
     assert result.exit_code == 0
-    assert "Carapace" in _strip_ansi(result.output)
+    assert "carapace" in _strip_ansi(result.output)
 
 
 def test_chat_help():

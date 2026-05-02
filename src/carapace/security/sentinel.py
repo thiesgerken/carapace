@@ -31,7 +31,7 @@ from carapace.security.context import (
 from carapace.usage import LlmRequestLogCapability, UsageTracker
 
 _SENTINEL_SYSTEM_PREFIX = """\
-You are the security gate for an AI agent system called Carapace.
+You are the security gate for an AI agent system called carapace.
 You evaluate tool calls, proxy domain requests, and credential access
 requests to decide whether they should be allowed, escalated to the
 user for approval, or denied.
@@ -47,7 +47,7 @@ what a script does when you see the agent running skill commands.
 
 About use_skill: when you see a use_skill call, the `declared_domains`
 and `declared_creds` fields are NOT requested by the agent — they are
-declared by the skill itself in its Carapace metadata (`SKILL.md`
+declared by the skill itself in its carapace metadata (`SKILL.md`
 frontmatter or `carapace.yaml`) and
 automatically bundled into the call for your review. Approving
 use_skill implicitly grants all declared domains and credentials

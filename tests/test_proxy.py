@@ -541,7 +541,7 @@ async def test_activate_skill_registers_command_aliases_in_image_shim_dir(tmp_pa
 # ── carapace.yaml parsing ───────────────────────────────────────────
 
 
-class TestCarapaceYamlParsing:
+class TestcarapaceYamlParsing:
     def test_parse_frontmatter_carapace_metadata(self, tmp_path: Path):
         skill_dir = tmp_path / "inline"
         skill_dir.mkdir()

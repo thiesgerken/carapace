@@ -1,6 +1,6 @@
-# Carapace Helm Chart
+# carapace Helm Chart
 
-Helm chart for deploying [Carapace](https://github.com/thiesgerken/carapace) on Kubernetes.
+Helm chart for deploying [carapace](https://github.com/thiesgerken/carapace) on Kubernetes.
 
 ## Prerequisites
 
@@ -12,7 +12,7 @@ Helm chart for deploying [Carapace](https://github.com/thiesgerken/carapace) on 
 
 > **⚠️ SECURITY WARNING — NetworkPolicy is critical**
 >
-> Carapace's security model relies on sandbox pods having **no direct internet access**. All outbound traffic is forced through the server's HTTP proxy, which enforces per-session domain allowlisting and the human-in-the-loop approval flow.
+> carapace's security model relies on sandbox pods having **no direct internet access**. All outbound traffic is forced through the server's HTTP proxy, which enforces per-session domain allowlisting and the human-in-the-loop approval flow.
 >
 > The chart installs a `NetworkPolicy` that restricts sandbox pod egress to the proxy port (3128), the sandbox API port (8322), and DNS only. **If you add broader egress rules to the namespace, or your CNI does not enforce NetworkPolicy, sandbox pods can bypass the proxy entirely — defeating the approval system and all domain-level security controls.**
 >
@@ -124,9 +124,9 @@ Leave `config` empty (`{}`) to skip the ConfigMap entirely and manage the file o
 
 ### Bitwarden / Vaultwarden credential backend
 
-To use a Bitwarden-compatible vault (including Vaultwarden) as a credential backend, the chart can inject one or more `bw serve` sidecar containers into the server Pod. Each sidecar shares the Pod's network namespace, so Carapace reaches it at `127.0.0.1:<port>`. Because `bw serve` only listens on localhost, no NetworkPolicy is needed to protect it — unlike a standalone deployment where the unauthenticated API would be reachable cluster-wide.
+To use a Bitwarden-compatible vault (including Vaultwarden) as a credential backend, the chart can inject one or more `bw serve` sidecar containers into the server Pod. Each sidecar shares the Pod's network namespace, so carapace reaches it at `127.0.0.1:<port>`. Because `bw serve` only listens on localhost, no NetworkPolicy is needed to protect it — unlike a standalone deployment where the unauthenticated API would be reachable cluster-wide.
 
-The sidecar image (`carapace-bitwarden-cli`) is built as part of the Carapace release and bundles the Bitwarden CLI. On startup it logs in, unlocks the vault, and starts `bw serve`. The liveness probe periodically calls `/sync` to keep the vault data fresh.
+The sidecar image (`carapace-bitwarden-cli`) is built as part of the carapace release and bundles the Bitwarden CLI. On startup it logs in, unlocks the vault, and starts `bw serve`. The liveness probe periodically calls `/sync` to keep the vault data fresh.
 
 1. **Create a Secret** with Bitwarden CLI credentials. The chart mounts it read-only at `/run/secrets/bitwarden`; the sidecar entrypoint reads keys from files when the matching env vars are unset (see [`bitwarden-cli/README.md`](../../bitwarden-cli/README.md)).
 
@@ -149,7 +149,7 @@ Supported **Secret** keys (each becomes a file name under the mount):
 | `BW_CLIENTID`        | no       | API key client ID (generate in Bitwarden web UI → Account Settings → Keys) |
 | `BW_CLIENTSECRET`    | no       | API key client secret                                                      |
 
-When both `BW_CLIENTID` and `BW_CLIENTSECRET` are present, the sidecar uses API key login (required if 2FA is enabled). Otherwise it uses password login and needs `BW_EMAIL` in the Secret. The master password is needed in both cases. As the project readme mentions, it is recommended to use a dedicated user for Carapace and share entries to it instead of using your account directly.
+When both `BW_CLIENTID` and `BW_CLIENTSECRET` are present, the sidecar uses API key login (required if 2FA is enabled). Otherwise it uses password login and needs `BW_EMAIL` in the Secret. The master password is needed in both cases. As the project readme mentions, it is recommended to use a dedicated user for carapace and share entries to it instead of using your account directly.
 
 2. **Enable the sidecar** in your values:
 
@@ -215,7 +215,7 @@ Multiple instances are supported — just add more entries with different names 
 
 See [values.yaml](values.yaml) for the complete reference.
 
-The `Sandboxes` CR is currently used only as an ownership/metadata anchor. The chart installs the CRD and a singleton resource, but no operator/controller is deployed yet; runtime sandbox lifecycle is still managed directly by the Carapace server.
+The `Sandboxes` CR is currently used only as an ownership/metadata anchor. The chart installs the CRD and a singleton resource, but no operator/controller is deployed yet; runtime sandbox lifecycle is still managed directly by the carapace server.
 
 ## Development
 

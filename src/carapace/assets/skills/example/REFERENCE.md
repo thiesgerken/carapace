@@ -46,7 +46,7 @@ When adapting this example:
 
 ## Activation Flow
 
-When the skill is activated, Carapace copies the skill into the sandbox and runs the matching setup providers from the pushed upstream revision:
+When the skill is activated, carapace copies the skill into the sandbox and runs the matching setup providers from the pushed upstream revision:
 
 - `uv sync --locked` for `pyproject.toml` plus `uv.lock`
 - `pnpm install --frozen-lockfile` for `package.json` plus `pnpm-lock.yaml`

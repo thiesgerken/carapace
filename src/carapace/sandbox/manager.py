@@ -138,7 +138,7 @@ async def _handle_client(
 
 
 async def _run() -> None:
-    parser = argparse.ArgumentParser(description="Carapace CONNECT tunnel helper")
+    parser = argparse.ArgumentParser(description="carapace CONNECT tunnel helper")
     parser.add_argument("--listen-host", default="127.0.0.1")
     parser.add_argument("--listen-port", type=int, required=True)
     parser.add_argument("--target-host", required=True)
@@ -198,7 +198,7 @@ class SandboxManager:
         idle_timeout_minutes: int = 15,
         proxy_port: int = 3128,
         sandbox_port: int = 8322,
-        git_author: str = "Carapace <carapace@%h>",
+        git_author: str = "carapace <carapace@%h>",
     ) -> None:
         self._runtime = runtime
         self._data_dir = data_dir

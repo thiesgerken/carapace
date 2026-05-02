@@ -1871,7 +1871,7 @@ export function ChatView({
           )}
           {!loadingHistory && messages.length === 0 && (
             <div className="flex flex-col items-center justify-center py-16 text-center">
-              <p className="text-lg font-medium text-foreground/80">Carapace</p>
+              <p className="text-lg font-medium text-foreground/80">carapace</p>
               <p className="mt-1 text-sm text-muted-foreground">
                 {connected
                   ? "Send a message to get started"

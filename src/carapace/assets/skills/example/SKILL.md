@@ -8,7 +8,7 @@ metadata:
         - host: imap.gmail.com
           remote_port: 993
           local_port: 1993
-          description: Unauthenticated IMAP CAPABILITY probe over a Carapace-managed tunnel
+          description: Unauthenticated IMAP CAPABILITY probe over a carapace-managed tunnel
     commands:
       - name: example-hello
         command: uv run --directory /workspace/skills/example hello
@@ -24,7 +24,7 @@ and an exec-scoped TCP tunnel declared in `metadata.carapace`.
 
 ## Exposed Commands
 
-- `example-hello`: Run the Python demo command that probes IMAP `CAPABILITY` through the Carapace-managed tunnel.
+- `example-hello`: Run the Python demo command that probes IMAP `CAPABILITY` through the carapace-managed tunnel.
 - `example-node`: Run the Node demo command from the pnpm-managed entrypoint.
 
 ## Instructions
@@ -37,7 +37,7 @@ example-node
 ```
 
 The Python command performs an unauthenticated IMAP `CAPABILITY` request against `imap.gmail.com`
-through a Carapace-managed tunnel. That demonstrates the important path for non-HTTP protocols:
+through a carapace-managed tunnel. That demonstrates the important path for non-HTTP protocols:
 
 - `metadata.carapace` declares `network.tunnels`
 - `setup.sh` materializes a tiny local config file consumed by the Python command

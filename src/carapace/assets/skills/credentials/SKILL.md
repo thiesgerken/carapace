@@ -5,7 +5,7 @@ description: Documents the credential system — how to list, fetch, and use sec
 
 # Credentials
 
-Carapace provides a pull-based credential system. Credentials live in an
+carapace provides a pull-based credential system. Credentials live in an
 external vault (password manager or file) and are fetched on demand.
 Auto-injected credentials (via `metadata.carapace` or legacy `carapace.yaml`) are placed directly into the
 sandbox as env vars or files — **you must not read, echo, or return their
@@ -13,7 +13,7 @@ values**. On-demand credentials fetched with `ccred get` pass through the
 sandbox shell; wire them into commands via `-o` or subshell capture so that
 values are consumed by tools without being exposed.
 
-## Auto-injection via Carapace metadata
+## Auto-injection via carapace metadata
 
 Skills that need credentials declare them in `SKILL.md` frontmatter under `metadata.carapace` (or in `carapace.yaml`):
 
@@ -29,7 +29,7 @@ metadata:
         file: ~/.ssh/id_ed25519
 ```
 
-When you activate the skill with `use_skill`, Carapace:
+When you activate the skill with `use_skill`, carapace:
 
 1. Sends all declared credentials through the security sentinel
 2. Asks the user for approval (one prompt for the whole bundle)

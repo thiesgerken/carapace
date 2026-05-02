@@ -54,7 +54,7 @@ class SkillRegistry:
         return skill_md.read_text()
 
     def get_carapace_config(self, skill_name: str) -> SkillCarapaceConfig | None:
-        """Load Carapace skill config from SKILL.md frontmatter or ``carapace.yaml``."""
+        """Load carapace skill config from SKILL.md frontmatter or ``carapace.yaml``."""
         skill_dir = self.skills_dir / skill_name
         skill_md = skill_dir / "SKILL.md"
         if skill_md.exists():

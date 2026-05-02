@@ -21,7 +21,7 @@
 ## Authentication & Multi-User
 
 - [ ] **OIDC / OAuth 2.0** — replace the static bearer token with a proper OIDC provider (Keycloak, Authentik, Authelia, etc.) for login on both the web UI and CLI
-- [ ] **Multi-user support** — per-user sessions, memory, and security context; map OIDC subject to a Carapace user identity
+- [ ] **Multi-user support** — per-user sessions, memory, and security context; map OIDC subject to a carapace user identity
 - [ ] **Session token lifecycle** — short-lived access tokens with refresh, proper logout / revocation
 - [ ] **Per-user data isolation** — each user gets their own memory, session history, and workspace files
 

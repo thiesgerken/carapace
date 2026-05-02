@@ -798,7 +798,7 @@ class KubernetesRuntime(ContainerRuntime):
             return {}
 
     async def get_host_ip(self, network: str) -> str | None:
-        """Return the Carapace service ClusterIP."""
+        """Return the carapace service ClusterIP."""
         service_host = os.environ.get("CARAPACE_SERVICE_HOST")
         if service_host:
             return service_host

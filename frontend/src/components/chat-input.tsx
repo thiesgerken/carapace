@@ -346,7 +346,7 @@ export function ChatInput({
             value={value}
             onChange={handleInput}
             onKeyDown={handleKeyDown}
-            placeholder={disabled ? disabledPlaceholder : "Message Carapace…"}
+            placeholder={disabled ? disabledPlaceholder : "Message carapace…"}
             rows={1}
             disabled={disabled}
             className={cn(

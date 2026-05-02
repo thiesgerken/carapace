@@ -157,7 +157,7 @@ For example, `Read, search, summarize, and move private Zoho mailbox messages` r
 
 ## Progressive Disclosure
 
-Carapace loads skills in three tiers:
+carapace loads skills in three tiers:
 
 1. Discovery: `name` and `description`
 2. Activation: full `SKILL.md`
@@ -167,9 +167,9 @@ That is why `SKILL.md` should stay short and user-facing. Put the rest here or i
 
 As a rule of thumb, if a runtime agent can succeed without reading a section every time the skill is activated, that section belongs here instead of in `SKILL.md`.
 
-## Carapace metadata (`metadata.carapace`)
+## carapace metadata (`metadata.carapace`)
 
-Preferred: declare Carapace-specific metadata inline in `SKILL.md` under `metadata.carapace`. Use legacy `carapace.yaml` only when you need a compatibility fallback.
+Preferred: declare carapace-specific metadata inline in `SKILL.md` under `metadata.carapace`. Use legacy `carapace.yaml` only when you need a compatibility fallback.
 
 Top-level keys:
 

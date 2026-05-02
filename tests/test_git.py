@@ -37,7 +37,7 @@ class TestGitStoreParseAuthor:
         import socket
 
         expected_host = socket.gethostname()
-        assert name == "Carapace"
+        assert name == "carapace"
         assert email == f"carapace@{expected_host}"
 
     def test_custom_template(self):
@@ -58,7 +58,7 @@ class TestGitStoreParseAuthor:
         import socket
 
         expected_host = socket.gethostname()
-        assert name == "Carapace"
+        assert name == "carapace"
         assert email == f"carapace@{expected_host}"
 
     def test_hostname_placeholder(self):

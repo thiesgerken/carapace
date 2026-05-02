@@ -1,15 +1,15 @@
 # Skill System
 
-Carapace uses the open [AgentSkills](https://agentskills.io/) format for skills. This makes skills portable to any AgentSkills-compatible agent (Claude Code, Cursor, Gemini CLI, etc.) while Carapace adds its own security layer on top.
+carapace uses the open [AgentSkills](https://agentskills.io/) format for skills. This makes skills portable to any AgentSkills-compatible agent (Claude Code, Cursor, Gemini CLI, etc.) while carapace adds its own security layer on top.
 
 ## Skill structure
 
 A skill is a directory with a `SKILL.md` file (Markdown instructions with YAML frontmatter) plus optional `scripts/`, `references/`, and `assets/` directories.
 
-Carapace extends the format with optional files and metadata:
+carapace extends the format with optional files and metadata:
 
-- **`SKILL.md` frontmatter `metadata.carapace`** — preferred place for Carapace-specific metadata: network domain declarations, credential needs, and command aliases
-- **`carapace.yaml`** — legacy fallback for the same Carapace-specific metadata
+- **`SKILL.md` frontmatter `metadata.carapace`** — preferred place for carapace-specific metadata: network domain declarations, credential needs, and command aliases
+- **`carapace.yaml`** — legacy fallback for the same carapace-specific metadata
 - **`pyproject.toml`** + **`uv.lock`** — Python dependencies installed via `uv sync --locked`
 - **`package.json`** + **`package-lock.json`** or **`pnpm-lock.yaml`** — Node dependencies installed with the matching package manager
 - **`setup.sh`** — optional post-activation setup script for local config generation or other derived artifacts
@@ -69,7 +69,7 @@ Returns JSON with title, URL, and snippet for each result.
 Summarize the top results for the user.
 ```
 
-## Carapace metadata
+## carapace metadata
 
 Preferred location: `SKILL.md` frontmatter under `metadata.carapace`. Legacy `carapace.yaml` is still supported with the same schema when inline metadata is absent.
 
@@ -87,7 +87,7 @@ metadata:
         - host: imap.zoho.eu
           remote_port: 993
           local_port: 1993
-          description: Zoho IMAP over the Carapace CONNECT proxy
+          description: Zoho IMAP over the carapace CONNECT proxy
     credentials:
       - vault_path: dev/searxng-url
         description: Base URL for the SearXNG instance
@@ -112,7 +112,7 @@ network:
     - host: imap.zoho.eu
       remote_port: 993
       local_port: 1993
-      description: Zoho IMAP over the Carapace CONNECT proxy
+      description: Zoho IMAP over the carapace CONNECT proxy
 
 credentials:
   - vault_path: "dev/searxng-url"
@@ -138,7 +138,7 @@ commands:
 - `local_port` — unprivileged local port inside the sandbox used for the duration of the exec.
 - `description` — optional human-readable explanation for approvals and docs.
 
-Carapace manages these tunnels itself during `exec(..., contexts=[...])`. Skills do not start background processes. Tunnel setup is temporary and is re-established if the sandbox has to be recreated before the command retry.
+carapace manages these tunnels itself during `exec(..., contexts=[...])`. Skills do not start background processes. Tunnel setup is temporary and is re-established if the sandbox has to be recreated before the command retry.
 
 `network.domains` and `network.tunnels` may refer to the same hostname. That is intentional: HTTP and HTTPS through the proxy still work normally, while direct socket connections to the tunneled hostname are shadowed during that exec.
 
@@ -157,7 +157,7 @@ Carapace manages these tunnels itself during `exec(..., contexts=[...])`. Skills
 - `name` — the exact alias token, for example `web-search`
 - `command` — a single-line shell command to run for that alias
 
-When the skill is activated, Carapace writes a generated wrapper script for each alias into `/root/.carapace/bin/`, marks it executable, and exposes that directory on `PATH`. Agents should invoke the plain alias token such as `web-search`, not the absolute shim path. The wrapper looks like this conceptually:
+When the skill is activated, carapace writes a generated wrapper script for each alias into `/root/.carapace/bin/`, marks it executable, and exposes that directory on `PATH`. Agents should invoke the plain alias token such as `web-search`, not the absolute shim path. The wrapper looks like this conceptually:
 
 ```sh
 #!/bin/sh
@@ -181,10 +181,10 @@ Skill-declared domains and credentials are **not globally available** in the ses
 1. **Activation** creates a context grant: `use_skill("moneydb")` registers the skill's declared domains and credential vault paths as a grant keyed by `"moneydb"`.
 2. **Exec requests contexts**: The agent passes `contexts=["moneydb"]` when running commands that need the skill's resources.
 3. **Per-exec injection**: Domains are temporarily allowed in the proxy. Credential values are injected as env vars or written as files for the duration of that single exec. File-based credentials are deleted immediately after the command completes.
-   Tunnel declarations are also applied here: Carapace temporarily shadows the declared hostnames inside the sandbox, starts trusted CONNECT-backed tunnel helpers, and tears them down again after the exec.
+   Tunnel declarations are also applied here: carapace temporarily shadows the declared hostnames inside the sandbox, starts trusted CONNECT-backed tunnel helpers, and tears them down again after the exec.
 4. **No context = no access**: An exec without `contexts` (or with unrelated contexts) does not get the skill's domains or credentials. The sentinel evaluates any credential access without a matching context.
 
-For command aliases declared in `carapace.yaml`, Carapace also recognizes the alias at the start of an `exec` command. If the owning skill is already active but missing from `contexts`, Carapace adds that context automatically, resolves the command through the generated shim on `PATH`, and warns the agent to pass the context explicitly next time while continuing to use the plain alias.
+For command aliases declared in `carapace.yaml`, carapace also recognizes the alias at the start of an `exec` command. If the owning skill is already active but missing from `contexts`, carapace adds that context automatically, resolves the command through the generated shim on `PATH`, and warns the agent to pass the context explicitly next time while continuing to use the plain alias.
 
 ### Matching semantics
 
@@ -194,14 +194,14 @@ For command aliases declared in `carapace.yaml`, Carapace also recognizes the al
 
 ## Automatic setup providers
 
-When `use_skill` activates a skill, Carapace checks a fixed provider chain and runs every matching provider in order:
+When `use_skill` activates a skill, carapace checks a fixed provider chain and runs every matching provider in order:
 
 1. `pyproject.toml` + `uv.lock` → `uv sync --locked`
 2. `package.json` + `package-lock.json` (without `pnpm-lock.yaml`) → `npm ci`
 3. `package.json` + `pnpm-lock.yaml` → `pnpm install --frozen-lockfile`
 4. `setup.sh` → `sh ./setup.sh`
 
-The provider files above are security-sensitive. Carapace restores them from the skill's **pushed upstream revision** before running them, so local uncommitted or merely local committed sandbox edits are not executed automatically.
+The provider files above are security-sensitive. carapace restores them from the skill's **pushed upstream revision** before running them, so local uncommitted or merely local committed sandbox edits are not executed automatically.
 
 All automatic setup providers run with the proxy temporarily bypassed. This includes `setup.sh` by design: it is a committed, human-authored setup hook restored from upstream, and is treated as more intentional and reviewable than arbitrary lifecycle scripts inside third-party package installs.
 
@@ -223,7 +223,7 @@ A skill can include a `pyproject.toml` plus `uv.lock` to declare its Python depe
 
 ### Lifecycle
 
-1. **Activation** (`use_skill`): Carapace copies the skill into the sandbox at `/workspace/skills/<name>/`. If `pyproject.toml` and `uv.lock` are present, it runs `uv sync --locked` in that directory. The proxy is temporarily bypassed during install.
+1. **Activation** (`use_skill`): carapace copies the skill into the sandbox at `/workspace/skills/<name>/`. If `pyproject.toml` and `uv.lock` are present, it runs `uv sync --locked` in that directory. The proxy is temporarily bypassed during install.
 2. **Runtime**: Scripts should be invoked with `uv run --directory /workspace/skills/<name> scripts/<script>.py` so they run inside the venv.
 3. **Persistence**: Skills are persisted via Git — changes in `/workspace/skills/` are committed and pushed to the workspace repository.
 4. **Container restart**: Venvs are rebuilt for all activated skills automatically when a container is recreated after idle timeout.
@@ -254,13 +254,13 @@ Skills can also use Node-based tooling. The sandbox image includes `npm` and `pn
 - `package.json` + `package-lock.json` → `npm ci`
 - `package.json` + `pnpm-lock.yaml` → `pnpm install --frozen-lockfile`
 
-If both `package-lock.json` and `pnpm-lock.yaml` are present, Carapace treats the skill as pnpm-based and skips `npm ci`.
+If both `package-lock.json` and `pnpm-lock.yaml` are present, carapace treats the skill as pnpm-based and skips `npm ci`.
 
 As with Python skills, commit the lockfile alongside the manifest so activation is reproducible.
 
 ## setup.sh
 
-If `setup.sh` exists, Carapace runs it after the dependency providers above.
+If `setup.sh` exists, carapace runs it after the dependency providers above.
 
 Use it for local, deterministic post-processing such as:
 
@@ -272,11 +272,11 @@ Keep `setup.sh` idempotent. It runs on first activation and again after sandbox 
 
 Because it runs automatically and may execute with approved credentials available, `setup.sh` should be treated like code, not documentation. Only the pushed upstream copy is executed.
 
-Like the dependency providers above, `setup.sh` runs under the temporary proxy-bypass window. The trust model here is deliberate: `setup.sh` is the explicit, committed setup hook for the skill, so Carapace treats it as more trustworthy than transitive package installation behavior.
+Like the dependency providers above, `setup.sh` runs under the temporary proxy-bypass window. The trust model here is deliberate: `setup.sh` is the explicit, committed setup hook for the skill, so carapace treats it as more trustworthy than transitive package installation behavior.
 
 ## Discovery (progressive disclosure)
 
-At startup, Carapace loads only `name` and `description` from each skill's frontmatter (~100 tokens per skill). These are injected into the agent's system prompt as a skill catalog. The agent sees what's available without the full instructions consuming context.
+At startup, carapace loads only `name` and `description` from each skill's frontmatter (~100 tokens per skill). These are injected into the agent's system prompt as a skill catalog. The agent sees what's available without the full instructions consuming context.
 
 The full `SKILL.md` body is loaded only when the agent decides a skill is relevant — via the `use_skill` tool.
 

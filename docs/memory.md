@@ -1,6 +1,6 @@
 # Memory and Workspace Files
 
-Carapace has two kinds of persistent agent context: **memory** (facts, notes, and topics that grow over time) and **workspace files** (identity, behavioral guide, user context).
+carapace has two kinds of persistent agent context: **memory** (facts, notes, and topics that grow over time) and **workspace files** (identity, behavioral guide, user context).
 
 ---
 

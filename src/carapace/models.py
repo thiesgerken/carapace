@@ -381,7 +381,7 @@ class GitConfig(BaseModel):
 
     remote: str = ""  # optional external remote URL
     branch: str = "main"  # remote branch to fetch/push (local is always "main")
-    author: str = "Carapace <carapace@%h>"  # %s → session ID, %h → hostname
+    author: str = "carapace <carapace@%h>"  # %s → session ID, %h → hostname
     token: Secret | None = None
 
 
@@ -488,7 +488,7 @@ class ToolResult:
 
 
 class SkillCredentialDecl(BaseModel):
-    """A credential requirement declared in a skill's Carapace metadata."""
+    """A credential requirement declared in a skill's carapace metadata."""
 
     vault_path: str
     description: str = ""
@@ -524,7 +524,7 @@ _SKILL_COMMAND_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
 
 class SkillCommandDecl(BaseModel):
-    """A command alias declared in a skill's Carapace metadata."""
+    """A command alias declared in a skill's carapace metadata."""
 
     name: str
     command: str
@@ -548,7 +548,7 @@ class SkillCommandDecl(BaseModel):
 
 
 class SkillCarapaceConfig(BaseModel):
-    """Parsed Carapace config declared inline in SKILL.md or in ``carapace.yaml``."""
+    """Parsed carapace config declared inline in SKILL.md or in ``carapace.yaml``."""
 
     network: SkillNetworkConfig = SkillNetworkConfig()
     credentials: list[SkillCredentialDecl] = []
@@ -630,7 +630,7 @@ class Deps(BaseModel):
     activated_skills: list[str] = []
     agent_model: Model
     agent_model_id: str = Field(
-        description="Carapace-registered model id (custom id or provider:name); usage keys, not provider wire ids.",
+        description="carapace-registered model id (custom id or provider:name); usage keys, not provider wire ids.",
     )
 
     verbose: bool = True

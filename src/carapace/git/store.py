@@ -100,7 +100,7 @@ class GitStore:
         repo_dir: Path,
         *,
         remote_branch: str = "main",
-        author: str = "Carapace <carapace@%h>",
+        author: str = "carapace <carapace@%h>",
     ) -> None:
         self.repo_dir = repo_dir
         self.remote_branch = remote_branch

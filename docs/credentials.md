@@ -1,6 +1,6 @@
 # Credentials
 
-Carapace keeps credentials in external vault backends and exposes them to sandboxed tools when needed. The server never persists secret values to disk, and credential access is session-scoped with explicit approval.
+carapace keeps credentials in external vault backends and exposes them to sandboxed tools when needed. The server never persists secret values to disk, and credential access is session-scoped with explicit approval.
 
 ## Design: pull, not push
 
@@ -75,7 +75,7 @@ metadata:
 On `use_skill`:
 
 1. Credential vault paths are included in the gated `use_skill` decision.
-2. After approval, Carapace fetches and **caches** the values from the configured backend (in memory only, never persisted to disk).
+2. After approval, carapace fetches and **caches** the values from the configured backend (in memory only, never persisted to disk).
 3. A **context grant** is registered for the skill, recording which vault paths and injection mappings are available.
 4. Credentials are **not injected** into the session environment. They are only available during `exec` calls that explicitly request the skill's context (see [skills.md — Context-scoped access](skills.md#context-scoped-access)).
 

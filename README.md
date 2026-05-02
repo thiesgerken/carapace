@@ -1,100 +1,90 @@
-# Carapace
+<p align="center">
+  <a href="https://github.com/thiesgerken/carapace/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/thiesgerken/carapace/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://github.com/thiesgerken/carapace/releases"><img alt="Release" src="https://img.shields.io/github/v/release/thiesgerken/carapace?display_name=tag"></a>
+  <a href="https://www.python.org/"><img alt="Python 3.12+" src="https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white"></a>
+  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-0F766E"></a>
+  <a href="charts/carapace/README.md"><img alt="Helm chart" src="https://img.shields.io/badge/helm-chart-0F766E?logo=helm&logoColor=white"></a>
+</p>
 
-> **Disclaimer:** This is a pet project, born out of curiosity to
->
-> - find out what hurdles arise when trying to build a "safe" OpenClaw,
-> - see how far I can get by only assuming the reviewer / architect role, letting Cursor do the rest.
+<p align="center">
+  <img src="docs/assets/carapace-banner.png" alt="carapace logo" width="180">
+</p>
 
-A security-first personal AI agent with LLM-powered security gating.
+<p align="center"><strong>A secure personal AI agent for DevOps engineers.</strong></p>
 
-Carapace is a self-hosted AI agent gateway with a web UI and Matrix integration that lets you interact with an AI assistant from anywhere. Unlike other agent frameworks that start with broad access and lock down after the fact, Carapace starts with **zero access** and gates every capability through a dedicated **sentinel agent** -- an LLM that maintains a persistent security conversation, evaluating each action against a natural-language security policy (`SECURITY.md`).
+<p align="center">Zero trust. Git-backed knowledge. Full audit trail.</p>
 
-## Key ideas
+<p align="center">
+  <a href="docs/quickstart.md">Quickstart</a>
+  ·
+  <a href="docs/security.md">Security Model</a>
+  ·
+  <a href="docs/kubernetes.md">Kubernetes</a>
+  ·
+  <a href="charts/carapace/README.md">Helm Chart</a>
+</p>
 
-- **Sentinel agent, not permission matrices.** A dedicated LLM agent (the "sentinel") evaluates every non-trivial action against a human-readable `SECURITY.md` policy. It maintains a shadow conversation per session, building context over time for nuanced, intent-aware decisions.
-- **Graduated trust.** The sentinel factors in the full session history -- previous approvals, user intent, time since last interaction -- to make proportional decisions. Early in a session or right after user confirmation, actions flow smoothly; after consuming untrusted data, scrutiny increases.
-- **Strict veto semantics.** If any part of the security gate (safe-list bypass, sentinel, or user) flags an action for denial or approval, that decision is final. A compromised sentinel cannot override a deterministic denial.
-- **Sandboxed execution.** Every agent action runs inside a sandboxed container (Docker or Kubernetes pod). All outbound traffic goes through an HTTP proxy that enforces per-session domain allowlisting. The sentinel evaluates unknown domains for plausibility.
-- **Skills are trusted code.** A personal agent has access to so much of your data and life that running completely untrusted skills through it would be reckless. The user (or an LLM acting on their behalf) is responsible for reviewing skills before installing them. The security model protects against the agent being _influenced by outside data_ to misuse skills, not against malicious skills themselves.
-- **Skills are portable.** Skills follow the open [AgentSkills](https://agentskills.io/) format (SKILL.md + scripts). They work in Claude Code, Cursor, Gemini CLI too. Carapace extends the format with inline `metadata.carapace` in `SKILL.md` for network domain declarations, credential metadata, and command aliases, with legacy `carapace.yaml` still supported as a fallback. Optional `pyproject.toml` manages Python dependencies via uv.
-- **The agent improves itself.** Carapace can write new skills, update its memory, and evolve its personality -- all gated by the same security system. No special "architect mode", just a sentinel that understands context.
-- **Credentials stay in your vault.** Carapace fetches credentials from configured backends (file or Bitwarden via `bw serve`) with per-session approval. Skills can auto-inject approved secrets as env vars or files, and sandbox scripts can fetch on demand with `ccred`. See [docs/credentials.md](docs/credentials.md).
+carapace is a self-hosted AI agent with a web UI, CLI, and Matrix channel for operators who want an assistant they can actually reason about. Every meaningful action is evaluated by a dedicated sentinel LLM against your natural-language policy in `SECURITY.md`, executed inside a sandbox, and recorded in an audit trail. Its memory is not hidden inside an app-specific database: personality, policy, skills, memory, and archived sessions live in a Git-backed knowledge repo you can inspect, diff, and sync.
 
-## Demo
+## Highlights
 
-```text
-$ carapace-server
-INFO:     Carapace server ready — model=anthropic:claude-sonnet-4-5, skills=1, token=a1b2c3d4…
+- Sentinel-gated execution. Every non-trivial action is reviewed by a dedicated security agent that keeps session context, not a static allowlist spreadsheet.
+- Kubernetes-ready sandboxes. Docker and Kubernetes runtimes are both supported, with StatefulSet-backed sandbox sessions, per-session PVCs, and idle-to-zero scaling already in place.
+- Git-native knowledge repo. `SOUL.md`, `USER.md`, `SECURITY.md`, skills, memory, and archived sessions live in files you can inspect, diff, sync, and push upstream.
+- No-direct-internet sandboxes. Sandbox workloads do not get ambient internet access; outbound traffic is forced through the proxy path.
+- Proxy system with tunnels. HTTP traffic is mediated by the proxy, and exec-scoped tunnels cover non-HTTP protocols without leaving long-lived daemons behind.
+- Context-scoped credentials. Secrets stay in your vault and are only injected or fetched on demand for exec calls that have the matching approved skill context.
 
-$ carapace
-New session c72188b27225
-Server: http://127.0.0.1:8321 | Type /help for commands
+## Knowledge Repo, Not Hidden State
 
-carapace> hi
+carapace treats long-term agent state as a repository, not as an opaque internal store.
 
-Hello! I'm Carapace, your personal AI assistant. How can I help you today?
+- The agent's policy lives in `SECURITY.md`.
+- Its personality and user model live in `SOUL.md` and `USER.md`.
+- Skills are plain files in AgentSkills format.
+- Memory is markdown on disk.
+- Session histories can be archived into the knowledge repo and pushed upstream.
 
-carapace> what can you do
+That makes the system inspectable in a way most agent projects are not. You can review what changed, diff it, sync it, and audit how the agent's knowledge evolves over time.
 
-I can help you with a variety of tasks:
+## Security Model
 
-File Management
- • Read, write, and edit files
- • Organize and manage documents
+- Sentinel agent evaluates every non-trivial action against a natural-language policy, not a rigid matrix of rules.
+- Strict veto semantics apply: if the safe path, sentinel, or user says no, the action does not proceed.
+- Sandboxed execution provides a hard boundary for file and process activity.
+- Outbound traffic goes through a proxy, with domain plausibility checks and visible approval events.
+- Domains, credentials, and tunnels are scoped to individual exec calls, so privileges do not accumulate across a long-running session.
+- Credential access is session-aware and auditable, with a fast path only when a matching skill context explicitly covers it.
+- Git pushes from the knowledge workflow are security-reviewed like other sensitive actions.
 
-Command Execution
- • Run shell commands and scripts
- • Execute code and tools
+See [docs/security.md](docs/security.md), [docs/credentials.md](docs/credentials.md), and [docs/sandbox.md](docs/sandbox.md) for the full model.
 
-Information & Research
- • Search the web for information
- • Look up facts and research topics
-
-Memory
- • Remember important information about you and your preferences
- • Maintain context across our conversations
-
-Task Planning
- • Break down complex tasks into steps
- • Help organize and execute multi-step projects
-
-carapace> find out about your environment
-  bash(command='ls -la')     [read_local] (shell)
-  bash(command='uname -a')   [read_local] (shell)
-  bash(command='pwd')        [read_local] (shell)
-
-Here's what I found about the environment:
-
-Location & System
- • Working directory: /home/user/carapace/data
- • OS: macOS (Darwin kernel, ARM64 - Apple Silicon)
- • Shell: zsh
-
-Available Files & Directories
- • AGENTS.md, SOUL.md, USER.md - configuration files
- • config.yaml - system configuration
- • SECURITY.md - security policy
- • logs/, memory/, sessions/, skills/
-
-Programming Languages Available
- • Python 3 (in virtual environment)
- • Node.js
-
-carapace> ^D
-Goodbye.
-```
-
-## Getting started
+## Getting Started
 
 ```bash
-cp .env.example .env   # fill in ANTHROPIC_API_KEY and CARAPACE_TOKEN
+cp .env.example .env
+# fill in ANTHROPIC_API_KEY and CARAPACE_TOKEN
+
 docker compose build
 docker compose up -d
 ```
 
-Server at `http://localhost:8321`, frontend at `http://localhost:3001`. See the **[Quickstart guide](docs/quickstart.md)** for full setup including Matrix integration, credential backends, and personalisation.
+This starts:
 
-## Architecture overview
+- Server at `http://localhost:8321`
+- Frontend at `http://localhost:3001`
+
+Optional CLI connection:
+
+```bash
+uv run carapace --token "$CARAPACE_TOKEN"
+```
+
+You can use whichever LLM backend fits your setup: hosted APIs, self-hosted `vllm`, `llama.cpp`, LM Studio, or anything else that exposes a compatible endpoint.
+
+For the full Docker Compose setup, model configuration, credential backends, Matrix integration, and knowledge-repo configuration, see [docs/quickstart.md](docs/quickstart.md). For Kubernetes deployment, see [docs/kubernetes.md](docs/kubernetes.md) and [charts/carapace/README.md](charts/carapace/README.md).
+
+## Architecture
 
 ```mermaid
 flowchart TD
@@ -112,90 +102,91 @@ flowchart TD
     Agent -->|"exec, file ops"| Sandbox["Sandbox Container\n(Docker or K8s pod)"]
     Sandbox -->|"outbound traffic"| Proxy[HTTP Proxy]
     Proxy --> Sentinel
+    Engine --> Knowledge["Git-backed knowledge repo"]
 ```
 
-The server runs the agent and all logic. The CLI, web UI, and Matrix are thin clients that connect via HTTP (sessions) and WebSocket (chat, slash commands, approval flow). Every tool call passes through the security module: safe operations (reads, memory, skill activation) are auto-allowed; everything else is evaluated by the sentinel agent. Network requests from sandbox containers are intercepted by an HTTP proxy and checked by the sentinel for domain plausibility.
+The server runs the agent loop, session lifecycle, and security system. The CLI, web UI, and Matrix channel are thin clients. The knowledge repo is a first-class part of the design: session output can be promoted into Git-backed knowledge, and outbound Git operations are security-reviewed instead of treated as an afterthought.
 
-See [docs/architecture.md](docs/architecture.md) for the full architecture with Mermaid diagrams.
+See [docs/architecture.md](docs/architecture.md) for the fuller architecture breakdown.
 
-## Core concepts
+## Core Docs
 
-| Concept             | Description                                                        | Doc                                                            |
-| ------------------- | ------------------------------------------------------------------ | -------------------------------------------------------------- |
-| Quickstart          | Docker Compose setup, Matrix, credentials, personalisation         | [docs/quickstart.md](docs/quickstart.md)                       |
-| Security            | Sentinel agent + SECURITY.md policy + action log                   | [docs/security.md](docs/security.md)                           |
-| Skills              | AgentSkills-compatible with uv-managed Python dependencies         | [docs/skills.md](docs/skills.md)                               |
-| Credentials         | Vault-backed credential access, approvals, and sandbox injection   | [docs/credentials.md](docs/credentials.md)                     |
-| Sandbox             | Docker / Kubernetes sandboxed execution with HTTP proxy            | [docs/sandbox.md](docs/sandbox.md)                             |
-| Sessions & Channels | Channel-decoupled persistent sessions (WebSocket, Matrix)          | [docs/sessions-and-channels.md](docs/sessions-and-channels.md) |
-| Memory              | Markdown-based persistent memory with text search                  | [docs/memory.md](docs/memory.md)                               |
-| Kubernetes          | Helm chart, StatefulSet sandboxes, per-session PVCs, NetworkPolicy | [docs/kubernetes.md](docs/kubernetes.md)                       |
+| Topic                                                          | What it covers                                                             |
+| -------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| [docs/quickstart.md](docs/quickstart.md)                       | Docker Compose setup, credentials, Matrix, and initial configuration       |
+| [docs/security.md](docs/security.md)                           | Sentinel policy model, audit trail, approvals, and veto semantics          |
+| [docs/skills.md](docs/skills.md)                               | AgentSkills support, context-scoped access, providers, and command aliases |
+| [docs/credentials.md](docs/credentials.md)                     | Vault-backed credentials, approval flow, and per-exec injection            |
+| [docs/memory.md](docs/memory.md)                               | Markdown memory model and how it is loaded and searched                    |
+| [docs/sandbox.md](docs/sandbox.md)                             | Docker/Kubernetes sandboxes, proxy behavior, and exec-scoped tunnels       |
+| [docs/sessions-and-channels.md](docs/sessions-and-channels.md) | Session lifecycle, WebSocket events, Matrix behavior, and approvals        |
+| [docs/kubernetes.md](docs/kubernetes.md)                       | Kubernetes runtime, StatefulSet sandboxes, and Helm deployment             |
 
-## Technology stack
+## Kubernetes Deployment
 
-- **Python 3.12+** with **Pydantic AI** (agents, tools, dependency injection)
-- **FastAPI** + **uvicorn** for the server, **WebSockets** for real-time chat
-- **Next.js 16** + **React 19** + **Tailwind CSS 4** for the web UI
-- **matrix-nio** for Matrix integration
-- **Docker** or **Kubernetes** for sandboxed tool execution
-- **Pydantic v2** for config and models
-- **Pydantic Logfire** for observability (OpenTelemetry)
-- **uv** for packaging, **Docker Compose** for deployment
+carapace supports Kubernetes as a sandbox runtime. Sandboxes run as StatefulSets with per-session PVCs. On idle timeout the StatefulSet scales to zero while preserving persistent state, and on resume the sandbox is recreated with its committed knowledge and activated setup restored.
 
-## Data directory
+Use the included Helm chart in [charts/carapace](charts/carapace) and see [charts/carapace/README.md](charts/carapace/README.md) for installation details.
 
-All state lives under `$CARAPACE_DATA_DIR` (defaults to `./data`).
-
-```text
-$CARAPACE_DATA_DIR/
-  config.yaml            # main configuration
-  SECURITY.md            # natural-language security policy (sentinel system prompt)
-  AGENTS.md              # agent behavioral guide (seeded from built-in template)
-  SOUL.md                # agent personality
-  USER.md                # about the human
-  skills/                # AgentSkills-format skill folders
-  memory/                # Markdown-based persistent memory
-  sessions/              # per-session history, state, audit logs, and workspace
-```
-
-## Comparison with OpenClaw
-
-Carapace is inspired by [OpenClaw](https://docs.openclaw.ai/) but differs fundamentally in security philosophy:
-
-- **OpenClaw** is perimeter-based: control who can talk to the bot, then trust the bot broadly.
-- **Carapace** is flow-based: the bot starts untrusted and every capability is gated by a sentinel agent that tracks the full session context.
-
-Other differences: Carapace is Python (not Node), uses Pydantic AI (not a custom agent loop), runs everything in sandboxed containers (not on the host), and uses the open AgentSkills format (not a custom skill system).
-
-## Kubernetes deployment
-
-Carapace supports Kubernetes as a sandbox runtime — sandbox sessions run as StatefulSets with per-session PVCs (via `volumeClaimTemplates`). On idle timeout the StatefulSet is scaled to 0 replicas (PVC retained, no venv rebuild on resume); on session deletion the PVC is cleaned up automatically. A [Helm chart](charts/carapace/) is included for deployment. See the [Kubernetes deployment guide](docs/kubernetes.md) for details and the [chart README](charts/carapace/README.md) for installation instructions.
-
-## Development setup
-
-For local development, run the backend and frontend directly instead of using Docker Compose:
+## Development
 
 ```bash
-# Install Python dependencies
-uv sync
+uv sync --dev
+uv run pytest
+pnpm --dir frontend install
+pnpm --dir frontend lint
+```
 
-# Build the sandbox image (required — the server won't start without it)
+For local development without Docker Compose:
+
+```bash
 docker compose build sandbox
-
-# Start the backend
 uv run carapace-server
-
-# In another terminal — start the frontend (dev mode with hot reload)
-cd frontend && pnpm install && pnpm dev
-
-# In another terminal — connect via CLI
+pnpm --dir frontend dev
 uv run carapace
 ```
 
-Additional prerequisites: **Python 3.12+** (3.14 recommended), **[uv](https://docs.astral.sh/uv/)**, **Node.js 24+**, and **pnpm** (`corepack enable pnpm`) for the frontend.
+Additional prerequisites: Python 3.12+, `uv`, Node.js 24+, and `pnpm`.
 
 ## Status
 
-In active development. Core features are working: client-server architecture with FastAPI + WebSocket, Next.js web frontend, Matrix channel, sentinel-gated tool execution, sandboxed containers (Docker + Kubernetes), HTTP proxy with domain allowlisting, skill system with uv-managed dependencies, and interactive CLI.
+carapace is in active development, but the core system is already usable.
 
-Planned features: [vector search for memory](docs/plans/memory.md), [task scheduling](docs/plans/channels.md), [Kubernetes enhancements](docs/plans/kubernetes.md).
+Shipped today:
+
+- Sentinel-gated tool execution
+- Web UI, CLI, and Matrix channels
+- Docker and Kubernetes sandbox runtimes
+- Git-backed knowledge repo with session archiving and upstream push support
+- Context-scoped skill domains, credentials, and exec-scoped tunnels
+- Credential broker with file and Bitwarden backends
+- Session fork, sidebar controls, session attributes, and approval-source UI badges
+- Token usage reporting, budgets, and runtime model switching
+
+Planned next:
+
+- [Vector search for memory](docs/plans/memory.md)
+- [Scheduled tasks and cron-like channels](docs/plans/channels.md)
+- [Further Kubernetes enhancements](docs/plans/kubernetes.md)
+
+## Project Notes
+
+- Heavy AI use during development: the frontend is vibecoded, the backend is reviewcoded, and the architectural and security decisions are manual.
+- carapace is pre-1.0. Expect breaking changes before `1.0.0`.
+- Batteries are not included. The point is to use the agent to build out your own skills and workflows.
+- This is primarily a personal agent, published because other people may find it useful too.
+
+## Contributing
+
+Issues and pull requests are welcome. Before opening a PR, run the backend tests, frontend lint, and chart linting where relevant. The repo uses `prek` hooks and CI also covers tests, frontend lint, and Helm lint.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
+
+## Disclaimer
+
+This is a pet project, born out of curiosity to:
+
+- find out what hurdles arise when trying to build a safe personal agent,
+- see how far I can get by only assuming the reviewer and architect role while letting Cursor do the rest.

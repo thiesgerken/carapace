@@ -8,5 +8,5 @@ metadata:
     {{- include "carapace.labels" . | nindent 4 }}
     app.kubernetes.io/component: sandbox
 spec:
-  description: Ownership anchor for runtime-created Carapace sandbox StatefulSets.
+  description: Ownership anchor for runtime-created carapace sandbox StatefulSets.
 {{- end }}

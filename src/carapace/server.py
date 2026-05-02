@@ -376,7 +376,7 @@ async def lifespan(app: FastAPI):
         await matrix_channel.start()
 
     logger.info(
-        f"Carapace server ready — model={_config.agent.model}, "
+        f"carapace server ready — model={_config.agent.model}, "
         f"skills={len(skill_catalog)}, proxy_port={proxy_port}, token={token[:8]}…"
         + (f", matrix=on ({_config.channels.matrix.homeserver})" if _config.channels.matrix.enabled else "")
     )
@@ -401,7 +401,7 @@ async def lifespan(app: FastAPI):
     logger.info("Shutdown complete")
 
 
-app = FastAPI(title="Carapace", lifespan=lifespan)
+app = FastAPI(title="carapace", lifespan=lifespan)
 
 router = APIRouter(prefix="/api")
 
@@ -1347,7 +1347,7 @@ def main() -> None:
     _setup_logging(config.carapace.log_level)
     token = get_token()
 
-    logger.info(f"Starting Carapace server on {config.server.host}:{config.server.port}")
+    logger.info(f"Starting carapace server on {config.server.host}:{config.server.port}")
     logger.info(f"Sandbox API on 0.0.0.0:{config.server.sandbox_port}")
     logger.info(f"Internal API on 127.0.0.1:{config.server.internal_port}")
     logger.info(f"Bearer token: {token[:8]}…")
@@ -1364,7 +1364,7 @@ def main() -> None:
 # --- Internal endpoint for pre-receive hook sentinel evaluation ---
 # Bound to 127.0.0.1 only — unreachable from sandbox containers.
 
-internal_app = FastAPI(title="Carapace Internal")
+internal_app = FastAPI(title="carapace Internal")
 
 
 class PushEvalRequest(BaseModel):
@@ -1414,7 +1414,7 @@ app.include_router(router)
 
 # --- Sandbox-facing API (Basic Auth, serves git HTTP backend) ---
 
-sandbox_app = FastAPI(title="Carapace Sandbox API")
+sandbox_app = FastAPI(title="carapace Sandbox API")
 
 
 @sandbox_app.api_route("/git/{path:path}", methods=["GET", "POST"])

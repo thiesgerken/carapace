@@ -51,10 +51,10 @@ The existing split between internal and agent-facing commands is preserved:
 
 | Path                          | Used for                                                    | Shell state                                                      |
 | ----------------------------- | ----------------------------------------------------------- | ---------------------------------------------------------------- |
-| `_exec()` (raw `docker exec`) | Carapace internals: venv builds, file ops, proxy setup, git | Fresh process each time — correct, these are scripted operations |
+| `_exec()` (raw `docker exec`) | carapace internals: venv builds, file ops, proxy setup, git | Fresh process each time — correct, these are scripted operations |
 | `exec_command()` → tmux       | Agent's `exec` tool calls                                   | **Persistent** — env, cwd, functions all survive                 |
 
-This avoids polluting the agent's shell with Carapace's internal scaffolding commands.
+This avoids polluting the agent's shell with carapace's internal scaffolding commands.
 
 ## What needs to change
 
@@ -127,7 +127,7 @@ The caveat about `export TOKEN=...` not persisting is removed — with tmux, it 
 ## What does NOT change
 
 - `tools.py` — the `exec` tool interface is unchanged
-- The `_exec()` path for Carapace-internal commands — still uses raw `docker exec`
+- The `_exec()` path for carapace-internal commands — still uses raw `docker exec`
 - The exec lock — one command at a time per session, same as before
 - Container lifecycle, proxy, git, file operations — unaffected
 
