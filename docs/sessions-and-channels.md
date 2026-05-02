@@ -12,14 +12,19 @@ class SessionState(BaseModel):
     channel_type: str           # "cli" | "matrix" | "web" | ...
     channel_ref: str | None     # channel-specific ID (room_id, etc.)
     title: str | None           # auto-generated after first messages
-    private: bool               # if true, session is excluded from knowledge commits
+    agent_model_name: str | None
+    sentinel_model_name: str | None
+    title_model_name: str | None
+    attributes: SessionAttributes  # private / archived / pinned / favourite
     approved_operations: list[str]
     activated_skills: list[str]
     context_grants: dict[str, ContextGrant]  # per-skill domain & credential grants
+    budget: SessionBudget
     created_at: datetime
     last_active: datetime
     knowledge_last_committed_at: datetime | None
     knowledge_last_archive_path: str | None
+    knowledge_last_export_hash: str | None
     knowledge_last_commit_trigger: str | None
 ```
 
@@ -35,15 +40,22 @@ Each session also has an `ActiveSession` in-memory object (when loaded) that hol
 
 Sessions are stored on disk at `$CARAPACE_DATA_DIR/sessions/<session_id>/`:
 
-| File           | Contents                                                 |
-| -------------- | -------------------------------------------------------- |
-| `state.yaml`   | Session metadata (SessionState)                          |
-| `history.yaml` | Full message history (agent + user messages)             |
-| `events.yaml`  | Event stream (tool calls, results, etc.) with timestamps |
-| `usage.yaml`   | Token usage breakdown by model                           |
-| `audit.yaml`   | Security audit trail (sentinel verdicts, decisions)      |
+| File           | Contents                                                                                                  |
+| -------------- | --------------------------------------------------------------------------------------------------------- |
+| `state.yaml`   | Session metadata (SessionState)                                                                           |
+| `history.yaml` | Raw Pydantic AI message history used as model conversation state                                          |
+| `events.yaml`  | User-facing session transcript and event stream (messages, tool calls/results, approvals, slash commands) |
+| `usage.yaml`   | Token usage breakdown by model                                                                            |
+| `audit.yaml`   | Security audit trail (sentinel verdicts, decisions)                                                       |
 
 Sessions persist across server restarts. In-memory state (action log, sentinel conversation) is rebuilt when a session is reactivated.
+
+`history.yaml` and `events.yaml` serve different purposes:
+
+- `history.yaml` stores the full `ModelMessage` sequence that is fed back into Pydantic AI on the next turn. This is the model-side conversation state.
+- `events.yaml` stores the normalized session transcript used by the UI and APIs. It includes items that do not belong in model history, such as slash commands, approval requests/responses, and other operational events.
+- The REST history endpoint prefers `events.yaml` and only falls back to rebuilding a simplified transcript from `history.yaml` for legacy sessions.
+- Retry, reset, fork, and knowledge export align both files by completed turns, but they do not collapse them into a single source of truth.
 
 ## Knowledge commits
 
@@ -56,7 +68,7 @@ Carapace can optionally commit session histories into the Git-backed knowledge r
 
 ### Privacy model
 
-- Every session has a `private` flag in `SessionState`
+- Every session has an `attributes.private` flag in `SessionState`
 - New sessions inherit `sessions.default_private` from `config.yaml`
 - Private sessions are excluded from manual commits to knowledge and from autosave commits
 - Switching a session from public to private does **not** rewrite Git history; already-committed snapshots remain in the knowledge repo history

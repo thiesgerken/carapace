@@ -113,6 +113,12 @@ The action log is a per-session, append-only chronological record of all signifi
 
 The action log serves as the sentinel's primary source of truth. Raw tool results are never included -- only their metadata (size, success/failure) -- to prevent prompt injection via tool output.
 
+This action log is distinct from both runtime session transcripts:
+
+- `history.yaml` stores the raw model conversation state (`ModelMessage` history) for the main agent.
+- `events.yaml` stores the user-facing session transcript and operational events used by the UI, retry/reset/fork flows, and knowledge export.
+- `audit.yaml` stores security decisions and sentinel verdicts for auditability.
+
 ## Credential access
 
 Credential access is mediated through the sandbox API and session state:
