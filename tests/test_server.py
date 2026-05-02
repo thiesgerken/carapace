@@ -109,7 +109,8 @@ def test_create_session(client, auth_headers):
     data = resp.json()
     assert "session_id" in data
     assert data["channel_type"] == "cli"
-    assert data["private"] is False
+    assert data["attributes"]["private"] is False
+    assert data["attributes"]["archived"] is False
 
 
 def test_create_session_uses_configured_default_privacy(client, auth_headers):
@@ -118,7 +119,7 @@ def test_create_session_uses_configured_default_privacy(client, auth_headers):
     resp = client.post("/api/sessions", headers=auth_headers)
 
     assert resp.status_code == 200
-    assert resp.json()["private"] is True
+    assert resp.json()["attributes"]["private"] is True
 
 
 def test_list_sessions(client, auth_headers):
@@ -201,12 +202,16 @@ def test_update_session_privacy(client, auth_headers):
         ],
     )
 
-    resp = client.patch(f"/api/sessions/{sid}", headers=auth_headers, json={"private": True})
+    resp = client.patch(
+        f"/api/sessions/{sid}",
+        headers=auth_headers,
+        json={"attributes": {"private": True}},
+    )
 
     assert resp.status_code == 200
-    assert resp.json()["private"] is True
+    assert resp.json()["attributes"]["private"] is True
     assert resp.json()["message_count"] == 2
-    assert srv._engine.session_mgr.load_state(sid).private is True
+    assert srv._engine.session_mgr.load_state(sid).attributes.private is True
 
 
 def test_update_session_privacy_updates_active_session_state(client, auth_headers):
@@ -215,14 +220,135 @@ def test_update_session_privacy_updates_active_session_state(client, auth_header
     active = srv._engine.get_or_activate(sid)
     original_state = active.state
     active.state.activated_skills.append("demo-skill")
-    assert active.state.private is False
+    assert active.state.attributes.private is False
 
-    resp = client.patch(f"/api/sessions/{sid}", headers=auth_headers, json={"private": True})
+    resp = client.patch(
+        f"/api/sessions/{sid}",
+        headers=auth_headers,
+        json={"attributes": {"private": True}},
+    )
 
     assert resp.status_code == 200
     assert active.state is original_state
-    assert active.state.private is True
+    assert active.state.attributes.private is True
     assert active.state.activated_skills == ["demo-skill"]
+
+
+def test_list_sessions_excludes_archived_by_default(client, auth_headers):
+    sid = client.post("/api/sessions", headers=auth_headers).json()["session_id"]
+    archive_resp = client.patch(
+        f"/api/sessions/{sid}",
+        headers=auth_headers,
+        json={"attributes": {"archived": True}},
+    )
+
+    assert archive_resp.status_code == 200
+    resp = client.get("/api/sessions", headers=auth_headers)
+
+    assert resp.status_code == 200
+    assert sid not in {session["session_id"] for session in resp.json()}
+
+
+def test_list_sessions_can_include_archived(client, auth_headers):
+    sid = client.post("/api/sessions", headers=auth_headers).json()["session_id"]
+    client.patch(
+        f"/api/sessions/{sid}",
+        headers=auth_headers,
+        json={"attributes": {"archived": True}},
+    )
+
+    resp = client.get("/api/sessions?include_archived=true", headers=auth_headers)
+
+    assert resp.status_code == 200
+    archived_session = next(item for item in resp.json() if item["session_id"] == sid)
+    assert archived_session["attributes"]["archived"] is True
+
+
+def test_update_session_archives_and_destroys_sandbox(client, auth_headers):
+    sid = client.post("/api/sessions", headers=auth_headers).json()["session_id"]
+
+    resp = client.patch(
+        f"/api/sessions/{sid}",
+        headers=auth_headers,
+        json={"attributes": {"archived": True}},
+    )
+
+    assert resp.status_code == 200
+    assert resp.json()["attributes"]["archived"] is True
+    assert srv._engine.session_mgr.load_state(sid).attributes.archived is True
+    srv._engine.sandbox_mgr.destroy_session.assert_awaited_with(sid)
+
+
+def test_update_session_archives_non_private_session_into_knowledge_repo(client, auth_headers, tmp_path):
+    sid = client.post("/api/sessions", headers=auth_headers).json()["session_id"]
+    srv._engine.session_mgr.append_events(
+        sid,
+        [
+            {"role": "user", "content": "hello"},
+            {"role": "assistant", "content": "world"},
+        ],
+    )
+
+    resp = client.patch(
+        f"/api/sessions/{sid}",
+        headers=auth_headers,
+        json={"attributes": {"archived": True}},
+    )
+
+    assert resp.status_code == 200
+    assert resp.json()["attributes"]["archived"] is True
+    archive_path = resp.json()["knowledge_last_archive_path"]
+    assert archive_path is not None
+    archive_file = tmp_path / archive_path
+    assert archive_file.exists()
+    payload = archive_file.read_text()
+    assert '"archived": true' in payload
+    assert srv._engine.session_mgr.load_state(sid).knowledge_last_commit_trigger == "archive"
+
+
+def test_update_session_archives_updates_active_session_state(client, auth_headers):
+    sid = client.post("/api/sessions", headers=auth_headers).json()["session_id"]
+    active = srv._engine.get_or_activate(sid)
+    original_state = active.state
+
+    resp = client.patch(
+        f"/api/sessions/{sid}",
+        headers=auth_headers,
+        json={"attributes": {"archived": True}},
+    )
+
+    assert resp.status_code == 200
+    assert original_state.attributes.archived is True
+    assert srv._engine.get_active(sid) is None
+
+
+def test_archived_session_rejects_sandbox_start(client, auth_headers):
+    sid = client.post("/api/sessions", headers=auth_headers).json()["session_id"]
+    client.patch(
+        f"/api/sessions/{sid}",
+        headers=auth_headers,
+        json={"attributes": {"archived": True}},
+    )
+
+    resp = client.post(f"/api/sessions/{sid}/sandbox/up", headers=auth_headers)
+
+    assert resp.status_code == 409
+
+
+def test_list_sessions_sorts_pinned_first(client, auth_headers):
+    first = client.post("/api/sessions", headers=auth_headers).json()["session_id"]
+    second = client.post("/api/sessions", headers=auth_headers).json()["session_id"]
+    client.patch(
+        f"/api/sessions/{first}",
+        headers=auth_headers,
+        json={"attributes": {"pinned": True}},
+    )
+
+    resp = client.get("/api/sessions", headers=auth_headers)
+
+    assert resp.status_code == 200
+    session_ids = [item["session_id"] for item in resp.json() if item["session_id"] in {first, second}]
+    assert session_ids[0] == first
 
 
 def test_fork_session_creates_new_session_from_turn(client, auth_headers):
@@ -338,6 +464,25 @@ def test_delete_session_removes_archived_knowledge(client, auth_headers, tmp_pat
 
     assert resp.status_code == 204
     assert not archive_file.exists()
+
+
+def test_archiving_session_does_not_remove_knowledge_archive(client, auth_headers, tmp_path):
+    sid = client.post("/api/sessions", headers=auth_headers).json()["session_id"]
+    srv._engine.session_mgr.append_events(sid, [{"role": "user", "content": "hello"}])
+    commit_resp = client.post(f"/api/sessions/{sid}/knowledge/commit", headers=auth_headers)
+    archive_path = commit_resp.json()["archive_path"]
+    assert archive_path is not None
+    archive_file = tmp_path / archive_path
+    assert archive_file.exists()
+
+    resp = client.patch(
+        f"/api/sessions/{sid}",
+        headers=auth_headers,
+        json={"attributes": {"archived": True}},
+    )
+
+    assert resp.status_code == 200
+    assert archive_file.exists()
     assert srv._engine.sandbox_mgr.destroy_session.await_count == 1
 
 
@@ -351,7 +496,11 @@ def test_delete_private_session_keeps_committed_knowledge(client, auth_headers, 
     archive_file = tmp_path / archive_path
     assert archive_file.exists()
 
-    patch_resp = client.patch(f"/api/sessions/{sid}", headers=auth_headers, json={"private": True})
+    patch_resp = client.patch(
+        f"/api/sessions/{sid}",
+        headers=auth_headers,
+        json={"attributes": {"private": True}},
+    )
     assert patch_resp.status_code == 200
 
     resp = client.delete(f"/api/sessions/{sid}", headers=auth_headers)

@@ -14,7 +14,7 @@ from loguru import logger
 from pydantic import BaseModel
 from pydantic_ai import ModelMessage, ModelMessagesTypeAdapter
 
-from carapace.models import SessionBudget, SessionState
+from carapace.models import SessionAttributes, SessionBudget, SessionState
 from carapace.sandbox.state import (
     SessionSandboxSnapshot,
     clear_sandbox_snapshot,
@@ -75,7 +75,7 @@ class SessionManager:
             session_id=session_id,
             channel_type=channel_type,
             channel_ref=channel_ref or None,
-            private=private,
+            attributes=SessionAttributes(private=private),
             budget=budget.model_copy(deep=True) if budget is not None else SessionBudget(),
             created_at=now,
             last_active=now,

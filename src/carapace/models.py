@@ -73,6 +73,13 @@ class SessionBudget(BaseModel):
         return any(limit is not None for limit in (self.input_tokens, self.output_tokens, self.cost_usd))
 
 
+class SessionAttributes(BaseModel):
+    private: bool = False
+    archived: bool = False
+    pinned: bool = False
+    favorite: bool = False
+
+
 class SessionState(BaseModel):
     session_id: str
     channel_type: str = "cli"
@@ -81,11 +88,11 @@ class SessionState(BaseModel):
     agent_model_name: str | None = None
     sentinel_model_name: str | None = None
     title_model_name: str | None = None
-    private: bool = False
-    approved_operations: list[str] = []
-    activated_skills: list[str] = []
-    context_grants: dict[str, ContextGrant] = {}
-    budget: SessionBudget = Field(default_factory=SessionBudget)
+    attributes: Annotated[SessionAttributes, Field(default_factory=SessionAttributes)]
+    approved_operations: Annotated[list[str], Field(default_factory=list)]
+    activated_skills: Annotated[list[str], Field(default_factory=list)]
+    context_grants: Annotated[dict[str, ContextGrant], Field(default_factory=dict)]
+    budget: Annotated[SessionBudget, Field(default_factory=SessionBudget)]
     created_at: datetime
     last_active: datetime
     knowledge_last_committed_at: datetime | None = None
@@ -110,8 +117,11 @@ class SessionState(BaseModel):
             channel_type=channel_type,
             channel_ref=channel_ref,
             title=title,
-            private=private,
+            attributes=SessionAttributes(private=private),
             approved_operations=approved_operations or [],
+            activated_skills=[],
+            context_grants={},
+            budget=SessionBudget(),
             created_at=ts,
             last_active=ts,
         )

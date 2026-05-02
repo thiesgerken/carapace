@@ -593,6 +593,8 @@ class SessionEngine(SessionTurnMixin):
             for field_name, value in changes.items():
                 if field_name not in SessionState.model_fields:
                     raise AttributeError(f"Unknown SessionState field: {field_name}")
+                if hasattr(value, "model_copy"):
+                    value = value.model_copy(deep=True)
                 setattr(active.state, field_name, value)
 
     def is_agent_running(self, session_id: str) -> bool:

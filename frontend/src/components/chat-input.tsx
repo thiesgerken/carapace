@@ -59,6 +59,8 @@ interface ChatInputProps {
   onCancel?: () => void;
   onInterrupt?: (content: string) => void;
   connected: boolean;
+  disabled?: boolean;
+  disabledPlaceholder?: string;
   waiting?: boolean;
   queuedMessage?: string | null;
   commands?: SlashCommand[];
@@ -71,6 +73,8 @@ export function ChatInput({
   onCancel,
   onInterrupt,
   connected,
+  disabled = false,
+  disabledPlaceholder = "Input disabled",
   waiting,
   queuedMessage,
   commands = [],
@@ -92,10 +96,10 @@ export function ChatInput({
   // browser won't scroll the input into view, leaving it hidden.
   useEffect(() => {
     const isTouch = window.matchMedia("(pointer: coarse)").matches;
-    if (!isTouch) {
+    if (!isTouch && !disabled) {
       textareaRef.current?.focus();
     }
-  }, []);
+  }, [disabled]);
 
   // Show autocomplete when input starts with "/" and is a single word, but not if it exactly matches a command
   const exactMatch = commands.some(
@@ -168,20 +172,21 @@ export function ChatInput({
 
   const submit = useCallback(() => {
     const trimmed = value.trim();
-    if (!trimmed || !connected) return;
+    if (disabled || !trimmed || !connected) return;
     if (waiting && queuedMessage) return;
     onSend(trimmed);
     clearInput();
-  }, [value, connected, waiting, queuedMessage, onSend, clearInput]);
+  }, [value, disabled, connected, waiting, queuedMessage, onSend, clearInput]);
 
   const interrupt = useCallback(() => {
     const trimmed = value.trim();
-    if (!trimmed || !connected || !waiting || !!queuedMessage) return;
+    if (disabled || !trimmed || !connected || !waiting || !!queuedMessage) return;
     onInterrupt?.(trimmed);
     clearInput();
-  }, [value, connected, waiting, queuedMessage, onInterrupt, clearInput]);
+  }, [value, disabled, connected, waiting, queuedMessage, onInterrupt, clearInput]);
 
   function handleKeyDown(e: React.KeyboardEvent) {
+    if (disabled) return;
     const activeMenu = showMenu ? "commands" : showModelMenu ? "models" : null;
     const menuLength =
       activeMenu === "commands"
@@ -225,6 +230,7 @@ export function ChatInput({
   }
 
   function handleInput(e: React.ChangeEvent<HTMLTextAreaElement>) {
+    if (disabled) return;
     setValue(e.target.value);
     setSelectedIndex(0);
     const el = e.target;
@@ -235,7 +241,9 @@ export function ChatInput({
   const hasText = value.trim().length > 0;
 
   let tooltip: string;
-  if (!waiting) {
+  if (disabled) {
+    tooltip = disabledPlaceholder;
+  } else if (!waiting) {
     tooltip = "Send message (Enter)";
   } else if (hasText) {
     tooltip = "Enter to queue · ⌥Enter to interrupt · Click to stop";
@@ -338,16 +346,18 @@ export function ChatInput({
             value={value}
             onChange={handleInput}
             onKeyDown={handleKeyDown}
-            placeholder="Message Carapace…"
+            placeholder={disabled ? disabledPlaceholder : "Message Carapace…"}
             rows={1}
+            disabled={disabled}
             className={cn(
               "flex-1 resize-none bg-transparent text-base sm:text-sm outline-none",
               "placeholder:text-muted-foreground/50",
+              disabled && "cursor-not-allowed text-muted-foreground",
             )}
           />
           <button
             onClick={waiting ? onCancel : submit}
-            disabled={waiting ? false : !connected || !hasText}
+            disabled={disabled || (waiting ? false : !connected || !hasText)}
             title={tooltip}
             className={cn(
               "shrink-0 rounded-lg p-2 transition-colors",

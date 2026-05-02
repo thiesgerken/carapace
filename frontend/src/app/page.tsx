@@ -6,7 +6,7 @@ import { Menu, X } from "lucide-react";
 import { ConnectForm } from "@/components/connect-form";
 import { Sidebar } from "@/components/sidebar";
 import { ChatView } from "@/components/chat-view";
-import { createSession, deleteSession, listSessions } from "@/lib/api";
+import { createSession, deleteSession, listSessions, updateSession } from "@/lib/api";
 import {
   clearConnection,
   getServer,
@@ -41,6 +41,26 @@ function mergeSessionsWithNewerSandbox(
     );
     return freshestSandbox === session.sandbox ? session : { ...session, sandbox: freshestSandbox };
   });
+}
+
+function compareSessions(left: SessionInfo, right: SessionInfo): number {
+  if (left.attributes.pinned !== right.attributes.pinned) {
+    return left.attributes.pinned ? -1 : 1;
+  }
+
+  const leftTime = Date.parse(left.last_active);
+  const rightTime = Date.parse(right.last_active);
+  const normalizedLeft = Number.isNaN(leftTime) ? 0 : leftTime;
+  const normalizedRight = Number.isNaN(rightTime) ? 0 : rightTime;
+  if (normalizedLeft !== normalizedRight) {
+    return normalizedRight - normalizedLeft;
+  }
+
+  return left.session_id.localeCompare(right.session_id);
+}
+
+function sortSessions(sessions: SessionInfo[]): SessionInfo[] {
+  return [...sessions].sort(compareSessions);
 }
 
 type ConnectionState = {
@@ -137,7 +157,7 @@ function HomeContent() {
     setRefreshingSessions(true);
 
     try {
-      const list = await listSessions(srv, tok);
+      const list = await listSessions(srv, tok, { includeArchived: true });
 
       if (requestId !== refreshRequestIdRef.current) return;
 
@@ -183,7 +203,7 @@ function HomeContent() {
     setCreatingSession(true);
     try {
       const session = await createSession(server, token);
-      setSessions((prev) => [session, ...prev]);
+      setSessions((prev) => sortSessions([session, ...prev]));
       setActiveSessionId(session.session_id);
       setSidebarOpen(false);
     } catch {
@@ -204,6 +224,19 @@ function HomeContent() {
     }
   }, [activeSessionId, server, token]);
 
+  const handleUpdateSessionAttributes = useCallback(async (
+    id: string,
+    attributes: NonNullable<Parameters<typeof updateSession>[3]["attributes"]>,
+  ) => {
+    const updated = await updateSession(server, token, id, { attributes });
+    pendingSandboxUpdatesRef.current.delete(id);
+    setSessions((prev) => sortSessions(prev.map((entry) => (entry.session_id === id ? { ...entry, ...updated } : entry))));
+    if (updated.attributes.archived && activeSessionId === id) {
+      setActiveSessionId(null);
+    }
+    return updated;
+  }, [activeSessionId, server, token]);
+
   function handleSelectSession(id: string) {
     setActiveSessionId(id);
     setSidebarOpen(false);
@@ -220,9 +253,11 @@ function HomeContent() {
       const next = prev.map((entry) =>
         entry.session_id === session.session_id ? { ...entry, ...session } : entry,
       );
-      return next.some((entry) => entry.session_id === session.session_id)
-        ? next
-        : [session, ...next];
+      return sortSessions(
+        next.some((entry) => entry.session_id === session.session_id)
+          ? next
+          : [session, ...next],
+      );
     });
   }
 
@@ -286,6 +321,7 @@ function HomeContent() {
           activeSessionId={activeSessionId}
           onSelect={handleSelectSession}
           onNew={handleNewSession}
+          onUpdateAttributes={handleUpdateSessionAttributes}
           onDelete={handleDeleteSession}
           onDisconnect={handleDisconnect}
           loading={loading}
@@ -322,6 +358,7 @@ function HomeContent() {
             onSessionUpdate={handleActiveSessionUpdate}
             onSandboxUpdate={handleActiveSessionSandboxUpdate}
             onForkSession={handleForkSession}
+            onUpdateSessionAttributes={handleUpdateSessionAttributes}
             onDeleteSession={handleActiveSessionDelete}
           />
         ) : (

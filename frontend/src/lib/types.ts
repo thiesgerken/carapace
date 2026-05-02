@@ -23,6 +23,20 @@ export interface SessionSandboxSnapshot {
   last_error?: string | null;
 }
 
+export interface SessionAttributes {
+  private: boolean;
+  archived: boolean;
+  pinned: boolean;
+  favorite: boolean;
+}
+
+export interface SessionAttributesPatch {
+  private?: boolean;
+  archived?: boolean;
+  pinned?: boolean;
+  favorite?: boolean;
+}
+
 export interface SessionInfo {
   session_id: string;
   channel_type: string;
@@ -30,7 +44,7 @@ export interface SessionInfo {
   created_at: string;
   last_active: string;
   title?: string;
-  private: boolean;
+  attributes: SessionAttributes;
   knowledge_last_committed_at?: string | null;
   knowledge_last_archive_path?: string | null;
   knowledge_last_commit_trigger?: string | null;

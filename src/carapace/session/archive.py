@@ -17,7 +17,7 @@ from carapace.git.store import GitStore
 from carapace.models import SessionCommitConfig, SessionState
 from carapace.session.manager import SessionManager
 
-ArchiveTrigger = Literal["manual", "autosave"]
+ArchiveTrigger = Literal["manual", "autosave", "archive"]
 
 _SCHEMA_VERSION = 1
 
@@ -103,7 +103,7 @@ class SessionArchiveService:
             current_state = self._session_mgr.load_state(session_id)
             if current_state is None:
                 raise ValueError(f"Session {session_id!r} not found")
-            if current_state.private:
+            if current_state.attributes.private:
                 return SessionArchiveResult(
                     committed=False,
                     archive_path=None,
@@ -158,7 +158,7 @@ class SessionArchiveService:
                 "channel_type": current_state.channel_type,
                 "channel_ref": current_state.channel_ref,
                 "title": current_state.title,
-                "private": current_state.private,
+                "attributes": current_state.attributes.model_dump(mode="json"),
                 "created_at": current_state.created_at.isoformat(),
                 "last_active": current_state.last_active.isoformat(),
             }
@@ -233,7 +233,7 @@ class SessionArchiveService:
         async with self._locked_session(state.session_id):
             if not self._config.enabled:
                 return False
-            if state.private:
+            if state.attributes.private:
                 return False
 
             archive_path = state.knowledge_last_archive_path or self.archive_relative_path_for_state(state)

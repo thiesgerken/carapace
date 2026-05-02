@@ -1,8 +1,8 @@
 "use client";
 
-import { Lock, LogOut, Mail, MessageSquare, Plus, Save, Trash2 } from "lucide-react";
+import { Archive, ArchiveRestore, Lock, LogOut, Mail, MessageSquare, Pin, Plus, Save, Star, Trash2 } from "lucide-react";
 import { EmojiText } from "@/components/emoji-text";
-import type { SessionInfo, SessionSandboxSnapshot } from "@/lib/types";
+import type { SessionAttributesPatch, SessionInfo, SessionSandboxSnapshot } from "@/lib/types";
 import {
   cn,
   formatBytes,
@@ -16,6 +16,7 @@ interface SidebarProps {
   activeSessionId: string | null;
   onSelect: (sessionId: string) => void;
   onNew: () => void;
+  onUpdateAttributes: (sessionId: string, attributes: SessionAttributesPatch) => Promise<SessionInfo>;
   onDelete: (sessionId: string) => void;
   onDisconnect: () => void;
   loading?: boolean;
@@ -54,10 +55,208 @@ export function Sidebar({
   activeSessionId,
   onSelect,
   onNew,
+  onUpdateAttributes,
   onDelete,
   onDisconnect,
   loading,
 }: SidebarProps) {
+  const activeSessions = sessions.filter((session) => !session.attributes.archived);
+  const archivedSessions = sessions.filter((session) => session.attributes.archived);
+
+  function renderSessionSection(sectionSessions: SessionInfo[]) {
+    const pinnedSessions = sectionSessions.filter((session) => session.attributes.pinned);
+    const unpinnedSessions = sectionSessions.filter((session) => !session.attributes.pinned);
+
+    return (
+      <div className="space-y-0.5">
+        {pinnedSessions.map(renderSessionRow)}
+        {pinnedSessions.length > 0 && unpinnedSessions.length > 0 ? (
+          <div className="mx-3 my-1 border-t border-border/50" aria-hidden="true" />
+        ) : null}
+        {unpinnedSessions.map(renderSessionRow)}
+      </div>
+    );
+  }
+
+  function renderSessionRow(session: SessionInfo) {
+    const sandbox = sandboxSummary(session);
+    const sandboxLabel = sandbox ? sandboxSummaryLabel(sandbox) : null;
+    const showPrivateIcon = session.attributes.private;
+    const showSavedIcon = !session.attributes.private
+      && !!session.knowledge_last_committed_at
+      && !sessionHasKnowledgeChanges(session);
+    const showKnowledgeIndicator = showPrivateIcon || showSavedIcon;
+    const channelLabel = session.channel_type !== "web" && session.channel_type !== "cli"
+      ? session.channel_type
+      : null;
+    const lastActiveLabel = formatTime(session.last_active);
+    const hasSandboxInfo = !!sandbox;
+
+    return (
+      <div
+        key={session.session_id}
+        className={cn(
+          "group rounded-lg transition-colors",
+          session.session_id === activeSessionId
+            ? "bg-accent text-accent-foreground"
+            : "text-foreground/80 hover:bg-muted",
+        )}
+      >
+        <button
+          onClick={() => onSelect(session.session_id)}
+          className="flex w-full min-w-0 items-start gap-2.5 px-3 pt-2 pb-1 text-left"
+        >
+          <MessageSquare className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+          <div className="min-w-0 flex-1 truncate text-sm" title={session.title || session.session_id}>
+              {session.title ? (
+                <EmojiText text={session.title} />
+              ) : (
+                <span className="font-mono break-all">{session.session_id}</span>
+              )}
+          </div>
+        </button>
+        <div className="flex items-start gap-2 px-3 pb-2">
+          <button
+            onClick={() => onSelect(session.session_id)}
+            className="min-w-0 flex-1 text-left"
+          >
+            {hasSandboxInfo ? (
+              <div className="space-y-0.5 text-xs text-muted-foreground">
+                <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                  <span className="inline-flex items-center gap-1.5">
+                    <span
+                      title={sandboxStatusLabel(sandbox.status)}
+                      className={cn(
+                        "h-1.5 w-1.5 shrink-0 rounded-full",
+                        sandboxStatusIndicatorClass(sandbox.status),
+                      )}
+                    />
+                    {sandboxLabel ? <span>{sandboxLabel}</span> : null}
+                  </span>
+                  {sandboxLabel ? <span aria-hidden="true">·</span> : null}
+                  <span
+                    className="inline-flex items-center gap-1"
+                    title={`${session.message_count} ${session.message_count === 1 ? "message" : "messages"}`}
+                  >
+                    <span>{session.message_count}</span>
+                    <Mail className="mt-px h-3 w-3 shrink-0" />
+                    <span className="sr-only">{session.message_count === 1 ? "message" : "messages"}</span>
+                  </span>
+                </div>
+                <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                  <span>{lastActiveLabel}</span>
+                  {channelLabel ? <span aria-hidden="true">·</span> : null}
+                  {channelLabel ? <span>{channelLabel}</span> : null}
+                  {showKnowledgeIndicator ? <span aria-hidden="true">·</span> : null}
+                  {showKnowledgeIndicator ? (
+                    <span
+                      className="inline-flex items-center"
+                      title={showPrivateIcon ? "Private session" : (session.knowledge_last_archive_path ?? "All changes committed to knowledge")}
+                    >
+                      {showPrivateIcon ? <Lock className="mt-px h-3 w-3 shrink-0" /> : <Save className="mt-px h-3 w-3 shrink-0" />}
+                      <span className="sr-only">{showPrivateIcon ? "Private session" : "All changes committed to knowledge"}</span>
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-muted-foreground">
+                <span
+                  className="inline-flex items-center gap-1"
+                  title={`${session.message_count} ${session.message_count === 1 ? "message" : "messages"}`}
+                >
+                  <span>{session.message_count}</span>
+                  <Mail className="mt-px h-3 w-3 shrink-0" />
+                  <span className="sr-only">{session.message_count === 1 ? "message" : "messages"}</span>
+                </span>
+                <span aria-hidden="true">·</span>
+                <span>{lastActiveLabel}</span>
+                {channelLabel ? <span aria-hidden="true">·</span> : null}
+                {channelLabel ? <span>{channelLabel}</span> : null}
+                {showKnowledgeIndicator ? <span aria-hidden="true">·</span> : null}
+                {showKnowledgeIndicator ? (
+                  <span
+                    className="inline-flex items-center"
+                    title={showPrivateIcon ? "Private session" : (session.knowledge_last_archive_path ?? "All changes committed to knowledge")}
+                  >
+                    {showPrivateIcon ? <Lock className="mt-px h-3 w-3 shrink-0" /> : <Save className="mt-px h-3 w-3 shrink-0" />}
+                    <span className="sr-only">{showPrivateIcon ? "Private session" : "All changes committed to knowledge"}</span>
+                  </span>
+                ) : null}
+              </div>
+            )}
+          </button>
+          <div className="flex shrink-0 items-center gap-1 self-start">
+          <button
+            onClick={(event) => {
+              event.stopPropagation();
+              void onUpdateAttributes(session.session_id, { pinned: !session.attributes.pinned });
+            }}
+            title={session.attributes.pinned ? "Unpin session" : "Pin session"}
+            className={cn(
+              "rounded-md p-1.5 transition-colors",
+              session.attributes.pinned
+                ? "text-sky-700 hover:bg-sky-100"
+                : "text-muted-foreground/0 group-hover:text-muted-foreground hover:bg-muted hover:text-foreground",
+            )}
+          >
+            <Pin className="h-3.5 w-3.5" />
+          </button>
+          <button
+            onClick={(event) => {
+              event.stopPropagation();
+              void onUpdateAttributes(session.session_id, { favorite: !session.attributes.favorite });
+            }}
+            title={session.attributes.favorite ? "Remove favorite" : "Favorite session"}
+            className={cn(
+              "rounded-md p-1.5 transition-colors",
+              session.attributes.favorite
+                ? "text-amber-700 hover:bg-amber-100"
+                : "text-muted-foreground/0 group-hover:text-muted-foreground hover:bg-muted hover:text-foreground",
+            )}
+          >
+            <Star className="h-3.5 w-3.5" />
+          </button>
+          <button
+            onClick={(event) => {
+              event.stopPropagation();
+              void onUpdateAttributes(session.session_id, { archived: !session.attributes.archived });
+            }}
+            title={session.attributes.archived ? "Unarchive session" : "Archive session"}
+            className={cn(
+              "rounded-md p-1.5 transition-colors",
+              session.attributes.archived
+                ? "text-violet-700 group-hover:text-emerald-900 hover:bg-emerald-100"
+                : "text-muted-foreground/0 group-hover:text-muted-foreground hover:bg-muted hover:text-foreground",
+            )}
+          >
+            {session.attributes.archived ? (
+              <>
+                <Archive className="h-3.5 w-3.5 group-hover:hidden" />
+                <ArchiveRestore className="hidden h-3.5 w-3.5 group-hover:block" />
+              </>
+            ) : <Archive className="h-3.5 w-3.5" />}
+          </button>
+          <button
+            onClick={(event) => {
+              event.stopPropagation();
+              onDelete(session.session_id);
+            }}
+            title="Delete session"
+            className={cn(
+              "rounded-md p-1.5 transition-colors",
+              "text-muted-foreground/0 group-hover:text-muted-foreground",
+              "hover:!text-destructive hover:bg-destructive/10",
+            )}
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-full flex-col">
       {/* Header */}
@@ -90,107 +289,16 @@ export function Sidebar({
 
       {/* Session list */}
       <div className="flex-1 overflow-y-auto px-3 py-2">
-        <div className="space-y-0.5">
-          {sessions.map((s) => (
-            (() => {
-              const sandbox = sandboxSummary(s);
-              const sandboxLabel = sandbox ? sandboxSummaryLabel(sandbox) : null;
-              const showPrivateIcon = s.private;
-              const showSavedIcon = !s.private && !!s.knowledge_last_committed_at && !sessionHasKnowledgeChanges(s);
-              const showKnowledgeIndicator = showPrivateIcon || showSavedIcon;
-              const activityLabel = [
-                formatTime(s.last_active),
-                s.channel_type !== "web" && s.channel_type !== "cli"
-                  ? s.channel_type
-                  : null,
-              ]
-                .filter(Boolean)
-                .join(" · ");
-              return (
-            <div
-              key={s.session_id}
-              className={cn(
-                "group flex items-start rounded-lg transition-colors",
-                s.session_id === activeSessionId
-                  ? "bg-accent text-accent-foreground"
-                  : "text-foreground/80 hover:bg-muted",
-              )}
-            >
-              <button
-                onClick={() => onSelect(s.session_id)}
-                className="flex flex-1 items-start gap-2.5 px-3 py-2 text-left min-w-0"
-              >
-                <MessageSquare className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-                <div className="min-w-0 flex-1">
-                  <div
-                    className="truncate text-sm"
-                    title={s.title || s.session_id}
-                  >
-                    {s.title ? (
-                      <EmojiText text={s.title} />
-                    ) : (
-                      <span className="font-mono break-all">
-                        {s.session_id}
-                      </span>
-                    )}
-                  </div>
-                  <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-muted-foreground">
-                    {sandbox ? (
-                      <span className="inline-flex items-center gap-1.5">
-                        <span
-                          title={sandboxStatusLabel(sandbox.status)}
-                          className={cn(
-                            "h-1.5 w-1.5 shrink-0 rounded-full",
-                            sandboxStatusIndicatorClass(sandbox.status),
-                          )}
-                        />
-                        {sandboxLabel ? <span>{sandboxLabel}</span> : null}
-                      </span>
-                    ) : null}
-                    {sandbox && sandboxLabel ? <span aria-hidden="true">·</span> : null}
-                    <span
-                      className="inline-flex items-center gap-1"
-                      title={`${s.message_count} ${s.message_count === 1 ? "message" : "messages"}`}
-                    >
-                      <span>{s.message_count}</span>
-                      <Mail className="mt-px h-3 w-3 shrink-0" />
-                      <span className="sr-only">
-                        {s.message_count === 1 ? "message" : "messages"}
-                      </span>
-                    </span>
-                    <span aria-hidden="true">·</span>
-                    <span>{activityLabel}</span>
-                    {showKnowledgeIndicator ? <span aria-hidden="true">·</span> : null}
-                    {showKnowledgeIndicator ? (
-                      <span
-                        className="inline-flex items-center"
-                        title={showPrivateIcon ? "Private session" : (s.knowledge_last_archive_path ?? "All changes committed to knowledge")}
-                      >
-                        {showPrivateIcon ? <Lock className="mt-px h-3 w-3 shrink-0" /> : <Save className="mt-px h-3 w-3 shrink-0" />}
-                        <span className="sr-only">{showPrivateIcon ? "Private session" : "All changes committed to knowledge"}</span>
-                      </span>
-                    ) : null}
-                  </div>
-                </div>
-              </button>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onDelete(s.session_id);
-                }}
-                title="Delete session"
-                className={cn(
-                  "shrink-0 rounded-md p-1.5 mr-1 mt-1.5 transition-colors",
-                  "text-muted-foreground/0 group-hover:text-muted-foreground",
-                  "hover:!text-destructive hover:bg-destructive/10",
-                )}
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </button>
+        <div className="space-y-4">
+          {renderSessionSection(activeSessions)}
+          {archivedSessions.length > 0 ? (
+            <div>
+              <div className="px-3 pb-1 text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
+                Archived
+              </div>
+              {renderSessionSection(archivedSessions)}
             </div>
-              );
-            })()
-          ))}
+          ) : null}
           {sessions.length === 0 && !loading && (
             <p className="px-3 py-4 text-center text-xs text-muted-foreground">
               No sessions yet
