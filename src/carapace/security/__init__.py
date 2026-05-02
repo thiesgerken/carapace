@@ -310,14 +310,18 @@ async def _evaluate_single_domain_access(
 ) -> CachedDomainApproval:
     session.notify_domain_decision(domain, "[sentinel] reviewing", approval_source="sentinel")
 
-    verdict = await sentinel.evaluate_domain_access(
-        session,
-        domain,
-        command,
-        usage_tracker=usage_tracker,
-        assert_llm_budget_available=assert_llm_budget_available,
-        usage_limits=usage_limits,
-    )
+    try:
+        verdict = await sentinel.evaluate_domain_access(
+            session,
+            domain,
+            command,
+            usage_tracker=usage_tracker,
+            assert_llm_budget_available=assert_llm_budget_available,
+            usage_limits=usage_limits,
+        )
+    except UsageLimitExceeded:
+        return await _decision_for_usage_limit(session, domain, command)
+
     return await _decision_from_verdict(session, domain, command, verdict)
 
 
@@ -440,7 +444,7 @@ async def _evaluate_domain_batch(
         session.notify_domain_decision(domain, "[sentinel] reviewing", approval_source="sentinel")
 
     try:
-        verdicts = await sentinel.evaluate_domain_access_batch(
+        verdict = await sentinel.evaluate_domain_access_batch(
             session,
             domain_commands,
             usage_tracker=usage_tracker,
@@ -453,21 +457,10 @@ async def _evaluate_domain_batch(
             for domain, command in domain_commands.items()
         }
 
-    results: dict[str, CachedDomainApproval] = {}
-    for domain, command in domain_commands.items():
-        verdict = verdicts.get(
-            domain,
-            SentinelVerdict(
-                decision="escalate",
-                explanation=(
-                    "Automatic sentinel review did not return a decision for this domain. "
-                    + "Please approve or deny it manually."
-                ),
-                risk_level="high",
-            ),
-        )
-        results[domain] = await _decision_from_verdict(session, domain, command, verdict)
-    return results
+    return {
+        domain: await _decision_from_verdict(session, domain, command, verdict)
+        for domain, command in domain_commands.items()
+    }
 
 
 async def _run_domain_batch_worker(
@@ -500,10 +493,11 @@ async def _run_domain_batch_worker(
             raise
         except Exception as exc:
             await session.fail_domain_batch(snapshot)
+            await session.fail_pending_domain_requests(snapshot, exc)
             for request in snapshot.requests.values():
                 if not request.future.done():
                     request.future.set_exception(exc)
-            raise
+            continue
 
         await session.complete_domain_batch(snapshot, results)
         for domain, request in snapshot.requests.items():

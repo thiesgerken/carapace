@@ -16,7 +16,6 @@ from carapace.security.context import (
     ActionLogEntry,
     AgentResponseEntry,
     ApprovalEntry,
-    BatchedSentinelVerdict,
     ContextGrantEntry,
     CredentialAccessEntry,
     GitPushEntry,
@@ -148,7 +147,6 @@ class Sentinel:
         self._model_factory = model_factory
         self._model_settings_resolver = model_settings_resolver
         self._agent = self._create_agent()
-        self._batch_agent = self._create_batch_agent()
         self._message_history: list[Any] = []
         self._skill_file_cache: dict[tuple[str, str], tuple[int, int, str]] = {}
         self._eval_skill_reads: int = 0
@@ -164,7 +162,6 @@ class Sentinel:
         """Switch the sentinel model, recreating the internal agent."""
         self._model = model
         self._agent = self._create_agent()
-        self._batch_agent = self._create_batch_agent()
 
     def _load_system_prompt(self, _ctx: RunContext[Path]) -> str:
         return _build_system_prompt(self._load_security_md())
@@ -409,77 +406,6 @@ class Sentinel:
         self._register_agent_tools(agent)
         return agent
 
-    def _create_batch_agent(self) -> Agent[Path, BatchedSentinelVerdict]:
-        resolved = self._model_factory(self._model) if self._model_factory is not None else infer_model(self._model)
-        model_settings = (
-            self._model_settings_resolver(self._model) if self._model_settings_resolver is not None else None
-        )
-        agent: Agent[Path, BatchedSentinelVerdict] = Agent(
-            resolved,
-            deps_type=Path,
-            output_type=ToolOutput(BatchedSentinelVerdict, name="judge_batch"),
-            instructions=self._load_system_prompt,
-            capabilities=[LlmRequestLogCapability(source="sentinel")],
-            model_settings=model_settings,
-            output_retries=2,
-            retries=1,
-        )
-        self._register_agent_tools(agent)
-        return agent
-
-    async def _run_batch_evaluation(
-        self,
-        session: SessionSecurity,
-        prompt: str,
-        *,
-        subject: str,
-        new_entries_count: int,
-        usage_tracker: UsageTracker | None = None,
-        assert_llm_budget_available: Callable[[], None] | None = None,
-        usage_limits: UsageLimits | None = None,
-    ) -> BatchedSentinelVerdict:
-        eval_no = session.sentinel_eval_count + 1
-        logger.info(
-            f"Sentinel eval start session={session.session_id} seq={eval_no} "
-            + f"kind=domain_access_batch subject={subject} "
-            + f"history_messages={len(self._message_history)} new_entries={new_entries_count}"
-        )
-        self._begin_eval_logging(session.session_id, eval_no)
-
-        try:
-            if assert_llm_budget_available is not None:
-                assert_llm_budget_available()
-            result = await self._batch_agent.run(
-                prompt,
-                deps=self._skills_dir,
-                message_history=self._message_history or None,
-                usage_limits=usage_limits,
-            )
-        except Exception as exc:
-            stats = self._end_eval_logging()
-            logger.error(
-                f"Sentinel eval failed session={session.session_id} seq={eval_no} "
-                + f"kind=domain_access_batch subject={subject} "
-                + f"error={type(exc).__name__}: {exc} {self._format_eval_stats(stats)}"
-            )
-            raise
-
-        stats = self._end_eval_logging()
-        self._message_history = result.all_messages()
-        session.sentinel_eval_count += 1
-
-        if usage_tracker:
-            usage_tracker.record(self._model, "sentinel", result.usage())
-
-        usage = result.usage()
-        decisions = ", ".join(f"{item.domain}:{item.decision}" for item in result.output.decisions[:5]) or "none"
-        logger.info(
-            f"Sentinel eval done session={session.session_id} seq={eval_no} kind=domain_access_batch subject={subject} "
-            + f"decisions={decisions} input_tokens={usage.input_tokens or 0} output_tokens={usage.output_tokens or 0} "
-            + self._format_eval_stats(stats)
-        )
-        return result.output
-
     async def evaluate_tool_call(
         self,
         session: SessionSecurity,
@@ -567,7 +493,7 @@ class Sentinel:
         usage_tracker: UsageTracker | None = None,
         assert_llm_budget_available: Callable[[], None] | None = None,
         usage_limits: UsageLimits | None = None,
-    ) -> dict[str, SentinelVerdict]:
+    ) -> SentinelVerdict:
         async with self._lock:
             if self._should_reset(session):
                 self._reset(session)
@@ -586,41 +512,19 @@ class Sentinel:
             for domain, command in sorted(domain_commands.items()):
                 prompt_parts.append(f"Domain: {domain}")
                 prompt_parts.append(f"Triggered by: {command}")
+            prompt_parts.append("Apply one verdict to the entire batch of domains.")
 
             prompt = "\n".join(prompt_parts)
-            output = await self._run_batch_evaluation(
+            return await self._run_evaluation(
                 session,
                 prompt,
+                kind="domain_access_batch",
                 subject=f"{len(domain_commands)} domains",
                 new_entries_count=len(new_entries),
                 usage_tracker=usage_tracker,
                 assert_llm_budget_available=assert_llm_budget_available,
                 usage_limits=usage_limits,
             )
-
-            verdicts: dict[str, SentinelVerdict] = {}
-            for item in output.decisions:
-                if item.domain in domain_commands and item.domain not in verdicts:
-                    verdicts[item.domain] = SentinelVerdict(
-                        decision=item.decision,
-                        explanation=item.explanation,
-                        risk_level=item.risk_level,
-                    )
-
-            for domain in domain_commands:
-                verdicts.setdefault(
-                    domain,
-                    SentinelVerdict(
-                        decision="escalate",
-                        explanation=(
-                            "Automatic sentinel review did not return a decision for this domain. "
-                            + "Please approve or deny it manually."
-                        ),
-                        risk_level="high",
-                    ),
-                )
-
-            return verdicts
 
     async def evaluate_credential_access(
         self,
@@ -674,7 +578,6 @@ class Sentinel:
             + f"after {session.sentinel_eval_count} evaluations"
         )
         self._agent = self._create_agent()
-        self._batch_agent = self._create_batch_agent()
         self._message_history.clear()
         self._skill_file_cache.clear()
         self._end_eval_logging()
