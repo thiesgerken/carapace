@@ -111,6 +111,7 @@ async def test_exec_auto_allow_falls_back_to_sentinel_for_non_matching_commands(
 async def test_allowed_tool_can_auto_approve_one_domain_for_same_tool_call(tmp_path) -> None:
     session = SessionSecurity("test-session", audit_dir=tmp_path, sentinel_domain_batch_window_ms=0)
     sentinel = MagicMock(spec=Sentinel)
+    callback_calls: list[tuple[str, dict[str, object], str, str | None, str | None, str | None]] = []
     sentinel.evaluate_tool_call = AsyncMock(
         return_value=SentinelVerdict(
             decision="allow",
@@ -133,7 +134,7 @@ async def test_allowed_tool_can_auto_approve_one_domain_for_same_tool_call(tmp_p
         verdict: str | None,
         explanation: str | None,
     ) -> None:
-        del tool, args, detail, source, verdict, explanation
+        callback_calls.append((tool, args, detail, source, verdict, explanation))
         session.current_parent_tool_id = "tool-1"
 
     await evaluate_with(
@@ -150,6 +151,44 @@ async def test_allowed_tool_can_auto_approve_one_domain_for_same_tool_call(tmp_p
     sentinel.evaluate_tool_call.assert_awaited_once()
     sentinel.evaluate_domain_access.assert_not_awaited()
     sentinel.evaluate_domain_access_batch.assert_not_awaited()
+    entry = session.action_log[-1]
+    assert isinstance(entry, ToolCallEntry)
+    assert entry.explanation == "curl target is clear Auto-approved domain for this tool call: google.de."
+    assert callback_calls == [
+        (
+            "exec",
+            {"command": "curl https://google.de/search?q=test"},
+            "[sentinel: allow] curl target is clear Auto-approved domain for this tool call: google.de.",
+            "sentinel",
+            "allow",
+            "curl target is clear Auto-approved domain for this tool call: google.de.",
+        )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_auto_approved_domain_emits_log_line(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    session = SessionSecurity("test-session", audit_dir=tmp_path)
+    sentinel = MagicMock(spec=Sentinel)
+    sentinel.evaluate_tool_call = AsyncMock(
+        return_value=SentinelVerdict(
+            decision="allow",
+            explanation="curl target is clear",
+            auto_approve_domain="google.de",
+        )
+    )
+    messages: list[str] = []
+    monkeypatch.setattr("carapace.security.logger.info", messages.append)
+
+    await evaluate_with(
+        session,
+        sentinel,
+        "exec",
+        {"command": "curl google.de"},
+        verbose=False,
+    )
+
+    assert messages == ["Sentinel auto-approved domain for tool call tool=exec domain=google.de"]
 
 
 @pytest.mark.asyncio

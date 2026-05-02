@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 from urllib.parse import urlsplit
 
+from loguru import logger
 from pydantic_ai import ApprovalRequired
 from pydantic_ai.exceptions import UsageLimitExceeded
 from pydantic_ai.usage import UsageLimits
@@ -136,19 +137,21 @@ async def evaluate_with(
         )
 
     decision_str = _verdict_to_decision(verdict)
+    auto_approved_domain: str | None = None
+    approval_explanation = verdict.explanation
+    if verdict.decision == "allow":
+        auto_approved_domain = _normalize_auto_approve_domain(verdict.auto_approve_domain)
+        approval_explanation = _format_tool_approval_explanation(verdict.explanation, auto_approved_domain)
 
     entry = ToolCallEntry(
         tool=tool_name,
         args=args,
         decision=decision_str,
-        explanation=verdict.explanation,
+        explanation=approval_explanation,
     )
     session.append(entry)
-    auto_approved_domain: str | None = None
-    if verdict.decision == "allow":
-        auto_approved_domain = _normalize_auto_approve_domain(verdict.auto_approve_domain)
 
-    detail = f"[sentinel: {verdict.decision}] {verdict.explanation}"
+    detail = f"[sentinel: {verdict.decision}] {approval_explanation}"
     if verbose:
         _log_tool_call(
             tool_name,
@@ -157,7 +160,7 @@ async def evaluate_with(
             tool_call_callback,
             approval_source="sentinel",
             approval_verdict=verdict.decision,
-            approval_explanation=verdict.explanation,
+            approval_explanation=approval_explanation,
         )
 
     if verdict.decision == "allow" and auto_approved_domain is not None:
@@ -167,17 +170,14 @@ async def evaluate_with(
                 allowed=True,
                 approval_source="sentinel",
                 approval_verdict="allow",
-                explanation=verdict.explanation,
-                detail=f"[sentinel: allow] {verdict.explanation}",
+                explanation=approval_explanation,
+                detail=f"[sentinel: allow] {approval_explanation}",
                 final_decision="allowed",
-                audit_explanation=(
-                    f"{verdict.explanation} (auto-approved domain: {auto_approved_domain})"
-                    if verdict.explanation
-                    else f"auto-approved domain: {auto_approved_domain}"
-                ),
+                audit_explanation=approval_explanation,
                 sentinel_verdict=verdict,
             ),
         )
+        logger.info(f"Sentinel auto-approved domain for tool call tool={tool_name} domain={auto_approved_domain}")
 
     if verdict.decision == "deny":
         session.write_audit(
@@ -187,7 +187,7 @@ async def evaluate_with(
                 args_summary=args,
                 sentinel_verdict=verdict,
                 final_decision="denied",
-                explanation=verdict.explanation,
+                explanation=approval_explanation,
             )
         )
         raise SecurityDeniedError(format_denial_message("sentinel", verdict.explanation))
@@ -197,7 +197,7 @@ async def evaluate_with(
             metadata={
                 "tool": tool_name,
                 "args": args,
-                "explanation": verdict.explanation,
+                "explanation": approval_explanation,
                 "risk_level": verdict.risk_level,
                 "sentinel_verdict": verdict,
                 "args_summary": args,
@@ -212,7 +212,7 @@ async def evaluate_with(
             args_summary=args,
             sentinel_verdict=verdict,
             final_decision="allowed",
-            explanation=verdict.explanation,
+            explanation=approval_explanation,
         )
     )
 
@@ -794,6 +794,15 @@ def _normalize_auto_approve_domain(candidate: str | None) -> str | None:
     if "." not in hostname:
         return None
     return hostname
+
+
+def _format_tool_approval_explanation(explanation: str, auto_approved_domain: str | None) -> str:
+    if auto_approved_domain is None:
+        return explanation
+    suffix = f"Auto-approved domain for this tool call: {auto_approved_domain}."
+    if explanation:
+        return f"{explanation} {suffix}"
+    return suffix
 
 
 def _extract_hostname(text: str) -> str | None:
