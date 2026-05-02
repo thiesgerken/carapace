@@ -383,6 +383,12 @@ class SessionSecurity:
             self._sync_domain_scope()
             for domain in snapshot.requests:
                 self._domain_scope_inflight_futures.pop(domain, None)
+            if (
+                snapshot.can_review
+                and self.current_parent_tool_id == snapshot.scope_id
+                and self._domain_scope_sentinel_calls > 0
+            ):
+                self._domain_scope_sentinel_calls -= 1
 
     async def fail_pending_domain_requests(self, snapshot: DomainBatchSnapshot, exc: Exception) -> None:
         async with self._domain_scope_lock:

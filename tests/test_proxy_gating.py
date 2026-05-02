@@ -129,6 +129,30 @@ async def test_reused_allowed_domain_reports_auto_source() -> None:
 
 
 @pytest.mark.anyio
+async def test_scope_change_before_enqueue_falls_back_to_single_domain_review() -> None:
+    session = SessionSecurity("session-1", sentinel_domain_batch_window_ms=0)
+    session.current_parent_tool_id = "tool-1"
+    sentinel = StubSentinel(single_side_effects=[SentinelVerdict(decision="allow", explanation="fallback")])
+
+    async def simulate_scope_change(
+        domain: str,
+        command: str,
+        worker_factory: object,
+    ) -> tuple[None, None, bool]:
+        del domain, command, worker_factory
+        session.current_parent_tool_id = None
+        return None, None, False
+
+    session.get_or_enqueue_domain_approval = simulate_scope_change  # type: ignore[method-assign]
+
+    allowed = await evaluate_domain_with(session, sentinel, "api.example.com", "curl https://api.example.com")
+
+    assert allowed is True
+    assert sentinel.calls == [("api.example.com", "curl https://api.example.com")]
+    assert sentinel.batch_calls == []
+
+
+@pytest.mark.anyio
 async def test_reuses_user_domain_approval_within_tool_call() -> None:
     session = SessionSecurity("session-1", sentinel_domain_batch_window_ms=0)
     session.current_parent_tool_id = "tool-1"
@@ -331,3 +355,34 @@ async def test_pending_requests_fail_when_worker_errors() -> None:
     assert str(first[0]) == "sentinel batch blew up"
     assert isinstance(second[0], RuntimeError)
     assert str(second[0]) == "sentinel batch blew up"
+
+
+@pytest.mark.anyio
+async def test_failed_batch_does_not_consume_review_budget() -> None:
+    session = SessionSecurity("session-1", max_sentinel_calls_per_tool_call=1, sentinel_domain_batch_window_ms=0)
+    session.current_parent_tool_id = "tool-1"
+    user_calls: list[tuple[str, dict[str, object]]] = []
+    sentinel = StubSentinel(
+        batch_side_effects=[RuntimeError("sentinel batch blew up"), SentinelVerdict(decision="allow", explanation="ok")]
+    )
+
+    async def approve(subject: str, context: dict[str, object]) -> UserEscalationDecision:
+        user_calls.append((subject, context))
+        return UserEscalationDecision(allowed=True)
+
+    session.set_user_escalation_callback(lambda _sid, subject, context: approve(subject, context))
+
+    first = await asyncio.gather(
+        evaluate_domain_with(session, sentinel, "a.example.com", "curl https://a.example.com"),
+        return_exceptions=True,
+    )
+    second = await evaluate_domain_with(session, sentinel, "b.example.com", "curl https://b.example.com")
+
+    assert isinstance(first[0], RuntimeError)
+    assert str(first[0]) == "sentinel batch blew up"
+    assert second is True
+    assert sentinel.batch_calls == [
+        {"a.example.com": "curl https://a.example.com"},
+        {"b.example.com": "curl https://b.example.com"},
+    ]
+    assert user_calls == []

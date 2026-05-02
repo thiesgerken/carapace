@@ -243,7 +243,32 @@ async def evaluate_domain_with(
         return cached_approval.allowed
 
     if pending_result is None:
-        raise RuntimeError("Expected a pending domain review future for batched proxy gating.")
+        result = await _evaluate_single_domain_access(
+            session,
+            sentinel,
+            domain,
+            command,
+            usage_tracker=usage_tracker,
+            assert_llm_budget_available=assert_llm_budget_available,
+            usage_limits=usage_limits,
+        )
+        session.notify_domain_decision(
+            domain,
+            result.detail,
+            approval_source=result.approval_source,
+            approval_verdict=result.approval_verdict,
+            approval_explanation=result.explanation,
+        )
+        session.write_audit(
+            AuditEntry.now(
+                kind="proxy_domain",
+                domain=domain,
+                sentinel_verdict=result.sentinel_verdict,
+                final_decision=result.final_decision,
+                explanation=result.audit_explanation,
+            )
+        )
+        return result.allowed
 
     if should_notify_queued:
         session.notify_domain_decision(domain, "[sentinel] queued for batched review", approval_source="sentinel")
