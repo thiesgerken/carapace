@@ -16,7 +16,7 @@ import secrets
 import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Literal
@@ -476,6 +476,7 @@ class SessionEngine(SessionTurnMixin):
             model=self._config.agent.sentinel_model,
             knowledge_dir=self._knowledge_dir,
             skills_dir=self._knowledge_dir / "skills",
+            timeout=timedelta(seconds=self._config.agent.sentinel_timeout_seconds),
             model_factory=self._model_factory,
             model_settings_resolver=self._resolve_model_settings,
         )

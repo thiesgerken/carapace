@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable
+from datetime import timedelta
 from os import stat_result
 from pathlib import Path
 from typing import Any
@@ -136,6 +137,7 @@ class Sentinel:
         model: str,
         knowledge_dir: Path,
         skills_dir: Path,
+        timeout: timedelta = timedelta(seconds=60),
         reset_threshold: int = _RESET_THRESHOLD_DEFAULT,
         model_factory: Callable[[str], Model] | None = None,
         model_settings_resolver: Callable[[str], ModelSettings | None] | None = None,
@@ -143,6 +145,7 @@ class Sentinel:
         self._model = model
         self._knowledge_dir = knowledge_dir
         self._skills_dir = skills_dir
+        self._timeout = timeout
         self._reset_threshold = reset_threshold
         self._model_factory = model_factory
         self._model_settings_resolver = model_settings_resolver
@@ -291,6 +294,12 @@ class Sentinel:
             + f"cache_misses={stats['cache_misses']}{path_text}"
         )
 
+    def _timeout_explanation(self) -> str:
+        return (
+            f"Automatic sentinel review timed out after {self._timeout.total_seconds():g}s. "
+            + "The tool call was blocked so the agent can decide whether to retry."
+        )
+
     async def _run_evaluation(
         self,
         session: SessionSecurity,
@@ -313,12 +322,22 @@ class Sentinel:
         try:
             if assert_llm_budget_available is not None:
                 assert_llm_budget_available()
-            result = await self._agent.run(
-                prompt,
-                deps=self._skills_dir,
-                message_history=self._message_history or None,
-                usage_limits=usage_limits,
+            async with asyncio.timeout(self._timeout.total_seconds()):
+                result = await self._agent.run(
+                    prompt,
+                    deps=self._skills_dir,
+                    message_history=self._message_history or None,
+                    usage_limits=usage_limits,
+                )
+        except TimeoutError:
+            stats = self._end_eval_logging()
+            session.sentinel_eval_count += 1
+            explanation = self._timeout_explanation()
+            logger.warning(
+                f"Sentinel eval timed out session={session.session_id} seq={eval_no} kind={kind} subject={subject} "
+                + f"timeout_seconds={self._timeout.total_seconds():g} {self._format_eval_stats(stats)}"
             )
+            return SentinelVerdict(decision="deny", explanation=explanation, risk_level="high")
         except Exception as exc:
             stats = self._end_eval_logging()
             logger.error(
