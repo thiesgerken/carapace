@@ -9,6 +9,8 @@
 - [ ] custom sentinel instructions for skills, e.g. moneydb: make sure that the agent only does mutations based on user approval
 - [ ] conversation history: fork session
 - [ ] "daily" session that is recreated every day and that should persist some of its memories during the night
+- [ ] forbid session to use some skills (include/exclude) — useful for cronjobs
+- [ ] harden sandbox so trusted exec allowlists are meaningful (run as non-root, read-only root fs where possible, avoid command alias / path tampering) — important prerequisite for auto-approving read-only commands like `rg`, `ls`, `cat`
 
 ## Knowledge Repo Handling
 
