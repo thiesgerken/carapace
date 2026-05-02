@@ -373,7 +373,7 @@ interface UsageBucket {
 }
 
 interface BudgetGaugeData {
-  key: "input" | "output" | "cost";
+  key: "input" | "output" | "cost" | "tool_calls";
   label: string;
   current_value: string;
   limit_value: string;
@@ -410,6 +410,7 @@ interface UsagePayload {
   categories: Record<string, UsageBucket>;
   total_input: number;
   total_output: number;
+  total_tool_calls?: number;
   costs?: Record<string, string>;
   category_costs?: Record<string, string>;
   budget_gauges?: BudgetGaugeData[];
@@ -458,6 +459,7 @@ function lastRequestRowsShowOtherPct(rows: LastLlmRequestRow[]): boolean {
 
 function UsageView({ data }: { data: UsagePayload }) {
   const budgetGauges = Array.isArray(data.budget_gauges) ? data.budget_gauges : [];
+  const totalToolCalls = data.total_tool_calls ?? 0;
   const allBuckets = [
     ...Object.values(data.models),
     ...Object.values(data.categories),
@@ -473,7 +475,8 @@ function UsageView({ data }: { data: UsagePayload }) {
   const isEmpty =
     Object.keys(data.models).length === 0 &&
     Object.keys(data.categories).length === 0 &&
-    budgetGauges.length === 0;
+    budgetGauges.length === 0 &&
+    totalToolCalls === 0;
   if (isEmpty) {
     return (
       <p className="my-1 text-sm text-muted-foreground">
@@ -573,6 +576,9 @@ function UsageView({ data }: { data: UsagePayload }) {
       <p className="mb-2 text-xs text-muted-foreground">
         Total: {fmt(total)} tokens ({fmt(data.total_input)} in +{" "}
         {fmt(data.total_output)} out){costStr}
+      </p>
+      <p className="mb-2 text-xs text-muted-foreground">
+        Tool Calls: {fmt(totalToolCalls)}
       </p>
       {budgetGauges.length > 0 ? <BudgetTable gauges={budgetGauges} /> : null}
       {Object.keys(data.models).length > 0 &&

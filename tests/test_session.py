@@ -73,13 +73,14 @@ def test_create_session(tmp_path: Path):
 
 def test_create_session_persists_budget(tmp_path: Path):
     mgr = SessionManager(tmp_path)
-    budget = SessionBudget(input_tokens=1_000, cost_usd=Decimal("5.00"))
+    budget = SessionBudget(input_tokens=1_000, cost_usd=Decimal("5.00"), tool_calls=4)
     state = mgr.create_session(budget=budget)
 
     resumed = mgr.resume_session(state.session_id)
     assert resumed is not None
     assert resumed.budget.input_tokens == 1_000
     assert resumed.budget.cost_usd == Decimal("5.00")
+    assert resumed.budget.tool_calls == 4
 
 
 def test_create_session_persists_private_attribute(tmp_path: Path):
@@ -1347,6 +1348,7 @@ def test_handle_slash_command_budget_sets_and_clears(tmp_path: Path):
             assert initial is not None
             assert "usage_hint" in initial["data"]
             assert "/budget input N" in initial["data"]["usage_hint"]
+            assert "/budget tools N" in initial["data"]["usage_hint"]
 
             set_result = await engine.handle_slash_command(sid, "/budget input 1000")
             assert set_result is not None
@@ -1362,6 +1364,28 @@ def test_handle_slash_command_budget_sets_and_clears(tmp_path: Path):
             reloaded = engine.session_mgr.load_state(sid)
             assert reloaded is not None
             assert reloaded.budget.input_tokens is None
+
+        asyncio.run(_run())
+
+
+def test_handle_slash_command_budget_sets_tool_call_limit(tmp_path: Path):
+    with _patch_sentinel():
+        engine = _make_engine(tmp_path)
+        state = engine.session_mgr.create_session()
+        sid = state.session_id
+        engine.get_or_activate(sid)
+
+        async def _run() -> None:
+            result = await engine.handle_slash_command(sid, "/budget tools 3")
+
+            assert result is not None
+            assert result["command"] == "budget"
+            assert result["data"]["message"] == "Set tool call budget to 3 tool calls."
+            assert result["data"]["gauges"][0]["key"] == "tool_calls"
+
+            reloaded = engine.session_mgr.load_state(sid)
+            assert reloaded is not None
+            assert reloaded.budget.tool_calls == 3
 
         asyncio.run(_run())
 
@@ -1402,6 +1426,25 @@ def test_handle_slash_command_help_lists_budget(tmp_path: Path):
             assert result is not None
             commands = result["data"]["commands"]
             assert any(item["command"] == "/budget" for item in commands)
+
+        asyncio.run(_run())
+
+
+def test_handle_slash_command_usage_includes_tool_call_total(tmp_path: Path):
+    with _patch_sentinel():
+        engine = _make_engine(tmp_path)
+        state = engine.session_mgr.create_session()
+        sid = state.session_id
+        active = engine.get_or_activate(sid)
+        active.usage_tracker.record_tool_call()
+        active.usage_tracker.record_tool_call()
+
+        async def _run() -> None:
+            result = await engine.handle_slash_command(sid, "/usage")
+
+            assert result is not None
+            assert result["command"] == "usage"
+            assert result["data"]["total_tool_calls"] == 2
 
         asyncio.run(_run())
 
@@ -1581,6 +1624,40 @@ def test_submit_message_budget_exhausted_broadcasts_error(tmp_path: Path):
 
         mocked_turn.assert_not_awaited()
         assert any("Session budget reached" in err for err in sub.errors)
+
+    with _patch_sentinel():
+        asyncio.run(_run())
+
+
+def test_submit_message_tool_call_budget_exhausted_broadcasts_error(tmp_path: Path):
+    async def _run() -> None:
+        engine = _make_engine(tmp_path)
+        state = engine.session_mgr.create_session(budget=SessionBudget(tool_calls=1))
+        sid = state.session_id
+        sub = _FakeSubscriber()
+        engine.subscribe(sid, sub)
+
+        async def _fail_on_second_tool_call(
+            _user_input: str,
+            deps,
+            _message_history: list[Any],
+            *_args: Any,
+            **_kwargs: Any,
+        ):
+            callback = deps.tool_call_callback
+            assert callback is not None
+            callback("read", {"path": "README.md"}, "[safe-list] auto-allowed", "safe-list", "allow", "ok")
+            callback("read", {"path": "README.md"}, "[safe-list] auto-allowed", "safe-list", "allow", "ok")
+            return [], "done", ""
+
+        with patch("carapace.session.engine.run_agent_turn", new=_fail_on_second_tool_call):
+            await engine.submit_message(sid, "hello")
+            await asyncio.sleep(0.1)
+
+        active = engine.get_active(sid)
+        assert active is not None
+        assert active.usage_tracker.tool_calls == 1
+        assert any("Session budget reached: tool calls 1 tool calls / 1 tool calls" in err for err in sub.errors)
 
     with _patch_sentinel():
         asyncio.run(_run())

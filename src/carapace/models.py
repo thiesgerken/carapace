@@ -48,6 +48,7 @@ class SessionBudget(BaseModel):
     input_tokens: int | None = None
     output_tokens: int | None = None
     cost_usd: Decimal | None = None
+    tool_calls: int | None = None
 
     @model_validator(mode="after")
     def _normalize_limits(self) -> SessionBudget:
@@ -66,11 +67,18 @@ class SessionBudget(BaseModel):
                 raise ValueError("budget.cost_usd must be >= 0")
             if self.cost_usd == 0:
                 self.cost_usd = None
+        if self.tool_calls is not None:
+            if self.tool_calls < 0:
+                raise ValueError("budget.tool_calls must be >= 0")
+            if self.tool_calls == 0:
+                self.tool_calls = None
         return self
 
     @property
     def has_any_limit(self) -> bool:
-        return any(limit is not None for limit in (self.input_tokens, self.output_tokens, self.cost_usd))
+        return any(
+            limit is not None for limit in (self.input_tokens, self.output_tokens, self.cost_usd, self.tool_calls)
+        )
 
 
 class SessionAttributes(BaseModel):

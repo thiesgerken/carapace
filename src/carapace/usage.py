@@ -86,6 +86,7 @@ class UsageTracker(BaseModel):
     models: dict[str, ModelUsage] = {}
     categories: dict[str, ModelUsage] = {}
     category_by_model: dict[str, dict[str, ModelUsage]] = {}
+    tool_calls: int = 0
 
     def record(self, model: str, category: str, usage: RunUsage) -> None:
         for bucket in (
@@ -96,6 +97,9 @@ class UsageTracker(BaseModel):
         cm = self.category_by_model.setdefault(category, {})
         m_bucket = cm.setdefault(model, ModelUsage())
         _merge_run_usage_into_bucket(m_bucket, usage)
+
+    def record_tool_call(self) -> None:
+        self.tool_calls += 1
 
     @property
     def total_input(self) -> int:
@@ -131,7 +135,7 @@ class UsageTracker(BaseModel):
 
 
 class BudgetGauge(BaseModel):
-    key: Literal["input", "output", "cost"]
+    key: Literal["input", "output", "cost", "tool_calls"]
     label: str
     current_value: str
     current_amount: float | None = None
@@ -160,12 +164,18 @@ def _format_usd(value: Decimal) -> str:
     return f"${value:.4f}"
 
 
+def _format_tool_calls(value: int) -> str:
+    suffix = "call" if value == 1 else "calls"
+    return f"{value:,} tool {suffix}"
+
+
 def usage_budget_gauges(
     tracker: UsageTracker,
     *,
     input_tokens_limit: int | None = None,
     output_tokens_limit: int | None = None,
     total_cost_limit: Decimal | None = None,
+    tool_calls_limit: int | None = None,
 ) -> list[BudgetGauge]:
     gauges: list[BudgetGauge] = []
 
@@ -220,6 +230,23 @@ def usage_budget_gauges(
             )
         )
 
+    if tool_calls_limit is not None:
+        current = tracker.tool_calls
+        remaining = max(0, tool_calls_limit - current)
+        fill_pct = min(100.0, (100.0 * current / tool_calls_limit)) if tool_calls_limit > 0 else 0.0
+        gauges.append(
+            BudgetGauge(
+                key="tool_calls",
+                label="Tool Calls",
+                current_value=_format_tool_calls(current),
+                current_amount=float(current),
+                limit_value=_format_tool_calls(tool_calls_limit),
+                remaining_value=_format_tool_calls(remaining),
+                fill_pct=round(fill_pct, 1),
+                reached=current >= tool_calls_limit,
+            )
+        )
+
     return gauges
 
 
@@ -229,12 +256,14 @@ def usage_budget_exceeded_error(
     input_tokens_limit: int | None = None,
     output_tokens_limit: int | None = None,
     total_cost_limit: Decimal | None = None,
+    tool_calls_limit: int | None = None,
 ) -> SessionBudgetExceededError | None:
     gauges = usage_budget_gauges(
         tracker,
         input_tokens_limit=input_tokens_limit,
         output_tokens_limit=output_tokens_limit,
         total_cost_limit=total_cost_limit,
+        tool_calls_limit=tool_calls_limit,
     )
     offenders = [gauge for gauge in gauges if gauge.reached]
     if not offenders:
