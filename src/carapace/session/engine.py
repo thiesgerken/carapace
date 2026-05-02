@@ -353,16 +353,17 @@ class SessionEngine(SessionTurnMixin):
                 multiplier = 1_000_000
                 lowered = lowered[:-1]
 
+            budget_type = "tool call budget" if metric == "tool_calls" else "token budget"
             if not lowered:
-                raise ValueError(f"Invalid token budget: {raw}")
+                raise ValueError(f"Invalid {budget_type}: {raw}")
 
             try:
                 scaled = Decimal(lowered) * multiplier
             except InvalidOperation as exc:
-                raise ValueError(f"Invalid token budget: {raw}") from exc
+                raise ValueError(f"Invalid {budget_type}: {raw}") from exc
 
             if scaled != scaled.to_integral_value():
-                raise ValueError(f"Invalid token budget: {raw}")
+                raise ValueError(f"Invalid {budget_type}: {raw}")
 
             value = int(scaled)
             if value < 0:

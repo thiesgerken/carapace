@@ -67,16 +67,15 @@ async def evaluate_with(
                 final_decision="auto_allowed",
             )
         )
-        if verbose:
-            _log_tool_call(
-                tool_name,
-                args,
-                "[safe-list] auto-allowed",
-                tool_call_callback,
-                approval_source="safe-list",
-                approval_verdict="allow",
-                approval_explanation="auto-allowed",
-            )
+        _log_tool_call(
+            tool_name,
+            args,
+            "[safe-list] auto-allowed",
+            tool_call_callback,
+            approval_source="safe-list",
+            approval_verdict="allow",
+            approval_explanation="auto-allowed",
+        )
         return
 
     if tool_name == "exec":
@@ -94,16 +93,15 @@ async def evaluate_with(
                     explanation=explanation,
                 )
             )
-            if verbose:
-                _log_tool_call(
-                    tool_name,
-                    args,
-                    f"[safe-list] auto-allowed read-only exec heuristic ({matched_exec})",
-                    tool_call_callback,
-                    approval_source="safe-list",
-                    approval_verdict="allow",
-                    approval_explanation=explanation,
-                )
+            _log_tool_call(
+                tool_name,
+                args,
+                f"[safe-list] auto-allowed read-only exec heuristic ({matched_exec})",
+                tool_call_callback,
+                approval_source="safe-list",
+                approval_verdict="allow",
+                approval_explanation=explanation,
+            )
             return
 
     if verbose:
@@ -145,16 +143,15 @@ async def evaluate_with(
     session.append(entry)
 
     detail = f"[sentinel: {verdict.decision}] {verdict.explanation}"
-    if verbose:
-        _log_tool_call(
-            tool_name,
-            args,
-            detail,
-            tool_call_callback,
-            approval_source="sentinel",
-            approval_verdict=verdict.decision,
-            approval_explanation=verdict.explanation,
-        )
+    _log_tool_call(
+        tool_name,
+        args,
+        detail,
+        tool_call_callback,
+        approval_source="sentinel",
+        approval_verdict=verdict.decision,
+        approval_explanation=verdict.explanation,
+    )
 
     if verdict.decision == "deny":
         session.write_audit(
