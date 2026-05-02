@@ -2,7 +2,6 @@
 
 > This roadmap outlines planned features and improvements. Items are grouped by area and roughly ordered by priority within each section.
 
-- [ ] Proper Icon + Logo, rewrite README to be more ... advertising
 - [ ] Compaction
 - [ ] image input ([plan](docs/plans/images.md))
 - [ ] image output — agent tools producing images (screenshots, charts, renders)
