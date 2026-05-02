@@ -1,6 +1,30 @@
 # CHANGELOG
 
 
+## v0.109.0 (2026-05-02)
+
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix: harden sidebar session updates
+  ([`b68d744`](https://github.com/thiesgerken/carapace/commit/b68d7446dfc34660656d6f1e547b9b1fca832093))
+
+- 🐛 fix: keep sessions active when unarchiving
+  ([`a081be6`](https://github.com/thiesgerken/carapace/commit/a081be6fe08728160b7607b72d33c5ed9136bef7))
+
+- 🐛 fix: reset forked session attributes
+  ([`cf6a53c`](https://github.com/thiesgerken/carapace/commit/cf6a53cb530dbb9c878e0d6f7039968a9655f995))
+
+- 🐛 fix: confirm sidebar destructive actions
+  ([`11c06dc`](https://github.com/thiesgerken/carapace/commit/11c06dcd497253959fba720fb3ffd7504f45f10f))
+
+### ✨ Features
+
+
+- ✨ feat: add session attributes and sidebar controls
+  ([`8e83ed3`](https://github.com/thiesgerken/carapace/commit/8e83ed3032594ea384468cbada5cc7f50014783a))
+
 ## v0.108.1 (2026-05-02)
 
 
