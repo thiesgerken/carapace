@@ -33,7 +33,7 @@ carapace is a self-hosted AI agent with a web UI, CLI, and Matrix channel for op
 - Git-native knowledge repo. `SOUL.md`, `USER.md`, `SECURITY.md`, skills, memory, and archived sessions live in files you can inspect, diff, sync, and push upstream.
 - No-direct-internet sandboxes. Sandbox workloads do not get ambient internet access; outbound traffic is forced through the proxy path.
 - Proxy system with tunnels. HTTP traffic is mediated by the proxy, and exec-scoped tunnels cover non-HTTP protocols without leaving long-lived daemons behind.
-- Context-scoped credentials. Secrets stay in your vault and are only injected or fetched on demand for exec calls that have the matching approved skill context.
+- Context-scoped credentials. Secrets stay in your vault, with native Bitwarden and Vaultwarden support, and are only injected or fetched on demand for exec calls that have the matching approved skill context.
 
 ## Knowledge Repo, Not Hidden State
 
