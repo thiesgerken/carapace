@@ -1,6 +1,15 @@
 # CHANGELOG
 
 
+## v0.110.0 (2026-05-02)
+
+
+### ✨ Features
+
+
+- ✨ feat: add a timeout for the sentinel
+  ([`98dd3cc`](https://github.com/thiesgerken/carapace/commit/98dd3ccc182ca9ebca0cc75bdffde6bdd46e27d6))
+
 ## v0.109.0 (2026-05-02)
 
 
