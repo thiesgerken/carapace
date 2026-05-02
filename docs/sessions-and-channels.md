@@ -1,6 +1,6 @@
 # Sessions and Channels
 
-Sessions are the core abstraction in Carapace. They are decoupled from any specific channel — a session is a conversation context with its own security state. Channels create and interact with sessions, but don't own them.
+Sessions are the core abstraction in carapace. They are decoupled from any specific channel — a session is a conversation context with its own security state. Channels create and interact with sessions, but don't own them.
 
 ## Session model
 
@@ -59,7 +59,7 @@ Sessions persist across server restarts. In-memory state (action log, sentinel c
 
 ## Knowledge commits
 
-Carapace can optionally commit session histories into the Git-backed knowledge repository. This is a secondary persistence path for long-term recall, not the primary runtime store.
+carapace can optionally commit session histories into the Git-backed knowledge repository. This is a secondary persistence path for long-term recall, not the primary runtime store.
 
 - The canonical committed artifact is `conversation.json`
 - Session snapshots are written under `<knowledge_dir>/sessions/YYYY/MM/<session_id>/conversation.json` by default
@@ -81,7 +81,7 @@ Carapace can optionally commit session histories into the Git-backed knowledge r
 
 ## Session lifecycle
 
-- Sessions are **persistent** — they survive Carapace restarts
+- Sessions are **persistent** — they survive carapace restarts
 - **Containers** are ephemeral: destroyed after an idle timeout (configurable, default 15 min). When the user sends a new message after containers expire, they are recreated. See [sandbox.md](sandbox.md).
 - **Title generation**: After the 1st and 3rd user messages, a title is auto-generated using a lightweight LLM model
 - **Privacy**: Sessions start public by default, unless `sessions.default_private` is set to `true`
@@ -91,11 +91,11 @@ Carapace can optionally commit session histories into the Git-backed knowledge r
 
 ## Channel system
 
-Channels are adapters that connect external systems to Carapace sessions. They implement the `SessionSubscriber` protocol, which defines callbacks for receiving streamed tokens, tool call info, approval requests, and other events.
+Channels are adapters that connect external systems to carapace sessions. They implement the `SessionSubscriber` protocol, which defines callbacks for receiving streamed tokens, tool call info, approval requests, and other events.
 
 ### Web Frontend (WebSocket)
 
-The primary interactive channel. A Next.js web app connects to the Carapace server via WebSocket.
+The primary interactive channel. A Next.js web app connects to the carapace server via WebSocket.
 
 **REST API:**
 
@@ -117,7 +117,7 @@ Authentication uses a bearer token (`CARAPACE_TOKEN` env var) passed as a query 
 
 ### Matrix Channel
 
-Connects Carapace to Matrix rooms using [matrix-nio](https://github.com/matrix-nio/matrix-nio). One session per room.
+Connects carapace to Matrix rooms using [matrix-nio](https://github.com/matrix-nio/matrix-nio). One session per room.
 
 Features:
 

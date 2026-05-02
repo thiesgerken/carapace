@@ -1,6 +1,6 @@
 # Architecture
 
-This document describes Carapace's high-level architecture, component responsibilities, data flow, deployment model, and configuration.
+This document describes carapace's high-level architecture, component responsibilities, data flow, deployment model, and configuration.
 
 ## High-level diagram
 
@@ -11,7 +11,7 @@ flowchart TB
         MatrixCh[Matrix Channel]
     end
 
-    subgraph carapace [Carapace Core]
+    subgraph carapace [carapace Core]
         SessionEngine[Session Engine]
         SessionMgr[Session Manager]
         SecurityMod["Security Module"]
@@ -100,7 +100,7 @@ The main agent, built on [Pydantic AI](https://ai.pydantic.dev/). It receives me
 | `exec` | Run a shell command in the sandbox (default timeout: 30s) |
 
 Persistent writes (memory, skills, workspace files) happen via `git commit` + `git push` inside the sandbox. Each push is evaluated by the security sentinel through a pre-receive hook — there is no direct write tool.
-Skill credential declarations in a skill's Carapace metadata (`SKILL.md` frontmatter or legacy `carapace.yaml`) are evaluated during `use_skill`; approved credentials are fetched from the configured backend and cached before automatic setup runs. Automatic setup can use committed provider files such as `pyproject.toml` + `uv.lock`, `package.json` + a lockfile, and `setup.sh`. Those provider files are restored from the pushed upstream revision before execution so local sandbox edits are not run automatically.
+Skill credential declarations in a skill's carapace metadata (`SKILL.md` frontmatter or legacy `carapace.yaml`) are evaluated during `use_skill`; approved credentials are fetched from the configured backend and cached before automatic setup runs. Automatic setup can use committed provider files such as `pyproject.toml` + `uv.lock`, `package.json` + a lockfile, and `setup.sh`. Those provider files are restored from the pushed upstream revision before execution so local sandbox edits are not run automatically.
 
 ### Security Module
 
@@ -134,11 +134,11 @@ Credential reads are sandbox-only: containers call `GET /credentials` and `GET /
 
 ### HTTP Forward Proxy
 
-An async forward proxy (HTTP + HTTPS CONNECT) running inside the Carapace server process. All outbound traffic from sandbox containers is routed through this proxy. It enforces per-session domain allowlisting with token-based authentication and delegates unknown domain requests to the security module for sentinel evaluation or user approval. See [sandbox.md](sandbox.md).
+An async forward proxy (HTTP + HTTPS CONNECT) running inside the carapace server process. All outbound traffic from sandbox containers is routed through this proxy. It enforces per-session domain allowlisting with token-based authentication and delegates unknown domain requests to the security module for sentinel evaluation or user approval. See [sandbox.md](sandbox.md).
 
 ## Server port architecture
 
-Carapace runs three separate listener ports for security isolation:
+carapace runs three separate listener ports for security isolation:
 
 | Port                | Bind address | Auth                                 | Purpose                                                                               |
 | ------------------- | ------------ | ------------------------------------ | ------------------------------------------------------------------------------------- |
@@ -193,7 +193,7 @@ sequenceDiagram
 
 ## Deployment
 
-Carapace runs as a Docker container with the Docker socket mounted (to orchestrate sandbox containers), alongside a Next.js web frontend.
+carapace runs as a Docker container with the Docker socket mounted (to orchestrate sandbox containers), alongside a Next.js web frontend.
 
 ```yaml
 # docker-compose.yaml (simplified)

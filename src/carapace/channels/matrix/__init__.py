@@ -1,4 +1,4 @@
-"""Matrix channel adapter for Carapace.
+"""Matrix channel adapter for carapace.
 
 Connects to a Matrix homeserver via matrix-nio (plain-text, no E2EE for now).
 Maps one session per room; supports slash commands including /reset.

@@ -49,7 +49,7 @@ class SandboxSessionLifecycleState:
 
 class SandboxSessionLifecycle:
     _READY_MARKER = "carapace sandbox ready"
-    _COMMIT_TRAILER_KEY = "Carapace-Session"
+    _COMMIT_TRAILER_KEY = "carapace-Session"
 
     def __init__(
         self,

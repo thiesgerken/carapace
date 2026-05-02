@@ -1,6 +1,6 @@
 # Security System
 
-Carapace gates every agent action through a two-layer security system: a fast **safe-list** bypass for known-harmless operations, and an LLM-powered **sentinel agent** for everything else. The sentinel maintains a persistent conversation per session, evaluating each action against a natural-language security policy and the full history of what happened so far.
+carapace gates every agent action through a two-layer security system: a fast **safe-list** bypass for known-harmless operations, and an LLM-powered **sentinel agent** for everything else. The sentinel maintains a persistent conversation per session, evaluating each action against a natural-language security policy and the full history of what happened so far.
 
 ## How it works
 
@@ -125,11 +125,11 @@ Credential access is mediated through the sandbox API and session state:
 
 - Sandbox scripts use `ccred` (or direct HTTP) to call `GET /credentials` and `GET /credentials/{vault_path}`.
 - `list` / `search` expose metadata only and are security-reviewed at the `exec` tool-call layer.
-- `fetch` is per-session approval-based: if a credential is not yet approved for the session, Carapace sends a credential approval request and blocks until approve/deny.
+- `fetch` is per-session approval-based: if a credential is not yet approved for the session, carapace sends a credential approval request and blocks until approve/deny.
 - Approved credential metadata is tracked via context grants in `SessionState.context_grants` and reflected in `/session`.
 - Credential access decisions are recorded as `CredentialAccessEntry` action-log events.
 
-As with the rest of Carapace's model, the "keep secrets out of model output" guarantee is defense-in-depth: policy + sentinel + agent behavior. It is not a protocol-level cryptographic boundary, so secret-echoing commands must remain prohibited.
+As with the rest of carapace's model, the "keep secrets out of model output" guarantee is defense-in-depth: policy + sentinel + agent behavior. It is not a protocol-level cryptographic boundary, so secret-echoing commands must remain prohibited.
 
 ## Audit log
 
@@ -163,7 +163,7 @@ If the sentinel escalates a domain request, it is forwarded to the user through 
 
 ## Veto semantics
 
-Carapace follows strict veto semantics: if **any** part of the security system says "no" (or "needs approval"), that decision is final. This means:
+carapace follows strict veto semantics: if **any** part of the security system says "no" (or "needs approval"), that decision is final. This means:
 
 - A safe-list bypass cannot override a sentinel denial (safe-list only applies to its own set of tools).
 - The sentinel cannot override a deterministic denial from the safe-list check (which denies nothing -- it only auto-allows).

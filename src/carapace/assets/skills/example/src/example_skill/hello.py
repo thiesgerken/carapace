@@ -39,7 +39,7 @@ def main() -> None:
 
     host = str(config.get("host", "imap.gmail.com"))
     port = int(config.get("port", 1993))
-    print(f"  Connecting to {host}:{port} via Carapace-managed tunnel ...")
+    print(f"  Connecting to {host}:{port} via carapace-managed tunnel ...")
 
     try:
         client = imaplib.IMAP4_SSL(host=host, port=port)

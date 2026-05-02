@@ -340,7 +340,7 @@ function HomeContent() {
               <Menu className="h-5 w-5" />
             )}
           </button>
-          <span className="text-sm font-semibold">Carapace</span>
+          <span className="text-sm font-semibold">carapace</span>
         </div>
 
         {/* Chat or empty state */}
@@ -362,7 +362,7 @@ function HomeContent() {
         ) : (
           <div className="flex flex-1 items-center justify-center">
             <div className="text-center">
-              <p className="text-lg font-medium text-foreground/80">Carapace</p>
+              <p className="text-lg font-medium text-foreground/80">carapace</p>
               <p className="mt-1 text-sm text-muted-foreground">
                 Select a session or start a new one
               </p>

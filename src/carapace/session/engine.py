@@ -228,7 +228,7 @@ class SessionEngine(SessionTurnMixin):
         return out
 
     def agent_model_id_for_gauge(self, active: ActiveSession) -> str:
-        """Canonical Carapace model id (``provider:name``) for UI gauge / config lookup.
+        """Canonical carapace model id (``provider:name``) for UI gauge / config lookup.
 
         Do not use the provider's raw ``model_name`` from the LLM log — it is often a short
         id without the ``provider:`` prefix, so it would not match ``available_models`` entries.

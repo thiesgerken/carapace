@@ -1,6 +1,6 @@
 # Sandbox Architecture
 
-All agent tool invocations — script execution, shell commands, file operations — run inside a sandboxed container. Carapace itself (the server) runs on the host (or in its own container/pod), but every agent action runs inside an isolated container.
+All agent tool invocations — script execution, shell commands, file operations — run inside a sandboxed container. carapace itself (the server) runs on the host (or in its own container/pod), but every agent action runs inside an isolated container.
 
 ## Execution model
 
@@ -8,7 +8,7 @@ Each session gets a single sandbox container. The container provides the agent w
 
 ```mermaid
 flowchart LR
-    subgraph carapace [Carapace Server]
+    subgraph carapace [carapace Server]
         Agent[Agent Tools]
         Proxy[HTTP Forward Proxy]
     end
@@ -60,7 +60,7 @@ The knowledge repo is cloned directly into `/workspace/` on first start. On cont
 
 ## Network policy
 
-All outbound traffic from sandbox containers is routed through the Carapace server's HTTP forward proxy:
+All outbound traffic from sandbox containers is routed through the carapace server's HTTP forward proxy:
 
 - Containers receive only `HTTP_PROXY` / `HTTPS_PROXY` environment variables pointing to the proxy
 - No direct internet access — enforced by Docker network isolation or Kubernetes NetworkPolicy
@@ -79,12 +79,12 @@ The proxy supports exact domain matching (`example.com`) and wildcard matching (
 
 ### Exec-scoped TCP tunnels
 
-Skills may also declare `network.tunnels` in their Carapace metadata (`metadata.carapace` or legacy `carapace.yaml`). These are not long-running session daemons. Instead, Carapace manages them around a single `exec` call:
+Skills may also declare `network.tunnels` in their carapace metadata (`metadata.carapace` or legacy `carapace.yaml`). These are not long-running session daemons. Instead, carapace manages them around a single `exec` call:
 
-1. Before the command runs, Carapace temporarily shadows the declared hostnames inside the sandbox.
+1. Before the command runs, carapace temporarily shadows the declared hostnames inside the sandbox.
 2. It starts trusted TCP forwarders inside the sandbox that use the existing HTTP CONNECT proxy to reach the remote `host:remote_port` endpoints.
 3. The user command runs.
-4. In `finally`, Carapace stops the forwarders and restores the original host resolution.
+4. In `finally`, carapace stops the forwarders and restores the original host resolution.
 
 Important semantics:
 
@@ -100,12 +100,12 @@ Important semantics:
 - **Creation**: A container is created (or ensured running) when a session needs it — typically on the first tool call
 - **Reuse**: The container stays running for the session's duration. Multiple tool calls reuse the same container.
 - **Idle timeout**: Configurable (default: 15 min). In Docker mode, idle containers are destroyed. In Kubernetes mode, the StatefulSet is scaled to 0 replicas — the PVC is retained, so venvs and workspace state survive.
-- **Re-warming**: When the user sends a new message after the container expired, a new container is created (Docker: fresh container with same bind mounts; Kubernetes: StatefulSet scaled back to 1 replica, PVC still attached). Carapace restores committed provider files from the pushed upstream revision and reruns the matching automatic setup providers for activated skills. Approved skill credentials are made available before that setup runs so `setup.sh` can materialize local config files if needed.
+- **Re-warming**: When the user sends a new message after the container expired, a new container is created (Docker: fresh container with same bind mounts; Kubernetes: StatefulSet scaled back to 1 replica, PVC still attached). carapace restores committed provider files from the pushed upstream revision and reruns the matching automatic setup providers for activated skills. Approved skill credentials are made available before that setup runs so `setup.sh` can materialize local config files if needed.
 - **Reset** (`/reload`): Fully destroys the container and workspace (including the PVC in Kubernetes mode) and creates a fresh sandbox with a new git clone on the next command.
 
 ## Runtimes
 
-Carapace supports two sandbox runtimes, configured via `CARAPACE_SANDBOX_RUNTIME`:
+carapace supports two sandbox runtimes, configured via `CARAPACE_SANDBOX_RUNTIME`:
 
 ### Docker
 
@@ -115,11 +115,11 @@ The default runtime. Uses the Docker socket (`/var/run/docker.sock`) to manage c
 
 For cluster deployments. Sandbox sessions run as Kubernetes StatefulSets with per-session PVCs (via `volumeClaimTemplates`). Commands are executed via the Kubernetes exec API. On idle timeout the StatefulSet is scaled to 0 replicas (PVC retained); on resume it's scaled back to 1. See [kubernetes.md](kubernetes.md) for full details.
 
-Both runtimes implement the same `ContainerRuntime` interface, so the rest of Carapace doesn't need to know which backend is in use.
+Both runtimes implement the same `ContainerRuntime` interface, so the rest of carapace doesn't need to know which backend is in use.
 
 ## Docker socket
 
-In Docker mode, Carapace needs access to the Docker socket:
+In Docker mode, carapace needs access to the Docker socket:
 
 ```yaml
 services:

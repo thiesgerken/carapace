@@ -10,7 +10,7 @@ from carapace.models import BitwardenCredentialBackendConfig, CredentialMetadata
 class BitwardenBackend:
     """Talks to an external ``bw serve`` instance (sidecar / companion container).
 
-    Expects ``bw serve`` to already be running at *base_url* — Carapace does not
+    Expects ``bw serve`` to already be running at *base_url* — carapace does not
     manage the process lifecycle.  In Docker Compose the ``bw serve`` container
     shares the network namespace via ``network_mode: service:carapace``; in
     Kubernetes it runs as a sidecar in the same Pod.

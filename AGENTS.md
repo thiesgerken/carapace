@@ -2,7 +2,7 @@
 
 ## Project overview
 
-Carapace is a security-first personal AI agent with LLM-powered security gating. Python 3.12+, async, Pydantic AI.
+carapace is a security-first personal AI agent with LLM-powered security gating. Python 3.12+, async, Pydantic AI.
 
 ## Setup commands
 

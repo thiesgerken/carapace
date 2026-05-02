@@ -1,11 +1,11 @@
 ---
 name: create-skill
-description: Create and refine Carapace AgentSkills. Use when the user wants to add a new skill, reshape an existing one, or asks how a skill should be structured.
+description: Create and refine carapace AgentSkills. Use when the user wants to add a new skill, reshape an existing one, or asks how a skill should be structured.
 ---
 
 # Create Skill
 
-Create or update skills under `skills/<name>/` for Carapace.
+Create or update skills under `skills/<name>/` for carapace.
 
 ## Goal
 

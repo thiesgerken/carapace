@@ -10,7 +10,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Carapace",
+  title: "carapace",
   description: "Security-first personal AI agent",
 };
 

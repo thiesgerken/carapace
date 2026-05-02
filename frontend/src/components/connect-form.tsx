@@ -46,7 +46,7 @@ export function ConnectForm({ onConnect }: ConnectFormProps) {
     <div className="flex min-h-screen items-center justify-center p-4">
       <form onSubmit={handleSubmit} className="w-full max-w-sm space-y-4">
         <div className="space-y-1.5 text-center">
-          <h1 className="text-xl font-semibold tracking-tight">Carapace</h1>
+          <h1 className="text-xl font-semibold tracking-tight">carapace</h1>
           <p className="text-sm text-muted-foreground">
             Connect to your server
           </p>

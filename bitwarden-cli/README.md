@@ -1,6 +1,6 @@
 # Bitwarden CLI sidecar image
 
-Small Alpine image that runs the official [`@bitwarden/cli`](https://www.npmjs.com/package/@bitwarden/cli): on startup it configures the server URL, logs in (API key or password), unlocks the vault, then **`exec`s `bw serve`** bound to `127.0.0.1` inside the container. Carapace talks to that HTTP API from the main app or from another container on the same pod/network.
+Small Alpine image that runs the official [`@bitwarden/cli`](https://www.npmjs.com/package/@bitwarden/cli): on startup it configures the server URL, logs in (API key or password), unlocks the vault, then **`exec`s `bw serve`** bound to `127.0.0.1` inside the container. carapace talks to that HTTP API from the main app or from another container on the same pod/network.
 
 The entrypoint is [`entrypoint.sh`](./entrypoint.sh). Build with [`Dockerfile`](./Dockerfile); optional build arg `BW_CLI_VERSION` pins the npm package (default in the Dockerfile).
 
@@ -15,7 +15,7 @@ The entrypoint is [`entrypoint.sh`](./entrypoint.sh). Build with [`Dockerfile`](
 | `BW_SERVER_URL`      | No       | Vault server base URL (e.g. self-hosted Vaultwarden). Empty/unset applies US cloud (`bitwarden.com`) on first run or when the URL changes vs cached state.        |
 | `BW_SERVE_PORT`      | No       | Port for `bw serve` (default `8087`).                                                                                                                             |
 | `BW_SECRET_DIR`      | No       | Directory for optional file-backed credentials (default `/run/secrets/bitwarden`).                                                                                |
-| `BW_DATA_DIR`        | No       | Writable root for Bitwarden CLI app data and Carapace’s server-URL cache (default `/var/lib/bitwarden-cli`). Mount a volume here to survive container recreation. |
+| `BW_DATA_DIR`        | No       | Writable root for Bitwarden CLI app data and carapace’s server-URL cache (default `/var/lib/bitwarden-cli`). Mount a volume here to survive container recreation. |
 
 \* Either set both `BW_CLIENTID` and `BW_CLIENTSECRET`, or set `BW_EMAIL` for password login.
 

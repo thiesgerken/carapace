@@ -1,6 +1,6 @@
-# Carapace Frontend
+# carapace Frontend
 
-Web UI for Carapace, built with Next.js (App Router).
+Web UI for carapace, built with Next.js (App Router).
 
 ## Tech Stack
 

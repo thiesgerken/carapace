@@ -19,7 +19,7 @@ from websockets.exceptions import ConnectionClosed, InvalidHandshake
 
 load_dotenv()
 
-app = typer.Typer(help="Carapace -- security-first personal AI agent")
+app = typer.Typer(help="carapace -- security-first personal AI agent")
 console = Console()
 
 DEFAULT_SERVER = "http://127.0.0.1:8321"
@@ -721,7 +721,7 @@ def chat(
         -1, "--history", "-H", help="Number of past messages to show on resume (-1 = all, 0 = none)"
     ),
 ):
-    """Start an interactive chat session with the Carapace server."""
+    """Start an interactive chat session with the carapace server."""
     bearer = _get_token(data_dir, token)
     headers = _auth_headers(bearer)
 
