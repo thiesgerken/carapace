@@ -38,7 +38,7 @@ from carapace.sandbox.manager import SandboxManager
 from carapace.security.context import ApprovalSource, ApprovalVerdict, format_denial_message, normalize_optional_message
 from carapace.session.manager import SessionManager
 from carapace.session.types import ActiveSession, SessionSubscriber, TurnExecutionResult
-from carapace.usage import LlmRequestState, SessionBudgetExceededError
+from carapace.usage import LlmRequestState, SessionBudgetExceededError, interrupted_request_record
 from carapace.ws_models import ApprovalRequest, ApprovalResponse, TurnUsage
 
 
@@ -542,6 +542,8 @@ class SessionTurnMixin(SessionTurnHost):
     ) -> None:
         active.llm_request_thinking.clear()
         if save_progress:
+            if active.llm_request_state is not None:
+                active.llm_request_log.records.append(interrupted_request_record(active.llm_request_state))
             self._save_turn_progress(session_id, active)
         await self._clear_llm_request_state(active)
         self._save_user_message_on_failure(

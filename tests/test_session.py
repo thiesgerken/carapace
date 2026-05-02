@@ -973,6 +973,59 @@ def test_submit_cancel_persists_interruption_marker(tmp_path: Path):
         asyncio.run(_run())
 
 
+def test_submit_cancel_persists_interrupted_llm_request_log(tmp_path: Path):
+    """Cancelled in-flight LLM requests are saved in the request log as interrupted."""
+
+    async def _run() -> None:
+        engine = _make_engine(tmp_path)
+        state = engine.session_mgr.create_session()
+        sid = state.session_id
+
+        engine.subscribe(sid, _FakeSubscriber())
+
+        started_at = datetime(2026, 5, 2, 12, 0, tzinfo=UTC)
+
+        async def _hanging_turn(*_args: Any, **_kwargs: Any) -> str:
+            sink = usage_mod._llm_request_sink.get()
+            assert sink is not None
+            await sink.on_request_started(
+                LlmRequestState(
+                    request_id="req-1",
+                    source="agent",
+                    model_name="anthropic:claude-haiku-4-5",
+                    started_at=started_at,
+                    phase="thinking",
+                    first_thinking_at=started_at,
+                    last_thinking_at=started_at + timedelta(seconds=1),
+                )
+            )
+            await asyncio.sleep(999)
+            return "unreachable"
+
+        with patch("carapace.session.engine.run_agent_turn", new=_hanging_turn):
+            await engine.submit_message(sid, "hello")
+            await asyncio.sleep(0.05)
+            await engine.submit_cancel(sid)
+
+        log = engine.session_mgr.load_llm_request_log(sid)
+        assert len(log.records) == 1
+        record = log.records[0]
+        assert record.request_id == "req-1"
+        assert record.source == "agent"
+        assert record.model_name == "anthropic:claude-haiku-4-5"
+        assert record.outcome == "interrupted"
+        assert record.input_tokens == 0
+        assert record.output_tokens == 0
+        assert record.started_at == started_at
+        assert record.first_thinking_at == started_at
+        assert record.last_thinking_at == started_at + timedelta(seconds=1)
+        assert record.completed_at is None
+        assert engine.session_mgr.load_llm_request_state(sid) is None
+
+    with _patch_sentinel():
+        asyncio.run(_run())
+
+
 def test_submit_cancel_noop_when_inactive(tmp_path: Path):
     """submit_cancel is a no-op when session is not active."""
 
