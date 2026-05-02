@@ -1,6 +1,23 @@
 # CHANGELOG
 
 
+## v0.108.0 (2026-05-02)
+
+
+### ✨ Features
+
+
+- ✨ feat: implement auto-allow for exact domain in exec command and add corresponding tests
+  ([`0c047e5`](https://github.com/thiesgerken/carapace/commit/0c047e5327faf8351639e46b70bbac3c3a854280))
+
+  Co-authored-by: Copilot <copilot@github.com>
+
+### Other
+
+
+- ideas
+  ([`642a9e4`](https://github.com/thiesgerken/carapace/commit/642a9e4ca19e324b65f822e3755177f3d3296549))
+
 ## v0.107.0 (2026-05-02)
 
 
