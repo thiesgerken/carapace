@@ -78,6 +78,9 @@ class SessionState(BaseModel):
     channel_type: str = "cli"
     channel_ref: str | None = None
     title: str | None = None
+    agent_model_name: str | None = None
+    sentinel_model_name: str | None = None
+    title_model_name: str | None = None
     private: bool = False
     approved_operations: list[str] = []
     activated_skills: list[str] = []

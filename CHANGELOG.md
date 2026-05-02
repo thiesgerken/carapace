@@ -1,6 +1,18 @@
 # CHANGELOG
 
 
+## v0.105.6 (2026-05-01)
+
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix: fall back from stale model overrides
+  ([`90c3482`](https://github.com/thiesgerken/carapace/commit/90c34821732ae2b6d59846130d1cd5302907415e))
+
+- 🐛 fix: persist model overrides across restarts
+  ([`f2d4f8f`](https://github.com/thiesgerken/carapace/commit/f2d4f8fc5bf2858ba51a4becf4754b7bb04b9f8e))
+
 ## v0.105.5 (2026-05-01)
 
 
