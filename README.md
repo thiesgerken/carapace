@@ -26,6 +26,12 @@
 
 carapace is a self-hosted AI agent with a web UI, CLI, and Matrix channel for operators who want an assistant they can actually reason about. Every meaningful action is evaluated by a dedicated sentinel LLM against your natural-language policy in `SECURITY.md`, executed inside a sandbox, and recorded in an audit trail. Its memory is not hidden inside an app-specific database: personality, policy, skills, memory, and archived sessions live in a Git-backed knowledge repo you can inspect, diff, and sync.
 
+<p align="center">
+  <img src="docs/assets/screen.jpg" alt="carapace web UI showing sandbox status, knowledge state, and a sentinel-reviewed command execution" width="1000">
+</p>
+
+<p align="center"><em>The web UI surfaces sandbox state, knowledge-repo status, and sentinel-reviewed actions in one place.</em></p>
+
 ## Highlights
 
 - 🛡️ Sentinel-gated execution. Every non-trivial action is reviewed by a dedicated security agent that keeps session context, not a static allowlist spreadsheet.
