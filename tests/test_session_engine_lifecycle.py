@@ -12,6 +12,7 @@ from unittest.mock import patch
 import pytest
 from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, UserPromptPart
 
+import carapace.usage as usage_mod
 from carapace.usage import LlmRequestState, ModelUsage
 from tests.session_helpers import _FakeSubscriber, _make_engine, _patch_sentinel, _without_timestamps
 
@@ -266,8 +267,6 @@ def test_submit_cancel_persists_interrupted_llm_request_log(tmp_path: Path):
         assert record.last_thinking_at == started_at + timedelta(seconds=1)
         assert record.completed_at is None
         assert engine.session_mgr.load_llm_request_state(sid) is None
-
-    import carapace.usage as usage_mod
 
     with _patch_sentinel():
         asyncio.run(_run())
