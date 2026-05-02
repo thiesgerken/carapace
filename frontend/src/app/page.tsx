@@ -218,11 +218,11 @@ function HomeContent() {
       await deleteSession(server, token, id);
       pendingSandboxUpdatesRef.current.delete(id);
       setSessions((prev) => prev.filter((s) => s.session_id !== id));
-      if (activeSessionId === id) setActiveSessionId(null);
+      setActiveSessionId((current) => (current === id ? null : current));
     } catch {
       // deletion failed silently
     }
-  }, [activeSessionId, server, token]);
+  }, [server, token]);
 
   const handleUpdateSessionAttributes = useCallback(async (
     id: string,
@@ -231,11 +231,9 @@ function HomeContent() {
     const updated = await updateSession(server, token, id, { attributes });
     pendingSandboxUpdatesRef.current.delete(id);
     setSessions((prev) => sortSessions(prev.map((entry) => (entry.session_id === id ? { ...entry, ...updated } : entry))));
-    if (updated.attributes.archived && activeSessionId === id) {
-      setActiveSessionId(null);
-    }
+    setActiveSessionId((current) => (updated.attributes.archived && current === id ? null : current));
     return updated;
-  }, [activeSessionId, server, token]);
+  }, [server, token]);
 
   function handleSelectSession(id: string) {
     setActiveSessionId(id);

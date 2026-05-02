@@ -54,6 +54,12 @@ function shouldConfirmDestructiveAction(event: { shiftKey: boolean }, confirmati
   return event.shiftKey || window.confirm(confirmation);
 }
 
+function runSidebarAttributeUpdate(promise: Promise<SessionInfo>): void {
+  void promise.catch(() => {
+    // Sidebar actions currently fail silently like delete; avoid unhandled rejections.
+  });
+}
+
 export function Sidebar({
   sessions,
   activeSessionId,
@@ -194,7 +200,7 @@ export function Sidebar({
           <button
             onClick={(event) => {
               event.stopPropagation();
-              void onUpdateAttributes(session.session_id, { pinned: !session.attributes.pinned });
+              runSidebarAttributeUpdate(onUpdateAttributes(session.session_id, { pinned: !session.attributes.pinned }));
             }}
             title={session.attributes.pinned ? "Unpin session" : "Pin session"}
             className={cn(
@@ -209,7 +215,7 @@ export function Sidebar({
           <button
             onClick={(event) => {
               event.stopPropagation();
-              void onUpdateAttributes(session.session_id, { favorite: !session.attributes.favorite });
+              runSidebarAttributeUpdate(onUpdateAttributes(session.session_id, { favorite: !session.attributes.favorite }));
             }}
             title={session.attributes.favorite ? "Remove favorite" : "Favorite session"}
             className={cn(
@@ -234,7 +240,7 @@ export function Sidebar({
               ) {
                 return;
               }
-              void onUpdateAttributes(session.session_id, { archived: nextArchived });
+              runSidebarAttributeUpdate(onUpdateAttributes(session.session_id, { archived: nextArchived }));
             }}
             title={session.attributes.archived ? "Unarchive session" : ["Archive session", "Shift+click to skip confirmation"].join("\n")}
             className={cn(
