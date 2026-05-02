@@ -25,6 +25,7 @@ from carapace.git.store import GitStore
 from carapace.models import (
     ContextGrant,
     CredentialRegistryProtocol,
+    SessionAttributes,
     SessionBudget,
     SkillCredentialDecl,
     ToolResult,
@@ -67,6 +68,7 @@ def test_create_session(tmp_path: Path):
     state = mgr.create_session()
     assert len(state.session_id) == 25  # 2026-03-08-10-22-abcd1234
     assert state.channel_type == "cli"
+    assert state.attributes == SessionAttributes()
 
 
 def test_create_session_persists_budget(tmp_path: Path):
@@ -78,6 +80,15 @@ def test_create_session_persists_budget(tmp_path: Path):
     assert resumed is not None
     assert resumed.budget.input_tokens == 1_000
     assert resumed.budget.cost_usd == Decimal("5.00")
+
+
+def test_create_session_persists_private_attribute(tmp_path: Path):
+    mgr = SessionManager(tmp_path)
+    state = mgr.create_session(private=True)
+
+    resumed = mgr.resume_session(state.session_id)
+    assert resumed is not None
+    assert resumed.attributes.private is True
 
 
 def test_resume_session(tmp_path: Path):
@@ -467,6 +478,10 @@ def test_fork_session_copies_transcript_and_security_context(tmp_path: Path) -> 
     sid = source.session_id
     active = engine.get_or_activate(sid)
     active.state.title = "Original title"
+    active.state.attributes.private = True
+    active.state.attributes.archived = True
+    active.state.attributes.pinned = True
+    active.state.attributes.favorite = True
     active.state.approved_operations = ["exec"]
     active.state.activated_skills = ["web"]
     active.state.context_grants["web"] = ContextGrant(skill_name="web", domains={"example.com"})
@@ -508,7 +523,10 @@ def test_fork_session_copies_transcript_and_security_context(tmp_path: Path) -> 
     assert forked.channel_type == "web"
     assert forked.channel_ref is None
     assert forked.title == "Original title (Copy)"
-    assert forked.private is True
+    assert forked.attributes.private is True
+    assert forked.attributes.archived is False
+    assert forked.attributes.pinned is False
+    assert forked.attributes.favorite is False
     assert forked.approved_operations == ["exec"]
     assert forked.activated_skills == ["web"]
     assert forked.context_grants["web"].domains == {"example.com"}

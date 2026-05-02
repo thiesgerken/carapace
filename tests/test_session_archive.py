@@ -139,7 +139,7 @@ async def test_archive_service_preserves_concurrent_privacy_update(tmp_path) -> 
     async def commit_with_concurrent_privacy_flip(*args, **kwargs) -> bool:
         current = mgr.load_state(state.session_id)
         assert current is not None
-        current.private = True
+        current.attributes.private = True
         mgr.save_state(current)
         return True
 
@@ -156,7 +156,7 @@ async def test_archive_service_preserves_concurrent_privacy_update(tmp_path) -> 
 
     assert result.committed is True
     assert final_state is not None
-    assert final_state.private is True
+    assert final_state.attributes.private is True
     assert final_state.knowledge_last_committed_at is not None
 
 

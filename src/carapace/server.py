@@ -41,7 +41,7 @@ from carapace.credentials import CredentialRegistry, build_credential_registry
 from carapace.git.http import GitHttpHandler
 from carapace.git.store import GitStore
 from carapace.llm import make_model_factory
-from carapace.models import Config, SessionState, ToolResult
+from carapace.models import Config, SessionAttributes, SessionState, ToolResult
 from carapace.sandbox.manager import SandboxManager
 from carapace.sandbox.proxy import ProxyServer
 from carapace.sandbox.runtime import ContainerRuntime
@@ -162,7 +162,7 @@ async def _autosave_inactive_sessions() -> None:
     for session_id in session_ids:
         try:
             state = _engine.session_mgr.load_state(session_id)
-            if state is None or state.private or state.last_active > cutoff:
+            if state is None or state.attributes.private or state.last_active > cutoff:
                 continue
             if state.knowledge_last_committed_at is not None and state.knowledge_last_committed_at >= state.last_active:
                 continue
@@ -451,8 +451,15 @@ class SessionCreateRequest(BaseModel):
     private: bool | None = None
 
 
-class SessionUpdateRequest(BaseModel):
+class SessionAttributesPatch(BaseModel):
     private: bool | None = None
+    archived: bool | None = None
+    pinned: bool | None = None
+    favorite: bool | None = None
+
+
+class SessionUpdateRequest(BaseModel):
+    attributes: SessionAttributesPatch | None = None
 
 
 class SessionForkRequest(BaseModel):
@@ -468,7 +475,7 @@ class SessionInfo(BaseModel):
     created_at: str
     last_active: str
     title: str | None = None
-    private: bool = False
+    attributes: SessionAttributes
     knowledge_last_committed_at: str | None = None
     knowledge_last_archive_path: str | None = None
     knowledge_last_commit_trigger: str | None = None
@@ -490,7 +497,7 @@ class SessionInfo(BaseModel):
             created_at=state.created_at.isoformat(),
             last_active=state.last_active.isoformat(),
             title=state.title,
-            private=state.private,
+            attributes=state.attributes,
             knowledge_last_committed_at=(
                 state.knowledge_last_committed_at.isoformat() if state.knowledge_last_committed_at else None
             ),
@@ -537,17 +544,26 @@ async def create_session(
 @router.get("/sessions", response_model=list[SessionInfo])
 async def list_sessions(
     include_message_count: bool = False,
+    include_archived: bool = False,
     _token: str = Depends(_verify_token),
 ) -> list[SessionInfo]:
     results: list[SessionInfo] = []
     for sid in _engine.session_mgr.list_sessions():
         state = _engine.session_mgr.load_state(sid)
         if state:
+            if state.attributes.archived and not include_archived:
+                continue
             message_count = 0
             if include_message_count:
                 message_count = _session_message_count(sid)
             sandbox = _engine.session_mgr.load_sandbox_snapshot(sid)
             results.append(SessionInfo.from_state(state, message_count=message_count, sandbox=sandbox))
+    results.sort(
+        key=lambda session: (
+            not session.attributes.pinned,
+            -datetime.fromisoformat(session.last_active).timestamp(),
+        )
+    )
     return results
 
 
@@ -570,10 +586,42 @@ async def update_session(
     if state is None:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    if body.private is not None:
-        state.private = body.private
+    if body.attributes is not None:
+        previous_attributes = state.attributes.model_copy(deep=True)
+        next_attributes = state.attributes.model_copy(deep=True)
+        for field_name, value in body.attributes.model_dump(exclude_none=True).items():
+            setattr(next_attributes, field_name, value)
+
+        archive_changed = next_attributes.archived != state.attributes.archived
+        archive_now = next_attributes.archived
+
+        if archive_changed and _engine.is_agent_running(session_id):
+            raise HTTPException(status_code=409, detail="Cannot archive a session while an agent turn is running")
+
+        state.attributes = next_attributes
         _engine.session_mgr.save_state(state)
-        _engine.update_active_state(session_id, private=body.private)
+        _engine.update_active_state(session_id, attributes=next_attributes)
+
+        try:
+            if archive_changed and archive_now and _session_archive.enabled and not next_attributes.private:
+                await _session_archive.commit_session(
+                    session_id,
+                    trigger="archive",
+                    is_agent_running=lambda: _engine.is_agent_running(session_id),
+                )
+                refreshed = _engine.session_mgr.load_state(session_id)
+                if refreshed is None:
+                    raise HTTPException(status_code=404, detail="Session not found")
+                state = refreshed
+        except Exception:
+            state.attributes = previous_attributes
+            _engine.session_mgr.save_state(state)
+            _engine.update_active_state(session_id, attributes=previous_attributes)
+            raise
+
+        if archive_changed and archive_now:
+            _engine.deactivate(session_id)
+            await _engine.sandbox_mgr.destroy_session(session_id)
 
     sandbox = _engine.session_mgr.load_sandbox_snapshot(session_id)
     return SessionInfo.from_state(state, message_count=_session_message_count(session_id), sandbox=sandbox)
@@ -614,7 +662,7 @@ async def commit_session_knowledge(
         raise HTTPException(status_code=404, detail="Session not found")
     if not _session_archive.enabled:
         raise HTTPException(status_code=503, detail="Session archive is disabled")
-    if state.private:
+    if state.attributes.private:
         raise HTTPException(status_code=409, detail="Private sessions cannot be committed to knowledge")
     if _engine.is_agent_running(session_id):
         raise HTTPException(status_code=409, detail="Cannot archive a session while an agent turn is running")
@@ -652,6 +700,8 @@ async def start_session_sandbox(session_id: str, _token: str = Depends(_verify_t
     state = _engine.session_mgr.load_state(session_id)
     if state is None:
         raise HTTPException(status_code=404, detail="Session not found")
+    if state.attributes.archived:
+        raise HTTPException(status_code=409, detail="Archived sessions must be unarchived before use")
     if _engine.is_agent_running(session_id):
         raise HTTPException(status_code=409, detail="Cannot start sandbox while an agent turn is running")
     await _engine.sandbox_mgr.ensure_session(session_id)
@@ -664,6 +714,8 @@ async def stop_session_sandbox(session_id: str, _token: str = Depends(_verify_to
     state = _engine.session_mgr.load_state(session_id)
     if state is None:
         raise HTTPException(status_code=404, detail="Session not found")
+    if state.attributes.archived:
+        raise HTTPException(status_code=409, detail="Archived sessions must be unarchived before use")
     if _engine.is_agent_running(session_id):
         raise HTTPException(status_code=409, detail="Cannot scale down sandbox while an agent turn is running")
     await _engine.sandbox_mgr.cleanup_session(session_id)
@@ -676,6 +728,8 @@ async def wipe_session_sandbox(session_id: str, _token: str = Depends(_verify_to
     state = _engine.session_mgr.load_state(session_id)
     if state is None:
         raise HTTPException(status_code=404, detail="Session not found")
+    if state.attributes.archived:
+        raise HTTPException(status_code=409, detail="Archived sessions must be unarchived before use")
     if _engine.is_agent_running(session_id):
         raise HTTPException(status_code=409, detail="Cannot wipe sandbox while an agent turn is running")
     await _engine.sandbox_mgr.reset_session(session_id)
@@ -1116,9 +1170,16 @@ async def chat_ws(
                 await _send(websocket, ErrorMessage(detail=str(exc)))
                 continue
 
+            current_state = _engine.session_mgr.load_state(session_id)
+            archived_session = current_state is not None and current_state.attributes.archived
+
             # --- Cancel in-flight agent turn ---
             if isinstance(client_msg, CancelRequest):
                 await _engine.submit_cancel(session_id)
+                continue
+
+            if archived_session and isinstance(client_msg, RetryLatestTurnRequest | ResetToTurnRequest | UserMessage):
+                await _send(websocket, ErrorMessage(detail="Archived sessions must be unarchived before use"))
                 continue
 
             if isinstance(client_msg, RetryLatestTurnRequest):

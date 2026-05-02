@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Loader2, Lock, Play, RotateCcw, Save, Square, Trash2, Unlock } from "lucide-react";
+import { Archive, ArchiveRestore, Loader2, Lock, Pin, Play, RotateCcw, Save, Square, Star, Trash2, Unlock } from "lucide-react";
 import { useWebSocket } from "@/hooks/use-websocket";
 import {
   type AvailableModelInfo,
@@ -50,6 +50,7 @@ interface ChatViewProps {
   onSessionUpdate?: (session: SessionInfo) => void;
   onSandboxUpdate?: (sandbox: SessionSandboxSnapshot) => void;
   onForkSession?: (session: SessionInfo) => void;
+  onUpdateSessionAttributes?: (sessionId: string, attributes: { private?: boolean; archived?: boolean; pinned?: boolean; favorite?: boolean }) => Promise<SessionInfo>;
   onDeleteSession?: () => Promise<void>;
 }
 
@@ -124,7 +125,7 @@ function knowledgeStatusBadge(
     session?.knowledge_last_committed_at || session?.knowledge_last_archive_path,
   );
 
-  if (session?.private && !isInKnowledgeRepo) {
+  if (session?.attributes.private && !isInKnowledgeRepo) {
     return {
       label: "excluded",
       className: "border-zinc-300 bg-zinc-100 text-zinc-700",
@@ -708,6 +709,7 @@ export function ChatView({
   onSessionUpdate,
   onSandboxUpdate,
   onForkSession,
+  onUpdateSessionAttributes,
   onDeleteSession,
 }: ChatViewProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -728,7 +730,7 @@ export function ChatView({
   const [wipingSandbox, setWipingSandbox] = useState(false);
   const [deletingSession, setDeletingSession] = useState(false);
   const [savingKnowledge, setSavingKnowledge] = useState(false);
-  const [togglingPrivacy, setTogglingPrivacy] = useState(false);
+  const [updatingSessionAttribute, setUpdatingSessionAttribute] = useState<"archived" | "private" | "pinned" | "favorite" | null>(null);
   const [turnActionBusyIndex, setTurnActionBusyIndex] = useState<number | null>(null);
   const [knowledgeNotice, setKnowledgeNotice] = useState<{
     tone: "neutral" | "success" | "error";
@@ -1416,8 +1418,28 @@ export function ChatView({
     }
   }
 
+  async function handleToggleArchived() {
+    if (!session || updatingSessionAttribute || deletingSession || !onUpdateSessionAttributes) return;
+
+    const nextArchived = !session.attributes.archived;
+    const confirmation = nextArchived
+      ? "Archive this session? It will leave the default list, reset its sandbox, and stay in the knowledge repo."
+      : "Unarchive this session? It will return to the active session list.";
+    if (!window.confirm(confirmation)) {
+      return;
+    }
+
+    setUpdatingSessionAttribute("archived");
+    try {
+      const updated = await onUpdateSessionAttributes(sessionId, { archived: nextArchived });
+      onSessionUpdate?.(updated);
+    } finally {
+      setUpdatingSessionAttribute(null);
+    }
+  }
+
   async function handleCommitKnowledge() {
-    if (!session || session.private || waiting || savingKnowledge || deletingSession) return;
+    if (!session || session.attributes.private || session.attributes.archived || waiting || savingKnowledge || deletingSession) return;
 
     setSavingKnowledge(true);
     setKnowledgeNotice(null);
@@ -1438,9 +1460,9 @@ export function ChatView({
   }
 
   async function handleTogglePrivacy() {
-    if (!session || togglingPrivacy || deletingSession) return;
+    if (!session || updatingSessionAttribute || deletingSession) return;
 
-    const nextPrivate = !session.private;
+    const nextPrivate = !session.attributes.private;
     if (
       nextPrivate
       && session.knowledge_last_committed_at
@@ -1449,10 +1471,12 @@ export function ChatView({
       return;
     }
 
-    setTogglingPrivacy(true);
+    setUpdatingSessionAttribute("private");
     setKnowledgeNotice(null);
     try {
-      const updated = await updateSession(server, token, sessionId, { private: nextPrivate });
+      const updated = onUpdateSessionAttributes
+        ? await onUpdateSessionAttributes(sessionId, { private: nextPrivate })
+        : await updateSession(server, token, sessionId, { attributes: { private: nextPrivate } });
       onSessionUpdate?.(updated);
       setKnowledgeNotice({
         tone: "neutral",
@@ -1465,7 +1489,31 @@ export function ChatView({
     } catch (error) {
       setKnowledgeNotice({ tone: "error", message: errorDetail(error) });
     } finally {
-      setTogglingPrivacy(false);
+      setUpdatingSessionAttribute(null);
+    }
+  }
+
+  async function handleTogglePinned() {
+    if (!session || updatingSessionAttribute || deletingSession || !onUpdateSessionAttributes) return;
+
+    setUpdatingSessionAttribute("pinned");
+    try {
+      const updated = await onUpdateSessionAttributes(sessionId, { pinned: !session.attributes.pinned });
+      onSessionUpdate?.(updated);
+    } finally {
+      setUpdatingSessionAttribute(null);
+    }
+  }
+
+  async function handleToggleFavorite() {
+    if (!session || updatingSessionAttribute || deletingSession || !onUpdateSessionAttributes) return;
+
+    setUpdatingSessionAttribute("favorite");
+    try {
+      const updated = await onUpdateSessionAttributes(sessionId, { favorite: !session.attributes.favorite });
+      onSessionUpdate?.(updated);
+    } finally {
+      setUpdatingSessionAttribute(null);
     }
   }
 
@@ -1559,7 +1607,11 @@ export function ChatView({
   const connected = status === "connected";
   const hasKnowledgeContent = messages.length > 0;
   const hasKnowledgeChanges = sessionHasKnowledgeChanges(session);
-  const canCommitKnowledge = !!session && !session.private && hasKnowledgeContent && hasKnowledgeChanges;
+  const sessionArchived = session?.attributes.archived ?? false;
+  const sessionPrivate = session?.attributes.private ?? false;
+  const sessionPinned = session?.attributes.pinned ?? false;
+  const sessionFavorite = session?.attributes.favorite ?? false;
+  const canCommitKnowledge = !!session && !sessionPrivate && !sessionArchived && hasKnowledgeContent && hasKnowledgeChanges;
   const waitingLabel = !waiting
     ? null
     : llmActivity?.source === "agent"
@@ -1622,7 +1674,7 @@ export function ChatView({
                   <div className="flex shrink-0 items-center gap-1">
                     <button
                       onClick={() => void handleSandboxPowerAction()}
-                      disabled={sandboxActionDisabled}
+                      disabled={sandboxActionDisabled || sessionArchived}
                       title={sandboxPowerButtonLabel}
                       className="rounded-md p-1.5 text-sky-900 transition-colors hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-50"
                     >
@@ -1636,7 +1688,7 @@ export function ChatView({
                     </button>
                     <button
                       onClick={() => void handleWipeSandbox()}
-                      disabled={waiting || !!sandboxPowerAction || wipingSandbox || deletingSession}
+                      disabled={waiting || !!sandboxPowerAction || wipingSandbox || deletingSession || sessionArchived}
                       title="Reset sandbox"
                       className="rounded-md p-1.5 text-amber-900 transition-colors hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
                     >
@@ -1687,14 +1739,52 @@ export function ChatView({
                       )}
                     </button>
                     <button
+                      onClick={() => void handleTogglePinned()}
+                      disabled={!session || !!updatingSessionAttribute || deletingSession || !onUpdateSessionAttributes}
+                      title={sessionPinned ? "Unpin session" : "Pin session"}
+                      className="rounded-md p-1.5 text-sky-900 transition-colors hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {updatingSessionAttribute === "pinned" ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Pin className="h-3.5 w-3.5" />
+                      )}
+                    </button>
+                    <button
+                      onClick={() => void handleToggleFavorite()}
+                      disabled={!session || !!updatingSessionAttribute || deletingSession || !onUpdateSessionAttributes}
+                      title={sessionFavorite ? "Remove favorite" : "Favorite session"}
+                      className="rounded-md p-1.5 text-amber-900 transition-colors hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {updatingSessionAttribute === "favorite" ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Star className="h-3.5 w-3.5" />
+                      )}
+                    </button>
+                    <button
+                      onClick={() => void handleToggleArchived()}
+                      disabled={!session || !!updatingSessionAttribute || deletingSession || !onUpdateSessionAttributes}
+                      title={sessionArchived ? "Unarchive session" : "Archive session"}
+                      className="rounded-md p-1.5 text-violet-900 transition-colors hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {updatingSessionAttribute === "archived" ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : sessionArchived ? (
+                        <ArchiveRestore className="h-3.5 w-3.5" />
+                      ) : (
+                        <Archive className="h-3.5 w-3.5" />
+                      )}
+                    </button>
+                    <button
                       onClick={() => void handleTogglePrivacy()}
-                      disabled={!session || togglingPrivacy || deletingSession}
-                      title={session?.private ? "Include in repo" : "Keep private"}
+                      disabled={!session || !!updatingSessionAttribute || deletingSession}
+                      title={sessionPrivate ? "Include in repo" : "Keep private"}
                       className="rounded-md p-1.5 text-zinc-900 transition-colors hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                      {togglingPrivacy ? (
+                      {updatingSessionAttribute === "private" ? (
                         <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      ) : session?.private ? (
+                      ) : sessionPrivate ? (
                         <Unlock className="h-3.5 w-3.5" />
                       ) : (
                         <Lock className="h-3.5 w-3.5" />
@@ -1724,6 +1814,18 @@ export function ChatView({
                     >
                       {knowledgeBadge.label}
                     </span>
+                    {sessionPinned ? (
+                      <span className="inline-flex items-center gap-1 text-sky-700">
+                        <Pin className="h-3 w-3 shrink-0" />
+                        <span>Pinned</span>
+                      </span>
+                    ) : null}
+                    {sessionFavorite ? (
+                      <span className="inline-flex items-center gap-1 text-amber-700">
+                        <Star className="h-3 w-3 shrink-0" />
+                        <span>Favorite</span>
+                      </span>
+                    ) : null}
                     <span className="truncate">{archiveStatusLabel}</span>
                   </div>
                 </div>
@@ -1810,6 +1912,8 @@ export function ChatView({
         onCancel={handleCancel}
         onInterrupt={handleInterrupt}
         connected={connected}
+        disabled={sessionArchived}
+        disabledPlaceholder="Unarchive first"
         waiting={waiting}
         queuedMessage={queuedMessage}
         commands={commands}

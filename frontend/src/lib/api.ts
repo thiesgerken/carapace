@@ -1,6 +1,7 @@
 import type {
   HistoryMessage,
   SessionArchiveCommitResponse,
+  SessionAttributesPatch,
   SessionInfo,
   SessionSandboxSnapshot,
 } from "./types";
@@ -16,8 +17,13 @@ function headers(token: string): HeadersInit {
 export async function listSessions(
   server: string,
   token: string,
+  options?: { includeArchived?: boolean },
 ): Promise<SessionInfo[]> {
-  const res = await fetch(`${server}/api/sessions?include_message_count=true`, {
+  const params = new URLSearchParams({ include_message_count: "true" });
+  if (options?.includeArchived) {
+    params.set("include_archived", "true");
+  }
+  const res = await fetch(`${server}/api/sessions?${params.toString()}`, {
     headers: headers(token),
   });
   if (!res.ok) throw new Error(`Failed to list sessions: ${res.status}`);
@@ -42,7 +48,7 @@ export async function updateSession(
   server: string,
   token: string,
   sessionId: string,
-  body: { private?: boolean },
+  body: { attributes?: SessionAttributesPatch },
 ): Promise<SessionInfo> {
   const res = await fetch(`${server}/api/sessions/${sessionId}`, {
     method: "PATCH",

@@ -38,6 +38,7 @@ from carapace.models import (
     Config,
     CredentialRegistryProtocol,
     Deps,
+    SessionAttributes,
     SessionState,
     SkillInfo,
     ToolCallCallback,
@@ -593,6 +594,8 @@ class SessionEngine(SessionTurnMixin):
             for field_name, value in changes.items():
                 if field_name not in SessionState.model_fields:
                     raise AttributeError(f"Unknown SessionState field: {field_name}")
+                if hasattr(value, "model_copy"):
+                    value = value.model_copy(deep=True)
                 setattr(active.state, field_name, value)
 
     def is_agent_running(self, session_id: str) -> bool:
@@ -826,6 +829,7 @@ class SessionEngine(SessionTurnMixin):
                 "title": f"{source_state.title} (Copy)" if source_state.title else None,
                 "created_at": now,
                 "last_active": now,
+                "attributes": SessionAttributes(private=source_state.attributes.private),
                 "knowledge_last_committed_at": None,
                 "knowledge_last_archive_path": None,
                 "knowledge_last_export_hash": None,
