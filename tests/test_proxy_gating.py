@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+from typing import cast
 
 import pytest
 from pydantic_ai.exceptions import UsageLimitExceeded
 
 from carapace.security import evaluate_domain_with
 from carapace.security.context import SentinelVerdict, SessionSecurity, UserEscalationDecision
+from carapace.security.sentinel import Sentinel
 
 
 class StubSentinel:
@@ -65,6 +67,15 @@ class StubSentinel:
         return effect
 
 
+async def evaluate_domain_with_stub(
+    session: SessionSecurity,
+    sentinel: StubSentinel,
+    domain: str,
+    command: str,
+) -> bool:
+    return await evaluate_domain_with(session, cast(Sentinel, sentinel), domain, command)
+
+
 @pytest.mark.anyio
 async def test_duplicate_pending_domain_request_does_not_restart_debounce_generation() -> None:
     session = SessionSecurity("session-1", sentinel_domain_batch_window_ms=100)
@@ -94,13 +105,64 @@ async def test_reuses_sentinel_domain_approval_within_tool_call() -> None:
     session = SessionSecurity("session-1", sentinel_domain_batch_window_ms=0)
     session.current_parent_tool_id = "tool-1"
     sentinel = StubSentinel(batch_verdicts=[SentinelVerdict(decision="allow", explanation="looks fine")])
+    command = "python fetch.py --profile api"
 
-    first = await evaluate_domain_with(session, sentinel, "api.example.com", "curl https://api.example.com")
-    second = await evaluate_domain_with(session, sentinel, "api.example.com", "curl https://api.example.com")
+    first = await evaluate_domain_with_stub(session, sentinel, "api.example.com", command)
+    second = await evaluate_domain_with_stub(session, sentinel, "api.example.com", command)
 
     assert first is True
     assert second is True
-    assert sentinel.batch_calls == [{"api.example.com": "curl https://api.example.com"}]
+    assert sentinel.batch_calls == [{"api.example.com": command}]
+
+
+@pytest.mark.anyio
+async def test_exact_domain_in_command_auto_allows_with_safe_list() -> None:
+    session = SessionSecurity("session-1", sentinel_domain_batch_window_ms=0)
+    session.current_parent_tool_id = "tool-1"
+    domain_updates: list[tuple[str, str, str | None, str | None, str | None]] = []
+    sentinel = StubSentinel(batch_verdicts=[SentinelVerdict(decision="deny", explanation="should not run")])
+
+    session.set_domain_info_callback(
+        lambda domain, detail, source, verdict, explanation: domain_updates.append(
+            (domain, detail, source, verdict, explanation)
+        )
+    )
+
+    allowed = await evaluate_domain_with_stub(
+        session,
+        sentinel,
+        "api.example.com",
+        "curl https://api.example.com/v1 --header 'Host: api.example.com'",
+    )
+
+    assert allowed is True
+    assert sentinel.calls == []
+    assert sentinel.batch_calls == []
+    assert domain_updates[-1] == (
+        "api.example.com",
+        "[safe-list] auto-allowed because the exact domain appears in the exec command",
+        "safe-list",
+        "allow",
+        "Auto-allowed because the exact domain appears in the exec command.",
+    )
+
+
+@pytest.mark.anyio
+async def test_embedded_domain_substring_still_requires_review() -> None:
+    session = SessionSecurity("session-1", sentinel_domain_batch_window_ms=0)
+    session.current_parent_tool_id = "tool-1"
+    sentinel = StubSentinel(batch_verdicts=[SentinelVerdict(decision="allow", explanation="looks fine")])
+
+    allowed = await evaluate_domain_with_stub(
+        session,
+        sentinel,
+        "api.example.com",
+        "curl https://api.example.com.evil/path",
+    )
+
+    assert allowed is True
+    assert sentinel.calls == []
+    assert sentinel.batch_calls == [{"api.example.com": "curl https://api.example.com.evil/path"}]
 
 
 @pytest.mark.anyio
@@ -109,6 +171,7 @@ async def test_reused_allowed_domain_reports_auto_source() -> None:
     session.current_parent_tool_id = "tool-1"
     domain_updates: list[tuple[str, str, str | None, str | None, str | None]] = []
     sentinel = StubSentinel(batch_verdicts=[SentinelVerdict(decision="allow", explanation="looks fine")])
+    command = "python fetch.py --profile api"
 
     session.set_domain_info_callback(
         lambda domain, detail, source, verdict, explanation: domain_updates.append(
@@ -116,8 +179,8 @@ async def test_reused_allowed_domain_reports_auto_source() -> None:
         )
     )
 
-    assert await evaluate_domain_with(session, sentinel, "api.example.com", "curl https://api.example.com") is True
-    assert await evaluate_domain_with(session, sentinel, "api.example.com", "curl https://api.example.com") is True
+    assert await evaluate_domain_with_stub(session, sentinel, "api.example.com", command) is True
+    assert await evaluate_domain_with_stub(session, sentinel, "api.example.com", command) is True
 
     assert domain_updates[-1] == (
         "api.example.com",
@@ -133,6 +196,7 @@ async def test_scope_change_before_enqueue_falls_back_to_single_domain_review() 
     session = SessionSecurity("session-1", sentinel_domain_batch_window_ms=0)
     session.current_parent_tool_id = "tool-1"
     sentinel = StubSentinel(single_side_effects=[SentinelVerdict(decision="allow", explanation="fallback")])
+    command = "python fetch.py --profile api"
 
     async def simulate_scope_change(
         domain: str,
@@ -145,10 +209,10 @@ async def test_scope_change_before_enqueue_falls_back_to_single_domain_review() 
 
     session.get_or_enqueue_domain_approval = simulate_scope_change  # type: ignore[method-assign]
 
-    allowed = await evaluate_domain_with(session, sentinel, "api.example.com", "curl https://api.example.com")
+    allowed = await evaluate_domain_with_stub(session, sentinel, "api.example.com", command)
 
     assert allowed is True
-    assert sentinel.calls == [("api.example.com", "curl https://api.example.com")]
+    assert sentinel.calls == [("api.example.com", command)]
     assert sentinel.batch_calls == []
 
 
@@ -157,6 +221,7 @@ async def test_reuses_user_domain_approval_within_tool_call() -> None:
     session = SessionSecurity("session-1", sentinel_domain_batch_window_ms=0)
     session.current_parent_tool_id = "tool-1"
     user_calls: list[tuple[str, dict[str, object]]] = []
+    command = "python fetch.py --profile api"
 
     async def approve(subject: str, context: dict[str, object]) -> UserEscalationDecision:
         user_calls.append((subject, context))
@@ -165,8 +230,8 @@ async def test_reuses_user_domain_approval_within_tool_call() -> None:
     session.set_user_escalation_callback(lambda _sid, subject, context: approve(subject, context))
     sentinel = StubSentinel(batch_verdicts=[SentinelVerdict(decision="escalate", explanation="needs confirmation")])
 
-    first = await evaluate_domain_with(session, sentinel, "api.example.com", "curl https://api.example.com")
-    second = await evaluate_domain_with(session, sentinel, "api.example.com", "curl https://api.example.com")
+    first = await evaluate_domain_with_stub(session, sentinel, "api.example.com", command)
+    second = await evaluate_domain_with_stub(session, sentinel, "api.example.com", command)
 
     assert first is True
     assert second is True
@@ -192,13 +257,15 @@ async def test_domain_review_limit_falls_back_to_user_approval() -> None:
         ]
     )
 
-    assert await evaluate_domain_with(session, sentinel, "a.example.com", "curl https://a.example.com") is True
-    assert await evaluate_domain_with(session, sentinel, "b.example.com", "curl https://b.example.com") is True
-    assert await evaluate_domain_with(session, sentinel, "c.example.com", "curl https://c.example.com") is True
+    assert await evaluate_domain_with_stub(session, sentinel, "a.example.com", "python fetch.py --profile one") is True
+    assert await evaluate_domain_with_stub(session, sentinel, "b.example.com", "python fetch.py --profile two") is True
+    assert (
+        await evaluate_domain_with_stub(session, sentinel, "c.example.com", "python fetch.py --profile three") is True
+    )
 
     assert sentinel.batch_calls == [
-        {"a.example.com": "curl https://a.example.com"},
-        {"b.example.com": "curl https://b.example.com"},
+        {"a.example.com": "python fetch.py --profile one"},
+        {"b.example.com": "python fetch.py --profile two"},
     ]
     assert len(user_calls) == 1
     assert user_calls[0][0] == "c.example.com"
@@ -216,10 +283,15 @@ async def test_domain_approval_cache_resets_for_new_tool_call() -> None:
     )
 
     session.current_parent_tool_id = "tool-1"
-    assert await evaluate_domain_with(session, sentinel, "api.example.com", "curl https://api.example.com") is True
+    assert (
+        await evaluate_domain_with_stub(session, sentinel, "api.example.com", "python fetch.py --profile first") is True
+    )
 
     session.current_parent_tool_id = "tool-2"
-    assert await evaluate_domain_with(session, sentinel, "api.example.com", "curl https://api.example.com") is True
+    assert (
+        await evaluate_domain_with_stub(session, sentinel, "api.example.com", "python fetch.py --profile second")
+        is True
+    )
 
     assert len(sentinel.batch_calls) == 2
 
@@ -229,15 +301,16 @@ async def test_parallel_same_domain_requests_share_one_batch() -> None:
     session = SessionSecurity("session-1", sentinel_domain_batch_window_ms=10)
     session.current_parent_tool_id = "tool-1"
     sentinel = StubSentinel(batch_verdicts=[SentinelVerdict(decision="allow", explanation="shared")])
+    command = "python fetch.py --profile api"
 
     first, second = await asyncio.gather(
-        evaluate_domain_with(session, sentinel, "api.example.com", "curl https://api.example.com"),
-        evaluate_domain_with(session, sentinel, "api.example.com", "curl https://api.example.com"),
+        evaluate_domain_with_stub(session, sentinel, "api.example.com", command),
+        evaluate_domain_with_stub(session, sentinel, "api.example.com", command),
     )
 
     assert first is True
     assert second is True
-    assert sentinel.batch_calls == [{"api.example.com": "curl https://api.example.com"}]
+    assert sentinel.batch_calls == [{"api.example.com": command}]
 
 
 @pytest.mark.anyio
@@ -247,9 +320,9 @@ async def test_parallel_distinct_domains_share_one_batch() -> None:
     sentinel = StubSentinel(batch_verdicts=[SentinelVerdict(decision="allow", explanation="batch allow")])
 
     results = await asyncio.gather(
-        evaluate_domain_with(session, sentinel, "a.example.com", "curl https://a.example.com"),
-        evaluate_domain_with(session, sentinel, "b.example.com", "curl https://b.example.com"),
-        evaluate_domain_with(session, sentinel, "c.example.com", "curl https://c.example.com"),
+        evaluate_domain_with_stub(session, sentinel, "a.example.com", "python fetch.py --profile a"),
+        evaluate_domain_with_stub(session, sentinel, "b.example.com", "python fetch.py --profile b"),
+        evaluate_domain_with_stub(session, sentinel, "c.example.com", "python fetch.py --profile c"),
     )
 
     assert results == [True, True, True]
@@ -270,7 +343,7 @@ async def test_new_domain_wave_after_submission_forms_second_batch() -> None:
     )
 
     first_task = asyncio.create_task(
-        evaluate_domain_with(session, sentinel, "a.example.com", "curl https://a.example.com")
+        evaluate_domain_with_stub(session, sentinel, "a.example.com", "python fetch.py --profile a")
     )
     for _ in range(50):
         if sentinel.batch_calls:
@@ -278,7 +351,7 @@ async def test_new_domain_wave_after_submission_forms_second_batch() -> None:
         await asyncio.sleep(0)
 
     second_task = asyncio.create_task(
-        evaluate_domain_with(session, sentinel, "b.example.com", "curl https://b.example.com")
+        evaluate_domain_with_stub(session, sentinel, "b.example.com", "python fetch.py --profile b")
     )
     blocker.set()
 
@@ -287,8 +360,8 @@ async def test_new_domain_wave_after_submission_forms_second_batch() -> None:
     assert first is True
     assert second is True
     assert sentinel.batch_calls == [
-        {"a.example.com": "curl https://a.example.com"},
-        {"b.example.com": "curl https://b.example.com"},
+        {"a.example.com": "python fetch.py --profile a"},
+        {"b.example.com": "python fetch.py --profile b"},
     ]
 
 
@@ -296,6 +369,7 @@ async def test_new_domain_wave_after_submission_forms_second_batch() -> None:
 async def test_single_domain_usage_limit_falls_back_to_user_approval() -> None:
     session = SessionSecurity("session-1")
     user_calls: list[tuple[str, dict[str, object]]] = []
+    command = "python fetch.py --profile solo"
 
     async def approve(subject: str, context: dict[str, object]) -> UserEscalationDecision:
         user_calls.append((subject, context))
@@ -306,14 +380,14 @@ async def test_single_domain_usage_limit_falls_back_to_user_approval() -> None:
         single_side_effects=[UsageLimitExceeded("The next request would exceed the request_limit of 5")]
     )
 
-    allowed = await evaluate_domain_with(session, sentinel, "solo.example.com", "curl https://solo.example.com")
+    allowed = await evaluate_domain_with_stub(session, sentinel, "solo.example.com", command)
 
     assert allowed is True
     assert user_calls == [
         (
             "solo.example.com",
             {
-                "command": "curl https://solo.example.com",
+                "command": command,
                 "explanation": (
                     "Automatic sentinel review hit its internal request limit and could not finish. "
                     + "Please approve or deny this domain manually."
@@ -335,7 +409,7 @@ async def test_pending_requests_fail_when_worker_errors() -> None:
     )
 
     first_task = asyncio.create_task(
-        evaluate_domain_with(session, sentinel, "a.example.com", "curl https://a.example.com")
+        evaluate_domain_with_stub(session, sentinel, "a.example.com", "python fetch.py --profile a")
     )
     for _ in range(50):
         if sentinel.batch_calls:
@@ -343,7 +417,7 @@ async def test_pending_requests_fail_when_worker_errors() -> None:
         await asyncio.sleep(0)
 
     second_task = asyncio.create_task(
-        evaluate_domain_with(session, sentinel, "b.example.com", "curl https://b.example.com")
+        evaluate_domain_with_stub(session, sentinel, "b.example.com", "python fetch.py --profile b")
     )
     await asyncio.sleep(0)
     blocker.set()
@@ -363,7 +437,10 @@ async def test_failed_batch_does_not_consume_review_budget() -> None:
     session.current_parent_tool_id = "tool-1"
     user_calls: list[tuple[str, dict[str, object]]] = []
     sentinel = StubSentinel(
-        batch_side_effects=[RuntimeError("sentinel batch blew up"), SentinelVerdict(decision="allow", explanation="ok")]
+        batch_side_effects=[
+            RuntimeError("sentinel batch blew up"),
+            SentinelVerdict(decision="allow", explanation="ok"),
+        ]
     )
 
     async def approve(subject: str, context: dict[str, object]) -> UserEscalationDecision:
@@ -373,16 +450,16 @@ async def test_failed_batch_does_not_consume_review_budget() -> None:
     session.set_user_escalation_callback(lambda _sid, subject, context: approve(subject, context))
 
     first = await asyncio.gather(
-        evaluate_domain_with(session, sentinel, "a.example.com", "curl https://a.example.com"),
+        evaluate_domain_with_stub(session, sentinel, "a.example.com", "python fetch.py --profile a"),
         return_exceptions=True,
     )
-    second = await evaluate_domain_with(session, sentinel, "b.example.com", "curl https://b.example.com")
+    second = await evaluate_domain_with_stub(session, sentinel, "b.example.com", "python fetch.py --profile b")
 
     assert isinstance(first[0], RuntimeError)
     assert str(first[0]) == "sentinel batch blew up"
     assert second is True
     assert sentinel.batch_calls == [
-        {"a.example.com": "curl https://a.example.com"},
-        {"b.example.com": "curl https://b.example.com"},
+        {"a.example.com": "python fetch.py --profile a"},
+        {"b.example.com": "python fetch.py --profile b"},
     ]
     assert user_calls == []

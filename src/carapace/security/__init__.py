@@ -209,6 +209,25 @@ async def evaluate_domain_with(
     If the sentinel escalates, delegates to the session's user escalation callback.
     """
 
+    if _exec_command_mentions_domain(command, domain):
+        explanation = "Auto-allowed because the exact domain appears in the exec command."
+        session.notify_domain_decision(
+            domain,
+            "[safe-list] auto-allowed because the exact domain appears in the exec command",
+            approval_source="safe-list",
+            approval_verdict="allow",
+            approval_explanation=explanation,
+        )
+        session.write_audit(
+            AuditEntry.now(
+                kind="proxy_domain",
+                domain=domain,
+                final_decision="allowed",
+                explanation=explanation,
+            )
+        )
+        return True
+
     if session.current_parent_tool_id is None:
         result = await _evaluate_single_domain_access(
             session,
@@ -319,6 +338,13 @@ async def evaluate_domain_with(
         )
     )
     return result.allowed
+
+
+def _exec_command_mentions_domain(command: str, domain: str) -> bool:
+    if not command or not domain:
+        return False
+    pattern = re.compile(rf"(?<![A-Za-z0-9.-]){re.escape(domain)}(?![A-Za-z0-9.-])", re.IGNORECASE)
+    return pattern.search(command) is not None
 
 
 async def _evaluate_single_domain_access(
