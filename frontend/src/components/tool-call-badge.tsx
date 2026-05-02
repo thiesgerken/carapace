@@ -269,9 +269,11 @@ function ApprovalBadge({
 }) {
   if (source === "safe-list") {
     return (
-      <span className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium bg-blue-500/10 text-blue-600 dark:text-blue-400">
-        <ShieldCheck className="h-2.5 w-2.5" />
-        auto
+      <span
+        className="inline-flex shrink-0 items-center text-blue-600 dark:text-blue-400"
+        title={tooltip || undefined}
+      >
+        <ShieldCheck className="h-3 w-3" />
       </span>
     );
   }
@@ -309,19 +311,18 @@ function ApprovalBadge({
     return (
       <span
         className={cn(
-          "inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium",
+          "inline-flex shrink-0 items-center",
           isDenied
-            ? "bg-red-500/10 text-red-600 dark:text-red-400"
-            : "bg-purple-500/10 text-purple-600 dark:text-purple-400",
+            ? "text-red-600 dark:text-red-400"
+            : "text-purple-600 dark:text-purple-400",
         )}
         title={tooltip || undefined}
       >
         {isDenied ? (
-          <UserX className="h-2.5 w-2.5" />
+          <UserX className="h-3 w-3" />
         ) : (
-          <UserCheck className="h-2.5 w-2.5" />
+          <UserCheck className="h-3 w-3" />
         )}
-        user
       </span>
     );
   }
