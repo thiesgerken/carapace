@@ -1231,7 +1231,10 @@ class SessionEngine(SessionTurnMixin):
         if isinstance(contexts_raw, list):
             event["contexts"] = list(contexts_raw)
 
-        should_update_existing = approval_verdict is not None and approval_source in {"sentinel", "user"}
+        is_pending_sentinel_update = approval_source == "sentinel" and approval_verdict is None
+        should_update_existing = approval_source in {"sentinel", "user"} and (
+            approval_verdict is not None or (tool == "proxy_domain" and is_pending_sentinel_update)
+        )
 
         def _mutate(events: list[dict[str, Any]]) -> str:
             if should_update_existing:

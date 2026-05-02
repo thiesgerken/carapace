@@ -408,6 +408,57 @@ def test_record_tool_call_event_reuses_sentinel_row_for_user_decision(tmp_path: 
     ]
 
 
+def test_record_tool_call_event_reuses_proxy_domain_row_for_queued_reviewing_and_final(tmp_path: Path) -> None:
+    with _patch_sentinel():
+        engine = _make_engine(tmp_path)
+
+    sid = engine.session_mgr.create_session().session_id
+
+    queued_tool_id = engine._record_tool_call_event(
+        sid,
+        tool="proxy_domain",
+        args={"domain": "example.com"},
+        detail="[sentinel] queued for batched review",
+        approval_source="sentinel",
+        parent_tool_id="tool-1",
+    )
+    reviewing_tool_id = engine._record_tool_call_event(
+        sid,
+        tool="proxy_domain",
+        args={"domain": "example.com"},
+        detail="[sentinel] reviewing",
+        approval_source="sentinel",
+        parent_tool_id="tool-1",
+    )
+    approved_tool_id = engine._record_tool_call_event(
+        sid,
+        tool="proxy_domain",
+        args={"domain": "example.com"},
+        detail="[sentinel: allow] looks fine",
+        approval_source="sentinel",
+        approval_verdict="allow",
+        approval_explanation="looks fine",
+        parent_tool_id="tool-1",
+    )
+
+    assert queued_tool_id == reviewing_tool_id == approved_tool_id
+    events = engine.session_mgr.load_events(sid)
+    assert all("timestamp" in event for event in events)
+    assert _without_timestamps(events) == [
+        {
+            "role": "tool_call",
+            "tool": "proxy_domain",
+            "args": {"domain": "example.com"},
+            "detail": "[sentinel: allow] looks fine",
+            "approval_source": "sentinel",
+            "approval_verdict": "allow",
+            "approval_explanation": "looks fine",
+            "parent_tool_id": "tool-1",
+            "tool_id": queued_tool_id,
+        }
+    ]
+
+
 def test_fork_session_copies_transcript_and_security_context(tmp_path: Path) -> None:
     with _patch_sentinel():
         engine = _make_engine(tmp_path)
