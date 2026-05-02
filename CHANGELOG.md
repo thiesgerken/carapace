@@ -1,6 +1,25 @@
 # CHANGELOG
 
 
+## v0.111.0 (2026-05-02)
+
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix: correct tool call budget error messages and enforce budget regardless of verbose mode
+  ([`aa0a031`](https://github.com/thiesgerken/carapace/commit/aa0a0313cb642c30bea1dd0fdd8c821cf5985d9a))
+
+  Applied via @cursor push command
+
+### ✨ Features
+
+
+- ✨ feat: make tool calls budgetable
+  ([`13364ef`](https://github.com/thiesgerken/carapace/commit/13364efb6a464596b31f034f43c8172ebc77292e))
+
+  Co-authored-by: Copilot <copilot@github.com>
+
 ## v0.110.0 (2026-05-02)
 
 
