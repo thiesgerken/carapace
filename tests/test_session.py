@@ -478,6 +478,10 @@ def test_fork_session_copies_transcript_and_security_context(tmp_path: Path) -> 
     sid = source.session_id
     active = engine.get_or_activate(sid)
     active.state.title = "Original title"
+    active.state.attributes.private = True
+    active.state.attributes.archived = True
+    active.state.attributes.pinned = True
+    active.state.attributes.favorite = True
     active.state.approved_operations = ["exec"]
     active.state.activated_skills = ["web"]
     active.state.context_grants["web"] = ContextGrant(skill_name="web", domains={"example.com"})
@@ -520,6 +524,9 @@ def test_fork_session_copies_transcript_and_security_context(tmp_path: Path) -> 
     assert forked.channel_ref is None
     assert forked.title == "Original title (Copy)"
     assert forked.attributes.private is True
+    assert forked.attributes.archived is False
+    assert forked.attributes.pinned is False
+    assert forked.attributes.favorite is False
     assert forked.approved_operations == ["exec"]
     assert forked.activated_skills == ["web"]
     assert forked.context_grants["web"].domains == {"example.com"}
