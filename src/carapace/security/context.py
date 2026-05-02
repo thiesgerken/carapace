@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -133,6 +134,32 @@ ApprovalSource = Literal["safe-list", "sentinel", "user", "skill", "bypass", "un
 ApprovalVerdict = Literal["allow", "deny", "escalate"]
 
 
+@dataclass(frozen=True, slots=True)
+class CachedDomainApproval:
+    allowed: bool
+    approval_source: ApprovalSource
+    approval_verdict: ApprovalVerdict
+    explanation: str | None = None
+    detail: str = ""
+    final_decision: Literal["allowed", "denied"] = "allowed"
+    audit_explanation: str | None = None
+    sentinel_verdict: SentinelVerdict | None = None
+
+
+@dataclass(slots=True)
+class PendingDomainRequest:
+    command: str
+    future: asyncio.Future[CachedDomainApproval]
+
+
+@dataclass(frozen=True, slots=True)
+class DomainBatchSnapshot:
+    scope_id: str
+    requests: dict[str, PendingDomainRequest]
+    can_review: bool
+    review_limit: int | None
+
+
 # --- Audit Log ---
 
 
@@ -176,7 +203,14 @@ class AuditEntry(BaseModel):
 class SessionSecurity:
     """Mutable per-session security state managed by the security module."""
 
-    def __init__(self, session_id: str, *, audit_dir: Path | None = None) -> None:
+    def __init__(
+        self,
+        session_id: str,
+        *,
+        audit_dir: Path | None = None,
+        max_sentinel_calls_per_tool_call: int = 5,
+        sentinel_domain_batch_window_ms: int = 100,
+    ) -> None:
         self.session_id = session_id
         self.action_log: list[
             UserMessageEntry
@@ -191,6 +225,8 @@ class SessionSecurity:
             | ContextGrantEntry
         ] = []
         self.sentinel_eval_count: int = 0
+        self.max_sentinel_calls_per_tool_call = max_sentinel_calls_per_tool_call
+        self.sentinel_domain_batch_window_ms = sentinel_domain_batch_window_ms
         self._last_synced_idx: int = 0
         self._audit_dir = audit_dir
         self._user_escalation_callback: (
@@ -207,6 +243,165 @@ class SessionSecurity:
         ) = None
         self._credential_notify_suppress: Callable[[str], bool] | None = None
         self.current_parent_tool_id: str | None = None
+        self._domain_scope_lock = asyncio.Lock()
+        self._domain_scope_parent_tool_id: str | None = None
+        self._domain_scope_approvals: dict[str, CachedDomainApproval] = {}
+        self._domain_scope_sentinel_calls: int = 0
+        self._domain_scope_pending_generation: int = 0
+        self._domain_scope_pending_requests: dict[str, PendingDomainRequest] = {}
+        self._domain_scope_inflight_futures: dict[str, asyncio.Future[CachedDomainApproval]] = {}
+        self._domain_scope_worker_task: asyncio.Task[None] | None = None
+
+    def _cancel_domain_future(self, future: asyncio.Future[CachedDomainApproval], message: str) -> None:
+        if not future.done():
+            future.set_exception(RuntimeError(message))
+
+    def _reset_domain_scope(self) -> None:
+        current_task: asyncio.Task[None] | None
+        try:
+            current_task = asyncio.current_task()
+        except RuntimeError:
+            current_task = None
+        if (
+            self._domain_scope_worker_task is not None
+            and not self._domain_scope_worker_task.done()
+            and self._domain_scope_worker_task is not current_task
+        ):
+            self._domain_scope_worker_task.cancel()
+        for request in self._domain_scope_pending_requests.values():
+            self._cancel_domain_future(request.future, "Proxy domain batch was cancelled.")
+        for future in self._domain_scope_inflight_futures.values():
+            self._cancel_domain_future(future, "Proxy domain batch was cancelled.")
+        self._domain_scope_approvals = {}
+        self._domain_scope_sentinel_calls = 0
+        self._domain_scope_pending_generation = 0
+        self._domain_scope_pending_requests = {}
+        self._domain_scope_inflight_futures = {}
+        self._domain_scope_worker_task = None
+
+    def _sync_domain_scope(self) -> None:
+        if self.current_parent_tool_id != self._domain_scope_parent_tool_id:
+            self._domain_scope_parent_tool_id = self.current_parent_tool_id
+            self._reset_domain_scope()
+
+    def clear_current_parent_tool(self) -> None:
+        self.current_parent_tool_id = None
+        self._sync_domain_scope()
+
+    async def get_or_enqueue_domain_approval(
+        self,
+        domain: str,
+        command: str,
+        worker_factory: Callable[[], asyncio.Task[None]],
+    ) -> tuple[CachedDomainApproval | None, asyncio.Future[CachedDomainApproval] | None, bool]:
+        async with self._domain_scope_lock:
+            self._sync_domain_scope()
+            if self.current_parent_tool_id is None:
+                return None, None, False
+
+            cached = self._domain_scope_approvals.get(domain)
+            if cached is not None:
+                return cached, None, False
+
+            inflight = self._domain_scope_inflight_futures.get(domain)
+            if inflight is not None:
+                return None, inflight, False
+
+            pending = self._domain_scope_pending_requests.get(domain)
+            if pending is None:
+                future = asyncio.get_running_loop().create_future()
+                self._domain_scope_pending_requests[domain] = PendingDomainRequest(command=command, future=future)
+                should_notify_queued = True
+                self._domain_scope_pending_generation += 1
+            else:
+                pending.command = command
+                future = pending.future
+                should_notify_queued = False
+
+            if self._domain_scope_worker_task is None or self._domain_scope_worker_task.done():
+                self._domain_scope_worker_task = worker_factory()
+            return None, future, should_notify_queued
+
+    async def next_domain_batch(self) -> DomainBatchSnapshot | None:
+        while True:
+            async with self._domain_scope_lock:
+                self._sync_domain_scope()
+                if self.current_parent_tool_id is None or not self._domain_scope_pending_requests:
+                    self._domain_scope_worker_task = None
+                    return None
+                generation = self._domain_scope_pending_generation
+                wait_seconds = max(self.sentinel_domain_batch_window_ms, 0) / 1000
+
+            if wait_seconds > 0:
+                await asyncio.sleep(wait_seconds)
+
+            async with self._domain_scope_lock:
+                self._sync_domain_scope()
+                if self.current_parent_tool_id is None or not self._domain_scope_pending_requests:
+                    self._domain_scope_worker_task = None
+                    return None
+                if generation != self._domain_scope_pending_generation:
+                    continue
+
+                scope_id = self.current_parent_tool_id
+                if scope_id is None:
+                    self._domain_scope_worker_task = None
+                    return None
+
+                requests = self._domain_scope_pending_requests
+                self._domain_scope_pending_requests = {}
+                for domain, request in requests.items():
+                    self._domain_scope_inflight_futures[domain] = request.future
+
+                limit = self.max_sentinel_calls_per_tool_call
+                can_review = limit <= 0 or self._domain_scope_sentinel_calls < limit
+                if can_review:
+                    self._domain_scope_sentinel_calls += 1
+
+                return DomainBatchSnapshot(
+                    scope_id=scope_id,
+                    requests=requests,
+                    can_review=can_review,
+                    review_limit=limit if limit > 0 else None,
+                )
+
+    async def complete_domain_batch(
+        self,
+        snapshot: DomainBatchSnapshot,
+        results: dict[str, CachedDomainApproval],
+    ) -> None:
+        async with self._domain_scope_lock:
+            self._sync_domain_scope()
+            for domain in snapshot.requests:
+                self._domain_scope_inflight_futures.pop(domain, None)
+            if self.current_parent_tool_id == snapshot.scope_id:
+                for domain, result in results.items():
+                    self._domain_scope_approvals[domain] = result
+
+    async def fail_domain_batch(self, snapshot: DomainBatchSnapshot) -> None:
+        async with self._domain_scope_lock:
+            self._sync_domain_scope()
+            for domain in snapshot.requests:
+                self._domain_scope_inflight_futures.pop(domain, None)
+            if (
+                snapshot.can_review
+                and self.current_parent_tool_id == snapshot.scope_id
+                and self._domain_scope_sentinel_calls > 0
+            ):
+                self._domain_scope_sentinel_calls -= 1
+
+    async def fail_pending_domain_requests(self, snapshot: DomainBatchSnapshot, exc: Exception) -> None:
+        async with self._domain_scope_lock:
+            self._sync_domain_scope()
+            if self.current_parent_tool_id != snapshot.scope_id:
+                return
+
+            pending_requests = self._domain_scope_pending_requests
+            self._domain_scope_pending_requests = {}
+            self._domain_scope_pending_generation += 1
+
+        for request in pending_requests.values():
+            self._cancel_domain_future(request.future, str(exc))
 
     def append(self, entry: ActionLogEntry) -> None:
         self.action_log.append(entry)

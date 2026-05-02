@@ -54,7 +54,7 @@ for the duration of that skill's usage. Your job is to judge whether
 activating the skill makes sense for the user's request, not whether
 each individual credential or domain is justified separately.
 
-Always respond with a SentinelVerdict (structured output).
+Always respond using the requested structured output schema.
 
 """
 
@@ -343,22 +343,7 @@ class Sentinel:
         )
         return result.output
 
-    def _create_agent(self) -> Agent[Path, SentinelVerdict]:
-        resolved = self._model_factory(self._model) if self._model_factory is not None else infer_model(self._model)
-        model_settings = (
-            self._model_settings_resolver(self._model) if self._model_settings_resolver is not None else None
-        )
-        agent: Agent[Path, SentinelVerdict] = Agent(
-            resolved,
-            deps_type=Path,
-            output_type=ToolOutput(SentinelVerdict, name="judge"),
-            instructions=self._load_system_prompt,
-            capabilities=[LlmRequestLogCapability(source="sentinel")],
-            model_settings=model_settings,
-            output_retries=2,
-            retries=1,
-        )
-
+    def _register_agent_tools(self, agent: Agent[Path, Any]) -> None:
         @agent.tool
         async def list_skill_files(ctx: RunContext[Path], skill_name: str) -> str:
             """List files in a skill's master directory. Skills are trusted user-authored content."""
@@ -402,6 +387,23 @@ class Sentinel:
             )
             return result
 
+    def _create_agent(self) -> Agent[Path, SentinelVerdict]:
+        resolved = self._model_factory(self._model) if self._model_factory is not None else infer_model(self._model)
+        model_settings = (
+            self._model_settings_resolver(self._model) if self._model_settings_resolver is not None else None
+        )
+        agent: Agent[Path, SentinelVerdict] = Agent(
+            resolved,
+            deps_type=Path,
+            output_type=ToolOutput(SentinelVerdict, name="judge"),
+            instructions=self._load_system_prompt,
+            capabilities=[LlmRequestLogCapability(source="sentinel")],
+            model_settings=model_settings,
+            output_retries=2,
+            retries=1,
+        )
+
+        self._register_agent_tools(agent)
         return agent
 
     async def evaluate_tool_call(
@@ -477,6 +479,47 @@ class Sentinel:
                 prompt,
                 kind="domain_access",
                 subject=f"{domain} via {_truncate(command, 100)}",
+                new_entries_count=len(new_entries),
+                usage_tracker=usage_tracker,
+                assert_llm_budget_available=assert_llm_budget_available,
+                usage_limits=usage_limits,
+            )
+
+    async def evaluate_domain_access_batch(
+        self,
+        session: SessionSecurity,
+        domain_commands: dict[str, str],
+        *,
+        usage_tracker: UsageTracker | None = None,
+        assert_llm_budget_available: Callable[[], None] | None = None,
+        usage_limits: UsageLimits | None = None,
+    ) -> SentinelVerdict:
+        async with self._lock:
+            if self._should_reset(session):
+                self._reset(session)
+
+            new_entries = session.new_entries_since_sync()
+
+            prompt_parts: list[str] = []
+            if not self._message_history:
+                prompt_parts.append("Session started. Action log so far:")
+                prompt_parts.append(_format_action_log(session.action_log))
+            elif new_entries:
+                prompt_parts.append("New entries since last evaluation:")
+                prompt_parts.append(_format_action_log(new_entries))
+
+            prompt_parts.append("\nEVALUATE domain_access_batch_request:")
+            for domain, command in sorted(domain_commands.items()):
+                prompt_parts.append(f"Domain: {domain}")
+                prompt_parts.append(f"Triggered by: {command}")
+            prompt_parts.append("Apply one verdict to the entire batch of domains.")
+
+            prompt = "\n".join(prompt_parts)
+            return await self._run_evaluation(
+                session,
+                prompt,
+                kind="domain_access_batch",
+                subject=f"{len(domain_commands)} domains",
                 new_entries_count=len(new_entries),
                 usage_tracker=usage_tracker,
                 assert_llm_budget_available=assert_llm_budget_available,

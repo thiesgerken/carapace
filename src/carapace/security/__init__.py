@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -9,13 +10,13 @@ from pydantic_ai import ApprovalRequired
 from pydantic_ai.exceptions import UsageLimitExceeded
 from pydantic_ai.usage import UsageLimits
 
-from carapace.security.context import (
-    ActionLogEntry as ActionLogEntry,
-)
+from carapace.security.context import ActionLogEntry as ActionLogEntry
 from carapace.security.context import (
     ApprovalSource,
     ApprovalVerdict,
     AuditEntry,
+    CachedDomainApproval,
+    DomainBatchSnapshot,
     GitPushEntry,
     SecurityDeniedError,
     SentinelVerdict,
@@ -24,9 +25,7 @@ from carapace.security.context import (
     format_denial_message,
     normalize_optional_message,
 )
-from carapace.security.context import (
-    CredentialAccessEntry as CredentialAccessEntry,
-)
+from carapace.security.context import CredentialAccessEntry as CredentialAccessEntry
 from carapace.security.sentinel import Sentinel
 from carapace.usage import UsageTracker
 
@@ -182,19 +181,153 @@ async def evaluate_domain_with(
     If the sentinel escalates, delegates to the session's user escalation callback.
     """
 
-    session.notify_domain_decision(domain, "[sentinel] reviewing", approval_source="sentinel")
+    if session.current_parent_tool_id is None:
+        result = await _evaluate_single_domain_access(
+            session,
+            sentinel,
+            domain,
+            command,
+            usage_tracker=usage_tracker,
+            assert_llm_budget_available=assert_llm_budget_available,
+            usage_limits=usage_limits,
+        )
+        session.notify_domain_decision(
+            domain,
+            result.detail,
+            approval_source=result.approval_source,
+            approval_verdict=result.approval_verdict,
+            approval_explanation=result.explanation,
+        )
+        session.write_audit(
+            AuditEntry.now(
+                kind="proxy_domain",
+                domain=domain,
+                sentinel_verdict=result.sentinel_verdict,
+                final_decision=result.final_decision,
+                explanation=result.audit_explanation,
+            )
+        )
+        return result.allowed
 
-    verdict = await sentinel.evaluate_domain_access(
-        session,
+    cached_approval, pending_result, should_notify_queued = await session.get_or_enqueue_domain_approval(
         domain,
         command,
-        usage_tracker=usage_tracker,
-        assert_llm_budget_available=assert_llm_budget_available,
-        usage_limits=usage_limits,
+        lambda: asyncio.create_task(
+            _run_domain_batch_worker(
+                session,
+                sentinel,
+                usage_tracker=usage_tracker,
+                assert_llm_budget_available=assert_llm_budget_available,
+                usage_limits=usage_limits,
+            )
+        ),
     )
+    if cached_approval is not None:
+        display_source: ApprovalSource = "safe-list" if cached_approval.allowed else cached_approval.approval_source
+        detail = f"[cached {display_source}: {cached_approval.approval_verdict}] " + "reused earlier decision"
+        session.notify_domain_decision(
+            domain,
+            detail,
+            approval_source=display_source,
+            approval_verdict=cached_approval.approval_verdict,
+            approval_explanation=cached_approval.explanation,
+        )
+        session.write_audit(
+            AuditEntry.now(
+                kind="proxy_domain",
+                domain=domain,
+                final_decision="allowed" if cached_approval.allowed else "denied",
+                explanation="Reused earlier domain decision within the same tool call.",
+            )
+        )
+        return cached_approval.allowed
 
+    if pending_result is None:
+        result = await _evaluate_single_domain_access(
+            session,
+            sentinel,
+            domain,
+            command,
+            usage_tracker=usage_tracker,
+            assert_llm_budget_available=assert_llm_budget_available,
+            usage_limits=usage_limits,
+        )
+        session.notify_domain_decision(
+            domain,
+            result.detail,
+            approval_source=result.approval_source,
+            approval_verdict=result.approval_verdict,
+            approval_explanation=result.explanation,
+        )
+        session.write_audit(
+            AuditEntry.now(
+                kind="proxy_domain",
+                domain=domain,
+                sentinel_verdict=result.sentinel_verdict,
+                final_decision=result.final_decision,
+                explanation=result.audit_explanation,
+            )
+        )
+        return result.allowed
+
+    if should_notify_queued:
+        session.notify_domain_decision(domain, "[sentinel] queued for batched review", approval_source="sentinel")
+
+    result = await pending_result
+    session.notify_domain_decision(
+        domain,
+        result.detail,
+        approval_source=result.approval_source,
+        approval_verdict=result.approval_verdict,
+        approval_explanation=result.explanation,
+    )
+    session.write_audit(
+        AuditEntry.now(
+            kind="proxy_domain",
+            domain=domain,
+            sentinel_verdict=result.sentinel_verdict,
+            final_decision=result.final_decision,
+            explanation=result.audit_explanation,
+        )
+    )
+    return result.allowed
+
+
+async def _evaluate_single_domain_access(
+    session: SessionSecurity,
+    sentinel: Sentinel,
+    domain: str,
+    command: str,
+    *,
+    usage_tracker: UsageTracker | None = None,
+    assert_llm_budget_available: Callable[[], None] | None = None,
+    usage_limits: UsageLimits | None = None,
+) -> CachedDomainApproval:
+    session.notify_domain_decision(domain, "[sentinel] reviewing", approval_source="sentinel")
+
+    try:
+        verdict = await sentinel.evaluate_domain_access(
+            session,
+            domain,
+            command,
+            usage_tracker=usage_tracker,
+            assert_llm_budget_available=assert_llm_budget_available,
+            usage_limits=usage_limits,
+        )
+    except UsageLimitExceeded:
+        return await _decision_for_usage_limit(session, domain, command)
+
+    return await _decision_from_verdict(session, domain, command, verdict)
+
+
+async def _decision_from_verdict(
+    session: SessionSecurity,
+    domain: str,
+    command: str,
+    verdict: SentinelVerdict,
+) -> CachedDomainApproval:
     allowed: bool
-    final_decision: str
+    final_decision: Literal["allowed", "denied"]
     user_message: str | None = None
 
     if verdict.decision == "allow":
@@ -217,25 +350,155 @@ async def evaluate_domain_with(
 
     source: ApprovalSource = "sentinel" if verdict.decision != "escalate" else "user"
     approval_verdict: ApprovalVerdict = "allow" if allowed else "deny"
-    session.notify_domain_decision(
-        domain,
-        detail,
+    approval_explanation = (
+        verdict.explanation if source == "sentinel" else normalize_optional_message(user_message) or verdict.explanation
+    )
+    return CachedDomainApproval(
+        allowed=allowed,
         approval_source=source,
         approval_verdict=approval_verdict,
-        approval_explanation=verdict.explanation if source == "sentinel" else normalize_optional_message(user_message),
+        explanation=approval_explanation,
+        detail=detail,
+        final_decision=final_decision,
+        audit_explanation=verdict.explanation,
+        sentinel_verdict=verdict,
     )
 
-    session.write_audit(
-        AuditEntry.now(
-            kind="proxy_domain",
-            domain=domain,
-            sentinel_verdict=verdict,
-            final_decision=final_decision,
-            explanation=verdict.explanation,
+
+async def _decision_for_batch_limit(
+    session: SessionSecurity,
+    domain: str,
+    command: str,
+    review_limit: int | None,
+) -> CachedDomainApproval:
+    limit_text = (
+        "Automatic sentinel review hit the per-tool-call domain batch limit"
+        + (f" ({review_limit})" if review_limit is not None else "")
+        + ". Please approve or deny this domain manually."
+    )
+    verdict = SentinelVerdict(
+        decision="escalate",
+        explanation=limit_text,
+        risk_level="high",
+    )
+    user_decision = await session.escalate_to_user(
+        domain,
+        {"command": command, "explanation": verdict.explanation, "kind": "domain_access"},
+    )
+    allowed = user_decision.allowed
+    user_message = user_decision.message
+    return CachedDomainApproval(
+        allowed=allowed,
+        approval_source="user",
+        approval_verdict="allow" if allowed else "deny",
+        explanation=normalize_optional_message(user_message) or verdict.explanation,
+        detail=(
+            "[user: allow] sentinel domain batch limit reached"
+            if allowed
+            else format_denial_message("user", user_message)
+        ),
+        final_decision="allowed" if allowed else "denied",
+        audit_explanation=verdict.explanation,
+        sentinel_verdict=verdict,
+    )
+
+
+async def _decision_for_usage_limit(
+    session: SessionSecurity,
+    domain: str,
+    command: str,
+) -> CachedDomainApproval:
+    verdict = SentinelVerdict(
+        decision="escalate",
+        explanation=(
+            "Automatic sentinel review hit its internal request limit and could not finish. "
+            + "Please approve or deny this domain manually."
+        ),
+        risk_level="high",
+    )
+    return await _decision_from_verdict(session, domain, command, verdict)
+
+
+async def _evaluate_domain_batch(
+    session: SessionSecurity,
+    sentinel: Sentinel,
+    snapshot: DomainBatchSnapshot,
+    *,
+    usage_tracker: UsageTracker | None = None,
+    assert_llm_budget_available: Callable[[], None] | None = None,
+    usage_limits: UsageLimits | None = None,
+) -> dict[str, CachedDomainApproval]:
+    domain_commands = {domain: request.command for domain, request in snapshot.requests.items()}
+    if not snapshot.can_review:
+        return {
+            domain: await _decision_for_batch_limit(session, domain, command, snapshot.review_limit)
+            for domain, command in domain_commands.items()
+        }
+
+    for domain in domain_commands:
+        session.notify_domain_decision(domain, "[sentinel] reviewing", approval_source="sentinel")
+
+    try:
+        verdict = await sentinel.evaluate_domain_access_batch(
+            session,
+            domain_commands,
+            usage_tracker=usage_tracker,
+            assert_llm_budget_available=assert_llm_budget_available,
+            usage_limits=usage_limits,
         )
-    )
+    except UsageLimitExceeded:
+        return {
+            domain: await _decision_for_usage_limit(session, domain, command)
+            for domain, command in domain_commands.items()
+        }
 
-    return allowed
+    return {
+        domain: await _decision_from_verdict(session, domain, command, verdict)
+        for domain, command in domain_commands.items()
+    }
+
+
+async def _run_domain_batch_worker(
+    session: SessionSecurity,
+    sentinel: Sentinel,
+    *,
+    usage_tracker: UsageTracker | None = None,
+    assert_llm_budget_available: Callable[[], None] | None = None,
+    usage_limits: UsageLimits | None = None,
+) -> None:
+    while True:
+        snapshot = await session.next_domain_batch()
+        if snapshot is None:
+            return
+
+        try:
+            results = await _evaluate_domain_batch(
+                session,
+                sentinel,
+                snapshot,
+                usage_tracker=usage_tracker,
+                assert_llm_budget_available=assert_llm_budget_available,
+                usage_limits=usage_limits,
+            )
+        except asyncio.CancelledError:
+            await session.fail_domain_batch(snapshot)
+            for request in snapshot.requests.values():
+                if not request.future.done():
+                    request.future.set_exception(RuntimeError("Proxy domain batch was cancelled."))
+            raise
+        except Exception as exc:
+            await session.fail_domain_batch(snapshot)
+            await session.fail_pending_domain_requests(snapshot, exc)
+            for request in snapshot.requests.values():
+                if not request.future.done():
+                    request.future.set_exception(exc)
+            continue
+
+        await session.complete_domain_batch(snapshot, results)
+        for domain, request in snapshot.requests.items():
+            result = results[domain]
+            if not request.future.done():
+                request.future.set_result(result)
 
 
 async def evaluate_push_with(
