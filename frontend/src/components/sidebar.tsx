@@ -101,21 +101,33 @@ export function Sidebar({
       : null;
     const lastActiveLabel = formatTime(session.last_active);
     const hasSandboxInfo = !!sandbox;
+    const selectSession = (): void => {
+      onSelect(session.session_id);
+    };
+    const handleRowKeyDown = (event: React.KeyboardEvent<HTMLDivElement>): void => {
+      if (event.key !== "Enter" && event.key !== " ") {
+        return;
+      }
+      event.preventDefault();
+      selectSession();
+    };
 
     return (
       <div
         key={session.session_id}
+        role="button"
+        tabIndex={0}
+        onClick={selectSession}
+        onKeyDown={handleRowKeyDown}
+        aria-pressed={session.session_id === activeSessionId}
         className={cn(
-          "group rounded-lg transition-colors",
+          "group cursor-pointer rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
           session.session_id === activeSessionId
             ? "bg-accent text-accent-foreground"
             : "text-foreground/80 hover:bg-muted",
         )}
       >
-        <button
-          onClick={() => onSelect(session.session_id)}
-          className="flex w-full min-w-0 items-start gap-2.5 px-3 pt-2 pb-1 text-left"
-        >
+        <div className="flex w-full min-w-0 items-start gap-2.5 px-3 pt-2 pb-1 text-left">
           <MessageSquare className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
           <div className="min-w-0 flex-1 truncate text-sm" title={session.title || session.session_id}>
               {session.title ? (
@@ -124,12 +136,9 @@ export function Sidebar({
                 <span className="font-mono break-all">{session.session_id}</span>
               )}
           </div>
-        </button>
+        </div>
         <div className="flex items-start gap-2 px-3 pb-2">
-          <button
-            onClick={() => onSelect(session.session_id)}
-            className="min-w-0 flex-1 text-left"
-          >
+          <div className="min-w-0 flex-1 text-left">
             {hasSandboxInfo ? (
               <div className="space-y-0.5 text-xs text-muted-foreground">
                 <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
@@ -195,7 +204,7 @@ export function Sidebar({
                 ) : null}
               </div>
             )}
-          </button>
+          </div>
           <div className="flex shrink-0 items-center gap-1 self-start">
           <button
             onClick={(event) => {
