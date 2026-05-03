@@ -18,22 +18,6 @@ function headers(token: string): HeadersInit {
 export async function listSessions(
   server: string,
   token: string,
-  options?: { includeArchived?: boolean },
-): Promise<SessionInfo[]> {
-  const params = new URLSearchParams({ include_message_count: "true" });
-  if (options?.includeArchived) {
-    params.set("include_archived", "true");
-  }
-  const res = await fetch(`${server}/api/sessions?${params.toString()}`, {
-    headers: headers(token),
-  });
-  if (!res.ok) throw new Error(`Failed to list sessions: ${res.status}`);
-  return res.json();
-}
-
-export async function listSessionsPage(
-  server: string,
-  token: string,
   options?: {
     includeArchived?: boolean;
     includeMessageCount?: boolean;
@@ -54,10 +38,10 @@ export async function listSessionsPage(
   if (options?.cursor) {
     params.set("cursor", options.cursor);
   }
-  const res = await fetch(`${server}/api/sessions/page?${params.toString()}`, {
+  const res = await fetch(`${server}/api/sessions?${params.toString()}`, {
     headers: headers(token),
   });
-  if (!res.ok) throw new Error(`Failed to list session page: ${res.status}`);
+  if (!res.ok) throw new Error(`Failed to list sessions: ${res.status}`);
   return res.json();
 }
 

@@ -6,7 +6,7 @@ import { Menu, X } from "lucide-react";
 import { ConnectForm } from "@/components/connect-form";
 import { Sidebar } from "@/components/sidebar";
 import { ChatView } from "@/components/chat-view";
-import { createSession, deleteSession, getSession, listSessionsPage, updateSession } from "@/lib/api";
+import { createSession, deleteSession, getSession, listSessions, updateSession } from "@/lib/api";
 import {
   clearConnection,
   getServer,
@@ -178,7 +178,7 @@ function HomeContent() {
     setLoadingMoreSessions(false);
 
     try {
-      const page = await listSessionsPage(srv, tok, {
+      const page = await listSessions(srv, tok, {
         includeArchived: true,
         includeMessageCount: true,
         limit: SESSION_PAGE_SIZE,
@@ -231,7 +231,7 @@ function HomeContent() {
     setLoadingMoreSessions(true);
 
     try {
-      const page = await listSessionsPage(server, token, {
+      const page = await listSessions(server, token, {
         includeArchived: true,
         includeMessageCount: true,
         limit: SESSION_PAGE_SIZE,

@@ -570,6 +570,25 @@ def _session_info_from_state(state: SessionState, *, include_message_count: bool
     return SessionInfo.from_state(state, message_count=message_count, sandbox=sandbox)
 
 
+def _list_session_page(
+    *,
+    include_message_count: bool,
+    include_archived: bool,
+    limit: int | None,
+    cursor: str | None,
+) -> SessionListPage:
+    offset = _parse_session_cursor(cursor)
+    states = _sorted_session_states(include_archived=include_archived)
+    page_states = states[offset:] if limit is None else states[offset : offset + limit]
+    next_offset = offset + len(page_states)
+    has_more = next_offset < len(states)
+    return SessionListPage(
+        items=[_session_info_from_state(state, include_message_count=include_message_count) for state in page_states],
+        next_cursor=str(next_offset) if has_more else None,
+        has_more=has_more,
+    )
+
+
 @router.post("/sessions", response_model=SessionInfo)
 async def create_session(
     body: SessionCreateRequest | None = None,
@@ -585,35 +604,19 @@ async def create_session(
     return SessionInfo.from_state(state)
 
 
-@router.get("/sessions", response_model=list[SessionInfo])
+@router.get("/sessions", response_model=SessionListPage)
 async def list_sessions(
-    include_message_count: bool = False,
-    include_archived: bool = False,
-    _token: str = Depends(_verify_token),
-) -> list[SessionInfo]:
-    return [
-        _session_info_from_state(state, include_message_count=include_message_count)
-        for state in _sorted_session_states(include_archived=include_archived)
-    ]
-
-
-@router.get("/sessions/page", response_model=SessionListPage)
-async def list_sessions_page(
     include_message_count: bool = False,
     include_archived: bool = False,
     limit: int = Query(default=50, ge=1, le=200),
     cursor: str | None = None,
     _token: str = Depends(_verify_token),
 ) -> SessionListPage:
-    offset = _parse_session_cursor(cursor)
-    states = _sorted_session_states(include_archived=include_archived)
-    page_states = states[offset : offset + limit]
-    next_offset = offset + len(page_states)
-    has_more = next_offset < len(states)
-    return SessionListPage(
-        items=[_session_info_from_state(state, include_message_count=include_message_count) for state in page_states],
-        next_cursor=str(next_offset) if has_more else None,
-        has_more=has_more,
+    return _list_session_page(
+        include_message_count=include_message_count,
+        include_archived=include_archived,
+        limit=limit,
+        cursor=cursor,
     )
 
 
