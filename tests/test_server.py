@@ -292,6 +292,51 @@ def test_list_sessions_page_can_paginate(client, auth_headers):
     assert second_payload["next_cursor"] is None
 
 
+def test_list_sessions_page_can_include_message_count(client, auth_headers):
+    sid = client.post("/api/sessions", headers=auth_headers).json()["session_id"]
+    srv._engine.session_mgr.append_events(
+        sid,
+        [
+            {"role": "user", "content": "first"},
+            {"role": "assistant", "content": "reply"},
+        ],
+    )
+
+    resp = client.get(
+        "/api/sessions/page?include_message_count=true&include_archived=true",
+        headers=auth_headers,
+    )
+
+    assert resp.status_code == 200
+    session = next(item for item in resp.json()["items"] if item["session_id"] == sid)
+    assert session["message_count"] == 2
+
+
+def test_list_sessions_page_uses_stable_tiebreaker(client, auth_headers):
+    created_ids = [client.post("/api/sessions", headers=auth_headers).json()["session_id"] for _ in range(3)]
+    shared_last_active = datetime(2024, 1, 1, tzinfo=UTC)
+
+    for session_id in created_ids:
+        state = srv._engine.session_mgr.load_state(session_id)
+        assert state is not None
+        state.last_active = shared_last_active
+        state.attributes.pinned = False
+        srv._engine.session_mgr.save_state(state)
+
+    first_page = client.get(
+        "/api/sessions/page?limit=2&include_archived=true",
+        headers=auth_headers,
+    )
+    assert first_page.status_code == 200
+    second_page = client.get(
+        f"/api/sessions/page?limit=2&include_archived=true&cursor={first_page.json()['next_cursor']}",
+        headers=auth_headers,
+    )
+
+    ordered_ids = [item["session_id"] for item in first_page.json()["items"] + second_page.json()["items"]]
+    assert ordered_ids[: len(created_ids)] == sorted(created_ids)
+
+
 def test_list_sessions_page_rejects_invalid_cursor(client, auth_headers):
     resp = client.get("/api/sessions/page?cursor=abc", headers=auth_headers)
 

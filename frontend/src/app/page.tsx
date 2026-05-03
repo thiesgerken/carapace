@@ -118,14 +118,18 @@ function HomeContent() {
   const [creatingSession, setCreatingSession] = useState(false);
   const [refreshingSessions, setRefreshingSessions] = useState(false);
   const [loadingMoreSessions, setLoadingMoreSessions] = useState(false);
+  const [sessionListInitialized, setSessionListInitialized] = useState(false);
   const [sessionListCursor, setSessionListCursor] = useState<string | null>(null);
   const [sessionListHasMore, setSessionListHasMore] = useState(false);
   const refreshRequestIdRef = useRef(0);
   const loadingMoreSessionsRef = useRef(false);
+  const failedLoadMoreCursorRef = useRef<string | null>(null);
   const pendingSandboxUpdatesRef = useRef(new Map<string, SessionInfo["sandbox"]>());
 
   const { connected, server, token } = connection;
   const loading = creatingSession || refreshingSessions;
+  const hasActiveSessionLoaded = activeSessionId != null
+    && sessions.some((session) => session.session_id === activeSessionId);
 
   useSwipeDrawer(sidebarOpen, setSidebarOpen);
 
@@ -168,7 +172,9 @@ function HomeContent() {
 
     const requestId = ++refreshRequestIdRef.current;
     setRefreshingSessions(true);
+    setSessionListInitialized(false);
     loadingMoreSessionsRef.current = false;
+    failedLoadMoreCursorRef.current = null;
     setLoadingMoreSessions(false);
 
     try {
@@ -183,11 +189,13 @@ function HomeContent() {
       setSessions((current) => mergeSessions(current, page.items, pendingSandboxUpdatesRef.current));
       setSessionListCursor(page.next_cursor ?? null);
       setSessionListHasMore(page.has_more);
+      failedLoadMoreCursorRef.current = null;
     } catch {
       // If sessions fail to load, connection might be stale
     } finally {
       if (requestId === refreshRequestIdRef.current) {
         setRefreshingSessions(false);
+        setSessionListInitialized(true);
       }
     }
   }, []);
@@ -206,7 +214,15 @@ function HomeContent() {
   }, [connected, loadInitialSessions, server, token]);
 
   const loadMoreSessions = useCallback(async () => {
-    if (!server || !token || refreshingSessions || loadingMoreSessionsRef.current || !sessionListHasMore || !sessionListCursor) {
+    if (
+      !server
+      || !token
+      || refreshingSessions
+      || loadingMoreSessionsRef.current
+      || !sessionListHasMore
+      || !sessionListCursor
+      || failedLoadMoreCursorRef.current === sessionListCursor
+    ) {
       return;
     }
 
@@ -227,8 +243,9 @@ function HomeContent() {
       setSessions((current) => mergeSessions(current, page.items, pendingSandboxUpdatesRef.current));
       setSessionListCursor(page.next_cursor ?? null);
       setSessionListHasMore(page.has_more);
+      failedLoadMoreCursorRef.current = null;
     } catch {
-      // Ignore transient pagination failures and allow a later retry.
+      failedLoadMoreCursorRef.current = sessionListCursor;
     } finally {
       if (requestId === refreshRequestIdRef.current) {
         loadingMoreSessionsRef.current = false;
@@ -238,8 +255,7 @@ function HomeContent() {
   }, [refreshingSessions, server, sessionListCursor, sessionListHasMore, token]);
 
   useEffect(() => {
-    if (!connected || !activeSessionId) return;
-    if (sessions.some((session) => session.session_id === activeSessionId)) return;
+    if (!connected || !activeSessionId || !sessionListInitialized || hasActiveSessionLoaded) return;
 
     let cancelled = false;
     const requestId = refreshRequestIdRef.current;
@@ -258,14 +274,16 @@ function HomeContent() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [activeSessionId, connected, server, sessions, token]);
+  }, [activeSessionId, connected, hasActiveSessionLoaded, server, sessionListInitialized, token]);
 
   function handleConnect(srv: string, tok: string) {
     refreshRequestIdRef.current += 1;
     loadingMoreSessionsRef.current = false;
+    failedLoadMoreCursorRef.current = null;
     pendingSandboxUpdatesRef.current.clear();
     setRefreshingSessions(false);
     setLoadingMoreSessions(false);
+    setSessionListInitialized(false);
     setSessions([]);
     setSessionListCursor(null);
     setSessionListHasMore(false);
@@ -276,10 +294,12 @@ function HomeContent() {
   function handleDisconnect() {
     refreshRequestIdRef.current += 1;
     loadingMoreSessionsRef.current = false;
+    failedLoadMoreCursorRef.current = null;
     pendingSandboxUpdatesRef.current.clear();
     clearConnection();
     setRefreshingSessions(false);
     setLoadingMoreSessions(false);
+    setSessionListInitialized(false);
     setConnection({ connected: false, server: "", token: "" });
     setSessions([]);
     setSessionListCursor(null);

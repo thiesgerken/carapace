@@ -90,7 +90,7 @@ export function Sidebar({
 
     const observer = new IntersectionObserver(
       (entries) => {
-        if (!entries.some((entry) => entry.isIntersecting) || loadingMore) {
+        if (!entries.some((entry) => entry.isIntersecting)) {
           return;
         }
         onLoadMore();
@@ -102,7 +102,7 @@ export function Sidebar({
     return () => {
       observer.disconnect();
     };
-  }, [hasMore, loadingMore, onLoadMore, sessions.length]);
+  }, [hasMore, onLoadMore, sessions.length]);
 
   function renderSessionSection(sectionSessions: SessionInfo[]) {
     const pinnedSessions = sectionSessions.filter((session) => session.attributes.pinned);

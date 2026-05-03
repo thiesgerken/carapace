@@ -546,6 +546,7 @@ def _sorted_session_states(*, include_archived: bool) -> list[SessionState]:
         key=lambda state: (
             not state.attributes.pinned,
             -state.last_active.timestamp(),
+            state.session_id,
         )
     )
     return states
