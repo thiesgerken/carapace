@@ -508,6 +508,12 @@ class SessionInfo(BaseModel):
         )
 
 
+class SessionListPage(BaseModel):
+    items: list[SessionInfo]
+    next_cursor: str | None = None
+    has_more: bool
+
+
 class SessionArchiveCommitResponse(BaseModel):
     session: SessionInfo
     committed: bool
@@ -524,6 +530,43 @@ def _session_message_count(session_id: str) -> int:
 
     history = _history_from_messages(session_id)
     return sum(1 for message in history if message.role in {"user", "assistant"})
+
+
+def _sorted_session_states(*, include_archived: bool) -> list[SessionState]:
+    states: list[SessionState] = []
+    for session_id in _engine.session_mgr.list_sessions():
+        state = _engine.session_mgr.load_state(session_id)
+        if state is None:
+            continue
+        if state.attributes.archived and not include_archived:
+            continue
+        states.append(state)
+
+    states.sort(
+        key=lambda state: (
+            not state.attributes.pinned,
+            -state.last_active.timestamp(),
+        )
+    )
+    return states
+
+
+def _parse_session_cursor(cursor: str | None) -> int:
+    if cursor is None:
+        return 0
+    try:
+        offset = int(cursor)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid session cursor") from exc
+    if offset < 0:
+        raise HTTPException(status_code=400, detail="Invalid session cursor")
+    return offset
+
+
+def _session_info_from_state(state: SessionState, *, include_message_count: bool) -> SessionInfo:
+    message_count = _session_message_count(state.session_id) if include_message_count else 0
+    sandbox = _engine.session_mgr.load_sandbox_snapshot(state.session_id)
+    return SessionInfo.from_state(state, message_count=message_count, sandbox=sandbox)
 
 
 @router.post("/sessions", response_model=SessionInfo)
@@ -547,24 +590,30 @@ async def list_sessions(
     include_archived: bool = False,
     _token: str = Depends(_verify_token),
 ) -> list[SessionInfo]:
-    results: list[SessionInfo] = []
-    for sid in _engine.session_mgr.list_sessions():
-        state = _engine.session_mgr.load_state(sid)
-        if state:
-            if state.attributes.archived and not include_archived:
-                continue
-            message_count = 0
-            if include_message_count:
-                message_count = _session_message_count(sid)
-            sandbox = _engine.session_mgr.load_sandbox_snapshot(sid)
-            results.append(SessionInfo.from_state(state, message_count=message_count, sandbox=sandbox))
-    results.sort(
-        key=lambda session: (
-            not session.attributes.pinned,
-            -datetime.fromisoformat(session.last_active).timestamp(),
-        )
+    return [
+        _session_info_from_state(state, include_message_count=include_message_count)
+        for state in _sorted_session_states(include_archived=include_archived)
+    ]
+
+
+@router.get("/sessions/page", response_model=SessionListPage)
+async def list_sessions_page(
+    include_message_count: bool = False,
+    include_archived: bool = False,
+    limit: int = Query(default=50, ge=1, le=200),
+    cursor: str | None = None,
+    _token: str = Depends(_verify_token),
+) -> SessionListPage:
+    offset = _parse_session_cursor(cursor)
+    states = _sorted_session_states(include_archived=include_archived)
+    page_states = states[offset : offset + limit]
+    next_offset = offset + len(page_states)
+    has_more = next_offset < len(states)
+    return SessionListPage(
+        items=[_session_info_from_state(state, include_message_count=include_message_count) for state in page_states],
+        next_cursor=str(next_offset) if has_more else None,
+        has_more=has_more,
     )
-    return results
 
 
 @router.get("/sessions/{session_id}", response_model=SessionInfo)

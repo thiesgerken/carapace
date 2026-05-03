@@ -264,6 +264,41 @@ def test_list_sessions_can_include_archived(client, auth_headers):
     assert archived_session["attributes"]["archived"] is True
 
 
+def test_list_sessions_page_can_paginate(client, auth_headers):
+    created_ids = [client.post("/api/sessions", headers=auth_headers).json()["session_id"] for _ in range(3)]
+
+    first_page = client.get(
+        "/api/sessions/page?limit=2&include_archived=true",
+        headers=auth_headers,
+    )
+
+    assert first_page.status_code == 200
+    first_payload = first_page.json()
+    assert len(first_payload["items"]) == 2
+    assert first_payload["has_more"] is True
+    assert first_payload["next_cursor"] == "2"
+
+    second_page = client.get(
+        f"/api/sessions/page?limit=2&include_archived=true&cursor={first_payload['next_cursor']}",
+        headers=auth_headers,
+    )
+
+    assert second_page.status_code == 200
+    second_payload = second_page.json()
+    returned_ids = [item["session_id"] for item in first_payload["items"] + second_payload["items"]]
+    assert len(set(returned_ids)) >= 3
+    assert set(created_ids).issubset(set(returned_ids))
+    assert second_payload["has_more"] is False
+    assert second_payload["next_cursor"] is None
+
+
+def test_list_sessions_page_rejects_invalid_cursor(client, auth_headers):
+    resp = client.get("/api/sessions/page?cursor=abc", headers=auth_headers)
+
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "Invalid session cursor"
+
+
 def test_update_session_archives_and_destroys_sandbox(client, auth_headers):
     sid = client.post("/api/sessions", headers=auth_headers).json()["session_id"]
 

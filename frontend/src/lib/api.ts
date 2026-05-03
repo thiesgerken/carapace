@@ -3,6 +3,7 @@ import type {
   SessionArchiveCommitResponse,
   SessionAttributesPatch,
   SessionInfo,
+  SessionListPage,
   SessionSandboxSnapshot,
 } from "./types";
 import { isRecord, readNumber, readString } from "./decoding";
@@ -27,6 +28,48 @@ export async function listSessions(
     headers: headers(token),
   });
   if (!res.ok) throw new Error(`Failed to list sessions: ${res.status}`);
+  return res.json();
+}
+
+export async function listSessionsPage(
+  server: string,
+  token: string,
+  options?: {
+    includeArchived?: boolean;
+    includeMessageCount?: boolean;
+    limit?: number;
+    cursor?: string | null;
+  },
+): Promise<SessionListPage> {
+  const params = new URLSearchParams();
+  if (options?.includeMessageCount ?? true) {
+    params.set("include_message_count", "true");
+  }
+  if (options?.includeArchived) {
+    params.set("include_archived", "true");
+  }
+  if (typeof options?.limit === "number") {
+    params.set("limit", String(options.limit));
+  }
+  if (options?.cursor) {
+    params.set("cursor", options.cursor);
+  }
+  const res = await fetch(`${server}/api/sessions/page?${params.toString()}`, {
+    headers: headers(token),
+  });
+  if (!res.ok) throw new Error(`Failed to list session page: ${res.status}`);
+  return res.json();
+}
+
+export async function getSession(
+  server: string,
+  token: string,
+  sessionId: string,
+): Promise<SessionInfo> {
+  const res = await fetch(`${server}/api/sessions/${sessionId}`, {
+    headers: headers(token),
+  });
+  if (!res.ok) throw new Error(`Failed to fetch session: ${res.status}`);
   return res.json();
 }
 

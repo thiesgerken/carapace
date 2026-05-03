@@ -1,6 +1,7 @@
 "use client";
 
-import { Archive, ArchiveRestore, Lock, LogOut, Mail, MessageSquare, Pin, Plus, Save, Star, Trash2 } from "lucide-react";
+import { useEffect, useRef } from "react";
+import { Archive, ArchiveRestore, Loader2, Lock, LogOut, Mail, MessageSquare, Pin, Plus, Save, Star, Trash2 } from "lucide-react";
 import { EmojiText } from "@/components/emoji-text";
 import type { SessionAttributesPatch, SessionInfo, SessionSandboxSnapshot } from "@/lib/types";
 import {
@@ -20,6 +21,9 @@ interface SidebarProps {
   onDelete: (sessionId: string) => void;
   onDisconnect: () => void;
   loading?: boolean;
+  hasMore?: boolean;
+  loadingMore?: boolean;
+  onLoadMore?: () => void;
 }
 
 function formatTime(iso: string): string {
@@ -69,9 +73,36 @@ export function Sidebar({
   onDelete,
   onDisconnect,
   loading,
+  hasMore = false,
+  loadingMore = false,
+  onLoadMore,
 }: SidebarProps) {
+  const scrollRootRef = useRef<HTMLDivElement | null>(null);
+  const loadMoreRef = useRef<HTMLDivElement | null>(null);
   const activeSessions = sessions.filter((session) => !session.attributes.archived);
   const archivedSessions = sessions.filter((session) => session.attributes.archived);
+
+  useEffect(() => {
+    if (!hasMore || !onLoadMore) return;
+    const root = scrollRootRef.current;
+    const target = loadMoreRef.current;
+    if (!root || !target) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (!entries.some((entry) => entry.isIntersecting) || loadingMore) {
+          return;
+        }
+        onLoadMore();
+      },
+      { root, rootMargin: "160px 0px" },
+    );
+
+    observer.observe(target);
+    return () => {
+      observer.disconnect();
+    };
+  }, [hasMore, loadingMore, onLoadMore, sessions.length]);
 
   function renderSessionSection(sectionSessions: SessionInfo[]) {
     const pinnedSessions = sectionSessions.filter((session) => session.attributes.pinned);
@@ -320,7 +351,7 @@ export function Sidebar({
       </div>
 
       {/* Session list */}
-      <div className="flex-1 overflow-y-auto px-3 py-2">
+      <div ref={scrollRootRef} className="flex-1 overflow-y-auto px-3 py-2">
         <div className="space-y-4">
           {renderSessionSection(activeSessions)}
           {archivedSessions.length > 0 ? (
@@ -336,6 +367,18 @@ export function Sidebar({
               No sessions yet
             </p>
           )}
+          {hasMore || loadingMore ? (
+            <div ref={loadMoreRef} className="px-3 py-2">
+              {loadingMore ? (
+                <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  Loading more sessions
+                </div>
+              ) : (
+                <div className="h-4" aria-hidden="true" />
+              )}
+            </div>
+          ) : null}
         </div>
       </div>
     </div>
