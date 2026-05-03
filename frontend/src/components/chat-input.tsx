@@ -357,7 +357,7 @@ export function ChatInput({
           />
           <button
             onClick={waiting ? onCancel : submit}
-            disabled={disabled || (waiting ? false : !connected || !hasText)}
+            disabled={waiting ? !onCancel : disabled || !connected || !hasText}
             title={tooltip}
             className={cn(
               "shrink-0 rounded-lg p-2 transition-colors",

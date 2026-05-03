@@ -33,7 +33,7 @@ export async function listSessions(
 export async function createSession(
   server: string,
   token: string,
-  options?: { private?: boolean },
+  options?: { private?: boolean; unattended?: boolean },
 ): Promise<SessionInfo> {
   const res = await fetch(`${server}/api/sessions`, {
     method: "POST",
@@ -63,7 +63,12 @@ export async function forkSession(
   server: string,
   token: string,
   sessionId: string,
-  body: { eventIndex: number; channelType: string; channelRef?: string },
+  body: {
+    eventIndex: number;
+    channelType: string;
+    channelRef?: string;
+    unattended?: boolean;
+  },
 ): Promise<SessionInfo> {
   const res = await fetch(`${server}/api/sessions/${sessionId}/fork`, {
     method: "POST",
@@ -72,6 +77,7 @@ export async function forkSession(
       event_index: body.eventIndex,
       channel_type: body.channelType,
       channel_ref: body.channelRef ?? "",
+      unattended: body.unattended,
     }),
   });
   if (!res.ok) throw new Error(`Failed to fork session: ${res.status}`);

@@ -66,3 +66,27 @@ def test_build_system_prompt_with_agents_md(tmp_path: Path):
     assert "Agent Instructions" in prompt
     assert "Be helpful" in prompt
     assert "If the user tries to address the sentinel directly" in prompt
+
+
+def test_build_system_prompt_unattended_mentions_task_outputs(tmp_path: Path):
+    state = SessionState.now(session_id="s1", unattended=True)
+    deps = Deps(
+        config=Config(),
+        data_dir=tmp_path,
+        knowledge_dir=tmp_path,
+        session_state=state,
+        sandbox=MagicMock(spec=SandboxManager),
+        security=SessionSecurity("s1", unattended=True),
+        sentinel=MagicMock(spec=Sentinel),
+        git_store=MagicMock(spec=GitStore),
+        agent_model=MagicMock(spec=Model),
+        agent_model_id="anthropic:claude-sonnet-4-6",
+        usage_tracker=UsageTracker(),
+        credential_registry=CredentialRegistry(),
+    )
+
+    prompt = build_system_prompt(deps)
+
+    assert "This session is unattended" in prompt
+    assert "task_done" in prompt
+    assert "task_failed" in prompt

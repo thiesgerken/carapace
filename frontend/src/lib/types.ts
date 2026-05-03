@@ -28,6 +28,7 @@ export interface SessionAttributes {
   archived: boolean;
   pinned: boolean;
   favorite: boolean;
+  unattended: boolean;
 }
 
 export interface SessionAttributesPatch {
@@ -35,6 +36,7 @@ export interface SessionAttributesPatch {
   archived?: boolean;
   pinned?: boolean;
   favorite?: boolean;
+  unattended?: boolean;
 }
 
 export interface SessionInfo {

@@ -130,6 +130,12 @@ class SentinelVerdict(BaseModel):
     risk_level: Literal["low", "medium", "high"] = "medium"
 
 
+class UnattendedSentinelVerdict(BaseModel):
+    decision: Literal["allow", "deny"]
+    explanation: str = ""
+    risk_level: Literal["low", "medium", "high"] = "medium"
+
+
 ApprovalSource = Literal["safe-list", "sentinel", "user", "skill", "bypass", "unknown"]
 ApprovalVerdict = Literal["allow", "deny", "escalate"]
 
@@ -210,8 +216,10 @@ class SessionSecurity:
         audit_dir: Path | None = None,
         max_sentinel_calls_per_tool_call: int = 5,
         sentinel_domain_batch_window_ms: int = 100,
+        unattended: bool = False,
     ) -> None:
         self.session_id = session_id
+        self.unattended = unattended
         self.action_log: list[
             UserMessageEntry
             | ToolCallEntry

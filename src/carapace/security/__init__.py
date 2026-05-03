@@ -40,6 +40,14 @@ SAFE_TOOLS: frozenset[str] = frozenset(
 )
 
 
+def _fallback_verdict(session: SessionSecurity, *, explanation: str) -> SentinelVerdict:
+    return SentinelVerdict(
+        decision="deny" if session.unattended else "escalate",
+        explanation=explanation,
+        risk_level="high",
+    )
+
+
 async def evaluate_with(
     session: SessionSecurity,
     sentinel: Sentinel,
@@ -123,13 +131,16 @@ async def evaluate_with(
             usage_limits=usage_limits,
         )
     except UsageLimitExceeded:
-        verdict = SentinelVerdict(
-            decision="escalate",
+        verdict = _fallback_verdict(
+            session,
             explanation=(
                 "Automatic sentinel review hit its internal request limit and could not finish. "
-                "Please approve or deny this tool call manually."
+                + (
+                    "The tool call was denied because no user approval path is available."
+                    if session.unattended
+                    else "Please approve or deny this tool call manually."
+                )
             ),
-            risk_level="high",
         )
 
     decision_str = _verdict_to_decision(verdict)
@@ -425,13 +436,24 @@ async def _decision_for_batch_limit(
     limit_text = (
         "Automatic sentinel review hit the per-tool-call domain batch limit"
         + (f" ({review_limit})" if review_limit is not None else "")
-        + ". Please approve or deny this domain manually."
+        + (
+            ". The domain request was denied because no user approval path is available."
+            if session.unattended
+            else ". Please approve or deny this domain manually."
+        )
     )
-    verdict = SentinelVerdict(
-        decision="escalate",
-        explanation=limit_text,
-        risk_level="high",
-    )
+    verdict = _fallback_verdict(session, explanation=limit_text)
+    if session.unattended:
+        return CachedDomainApproval(
+            allowed=False,
+            approval_source="sentinel",
+            approval_verdict="deny",
+            explanation=verdict.explanation,
+            detail=f"[sentinel: deny] {verdict.explanation}",
+            final_decision="denied",
+            audit_explanation=verdict.explanation,
+            sentinel_verdict=verdict,
+        )
     user_decision = await session.escalate_to_user(
         domain,
         {"command": command, "explanation": verdict.explanation, "kind": "domain_access"},
@@ -459,13 +481,16 @@ async def _decision_for_usage_limit(
     domain: str,
     command: str,
 ) -> CachedDomainApproval:
-    verdict = SentinelVerdict(
-        decision="escalate",
+    verdict = _fallback_verdict(
+        session,
         explanation=(
             "Automatic sentinel review hit its internal request limit and could not finish. "
-            + "Please approve or deny this domain manually."
+            + (
+                "The domain request was denied because no user approval path is available."
+                if session.unattended
+                else "Please approve or deny this domain manually."
+            )
         ),
-        risk_level="high",
     )
     return await _decision_from_verdict(session, domain, command, verdict)
 
@@ -581,6 +606,16 @@ async def evaluate_push_with(
         usage_limits=usage_limits,
     )
 
+    if verdict.decision == "escalate" and session.unattended:
+        verdict = SentinelVerdict(
+            decision="deny",
+            explanation=(
+                verdict.explanation
+                or "The push was denied because no user approval path is available for unattended sessions."
+            ),
+            risk_level=verdict.risk_level,
+        )
+
     decision = _verdict_to_decision(verdict)
     user_message: str | None = None
 
@@ -680,6 +715,16 @@ async def evaluate_credential_with(
         assert_llm_budget_available=assert_llm_budget_available,
         usage_limits=usage_limits,
     )
+
+    if verdict.decision == "escalate" and session.unattended:
+        verdict = SentinelVerdict(
+            decision="deny",
+            explanation=(
+                verdict.explanation
+                or "Credential access was denied because no user approval path is available for unattended sessions."
+            ),
+            risk_level=verdict.risk_level,
+        )
 
     decision = _verdict_to_decision(verdict)
     user_was_prompted = verdict.decision == "escalate"

@@ -1351,6 +1351,7 @@ export function ChatView({
       const forked = await forkSession(server, token, sessionId, {
         eventIndex: targetEventIndex,
         channelType: "web",
+        unattended: session?.attributes.unattended ? false : undefined,
       });
       onForkSession(forked);
     } catch (error) {
@@ -1608,9 +1609,14 @@ export function ChatView({
   const hasKnowledgeContent = messages.length > 0;
   const hasKnowledgeChanges = sessionHasKnowledgeChanges(session);
   const sessionArchived = session?.attributes.archived ?? false;
+  const sessionUnattended = session?.attributes.unattended ?? false;
   const sessionPrivate = session?.attributes.private ?? false;
   const sessionPinned = session?.attributes.pinned ?? false;
   const sessionFavorite = session?.attributes.favorite ?? false;
+  const inputDisabled = sessionArchived || sessionUnattended;
+  const inputDisabledPlaceholder = sessionArchived
+    ? "Unarchive first"
+    : "This session is unattended. Fork it first to continue here.";
   const canCommitKnowledge = !!session && !sessionPrivate && !sessionArchived && hasKnowledgeContent && hasKnowledgeChanges;
   const waitingLabel = !waiting
     ? null
@@ -1912,8 +1918,8 @@ export function ChatView({
         onCancel={handleCancel}
         onInterrupt={handleInterrupt}
         connected={connected}
-        disabled={sessionArchived}
-        disabledPlaceholder="Unarchive first"
+        disabled={inputDisabled}
+        disabledPlaceholder={inputDisabledPlaceholder}
         waiting={waiting}
         queuedMessage={queuedMessage}
         commands={commands}

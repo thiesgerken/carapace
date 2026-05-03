@@ -234,6 +234,20 @@ def test_update_session_privacy_updates_active_session_state(client, auth_header
     assert active.state.activated_skills == ["demo-skill"]
 
 
+def test_update_session_rejects_unattended_mode_change(client, auth_headers):
+    create_resp = client.post("/api/sessions", headers=auth_headers)
+    sid = create_resp.json()["session_id"]
+
+    resp = client.patch(
+        f"/api/sessions/{sid}",
+        headers=auth_headers,
+        json={"attributes": {"unattended": True}},
+    )
+
+    assert resp.status_code == 409
+    assert "fork the session instead" in resp.json()["detail"]
+
+
 def test_list_sessions_excludes_archived_by_default(client, auth_headers):
     sid = client.post("/api/sessions", headers=auth_headers).json()["session_id"]
     archive_resp = client.patch(

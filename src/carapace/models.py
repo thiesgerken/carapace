@@ -86,6 +86,7 @@ class SessionAttributes(BaseModel):
     archived: bool = False
     pinned: bool = False
     favorite: bool = False
+    unattended: bool = False
 
 
 class SessionState(BaseModel):
@@ -117,6 +118,7 @@ class SessionState(BaseModel):
         channel_ref: str | None = None,
         title: str | None = None,
         private: bool = False,
+        unattended: bool = False,
         approved_operations: list[str] | None = None,
     ) -> SessionState:
         ts = datetime.now(tz=UTC)
@@ -125,7 +127,7 @@ class SessionState(BaseModel):
             channel_type=channel_type,
             channel_ref=channel_ref,
             title=title,
-            attributes=SessionAttributes(private=private),
+            attributes=SessionAttributes(private=private, unattended=unattended),
             approved_operations=approved_operations or [],
             activated_skills=[],
             context_grants={},
@@ -485,6 +487,18 @@ class ToolResult:
     output: str
     exit_code: int = 0
     tool_id: str | None = None
+
+
+class TaskDone(BaseModel):
+    """Explicit unattended completion output for successful runs."""
+
+    result: str
+
+
+class TaskFailed(BaseModel):
+    """Explicit unattended completion output for blocked or failed runs."""
+
+    problem: str
 
 
 class SkillCredentialDecl(BaseModel):
