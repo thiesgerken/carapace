@@ -112,6 +112,18 @@ def test_save_and_resume_state(tmp_path: Path):
     assert "dev/test" in resumed.context_grants["my-skill"].vault_paths
 
 
+def test_session_manager_calls_on_change_for_state_mutations(tmp_path: Path) -> None:
+    changed: list[str] = []
+    mgr = SessionManager(tmp_path, on_change=lambda: changed.append("changed"))
+
+    state = mgr.create_session()
+    state.title = "Renamed"
+    mgr.save_state(state)
+    assert mgr.delete_session(state.session_id) is True
+
+    assert changed == ["changed", "changed", "changed"]
+
+
 def test_save_and_load_llm_request_state(tmp_path: Path) -> None:
     mgr = SessionManager(tmp_path)
     state = mgr.create_session()

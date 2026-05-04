@@ -39,6 +39,7 @@ This starts:
 
 - **Server** at `http://localhost:8321`
 - **Frontend** at `http://localhost:3001`
+- **Redis** for mandatory session-list caching
 - **Sandbox image** is built automatically
 
 The web UI prompts for the server URL and token on first connect.
@@ -78,6 +79,10 @@ sessions:
     autosave_inactivity_hours: 4
     # When true, deleting a session also removes its current committed snapshot from the knowledge repo.
     delete_from_knowledge_on_session_delete: true
+
+cache:
+  # Override this only if Redis is not reachable at the default URL.
+  redis_url: redis://redis:6379/0
 ```
 
 Session histories always live primarily under `data/sessions/<session_id>/`. The `sessions.commit.*` settings control a secondary commit flow into the Git-backed knowledge repo so the agent can refer back to past conversations later.

@@ -36,6 +36,7 @@ from pydantic_ai.exceptions import UsageLimitExceeded
 
 from carapace.auth import get_token
 from carapace.bootstrap import ensure_data_dir, ensure_knowledge_dir
+from carapace.cache import SessionListCache
 from carapace.config import _resolve_data_dir, _resolve_knowledge_dir, get_config_path, get_data_dir, load_config
 from carapace.credentials import CredentialRegistry, build_credential_registry
 from carapace.git.http import GitHttpHandler
@@ -91,6 +92,7 @@ _engine: SessionEngine
 _git_handler: GitHttpHandler
 _credential_registry: CredentialRegistry
 _session_archive: SessionArchiveService
+_session_list_cache: SessionListCache
 
 _SESSION_COMMIT_SWEEP_SECONDS = 15 * 60
 
@@ -180,7 +182,7 @@ async def _autosave_inactive_sessions() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _data_dir, _config, _engine, _git_handler, _credential_registry, _session_archive
+    global _data_dir, _config, _engine, _git_handler, _credential_registry, _session_archive, _session_list_cache
 
     # 1. Load config
     config_path = get_config_path()
@@ -225,7 +227,8 @@ async def lifespan(app: FastAPI):
         logfire.configure(token=_config.carapace.logfire_token, console=False)
         logfire.instrument_pydantic_ai()
 
-    session_mgr = SessionManager(_data_dir)
+    _session_list_cache = SessionListCache(_config.cache)
+    session_mgr = SessionManager(_data_dir, on_change=_session_list_cache.invalidate_sync)
     registry = SkillRegistry(knowledge_dir / "skills")
     skill_catalog = registry.scan()
     model_factory = make_model_factory(_config)
@@ -353,6 +356,7 @@ async def lifespan(app: FastAPI):
     logger.info(f"Internal API listening on 127.0.0.1:{_config.server.internal_port}")
 
     token = get_token()
+    await _session_list_cache.start()
 
     price_updater = UpdatePrices()
     price_updater.start()
@@ -397,6 +401,7 @@ async def lifespan(app: FastAPI):
     await proxy.stop()
     await _credential_registry.close()
     await _sandbox_mgr.cleanup_all()
+    await _session_list_cache.close()
     price_updater.stop()
     logger.info("Shutdown complete")
 
@@ -532,7 +537,7 @@ def _session_message_count(session_id: str) -> int:
     return sum(1 for message in history if message.role in {"user", "assistant"})
 
 
-def _sorted_session_states(*, include_archived: bool) -> list[SessionState]:
+def _compute_sorted_session_ids(*, include_archived: bool) -> list[str]:
     states: list[SessionState] = []
     for session_id in _engine.session_mgr.list_sessions():
         state = _engine.session_mgr.load_state(session_id)
@@ -549,7 +554,7 @@ def _sorted_session_states(*, include_archived: bool) -> list[SessionState]:
             state.session_id,
         )
     )
-    return states
+    return [state.session_id for state in states]
 
 
 def _parse_session_cursor(cursor: str | None) -> int:
@@ -570,7 +575,7 @@ def _session_info_from_state(state: SessionState, *, include_message_count: bool
     return SessionInfo.from_state(state, message_count=message_count, sandbox=sandbox)
 
 
-def _list_session_page(
+async def _list_session_page(
     *,
     include_message_count: bool,
     include_archived: bool,
@@ -578,10 +583,21 @@ def _list_session_page(
     cursor: str | None,
 ) -> SessionListPage:
     offset = _parse_session_cursor(cursor)
-    states = _sorted_session_states(include_archived=include_archived)
-    page_states = states[offset:] if limit is None else states[offset : offset + limit]
-    next_offset = offset + len(page_states)
-    has_more = next_offset < len(states)
+    session_ids = await _session_list_cache.get_session_ids(
+        include_archived=include_archived,
+        loader=lambda: _compute_sorted_session_ids(include_archived=include_archived),
+    )
+    page_states: list[SessionState] = []
+    next_offset = offset
+    while next_offset < len(session_ids) and (limit is None or len(page_states) < limit):
+        state = _engine.session_mgr.load_state(session_ids[next_offset])
+        next_offset += 1
+        if state is None:
+            continue
+        if state.attributes.archived and not include_archived:
+            continue
+        page_states.append(state)
+    has_more = next_offset < len(session_ids)
     return SessionListPage(
         items=[_session_info_from_state(state, include_message_count=include_message_count) for state in page_states],
         next_cursor=str(next_offset) if has_more else None,
@@ -612,7 +628,7 @@ async def list_sessions(
     cursor: str | None = None,
     _token: str = Depends(_verify_token),
 ) -> SessionListPage:
-    return _list_session_page(
+    return await _list_session_page(
         include_message_count=include_message_count,
         include_archived=include_archived,
         limit=limit,

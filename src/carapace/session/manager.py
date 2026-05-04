@@ -56,10 +56,11 @@ def _timestamped_event(event: dict[str, Any], *, now: datetime | None = None) ->
 
 
 class SessionManager:
-    def __init__(self, data_dir: Path):
+    def __init__(self, data_dir: Path, on_change: Callable[[], None] | None = None):
         self.sessions_dir = data_dir / "sessions"
         self.sessions_dir.mkdir(parents=True, exist_ok=True)
         self._events_lock = RLock()
+        self._on_change = on_change
 
     def create_session(
         self,
@@ -130,6 +131,7 @@ class SessionManager:
         session_dir = self.sessions_dir / session_id
         if session_dir.exists():
             shutil.rmtree(session_dir)
+            self._notify_change()
             return True
         return False
 
@@ -142,6 +144,11 @@ class SessionManager:
         state_path = session_dir / "state.yaml"
         with open(state_path, "w") as f:
             yaml.dump(state.model_dump(mode="json"), f, default_flow_style=False)
+        self._notify_change()
+
+    def _notify_change(self) -> None:
+        if self._on_change is not None:
+            self._on_change()
 
     def load_history(self, session_id: str) -> list[ModelMessage]:
         history_path = self.sessions_dir / session_id / "history.yaml"

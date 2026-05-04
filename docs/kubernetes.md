@@ -30,6 +30,8 @@ helm upgrade carapace oci://ghcr.io/thiesgerken/charts/carapace -n carapace
 
 Inject additional config via `extraEnv` (inline values) or `envFrom` (external Secrets / ConfigMaps). The PVC uses the cluster's default StorageClass unless overridden with `persistence.storageClassName`.
 
+Session-list caching requires Redis. The Helm chart deploys an in-cluster Redis by default; if you disable it, point carapace at an external Redis instance instead.
+
 See the [chart README](../charts/carapace/README.md) for installation details and the full values reference.
 
 ## Architecture
@@ -100,6 +102,16 @@ env:
 ```
 
 When `CARAPACE_SANDBOX_RUNTIME` is unset or `docker` (the default), nothing changes — the server uses the Docker socket as before.
+
+The session-list cache is configured through `config.yaml` instead:
+
+```yaml
+config:
+  cache:
+    redis_url: redis://carapace-redis:6379/0
+```
+
+The Helm chart deploys an in-cluster Redis by default. Its Service name is `<release>-redis`, so a typical URL is `redis://<release>-redis:6379/0`. If you set `redis.enabled=false`, you must provide an external Redis URL via `config.cache.redis_url` or `CARAPACE_CACHE_REDIS_URL`.
 
 > **Important:** Always pin the sandbox image to a specific version tag (e.g. `:0.25.1`). Using `:latest` in production can lead to version mismatches between the server and sandbox image.
 

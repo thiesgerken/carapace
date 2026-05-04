@@ -30,6 +30,14 @@ from carapace.usage import LlmRequestState
 _TEST_TOKEN = "test-bearer-token-for-server-tests"
 
 
+class _FakeSessionListCache:
+    async def get_session_ids(self, *, include_archived: bool, loader):
+        return loader()
+
+    def invalidate_sync(self) -> None:
+        return
+
+
 @pytest.fixture(autouse=True)
 def _setup_server(tmp_path, monkeypatch):
     """Initialise server globals with a temp data dir so tests don't need lifespan."""
@@ -39,7 +47,8 @@ def _setup_server(tmp_path, monkeypatch):
     monkeypatch.setenv("CARAPACE_TOKEN", _TEST_TOKEN)
     ensure_data_dir(tmp_path)
     config = load_config(tmp_path)
-    session_mgr = SessionManager(tmp_path)
+    srv._session_list_cache = _FakeSessionListCache()
+    session_mgr = SessionManager(tmp_path, on_change=srv._session_list_cache.invalidate_sync)
     registry = SkillRegistry(tmp_path / "skills")
     skill_catalog = registry.scan()
     sandbox_mgr = MagicMock(spec=SandboxManager)
