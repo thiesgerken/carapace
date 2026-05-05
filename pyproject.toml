@@ -31,7 +31,7 @@ carapace = "carapace.cli:app"
 carapace-server = "carapace.server:main"
 
 [dependency-groups]
-dev = ["pytest", "pytest-asyncio", "ruff>=0.15.10"]
+dev = ["pyright>=1.1.403", "pytest", "pytest-asyncio", "ruff>=0.15.10"]
 
 [build-system]
 requires = ["hatchling"]
@@ -89,3 +89,7 @@ template_dir = "templates"
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+
+[tool.pyright]
+include = ["src"]
+exclude = ["tests"]
