@@ -17,6 +17,8 @@ from rich.panel import Panel
 from rich.table import Table
 from websockets.exceptions import ConnectionClosed, InvalidHandshake
 
+from carapace.payloads import dict_of_dicts, dict_or_empty, list_of_dicts, string_dict
+
 load_dotenv()
 
 app = typer.Typer(help="carapace -- security-first personal AI agent")
@@ -225,11 +227,11 @@ def _render_command_result(data: dict[str, Any]) -> None:
 
 
 def _render_usage(payload: dict[str, Any]) -> None:
-    models: dict[str, dict[str, int]] = payload.get("models", {})
-    categories: dict[str, dict[str, int]] = payload.get("categories", {})
-    costs: dict[str, str] = payload.get("costs", {})
-    category_costs: dict[str, str] = payload.get("category_costs", {})
-    budget_gauges: list[dict[str, Any]] = payload.get("budget_gauges", [])
+    models = dict_of_dicts(payload.get("models"))
+    categories = dict_of_dicts(payload.get("categories"))
+    costs = string_dict(payload.get("costs"))
+    category_costs = string_dict(payload.get("category_costs"))
+    budget_gauges = list_of_dicts(payload.get("budget_gauges"))
     total_tool_calls = int(payload.get("total_tool_calls", 0) or 0)
 
     if not models and not categories and not budget_gauges and total_tool_calls == 0:
@@ -313,14 +315,14 @@ def _render_usage(payload: dict[str, Any]) -> None:
 
     last_rows: list[tuple[str, dict[str, Any]]] = []
     for key, src in (("last_llm_agent", "agent"), ("last_llm_sentinel", "sentinel")):
-        row = payload.get(key)
-        if isinstance(row, dict) and row.get("context_size", 0) > 0:
+        row = dict_or_empty(payload.get(key))
+        if int(row.get("context_size", 0) or 0) > 0:
             last_rows.append((src, row))
 
     if last_rows:
         show_other = False
         for _, row in last_rows:
-            b = row.get("breakdown_pct") if isinstance(row.get("breakdown_pct"), dict) else {}
+            b = dict_or_empty(row.get("breakdown_pct"))
             o = b.get("other")
             if isinstance(o, int | float) and float(o) > 0:
                 show_other = True
@@ -337,7 +339,7 @@ def _render_usage(payload: dict[str, Any]) -> None:
         if show_other:
             lr.add_column("oth%", justify="right")
         for src, row in last_rows:
-            b = row.get("breakdown_pct") if isinstance(row.get("breakdown_pct"), dict) else {}
+            b = dict_or_empty(row.get("breakdown_pct"))
             tok_n = int(row.get("context_size", 0))
             pct_raw = row.get("context_used_pct")
             tok_cell = f"{tok_n:,} ({float(pct_raw):.1f}%)" if isinstance(pct_raw, int | float) else f"{tok_n:,}"

@@ -640,6 +640,7 @@ class LlmRequestLogCapability(AbstractCapability[AgentDepsT]):
     async def after_model_request(
         self,
         ctx: RunContext[AgentDepsT],
+        *,
         request_context: ModelRequestContext,
         response: ModelResponse,
     ) -> ModelResponse:

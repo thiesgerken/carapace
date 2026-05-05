@@ -1024,6 +1024,8 @@ class SessionEngine(SessionTurnMixin):
                 "tool-calls": "tool_calls",
             }
             metric = metric_aliases.get(args[0].lower()) if len(args) == 2 else None
+            if metric == "tools":
+                metric = "tool_calls"
             if len(args) != 2 or metric is None:
                 return {
                     "command": "budget",
@@ -1034,6 +1036,8 @@ class SessionEngine(SessionTurnMixin):
                         ),
                     },
                 }
+
+            assert metric in ("input", "output", "cost", "tool_calls")
 
             try:
                 value = self._parse_budget_limit_value(metric, args[1].strip())

@@ -60,7 +60,8 @@ class SessionListCache:
     def invalidate_sync(self) -> None:
         if self._redis_client is None or self._loop is None or self._loop.is_closed():
             return
-        self._loop.call_soon_threadsafe(lambda: self._loop.create_task(self.invalidate()))
+        loop = self._loop
+        loop.call_soon_threadsafe(lambda: loop.create_task(self.invalidate()))
 
     def _cache_key(self, include_archived: bool) -> str:
         return f"carapace:sessions:sorted:{int(include_archived)}"
