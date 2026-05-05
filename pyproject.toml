@@ -92,4 +92,11 @@ testpaths = ["tests"]
 
 [tool.pyright]
 include = ["src"]
-exclude = ["tests"]
+exclude = [
+    "tests",
+    "src/carapace/assets",
+    "**/node_modules/**",
+    "**/__pycache__",
+    "**/.*",
+    ".venv",
+]
