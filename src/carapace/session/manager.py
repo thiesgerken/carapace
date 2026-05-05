@@ -182,6 +182,7 @@ class SessionManager:
         data = ModelMessagesTypeAdapter.dump_python(messages, mode="json")
         with open(history_path, "w") as f:
             yaml.dump(data, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+        self._notify_change()
 
     # --- Usage tracking persistence ---
 
@@ -261,9 +262,11 @@ class SessionManager:
 
     def save_sandbox_snapshot(self, session_id: str, snapshot: SessionSandboxSnapshot) -> None:
         save_sandbox_snapshot(self._sandbox_snapshot_path(session_id), snapshot)
+        self._notify_change()
 
     def clear_sandbox_snapshot(self, session_id: str) -> None:
         clear_sandbox_snapshot(self._sandbox_snapshot_path(session_id))
+        self._notify_change()
 
     # --- Event log (ordered display history including slash commands) ---
 
@@ -323,6 +326,7 @@ class SessionManager:
     def append_events(self, session_id: str, events: list[dict[str, Any]]) -> None:
         with self._events_lock:
             self._append_events_unlocked(session_id, events)
+        self._notify_change()
 
     def _save_events_unlocked(self, session_id: str, events: list[dict[str, Any]]) -> None:
         session_dir = self.sessions_dir / session_id
@@ -336,6 +340,7 @@ class SessionManager:
     def save_events(self, session_id: str, events: list[dict[str, Any]]) -> None:
         with self._events_lock:
             self._save_events_unlocked(session_id, events)
+        self._notify_change()
 
     def update_events(
         self,
@@ -352,4 +357,5 @@ class SessionManager:
                 for index in new_event_indexes:
                     events[index] = _timestamped_event(events[index], now=ts)
             self._save_events_unlocked(session_id, events)
+            self._notify_change()
             return result

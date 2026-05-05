@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
 
@@ -31,11 +32,26 @@ _TEST_TOKEN = "test-bearer-token-for-server-tests"
 
 
 class _FakeSessionListCache:
-    async def get_session_ids(self, *, include_archived: bool, loader):
-        return loader()
+    def __init__(self) -> None:
+        self._entries: dict[tuple[bool, bool], list[dict[str, object]]] = {}
+
+    async def get_session_infos(
+        self,
+        *,
+        include_archived: bool,
+        include_message_count: bool,
+        loader: Callable[[], list[dict[str, object]]],
+    ) -> list[dict[str, object]]:
+        key = (include_archived, include_message_count)
+        cached = self._entries.get(key)
+        if cached is not None:
+            return cached
+        loaded = loader()
+        self._entries[key] = loaded
+        return loaded
 
     def invalidate_sync(self) -> None:
-        return
+        self._entries.clear()
 
 
 @pytest.fixture(autouse=True)
@@ -318,6 +334,41 @@ def test_list_sessions_page_can_include_message_count(client, auth_headers):
 
     assert resp.status_code == 200
     session = next(item for item in resp.json()["items"] if item["session_id"] == sid)
+    assert session["message_count"] == 2
+
+
+def test_list_sessions_uses_cached_summaries_on_subsequent_requests(client, auth_headers, monkeypatch):
+    sid = client.post("/api/sessions", headers=auth_headers).json()["session_id"]
+    srv._engine.session_mgr.append_events(
+        sid,
+        [
+            {"role": "user", "content": "first"},
+            {"role": "assistant", "content": "reply"},
+        ],
+    )
+
+    first_resp = client.get("/api/sessions?include_message_count=true", headers=auth_headers)
+    assert first_resp.status_code == 200
+
+    monkeypatch.setattr(
+        srv._engine.session_mgr,
+        "load_state",
+        MagicMock(side_effect=AssertionError("load_state should not be called after summaries are cached")),
+    )
+    monkeypatch.setattr(
+        srv._engine.session_mgr,
+        "load_events",
+        MagicMock(side_effect=AssertionError("load_events should not be called after summaries are cached")),
+    )
+    monkeypatch.setattr(
+        srv._engine.session_mgr,
+        "load_sandbox_snapshot",
+        MagicMock(side_effect=AssertionError("load_sandbox_snapshot should not be called after summaries are cached")),
+    )
+
+    second_resp = client.get("/api/sessions?include_message_count=true", headers=auth_headers)
+    assert second_resp.status_code == 200
+    session = next(item for item in second_resp.json()["items"] if item["session_id"] == sid)
     assert session["message_count"] == 2
 
 

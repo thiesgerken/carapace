@@ -557,6 +557,19 @@ def _compute_sorted_session_ids(*, include_archived: bool) -> list[str]:
     return [state.session_id for state in states]
 
 
+def _build_session_list_items(*, include_archived: bool, include_message_count: bool) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    for session_id in _compute_sorted_session_ids(include_archived=include_archived):
+        state = _engine.session_mgr.load_state(session_id)
+        if state is None:
+            continue
+        if state.attributes.archived and not include_archived:
+            continue
+        session_info = _session_info_from_state(state, include_message_count=include_message_count)
+        items.append(session_info.model_dump(mode="json"))
+    return items
+
+
 def _parse_session_cursor(cursor: str | None) -> int:
     if cursor is None:
         return 0
@@ -583,23 +596,19 @@ async def _list_session_page(
     cursor: str | None,
 ) -> SessionListPage:
     offset = _parse_session_cursor(cursor)
-    session_ids = await _session_list_cache.get_session_ids(
+    cached_items = await _session_list_cache.get_session_infos(
         include_archived=include_archived,
-        loader=lambda: _compute_sorted_session_ids(include_archived=include_archived),
+        include_message_count=include_message_count,
+        loader=lambda: _build_session_list_items(
+            include_archived=include_archived,
+            include_message_count=include_message_count,
+        ),
     )
-    page_states: list[SessionState] = []
-    next_offset = offset
-    while next_offset < len(session_ids) and (limit is None or len(page_states) < limit):
-        state = _engine.session_mgr.load_state(session_ids[next_offset])
-        next_offset += 1
-        if state is None:
-            continue
-        if state.attributes.archived and not include_archived:
-            continue
-        page_states.append(state)
-    has_more = next_offset < len(session_ids)
+    page_items = cached_items[offset:] if limit is None else cached_items[offset : offset + limit]
+    next_offset = offset + len(page_items)
+    has_more = next_offset < len(cached_items)
     return SessionListPage(
-        items=[_session_info_from_state(state, include_message_count=include_message_count) for state in page_states],
+        items=[SessionInfo.model_validate(item) for item in page_items],
         next_cursor=str(next_offset) if has_more else None,
         has_more=has_more,
     )
