@@ -537,7 +537,7 @@ def _session_message_count(session_id: str) -> int:
     return sum(1 for message in history if message.role in {"user", "assistant"})
 
 
-def _compute_sorted_session_ids(*, include_archived: bool) -> list[str]:
+def _compute_sorted_session_states(*, include_archived: bool) -> list[SessionState]:
     states: list[SessionState] = []
     for session_id in _engine.session_mgr.list_sessions():
         state = _engine.session_mgr.load_state(session_id)
@@ -554,17 +554,12 @@ def _compute_sorted_session_ids(*, include_archived: bool) -> list[str]:
             state.session_id,
         )
     )
-    return [state.session_id for state in states]
+    return states
 
 
 def _build_session_list_items(*, include_archived: bool, include_message_count: bool) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
-    for session_id in _compute_sorted_session_ids(include_archived=include_archived):
-        state = _engine.session_mgr.load_state(session_id)
-        if state is None:
-            continue
-        if state.attributes.archived and not include_archived:
-            continue
+    for state in _compute_sorted_session_states(include_archived=include_archived):
         session_info = _session_info_from_state(state, include_message_count=include_message_count)
         items.append(session_info.model_dump(mode="json"))
     return items

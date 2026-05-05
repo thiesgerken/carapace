@@ -372,6 +372,23 @@ def test_list_sessions_uses_cached_summaries_on_subsequent_requests(client, auth
     assert session["message_count"] == 2
 
 
+def test_list_sessions_cache_miss_loads_state_once_per_session(client, auth_headers, monkeypatch):
+    created_ids = [client.post("/api/sessions", headers=auth_headers).json()["session_id"] for _ in range(3)]
+    original_load_state = srv._engine.session_mgr.load_state
+    load_calls: list[str] = []
+
+    def counting_load_state(session_id: str):
+        load_calls.append(session_id)
+        return original_load_state(session_id)
+
+    monkeypatch.setattr(srv._engine.session_mgr, "load_state", counting_load_state)
+
+    resp = client.get("/api/sessions?include_archived=true", headers=auth_headers)
+
+    assert resp.status_code == 200
+    assert sorted(load_calls) == sorted(created_ids)
+
+
 def test_list_sessions_page_uses_stable_tiebreaker(client, auth_headers):
     created_ids = [client.post("/api/sessions", headers=auth_headers).json()["session_id"] for _ in range(3)]
     shared_last_active = datetime(2024, 1, 1, tzinfo=UTC)
