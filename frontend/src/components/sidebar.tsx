@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { Archive, ArchiveRestore, Loader2, Lock, LogOut, Mail, MessageSquare, Pin, Plus, Save, Star, Trash2 } from "lucide-react";
+import { Archive, ArchiveRestore, Bot, Loader2, Lock, LogOut, Mail, MessageSquare, Pin, Save, Star, Trash2 } from "lucide-react";
 import { EmojiText } from "@/components/emoji-text";
+import { NewSessionButton } from "@/components/new-session-button";
 import type { SessionAttributesPatch, SessionInfo, SessionSandboxSnapshot } from "@/lib/types";
 import {
   cn,
@@ -16,7 +17,7 @@ interface SidebarProps {
   sessions: SessionInfo[];
   activeSessionId: string | null;
   onSelect: (sessionId: string) => void;
-  onNew: () => void;
+  onNew: (unattended?: boolean) => void;
   onUpdateAttributes: (sessionId: string, attributes: SessionAttributesPatch) => Promise<SessionInfo>;
   onDelete: (sessionId: string) => void;
   onDisconnect: () => void;
@@ -127,6 +128,7 @@ export function Sidebar({
       && !!session.knowledge_last_committed_at
       && !sessionHasKnowledgeChanges(session);
     const showKnowledgeIndicator = showPrivateIcon || showSavedIcon;
+    const showUnattendedIcon = session.attributes.unattended;
     const channelLabel = session.channel_type !== "web" && session.channel_type !== "cli"
       ? session.channel_type
       : null;
@@ -167,6 +169,15 @@ export function Sidebar({
                 <span className="font-mono break-all">{session.session_id}</span>
               )}
           </div>
+          {showUnattendedIcon ? (
+            <span
+              className="mt-0.5 inline-flex shrink-0 items-center text-emerald-700"
+              title="Unattended session"
+            >
+              <Bot className="h-3.5 w-3.5" />
+              <span className="sr-only">Unattended session</span>
+            </span>
+          ) : null}
         </div>
         <div className="flex items-start gap-2 px-3 pb-2">
           <div className="min-w-0 flex-1 text-left">
@@ -336,18 +347,7 @@ export function Sidebar({
 
       {/* New session button */}
       <div className="px-3 pt-3 pb-1">
-        <button
-          onClick={onNew}
-          disabled={loading}
-          className={cn(
-            "flex w-full items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm",
-            "hover:bg-muted transition-colors",
-            "disabled:opacity-50",
-          )}
-        >
-          <Plus className="h-4 w-4" />
-          New session
-        </button>
+        <NewSessionButton onCreate={onNew} disabled={loading} fullWidth />
       </div>
 
       {/* Session list */}

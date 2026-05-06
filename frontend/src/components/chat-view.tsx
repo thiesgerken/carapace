@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Archive, ArchiveRestore, Loader2, Lock, Pin, Play, RotateCcw, Save, Square, Star, Trash2, Unlock } from "lucide-react";
+import { Archive, ArchiveRestore, Bot, Loader2, Lock, Pin, Play, RotateCcw, Save, Square, Star, Trash2, Unlock } from "lucide-react";
 import { useWebSocket } from "@/hooks/use-websocket";
 import {
   type AvailableModelInfo,
@@ -1610,10 +1610,14 @@ export function ChatView({
   const hasKnowledgeChanges = sessionHasKnowledgeChanges(session);
   const sessionArchived = session?.attributes.archived ?? false;
   const sessionUnattended = session?.attributes.unattended ?? false;
+  const hasSubmittedUserMessage = messages.some(
+    (message) => message.kind === "user" && !message.content.startsWith("/"),
+  );
+  const unattendedInputLocked = sessionUnattended && hasSubmittedUserMessage;
   const sessionPrivate = session?.attributes.private ?? false;
   const sessionPinned = session?.attributes.pinned ?? false;
   const sessionFavorite = session?.attributes.favorite ?? false;
-  const inputDisabled = sessionArchived || sessionUnattended;
+  const inputDisabled = sessionArchived || unattendedInputLocked;
   const inputDisabledPlaceholder = sessionArchived
     ? "Unarchive first"
     : "This session is unattended. Fork it first to continue here.";
@@ -1671,6 +1675,14 @@ export function ChatView({
       <div className="border-b border-border px-3 py-2.5 sm:px-4 sm:py-3">
         <div className="w-full">
           <div className="min-w-0 w-full space-y-2">
+            {sessionUnattended ? (
+              <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 font-medium text-emerald-800">
+                  <Bot className="h-3 w-3 shrink-0" />
+                  <span>Unattended</span>
+                </span>
+              </div>
+            ) : null}
             <div className="grid grid-cols-2 gap-2">
               <div className="min-w-0 rounded-lg border border-border/70 bg-muted/20 px-2.5 py-2 sm:px-3">
                 <div className="flex items-start justify-between gap-2">
