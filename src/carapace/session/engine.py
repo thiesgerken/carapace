@@ -1052,6 +1052,8 @@ class SessionEngine(SessionTurnMixin):
                     },
                 }
 
+            assert metric in ("input", "output", "cost", "tool_calls")
+
             try:
                 value = self._parse_budget_limit_value(metric, args[1].strip())
             except ValueError as exc:

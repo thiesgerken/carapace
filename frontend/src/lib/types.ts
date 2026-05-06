@@ -56,6 +56,12 @@ export interface SessionInfo {
   sandbox?: SessionSandboxSnapshot | null;
 }
 
+export interface SessionListPage {
+  items: SessionInfo[];
+  next_cursor?: string | null;
+  has_more: boolean;
+}
+
 export interface SessionArchiveCommitResponse {
   session: SessionInfo;
   committed: boolean;

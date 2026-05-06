@@ -4,6 +4,7 @@ import asyncio
 import os
 import shutil
 from pathlib import Path
+from typing import cast
 
 import docker
 import docker.models.containers
@@ -382,8 +383,9 @@ class DockerRuntime(ContainerRuntime):
                 raise
             exit_code = result.exit_code if result.exit_code is not None else -1
 
-            stdout = result.output[0].decode("utf-8", errors="replace") if result.output[0] else ""
-            stderr = result.output[1].decode("utf-8", errors="replace") if result.output[1] else ""
+            stdout_bytes, stderr_bytes = cast(tuple[bytes | None, bytes | None], result.output)
+            stdout = stdout_bytes.decode("utf-8", errors="replace") if stdout_bytes else ""
+            stderr = stderr_bytes.decode("utf-8", errors="replace") if stderr_bytes else ""
             output = stdout
             if stderr:
                 output += f"\n[stderr] {stderr}"

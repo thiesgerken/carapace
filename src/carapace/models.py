@@ -411,6 +411,21 @@ class SessionsConfig(BaseModel):
     commit: SessionCommitConfig = SessionCommitConfig()
 
 
+class CacheConfig(BaseSettings):
+    model_config = SettingsConfigDict(env_prefix="CARAPACE_CACHE_")
+
+    ttl_seconds: int = 1800
+    redis_url: str = "redis://localhost:6379/0"
+
+    @model_validator(mode="after")
+    def _validate(self) -> CacheConfig:
+        if self.ttl_seconds <= 0:
+            raise ValueError("cache.ttl_seconds must be > 0")
+        if not self.redis_url.strip():
+            raise ValueError("cache.redis_url must not be empty")
+        return self
+
+
 class ServerConfig(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="CARAPACE_SERVER_")
 
@@ -465,6 +480,7 @@ class CredentialsConfig(BaseModel):
 
 class Config(BaseModel):
     carapace: CarapaceConfig = CarapaceConfig()
+    cache: CacheConfig = CacheConfig()
     server: ServerConfig = ServerConfig()
     channels: ChannelsConfig = ChannelsConfig()
     agent: AgentConfig = AgentConfig()

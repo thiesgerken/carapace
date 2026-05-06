@@ -252,16 +252,21 @@ class ProxyServer:
             body = await asyncio.wait_for(reader.readexactly(content_length), timeout=30)
 
         try:
-            connect_kwargs: dict[str, object] = {}
             if use_tls:
-                connect_kwargs = {
-                    "ssl": ssl.create_default_context(),
-                    "server_hostname": domain,
-                }
-            remote_reader, remote_writer = await asyncio.wait_for(
-                asyncio.open_connection(domain, port, **connect_kwargs),
-                timeout=30,
-            )
+                remote_reader, remote_writer = await asyncio.wait_for(
+                    asyncio.open_connection(
+                        domain,
+                        port,
+                        ssl=ssl.create_default_context(),
+                        server_hostname=domain,
+                    ),
+                    timeout=30,
+                )
+            else:
+                remote_reader, remote_writer = await asyncio.wait_for(
+                    asyncio.open_connection(domain, port),
+                    timeout=30,
+                )
         except Exception as exc:
             logger.debug(f"Proxy HTTP: cannot reach {domain}:{port} — {exc}")
             writer.write(b"HTTP/1.1 502 Bad Gateway\r\n\r\n")

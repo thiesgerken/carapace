@@ -38,7 +38,7 @@ from carapace.sandbox.manager import SandboxManager
 from carapace.security.context import ApprovalSource, ApprovalVerdict, format_denial_message, normalize_optional_message
 from carapace.session.manager import SessionManager
 from carapace.session.types import ActiveSession, SessionSubscriber, TurnExecutionResult
-from carapace.usage import LlmRequestState, SessionBudgetExceededError, interrupted_request_record
+from carapace.usage import BudgetGauge, LlmRequestState, SessionBudgetExceededError, interrupted_request_record
 from carapace.ws_models import ApprovalRequest, ApprovalResponse, TurnUsage
 
 
@@ -138,6 +138,8 @@ class SessionTurnHost(Protocol):
     def _assert_llm_budget_available(self, active: ActiveSession) -> None: ...
 
     def _remaining_usage_limits(self, active: ActiveSession) -> UsageLimits | None: ...
+
+    def _budget_gauges(self, active: ActiveSession) -> list[BudgetGauge]: ...
 
     async def _maybe_promote_llm_request_state(
         self,

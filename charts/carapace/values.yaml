@@ -154,3 +154,17 @@ extraEnv: []
 #     - configMapRef:
 #         name: carapace-config
 envFrom: []
+
+redis:
+  enabled: true
+  image:
+    registry: docker.io
+    repository: library/redis
+    tag: 7-alpine
+    pullPolicy: IfNotPresent
+  resources:
+    requests:
+      cpu: 25m
+      memory: 64Mi
+    limits:
+      memory: 128Mi

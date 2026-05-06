@@ -64,6 +64,10 @@ spec:
               value: {{ include "carapace.sandboxesName" . | quote }}
             - name: CARAPACE_SANDBOX_K8S_SESSION_PVC_SIZE
               value: {{ .Values.sandbox.sessionPvc.size | quote }}
+          {{- if .Values.redis.enabled }}
+            - name: CARAPACE_CACHE_REDIS_URL
+              value: redis://{{ .Release.Name }}-redis:6379/0
+          {{- end }}
           {{- if .Values.sandbox.sessionPvc.storageClass }}
             - name: CARAPACE_SANDBOX_K8S_SESSION_PVC_STORAGE_CLASS
               value: {{ .Values.sandbox.sessionPvc.storageClass | quote }}

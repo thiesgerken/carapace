@@ -36,6 +36,7 @@ from pydantic_ai.exceptions import UsageLimitExceeded
 
 from carapace.auth import get_token
 from carapace.bootstrap import ensure_data_dir, ensure_knowledge_dir
+from carapace.cache import SessionListCache
 from carapace.config import _resolve_data_dir, _resolve_knowledge_dir, get_config_path, get_data_dir, load_config
 from carapace.credentials import CredentialRegistry, build_credential_registry
 from carapace.git.http import GitHttpHandler
@@ -91,6 +92,7 @@ _engine: SessionEngine
 _git_handler: GitHttpHandler
 _credential_registry: CredentialRegistry
 _session_archive: SessionArchiveService
+_session_list_cache: SessionListCache
 
 _SESSION_COMMIT_SWEEP_SECONDS = 15 * 60
 
@@ -180,7 +182,7 @@ async def _autosave_inactive_sessions() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _data_dir, _config, _engine, _git_handler, _credential_registry, _session_archive
+    global _data_dir, _config, _engine, _git_handler, _credential_registry, _session_archive, _session_list_cache
 
     # 1. Load config
     config_path = get_config_path()
@@ -225,7 +227,8 @@ async def lifespan(app: FastAPI):
         logfire.configure(token=_config.carapace.logfire_token, console=False)
         logfire.instrument_pydantic_ai()
 
-    session_mgr = SessionManager(_data_dir)
+    _session_list_cache = SessionListCache(_config.cache)
+    session_mgr = SessionManager(_data_dir, on_change=_session_list_cache.invalidate_sync)
     registry = SkillRegistry(knowledge_dir / "skills")
     skill_catalog = registry.scan()
     model_factory = make_model_factory(_config)
@@ -353,6 +356,7 @@ async def lifespan(app: FastAPI):
     logger.info(f"Internal API listening on 127.0.0.1:{_config.server.internal_port}")
 
     token = get_token()
+    await _session_list_cache.start()
 
     price_updater = UpdatePrices()
     price_updater.start()
@@ -397,6 +401,7 @@ async def lifespan(app: FastAPI):
     await proxy.stop()
     await _credential_registry.close()
     await _sandbox_mgr.cleanup_all()
+    await _session_list_cache.close()
     price_updater.stop()
     logger.info("Shutdown complete")
 
@@ -511,6 +516,12 @@ class SessionInfo(BaseModel):
         )
 
 
+class SessionListPage(BaseModel):
+    items: list[SessionInfo]
+    next_cursor: str | None = None
+    has_more: bool
+
+
 class SessionArchiveCommitResponse(BaseModel):
     session: SessionInfo
     committed: bool
@@ -529,6 +540,78 @@ def _session_message_count(session_id: str) -> int:
     return sum(1 for message in history if message.role in {"user", "assistant"})
 
 
+def _compute_sorted_session_states(*, include_archived: bool) -> list[SessionState]:
+    states: list[SessionState] = []
+    for session_id in _engine.session_mgr.list_sessions():
+        state = _engine.session_mgr.load_state(session_id)
+        if state is None:
+            continue
+        if state.attributes.archived and not include_archived:
+            continue
+        states.append(state)
+
+    states.sort(
+        key=lambda state: (
+            not state.attributes.pinned,
+            -state.last_active.timestamp(),
+            state.session_id,
+        )
+    )
+    return states
+
+
+def _build_session_list_items(*, include_archived: bool, include_message_count: bool) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    for state in _compute_sorted_session_states(include_archived=include_archived):
+        session_info = _session_info_from_state(state, include_message_count=include_message_count)
+        items.append(session_info.model_dump(mode="json"))
+    return items
+
+
+def _parse_session_cursor(cursor: str | None) -> int:
+    if cursor is None:
+        return 0
+    try:
+        offset = int(cursor)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid session cursor") from exc
+    if offset < 0:
+        raise HTTPException(status_code=400, detail="Invalid session cursor")
+    return offset
+
+
+def _session_info_from_state(state: SessionState, *, include_message_count: bool) -> SessionInfo:
+    message_count = _session_message_count(state.session_id) if include_message_count else 0
+    sandbox = _engine.session_mgr.load_sandbox_snapshot(state.session_id)
+    return SessionInfo.from_state(state, message_count=message_count, sandbox=sandbox)
+
+
+async def _list_session_page(
+    *,
+    include_message_count: bool,
+    include_archived: bool,
+    limit: int | None,
+    cursor: str | None,
+) -> SessionListPage:
+    offset = _parse_session_cursor(cursor)
+    cached_items = await _session_list_cache.get_session_infos(
+        include_archived=include_archived,
+        include_message_count=include_message_count,
+        loader=lambda: _build_session_list_items(
+            include_archived=include_archived,
+            include_message_count=include_message_count,
+        ),
+    )
+    page_items = cached_items[offset:] if limit is None else cached_items[offset : offset + limit]
+    next_offset = offset + len(page_items)
+    has_more = next_offset < len(cached_items)
+    return SessionListPage(
+        items=[SessionInfo.model_validate(item) for item in page_items],
+        next_cursor=str(next_offset) if has_more else None,
+        has_more=has_more,
+    )
+
+
 @router.post("/sessions", response_model=SessionInfo)
 async def create_session(
     body: SessionCreateRequest | None = None,
@@ -545,30 +628,20 @@ async def create_session(
     return SessionInfo.from_state(state)
 
 
-@router.get("/sessions", response_model=list[SessionInfo])
+@router.get("/sessions", response_model=SessionListPage)
 async def list_sessions(
     include_message_count: bool = False,
     include_archived: bool = False,
+    limit: int = Query(default=50, ge=1, le=200),
+    cursor: str | None = None,
     _token: str = Depends(_verify_token),
-) -> list[SessionInfo]:
-    results: list[SessionInfo] = []
-    for sid in _engine.session_mgr.list_sessions():
-        state = _engine.session_mgr.load_state(sid)
-        if state:
-            if state.attributes.archived and not include_archived:
-                continue
-            message_count = 0
-            if include_message_count:
-                message_count = _session_message_count(sid)
-            sandbox = _engine.session_mgr.load_sandbox_snapshot(sid)
-            results.append(SessionInfo.from_state(state, message_count=message_count, sandbox=sandbox))
-    results.sort(
-        key=lambda session: (
-            not session.attributes.pinned,
-            -datetime.fromisoformat(session.last_active).timestamp(),
-        )
+) -> SessionListPage:
+    return await _list_session_page(
+        include_message_count=include_message_count,
+        include_archived=include_archived,
+        limit=limit,
+        cursor=cursor,
     )
-    return results
 
 
 @router.get("/sessions/{session_id}", response_model=SessionInfo)
