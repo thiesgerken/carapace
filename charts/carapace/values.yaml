@@ -160,7 +160,7 @@ redis:
   image:
     registry: docker.io
     repository: library/redis
-    tag: 7-alpine
+    tag: 8-alpine
     pullPolicy: IfNotPresent
   resources:
     requests:
