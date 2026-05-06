@@ -728,9 +728,32 @@ def chat(
     headers = _auth_headers(bearer)
 
     if list_sessions:
-        resp = httpx.get(f"{server}/api/sessions?include_message_count=true", headers=headers)
-        resp.raise_for_status()
-        sessions = resp.json()
+        sessions: list[dict[str, Any]] = []
+        cursor: str | None = None
+
+        while True:
+            params = {"include_message_count": "true", "limit": "200"}
+            if cursor is not None:
+                params["cursor"] = cursor
+
+            resp = httpx.get(f"{server}/api/sessions", headers=headers, params=params)
+            resp.raise_for_status()
+            payload = resp.json()
+
+            if isinstance(payload, list):
+                sessions.extend(payload)
+                break
+
+            page = dict_or_empty(payload)
+            sessions.extend(list_of_dicts(page.get("items")))
+            if not page.get("has_more", False):
+                break
+
+            next_cursor = page.get("next_cursor")
+            if not isinstance(next_cursor, str) or not next_cursor:
+                break
+            cursor = next_cursor
+
         if not sessions:
             console.print("No existing sessions.")
         else:
