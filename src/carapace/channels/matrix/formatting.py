@@ -6,6 +6,7 @@ import json
 
 import markdown as md
 
+from carapace.payloads import dict_of_dicts, dict_or_empty, list_of_dicts, string_dict
 from carapace.ws_models import ApprovalRequest, CommandResult
 
 
@@ -16,7 +17,7 @@ def md_to_html(text: str) -> str:
 
 def format_command_result_text(result: CommandResult) -> str:
     """Render a CommandResult as plain text suitable for a Matrix message."""
-    data = result.data
+    data = dict_or_empty(result.data)
 
     match result.command:
         case "help":
@@ -38,25 +39,27 @@ def format_command_result_text(result: CommandResult) -> str:
             return data.get("message", "Context approved.")
 
         case "session":
-            grants: dict[str, dict[str, object]] = data.get("context_grants") or {}
+            grants = dict_of_dicts(data.get("context_grants"))
             if grants:
                 grant_lines: list[str] = []
                 for skill, info in grants.items():
                     parts_g = [f"- **{skill}**"]
-                    domains_list = info.get("domains") or []
-                    if domains_list:
+                    domains_list = info.get("domains")
+                    if isinstance(domains_list, list) and domains_list:
                         parts_g.append(f"  domains: {', '.join(str(d) for d in domains_list)}")
-                    vps = info.get("vault_paths") or []
+                    vps = info.get("vault_paths")
                     cached = info.get("cached_credentials", 0)
-                    if vps:
+                    if isinstance(vps, list) and vps:
                         parts_g.append(f"  credentials: {len(vps)} declared, {cached} cached")
                     grant_lines.append("\n".join(parts_g))
                 grants_str = "\n" + "\n".join(grant_lines)
             else:
                 grants_str = " (none)"
-            domain_entries: list[dict[str, str]] = data.get("allowed_domains") or []
+            domain_entries = list_of_dicts(data.get("allowed_domains"))
             if domain_entries:
-                domains_str = "\n" + "\n".join(f"  - `{e['domain']}` ({e['scope']})" for e in domain_entries)
+                domains_str = "\n" + "\n".join(
+                    f"  - `{e.get('domain', '?')}` ({e.get('scope', '?')})" for e in domain_entries
+                )
             else:
                 domains_str = " (none)"
             lines = [
@@ -68,11 +71,12 @@ def format_command_result_text(result: CommandResult) -> str:
             return "\n".join(lines)
 
         case "skills":
-            if not data:
+            skills = list_of_dicts(result.data)
+            if not skills:
                 return "No skills available."
             lines = ["**Skills:**\n"]
-            for s in data:
-                lines.append(f"- **{s['name']}** — {s['description']}")
+            for skill in skills:
+                lines.append(f"- **{skill.get('name', '?')}** — {skill.get('description', '')}")
             return "\n".join(lines)
 
         case "memory":
@@ -87,11 +91,11 @@ def format_command_result_text(result: CommandResult) -> str:
             return data.get("message", "")
 
         case "usage":
-            models: dict[str, dict] = data.get("models", {})
-            categories: dict[str, dict] = data.get("categories", {})
-            costs: dict[str, str] = data.get("costs", {})
-            category_costs: dict[str, str] = data.get("category_costs", {})
-            budget_gauges: list[dict] = data.get("budget_gauges", [])
+            models = dict_of_dicts(data.get("models"))
+            categories = dict_of_dicts(data.get("categories"))
+            costs = string_dict(data.get("costs"))
+            category_costs = string_dict(data.get("category_costs"))
+            budget_gauges = list_of_dicts(data.get("budget_gauges"))
             total_input = data.get("total_input", 0)
             total_output = data.get("total_output", 0)
             total_tool_calls = int(data.get("total_tool_calls", 0) or 0)
@@ -188,16 +192,16 @@ def format_command_result_text(result: CommandResult) -> str:
                     return f"{float(v):.1f}%"
                 return "—"
 
-            last_rows: list[tuple[str, dict]] = []
+            last_rows: list[tuple[str, dict[str, object]]] = []
             for key, src in (("last_llm_agent", "agent"), ("last_llm_sentinel", "sentinel")):
-                row = data.get(key)
-                if isinstance(row, dict) and int(row.get("context_size", 0) or 0) > 0:
+                row = dict_or_empty(data.get(key))
+                if int(row.get("context_size", 0) or 0) > 0:
                     last_rows.append((src, row))
 
             if last_rows:
                 show_other = False
                 for _, row in last_rows:
-                    b = row.get("breakdown_pct") if isinstance(row.get("breakdown_pct"), dict) else {}
+                    b = dict_or_empty(row.get("breakdown_pct"))
                     o = b.get("other")
                     if isinstance(o, int | float) and float(o) > 0:
                         show_other = True
@@ -215,9 +219,11 @@ def format_command_result_text(result: CommandResult) -> str:
                     )
                 lines = ["**Context**\n", hdr]
                 for src, row in last_rows:
-                    b = row.get("breakdown_pct") if isinstance(row.get("breakdown_pct"), dict) else {}
+                    b = dict_or_empty(row.get("breakdown_pct"))
+                    context_size = row.get("context_size", 0)
+                    context_tokens = int(context_size) if isinstance(context_size, int | float | str) else 0
                     core = (
-                        f"| {src} | {int(row.get('context_size', 0)):,} | "
+                        f"| {src} | {context_tokens:,} | "
                         f"{_fmt_pct_cell(b.get('system'))} | {_fmt_pct_cell(b.get('user'))} | "
                         f"{_fmt_pct_cell(b.get('assistant'))} | {_fmt_pct_cell(b.get('tool_calls'))} | "
                         f"{_fmt_pct_cell(b.get('tool_returns'))}"

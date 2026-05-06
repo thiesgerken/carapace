@@ -56,10 +56,17 @@ def _timestamped_event(event: dict[str, Any], *, now: datetime | None = None) ->
 
 
 class SessionManager:
-    def __init__(self, data_dir: Path):
+    def __init__(self, data_dir: Path, on_change: Callable[[], None] | None = None):
         self.sessions_dir = data_dir / "sessions"
         self.sessions_dir.mkdir(parents=True, exist_ok=True)
         self._events_lock = RLock()
+        self._on_change = on_change
+
+    def _log_disk_read(self, kind: str, path: Path, *, session_id: str | None = None) -> None:
+        if session_id is None:
+            logger.debug(f"Reading {kind} from disk: {path}")
+            return
+        logger.debug(f"Reading {kind} from disk for session {session_id}: {path}")
 
     def create_session(
         self,
@@ -76,6 +83,9 @@ class SessionManager:
             channel_type=channel_type,
             channel_ref=channel_ref or None,
             attributes=SessionAttributes(private=private),
+            approved_operations=[],
+            activated_skills=[],
+            context_grants={},
             budget=budget.model_copy(deep=True) if budget is not None else SessionBudget(),
             created_at=now,
             last_active=now,
@@ -90,6 +100,7 @@ class SessionManager:
         state_path = self.sessions_dir / session_id / "state.yaml"
         if not state_path.exists():
             return None
+        self._log_disk_read("session state", state_path, session_id=session_id)
         with open(state_path) as f:
             raw = yaml.safe_load(f)
         return SessionState.model_validate(raw)
@@ -103,6 +114,7 @@ class SessionManager:
     def list_sessions(self) -> list[str]:
         if not self.sessions_dir.exists():
             return []
+        self._log_disk_read("session directory listing", self.sessions_dir)
         return sorted(
             [d.name for d in self.sessions_dir.iterdir() if d.is_dir()],
             key=lambda s: self._get_mtime(s),
@@ -130,6 +142,7 @@ class SessionManager:
         session_dir = self.sessions_dir / session_id
         if session_dir.exists():
             shutil.rmtree(session_dir)
+            self._notify_change()
             return True
         return False
 
@@ -142,6 +155,11 @@ class SessionManager:
         state_path = session_dir / "state.yaml"
         with open(state_path, "w") as f:
             yaml.dump(state.model_dump(mode="json"), f, default_flow_style=False)
+        self._notify_change()
+
+    def _notify_change(self) -> None:
+        if self._on_change is not None:
+            self._on_change()
 
     def load_history(self, session_id: str) -> list[ModelMessage]:
         history_path = self.sessions_dir / session_id / "history.yaml"
@@ -149,8 +167,10 @@ class SessionManager:
             # fallback to legacy JSON
             json_path = history_path.with_suffix(".json")
             if json_path.exists():
+                self._log_disk_read("session history (legacy json)", json_path, session_id=session_id)
                 return ModelMessagesTypeAdapter.validate_json(json_path.read_bytes())
             return []
+        self._log_disk_read("session history", history_path, session_id=session_id)
         with open(history_path) as f:
             raw = yaml.safe_load(f)
         return ModelMessagesTypeAdapter.validate_python(raw or [])
@@ -162,6 +182,7 @@ class SessionManager:
         data = ModelMessagesTypeAdapter.dump_python(messages, mode="json")
         with open(history_path, "w") as f:
             yaml.dump(data, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+        self._notify_change()
 
     # --- Usage tracking persistence ---
 
@@ -171,8 +192,10 @@ class SessionManager:
             # fallback to legacy JSON
             json_path = usage_path.with_suffix(".json")
             if json_path.exists():
+                self._log_disk_read("session usage (legacy json)", json_path, session_id=session_id)
                 return UsageTracker.model_validate_json(json_path.read_bytes())
             return UsageTracker()
+        self._log_disk_read("session usage", usage_path, session_id=session_id)
         with open(usage_path) as f:
             raw = yaml.safe_load(f)
         return UsageTracker.model_validate(raw or {})
@@ -190,6 +213,7 @@ class SessionManager:
         path = self.sessions_dir / session_id / "llm_requests.yaml"
         if not path.exists():
             return LlmRequestLog()
+        self._log_disk_read("llm request log", path, session_id=session_id)
         with open(path) as f:
             raw = yaml.safe_load(f)
         return LlmRequestLog.model_validate(raw or {})
@@ -207,6 +231,7 @@ class SessionManager:
         path = self.sessions_dir / session_id / "llm_activity.yaml"
         if not path.exists():
             return None
+        self._log_disk_read("llm activity", path, session_id=session_id)
         with open(path) as f:
             raw = yaml.safe_load(f)
         if not raw:
@@ -230,13 +255,18 @@ class SessionManager:
         return self.sessions_dir / session_id / "sandbox.yaml"
 
     def load_sandbox_snapshot(self, session_id: str) -> SessionSandboxSnapshot | None:
-        return load_sandbox_snapshot(self._sandbox_snapshot_path(session_id))
+        path = self._sandbox_snapshot_path(session_id)
+        if path.exists():
+            self._log_disk_read("sandbox snapshot", path, session_id=session_id)
+        return load_sandbox_snapshot(path)
 
     def save_sandbox_snapshot(self, session_id: str, snapshot: SessionSandboxSnapshot) -> None:
         save_sandbox_snapshot(self._sandbox_snapshot_path(session_id), snapshot)
+        self._notify_change()
 
     def clear_sandbox_snapshot(self, session_id: str) -> None:
         clear_sandbox_snapshot(self._sandbox_snapshot_path(session_id))
+        self._notify_change()
 
     # --- Event log (ordered display history including slash commands) ---
 
@@ -246,9 +276,11 @@ class SessionManager:
             # fallback to legacy JSON
             json_path = events_path.with_suffix(".json")
             if json_path.exists():
+                self._log_disk_read("session events (legacy json)", json_path, session_id=session_id)
                 return json.loads(json_path.read_bytes())
             return []
         result: list[dict[str, Any]] = []
+        self._log_disk_read("session events", events_path, session_id=session_id)
         with open(events_path) as f:
             try:
                 for doc in yaml.safe_load_all(f):
@@ -294,6 +326,7 @@ class SessionManager:
     def append_events(self, session_id: str, events: list[dict[str, Any]]) -> None:
         with self._events_lock:
             self._append_events_unlocked(session_id, events)
+        self._notify_change()
 
     def _save_events_unlocked(self, session_id: str, events: list[dict[str, Any]]) -> None:
         session_dir = self.sessions_dir / session_id
@@ -307,6 +340,7 @@ class SessionManager:
     def save_events(self, session_id: str, events: list[dict[str, Any]]) -> None:
         with self._events_lock:
             self._save_events_unlocked(session_id, events)
+        self._notify_change()
 
     def update_events(
         self,
@@ -323,4 +357,5 @@ class SessionManager:
                 for index in new_event_indexes:
                     events[index] = _timestamped_event(events[index], now=ts)
             self._save_events_unlocked(session_id, events)
+            self._notify_change()
             return result

@@ -6,7 +6,7 @@ import { Menu, X } from "lucide-react";
 import { ConnectForm } from "@/components/connect-form";
 import { Sidebar } from "@/components/sidebar";
 import { ChatView } from "@/components/chat-view";
-import { createSession, deleteSession, listSessions, updateSession } from "@/lib/api";
+import { createSession, deleteSession, getSession, listSessions, updateSession } from "@/lib/api";
 import {
   clearConnection,
   getServer,
@@ -25,22 +25,31 @@ function sandboxTimestampValue(sandbox: SessionInfo["sandbox"] | null | undefine
   return Number.isNaN(value) ? 0 : value;
 }
 
-function mergeSessionsWithNewerSandbox(
+const SESSION_PAGE_SIZE = 50;
+
+function mergeSessions(
   current: SessionInfo[],
   incoming: SessionInfo[],
   pending: Map<string, SessionInfo["sandbox"]>,
 ): SessionInfo[] {
-  const currentById = new Map(current.map((session) => [session.session_id, session]));
-  return incoming.map((session) => {
-    const existing = currentById.get(session.session_id);
+  const merged = new Map(current.map((session) => [session.session_id, session]));
+  for (const session of incoming) {
+    const existing = merged.get(session.session_id);
     const pendingSandbox = pending.get(session.session_id);
     const freshestSandbox = [session.sandbox, existing?.sandbox, pendingSandbox].reduce<SessionInfo["sandbox"]>(
       (freshest, candidate) =>
         sandboxTimestampValue(candidate) > sandboxTimestampValue(freshest) ? candidate : freshest,
       session.sandbox,
     );
-    return freshestSandbox === session.sandbox ? session : { ...session, sandbox: freshestSandbox };
-  });
+    const mergedSession = existing ? { ...existing, ...session } : session;
+    merged.set(
+      session.session_id,
+      freshestSandbox === mergedSession.sandbox
+        ? mergedSession
+        : { ...mergedSession, sandbox: freshestSandbox },
+    );
+  }
+  return sortSessions([...merged.values()]);
 }
 
 function compareSessions(left: SessionInfo, right: SessionInfo): number {
@@ -108,11 +117,19 @@ function HomeContent() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [creatingSession, setCreatingSession] = useState(false);
   const [refreshingSessions, setRefreshingSessions] = useState(false);
+  const [loadingMoreSessions, setLoadingMoreSessions] = useState(false);
+  const [sessionListInitialized, setSessionListInitialized] = useState(false);
+  const [sessionListCursor, setSessionListCursor] = useState<string | null>(null);
+  const [sessionListHasMore, setSessionListHasMore] = useState(false);
   const refreshRequestIdRef = useRef(0);
+  const loadingMoreSessionsRef = useRef(false);
+  const failedLoadMoreCursorRef = useRef<string | null>(null);
   const pendingSandboxUpdatesRef = useRef(new Map<string, SessionInfo["sandbox"]>());
 
   const { connected, server, token } = connection;
   const loading = creatingSession || refreshingSessions;
+  const hasActiveSessionLoaded = activeSessionId != null
+    && sessions.some((session) => session.session_id === activeSessionId);
 
   useSwipeDrawer(sidebarOpen, setSidebarOpen);
 
@@ -150,23 +167,35 @@ function HomeContent() {
   }, []);
 
   // Fetch sessions when connected
-  const refreshSessions = useCallback(async (srv: string, tok: string) => {
+  const loadInitialSessions = useCallback(async (srv: string, tok: string) => {
     if (!srv || !tok) return;
 
     const requestId = ++refreshRequestIdRef.current;
     setRefreshingSessions(true);
+    setSessionListInitialized(false);
+    loadingMoreSessionsRef.current = false;
+    failedLoadMoreCursorRef.current = null;
+    setLoadingMoreSessions(false);
 
     try {
-      const list = await listSessions(srv, tok, { includeArchived: true });
+      const page = await listSessions(srv, tok, {
+        includeArchived: true,
+        includeMessageCount: true,
+        limit: SESSION_PAGE_SIZE,
+      });
 
       if (requestId !== refreshRequestIdRef.current) return;
 
-      setSessions((current) => mergeSessionsWithNewerSandbox(current, list, pendingSandboxUpdatesRef.current));
+      setSessions((current) => mergeSessions(current, page.items, pendingSandboxUpdatesRef.current));
+      setSessionListCursor(page.next_cursor ?? null);
+      setSessionListHasMore(page.has_more);
+      failedLoadMoreCursorRef.current = null;
     } catch {
       // If sessions fail to load, connection might be stale
     } finally {
       if (requestId === refreshRequestIdRef.current) {
         setRefreshingSessions(false);
+        setSessionListInitialized(true);
       }
     }
   }, []);
@@ -176,26 +205,105 @@ function HomeContent() {
 
     // Defer to avoid synchronous setState in effect body.
     const timer = setTimeout(() => {
-      void refreshSessions(server, token);
+      void loadInitialSessions(server, token);
     }, 0);
 
     return () => {
       clearTimeout(timer);
     };
-  }, [connected, refreshSessions, server, token]);
+  }, [connected, loadInitialSessions, server, token]);
+
+  const loadMoreSessions = useCallback(async () => {
+    if (
+      !server
+      || !token
+      || refreshingSessions
+      || loadingMoreSessionsRef.current
+      || !sessionListHasMore
+      || !sessionListCursor
+      || failedLoadMoreCursorRef.current === sessionListCursor
+    ) {
+      return;
+    }
+
+    const requestId = refreshRequestIdRef.current;
+    loadingMoreSessionsRef.current = true;
+    setLoadingMoreSessions(true);
+
+    try {
+      const page = await listSessions(server, token, {
+        includeArchived: true,
+        includeMessageCount: true,
+        limit: SESSION_PAGE_SIZE,
+        cursor: sessionListCursor,
+      });
+
+      if (requestId !== refreshRequestIdRef.current) return;
+
+      setSessions((current) => mergeSessions(current, page.items, pendingSandboxUpdatesRef.current));
+      setSessionListCursor(page.next_cursor ?? null);
+      setSessionListHasMore(page.has_more);
+      failedLoadMoreCursorRef.current = null;
+    } catch {
+      failedLoadMoreCursorRef.current = sessionListCursor;
+    } finally {
+      if (requestId === refreshRequestIdRef.current) {
+        loadingMoreSessionsRef.current = false;
+        setLoadingMoreSessions(false);
+      }
+    }
+  }, [refreshingSessions, server, sessionListCursor, sessionListHasMore, token]);
+
+  useEffect(() => {
+    if (!connected || !activeSessionId || !sessionListInitialized || hasActiveSessionLoaded) return;
+
+    let cancelled = false;
+    const requestId = refreshRequestIdRef.current;
+    const timer = setTimeout(() => {
+      void getSession(server, token, activeSessionId)
+        .then((session) => {
+          if (cancelled || requestId !== refreshRequestIdRef.current) return;
+          setSessions((current) => mergeSessions(current, [session], pendingSandboxUpdatesRef.current));
+        })
+        .catch(() => {
+          // Leave the active id alone; ChatView will surface session-specific failures if needed.
+        });
+    }, 0);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [activeSessionId, connected, hasActiveSessionLoaded, server, sessionListInitialized, token]);
 
   function handleConnect(srv: string, tok: string) {
+    refreshRequestIdRef.current += 1;
+    loadingMoreSessionsRef.current = false;
+    failedLoadMoreCursorRef.current = null;
+    pendingSandboxUpdatesRef.current.clear();
+    setRefreshingSessions(false);
+    setLoadingMoreSessions(false);
+    setSessionListInitialized(false);
+    setSessions([]);
+    setSessionListCursor(null);
+    setSessionListHasMore(false);
     saveConnection(srv, tok);
     setConnection({ connected: true, server: srv, token: tok });
   }
 
   function handleDisconnect() {
     refreshRequestIdRef.current += 1;
+    loadingMoreSessionsRef.current = false;
+    failedLoadMoreCursorRef.current = null;
     pendingSandboxUpdatesRef.current.clear();
     clearConnection();
     setRefreshingSessions(false);
+    setLoadingMoreSessions(false);
+    setSessionListInitialized(false);
     setConnection({ connected: false, server: "", token: "" });
     setSessions([]);
+    setSessionListCursor(null);
+    setSessionListHasMore(false);
     setActiveSessionId(null);
   }
 
@@ -323,6 +431,9 @@ function HomeContent() {
           onDelete={handleDeleteSession}
           onDisconnect={handleDisconnect}
           loading={loading}
+          hasMore={sessionListHasMore}
+          loadingMore={loadingMoreSessions}
+          onLoadMore={loadMoreSessions}
         />
       </aside>
 

@@ -7,7 +7,7 @@ import shlex
 import socket
 from dataclasses import dataclass
 from pathlib import Path
-from typing import cast
+from typing import Literal, cast
 
 import kr8s
 from kr8s._api import Api
@@ -219,6 +219,7 @@ class KubernetesRuntime(ContainerRuntime):
         raw = sandboxes.raw
         uid = raw["metadata"]["uid"]
         api_version = raw["apiVersion"]
+        assert self._sandboxes_name is not None
         logger.info(f"KubernetesRuntime: sandbox owner Sandboxes {self._sandboxes_name!r} UID = {uid}")
         return _SandboxOwner(
             api_version=api_version,
@@ -597,13 +598,14 @@ class KubernetesRuntime(ContainerRuntime):
         except kr8s.NotFoundError:
             phase = "Pending"
 
-        status = {
+        status_by_phase: dict[str, Literal["running", "pending", "stopped", "error"]] = {
             "Running": "running",
             "Pending": "pending",
             "Unknown": "pending",
             "Succeeded": "stopped",
             "Failed": "error",
-        }.get(phase, "error")
+        }
+        status = status_by_phase.get(phase, "error")
         return SandboxInspection(
             exists=True,
             status=status,

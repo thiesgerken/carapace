@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
 
@@ -30,6 +31,29 @@ from carapace.usage import LlmRequestState
 _TEST_TOKEN = "test-bearer-token-for-server-tests"
 
 
+class _FakeSessionListCache:
+    def __init__(self) -> None:
+        self._entries: dict[tuple[bool, bool], list[dict[str, object]]] = {}
+
+    async def get_session_infos(
+        self,
+        *,
+        include_archived: bool,
+        include_message_count: bool,
+        loader: Callable[[], list[dict[str, object]]],
+    ) -> list[dict[str, object]]:
+        key = (include_archived, include_message_count)
+        cached = self._entries.get(key)
+        if cached is not None:
+            return cached
+        loaded = loader()
+        self._entries[key] = loaded
+        return loaded
+
+    def invalidate_sync(self) -> None:
+        self._entries.clear()
+
+
 @pytest.fixture(autouse=True)
 def _setup_server(tmp_path, monkeypatch):
     """Initialise server globals with a temp data dir so tests don't need lifespan."""
@@ -39,7 +63,8 @@ def _setup_server(tmp_path, monkeypatch):
     monkeypatch.setenv("CARAPACE_TOKEN", _TEST_TOKEN)
     ensure_data_dir(tmp_path)
     config = load_config(tmp_path)
-    session_mgr = SessionManager(tmp_path)
+    srv._session_list_cache = _FakeSessionListCache()
+    session_mgr = SessionManager(tmp_path, on_change=srv._session_list_cache.invalidate_sync)
     registry = SkillRegistry(tmp_path / "skills")
     skill_catalog = registry.scan()
     sandbox_mgr = MagicMock(spec=SandboxManager)
@@ -127,7 +152,7 @@ def test_list_sessions(client, auth_headers):
     client.post("/api/sessions", headers=auth_headers)
     resp = client.get("/api/sessions", headers=auth_headers)
     assert resp.status_code == 200
-    sessions = resp.json()
+    sessions = resp.json()["items"]
     assert len(sessions) >= 2
 
 
@@ -141,7 +166,7 @@ def test_list_sessions_skips_message_count_by_default(client, auth_headers, monk
     resp = client.get("/api/sessions", headers=auth_headers)
 
     assert resp.status_code == 200
-    session = next(item for item in resp.json() if item["session_id"] == sid)
+    session = next(item for item in resp.json()["items"] if item["session_id"] == sid)
     assert session["message_count"] == 0
 
 
@@ -160,7 +185,7 @@ def test_list_sessions_can_include_message_count(client, auth_headers):
     resp = client.get("/api/sessions?include_message_count=true", headers=auth_headers)
 
     assert resp.status_code == 200
-    session = next(item for item in resp.json() if item["session_id"] == sid)
+    session = next(item for item in resp.json()["items"] if item["session_id"] == sid)
     assert session["message_count"] == 3
 
 
@@ -179,7 +204,7 @@ def test_list_sessions_can_include_message_count_from_history_fallback(client, a
     resp = client.get("/api/sessions?include_message_count=true", headers=auth_headers)
 
     assert resp.status_code == 200
-    session = next(item for item in resp.json() if item["session_id"] == sid)
+    session = next(item for item in resp.json()["items"] if item["session_id"] == sid)
     assert session["message_count"] == 3
 
 
@@ -246,7 +271,7 @@ def test_list_sessions_excludes_archived_by_default(client, auth_headers):
     resp = client.get("/api/sessions", headers=auth_headers)
 
     assert resp.status_code == 200
-    assert sid not in {session["session_id"] for session in resp.json()}
+    assert sid not in {session["session_id"] for session in resp.json()["items"]}
 
 
 def test_list_sessions_can_include_archived(client, auth_headers):
@@ -260,8 +285,140 @@ def test_list_sessions_can_include_archived(client, auth_headers):
     resp = client.get("/api/sessions?include_archived=true", headers=auth_headers)
 
     assert resp.status_code == 200
-    archived_session = next(item for item in resp.json() if item["session_id"] == sid)
+    archived_session = next(item for item in resp.json()["items"] if item["session_id"] == sid)
     assert archived_session["attributes"]["archived"] is True
+
+
+def test_list_sessions_page_can_paginate(client, auth_headers):
+    created_ids = [client.post("/api/sessions", headers=auth_headers).json()["session_id"] for _ in range(3)]
+
+    first_page = client.get(
+        "/api/sessions?limit=2&include_archived=true",
+        headers=auth_headers,
+    )
+
+    assert first_page.status_code == 200
+    first_payload = first_page.json()
+    assert len(first_payload["items"]) == 2
+    assert first_payload["has_more"] is True
+    assert first_payload["next_cursor"] == "2"
+
+    second_page = client.get(
+        f"/api/sessions?limit=2&include_archived=true&cursor={first_payload['next_cursor']}",
+        headers=auth_headers,
+    )
+
+    assert second_page.status_code == 200
+    second_payload = second_page.json()
+    returned_ids = [item["session_id"] for item in first_payload["items"] + second_payload["items"]]
+    assert len(set(returned_ids)) >= 3
+    assert set(created_ids).issubset(set(returned_ids))
+    assert second_payload["has_more"] is False
+    assert second_payload["next_cursor"] is None
+
+
+def test_list_sessions_page_can_include_message_count(client, auth_headers):
+    sid = client.post("/api/sessions", headers=auth_headers).json()["session_id"]
+    srv._engine.session_mgr.append_events(
+        sid,
+        [
+            {"role": "user", "content": "first"},
+            {"role": "assistant", "content": "reply"},
+        ],
+    )
+
+    resp = client.get(
+        "/api/sessions?include_message_count=true&include_archived=true",
+        headers=auth_headers,
+    )
+
+    assert resp.status_code == 200
+    session = next(item for item in resp.json()["items"] if item["session_id"] == sid)
+    assert session["message_count"] == 2
+
+
+def test_list_sessions_uses_cached_summaries_on_subsequent_requests(client, auth_headers, monkeypatch):
+    sid = client.post("/api/sessions", headers=auth_headers).json()["session_id"]
+    srv._engine.session_mgr.append_events(
+        sid,
+        [
+            {"role": "user", "content": "first"},
+            {"role": "assistant", "content": "reply"},
+        ],
+    )
+
+    first_resp = client.get("/api/sessions?include_message_count=true", headers=auth_headers)
+    assert first_resp.status_code == 200
+
+    monkeypatch.setattr(
+        srv._engine.session_mgr,
+        "load_state",
+        MagicMock(side_effect=AssertionError("load_state should not be called after summaries are cached")),
+    )
+    monkeypatch.setattr(
+        srv._engine.session_mgr,
+        "load_events",
+        MagicMock(side_effect=AssertionError("load_events should not be called after summaries are cached")),
+    )
+    monkeypatch.setattr(
+        srv._engine.session_mgr,
+        "load_sandbox_snapshot",
+        MagicMock(side_effect=AssertionError("load_sandbox_snapshot should not be called after summaries are cached")),
+    )
+
+    second_resp = client.get("/api/sessions?include_message_count=true", headers=auth_headers)
+    assert second_resp.status_code == 200
+    session = next(item for item in second_resp.json()["items"] if item["session_id"] == sid)
+    assert session["message_count"] == 2
+
+
+def test_list_sessions_cache_miss_loads_state_once_per_session(client, auth_headers, monkeypatch):
+    created_ids = [client.post("/api/sessions", headers=auth_headers).json()["session_id"] for _ in range(3)]
+    original_load_state = srv._engine.session_mgr.load_state
+    load_calls: list[str] = []
+
+    def counting_load_state(session_id: str):
+        load_calls.append(session_id)
+        return original_load_state(session_id)
+
+    monkeypatch.setattr(srv._engine.session_mgr, "load_state", counting_load_state)
+
+    resp = client.get("/api/sessions?include_archived=true", headers=auth_headers)
+
+    assert resp.status_code == 200
+    assert sorted(load_calls) == sorted(created_ids)
+
+
+def test_list_sessions_page_uses_stable_tiebreaker(client, auth_headers):
+    created_ids = [client.post("/api/sessions", headers=auth_headers).json()["session_id"] for _ in range(3)]
+    shared_last_active = datetime(2024, 1, 1, tzinfo=UTC)
+
+    for session_id in created_ids:
+        state = srv._engine.session_mgr.load_state(session_id)
+        assert state is not None
+        state.last_active = shared_last_active
+        state.attributes.pinned = False
+        srv._engine.session_mgr.save_state(state)
+
+    first_page = client.get(
+        "/api/sessions?limit=2&include_archived=true",
+        headers=auth_headers,
+    )
+    assert first_page.status_code == 200
+    second_page = client.get(
+        f"/api/sessions?limit=2&include_archived=true&cursor={first_page.json()['next_cursor']}",
+        headers=auth_headers,
+    )
+
+    ordered_ids = [item["session_id"] for item in first_page.json()["items"] + second_page.json()["items"]]
+    assert ordered_ids[: len(created_ids)] == sorted(created_ids)
+
+
+def test_list_sessions_page_rejects_invalid_cursor(client, auth_headers):
+    resp = client.get("/api/sessions?cursor=abc", headers=auth_headers)
+
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "Invalid session cursor"
 
 
 def test_update_session_archives_and_destroys_sandbox(client, auth_headers):
@@ -366,7 +523,7 @@ def test_list_sessions_sorts_pinned_first(client, auth_headers):
     resp = client.get("/api/sessions", headers=auth_headers)
 
     assert resp.status_code == 200
-    session_ids = [item["session_id"] for item in resp.json() if item["session_id"] in {first, second}]
+    session_ids = [item["session_id"] for item in resp.json()["items"] if item["session_id"] in {first, second}]
     assert session_ids[0] == first
 
 

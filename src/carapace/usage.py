@@ -577,7 +577,7 @@ def _accumulate_response_part(part: ModelResponsePart, buckets: dict[str, str]) 
     elif isinstance(part, FilePart):
         buckets["other"] += _file_part_blob(part) + "\n"
     else:
-        assert_never(part, f"unexpected response part of type {type(part)}")
+        assert_never(f"unexpected response part of type {type(part)}")
 
 
 def input_shape_ratios_from_messages(
@@ -640,6 +640,7 @@ class LlmRequestLogCapability(AbstractCapability[AgentDepsT]):
     async def after_model_request(
         self,
         ctx: RunContext[AgentDepsT],
+        *,
         request_context: ModelRequestContext,
         response: ModelResponse,
     ) -> ModelResponse:

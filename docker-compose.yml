@@ -2,6 +2,9 @@ services:
   carapace:
     build: .
     tty: true
+    depends_on:
+      redis:
+        condition: service_healthy
     ports:
       - "8321:8321"
     group_add:
@@ -17,6 +20,7 @@ services:
       - CARAPACE_RESET_ASSETS=false
       - CARAPACE_MATRIX_PASSWORD=${CARAPACE_MATRIX_PASSWORD:-}
       - CARAPACE_GIT_TOKEN=${CARAPACE_GIT_TOKEN:-}
+      - CARAPACE_CACHE_REDIS_URL=redis://redis:6379/0
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - GOOGLE_API_KEY=${GOOGLE_API_KEY}
     networks:
@@ -47,6 +51,16 @@ services:
     build: ./frontend
     ports:
       - "3001:80"
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
 
   sandbox:
     build: ./sandbox

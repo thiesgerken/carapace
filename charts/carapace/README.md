@@ -122,6 +122,19 @@ config:
 
 Leave `config` empty (`{}`) to skip the ConfigMap entirely and manage the file on the PVC instead.
 
+The chart deploys Redis by default and wires the server to `<release>-redis`. If you disable the bundled Redis, point the application config at an external Redis instance:
+
+```yaml
+redis:
+  enabled: false
+
+config:
+  cache:
+    redis_url: redis://carapace-redis:6379/0
+```
+
+Replace `carapace-redis` with `<release>-redis` when your Helm release name is not `carapace`.
+
 ### Bitwarden / Vaultwarden credential backend
 
 To use a Bitwarden-compatible vault (including Vaultwarden) as a credential backend, the chart can inject one or more `bw serve` sidecar containers into the server Pod. Each sidecar shares the Pod's network namespace, so carapace reaches it at `127.0.0.1:<port>`. Because `bw serve` only listens on localhost, no NetworkPolicy is needed to protect it — unlike a standalone deployment where the unauthenticated API would be reachable cluster-wide.
@@ -205,6 +218,9 @@ Multiple instances are supported — just add more entries with different names 
 | `priorityClassName`                      | `""`                             | PriorityClass for all pods (server, frontend, sandbox)             |
 | `envFrom`                                | `[]`                             | Secret/ConfigMap refs injected into the server                     |
 | `extraEnv`                               | `[]`                             | Extra env vars for the server container                            |
+| `redis.enabled`                          | `true`                           | Deploy the bundled Redis required for session-list cache           |
+| `redis.image.tag`                        | `7-alpine`                       | Redis image tag                                                    |
+| `redis.resources`                        | requests: 25m/64Mi, limit: 128Mi | Redis resource requests/limits                                     |
 | `resources`                              | requests: 200m/256Mi, limit: 1Gi | Server resource requests/limits                                    |
 | `frontend.resources`                     | requests: 50m/64Mi, limit: 128Mi | Frontend resource requests/limits                                  |
 | `bitwarden.image.tag`                    | `""` (appVersion)                | bitwarden-cli sidecar image tag                                    |
