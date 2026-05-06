@@ -28,6 +28,7 @@ from pydantic_ai.messages import (
     ModelRequest,
     ModelResponse,
     TextPart,
+    ThinkingPart,
     ToolCallPart,
     ToolReturnPart,
     UserPromptPart,
@@ -1400,24 +1401,24 @@ class SessionEngine(SessionTurnMixin):
             current = messages[index]
             next_message = messages[index + 1] if index + 1 < len(messages) else None
 
-            if (
-                isinstance(current, ModelResponse)
-                and len(current.parts) == 1
-                and isinstance(current.parts[0], ToolCallPart)
-                and current.parts[0].tool_name in {"task_done", "task_failed"}
-                and isinstance(next_message, ModelRequest)
-                and any(
-                    isinstance(part, ToolReturnPart)
-                    and part.tool_name == current.parts[0].tool_name
-                    and part.tool_call_id == current.parts[0].tool_call_id
-                    for part in next_message.parts
-                )
-            ):
-                content = self._task_output_text(current.parts[0])
-                if content is not None:
-                    normalized.append(replace(current, parts=[TextPart(content=content)]))
-                    index += 2
-                    continue
+            if isinstance(current, ModelResponse):
+                tool_call_parts = [p for p in current.parts if isinstance(p, ToolCallPart)]
+                if (
+                    len(tool_call_parts) == 1
+                    and tool_call_parts[0].tool_name in {"task_done", "task_failed"}
+                    and isinstance(next_message, ModelRequest)
+                    and any(
+                        isinstance(part, ToolReturnPart)
+                        and part.tool_name == tool_call_parts[0].tool_name
+                        and part.tool_call_id == tool_call_parts[0].tool_call_id
+                        for part in next_message.parts
+                    )
+                ):
+                    content = self._task_output_text(tool_call_parts[0])
+                    if content is not None:
+                        normalized.append(replace(current, parts=[TextPart(content=content)]))
+                        index += 2
+                        continue
 
             normalized.append(current)
             index += 1
