@@ -90,6 +90,7 @@ def test_submit_message_unexpected_output_marks_terminal_error(tmp_path: Path):
                 ],
                 unexpected,
                 "",
+                None,
             )
 
         with patch("carapace.session.engine.run_agent_turn", new=_unexpected_run_agent_turn):

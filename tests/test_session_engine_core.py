@@ -500,8 +500,8 @@ def test_user_message_from_self(tmp_path: Path):
         engine.subscribe(sid, origin)
         engine.subscribe(sid, other)
 
-        async def _noop_turn(*_a: Any, **_kw: Any) -> tuple[list[Any], str, str]:
-            return [], "ok", ""
+        async def _noop_turn(*_a: Any, **_kw: Any) -> tuple[list[Any], str, str, None]:
+            return [], "ok", "", None
 
         with patch("carapace.agent.loop.run_agent_turn", new=_noop_turn):
             await engine.submit_message(sid, "hello", origin=origin)
@@ -527,8 +527,8 @@ def test_user_message_no_origin(tmp_path: Path):
         engine.subscribe(sid, sub_a)
         engine.subscribe(sid, sub_b)
 
-        async def _noop_turn(*_a: Any, **_kw: Any) -> tuple[list[Any], str, str]:
-            return [], "ok", ""
+        async def _noop_turn(*_a: Any, **_kw: Any) -> tuple[list[Any], str, str, None]:
+            return [], "ok", "", None
 
         with patch("carapace.agent.loop.run_agent_turn", new=_noop_turn):
             await engine.submit_message(sid, "hi")

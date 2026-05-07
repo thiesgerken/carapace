@@ -1,6 +1,6 @@
 "use client";
 
-import { Brain, Check, ChevronRight, Copy, GitBranch, Loader2, RotateCcw, Undo2 } from "lucide-react";
+import { AlertTriangle, Brain, Check, ChevronRight, Copy, GitBranch, Info, Loader2, RotateCcw, Undo2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
 import type { ChatMessage, EscalationDecision, LlmActivity } from "@/lib/types";
@@ -240,6 +240,33 @@ function MessageActions({
   );
 }
 
+function FinalStatusNotice({ status }: { status: "success" | "warning" }) {
+  const isWarning = status === "warning";
+
+  return (
+    <div
+      className={cn(
+        "mt-3 rounded-xl border px-3 py-2.5 text-sm",
+        isWarning
+          ? "border-amber-200 bg-amber-50 text-amber-900"
+          : "border-sky-200 bg-sky-50 text-sky-900",
+      )}
+    >
+      <div className="flex items-start gap-2">
+        {isWarning ? (
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+        ) : (
+          <Info className="mt-0.5 h-4 w-4 shrink-0" />
+        )}
+        <p>
+          The agent has ended its task with a {status} message. The session is now read-only, but you can fork it to
+          continue chatting.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 interface MessageProps {
   message: ChatMessage;
   activeLlmActivity?: LlmActivity | null;
@@ -297,6 +324,7 @@ export function Message({
         <div className="group max-w-[85%] text-sm">
           <div className="min-w-0 flex-1">
             <MarkdownContent content={message.content} />
+            {message.finalStatus ? <FinalStatusNotice status={message.finalStatus} /> : null}
           </div>
           <MessageActions
             copyText={message.content}

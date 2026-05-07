@@ -27,6 +27,12 @@ export function sessionHasKnowledgeChanges(
   return lastActive > committedAt;
 }
 
+export function canArchiveSession(
+  session: Pick<SessionInfo, "message_count"> | null | undefined,
+): boolean {
+  return (session?.message_count ?? 0) > 0;
+}
+
 export function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   const units = ["KB", "MB", "GB", "TB"];

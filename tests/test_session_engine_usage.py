@@ -402,12 +402,12 @@ def test_submit_message_tool_call_budget_exhausted_broadcasts_error(tmp_path: Pa
             _message_history: list[Any],
             *_args: Any,
             **_kwargs: Any,
-        ) -> tuple[list[Any], str, str]:
+        ) -> tuple[list[Any], str, str, None]:
             callback = deps.tool_call_callback
             assert callback is not None
             callback("read", {"path": "README.md"}, "[safe-list] auto-allowed", "safe-list", "allow", "ok")
             callback("read", {"path": "README.md"}, "[safe-list] auto-allowed", "safe-list", "allow", "ok")
-            return [], "done", ""
+            return [], "done", "", None
 
         with patch("carapace.session.engine.run_agent_turn", new=_fail_on_second_tool_call):
             await engine.submit_message(sid, "hello")
@@ -430,8 +430,8 @@ def test_submit_message_refreshes_sandbox_once_after_completed_turn(tmp_path: Pa
         sub = _FakeSubscriber()
         engine.subscribe(sid, sub)
 
-        async def _complete_turn(*_args: Any, **_kwargs: Any) -> tuple[list[Any], str, str]:
-            return [], "done", "thinking"
+        async def _complete_turn(*_args: Any, **_kwargs: Any) -> tuple[list[Any], str, str, None]:
+            return [], "done", "thinking", None
 
         with patch("carapace.session.engine.run_agent_turn", new=_complete_turn):
             await engine.submit_message(sid, "hello")
@@ -451,8 +451,8 @@ def test_submit_message_refresh_failure_does_not_block_completed_turn(tmp_path: 
         sub = _FakeSubscriber()
         engine.subscribe(sid, sub)
 
-        async def _complete_turn(*_args: Any, **_kwargs: Any) -> tuple[list[Any], str, str]:
-            return [], "done", "thinking"
+        async def _complete_turn(*_args: Any, **_kwargs: Any) -> tuple[list[Any], str, str, None]:
+            return [], "done", "thinking", None
 
         _sandbox_refresh_snapshot_mock(engine).side_effect = RuntimeError("snapshot refresh failed")
 
@@ -464,6 +464,28 @@ def test_submit_message_refresh_failure_does_not_block_completed_turn(tmp_path: 
         event = engine.session_mgr.load_events(sid)[-1]
         assert "timestamp" in event
         assert _without_timestamp(event) == {"role": "assistant", "content": "done"}
+
+    with _patch_sentinel():
+        asyncio.run(_run())
+
+
+def test_submit_message_persists_final_status_in_events(tmp_path: Path):
+    async def _run() -> None:
+        engine = _make_engine(tmp_path)
+        state = engine.session_mgr.create_session()
+        sid = state.session_id
+
+        async def _complete_turn(*_args: Any, **_kwargs: Any) -> tuple[list[Any], str, str, str]:
+            return [], "done", "thinking", "success"
+
+        with patch("carapace.session.engine.run_agent_turn", new=_complete_turn):
+            await engine.submit_message(sid, "hello")
+            await asyncio.sleep(0.1)
+
+        event = engine.session_mgr.load_events(sid)[-1]
+        assert event["role"] == "assistant"
+        assert event["content"] == "done"
+        assert event["final_status"] == "success"
 
     with _patch_sentinel():
         asyncio.run(_run())

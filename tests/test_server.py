@@ -1172,6 +1172,25 @@ def test_history_includes_thinking_reasoning_metadata(client, auth_headers):
     assert history[0]["reasoning_tokens"] == 42
 
 
+def test_history_includes_assistant_final_status(client, auth_headers):
+    create_resp = client.post("/api/sessions", headers=auth_headers)
+    sid = create_resp.json()["session_id"]
+    srv._engine.session_mgr.append_events(
+        sid,
+        [
+            {"role": "user", "content": "hello"},
+            {"role": "assistant", "content": "done", "final_status": "success"},
+        ],
+    )
+
+    resp = client.get(f"/api/sessions/{sid}/history", headers=auth_headers)
+
+    assert resp.status_code == 200
+    history = resp.json()
+    assert history[1]["role"] == "assistant"
+    assert history[1]["final_status"] == "success"
+
+
 def test_ws_budget_command_emits_status_refresh(client, auth_headers, bearer):
     create_resp = client.post("/api/sessions", headers=auth_headers)
     sid = create_resp.json()["session_id"]

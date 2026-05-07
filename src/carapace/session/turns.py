@@ -39,7 +39,7 @@ from carapace.security.context import ApprovalSource, ApprovalVerdict, format_de
 from carapace.session.manager import SessionManager
 from carapace.session.types import ActiveSession, SessionSubscriber, TurnExecutionResult
 from carapace.usage import BudgetGauge, LlmRequestState, SessionBudgetExceededError, interrupted_request_record
-from carapace.ws_models import ApprovalRequest, ApprovalResponse, TurnUsage
+from carapace.ws_models import ApprovalRequest, ApprovalResponse, FinalStatus, TurnUsage
 
 
 def _non_slash_user_message_count(events: list[dict[str, Any]]) -> int:
@@ -287,6 +287,7 @@ class SessionTurnMixin(SessionTurnHost):
                     turn_result.messages,
                     turn_result.output,
                     turn_result.thinking,
+                    final_status=turn_result.final_status,
                 )
 
         except asyncio.CancelledError:
@@ -467,7 +468,7 @@ class SessionTurnMixin(SessionTurnHost):
         async with self._llm_semaphore:
             with self.llm_request_recording(active):
                 self._assert_llm_budget_available(active)
-                messages, output, thinking = await _engine_module().run_agent_turn(
+                messages, output, thinking, final_status = await _engine_module().run_agent_turn(
                     user_input,
                     deps,
                     message_history,
@@ -479,7 +480,12 @@ class SessionTurnMixin(SessionTurnHost):
                     before_llm_call=lambda: self._assert_llm_budget_available(active),
                     get_usage_limits=lambda: self._remaining_usage_limits(active),
                 )
-        return TurnExecutionResult(messages=messages, output=output, thinking=thinking)
+        return TurnExecutionResult(
+            messages=messages,
+            output=output,
+            thinking=thinking,
+            final_status=final_status,
+        )
 
     async def _handle_token_chunk(self, active: ActiveSession, chunk: str) -> None:
         await self._maybe_promote_llm_request_state(active, _engine_module().note_llm_request_text())
@@ -516,12 +522,16 @@ class SessionTurnMixin(SessionTurnHost):
         messages: list[ModelMessage],
         output: str,
         thinking: str,
+        final_status: FinalStatus | None = None,
     ) -> None:
         self._session_mgr.save_history(session_id, messages)
         self._session_mgr.save_state(active.state)
         self._save_turn_progress(session_id, active)
         await self._refresh_sandbox_snapshot_after_turn(session_id)
-        self._session_mgr.append_events(session_id, [{"role": "assistant", "content": output}])
+        assistant_event: dict[str, Any] = {"role": "assistant", "content": output}
+        if final_status is not None:
+            assistant_event["final_status"] = final_status
+        self._session_mgr.append_events(session_id, [assistant_event])
 
         if output.startswith("Unexpected agent output type:"):
             await self._broadcast(active, "on_error", output, turn_terminal=True)
@@ -539,6 +549,7 @@ class SessionTurnMixin(SessionTurnHost):
                 output,
                 usage_payload,
                 thinking=thinking or None,
+                final_status=final_status,
             )
 
         self._schedule_title_generation_if_needed(active, session_id, self._session_mgr.load_events(session_id))
@@ -564,6 +575,7 @@ class SessionTurnMixin(SessionTurnHost):
             user_input,
             latest_messages=latest_messages,
             terminal_message=terminal_message,
+            final_status="warning" if terminal_message else None,
         )
 
     def _save_user_message_on_failure(
@@ -573,6 +585,7 @@ class SessionTurnMixin(SessionTurnHost):
         *,
         latest_messages: list[ModelMessage] | None = None,
         terminal_message: str | None = None,
+        final_status: FinalStatus | None = None,
     ) -> None:
         """Persist the user message to history even when the agent turn fails.
 
@@ -591,13 +604,14 @@ class SessionTurnMixin(SessionTurnHost):
 
         events = self._truncate_incomplete_events(self._session_mgr.load_events(session_id))
         if terminal_message:
-            events.append(
-                {
-                    "role": "assistant",
-                    "content": terminal_message,
-                    "timestamp": datetime.now(tz=UTC).isoformat(),
-                }
-            )
+            event: dict[str, Any] = {
+                "role": "assistant",
+                "content": terminal_message,
+                "timestamp": datetime.now(tz=UTC).isoformat(),
+            }
+            if final_status is not None:
+                event["final_status"] = final_status
+            events.append(event)
         self._session_mgr.save_events(session_id, events)
 
     def _truncate_incomplete_model_history(self, messages: list[ModelMessage]) -> list[ModelMessage]:

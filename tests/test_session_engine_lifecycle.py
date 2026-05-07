@@ -315,7 +315,7 @@ def test_retry_latest_turn_rewinds_and_restarts(tmp_path: Path):
             _deps: Any,
             message_history: list[Any],
             **_kwargs: Any,
-        ) -> tuple[list[Any], str, str]:
+        ) -> tuple[list[Any], str, str, None]:
             assert user_input == "second"
             assert len(message_history) == 2
             assert isinstance(message_history[0], ModelRequest)
@@ -328,6 +328,7 @@ def test_retry_latest_turn_rewinds_and_restarts(tmp_path: Path):
                 ],
                 "retried answer",
                 "",
+                None,
             )
 
         with patch("carapace.session.engine.run_agent_turn", new=_fake_run_turn):
@@ -378,7 +379,7 @@ def test_retry_latest_turn_after_failure_uses_terminal_marker_history(tmp_path: 
             _deps: Any,
             message_history: list[Any],
             **_kwargs: Any,
-        ) -> tuple[list[Any], str, str]:
+        ) -> tuple[list[Any], str, str, None]:
             assert user_input == "hello"
             assert message_history == []
             return (
@@ -388,6 +389,7 @@ def test_retry_latest_turn_after_failure_uses_terminal_marker_history(tmp_path: 
                 ],
                 "recovered",
                 "",
+                None,
             )
 
         with patch("carapace.session.engine.run_agent_turn", new=_fake_run_turn):

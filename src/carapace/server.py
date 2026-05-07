@@ -64,6 +64,7 @@ from carapace.ws_models import (
     Done,
     ErrorMessage,
     EscalationResponse,
+    FinalStatus,
     GitPushApprovalRequest,
     LlmActivity,
     LlmActivityUpdate,
@@ -858,6 +859,7 @@ _HistoryRole = Literal[
 class HistoryMessage(BaseModel):
     role: _HistoryRole
     content: str = ""
+    final_status: FinalStatus | None = None
     event_index: int | None = None
     reasoning_duration_ms: int | None = None
     reasoning_tokens: int | None = None
@@ -1050,8 +1052,15 @@ class WebSocketSubscriber:
     async def on_llm_activity(self, activity: LlmRequestState | None) -> None:
         await self._safe_send(LlmActivityUpdate(activity=_llm_activity_payload(activity)))
 
-    async def on_done(self, content: str, usage: TurnUsage, *, thinking: str | None = None) -> None:
-        await self._safe_send(Done(content=content, thinking=thinking, usage=usage))
+    async def on_done(
+        self,
+        content: str,
+        usage: TurnUsage,
+        *,
+        thinking: str | None = None,
+        final_status: FinalStatus | None = None,
+    ) -> None:
+        await self._safe_send(Done(content=content, thinking=thinking, usage=usage, final_status=final_status))
 
     async def on_error(self, detail: str, *, turn_terminal: bool = False) -> None:
         await self._safe_send(ErrorMessage(detail=detail, turn_terminal=turn_terminal))

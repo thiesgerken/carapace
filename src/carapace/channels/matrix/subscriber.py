@@ -114,7 +114,14 @@ class MatrixSubscriber:
     async def on_llm_activity(self, activity: LlmRequestState | None) -> None:
         pass
 
-    async def on_done(self, content: str, usage: TurnUsage, *, thinking: str | None = None) -> None:
+    async def on_done(
+        self,
+        content: str,
+        usage: TurnUsage,
+        *,
+        thinking: str | None = None,
+        final_status: str | None = None,
+    ) -> None:
         if self._stream_event_id is not None:
             await self._channel._edit_message(
                 self._room_id,

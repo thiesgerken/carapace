@@ -49,16 +49,17 @@ def _make_deps(tmp_path: Path, *, unattended: bool) -> Deps:
 
 @pytest.mark.anyio
 @pytest.mark.parametrize(
-    ("output", "expected_text"),
+    ("output", "expected_text", "expected_status"),
     [
-        (TaskDone(result="completed"), "completed"),
-        (TaskFailed(problem="blocked by missing credential"), "blocked by missing credential"),
+        (TaskDone(result="completed"), "completed", "success"),
+        (TaskFailed(problem="blocked by missing credential"), "blocked by missing credential", "warning"),
     ],
 )
 async def test_run_agent_turn_decodes_unattended_structured_outputs(
     tmp_path: Path,
     output: TaskDone | TaskFailed,
     expected_text: str,
+    expected_status: str,
 ) -> None:
     deps = _make_deps(tmp_path, unattended=True)
     fake_agent = MagicMock()
@@ -71,7 +72,7 @@ async def test_run_agent_turn_decodes_unattended_structured_outputs(
         raise AssertionError("approval loop should not run")
 
     with patch("carapace.agent.loop.create_agent", return_value=fake_agent):
-        messages, output_text, thinking = await run_agent_turn(
+        messages, output_text, thinking, final_status = await run_agent_turn(
             "finish the task",
             deps,
             [],
@@ -82,4 +83,5 @@ async def test_run_agent_turn_decodes_unattended_structured_outputs(
     assert messages == []
     assert output_text == expected_text
     assert thinking == ""
+    assert final_status == expected_status
     assert isinstance(deps.security.action_log[-1], AgentResponseEntry)

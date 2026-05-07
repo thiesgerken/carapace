@@ -31,6 +31,7 @@ import type {
 } from "@/lib/types";
 import { isRecord } from "@/lib/decoding";
 import {
+  canArchiveSession,
   cn,
   formatBytes,
   sandboxStatusIndicatorClass,
@@ -692,6 +693,7 @@ function projectHistoryToMessages(history: HistoryMessage[]): ChatMessage[] {
     messages.push({
       kind: "assistant",
       content: entry.content,
+      finalStatus: entry.final_status,
       eventIndex: typeof entry.event_index === "number" ? entry.event_index : undefined,
     });
   }
@@ -754,11 +756,12 @@ export function ChatView({
     onSandboxUpdateRef.current = onSandboxUpdate;
   }, [onSandboxUpdate]);
 
-  const markSessionKnowledgeChanged = useCallback(() => {
+  const markSessionKnowledgeChanged = useCallback((hasNewMessage = false) => {
     if (!session) return;
     onSessionUpdate?.({
       ...session,
       last_active: new Date().toISOString(),
+      message_count: hasNewMessage ? Math.max(session.message_count, 1) : session.message_count,
     });
   }, [onSessionUpdate, session]);
 
@@ -935,9 +938,13 @@ export function ChatView({
             // Replace streaming message with the final content
             const streamIdx = updated.findLastIndex((m) => m.kind === "streaming");
             if (streamIdx !== -1) {
-              updated[streamIdx] = { kind: "assistant", content: msg.content };
+              updated[streamIdx] = {
+                kind: "assistant",
+                content: msg.content,
+                finalStatus: msg.final_status,
+              };
             } else {
-              updated.push({ kind: "assistant", content: msg.content });
+              updated.push({ kind: "assistant", content: msg.content, finalStatus: msg.final_status });
             }
             return updated;
           });
@@ -1261,7 +1268,7 @@ export function ChatView({
     } else {
       lastThinkingStartedAtRef.current = null;
       send({ type: "message", content });
-      markSessionKnowledgeChanged();
+      markSessionKnowledgeChanged(true);
       setWaiting(true);
     }
   }
@@ -1408,7 +1415,10 @@ export function ChatView({
 
   async function handleDeleteSession() {
     if (waiting || sandboxPowerAction || wipingSandbox || deletingSession || !onDeleteSession) return;
-    if (!window.confirm("Delete this session? Chat history and sandbox state will be removed.")) {
+    if (
+      (session?.message_count ?? 0) > 0
+      && !window.confirm("Delete this session? Chat history and sandbox state will be removed.")
+    ) {
       return;
     }
     setDeletingSession(true);
@@ -1423,6 +1433,9 @@ export function ChatView({
     if (!session || updatingSessionAttribute || deletingSession || !onUpdateSessionAttributes) return;
 
     const nextArchived = !session.attributes.archived;
+    if (nextArchived && !canArchiveSession(session)) {
+      return;
+    }
     const confirmation = nextArchived
       ? "Archive this session? It will leave the default list, reset its sandbox, and stay in the knowledge repo."
       : "Unarchive this session? It will return to the active session list.";
@@ -1617,6 +1630,7 @@ export function ChatView({
   const sessionPrivate = session?.attributes.private ?? false;
   const sessionPinned = session?.attributes.pinned ?? false;
   const sessionFavorite = session?.attributes.favorite ?? false;
+  const sessionCanArchive = canArchiveSession(session);
   const inputDisabled = sessionArchived || unattendedInputLocked;
   const inputDisabledPlaceholder = sessionArchived
     ? "Unarchive first"
@@ -1780,20 +1794,22 @@ export function ChatView({
                         <Star className="h-3.5 w-3.5" />
                       )}
                     </button>
-                    <button
-                      onClick={() => void handleToggleArchived()}
-                      disabled={!session || !!updatingSessionAttribute || deletingSession || !onUpdateSessionAttributes}
-                      title={sessionArchived ? "Unarchive session" : "Archive session"}
-                      className="rounded-md p-1.5 text-violet-900 transition-colors hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      {updatingSessionAttribute === "archived" ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      ) : sessionArchived ? (
-                        <ArchiveRestore className="h-3.5 w-3.5" />
-                      ) : (
-                        <Archive className="h-3.5 w-3.5" />
-                      )}
-                    </button>
+                    {sessionArchived || sessionCanArchive ? (
+                      <button
+                        onClick={() => void handleToggleArchived()}
+                        disabled={!session || !!updatingSessionAttribute || deletingSession || !onUpdateSessionAttributes}
+                        title={sessionArchived ? "Unarchive session" : "Archive session"}
+                        className="rounded-md p-1.5 text-violet-900 transition-colors hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {updatingSessionAttribute === "archived" ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : sessionArchived ? (
+                          <ArchiveRestore className="h-3.5 w-3.5" />
+                        ) : (
+                          <Archive className="h-3.5 w-3.5" />
+                        )}
+                      </button>
+                    ) : null}
                     <button
                       onClick={() => void handleTogglePrivacy()}
                       disabled={!session || !!updatingSessionAttribute || deletingSession}

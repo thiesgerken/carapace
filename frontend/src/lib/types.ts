@@ -74,6 +74,7 @@ export interface SessionArchiveCommitResponse {
 export interface HistoryMessage {
   role: string;
   content: string;
+  final_status?: "success" | "warning";
   event_index?: number;
   reasoning_duration_ms?: number;
   reasoning_tokens?: number;
@@ -257,6 +258,7 @@ export interface Done {
   content: string;
   thinking?: string;
   usage?: TurnUsage;
+  final_status?: "success" | "warning";
 }
 
 export interface CommandResult {
@@ -360,7 +362,12 @@ export type ClientMessage =
 
 export type ChatMessage =
   | { kind: "user"; content: string }
-  | { kind: "assistant"; content: string; eventIndex?: number }
+  | {
+      kind: "assistant";
+      content: string;
+      eventIndex?: number;
+      finalStatus?: "success" | "warning";
+    }
   | { kind: "streaming"; content: string }
   | {
       kind: "thinking";

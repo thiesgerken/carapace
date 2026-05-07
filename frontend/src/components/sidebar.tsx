@@ -6,6 +6,7 @@ import { EmojiText } from "@/components/emoji-text";
 import { NewSessionButton } from "@/components/new-session-button";
 import type { SessionAttributesPatch, SessionInfo, SessionSandboxSnapshot } from "@/lib/types";
 import {
+  canArchiveSession,
   cn,
   formatBytes,
   sandboxStatusIndicatorClass,
@@ -63,6 +64,17 @@ function runSidebarAttributeUpdate(promise: Promise<SessionInfo>): void {
   void promise.catch(() => {
     // Sidebar actions currently fail silently like delete; avoid unhandled rejections.
   });
+}
+
+function shouldConfirmSessionDeletion(
+  session: Pick<SessionInfo, "message_count">,
+  event: { shiftKey: boolean },
+): boolean {
+  return session.message_count === 0
+    || shouldConfirmDestructiveAction(
+      event,
+      "Delete this session? Chat history and sandbox state will be removed.",
+    );
 }
 
 export function Sidebar({
@@ -123,6 +135,7 @@ export function Sidebar({
   function renderSessionRow(session: SessionInfo) {
     const sandbox = sandboxSummary(session);
     const sandboxLabel = sandbox ? sandboxSummaryLabel(sandbox) : null;
+    const sessionCanArchive = canArchiveSession(session);
     const showPrivateIcon = session.attributes.private;
     const showSavedIcon = !session.attributes.private
       && !!session.knowledge_last_committed_at
@@ -278,45 +291,49 @@ export function Sidebar({
           >
             <Star className="h-3.5 w-3.5" />
           </button>
+          {session.attributes.archived || sessionCanArchive ? (
+            <button
+              onClick={(event) => {
+                event.stopPropagation();
+                const nextArchived = !session.attributes.archived;
+                if (
+                  nextArchived
+                  && !shouldConfirmDestructiveAction(
+                    event,
+                    "Archive this session? It will leave the default list, reset its sandbox, and stay in the knowledge repo.",
+                  )
+                ) {
+                  return;
+                }
+                runSidebarAttributeUpdate(onUpdateAttributes(session.session_id, { archived: nextArchived }));
+              }}
+              title={session.attributes.archived ? "Unarchive session" : ["Archive session", "Shift+click to skip confirmation"].join("\n")}
+              className={cn(
+                "rounded-md p-1.5 transition-colors",
+                session.attributes.archived
+                  ? "text-violet-700 group-hover:text-emerald-900 hover:bg-emerald-100"
+                  : "text-muted-foreground/0 group-hover:text-muted-foreground hover:bg-muted hover:text-foreground",
+              )}
+            >
+              {session.attributes.archived ? (
+                <>
+                  <Archive className="h-3.5 w-3.5 group-hover:hidden" />
+                  <ArchiveRestore className="hidden h-3.5 w-3.5 group-hover:block" />
+                </>
+              ) : <Archive className="h-3.5 w-3.5" />}
+            </button>
+          ) : null}
           <button
             onClick={(event) => {
               event.stopPropagation();
-              const nextArchived = !session.attributes.archived;
-              if (
-                nextArchived
-                && !shouldConfirmDestructiveAction(
-                  event,
-                  "Archive this session? It will leave the default list, reset its sandbox, and stay in the knowledge repo.",
-                )
-              ) {
-                return;
-              }
-              runSidebarAttributeUpdate(onUpdateAttributes(session.session_id, { archived: nextArchived }));
-            }}
-            title={session.attributes.archived ? "Unarchive session" : ["Archive session", "Shift+click to skip confirmation"].join("\n")}
-            className={cn(
-              "rounded-md p-1.5 transition-colors",
-              session.attributes.archived
-                ? "text-violet-700 group-hover:text-emerald-900 hover:bg-emerald-100"
-                : "text-muted-foreground/0 group-hover:text-muted-foreground hover:bg-muted hover:text-foreground",
-            )}
-          >
-            {session.attributes.archived ? (
-              <>
-                <Archive className="h-3.5 w-3.5 group-hover:hidden" />
-                <ArchiveRestore className="hidden h-3.5 w-3.5 group-hover:block" />
-              </>
-            ) : <Archive className="h-3.5 w-3.5" />}
-          </button>
-          <button
-            onClick={(event) => {
-              event.stopPropagation();
-              if (!shouldConfirmDestructiveAction(event, "Delete this session? Chat history and sandbox state will be removed.")) {
+              if (!shouldConfirmSessionDeletion(session, event)) {
                 return;
               }
               onDelete(session.session_id);
             }}
-            title={["Delete session", "Shift+click to skip confirmation"].join("\n")}
+            title={session.message_count === 0
+              ? "Delete empty session"
+              : ["Delete session", "Shift+click to skip confirmation"].join("\n")}
             className={cn(
               "rounded-md p-1.5 transition-colors",
               "text-muted-foreground/0 group-hover:text-muted-foreground",
