@@ -575,7 +575,7 @@ class SessionTurnMixin(SessionTurnHost):
             user_input,
             latest_messages=latest_messages,
             terminal_message=terminal_message,
-            final_status="warning" if terminal_message else None,
+            final_status="warning" if (terminal_message and active.state.attributes.unattended) else None,
         )
 
     def _save_user_message_on_failure(
