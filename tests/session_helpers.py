@@ -20,7 +20,7 @@ from carapace.session import SessionEngine, SessionManager
 from carapace.session.types import ActiveSession, SessionSubscriber
 from carapace.skills import SkillRegistry
 from carapace.usage import LlmRequestState
-from carapace.ws_models import ApprovalRequest, TurnUsage
+from carapace.ws_models import ApprovalRequest, FinalStatus, TurnUsage
 
 
 def _patch_sentinel():
@@ -77,7 +77,14 @@ class _FakeSubscriber(SessionSubscriber):
     async def on_thinking_token(self, content: str) -> None:
         self.thinking_chunks.append(content)
 
-    async def on_done(self, content: str, usage: TurnUsage, *, thinking: str | None = None) -> None:
+    async def on_done(
+        self,
+        content: str,
+        usage: TurnUsage,
+        *,
+        thinking: str | None = None,
+        final_status: FinalStatus | None = None,
+    ) -> None:
         self.done_messages.append((content, usage))
 
     async def on_error(self, detail: str, *, turn_terminal: bool = False) -> None:

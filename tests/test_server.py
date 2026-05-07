@@ -259,6 +259,20 @@ def test_update_session_privacy_updates_active_session_state(client, auth_header
     assert active.state.activated_skills == ["demo-skill"]
 
 
+def test_update_session_rejects_unattended_mode_change(client, auth_headers):
+    create_resp = client.post("/api/sessions", headers=auth_headers)
+    sid = create_resp.json()["session_id"]
+
+    resp = client.patch(
+        f"/api/sessions/{sid}",
+        headers=auth_headers,
+        json={"attributes": {"unattended": True}},
+    )
+
+    assert resp.status_code == 409
+    assert "fork the session instead" in resp.json()["detail"]
+
+
 def test_list_sessions_excludes_archived_by_default(client, auth_headers):
     sid = client.post("/api/sessions", headers=auth_headers).json()["session_id"]
     archive_resp = client.patch(
@@ -1156,6 +1170,25 @@ def test_history_includes_thinking_reasoning_metadata(client, auth_headers):
     assert history[0]["role"] == "thinking"
     assert history[0]["reasoning_duration_ms"] == 1200
     assert history[0]["reasoning_tokens"] == 42
+
+
+def test_history_includes_assistant_final_status(client, auth_headers):
+    create_resp = client.post("/api/sessions", headers=auth_headers)
+    sid = create_resp.json()["session_id"]
+    srv._engine.session_mgr.append_events(
+        sid,
+        [
+            {"role": "user", "content": "hello"},
+            {"role": "assistant", "content": "done", "final_status": "success"},
+        ],
+    )
+
+    resp = client.get(f"/api/sessions/{sid}/history", headers=auth_headers)
+
+    assert resp.status_code == 200
+    history = resp.json()
+    assert history[1]["role"] == "assistant"
+    assert history[1]["final_status"] == "success"
 
 
 def test_ws_budget_command_emits_status_refresh(client, auth_headers, bearer):

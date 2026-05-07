@@ -25,6 +25,7 @@ from carapace.security.context import (
     SkillActivatedEntry,
     ToolCallEntry,
     ToolResultEntry,
+    UnattendedSentinelVerdict,
     UserMessageEntry,
     UserVouchedEntry,
 )
@@ -62,8 +63,17 @@ Always respond using the requested structured output schema.
 _RESET_THRESHOLD_DEFAULT = 20
 
 
-def _build_system_prompt(security_md: str) -> str:
-    return _SENTINEL_SYSTEM_PREFIX + security_md
+def _build_system_prompt(security_md: str, *, unattended: bool) -> str:
+    mode_text = (
+        "This session is unattended. No user approval path is available. "
+        + "You must make a final allow-or-deny decision yourself. Never choose escalation.\n\n"
+        if unattended
+        else ""
+    )
+    return _SENTINEL_SYSTEM_PREFIX + mode_text + security_md
+
+
+type _SentinelOutput = SentinelVerdict | UnattendedSentinelVerdict
 
 
 def _format_entry(entry: ActionLogEntry) -> str:
@@ -137,6 +147,7 @@ class Sentinel:
         model: str,
         knowledge_dir: Path,
         skills_dir: Path,
+        unattended: bool = False,
         timeout: timedelta = timedelta(seconds=60),
         reset_threshold: int = _RESET_THRESHOLD_DEFAULT,
         model_factory: Callable[[str], Model] | None = None,
@@ -145,6 +156,7 @@ class Sentinel:
         self._model = model
         self._knowledge_dir = knowledge_dir
         self._skills_dir = skills_dir
+        self._unattended = unattended
         self._timeout = timeout
         self._reset_threshold = reset_threshold
         self._model_factory = model_factory
@@ -167,7 +179,7 @@ class Sentinel:
         self._agent = self._create_agent()
 
     def _load_system_prompt(self, _ctx: RunContext[Path]) -> str:
-        return _build_system_prompt(self._load_security_md())
+        return _build_system_prompt(self._load_security_md(), unattended=self._unattended)
 
     def _load_security_md(self) -> str:
         path = self._knowledge_dir / "SECURITY.md"
@@ -354,13 +366,15 @@ class Sentinel:
             usage_tracker.record(self._model, "sentinel", result.usage())
 
         usage = result.usage()
+        output = self._normalize_verdict(result.output)
+
         logger.info(
             f"Sentinel eval done session={session.session_id} seq={eval_no} kind={kind} subject={subject} "
-            + f"decision={result.output.decision} risk={result.output.risk_level} "
+            + f"decision={output.decision} risk={output.risk_level} "
             + f"input_tokens={usage.input_tokens or 0} output_tokens={usage.output_tokens or 0} "
             + self._format_eval_stats(stats)
         )
-        return result.output
+        return output
 
     def _register_agent_tools(self, agent: Agent[Path, Any]) -> None:
         @agent.tool
@@ -406,15 +420,25 @@ class Sentinel:
             )
             return result
 
-    def _create_agent(self) -> Agent[Path, SentinelVerdict]:
+    def _normalize_verdict(self, output: _SentinelOutput) -> SentinelVerdict:
+        if isinstance(output, SentinelVerdict):
+            return output
+        return SentinelVerdict(
+            decision=output.decision,
+            explanation=output.explanation,
+            risk_level=output.risk_level,
+        )
+
+    def _create_agent(self) -> Agent[Path, _SentinelOutput]:
         resolved = self._model_factory(self._model) if self._model_factory is not None else infer_model(self._model)
         model_settings = (
             self._model_settings_resolver(self._model) if self._model_settings_resolver is not None else None
         )
-        agent: Agent[Path, SentinelVerdict] = Agent(
+        output_model = UnattendedSentinelVerdict if self._unattended else SentinelVerdict
+        agent: Agent[Path, _SentinelOutput] = Agent(
             resolved,
             deps_type=Path,
-            output_type=ToolOutput(SentinelVerdict, name="judge"),
+            output_type=ToolOutput(output_model, name="judge"),
             instructions=self._load_system_prompt,
             capabilities=[LlmRequestLogCapability(source="sentinel")],
             model_settings=model_settings,

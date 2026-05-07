@@ -64,6 +64,7 @@ from carapace.ws_models import (
     Done,
     ErrorMessage,
     EscalationResponse,
+    FinalStatus,
     GitPushApprovalRequest,
     LlmActivity,
     LlmActivityUpdate,
@@ -454,6 +455,7 @@ class SessionCreateRequest(BaseModel):
     channel_type: str = "cli"
     channel_ref: str = ""
     private: bool | None = None
+    unattended: bool | None = None
 
 
 class SessionAttributesPatch(BaseModel):
@@ -461,6 +463,7 @@ class SessionAttributesPatch(BaseModel):
     archived: bool | None = None
     pinned: bool | None = None
     favorite: bool | None = None
+    unattended: bool | None = None
 
 
 class SessionUpdateRequest(BaseModel):
@@ -471,6 +474,7 @@ class SessionForkRequest(BaseModel):
     event_index: int
     channel_type: str = "cli"
     channel_ref: str = ""
+    unattended: bool | None = None
 
 
 class SessionInfo(BaseModel):
@@ -620,6 +624,7 @@ async def create_session(
         body.channel_ref,
         budget=_engine.config.agent.default_session_budget,
         private=_engine.config.sessions.default_private if body.private is None else body.private,
+        unattended=False if body.unattended is None else body.unattended,
     )
     return SessionInfo.from_state(state)
 
@@ -664,6 +669,13 @@ async def update_session(
         next_attributes = state.attributes.model_copy(deep=True)
         for field_name, value in body.attributes.model_dump(exclude_none=True).items():
             setattr(next_attributes, field_name, value)
+
+        unattended_changed = next_attributes.unattended != state.attributes.unattended
+        if unattended_changed:
+            raise HTTPException(
+                status_code=409,
+                detail="Cannot change unattended mode in place; fork the session instead",
+            )
 
         archive_changed = next_attributes.archived != state.attributes.archived
         archive_now = next_attributes.archived
@@ -716,6 +728,7 @@ async def fork_session(
             event_index=body.event_index,
             channel_type=body.channel_type,
             channel_ref=body.channel_ref,
+            unattended=body.unattended,
         )
     except RuntimeError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
@@ -846,6 +859,7 @@ _HistoryRole = Literal[
 class HistoryMessage(BaseModel):
     role: _HistoryRole
     content: str = ""
+    final_status: FinalStatus | None = None
     event_index: int | None = None
     reasoning_duration_ms: int | None = None
     reasoning_tokens: int | None = None
@@ -1038,8 +1052,15 @@ class WebSocketSubscriber:
     async def on_llm_activity(self, activity: LlmRequestState | None) -> None:
         await self._safe_send(LlmActivityUpdate(activity=_llm_activity_payload(activity)))
 
-    async def on_done(self, content: str, usage: TurnUsage, *, thinking: str | None = None) -> None:
-        await self._safe_send(Done(content=content, thinking=thinking, usage=usage))
+    async def on_done(
+        self,
+        content: str,
+        usage: TurnUsage,
+        *,
+        thinking: str | None = None,
+        final_status: FinalStatus | None = None,
+    ) -> None:
+        await self._safe_send(Done(content=content, thinking=thinking, usage=usage, final_status=final_status))
 
     async def on_error(self, detail: str, *, turn_terminal: bool = False) -> None:
         await self._safe_send(ErrorMessage(detail=detail, turn_terminal=turn_terminal))

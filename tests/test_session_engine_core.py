@@ -9,7 +9,7 @@ from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, UserPromptPart
+from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, ToolCallPart, ToolReturnPart, UserPromptPart
 
 import carapace.usage as usage_mod
 from carapace.models import ContextGrant, CredentialRegistryProtocol, SkillCredentialDecl
@@ -258,6 +258,56 @@ def test_fork_session_copies_transcript_and_security_context(tmp_path: Path) -> 
     assert len(engine.session_mgr.load_events(sid)) == 5
 
 
+def test_fork_session_normalizes_unattended_history_when_becoming_attended(tmp_path: Path) -> None:
+    with _patch_sentinel():
+        engine = _make_engine(tmp_path)
+
+    source = engine.session_mgr.create_session(unattended=True)
+    sid = source.session_id
+    engine.get_or_activate(sid)
+    engine.session_mgr.append_events(
+        sid,
+        [
+            {"role": "user", "content": "run on your own"},
+            {"role": "assistant", "content": "completed"},
+        ],
+    )
+    engine.session_mgr.save_history(
+        sid,
+        [
+            ModelRequest(parts=[UserPromptPart(content="run on your own")]),
+            ModelResponse(
+                parts=[
+                    ToolCallPart(
+                        tool_name="task_done",
+                        args={"result": "completed"},
+                        tool_call_id="done-1",
+                    )
+                ]
+            ),
+            ModelRequest(
+                parts=[
+                    ToolReturnPart(
+                        tool_name="task_done",
+                        content="Final result processed.",
+                        tool_call_id="done-1",
+                    )
+                ]
+            ),
+        ],
+    )
+
+    forked = engine.fork_session(sid, event_index=1, channel_type="web", unattended=False)
+
+    assert forked.attributes.unattended is False
+    forked_history = engine.session_mgr.load_history(forked.session_id)
+    assert len(forked_history) == 2
+    assert isinstance(forked_history[1], ModelResponse)
+    response_part = forked_history[1].parts[0]
+    assert isinstance(response_part, TextPart)
+    assert response_part.content == "completed"
+
+
 def test_handle_token_chunk_promotes_activity_and_broadcasts(tmp_path: Path) -> None:
     async def _run() -> None:
         with _patch_sentinel():
@@ -450,8 +500,8 @@ def test_user_message_from_self(tmp_path: Path):
         engine.subscribe(sid, origin)
         engine.subscribe(sid, other)
 
-        async def _noop_turn(*_a: Any, **_kw: Any) -> tuple[list[Any], str, str]:
-            return [], "ok", ""
+        async def _noop_turn(*_a: Any, **_kw: Any) -> tuple[list[Any], str, str, None]:
+            return [], "ok", "", None
 
         with patch("carapace.agent.loop.run_agent_turn", new=_noop_turn):
             await engine.submit_message(sid, "hello", origin=origin)
@@ -477,8 +527,8 @@ def test_user_message_no_origin(tmp_path: Path):
         engine.subscribe(sid, sub_a)
         engine.subscribe(sid, sub_b)
 
-        async def _noop_turn(*_a: Any, **_kw: Any) -> tuple[list[Any], str, str]:
-            return [], "ok", ""
+        async def _noop_turn(*_a: Any, **_kw: Any) -> tuple[list[Any], str, str, None]:
+            return [], "ok", "", None
 
         with patch("carapace.agent.loop.run_agent_turn", new=_noop_turn):
             await engine.submit_message(sid, "hi")

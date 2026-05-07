@@ -75,6 +75,7 @@ class SessionManager:
         budget: SessionBudget | None = None,
         *,
         private: bool = False,
+        unattended: bool = False,
     ) -> SessionState:
         now = datetime.now(tz=UTC)
         session_id = f"{now:%Y-%m-%d-%H-%M}-{secrets.token_hex(4)}"
@@ -82,7 +83,7 @@ class SessionManager:
             session_id=session_id,
             channel_type=channel_type,
             channel_ref=channel_ref or None,
-            attributes=SessionAttributes(private=private),
+            attributes=SessionAttributes(private=private, unattended=unattended),
             approved_operations=[],
             activated_skills=[],
             context_grants={},

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Archive, ArchiveRestore, Loader2, Lock, Pin, Play, RotateCcw, Save, Square, Star, Trash2, Unlock } from "lucide-react";
+import { Archive, ArchiveRestore, Bot, Loader2, Lock, Pin, Play, RotateCcw, Save, Square, Star, Trash2, Unlock } from "lucide-react";
 import { useWebSocket } from "@/hooks/use-websocket";
 import {
   type AvailableModelInfo,
@@ -31,6 +31,7 @@ import type {
 } from "@/lib/types";
 import { isRecord } from "@/lib/decoding";
 import {
+  canArchiveSession,
   cn,
   formatBytes,
   sandboxStatusIndicatorClass,
@@ -692,6 +693,7 @@ function projectHistoryToMessages(history: HistoryMessage[]): ChatMessage[] {
     messages.push({
       kind: "assistant",
       content: entry.content,
+      finalStatus: entry.final_status,
       eventIndex: typeof entry.event_index === "number" ? entry.event_index : undefined,
     });
   }
@@ -754,11 +756,12 @@ export function ChatView({
     onSandboxUpdateRef.current = onSandboxUpdate;
   }, [onSandboxUpdate]);
 
-  const markSessionKnowledgeChanged = useCallback(() => {
+  const markSessionKnowledgeChanged = useCallback((hasNewMessage = false) => {
     if (!session) return;
     onSessionUpdate?.({
       ...session,
       last_active: new Date().toISOString(),
+      message_count: hasNewMessage ? Math.max(session.message_count, 1) : session.message_count,
     });
   }, [onSessionUpdate, session]);
 
@@ -935,9 +938,13 @@ export function ChatView({
             // Replace streaming message with the final content
             const streamIdx = updated.findLastIndex((m) => m.kind === "streaming");
             if (streamIdx !== -1) {
-              updated[streamIdx] = { kind: "assistant", content: msg.content };
+              updated[streamIdx] = {
+                kind: "assistant",
+                content: msg.content,
+                finalStatus: msg.final_status,
+              };
             } else {
-              updated.push({ kind: "assistant", content: msg.content });
+              updated.push({ kind: "assistant", content: msg.content, finalStatus: msg.final_status });
             }
             return updated;
           });
@@ -1261,7 +1268,7 @@ export function ChatView({
     } else {
       lastThinkingStartedAtRef.current = null;
       send({ type: "message", content });
-      markSessionKnowledgeChanged();
+      markSessionKnowledgeChanged(true);
       setWaiting(true);
     }
   }
@@ -1351,6 +1358,7 @@ export function ChatView({
       const forked = await forkSession(server, token, sessionId, {
         eventIndex: targetEventIndex,
         channelType: "web",
+        unattended: session?.attributes.unattended ? false : undefined,
       });
       onForkSession(forked);
     } catch (error) {
@@ -1407,7 +1415,10 @@ export function ChatView({
 
   async function handleDeleteSession() {
     if (waiting || sandboxPowerAction || wipingSandbox || deletingSession || !onDeleteSession) return;
-    if (!window.confirm("Delete this session? Chat history and sandbox state will be removed.")) {
+    if (
+      (session?.message_count ?? 0) > 0
+      && !window.confirm("Delete this session? Chat history and sandbox state will be removed.")
+    ) {
       return;
     }
     setDeletingSession(true);
@@ -1422,6 +1433,9 @@ export function ChatView({
     if (!session || updatingSessionAttribute || deletingSession || !onUpdateSessionAttributes) return;
 
     const nextArchived = !session.attributes.archived;
+    if (nextArchived && !canArchiveSession(session)) {
+      return;
+    }
     const confirmation = nextArchived
       ? "Archive this session? It will leave the default list, reset its sandbox, and stay in the knowledge repo."
       : "Unarchive this session? It will return to the active session list.";
@@ -1608,9 +1622,19 @@ export function ChatView({
   const hasKnowledgeContent = messages.length > 0;
   const hasKnowledgeChanges = sessionHasKnowledgeChanges(session);
   const sessionArchived = session?.attributes.archived ?? false;
+  const sessionUnattended = session?.attributes.unattended ?? false;
+  const hasSubmittedUserMessage = messages.some(
+    (message) => message.kind === "user" && !message.content.startsWith("/"),
+  );
+  const unattendedInputLocked = sessionUnattended && hasSubmittedUserMessage;
   const sessionPrivate = session?.attributes.private ?? false;
   const sessionPinned = session?.attributes.pinned ?? false;
   const sessionFavorite = session?.attributes.favorite ?? false;
+  const sessionCanArchive = canArchiveSession(session);
+  const inputDisabled = sessionArchived || unattendedInputLocked;
+  const inputDisabledPlaceholder = sessionArchived
+    ? "Unarchive first"
+    : "This session is unattended. Fork it first to continue here.";
   const canCommitKnowledge = !!session && !sessionPrivate && !sessionArchived && hasKnowledgeContent && hasKnowledgeChanges;
   const waitingLabel = !waiting
     ? null
@@ -1665,6 +1689,14 @@ export function ChatView({
       <div className="border-b border-border px-3 py-2.5 sm:px-4 sm:py-3">
         <div className="w-full">
           <div className="min-w-0 w-full space-y-2">
+            {sessionUnattended ? (
+              <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 font-medium text-emerald-800">
+                  <Bot className="h-3 w-3 shrink-0" />
+                  <span>Unattended</span>
+                </span>
+              </div>
+            ) : null}
             <div className="grid grid-cols-2 gap-2">
               <div className="min-w-0 rounded-lg border border-border/70 bg-muted/20 px-2.5 py-2 sm:px-3">
                 <div className="flex items-start justify-between gap-2">
@@ -1762,20 +1794,22 @@ export function ChatView({
                         <Star className="h-3.5 w-3.5" />
                       )}
                     </button>
-                    <button
-                      onClick={() => void handleToggleArchived()}
-                      disabled={!session || !!updatingSessionAttribute || deletingSession || !onUpdateSessionAttributes}
-                      title={sessionArchived ? "Unarchive session" : "Archive session"}
-                      className="rounded-md p-1.5 text-violet-900 transition-colors hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      {updatingSessionAttribute === "archived" ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      ) : sessionArchived ? (
-                        <ArchiveRestore className="h-3.5 w-3.5" />
-                      ) : (
-                        <Archive className="h-3.5 w-3.5" />
-                      )}
-                    </button>
+                    {sessionArchived || sessionCanArchive ? (
+                      <button
+                        onClick={() => void handleToggleArchived()}
+                        disabled={!session || !!updatingSessionAttribute || deletingSession || !onUpdateSessionAttributes}
+                        title={sessionArchived ? "Unarchive session" : "Archive session"}
+                        className="rounded-md p-1.5 text-violet-900 transition-colors hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {updatingSessionAttribute === "archived" ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : sessionArchived ? (
+                          <ArchiveRestore className="h-3.5 w-3.5" />
+                        ) : (
+                          <Archive className="h-3.5 w-3.5" />
+                        )}
+                      </button>
+                    ) : null}
                     <button
                       onClick={() => void handleTogglePrivacy()}
                       disabled={!session || !!updatingSessionAttribute || deletingSession}
@@ -1912,8 +1946,8 @@ export function ChatView({
         onCancel={handleCancel}
         onInterrupt={handleInterrupt}
         connected={connected}
-        disabled={sessionArchived}
-        disabledPlaceholder="Unarchive first"
+        disabled={inputDisabled}
+        disabledPlaceholder={inputDisabledPlaceholder}
         waiting={waiting}
         queuedMessage={queuedMessage}
         commands={commands}

@@ -19,7 +19,7 @@ from carapace.models import SessionState, ToolResult
 from carapace.security.context import ApprovalSource, ApprovalVerdict, SessionSecurity
 from carapace.security.sentinel import Sentinel
 from carapace.usage import LlmRequestLog, LlmRequestState, UsageTracker
-from carapace.ws_models import ApprovalRequest, ApprovalResponse, EscalationResponse, TurnUsage
+from carapace.ws_models import ApprovalRequest, ApprovalResponse, EscalationResponse, FinalStatus, TurnUsage
 
 
 @runtime_checkable
@@ -42,7 +42,14 @@ class SessionSubscriber(Protocol):
     async def on_token(self, content: str) -> None: ...
     async def on_thinking_token(self, content: str) -> None: ...
     async def on_llm_activity(self, activity: LlmRequestState | None) -> None: ...
-    async def on_done(self, content: str, usage: TurnUsage, *, thinking: str | None = None) -> None: ...
+    async def on_done(
+        self,
+        content: str,
+        usage: TurnUsage,
+        *,
+        thinking: str | None = None,
+        final_status: FinalStatus | None = None,
+    ) -> None: ...
     async def on_error(self, detail: str, *, turn_terminal: bool = False) -> None: ...
     async def on_cancelled(self) -> None: ...
     async def on_approval_request(self, req: ApprovalRequest) -> None: ...
@@ -127,3 +134,4 @@ class TurnExecutionResult:
     messages: list[ModelMessage]
     output: str
     thinking: str
+    final_status: FinalStatus | None = None

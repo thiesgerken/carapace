@@ -8,6 +8,8 @@ from pydantic import BaseModel
 from carapace.security.context import ApprovalSource, ApprovalVerdict
 from carapace.usage import BudgetGauge, LlmRequestPhase, LlmSource
 
+FinalStatus = Literal["success", "warning"]
+
 SLASH_COMMANDS: list[dict[str, str]] = [
     {"command": "/security", "description": "Show security policy summary"},
     {"command": "/approve-context", "description": "Vouch for the current agent context as trustworthy"},
@@ -234,6 +236,7 @@ class Done(BaseModel):
     content: str
     thinking: str | None = None
     usage: TurnUsage | None = None
+    final_status: FinalStatus | None = None
 
 
 class CommandResult(BaseModel):

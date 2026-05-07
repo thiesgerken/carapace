@@ -10,7 +10,7 @@ from typing import Annotated, Any
 import httpx
 from loguru import logger
 from pydantic import Field
-from pydantic_ai import Agent, DeferredToolRequests, RunContext, ToolDenied
+from pydantic_ai import Agent, DeferredToolRequests, RunContext, ToolDenied, ToolOutput
 
 import carapace.security as security
 from carapace.config import load_workspace_file
@@ -21,6 +21,8 @@ from carapace.models import (
     Deps,
     SkillCarapaceConfig,
     SkillCredentialDecl,
+    TaskDone,
+    TaskFailed,
     ToolResult,
 )
 from carapace.sandbox.manager import READ_TOOL_MAX_LINE_WINDOW
@@ -433,6 +435,16 @@ def build_system_prompt(deps: Deps) -> str:
         "For LaTeX math, use $...$ inline and $$...$$ on their own lines for display equations."
     )
 
+    if deps.session_state.attributes.unattended:
+        parts.append(
+            "# Unattended Session\n"
+            "This session is unattended. No user will reply in-place.\n"
+            "Keep working until you can finish by returning `task_done` with the final result, "
+            + "or `task_failed` with the concrete blocking problem.\n"
+            "Do not end with plain conversational text, "
+            + "and do not ask the user to confirm or continue within this session."
+        )
+
     today = date.today()
     parts.append(
         f"# Session Info\nToday's date: {today:%A}, {today:%Y-%m-%d}\nSession ID: {deps.session_state.session_id}"
@@ -441,13 +453,23 @@ def build_system_prompt(deps: Deps) -> str:
     return "\n\n---\n\n".join(parts)
 
 
-def create_agent(deps: Deps) -> Agent[Deps, str | DeferredToolRequests]:
+def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | DeferredToolRequests]:
     system_prompt = build_system_prompt(deps)
 
-    agent: Agent[Deps, str | DeferredToolRequests] = Agent(
+    output_type: list[Any]
+    if deps.session_state.attributes.unattended:
+        output_type = [
+            ToolOutput(TaskDone, name="task_done"),
+            ToolOutput(TaskFailed, name="task_failed"),
+            DeferredToolRequests,
+        ]
+    else:
+        output_type = [str, DeferredToolRequests]
+
+    agent: Agent[Deps, str | TaskDone | TaskFailed | DeferredToolRequests] = Agent(
         deps.agent_model,
         deps_type=Deps,
-        output_type=[str, DeferredToolRequests],  # type: ignore[arg-type]
+        output_type=output_type,  # type: ignore[arg-type]
         instructions=system_prompt,
         capabilities=[LlmRequestLogCapability(source="agent")],
         model_settings=model_settings_for_config(deps.config, deps.agent_model_id, default_thinking=True),

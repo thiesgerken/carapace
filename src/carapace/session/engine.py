@@ -15,7 +15,7 @@ import contextlib
 import secrets
 import uuid
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -23,7 +23,15 @@ from typing import Any, Literal
 
 from loguru import logger
 from pydantic_ai.exceptions import UsageLimitExceeded
-from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, UserPromptPart
+from pydantic_ai.messages import (
+    ModelMessage,
+    ModelRequest,
+    ModelResponse,
+    TextPart,
+    ToolCallPart,
+    ToolReturnPart,
+    UserPromptPart,
+)
 from pydantic_ai.models import Model, infer_model
 from pydantic_ai.settings import ModelSettings
 from pydantic_ai.usage import UsageLimits
@@ -489,11 +497,13 @@ class SessionEngine(SessionTurnMixin):
             audit_dir=audit_dir,
             max_sentinel_calls_per_tool_call=self._config.agent.max_sentinel_calls_per_tool_call,
             sentinel_domain_batch_window_ms=self._config.agent.sentinel_domain_batch_window_ms,
+            unattended=state.attributes.unattended,
         )
         sentinel = Sentinel(
             model=self._config.agent.sentinel_model,
             knowledge_dir=self._knowledge_dir,
             skills_dir=self._knowledge_dir / "skills",
+            unattended=state.attributes.unattended,
             timeout=timedelta(seconds=self._config.agent.sentinel_timeout_seconds),
             model_factory=self._model_factory,
             model_settings_resolver=self._resolve_model_settings,
@@ -818,6 +828,7 @@ class SessionEngine(SessionTurnMixin):
         event_index: int,
         channel_type: str,
         channel_ref: str = "",
+        unattended: bool | None = None,
     ) -> SessionState:
         active = self._ensure_active(session_id)
         if active.agent_task and not active.agent_task.done():
@@ -836,6 +847,9 @@ class SessionEngine(SessionTurnMixin):
         turn_count = len(self._completed_event_turns(forked_events))
         history = self._truncate_incomplete_model_history(self._session_mgr.load_history(session_id))
         forked_history = self._history_for_completed_turn_count(history, turn_count)
+        target_unattended = source_state.attributes.unattended if unattended is None else unattended
+        if source_state.attributes.unattended and not target_unattended:
+            forked_history = self._normalize_unattended_output_history(forked_history)
 
         now = datetime.now(tz=UTC)
         forked_session_id = f"{now:%Y-%m-%d-%H-%M}-{secrets.token_hex(4)}"
@@ -848,7 +862,10 @@ class SessionEngine(SessionTurnMixin):
                 "title": f"{source_state.title} (Copy)" if source_state.title else None,
                 "created_at": now,
                 "last_active": now,
-                "attributes": SessionAttributes(private=source_state.attributes.private),
+                "attributes": SessionAttributes(
+                    private=source_state.attributes.private,
+                    unattended=target_unattended,
+                ),
                 "knowledge_last_committed_at": None,
                 "knowledge_last_archive_path": None,
                 "knowledge_last_export_hash": None,
@@ -1339,7 +1356,7 @@ class SessionEngine(SessionTurnMixin):
             if (
                 current_turn_start is not None
                 and index - 1 > current_turn_start
-                and isinstance(messages[index - 1], ModelResponse)
+                and self._is_terminal_history_message(messages[index - 1])
             ):
                 turn_end_indexes.append(index - 1)
             current_turn_start = index
@@ -1347,11 +1364,21 @@ class SessionEngine(SessionTurnMixin):
         if (
             current_turn_start is not None
             and len(messages) - 1 > current_turn_start
-            and isinstance(messages[-1], ModelResponse)
+            and self._is_terminal_history_message(messages[-1])
         ):
             turn_end_indexes.append(len(messages) - 1)
 
         return turn_end_indexes
+
+    def _is_terminal_history_message(self, message: ModelMessage) -> bool:
+        if isinstance(message, ModelResponse):
+            return True
+        if not isinstance(message, ModelRequest):
+            return False
+        return any(
+            isinstance(part, ToolReturnPart) and part.tool_name in {"task_done", "task_failed"}
+            for part in message.parts
+        )
 
     def _history_for_completed_turn_count(self, messages: list[ModelMessage], turn_count: int) -> list[ModelMessage]:
         if turn_count <= 0:
@@ -1363,6 +1390,51 @@ class SessionEngine(SessionTurnMixin):
 
         capped_turn_count = min(turn_count, len(turn_end_indexes))
         return messages[: turn_end_indexes[capped_turn_count - 1] + 1]
+
+    def _normalize_unattended_output_history(self, messages: list[ModelMessage]) -> list[ModelMessage]:
+        """Rewrite unattended task output tools into plain assistant text for attended forks."""
+        normalized: list[ModelMessage] = []
+        index = 0
+
+        while index < len(messages):
+            current = messages[index]
+            next_message = messages[index + 1] if index + 1 < len(messages) else None
+
+            if (
+                isinstance(current, ModelResponse)
+                and len(current.parts) == 1
+                and isinstance(current.parts[0], ToolCallPart)
+                and current.parts[0].tool_name in {"task_done", "task_failed"}
+                and isinstance(next_message, ModelRequest)
+                and any(
+                    isinstance(part, ToolReturnPart)
+                    and part.tool_name == current.parts[0].tool_name
+                    and part.tool_call_id == current.parts[0].tool_call_id
+                    for part in next_message.parts
+                )
+            ):
+                content = self._task_output_text(current.parts[0])
+                if content is not None:
+                    normalized.append(replace(current, parts=[TextPart(content=content)]))
+                    index += 2
+                    continue
+
+            normalized.append(current)
+            index += 1
+
+        return normalized
+
+    def _task_output_text(self, part: ToolCallPart) -> str | None:
+        args = part.args if isinstance(part.args, dict) else None
+        if args is None:
+            return None
+        if part.tool_name == "task_done":
+            value = args.get("result")
+        elif part.tool_name == "task_failed":
+            value = args.get("problem")
+        else:
+            return None
+        return value if isinstance(value, str) and value else None
 
     def _rewrite_session_transcript(self, session_id: str, events: list[dict[str, Any]]) -> None:
         truncated_events = self._truncate_incomplete_events(events)

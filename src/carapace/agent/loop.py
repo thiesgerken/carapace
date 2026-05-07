@@ -28,7 +28,7 @@ from pydantic_ai.messages import (
 from pydantic_ai.usage import UsageLimits
 
 from carapace.agent.tools import create_agent
-from carapace.models import Deps
+from carapace.models import Deps, TaskDone, TaskFailed
 from carapace.security.context import (
     AgentResponseEntry,
     ApprovalEntry,
@@ -36,7 +36,7 @@ from carapace.security.context import (
     SentinelVerdict,
     UserMessageEntry,
 )
-from carapace.ws_models import ApprovalRequest
+from carapace.ws_models import ApprovalRequest, FinalStatus
 
 
 async def run_agent_turn(
@@ -50,10 +50,10 @@ async def run_agent_turn(
     on_messages_snapshot: Callable[[list[Any]], None] | None = None,
     before_llm_call: Callable[[], None] | None = None,
     get_usage_limits: Callable[[], UsageLimits | None] | None = None,
-) -> tuple[list[Any], str, str]:
+) -> tuple[list[Any], str, str, FinalStatus | None]:
     """Run one full agent turn, handling approval loops.
 
-    Returns ``(updated_message_history, output_text, thinking_text)``.
+    Returns ``(updated_message_history, output_text, thinking_text, final_status)``.
     The caller is responsible for persisting history and delivering the output
     to the user.
     """
@@ -166,11 +166,22 @@ async def run_agent_turn(
         if on_messages_snapshot is not None:
             on_messages_snapshot(list(messages))
 
+    output_text: str | None = None
+    final_status: FinalStatus | None = None
     if isinstance(result.output, str):
+        output_text = result.output
+    elif isinstance(result.output, TaskDone):
+        output_text = result.output.result
+        final_status = "success"
+    elif isinstance(result.output, TaskFailed):
+        output_text = result.output.problem
+        final_status = "warning"
+
+    if output_text is not None:
         last_usage = result.usage()
         token_count = (last_usage.output_tokens or 0) + (last_usage.input_tokens or 0)
         deps.security.append(AgentResponseEntry(token_count=token_count))
-        return messages, result.output, last_thinking
+        return messages, output_text, last_thinking, final_status
 
     output = f"Unexpected agent output type: {type(result.output).__name__}"
-    return messages, output, last_thinking
+    return messages, output, last_thinking, None

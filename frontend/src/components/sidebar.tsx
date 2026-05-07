@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { Archive, ArchiveRestore, Loader2, Lock, LogOut, Mail, MessageSquare, Pin, Plus, Save, Star, Trash2 } from "lucide-react";
+import { Archive, ArchiveRestore, Bot, Loader2, Lock, LogOut, Mail, MessageSquare, Pin, Save, Star, Trash2 } from "lucide-react";
 import { EmojiText } from "@/components/emoji-text";
+import { NewSessionButton } from "@/components/new-session-button";
 import type { SessionAttributesPatch, SessionInfo, SessionSandboxSnapshot } from "@/lib/types";
 import {
+  canArchiveSession,
   cn,
   formatBytes,
   sandboxStatusIndicatorClass,
@@ -16,7 +18,7 @@ interface SidebarProps {
   sessions: SessionInfo[];
   activeSessionId: string | null;
   onSelect: (sessionId: string) => void;
-  onNew: () => void;
+  onNew: (unattended?: boolean) => void;
   onUpdateAttributes: (sessionId: string, attributes: SessionAttributesPatch) => Promise<SessionInfo>;
   onDelete: (sessionId: string) => void;
   onDisconnect: () => void;
@@ -62,6 +64,17 @@ function runSidebarAttributeUpdate(promise: Promise<SessionInfo>): void {
   void promise.catch(() => {
     // Sidebar actions currently fail silently like delete; avoid unhandled rejections.
   });
+}
+
+function shouldConfirmSessionDeletion(
+  session: Pick<SessionInfo, "message_count">,
+  event: { shiftKey: boolean },
+): boolean {
+  return session.message_count === 0
+    || shouldConfirmDestructiveAction(
+      event,
+      "Delete this session? Chat history and sandbox state will be removed.",
+    );
 }
 
 export function Sidebar({
@@ -122,11 +135,13 @@ export function Sidebar({
   function renderSessionRow(session: SessionInfo) {
     const sandbox = sandboxSummary(session);
     const sandboxLabel = sandbox ? sandboxSummaryLabel(sandbox) : null;
+    const sessionCanArchive = canArchiveSession(session);
     const showPrivateIcon = session.attributes.private;
     const showSavedIcon = !session.attributes.private
       && !!session.knowledge_last_committed_at
       && !sessionHasKnowledgeChanges(session);
     const showKnowledgeIndicator = showPrivateIcon || showSavedIcon;
+    const showUnattendedIcon = session.attributes.unattended;
     const channelLabel = session.channel_type !== "web" && session.channel_type !== "cli"
       ? session.channel_type
       : null;
@@ -167,6 +182,15 @@ export function Sidebar({
                 <span className="font-mono break-all">{session.session_id}</span>
               )}
           </div>
+          {showUnattendedIcon ? (
+            <span
+              className="mt-0.5 inline-flex shrink-0 items-center text-emerald-700"
+              title="Unattended session"
+            >
+              <Bot className="h-3.5 w-3.5" />
+              <span className="sr-only">Unattended session</span>
+            </span>
+          ) : null}
         </div>
         <div className="flex items-start gap-2 px-3 pb-2">
           <div className="min-w-0 flex-1 text-left">
@@ -267,45 +291,49 @@ export function Sidebar({
           >
             <Star className="h-3.5 w-3.5" />
           </button>
+          {session.attributes.archived || sessionCanArchive ? (
+            <button
+              onClick={(event) => {
+                event.stopPropagation();
+                const nextArchived = !session.attributes.archived;
+                if (
+                  nextArchived
+                  && !shouldConfirmDestructiveAction(
+                    event,
+                    "Archive this session? It will leave the default list, reset its sandbox, and stay in the knowledge repo.",
+                  )
+                ) {
+                  return;
+                }
+                runSidebarAttributeUpdate(onUpdateAttributes(session.session_id, { archived: nextArchived }));
+              }}
+              title={session.attributes.archived ? "Unarchive session" : ["Archive session", "Shift+click to skip confirmation"].join("\n")}
+              className={cn(
+                "rounded-md p-1.5 transition-colors",
+                session.attributes.archived
+                  ? "text-violet-700 group-hover:text-emerald-900 hover:bg-emerald-100"
+                  : "text-muted-foreground/0 group-hover:text-muted-foreground hover:bg-muted hover:text-foreground",
+              )}
+            >
+              {session.attributes.archived ? (
+                <>
+                  <Archive className="h-3.5 w-3.5 group-hover:hidden" />
+                  <ArchiveRestore className="hidden h-3.5 w-3.5 group-hover:block" />
+                </>
+              ) : <Archive className="h-3.5 w-3.5" />}
+            </button>
+          ) : null}
           <button
             onClick={(event) => {
               event.stopPropagation();
-              const nextArchived = !session.attributes.archived;
-              if (
-                nextArchived
-                && !shouldConfirmDestructiveAction(
-                  event,
-                  "Archive this session? It will leave the default list, reset its sandbox, and stay in the knowledge repo.",
-                )
-              ) {
-                return;
-              }
-              runSidebarAttributeUpdate(onUpdateAttributes(session.session_id, { archived: nextArchived }));
-            }}
-            title={session.attributes.archived ? "Unarchive session" : ["Archive session", "Shift+click to skip confirmation"].join("\n")}
-            className={cn(
-              "rounded-md p-1.5 transition-colors",
-              session.attributes.archived
-                ? "text-violet-700 group-hover:text-emerald-900 hover:bg-emerald-100"
-                : "text-muted-foreground/0 group-hover:text-muted-foreground hover:bg-muted hover:text-foreground",
-            )}
-          >
-            {session.attributes.archived ? (
-              <>
-                <Archive className="h-3.5 w-3.5 group-hover:hidden" />
-                <ArchiveRestore className="hidden h-3.5 w-3.5 group-hover:block" />
-              </>
-            ) : <Archive className="h-3.5 w-3.5" />}
-          </button>
-          <button
-            onClick={(event) => {
-              event.stopPropagation();
-              if (!shouldConfirmDestructiveAction(event, "Delete this session? Chat history and sandbox state will be removed.")) {
+              if (!shouldConfirmSessionDeletion(session, event)) {
                 return;
               }
               onDelete(session.session_id);
             }}
-            title={["Delete session", "Shift+click to skip confirmation"].join("\n")}
+            title={session.message_count === 0
+              ? "Delete empty session"
+              : ["Delete session", "Shift+click to skip confirmation"].join("\n")}
             className={cn(
               "rounded-md p-1.5 transition-colors",
               "text-muted-foreground/0 group-hover:text-muted-foreground",
@@ -336,18 +364,7 @@ export function Sidebar({
 
       {/* New session button */}
       <div className="px-3 pt-3 pb-1">
-        <button
-          onClick={onNew}
-          disabled={loading}
-          className={cn(
-            "flex w-full items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm",
-            "hover:bg-muted transition-colors",
-            "disabled:opacity-50",
-          )}
-        >
-          <Plus className="h-4 w-4" />
-          New session
-        </button>
+        <NewSessionButton onCreate={onNew} disabled={loading} fullWidth />
       </div>
 
       {/* Session list */}

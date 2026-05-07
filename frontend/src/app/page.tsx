@@ -4,6 +4,7 @@ import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Menu, X } from "lucide-react";
 import { ConnectForm } from "@/components/connect-form";
+import { NewSessionButton } from "@/components/new-session-button";
 import { Sidebar } from "@/components/sidebar";
 import { ChatView } from "@/components/chat-view";
 import { createSession, deleteSession, getSession, listSessions, updateSession } from "@/lib/api";
@@ -307,10 +308,10 @@ function HomeContent() {
     setActiveSessionId(null);
   }
 
-  async function handleNewSession() {
+  async function handleNewSession(unattended = false) {
     setCreatingSession(true);
     try {
-      const session = await createSession(server, token);
+      const session = await createSession(server, token, { unattended });
       setSessions((prev) => sortSessions([session, ...prev]));
       setActiveSessionId(session.session_id);
       setSidebarOpen(false);
@@ -477,17 +478,11 @@ function HomeContent() {
               <p className="mt-1 text-sm text-muted-foreground">
                 Select a session or start a new one
               </p>
-              <button
-                onClick={handleNewSession}
+              <NewSessionButton
+                onCreate={handleNewSession}
                 disabled={loading}
-                className={cn(
-                  "mt-4 rounded-lg px-4 py-2 text-sm font-medium transition-colors",
-                  "bg-foreground text-background hover:bg-foreground/90",
-                  "disabled:opacity-50",
-                )}
-              >
-                New session
-              </button>
+                className="mt-4"
+              />
             </div>
           </div>
         )}
