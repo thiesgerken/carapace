@@ -53,7 +53,7 @@ services:
       - "3001:80"
 
   redis:
-    image: redis:7-alpine
+    image: redis:7-alpine@sha256:9de71018be8413f419688ac34e19dbac432d1c6d9593d2ded99a82eebefeb18f
     command: ["redis-server", "--save", "", "--appendonly", "no"]
     restart: unless-stopped
     healthcheck:
