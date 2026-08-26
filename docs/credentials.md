@@ -136,7 +136,7 @@ ccred get <backend>/<id> -o ~/.ssh/id_ed25519
 - `list`/`search` return metadata only (name, vault path, optional description).
 - `get` returns the raw password/value by default (or writes it to `-o` with mode `0400`).
 - `--login` returns the provider login name when supported. Bitwarden supports it; unsupported providers fail with a non-zero exit code.
-- `--json` returns the complete provider-specific item. Bitwarden returns its item object; file backends return `id`, `name`, and `value`.
+- `--json` returns the complete provider-specific item. Every provider supports this.
 - `--login` and `--json` are mutually exclusive and go through normal credential approval rather than skill-context approval.
 - `get` blocks until the user approves, then continues.
 

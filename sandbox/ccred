@@ -131,7 +131,7 @@ def main() -> None:
             "  ccred list                         list all available credentials\n"
             "  ccred search gmail                 search credentials matching 'gmail'\n"
             "  ccred get <backend>/<id>           fetch password (blocks until approved)\n"
-            "  ccred get <backend>/<id> --login   fetch login name\n"
+            "  ccred get <backend>/<id> --login   fetch login name (not supported by every provider)\n"
             "  ccred get <backend>/<id> --json    fetch provider-specific JSON\n"
             "  ccred get <backend>/<id> -o FILE   write output to FILE with mode 0400\n"
             "                                     (-o is subject to approval like stdout fetch)\n"
@@ -151,7 +151,13 @@ def main() -> None:
     get = sub.add_parser("get", help="Fetch a credential value")
     get.add_argument("vault_path", help="Vault path (<backend>/<id>)")
     kind = get.add_mutually_exclusive_group()
-    kind.add_argument("--login", action="store_const", const="login", dest="kind", help="Fetch the login name")
+    kind.add_argument(
+        "--login",
+        action="store_const",
+        const="login",
+        dest="kind",
+        help="Fetch the login name (not supported by every provider)",
+    )
     kind.add_argument("--json", action="store_const", const="json", dest="kind", help="Fetch provider-specific JSON")
     get.set_defaults(kind="password")
     get.add_argument("-o", "--output", help="Write value to file instead of stdout")
