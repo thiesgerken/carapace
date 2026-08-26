@@ -3196,6 +3196,35 @@ def test_sandbox_list_credentials_backend_error_returns_503(client, auth_headers
     assert resp.json() == {"detail": "Bitwarden backend unavailable"}
 
 
+def test_sandbox_fetch_credential_alternate_kind_uses_sentinel(client, auth_headers, monkeypatch):
+    create_resp = client.post("/api/sessions", headers=auth_headers)
+    sid = create_resp.json()["session_id"]
+    active = srv._engine.get_or_activate(sid)
+    active.sentinel = MagicMock()
+    active.state.context_grants["demo"] = MagicMock(vault_paths=["bw/id-1"])
+
+    mock_reg = MagicMock()
+    mock_reg.fetch_metadata = AsyncMock(return_value=CredentialMetadata(vault_path="bw/id-1", name="Example"))
+    mock_reg.fetch = AsyncMock(return_value='{"id":"id-1"}')
+    evaluate = AsyncMock(return_value=MagicMock(allowed=True))
+    monkeypatch.setattr(srv, "_credential_registry_for_session", AsyncMock(return_value=mock_reg), raising=False)
+    monkeypatch.setattr("carapace.security.evaluate_credential_with", evaluate)
+    srv._engine.sandbox_mgr.verify_session_token.side_effect = lambda s, t: s == sid and t == "secret"
+    srv._engine.sandbox_mgr.get_current_contexts.return_value = ["demo"]
+
+    basic = base64.b64encode(f"{sid}:secret".encode()).decode()
+    resp = TestClient(sandbox_app).get(
+        "/credentials/bw/id-1?kind=json",
+        headers={"Authorization": f"Basic {basic}"},
+    )
+
+    assert resp.status_code == 200
+    assert resp.json() == {"id": "id-1"}
+    evaluate.assert_awaited_once()
+    assert evaluate.await_args.kwargs["audit_args"]["value_kind"] == "json"
+    mock_reg.fetch.assert_awaited_once_with("bw/id-1", "json")
+
+
 def test_sandbox_fetch_credential_backend_error_returns_503(client, auth_headers, monkeypatch):
     create_resp = client.post("/api/sessions", headers=auth_headers)
     sid = create_resp.json()["session_id"]

@@ -14,12 +14,14 @@ from carapace.credentials import (
     build_credential_registry,
     is_exposed,
 )
+from carapace.credentials.protocol import UnsupportedCredentialValueKindError
 from carapace.credentials.registry import FILE_CREDENTIAL_BACKEND_ENV, file_credential_backend_allowed_from_env
 from carapace.models.credentials import (
     BasicAuthConfig,
     BitwardenCredentialBackendConfig,
     CredentialMetadata,
     CredentialsConfig,
+    CredentialValueKind,
     FileCredentialBackendConfig,
 )
 from carapace.models.skills import SkillCredentialDecl
@@ -163,6 +165,16 @@ async def test_file_fetch(file_backend: FileVaultBackend) -> None:
 async def test_file_fetch_missing(file_backend: FileVaultBackend) -> None:
     with pytest.raises(KeyError):
         await file_backend.fetch("nonexistent")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("kind", ["login", "json"])
+async def test_file_fetch_rejects_provider_specific_kinds(
+    file_backend: FileVaultBackend,
+    kind: CredentialValueKind,
+) -> None:
+    with pytest.raises(UnsupportedCredentialValueKindError):
+        await file_backend.fetch("gmail", kind)
 
 
 @pytest.mark.asyncio
@@ -505,6 +517,31 @@ async def test_bitwarden_fetch_success() -> None:
 
     result = await backend.fetch("id-1")
     assert result == "s3cr3t"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("kind", "path", "payload", "expected"),
+    [
+        ("login", "/object/username/id-1", {"data": {"data": "alice"}}, "alice"),
+        (
+            "json",
+            "/object/item/id-1",
+            {"data": {"id": "id-1", "name": "Example", "login": {"username": "alice", "password": "secret"}}},
+            '{"id":"id-1","name":"Example","login":{"username":"alice","password":"secret"}}',
+        ),
+    ],
+)
+async def test_bitwarden_fetch_alternate_kind(
+    kind: CredentialValueKind,
+    path: str,
+    payload: dict,
+    expected: str,
+) -> None:
+    backend = BitwardenBackend(name="bw", base_url="http://bitwarden.local", cfg=BitwardenCredentialBackendConfig())
+    backend._client = _FakeBitwardenClient({path: _FakeResponse(status_code=200, payload=payload)})  # type: ignore[assignment]
+
+    assert await backend.fetch("id-1", kind) == expected
 
 
 @pytest.mark.asyncio

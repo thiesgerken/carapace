@@ -6,8 +6,8 @@ from pathlib import Path
 import yaml
 from loguru import logger
 
-from ..models.credentials import CredentialMetadata, FileCredentialBackendConfig
-from .protocol import is_exposed, require_exposed
+from ..models.credentials import CredentialMetadata, CredentialValueKind, FileCredentialBackendConfig
+from .protocol import UnsupportedCredentialValueKindError, is_exposed, require_exposed
 
 
 @dataclass(slots=True)
@@ -94,8 +94,12 @@ class FileVaultBackend:
             raise KeyError(f"Credential '{identifier}' not found in backend '{self._name}'")
         require_exposed(identifier, self._cfg, self._name)
 
-    async def fetch(self, identifier: str) -> str:
+    async def fetch(self, identifier: str, kind: CredentialValueKind = "password") -> str:
         self._require(identifier)
+        if kind != "password":
+            raise UnsupportedCredentialValueKindError(
+                f"File credential backend '{self._name}' does not support {kind!r} retrieval"
+            )
         return self._secrets[identifier].value
 
     async def write(self, identifier: str, value: str) -> None:

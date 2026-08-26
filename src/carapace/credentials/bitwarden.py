@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import json
+
 import httpx
 from loguru import logger
 
-from ..models.credentials import BitwardenCredentialBackendConfig, CredentialMetadata
+from ..models.credentials import BitwardenCredentialBackendConfig, CredentialMetadata, CredentialValueKind
 from .protocol import CredentialBackendError, is_exposed, require_exposed
 
 
@@ -68,15 +70,16 @@ class BitwardenBackend:
     def _vault_path(self, uuid: str) -> str:
         return f"{self._name}/{uuid}"
 
-    async def fetch(self, identifier: str) -> str:
-        """Fetch the password for a Bitwarden item by UUID."""
+    async def fetch(self, identifier: str, kind: CredentialValueKind = "password") -> str:
+        """Fetch a password, login name, or provider-specific JSON by item UUID."""
         require_exposed(identifier, self._cfg, self._name)
-        resp = await self._get(f"/object/password/{identifier}", operation="fetch password")
+        object_type = {"password": "password", "login": "username", "json": "item"}[kind]
+        resp = await self._get(f"/object/{object_type}/{identifier}", operation=f"fetch {kind}")
         if resp.status_code == 404:
             raise KeyError(f"Credential '{identifier}' not found in backend '{self._name}'")
         resp.raise_for_status()
-        data = resp.json()
-        return data.get("data", {}).get("data", "")
+        data = resp.json().get("data", {})
+        return json.dumps(data, separators=(",", ":")) if kind == "json" else data.get("data", "")
 
     async def write(self, identifier: str, value: str) -> None:
         """Store *value* in the item's login password field (read-modify-write via bw serve)."""
