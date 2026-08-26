@@ -168,13 +168,14 @@ async def test_file_fetch_missing(file_backend: FileVaultBackend) -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("kind", ["login", "json"])
-async def test_file_fetch_rejects_provider_specific_kinds(
-    file_backend: FileVaultBackend,
-    kind: CredentialValueKind,
-) -> None:
+async def test_file_fetch_rejects_login(file_backend: FileVaultBackend) -> None:
     with pytest.raises(UnsupportedCredentialValueKindError):
-        await file_backend.fetch("gmail", kind)
+        await file_backend.fetch("gmail", "login")
+
+
+@pytest.mark.asyncio
+async def test_file_fetch_json(file_backend: FileVaultBackend) -> None:
+    assert await file_backend.fetch("gmail", "json") == '{"id":"gmail","name":"gmail","value":"myapppassword"}'
 
 
 @pytest.mark.asyncio

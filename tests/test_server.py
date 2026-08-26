@@ -24,6 +24,7 @@ from carapace.auth import AuthStore
 from carapace.bootstrap import ensure_data_dir
 from carapace.config import build_config, resolve_user_knowledge_dir
 from carapace.credentials import CredentialBackendError, CredentialRegistry
+from carapace.credentials.protocol import UnsupportedCredentialValueKindError
 from carapace.database.models import SessionAuditRow
 from carapace.git.store import GitStore
 from carapace.jobs import JobsScheduler, JobsStore
@@ -3223,6 +3224,15 @@ def test_sandbox_fetch_credential_alternate_kind_uses_sentinel(client, auth_head
     evaluate.assert_awaited_once()
     assert evaluate.await_args.kwargs["audit_args"]["value_kind"] == "json"
     mock_reg.fetch.assert_awaited_once_with("bw/id-1", "json")
+
+    mock_reg.fetch.side_effect = UnsupportedCredentialValueKindError("login retrieval is unsupported")
+    resp = TestClient(sandbox_app).get(
+        "/credentials/bw/id-1?kind=login",
+        headers={"Authorization": f"Basic {basic}"},
+    )
+
+    assert resp.status_code == 400
+    assert resp.text == "login retrieval is unsupported"
 
 
 def test_sandbox_fetch_credential_backend_error_returns_503(client, auth_headers, monkeypatch):

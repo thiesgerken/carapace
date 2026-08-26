@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -96,11 +97,17 @@ class FileVaultBackend:
 
     async def fetch(self, identifier: str, kind: CredentialValueKind = "password") -> str:
         self._require(identifier)
-        if kind != "password":
+        secret = self._secrets[identifier]
+        if kind == "login":
             raise UnsupportedCredentialValueKindError(
-                f"File credential backend '{self._name}' does not support {kind!r} retrieval"
+                f"File credential backend '{self._name}' does not support login retrieval"
             )
-        return self._secrets[identifier].value
+        if kind == "json":
+            return json.dumps(
+                {"id": identifier, "name": secret.name, "value": secret.value},
+                separators=(",", ":"),
+            )
+        return secret.value
 
     async def write(self, identifier: str, value: str) -> None:
         """Overwrite an existing secret and persist it back to the file."""
