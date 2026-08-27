@@ -352,6 +352,16 @@ async def test_registry_fetch(file_backend: FileVaultBackend) -> None:
     assert await reg.fetch("dev/gmail") == "myapppassword"
 
 
+def test_registry_rejects_unsupported_kind_before_fetch(file_backend: FileVaultBackend) -> None:
+    reg = CredentialRegistry()
+    reg.register("dev", file_backend)
+
+    with pytest.raises(UnsupportedCredentialValueKindError, match="does not support 'login' retrieval"):
+        reg.require_supported("dev/gmail", "login")
+
+    reg.require_supported("dev/gmail", "json")
+
+
 @pytest.mark.asyncio
 async def test_registry_fetch_unknown_backend() -> None:
     reg = CredentialRegistry()
@@ -543,6 +553,28 @@ async def test_bitwarden_fetch_alternate_kind(
     backend._client = _FakeBitwardenClient({path: _FakeResponse(status_code=200, payload=payload)})  # type: ignore[assignment]
 
     assert await backend.fetch("id-1", kind) == expected
+
+
+@pytest.mark.asyncio
+async def test_bitwarden_fetch_unsupported_kind_raises_clear_error() -> None:
+    backend = BitwardenBackend(name="bw", base_url="http://bitwarden.local", cfg=BitwardenCredentialBackendConfig())
+    backend._client = _FakeBitwardenClient(  # type: ignore[assignment]
+        {"/object/username/id-1": _FakeResponse(status_code=400, payload={})}
+    )
+
+    with pytest.raises(UnsupportedCredentialValueKindError, match="does not support 'login' retrieval"):
+        await backend.fetch("id-1", "login")
+
+
+@pytest.mark.asyncio
+async def test_bitwarden_fetch_http_error_raises_backend_error() -> None:
+    backend = BitwardenBackend(name="bw", base_url="http://bitwarden.local", cfg=BitwardenCredentialBackendConfig())
+    backend._client = _FakeBitwardenClient(  # type: ignore[assignment]
+        {"/object/username/id-1": _FakeResponse(status_code=500, payload={})}
+    )
+
+    with pytest.raises(CredentialBackendError, match=r"failed to fetch 'login' \(HTTP 500\)"):
+        await backend.fetch("id-1", "login")
 
 
 @pytest.mark.asyncio

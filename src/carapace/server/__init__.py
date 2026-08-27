@@ -860,8 +860,11 @@ async def fetch_credential(
 
     try:
         meta = await credential_registry.fetch_metadata(vault_path)
+        credential_registry.require_supported(vault_path, kind)
     except KeyError:
         return Response(status_code=404, content="Credential not found")
+    except UnsupportedCredentialValueKindError as exc:
+        return Response(status_code=400, content=str(exc), media_type="text/plain")
     except CredentialBackendError as exc:
         return _credential_backend_unavailable(exc)
 
@@ -892,7 +895,12 @@ async def fetch_credential(
             approval_source="skill",
             approval_verdict="allow",
             audit_final="auto_allowed",
-            audit_args={"operation": "fetch", "vault_path": vault_path, "source": "skill_context"},
+            audit_args={
+                "operation": "fetch",
+                "vault_path": vault_path,
+                "value_kind": kind,
+                "source": "skill_context",
+            },
         )
     else:
         # Always evaluate via sentinel (no session-wide short-circuit)

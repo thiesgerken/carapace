@@ -6,7 +6,7 @@ import httpx
 from loguru import logger
 
 from ..models.credentials import BitwardenCredentialBackendConfig, CredentialMetadata, CredentialValueKind
-from .protocol import CredentialBackendError, is_exposed, require_exposed
+from .protocol import CredentialBackendError, UnsupportedCredentialValueKindError, is_exposed, require_exposed
 
 
 class BitwardenBackend:
@@ -17,6 +17,8 @@ class BitwardenBackend:
     shares the network namespace via ``network_mode: service:carapace``; in
     Kubernetes the Helm chart runs it as a companion Pod behind an nginx proxy.
     """
+
+    supported_kinds: frozenset[CredentialValueKind] = frozenset(("password", "login", "json"))
 
     def __init__(
         self,
@@ -77,7 +79,14 @@ class BitwardenBackend:
         resp = await self._get(f"/object/{object_type}/{identifier}", operation=f"fetch {kind}")
         if resp.status_code == 404:
             raise KeyError(f"Credential '{identifier}' not found in backend '{self._name}'")
-        resp.raise_for_status()
+        if resp.status_code == 400:
+            raise UnsupportedCredentialValueKindError(
+                f"Bitwarden item {identifier!r} in backend '{self._name}' does not support {kind!r} retrieval"
+            )
+        if resp.status_code >= 400:
+            raise CredentialBackendError(
+                f"Bitwarden credential backend '{self._name}' failed to fetch {kind!r} (HTTP {resp.status_code})"
+            )
         data = resp.json().get("data", {})
         return json.dumps(data, separators=(",", ":")) if kind == "json" else data.get("data", "")
 

@@ -25,6 +25,8 @@ class VaultBackend(Protocol):
     and return metadata for listing/searching.
     """
 
+    supported_kinds: frozenset[CredentialValueKind]
+
     async def fetch(self, identifier: str, kind: CredentialValueKind = "password") -> str:
         """Return the selected representation of *identifier*.
 

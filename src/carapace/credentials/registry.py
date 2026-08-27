@@ -17,7 +17,7 @@ from ..models.credentials import (
 )
 from .bitwarden import BitwardenBackend
 from .file import FileVaultBackend
-from .protocol import VaultBackend
+from .protocol import UnsupportedCredentialValueKindError, VaultBackend
 
 FILE_CREDENTIAL_BACKEND_ENV = "CARAPACE_ALLOW_FILE_CREDENTIAL_BACKEND"
 _TRUE_ENV_VALUES = {"1", "true", "yes", "on"}
@@ -63,6 +63,14 @@ class CredentialRegistry:
         if backend is None:
             raise UnknownBackendError(f"Unknown credential backend: {prefix!r}")
         return backend, identifier
+
+    def require_supported(self, vault_path: str, kind: CredentialValueKind) -> None:
+        backend, _ = self._resolve(vault_path)
+        if kind not in backend.supported_kinds:
+            name = vault_path.partition("/")[0]
+            raise UnsupportedCredentialValueKindError(
+                f"Credential backend '{name}' does not support {kind!r} retrieval"
+            )
 
     async def fetch(self, vault_path: str, kind: CredentialValueKind = "password") -> str:
         backend, identifier = self._resolve(vault_path)
