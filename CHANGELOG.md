@@ -1,6 +1,33 @@
 # CHANGELOG
 
 
+## v0.155.1 (2026-08-27)
+
+
+### Other
+
+
+- Merge pull request #276 from thiesgerken/renovate/pnpm
+  ([`f1dd98e`](https://github.com/thiesgerken/carapace/commit/f1dd98e009afbe50de97081c98374ba7ef9fe35a))
+
+- Merge pull request #274 from thiesgerken/renovate/all-routine-dependencies
+  ([`0f527dc`](https://github.com/thiesgerken/carapace/commit/0f527dc3fb26d74a6b1510ea0969865a60ce11c7))
+
+### ⬆️ Dependencies
+
+
+- ⬆️ chore: upgrade pnpm to 11.24.0
+  ([`f1dd98e`](https://github.com/thiesgerken/carapace/commit/f1dd98e009afbe50de97081c98374ba7ef9fe35a))
+
+- ⬆️ chore: upgrade pnpm to 11.24.0
+  ([`b577c0c`](https://github.com/thiesgerken/carapace/commit/b577c0cca32cec95bf63bea5a0371c4ce008f7ad))
+
+- ⬆️ chore: upgrade traefik:v3.7 Docker digest to ef751c6
+  ([`0f527dc`](https://github.com/thiesgerken/carapace/commit/0f527dc3fb26d74a6b1510ea0969865a60ce11c7))
+
+- ⬆️ chore: upgrade traefik:v3.7 Docker digest to ef751c6
+  ([`d9a28cf`](https://github.com/thiesgerken/carapace/commit/d9a28cf847135ba0255bf35d4538539ee40dad7c))
+
 ## v0.155.0 (2026-08-26)
 
 
