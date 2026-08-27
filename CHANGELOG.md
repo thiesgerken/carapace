@@ -1,6 +1,24 @@
 # CHANGELOG
 
 
+## v0.155.2 (2026-08-27)
+
+
+### Other
+
+
+- Merge pull request #277 from thiesgerken/renovate/all-routine-dependencies
+  ([`0ae2336`](https://github.com/thiesgerken/carapace/commit/0ae2336c1108532350b630ac7cc1238b4168265f))
+
+### ⬆️ Dependencies
+
+
+- ⬆️ chore: upgrade Node.js to 705813e
+  ([`0ae2336`](https://github.com/thiesgerken/carapace/commit/0ae2336c1108532350b630ac7cc1238b4168265f))
+
+- ⬆️ chore: upgrade Node.js to 705813e
+  ([`64b2c88`](https://github.com/thiesgerken/carapace/commit/64b2c88a40795fd8255d33458b0d2ee0c2e3ecba))
+
 ## v0.155.1 (2026-08-27)
 
 

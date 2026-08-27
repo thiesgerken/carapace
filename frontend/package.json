@@ -1,6 +1,6 @@
 {
   "name": "frontend",
-  "version": "0.155.1",
+  "version": "0.155.2",
   "private": true,
   "scripts": {
     "prepare:emoji": "node ./scripts/prepare-emoji-assets.mjs",
