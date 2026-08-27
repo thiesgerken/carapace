@@ -1,6 +1,42 @@
 # CHANGELOG
 
 
+## v0.156.0 (2026-08-27)
+
+
+### ✨ Features
+
+
+- ✨Merge pull request #273 from jkuball/feat/ccred-login-json
+  ([`7bc8ad6`](https://github.com/thiesgerken/carapace/commit/7bc8ad61092df37a26440e4770751e2ea878d051))
+
+- ✨ feat: extend ccred retrieval with more options
+  ([`7bc8ad6`](https://github.com/thiesgerken/carapace/commit/7bc8ad61092df37a26440e4770751e2ea878d051))
+
+- ✨ feat: add file credential JSON retrieval
+  ([`a5dcca4`](https://github.com/thiesgerken/carapace/commit/a5dcca41affc2791ddbe9433d49479f3192f9cf1))
+
+- ✨ feat: extend ccred Bitwarden retrieval
+  ([`7868d1e`](https://github.com/thiesgerken/carapace/commit/7868d1e34913ce64dc9af21928be3202084f1de3))
+
+### ♻️ Refactoring
+
+
+- ♻️ refactor: match ccred HTTP errors
+  ([`14b1ce8`](https://github.com/thiesgerken/carapace/commit/14b1ce8178d36bf094e1e0d415bdd9d1219f0ae1))
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix: address ccred review feedback
+  ([`7908f2a`](https://github.com/thiesgerken/carapace/commit/7908f2a06e7ff3e1aa7f4c173b4c12a54ddf2ef1))
+
+### Other
+
+
+- 📝 docs: clarify ccred provider support
+  ([`9d8d629`](https://github.com/thiesgerken/carapace/commit/9d8d629b2cc203961580b8d5c6177ebccd72e7d7))
+
 ## v0.155.2 (2026-08-27)
 
 
