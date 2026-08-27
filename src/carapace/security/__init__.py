@@ -780,6 +780,7 @@ async def evaluate_credential_with(
     usage_tracker: UsageTracker | None = None,
     assert_llm_budget_available: Callable[[], None] | None = None,
     usage_limits: UsageLimits | None = None,
+    audit_args: dict[str, Any] | None = None,
 ) -> CredentialAccessEvaluation:
     """Evaluate a credential access request.
 
@@ -799,6 +800,7 @@ async def evaluate_credential_with(
             approval_verdict="allow",
             ui_explanation=explanation,
             audit_final="allowed",
+            audit_args=audit_args,
             sentinel_verdict=None,
         )
         return CredentialAccessEvaluation(
@@ -874,6 +876,7 @@ async def evaluate_credential_with(
         approval_verdict=approval_verdict,
         ui_explanation=verdict.explanation if source == "sentinel" else normalize_optional_message(user_message),
         audit_final=decision,
+        audit_args=audit_args,
         sentinel_verdict=verdict,
     )
 

@@ -24,6 +24,7 @@ from carapace.auth import AuthStore
 from carapace.bootstrap import ensure_data_dir
 from carapace.config import build_config, resolve_user_knowledge_dir
 from carapace.credentials import CredentialBackendError, CredentialRegistry
+from carapace.credentials.protocol import UnsupportedCredentialValueKindError
 from carapace.database.models import SessionAuditRow
 from carapace.git.store import GitStore
 from carapace.jobs import JobsScheduler, JobsStore
@@ -3194,6 +3195,65 @@ def test_sandbox_list_credentials_backend_error_returns_503(client, auth_headers
 
     assert resp.status_code == 503
     assert resp.json() == {"detail": "Bitwarden backend unavailable"}
+
+
+def test_sandbox_fetch_credential_alternate_kind_uses_sentinel(client, auth_headers, monkeypatch):
+    create_resp = client.post("/api/sessions", headers=auth_headers)
+    sid = create_resp.json()["session_id"]
+    active = srv._engine.get_or_activate(sid)
+    active.sentinel = MagicMock()
+    active.state.context_grants["demo"] = MagicMock(vault_paths=["bw/id-1"])
+
+    mock_reg = MagicMock()
+    mock_reg.fetch_metadata = AsyncMock(return_value=CredentialMetadata(vault_path="bw/id-1", name="Example"))
+    mock_reg.fetch = AsyncMock(return_value='{"id":"id-1"}')
+    mock_reg.require_supported = MagicMock()
+    evaluate = AsyncMock(return_value=MagicMock(allowed=True))
+    monkeypatch.setattr(srv, "_credential_registry_for_session", AsyncMock(return_value=mock_reg), raising=False)
+    monkeypatch.setattr("carapace.security.evaluate_credential_with", evaluate)
+    srv._engine.sandbox_mgr.verify_session_token.side_effect = lambda s, t: s == sid and t == "secret"
+    srv._engine.sandbox_mgr.get_current_contexts.return_value = ["demo"]
+    srv._engine.sandbox_mgr.mark_credential_notified.return_value = False
+
+    basic = base64.b64encode(f"{sid}:secret".encode()).decode()
+    sb_client = TestClient(sandbox_app)
+    resp = sb_client.get(
+        "/credentials/bw/id-1",
+        headers={"Authorization": f"Basic {basic}"},
+    )
+
+    assert resp.status_code == 200
+    evaluate.assert_not_awaited()
+    with srv._session_factory() as db:
+        audit_rows = db.scalars(select(SessionAuditRow).where(SessionAuditRow.session_id == sid)).all()
+    skill_audit = next(
+        row.data for row in audit_rows if row.data.get("args_summary", {}).get("source") == "skill_context"
+    )
+    assert skill_audit["args_summary"]["value_kind"] == "password"
+
+    mock_reg.fetch.reset_mock()
+    resp = sb_client.get(
+        "/credentials/bw/id-1?kind=json",
+        headers={"Authorization": f"Basic {basic}"},
+    )
+
+    assert resp.status_code == 200
+    assert resp.json() == {"id": "id-1"}
+    evaluate.assert_awaited_once()
+    assert evaluate.await_args.kwargs["audit_args"]["value_kind"] == "json"
+    mock_reg.fetch.assert_awaited_once_with("bw/id-1", "json")
+
+    mock_reg.fetch.reset_mock()
+    mock_reg.require_supported.side_effect = UnsupportedCredentialValueKindError("login retrieval is unsupported")
+    resp = sb_client.get(
+        "/credentials/bw/id-1?kind=login",
+        headers={"Authorization": f"Basic {basic}"},
+    )
+
+    assert resp.status_code == 400
+    assert resp.text == "login retrieval is unsupported"
+    evaluate.assert_awaited_once()
+    mock_reg.fetch.assert_not_awaited()
 
 
 def test_sandbox_fetch_credential_backend_error_returns_503(client, auth_headers, monkeypatch):

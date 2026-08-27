@@ -1,13 +1,15 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
+from typing import assert_never
 
 import yaml
 from loguru import logger
 
-from ..models.credentials import CredentialMetadata, FileCredentialBackendConfig
-from .protocol import is_exposed, require_exposed
+from ..models.credentials import CredentialMetadata, CredentialValueKind, FileCredentialBackendConfig
+from .protocol import UnsupportedCredentialValueKindError, is_exposed, require_exposed
 
 
 @dataclass(slots=True)
@@ -37,6 +39,8 @@ class FileVaultBackend:
     Format is auto-detected from the file extension (``.yaml``/``.yml`` → YAML,
     everything else → ``.env``).
     """
+
+    supported_kinds: frozenset[CredentialValueKind] = frozenset(("password", "json"))
 
     def __init__(self, *, name: str, path: Path, cfg: FileCredentialBackendConfig) -> None:
         self._name = name
@@ -94,9 +98,23 @@ class FileVaultBackend:
             raise KeyError(f"Credential '{identifier}' not found in backend '{self._name}'")
         require_exposed(identifier, self._cfg, self._name)
 
-    async def fetch(self, identifier: str) -> str:
+    async def fetch(self, identifier: str, kind: CredentialValueKind = "password") -> str:
         self._require(identifier)
-        return self._secrets[identifier].value
+        secret = self._secrets[identifier]
+        match kind:
+            case "password":
+                return secret.value
+            case "login":
+                raise UnsupportedCredentialValueKindError(
+                    f"File credential backend '{self._name}' does not support login retrieval"
+                )
+            case "json":
+                return json.dumps(
+                    {"id": identifier, "name": secret.name, "value": secret.value},
+                    separators=(",", ":"),
+                )
+            case _:
+                assert_never(kind)
 
     async def write(self, identifier: str, value: str) -> None:
         """Overwrite an existing secret and persist it back to the file."""

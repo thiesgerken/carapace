@@ -5,12 +5,17 @@ from typing import Protocol
 from ..models.credentials import (
     BitwardenCredentialBackendConfig,
     CredentialMetadata,
+    CredentialValueKind,
     FileCredentialBackendConfig,
 )
 
 
 class CredentialBackendError(RuntimeError):
     """Credential backend failure with a message safe to show to users."""
+
+
+class UnsupportedCredentialValueKindError(ValueError):
+    """The selected backend cannot return the requested credential representation."""
 
 
 class VaultBackend(Protocol):
@@ -20,8 +25,10 @@ class VaultBackend(Protocol):
     and return metadata for listing/searching.
     """
 
-    async def fetch(self, identifier: str) -> str:
-        """Return the raw secret value for *identifier*.
+    supported_kinds: frozenset[CredentialValueKind]
+
+    async def fetch(self, identifier: str, kind: CredentialValueKind = "password") -> str:
+        """Return the selected representation of *identifier*.
 
         Raises ``KeyError`` if the identifier does not exist.
         """

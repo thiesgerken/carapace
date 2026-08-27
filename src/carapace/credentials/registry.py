@@ -12,11 +12,12 @@ from ..models.credentials import (
     CredentialMetadata,
     CredentialRegistryProtocol,
     CredentialsConfig,
+    CredentialValueKind,
     FileCredentialBackendConfig,
 )
 from .bitwarden import BitwardenBackend
 from .file import FileVaultBackend
-from .protocol import VaultBackend
+from .protocol import UnsupportedCredentialValueKindError, VaultBackend
 
 FILE_CREDENTIAL_BACKEND_ENV = "CARAPACE_ALLOW_FILE_CREDENTIAL_BACKEND"
 _TRUE_ENV_VALUES = {"1", "true", "yes", "on"}
@@ -63,9 +64,17 @@ class CredentialRegistry:
             raise UnknownBackendError(f"Unknown credential backend: {prefix!r}")
         return backend, identifier
 
-    async def fetch(self, vault_path: str) -> str:
+    def require_supported(self, vault_path: str, kind: CredentialValueKind) -> None:
+        backend, _ = self._resolve(vault_path)
+        if kind not in backend.supported_kinds:
+            name = vault_path.partition("/")[0]
+            raise UnsupportedCredentialValueKindError(
+                f"Credential backend '{name}' does not support {kind!r} retrieval"
+            )
+
+    async def fetch(self, vault_path: str, kind: CredentialValueKind = "password") -> str:
         backend, identifier = self._resolve(vault_path)
-        return await backend.fetch(identifier)
+        return await backend.fetch(identifier) if kind == "password" else await backend.fetch(identifier, kind)
 
     async def write(self, vault_path: str, value: str) -> None:
         backend, identifier = self._resolve(vault_path)
@@ -106,8 +115,9 @@ class SessionCredentialRegistry:
     async def _registry(self) -> CredentialRegistryProtocol:
         return await self._resolve_registry(self._session_id)
 
-    async def fetch(self, vault_path: str) -> str:
-        return await (await self._registry()).fetch(vault_path)
+    async def fetch(self, vault_path: str, kind: CredentialValueKind = "password") -> str:
+        registry = await self._registry()
+        return await registry.fetch(vault_path) if kind == "password" else await registry.fetch(vault_path, kind)
 
     async def write(self, vault_path: str, value: str) -> None:
         await (await self._registry()).write(vault_path, value)

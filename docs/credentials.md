@@ -128,11 +128,16 @@ Sandbox images include the `ccred` helper:
 ccred list
 ccred search gmail
 ccred get <backend>/<id>
+ccred get <backend>/<id> --login
+ccred get <backend>/<id> --json
 ccred get <backend>/<id> -o ~/.ssh/id_ed25519
 ```
 
 - `list`/`search` return metadata only (name, vault path, optional description).
-- `get` returns the raw value (or writes it to `-o` file with `0400`).
+- `get` returns the raw password/value by default (or writes it to `-o` with mode `0400`).
+- `--login` returns the provider login name when supported. Bitwarden supports it; unsupported providers fail with a non-zero exit code.
+- `--json` returns the complete provider-specific item. Every provider supports this.
+- `--login` and `--json` are mutually exclusive and go through normal credential approval rather than skill-context approval.
 - `get` blocks until the user approves, then continues.
 
 `ccred` reads `CARAPACE_API_URL` from the sandbox environment to reach the sandbox API with session auth.
@@ -140,7 +145,7 @@ ccred get <backend>/<id> -o ~/.ssh/id_ed25519
 ## API surface (sandbox-only)
 
 - `GET /credentials?q=<query>`: list/search metadata
-- `GET /credentials/{vault_path}`: fetch value (approval-gated per session)
+- `GET /credentials/{vault_path}?kind=password|login|json`: fetch the selected representation (approval-gated per session)
 
 These endpoints are served on the sandbox API port (`8322`) and require Basic auth (`session_id:token`).
 

@@ -58,6 +58,10 @@ For credentials not declared in `metadata.carapace`, use `ccred get`:
 # Write to a file with restrictive permissions (0400; -o is also subject to approval)
 ccred get <backend>/<id> -o ~/.ssh/id_ed25519
 
+# Pass a provider login name or complete provider-specific item to a consumer
+LOGIN=$(ccred get <backend>/<id> --login) ./some-tool
+ccred get <backend>/<id> --json | ./provider-aware-tool
+
 # Use as an env var for a single command (value never visible in output)
 API_KEY=$(ccred get <backend>/api-key) ./my-script.sh
 
@@ -66,9 +70,13 @@ ccred get <backend>/<id> | some-tool --token-stdin
 ```
 
 `<backend>` is the vault backend name from server config; `<id>` is the
-credential identifier (often a UUID). The `get` command blocks until approval in
-the UI — you do not need to manage that flow. Only request credentials that are
-actually needed for the task.
+credential identifier (often a UUID). By default, `get` returns the credential's
+password/value. `--login` returns the provider login name when supported and exits
+non-zero otherwise. `--json` returns the complete provider-specific item for every
+backend. Alternate representations always require the normal approval flow. The
+`get` command blocks until approval in the UI — you
+do not need to manage that flow. Only request credentials that are actually needed
+for the task.
 
 ## Important rules
 

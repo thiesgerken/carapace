@@ -7,7 +7,7 @@ credentials from the configured vault backends.
 Usage:
     ccred list
     ccred search QUERY
-    ccred get <vault_path> [-o FILE]
+    ccred get <vault_path> [-o FILE] [--login | --json]
 """
 
 from __future__ import annotations
@@ -97,18 +97,23 @@ def cmd_search(args: argparse.Namespace) -> None:
 def cmd_get(args: argparse.Namespace) -> None:
     vault_path = args.vault_path
     path = f"/credentials/{vault_path}"
+    if args.kind != "password":
+        path += f"?kind={args.kind}"
 
     try:
         with urllib.request.urlopen(_request(path)) as resp:
             value = resp.read().decode()
     except urllib.error.HTTPError as e:
-        if e.code == 403:
-            print("error: credential request denied by user", file=sys.stderr)
-            sys.exit(1)
-        if e.code == 404:
-            print(f"error: credential not found: {vault_path}", file=sys.stderr)
-            sys.exit(1)
-        print(f"error: {e.code} {e.reason}", file=sys.stderr)
+        match e.code:
+            case 400:
+                message = e.read().decode()
+            case 403:
+                message = "credential request denied by user"
+            case 404:
+                message = f"credential not found: {vault_path}"
+            case _:
+                message = f"{e.code} {e.reason}"
+        print(f"error: {message}", file=sys.stderr)
         sys.exit(1)
 
     if args.output:
@@ -128,8 +133,10 @@ def main() -> None:
             "examples:\n"
             "  ccred list                         list all available credentials\n"
             "  ccred search gmail                 search credentials matching 'gmail'\n"
-            "  ccred get <backend>/<id>           fetch value to stdout (blocks until approved)\n"
-            "  ccred get <backend>/<id> -o FILE   write value to FILE with mode 0400\n"
+            "  ccred get <backend>/<id>           fetch password (blocks until approved)\n"
+            "  ccred get <backend>/<id> --login   fetch login name (not supported by every provider)\n"
+            "  ccred get <backend>/<id> --json    fetch provider-specific JSON\n"
+            "  ccred get <backend>/<id> -o FILE   write output to FILE with mode 0400\n"
             "                                     (-o is subject to approval like stdout fetch)\n"
             "\n"
             "Only request credentials that are needed. Never echo secret values or log them;\n"
@@ -146,6 +153,16 @@ def main() -> None:
 
     get = sub.add_parser("get", help="Fetch a credential value")
     get.add_argument("vault_path", help="Vault path (<backend>/<id>)")
+    kind = get.add_mutually_exclusive_group()
+    kind.add_argument(
+        "--login",
+        action="store_const",
+        const="login",
+        dest="kind",
+        help="Fetch the login name (not supported by every provider)",
+    )
+    kind.add_argument("--json", action="store_const", const="json", dest="kind", help="Fetch provider-specific JSON")
+    get.set_defaults(kind="password")
     get.add_argument("-o", "--output", help="Write value to file instead of stdout")
 
     args = parser.parse_args(args=None if sys.argv[1:] else ["--help"])

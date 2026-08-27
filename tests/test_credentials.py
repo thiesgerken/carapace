@@ -14,12 +14,14 @@ from carapace.credentials import (
     build_credential_registry,
     is_exposed,
 )
+from carapace.credentials.protocol import UnsupportedCredentialValueKindError
 from carapace.credentials.registry import FILE_CREDENTIAL_BACKEND_ENV, file_credential_backend_allowed_from_env
 from carapace.models.credentials import (
     BasicAuthConfig,
     BitwardenCredentialBackendConfig,
     CredentialMetadata,
     CredentialsConfig,
+    CredentialValueKind,
     FileCredentialBackendConfig,
 )
 from carapace.models.skills import SkillCredentialDecl
@@ -163,6 +165,17 @@ async def test_file_fetch(file_backend: FileVaultBackend) -> None:
 async def test_file_fetch_missing(file_backend: FileVaultBackend) -> None:
     with pytest.raises(KeyError):
         await file_backend.fetch("nonexistent")
+
+
+@pytest.mark.asyncio
+async def test_file_fetch_rejects_login(file_backend: FileVaultBackend) -> None:
+    with pytest.raises(UnsupportedCredentialValueKindError):
+        await file_backend.fetch("gmail", "login")
+
+
+@pytest.mark.asyncio
+async def test_file_fetch_json(file_backend: FileVaultBackend) -> None:
+    assert await file_backend.fetch("gmail", "json") == '{"id":"gmail","name":"gmail","value":"myapppassword"}'
 
 
 @pytest.mark.asyncio
@@ -339,6 +352,16 @@ async def test_registry_fetch(file_backend: FileVaultBackend) -> None:
     assert await reg.fetch("dev/gmail") == "myapppassword"
 
 
+def test_registry_rejects_unsupported_kind_before_fetch(file_backend: FileVaultBackend) -> None:
+    reg = CredentialRegistry()
+    reg.register("dev", file_backend)
+
+    with pytest.raises(UnsupportedCredentialValueKindError, match="does not support 'login' retrieval"):
+        reg.require_supported("dev/gmail", "login")
+
+    reg.require_supported("dev/gmail", "json")
+
+
 @pytest.mark.asyncio
 async def test_registry_fetch_unknown_backend() -> None:
     reg = CredentialRegistry()
@@ -505,6 +528,53 @@ async def test_bitwarden_fetch_success() -> None:
 
     result = await backend.fetch("id-1")
     assert result == "s3cr3t"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("kind", "path", "payload", "expected"),
+    [
+        ("login", "/object/username/id-1", {"data": {"data": "alice"}}, "alice"),
+        (
+            "json",
+            "/object/item/id-1",
+            {"data": {"id": "id-1", "name": "Example", "login": {"username": "alice", "password": "secret"}}},
+            '{"id":"id-1","name":"Example","login":{"username":"alice","password":"secret"}}',
+        ),
+    ],
+)
+async def test_bitwarden_fetch_alternate_kind(
+    kind: CredentialValueKind,
+    path: str,
+    payload: dict,
+    expected: str,
+) -> None:
+    backend = BitwardenBackend(name="bw", base_url="http://bitwarden.local", cfg=BitwardenCredentialBackendConfig())
+    backend._client = _FakeBitwardenClient({path: _FakeResponse(status_code=200, payload=payload)})  # type: ignore[assignment]
+
+    assert await backend.fetch("id-1", kind) == expected
+
+
+@pytest.mark.asyncio
+async def test_bitwarden_fetch_unsupported_kind_raises_clear_error() -> None:
+    backend = BitwardenBackend(name="bw", base_url="http://bitwarden.local", cfg=BitwardenCredentialBackendConfig())
+    backend._client = _FakeBitwardenClient(  # type: ignore[assignment]
+        {"/object/username/id-1": _FakeResponse(status_code=400, payload={})}
+    )
+
+    with pytest.raises(UnsupportedCredentialValueKindError, match="does not support 'login' retrieval"):
+        await backend.fetch("id-1", "login")
+
+
+@pytest.mark.asyncio
+async def test_bitwarden_fetch_http_error_raises_backend_error() -> None:
+    backend = BitwardenBackend(name="bw", base_url="http://bitwarden.local", cfg=BitwardenCredentialBackendConfig())
+    backend._client = _FakeBitwardenClient(  # type: ignore[assignment]
+        {"/object/username/id-1": _FakeResponse(status_code=500, payload={})}
+    )
+
+    with pytest.raises(CredentialBackendError, match=r"failed to fetch 'login' \(HTTP 500\)"):
+        await backend.fetch("id-1", "login")
 
 
 @pytest.mark.asyncio

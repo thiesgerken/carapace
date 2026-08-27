@@ -35,12 +35,14 @@ from ..bootstrap import ensure_data_dir, ensure_knowledge_dir
 from ..cache import SessionListCache
 from ..config import build_config
 from ..credentials import CredentialBackendError, CredentialRegistry, build_credential_registry
+from ..credentials.protocol import UnsupportedCredentialValueKindError
 from ..database.engine import SessionFactory, create_engine_and_factory, run_migrations
 from ..git.http import GitHttpHandler
 from ..jobs import JobsScheduler, JobsStore
 from ..knowledge import KnowledgeRepoRegistry
 from ..llm import make_model_factory
 from ..models.config import Config
+from ..models.credentials import CredentialValueKind
 from ..models.user import UserConfig
 from ..notifications.presence import NotificationPresenceRegistry
 from ..notifications.router import NotificationRouter
@@ -837,12 +839,15 @@ async def list_credentials(request: Request, q: str = "") -> list[dict[str, str]
 
 
 @sandbox_app.get("/credentials/{vault_path:path}")
-async def fetch_credential(request: Request, vault_path: str) -> Response:
+async def fetch_credential(
+    request: Request,
+    vault_path: str,
+    kind: CredentialValueKind = "password",
+) -> Response:
     """Fetch a credential value (sentinel-gated, may escalate to user).
 
-    Fast path: if the credential is declared by a skill whose context is
-    active for the current exec, it is allowed without sentinel evaluation.
-    Otherwise, **every** access goes through ``evaluate_credential_with``.
+    Fast path: the default password/value may use an active skill context.
+    Alternate representations always go through ``evaluate_credential_with``.
     """
     session_id = _authenticate_sandbox(request.headers.get("authorization"))
     if session_id is None:
@@ -855,8 +860,11 @@ async def fetch_credential(request: Request, vault_path: str) -> Response:
 
     try:
         meta = await credential_registry.fetch_metadata(vault_path)
+        credential_registry.require_supported(vault_path, kind)
     except KeyError:
         return Response(status_code=404, content="Credential not found")
+    except UnsupportedCredentialValueKindError as exc:
+        return Response(status_code=400, content=str(exc), media_type="text/plain")
     except CredentialBackendError as exc:
         return _credential_backend_unavailable(exc)
 
@@ -865,7 +873,7 @@ async def fetch_credential(request: Request, vault_path: str) -> Response:
     # Context fast path: check if the credential is covered by active contexts
     current_contexts = _engine.sandbox_mgr.get_current_contexts(session_id)
     skill_covered = False
-    if current_contexts:
+    if kind == "password" and current_contexts:
         grants = active.state.context_grants
         for ctx_name in current_contexts:
             grant = grants.get(ctx_name)
@@ -887,7 +895,12 @@ async def fetch_credential(request: Request, vault_path: str) -> Response:
             approval_source="skill",
             approval_verdict="allow",
             audit_final="auto_allowed",
-            audit_args={"operation": "fetch", "vault_path": vault_path, "source": "skill_context"},
+            audit_args={
+                "operation": "fetch",
+                "vault_path": vault_path,
+                "value_kind": kind,
+                "source": "skill_context",
+            },
         )
     else:
         # Always evaluate via sentinel (no session-wide short-circuit)
@@ -904,10 +917,11 @@ async def fetch_credential(request: Request, vault_path: str) -> Response:
                     vault_path,
                     meta.name,
                     meta.description,
-                    f"Sandbox requested credential: {meta.name}",
+                    f"Sandbox requested credential {kind}: {meta.name}",
                     usage_tracker=active.usage_tracker,
                     assert_llm_budget_available=lambda: _engine._assert_llm_budget_available(active),
                     usage_limits=_engine._remaining_aux_usage_limits(active),
+                    audit_args={"operation": "fetch", "vault_path": vault_path, "value_kind": kind},
                 )
             except SessionBudgetExceededError as exc:
                 return Response(status_code=403, content=str(exc))
@@ -917,13 +931,15 @@ async def fetch_credential(request: Request, vault_path: str) -> Response:
             return Response(status_code=403, content="Credential access denied")
 
     try:
-        value = await credential_registry.fetch(vault_path)
+        value = await credential_registry.fetch(vault_path, kind)
     except KeyError:
         return Response(status_code=404, content="Credential not found")
+    except UnsupportedCredentialValueKindError as exc:
+        return Response(status_code=400, content=str(exc), media_type="text/plain")
     except CredentialBackendError as exc:
         return _credential_backend_unavailable(exc)
 
-    return Response(content=value, media_type="text/plain")
+    return Response(content=value, media_type="application/json" if kind == "json" else "text/plain")
 
 
 if __name__ == "__main__":
