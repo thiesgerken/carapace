@@ -104,16 +104,16 @@ def cmd_get(args: argparse.Namespace) -> None:
         with urllib.request.urlopen(_request(path)) as resp:
             value = resp.read().decode()
     except urllib.error.HTTPError as e:
-        if e.code == 403:
-            print("error: credential request denied by user", file=sys.stderr)
-            sys.exit(1)
-        if e.code == 404:
-            print(f"error: credential not found: {vault_path}", file=sys.stderr)
-            sys.exit(1)
-        if e.code == 400:
-            print(f"error: {e.read().decode()}", file=sys.stderr)
-            sys.exit(1)
-        print(f"error: {e.code} {e.reason}", file=sys.stderr)
+        match e.code:
+            case 400:
+                message = e.read().decode()
+            case 403:
+                message = "credential request denied by user"
+            case 404:
+                message = f"credential not found: {vault_path}"
+            case _:
+                message = f"{e.code} {e.reason}"
+        print(f"error: {message}", file=sys.stderr)
         sys.exit(1)
 
     if args.output:
