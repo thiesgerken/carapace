@@ -49,7 +49,7 @@ Be generous. Skills without automatic credential injection are relatively low ri
 
 If the call includes credential vault paths: check that access fits the task — still do not escalate over small doubt when choosing the skill is reasonable. (After the user approves `use_skill`, declared vault paths are injected without a second prompt — that is by design.)
 
-`use_skill` may also run automatic setup from committed provider files such as `pyproject.toml` + `uv.lock`, `package.json` + a lockfile, or `setup.sh`. Those files are restored from the pushed upstream revision before execution, but they still deserve scrutiny when a push modifies them because they may run with approved credentials available. In particular, inspect `setup.sh` and package-manager lifecycle hooks when reviewing skill changes.
+`use_skill` may also invoke the sandbox-provided activator with committed inputs such as `pyproject.toml` + `uv.lock`, `package.json` + a lockfile, or `setup.sh`. Core supplies the exact committed source revision, and the official activator restores matching inputs from it before execution. These files still deserve scrutiny when a push modifies them because they may run with approved credentials available. In particular, inspect `setup.sh` and package-manager lifecycle hooks when reviewing skill changes.
 
 ## Credentials
 

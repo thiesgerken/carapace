@@ -125,6 +125,7 @@ class TestGitStoreHeadRevision:
         return s
 
     async def test_none_without_commits(self, store: GitStore):
+        assert await store.head_sha() is None
         assert await store.head_revision() is None
 
     async def test_returns_short_hash_and_subject(self, store: GitStore):
@@ -137,6 +138,7 @@ class TestGitStoreHeadRevision:
         short, subject = revision
         assert subject == "add test file"
         _, full = await store._run("rev-parse", "HEAD")
+        assert await store.head_sha() == full
         assert full.startswith(short)
 
     async def test_subject_with_null_safe_characters(self, store: GitStore):

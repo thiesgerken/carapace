@@ -1,0 +1,108 @@
+#!/bin/sh
+set -u
+
+MARKER='@@CARAPACE_SKILL_ACTIVATOR@@'
+JQ=/usr/bin/jq
+GIT=/usr/bin/git
+
+emit_error() {
+    message=$1
+    status=${2:-1}
+    response=$($JQ -cn --arg message "$message" '{protocol_version: 1, error: $message}')
+    printf '%s%s\n' "$MARKER" "$response"
+    exit "$status"
+}
+
+[ "$#" -eq 2 ] && [ "$1" = "--request-base64" ] || emit_error 'invalid activator arguments' 2
+request=$(printf '%s' "$2" | /usr/bin/base64 -d) || emit_error 'invalid base64 request' 2
+
+protocol_version=$(printf '%s' "$request" | $JQ -er '.protocol_version') || emit_error 'invalid activator request' 2
+[ "$protocol_version" = 1 ] || emit_error "unsupported protocol version: $protocol_version" 2
+
+skill=$(printf '%s' "$request" | $JQ -er '.skill') || emit_error 'invalid skill name' 2
+skill_dir=$(printf '%s' "$request" | $JQ -er '.skill_dir') || emit_error 'invalid skill directory' 2
+workspace=$(printf '%s' "$request" | $JQ -er '.workspace') || emit_error 'invalid workspace directory' 2
+source_revision=$(printf '%s' "$request" | $JQ -er '.source_revision') || emit_error 'invalid source revision' 2
+command_count=$(printf '%s' "$request" | $JQ -er '.commands | length') || emit_error 'invalid commands' 2
+
+[ "$skill_dir" = "$workspace/skills/$skill" ] || emit_error 'skill directory does not match workspace and skill name' 2
+$GIT -C "$workspace" cat-file -e "$source_revision^{commit}" 2>/dev/null \
+    || emit_error 'source revision is unavailable in the sandbox workspace'
+
+skill_path="skills/$skill"
+tracked() {
+    $GIT -C "$workspace" cat-file -e "$source_revision:$skill_path/$1" 2>/dev/null
+}
+restore() {
+    $GIT -C "$workspace" checkout "$source_revision" -- "$skill_path/$1" 1>&2 \
+        || emit_error "failed to restore $1 from source revision"
+}
+
+has_uv=false
+has_npm=false
+has_pnpm=false
+has_setup=false
+
+if tracked pyproject.toml && tracked uv.lock; then
+    has_uv=true
+fi
+if tracked package.json && tracked pnpm-lock.yaml; then
+    has_pnpm=true
+fi
+if [ "$has_pnpm" = false ] && tracked package.json && tracked package-lock.json; then
+    has_npm=true
+fi
+if tracked setup.sh; then
+    has_setup=true
+fi
+
+if [ "$has_uv" = true ] || [ "$has_npm" = true ] || [ "$has_pnpm" = true ] || [ "$has_setup" = true ] \
+    || [ "$command_count" -gt 0 ]; then
+    tracked SKILL.md && restore SKILL.md
+fi
+if [ "$has_uv" = true ]; then
+    restore pyproject.toml
+    restore uv.lock
+fi
+if [ "$has_npm" = true ]; then
+    restore package.json
+    restore package-lock.json
+fi
+if [ "$has_pnpm" = true ]; then
+    restore package.json
+    restore pnpm-lock.yaml
+fi
+if [ "$has_setup" = true ]; then
+    restore setup.sh
+fi
+
+cd "$skill_dir" || emit_error 'skill directory is unavailable'
+messages='[]'
+run_step() {
+    name=$1
+    message=$2
+    shift 2
+    if "$@" 1>&2; then
+        messages=$(printf '%s' "$messages" | $JQ -c --arg message "$message" '. + [$message]')
+    else
+        status=$?
+        emit_error "$name failed with status $status" "$status"
+    fi
+}
+
+if [ "$has_uv" = true ]; then
+    run_step uv 'Python dependencies synced.' /usr/local/bin/uv sync --locked
+fi
+if [ "$has_npm" = true ]; then
+    run_step npm 'npm dependencies installed.' /usr/bin/npm ci
+fi
+if [ "$has_pnpm" = true ]; then
+    run_step pnpm 'pnpm dependencies installed.' /usr/bin/pnpm install --frozen-lockfile
+fi
+if [ "$has_setup" = true ]; then
+    run_step setup.sh 'setup.sh completed.' /bin/sh ./setup.sh
+fi
+
+response=$($JQ -cn --argjson messages "$messages" \
+    '{protocol_version: 1, command_overrides: {}, messages: $messages}')
+printf '%s%s\n' "$MARKER" "$response"

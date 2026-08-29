@@ -54,6 +54,10 @@ spec:
               value: kubernetes
             - name: CARAPACE_SANDBOX_BASE_IMAGE
               value: {{ include "carapace.sandboxImage" . }}
+          {{- if .Values.sandbox.skillActivator }}
+            - name: CARAPACE_SANDBOX_SKILL_ACTIVATOR
+              value: {{ .Values.sandbox.skillActivator | quote }}
+          {{- end }}
             - name: CARAPACE_SANDBOX_WARM_POOL_SIZE
               value: {{ .Values.sandbox.warmPoolSize | quote }}
             - name: CARAPACE_SANDBOX_IDLE_TIMEOUT_MINUTES

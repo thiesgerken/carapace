@@ -433,7 +433,10 @@ async def test_exec_with_env_uses_non_login_shell() -> None:
     pod = MagicMock()
     pod.exec = AsyncMock(return_value=completed)
 
-    with patch("carapace.sandbox.kubernetes.Pod.get", AsyncMock(return_value=pod)):
+    with (
+        patch("carapace.sandbox.kubernetes.Pod.get", AsyncMock(return_value=pod)),
+        patch("carapace.sandbox.kubernetes.logger.debug") as debug_log,
+    ):
         result = await rt.exec(
             "carapace-sandbox-abc-0",
             "weather --daily",
@@ -442,6 +445,7 @@ async def test_exec_with_env_uses_non_login_shell() -> None:
         )
 
     assert result.exit_code == 0
+    assert "secret" not in debug_log.call_args.args[0]
     assert result.output == "ok"
     pod.exec.assert_awaited_once_with(
         [

@@ -147,6 +147,8 @@ Set the server log level via `logLevel` (default `info`; `debug`, `warning`, `er
 
 `sandbox.warmPoolSize` (default `1`) keeps that many generic warm sandboxes ready for faster claims; set it to `0` to disable.
 
+`sandbox.skillActivator` configures the absolute activator path inside sandbox images. It defaults to the executable shipped by the official image. Set it to an empty string for no-op skill activation when using an image without an activator.
+
 ### Application configuration
 
 The chart no longer accepts application `config.yaml` through Helm values and does not render a ConfigMap for it. Platform and user settings are managed from the web UI after install:

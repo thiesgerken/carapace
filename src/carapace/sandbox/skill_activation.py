@@ -3,75 +3,70 @@ from __future__ import annotations
 import base64
 import shlex
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
-from pathlib import Path
+from typing import Annotated, Literal
 
 from loguru import logger
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
+from ..models.skills import SkillCommandDecl
 from .file_ops import ContextFileCredential, SessionContainerLike, WrittenContextFile
 from .runtime import ExecResult, SkillActivationError, SkillActivationInputs
 
+SKILL_ACTIVATOR_PROTOCOL_VERSION = 1
+SKILL_ACTIVATOR_MARKER = "@@CARAPACE_SKILL_ACTIVATOR@@"
 SKILL_COMMAND_SHIM_DIR = "/workspace/.carapace/bin"
 
-
-@dataclass(frozen=True)
-class SkillActivationProvider:
-    name: str
-    trusted_files: tuple[str, ...]
-    status_message: str
-    command: str
-    timeout: int = 600
-    matcher: Callable[[Path], bool] | None = None
-
-    def matches(self, skill_dir: Path) -> bool:
-        if self.matcher is None:
-            return False
-        return self.matcher(skill_dir)
+type ActivationCommand = tuple[str, str]
+type ActivationMessage = Annotated[str, Field(min_length=1, max_length=1000)]
 
 
-def _has_all_files(*names: str) -> Callable[[Path], bool]:
-    def _matcher(skill_dir: Path) -> bool:
-        return all((skill_dir / name).exists() for name in names)
+class SkillActivatorRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
 
-    return _matcher
-
-
-def _matches_npm_provider(skill_dir: Path) -> bool:
-    return (
-        _has_all_files("package.json", "package-lock.json")(skill_dir) and not (skill_dir / "pnpm-lock.yaml").exists()
-    )
+    protocol_version: Literal[1] = SKILL_ACTIVATOR_PROTOCOL_VERSION
+    skill: str
+    skill_dir: str
+    workspace: str
+    source_revision: Annotated[str, Field(pattern=r"^[0-9a-f]{40,64}$")]
+    commands: list[SkillCommandDecl] = []
 
 
-SKILL_ACTIVATION_PROVIDERS: tuple[SkillActivationProvider, ...] = (
-    SkillActivationProvider(
-        name="uv",
-        trusted_files=("pyproject.toml", "uv.lock"),
-        status_message="Python dependencies synced.",
-        command="uv sync --locked",
-        matcher=_has_all_files("pyproject.toml", "uv.lock"),
-    ),
-    SkillActivationProvider(
-        name="npm",
-        trusted_files=("package.json", "package-lock.json"),
-        status_message="npm dependencies installed.",
-        command="npm ci",
-        matcher=_matches_npm_provider,
-    ),
-    SkillActivationProvider(
-        name="pnpm",
-        trusted_files=("package.json", "pnpm-lock.yaml"),
-        status_message="pnpm dependencies installed.",
-        command="pnpm install --frozen-lockfile",
-        matcher=_has_all_files("package.json", "pnpm-lock.yaml"),
-    ),
-    SkillActivationProvider(
-        name="setup.sh",
-        trusted_files=("setup.sh",),
-        status_message="setup.sh completed.",
-        command="sh ./setup.sh",
-        matcher=_has_all_files("setup.sh"),
-    ),
-)
+class SkillActivatorResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    protocol_version: Literal[1]
+    command_overrides: dict[str, str] = Field(default_factory=dict, max_length=256)
+    messages: list[ActivationMessage] = Field(default_factory=list, max_length=50)
+    error: Annotated[str, Field(min_length=1, max_length=1000)] | None = None
+
+    @field_validator("messages", mode="before")
+    @classmethod
+    def _validate_messages(cls, value: object) -> object:
+        if isinstance(value, list):
+            return [cls._single_line(item, "activation message") for item in value]
+        return value
+
+    @field_validator("error", mode="before")
+    @classmethod
+    def _validate_error(cls, value: object) -> object:
+        if isinstance(value, str):
+            return cls._single_line(value, "activation error")
+        return value
+
+    @staticmethod
+    def _single_line(value: object, label: str) -> object:
+        if not isinstance(value, str):
+            return value
+        stripped = value.strip()
+        if "\n" in stripped or "\r" in stripped:
+            raise ValueError(f"{label} must be a single line")
+        return stripped
+
+    @model_validator(mode="after")
+    def _validate_error_result(self) -> SkillActivatorResponse:
+        if self.error is not None and (self.command_overrides or self.messages):
+            raise ValueError("an activation error response cannot include overrides or messages")
+        return self
 
 
 class SkillActivationRunner:
@@ -79,6 +74,8 @@ class SkillActivationRunner:
         self,
         *,
         knowledge_workdir: str,
+        activator_path: str | None,
+        activator_timeout: int,
         get_activation_inputs: Callable[[str, str], Awaitable[SkillActivationInputs]],
         exec_in_session: Callable[..., Awaitable[ExecResult]],
         exec_in_container: Callable[..., Awaitable[ExecResult]],
@@ -86,94 +83,17 @@ class SkillActivationRunner:
         delete_context_file_credentials: Callable[[str, list[WrittenContextFile]], Awaitable[None]],
     ) -> None:
         self._knowledge_workdir = knowledge_workdir
+        self._activator_path = activator_path
+        self._activator_timeout = activator_timeout
         self._get_activation_inputs = get_activation_inputs
         self._exec_in_session = exec_in_session
         self._exec_in_container = exec_in_container
         self._write_context_file_credentials = write_context_file_credentials
         self._delete_context_file_credentials = delete_context_file_credentials
 
-    def matching_providers(self, skill_dir: Path) -> list[SkillActivationProvider]:
-        return [provider for provider in SKILL_ACTIVATION_PROVIDERS if provider.matches(skill_dir)]
-
-    def trusted_files_for(self, providers: list[SkillActivationProvider]) -> set[str]:
-        trusted_files = {"SKILL.md"}
-        for provider in providers:
-            trusted_files.update(provider.trusted_files)
-        return trusted_files
-
-    async def restore_trusted_files(
-        self,
-        skill_name: str,
-        trusted_files: set[str],
-        *,
-        session_id: str | None = None,
-        sc: SessionContainerLike | None = None,
-    ) -> None:
-        if (session_id is None) == (sc is None):
-            raise ValueError("Exactly one of session_id and sc must be set")
-
-        skill_path = f"skills/{shlex.quote(skill_name)}"
-        for fname in sorted(trusted_files):
-            command = f"git checkout @{{upstream}} -- {skill_path}/{fname} 2>/dev/null || true"
-            if session_id is not None:
-                await self._exec_in_session(
-                    session_id,
-                    command,
-                    timeout=10,
-                    workdir=self._knowledge_workdir,
-                )
-                continue
-
-            assert sc is not None
-            await self._exec_in_container(
-                sc,
-                command,
-                timeout=10,
-                workdir=self._knowledge_workdir,
-            )
-
-    async def restore_and_run_detected_providers(
-        self,
-        sc: SessionContainerLike,
-        skill_name: str,
-        skill_dir: Path,
-        *,
-        command_aliases: list[tuple[str, str]] | None = None,
-        run_session_id: str | None = None,
-    ) -> list[str]:
-        providers = self.matching_providers(skill_dir)
-        if not providers and not command_aliases:
-            return []
-
-        trusted_files = self.trusted_files_for(providers)
-        await self.restore_trusted_files(
-            skill_name,
-            trusted_files,
-            session_id=run_session_id,
-            sc=None if run_session_id is not None else sc,
-        )
-
-        activation_inputs = await self._get_activation_inputs(run_session_id or sc.session_id, skill_name)
-        if run_session_id is not None:
-            status_lines = await self.run_providers(
-                skill_name,
-                providers,
-                activation_inputs,
-                session_id=run_session_id,
-            )
-            if command_aliases:
-                status_lines.extend(
-                    await self.register_command_aliases(
-                        command_aliases,
-                        session_id=run_session_id,
-                    )
-                )
-            return status_lines
-
-        status_lines = await self.run_providers(skill_name, providers, activation_inputs, sc=sc)
-        if command_aliases:
-            status_lines.extend(await self.register_command_aliases(command_aliases, sc=sc))
-        return status_lines
+    @property
+    def enabled(self) -> bool:
+        return self._activator_path is not None
 
     def _command_shim_path(self, alias: str) -> str:
         return f"{SKILL_COMMAND_SHIM_DIR}/{alias}"
@@ -183,7 +103,7 @@ class SkillActivationRunner:
 
     async def register_command_aliases(
         self,
-        command_aliases: list[tuple[str, str]],
+        command_aliases: list[ActivationCommand],
         *,
         session_id: str | None = None,
         sc: SessionContainerLike | None = None,
@@ -236,10 +156,46 @@ class SkillActivationRunner:
     ) -> list[ContextFileCredential]:
         return [(skill_name, cred.path, cred.value) for cred in activation_inputs.file_credentials]
 
-    async def run_provider(
+    def _invocation(self, request: SkillActivatorRequest) -> str:
+        assert self._activator_path is not None
+        path = shlex.quote(self._activator_path)
+        encoded = base64.b64encode(request.model_dump_json().encode()).decode()
+        return f"test -x {path} || exit 126; exec {path} --request-base64 {shlex.quote(encoded)}"
+
+    def _parse_response(self, output: str) -> SkillActivatorResponse:
+        marked = [
+            line.removeprefix(SKILL_ACTIVATOR_MARKER)
+            for line in output.splitlines()
+            if line.startswith(SKILL_ACTIVATOR_MARKER)
+        ]
+        if len(marked) != 1:
+            raise SkillActivationError("skill activator must emit exactly one marked JSON response")
+        try:
+            return SkillActivatorResponse.model_validate_json(marked[0])
+        except ValidationError as exc:
+            raise SkillActivationError("skill activator returned an invalid protocol response") from exc
+
+    def _resolved_commands(
+        self,
+        declared: list[ActivationCommand],
+        overrides: dict[str, str],
+    ) -> list[ActivationCommand]:
+        resolved = dict(declared)
+        for alias, command in overrides.items():
+            if alias not in resolved:
+                raise SkillActivationError(f"skill activator returned an override for undeclared command {alias!r}")
+            try:
+                resolved[alias] = SkillCommandDecl(name=alias, command=command).command
+            except ValidationError as exc:
+                raise SkillActivationError(
+                    f"skill activator returned an invalid override for command {alias!r}"
+                ) from exc
+        return [(alias, resolved[alias]) for alias, _command in declared]
+
+    async def _exec_activator(
         self,
         skill_name: str,
-        provider: SkillActivationProvider,
+        request: SkillActivatorRequest,
         activation_inputs: SkillActivationInputs,
         *,
         session_id: str | None = None,
@@ -248,14 +204,15 @@ class SkillActivationRunner:
         if (session_id is None) == (sc is None):
             raise ValueError("Exactly one of session_id and sc must be set")
 
+        command = self._invocation(request)
         skill_dir = f"/workspace/skills/{skill_name}"
         extra_env = activation_inputs.environment or None
         file_creds = self._activation_file_credentials(skill_name, activation_inputs)
         if session_id is not None:
             return await self._exec_in_session(
                 session_id,
-                provider.command,
-                timeout=provider.timeout,
+                command,
+                timeout=self._activator_timeout,
                 bypass_proxy=True,
                 workdir=skill_dir,
                 extra_env=extra_env,
@@ -269,8 +226,8 @@ class SkillActivationRunner:
                 written_files = await self._write_context_file_credentials(sc, file_creds)
             return await self._exec_in_container(
                 sc,
-                provider.command,
-                timeout=provider.timeout,
+                command,
+                timeout=self._activator_timeout,
                 workdir=skill_dir,
                 bypass_proxy=True,
                 extra_env=extra_env,
@@ -279,34 +236,67 @@ class SkillActivationRunner:
             if written_files:
                 await self._delete_context_file_credentials(sc.session_id, written_files)
 
-    async def run_providers(
+    async def activate(
         self,
+        sc: SessionContainerLike,
         skill_name: str,
-        providers: list[SkillActivationProvider],
-        activation_inputs: SkillActivationInputs,
+        source_revision: str | None,
         *,
-        session_id: str | None = None,
-        sc: SessionContainerLike | None = None,
+        command_aliases: list[ActivationCommand],
+        run_session_id: str | None = None,
     ) -> list[str]:
-        if (session_id is None) == (sc is None):
-            raise ValueError("Exactly one of session_id and sc must be set")
-
+        resolved_commands = command_aliases
         status_lines: list[str] = []
-        for provider in providers:
-            logger.info(f"Running skill activation provider '{provider.name}' for skill '{skill_name}'")
-            result = await self.run_provider(
-                skill_name,
-                provider,
-                activation_inputs,
-                session_id=session_id,
-                sc=sc,
-            )
-            if result.exit_code != 0:
-                logger.error(
-                    f"Skill activation provider '{provider.name}' failed for '{skill_name}' "
-                    + f"(exit {result.exit_code}): {result.output[:300]}"
-                )
-                raise SkillActivationError(f"{provider.name} exit {result.exit_code}: {result.output[:500]}")
-            status_lines.append(provider.status_message)
 
+        if self.enabled:
+            if source_revision is None:
+                raise SkillActivationError("cannot run the skill activator without a committed source revision")
+            request = SkillActivatorRequest(
+                skill=skill_name,
+                skill_dir=f"/workspace/skills/{skill_name}",
+                workspace=self._knowledge_workdir,
+                source_revision=source_revision,
+                commands=[SkillCommandDecl(name=name, command=command) for name, command in command_aliases],
+            )
+            activation_inputs = await self._get_activation_inputs(run_session_id or sc.session_id, skill_name)
+            logger.info(f"Running sandbox skill activator for skill '{skill_name}'")
+            result = await self._exec_activator(
+                skill_name,
+                request,
+                activation_inputs,
+                session_id=run_session_id,
+                sc=None if run_session_id is not None else sc,
+            )
+
+            response: SkillActivatorResponse | None = None
+            try:
+                response = self._parse_response(result.output)
+            except SkillActivationError:
+                if result.exit_code == 0:
+                    raise
+
+            if result.exit_code != 0:
+                if response is not None and response.error is not None:
+                    detail = response.error
+                elif result.exit_code == 126:
+                    detail = f"configured skill activator is missing or not executable: {self._activator_path}"
+                elif result.exit_code == -1:
+                    detail = f"skill activator timed out after {self._activator_timeout} seconds"
+                else:
+                    detail = f"skill activator exited with status {result.exit_code}"
+                raise SkillActivationError(detail)
+
+            assert response is not None
+            if response.error is not None:
+                raise SkillActivationError(response.error)
+            resolved_commands = self._resolved_commands(command_aliases, response.command_overrides)
+            status_lines.extend(response.messages)
+
+        status_lines.extend(
+            await self.register_command_aliases(
+                resolved_commands,
+                session_id=run_session_id,
+                sc=None if run_session_id is not None else sc,
+            )
+        )
         return status_lines

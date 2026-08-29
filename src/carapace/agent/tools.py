@@ -979,8 +979,8 @@ def build_system_prompt(deps: Deps) -> str:
         catalog_lines.append("")
         catalog_lines.append(
             "Use `use_skill` to activate a skill before using it. "
-            + "That copies the skill into the sandbox and runs any committed "
-            + "automatic setup providers it declares."
+            + "That makes the skill available in the sandbox and runs the configured "
+            + "sandbox activator."
         )
         parts.append("\n".join(catalog_lines))
 
@@ -1000,9 +1000,9 @@ def build_system_prompt(deps: Deps) -> str:
         "Use `rg` to search archived conversations by session ID, message text, "
         "tool names, or JSON fields when you need prior context.\n"
         "Call `use_skill(skill_name)` to activate a skill before running its scripts.\n"
-        "Automatic skill setup can use committed provider files such as "
+        "The sandbox-provided skill activator can use committed inputs such as "
         "`pyproject.toml` + `uv.lock`, `package.json` + a lockfile, and `setup.sh`.\n"
-        "Provider setup runs from the pushed skill revision and only after approved "
+        "Core supplies the committed source revision, and activation runs only after approved "
         "skill credentials have been activated for the session.\n"
         "Use `uv run --directory /workspace/skills/<name> ...` for Python entrypoints "
         "and the matching package manager or shell command for Node/setup-based skills.\n\n"
@@ -1090,7 +1090,7 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
 
     @agent.tool
     async def use_skill(ctx: RunContext[Deps], skill_name: str) -> str | ToolDenied:
-        """Activate a skill: copies it to the sandbox, runs automatic setup, and loads instructions.
+        """Activate a skill: prepare its sandbox runtime and load instructions.
 
         Call before using a skill.
         """

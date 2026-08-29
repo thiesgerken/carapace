@@ -27,6 +27,9 @@ RUN chmod +x /usr/local/bin/setup-proxy.sh
 COPY ccred /usr/local/bin/ccred
 RUN chmod +x /usr/local/bin/ccred
 
+COPY carapace-skill-activator /usr/local/bin/carapace-skill-activator
+RUN chmod +x /usr/local/bin/carapace-skill-activator
+
 # Self-contained venv for the stdio MCP bridge (skill-declared stdio MCP servers).
 # Baked at build time so no dependency resolution happens at runtime (the sandbox's
 # egress is proxy/domain-gated and would block a runtime `pip`/`uv` fetch).

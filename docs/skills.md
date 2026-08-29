@@ -217,22 +217,22 @@ For command aliases declared in `metadata.carapace`, carapace also recognizes th
 - **Validation**: Every context string must correspond to an activated skill. Unknown context names are rejected.
 - **Piping**: When piping output between skill scripts, pass all relevant contexts: `contexts=["moneydb", "web-search"]`.
 
-## Automatic setup providers
+## Sandbox-provided activation
 
-When `use_skill` activates a skill, carapace checks a fixed provider chain and runs every matching provider in order:
+When `use_skill` activates a skill, Carapace invokes the activator supplied by the configured sandbox image. The official image preserves the previous provider chain:
 
 1. `pyproject.toml` + `uv.lock` → `uv sync --locked`
 2. `package.json` + `package-lock.json` (without `pnpm-lock.yaml`) → `npm ci`
 3. `package.json` + `pnpm-lock.yaml` → `pnpm install --frozen-lockfile`
 4. `setup.sh` → `sh ./setup.sh`
 
-The provider files above are security-sensitive. carapace restores them from the skill's **pushed upstream revision** before running them, so local uncommitted or merely local committed sandbox edits are not executed automatically.
+Core sends the activator the exact committed source revision. The official activator detects and restores only the matching provider inputs from that revision before executing them, so later local sandbox replacements are not run automatically. Custom sandbox images may provide another implementation, such as one that realizes packages from a locked Nix flake. See [sandbox.md](sandbox.md#custom-sandbox-skill-activator-contract) for the protocol.
 
-All automatic setup providers run with the proxy temporarily bypassed. This includes `setup.sh` by design: it is a committed, human-authored setup hook restored from upstream, and is treated as more intentional and reviewable than arbitrary lifecycle scripts inside third-party package installs.
+Activation runs with the proxy temporarily bypassed.
 
 ### Credential ordering
 
-Skill-declared credentials are approved and cached before any automatic setup provider runs. This is important for `setup.sh`, whose main use case is often to transform injected secrets into the local config files a tool actually expects.
+Skill-declared credentials are approved and cached before the sandbox activator runs. This is important for `setup.sh`, whose main use case is often to transform injected secrets into the local config files a tool actually expects.
 
 Examples:
 
@@ -240,7 +240,7 @@ Examples:
 - Decode a base64 kubeconfig into a file under the skill directory
 - Generate a `.npmrc` or other tool config from approved credentials
 
-Providers must never print raw secret values. Treat them as internal setup steps only.
+Activators and setup commands must never print raw secret values. Treat them as internal setup steps only.
 
 ## Python dependencies
 
@@ -248,7 +248,7 @@ A skill can include a `pyproject.toml` plus `uv.lock` to declare its Python depe
 
 ### Lifecycle
 
-1. **Activation** (`use_skill`): carapace copies the skill into the sandbox at `/workspace/skills/<name>/`. If `pyproject.toml` and `uv.lock` are present, it runs `uv sync --locked` in that directory. The proxy is temporarily bypassed during install.
+1. **Activation** (`use_skill`): with the official sandbox activator, committed `pyproject.toml` and `uv.lock` files run `uv sync --locked` in `/workspace/skills/<name>/`. The proxy is temporarily bypassed during install.
 2. **Runtime**: Scripts should be invoked with `uv run --directory /workspace/skills/<name> scripts/<script>.py` so they run inside the venv.
 3. **Persistence**: Skills are persisted via Git — changes in `/workspace/skills/` are committed and pushed to the workspace repository.
 4. **Container restart**: Venvs are rebuilt for all activated skills automatically when a container is recreated after idle timeout.
@@ -272,7 +272,7 @@ Always commit a `uv.lock` alongside `pyproject.toml` to ensure reproducible inst
 
 ## Node dependencies
 
-Skills can also use Node-based tooling. The sandbox image includes `npm` and `pnpm` for skill activation.
+Skills can also use Node-based tooling. The official sandbox image and activator include `npm` and `pnpm` for skill activation.
 
 ### Supported lockfile workflows
 
@@ -285,7 +285,7 @@ As with Python skills, commit the lockfile alongside the manifest so activation 
 
 ## setup.sh
 
-If `setup.sh` exists, carapace runs it after the dependency providers above.
+With the official sandbox activator, a committed `setup.sh` runs after the dependency providers above.
 
 Use it for local, deterministic post-processing such as:
 
@@ -295,7 +295,7 @@ Use it for local, deterministic post-processing such as:
 
 Keep `setup.sh` idempotent. It runs on first activation and again after sandbox recreation.
 
-Because it runs automatically and may execute with approved credentials available, `setup.sh` should be treated like code, not documentation. Only the pushed upstream copy is executed.
+Because it runs automatically and may execute with approved credentials available, `setup.sh` should be treated like code, not documentation. The official activator restores the copy from the source revision selected by core before execution.
 
 Like the dependency providers above, `setup.sh` runs under the temporary proxy-bypass window. The trust model here is deliberate: `setup.sh` is the explicit, committed setup hook for the skill, so carapace treats it as more trustworthy than transitive package installation behavior.
 

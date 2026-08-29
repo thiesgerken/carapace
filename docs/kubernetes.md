@@ -205,6 +205,8 @@ When the server runs inside Kubernetes (the `KUBERNETES_SERVICE_HOST` env var is
 | ------------------------------------------------ | ------------------------- | ---------------------------------------------------------- |
 | `CARAPACE_SANDBOX_RUNTIME`                       | `docker`                  | `docker` or `kubernetes`                                   |
 | `CARAPACE_SANDBOX_BASE_IMAGE`                    | `carapace-sandbox:latest` | Sandbox container image (pin version)                      |
+| `CARAPACE_SANDBOX_SKILL_ACTIVATOR`               | unset                     | Absolute skill activator path; unset disables activation   |
+| `CARAPACE_SANDBOX_SKILL_ACTIVATOR_TIMEOUT_SECONDS` | `600`                   | Whole-skill activator timeout                              |
 | `CARAPACE_SANDBOX_IDLE_TIMEOUT_MINUTES`          | `60`                      | Idle sandbox cleanup interval                              |
 | `CARAPACE_SANDBOX_WARM_POOL_SIZE`                | `0`                       | Number of generic warm sandboxes to keep ready             |
 | `CARAPACE_SANDBOX_PROXY_PORT`                    | `3128`                    | HTTP proxy port for domain filtering                       |

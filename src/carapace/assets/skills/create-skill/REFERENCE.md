@@ -320,7 +320,7 @@ Node-backed skills are supported through either npm or pnpm.
 - `package.json` + `package-lock.json` uses `npm ci`
 - `package.json` + `pnpm-lock.yaml` uses `pnpm install --frozen-lockfile`
 
-Commit the lockfile. Activation uses the pushed upstream provider files.
+Commit the lockfile. The official sandbox activator restores provider inputs from the source revision supplied by core.
 
 If both npm and pnpm files are present, be explicit about which workflow is intended and remove stale lockfiles when possible.
 
@@ -332,7 +332,7 @@ Rules:
 
 - keep it idempotent
 - do not print secrets
-- assume only the pushed upstream copy runs automatically
+- assume the official activator runs the copy from the committed source revision
 
 `setup.sh` is not a place for user guidance. If the runtime agent needs to know that setup materializes local config, mention that in one short line in `SKILL.md` and keep the details here.
 

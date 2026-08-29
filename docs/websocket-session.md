@@ -105,7 +105,7 @@ When present:
 
 **`skill`** — the action was allowed because it's covered by a context grant from an activated skill (e.g., domain access or credential fetch within a matching `contexts` exec).
 
-**`bypass`** — the action was silently allowed without sentinel evaluation (e.g., proxy bypass during trusted automatic skill setup such as `uv sync --locked`, `pnpm install`, or `setup.sh`).
+**`bypass`** — the action was silently allowed without sentinel evaluation (e.g., proxy bypass during sandbox-provided skill activation).
 
 ## Turn-control messages
 

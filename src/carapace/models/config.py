@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import os
 from collections.abc import Callable
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_serializer, model_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_serializer, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from ..notifications.models import NotificationsConfig
@@ -273,6 +273,10 @@ class SandboxConfig(BaseSettings):
     runtime: Literal["docker", "kubernetes"] = "docker"
     # Container image used for sandbox pods/containers.
     base_image: str = "carapace-sandbox:latest"
+    # Absolute path to the optional skill activator inside the sandbox image.
+    skill_activator: str | None = None
+    # Maximum duration of one whole-skill activator invocation.
+    skill_activator_timeout_seconds: int = Field(default=600, ge=1)
     # Minutes of inactivity before a sandbox is automatically cleaned up.
     idle_timeout_minutes: int = 60
     # Docker network to attach sandbox containers to (docker runtime only).
@@ -313,6 +317,30 @@ class SandboxConfig(BaseSettings):
     k8s_resource_limits_memory: str = ""
     # Remove sandbox resources for sessions that no longer exist on disk at startup.
     cleanup_orphans_on_startup: bool = True
+
+    @field_validator("skill_activator", mode="before")
+    @classmethod
+    def _validate_skill_activator(cls, value: object) -> object:
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            return value
+        value = value.strip()
+        if not value:
+            return None
+
+        path = PurePosixPath(value)
+        if not path.is_absolute() or ".." in path.parts:
+            raise ValueError("sandbox skill activator must be an absolute normalized path")
+        writable_roots = (
+            PurePosixPath("/workspace"),
+            PurePosixPath("/tmp"),
+            PurePosixPath("/var/tmp"),
+            PurePosixPath("/dev/shm"),
+        )
+        if any(path == root or root in path.parents for root in writable_roots):
+            raise ValueError("sandbox skill activator must be outside writable workspace and temporary directories")
+        return str(path)
 
 
 class SessionCommitConfig(ConfigModel):

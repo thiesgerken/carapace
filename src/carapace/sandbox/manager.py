@@ -215,6 +215,8 @@ class SandboxManager:
         proxy_port: int = 3128,
         sandbox_port: int = 8322,
         warm_pool_size: int = 0,
+        skill_activator: str | None = None,
+        skill_activator_timeout_seconds: int = 600,
     ) -> None:
         self._runtime = runtime
         self._data_dir = data_dir
@@ -302,6 +304,8 @@ class SandboxManager:
         )
         self._skill_activation_runner = SkillActivationRunner(
             knowledge_workdir=self._KNOWLEDGE_WORKDIR,
+            activator_path=skill_activator,
+            activator_timeout=skill_activator_timeout_seconds,
             get_activation_inputs=self._get_skill_activation_inputs,
             exec_in_session=self._exec,
             exec_in_container=self._exec_in_container,
@@ -840,10 +844,11 @@ class SandboxManager:
 
         activation_msg = ""
         try:
-            activation_lines = await self._skill_activation_runner.restore_and_run_detected_providers(
+            source_revision = await self._skill_source_revision(session_id)
+            activation_lines = await self._skill_activation_runner.activate(
                 sc,
                 skill_name,
-                master_skill_dir,
+                source_revision,
                 command_aliases=command_aliases,
                 run_session_id=session_id,
             )
@@ -906,31 +911,40 @@ class SandboxManager:
     ) -> None:
         await self._sandbox_file_ops.delete_context_file_credentials(session_id, written_files)
 
-    async def _rerun_skill_setup(self, sc: SessionContainer, skill_name: str) -> str:
-        """Restore trusted skill files from git and rerun automatic setup providers."""
-        master = self._knowledge_dir_for_session(sc.session_id) / "skills" / skill_name
+    async def _skill_source_revision(self, session_id: str) -> str | None:
+        if not self._skill_activation_runner.enabled:
+            return None
+        revision = await self._repo_for_session(session_id).git_store.head_sha()
+        if revision is None:
+            raise SkillActivationError("cannot activate a skill from a knowledge repository without commits")
+        return revision
+
+    async def _rerun_skill_setup(self, sc: SessionContainer, skill_name: str, source_revision: str | None) -> str:
+        """Rerun sandbox-provided activation and restore command shims."""
         command_aliases = self._get_skill_command_aliases(sc.session_id, skill_name)
-        lines = await self._skill_activation_runner.restore_and_run_detected_providers(
+        lines = await self._skill_activation_runner.activate(
             sc,
             skill_name,
-            master,
+            source_revision,
             command_aliases=command_aliases,
         )
         return "\n".join(lines)
 
     async def rerun_skill_setup(self, session_id: str, activated_skills: list[str]) -> None:
-        """Restore trusted config and rerun automatic setup for activated skills.
-
-        Called by SessionEngine after container recreation.
-        """
+        """Rerun sandbox-provided activation for skills after sandbox recreation."""
         sc = self._sessions.get(session_id)
         if sc is None:
             logger.warning(f"Cannot rerun skill setup: missing container state for session {session_id}")
             return
+        try:
+            source_revision = await self._skill_source_revision(session_id)
+        except SkillActivationError as exc:
+            logger.error(f"Cannot rerun skill setup after sandbox recreation: {exc}")
+            return
         for skill_name in activated_skills:
             logger.info(f"Rerunning automatic setup for skill '{skill_name}' after container recreation")
             try:
-                await self._rerun_skill_setup(sc, skill_name)
+                await self._rerun_skill_setup(sc, skill_name, source_revision)
             except SkillActivationError as exc:
                 logger.error(f"Failed to rerun automatic setup for '{skill_name}': {exc}")
 

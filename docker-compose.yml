@@ -24,6 +24,7 @@ services:
       - CARAPACE_MATRIX_PASSWORD=${CARAPACE_MATRIX_PASSWORD:-}
       - CARAPACE_GIT_TOKEN=${CARAPACE_GIT_TOKEN:-}
       - CARAPACE_CACHE_REDIS_URL=redis://redis:6379/0
+      - CARAPACE_SANDBOX_SKILL_ACTIVATOR=/usr/local/bin/carapace-skill-activator
       # SQL backend. Migrations run automatically on startup.
       - CARAPACE_DATABASE_URL=postgresql+psycopg://carapace:carapace@postgres:5432/carapace
       # Enables credentials.backends.<name>.type=file for this local Compose example.

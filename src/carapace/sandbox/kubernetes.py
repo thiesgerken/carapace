@@ -744,12 +744,13 @@ class KubernetesRuntime(ContainerRuntime):
         shell_cmd = command if isinstance(command, str) else " ".join(command)
         if workdir:
             shell_cmd = f"cd {shlex.quote(workdir)} && {shell_cmd}"
+        command_preview = shell_cmd
         if env:
             env_prefix = " ".join(f"{shlex.quote(k)}={shlex.quote(v)}" for k, v in env.items())
             shell_cmd = f"env {env_prefix} bash -c {shlex.quote(shell_cmd)}"
 
         exec_command = ["bash", "-c", shell_cmd]
-        logger.debug(f"Exec in pod {container_id}: {shell_cmd} (timeout={timeout}s)")
+        logger.debug(f"Exec in pod {container_id}: {command_preview} (timeout={timeout}s)")
 
         try:
             api = await self._ensure_api()
@@ -781,7 +782,7 @@ class KubernetesRuntime(ContainerRuntime):
         except kr8s.ExecError:
             return ExecResult(exit_code=1, output="Error: exec protocol error")
         except TimeoutError:
-            logger.warning(f"Command timed out in pod {container_id} after {timeout}s: {shell_cmd}")
+            logger.warning(f"Command timed out in pod {container_id} after {timeout}s: {command_preview}")
             return ExecResult(exit_code=-1, output=f"Error: command timed out ({timeout}s)")
 
         if result.exit_code != 0:

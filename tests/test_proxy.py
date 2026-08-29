@@ -21,11 +21,8 @@ from carapace.sandbox.runtime import (
     ContainerGoneError,
     ExecResult,
     NetworkTunnel,
-    SkillActivationInputs,
-    SkillFileCredential,
 )
 from carapace.sandbox.session_lifecycle import SessionContainer
-from carapace.sandbox.skill_activation import SKILL_ACTIVATION_PROVIDERS, SkillActivationRunner
 from carapace.session.manager import SessionManager, SessionMeta
 from carapace.skills import SkillRegistry
 from tests.runtime_mocks import make_runtime_mock
@@ -376,21 +373,6 @@ class TestSandboxManagerAllowlists:
         assert mgr.verify_session_token("sess-1", "tok") is False
 
 
-def test_skill_activation_trusted_files_include_skill_md() -> None:
-    runner = SkillActivationRunner(
-        knowledge_workdir="/workspace",
-        get_activation_inputs=AsyncMock(),
-        exec_in_session=AsyncMock(),
-        exec_in_container=AsyncMock(),
-        write_context_file_credentials=AsyncMock(),
-        delete_context_file_credentials=AsyncMock(),
-    )
-
-    providers = [provider for provider in SKILL_ACTIVATION_PROVIDERS if provider.name == "setup.sh"]
-
-    assert runner.trusted_files_for(providers) == {"SKILL.md", "setup.sh"}
-
-
 @pytest.mark.anyio
 async def test_exec_recreate_preserves_domains(tmp_path: Path, db_factory):
     runtime = make_runtime_mock()
@@ -424,194 +406,6 @@ async def test_exec_recreate_preserves_domains(tmp_path: Path, db_factory):
 
 
 @pytest.mark.anyio
-async def test_exec_recreate_reinjects_credential_files(tmp_path: Path, db_factory):
-    """After container recreation, activation providers re-materialize file credentials."""
-    runtime = make_runtime_mock()
-    runtime.get_host_ip = AsyncMock(return_value="172.18.0.1")
-    runtime.create_sandbox = AsyncMock(side_effect=["container-1", "container-2"])
-    runtime.get_ip = AsyncMock(return_value="172.18.0.22")
-    runtime.logs = AsyncMock(return_value="carapace sandbox ready")
-
-    _ok = ExecResult(exit_code=0, output="")
-    runtime.exec = AsyncMock(
-        side_effect=[
-            _ok,  # _clone_knowledge_repo probe after first create
-            _ok,  # setup_git_identity
-            _ok,  # install_commit_msg_hook
-            ContainerGoneError(),  # exec_command triggers recreate
-            _ok,  # _clone_knowledge_repo probe after recreate
-            _ok,  # setup_git_identity
-            _ok,  # install_commit_msg_hook
-            _ok,  # git checkout SKILL.md
-            _ok,  # git checkout setup.sh
-            _ok,  # _file_write_in_container (credential materialization)
-            _ok,  # setup.sh execution
-            _ok,  # credential file cleanup
-            ExecResult(exit_code=0, output="ok"),  # actual command retry
-        ]
-    )
-
-    # Create a skill dir with setup.sh so provider rebuild runs after recreation.
-    skill_dir = tmp_path / "skills" / "moneydb"
-    skill_dir.mkdir(parents=True)
-    (skill_dir / "SKILL.md").write_text("---\nname: moneydb\n---\nBody.\n")
-    (skill_dir / "setup.sh").write_text("#!/bin/sh\n")
-
-    mgr = _sandbox_manager(runtime=runtime, data_dir=tmp_path, knowledge_dir=tmp_path, session_factory=db_factory)
-    _seed_session_row(db_factory, tmp_path, "sess-1")
-    session_id = "sess-1"
-
-    # Register callbacks — the activated-skills callback returns "moneydb",
-    # and the activation callback returns one file credential to materialize.
-    mgr.set_activated_skills_callback(lambda sid: ["moneydb"])
-    activation_cb = AsyncMock(
-        return_value=SkillActivationInputs(
-            file_credentials=[SkillFileCredential(path="/tmp/creds/api_key.json", value="secret-key-value")]
-        )
-    )
-    mgr.set_skill_activation_inputs_callback(activation_cb)
-
-    await mgr.ensure_session(session_id)
-    output = await mgr.exec_command(session_id, "run-moneydb")
-    assert output.output == "ok"
-
-    # Verify the activation callback was called for the right session + skill.
-    activation_cb.assert_awaited_once_with(session_id, "moneydb")
-
-    # Verify upstream restore is used for trusted provider files.
-    restore_call = runtime.exec.call_args_list[8]
-    assert "git checkout @{upstream} -- skills/moneydb/setup.sh" in restore_call.args[1]
-
-    # Verify the credential file was written into the new container via exec.
-    # Index 9 is the _file_write_in_container for the credential — check that
-    # it targeted the correct workdir.
-    write_call = runtime.exec.call_args_list[9]
-    shell_cmd = write_call.args[1]
-    assert "/tmp/creds/api_key.json" in shell_cmd
-    assert base64.b64encode(b"secret-key-value").decode() in shell_cmd
-    assert write_call.kwargs.get("workdir") == "/workspace/skills/moneydb"
-
-
-@pytest.mark.anyio
-async def test_activate_skill_runs_setup_provider_with_activation_inputs(tmp_path: Path, db_factory):
-    runtime = make_runtime_mock()
-    runtime.get_host_ip = AsyncMock(return_value="172.18.0.1")
-    runtime.create_sandbox = AsyncMock(return_value="container-1")
-    runtime.get_ip = AsyncMock(return_value="172.18.0.22")
-    runtime.logs = AsyncMock(return_value="carapace sandbox ready")
-    runtime.exec = AsyncMock(
-        side_effect=[
-            ExecResult(exit_code=0, output=""),  # _clone_knowledge_repo probe after create
-            ExecResult(exit_code=0, output=""),  # setup_git_identity
-            ExecResult(exit_code=0, output=""),  # install_commit_msg_hook
-            ExecResult(exit_code=0, output=""),  # git checkout SKILL.md
-            ExecResult(exit_code=0, output=""),  # git checkout setup.sh
-            ExecResult(exit_code=0, output=""),  # credential file write
-            ExecResult(exit_code=0, output=""),  # setup.sh execution
-            ExecResult(exit_code=0, output=""),  # credential file cleanup
-        ]
-    )
-
-    skill_dir = tmp_path / "skills" / "cred-setup"
-    skill_dir.mkdir(parents=True)
-    (skill_dir / "SKILL.md").write_text("---\nname: cred-setup\n---\nBody.\n")
-    (skill_dir / "setup.sh").write_text("#!/bin/sh\n")
-
-    mgr = _sandbox_manager(runtime=runtime, data_dir=tmp_path, knowledge_dir=tmp_path, session_factory=db_factory)
-    _seed_session_row(db_factory, tmp_path, "sess-1")
-    mgr.set_skill_activation_inputs_callback(
-        AsyncMock(
-            return_value=SkillActivationInputs(
-                environment={"API_TOKEN": "secret-token"},
-                file_credentials=[SkillFileCredential(path=".config/token.txt", value="secret-token")],
-            )
-        )
-    )
-
-    result = await mgr.activate_skill("sess-1", "cred-setup")
-    assert "setup.sh completed." in result
-
-    setup_call = runtime.exec.call_args_list[6]
-    assert setup_call.args[1] == "sh ./setup.sh"
-    assert setup_call.kwargs.get("workdir") == "/workspace/skills/cred-setup"
-    assert setup_call.kwargs.get("env") == {"API_TOKEN": "secret-token"}
-
-    restore_call = runtime.exec.call_args_list[4]
-    assert "git checkout @{upstream} -- skills/cred-setup/setup.sh" in restore_call.args[1]
-
-
-@pytest.mark.anyio
-async def test_activate_skill_recovers_if_trusted_restore_hits_gone_container(tmp_path: Path, db_factory):
-    runtime = make_runtime_mock()
-    runtime.get_host_ip = AsyncMock(return_value="172.18.0.1")
-    runtime.create_sandbox = AsyncMock(side_effect=["container-1", "container-2"])
-    runtime.get_ip = AsyncMock(return_value="172.18.0.22")
-    runtime.logs = AsyncMock(return_value="carapace sandbox ready")
-    runtime.exec = AsyncMock(
-        side_effect=[
-            ExecResult(exit_code=0, output=""),  # _clone_knowledge_repo probe after first create
-            ExecResult(exit_code=0, output=""),  # setup_git_identity
-            ExecResult(exit_code=0, output=""),  # install_commit_msg_hook
-            ContainerGoneError(),  # trusted restore triggers recreate
-            ExecResult(exit_code=0, output=""),  # _clone_knowledge_repo probe after recreate
-            ExecResult(exit_code=0, output=""),  # setup_git_identity
-            ExecResult(exit_code=0, output=""),  # install_commit_msg_hook
-            ExecResult(exit_code=0, output=""),  # retried git checkout SKILL.md
-            ExecResult(exit_code=0, output=""),  # git checkout setup.sh
-            ExecResult(exit_code=0, output=""),  # setup.sh execution
-        ]
-    )
-
-    skill_dir = tmp_path / "skills" / "restore-retry"
-    skill_dir.mkdir(parents=True)
-    (skill_dir / "SKILL.md").write_text("---\nname: restore-retry\n---\nBody.\n")
-    (skill_dir / "setup.sh").write_text("#!/bin/sh\n")
-
-    mgr = _sandbox_manager(runtime=runtime, data_dir=tmp_path, knowledge_dir=tmp_path, session_factory=db_factory)
-    _seed_session_row(db_factory, tmp_path, "sess-1")
-
-    result = await mgr.activate_skill("sess-1", "restore-retry")
-    assert "setup.sh completed." in result
-    assert runtime.create_sandbox.await_count == 2
-
-    restore_retry_call = runtime.exec.call_args_list[8]
-    assert "git checkout @{upstream} -- skills/restore-retry/setup.sh" in restore_retry_call.args[1]
-
-
-@pytest.mark.anyio
-async def test_activate_skill_prefers_pnpm_when_package_and_pnpm_lockfiles_exist(tmp_path: Path, db_factory):
-    runtime = make_runtime_mock()
-    runtime.get_host_ip = AsyncMock(return_value="172.18.0.1")
-    runtime.create_sandbox = AsyncMock(return_value="container-1")
-    runtime.get_ip = AsyncMock(return_value="172.18.0.22")
-    runtime.logs = AsyncMock(return_value="carapace sandbox ready")
-    runtime.exec = AsyncMock(return_value=ExecResult(exit_code=0, output=""))
-
-    skill_dir = tmp_path / "skills" / "multi-node-lock"
-    skill_dir.mkdir(parents=True)
-    (skill_dir / "SKILL.md").write_text("---\nname: multi-node-lock\n---\nBody.\n")
-    (skill_dir / "package.json").write_text("{}\n")
-    (skill_dir / "package-lock.json").write_text("{}\n")
-    (skill_dir / "pnpm-lock.yaml").write_text("lockfileVersion: '9.0'\n")
-
-    mgr = _sandbox_manager(runtime=runtime, data_dir=tmp_path, knowledge_dir=tmp_path, session_factory=db_factory)
-    _seed_session_row(db_factory, tmp_path, "sess-1")
-
-    result = await mgr.activate_skill("sess-1", "multi-node-lock")
-    commands = [call.args[1] for call in runtime.exec.call_args_list]
-
-    result_lines = result.splitlines()
-
-    assert "pnpm dependencies installed." in result_lines
-    assert "npm dependencies installed." not in result_lines
-    assert "pnpm install --frozen-lockfile" in commands
-    assert "npm ci" not in commands
-    assert not any(
-        command.startswith("git checkout @{upstream} --") and "package-lock.json" in command for command in commands
-    )
-
-
-@pytest.mark.anyio
 async def test_activate_skill_registers_command_aliases_in_image_shim_dir(tmp_path: Path, db_factory):
     runtime = make_runtime_mock()
     runtime.get_host_ip = AsyncMock(return_value="172.18.0.1")
@@ -623,7 +417,6 @@ async def test_activate_skill_registers_command_aliases_in_image_shim_dir(tmp_pa
             ExecResult(exit_code=0, output=""),  # _clone_knowledge_repo probe after create
             ExecResult(exit_code=0, output=""),  # setup_git_identity
             ExecResult(exit_code=0, output=""),  # install_commit_msg_hook
-            ExecResult(exit_code=0, output=""),  # git checkout SKILL.md
             ExecResult(exit_code=0, output=""),  # command alias registration
         ]
     )
@@ -645,7 +438,7 @@ async def test_activate_skill_registers_command_aliases_in_image_shim_dir(tmp_pa
     assert "Command aliases registered: web." in result
     assert "PATH" not in mgr.get_session_env("sess-1")
 
-    register_call = runtime.exec.call_args_list[4]
+    register_call = runtime.exec.call_args_list[3]
     shell_cmd = register_call.args[1]
     wrapper = '#!/bin/sh\nexec uv run --directory /workspace/skills/web web-search "$@"\n'
     assert "/workspace/.carapace/bin/web" in shell_cmd

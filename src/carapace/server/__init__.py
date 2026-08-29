@@ -398,6 +398,8 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
         proxy_port=proxy_port,
         sandbox_port=_config.server.sandbox_port,
         warm_pool_size=_config.sandbox.warm_pool_size,
+        skill_activator=_config.sandbox.skill_activator,
+        skill_activator_timeout_seconds=_config.sandbox.skill_activator_timeout_seconds,
         knowledge_repo_for_session=knowledge_repo_for_session,
     )
     logger.info(f"Sandbox enabled (image={base_image}, network={sandbox_network})")
