@@ -12,7 +12,7 @@ dependencies = [
     "typer>=0.23,<1",
     "rich>=15,<16",
     "httpx>=0.28,<1",
-    "websockets>=16,<17",
+    "websockets>=17,<18",
     "python-dotenv>=1.2,<2",
 ]
 
