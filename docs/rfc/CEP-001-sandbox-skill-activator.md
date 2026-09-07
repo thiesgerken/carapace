@@ -4,7 +4,7 @@
 
 ## Summary
 
-Move all automatic skill activation behavior out of Carapace core and behind one activator supplied by the sandbox image.
+Move all automatic skill activation behavior out of Carapace and behind one activator supplied by the sandbox image.
 
 Carapace continues to own `use_skill`, security approval, activation lifecycle, and command shims. The sandbox activator owns runtime materialization. It may perform side effects such as `uv sync`, `pnpm install`, `setup.sh`, or realizing Nix packages. It may also return command overrides that Carapace installs through its existing shims.
 
@@ -19,14 +19,14 @@ The motivating deployment uses a custom Nix-based sandbox:
 - CI and a binary cache provide package closures.
 - Running `nix develop` for every skill command is too expensive.
 - Multiple skills should not require composing devshell environments.
-- Carapace core should not gain Nix-specific behavior.
+- Carapace should not gain Nix-specific behavior.
 
 A Nix activator can realize all packages for one skill in one invocation and return direct store-backed commands.
 
 ## Goals
 
 - Move the complete current activation-provider chain into the official sandbox image.
-- Let custom sandbox images replace that behavior without changing Carapace core.
+- Let custom sandbox images replace that behavior without changing Carapace.
 - Preserve the existing `metadata.carapace.commands` schema and concrete command semantics.
 - Allow activation-time side effects and optional command overrides through one extension point.
 - Resolve or prepare all commands for one skill in one activator invocation.
@@ -34,7 +34,7 @@ A Nix activator can realize all packages for one skill in one invocation and ret
 
 ## Non-goals
 
-- Nix-aware behavior in Carapace core.
+- Nix-aware behavior in Carapace.
 - PATH composition between skills.
 - A general multi-phase lifecycle-hook framework.
 - File watching, input fingerprints, or automatic reactivation after workspace edits.
@@ -69,13 +69,13 @@ Every compatible sandbox image contains an executable at `/usr/local/bin/carapac
 
 There is no implicit no-op fallback. An image that needs no preparation must still provide a protocol-compatible executable that exits zero and emits `@@CARAPACE_SKILL_ACTIVATOR@@{"protocol_version":1}`. Carapace then registers the declared commands unchanged.
 
-Core retains only the timeout configuration:
+Carapace retains only the timeout configuration:
 
 ```text
 CARAPACE_SANDBOX_SKILL_ACTIVATOR_TIMEOUT_SECONDS=600
 ```
 
-Carapace core does not retain the legacy uv, npm, pnpm, or `setup.sh` provider chain as a fallback. Older images without the executable require a coordinated upgrade. Skill metadata needs no migration.
+Carapace does not retain the legacy uv, npm, pnpm, or `setup.sh` provider chain as a fallback. Older images without the executable require a coordinated upgrade. Skill metadata needs no migration.
 
 ## Activator protocol
 
@@ -114,7 +114,7 @@ It returns optional command overrides and status messages:
 }
 ```
 
-`protocol_version` identifies the protocol spoken by both sides and must equal `1`. `source_revision` is the exact committed knowledge-repository object ID selected by core. The activator decides which inputs it consumes from that revision and how it restores or materializes them. Core never resets the complete skill directory.
+`protocol_version` identifies the protocol spoken by both sides and must equal `1`. `source_revision` is the exact committed knowledge-repository object ID selected by Carapace. The activator decides which inputs it consumes from that revision and how it restores or materializes them. Carapace never resets the complete skill directory.
 
 Carapace also supplies `GIT_REPO_URL` in the activator's environment. It is the authenticated server-side knowledge-repository URL. If the source commit is not present locally, the official activator fetches that exact revision and verifies it before restoring provider inputs. Fetching does not merge, move local branches, or reset workspace files. The URL must not appear in protocol JSON or logs because it contains credentials.
 
@@ -173,11 +173,11 @@ No additional capability settings are introduced in protocol version 1. The acti
 
 The activator is trusted deployment code. The skill files, manifests, package definitions, and `setup.sh` it consumes remain untrusted activation input.
 
-Core-enforced controls:
+Carapace-enforced controls:
 
 - The activator path is fixed and cannot be overridden by skill metadata or server path configuration.
 - The activator runs only after `use_skill` security approval.
-- Core supplies the exact committed source revision in the request.
+- Carapace supplies the exact committed source revision in the request.
 - Returned overrides may reference only commands declared by the skill.
 - Every response and override is validated before Carapace replaces command shims.
 
@@ -193,7 +193,7 @@ Carapace does not attempt to enforce image immutability consistently across Dock
 
 ### Keep the current provider chain as a fallback
 
-Rejected because it duplicates activation logic across core and the sandbox image and makes the legacy path difficult to remove. This CEP instead accepts coordinated server and image upgrades.
+Rejected because it duplicates activation logic across Carapace and the sandbox image and makes the legacy path difficult to remove. This CEP instead accepts coordinated server and image upgrades.
 
 ### Command resolver only
 
@@ -219,6 +219,6 @@ Deferred until a concrete need appears:
 
 - Per-activator credential or network capability switches.
 - Strong process termination guarantees after timeout.
-- Core-enforced read-only roots or non-root sandbox execution.
+- Carapace-enforced read-only roots or non-root sandbox execution.
 - Filesystem rollback after partial activation side effects.
 - Manual refresh, file watching, or activation fingerprints.

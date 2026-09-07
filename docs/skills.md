@@ -6,7 +6,7 @@ carapace uses the open [AgentSkills](https://agentskills.io/) format for skills.
 
 A skill is a directory with a `SKILL.md` file (Markdown instructions with YAML frontmatter) plus optional `scripts/`, `references/`, and `assets/` directories.
 
-Carapace adds optional `metadata.carapace` frontmatter for network domains, credentials, command aliases, and MCP servers. Runtime preparation is supplied by the sandbox image, not by the AgentSkills format or Carapace core.
+Carapace adds optional `metadata.carapace` frontmatter for network domains, credentials, command aliases, and MCP servers. Runtime preparation is supplied by the sandbox image, not by the AgentSkills format or Carapace.
 
 ```text
 skills/
@@ -206,13 +206,13 @@ For command aliases declared in `metadata.carapace`, carapace also recognizes th
 
 ## Sandbox-provided activation
 
-Every sandbox image provides `/usr/local/bin/carapace-skill-activator`. Core invokes it after `use_skill` approval with all declared commands and the exact committed source revision. The image determines how to prepare the runtime. For example, a custom Nix image can realize commands from a locked root flake instead of installing dependencies in each skill directory.
+Every sandbox image provides `/usr/local/bin/carapace-skill-activator`. Carapace invokes it after `use_skill` approval with all declared commands and the exact committed source revision. The image determines how to prepare the runtime. For example, a custom Nix image can realize commands from a locked root flake instead of installing dependencies in each skill directory.
 
 ### Lifecycle and command overrides
 
-Activation runs on `use_skill` and is repeated for active skills after sandbox recreation. Workspace edits do not trigger automatic reactivation. The activator selects its inputs from the supplied source revision; core does not reset the skill directory.
+Activation runs on `use_skill` and is repeated for active skills after sandbox recreation. Workspace edits do not trigger automatic reactivation. The activator selects its inputs from the supplied source revision; Carapace does not reset the skill directory.
 
-The activator may override declared command aliases. Omitted aliases retain their original commands. Core validates the complete response before registering the command shims, keeping command invocation independent of how the image prepares dependencies.
+The activator may override declared command aliases. Omitted aliases retain their original commands. Carapace validates the complete response before registering the command shims, keeping command invocation independent of how the image prepares dependencies.
 
 ### Credentials and network access
 
@@ -294,7 +294,7 @@ Use it for local, deterministic post-processing such as:
 
 Keep `setup.sh` idempotent. It runs on first activation and again after sandbox recreation.
 
-Because it runs automatically and may execute with approved credentials available, `setup.sh` should be treated like code, not documentation. The official activator restores the copy from the source revision selected by core before execution.
+Because it runs automatically and may execute with approved credentials available, `setup.sh` should be treated like code, not documentation. The official activator restores the copy from the source revision selected by Carapace before execution.
 
 Like dependency installation, `setup.sh` receives approved activation credentials and runs during the proxy-bypass window. Never print secrets. Use it to generate tool-specific configuration from approved inputs, such as a `.npmrc` or API client config.
 

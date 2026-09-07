@@ -1002,7 +1002,7 @@ def build_system_prompt(deps: Deps) -> str:
         "Call `use_skill(skill_name)` to activate a skill before running its scripts.\n"
         "The sandbox-provided skill activator can use committed inputs such as "
         "`pyproject.toml` + `uv.lock`, `package.json` + a lockfile, and `setup.sh`.\n"
-        "Core supplies the committed source revision, and activation runs only after approved "
+        "Carapace supplies the committed source revision, and activation runs only after approved "
         "skill credentials have been activated for the session.\n"
         "Use `uv run --directory /workspace/skills/<name> ...` for Python entrypoints "
         "and the matching package manager or shell command for Node/setup-based skills.\n\n"

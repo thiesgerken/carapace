@@ -66,7 +66,7 @@ Every sandbox image must contain an executable at `/usr/local/bin/carapace-skill
 
 A missing or non-executable activator fails automatic setup. There is no implicit no-op fallback. An image that needs no preparation must still provide an executable that exits zero and emits `@@CARAPACE_SKILL_ACTIVATOR@@{"protocol_version":1}`. This leaves all declared commands unchanged.
 
-Core enforces a 600-second timeout for the complete invocation, configurable on the server:
+Carapace enforces a 600-second timeout for the complete invocation, configurable on the server:
 
 ```text
 CARAPACE_SANDBOX_SKILL_ACTIVATOR_TIMEOUT_SECONDS=600
@@ -90,7 +90,7 @@ Carapace invokes the executable once per skill with `--request-base64` followed 
 }
 ```
 
-`source_revision` is the exact committed knowledge-repository object ID selected by core. The live workspace remains writable and may contain later or uncommitted changes. The activator selects its activation inputs from `source_revision` and decides which files to restore or how to consume that revision. Core never resets the complete skill directory.
+`source_revision` is the exact committed knowledge-repository object ID selected by Carapace. The live workspace remains writable and may contain later or uncommitted changes. The activator selects its activation inputs from `source_revision` and decides which files to restore or how to consume that revision. Carapace never resets the complete skill directory.
 
 Carapace supplies `GIT_REPO_URL` in the process environment. It is the authenticated URL of the server-side knowledge repository, not a mutable Git remote name from the workspace. A long-lived sandbox may not yet contain `source_revision`. The official activator fetches that exact object from `GIT_REPO_URL` when needed and verifies it before restoring individual provider files. It does not merge, reset the working tree, or move local branches. If fetching fails, activation fails rather than substituting another revision.
 

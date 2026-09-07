@@ -46,7 +46,7 @@ When adapting this example:
 
 ## Activation Flow
 
-When the skill is activated, the official sandbox activator restores and runs matching setup inputs from the source revision supplied by core:
+When the skill is activated, the official sandbox activator restores and runs matching setup inputs from the source revision supplied by Carapace:
 
 - `uv sync --locked` for `pyproject.toml` plus `uv.lock`
 - `pnpm install --frozen-lockfile` for `package.json` plus `pnpm-lock.yaml`
