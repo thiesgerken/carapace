@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 import shlex
 import subprocess
 from pathlib import Path
@@ -11,20 +12,18 @@ from unittest.mock import AsyncMock
 import pytest
 
 from carapace.sandbox.runtime import ExecResult, SkillActivationError, SkillActivationInputs, SkillFileCredential
-from carapace.sandbox.skill_activation import SKILL_ACTIVATOR_MARKER, SkillActivationRunner
+from carapace.sandbox.skill_activation import SKILL_ACTIVATOR_MARKER, SKILL_ACTIVATOR_PATH, SkillActivationRunner
 
 _SOURCE_REVISION = "a" * 40
 
 
 def _runner(
     *,
-    activator_path: str | None,
     exec_in_session: AsyncMock,
     get_activation_inputs: AsyncMock | None = None,
 ) -> SkillActivationRunner:
     return SkillActivationRunner(
         knowledge_workdir="/workspace",
-        activator_path=activator_path,
         activator_timeout=600,
         get_activation_inputs=get_activation_inputs or AsyncMock(return_value=SkillActivationInputs()),
         exec_in_session=exec_in_session,
@@ -44,7 +43,8 @@ async def test_activator_receives_revision_credentials_and_all_commands() -> Non
         side_effect=[
             ExecResult(
                 exit_code=0,
-                output=_response(
+                output="[stderr]\n" + _response({"error": "diagnostics must not be parsed"}),
+                stdout=_response(
                     {
                         "command_overrides": {"search": "/nix/store/search/bin/search"},
                         "messages": ["Realized search."],
@@ -61,7 +61,6 @@ async def test_activator_receives_revision_credentials_and_all_commands() -> Non
         )
     )
     runner = _runner(
-        activator_path="/usr/local/bin/carapace-skill-activator",
         exec_in_session=exec_in_session,
         get_activation_inputs=get_inputs,
     )
@@ -83,6 +82,7 @@ async def test_activator_receives_revision_credentials_and_all_commands() -> Non
     assert activator_call.kwargs["extra_env"] == {"API_TOKEN": "secret"}
     assert activator_call.kwargs["context_file_creds"] == [("web", ".config/token", "secret")]
 
+    assert f"exec {SKILL_ACTIVATOR_PATH} --request-base64" in activator_call.args[1]
     encoded_request = shlex.split(activator_call.args[1])[-1]
     request = json.loads(base64.b64decode(encoded_request))
     assert request == {
@@ -107,10 +107,11 @@ async def test_invalid_override_does_not_replace_shims() -> None:
     exec_in_session = AsyncMock(
         return_value=ExecResult(
             exit_code=0,
-            output=_response({"command_overrides": {"undeclared": "echo nope"}, "messages": []}),
+            output="",
+            stdout=_response({"command_overrides": {"undeclared": "echo nope"}, "messages": []}),
         )
     )
-    runner = _runner(activator_path="/usr/local/bin/activate", exec_in_session=exec_in_session)
+    runner = _runner(exec_in_session=exec_in_session)
 
     with pytest.raises(SkillActivationError, match="undeclared command"):
         await runner.activate(
@@ -130,12 +131,13 @@ async def test_invalid_override_does_not_replace_shims() -> None:
     [
         (ExecResult(exit_code=126, output=""), "missing or not executable"),
         (ExecResult(exit_code=-1, output=""), "timed out after 600 seconds"),
-        (ExecResult(exit_code=1, output=_response({"error": "realization failed"})), "realization failed"),
+        (ExecResult(exit_code=1, output="", stdout=_response({"error": "realization failed"})), "realization failed"),
+        (ExecResult(exit_code=0, output=_response({})), "exactly one marked"),
     ],
 )
 async def test_activator_failure_does_not_register_shims(result: ExecResult, message: str) -> None:
     exec_in_session = AsyncMock(return_value=result)
-    runner = _runner(activator_path="/usr/local/bin/activate", exec_in_session=exec_in_session)
+    runner = _runner(exec_in_session=exec_in_session)
 
     with pytest.raises(SkillActivationError, match=message):
         await runner.activate(
@@ -150,27 +152,27 @@ async def test_activator_failure_does_not_register_shims(result: ExecResult, mes
 
 
 @pytest.mark.anyio
-async def test_unconfigured_activator_registers_declared_commands_unchanged() -> None:
-    exec_in_session = AsyncMock(return_value=ExecResult(exit_code=0, output=""))
-    get_inputs = AsyncMock()
-    runner = _runner(activator_path=None, exec_in_session=exec_in_session, get_activation_inputs=get_inputs)
+async def test_explicit_noop_activator_registers_declared_commands_unchanged() -> None:
+    exec_in_session = AsyncMock(return_value=ExecResult(exit_code=0, output="", stdout=_response({})))
+    runner = _runner(exec_in_session=exec_in_session)
 
     messages = await runner.activate(
         SimpleNamespace(session_id="session-1"),
         "web",
-        None,
+        _SOURCE_REVISION,
         command_aliases=[("search", "uv run search")],
         run_session_id="session-1",
     )
 
     assert messages == ["Command aliases registered: search."]
-    get_inputs.assert_not_awaited()
+    assert exec_in_session.await_count == 2
     assert "uv run search" not in exec_in_session.await_args.args[1]
     wrapper = '#!/bin/sh\nexec uv run search "$@"\n'
     assert base64.b64encode(wrapper.encode()).decode() in exec_in_session.await_args.args[1]
 
 
-def test_official_activator_restores_setup_from_source_revision(tmp_path: Path) -> None:
+@pytest.mark.parametrize("fetch_state", ["present", "missing", "unreachable"])
+def test_official_activator_restores_setup_from_source_revision(tmp_path: Path, fetch_state: str) -> None:
     workspace = tmp_path / "workspace"
     skill_dir = workspace / "skills" / "demo"
     skill_dir.mkdir(parents=True)
@@ -182,13 +184,34 @@ def test_official_activator_restores_setup_from_source_revision(tmp_path: Path) 
     subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=workspace, check=True)
     subprocess.run(["git", "add", "."], cwd=workspace, check=True)
     subprocess.run(["git", "commit", "-m", "add skill"], cwd=workspace, check=True, capture_output=True)
+    remote = tmp_path / "remote"
+    subprocess.run(["git", "clone", str(workspace), str(remote)], check=True, capture_output=True)
+    if fetch_state != "present":
+        subprocess.run(
+            [
+                "git",
+                "-c",
+                "user.name=Test",
+                "-c",
+                "user.email=test@example.com",
+                "commit",
+                "--allow-empty",
+                "-m",
+                "new",
+            ],
+            cwd=remote,
+            check=True,
+            capture_output=True,
+        )
     source_revision = subprocess.run(
         ["git", "rev-parse", "HEAD"],
-        cwd=workspace,
+        cwd=remote,
         check=True,
         capture_output=True,
         text=True,
     ).stdout.strip()
+    head_before = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=workspace)
+    (skill_dir / "unrelated.txt").write_text("keep local edits")
 
     (skill_dir / "setup.sh").write_text("printf tampered > activation-result\n")
     request = {
@@ -205,12 +228,23 @@ def test_official_activator_restores_setup_from_source_revision(tmp_path: Path) 
     result = subprocess.run(
         [script, "--request-base64", encoded],
         cwd=skill_dir,
+        env={**os.environ, "GIT_REPO_URL": str(remote if fetch_state == "missing" else tmp_path / "secret-token")},
         check=False,
         capture_output=True,
         text=True,
     )
 
+    if fetch_state == "unreachable":
+        assert result.returncode != 0
+        assert "failed to fetch source revision" in result.stdout
+        assert "secret-token" not in result.stdout + result.stderr
+        assert not (skill_dir / "activation-result").exists()
+        assert (skill_dir / "setup.sh").read_text() == "printf tampered > activation-result\n"
+        return
+
     assert result.returncode == 0, result.stderr
     assert (skill_dir / "activation-result").read_text() == "committed"
     assert (skill_dir / "setup.sh").read_text() == "printf committed > activation-result\n"
     assert "setup.sh completed." in result.stdout
+    assert subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=workspace) == head_before
+    assert (skill_dir / "unrelated.txt").read_text() == "keep local edits"

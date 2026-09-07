@@ -215,7 +215,6 @@ class SandboxManager:
         proxy_port: int = 3128,
         sandbox_port: int = 8322,
         warm_pool_size: int = 0,
-        skill_activator: str | None = None,
         skill_activator_timeout_seconds: int = 600,
     ) -> None:
         self._runtime = runtime
@@ -304,7 +303,6 @@ class SandboxManager:
         )
         self._skill_activation_runner = SkillActivationRunner(
             knowledge_workdir=self._KNOWLEDGE_WORKDIR,
-            activator_path=skill_activator,
             activator_timeout=skill_activator_timeout_seconds,
             get_activation_inputs=self._get_skill_activation_inputs,
             exec_in_session=self._exec,
@@ -911,15 +909,13 @@ class SandboxManager:
     ) -> None:
         await self._sandbox_file_ops.delete_context_file_credentials(session_id, written_files)
 
-    async def _skill_source_revision(self, session_id: str) -> str | None:
-        if not self._skill_activation_runner.enabled:
-            return None
+    async def _skill_source_revision(self, session_id: str) -> str:
         revision = await self._repo_for_session(session_id).git_store.head_sha()
         if revision is None:
             raise SkillActivationError("cannot activate a skill from a knowledge repository without commits")
         return revision
 
-    async def _rerun_skill_setup(self, sc: SessionContainer, skill_name: str, source_revision: str | None) -> str:
+    async def _rerun_skill_setup(self, sc: SessionContainer, skill_name: str, source_revision: str) -> str:
         """Rerun sandbox-provided activation and restore command shims."""
         command_aliases = self._get_skill_command_aliases(sc.session_id, skill_name)
         lines = await self._skill_activation_runner.activate(

@@ -770,7 +770,7 @@ class KubernetesRuntime(ContainerRuntime):
                 output = stdout
                 if stderr:
                     output += f"\n[stderr] {stderr}"
-                return ExecResult(exit_code=exit_code, output=output)
+                return ExecResult(exit_code=exit_code, output=output, stdout=stdout)
 
             if timeout:
                 result = await asyncio.wait_for(_do_exec(), timeout=timeout)
@@ -786,7 +786,7 @@ class KubernetesRuntime(ContainerRuntime):
             return ExecResult(exit_code=-1, output=f"Error: command timed out ({timeout}s)")
 
         if result.exit_code != 0:
-            logger.debug(f"Command exited {result.exit_code} in pod {container_id}: {shell_cmd}")
+            logger.debug(f"Command exited {result.exit_code} in pod {container_id}: {command_preview}")
         return result
 
     # ------------------------------------------------------------------

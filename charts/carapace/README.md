@@ -147,7 +147,7 @@ Set the server log level via `logLevel` (default `info`; `debug`, `warning`, `er
 
 `sandbox.warmPoolSize` (default `1`) keeps that many generic warm sandboxes ready for faster claims; set it to `0` to disable.
 
-`sandbox.skillActivator` configures the absolute activator path inside sandbox images. It defaults to the executable shipped by the official image. Set it to an empty string for no-op skill activation when using an image without an activator.
+Sandbox images must contain an executable at `/usr/local/bin/carapace-skill-activator`. The official image provides it; custom images must implement the same [activator contract](../../docs/sandbox.md#custom-sandbox-skill-activator-contract). No Helm setting selects the executable.
 
 ### Application configuration
 

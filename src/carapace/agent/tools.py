@@ -979,7 +979,7 @@ def build_system_prompt(deps: Deps) -> str:
         catalog_lines.append("")
         catalog_lines.append(
             "Use `use_skill` to activate a skill before using it. "
-            + "That makes the skill available in the sandbox and runs the configured "
+            + "That makes the skill available in the sandbox and runs the image-provided "
             + "sandbox activator."
         )
         parts.append("\n".join(catalog_lines))

@@ -400,7 +400,7 @@ class DockerRuntime(ContainerRuntime):
             if stderr:
                 output += f"\n[stderr] {stderr}"
 
-            return ExecResult(exit_code=exit_code, output=output)
+            return ExecResult(exit_code=exit_code, output=output, stdout=stdout)
 
         cmd_preview = command if isinstance(command, str) else " ".join(command)
         logger.debug(f"Exec in {container_id[:12]}: {cmd_preview} (timeout={timeout}s)")

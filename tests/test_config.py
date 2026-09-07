@@ -25,7 +25,6 @@ def test_build_config_defaults(tmp_path: Path):
     assert cfg.agent.model == "anthropic:claude-sonnet-4-6"
     assert cfg.sessions.commit.enabled is True
     assert cfg.sandbox.k8s_session_pvc_size == "1Gi"
-    assert cfg.sandbox.skill_activator is None
     assert cfg.sandbox.skill_activator_timeout_seconds == 600
 
 
@@ -55,21 +54,10 @@ def test_notifications_vapid_subject_from_env(monkeypatch: pytest.MonkeyPatch):
     assert NotificationsConfig().vapid_subject == "mailto:ops@example.com"
 
 
-def test_sandbox_skill_activator_from_env(monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setenv("CARAPACE_SANDBOX_SKILL_ACTIVATOR", "/usr/local/bin/activate-skill")
+def test_sandbox_skill_activator_timeout_from_env(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("CARAPACE_SANDBOX_SKILL_ACTIVATOR_TIMEOUT_SECONDS", "900")
     config = SandboxConfig()
-    assert config.skill_activator == "/usr/local/bin/activate-skill"
     assert config.skill_activator_timeout_seconds == 900
-
-
-@pytest.mark.parametrize(
-    "path",
-    ["activate-skill", "/workspace/activate-skill", "/tmp/activate-skill", "/usr/../tmp/x"],
-)
-def test_sandbox_skill_activator_rejects_untrusted_paths(path: str):
-    with pytest.raises(ValidationError):
-        SandboxConfig(skill_activator=path)
 
 
 @pytest.mark.parametrize(

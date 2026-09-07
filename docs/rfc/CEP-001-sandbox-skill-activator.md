@@ -10,7 +10,7 @@ Carapace continues to own `use_skill`, security approval, activation lifecycle, 
 
 ## Motivation and use case
 
-Carapace currently detects package-manager and hook files in server code through `SKILL_ACTIVATION_PROVIDERS`. It runs uv, npm, pnpm, and `setup.sh` in a fixed order. This only works when the selected sandbox image contains those tools and supports their assumptions, so the behavior belongs to the execution layer provided by that image.
+Before this change, Carapace detected package-manager and hook files in server code through `SKILL_ACTIVATION_PROVIDERS`. It ran uv, npm, pnpm, and `setup.sh` in a fixed order. This only works when the selected sandbox image contains those tools and supports their assumptions, so the behavior belongs to the execution layer provided by that image.
 
 The motivating deployment uses a custom Nix-based sandbox:
 
@@ -63,22 +63,21 @@ The official activator can therefore reproduce current behavior by preparing dep
 
 No activator command is embedded in skill metadata. The activator is selected by the deployment, not by the skill.
 
-## Activator configuration
+## Image contract and timeout
 
-A compatible sandbox image provides one activator executable at an operator-configured absolute path:
+Every compatible sandbox image contains an executable at `/usr/local/bin/carapace-skill-activator`. Custom images may provide a wrapper or symlink at that fixed path. The implementation belongs to the image, not to Helm, Docker Compose, or skill metadata. A missing or non-executable activator is an activation error.
+
+There is no implicit no-op fallback. An image that needs no preparation must still provide a protocol-compatible executable that exits zero and emits `@@CARAPACE_SKILL_ACTIVATOR@@{"protocol_version":1}`. Carapace then registers the declared commands unchanged.
+
+Core retains only the timeout configuration:
 
 ```text
-CARAPACE_SANDBOX_SKILL_ACTIVATOR=/usr/local/bin/carapace-skill-activator
 CARAPACE_SANDBOX_SKILL_ACTIVATOR_TIMEOUT_SECONDS=600
 ```
 
-The path must be absolute and outside `/workspace`, `/tmp`, `/var/tmp`, and `/dev/shm`. Activator integrity remains a deployment requirement; core does not prove that the configured file is immutable. The official Carapace sandbox image ships the default implementation. Docker Compose and the Helm chart configure its path. A custom sandbox image may provide a different implementation at that or another path.
+Carapace core does not retain the legacy uv, npm, pnpm, or `setup.sh` provider chain as a fallback. Older images without the executable require a coordinated upgrade. Skill metadata needs no migration.
 
-When no activator is configured, Carapace uses no-op activation: it performs no runtime preparation, receives no command overrides, and installs the originally declared commands unchanged. A configured path that is missing or not executable is an activation error.
-
-Carapace core does not retain the legacy uv, npm, pnpm, or `setup.sh` provider chain as a fallback. No-op activation is therefore an intentional execution-layer compatibility break for configurations that omit the activator: a command such as `uv run ...` is preserved, but the preceding `uv sync` no longer happens. This avoids keeping two activation implementations indefinitely and does not require a skill-schema migration.
-
-## Conceptual activator protocol
+## Activator protocol
 
 Carapace invokes the activator once per skill with all declared commands:
 
@@ -117,6 +116,8 @@ It returns optional command overrides and status messages:
 
 `protocol_version` identifies the protocol spoken by both sides and must equal `1`. `source_revision` is the exact committed knowledge-repository object ID selected by core. The activator decides which inputs it consumes from that revision and how it restores or materializes them. Core never resets the complete skill directory.
 
+Carapace also supplies `GIT_REPO_URL` in the activator's environment. It is the authenticated server-side knowledge-repository URL. If the source commit is not present locally, the official activator fetches that exact revision and verifies it before restoring provider inputs. Fetching does not merge, move local branches, or reset workspace files. The URL must not appear in protocol JSON or logs because it contains credentials.
+
 `command_overrides` replaces only the listed aliases; an omitted command always uses its original declaration. Overrides use the same shell-command semantics as existing skill commands and may include arguments or environment preparation.
 
 `messages` contains model-facing activation status. Messages must be short, non-sensitive, single-line summaries authored by the activator. Carapace does not pass package-manager or hook output through automatically.
@@ -127,7 +128,7 @@ Carapace invokes the executable as:
 <activator> --request-base64 <base64-encoded-request-json>
 ```
 
-The activator writes exactly one response line to stdout, prefixed with `@@CARAPACE_SKILL_ACTIVATOR@@`. Other output is diagnostic only. Exit status zero requires a valid success response. A failure may return a safe, single-line error response before exiting nonzero:
+The activator writes exactly one response line to stdout, prefixed with `@@CARAPACE_SKILL_ACTIVATOR@@`. Carapace parses raw stdout only. Package-manager and hook diagnostics belong on stderr and cannot supply a response. Exit status zero requires a valid success response. A failure may return a safe, single-line error response before exiting nonzero:
 
 ```json
 {
@@ -174,8 +175,7 @@ The activator is trusted deployment code. The skill files, manifests, package de
 
 Core-enforced controls:
 
-- The activator path is configured by the operator and cannot be overridden by skill metadata.
-- The path is absolute and lexically outside writable workspace and temporary directories.
+- The activator path is fixed and cannot be overridden by skill metadata or server path configuration.
 - The activator runs only after `use_skill` security approval.
 - Core supplies the exact committed source revision in the request.
 - Returned overrides may reference only commands declared by the skill.
@@ -183,9 +183,9 @@ Core-enforced controls:
 
 Deployment requirements:
 
-- Activator code must be immutable to the agent through an immutable image path, read-only mount, Nix store path, or an unprivileged agent combined with root-owned files.
+- Activator code, its interpreter, dependencies, and any symlink target must be protected from agent modification. Do not place them in agent-writable workspace or temporary directories, to ensure that the agent cannot tamper with activation. Use read-only mounts or an unprivileged agent combined with protected image files. Nix store paths also require an agent that cannot modify the store.
 - A writable container root filesystem is insufficient when agent commands run as root.
-- The activator must select automatically executed inputs from `source_revision`, rather than trusting arbitrary replacements in the live workspace.
+- The activator must select its activation inputs from `source_revision`, rather than trusting arbitrary replacements in the live workspace. The official implementation restores provider manifests and hooks, not an isolated snapshot of all transitive build inputs.
 
 Carapace does not attempt to enforce image immutability consistently across Docker and Kubernetes as part of this feature. Activator confidentiality is not a security boundary. Read access can aid auditing. Integrity, not secrecy, is required.
 
@@ -213,7 +213,7 @@ Rejected because they make deployment-specific execution skill-controlled and re
 
 ## Packaging and deferred work
 
-The official sandbox image installs a standalone executable at `/usr/local/bin/carapace-skill-activator`. Custom images may copy it from the official image or replace it. The JSON protocol is the compatibility boundary; there is no library or subclass API.
+The official sandbox image contains a standalone executable at `/usr/local/bin/carapace-skill-activator`. Custom images may copy it from the official image or replace it. The JSON protocol is the compatibility boundary; there is no library or subclass API.
 
 Deferred until a concrete need appears:
 

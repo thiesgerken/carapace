@@ -34,7 +34,7 @@ flowchart LR
 - **Shell access**: The agent runs commands via `exec` (equivalent to `docker exec` / `kubectl exec`)
 - **File operations**: `read`, `write`, `str_replace` work directly on the container filesystem
 - **Network access**: All outbound traffic goes through the HTTP forward proxy, which enforces per-session domain allowlisting
-- **Skills**: Activated skills are available in the cloned knowledge repo; the configured sandbox activator prepares their runtimes
+- **Skills**: Activated skills are available in the cloned knowledge repo; the image-provided activator prepares their runtimes
 - **Workspace files**: `SOUL.md`, `USER.md`, `SECURITY.md` etc. live in the knowledge repo at `/workspace/`. Changes are persisted via `git commit` and `git push`.
 
 ## Mounts
@@ -62,14 +62,15 @@ The knowledge repo is cloned directly into `/workspace/` on first start. On cont
 
 ## Custom sandbox skill activator contract
 
-A sandbox image may provide one executable that prepares a complete skill runtime and optionally overrides its declared command aliases. Configure its absolute in-container path on the server:
+Every sandbox image must contain an executable at `/usr/local/bin/carapace-skill-activator`. It prepares a complete skill runtime and may override declared command aliases. The image owns the implementation; neither Helm nor Docker Compose selects its path. A custom image may provide a wrapper or a symlink to an immutable executable, for example in the Nix store.
+
+A missing or non-executable activator fails automatic setup. There is no implicit no-op fallback. An image that needs no preparation must still provide an executable that exits zero and emits `@@CARAPACE_SKILL_ACTIVATOR@@{"protocol_version":1}`. This leaves all declared commands unchanged.
+
+Core enforces a 600-second timeout for the complete invocation, configurable on the server:
 
 ```text
-CARAPACE_SANDBOX_SKILL_ACTIVATOR=/usr/local/bin/carapace-skill-activator
 CARAPACE_SANDBOX_SKILL_ACTIVATOR_TIMEOUT_SECONDS=600
 ```
-
-An unset or empty path disables automatic runtime preparation while preserving declared command aliases. A configured path that is missing or not executable fails automatic setup. The path must be outside `/workspace`, `/tmp`, `/var/tmp`, and `/dev/shm`.
 
 Carapace invokes the executable once per skill with `--request-base64` followed by a base64-encoded JSON object:
 
@@ -89,9 +90,13 @@ Carapace invokes the executable once per skill with `--request-base64` followed 
 }
 ```
 
-`source_revision` is the exact committed knowledge-repository object ID selected by core. The live workspace remains writable and may contain later or uncommitted changes. The activator must select any automatically executed input from `source_revision`. It decides which files to restore or how to consume that revision. Core never resets the complete skill directory.
+`source_revision` is the exact committed knowledge-repository object ID selected by core. The live workspace remains writable and may contain later or uncommitted changes. The activator selects its activation inputs from `source_revision` and decides which files to restore or how to consume that revision. Core never resets the complete skill directory.
 
-On success, the executable exits zero and writes exactly one marked JSON line to stdout:
+Carapace supplies `GIT_REPO_URL` in the process environment. It is the authenticated URL of the server-side knowledge repository, not a mutable Git remote name from the workspace. A long-lived sandbox may not yet contain `source_revision`. The official activator fetches that exact object from `GIT_REPO_URL` when needed and verifies it before restoring individual provider files. It does not merge, reset the working tree, or move local branches. If fetching fails, activation fails rather than substituting another revision.
+
+Keep `GIT_REPO_URL` out of protocol JSON, messages, and logs: it contains authentication credentials. The base64 request is encoded for shell transport, not encrypted.
+
+On success, the executable exits zero and writes exactly one marked JSON line to stdout. The parser reads raw stdout only, never combined stdout/stderr. Send package-manager and hook diagnostics to stderr; marker-like text there cannot act as a protocol response:
 
 ```text
 @@CARAPACE_SKILL_ACTIVATOR@@{"protocol_version":1,"command_overrides":{"web_search":"/nix/store/.../bin/web_search"},"messages":["Realized web commands."]}
@@ -109,9 +114,9 @@ Carapace rejects unknown versions, malformed responses, undeclared aliases, inva
 
 The activator runs after `use_skill` approval with the skill's successfully resolved `env_var` and `file` credentials, plus the same proxy bypass used by the previous built-in setup providers. Credentials are not part of the JSON request. File credentials are removed after invocation.
 
-The executable is trusted deployment code. Its integrity is the sandbox image operator's responsibility. Use an immutable image path, read-only mount, Nix store path, or a non-root sandbox user with root-owned activator files. Carapace validates the configured path but does not enforce a read-only container root.
+The executable is trusted deployment code that receives credentials and proxy bypass. It must not be stored in agent-writable locations such as `/workspace` or `/tmp`, to ensure that the agent cannot tamper with activation. Its integrity, including the symlink target, interpreter, and dependencies, is the sandbox image operator's responsibility. Use read-only mounts or a non-root sandbox user with protected image files. A Nix store path is suitable only if the agent cannot modify that store or the link to it. The fixed path alone is not an integrity guarantee; Carapace does not enforce a read-only container root.
 
-The official image installs `/usr/local/bin/carapace-skill-activator`. It restores matching provider inputs from `source_revision`, then preserves the former uv, npm, pnpm, and `setup.sh` behavior. Custom images need only implement the versioned process contract above.
+The official image contains `/usr/local/bin/carapace-skill-activator`. It restores matching provider inputs from `source_revision`, then runs the [official provider chain](skills.md#official-sandbox-activator). Custom images must implement the versioned process contract above; they need not reproduce that provider chain.
 
 ## Network policy
 
@@ -155,7 +160,7 @@ Important semantics:
 - **Reuse**: The container stays running for the session's duration. Multiple tool calls reuse the same container.
 - **Idle timeout**: Configurable (default: 60 min). In Docker mode, idle containers are destroyed. In Kubernetes mode, the StatefulSet is scaled to 0 replicas — the PVC is retained, so venvs and workspace state survive.
 - **Warm pool**: If `CARAPACE_SANDBOX_WARM_POOL_SIZE > 0`, carapace maintains that many unattached base-image sandboxes ahead of time. On Kubernetes, new sessions claim one of these warm sandboxes before falling back to cold creation. The claimed sandbox keeps its own unique `sandbox_id` (for example `pool-3f9c…`) while still being attached to the session.
-- **Re-warming**: When the user sends a new message after the container expired, a new container is created (Docker: fresh container with the same bind mounts; Kubernetes: StatefulSet scaled back to 1 replica, PVC still attached). Carapace reruns the configured activator for each active skill and restores command shims. Approved skill credentials are made available before activation.
+- **Re-warming**: When the user sends a new message after the container expired, a new container is created (Docker: fresh container with the same bind mounts; Kubernetes: StatefulSet scaled back to 1 replica, PVC still attached). Carapace reruns the image-provided activator for each active skill and restores command shims. Approved skill credentials are made available before activation.
 - **Reset** (`/reload`): Fully destroys the container and workspace (including the PVC in Kubernetes mode) and creates a fresh sandbox with a new git clone on the next command.
 
 ## Runtimes

@@ -26,8 +26,14 @@ source_revision=$(printf '%s' "$request" | $JQ -er '.source_revision') || emit_e
 command_count=$(printf '%s' "$request" | $JQ -er '.commands | length') || emit_error 'invalid commands' 2
 
 [ "$skill_dir" = "$workspace/skills/$skill" ] || emit_error 'skill directory does not match workspace and skill name' 2
-$GIT -C "$workspace" cat-file -e "$source_revision^{commit}" 2>/dev/null \
-    || emit_error 'source revision is unavailable in the sandbox workspace'
+if ! $GIT -C "$workspace" cat-file -e "$source_revision^{commit}" 2>/dev/null; then
+    [ -n "${GIT_REPO_URL:-}" ] || emit_error 'GIT_REPO_URL is required to fetch the source revision'
+    # Do not expose the authenticated URL in Git diagnostics or change local branches/working files.
+    $GIT -C "$workspace" fetch --no-tags --no-write-fetch-head "$GIT_REPO_URL" "$source_revision" >/dev/null 2>&1 \
+        || emit_error 'failed to fetch source revision from the knowledge repository'
+    $GIT -C "$workspace" cat-file -e "$source_revision^{commit}" 2>/dev/null \
+        || emit_error 'source revision is unavailable after fetch'
+fi
 
 skill_path="skills/$skill"
 tracked() {

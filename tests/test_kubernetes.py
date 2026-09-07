@@ -425,17 +425,19 @@ async def test_resume_sandbox():
 
 
 @pytest.mark.asyncio
-async def test_exec_with_env_uses_non_login_shell() -> None:
+@pytest.mark.parametrize("exit_code", [0, 1, -1])
+async def test_exec_with_env_uses_non_login_shell(exit_code: int) -> None:
     rt = _make_runtime()
     rt._ensure_api = AsyncMock()
 
-    completed = MagicMock(stdout=b"ok", stderr=b"", returncode=0)
+    completed = MagicMock(stdout=b"ok", stderr=b"diagnostics", returncode=exit_code)
     pod = MagicMock()
-    pod.exec = AsyncMock(return_value=completed)
+    pod.exec = AsyncMock(return_value=completed, side_effect=TimeoutError if exit_code == -1 else None)
 
     with (
         patch("carapace.sandbox.kubernetes.Pod.get", AsyncMock(return_value=pod)),
         patch("carapace.sandbox.kubernetes.logger.debug") as debug_log,
+        patch("carapace.sandbox.kubernetes.logger.warning") as warning_log,
     ):
         result = await rt.exec(
             "carapace-sandbox-abc-0",
@@ -444,9 +446,14 @@ async def test_exec_with_env_uses_non_login_shell() -> None:
             workdir="/workspace",
         )
 
-    assert result.exit_code == 0
-    assert "secret" not in debug_log.call_args.args[0]
-    assert result.output == "ok"
+    assert result.exit_code == exit_code
+    assert all("secret" not in call.args[0] for call in debug_log.call_args_list + warning_log.call_args_list)
+    if exit_code == -1:
+        assert "timed out" in result.output
+        assert result.stdout == ""
+    else:
+        assert result.output == "ok\n[stderr] diagnostics"
+        assert result.stdout == "ok"
     pod.exec.assert_awaited_once_with(
         [
             "bash",

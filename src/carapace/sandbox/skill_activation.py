@@ -12,6 +12,7 @@ from ..models.skills import SkillCommandDecl
 from .file_ops import ContextFileCredential, SessionContainerLike, WrittenContextFile
 from .runtime import ExecResult, SkillActivationError, SkillActivationInputs
 
+SKILL_ACTIVATOR_PATH = "/usr/local/bin/carapace-skill-activator"
 SKILL_ACTIVATOR_PROTOCOL_VERSION = 1
 SKILL_ACTIVATOR_MARKER = "@@CARAPACE_SKILL_ACTIVATOR@@"
 SKILL_COMMAND_SHIM_DIR = "/workspace/.carapace/bin"
@@ -74,7 +75,6 @@ class SkillActivationRunner:
         self,
         *,
         knowledge_workdir: str,
-        activator_path: str | None,
         activator_timeout: int,
         get_activation_inputs: Callable[[str, str], Awaitable[SkillActivationInputs]],
         exec_in_session: Callable[..., Awaitable[ExecResult]],
@@ -83,17 +83,12 @@ class SkillActivationRunner:
         delete_context_file_credentials: Callable[[str, list[WrittenContextFile]], Awaitable[None]],
     ) -> None:
         self._knowledge_workdir = knowledge_workdir
-        self._activator_path = activator_path
         self._activator_timeout = activator_timeout
         self._get_activation_inputs = get_activation_inputs
         self._exec_in_session = exec_in_session
         self._exec_in_container = exec_in_container
         self._write_context_file_credentials = write_context_file_credentials
         self._delete_context_file_credentials = delete_context_file_credentials
-
-    @property
-    def enabled(self) -> bool:
-        return self._activator_path is not None
 
     def _command_shim_path(self, alias: str) -> str:
         return f"{SKILL_COMMAND_SHIM_DIR}/{alias}"
@@ -157,8 +152,7 @@ class SkillActivationRunner:
         return [(skill_name, cred.path, cred.value) for cred in activation_inputs.file_credentials]
 
     def _invocation(self, request: SkillActivatorRequest) -> str:
-        assert self._activator_path is not None
-        path = shlex.quote(self._activator_path)
+        path = shlex.quote(SKILL_ACTIVATOR_PATH)
         encoded = base64.b64encode(request.model_dump_json().encode()).decode()
         return f"test -x {path} || exit 126; exec {path} --request-base64 {shlex.quote(encoded)}"
 
@@ -240,58 +234,51 @@ class SkillActivationRunner:
         self,
         sc: SessionContainerLike,
         skill_name: str,
-        source_revision: str | None,
+        source_revision: str,
         *,
         command_aliases: list[ActivationCommand],
         run_session_id: str | None = None,
     ) -> list[str]:
-        resolved_commands = command_aliases
-        status_lines: list[str] = []
+        request = SkillActivatorRequest(
+            skill=skill_name,
+            skill_dir=f"/workspace/skills/{skill_name}",
+            workspace=self._knowledge_workdir,
+            source_revision=source_revision,
+            commands=[SkillCommandDecl(name=name, command=command) for name, command in command_aliases],
+        )
+        activation_inputs = await self._get_activation_inputs(run_session_id or sc.session_id, skill_name)
+        logger.info(f"Running sandbox skill activator for skill '{skill_name}'")
+        result = await self._exec_activator(
+            skill_name,
+            request,
+            activation_inputs,
+            session_id=run_session_id,
+            sc=None if run_session_id is not None else sc,
+        )
 
-        if self.enabled:
-            if source_revision is None:
-                raise SkillActivationError("cannot run the skill activator without a committed source revision")
-            request = SkillActivatorRequest(
-                skill=skill_name,
-                skill_dir=f"/workspace/skills/{skill_name}",
-                workspace=self._knowledge_workdir,
-                source_revision=source_revision,
-                commands=[SkillCommandDecl(name=name, command=command) for name, command in command_aliases],
-            )
-            activation_inputs = await self._get_activation_inputs(run_session_id or sc.session_id, skill_name)
-            logger.info(f"Running sandbox skill activator for skill '{skill_name}'")
-            result = await self._exec_activator(
-                skill_name,
-                request,
-                activation_inputs,
-                session_id=run_session_id,
-                sc=None if run_session_id is not None else sc,
-            )
+        response: SkillActivatorResponse | None = None
+        try:
+            response = self._parse_response(result.stdout)
+        except SkillActivationError:
+            if result.exit_code == 0:
+                raise
 
-            response: SkillActivatorResponse | None = None
-            try:
-                response = self._parse_response(result.output)
-            except SkillActivationError:
-                if result.exit_code == 0:
-                    raise
+        if result.exit_code != 0:
+            if response is not None and response.error is not None:
+                detail = response.error
+            elif result.exit_code == 126:
+                detail = f"sandbox image skill activator is missing or not executable: {SKILL_ACTIVATOR_PATH}"
+            elif result.exit_code == -1:
+                detail = f"skill activator timed out after {self._activator_timeout} seconds"
+            else:
+                detail = f"skill activator exited with status {result.exit_code}"
+            raise SkillActivationError(detail)
 
-            if result.exit_code != 0:
-                if response is not None and response.error is not None:
-                    detail = response.error
-                elif result.exit_code == 126:
-                    detail = f"configured skill activator is missing or not executable: {self._activator_path}"
-                elif result.exit_code == -1:
-                    detail = f"skill activator timed out after {self._activator_timeout} seconds"
-                else:
-                    detail = f"skill activator exited with status {result.exit_code}"
-                raise SkillActivationError(detail)
-
-            assert response is not None
-            if response.error is not None:
-                raise SkillActivationError(response.error)
-            resolved_commands = self._resolved_commands(command_aliases, response.command_overrides)
-            status_lines.extend(response.messages)
-
+        assert response is not None
+        if response.error is not None:
+            raise SkillActivationError(response.error)
+        resolved_commands = self._resolved_commands(command_aliases, response.command_overrides)
+        status_lines = list(response.messages)
         status_lines.extend(
             await self.register_command_aliases(
                 resolved_commands,

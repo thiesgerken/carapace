@@ -417,6 +417,7 @@ async def test_activate_skill_registers_command_aliases_in_image_shim_dir(tmp_pa
             ExecResult(exit_code=0, output=""),  # _clone_knowledge_repo probe after create
             ExecResult(exit_code=0, output=""),  # setup_git_identity
             ExecResult(exit_code=0, output=""),  # install_commit_msg_hook
+            ExecResult(exit_code=0, output="", stdout='@@CARAPACE_SKILL_ACTIVATOR@@{"protocol_version":1}'),
             ExecResult(exit_code=0, output=""),  # command alias registration
         ]
     )
@@ -433,12 +434,15 @@ async def test_activate_skill_registers_command_aliases_in_image_shim_dir(tmp_pa
         )
     )
 
+    store = mgr._repo_for_session("sess-1").git_store
+    await store.ensure_repo()
+    await store.commit(["skills/web/SKILL.md"], "add skill")
     result = await mgr.activate_skill("sess-1", "web")
 
     assert "Command aliases registered: web." in result
     assert "PATH" not in mgr.get_session_env("sess-1")
 
-    register_call = runtime.exec.call_args_list[3]
+    register_call = runtime.exec.call_args_list[4]
     shell_cmd = register_call.args[1]
     wrapper = '#!/bin/sh\nexec uv run --directory /workspace/skills/web web-search "$@"\n'
     assert "/workspace/.carapace/bin/web" in shell_cmd
