@@ -12,7 +12,7 @@ from carapace.config import (
     resolve_user_knowledge_dir,
 )
 from carapace.llm import resolve_available_model_entry
-from carapace.models.config import AgentConfig, AuthConfig, AvailableModelEntry, Config
+from carapace.models.config import AgentConfig, AuthConfig, AvailableModelEntry, Config, SandboxConfig
 from carapace.notifications.models import NotificationsConfig
 
 
@@ -25,6 +25,7 @@ def test_build_config_defaults(tmp_path: Path):
     assert cfg.agent.model == "anthropic:claude-sonnet-4-6"
     assert cfg.sessions.commit.enabled is True
     assert cfg.sandbox.k8s_session_pvc_size == "1Gi"
+    assert cfg.sandbox.skill_activator_timeout_seconds == 600
 
 
 def test_build_config_reads_data_dir_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
@@ -51,6 +52,12 @@ def test_build_config_applies_subsection_env(tmp_path: Path, monkeypatch: pytest
 def test_notifications_vapid_subject_from_env(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("CARAPACE_NOTIFICATIONS_VAPID_SUBJECT", "mailto:ops@example.com")
     assert NotificationsConfig().vapid_subject == "mailto:ops@example.com"
+
+
+def test_sandbox_skill_activator_timeout_from_env(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("CARAPACE_SANDBOX_SKILL_ACTIVATOR_TIMEOUT_SECONDS", "900")
+    config = SandboxConfig()
+    assert config.skill_activator_timeout_seconds == 900
 
 
 @pytest.mark.parametrize(

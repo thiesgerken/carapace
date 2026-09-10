@@ -113,6 +113,8 @@ class SandboxConfig(BaseModel):
 class ExecResult(BaseModel):
     exit_code: int
     output: str
+    # Raw stdout for machine protocols. Never fall back to combined diagnostic output.
+    stdout: str = ""
 
 
 SandboxRuntimeKind = Literal["docker", "kubernetes"]

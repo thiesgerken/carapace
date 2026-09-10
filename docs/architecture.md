@@ -119,14 +119,14 @@ The main agent, built on [Pydantic AI](https://ai.pydantic.dev/). It receives me
 | Tool          | Description                                                               |
 | ------------- | ------------------------------------------------------------------------- |
 | `list_skills` | List available skills (names + descriptions)                              |
-| `use_skill`   | Activate a skill: copy to sandbox, run automatic setup, load instructions |
+| `use_skill`   | Activate a skill: prepare its sandbox runtime and load instructions       |
 | `read`        | Read a file or list a directory inside the sandbox                        |
 | `write`       | Write content to a file in the sandbox                                    |
 | `str_replace` | Search-and-replace edit of a file in the sandbox                          |
 | `exec`        | Run a shell command in the sandbox (default timeout: 30s)                 |
 
 Persistent writes to workspace files, skills, and archived session snapshots happen via `git commit` + `git push` inside the sandbox. Each push is evaluated by the security sentinel through a pre-receive hook, so persistent knowledge changes do not bypass the sentinel.
-Skill credential declarations in a skill's `SKILL.md` `metadata.carapace` frontmatter are evaluated during `use_skill`; approved credentials are fetched from the configured backend and cached before automatic setup runs. Automatic setup can use committed provider files such as `pyproject.toml` + `uv.lock`, `package.json` + a lockfile, and `setup.sh`. Those provider files are restored from the pushed upstream revision before execution so local sandbox edits are not run automatically.
+Skill credential declarations in a skill's `SKILL.md` `metadata.carapace` frontmatter are evaluated during `use_skill`; approved credentials are fetched from the configured backend and cached before sandbox-provided activation runs. Core supplies the activator with the exact committed source revision. The official activator restores matching uv, npm, pnpm, and `setup.sh` inputs from that revision before execution.
 
 ### Security Module
 

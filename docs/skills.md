@@ -6,31 +6,18 @@ carapace uses the open [AgentSkills](https://agentskills.io/) format for skills.
 
 A skill is a directory with a `SKILL.md` file (Markdown instructions with YAML frontmatter) plus optional `scripts/`, `references/`, and `assets/` directories.
 
-carapace extends the format with optional files and metadata:
-
-- **`SKILL.md` frontmatter `metadata.carapace`** — carapace-specific metadata: network domain declarations, credential needs, and command aliases
-- **`pyproject.toml`** + **`uv.lock`** — Python dependencies installed via `uv sync --locked`
-- **`package.json`** + **`package-lock.json`** or **`pnpm-lock.yaml`** — Node dependencies installed with the matching package manager
-- **`setup.sh`** — optional post-activation setup script for local config generation or other derived artifacts
+Carapace adds optional `metadata.carapace` frontmatter for network domains, credentials, command aliases, and MCP servers. Runtime preparation is supplied by the sandbox image, not by the AgentSkills format or Carapace.
 
 ```text
 skills/
-  web-search/
-    SKILL.md             # required: AgentSkills standard + optional metadata.carapace
-    pyproject.toml       # optional: Python dependencies
-    uv.lock              # optional: required alongside pyproject.toml
-    scripts/
-      search.py
-  node-tool/
-    SKILL.md
-    package.json
-    package-lock.json
-    setup.sh
-    scripts/
-      run.mjs
-    references/
-      api-docs.md
+  my-skill/
+    SKILL.md             # required: instructions and optional metadata.carapace
+    scripts/             # optional executable code
+    references/          # optional detailed documentation
+    assets/              # optional supporting files
 ```
+
+The [official sandbox activator](#official-sandbox-activator) recognizes Python and Node manifests and `setup.sh`. Custom images may use different runtime inputs without changing the skill metadata schema.
 
 ## SKILL.md (AgentSkills standard)
 
@@ -217,43 +204,55 @@ For command aliases declared in `metadata.carapace`, carapace also recognizes th
 - **Validation**: Every context string must correspond to an activated skill. Unknown context names are rejected.
 - **Piping**: When piping output between skill scripts, pass all relevant contexts: `contexts=["moneydb", "web-search"]`.
 
-## Automatic setup providers
+## Sandbox-provided activation
 
-When `use_skill` activates a skill, carapace checks a fixed provider chain and runs every matching provider in order:
+Every sandbox image provides `/usr/local/bin/carapace-skill-activator`. Carapace invokes it after `use_skill` approval with all declared commands and the exact committed source revision. The image determines how to prepare the runtime. For example, a custom Nix image can realize commands from a locked root flake instead of installing dependencies in each skill directory.
+
+### Lifecycle and command overrides
+
+Activation runs on `use_skill` and is repeated for active skills after sandbox recreation. Workspace edits do not trigger automatic reactivation. The activator selects its inputs from the supplied source revision; Carapace does not reset the skill directory.
+
+The activator may override declared command aliases. Omitted aliases retain their original commands. Carapace validates the complete response before registering the command shims, keeping command invocation independent of how the image prepares dependencies.
+
+### Credentials and network access
+
+Skill credentials are approved and cached before activation. Successfully resolved declarations with `env_var` or `file` are injected for the invocation; temporary credential files are removed afterwards. The proxy temporarily allows all destinations during activation. Activators and their child processes must never print secrets.
+
+### Failure behavior
+
+Missing activators, invalid responses, nonzero exits, and timeouts fail automatic setup. The skill's instructions and context grant remain available, but new shims are not installed after activation failure. Filesystem side effects are not rolled back. Recreation retains best-effort setup behavior.
+
+See the [sandbox activator contract](sandbox.md#custom-sandbox-skill-activator-contract) for protocol, timeout, source fetching, and image integrity requirements.
+
+## Official sandbox activator
+
+The official image contains an activator implementing the following file conventions. These are not requirements for custom images.
+
+### Provider order and restoration
+
+The activator detects matching provider inputs in the committed source revision and runs these steps in order:
 
 1. `pyproject.toml` + `uv.lock` → `uv sync --locked`
 2. `package.json` + `package-lock.json` (without `pnpm-lock.yaml`) → `npm ci`
 3. `package.json` + `pnpm-lock.yaml` → `pnpm install --frozen-lockfile`
 4. `setup.sh` → `sh ./setup.sh`
 
-The provider files above are security-sensitive. carapace restores them from the skill's **pushed upstream revision** before running them, so local uncommitted or merely local committed sandbox edits are not executed automatically.
+If the source revision is missing locally, the activator fetches it from `GIT_REPO_URL`. Before execution, it restores only matching provider inputs and, when setup or commands are present, the tracked `SKILL.md`. It does not reset the complete skill directory. Generated environments and unrelated workspace files remain in place. Restoration protects these specific files, not every transitive file a build or hook might read.
 
-All automatic setup providers run with the proxy temporarily bypassed. This includes `setup.sh` by design: it is a committed, human-authored setup hook restored from upstream, and is treated as more intentional and reviewable than arbitrary lifecycle scripts inside third-party package installs.
+The official activator returns status summaries without command overrides or raw hook output.
 
-### Credential ordering
+### Python dependencies
 
-Skill-declared credentials are approved and cached before any automatic setup provider runs. This is important for `setup.sh`, whose main use case is often to transform injected secrets into the local config files a tool actually expects.
+The official image contains **uv**. Include both `pyproject.toml` and a committed `uv.lock` to enable its locked dependency-installation step.
 
-Examples:
+#### Lifecycle
 
-- Write an API token from an env var into `~/.config/<tool>/config.toml`
-- Decode a base64 kubeconfig into a file under the skill directory
-- Generate a `.npmrc` or other tool config from approved credentials
-
-Providers must never print raw secret values. Treat them as internal setup steps only.
-
-## Python dependencies
-
-A skill can include a `pyproject.toml` plus `uv.lock` to declare its Python dependencies. Dependency management uses **uv** exclusively — it is pre-installed in every sandbox container.
-
-### Lifecycle
-
-1. **Activation** (`use_skill`): carapace copies the skill into the sandbox at `/workspace/skills/<name>/`. If `pyproject.toml` and `uv.lock` are present, it runs `uv sync --locked` in that directory. The proxy is temporarily bypassed during install.
+1. **Activation** (`use_skill`): with the official sandbox activator, committed `pyproject.toml` and `uv.lock` files run `uv sync --locked` in `/workspace/skills/<name>/`. The proxy is temporarily bypassed during install.
 2. **Runtime**: Scripts should be invoked with `uv run --directory /workspace/skills/<name> scripts/<script>.py` so they run inside the venv.
 3. **Persistence**: Skills are persisted via Git — changes in `/workspace/skills/` are committed and pushed to the workspace repository.
 4. **Container restart**: Venvs are rebuilt for all activated skills automatically when a container is recreated after idle timeout.
 
-### Managing dependencies
+#### Managing dependencies
 
 Inside the sandbox, use standard `uv` commands:
 
@@ -270,22 +269,22 @@ uv sync --directory /workspace/skills/my-skill
 
 Always commit a `uv.lock` alongside `pyproject.toml` to ensure reproducible installs.
 
-## Node dependencies
+### Node dependencies
 
-Skills can also use Node-based tooling. The sandbox image includes `npm` and `pnpm` for skill activation.
+Skills can also use Node-based tooling. The official sandbox image and activator include `npm` and `pnpm` for skill activation.
 
-### Supported lockfile workflows
+#### Supported lockfile workflows
 
 - `package.json` + `package-lock.json` → `npm ci`
 - `package.json` + `pnpm-lock.yaml` → `pnpm install --frozen-lockfile`
 
-If both `package-lock.json` and `pnpm-lock.yaml` are present, carapace treats the skill as pnpm-based and skips `npm ci`.
+If both lockfiles are present in the source revision, the official activator uses pnpm and skips `npm ci`.
 
 As with Python skills, commit the lockfile alongside the manifest so activation is reproducible.
 
-## setup.sh
+### setup.sh
 
-If `setup.sh` exists, carapace runs it after the dependency providers above.
+With the official sandbox activator, a committed `setup.sh` runs after the dependency providers above.
 
 Use it for local, deterministic post-processing such as:
 
@@ -295,9 +294,9 @@ Use it for local, deterministic post-processing such as:
 
 Keep `setup.sh` idempotent. It runs on first activation and again after sandbox recreation.
 
-Because it runs automatically and may execute with approved credentials available, `setup.sh` should be treated like code, not documentation. Only the pushed upstream copy is executed.
+Because it runs automatically and may execute with approved credentials available, `setup.sh` should be treated like code, not documentation. The official activator restores the copy from the source revision selected by Carapace before execution.
 
-Like the dependency providers above, `setup.sh` runs under the temporary proxy-bypass window. The trust model here is deliberate: `setup.sh` is the explicit, committed setup hook for the skill, so carapace treats it as more trustworthy than transitive package installation behavior.
+Like dependency installation, `setup.sh` receives approved activation credentials and runs during the proxy-bypass window. Never print secrets. Use it to generate tool-specific configuration from approved inputs, such as a `.npmrc` or API client config.
 
 ## Discovery (progressive disclosure)
 

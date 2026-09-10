@@ -55,7 +55,7 @@ to connect.
 
 ## Why no uv.lock
 
-`uv sync --locked` (the bundled uv provider) would require a committed `uv.lock`, but
+`uv sync --locked` (the official sandbox activator's uv step) would require a committed `uv.lock`, but
 locking a `git+https://…carapace.git` dependency pins a specific commit that goes stale as
 carapace evolves. Instead this skill ships only `pyproject.toml` + `setup.sh`; `setup.sh`
 runs `uv sync` at activation (network open), resolving carapace fresh each time and writing
