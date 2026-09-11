@@ -422,7 +422,7 @@ requires-dist = [
     { name = "httpx2", marker = "extra == 'server'", specifier = ">=2.12,<3" },
     { name = "joserfc", marker = "extra == 'server'", specifier = ">=1.6.5" },
     { name = "kr8s", marker = "extra == 'server'", specifier = ">=0.20,<1" },
-    { name = "logfire", extras = ["httpx"], marker = "extra == 'server'", specifier = ">=4,<5" },
+    { name = "logfire", extras = ["httpx"], marker = "extra == 'server'", specifier = ">=5,<6" },
     { name = "loguru", marker = "extra == 'server'", specifier = ">=0.7.3" },
     { name = "markdown", marker = "extra == 'server'", specifier = ">=3,<4" },
     { name = "matrix-nio", marker = "extra == 'server'", specifier = ">=0.25,<1" },
@@ -1483,7 +1483,7 @@ wheels = [
 
 [[package]]
 name = "logfire"
-version = "4.41.0"
+version = "5.1.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "executing" },
@@ -1494,9 +1494,9 @@ dependencies = [
     { name = "rich" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/64/1a/529f5fd3d0b72eca62737e07b290d38737f104f31891d23e5ed47a8ec7a0/logfire-4.41.0.tar.gz", hash = "sha256:3806fba60389d57c38a12a88135a7c7bf9d0fca09325094517e976b29b5b9d33", size = 1302531, upload-time = "2026-08-20T17:42:23.037Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/f9/da/0c73a4447dffe01e1737580556f5f061ffda8f85e46fbf35ac36f5b64d27/logfire-5.1.0.tar.gz", hash = "sha256:edf6c7d33c00214e11c2cdc567eb53051be36289747091e8bb910527e5970bea", size = 1359738, upload-time = "2026-09-11T10:25:11.674Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/fc/e1/ee33bf0e3f85c00a4235c8c9c4e23f3955154d842f15f0377936461ec6a3/logfire-4.41.0-py3-none-any.whl", hash = "sha256:5bae36637aef81eeee6bfa5d764bf3cff0755af613a4888fd0ae4a656cd2451e", size = 426654, upload-time = "2026-08-20T17:42:20.092Z" },
+    { url = "https://files.pythonhosted.org/packages/cd/02/b32c3d5c298e4a9010694d261fb82c2c672747c0bf2b47bffda484aef349/logfire-5.1.0-py3-none-any.whl", hash = "sha256:c1d54eabf39f4c8f5e18e71f35da13375c8adb144c263f3076e650ba85929108", size = 474841, upload-time = "2026-09-11T10:25:08.131Z" },
 ]
 
 [package.optional-dependencies]
