@@ -147,6 +147,8 @@ Set the server log level via `logLevel` (default `info`; `debug`, `warning`, `er
 
 `sandbox.warmPoolSize` (default `1`) keeps that many generic warm sandboxes ready for faster claims; set it to `0` to disable.
 
+Sandbox images must contain an executable at `/usr/local/bin/carapace-skill-activator`. The official image provides it; custom images must implement the same [activator contract](../../docs/sandbox.md#custom-sandbox-skill-activator-contract). No Helm setting selects the executable.
+
 ### Application configuration
 
 The chart no longer accepts application `config.yaml` through Helm values and does not render a ConfigMap for it. Platform and user settings are managed from the web UI after install:
