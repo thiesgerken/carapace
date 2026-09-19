@@ -61,7 +61,7 @@ services:
     build: ./frontend
 
   proxy:
-    image: traefik:v3.7@sha256:ef751c695afd26e2be41009047f651153dc1e61ace03e6d13f299d8c4be842b8
+    image: traefik:v3.7@sha256:1c32e7c368204fd72812152ebdd2ac0425993df6fd982317deb02e48f2d5423c
     command:
       - "--providers.file.filename=/etc/traefik/dynamic.yml"
       - "--entrypoints.web.address=:80"
@@ -74,7 +74,7 @@ services:
       - ./docker/traefik-dynamic.yml:/etc/traefik/dynamic.yml:ro
 
   redis:
-    image: redis:8-alpine@sha256:becdda6c7f4b3fb42e42fd7f120bbf5c54c4caaaf16f26da24e4563d2c1f0576
+    image: redis:8-alpine@sha256:bd999b5cfee25fb24b8320a31fddbd69f462df44c8138c66e369582937beebc0
     command: ["redis-server", "--save", "", "--appendonly", "no"]
     restart: unless-stopped
     healthcheck:
@@ -84,7 +84,7 @@ services:
       retries: 20
 
   postgres:
-    image: postgres:18-alpine@sha256:d3e1620b530c944afa6e887d22eb899824da68e19c52024bf98f5220c88a65b2
+    image: postgres:18-alpine@sha256:6c538e7206ea40ff740ef27883529390a690b6ead6ba96b44c67a9f7c638e8fd
     restart: unless-stopped
     environment:
       POSTGRES_DB: carapace
