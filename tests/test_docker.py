@@ -66,6 +66,18 @@ async def test_list_sandboxes_returns_all_managed_containers(tmp_path: Path) -> 
 
 
 @pytest.mark.asyncio
+async def test_exec_keeps_protocol_stdout_separate_from_diagnostics(tmp_path: Path) -> None:
+    runtime = _make_runtime(tmp_path)
+    container = runtime._client.containers.get.return_value
+    container.exec_run.return_value = MagicMock(exit_code=0, output=(b"protocol\n", b"diagnostics\n"))
+
+    result = await runtime.exec("container-1", "activate")
+
+    assert result.stdout == "protocol\n"
+    assert result.output == "protocol\n\n[stderr] diagnostics\n"
+
+
+@pytest.mark.asyncio
 async def test_list_pool_sandboxes_returns_empty_for_docker(tmp_path: Path) -> None:
     runtime = _make_runtime(tmp_path)
 

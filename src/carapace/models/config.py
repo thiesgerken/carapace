@@ -273,6 +273,8 @@ class SandboxConfig(BaseSettings):
     runtime: Literal["docker", "kubernetes"] = "docker"
     # Container image used for sandbox pods/containers.
     base_image: str = "carapace-sandbox:latest"
+    # Maximum duration of one whole-skill activator invocation.
+    skill_activator_timeout_seconds: int = Field(default=600, ge=1)
     # Minutes of inactivity before a sandbox is automatically cleaned up.
     idle_timeout_minutes: int = 60
     # Docker network to attach sandbox containers to (docker runtime only).
