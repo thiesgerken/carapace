@@ -20,7 +20,7 @@
     "clsx": "^2.1.1",
     "cronstrue": "^3.14.0",
     "diff": "^9.0.0",
-    "emoji-regex": "^10.6.0",
+    "emoji-regex": "^11.0.0",
     "katex": "^0.18.0",
     "lucide-react": "^1.14.0",
     "mermaid": "^11.17.2",
