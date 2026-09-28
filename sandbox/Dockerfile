@@ -34,7 +34,7 @@ RUN chmod +x /usr/local/bin/carapace-skill-activator
 # Baked at build time so no dependency resolution happens at runtime (the sandbox's
 # egress is proxy/domain-gated and would block a runtime `pip`/`uv` fetch).
 RUN uv venv /opt/carapace-mcp --python 3.14 \
-   && uv pip install --python /opt/carapace-mcp/bin/python "mcp>=1.20,<2"
+   && uv pip install --python /opt/carapace-mcp/bin/python "mcp>=2.2,<3"
 COPY carapace-mcp-bridge /usr/local/bin/carapace-mcp-bridge
 RUN chmod +x /usr/local/bin/carapace-mcp-bridge
 

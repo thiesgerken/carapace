@@ -205,8 +205,8 @@ class TestBuildStdioToolset:
 
 _FAKE_SERVER = textwrap.dedent(
     """
-    from mcp.server.fastmcp import FastMCP
-    mcp = FastMCP("demo")
+    from mcp.server.mcpserver import MCPServer
+    mcp = MCPServer("demo")
 
     @mcp.tool()
     def echo(text: str, times: int = 1) -> str:

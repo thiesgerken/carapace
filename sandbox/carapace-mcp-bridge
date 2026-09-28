@@ -47,7 +47,7 @@ async def _list(server_cmd: str) -> list[dict]:
         await session.initialize()
         result = await session.list_tools()
         return [
-            {"name": t.name, "description": t.description or "", "input_schema": t.inputSchema} for t in result.tools
+            {"name": t.name, "description": t.description or "", "input_schema": t.input_schema} for t in result.tools
         ]
 
 
@@ -58,13 +58,13 @@ async def _call(server_cmd: str, tool: str, arguments: dict) -> object:
     ):
         await session.initialize()
         result = await session.call_tool(tool, arguments=arguments or {})
-        if result.structuredContent is not None:
-            payload: object = result.structuredContent
+        if result.structured_content is not None:
+            payload: object = result.structured_content
         else:
             payload = "\n".join(
                 getattr(block, "text", "") for block in result.content if getattr(block, "type", None) == "text"
             )
-        if result.isError:
+        if result.is_error:
             message = payload if isinstance(payload, str) else json.dumps(payload)
             raise RuntimeError(message or "MCP tool call reported an error")
         return payload
