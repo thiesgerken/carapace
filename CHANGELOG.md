@@ -1,6 +1,95 @@
 # CHANGELOG
 
 
+## v0.157.1 (2026-09-28)
+
+
+### ⬆️ Dependencies
+
+
+- ⬆️ chore: upgrade emoji-regex to 11.0.0
+  ([`d212c1f`](https://github.com/thiesgerken/carapace/commit/d212c1fc3f710be5c596c8d7a428ea198e7a7487))
+
+  Co-authored-by: renovate[bot] <29139614+renovate[bot]@users.noreply.github.com>
+
+- ⬆️ chore: upgrade logfire to 5.1.1
+  ([`b955a3c`](https://github.com/thiesgerken/carapace/commit/b955a3cf23a21ba223b8f6f79e41d0d12432a208))
+
+  Co-authored-by: renovate[bot] <29139614+renovate[bot]@users.noreply.github.com>
+
+- ⬆️ chore: upgrade all routine dependency updates
+  ([`c1ad1b8`](https://github.com/thiesgerken/carapace/commit/c1ad1b88e977d2d7344cef6c6f5ac064942d6d5a))
+
+  Co-authored-by: renovate[bot] <29139614+renovate[bot]@users.noreply.github.com>
+
+- ⬆️ chore: upgrade astral-sh/setup-uv action to v10.2.0
+  ([`5818d0e`](https://github.com/thiesgerken/carapace/commit/5818d0e82cba2e50ab93da5ebaa599c52b77b13a))
+
+  Co-authored-by: renovate[bot] <29139614+renovate[bot]@users.noreply.github.com>
+
+## v0.157.0 (2026-09-28)
+
+
+### Other
+
+
+- Merge pull request #289 from thiesgerken/renovate/sqlalchemy-2.x
+  ([`a6fb8bc`](https://github.com/thiesgerken/carapace/commit/a6fb8bc0a4c936ad8224bf4d24c798e0bb0456e7))
+
+- 📝 docs: name Carapace explicitly in activator contract
+  ([`5a02bb4`](https://github.com/thiesgerken/carapace/commit/5a02bb4931e1202af3b2b902f8a7034ad1ec8a2f))
+
+- 📝 docs: clarify activator command overrides
+  ([`68ceb52`](https://github.com/thiesgerken/carapace/commit/68ceb52bc5e8a4428d232107189515692c834fdc))
+
+- 📝 docs: reframe CEP-001 around skill activation
+  ([`24e8c9e`](https://github.com/thiesgerken/carapace/commit/24e8c9ece63b00cdbcfa18dc6c8eff246935c87a))
+
+- 📝 docs: propose sandbox skill command resolver
+  ([`5359e5f`](https://github.com/thiesgerken/carapace/commit/5359e5f8f05ccd0d7c060337040e856719703785))
+
+### ⬆️ Dependencies
+
+
+- ⬆️ chore: upgrade sqlalchemy to 2.1.1
+  ([`a6fb8bc`](https://github.com/thiesgerken/carapace/commit/a6fb8bc0a4c936ad8224bf4d24c798e0bb0456e7))
+
+- ⬆️ chore: upgrade sqlalchemy to 2.1.1
+  ([`266fde9`](https://github.com/thiesgerken/carapace/commit/266fde996c08bef19e007b7746944cfb8c033c15))
+
+### ✨ Features
+
+
+- ✨Merge pull request #275 from jkuball/docs/cep-001-skill-command-resolver✨
+  ([`422a79c`](https://github.com/thiesgerken/carapace/commit/422a79c458a81a16954a5349d6b984d7dc6fa512))
+
+- ✨ feat: delegate skill activation to sandbox images
+  ([`422a79c`](https://github.com/thiesgerken/carapace/commit/422a79c458a81a16954a5349d6b984d7dc6fa512))
+
+- ✨ feat: add sandbox skill activator protocol
+  ([`d16f9cc`](https://github.com/thiesgerken/carapace/commit/d16f9cc71c9bac4038e234d1953b4fc7ee2ba2b3))
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix: address sandbox activator review findings
+  ([`69f5382`](https://github.com/thiesgerken/carapace/commit/69f5382dad09beb2d3a32d11f61a79d5d3fe19f9))
+
+- 🐛 fix: avoid logging sandbox environment values
+  ([`209785c`](https://github.com/thiesgerken/carapace/commit/209785c3dc732720be62040243b9e3fc6e1f6ac3))
+
+### 🗑️ Deprecations
+
+
+- 🗑️ docs: remove implemented activator proposal
+  ([`e4c545b`](https://github.com/thiesgerken/carapace/commit/e4c545b1c59e7dd7dac1eb145602f381121b4b1e))
+
+### ♻️ Refactoring
+
+
+- ♻️ refactor: make skill activation an image contract
+  ([`4d515d9`](https://github.com/thiesgerken/carapace/commit/4d515d907e8592a2a53f7bdaadcf7a045a3bb80d))
+
 ## v0.156.4 (2026-09-24)
 
 
