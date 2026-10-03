@@ -80,6 +80,7 @@
         "sections": {
             "appearance": "Appearance",
             "defaultModels": "Default models",
+            "chatgpt": "ChatGPT subscription",
             "defaultBudgets": "Default budgets",
             "matrix": "Matrix",
             "credentials": "Credentials",
@@ -158,6 +159,29 @@
         "hints": {
             "agentName": "Shown instead of “carapace” in the tab title, sidebar, and message box. Leave empty for the default.",
             "agentIcon": "A single emoji used as the favicon and sidebar logo. Leave empty for the default."
+        },
+        "chatgpt": {
+            "description": "Use your own ChatGPT subscription for openai-codex models instead of the platform's API keys. Usage counts against your subscription limits; cost figures show the equivalent API price.",
+            "status": {
+                "loading": "Loading subscription status",
+                "connected": "Connected",
+                "connectedAs": "Connected as {email}",
+                "notConnected": "Not connected"
+            },
+            "actions": {
+                "connect": "Connect ChatGPT",
+                "reconnect": "Reconnect",
+                "disconnect": "Disconnect",
+                "complete": "Complete login"
+            },
+            "steps": {
+                "open": "Open the ChatGPT login in a new tab and sign in",
+                "redirect": "Afterwards your browser lands on a localhost:1455 page that fails to load. That is expected: OpenAI only redirects to localhost.",
+                "paste": "Copy the full URL from that tab's address bar and paste it here:"
+            },
+            "errors": {
+                "generic": "ChatGPT subscription request failed"
+            }
         }
     },
     "platformSettings": {

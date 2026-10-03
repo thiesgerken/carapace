@@ -7,12 +7,14 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 import yaml
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, UserPromptPart
+from pydantic_ai.providers.openai_codex import OpenAICodexCredentials, OpenAICodexOAuthFlow
 from sqlalchemy import select
 
 # We patch the server module globals directly for testing
@@ -22,6 +24,7 @@ import carapace.server.platform_settings as platform_settings
 from carapace.api_keys import Access, ApiKeyGrant, ApiKeyStore, Scope
 from carapace.auth import AuthStore
 from carapace.bootstrap import ensure_data_dir
+from carapace.codex_auth import CodexAccounts, CodexCredentialStore
 from carapace.config import build_config, resolve_user_knowledge_dir
 from carapace.credentials import CredentialBackendError, CredentialRegistry
 from carapace.credentials.protocol import UnsupportedCredentialValueKindError
@@ -132,7 +135,6 @@ def _setup_server(tmp_path, monkeypatch, db_factory):
         config=config,
         data_dir=tmp_path,
         session_mgr=session_mgr,
-        agent_model=None,
         sandbox_mgr=sandbox_mgr,
         credential_registry_for_session=credential_registry_for_session,
         knowledge_repo_for_session=knowledge_repo_for_session,
@@ -153,6 +155,7 @@ def _setup_server(tmp_path, monkeypatch, db_factory):
         ttl=timedelta(seconds=config.notifications.presence_ttl_seconds)
     )
     srv._platform_store = PlatformSettingsStore(db_factory)
+    srv._codex_accounts = CodexAccounts(CodexCredentialStore(db_factory))
 
 
 @pytest.fixture()
@@ -615,7 +618,7 @@ def _patch_lifespan_dependencies(tmp_path, monkeypatch, *, stub_model_factory: b
     monkeypatch.delattr(srv, "_knowledge_repo_registry", raising=False)
     monkeypatch.setattr(srv, "build_config", lambda *args, **kwargs: config)
     if stub_model_factory:
-        monkeypatch.setattr(srv, "make_model_factory", lambda _config: lambda _model_name: None)
+        monkeypatch.setattr(srv, "make_model_factory", lambda _config, _codex_provider_for: lambda _name, *, user: None)
     monkeypatch.setattr(srv, "_create_sandbox_runtime", lambda _config, _data_dir: _FakeRuntime())
     monkeypatch.setattr(srv, "SessionListCache", lambda _cache_config: _FakeSessionListCache())
     monkeypatch.setattr(srv, "SandboxManager", lambda **_kwargs: sandbox_mgr)
@@ -653,9 +656,9 @@ async def test_lifespan_starts_without_provider_credentials(tmp_path, monkeypatc
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     sandbox_mgr = _patch_lifespan_dependencies(tmp_path, monkeypatch, stub_model_factory=False)
 
+    # Entering the lifespan is the assertion: the engine resolves models on first use instead.
     async with srv._lifespan(app):
-        # Nothing built the default model: the engine resolves it on first use instead.
-        assert srv._engine.kwargs["agent_model"] is None
+        pass
 
     sandbox_mgr.cleanup_all.assert_awaited_once()
 
@@ -1022,8 +1025,8 @@ def test_admin_platform_settings_validates_runtime_before_persisting(
     srv._platform_store.save_agent_config(srv._config.agent)
     baseline = {m.model_id for m in srv._platform_store.load_models()}
 
-    def _failing_model_factory(_config):
-        def _factory(_name: str):
+    def _failing_model_factory(_config, _codex_provider_for):
+        def _factory(_name: str, *, user: str):
             raise ValueError("runtime model validation failed")
 
         return _factory
@@ -1128,6 +1131,54 @@ def test_admin_user_config_redacts_and_preserves_backend_password(client, admin_
     stored_backend = user.config.credentials.backends["vault"]
     assert isinstance(stored_backend, BitwardenCredentialBackendConfig)
     assert stored_backend.basic_auth == BasicAuthConfig(username="ada", password="proxy-password")
+
+
+def test_codex_login_connects_and_disconnects_chatgpt_subscription(client, auth_headers, monkeypatch):
+    async def _exchange_code(_flow, code: str) -> OpenAICodexCredentials:
+        assert code == "auth-code"
+        return OpenAICodexCredentials(access_token="access", refresh_token="refresh", account_id="acct")
+
+    monkeypatch.setattr(OpenAICodexOAuthFlow, "exchange_code", _exchange_code)
+    reset_user_models = MagicMock()
+    monkeypatch.setattr(srv._engine, "reset_user_models", reset_user_models)
+
+    assert client.get("/api/user/codex", headers=auth_headers).json() == {
+        "connected": False,
+        "email": None,
+        "updated_at": None,
+    }
+    started = client.post("/api/user/codex/login", headers=auth_headers)
+    assert started.status_code == 200
+    state = parse_qs(urlsplit(started.json()["authorize_url"]).query)["state"][0]
+
+    completed = client.post(
+        "/api/user/codex/login/complete",
+        headers=auth_headers,
+        json={"redirect_url": f"http://localhost:1455/auth/callback?code=auth-code&state={state}"},
+    )
+
+    assert completed.status_code == 200
+    assert completed.json()["connected"] is True
+    assert client.get("/api/user/codex", headers=auth_headers).json()["connected"] is True
+    reset_user_models.assert_called_once_with("thies")
+
+    assert client.delete("/api/user/codex", headers=auth_headers).status_code == 204
+    assert client.get("/api/user/codex", headers=auth_headers).json()["connected"] is False
+    assert client.delete("/api/user/codex", headers=auth_headers).status_code == 404
+
+
+def test_codex_login_complete_rejects_foreign_state(client, auth_headers, admin_auth_headers):
+    started = client.post("/api/user/codex/login", headers=admin_auth_headers)
+    state = parse_qs(urlsplit(started.json()["authorize_url"]).query)["state"][0]
+
+    resp = client.post(
+        "/api/user/codex/login/complete",
+        headers=auth_headers,
+        json={"redirect_url": f"http://localhost:1455/auth/callback?code=auth-code&state={state}"},
+    )
+
+    assert resp.status_code == 400
+    assert "No ChatGPT login is in progress" in resp.json()["detail"]
 
 
 def test_user_settings_redacts_write_only_fields(client, auth_headers):

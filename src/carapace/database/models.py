@@ -191,6 +191,24 @@ class ApiKeyRow(Base):
     revoked_at: Mapped[datetime | None] = mapped_column(UtcDateTime, nullable=True)
 
 
+class UserCodexCredentialsRow(Base):
+    """A user's ChatGPT subscription (OpenAI Codex) OAuth credentials.
+
+    Its own table rather than part of ``User.config``: settings saves read-modify-write that blob
+    and would clobber a refresh token rotated in between, and refresh tokens are single-use.
+    """
+
+    __tablename__ = "user_codex_credentials"
+
+    user: Mapped[str] = mapped_column(String(256), ForeignKey("users.username", ondelete="CASCADE"), primary_key=True)
+    access_token: Mapped[str] = mapped_column(Text)
+    refresh_token: Mapped[str] = mapped_column(Text)
+    account_id: Mapped[str] = mapped_column(Text)
+    # Display only: the ChatGPT login is not guaranteed to carry an email claim.
+    email: Mapped[str | None] = mapped_column(Text, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(UtcDateTime)
+
+
 class ModelRow(Base):
     __tablename__ = "models"
 

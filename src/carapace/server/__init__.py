@@ -33,6 +33,7 @@ from ..api_keys import ApiKeyStore
 from ..auth import AuthStore
 from ..bootstrap import ensure_data_dir, ensure_knowledge_dir
 from ..cache import SessionListCache
+from ..codex_auth import CodexAccounts, CodexCredentialStore
 from ..config import build_config
 from ..credentials import CredentialBackendError, CredentialRegistry, build_credential_registry
 from ..credentials.protocol import UnsupportedCredentialValueKindError
@@ -59,6 +60,7 @@ from ..usage import SessionBudgetExceededError
 from .api_keys import router as api_keys_router
 from .auth import router as auth_router
 from .auth import verify_ws_token
+from .codex_auth import router as codex_auth_router
 from .history import router as history_router
 from .jobs import _jobs_scheduler_loop
 from .jobs import router as jobs_router
@@ -101,6 +103,7 @@ _notification_router: NotificationRouter
 _auth_store: AuthStore
 _api_key_store: ApiKeyStore
 _platform_store: PlatformSettingsStore
+_codex_accounts: CodexAccounts
 
 
 def _enabled_user_git_configs(auth_store: AuthStore) -> dict[str, KnowledgeGitConfig]:
@@ -312,7 +315,8 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
         _notification_router, \
         _auth_store, \
         _api_key_store, \
-        _platform_store
+        _platform_store, \
+        _codex_accounts
 
     # 1. Build config from env (CARAPACE_DATA_DIR + CARAPACE_* subsections; no config file)
     _config = build_config()
@@ -331,6 +335,7 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
 
     _auth_store = AuthStore(_session_factory, _config.auth, _data_dir)
     _api_key_store = ApiKeyStore(_session_factory, _auth_store)
+    _codex_accounts = CodexAccounts(CodexCredentialStore(_session_factory))
     if _auth_store.ensure_bootstrap_admin() is not None:
         logger.warning("Created bootstrap admin user 'admin' with password from CARAPACE_TOKEN")
     _knowledge_repo_registry = KnowledgeRepoRegistry(_data_dir)
@@ -346,7 +351,7 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
     session_mgr = SessionManager(_session_factory, _data_dir, on_change=_session_list_cache.invalidate_sync)
     # No eager default-model construction: a fresh install has no provider credentials yet, and
     # the admin needs the server up to configure them. SessionEngine resolves on first use.
-    model_factory = make_model_factory(_config)
+    model_factory = make_model_factory(_config, _codex_accounts.provider_for)
 
     runtime = _create_sandbox_runtime(_config, _data_dir)
 
@@ -446,7 +451,6 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
         config=_config,
         data_dir=_data_dir,
         session_mgr=session_mgr,
-        agent_model=None,
         sandbox_mgr=_sandbox_mgr,
         credential_registry_for_session=_credential_registry_for_session,
         knowledge_repo_for_session=knowledge_repo_for_session,
@@ -742,6 +746,7 @@ router.include_router(session_sandbox_router)
 router.include_router(notifications_router)
 router.include_router(platform_settings_router)
 router.include_router(user_settings_router)
+router.include_router(codex_auth_router)
 router.include_router(websocket_router)
 router.include_router(auth_router)
 router.include_router(api_keys_router)

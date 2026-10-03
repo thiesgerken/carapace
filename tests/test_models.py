@@ -7,6 +7,7 @@ import pytest
 from pydantic import ValidationError
 from pydantic_ai.models.openai import OpenAIChatModel, OpenAIResponsesModel
 from pydantic_ai.models.openrouter import OpenRouterModel
+from pydantic_ai.providers.openai_codex import OpenAICodexProvider
 from pydantic_ai.providers.openrouter import OpenRouterProvider
 
 from carapace.llm import make_model_factory, model_settings_for_config, normalize_provider_prefix
@@ -352,6 +353,10 @@ def test_agent_available_model_entries_last_duplicate_id_wins():
     assert ids == sorted(ids)
 
 
+def _no_codex_provider(user: str) -> OpenAICodexProvider:
+    raise AssertionError(f"unexpected Codex provider lookup for {user!r}")
+
+
 def test_make_model_factory_openai_compatible_row():
     cfg = Config.model_validate(
         {
@@ -372,8 +377,8 @@ def test_make_model_factory_openai_compatible_row():
             }
         }
     )
-    factory = make_model_factory(cfg)
-    m = factory("on-prem:custom")
+    factory = make_model_factory(cfg, _no_codex_provider)
+    m = factory("on-prem:custom", user="thies")
     assert isinstance(m, OpenAIChatModel)
 
 
@@ -397,8 +402,8 @@ def test_make_model_factory_openai_responses_row_forces_responses_api():
             }
         }
     )
-    factory = make_model_factory(cfg)
-    m = factory("on-prem:custom")
+    factory = make_model_factory(cfg, _no_codex_provider)
+    m = factory("on-prem:custom", user="thies")
     assert isinstance(m, OpenAIResponsesModel)
 
 
@@ -419,17 +424,17 @@ def test_make_model_factory_openrouter_row():
             }
         }
     )
-    factory = make_model_factory(cfg)
-    m = factory("openrouter:anthropic/claude-sonnet-4.5")
+    factory = make_model_factory(cfg, _no_codex_provider)
+    m = factory("openrouter:anthropic/claude-sonnet-4.5", user="thies")
     assert isinstance(m, OpenRouterModel)
     assert isinstance(m.provider, OpenRouterProvider)
 
 
 def test_make_model_factory_rejects_unregistered_model():
     cfg = Config()
-    factory = make_model_factory(cfg)
+    factory = make_model_factory(cfg, _no_codex_provider)
     with pytest.raises(ValueError, match="not registered"):
-        factory("openai:gpt-4o")
+        factory("openai:gpt-4o", user="thies")
 
 
 def test_model_settings_for_config_enables_openrouter_usage_accounting():
@@ -472,8 +477,8 @@ def test_make_model_factory_resolves_registered_alias(monkeypatch: pytest.Monkey
         return MagicMock()
 
     monkeypatch.setattr("carapace.llm.infer_model_with_retry_transport", _fake_infer)
-    factory = make_model_factory(cfg)
-    _ = factory("alias:opus")
+    factory = make_model_factory(cfg, _no_codex_provider)
+    _ = factory("alias:opus", user="thies")
     assert seen == ["anthropic:claude-opus-4-6"]
 
 

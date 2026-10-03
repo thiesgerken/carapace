@@ -512,7 +512,7 @@ def test_model_overrides_persist_across_restart(tmp_path: Path, db_factory) -> N
     _sentinel_set_model_mock(active).assert_called_once_with("openai:gpt-4o")
 
 
-def test_default_agent_model_is_built_once(tmp_path: Path, db_factory) -> None:
+def test_default_agent_model_is_built_once_per_session(tmp_path: Path, db_factory) -> None:
     # The platform default is resolved lazily (startup may have no credentials) and must be cached:
     # every build opens its own HTTP client, and _build_deps runs once per turn.
     with _patch_sentinel():
@@ -523,7 +523,43 @@ def test_default_agent_model_is_built_once(tmp_path: Path, db_factory) -> None:
         second = engine._build_deps(active)
 
     assert first.agent_model is second.agent_model
-    assert engine.agent_model is first.agent_model
+
+
+def test_agent_model_is_built_for_the_session_owner(tmp_path: Path, db_factory) -> None:
+    # Models can carry per-user provider credentials (ChatGPT subscriptions), so the default
+    # agent model must never be shared between sessions of different users.
+    built_for: dict[int, str] = {}
+
+    def factory(_name: str, *, user: str) -> TestModel:
+        model = TestModel()
+        built_for[id(model)] = user
+        return model
+
+    with _patch_sentinel():
+        engine = _make_engine(tmp_path, session_factory=db_factory)
+        engine._model_factory = factory
+        thies = engine.get_or_activate(engine.session_mgr.create_session(user="thies").session_id)
+        ada = engine.get_or_activate(engine.session_mgr.create_session(user="ada").session_id)
+        thies_model = engine._build_deps(thies).agent_model
+        ada_model = engine._build_deps(ada).agent_model
+
+    assert built_for[id(thies_model)] == "thies"
+    assert built_for[id(ada_model)] == "ada"
+
+
+def test_reset_user_models_only_drops_that_users_models(tmp_path: Path, db_factory) -> None:
+    with _patch_sentinel():
+        engine = _make_engine(tmp_path, session_factory=db_factory)
+        thies = engine.get_or_activate(engine.session_mgr.create_session(user="thies").session_id)
+        ada = engine.get_or_activate(engine.session_mgr.create_session(user="ada").session_id)
+        engine._build_deps(thies)
+        ada_model = engine._build_deps(ada).agent_model
+
+        engine.reset_user_models("thies")
+
+    assert thies.agent_model is None
+    _sentinel_set_model_mock(thies).assert_called_with(engine.config.agent.sentinel_model)
+    assert ada.agent_model is ada_model
 
 
 def test_apply_platform_model_config_invalidates_cached_override_agent_model(tmp_path: Path, db_factory) -> None:
@@ -537,8 +573,7 @@ def test_apply_platform_model_config_invalidates_cached_override_agent_model(tmp
 
         engine.apply_platform_model_config(
             engine.config,
-            model_factory=lambda _name: TestModel(),
-            agent_model=TestModel(),
+            model_factory=lambda _name, *, user: TestModel(),
         )
 
     assert active.agent_model_name == "openai:gpt-4o"
@@ -548,7 +583,7 @@ def test_apply_platform_model_config_invalidates_cached_override_agent_model(tmp
 def test_apply_platform_model_config_refreshes_active_sentinel_factory(tmp_path: Path, db_factory) -> None:
     engine = _make_engine(tmp_path, session_factory=db_factory)
 
-    def old_factory(name: str) -> TestModel:
+    def old_factory(name: str, *, user: str) -> TestModel:
         if name == "local:new-model":
             raise ValueError("old catalog")
         return TestModel()
@@ -558,7 +593,7 @@ def test_apply_platform_model_config_refreshes_active_sentinel_factory(tmp_path:
     active = engine.get_or_activate(state.session_id)
     assert active.sentinel is not None
 
-    def new_factory(_name: str) -> TestModel:
+    def new_factory(_name: str, *, user: str) -> TestModel:
         return TestModel()
 
     config = engine.config.model_copy(deep=True)
@@ -571,7 +606,7 @@ def test_apply_platform_model_config_refreshes_active_sentinel_factory(tmp_path:
             {"provider": "openai", "name": "new-model", "id": "local:new-model"},
         ],
     )
-    engine.apply_platform_model_config(config, model_factory=new_factory, agent_model=TestModel())
+    engine.apply_platform_model_config(config, model_factory=new_factory)
     updated = engine.update_session_model_overrides(
         state.session_id,
         agent_model_name="local:new-model",
@@ -605,8 +640,7 @@ def test_apply_platform_model_config_clears_stale_active_sentinel_override(tmp_p
 
         engine.apply_platform_model_config(
             engine.config,
-            model_factory=lambda _name: TestModel(),
-            agent_model=TestModel(),
+            model_factory=lambda _name, *, user: TestModel(),
         )
 
     assert active.sentinel_model_name is None
@@ -643,7 +677,7 @@ def test_invalid_model_overrides_fall_back_on_restart(tmp_path: Path, db_factory
 
         restarted = _make_engine(tmp_path, session_factory=db_factory)
         restarted._resolve_model = MagicMock(
-            side_effect=lambda name: (
+            side_effect=lambda name, _user: (
                 TestModel()
                 if name == restarted._config.agent.model
                 else (_ for _ in ()).throw(ValueError("missing agent model"))
@@ -920,7 +954,7 @@ def test_disabled_model_override_errors_instead_of_falling_back(tmp_path: Path, 
             AvailableModelEntry.model_validate({"provider": "openai", "name": "gpt-4o", "enabled": False})
         )
         restarted._resolve_model = MagicMock(
-            side_effect=lambda name: (_ for _ in ()).throw(DisabledModelError(f"Model {name!r} is disabled"))
+            side_effect=lambda name, _user: (_ for _ in ()).throw(DisabledModelError(f"Model {name!r} is disabled"))
         )
         active = restarted.get_or_activate(state.session_id)
 

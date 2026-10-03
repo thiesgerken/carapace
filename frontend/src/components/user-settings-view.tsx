@@ -18,6 +18,7 @@ import {
   type UserSettingsResponseInfo,
 } from "@/lib/api";
 import { useAppShell } from "@/components/app-shell-context";
+import { ChatGptSubscriptionPanel } from "@/components/chatgpt-subscription-panel";
 import { ModelPicker, withSelectedModelOption } from "@/components/model-picker";
 import { SwitchRow } from "@/components/switch-row";
 import { resolveBundledEmojiAsset, splitEmojiText } from "@/lib/emoji";
@@ -680,6 +681,10 @@ export function UserSettingsView({ server, token }: { server: string; token: str
               />
             </Field>
           </div>
+        </Section>
+
+        <Section title={t("sections.chatgpt")}>
+          <ChatGptSubscriptionPanel server={server} token={token} />
         </Section>
 
         <Section title={t("sections.defaultBudgets")}>

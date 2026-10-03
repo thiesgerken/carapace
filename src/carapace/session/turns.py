@@ -32,9 +32,11 @@ from pydantic_ai.messages import (
     ToolReturnPart,
     UserPromptPart,
 )
+from pydantic_ai.providers.openai_codex import CredentialsRefreshError
 from pydantic_ai.usage import UsageLimits
 
 from ..agent.deps import Deps
+from ..codex_auth import CODEX_RECONNECT_MESSAGE, CodexNotConnectedError
 from ..llm import DisabledModelError
 from ..models.config import Config
 from ..models.tooling import ToolCallCallback, ToolResult
@@ -355,8 +357,8 @@ class SessionTurnMixin(SessionTurnHost):
                 save_progress=True,
             )
             await self._broadcast(active, "on_error", str(exc), turn_terminal=True)
-        except DisabledModelError as exc:
-            logger.info(f"Turn blocked by disabled model for {session_id}: {exc}")
+        except (DisabledModelError, CodexNotConnectedError) as exc:
+            logger.info(f"Turn blocked by unusable model for {session_id}: {exc}")
             await self._finalize_failed_turn(
                 active,
                 session_id,
@@ -365,6 +367,16 @@ class SessionTurnMixin(SessionTurnHost):
                 terminal_message=str(exc),
             )
             await self._broadcast(active, "on_error", str(exc), turn_terminal=True)
+        except CredentialsRefreshError as exc:
+            logger.warning(f"ChatGPT subscription refresh failed for {session_id} (owner {active.owner}): {exc}")
+            await self._finalize_failed_turn(
+                active,
+                session_id,
+                agent_input,
+                latest_messages=latest_messages,
+                terminal_message=CODEX_RECONNECT_MESSAGE,
+            )
+            await self._broadcast(active, "on_error", CODEX_RECONNECT_MESSAGE, turn_terminal=True)
         except UsageLimitExceeded as exc:
             sentinel_evals = active.security.sentinel_eval_count if active.security else 0
             logger.error(

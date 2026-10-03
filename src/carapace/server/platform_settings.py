@@ -1,16 +1,15 @@
 from __future__ import annotations
 
-from collections.abc import Callable
 from pathlib import Path
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 from pydantic_ai.exceptions import UserError
-from pydantic_ai.models import Model
 
 from ..api_keys import Access, Scope
-from ..llm import make_model_factory
+from ..auth import UserIdentity
+from ..llm import ModelFactory, make_model_factory
 from ..models.config import (
     OPENAI_COMPATIBLE_PROVIDERS,
     PROVIDERS_WITH_MODEL_API_KEYS,
@@ -273,22 +272,22 @@ def _agent_config_from_patch(body: PlatformSettingsPatch, existing_agent: AgentC
     )
 
 
-def _runtime_models_for_config(config: Config) -> tuple[Callable[[str], Model], Model]:
-    model_factory = make_model_factory(config)
-    agent_model = model_factory(config.agent.model)
-    model_factory(config.agent.sentinel_model)
-    model_factory(config.agent.title_model)
-    return model_factory, agent_model
+def _runtime_model_factory(config: Config, *, user: str) -> ModelFactory:
+    """Build the factory for *config* and check its default models construct.
+
+    Built for the requesting admin because models are per user; construction does no credential
+    I/O, so a ChatGPT subscription default validates even if that admin never connected one.
+    """
+    model_factory = make_model_factory(config, server._codex_accounts.provider_for)
+    model_factory(config.agent.model, user=user)
+    model_factory(config.agent.sentinel_model, user=user)
+    model_factory(config.agent.title_model, user=user)
+    return model_factory
 
 
-def _apply_runtime_config(
-    config: Config,
-    *,
-    model_factory: Callable[[str], Model],
-    agent_model: Model,
-) -> None:
+def _apply_runtime_config(config: Config, *, model_factory: ModelFactory) -> None:
     server.__dict__["_config"] = config
-    server._engine.apply_platform_model_config(config, model_factory=model_factory, agent_model=agent_model)
+    server._engine.apply_platform_model_config(config, model_factory=model_factory)
 
 
 @router.get("/admin/platform/settings", response_model=PlatformSettingsResponse)
@@ -301,17 +300,17 @@ async def get_platform_settings(
 @router.patch("/admin/platform/settings", response_model=PlatformSettingsResponse)
 async def update_platform_settings(
     body: PlatformSettingsPatch,
-    _admin: Annotated[object, Depends(require(Scope.admin, Access.write))],
+    admin: Annotated[UserIdentity, Depends(require(Scope.admin, Access.write))],
 ) -> PlatformSettingsResponse:
     # Build + validate the new agent config (AgentConfig() re-runs the defaults∈catalog check),
     # then a candidate Config so the runtime model factory can be built before we persist anything.
     try:
         agent = _agent_config_from_patch(body, server._config.agent)
         config = server._config.model_copy(update={"agent": agent})
-        model_factory, agent_model = _runtime_models_for_config(config)
+        model_factory = _runtime_model_factory(config, user=admin.username)
     except (ValueError, ValidationError, UserError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     # Persist to the DB (model catalog + scalar agent row) in one transaction, then swap runtime.
     server._platform_store.save_agent_config(agent)
-    _apply_runtime_config(config, model_factory=model_factory, agent_model=agent_model)
+    _apply_runtime_config(config, model_factory=model_factory)
     return _response()

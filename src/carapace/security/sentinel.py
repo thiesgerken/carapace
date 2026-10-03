@@ -9,10 +9,11 @@ from typing import Any
 
 from loguru import logger
 from pydantic_ai import Agent, RunContext, ToolOutput
-from pydantic_ai.models import Model, infer_model
+from pydantic_ai.models import infer_model
 from pydantic_ai.settings import ModelSettings
 from pydantic_ai.usage import UsageLimits
 
+from ..llm import ModelFactory
 from ..usage import LlmRequestLogCapability, UsageTracker, provider_cost_usd_from_messages
 from .context import (
     ActionLogEntry,
@@ -161,16 +162,19 @@ class Sentinel:
         self,
         *,
         model: str,
+        user: str,
         knowledge_dir: Path,
         skills_dir: Path,
         unattended: bool = False,
         ask_mode: bool = False,
         timeout: timedelta = timedelta(seconds=600),
         reset_threshold: int = _RESET_THRESHOLD_DEFAULT,
-        model_factory: Callable[[str], Model] | None = None,
+        model_factory: ModelFactory | None = None,
         model_settings_resolver: Callable[[str], ModelSettings | None] | None = None,
     ) -> None:
         self._model = model
+        # The session owner, whom the sentinel's model requests are made for.
+        self._user = user
         self._knowledge_dir = knowledge_dir
         self._skills_dir = skills_dir
         self._unattended = unattended
@@ -200,7 +204,7 @@ class Sentinel:
         self,
         *,
         model: str | None = None,
-        model_factory: Callable[[str], Model] | None,
+        model_factory: ModelFactory | None,
         model_settings_resolver: Callable[[str], ModelSettings | None] | None,
     ) -> None:
         if model is not None:
@@ -483,7 +487,11 @@ class Sentinel:
         )
 
     def _create_agent(self) -> Agent[Path, _SentinelOutput]:
-        resolved = self._model_factory(self._model) if self._model_factory is not None else infer_model(self._model)
+        resolved = (
+            self._model_factory(self._model, user=self._user)
+            if self._model_factory is not None
+            else infer_model(self._model)
+        )
         model_settings = (
             self._model_settings_resolver(self._model) if self._model_settings_resolver is not None else None
         )
