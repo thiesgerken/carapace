@@ -18,10 +18,11 @@ def _make_sentinel(tmp_path: Path, *, timeout: timedelta | None = None) -> tuple
     skills_dir.mkdir()
     sentinel = Sentinel(
         model="test:model",
+        user="thies",
         knowledge_dir=knowledge_dir,
         skills_dir=skills_dir,
         timeout=timeout,
-        model_factory=lambda _name: TestModel(),
+        model_factory=lambda _name, *, user: TestModel(),
     )
     return sentinel, skills_dir
 

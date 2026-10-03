@@ -220,9 +220,8 @@ def _make_engine(
         config=config,
         data_dir=tmp_path,
         session_mgr=session_mgr,
-        agent_model=None,
         sandbox_mgr=sandbox_mgr,
         credential_registry_for_session=credential_registry_for_session,
         knowledge_repo_for_session=knowledge_repo_for_session,
-        model_factory=lambda _name: TestModel(),
+        model_factory=lambda _name, *, user: TestModel(),
     )

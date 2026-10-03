@@ -122,7 +122,7 @@ All images default to the chart's `appVersion` tag. Release charts use the seman
 | What                   | How                                                                                                                                                                    |
 | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Bootstrap password** | Set `CARAPACE_TOKEN` in the Secret referenced via `envFrom`. It is only used as the initial password for the bootstrap `admin` user when no enabled admin user exists. |
-| **LLM API key**        | Set `ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY`, or another configured provider key in the same Secret. Not needed at startup: the server boots without one so an admin can configure the model catalog first. |
+| **LLM API key**        | Set `ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY`, or another configured provider key in the same Secret. Not needed at startup: the server boots without one so an admin can configure the model catalog first. Not needed for `openai-codex` models, which use each user's ChatGPT subscription ([docs](../../docs/chatgpt-subscription.md)). |
 | **Ingress hostname**   | `--set ingress.hostname=carapace.example.com`                                                                                                                          |
 | **Gateway parent ref** | `--set ingress.parentRefs[0].name=my-gateway` (defaults to `default-gateway`)                                                                                          |
 
@@ -155,7 +155,7 @@ The chart no longer accepts application `config.yaml` through Helm values and do
 
 - **Settings** -> **Admin** -> **Platform** for model catalog, default models, OpenAI-compatible base URLs, OpenRouter API keys, reasoning options, and default budgets.
 - **Settings** -> **Admin** -> **Users** for local users, roles, passwords, and assignment of existing data.
-- **Settings** -> **Account** for per-user model defaults, Matrix, Git, and credential backends.
+- **Settings** -> **Account** for per-user model defaults, ChatGPT subscription login for `openai-codex` models, Matrix, Git, and credential backends.
 - **Settings** -> **Jobs** for saved jobs and schedules.
 
 The model catalog and the scalar `agent`/`sessions` settings edited in **Platform** are stored in the database (`models` + `platform_settings` tables). A fresh database starts **empty**; until an admin configures the catalog the server runs on the built-in default models. The admin UI is the source of truth.

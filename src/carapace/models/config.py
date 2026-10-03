@@ -13,6 +13,8 @@ from .session import SessionBudget
 
 OPENAI_COMPATIBLE_PROVIDERS = {"openai", "openai-chat", "openai-responses"}
 PROVIDERS_WITH_MODEL_API_KEYS = OPENAI_COMPATIBLE_PROVIDERS | {"openrouter"}
+# Authenticates with each user's own ChatGPT subscription instead of a platform API key.
+CODEX_PROVIDER = "openai-codex"
 
 
 class ConfigModel(BaseModel):
@@ -79,7 +81,7 @@ class AvailableModelEntry(ConfigModel):
     provider: str = Field(
         description=(
             "API kind used to access the model, such as anthropic, openai, "
-            "openai-chat, openai-responses, or openrouter."
+            "openai-chat, openai-responses, openrouter, or openai-codex."
         ),
     )
     name: str = Field(
