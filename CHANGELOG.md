@@ -1,6 +1,24 @@
 # CHANGELOG
 
 
+## v0.158.1 (2026-10-03)
+
+
+### Other
+
+
+- Merge pull request #297 from thiesgerken/renovate/all-routine-dependencies
+  ([`450414f`](https://github.com/thiesgerken/carapace/commit/450414f6ce30a33e0ae722f4a992e14c2634e59c))
+
+### ⬆️ Dependencies
+
+
+- ⬆️ chore: upgrade all routine dependency updates
+  ([`450414f`](https://github.com/thiesgerken/carapace/commit/450414f6ce30a33e0ae722f4a992e14c2634e59c))
+
+- ⬆️ chore: upgrade all routine dependency updates
+  ([`d688e1d`](https://github.com/thiesgerken/carapace/commit/d688e1d9281b8f04292d789e2fa539204e613e23))
+
 ## v0.158.0 (2026-10-03)
 
 
