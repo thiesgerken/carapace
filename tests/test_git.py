@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import os
 import stat
 import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -534,6 +535,30 @@ class TestGitHttpHandlerHandle:
             body=b"",
         )
         assert status != 403
+
+    @needs_git
+    async def test_get_without_body_spawns_backend_without_stdin_pipe(self, tmp_path: Path):
+        subprocess.run(["git", "init", "--bare", "-q", str(tmp_path / "knowledge")], check=True)
+        h = GitHttpHandler(
+            knowledge_root=tmp_path,
+            owner_for_session=lambda _session_id: "knowledge",
+            default_branch="main",
+        )
+        spawn = AsyncMock(wraps=asyncio.create_subprocess_exec)
+
+        with patch("carapace.git.http.asyncio.create_subprocess_exec", spawn):
+            status, _headers, body = await h.handle(
+                session_id="sess-1",
+                method="GET",
+                path="/git/knowledge/info/refs",
+                query_string="service=git-upload-pack",
+                content_type=None,
+                body=b"",
+            )
+
+        assert status == 200
+        assert b"# service=git-upload-pack" in body
+        assert spawn.await_args.kwargs["stdin"] == asyncio.subprocess.DEVNULL
 
     async def test_path_traversal_returns_403(self):
         h = self._handler()

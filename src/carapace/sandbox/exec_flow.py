@@ -16,10 +16,9 @@ from .session_lifecycle import SessionContainer
 type DomainApprovalCallback = Callable[[str, str], Awaitable[bool]]
 type DomainNotifyCallback = Callable[[str, str, ApprovalSource | None, ApprovalVerdict | None, str | None], None]
 type AfterExecCredentialNotify = Callable[[], None]
-type EnsureSessionCallback = Callable[[str], Awaitable[tuple[SessionContainer, bool]]]
-type RerunSkillSetupCallback = Callable[[str], Awaitable[None]]
+type EnsureSessionCallback = Callable[[str], Awaitable[SessionContainer]]
+type RecreateSessionCallback = Callable[[str], Awaitable[SessionContainer]]
 type LogContainerTailCallback = Callable[[str, str], Awaitable[None]]
-type PrepareSessionRecreateCallback = Callable[[str], None]
 type ExecInContainerCallback = Callable[..., Awaitable[ExecResult]]
 type PrepareContextTunnelsCallback = Callable[[SessionContainer, list[NetworkTunnel]], Awaitable[None]]
 type CleanupContextTunnelsCallback = Callable[[SessionContainer, list[NetworkTunnel]], Awaitable[None]]
@@ -93,9 +92,8 @@ class SandboxExecCoordinator:
         timeout: int = 30,
         *,
         ensure_session: EnsureSessionCallback,
-        rerun_skill_setup: RerunSkillSetupCallback,
+        recreate_session: RecreateSessionCallback,
         log_container_tail: LogContainerTailCallback,
-        prepare_session_recreate: PrepareSessionRecreateCallback,
         exec_in_container: ExecInContainerCallback,
         prepare_context_tunnels: PrepareContextTunnelsCallback,
         cleanup_context_tunnels: CleanupContextTunnelsCallback,
@@ -121,9 +119,7 @@ class SandboxExecCoordinator:
                 self._state.proxy_bypass_sessions.add(session_id)
                 logger.info(f"Proxy bypass ENABLED for session {session_id}")
             try:
-                sc, needs_runtime_setup = await ensure_session(session_id)
-                if needs_runtime_setup:
-                    await rerun_skill_setup(session_id)
+                sc = await ensure_session(session_id)
                 sc.last_used = time.time()
                 logger.debug(f"Exec in session {session_id}: {command}")
 
@@ -156,9 +152,7 @@ class SandboxExecCoordinator:
                     logger.warning(f"Container gone for session {session_id}, recreating sandbox")
                     tunnels_prepared = False
                     await log_container_tail(sc.container_id, session_id)
-                    prepare_session_recreate(session_id)
-                    sc, _ = await ensure_session(session_id)
-                    await rerun_skill_setup(session_id)
+                    sc = await recreate_session(session_id)
 
                     written_files.clear()
                     if context_tunnels:

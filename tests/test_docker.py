@@ -51,6 +51,9 @@ async def test_list_sandboxes_returns_all_managed_containers(tmp_path: Path) -> 
     session_container = MagicMock()
     session_container.id = "container-1"
     session_container.labels = {"carapace.session": "sess-1", "carapace.managed": "true"}
+    stale_container = MagicMock()
+    stale_container.id = "container-3"
+    stale_container.labels = {"carapace.session": "sess-1", "carapace.managed": "true"}
     pool_container = MagicMock()
     pool_container.id = "container-2"
     pool_container.labels = {
@@ -58,11 +61,11 @@ async def test_list_sandboxes_returns_all_managed_containers(tmp_path: Path) -> 
         "carapace.managed": "true",
         "carapace.pool": "true",
     }
-    runtime._client.containers.list.return_value = [session_container, pool_container]
+    runtime._client.containers.list.return_value = [session_container, pool_container, stale_container]
 
     sandboxes = await runtime.list_sandboxes()
 
-    assert sandboxes == {"sess-1": "container-1", "warm-1": "container-2"}
+    assert sandboxes == {"sess-1": ["container-1", "container-3"], "warm-1": ["container-2"]}
 
 
 @pytest.mark.asyncio

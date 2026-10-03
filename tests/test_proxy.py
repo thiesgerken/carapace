@@ -5,7 +5,7 @@ from __future__ import annotations
 import base64
 from pathlib import Path
 from typing import Any, cast
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -404,6 +404,31 @@ async def test_exec_recreate_preserves_domains(tmp_path: Path, db_factory):
     assert output.output == "ok"
     assert output.stdout == "ok"
     assert mgr.get_allowed_domains(session_id) == {"api.example.com"}
+
+
+@pytest.mark.anyio
+async def test_exec_container_gone_recovery_reruns_skill_setup(tmp_path: Path, db_factory):
+    runtime = make_runtime_mock()
+    runtime.sandbox_exists = AsyncMock(return_value="container-1")
+    runtime.exec = AsyncMock(side_effect=[ContainerGoneError(), ExecResult(stdout="ok", exit_code=0, output="ok")])
+    mgr = _sandbox_manager(runtime=runtime, data_dir=tmp_path, knowledge_dir=tmp_path, session_factory=db_factory)
+    _seed_session_row(db_factory, tmp_path, "sess-1")
+    mgr._sessions["sess-1"] = SessionContainer(
+        container_id="container-1",
+        session_id="sess-1",
+        created_at=1.0,
+        last_used=1.0,
+    )
+    mgr.set_activated_skills_callback(lambda _sid: ["email"])
+    mgr.rerun_skill_setup = AsyncMock()
+
+    result = await mgr.exec_command("sess-1", "check-mail")
+
+    assert result.output == "ok"
+    # The runtime already restarted the container, so the lifecycle re-attaches
+    # without reporting a fresh runtime; recovery must restore the skills anyway.
+    runtime.create_sandbox.assert_not_awaited()
+    mgr.rerun_skill_setup.assert_awaited_once_with("sess-1", ["email"])
 
 
 @pytest.mark.anyio
@@ -959,10 +984,9 @@ async def test_exec_cleanup_tunnel_error_does_not_mask_command_error_or_skip_cre
     sc2 = SessionContainer(container_id="container-2", session_id="sess-1", created_at=0, last_used=0)
     written_files = [("example", "/workspace/skills/example/.secrets/token.txt")]
 
-    ensure_session = AsyncMock(side_effect=[(sc1, False), (sc2, False)])
-    rerun_skill_setup = AsyncMock()
+    ensure_session = AsyncMock(return_value=sc1)
+    recreate_session = AsyncMock(return_value=sc2)
     log_container_tail = AsyncMock()
-    prepare_session_recreate = MagicMock()
     exec_in_container = AsyncMock(side_effect=[ContainerGoneError("gone"), RuntimeError("command failed")])
     prepare_context_tunnels = AsyncMock()
     cleanup_context_tunnels = AsyncMock(side_effect=ContainerGoneError("cleanup failed"))
@@ -974,9 +998,8 @@ async def test_exec_cleanup_tunnel_error_does_not_mask_command_error_or_skip_cre
             "sess-1",
             "run-mail-sync",
             ensure_session=ensure_session,
-            rerun_skill_setup=rerun_skill_setup,
+            recreate_session=recreate_session,
             log_container_tail=log_container_tail,
-            prepare_session_recreate=prepare_session_recreate,
             exec_in_container=exec_in_container,
             prepare_context_tunnels=prepare_context_tunnels,
             cleanup_context_tunnels=cleanup_context_tunnels,

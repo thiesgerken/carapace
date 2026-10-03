@@ -271,15 +271,19 @@ class DockerRuntime(ContainerRuntime):
 
         return await asyncio.to_thread(_check)
 
-    async def list_sandboxes(self) -> dict[str, str]:
-        """List all carapace-managed containers, returning ``{session_id: container_id}``."""
+    async def list_sandboxes(self) -> dict[str, list[str]]:
+        """List all carapace-managed containers, returning ``{session_id: [container_id, ...]}``."""
 
-        def _list() -> dict[str, str]:
+        def _list() -> dict[str, list[str]]:
             containers = self._client.containers.list(
                 all=True,
                 filters={"label": ["carapace.managed=true"]},
             )
-            return {c.labels["carapace.session"]: c.id or "" for c in containers if "carapace.session" in c.labels}
+            result: dict[str, list[str]] = {}
+            for c in containers:
+                if "carapace.session" in c.labels:
+                    result.setdefault(c.labels["carapace.session"], []).append(c.id or "")
+            return result
 
         return await asyncio.to_thread(_list)
 

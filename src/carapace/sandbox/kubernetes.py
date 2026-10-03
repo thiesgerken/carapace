@@ -58,6 +58,10 @@ def _sanitize_pod_name(name: str) -> str:
     return sanitized[:63].strip("-")
 
 
+def _is_terminating(sts: StatefulSet) -> bool:
+    return bool(sts.raw.get("metadata", {}).get("deletionTimestamp"))
+
+
 def _default_command(command: str | list[str] | None) -> list[str]:
     if isinstance(command, str):
         return ["bash", "-c", command]
@@ -537,21 +541,25 @@ class KubernetesRuntime(ContainerRuntime):
             return f"{sts_name}-0"
         return None
 
-    async def list_sandboxes(self) -> dict[str, str]:
-        """List all carapace-managed StatefulSets, returning ``{session_id: pod_name}``."""
+    async def list_sandboxes(self) -> dict[str, list[str]]:
+        """List live carapace-managed StatefulSets, returning ``{session_id: [pod_name, ...]}``.
+
+        StatefulSets being deleted are skipped: a foreground delete keeps one around,
+        still labelled with its session, until its pod has terminated.
+        """
         api = await self._ensure_api()
-        result: dict[str, str] = {}
+        result: dict[str, list[str]] = {}
         async for sts in StatefulSet.list(
             namespace=self._namespace,
             label_selector="app.kubernetes.io/managed-by=carapace-server",
             api=api,
         ):
             sts = cast(StatefulSet, sts)
-            if sts.labels.get("carapace.pool") == "true":
+            if sts.labels.get("carapace.pool") == "true" or _is_terminating(sts):
                 continue
             session_id = sts.labels.get("carapace.session")
             if session_id:
-                result[session_id] = f"{sts.name}-0"
+                result.setdefault(session_id, []).append(f"{sts.name}-0")
         return result
 
     async def list_pool_sandboxes(self) -> dict[str, str]:
@@ -564,7 +572,7 @@ class KubernetesRuntime(ContainerRuntime):
             api=api,
         ):
             sts = cast(StatefulSet, sts)
-            if sts.labels.get("carapace.pool") != "true":
+            if sts.labels.get("carapace.pool") != "true" or _is_terminating(sts):
                 continue
             sandbox_id = sts.labels.get("carapace.sandbox") or sts.labels.get("carapace.session")
             if sandbox_id:
