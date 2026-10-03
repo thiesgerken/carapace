@@ -80,6 +80,7 @@
         "sections": {
             "appearance": "Darstellung",
             "defaultModels": "Standardmodelle",
+            "chatgpt": "ChatGPT-Abo",
             "defaultBudgets": "Standardbudgets",
             "matrix": "Matrix",
             "credentials": "Zugangsdaten",
@@ -158,6 +159,29 @@
         "hints": {
             "agentName": "Wird statt „carapace“ im Tab-Titel, in der Seitenleiste und im Eingabefeld angezeigt. Leer lassen für Standard.",
             "agentIcon": "Ein einzelnes Emoji als Favicon und Logo in der Seitenleiste. Leer lassen für Standard."
+        },
+        "chatgpt": {
+            "description": "Nutze dein eigenes ChatGPT-Abo für openai-codex-Modelle statt der API-Schlüssel der Plattform. Die Nutzung zählt gegen die Limits deines Abos; Kostenangaben zeigen den entsprechenden API-Preis.",
+            "status": {
+                "loading": "Abo-Status wird geladen",
+                "connected": "Verbunden",
+                "connectedAs": "Verbunden als {email}",
+                "notConnected": "Nicht verbunden"
+            },
+            "actions": {
+                "connect": "ChatGPT verbinden",
+                "reconnect": "Neu verbinden",
+                "disconnect": "Trennen",
+                "complete": "Anmeldung abschließen"
+            },
+            "steps": {
+                "open": "ChatGPT-Anmeldung in einem neuen Tab öffnen und anmelden",
+                "redirect": "Danach landet dein Browser auf einer Seite unter localhost:1455, die nicht lädt. Das ist erwartet: OpenAI leitet nur auf localhost weiter.",
+                "paste": "Kopiere die vollständige URL aus der Adressleiste dieses Tabs und füge sie hier ein:"
+            },
+            "errors": {
+                "generic": "Anfrage zum ChatGPT-Abo fehlgeschlagen"
+            }
         }
     },
     "platformSettings": {

@@ -1445,6 +1445,73 @@ export async function updateUserSettings(
   return decodeUserSettingsResponse(await res.json());
 }
 
+export interface CodexStatusInfo {
+  connected: boolean;
+  email: string | null;
+  updated_at: string | null;
+}
+
+export async function getCodexStatus(
+  server: string,
+  token: string,
+): Promise<CodexStatusInfo> {
+  const res = await fetch(`${server}/api/user/codex`, {
+    headers: headers(token),
+  });
+  if (!res.ok)
+    throw new Error(
+      await readErrorMessage(res, "Failed to load ChatGPT subscription status"),
+    );
+  return (await res.json()) as CodexStatusInfo;
+}
+
+export async function startCodexLogin(
+  server: string,
+  token: string,
+): Promise<string> {
+  const res = await fetch(`${server}/api/user/codex/login`, {
+    method: "POST",
+    headers: headers(token),
+  });
+  if (!res.ok)
+    throw new Error(
+      await readErrorMessage(res, "Failed to start ChatGPT login"),
+    );
+  const body = (await res.json()) as { authorize_url: string };
+  return body.authorize_url;
+}
+
+export async function completeCodexLogin(
+  server: string,
+  token: string,
+  redirectUrl: string,
+): Promise<CodexStatusInfo> {
+  const res = await fetch(`${server}/api/user/codex/login/complete`, {
+    method: "POST",
+    headers: headers(token),
+    body: JSON.stringify({ redirect_url: redirectUrl }),
+  });
+  if (!res.ok)
+    throw new Error(
+      await readErrorMessage(res, "Failed to complete ChatGPT login"),
+    );
+  return (await res.json()) as CodexStatusInfo;
+}
+
+export async function disconnectCodex(
+  server: string,
+  token: string,
+): Promise<void> {
+  const res = await fetch(`${server}/api/user/codex`, {
+    method: "DELETE",
+    headers: headers(token),
+  });
+  if (!res.ok)
+    throw new Error(
+      await readErrorMessage(res, "Failed to disconnect ChatGPT subscription"),
+    );
+}
+
 export async function getPlatformSettings(
   server: string,
   token: string,
