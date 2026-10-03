@@ -210,7 +210,7 @@ Every sandbox image provides `/usr/local/bin/carapace-skill-activator`. Carapace
 
 ### Lifecycle and command overrides
 
-Activation runs on `use_skill` and is repeated for active skills after sandbox recreation. Workspace edits do not trigger automatic reactivation. The activator selects its inputs from the supplied source revision; Carapace does not reset the skill directory.
+Activation runs on `use_skill` and is repeated for active skills whenever the sandbox is recreated or resumed. Workspace edits do not trigger automatic reactivation. The activator selects its inputs from the supplied source revision; Carapace does not reset the skill directory.
 
 The activator may override declared command aliases. Omitted aliases retain their original commands. Carapace validates the complete response before registering the command shims, keeping command invocation independent of how the image prepares dependencies.
 
@@ -250,7 +250,7 @@ The official image contains **uv**. Include both `pyproject.toml` and a committe
 1. **Activation** (`use_skill`): with the official sandbox activator, committed `pyproject.toml` and `uv.lock` files run `uv sync --locked` in `/workspace/skills/<name>/`. The proxy is temporarily bypassed during install.
 2. **Runtime**: Scripts should be invoked with `uv run --directory /workspace/skills/<name> scripts/<script>.py` so they run inside the venv.
 3. **Persistence**: Skills are persisted via Git — changes in `/workspace/skills/` are committed and pushed to the workspace repository.
-4. **Container restart**: Venvs are rebuilt for all activated skills automatically when a container is recreated after idle timeout.
+4. **Container restart**: Venvs are rebuilt for all activated skills automatically when the sandbox is recreated or resumed, for example after idle timeout.
 
 #### Managing dependencies
 
