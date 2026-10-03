@@ -3032,7 +3032,7 @@ def test_start_session_sandbox_starts_when_idle(client, auth_headers):
     create_resp = client.post("/api/sessions", headers=auth_headers)
     sid = create_resp.json()["session_id"]
 
-    async def _ensure_session(session_id: str) -> tuple[MagicMock, bool]:
+    async def _ensure_session(session_id: str) -> MagicMock:
         assert session_id == sid
         srv._engine.session_mgr.save_sandbox_snapshot(
             sid,
@@ -3044,7 +3044,7 @@ def test_start_session_sandbox_starts_when_idle(client, auth_headers):
                 updated_at=datetime.now(tz=UTC),
             ),
         )
-        return MagicMock(), True
+        return MagicMock()
 
     srv._engine.sandbox_mgr.ensure_session = AsyncMock(side_effect=_ensure_session)
 

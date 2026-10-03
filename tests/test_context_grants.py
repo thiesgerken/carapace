@@ -368,7 +368,7 @@ class TestSandboxManagerCredentialCache:
         assert snapshot.status == "missing"
 
     @pytest.mark.anyio
-    async def test_ensure_session_flags_resumed_runtime_for_setup_rerun(self, tmp_path: Path, db_factory):
+    async def test_ensure_session_reruns_skill_setup_after_resume(self, tmp_path: Path, db_factory):
         runtime = make_runtime_mock()
         runtime.is_running = AsyncMock(return_value=False)
         runtime.logs = AsyncMock(return_value="carapace sandbox ready")
@@ -380,10 +380,11 @@ class TestSandboxManagerCredentialCache:
             created_at=1.0,
             last_used=1.0,
         )
+        mgr._rerun_activated_skill_setup = AsyncMock()
 
-        _container, needs_runtime_setup = await mgr.ensure_session("sess-1")
+        await mgr.ensure_session("sess-1")
 
-        assert needs_runtime_setup is True
+        mgr._rerun_activated_skill_setup.assert_awaited_once_with("sess-1")
         runtime.resume_sandbox.assert_awaited_once_with("carapace-sandbox-sess-1")
         runtime.write_stdout_log.assert_awaited_once()
         assert runtime.write_stdout_log.await_args.args[0] == "container-1"
@@ -461,11 +462,12 @@ class TestSandboxManagerCredentialCache:
         )
         _seed_session_row(db_factory, tmp_path, "sess-1")
         mgr._session_lifecycle.ensure_warm_pool = AsyncMock(return_value=1)
+        mgr._rerun_activated_skill_setup = AsyncMock()
 
-        sc, needs_runtime_setup = await mgr.ensure_session("sess-1")
+        sc = await mgr.ensure_session("sess-1")
         await _drain_warm_refill(mgr)
 
-        assert needs_runtime_setup is True
+        mgr._rerun_activated_skill_setup.assert_awaited_once_with("sess-1")
         assert sc.sandbox_id == "warm-1"
         assert sc.container_id == "warm-pod-1"
         runtime.create_sandbox.assert_not_awaited()
@@ -509,15 +511,12 @@ class TestSandboxManagerCredentialCache:
             runtime=runtime, data_dir=tmp_path, knowledge_dir=tmp_path, warm_pool_size=1, session_factory=db_factory
         )
         _seed_session_row(db_factory, tmp_path, "sess-1")
+        mgr._rerun_activated_skill_setup = AsyncMock()
 
-        mgr = _sandbox_manager(
-            runtime=runtime, data_dir=tmp_path, knowledge_dir=tmp_path, warm_pool_size=1, session_factory=db_factory
-        )
-
-        sc, needs_runtime_setup = await mgr.ensure_session("sess-1")
+        sc = await mgr.ensure_session("sess-1")
         await _drain_warm_refill(mgr)
 
-        assert needs_runtime_setup is True
+        mgr._rerun_activated_skill_setup.assert_awaited_once_with("sess-1")
         assert sc.sandbox_id == "sess-1"
         assert sc.container_id == "cold-pod-1"
         runtime.destroy_sandbox.assert_awaited_once_with("sess-1", "carapace-sandbox-warm-1", "warm-pod-1")
@@ -553,12 +552,8 @@ class TestSandboxManagerCredentialCache:
         )
         await _drain_warm_refill(mgr)
 
-        first_sc, first_setup = first
-        second_sc, second_setup = second
-        assert first_setup is True
-        assert second_setup is True
-        assert first_sc.sandbox_id == "warm-1"
-        assert second_sc.sandbox_id == "sess-2"
+        assert first.sandbox_id == "warm-1"
+        assert second.sandbox_id == "sess-2"
         runtime.claim_warm_sandbox.assert_awaited_once_with("carapace-sandbox-warm-1", "sess-1")
         runtime.create_sandbox.assert_awaited_once()
 
@@ -580,11 +575,12 @@ class TestSandboxManagerCredentialCache:
         mgr._session_lifecycle.claim_warm_sandbox = AsyncMock(return_value=claimed)
         mgr._session_lifecycle.ensure_warm_pool = AsyncMock(return_value=1)
         _seed_session_row(db_factory, tmp_path, "sess-1")
+        mgr._rerun_activated_skill_setup = AsyncMock()
 
-        sc, needs_runtime_setup = await mgr.ensure_session("sess-1")
+        sc = await mgr.ensure_session("sess-1")
         await _drain_warm_refill(mgr)
 
-        assert needs_runtime_setup is True
+        mgr._rerun_activated_skill_setup.assert_awaited_once_with("sess-1")
         assert sc is claimed
         mgr._session_lifecycle.ensure_warm_pool.assert_awaited_once_with(1)
 
@@ -599,14 +595,79 @@ class TestSandboxManagerCredentialCache:
         mgr = _sandbox_manager(
             runtime=runtime, data_dir=tmp_path, knowledge_dir=tmp_path, warm_pool_size=1, session_factory=db_factory
         )
+        mgr._rerun_activated_skill_setup = AsyncMock()
 
-        sc, needs_runtime_setup = await mgr.ensure_session("sess-1")
+        sc = await mgr.ensure_session("sess-1")
 
-        assert needs_runtime_setup is False
+        mgr._rerun_activated_skill_setup.assert_not_awaited()
         assert sc.container_id == "carapace-sandbox-warm-1-0"
         assert sc.sandbox_id == "warm-1"
         runtime.claim_warm_sandbox.assert_not_awaited()
         runtime.create_sandbox.assert_not_awaited()
+
+    @pytest.mark.anyio
+    async def test_concurrent_ensure_session_for_one_session_claims_once(self, tmp_path: Path, db_factory):
+        runtime = make_runtime_mock()
+        runtime.runtime_kind = "kubernetes"
+        runtime.list_pool_sandboxes = AsyncMock(return_value={"warm-1": "warm-pod-1"})
+        runtime.claim_warm_sandbox = AsyncMock(return_value=True)
+        mgr = _sandbox_manager(
+            runtime=runtime, data_dir=tmp_path, knowledge_dir=tmp_path, warm_pool_size=1, session_factory=db_factory
+        )
+        mgr._session_lifecycle.wait_for_ready = AsyncMock()
+        mgr._session_lifecycle.log_assignment = AsyncMock()
+        mgr._session_lifecycle.setup_proxy = AsyncMock()
+        mgr._session_lifecycle.ensure_warm_pool = AsyncMock(return_value=1)
+        mgr._rerun_activated_skill_setup = AsyncMock()
+        clone_started = asyncio.Event()
+        release_clone = asyncio.Event()
+
+        async def slow_clone(*_args, **_kwargs) -> None:
+            clone_started.set()
+            await release_clone.wait()
+
+        mgr._session_lifecycle.clone_knowledge_repo = AsyncMock(side_effect=slow_clone)
+        _seed_session_row(db_factory, tmp_path, "sess-1")
+
+        first = asyncio.create_task(mgr.ensure_session("sess-1"))
+        await clone_started.wait()
+        second = asyncio.create_task(mgr.ensure_session("sess-1"))
+        for _ in range(5):
+            await asyncio.sleep(0)
+        second_waited_for_first = not second.done()
+        release_clone.set()
+        first_sc, second_sc = await asyncio.gather(first, second)
+        await _drain_warm_refill(mgr)
+
+        # The claimed sandbox is already in _sessions while it clones; the second
+        # caller must wait for the clone and skill setup instead of using it.
+        assert second_waited_for_first
+        assert first_sc is second_sc
+        runtime.claim_warm_sandbox.assert_awaited_once_with("carapace-sandbox-warm-1", "sess-1")
+        runtime.create_sandbox.assert_not_awaited()
+        mgr._rerun_activated_skill_setup.assert_awaited_once_with("sess-1")
+
+    @pytest.mark.anyio
+    async def test_activate_skill_resume_reruns_setup_for_activated_skills(self, tmp_path: Path, db_factory):
+        runtime = make_runtime_mock()
+        runtime.is_running = AsyncMock(return_value=False)
+        runtime.logs = AsyncMock(return_value="carapace sandbox ready")
+        mgr = _sandbox_manager(runtime=runtime, data_dir=tmp_path, knowledge_dir=tmp_path, session_factory=db_factory)
+        mgr._sessions["sess-1"] = SessionContainer(
+            container_id="container-1",
+            session_id="sess-1",
+            created_at=1.0,
+            last_used=1.0,
+        )
+        mgr.set_activated_skills_callback(lambda _sid: ["email"])
+        mgr.rerun_skill_setup = AsyncMock()
+        _seed_session_row(db_factory, tmp_path, "sess-1")
+
+        # The new skill doesn't exist, so activation stops right after the sandbox is up.
+        await mgr.activate_skill("sess-1", "moneta")
+
+        runtime.resume_sandbox.assert_awaited_once_with("carapace-sandbox-sess-1")
+        mgr.rerun_skill_setup.assert_awaited_once_with("sess-1", ["email"])
 
     @pytest.mark.anyio
     async def test_ensure_warm_pool_is_noop_for_docker_runtime(self, tmp_path: Path, db_factory):
@@ -821,7 +882,7 @@ class TestExecNotificationDedupe:
         sc.session_env = {}
 
         async def fake_ensure(sid: str):
-            return sc, False
+            return sc
 
         async def fake_rebuild(sid: str) -> None:
             return None
@@ -856,7 +917,7 @@ class TestExecNotificationDedupe:
         sc.session_env = {}
 
         async def fake_ensure(sid: str):
-            return sc, False
+            return sc
 
         async def fake_rebuild(sid: str) -> None:
             return None

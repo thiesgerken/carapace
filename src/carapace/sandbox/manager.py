@@ -239,6 +239,7 @@ class SandboxManager:
             Callable[[str, str, ApprovalSource | None, ApprovalVerdict | None, str | None], None],
         ] = {}
         self._exec_locks: dict[str, Lock] = {}
+        self._startup_locks: dict[str, Lock] = {}
         self._proxy_bypass_sessions: set[str] = set()
         self._stashed_session_env: dict[str, dict[str, str]] = {}
         self._credential_cache: dict[str, dict[str, str]] = {}  # session_id -> {vault_path: value}
@@ -261,6 +262,7 @@ class SandboxManager:
                 domain_approval_cbs=self._domain_approval_cbs,
                 domain_notify_cbs=self._domain_notify_cbs,
                 exec_locks=self._exec_locks,
+                startup_locks=self._startup_locks,
                 proxy_bypass_sessions=self._proxy_bypass_sessions,
                 stashed_session_env=self._stashed_session_env,
                 credential_cache=self._credential_cache,
@@ -370,6 +372,9 @@ class SandboxManager:
     def _get_exec_lock(self, session_id: str) -> Lock:
         return self._exec_coordinator.get_exec_lock(session_id)
 
+    def _get_startup_lock(self, session_id: str) -> Lock:
+        return self._startup_locks.setdefault(session_id, Lock())
+
     def _save_transient_sandbox_snapshot(
         self,
         session_id: str,
@@ -394,14 +399,39 @@ class SandboxManager:
         )
         save_sandbox_snapshot(self._session_factory, session_id, snapshot)
 
-    async def ensure_session(self, session_id: str) -> tuple[SessionContainer, bool]:
+    async def ensure_session(self, session_id: str) -> SessionContainer:
+        """Return the session's running sandbox, starting, resuming or re-attaching it as needed.
+
+        This is the single entry point for sandbox startup. It is serialized per
+        session because parallel tool calls would otherwise each find no live
+        sandbox and race to claim or create one. Skill setup reruns inside the lock,
+        so no caller sees a freshly started sandbox before its skills are restored.
+        Nothing under the lock may call back into ``ensure_session`` (the lock is
+        not reentrant); the exec path takes its exec lock before this one.
+        """
+        async with self._get_startup_lock(session_id):
+            return await self._start_session(session_id, force_skill_setup=False)
+
+    async def recreate_session(self, session_id: str) -> SessionContainer:
+        """Replace a sandbox whose container vanished and restore the session's skills.
+
+        Skill setup always reruns here: the lifecycle may re-attach to a pod the
+        runtime already restarted on its own, which looks like a healthy sandbox
+        but has lost everything outside the persistent workspace.
+        """
+        async with self._get_startup_lock(session_id):
+            self._session_lifecycle.prepare_session_recreate(session_id)
+            return await self._start_session(session_id, force_skill_setup=True)
+
+    async def _start_session(self, session_id: str, *, force_skill_setup: bool) -> SessionContainer:
+        """Start or attach the sandbox and keep the persisted snapshot in sync. Requires the startup lock."""
         sc = self._sessions.get(session_id)
         needs_startup = sc is None or not await self._runtime.is_running(sc.container_id)
         if needs_startup:
             self._save_transient_sandbox_snapshot(session_id, "pending")
 
         try:
-            ensured_sc, needs_runtime_setup = await self._session_lifecycle.ensure_session(session_id)
+            ensured_sc = await self._attach_or_start(session_id, force_skill_setup=force_skill_setup)
         except BaseException as exc:
             if needs_startup:
                 try:
@@ -418,7 +448,14 @@ class SandboxManager:
                 await self.refresh_sandbox_snapshot(session_id, container_id=ensured_sc.container_id)
             except Exception:
                 logger.exception(f"Failed to refresh sandbox snapshot after startup for session {session_id}")
-        return ensured_sc, needs_runtime_setup
+        return ensured_sc
+
+    async def _attach_or_start(self, session_id: str, *, force_skill_setup: bool) -> SessionContainer:
+        """Run the lifecycle and restore activated skills on a fresh runtime. Requires the startup lock."""
+        sc, needs_runtime_setup = await self._session_lifecycle.ensure_session(session_id)
+        if needs_runtime_setup or force_skill_setup:
+            await self._rerun_activated_skill_setup(session_id)
+        return sc
 
     def _sandbox_name(self, session_id: str) -> str:
         return self._session_lifecycle.sandbox_name(session_id)
@@ -511,9 +548,8 @@ class SandboxManager:
             command,
             timeout=timeout,
             ensure_session=lambda sid: self.ensure_session(sid),
-            rerun_skill_setup=lambda sid: self._rerun_activated_skill_setup(sid),
+            recreate_session=lambda sid: self.recreate_session(sid),
             log_container_tail=lambda container_id, sid: self._log_container_tail(container_id, sid),
-            prepare_session_recreate=lambda sid: self._prepare_session_recreate(sid),
             exec_in_container=lambda sc, cmd, cmd_timeout=30, **kwargs: self._exec_in_container(
                 sc,
                 cmd,
@@ -607,13 +643,12 @@ class SandboxManager:
 
         existing_id = await self._runtime.sandbox_exists(self._sandbox_name(session_id))
         if isinstance(existing_id, str) and existing_id and await self._runtime.is_running(existing_id):
-            # Re-attach through the lifecycle directly, not self.ensure_session:
-            # the latter writes a transient "pending" sandbox snapshot when the
-            # cache is cold, which would wrongly flip UI state for a read-only
-            # status check. The container is already running, so this re-attaches
-            # without booting and without touching the snapshot.
-            adopted, _ = await self._session_lifecycle.ensure_session(session_id)
-            return adopted
+            # Bypass self.ensure_session: it writes a transient "pending" sandbox
+            # snapshot when the cache is cold, which would wrongly flip UI state for
+            # a read-only status check. The container is already running, so this
+            # re-attaches without booting and without touching the snapshot.
+            async with self._get_startup_lock(session_id):
+                return await self._attach_or_start(session_id, force_skill_setup=False)
         return None
 
     async def sandbox_git_status(self, session_id: str, *, fetch: bool) -> SandboxGitStatus:
@@ -657,14 +692,14 @@ class SandboxManager:
 
     async def sandbox_git_pull(self, session_id: str) -> GitActionResult:
         """Pull the sandbox clone from the backend repo (fast-forward only)."""
-        sc, _ = await self.ensure_session(session_id)
+        sc = await self.ensure_session(session_id)
         res = await self._git_in_workspace(sc, "pull --ff-only", timeout=120)
         ok = res.exit_code == 0
         return GitActionResult(ok=ok, message=res.output.strip() or ("Pulled." if ok else "Pull failed."))
 
     async def sandbox_git_push(self, session_id: str) -> GitActionResult:
         """Push the sandbox clone to the backend repo (sentinel-gated via pre-receive)."""
-        sc, _ = await self.ensure_session(session_id)
+        sc = await self.ensure_session(session_id)
         res = await self._git_in_workspace(sc, "push origin HEAD", timeout=600)
         ok = res.exit_code == 0
         denied = not ok and "DENIED" in res.output
@@ -829,7 +864,7 @@ class SandboxManager:
         if err := _validate_skill_name(skill_name):
             return err
 
-        sc, _ = await self.ensure_session(session_id)
+        sc = await self.ensure_session(session_id)
 
         # Check that the skill exists in the server-side knowledge store.
         # The sandbox already has it at /workspace/skills/{name} via git clone.
@@ -1169,9 +1204,6 @@ class SandboxManager:
 
     async def request_domain_approval(self, session_id: str, domain: str) -> bool:
         return await self._exec_coordinator.request_domain_approval(session_id, domain)
-
-    def _prepare_session_recreate(self, session_id: str) -> None:
-        self._session_lifecycle.prepare_session_recreate(session_id)
 
     def _cleanup_tracking(
         self,
