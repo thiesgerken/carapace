@@ -239,6 +239,8 @@ class SandboxManager:
             Callable[[str, str, ApprovalSource | None, ApprovalVerdict | None, str | None], None],
         ] = {}
         self._exec_locks: dict[str, Lock] = {}
+        # Never pruned: dropping a lock that a caller holds or is queued on would let
+        # a newcomer start concurrently on a fresh one. One Lock per session is cheap.
         self._startup_locks: dict[str, Lock] = {}
         self._proxy_bypass_sessions: set[str] = set()
         self._stashed_session_env: dict[str, dict[str, str]] = {}
@@ -262,7 +264,6 @@ class SandboxManager:
                 domain_approval_cbs=self._domain_approval_cbs,
                 domain_notify_cbs=self._domain_notify_cbs,
                 exec_locks=self._exec_locks,
-                startup_locks=self._startup_locks,
                 proxy_bypass_sessions=self._proxy_bypass_sessions,
                 stashed_session_env=self._stashed_session_env,
                 credential_cache=self._credential_cache,

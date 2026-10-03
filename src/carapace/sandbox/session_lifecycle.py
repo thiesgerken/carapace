@@ -44,7 +44,6 @@ class SandboxSessionLifecycleState:
         Callable[[str, str, ApprovalSource | None, ApprovalVerdict | None, str | None], None],
     ]
     exec_locks: dict[str, asyncio.Lock]
-    startup_locks: dict[str, asyncio.Lock]
     proxy_bypass_sessions: set[str]
     stashed_session_env: dict[str, dict[str, str]]
     credential_cache: dict[str, dict[str, str]]
@@ -667,9 +666,6 @@ class SandboxSessionLifecycle:
         self._state.proxy_bypass_sessions.discard(session_id)
         self._state.session_current_contexts.pop(session_id, None)
         self._state.exec_locks.pop(session_id, None)
-        # startup_locks stays: this runs while ensure_session holds that lock, and
-        # dropping it would let a newcomer start on a fresh lock concurrently with a
-        # caller still queued on the old one.
 
     async def cleanup_session(self, session_id: str) -> None:
         """Suspend the sandbox while preserving broader session state."""
@@ -702,7 +698,6 @@ class SandboxSessionLifecycle:
         self._state.domain_approval_cbs.pop(session_id, None)
         self._state.domain_notify_cbs.pop(session_id, None)
         self._state.exec_locks.pop(session_id, None)
-        self._state.startup_locks.pop(session_id, None)
         self._state.proxy_bypass_sessions.discard(session_id)
         self._state.credential_cache.pop(session_id, None)
         self._state.session_current_contexts.pop(session_id, None)
