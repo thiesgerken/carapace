@@ -18,7 +18,6 @@ from .runtime import (
     ContainerConfig,
     ContainerGoneError,
     ContainerRuntime,
-    DuplicateSandboxError,
     ExecResult,
     Mount,
     SandboxConfig,
@@ -542,15 +541,14 @@ class KubernetesRuntime(ContainerRuntime):
             return f"{sts_name}-0"
         return None
 
-    async def list_sandboxes(self) -> dict[str, str]:
-        """List live carapace-managed StatefulSets, returning ``{session_id: pod_name}``.
+    async def list_sandboxes(self) -> dict[str, list[str]]:
+        """List live carapace-managed StatefulSets, returning ``{session_id: [pod_name, ...]}``.
 
         StatefulSets being deleted are skipped: a foreground delete keeps one around,
-        still labelled with its session, until its pod has terminated. Two live ones
-        for the same session have no safe owner to pick, so that raises.
+        still labelled with its session, until its pod has terminated.
         """
         api = await self._ensure_api()
-        result: dict[str, str] = {}
+        result: dict[str, list[str]] = {}
         async for sts in StatefulSet.list(
             namespace=self._namespace,
             label_selector="app.kubernetes.io/managed-by=carapace-server",
@@ -560,14 +558,8 @@ class KubernetesRuntime(ContainerRuntime):
             if sts.labels.get("carapace.pool") == "true" or _is_terminating(sts):
                 continue
             session_id = sts.labels.get("carapace.session")
-            if not session_id:
-                continue
-            pod_name = f"{sts.name}-0"
-            if session_id in result:
-                raise DuplicateSandboxError(
-                    f"Session {session_id} has more than one live sandbox: {result[session_id]} and {pod_name}"
-                )
-            result[session_id] = pod_name
+            if session_id:
+                result.setdefault(session_id, []).append(f"{sts.name}-0")
         return result
 
     async def list_pool_sandboxes(self) -> dict[str, str]:

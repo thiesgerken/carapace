@@ -52,7 +52,7 @@ from ..notifications.vapid import ensure_vapid_config
 from ..platform_store import PlatformSettingsStore
 from ..sandbox.manager import SandboxManager
 from ..sandbox.proxy import ProxyServer
-from ..sandbox.runtime import ContainerRuntime, DuplicateSandboxError
+from ..sandbox.runtime import ContainerRuntime
 from ..session import SessionEngine, SessionManager
 from ..session.archive import SessionArchiveService
 from ..usage import SessionBudgetExceededError
@@ -411,15 +411,9 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
 
     if _config.sandbox.cleanup_orphans_on_startup:
         known = set(session_mgr.list_sessions())
-        try:
-            removed = await _sandbox_mgr.cleanup_orphaned_sandboxes(known)
-        except DuplicateSandboxError as exc:
-            # One session's inconsistent sandboxes must not keep the whole server down;
-            # that session fails loudly on its next sandbox start instead.
-            logger.error(f"Skipped orphaned sandbox cleanup, needs manual resolution: {exc}")
-        else:
-            if removed:
-                logger.info(f"Cleaned up {removed} orphaned sandbox(es)")
+        removed = await _sandbox_mgr.cleanup_orphaned_sandboxes(known)
+        if removed:
+            logger.info(f"Cleaned up {removed} orphaned sandbox(es)")
 
     # Warm pool is provisioned by _warm_pool_loop (background task) so it never
     # blocks API startup; its first iteration runs immediately.

@@ -15,7 +15,7 @@ from sqlalchemy.exc import IntegrityError
 from ..database.engine import SessionFactory
 from ..database.models import SandboxTokenRow
 from ..security.context import ApprovalSource, ApprovalVerdict
-from .runtime import ContainerRuntime, SandboxConfig
+from .runtime import ContainerRuntime, DuplicateSandboxError, SandboxConfig
 from .state import load_sandbox_snapshot
 
 
@@ -308,7 +308,14 @@ class SandboxSessionLifecycle:
         else:
             existing_id = await self._runtime.sandbox_exists(sandbox_name)
             if self._runtime.runtime_kind == "kubernetes":
-                owned = (await self._runtime.list_sandboxes()).get(session_id)
+                owned_ids = (await self._runtime.list_sandboxes()).get(session_id, [])
+                if len(owned_ids) > 1:
+                    # No safe way to pick one; attaching to either could hijack the
+                    # sandbox the other code path is still using or tearing down.
+                    raise DuplicateSandboxError(
+                        f"Session {session_id} has more than one live sandbox: {', '.join(owned_ids)}"
+                    )
+                owned = owned_ids[0] if owned_ids else None
                 if existing_id and owned != existing_id:
                     # The sandbox at our snapshot's name is labelled for a different
                     # session. Pool ids are random uuids, so this should never happen;
@@ -745,12 +752,16 @@ class SandboxSessionLifecycle:
     async def cleanup_orphaned_sandboxes(self, known_sessions: set[str]) -> int:
         """Destroy sandbox resources whose session no longer exists on disk."""
         live = await self._runtime.list_sandboxes()
-        orphans = {sid: cid for sid, cid in live.items() if sid not in known_sessions}
-        for sid, container_id in orphans.items():
-            sandbox_name = self.sandbox_name_for_live_resource(sid, container_id)
-            await self._runtime.destroy_sandbox(sid, sandbox_name, container_id)
-            logger.info(f"Removed orphaned sandbox for deleted session {sid}")
-        return len(orphans)
+        removed = 0
+        for sid, container_ids in live.items():
+            if sid in known_sessions:
+                continue
+            for container_id in container_ids:
+                sandbox_name = self.sandbox_name_for_live_resource(sid, container_id)
+                await self._runtime.destroy_sandbox(sid, sandbox_name, container_id)
+                logger.info(f"Removed orphaned sandbox {sandbox_name} for deleted session {sid}")
+                removed += 1
+        return removed
 
     def set_session_env(self, session_id: str, env: dict[str, str]) -> None:
         """Merge *env* into the persistent session environment."""

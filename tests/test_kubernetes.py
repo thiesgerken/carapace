@@ -15,7 +15,7 @@ from carapace.sandbox.kubernetes import (
     _sanitize_pod_name,
     _standard_labels,
 )
-from carapace.sandbox.runtime import ContainerConfig, DuplicateSandboxError, ExecResult, Mount, SandboxConfig
+from carapace.sandbox.runtime import ContainerConfig, ExecResult, Mount, SandboxConfig
 
 # --- Helpers ---
 
@@ -494,7 +494,7 @@ def _statefulset(name: str, labels: dict[str, str], *, deleting: bool = False) -
     return sts
 
 
-async def _list_sandboxes(rt: KubernetesRuntime, *statefulsets: MagicMock) -> dict[str, str]:
+async def _list_sandboxes(rt: KubernetesRuntime, *statefulsets: MagicMock) -> dict[str, list[str]]:
     async def _statefulsets():
         for sts in statefulsets:
             yield sts
@@ -514,7 +514,7 @@ async def test_list_sandboxes_skips_pool_statefulsets() -> None:
         _statefulset("carapace-sandbox-warm-1", {"carapace.sandbox": "warm-1", "carapace.pool": "true"}),
     )
 
-    assert sandboxes == {"sess-1": "carapace-sandbox-sess-1-0"}
+    assert sandboxes == {"sess-1": ["carapace-sandbox-sess-1-0"]}
 
 
 @pytest.mark.asyncio
@@ -528,7 +528,7 @@ async def test_list_sandboxes_maps_claimed_warm_by_session_label() -> None:
         _statefulset("carapace-sandbox-warm-1", {"carapace.sandbox": "warm-1", "carapace.session": "sess-2"}),
     )
 
-    assert sandboxes == {"sess-2": "carapace-sandbox-warm-1-0"}
+    assert sandboxes == {"sess-2": ["carapace-sandbox-warm-1-0"]}
 
 
 @pytest.mark.asyncio
@@ -548,20 +548,21 @@ async def test_list_sandboxes_skips_terminating_statefulset_of_failed_claim() ->
         ),
     )
 
-    assert sandboxes == {"sess-1": "carapace-sandbox-sess-1-0"}
+    assert sandboxes == {"sess-1": ["carapace-sandbox-sess-1-0"]}
 
 
 @pytest.mark.asyncio
-async def test_list_sandboxes_rejects_two_live_statefulsets_for_one_session() -> None:
+async def test_list_sandboxes_returns_every_live_statefulset_of_a_session() -> None:
     rt = _make_runtime()
     rt._ensure_api = AsyncMock(return_value=object())
 
-    with pytest.raises(DuplicateSandboxError, match="sess-1"):
-        await _list_sandboxes(
-            rt,
-            _statefulset("carapace-sandbox-sess-1", {"carapace.session": "sess-1", "carapace.sandbox": "sess-1"}),
-            _statefulset("carapace-sandbox-warm-1", {"carapace.session": "sess-1", "carapace.sandbox": "warm-1"}),
-        )
+    sandboxes = await _list_sandboxes(
+        rt,
+        _statefulset("carapace-sandbox-sess-1", {"carapace.session": "sess-1", "carapace.sandbox": "sess-1"}),
+        _statefulset("carapace-sandbox-warm-1", {"carapace.session": "sess-1", "carapace.sandbox": "warm-1"}),
+    )
+
+    assert sandboxes == {"sess-1": ["carapace-sandbox-sess-1-0", "carapace-sandbox-warm-1-0"]}
 
 
 @pytest.mark.asyncio

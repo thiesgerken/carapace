@@ -16,7 +16,7 @@ from carapace.knowledge import KnowledgeRepoHandle
 from carapace.models.session import SessionState
 from carapace.models.skills import ContextGrant, SkillCredentialDecl, context_grants_session_summary
 from carapace.sandbox.manager import SandboxManager
-from carapace.sandbox.runtime import ExecResult
+from carapace.sandbox.runtime import DuplicateSandboxError, ExecResult
 from carapace.sandbox.session_lifecycle import SessionContainer
 from carapace.sandbox.state import load_sandbox_snapshot
 from carapace.security.context import ApprovalSource, ContextGrantEntry, CredentialAccessEntry, SessionSecurity
@@ -589,7 +589,7 @@ class TestSandboxManagerCredentialCache:
         runtime = make_runtime_mock()
         runtime.runtime_kind = "kubernetes"
         runtime.sandbox_exists = AsyncMock(return_value=None)
-        runtime.list_sandboxes = AsyncMock(return_value={"sess-1": "carapace-sandbox-warm-1-0"})
+        runtime.list_sandboxes = AsyncMock(return_value={"sess-1": ["carapace-sandbox-warm-1-0"]})
         runtime.is_running = AsyncMock(return_value=True)
         runtime.get_ip = AsyncMock(return_value="10.1.1.4")
         mgr = _sandbox_manager(
@@ -683,10 +683,51 @@ class TestSandboxManagerCredentialCache:
         runtime.create_sandbox.assert_not_awaited()
 
     @pytest.mark.anyio
+    async def test_duplicate_sandboxes_only_block_their_own_session(self, tmp_path: Path, db_factory):
+        runtime = make_runtime_mock()
+        runtime.runtime_kind = "kubernetes"
+        runtime.sandbox_exists = AsyncMock(side_effect=lambda name: f"{name}-0")
+        runtime.list_sandboxes = AsyncMock(
+            return_value={
+                "sess-a": ["carapace-sandbox-sess-a-0", "carapace-sandbox-pool-1-0"],
+                "sess-b": ["carapace-sandbox-sess-b-0"],
+            }
+        )
+        mgr = _sandbox_manager(runtime=runtime, data_dir=tmp_path, knowledge_dir=tmp_path, session_factory=db_factory)
+        _seed_session_row(db_factory, tmp_path, "sess-a", "sess-b")
+
+        with pytest.raises(DuplicateSandboxError, match="sess-a"):
+            await mgr.ensure_session("sess-a")
+        sc = await mgr.ensure_session("sess-b")
+
+        assert sc.container_id == "carapace-sandbox-sess-b-0"
+        assert "sess-a" not in mgr._sessions
+
+    @pytest.mark.anyio
+    async def test_cleanup_orphaned_sandboxes_removes_every_sandbox_of_an_orphan(self, tmp_path: Path, db_factory):
+        runtime = make_runtime_mock()
+        runtime.runtime_kind = "kubernetes"
+        runtime.list_sandboxes = AsyncMock(
+            return_value={
+                "gone": ["carapace-sandbox-gone-0", "carapace-sandbox-pool-1-0"],
+                "known": ["carapace-sandbox-known-0", "carapace-sandbox-pool-2-0"],
+            }
+        )
+        mgr = _sandbox_manager(runtime=runtime, data_dir=tmp_path, knowledge_dir=tmp_path, session_factory=db_factory)
+
+        removed = await mgr.cleanup_orphaned_sandboxes({"known"})
+
+        assert removed == 2
+        assert [call.args for call in runtime.destroy_sandbox.await_args_list] == [
+            ("gone", "carapace-sandbox-gone", "carapace-sandbox-gone-0"),
+            ("gone", "carapace-sandbox-pool-1", "carapace-sandbox-pool-1-0"),
+        ]
+
+    @pytest.mark.anyio
     async def test_cleanup_orphaned_sandboxes_uses_live_k8s_resource_name(self, tmp_path: Path, db_factory):
         runtime = make_runtime_mock()
         runtime.runtime_kind = "kubernetes"
-        runtime.list_sandboxes = AsyncMock(return_value={"sess-1": "carapace-sandbox-warm-1-0"})
+        runtime.list_sandboxes = AsyncMock(return_value={"sess-1": ["carapace-sandbox-warm-1-0"]})
         mgr = _sandbox_manager(runtime=runtime, data_dir=tmp_path, knowledge_dir=tmp_path, session_factory=db_factory)
 
         removed = await mgr.cleanup_orphaned_sandboxes(set())
