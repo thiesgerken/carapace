@@ -254,7 +254,9 @@ with an external-URL (`database.url`) or SQLite-on-the-data-PVC option. See the
 Runtime platform settings — the model catalog and scalar `agent`/`sessions` config edited in
 the admin UI — also live in the database (`models` + `platform_settings` tables). A fresh DB
 starts **empty**; until an admin configures the catalog, the server runs on the built-in
-default models. The admin UI is the source of truth. Operator/bootstrap config
+default models. The admin UI is the source of truth. Per-user ChatGPT subscription tokens for
+`openai-codex` models are stored in the `user_codex_credentials` table; their login works without
+the server being reachable on `localhost` (see [chatgpt-subscription.md](chatgpt-subscription.md)). Operator/bootstrap config
 (`CARAPACE_DATA_DIR`, `CARAPACE_DATABASE_URL`, `CARAPACE_LOG_LEVEL`, `CARAPACE_SERVER_*`,
 `CARAPACE_AUTH_*`, `CARAPACE_SANDBOX_*`, …) comes from env vars — there is no config file.
 

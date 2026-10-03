@@ -167,6 +167,7 @@ See [docs/architecture.md](docs/architecture.md) for the diagrams and fuller arc
 | [docs/sandbox.md](docs/sandbox.md)                             | Docker/Kubernetes sandboxes, proxy behavior, and exec-scoped tunnels       |
 | [docs/sessions-and-channels.md](docs/sessions-and-channels.md) | Session lifecycle, session controls, Matrix behavior, and approvals        |
 | [docs/compaction.md](docs/compaction.md)                       | Session compaction: `/compact`, fold/tool strategies, agent view           |
+| [docs/chatgpt-subscription.md](docs/chatgpt-subscription.md)   | Per-user ChatGPT subscription (`openai-codex`) models and login flow       |
 | [docs/kubernetes.md](docs/kubernetes.md)                       | Kubernetes runtime, StatefulSet sandboxes, and Helm deployment             |
 
 ## Kubernetes Deployment

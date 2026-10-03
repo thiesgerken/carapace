@@ -172,6 +172,7 @@ This map describes the Python modules under `src/carapace/`. It is meant as a na
 | `bootstrap.py` | First-run data and knowledge directory seeding, including bundled knowledge files and skills. |
 | `cache.py`     | In-memory cache for paginated session-list responses.                                         |
 | `cli.py`       | Thin terminal client for REST and WebSocket session interaction.                              |
+| `codex_auth.py` | Per-user ChatGPT subscription credentials, login flow, and `openai-codex` providers.         |
 | `config.py`    | Configuration path resolution, YAML loading, and workspace-file loading helpers.              |
 | `jobs.py`      | Job file persistence, cron scheduling, and job-run prompt construction.                       |
 | `llm.py`       | Pydantic AI model factory and model settings helpers.                                         |
@@ -275,6 +276,7 @@ This map describes the Python modules under `src/carapace/`. It is meant as a na
 | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
 | `server/__init__.py`      | FastAPI app facade, startup/shutdown lifecycle, shared state, REST routes not yet split out, internal API, sandbox API, and `main()`. |
 | `server/auth.py`          | Login/logout, cookie-session FastAPI dependencies, WebSocket auth, and admin user-management routes.                                  |
+| `server/codex_auth.py`    | ChatGPT subscription status, login, and disconnect routes.                                                                            |
 | `server/notifications.py` | Notification subscription, test, and presence routes.                                                                                 |
 | `server/state.py`         | Helper for extracted route modules to access the mutable `carapace.server` facade.                                                    |
 | `server/websocket.py`     | Chat WebSocket route, `WebSocketSubscriber`, and small web-facing metadata/model routes.                                              |
@@ -422,6 +424,8 @@ agent:
       api_key:
         env: OPENROUTER_API_KEY
 ```
+
+`openai-codex` rows run on each user's own ChatGPT subscription instead of a platform key; users connect it from **Settings** -> **Account**. See [chatgpt-subscription.md](chatgpt-subscription.md).
 
 Operator/bootstrap configuration comes entirely from **environment variables** (no config file). Each section maps to a prefix; nested fields use `__`:
 
