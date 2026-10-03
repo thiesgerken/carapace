@@ -1,6 +1,106 @@
 # CHANGELOG
 
 
+## v0.158.0 (2026-10-03)
+
+
+### ✨ Features
+
+
+- ✨Merge pull request #298 from thiesgerken/feat/codex-subscription-auth
+  ([`5337005`](https://github.com/thiesgerken/carapace/commit/5337005f5170592869b181c4028382170c48535a))
+
+- ✨ feat: per-user ChatGPT subscription models (openai-codex)
+  ([`5337005`](https://github.com/thiesgerken/carapace/commit/5337005f5170592869b181c4028382170c48535a))
+
+- ✨ feat(frontend): connect a ChatGPT subscription in account settings
+  ([`c9be9e7`](https://github.com/thiesgerken/carapace/commit/c9be9e784ac7e4e9f44f056c202b5bc5098a4502))
+
+  New "ChatGPT subscription" section: Connect fetches the authorize URL and shows the paste-back steps (the redirect lands on a failing localhost page whose URL carries code and state), Complete posts the pasted URL, and the section shows the connected email with Reconnect/Disconnect. It acts through its own endpoints rather than the settings save draft.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01SXTai7x3FfwhLFZYk8ApNL
+
+- ✨ feat: per-user ChatGPT subscription (openai-codex) models
+  ([`c37b0a9`](https://github.com/thiesgerken/carapace/commit/c37b0a9e0f27237833c92ceb8947b57e3fa3684c))
+
+  Admins can register openai-codex:<model> catalog rows; each request then authenticates with the session owner's own ChatGPT subscription.
+
+  - user_codex_credentials table (migration 0005) holds each user's OAuth
+    tokens, outside User.config so settings saves cannot clobber a rotated
+    single-use refresh token.
+  - CodexAccounts owns the paste-back login flow (pending PKCE flows in
+    memory), disconnect, and one OpenAICodexProvider per user so token
+    refreshes stay single-flight per user.
+  - The model factory takes an explicit user (factory(name, user=...)),
+    threaded from the session owner into agent, sentinel, title and
+    compaction models. The engine-wide cached default agent model is gone;
+    agent models are cached per session instead.
+  - A Codex request without a connected subscription fails with an
+    actionable CodexNotConnectedError instead of an opaque 401.
+  - /api/user/codex endpoints: status, start login, complete login with the
+    pasted redirect URL, disconnect.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01SXTai7x3FfwhLFZYk8ApNL
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix(frontend): offer openai-codex in the admin provider presets
+  ([`e278c0d`](https://github.com/thiesgerken/carapace/commit/e278c0dd4cefc61c2d121d5b055b0244e3996198))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01SXTai7x3FfwhLFZYk8ApNL
+
+- 🐛 fix: ask to reconnect when a ChatGPT subscription grant is revoked
+  ([`c05d51c`](https://github.com/thiesgerken/carapace/commit/c05d51c3e3eb3ba808eebfb63aab9ef99469dffc))
+
+  A revoked grant or a refresh token spent by another client surfaces as CredentialsRefreshError. The turn runner now reports it as a "reconnect under Settings" message (upstream detail goes to the log) instead of a traceback with a raw token-endpoint error.
+
+  Also drop the OpenAIError base from CodexNotConnectedError: the OpenAI SDK only wraps httpx RequestError/SSL/EndOfStream, so any other exception from the auth flow already propagates unchanged.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01SXTai7x3FfwhLFZYk8ApNL
+
+### 🔒 Security
+
+
+- 🔒️ fix: compare the Codex login state in constant time
+  ([`8efa925`](https://github.com/thiesgerken/carapace/commit/8efa925405fa2dbc1c9c1cfea79d33ee6091df5a))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01SXTai7x3FfwhLFZYk8ApNL
+
+### Other
+
+
+- 📝 docs: using a ChatGPT subscription for openai-codex models
+  ([`45a307f`](https://github.com/thiesgerken/carapace/commit/45a307f6446123552076acf950aefde8ebfbcb18))
+
+  Covers the admin catalog setup, the per-user paste-back login and why it exists (OpenAI pins the redirect URI to localhost), why a laptop's ~/.codex/auth.json must not be imported (single-use rotating refresh tokens), storage in user_codex_credentials, cost display and the API.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01SXTai7x3FfwhLFZYk8ApNL
+
+### ⬆️ Dependencies
+
+
+- ⬆️ chore: bump pydantic-ai to 2.54
+  ([`b0cb7f8`](https://github.com/thiesgerken/carapace/commit/b0cb7f8f2af36218919afb201add18523eee4b70))
+
+  The OpenAI Codex provider (ChatGPT subscription auth) needs a recent pydantic-ai; pin the floor so it cannot resolve older.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01SXTai7x3FfwhLFZYk8ApNL
+
 ## v0.157.6 (2026-10-03)
 
 
