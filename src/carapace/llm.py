@@ -4,22 +4,24 @@ from __future__ import annotations
 
 import inspect
 from collections.abc import Callable
-from typing import Literal, cast
+from typing import Literal, Protocol, cast
 
 from httpx2 import AsyncClient, HTTPStatusError, Timeout
 from pydantic_ai.exceptions import UserError
 from pydantic_ai.models import Model, infer_model
 from pydantic_ai.models.openai import OpenAIChatModel, OpenAIResponsesModel
+from pydantic_ai.models.openai_codex import OpenAICodexModel
 from pydantic_ai.models.openrouter import OpenRouterModel
 from pydantic_ai.profiles.anthropic import ANTHROPIC_THINKING_BUDGET_MAP
 from pydantic_ai.providers import Provider, infer_provider, infer_provider_class
 from pydantic_ai.providers.openai import OpenAIProvider
+from pydantic_ai.providers.openai_codex import OpenAICodexProvider
 from pydantic_ai.providers.openrouter import OpenRouterProvider
 from pydantic_ai.retries import AsyncHTTPX2TenacityTransport, RetryConfig, wait_retry_after
 from pydantic_ai.settings import ModelSettings
 from tenacity import retry_if_exception_type, stop_after_attempt, wait_exponential
 
-from .models.config import Config, agent_available_model_entries
+from .models.config import CODEX_PROVIDER, Config, agent_available_model_entries
 
 ThinkingSetting = bool | Literal["minimal", "low", "medium", "high", "xhigh"]
 
@@ -139,12 +141,27 @@ def model_settings_for_config(
     return model_settings_for_entry(entry, default_thinking=default_thinking)
 
 
-def make_model_factory(config: Config) -> Callable[[str], Model]:
+class ModelFactory(Protocol):
+    """Builds a registered model for the user whose request it will serve.
+
+    The user matters for providers that authenticate per user (ChatGPT subscriptions), so a model
+    built for one user must never serve another user's requests.
+    """
+
+    def __call__(self, model_name: str, *, user: str) -> Model: ...
+
+
+def make_model_factory(
+    config: Config,
+    codex_provider_for: Callable[[str], OpenAICodexProvider],
+) -> ModelFactory:
     """Resolve registered model ids; OpenAI-compatible overrides use ``OpenAIProvider``."""
 
-    def factory(model_name: str) -> Model:
+    def factory(model_name: str, *, user: str) -> Model:
         entry = resolve_available_model_entry(config, model_name)
         resolved_model_name = f"{entry.provider}:{entry.name}"
+        if entry.provider == CODEX_PROVIDER:
+            return OpenAICodexModel(entry.name, provider=codex_provider_for(user))
         if entry.provider == "openrouter":
             api_key: str | None = None
             if entry.api_key is not None:

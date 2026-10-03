@@ -7,10 +7,11 @@ from typing import Any
 
 from loguru import logger
 from pydantic_ai import Agent
-from pydantic_ai.models import Model, infer_model
+from pydantic_ai.models import infer_model
 from pydantic_ai.settings import ModelSettings
 from pydantic_ai.usage import UsageLimits
 
+from ..llm import ModelFactory
 from ..usage import LlmRequestLogCapability, UsageTracker, provider_cost_usd_from_messages
 
 _SYSTEM_PROMPT = """\
@@ -25,9 +26,10 @@ async def generate_title(
     events: list[dict[str, Any]],
     *,
     model: str,
+    user: str,
     usage_tracker: UsageTracker | None = None,
     before_llm_call: Callable[[], None] | None = None,
-    model_factory: Callable[[str], Model] | None = None,
+    model_factory: ModelFactory | None = None,
     model_settings: ModelSettings | None = None,
     usage_limits: UsageLimits | None = None,
 ) -> str:
@@ -59,7 +61,7 @@ async def generate_title(
     # Keep the prompt compact — at most ~2000 chars from the conversation
     prompt = "\n".join(lines)[:2000]
 
-    resolved = model_factory(model) if model_factory is not None else infer_model(model)
+    resolved = model_factory(model, user=user) if model_factory is not None else infer_model(model)
     agent: Agent[None, str] = Agent(
         resolved,
         output_type=str,

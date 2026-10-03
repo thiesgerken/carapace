@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 import sys
-from collections.abc import Callable
 from typing import Any, Literal, Protocol
 
 from loguru import logger
 from pydantic_ai.models import Model, infer_model
 from pydantic_ai.settings import ModelSettings
 
-from ..llm import DisabledModelError, model_settings_for_config
+from ..llm import DisabledModelError, ModelFactory, model_settings_for_config
 from ..models.config import AvailableModelEntry, Config, agent_available_model_entries
 from ..models.session import SessionState
 from .manager import SessionManager
@@ -30,7 +29,7 @@ class SessionModelHost(Protocol):
     _active: dict[str, ActiveSession]
     _config: Config
     _session_mgr: SessionManager
-    _model_factory: Callable[[str], Model] | None
+    _model_factory: ModelFactory | None
 
     async def _generate_title(self, active: ActiveSession, events: list[dict[str, Any]]) -> str: ...
 
@@ -89,9 +88,9 @@ class SessionModelMixin(SessionModelHost):
             if entry is not None and not entry.enabled:
                 raise DisabledModelError(f"{model_type} model {name!r} is disabled — select another model")
 
-    def _resolve_model(self, name: str) -> Model:
-        """Create a Model from a name, using the model_factory if available."""
-        return self._model_factory(name) if self._model_factory else infer_model(name)
+    def _resolve_model(self, name: str, user: str) -> Model:
+        """Create a Model from a name for *user*, using the model_factory if available."""
+        return self._model_factory(name, user=user) if self._model_factory else infer_model(name)
 
     def _resolve_model_settings(self, name: str) -> ModelSettings | None:
         """Build per-model request settings from the configured catalog."""
@@ -101,12 +100,10 @@ class SessionModelMixin(SessionModelHost):
         self,
         config: Config,
         *,
-        model_factory: Callable[[str], Model] | None,
-        agent_model: Model | None,
+        model_factory: ModelFactory | None,
     ) -> None:
         self._config = config
         self._model_factory = model_factory
-        self._agent_model = agent_model
         for active in self._active.values():
             active.agent_model = None
             if active.sentinel is not None:
@@ -134,6 +131,19 @@ class SessionModelMixin(SessionModelHost):
                     active.state.sentinel_model_name = None
                     self._session_mgr.save_state(active.state)
 
+    def reset_user_models(self, user: str) -> None:
+        """Rebuild the cached models of *user*'s active sessions.
+
+        Needed when the user's ChatGPT subscription login changes: cached models hold the provider
+        of the previous login and would keep using its credentials.
+        """
+        for active in self._active.values():
+            if active.owner != user:
+                continue
+            active.agent_model = None
+            if active.sentinel is not None:
+                active.sentinel.set_model(active.sentinel_model_name or self._config.agent.sentinel_model)
+
     def _restore_persisted_model_overrides(self, active: ActiveSession) -> None:
         """Validate restored overrides, falling back to defaults when they are no longer usable.
 
@@ -144,7 +154,7 @@ class SessionModelMixin(SessionModelHost):
 
         if active.agent_model_name is not None:
             try:
-                active.agent_model = self._resolve_model(active.agent_model_name)
+                active.agent_model = self._resolve_model(active.agent_model_name, active.owner)
             except DisabledModelError:
                 pass
             except Exception as exc:
@@ -172,7 +182,7 @@ class SessionModelMixin(SessionModelHost):
 
         if active.title_model_name is not None:
             try:
-                self._resolve_model(active.title_model_name)
+                self._resolve_model(active.title_model_name, active.owner)
             except DisabledModelError:
                 pass
             except Exception as exc:
@@ -186,7 +196,7 @@ class SessionModelMixin(SessionModelHost):
 
         if active.compaction_model_name is not None:
             try:
-                self._resolve_model(active.compaction_model_name)
+                self._resolve_model(active.compaction_model_name, active.owner)
             except DisabledModelError:
                 pass
             except Exception as exc:
@@ -213,9 +223,10 @@ class SessionModelMixin(SessionModelHost):
         state = active.state if active is not None else self._session_mgr.load_state(session_id)
         if state is None:
             raise KeyError(session_id)
+        owner = active.owner if active is not None else self._session_mgr.load_meta(session_id).user
 
         if not isinstance(agent_model_name, _UnsetType):
-            next_agent_model = None if agent_model_name is None else self._resolve_model(agent_model_name)
+            next_agent_model = None if agent_model_name is None else self._resolve_model(agent_model_name, owner)
             if active is not None:
                 self._apply_model_override(active, "agent", agent_model_name, next_agent_model)
             else:
@@ -223,7 +234,7 @@ class SessionModelMixin(SessionModelHost):
 
         if not isinstance(sentinel_model_name, _UnsetType):
             if sentinel_model_name is not None:
-                self._resolve_model(sentinel_model_name)
+                self._resolve_model(sentinel_model_name, owner)
             if active is not None:
                 self._apply_model_override(active, "sentinel", sentinel_model_name, None)
             else:
@@ -300,7 +311,7 @@ class SessionModelMixin(SessionModelHost):
             }
 
         try:
-            new_model = self._resolve_model(arg)
+            new_model = self._resolve_model(arg, active.owner)
         except Exception as exc:
             return {"command": "model", "data": {"models": models_view, "error": str(exc)}}
 
@@ -357,7 +368,7 @@ class SessionModelMixin(SessionModelHost):
             }
 
         try:
-            new_model = self._resolve_model(arg)
+            new_model = self._resolve_model(arg, active.owner)
         except Exception as exc:
             return {"command": cmd_name, "data": {"current": current, "default": default, "error": str(exc)}}
 

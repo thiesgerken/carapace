@@ -35,7 +35,10 @@ async def test_generate_title_skips_slash_user_and_truncates() -> None:
         inst.run = AsyncMock(side_effect=_fake_run)
         agent_cls.return_value = inst
         out = await generate_title(
-            events, model="anthropic:claude-3-5-haiku-latest", model_factory=lambda _m: MagicMock()
+            events,
+            model="anthropic:claude-3-5-haiku-latest",
+            user="thies",
+            model_factory=lambda _m, *, user: MagicMock(),
         )
 
     assert out == "📌 t"
@@ -67,7 +70,10 @@ async def test_generate_title_includes_unknown_slash_message() -> None:
         inst.run = AsyncMock(side_effect=_fake_run)
         agent_cls.return_value = inst
         out = await generate_title(
-            events, model="anthropic:claude-3-5-haiku-latest", model_factory=lambda _m: MagicMock()
+            events,
+            model="anthropic:claude-3-5-haiku-latest",
+            user="thies",
+            model_factory=lambda _m, *, user: MagicMock(),
         )
 
     assert out == "📌 t"

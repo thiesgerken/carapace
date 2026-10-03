@@ -9,6 +9,7 @@ from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import carapace.usage as usage_mod
+from carapace.codex_auth import CodexNotConnectedError
 from carapace.knowledge import KnowledgeRepoRegistry
 from carapace.models.session import SessionBudget
 from carapace.usage import LlmRequestRecord, LlmRequestState, ModelUsage
@@ -448,6 +449,24 @@ def test_submit_message_budget_exhausted_broadcasts_error(tmp_path: Path, db_fac
 
         mocked_turn.assert_not_awaited()
         assert any("Session budget reached" in err for err in sub.errors)
+
+    with _patch_sentinel():
+        asyncio.run(_run())
+
+
+def test_submit_message_without_chatgpt_connection_broadcasts_actionable_error(tmp_path: Path, db_factory):
+    async def _run() -> None:
+        engine = _make_engine(tmp_path, session_factory=db_factory)
+        sid = engine.session_mgr.create_session(user="thies").session_id
+        sub = _FakeSubscriber()
+        engine.subscribe(sid, sub)
+
+        not_connected = AsyncMock(side_effect=CodexNotConnectedError("thies"))
+        with patch("carapace.session.engine.run_agent_turn", new=not_connected):
+            await engine.submit_message(sid, "hello")
+            await asyncio.sleep(0.1)
+
+        assert sub.errors == [str(CodexNotConnectedError("thies"))]
 
     with _patch_sentinel():
         asyncio.run(_run())
