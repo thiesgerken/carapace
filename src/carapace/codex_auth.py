@@ -9,7 +9,6 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from urllib.parse import parse_qs, urlsplit
 
-from openai import OpenAIError
 from pydantic_ai.exceptions import ModelAPIError
 from pydantic_ai.providers.openai_codex import (
     OpenAICodexCredentials,
@@ -31,13 +30,15 @@ _LOGIN_TTL = timedelta(minutes=10)
 _PROFILE_CLAIM = "https://api.openai.com/profile"
 
 
-class CodexNotConnectedError(ModelAPIError, OpenAIError):
-    """A Codex model was used by a user who has not connected a ChatGPT subscription.
+# Shown when the stored grant can no longer be refreshed (revoked, or its single-use refresh token
+# was spent elsewhere): only a fresh login fixes that.
+CODEX_RECONNECT_MESSAGE = (
+    "Your ChatGPT subscription login is no longer valid. Reconnect it under Settings > ChatGPT subscription."
+)
 
-    Also an ``OpenAIError`` because it is raised from the provider's credential loading inside the
-    HTTP auth flow: the OpenAI SDK passes ``OpenAIError`` through unchanged, while anything else is
-    retried as a transport failure and ends up as an opaque connection error.
-    """
+
+class CodexNotConnectedError(ModelAPIError):
+    """A Codex model was used by a user who has not connected a ChatGPT subscription."""
 
     def __init__(self, user: str) -> None:
         super().__init__(

@@ -307,6 +307,27 @@ async def test_codex_request_without_connection_raises_not_connected(
     assert codex_requests == []
 
 
+async def test_codex_request_with_revoked_grant_raises_refresh_error(
+    store: CodexCredentialStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A revoked grant (or a refresh token spent by another client) makes the backend answer 401
+    # and the token endpoint reject the refresh; the turn runner turns this into "reconnect".
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        if request.url.host == "auth.openai.com":
+            return httpx2.Response(400, json={"error": "invalid_grant", "error_description": "refresh token reused"})
+        return httpx2.Response(401, json={"error": {"message": "token revoked"}})
+
+    monkeypatch.setattr(
+        codex_auth, "retry_http_client", lambda: httpx2.AsyncClient(transport=httpx2.MockTransport(handler))
+    )
+    store.connect("thies", _credentials("acct-thies"), email=None)
+    model = make_model_factory(_codex_config(), CodexAccounts(store).provider_for)(_CODEX_MODEL, user="thies")
+
+    with pytest.raises(CredentialsRefreshError, match="refresh token reused"):
+        await model.client.models.list()
+    assert store.load("thies") == _credentials("acct-thies")
+
+
 # --- pricing ---
 
 

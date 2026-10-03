@@ -43,6 +43,8 @@ The table is separate from the user settings on purpose: settings saves rewrite 
 
 The provider refreshes the access token when it expires and writes the rotated tokens back to the row. All Codex models of a user share one provider instance in the server, so refreshes for a user never run concurrently and cannot spend the same refresh token twice. A refresh never recreates a row that a disconnect removed.
 
+If a refresh is rejected (the grant was revoked, for example by logging out of all ChatGPT sessions, or its refresh token was spent by another client), the turn fails with a message asking the user to reconnect under **Settings** -> **Account** -> **ChatGPT subscription**; the upstream error goes to the server log.
+
 The server needs outbound HTTPS access to `auth.openai.com` and `chatgpt.com`.
 
 ## Usage and cost

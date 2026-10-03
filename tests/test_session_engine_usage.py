@@ -8,8 +8,10 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, patch
 
+from pydantic_ai.providers.openai_codex import CredentialsRefreshError
+
 import carapace.usage as usage_mod
-from carapace.codex_auth import CodexNotConnectedError
+from carapace.codex_auth import CODEX_RECONNECT_MESSAGE, CodexNotConnectedError
 from carapace.knowledge import KnowledgeRepoRegistry
 from carapace.models.session import SessionBudget
 from carapace.usage import LlmRequestRecord, LlmRequestState, ModelUsage
@@ -467,6 +469,25 @@ def test_submit_message_without_chatgpt_connection_broadcasts_actionable_error(t
             await asyncio.sleep(0.1)
 
         assert sub.errors == [str(CodexNotConnectedError("thies"))]
+
+    with _patch_sentinel():
+        asyncio.run(_run())
+
+
+def test_submit_message_with_revoked_chatgpt_grant_asks_to_reconnect(tmp_path: Path, db_factory):
+    async def _run() -> None:
+        engine = _make_engine(tmp_path, session_factory=db_factory)
+        sid = engine.session_mgr.create_session(user="thies").session_id
+        sub = _FakeSubscriber()
+        engine.subscribe(sid, sub)
+
+        refresh_failed = AsyncMock(side_effect=CredentialsRefreshError("Token request failed: invalid_grant"))
+        with patch("carapace.session.engine.run_agent_turn", new=refresh_failed):
+            await engine.submit_message(sid, "hello")
+            await asyncio.sleep(0.1)
+
+        assert sub.errors == [CODEX_RECONNECT_MESSAGE]
+        assert engine.session_mgr.load_events(sid)[-1]["content"] == CODEX_RECONNECT_MESSAGE
 
     with _patch_sentinel():
         asyncio.run(_run())
