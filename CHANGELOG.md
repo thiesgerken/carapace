@@ -1,6 +1,85 @@
 # CHANGELOG
 
 
+## v0.157.6 (2026-10-03)
+
+
+### Other
+
+
+- Merge pull request #291 from thiesgerken/renovate/all-routine-dependencies
+  ([`73ccd85`](https://github.com/thiesgerken/carapace/commit/73ccd85c74431d571cc390745dd8d5269813f557))
+
+- 📝 docs: describe serialized sandbox startup and skill setup reruns
+  ([`1146725`](https://github.com/thiesgerken/carapace/commit/1146725db43d611b8c9e4489667f11913df22358))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01372d9vXzGD7GtFRpm5LoNN
+
+### ⬆️ Dependencies
+
+
+- ⬆️ chore: upgrade all routine dependency updates
+  ([`73ccd85`](https://github.com/thiesgerken/carapace/commit/73ccd85c74431d571cc390745dd8d5269813f557))
+
+- ⬆️ chore: upgrade all routine dependency updates
+  ([`54f9fe4`](https://github.com/thiesgerken/carapace/commit/54f9fe45a17c0f5149a8c30a4b820524dd564ad6))
+
+### 🐛 Bug Fixes
+
+
+- 🐛Merge pull request #296 from thiesgerken/fix/sandbox-startup-race
+  ([`69fe31a`](https://github.com/thiesgerken/carapace/commit/69fe31aa808507204f9e920f84223ff1221f719f))
+
+- 🐛 fix: sandbox startup race on parallel tool calls
+  ([`69fe31a`](https://github.com/thiesgerken/carapace/commit/69fe31aa808507204f9e920f84223ff1221f719f))
+
+- 🐛 fix: never prune per-session startup locks
+  ([`22c8df3`](https://github.com/thiesgerken/carapace/commit/22c8df39f5bd56e069fce8225e0530042da19a57))
+
+  destroy_session could drop the startup lock while a parallel call held or waited on it, letting the next caller start on a fresh lock concurrently. The locks now live only on SandboxManager and are kept for the process lifetime; one Lock per session is negligible.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01372d9vXzGD7GtFRpm5LoNN
+
+- 🐛 fix: scope duplicate sandbox detection to the affected session
+  ([`2d8807f`](https://github.com/thiesgerken/carapace/commit/2d8807f6363a337da5a117fd975d5cd6fc48bb83))
+
+  Raising DuplicateSandboxError inside the global list_sandboxes() broke sandbox startup for every k8s session not yet attached once any single session had two live StatefulSets. list_sandboxes() now returns every live sandbox per session ({session_id: [id, ...]}, Docker and k8s), the lifecycle raises only when its own session has more than one, and orphan cleanup destroys all sandboxes of a deleted session. The server startup catch is gone.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01372d9vXzGD7GtFRpm5LoNN
+
+- 🐛 fix: don't pipe stdin to git http-backend for bodyless requests
+  ([`e064376`](https://github.com/thiesgerken/carapace/commit/e0643766ba3289a1b5f2475ddd8d190232fcc5d5))
+
+  A clone's GET info/refs failed with HTTP 500 when git http-backend exited before communicate() closed its stdin: uvloop raises RuntimeError on the closed transport, which asyncio does not suppress. Requests without a body now spawn the backend with stdin from /dev/null.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01372d9vXzGD7GtFRpm5LoNN
+
+- 🐛 fix: ignore terminating StatefulSets when listing k8s sandboxes
+  ([`ee9dd5a`](https://github.com/thiesgerken/carapace/commit/ee9dd5ac0d83ae2b05dd8e7f23f79276f5aab537))
+
+  A failed warm claim foreground-deletes the pool StatefulSet, which keeps its carapace.session label until the pod is gone. list_sandboxes picked whichever StatefulSet came last, so a concurrent start could resolve the session to the terminating pool sandbox and fail the ownership check. Terminating StatefulSets are now skipped (also for the warm pool), and two live StatefulSets for one session raise DuplicateSandboxError instead of silently picking one. Startup orphan cleanup logs and skips on that error rather than keeping the server down.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01372d9vXzGD7GtFRpm5LoNN
+
+- 🐛 fix: serialize sandbox startup per session and own skill setup rerun
+  ([`57c6cfd`](https://github.com/thiesgerken/carapace/commit/57c6cfd1c259af72d0272a3b82765bf5da7c06fa))
+
+  Parallel tool calls in a fresh session could both run ensure_session, claim/create twice and trip the ownership check on a terminating pool sandbox. SandboxManager.ensure_session now runs the lifecycle and the activated-skill setup rerun under a per-session startup lock and returns just the SessionContainer, so every caller (activate_skill, git pull/push, REST start/upload) gets restored skills on resume, not only the exec path. ContainerGone recovery goes through recreate_session, which recreates under the same lock and always reruns skill setup.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01372d9vXzGD7GtFRpm5LoNN
+
 ## v0.157.5 (2026-10-01)
 
 
