@@ -15,7 +15,7 @@ from carapace.sandbox.kubernetes import (
     _sanitize_pod_name,
     _standard_labels,
 )
-from carapace.sandbox.runtime import ContainerConfig, ExecResult, Mount, SandboxConfig
+from carapace.sandbox.runtime import ContainerConfig, DuplicateSandboxError, ExecResult, Mount, SandboxConfig
 
 # --- Helpers ---
 
@@ -485,24 +485,34 @@ async def test_destroy_sandbox_not_found():
     await rt.destroy_sandbox("abc", "carapace-sandbox-abc", "carapace-sandbox-abc-0")
 
 
+def _statefulset(name: str, labels: dict[str, str], *, deleting: bool = False) -> MagicMock:
+    sts = MagicMock()
+    sts.name = name
+    sts.labels = labels
+    metadata: dict[str, str] = {"deletionTimestamp": "2026-10-03T18:57:00Z"} if deleting else {}
+    sts.raw = {"metadata": metadata}
+    return sts
+
+
+async def _list_sandboxes(rt: KubernetesRuntime, *statefulsets: MagicMock) -> dict[str, str]:
+    async def _statefulsets():
+        for sts in statefulsets:
+            yield sts
+
+    with patch("carapace.sandbox.kubernetes.StatefulSet.list", return_value=_statefulsets()):
+        return await rt.list_sandboxes()
+
+
 @pytest.mark.asyncio
 async def test_list_sandboxes_skips_pool_statefulsets() -> None:
     rt = _make_runtime()
     rt._ensure_api = AsyncMock(return_value=object())
 
-    session_sts = MagicMock()
-    session_sts.labels = {"carapace.session": "sess-1", "carapace.sandbox": "sess-1"}
-    session_sts.name = "carapace-sandbox-sess-1"
-    pool_sts = MagicMock()
-    pool_sts.labels = {"carapace.sandbox": "warm-1", "carapace.pool": "true"}
-    pool_sts.name = "carapace-sandbox-warm-1"
-
-    async def _statefulsets():
-        yield session_sts
-        yield pool_sts
-
-    with patch("carapace.sandbox.kubernetes.StatefulSet.list", return_value=_statefulsets()):
-        sandboxes = await rt.list_sandboxes()
+    sandboxes = await _list_sandboxes(
+        rt,
+        _statefulset("carapace-sandbox-sess-1", {"carapace.session": "sess-1", "carapace.sandbox": "sess-1"}),
+        _statefulset("carapace-sandbox-warm-1", {"carapace.sandbox": "warm-1", "carapace.pool": "true"}),
+    )
 
     assert sandboxes == {"sess-1": "carapace-sandbox-sess-1-0"}
 
@@ -512,18 +522,65 @@ async def test_list_sandboxes_maps_claimed_warm_by_session_label() -> None:
     rt = _make_runtime()
     rt._ensure_api = AsyncMock(return_value=object())
 
-    claimed_sts = MagicMock()
     # A claimed warm sandbox: pool marker gone, session stamped, sandbox id stable.
-    claimed_sts.labels = {"carapace.sandbox": "warm-1", "carapace.session": "sess-2"}
-    claimed_sts.name = "carapace-sandbox-warm-1"
-
-    async def _statefulsets():
-        yield claimed_sts
-
-    with patch("carapace.sandbox.kubernetes.StatefulSet.list", return_value=_statefulsets()):
-        sandboxes = await rt.list_sandboxes()
+    sandboxes = await _list_sandboxes(
+        rt,
+        _statefulset("carapace-sandbox-warm-1", {"carapace.sandbox": "warm-1", "carapace.session": "sess-2"}),
+    )
 
     assert sandboxes == {"sess-2": "carapace-sandbox-warm-1-0"}
+
+
+@pytest.mark.asyncio
+async def test_list_sandboxes_skips_terminating_statefulset_of_failed_claim() -> None:
+    rt = _make_runtime()
+    rt._ensure_api = AsyncMock(return_value=object())
+
+    # A failed warm claim foreground-deletes the pool StatefulSet, which keeps the
+    # session label until its pod is gone, while the cold-created one takes over.
+    sandboxes = await _list_sandboxes(
+        rt,
+        _statefulset("carapace-sandbox-sess-1", {"carapace.session": "sess-1", "carapace.sandbox": "sess-1"}),
+        _statefulset(
+            "carapace-sandbox-pool-bee2abb4b74e",
+            {"carapace.session": "sess-1", "carapace.sandbox": "pool-bee2abb4b74e"},
+            deleting=True,
+        ),
+    )
+
+    assert sandboxes == {"sess-1": "carapace-sandbox-sess-1-0"}
+
+
+@pytest.mark.asyncio
+async def test_list_sandboxes_rejects_two_live_statefulsets_for_one_session() -> None:
+    rt = _make_runtime()
+    rt._ensure_api = AsyncMock(return_value=object())
+
+    with pytest.raises(DuplicateSandboxError, match="sess-1"):
+        await _list_sandboxes(
+            rt,
+            _statefulset("carapace-sandbox-sess-1", {"carapace.session": "sess-1", "carapace.sandbox": "sess-1"}),
+            _statefulset("carapace-sandbox-warm-1", {"carapace.session": "sess-1", "carapace.sandbox": "warm-1"}),
+        )
+
+
+@pytest.mark.asyncio
+async def test_list_pool_sandboxes_skips_terminating_statefulsets() -> None:
+    rt = _make_runtime()
+    rt._ensure_api = AsyncMock(return_value=object())
+
+    async def _statefulsets():
+        yield _statefulset("carapace-sandbox-warm-1", {"carapace.sandbox": "warm-1", "carapace.pool": "true"})
+        yield _statefulset(
+            "carapace-sandbox-warm-2",
+            {"carapace.sandbox": "warm-2", "carapace.pool": "true"},
+            deleting=True,
+        )
+
+    with patch("carapace.sandbox.kubernetes.StatefulSet.list", return_value=_statefulsets()):
+        pool = await rt.list_pool_sandboxes()
+
+    assert pool == {"warm-1": "carapace-sandbox-warm-1-0"}
 
 
 @pytest.mark.asyncio

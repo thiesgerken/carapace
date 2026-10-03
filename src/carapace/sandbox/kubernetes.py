@@ -18,6 +18,7 @@ from .runtime import (
     ContainerConfig,
     ContainerGoneError,
     ContainerRuntime,
+    DuplicateSandboxError,
     ExecResult,
     Mount,
     SandboxConfig,
@@ -56,6 +57,10 @@ def _sanitize_pod_name(name: str) -> str:
     # Strip any characters that aren't alphanumeric or hyphens
     sanitized = "".join(c for c in sanitized if c.isalnum() or c == "-")
     return sanitized[:63].strip("-")
+
+
+def _is_terminating(sts: StatefulSet) -> bool:
+    return bool(sts.raw.get("metadata", {}).get("deletionTimestamp"))
 
 
 def _default_command(command: str | list[str] | None) -> list[str]:
@@ -538,7 +543,12 @@ class KubernetesRuntime(ContainerRuntime):
         return None
 
     async def list_sandboxes(self) -> dict[str, str]:
-        """List all carapace-managed StatefulSets, returning ``{session_id: pod_name}``."""
+        """List live carapace-managed StatefulSets, returning ``{session_id: pod_name}``.
+
+        StatefulSets being deleted are skipped: a foreground delete keeps one around,
+        still labelled with its session, until its pod has terminated. Two live ones
+        for the same session have no safe owner to pick, so that raises.
+        """
         api = await self._ensure_api()
         result: dict[str, str] = {}
         async for sts in StatefulSet.list(
@@ -547,11 +557,17 @@ class KubernetesRuntime(ContainerRuntime):
             api=api,
         ):
             sts = cast(StatefulSet, sts)
-            if sts.labels.get("carapace.pool") == "true":
+            if sts.labels.get("carapace.pool") == "true" or _is_terminating(sts):
                 continue
             session_id = sts.labels.get("carapace.session")
-            if session_id:
-                result[session_id] = f"{sts.name}-0"
+            if not session_id:
+                continue
+            pod_name = f"{sts.name}-0"
+            if session_id in result:
+                raise DuplicateSandboxError(
+                    f"Session {session_id} has more than one live sandbox: {result[session_id]} and {pod_name}"
+                )
+            result[session_id] = pod_name
         return result
 
     async def list_pool_sandboxes(self) -> dict[str, str]:
@@ -564,7 +580,7 @@ class KubernetesRuntime(ContainerRuntime):
             api=api,
         ):
             sts = cast(StatefulSet, sts)
-            if sts.labels.get("carapace.pool") != "true":
+            if sts.labels.get("carapace.pool") != "true" or _is_terminating(sts):
                 continue
             sandbox_id = sts.labels.get("carapace.sandbox") or sts.labels.get("carapace.session")
             if sandbox_id:

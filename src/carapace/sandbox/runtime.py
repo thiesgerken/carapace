@@ -10,6 +10,10 @@ class ContainerGoneError(Exception):
     """Raised when a container no longer exists."""
 
 
+class DuplicateSandboxError(RuntimeError):
+    """Raised when more than one live sandbox claims the same session."""
+
+
 class SkillActivationError(Exception):
     """Raised when automatic skill activation/setup fails."""
 
