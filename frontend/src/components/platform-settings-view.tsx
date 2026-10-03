@@ -62,7 +62,7 @@ interface SummaryBadge {
   icon?: BadgeIcon;
 }
 
-const providerPresets = ["anthropic", "google-gla", "google-vertex", "openai", "openai-chat", "openrouter"];
+const providerPresets = ["anthropic", "google-gla", "google-vertex", "openai", "openai-chat", "openai-codex", "openrouter"];
 const thinkingOptions: ThinkingDraft[] = ["", "true", "false", "minimal", "low", "medium", "high", "xhigh"];
 
 const inputClassName = cn(
