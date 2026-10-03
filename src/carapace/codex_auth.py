@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import json
+import secrets
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from urllib.parse import parse_qs, urlsplit
@@ -178,7 +179,7 @@ class CodexAccounts:
         if pending is None or datetime.now(tz=UTC) - pending.started_at > _LOGIN_TTL:
             self._pending.pop(user, None)
             raise CodexLoginError("No ChatGPT login is in progress or it expired. Start the login again.")
-        if state != pending.flow.state:
+        if not secrets.compare_digest(state.encode(), pending.flow.state.encode()):
             raise CodexLoginError("This redirect URL belongs to a different login attempt. Start the login again.")
         del self._pending[user]
         credentials = await pending.flow.exchange_code(code)
@@ -206,7 +207,10 @@ def _parse_redirect(redirect_url: str) -> tuple[str, str]:
 
 
 def _email_from_access_token(access_token: str) -> str | None:
-    """The account email from the access token's unverified profile claim, for display only."""
+    """The account email from the access token's unverified profile claim, for display only.
+
+    Read from the access token because ``exchange_code()`` does not hand out the id_token.
+    """
     try:
         segment = access_token.split(".")[1]
         payload = json.loads(base64.urlsafe_b64decode(segment + "=" * (-len(segment) % 4)))
