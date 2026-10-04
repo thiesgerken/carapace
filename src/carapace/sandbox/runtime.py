@@ -133,12 +133,26 @@ class SandboxInspection(BaseModel):
     provisioned_bytes: int | None = None
 
 
+class PoolSandbox(BaseModel):
+    """An unattached warm-pool sandbox and the image its pods run."""
+
+    container_id: str
+    image: str
+
+
 class ContainerRuntime(Protocol):
     runtime_kind: SandboxRuntimeKind
 
     # -- Sandbox lifecycle (runtime decides Docker vs K8s details) --
     async def create_sandbox(self, config: SandboxConfig) -> str: ...
-    async def resume_sandbox(self, name: str) -> None: ...
+    async def resume_sandbox(self, name: str, image: str) -> None:
+        """Start a suspended sandbox again.
+
+        *image* is the configured base image. Where resuming starts a fresh container
+        anyway, the runtime switches the sandbox to it; a live container is never replaced.
+        """
+        ...
+
     async def suspend_sandbox(self, name: str, container_id: str) -> None: ...
     async def destroy_sandbox(self, session_id: str, name: str, container_id: str) -> None: ...
     async def sandbox_exists(self, name: str) -> str | None:
@@ -153,8 +167,8 @@ class ContainerRuntime(Protocol):
         """
         ...
 
-    async def list_pool_sandboxes(self) -> dict[str, str]:
-        """Return ``{sandbox_id: container_or_pod_id}`` for unattached warm-pool sandboxes."""
+    async def list_pool_sandboxes(self) -> dict[str, PoolSandbox]:
+        """Return ``{sandbox_id: PoolSandbox}`` for unattached warm-pool sandboxes."""
         ...
 
     async def claim_warm_sandbox(self, name: str, session_id: str) -> bool:

@@ -99,6 +99,16 @@ If `CARAPACE_SANDBOX_WARM_POOL_SIZE` is greater than `0`, the server also keeps 
 
 When a session is permanently deleted (or the user runs `/reload`), the entire StatefulSet is deleted. The PVC is automatically cleaned up via the retention policy (`whenDeleted: Delete`).
 
+### Changing the sandbox image
+
+`CARAPACE_SANDBOX_BASE_IMAGE` is read at server startup, so an image change takes effect with the server rollout. Existing sandbox StatefulSets are brought in line as follows:
+
+- **Unclaimed warm-pool members** hold no user data. Pool maintenance (at startup and every 60 s) deletes members whose pod template uses a different image and refills the pool from the configured one. Until then, new sessions skip stale members when claiming and fall back to another member or a cold create.
+- **Session sandboxes scaled to 0** get their pod template switched to the configured image right before they are scaled back up. Scaling up from 0 starts a fresh pod anyway, and the workspace and `/tmp` live on the PVC, so nothing is lost.
+- **Running session sandboxes** are never touched. They pick up the new image the next time they are resumed after an idle scale-down.
+
+Images are compared as plain reference strings. Re-pushing a mutable tag such as `:latest` under the same name is not detected, which is another reason to pin a specific version tag.
+
 ## Configuration
 
 All operator settings are configured via environment variables (there is no `config.yaml`); sandbox settings use the `CARAPACE_SANDBOX_` prefix. This keeps deployment-specific settings separate from UI-managed runtime data on the server PVC.
