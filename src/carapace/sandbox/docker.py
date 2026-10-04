@@ -20,6 +20,7 @@ from .runtime import (
     ContainerRuntime,
     ExecResult,
     Mount,
+    PoolSandbox,
     SandboxConfig,
     SandboxInspection,
 )
@@ -246,8 +247,8 @@ class DockerRuntime(ContainerRuntime):
         )
         return await self.create(container_config)
 
-    async def resume_sandbox(self, name: str) -> None:
-        """Docker containers cannot be resumed — always raises."""
+    async def resume_sandbox(self, name: str, image: str) -> None:
+        """Docker containers cannot be resumed; always raises so the caller recreates from *image*."""
         raise RuntimeError(f"Docker container {name} cannot be resumed, must be recreated")
 
     async def suspend_sandbox(self, name: str, container_id: str) -> None:
@@ -287,7 +288,7 @@ class DockerRuntime(ContainerRuntime):
 
         return await asyncio.to_thread(_list)
 
-    async def list_pool_sandboxes(self) -> dict[str, str]:
+    async def list_pool_sandboxes(self) -> dict[str, PoolSandbox]:
         """Docker does not participate in warm-pool inventory."""
         return {}
 
