@@ -1,6 +1,29 @@
 # CHANGELOG
 
 
+## v0.158.3 (2026-10-04)
+
+
+### 🐛 Bug Fixes
+
+
+- 🐛Merge pull request #300 from thiesgerken/fix/sandbox-image-drift
+  ([`0bceb73`](https://github.com/thiesgerken/carapace/commit/0bceb7383672f964d3895b841b251d7da378e151))
+
+- 🐛 fix(sandbox): replace stale warm-pool members and update image on resume
+  ([`0bceb73`](https://github.com/thiesgerken/carapace/commit/0bceb7383672f964d3895b841b251d7da378e151))
+
+- 🐛 fix(sandbox): replace warm-pool members and resumed sandboxes on base-image change
+  ([`4bded0e`](https://github.com/thiesgerken/carapace/commit/4bded0ed5fbc3b6856fcccd0c9443bd4746389f1))
+
+  Pool maintenance destroys unclaimed warm-pool members whose StatefulSet template runs a different image than CARAPACE_SANDBOX_BASE_IMAGE and refills the pool from the configured image; claims skip stale members meanwhile. Resuming a Kubernetes sandbox from zero replicas first switches its template to the configured image. Running sandboxes are never touched.
+
+  Closes #294
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01YDCtmFHoYV4FvYgdMxX3UL
+
 ## v0.158.2 (2026-10-04)
 
 
