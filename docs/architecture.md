@@ -292,6 +292,7 @@ This map describes the Python modules under `src/carapace/`. It is meant as a na
 | `session/engine.py`          | Public session engine facade, lifecycle management, dependency wiring, subscribers, retry/reset/fork APIs, and title generation. |
 | `session/manager.py`         | On-disk session persistence for state, history, events, usage, sandbox snapshots, and LLM activity.                              |
 | `session/model_selection.py` | Available model catalog and per-session model override logic.                                                                    |
+| `session/open_approvals.py`  | Detection and system denial of approval requests whose turn ended without a decision.                                            |
 | `session/titler.py`          | Lightweight LLM title generation.                                                                                                |
 | `session/transcript.py`      | Transcript/history helpers for retry, reset, fork, and unattended-output normalization.                                          |
 | `session/turns.py`           | Agent-turn execution, cancellation/failure handling, and subscriber notifications.                                               |

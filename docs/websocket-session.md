@@ -122,7 +122,7 @@ Both controls operate on the normalized event log used by `/api/sessions/{sessio
 2. `llm_activity` and optional `thinking` chunks while the model is working.
 3. Many `token` chunks (streaming).
 4. Interleaved `tool_call` / `tool_result` pairs while tools run.
-5. Possible: `approval_request` or escalation requests — client must respond; turn stays blocked until then.
+5. Possible: `approval_request` or escalation requests — client must respond; turn stays blocked until then. If the turn ends first (cancel, failure, restart), the server records a system denial for the request instead (see [sessions-and-channels.md](sessions-and-channels.md#unanswered-requests)).
 6. `done` with final text and optional `usage`.
 
 ## Reconnect behaviour

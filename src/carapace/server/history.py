@@ -20,6 +20,7 @@ from ..models.compaction import FOLD_MARKER
 from ..models.tooling import SentFileInfo, normalize_tool_call_args
 from ..security.context import ApprovalSource, ApprovalVerdict
 from ..session.compaction import is_fold_message, tool_return_compaction_info, tool_return_is_compacted
+from ..session.open_approvals import ApprovalDecisionSource
 from ..ws_models import Attachment, FinalStatus
 from .auth import require
 from .state import server_module
@@ -69,7 +70,7 @@ class HistoryMessage(BaseModel):
     domain: str | None = None
     decision: str | None = None
     tool_call_id: str | None = None
-    decision_source: ApprovalSource | None = None
+    decision_source: ApprovalDecisionSource | None = None
     message: str | None = None
     explanation: str | None = None
     risk_level: str | None = None
