@@ -1,6 +1,21 @@
 # CHANGELOG
 
 
+## v0.158.4 (2026-10-05)
+
+
+### 🔧 Configuration
+
+
+- 🔧 chore(frontend): commit Next.js-generated agent rules
+  ([`93e5cf2`](https://github.com/thiesgerken/carapace/commit/93e5cf26c6a62b23239c05206efdfa7de7b7bb27))
+
+  `next dev` writes frontend/AGENTS.md and frontend/CLAUDE.md on every run. Committing them keeps the working tree clean.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01EZLdaw4sVDnNvQa4xkMTi4
+
 ## v0.158.3 (2026-10-04)
 
 
