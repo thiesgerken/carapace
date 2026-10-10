@@ -1,5 +1,9 @@
 import type {
   MemoryBudgetWindowStatus,
+  MemoryFactView,
+  MemoryDigestLevel,
+  MemoryMonthNode,
+  MemoryPeriodNode,
   MemoryEstimateTotal,
   MemoryExtractionState,
   MemoryOutdatedReason,
@@ -133,4 +137,77 @@ export function toSpawnRequest(pick: SessionPick, filter: MemorySessionFilter): 
 /** Task ids behind the picked rows; sessions without a task have nothing to run. */
 export function runnableTaskIds(rows: MemorySessionRow[], ids: string[]): number[] {
   return rows.flatMap((row) => (row.task && ids.includes(row.session_id) ? [row.task.id] : []));
+}
+
+/** Week keys are ISO weeks (2026-W36), month keys calendar months (2026-09). */
+export function periodLevel(key: string): MemoryDigestLevel {
+  return key.includes("-W") ? "week" : "month";
+}
+
+export type PeriodBadge =
+  | { kind: "current" }
+  | { kind: "stale"; reasons: ("sources" | MemoryOutdatedReason)[] }
+  | { kind: "notRun" };
+
+export function periodBadge(node: MemoryPeriodNode): PeriodBadge {
+  if (node.digest === null) return { kind: "notRun" };
+  const reasons = [...(node.stale ? (["sources"] as const) : []), ...node.digest.outdated];
+  return reasons.length > 0 ? { kind: "stale", reasons } : { kind: "current" };
+}
+
+/** Month nodes start on the Monday of their first week, so the name comes from the key. */
+export function monthLabel(key: string, locale: string, withYear: boolean): string {
+  const [year, month] = key.split("-").map(Number);
+  return new Intl.DateTimeFormat(locale, { month: "long", ...(withYear ? { year: "numeric" } : {}), timeZone: "UTC" })
+    .format(Date.UTC(year, month - 1, 1));
+}
+
+/** Months arrive newest first; years keep that order. */
+export function groupMonthsByYear(months: MemoryMonthNode[]): [string, MemoryMonthNode[]][] {
+  const years = new Map<string, MemoryMonthNode[]>();
+  for (const month of months) {
+    const year = month.key.slice(0, 4);
+    years.set(year, [...(years.get(year) ?? []), month]);
+  }
+  return [...years];
+}
+
+/** The same fact from several sessions, merged by normalized statement + subject. */
+export interface FactGroup {
+  key: string;
+  latest: MemoryFactView;
+  occurrences: MemoryFactView[];
+  firstSeen: string;
+  lastSeen: string;
+}
+
+function normalizeFactText(value: string | null): string {
+  return (value ?? "").trim().toLowerCase().replace(/\s+/g, " ").replace(/[.!]+$/, "");
+}
+
+/** ponytail: exact normalized match only; fuzzy dedup is a planned follow-up. */
+export function groupFacts(facts: MemoryFactView[]): FactGroup[] {
+  const groups = new Map<string, MemoryFactView[]>();
+  for (const fact of facts) {
+    const key = `${normalizeFactText(fact.subject)}\u0000${normalizeFactText(fact.statement)}`;
+    groups.set(key, [...(groups.get(key) ?? []), fact]);
+  }
+  return [...groups].map(([key, occurrences]) => {
+    // ISO week keys are zero-padded, so they sort chronologically as strings.
+    const sorted = [...occurrences].sort((a, b) => a.week_key.localeCompare(b.week_key) || a.created_at.localeCompare(b.created_at));
+    const latest = sorted[sorted.length - 1];
+    return { key, latest, occurrences: sorted, firstSeen: sorted[0].week_key, lastSeen: latest.week_key };
+  }).sort((a, b) => b.lastSeen.localeCompare(a.lastSeen));
+}
+
+/** Dated facts stop being true after valid_until (an ISO date). */
+export function isExpiredFact(fact: MemoryFactView, today: string): boolean {
+  return fact.durability === "dated" && fact.valid_until !== null && fact.valid_until < today;
+}
+
+export function factMatchesText(group: FactGroup, query: string): boolean {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return true;
+  return [group.latest.statement, group.latest.subject, ...group.occurrences.map((fact) => fact.session_title)]
+    .some((text) => text?.toLowerCase().includes(needle));
 }

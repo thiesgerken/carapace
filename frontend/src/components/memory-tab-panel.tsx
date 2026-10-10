@@ -1,13 +1,26 @@
 "use client";
 
-import { useTranslations } from "next-intl";
 import { useAppShell } from "@/components/app-shell-context";
+import { MemoryFactsView } from "@/components/memory-facts-view";
 import { MemorySessionsView } from "@/components/memory-sessions-view";
 import { MemoryTasksView } from "@/components/memory-tasks-view";
+import { MemoryTimelineView } from "@/components/memory-timeline-view";
 import type { MemoryTab } from "@/lib/memory-tabs";
 
+function MemoryTabContent({ tab, server, token }: { tab: MemoryTab; server: string; token: string }) {
+  switch (tab) {
+    case "timeline":
+      return <MemoryTimelineView server={server} token={token} />;
+    case "sessions":
+      return <MemorySessionsView server={server} token={token} />;
+    case "facts":
+      return <MemoryFactsView server={server} />;
+    case "tasks":
+      return <MemoryTasksView server={server} token={token} />;
+  }
+}
+
 export function MemoryTabPanel({ tab }: { tab: MemoryTab }) {
-  const t = useTranslations("memory");
   const { server, token } = useAppShell();
   return (
     <div
@@ -16,13 +29,7 @@ export function MemoryTabPanel({ tab }: { tab: MemoryTab }) {
       aria-labelledby={`memory-tab-${tab}`}
       className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background/65"
     >
-      {tab === "tasks" ? (
-        <MemoryTasksView server={server} token={token} />
-      ) : tab === "sessions" ? (
-        <MemorySessionsView server={server} token={token} />
-      ) : (
-        <div className="flex flex-1 items-center justify-center p-6 text-sm text-muted-foreground">{t("comingSoon")}</div>
-      )}
+      <MemoryTabContent tab={tab} server={server} token={token} />
     </div>
   );
 }

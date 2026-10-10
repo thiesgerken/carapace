@@ -382,3 +382,36 @@ async def test_deleted_session_triggers_a_mirror(env: Env):
     env.sessions.delete_session(state.session_id)
     await env.spawner.sweep(NOW)
     assert env.changed == ["alice"]
+
+
+async def test_pending_task_is_refreshed_when_the_session_continues(env: Env):
+    state = env.session()
+    await env.spawner.sweep(NOW)
+    [pending] = env.tasks()
+    handler = env.handlers[TaskKind.session_extract]
+    assert len(handler.estimated) == 1
+
+    # Continued after the spawn, then idle long enough to settle again.
+    env.sessions.append_events(state.session_id, [{"role": "assistant", "content": "more"}])
+    state.last_active = NOW + timedelta(hours=1)
+    env.sessions.save_state(state)
+    later = NOW + timedelta(days=1)
+    await env.spawner.sweep(later)
+
+    [refreshed] = env.tasks()
+    assert refreshed.id == pending.id and refreshed.created_at == later
+    assert len(handler.estimated) == 2
+
+
+async def test_queued_task_is_not_replaced(env: Env):
+    state = env.session()
+    await env.spawner.sweep(NOW)
+    [task] = env.tasks()
+    env.store.run("alice", TaskSelection(ids=[task.id]), None, NOW)
+
+    env.sessions.append_events(state.session_id, [{"role": "assistant", "content": "more"}])
+    state.last_active = NOW + timedelta(hours=1)
+    env.sessions.save_state(state)
+    await env.spawner.sweep(NOW + timedelta(days=1))
+    assert [(t.id, t.status) for t in env.tasks()] == [(task.id, TaskStatus.queued)]
+    assert len(env.handlers[TaskKind.session_extract].estimated) == 1
