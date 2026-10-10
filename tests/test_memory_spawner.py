@@ -415,3 +415,64 @@ async def test_queued_task_is_not_replaced(env: Env):
     await env.spawner.sweep(NOW + timedelta(days=1))
     assert [(t.id, t.status) for t in env.tasks()] == [(task.id, TaskStatus.queued)]
     assert len(env.handlers[TaskKind.session_extract].estimated) == 1
+
+
+def _finish_week_digest(env: Env, week: str, *, fail: bool = False) -> None:
+    task = env.store.spawn(
+        "alice",
+        TaskKind.week_digest,
+        week,
+        spawned_by=SpawnedBy.auto,
+        now=NOW,
+        estimate=TaskEstimate(model="m", input_tokens=1, output_tokens_cap=1, cost_usd=None),
+    )
+    assert task is not None
+    env.store.run("alice", TaskSelection(ids=[task.id]), None, NOW)
+    env.store.claim(task.id, NOW)
+    if fail:
+        env.store.record_failure(task.id, "boom", NOW)
+        return
+    coverage = week_coverage(env.store.current_extractions("alice", week))
+    result = DigestResult(
+        level=DigestLevel.week,
+        period_key=week,
+        coverage=coverage,
+        coverage_hash=coverage_hash(coverage),
+        digest=PeriodDigest(summary="s", on_my_mind=[], highlights=[], open_loops=[], learned=[]),
+    )
+    provenance = Provenance(
+        carapace_version="0",
+        model="m",
+        prompt_version="p",
+        input_format_version=1,
+        input_hash="i",
+        input_tokens=1,
+        output_tokens=1,
+        cost_usd=None,
+        duration_ms=1,
+        task_id=task.id,
+        created_at=NOW,
+    )
+    assert env.store.record_outcome(task.id, TaskOutcome(provenance=provenance, result=result), NOW)
+
+
+async def test_week_digest_respawns_when_a_source_disappears(env: Env):
+    env.handlers[TaskKind.week_digest] = FakeHandler(TaskKind.week_digest, ModelRole.memory_high)
+    kept, dropped = env.session(), env.session()
+    env.extract(kept.session_id, input_hash="a")
+    env.extract(dropped.session_id, input_hash="b")
+    _finish_week_digest(env, "2026-W37")
+
+    # No source is newer than the digest, yet its coverage changed: it must be redone.
+    env.sessions.delete_session(dropped.session_id)
+    await env.spawner.sweep(NOW + timedelta(hours=1))
+    assert sorted(t.status for t in env.tasks(TaskKind.week_digest)) == [TaskStatus.done, TaskStatus.pending]
+
+
+async def test_failed_week_digest_is_not_retried_for_the_same_sources(env: Env):
+    env.handlers[TaskKind.week_digest] = FakeHandler(TaskKind.week_digest, ModelRole.memory_high)
+    state = env.session()
+    env.extract(state.session_id, input_hash="a")
+    _finish_week_digest(env, "2026-W37", fail=True)
+    await env.spawner.sweep(NOW + timedelta(hours=1))
+    assert [t.status for t in env.tasks(TaskKind.week_digest)] == [TaskStatus.failed]
