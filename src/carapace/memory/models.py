@@ -218,6 +218,11 @@ class MemoryTask(BaseModel):
     kind: TaskKind
     target: str
     status: TaskStatus
+    # Period the target falls into: the session's week for extractions, the target for digests.
+    week_key: str | None = None
+    month_key: str | None = None
+    # Model of the latest estimate, replaced by the model that actually ran on completion.
+    model: str | None = None
     blocked_reason: BlockedReason | None = None
     spawned_by: SpawnedBy
     model_override: str | None = None

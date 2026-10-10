@@ -43,6 +43,9 @@ def upgrade() -> None:
         sa.Column("kind", sa.String(length=32), nullable=False),
         sa.Column("target", sa.String(length=256), nullable=False),
         sa.Column("status", sa.String(length=16), nullable=False),
+        sa.Column("week_key", sa.String(length=16), nullable=True),
+        sa.Column("month_key", sa.String(length=16), nullable=True),
+        sa.Column("model", sa.String(length=256), nullable=True),
         sa.Column("blocked_reason", sa.String(length=32), nullable=True),
         sa.Column("spawned_by", sa.String(length=16), nullable=False),
         sa.Column("model_override", sa.Text(), nullable=True),
@@ -59,6 +62,8 @@ def upgrade() -> None:
     )
     op.create_index("ix_memory_tasks_user", "memory_tasks", ["user"])
     op.create_index("ix_memory_tasks_status", "memory_tasks", ["status"])
+    op.create_index("ix_memory_tasks_week_key", "memory_tasks", ["week_key"])
+    op.create_index("ix_memory_tasks_month_key", "memory_tasks", ["month_key"])
     op.create_index(
         "uq_memory_tasks_open",
         "memory_tasks",
