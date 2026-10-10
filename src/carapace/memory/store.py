@@ -376,6 +376,20 @@ class MemoryStore:
                 total = total.plus(estimate)
         return total
 
+    def queued_spend(self, user: str) -> Spend:
+        """The estimates of the user's queued tasks: spend that is promised but not yet claimed."""
+        with self._session_factory() as db:
+            estimates = db.scalars(
+                select(MemoryTaskRow.estimate).where(
+                    MemoryTaskRow.user == user, MemoryTaskRow.status == TaskStatus.queued
+                )
+            ).all()
+        total = Spend()
+        for estimate in estimates:
+            if estimate is not None:
+                total = total.plus(estimate)
+        return total
+
     def status_counts(self, user: str) -> tuple[dict[TaskStatus, int], int]:
         """Task count per status, and how many queued tasks the budget holds back."""
         with self._session_factory() as db:

@@ -590,8 +590,8 @@ export function Sidebar({
     <div className="flex h-full flex-col">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-border px-4 py-3">
-        <div className="flex min-w-0 items-center gap-2">
-          <div className="flex min-w-0 items-center gap-1.5 leading-none">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <div className="flex shrink-0 items-center gap-1.5 leading-none">
             <Image src={agentIcon(currentUser?.agentIcon)} alt="" width={18} height={18} aria-hidden="true" className="shrink-0" />
             <button
               type="button"
@@ -605,7 +605,7 @@ export function Sidebar({
           </div>
           <VersionBadge frontendVersion={frontendVersion} backendVersion={backendVersion} />
         </div>
-        <div className="flex items-center gap-0.5">
+        <div className="flex shrink-0 items-center gap-0.5">
           <Link
             href="/knowledge"
             title={t("navigation.knowledge")}

@@ -1,5 +1,6 @@
 import type {
   MemoryBudgetWindowStatus,
+  MemoryFactView,
   MemoryDigestLevel,
   MemoryMonthNode,
   MemoryPeriodNode,
@@ -169,4 +170,44 @@ export function groupMonthsByYear(months: MemoryMonthNode[]): [string, MemoryMon
     years.set(year, [...(years.get(year) ?? []), month]);
   }
   return [...years];
+}
+
+/** The same fact from several sessions, merged by normalized statement + subject. */
+export interface FactGroup {
+  key: string;
+  latest: MemoryFactView;
+  occurrences: MemoryFactView[];
+  firstSeen: string;
+  lastSeen: string;
+}
+
+function normalizeFactText(value: string | null): string {
+  return (value ?? "").trim().toLowerCase().replace(/\s+/g, " ").replace(/[.!]+$/, "");
+}
+
+/** ponytail: exact normalized match only; fuzzy dedup is a planned follow-up. */
+export function groupFacts(facts: MemoryFactView[]): FactGroup[] {
+  const groups = new Map<string, MemoryFactView[]>();
+  for (const fact of facts) {
+    const key = `${normalizeFactText(fact.subject)}\u0000${normalizeFactText(fact.statement)}`;
+    groups.set(key, [...(groups.get(key) ?? []), fact]);
+  }
+  return [...groups].map(([key, occurrences]) => {
+    // ISO week keys are zero-padded, so they sort chronologically as strings.
+    const sorted = [...occurrences].sort((a, b) => a.week_key.localeCompare(b.week_key) || a.created_at.localeCompare(b.created_at));
+    const latest = sorted[sorted.length - 1];
+    return { key, latest, occurrences: sorted, firstSeen: sorted[0].week_key, lastSeen: latest.week_key };
+  }).sort((a, b) => b.lastSeen.localeCompare(a.lastSeen));
+}
+
+/** Dated facts stop being true after valid_until (an ISO date). */
+export function isExpiredFact(fact: MemoryFactView, today: string): boolean {
+  return fact.durability === "dated" && fact.valid_until !== null && fact.valid_until < today;
+}
+
+export function factMatchesText(group: FactGroup, query: string): boolean {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return true;
+  return [group.latest.statement, group.latest.subject, ...group.occurrences.map((fact) => fact.session_title)]
+    .some((text) => text?.toLowerCase().includes(needle));
 }

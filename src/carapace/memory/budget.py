@@ -27,6 +27,9 @@ class Spend:
     def plus(self, estimate: TaskEstimate) -> Spend:
         return Spend(self.cost_usd + (estimate.cost_usd or 0), self.input_tokens + estimate.input_tokens)
 
+    def plus_spend(self, other: Spend) -> Spend:
+        return Spend(self.cost_usd + other.cost_usd, self.input_tokens + other.input_tokens)
+
 
 @dataclass(frozen=True)
 class BudgetWindows:

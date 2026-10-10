@@ -57,7 +57,6 @@
             "facts": "Facts",
             "tasks": "Tasks"
         },
-        "comingSoon": "Nothing here yet.",
         "status": {
             "loading": "Loading memory status…",
             "autoModeOn": "Auto mode on",
@@ -280,6 +279,23 @@
             "history": "{count, plural, one {Earlier version (#)} other {Earlier versions (#)}}",
             "historyCoverage": "{count, plural, one {Built from # source} other {Built from # sources}}",
             "alreadyQueued": "A digest task for this period is already queued or running."
+        },
+        "facts": {
+            "category": "Category",
+            "noSubject": "Unknown",
+            "empty": "No facts match these filters.",
+            "seen": "seen {first} – {last}",
+            "expired": "Expired: valid_until has passed",
+            "filters": {
+                "confidence": "Confidence",
+                "anyConfidence": "Any confidence",
+                "durability": "Durability",
+                "anyDurability": "Any durability",
+                "sourceKind": "Source",
+                "anySourceKind": "Any source",
+                "month": "Month",
+                "text": "Filter text"
+            }
         }
     },
     "account": {
@@ -319,7 +335,8 @@
             "defaultBudgets": "Default budgets",
             "matrix": "Matrix",
             "credentials": "Credentials",
-            "gitRemote": "Git remote"
+            "gitRemote": "Git remote",
+            "memory": "Memory"
         },
         "fields": {
             "agentName": "Name",
@@ -349,11 +366,20 @@
             "basicAuthUsername": "Basic Auth username",
             "basicAuthPassword": "Basic Auth password",
             "expose": "Expose",
-            "hide": "Hide"
+            "hide": "Hide",
+            "memoryAutoMode": "Auto mode",
+            "memoryCostPerDay": "Cost per day (USD)",
+            "memoryCostPerMonth": "Cost per month (USD)",
+            "memoryTokensPerDay": "Input tokens per day",
+            "memoryTokensPerMonth": "Input tokens per month",
+            "timezone": "Time zone",
+            "memoryLow": "Session extraction model",
+            "memoryHigh": "Digest model"
         },
         "defaults": {
             "serverDefault": "Server default",
-            "currentModel": "{model}"
+            "currentModel": "{model}",
+            "noLimit": "No limit"
         },
         "placeholders": {
             "addRoom": "Add room, Enter or comma",
@@ -393,7 +419,11 @@
         },
         "hints": {
             "agentName": "Shown instead of “carapace” in the tab title, sidebar, and message box. Leave empty for the default.",
-            "agentIcon": "A single emoji used as the favicon and sidebar logo. Leave empty for the default."
+            "agentIcon": "A single emoji used as the favicon and sidebar logo. Leave empty for the default.",
+            "memoryAutoMode": "Run pending memory tasks automatically while the budget allows. Off means tasks only run when you start them.",
+            "timezone": "Defines memory weeks, months and budget windows.",
+            "memoryLow": "memory_low: summarizes single sessions. A cheap model is enough.",
+            "memoryHigh": "memory_high: writes weekly and monthly digests. Use a stronger model."
         },
         "chatgpt": {
             "description": "Use your own ChatGPT subscription for openai-codex models instead of the platform's API keys. Usage counts against your subscription limits; cost figures show the equivalent API price.",
@@ -473,13 +503,17 @@
             "apiKeySource": "API key source",
             "apiKey": "API key",
             "secretReference": "Secret reference",
-            "compaction": "Compaction"
+            "compaction": "Compaction",
+            "memoryLow": "Memory: session extraction",
+            "memoryHigh": "Memory: digests"
         },
         "placeholders": {
             "selectModel": "Select model",
             "unlimited": "Unlimited",
             "generatedId": "provider:name",
-            "keepSecret": "Keep configured secret"
+            "keepSecret": "Keep configured secret",
+            "memoryLowDefault": "Compaction or title model",
+            "memoryHighDefault": "Agent model"
         },
         "actions": {
             "save": "Save",
@@ -1275,7 +1309,9 @@
             "timeZone": "Time Zone",
             "inputOptional": "Input (Optional)",
             "archivePreviousSessions": "Archive previous sessions",
-            "archivePreviousSessionsHelp": "When a new session starts, archive any earlier sessions still open from this job."
+            "archivePreviousSessionsHelp": "When a new session starts, archive any earlier sessions still open from this job.",
+            "memoryEnabled": "Include in memory",
+            "memoryEnabledHelp": "Sessions of this job are distilled into long-term memory like regular sessions."
         },
         "placeholders": {
             "name": "Nightly inbox review",

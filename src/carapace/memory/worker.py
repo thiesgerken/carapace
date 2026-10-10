@@ -133,7 +133,11 @@ class MemoryWorker:
             estimate = await self._estimate_or_fail(task, user_config, now)
             if estimate is not None:
                 candidates.append((task, estimate))
+        # Already queued tasks have a claim on the budget too; without them every tick would queue
+        # another affordable prefix and the backlog would pile up blocked.
         day, month = self._spend(user, user_config, now)
+        queued = self._store.queued_spend(user)
+        day, month = day.plus_spend(queued), month.plus_spend(queued)
         count = affordable_count(user_config.memory.budget, day, month, [e for _, e in candidates])
         if count:
             self._store.run(user, TaskSelection(ids=[t.id for t, _ in candidates[:count]]), None, now)
@@ -163,8 +167,6 @@ class MemoryWorker:
             if handler is None:
                 self._store.fail_unclaimed(task.id, f"no handler registered for {task.kind}", now)
                 continue
-            if task.kind is TaskKind.session_extract and not self._session_still_eligible(task, now):
-                continue
             user_config = self._user_config_for(task.user)
             estimate: TaskEstimate | None = None
             if handler.model_role is not None:
@@ -178,11 +180,15 @@ class MemoryWorker:
                     if task.blocked_reason is not BlockedReason.budget:
                         self._store.set_blocked(task.id, BlockedReason.budget)
                     continue
-                if not self._store.claim(task.id, now):
-                    continue
-                spend[task.user] = (day.plus(estimate), month.plus(estimate))
-            elif not self._store.claim(task.id, now):
+            # Only now, for the task about to run: the re-check loads its transcript, and budget-
+            # blocked tasks must not do that every tick.
+            if task.kind is TaskKind.session_extract and not self._session_still_eligible(task, now):
                 continue
+            if not self._store.claim(task.id, now):
+                continue
+            if estimate is not None:
+                day, month = spend[task.user]
+                spend[task.user] = (day.plus(estimate), month.plus(estimate))
             self._start(task, self._model_for(task, user_config))
 
     def _session_still_eligible(self, task: MemoryTask, now: datetime) -> bool:

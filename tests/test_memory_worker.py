@@ -95,7 +95,7 @@ class MirrorHandler:
 
 
 class Env:
-    def __init__(self, db_factory) -> None:
+    def __init__(self, db_factory, max_parallel: int = 4) -> None:
         with db_factory.begin() as db:
             db.add(
                 User(
@@ -118,6 +118,7 @@ class Env:
         self.extract = ExtractHandler()
         self.mirror = MirrorHandler()
         self.ineligible: dict[str, Ineligible] = {}
+        self.rechecked: list[str] = []
         self.sweeps = 0
         self.worker = MemoryWorker(
             store=self.store,
@@ -126,14 +127,18 @@ class Env:
             user_config_for=lambda _: self.user_config,
             users=lambda: ["alice"],
             sweep=self._sweep,
-            recheck_session=lambda task, now: self.ineligible.get(task.target),
-            max_parallel=4,
+            recheck_session=self._recheck,
+            max_parallel=max_parallel,
             timing=WorkerTiming(mirror_debounce=timedelta(minutes=2)),
             clock=lambda: self.now,
         )
 
     async def _sweep(self, now: datetime) -> None:
         self.sweeps += 1
+
+    def _recheck(self, task: MemoryTask, now: datetime) -> Ineligible | None:
+        self.rechecked.append(task.target)
+        return self.ineligible.get(task.target)
 
     def pending(self, session_id: str, cost: str = "0.60") -> MemoryTask:
         task = self.store.spawn(
@@ -296,3 +301,24 @@ async def test_sweep_runs_on_its_interval(env: Env):
     env.now += timedelta(minutes=6)
     await env.tick()
     assert env.sweeps == 2
+
+
+async def test_auto_mode_counts_queued_tasks_against_the_budget(db_factory):
+    env = Env(db_factory, max_parallel=1)
+    env.user_config.memory.auto_mode = True
+    tasks = [env.pending(s, cost="0.40") for s in ("s1", "s2", "s3")]
+    env.extract.block = asyncio.Event()
+
+    await env.worker.tick()  # promotes two (0.80), runs one, one stays queued
+    await env.worker.tick()  # running 0.40 + queued 0.40 leave no room for the third
+    statuses = sorted(env.task(t.id).status for t in tasks)
+    assert statuses == [TaskStatus.pending, TaskStatus.queued, TaskStatus.running]
+    env.extract.block.set()
+    await env.worker.drain()
+
+
+async def test_budget_blocked_tasks_never_load_transcripts(env: Env):
+    env.queued("s1", cost="2.00")
+    await env.tick()
+    await env.tick()
+    assert env.rechecked == []

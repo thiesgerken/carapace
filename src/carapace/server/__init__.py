@@ -42,7 +42,7 @@ from ..git.http import GitHttpHandler
 from ..jobs import JobsScheduler, JobsStore
 from ..knowledge import KnowledgeRepoRegistry
 from ..llm import make_model_factory
-from ..memory.handlers import DigestHandler, SessionExtractHandler
+from ..memory.handlers import DigestHandler, MirrorHandler, SessionExtractHandler
 from ..memory.models import DigestLevel, TaskKind
 from ..memory.service import MemoryService
 from ..memory.store import MemoryStore
@@ -508,6 +508,12 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
                 current_extractions=memory_store.current_extractions,
                 current_digests=memory_store.current_digests,
                 model_factory=model_factory,
+            ),
+            TaskKind.mirror: MirrorHandler(
+                current_extractions=memory_store.current_extractions,
+                current_digests=memory_store.current_digests,
+                knowledge_repo_for_user=_knowledge_repo_registry.ensure_user_repo,
+                push_if_configured=_knowledge_git_runtime.push_if_configured,
             ),
         },
         user_config_for=_user_config,
