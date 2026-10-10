@@ -66,6 +66,10 @@ class Spawner:
         self._on_records_changed = on_records_changed
         # Per user, as of the last sweep; shown on /status so the skip is visible.
         self.sessions_without_transcript: dict[str, int] = {}
+        # Current extraction ids per user at the last sweep. Deleting a session drops its
+        # extractions by cascade, invisibly to memory; a shrinking set is how the mirror hears.
+        # ponytail: in memory, so a deletion before a restart waits for the next record change.
+        self._known_extractions: dict[str, set[int]] = {}
 
     async def sweep(self, now: datetime) -> None:
         for user in self._users():
@@ -125,6 +129,8 @@ class Spawner:
     async def _sweep_sessions(self, user: str, user_config: UserConfig, now: datetime) -> None:
         tz = ZoneInfo(user_config.timezone)
         current = {record.session_id: record for record in self._store.current_extractions(user)}
+        known = self._known_extractions.get(user)
+        self._known_extractions[user] = {record.id for record in current.values()}
         open_tasks = self._store.open_tasks(user, TaskKind.session_extract)
         last_spawned = self._store.latest_task_times(user, TaskKind.session_extract)
         settled_before = now - timedelta(hours=self._config.sessions.commit.autosave_inactivity_hours)
@@ -156,6 +162,8 @@ class Spawner:
                 without_transcript += 1
 
         self.sessions_without_transcript[user] = without_transcript
+        if known is not None and not known <= self._known_extractions[user]:
+            records_changed = True
         if records_changed:
             self._on_records_changed(user, now)
 
