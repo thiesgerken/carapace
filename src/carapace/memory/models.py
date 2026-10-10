@@ -101,9 +101,14 @@ class ExtractionState(StrEnum):
 
 
 # --- LLM output schemas ---
+#
+# What the model returns. The fact provenance rules are deliberately not validated here: one bad
+# fact must not fail a whole billed run. Handlers drop offending facts and build the stored models
+# below, which validate the rules as a backstop. Stored models subclass these, so the schemas
+# cannot drift apart.
 
 
-class _FactBase(BaseModel):
+class _FactFields(BaseModel):
     category: FactCategory
     statement: str
     subject: str | None = None
@@ -112,27 +117,17 @@ class _FactBase(BaseModel):
     durability: Durability
     valid_until: date | None = None
 
-    @model_validator(mode="after")
-    def _validate_provenance_rules(self) -> Self:
-        if self.category is FactCategory.social and not self.subject:
-            raise ValueError("social facts need a subject")
-        # Tool output must not become facts about the user or their people: those end up in a
-        # system prompt later, so they may only come from what the user said.
-        if self.source_kind is FactSourceKind.observed and self.category is not FactCategory.surroundings:
-            raise ValueError("observed facts may only be surroundings facts")
-        return self
 
-
-class Fact(_FactBase):
+class ExtractedFact(_FactFields):
     source_seqs: list[int]
 
 
-class SessionExtraction(BaseModel):
+class SessionExtractionOutput(BaseModel):
     abstract: str
     outcomes: list[str]
     open_loops: list[str]
     on_my_mind: list[str]
-    facts: list[Fact]
+    facts: list[ExtractedFact]
     friction: list[str]
     tags: list[str]
 
@@ -143,15 +138,15 @@ class DigestTheme(BaseModel):
     refs: list[str]
 
 
-class DigestFact(_FactBase):
+class LearnedFact(_FactFields):
     """A deduplicated fact; ``user_said`` only if every merged source was."""
 
     # Session ids (week digests) or week keys (month digests) the fact came from.
     refs: list[str]
 
 
-class PeriodDigest(BaseModel):
-    """LLM output for week and month digests.
+class PeriodDigestOutput(BaseModel):
+    """Week and month digests.
 
     Stats (session count, coverage) are computed from the record's coverage, not generated.
     """
@@ -160,7 +155,49 @@ class PeriodDigest(BaseModel):
     on_my_mind: list[DigestTheme]
     highlights: list[str]
     open_loops: list[str]
-    learned: list[DigestFact]
+    learned: list[LearnedFact]
+
+
+# --- Stored extraction and digest content ---
+
+
+def violated_provenance_rule(fact: _FactFields) -> str | None:
+    """Why *fact* may not be stored, or ``None``.
+
+    Tool output must not become facts about the user or their people: those end up in a system
+    prompt later, so they may only come from what the user said.
+    """
+    if fact.category is FactCategory.social and not fact.subject:
+        return "social facts need a subject"
+    if fact.source_kind is FactSourceKind.observed and fact.category is not FactCategory.surroundings:
+        return "observed facts may only be surroundings facts"
+    return None
+
+
+class Fact(ExtractedFact):
+    @model_validator(mode="after")
+    def _validate_provenance_rules(self) -> Self:
+        if (violation := violated_provenance_rule(self)) is not None:
+            raise ValueError(violation)
+        return self
+
+
+class SessionExtraction(SessionExtractionOutput):
+    # Narrowed on purpose so stored facts are validated; list is invariant, hence the ignore.
+    facts: list[Fact]  # pyrefly: ignore[bad-override]
+
+
+class DigestFact(LearnedFact):
+    @model_validator(mode="after")
+    def _validate_provenance_rules(self) -> Self:
+        if (violation := violated_provenance_rule(self)) is not None:
+            raise ValueError(violation)
+        return self
+
+
+class PeriodDigest(PeriodDigestOutput):
+    # Narrowed on purpose so stored facts are validated; list is invariant, hence the ignore.
+    learned: list[DigestFact]  # pyrefly: ignore[bad-override]
 
 
 # --- Provenance, estimates, outcomes ---

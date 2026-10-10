@@ -38,15 +38,19 @@ from .models import (
     ExtractionRecord,
     ExtractionResult,
     Fact,
+    FactSourceKind,
     MemoryTask,
     MirrorResult,
     ModelRole,
     PeriodDigest,
+    PeriodDigestOutput,
     Provenance,
     SessionExtraction,
+    SessionExtractionOutput,
     TaskEstimate,
     TaskKind,
     TaskOutcome,
+    violated_provenance_rule,
 )
 from .periods import month_key_for_week, month_weeks, period_dates, week_key
 from .prompts import MONTH_DIGEST, SESSION_EXTRACT, WEEK_DIGEST, PromptTemplate
@@ -158,6 +162,7 @@ class _PreparedExtraction:
     call: _LlmCall
     week_key: str
     seqs: frozenset[int]
+    user_seqs: frozenset[int]
 
 
 class SessionExtractHandler:
@@ -184,10 +189,10 @@ class SessionExtractHandler:
         if model is None:
             raise ValueError("session extraction needs a model")
         prepared = self._prepare(task.user, task.target)
-        extraction, provenance = await _run_llm(
-            task, model, prepared.call, SessionExtraction, config=self._config, model_factory=self._model_factory
+        output, provenance = await _run_llm(
+            task, model, prepared.call, SessionExtractionOutput, config=self._config, model_factory=self._model_factory
         )
-        extraction = _traceable_extraction(task, extraction, prepared.seqs)
+        extraction = _traceable_extraction(task, output, prepared.seqs, prepared.user_seqs)
         result = ExtractionResult(
             session_id=task.target,
             week_key=prepared.week_key,
@@ -214,6 +219,7 @@ class SessionExtractHandler:
             ),
             week_key=week_key(started_at, tz),
             seqs=rendered.seqs,
+            user_seqs=rendered.user_seqs,
         )
 
 
@@ -256,10 +262,10 @@ class DigestHandler:
         if model is None:
             raise ValueError(f"{self.level} digests need a model")
         prepared = self._prepare(task.user, task.target)
-        digest, provenance = await _run_llm(
-            task, model, prepared.call, PeriodDigest, config=self._config, model_factory=self._model_factory
+        output, provenance = await _run_llm(
+            task, model, prepared.call, PeriodDigestOutput, config=self._config, model_factory=self._model_factory
         )
-        digest = _traceable_digest(task, digest, {entry.source_id for entry in prepared.coverage})
+        digest = _traceable_digest(task, output, {entry.source_id for entry in prepared.coverage})
         result = DigestResult(
             level=self.level,
             period_key=task.target,
@@ -301,36 +307,48 @@ class DigestHandler:
         )
 
 
-def _traceable_extraction(task: MemoryTask, extraction: SessionExtraction, seqs: Set[int]) -> SessionExtraction:
-    """Drop source seqs the model invented, and facts left without any: they can't be traced."""
+def _traceable_extraction(
+    task: MemoryTask, output: SessionExtractionOutput, seqs: Set[int], user_seqs: Set[int]
+) -> SessionExtraction:
+    """Keep the facts that can be traced and may be stored.
+
+    Invented seqs are removed. A fact is dropped when no valid seq remains, when it breaks a
+    provenance rule (facts about the user or their people must be ``user_said``), or when it
+    claims ``user_said`` without citing a user message: tool output must not pass as the user's word.
+    """
     facts: list[Fact] = []
     dropped_refs = 0
-    for fact in extraction.facts:
+    for fact in output.facts:
         valid = [seq for seq in fact.source_seqs if seq in seqs]
         dropped_refs += len(fact.source_seqs) - len(valid)
-        if valid:
-            facts.append(fact.model_copy(update={"source_seqs": valid}))
-    _warn_dropped(task, dropped_refs, len(extraction.facts) - len(facts))
-    return extraction.model_copy(update={"facts": facts})
+        cites_user = any(seq in user_seqs for seq in valid)
+        if (
+            valid
+            and violated_provenance_rule(fact) is None
+            and (fact.source_kind is not FactSourceKind.user_said or cites_user)
+        ):
+            facts.append(Fact(**fact.model_dump(exclude={"source_seqs"}), source_seqs=valid))
+    _warn_dropped(task, dropped_refs, len(output.facts) - len(facts))
+    return SessionExtraction(**output.model_dump(exclude={"facts"}), facts=facts)
 
 
-def _traceable_digest(task: MemoryTask, digest: PeriodDigest, source_ids: Set[str]) -> PeriodDigest:
+def _traceable_digest(task: MemoryTask, output: PeriodDigestOutput, source_ids: Set[str]) -> PeriodDigest:
     """Drop refs outside the digest's coverage. Themes keep their text without them; a learned
-    entry left without any ref can't be traced and is dropped."""
+    entry left without any ref, or breaking a provenance rule, is dropped."""
     dropped_refs = 0
     themes: list[DigestTheme] = []
-    for theme in digest.on_my_mind:
+    for theme in output.on_my_mind:
         valid = [ref for ref in theme.refs if ref in source_ids]
         dropped_refs += len(theme.refs) - len(valid)
         themes.append(theme.model_copy(update={"refs": valid}))
     learned: list[DigestFact] = []
-    for fact in digest.learned:
+    for fact in output.learned:
         valid = [ref for ref in fact.refs if ref in source_ids]
         dropped_refs += len(fact.refs) - len(valid)
-        if valid:
-            learned.append(fact.model_copy(update={"refs": valid}))
-    _warn_dropped(task, dropped_refs, len(digest.learned) - len(learned))
-    return digest.model_copy(update={"on_my_mind": themes, "learned": learned})
+        if valid and violated_provenance_rule(fact) is None:
+            learned.append(DigestFact(**fact.model_dump(exclude={"refs"}), refs=valid))
+    _warn_dropped(task, dropped_refs, len(output.learned) - len(learned))
+    return PeriodDigest(**output.model_dump(exclude={"on_my_mind", "learned"}), on_my_mind=themes, learned=learned)
 
 
 def _warn_dropped(task: MemoryTask, refs: int, entries: int) -> None:

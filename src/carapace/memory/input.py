@@ -33,6 +33,8 @@ class ExtractionInput(BaseModel):
     input_format_version: int
     # Seqs of the rendered blocks: the only ones a fact may cite.
     seqs: frozenset[int]
+    # The subset that are user messages: a `user_said` fact must cite at least one.
+    user_seqs: frozenset[int]
 
 
 def render_extraction_input(events: list[dict[str, Any]]) -> ExtractionInput:
@@ -49,6 +51,7 @@ def render_extraction_input(events: list[dict[str, Any]]) -> ExtractionInput:
         token_estimate=count_text_tokens(text),
         input_format_version=INPUT_FORMAT_VERSION,
         seqs=frozenset(blocks),
+        user_seqs=frozenset(seq for seq in blocks if _is_user_message(events, seq)),
     )
 
 

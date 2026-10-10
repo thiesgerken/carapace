@@ -22,6 +22,7 @@ from carapace.memory.models import (
     PeriodDigest,
     Provenance,
     SessionExtraction,
+    SessionExtractionOutput,
     SessionMemoryFilter,
     SpawnedBy,
     TaskEstimate,
@@ -38,7 +39,7 @@ from carapace.models.user import UserConfig
 from carapace.session import SessionManager
 
 NOW = datetime(2026, 9, 21, 12, tzinfo=UTC)
-CURRENT_PROMPT = SESSION_EXTRACT.version(SessionExtraction)
+CURRENT_PROMPT = SESSION_EXTRACT.version(SessionExtractionOutput)
 LOW_MODEL = Config().agent.title_model
 
 

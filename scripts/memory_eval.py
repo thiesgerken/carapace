@@ -38,13 +38,13 @@ from carapace.memory.budget import estimate_cost
 from carapace.memory.handlers import SESSION_EXTRACT_OUTPUT_CAP
 from carapace.memory.input import ExtractionInput, render_extraction_input
 from carapace.memory.llm import LlmCallError, prompt_tokens, run_structured
-from carapace.memory.models import SessionExtraction
+from carapace.memory.models import SessionExtractionOutput
 from carapace.memory.prompts import SESSION_EXTRACT
 
 DEFAULT_MODEL = "anthropic:claude-haiku-4-5"
 
-# Valid minimal output for --test-model: TestModel's generated data would trip the Fact validators.
-_TEST_OUTPUT = SessionExtraction(
+# Minimal output for --test-model; TestModel's generated data would fail the handlers' fact checks.
+_TEST_OUTPUT = SessionExtractionOutput(
     abstract="Test extraction.", outcomes=[], open_loops=[], on_my_mind=[], facts=[], friction=[], tags=[]
 )
 
@@ -147,7 +147,7 @@ async def run_calls(prepared: list[Prepared], model: str, resolve: Model | None)
         try:
             call = await run_structured(
                 SESSION_EXTRACT,
-                SessionExtraction,
+                SessionExtractionOutput,
                 p.user_prompt,
                 model=model,
                 user="eval",
