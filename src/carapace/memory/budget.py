@@ -1,5 +1,6 @@
 """Budget math for memory LLM tasks: spend windows, the gate decision and estimate pricing.
 
+Every LLM task has an estimate; tasks without an LLM call (mirror) never reach these functions.
 Unpriced work (local models without pricing data) adds nothing to cost and is bounded only
 by the token limits, which exist for exactly that case.
 """
@@ -43,10 +44,13 @@ def budget_windows(now: datetime, tz: ZoneInfo) -> BudgetWindows:
     )
 
 
-def spend_of(provenances: Iterable[Provenance]) -> Spend:
+def spend_of(provenances: Iterable[Provenance], reservations: Iterable[TaskEstimate] = ()) -> Spend:
+    """Actual spend of billed calls plus the estimates reserved by running ones."""
     total = Spend()
     for p in provenances:
         total = Spend(total.cost_usd + (p.cost_usd or 0), total.input_tokens + p.input_tokens)
+    for estimate in reservations:
+        total = total.plus(estimate)
     return total
 
 
@@ -55,10 +59,8 @@ def estimate_cost(model: str, input_tokens: int, output_tokens: int) -> Decimal 
     return price_for_usage(model, ModelUsage(input_tokens=input_tokens, output_tokens=output_tokens))
 
 
-def fits(budget: MemoryBudget, day: Spend, month: Spend, estimate: TaskEstimate | None) -> bool:
-    """Whether running a task keeps every configured limit. Tasks without an estimate are free."""
-    if estimate is None:
-        return True
+def fits(budget: MemoryBudget, day: Spend, month: Spend, estimate: TaskEstimate) -> bool:
+    """Whether running a task keeps every configured limit."""
     day, month = day.plus(estimate), month.plus(estimate)
     checks = (
         (budget.cost_usd_per_day, day.cost_usd),
@@ -69,7 +71,7 @@ def fits(budget: MemoryBudget, day: Spend, month: Spend, estimate: TaskEstimate 
     return all(limit is None or spent <= limit for limit, spent in checks)
 
 
-def affordable_count(budget: MemoryBudget, day: Spend, month: Spend, estimates: Sequence[TaskEstimate | None]) -> int:
+def affordable_count(budget: MemoryBudget, day: Spend, month: Spend, estimates: Sequence[TaskEstimate]) -> int:
     """Length of the longest prefix of *estimates* that fits the budget together.
 
     A prefix, not a best fit: auto mode promotes in priority order and stops at the first task
@@ -78,18 +80,15 @@ def affordable_count(budget: MemoryBudget, day: Spend, month: Spend, estimates: 
     for count, estimate in enumerate(estimates):
         if not fits(budget, day, month, estimate):
             return count
-        if estimate is not None:
-            day, month = day.plus(estimate), month.plus(estimate)
+        day, month = day.plus(estimate), month.plus(estimate)
     return len(estimates)
 
 
-def sum_estimates(estimates: Iterable[TaskEstimate | None]) -> EstimateTotal:
+def sum_estimates(estimates: Iterable[TaskEstimate]) -> EstimateTotal:
     task_count = input_tokens = output_tokens_cap = unpriced_count = 0
     cost_usd = Decimal(0)
     for estimate in estimates:
         task_count += 1
-        if estimate is None:
-            continue
         input_tokens += estimate.input_tokens
         output_tokens_cap += estimate.output_tokens_cap
         if estimate.cost_usd is None:
