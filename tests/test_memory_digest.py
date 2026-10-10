@@ -20,12 +20,15 @@ from carapace.memory.models import (
     MemoryTask,
     ModelRole,
     PeriodDigest,
+    PeriodDigestOutput,
     SpawnedBy,
     TaskKind,
     TaskStatus,
 )
+from carapace.memory.outdated import current_versions
 from carapace.memory.prompts import MONTH_DIGEST, WEEK_DIGEST
 from carapace.models.config import Config
+from carapace.models.user import UserConfig
 from tests.memory_fixtures import EXTRACTION, WEEK
 
 MODEL = "anthropic:claude-sonnet-4-6"
@@ -127,7 +130,7 @@ async def test_week_digest_from_the_weeks_extractions() -> None:
     assert model.instructions == [WEEK_DIGEST.system]
     provenance = outcome.provenance
     assert provenance is not None
-    assert provenance.prompt_version == WEEK_DIGEST.version(PeriodDigest)
+    assert provenance.prompt_version == WEEK_DIGEST.version(PeriodDigestOutput)
     assert provenance.input_hash == rendered.input_hash
     assert provenance.input_format_version == DIGEST_INPUT_FORMAT_VERSION
     assert (provenance.input_tokens, provenance.output_tokens, provenance.task_id) == (3000, 500, 21)
@@ -145,7 +148,7 @@ async def test_month_digest_from_the_digests_of_its_weeks() -> None:
     assert outcome.result.coverage == month_coverage([WEEK])
     assert model.prompts == [MONTH_DIGEST.user_prompt(render_month_input([WEEK]).text, period_key="2026-09")]
     assert outcome.provenance is not None
-    assert outcome.provenance.prompt_version == MONTH_DIGEST.version(PeriodDigest)
+    assert outcome.provenance.prompt_version == MONTH_DIGEST.version(PeriodDigestOutput)
 
 
 @pytest.mark.parametrize(
@@ -183,7 +186,7 @@ async def test_billed_failure_carries_provenance() -> None:
         )
 
     assert failed.value.provenance.output_tokens == DIGEST_OUTPUT_CAP + 1
-    assert failed.value.provenance.prompt_version == WEEK_DIGEST.version(PeriodDigest)
+    assert failed.value.provenance.prompt_version == WEEK_DIGEST.version(PeriodDigestOutput)
 
 
 async def test_digest_needs_a_model() -> None:
@@ -244,3 +247,42 @@ async def test_month_refs_are_week_keys() -> None:
 
     assert isinstance(outcome.result, DigestResult)
     assert outcome.result.digest.on_my_mind[0].refs == ["2026-W36"]
+
+
+async def test_learned_entries_follow_the_provenance_rules() -> None:
+    learned = DIGEST["learned"][0]
+    output = {
+        **DIGEST,
+        "learned": [
+            {**learned, "category": "social", "subject": "Anna", "source_kind": "observed"},
+            {**learned, "category": "social", "subject": None},
+            {**learned, "category": "surroundings", "subject": "NAS", "source_kind": "observed"},
+        ],
+    }
+
+    outcome = await _handler(DigestLevel.week, _Model(output=output), _Sources([EXTRACTION], [])).run(
+        _task(TaskKind.week_digest, "2026-W36"), MODEL
+    )
+
+    assert isinstance(outcome.result, DigestResult)
+    assert [(f.category.value, f.source_kind.value) for f in outcome.result.digest.learned] == [
+        ("surroundings", "observed")
+    ]
+
+
+@pytest.mark.parametrize(
+    ("level", "kind", "target", "sources"),
+    [
+        (DigestLevel.week, TaskKind.week_digest, "2026-W36", _Sources([EXTRACTION], [])),
+        (DigestLevel.month, TaskKind.month_digest, "2026-09", _Sources([], [WEEK])),
+    ],
+)
+async def test_provenance_matches_the_outdated_check(
+    level: DigestLevel, kind: TaskKind, target: str, sources: _Sources
+) -> None:
+    outcome = await _handler(level, _Model(), sources).run(_task(kind, target), MODEL)
+
+    assert outcome.provenance is not None
+    current = current_versions(Config(), UserConfig(), kind)
+    assert outcome.provenance.prompt_version == current.prompt_version
+    assert outcome.provenance.input_format_version == current.input_format_version

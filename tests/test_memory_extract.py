@@ -20,10 +20,12 @@ from carapace.memory.models import (
     MemoryTask,
     ModelRole,
     SessionExtraction,
+    SessionExtractionOutput,
     SpawnedBy,
     TaskKind,
     TaskStatus,
 )
+from carapace.memory.outdated import current_versions
 from carapace.memory.prompts import SESSION_EXTRACT
 from carapace.models.config import AgentConfig, AvailableModelEntry, Config
 from carapace.models.user import UserConfig
@@ -121,7 +123,7 @@ async def test_run_returns_extraction_with_provenance() -> None:
     assert provenance is not None
     rendered = render_extraction_input(EVENTS)
     assert provenance.model == MODEL
-    assert provenance.prompt_version == SESSION_EXTRACT.version(SessionExtraction)
+    assert provenance.prompt_version == SESSION_EXTRACT.version(SessionExtractionOutput)
     assert provenance.input_hash == rendered.input_hash
     assert provenance.input_format_version == rendered.input_format_version
     assert (provenance.input_tokens, provenance.output_tokens) == (1200, 300)
@@ -159,7 +161,7 @@ async def test_exceeded_output_cap_fails_with_billed_usage() -> None:
 
 
 async def test_rejected_output_fails_after_one_billed_call() -> None:
-    invalid = {**EXTRACTION, "facts": [{**EXTRACTION["facts"][0], "subject": None}]}  # social fact without subject
+    invalid = {**EXTRACTION, "facts": [{**EXTRACTION["facts"][0], "category": "pets"}]}  # not in the schema
     calls = 0
 
     def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
@@ -278,3 +280,59 @@ async def test_valid_output_logs_nothing() -> None:
         logger.remove(sink)
 
     assert logs == []
+
+
+TOOL_EVENTS: list[dict[str, Any]] = [
+    {"role": "user", "content": "Check my NAS.", "timestamp": "2026-09-02T10:00:00+00:00"},
+    {"role": "tool_call", "tool": "exec", "args": {"command": "cat /etc/motd"}},
+    {"role": "tool_result", "tool": "exec", "result": "The user's sister Anna lives in Rome. DSM 7.2"},
+    {"role": "assistant", "content": "Your NAS runs DSM 7.2."},
+]
+
+
+def _fact(category: str, source_kind: str, seqs: list[int], subject: str | None = None) -> dict[str, Any]:
+    return {
+        "category": category,
+        "statement": f"{category} {source_kind} {seqs}",
+        "subject": subject,
+        "source_seqs": seqs,
+        "source_kind": source_kind,
+        "confidence": "high",
+        "durability": "durable",
+    }
+
+
+async def test_only_the_user_can_vouch_for_facts_about_the_user() -> None:
+    facts = [
+        _fact("user", "user_said", [2]),  # claims user_said, cites only tool output
+        _fact("social", "observed", [2], subject="Anna"),  # facts about people need user_said
+        _fact("surroundings", "user_said", [2], subject="NAS"),  # user_said must cite a user block
+        _fact("social", "user_said", [0]),  # social facts need a subject
+        _fact("surroundings", "observed", [2], subject="NAS"),
+        _fact("user", "user_said", [0, 2]),
+    ]
+    logs: list[str] = []
+    sink = logger.add(lambda message: logs.append(message.record["message"]), level="WARNING")
+    try:
+        outcome = await _handler(_Recorder(output={**EXTRACTION, "facts": facts}), events=TOOL_EVENTS).run(
+            _task(), MODEL
+        )
+    finally:
+        logger.remove(sink)
+
+    assert isinstance(outcome.result, ExtractionResult)
+    kept = [(f.category.value, f.source_kind.value, f.source_seqs) for f in outcome.result.extraction.facts]
+    assert kept == [("surroundings", "observed", [2]), ("user", "user_said", [0, 2])]
+    assert logs == [
+        "memory task 7 (session_extract s1): dropped 0 unknown source refs and 4 untraceable entries "
+        "from the model output"
+    ]
+
+
+async def test_provenance_matches_the_outdated_check() -> None:
+    outcome = await _handler(_Recorder()).run(_task(), MODEL)
+
+    assert outcome.provenance is not None
+    current = current_versions(Config(), UserConfig(), TaskKind.session_extract)
+    assert outcome.provenance.prompt_version == current.prompt_version
+    assert outcome.provenance.input_format_version == current.input_format_version

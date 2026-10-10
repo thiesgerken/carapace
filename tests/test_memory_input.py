@@ -201,3 +201,19 @@ def test_seqs_are_those_of_rendered_blocks() -> None:
     ]
 
     assert render_extraction_input(events).seqs == frozenset({2, 4})
+
+
+def test_user_seqs_are_the_rendered_user_messages() -> None:
+    events = [
+        _user("/model haiku"),
+        {"role": "command", "command": "model", "data": {}},
+        _user("hello"),
+        {"role": "tool_result", "tool": "exec", "result": "ok"},
+        _user("/etc/hosts is broken"),
+        _assistant("fixed"),
+    ]
+
+    result = render_extraction_input(events)
+
+    assert result.seqs == frozenset({2, 3, 4, 5})
+    assert result.user_seqs == frozenset({2, 4})

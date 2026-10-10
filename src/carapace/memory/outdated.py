@@ -13,7 +13,7 @@ from ..models.user import UserConfig
 from ..user_defaults import effective_memory_model
 from .digest_input import DIGEST_INPUT_FORMAT_VERSION
 from .input import INPUT_FORMAT_VERSION
-from .models import ModelRole, OutdatedReason, PeriodDigest, Provenance, SessionExtraction, TaskKind
+from .models import ModelRole, OutdatedReason, PeriodDigestOutput, Provenance, SessionExtractionOutput, TaskKind
 from .prompts import MONTH_DIGEST, SESSION_EXTRACT, WEEK_DIGEST
 
 
@@ -27,9 +27,17 @@ class CurrentVersions:
 
 
 _KINDS = {
-    TaskKind.session_extract: (ModelRole.memory_low, SESSION_EXTRACT.version(SessionExtraction), INPUT_FORMAT_VERSION),
-    TaskKind.week_digest: (ModelRole.memory_high, WEEK_DIGEST.version(PeriodDigest), DIGEST_INPUT_FORMAT_VERSION),
-    TaskKind.month_digest: (ModelRole.memory_high, MONTH_DIGEST.version(PeriodDigest), DIGEST_INPUT_FORMAT_VERSION),
+    TaskKind.session_extract: (
+        ModelRole.memory_low,
+        SESSION_EXTRACT.version(SessionExtractionOutput),
+        INPUT_FORMAT_VERSION,
+    ),
+    TaskKind.week_digest: (ModelRole.memory_high, WEEK_DIGEST.version(PeriodDigestOutput), DIGEST_INPUT_FORMAT_VERSION),
+    TaskKind.month_digest: (
+        ModelRole.memory_high,
+        MONTH_DIGEST.version(PeriodDigestOutput),
+        DIGEST_INPUT_FORMAT_VERSION,
+    ),
 }
 
 
