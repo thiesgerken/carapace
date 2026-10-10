@@ -20,6 +20,7 @@ from carapace.memory.models import (
     TaskStatus,
 )
 from carapace.memory.service import MemoryService
+from carapace.memory.store import MemoryStore
 from carapace.models.config import Config
 from carapace.models.user import UserConfig
 from carapace.session import SessionManager
@@ -57,7 +58,7 @@ def setup(db_factory, tmp_path):
     sessions = SessionManager(db_factory, tmp_path)
     service = MemoryService(
         config=Config(),
-        session_factory=db_factory,
+        store=MemoryStore(db_factory),
         sessions=sessions,
         jobs=JobsStore(db_factory),
         handlers={

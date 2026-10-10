@@ -4,7 +4,6 @@ from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
-from ..database.engine import SessionFactory
 from ..jobs import JobsStore
 from ..models.config import Config
 from ..models.user import UserConfig
@@ -57,7 +56,7 @@ class MemoryService:
         self,
         *,
         config: Config,
-        session_factory: SessionFactory,
+        store: MemoryStore,
         sessions: SessionManager,
         jobs: JobsStore,
         handlers: Mapping[TaskKind, TaskHandler],
@@ -72,7 +71,8 @@ class MemoryService:
         self._handlers = handlers
         self._user_config_for = user_config_for
         self._clock = clock
-        self._store = MemoryStore(session_factory)
+        # Shared with the handlers, which read records through the same store.
+        self._store = store
         self._spawner = Spawner(
             store=self._store,
             sessions=sessions,
