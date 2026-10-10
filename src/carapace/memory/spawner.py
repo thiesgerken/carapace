@@ -138,7 +138,7 @@ class Spawner:
         known = self._known_extractions.get(user)
         self._known_extractions[user] = {record.id for record in current.values()}
         open_tasks = self._store.open_tasks(user, TaskKind.session_extract)
-        last_spawned = self._store.latest_task_times(user, TaskKind.session_extract)
+        latest_tasks = self._store.latest_tasks(user, TaskKind.session_extract)
         settled_before = now - timedelta(hours=self._config.sessions.commit.autosave_inactivity_hours)
         records_changed = False
         without_transcript = 0
@@ -154,8 +154,10 @@ class Spawner:
                 continue
             if not state.attributes.archived and state.last_active > settled_before:
                 continue
-            spawned_at = last_spawned.get(session_id)
-            if spawned_at is not None and spawned_at >= state.last_active:
+            # Only a session active since its last task can have new input; repeating a done,
+            # failed or cancelled task for unchanged input is the user's call, not the sweep's.
+            latest = latest_tasks.get(session_id)
+            if latest is not None and latest.created_at >= state.last_active:
                 continue
             try:
                 reason = await self._spawn_extraction(user, user_config, state, current.get(session_id), tz, now)
@@ -226,7 +228,7 @@ class Spawner:
         busy_weeks = {t.week_key for t in self._store.open_tasks(user, TaskKind.session_extract).values()}
         digests = {d.period_key: d for d in self._store.current_digests(user, DigestLevel.week)}
         open_digests = self._store.open_tasks(user, TaskKind.week_digest)
-        last_spawned = self._store.latest_task_times(user, TaskKind.week_digest)
+        latest_tasks = self._store.latest_tasks(user, TaskKind.week_digest)
 
         for week, sources in by_week.items():
             if (
@@ -236,7 +238,7 @@ class Spawner:
             ):
                 continue
             if not self._digest_due(
-                digests.get(week), coverage_hash(week_coverage(sources)), sources, last_spawned.get(week)
+                digests.get(week), coverage_hash(week_coverage(sources)), sources, latest_tasks.get(week)
             ):
                 continue
             await self._spawn(user, user_config, TaskKind.week_digest, week, now)
@@ -255,7 +257,7 @@ class Spawner:
         }
         digests = {d.period_key: d for d in self._store.current_digests(user, DigestLevel.month)}
         open_digests = self._store.open_tasks(user, TaskKind.month_digest)
-        last_spawned = self._store.latest_task_times(user, TaskKind.month_digest)
+        latest_tasks = self._store.latest_tasks(user, TaskKind.month_digest)
 
         for month, sources in by_month.items():
             if (
@@ -265,7 +267,7 @@ class Spawner:
             ):
                 continue
             if not self._digest_due(
-                digests.get(month), coverage_hash(month_coverage(sources)), sources, last_spawned.get(month)
+                digests.get(month), coverage_hash(month_coverage(sources)), sources, latest_tasks.get(month)
             ):
                 continue
             await self._spawn(user, user_config, TaskKind.month_digest, month, now)
@@ -275,13 +277,19 @@ class Spawner:
         current: DigestRecord | None,
         current_coverage_hash: str,
         sources: list[ExtractionRecord] | list[DigestRecord],
-        spawned_at: datetime | None,
+        latest: MemoryTask | None,
     ) -> bool:
-        """No digest yet or its coverage changed, and no task already tried these exact sources."""
+        """No digest yet or its coverage changed, unless a failed or cancelled attempt already met
+        these sources.
+
+        Coverage also changes when sources disappear (purge, deletion), which no source timestamp
+        shows; so only an unsuccessful latest attempt holds the spawn back, until a newer source.
+        """
         if current is not None and current.coverage_hash == current_coverage_hash:
             return False
-        newest_source = max(source.created_at for source in sources)
-        return spawned_at is None or spawned_at < newest_source
+        if latest is None or latest.status is TaskStatus.done:
+            return True
+        return latest.created_at < max(source.created_at for source in sources)
 
     # --- spawning ---
 
