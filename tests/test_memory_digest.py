@@ -283,4 +283,6 @@ async def test_provenance_matches_the_outdated_check(
     outcome = await _handler(level, _Model(), sources).run(_task(kind, target), MODEL)
 
     assert outcome.provenance is not None
-    assert outcome.provenance.prompt_version == current_versions(Config(), UserConfig(), kind).prompt_version
+    current = current_versions(Config(), UserConfig(), kind)
+    assert outcome.provenance.prompt_version == current.prompt_version
+    assert outcome.provenance.input_format_version == current.input_format_version
