@@ -78,6 +78,7 @@ Memory output lands in your knowledge repo and is meant to feed a generated syst
 - Facts about you and your social connections must come from what you said (`user_said`). Tool output may only yield `surroundings` facts. This is the main guard against tool output injecting "facts" about you.
 - Passwords, keys and tokens are never recorded.
 - The transcript sits inside delimiters, followed by a restated instruction tail. A closing delimiter inside the transcript is escaped, so tool output cannot break out of the data region.
+- Every fact must stay traceable. Source seqs that are not in the rendered transcript, and digest refs outside the digest's sources, are removed from the model output. A fact or `learned` entry left without any valid source is dropped; themes keep their text. Each removal is logged as a warning with the task id.
 - Each memory LLM call is single-shot (one request, no output retries), so a task is exactly one billed call and its estimate is an honest upper bound. Invalid output fails the task.
 
 ---

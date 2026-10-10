@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Set
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Protocol
 from zoneinfo import ZoneInfo
 
+from loguru import logger
 from pydantic import BaseModel
 
 from .. import get_version
@@ -29,11 +30,14 @@ from .llm import (
 )
 from .models import (
     CoverageEntry,
+    DigestFact,
     DigestLevel,
     DigestRecord,
     DigestResult,
+    DigestTheme,
     ExtractionRecord,
     ExtractionResult,
+    Fact,
     MemoryTask,
     MirrorResult,
     ModelRole,
@@ -153,6 +157,7 @@ async def _run_llm[OutputT: BaseModel](
 class _PreparedExtraction:
     call: _LlmCall
     week_key: str
+    seqs: frozenset[int]
 
 
 class SessionExtractHandler:
@@ -182,6 +187,7 @@ class SessionExtractHandler:
         extraction, provenance = await _run_llm(
             task, model, prepared.call, SessionExtraction, config=self._config, model_factory=self._model_factory
         )
+        extraction = _traceable_extraction(task, extraction, prepared.seqs)
         result = ExtractionResult(
             session_id=task.target,
             week_key=prepared.week_key,
@@ -207,6 +213,7 @@ class SessionExtractHandler:
                 input_format_version=rendered.input_format_version,
             ),
             week_key=week_key(started_at, tz),
+            seqs=rendered.seqs,
         )
 
 
@@ -252,6 +259,7 @@ class DigestHandler:
         digest, provenance = await _run_llm(
             task, model, prepared.call, PeriodDigest, config=self._config, model_factory=self._model_factory
         )
+        digest = _traceable_digest(task, digest, {entry.source_id for entry in prepared.coverage})
         result = DigestResult(
             level=self.level,
             period_key=task.target,
@@ -290,6 +298,46 @@ class DigestHandler:
                 input_format_version=rendered.input_format_version,
             ),
             coverage=coverage,
+        )
+
+
+def _traceable_extraction(task: MemoryTask, extraction: SessionExtraction, seqs: Set[int]) -> SessionExtraction:
+    """Drop source seqs the model invented, and facts left without any: they can't be traced."""
+    facts: list[Fact] = []
+    dropped_refs = 0
+    for fact in extraction.facts:
+        valid = [seq for seq in fact.source_seqs if seq in seqs]
+        dropped_refs += len(fact.source_seqs) - len(valid)
+        if valid:
+            facts.append(fact.model_copy(update={"source_seqs": valid}))
+    _warn_dropped(task, dropped_refs, len(extraction.facts) - len(facts))
+    return extraction.model_copy(update={"facts": facts})
+
+
+def _traceable_digest(task: MemoryTask, digest: PeriodDigest, source_ids: Set[str]) -> PeriodDigest:
+    """Drop refs outside the digest's coverage. Themes keep their text without them; a learned
+    entry left without any ref can't be traced and is dropped."""
+    dropped_refs = 0
+    themes: list[DigestTheme] = []
+    for theme in digest.on_my_mind:
+        valid = [ref for ref in theme.refs if ref in source_ids]
+        dropped_refs += len(theme.refs) - len(valid)
+        themes.append(theme.model_copy(update={"refs": valid}))
+    learned: list[DigestFact] = []
+    for fact in digest.learned:
+        valid = [ref for ref in fact.refs if ref in source_ids]
+        dropped_refs += len(fact.refs) - len(valid)
+        if valid:
+            learned.append(fact.model_copy(update={"refs": valid}))
+    _warn_dropped(task, dropped_refs, len(digest.learned) - len(learned))
+    return digest.model_copy(update={"on_my_mind": themes, "learned": learned})
+
+
+def _warn_dropped(task: MemoryTask, refs: int, entries: int) -> None:
+    if refs or entries:
+        logger.warning(
+            f"memory task {task.id} ({task.kind} {task.target}): dropped {refs} unknown source refs "
+            f"and {entries} untraceable entries from the model output"
         )
 
 

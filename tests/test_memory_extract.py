@@ -5,6 +5,7 @@ from decimal import Decimal
 from typing import Any
 
 import pytest
+from loguru import logger
 from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, ToolCallPart, UserPromptPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.profiles.anthropic import ANTHROPIC_THINKING_BUDGET_MAP
@@ -72,15 +73,16 @@ def _task(target: str = "s1") -> MemoryTask:
 
 
 class _Recorder:
-    def __init__(self, response_usage: RequestUsage | None = None) -> None:
+    def __init__(self, response_usage: RequestUsage | None = None, output: dict[str, Any] = EXTRACTION) -> None:
         self.messages: list[ModelMessage] = []
         self.info: AgentInfo | None = None
         self._usage = response_usage or RequestUsage(input_tokens=1200, output_tokens=300)
+        self._output = output
 
     def __call__(self, messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
         self.messages, self.info = messages, info
         return ModelResponse(
-            parts=[ToolCallPart(info.output_tools[0].name, EXTRACTION)],
+            parts=[ToolCallPart(info.output_tools[0].name, self._output)],
             usage=self._usage,
             provider_details={"cost": 0.0123},
         )
@@ -240,3 +242,39 @@ def test_handler_satisfies_the_protocol() -> None:
     handlers: dict[TaskKind, TaskHandler] = {TaskKind.session_extract: _handler(_Recorder())}
 
     assert handlers[TaskKind.session_extract].model_role is ModelRole.memory_low
+
+
+async def test_facts_cite_only_rendered_seqs() -> None:
+    fact = EXTRACTION["facts"][0]
+    output = {
+        **EXTRACTION,
+        "facts": [
+            {**fact, "source_seqs": [2, 99]},  # 99 does not exist
+            {**fact, "source_seqs": [0]},  # the /model command is not part of the rendered input
+            {**fact, "source_seqs": []},
+        ],
+    }
+    logs: list[str] = []
+    sink = logger.add(lambda message: logs.append(message.record["message"]), level="WARNING")
+    try:
+        outcome = await _handler(_Recorder(output=output)).run(_task(), MODEL)
+    finally:
+        logger.remove(sink)
+
+    assert isinstance(outcome.result, ExtractionResult)
+    assert [f.source_seqs for f in outcome.result.extraction.facts] == [[2]]
+    assert logs == [
+        "memory task 7 (session_extract s1): dropped 2 unknown source refs and 2 untraceable entries "
+        "from the model output"
+    ]
+
+
+async def test_valid_output_logs_nothing() -> None:
+    logs: list[str] = []
+    sink = logger.add(lambda message: logs.append(message.record["message"]), level="WARNING")
+    try:
+        await _handler(_Recorder()).run(_task(), MODEL)
+    finally:
+        logger.remove(sink)
+
+    assert logs == []

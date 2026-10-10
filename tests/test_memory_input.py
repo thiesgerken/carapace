@@ -189,3 +189,15 @@ def test_first_user_message_at_skips_slash_commands() -> None:
 
 def test_first_user_message_at_without_user_message() -> None:
     assert first_user_message_at([_user("/help"), {"role": "command", "command": "help", "data": {}}]) is None
+
+
+def test_seqs_are_those_of_rendered_blocks() -> None:
+    events = [
+        _user("/model haiku"),
+        {"role": "command", "command": "model", "data": {}},
+        _user("hello"),
+        {"role": "thinking", "content": "hmm"},
+        _assistant("hi"),
+    ]
+
+    assert render_extraction_input(events).seqs == frozenset({2, 4})
