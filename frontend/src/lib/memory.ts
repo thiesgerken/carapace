@@ -1,5 +1,6 @@
 import type {
   MemoryBudgetWindowStatus,
+  MemoryEstimateTotal,
   MemoryStatus,
   MemoryTaskFilter,
   MemoryTaskKind,
@@ -10,12 +11,16 @@ import type {
 export const MEMORY_TASK_STATUSES: readonly MemoryTaskStatus[] = ["pending", "queued", "running", "done", "failed", "cancelled"];
 export const MEMORY_TASK_KINDS: readonly MemoryTaskKind[] = ["session_extract", "week_digest", "month_digest", "mirror"];
 
-export function isActiveTaskStatus(status: MemoryTaskStatus): boolean {
-  return status === "queued" || status === "running";
+/** Budget-blocked tasks stay queued until the budget moves, so they don't count as progress to poll for. */
+export function hasActiveTasks(status: MemoryStatus): boolean {
+  return status.queue.queued - status.blocked + status.queue.running > 0;
 }
 
-export function hasActiveTasks(status: MemoryStatus): boolean {
-  return status.queue.queued + status.queue.running > 0;
+/** True when the estimate exceeds the tightest remaining cost or input-token headroom. */
+export function exceedsBudget(estimate: MemoryEstimateTotal, status: MemoryStatus): boolean {
+  const remaining = remainingBudget(status);
+  return (remaining.usd !== null && Number(estimate.cost_usd) > remaining.usd)
+    || (remaining.tokens !== null && estimate.input_tokens > remaining.tokens);
 }
 
 /** Decimal strings from the API; tiny per-task costs need a third digit to not read as $0.00. */

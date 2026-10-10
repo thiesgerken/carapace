@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { budgetGauge, formatUsd, remainingBudget, toTaskFilter, toTaskSelection } from "./memory";
+import { budgetGauge, exceedsBudget, formatUsd, hasActiveTasks, remainingBudget, toTaskFilter, toTaskSelection } from "./memory";
 import type { MemoryBudgetWindowStatus, MemoryStatus } from "./types";
 
 function window(overrides: Partial<MemoryBudgetWindowStatus> = {}): MemoryBudgetWindowStatus {
@@ -51,4 +51,18 @@ test("selections send ids or the filter, never both", () => {
   assert.deepEqual(filter, { status: ["pending"], kind: null, period: "2026-09", model: null });
   assert.deepEqual(toTaskSelection({ kind: "ids", ids: [1, 2] }, filter), { ids: [1, 2] });
   assert.deepEqual(toTaskSelection({ kind: "matching" }, filter), { filter });
+});
+
+test("budget-blocked queued tasks don't keep the poll alive", () => {
+  const blocked = { ...status(window(), window()), blocked: 3 };
+  blocked.queue = { ...blocked.queue, queued: 3 };
+  assert.equal(hasActiveTasks(blocked), false);
+  assert.equal(hasActiveTasks({ ...blocked, queue: { ...blocked.queue, running: 1 } }), true);
+});
+
+test("exceedsBudget checks token-only budgets too", () => {
+  const tokenOnly = status(window({ limit_input_tokens: 5000 }), window());
+  const estimate = { task_count: 1, input_tokens: 4500, output_tokens_cap: 0, cost_usd: "0", unpriced_count: 1 };
+  assert.equal(exceedsBudget(estimate, tokenOnly), true);
+  assert.equal(exceedsBudget({ ...estimate, input_tokens: 4000 }, tokenOnly), false);
 });

@@ -6,7 +6,7 @@ import { useLocale, useTranslations } from "next-intl";
 import { useMemoryStatus } from "@/components/memory-status";
 import { ModelPicker } from "@/components/model-picker";
 import { estimateMemoryTasks, fetchModels, runMemoryTasks, type AvailableModelInfo } from "@/lib/api";
-import { formatTokens, formatUsd, remainingBudget } from "@/lib/memory";
+import { exceedsBudget, formatTokens, formatUsd, remainingBudget } from "@/lib/memory";
 import type { MemoryEstimateTotal, MemoryTaskSelection } from "@/lib/types";
 
 interface MemoryRunDialogProps {
@@ -64,7 +64,7 @@ export function MemoryRunDialog({ server, token, selection, onClose, onQueued }:
   }
 
   const remaining = status ? remainingBudget(status) : null;
-  const overBudget = estimate !== null && remaining?.usd != null && Number(estimate.cost_usd) > remaining.usd;
+  const overBudget = estimate !== null && status !== null && exceedsBudget(estimate, status);
 
   return (
     <dialog
