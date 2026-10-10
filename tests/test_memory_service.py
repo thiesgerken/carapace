@@ -10,6 +10,7 @@ from carapace.jobs import JobsStore
 from carapace.memory.models import (
     MemoryTask,
     ModelRole,
+    SessionMemoryFilter,
     TaskEstimate,
     TaskFilter,
     TaskKind,
@@ -143,7 +144,21 @@ async def test_estimate_run_and_status(setup):
     assert (await service.cancel_tasks("alice", selection)).count == 2
 
 
-async def test_spawn_by_filter_is_not_available_yet(setup):
-    service, _ = setup
-    with pytest.raises(NotImplementedError):
-        await service.spawn_tasks("alice", TaskSpawnRequest(kind=TaskKind.session_extract, filter={}))
+async def test_spawn_by_filter_uses_the_session_query_and_eligibility(setup):
+    service, sessions = setup
+    first, second = _session(sessions), _session(sessions)
+    _session(sessions, private=True)  # never listed, so never spawned
+    _session(sessions, user="bob")
+
+    response = await service.spawn_tasks(
+        "alice", TaskSpawnRequest(kind=TaskKind.session_extract, filter=SessionMemoryFilter())
+    )
+    tasks = (await service.list_tasks("alice", TaskFilter(), None, 10)).items
+    assert {t.target for t in tasks} == {first, second}
+    assert len(response.task_ids) == 2 and response.skipped == []
+
+    # Respawning the same selection replaces the pending tasks in place.
+    again = await service.spawn_tasks(
+        "alice", TaskSpawnRequest(kind=TaskKind.session_extract, filter=SessionMemoryFilter())
+    )
+    assert sorted(again.task_ids) == sorted(response.task_ids)
