@@ -12,6 +12,8 @@ import {
   type CredentialBackendSettingsInfo,
   type CredentialsSettingsInfo,
   type MatrixSettingsInfo,
+  type MemoryBudgetSettings,
+  type MemorySettingsInfo,
   type SessionBudgetSettings,
   type UserDefaultModelsSettings,
   type UserSettingsPatchInput,
@@ -29,6 +31,8 @@ interface UserSettingsDraft {
   agentIcon: string;
   defaultModels: UserDefaultModelsSettings;
   budget: Record<keyof Required<SessionBudgetSettings>, string>;
+  timezone: string;
+  memory: MemoryDraft;
   matrix: MatrixSettingsInfo;
   matrixPassword: string;
   credentials: CredentialBackendDraft[];
@@ -39,6 +43,11 @@ interface UserSettingsDraft {
     token_set: boolean;
   };
   gitToken: string;
+}
+
+interface MemoryDraft {
+  autoMode: boolean;
+  budget: Record<keyof MemoryBudgetSettings, string>;
 }
 
 type CredentialBackendDraftType = "file" | "bitwarden";
@@ -285,6 +294,18 @@ function budgetCostValue(value: number | string | null | undefined): string {
   return Number.isFinite(parsed) ? parsed.toFixed(2) : rawValue;
 }
 
+function memoryDraftFromSettings(memory: MemorySettingsInfo): MemoryDraft {
+  return {
+    autoMode: memory.auto_mode,
+    budget: {
+      cost_usd_per_day: budgetValue(memory.budget.cost_usd_per_day),
+      cost_usd_per_month: budgetValue(memory.budget.cost_usd_per_month),
+      input_tokens_per_day: budgetValue(memory.budget.input_tokens_per_day),
+      input_tokens_per_month: budgetValue(memory.budget.input_tokens_per_month),
+    },
+  };
+}
+
 function draftFromSettings(response: UserSettingsResponseInfo): UserSettingsDraft {
   const budget = response.settings.default_budget;
   return {
@@ -297,6 +318,8 @@ function draftFromSettings(response: UserSettingsResponseInfo): UserSettingsDraf
       cost_usd: budgetCostValue(budget.cost_usd),
       tool_calls: budgetValue(budget.tool_calls),
     },
+    timezone: response.settings.timezone,
+    memory: memoryDraftFromSettings(response.settings.memory),
     matrix: response.settings.matrix,
     matrixPassword: "",
     credentials: credentialDraftsFromSettings(response.settings.credentials),
@@ -360,6 +383,24 @@ function comparableDefaultModels(models: UserDefaultModelsSettings): unknown {
     agent: models.agent?.trim() || null,
     sentinel: models.sentinel?.trim() || null,
     title: models.title?.trim() || null,
+    memory_low: models.memory_low?.trim() || null,
+    memory_high: models.memory_high?.trim() || null,
+  };
+}
+
+/** Unlike session budgets, a memory limit of 0 is meaningful (spend nothing), so only empty means "no limit". */
+function comparableMemory(memory: MemoryDraft): unknown {
+  const normalized = (value: string) => value.trim().replaceAll(",", "").replaceAll("_", "") || null;
+  const cost = (value: string) => {
+    const amount = normalized(value);
+    return amount === null || Number.isNaN(Number(amount)) ? amount : Number(amount).toFixed(2);
+  };
+  return {
+    auto_mode: memory.autoMode,
+    cost_usd_per_day: cost(memory.budget.cost_usd_per_day),
+    cost_usd_per_month: cost(memory.budget.cost_usd_per_month),
+    input_tokens_per_day: normalized(memory.budget.input_tokens_per_day),
+    input_tokens_per_month: normalized(memory.budget.input_tokens_per_month),
   };
 }
 
@@ -369,6 +410,8 @@ function comparableDraft(draft: UserSettingsDraft): unknown {
     agent_icon: draft.agentIcon.trim(),
     default_models: comparableDefaultModels(draft.defaultModels),
     default_budget: comparableBudget(draft.budget),
+    timezone: draft.timezone.trim(),
+    memory: comparableMemory(draft.memory),
     matrix: {
       ...draft.matrix,
       password_changed: draft.matrixPassword.length > 0,
@@ -390,6 +433,8 @@ function comparableSettings(settings: UserSettingsResponseInfo): unknown {
     agent_icon: settings.settings.agent_icon.trim(),
     default_models: comparableDefaultModels(settings.settings.default_models),
     default_budget: comparableBudget(settings.settings.default_budget),
+    timezone: settings.settings.timezone,
+    memory: comparableMemory(memoryDraftFromSettings(settings.settings.memory)),
     matrix: {
       ...settings.settings.matrix,
       password_changed: false,
@@ -417,6 +462,18 @@ function budgetFromDraft(draft: UserSettingsDraft, t: Translate): SessionBudgetS
     output_tokens: parseOptionalBudgetInteger(draft.budget.output_tokens, t("fields.outputTokens"), t),
     cost_usd: parseOptionalBudgetCost(draft.budget.cost_usd, t("fields.costUsd"), t),
     tool_calls: parseOptionalBudgetInteger(draft.budget.tool_calls, t("fields.toolCalls"), t),
+  };
+}
+
+function memoryFromDraft(memory: MemoryDraft, t: Translate): MemorySettingsInfo {
+  return {
+    auto_mode: memory.autoMode,
+    budget: {
+      cost_usd_per_day: parseOptionalBudgetDecimal(memory.budget.cost_usd_per_day, t("fields.memoryCostPerDay"), t),
+      cost_usd_per_month: parseOptionalBudgetDecimal(memory.budget.cost_usd_per_month, t("fields.memoryCostPerMonth"), t),
+      input_tokens_per_day: parseOptionalBudgetInteger(memory.budget.input_tokens_per_day, t("fields.memoryTokensPerDay"), t),
+      input_tokens_per_month: parseOptionalBudgetInteger(memory.budget.input_tokens_per_month, t("fields.memoryTokensPerMonth"), t),
+    },
   };
 }
 
@@ -448,8 +505,12 @@ export function buildUserSettingsPatch(
       agent: draft.defaultModels.agent?.trim() || null,
       sentinel: draft.defaultModels.sentinel?.trim() || null,
       title: draft.defaultModels.title?.trim() || null,
+      memory_low: draft.defaultModels.memory_low?.trim() || null,
+      memory_high: draft.defaultModels.memory_high?.trim() || null,
     },
     default_budget: budgetFromDraft(draft, t),
+    timezone: draft.timezone.trim(),
+    memory: memoryFromDraft(draft.memory, t),
     matrix: {
       enabled: draft.matrix.enabled,
       homeserver: draft.matrix.homeserver,
@@ -531,6 +592,23 @@ export function UserSettingsView({ server, token }: { server: string; token: str
     () => withSelectedModelOption(availableModels, draft?.defaultModels.title),
     [availableModels, draft?.defaultModels.title],
   );
+  const memoryLowOptions = useMemo(
+    () => withSelectedModelOption(availableModels, draft?.defaultModels.memory_low),
+    [availableModels, draft?.defaultModels.memory_low],
+  );
+  const memoryHighOptions = useMemo(
+    () => withSelectedModelOption(availableModels, draft?.defaultModels.memory_high),
+    [availableModels, draft?.defaultModels.memory_high],
+  );
+  const timeZones = useMemo(() => Intl.supportedValuesOf("timeZone"), []);
+
+  // Deep links such as /settings/account#memory arrive before the form renders, so the browser's
+  // own hash scroll finds nothing; scroll once the sections exist.
+  const settingsLoaded = settings !== null;
+  useEffect(() => {
+    if (!settingsLoaded || !window.location.hash) return;
+    document.getElementById(window.location.hash.slice(1))?.scrollIntoView();
+  }, [settingsLoaded]);
   const settingsChanged = useMemo(
     () => userSettingsChanged(draft, settings),
     [draft, settings],
@@ -698,6 +776,67 @@ export function UserSettingsView({ server, token }: { server: string; token: str
           </div>
         </Section>
 
+        <Section id="memory" title={t("sections.memory")}>
+          <div className="space-y-4">
+            <SwitchRow
+              checked={draft.memory.autoMode}
+              label={t("fields.memoryAutoMode")}
+              description={t("hints.memoryAutoMode")}
+              disabled={saving}
+              onCheckedChange={(autoMode) => updateDraft({ memory: { ...draft.memory, autoMode } })}
+            />
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              {([
+                ["cost_usd_per_day", "fields.memoryCostPerDay"],
+                ["cost_usd_per_month", "fields.memoryCostPerMonth"],
+                ["input_tokens_per_day", "fields.memoryTokensPerDay"],
+                ["input_tokens_per_month", "fields.memoryTokensPerMonth"],
+              ] as const).map(([key, label]) => (
+                <BudgetInput
+                  key={key}
+                  label={t(label)}
+                  placeholder={t("defaults.noLimit")}
+                  value={draft.memory.budget[key]}
+                  onChange={(value) => updateDraft({ memory: { ...draft.memory, budget: { ...draft.memory.budget, [key]: value } } })}
+                />
+              ))}
+            </div>
+            <div className="grid gap-4 lg:grid-cols-3">
+              <Field label={t("fields.timezone")} hint={t("hints.timezone")}>
+                <input
+                  list="memory-timezones"
+                  value={draft.timezone}
+                  onChange={(event) => updateDraft({ timezone: event.target.value })}
+                  className={inputClassName}
+                />
+                <datalist id="memory-timezones">
+                  {timeZones.map((zone) => <option key={zone} value={zone} />)}
+                </datalist>
+              </Field>
+              <Field label={t("fields.memoryLow")} help={t("hints.memoryLow")}>
+                <ModelPicker
+                  value={draft.defaultModels.memory_low}
+                  entries={memoryLowOptions}
+                  onChange={(memory_low) => updateDraft({ defaultModels: { ...draft.defaultModels, memory_low } })}
+                  disabled={saving}
+                  defaultLabel={t("defaults.serverDefault")}
+                  defaultDescription={t("defaults.currentModel", { model: settings.server_defaults.models.memory_low })}
+                />
+              </Field>
+              <Field label={t("fields.memoryHigh")} help={t("hints.memoryHigh")}>
+                <ModelPicker
+                  value={draft.defaultModels.memory_high}
+                  entries={memoryHighOptions}
+                  onChange={(memory_high) => updateDraft({ defaultModels: { ...draft.defaultModels, memory_high } })}
+                  disabled={saving}
+                  defaultLabel={t("defaults.serverDefault")}
+                  defaultDescription={t("defaults.currentModel", { model: settings.server_defaults.models.memory_high })}
+                />
+              </Field>
+            </div>
+          </div>
+        </Section>
+
         <Section title={t("sections.gitRemote")}>
           <div className="grid gap-4 md:grid-cols-2">
             <TextInput
@@ -786,9 +925,9 @@ export function UserSettingsView({ server, token }: { server: string; token: str
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({ id, title, children }: { id?: string; title: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-2xl border border-border bg-background/88 p-4 shadow-sm sm:p-5">
+    <section id={id} className="scroll-mt-4 rounded-2xl border border-border bg-background/88 p-4 shadow-sm sm:p-5">
       <h2 className="mb-4 text-sm font-semibold uppercase tracking-[0.14em] text-muted-foreground">{title}</h2>
       {children}
     </section>

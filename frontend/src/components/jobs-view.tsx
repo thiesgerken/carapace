@@ -806,6 +806,15 @@ export function JobsView({
                   />
 
                   <SwitchRow
+                    checked={draft.memory_enabled}
+                    label={t("fields.memoryEnabled")}
+                    description={t("fields.memoryEnabledHelp")}
+                    disabled={saving || running}
+                    onCheckedChange={(memory_enabled) => updateDraft({ memory_enabled })}
+                    className="rounded-xl border border-border/70 bg-background px-3 py-3"
+                  />
+
+                  <SwitchRow
                     checked={usePersistentSession}
                     label={t("fields.persistentSession")}
                     description={draft.unattended ? t("fields.persistentSessionDisabled") : t("fields.persistentSessionToggleHelp")}
