@@ -92,9 +92,6 @@
             "dismiss": "Ausblenden",
             "pickPage": "Alle Aufgaben dieser Seite auswählen",
             "pickTask": "{target} auswählen",
-            "pickMatching": "Alle {count} passenden Aufgaben auswählen",
-            "pickedMatching": "Alle {count} passenden Aufgaben sind ausgewählt.",
-            "clearPick": "Auswahl aufheben",
             "columns": {
                 "kind": "Art",
                 "target": "Ziel",
@@ -126,15 +123,6 @@
                 "queuedAt": "Eingereiht",
                 "started": "Gestartet",
                 "finished": "Beendet",
-                "model": "Modell",
-                "prompt": "Prompt-Version",
-                "inputFormat": "Eingabeformat",
-                "carapace": "carapace",
-                "inputHash": "Eingabe-Hash",
-                "usage": "Verbrauch",
-                "cost": "Kosten",
-                "unpriced": "kein Preis",
-                "duration": "Dauer",
                 "estimate": "Schätzung",
                 "openResult": "Ergebnis öffnen"
             }
@@ -154,6 +142,103 @@
             "roleDefault": "Standard der Rolle",
             "cancel": "Abbrechen",
             "confirm": "Ausführen"
+        },
+        "provenance": {
+            "model": "Modell",
+            "prompt": "Prompt-Version",
+            "inputFormat": "Eingabeformat",
+            "carapace": "carapace",
+            "inputHash": "Eingabe-Hash",
+            "usage": "Verbrauch",
+            "cost": "Kosten",
+            "unpriced": "kein Preis",
+            "duration": "Dauer",
+            "created": "Erstellt",
+            "task": "Aufgabe"
+        },
+        "pick": {
+            "pickMatching": "Alle {count} Treffer auswählen",
+            "pickedMatching": "Alle {count} Treffer sind ausgewählt.",
+            "clear": "Auswahl aufheben"
+        },
+        "sessions": {
+            "filters": {
+                "week": "Woche",
+                "state": "Extraktion",
+                "anyState": "Jede Extraktion",
+                "reason": "Grund für veraltet",
+                "anyReason": "Jeder Grund",
+                "taskStatus": "Aufgabenstatus",
+                "anyTaskStatus": "Jeder Aufgabenstatus",
+                "model": "Modell",
+                "anyModel": "Alle Modelle",
+                "channel": "Kanal",
+                "anyChannel": "Alle Kanäle"
+            },
+            "states": {
+                "missing": "nicht extrahiert",
+                "current": "aktuell",
+                "outdated": "veraltet"
+            },
+            "matching": "{count} Treffer",
+            "dismiss": "Ausblenden",
+            "pickPage": "Alle Sitzungen dieser Seite auswählen",
+            "pickSession": "{title} auswählen",
+            "columns": {
+                "date": "Datum",
+                "title": "Titel / Zusammenfassung",
+                "facts": "Fakten",
+                "factsHint": "Du · Personen · Umgebung",
+                "model": "Modell",
+                "status": "Status",
+                "cost": "Kosten"
+            },
+            "untitled": "Unbenannte Sitzung",
+            "task": "Aufgabe {status}",
+            "empty": "Keine Sitzungen passen zu diesen Filtern.",
+            "loadMore": "Mehr laden",
+            "runPicked": "Auswahl ausführen ({count})",
+            "runNeedsRows": "Ausführen braucht einzeln ausgewählte Zeilen; Neu erzeugen wirkt auf alle Treffer.",
+            "respawnPicked": "Auswahl neu erzeugen ({count})",
+            "spawned": "{count, plural, one {# Aufgabe erzeugt.} other {# Aufgaben erzeugt.}}",
+            "queued": "{count, plural, one {# Aufgabe eingereiht.} other {# Aufgaben eingereiht.}}"
+        },
+        "outdatedReasons": {
+            "prompt_version": "Prompt geändert",
+            "model": "Modell geändert",
+            "input_format_version": "Eingabeformat geändert"
+        },
+        "drawer": {
+            "openSession": "Sitzung öffnen",
+            "close": "Schließen",
+            "notEligible": "Diese Sitzung gehört nicht zum Gedächtnis (privat, ausgeschlossener Job oder unbekannt).",
+            "notExtracted": "Noch nicht extrahiert.",
+            "taskStatus": "Aufgabe ist {status}.",
+            "history": "Frühere Versionen",
+            "outcomes": "Ergebnisse",
+            "openLoops": "Offene Punkte",
+            "onMyMind": "Beschäftigt mich",
+            "friction": "Reibung",
+            "factCategories": {
+                "user": "Du",
+                "social": "Personen",
+                "surroundings": "Umgebung"
+            },
+            "confidence": {
+                "low": "geringe Sicherheit",
+                "medium": "mittlere Sicherheit",
+                "high": "hohe Sicherheit"
+            },
+            "durability": {
+                "durable": "dauerhaft",
+                "dated": "befristet"
+            },
+            "validUntil": "bis {date}",
+            "sourceKind": {
+                "user_said": "vom Nutzer gesagt",
+                "observed": "beobachtet"
+            },
+            "provenance": "Herkunft"
         }
     },
     "account": {
@@ -1003,7 +1088,8 @@
         "mobile": {
             "details": "Details",
             "done": "Fertig"
-        }
+        },
+        "memoryChip": "Gedächtnis"
     },
     "message": {
         "copy": "Nachricht kopieren",

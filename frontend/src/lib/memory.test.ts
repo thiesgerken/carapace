@@ -1,8 +1,19 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { budgetGauge, exceedsBudget, formatUsd, hasActiveTasks, remainingBudget, toTaskFilter, toTaskSelection } from "./memory";
-import type { MemoryBudgetWindowStatus, MemoryStatus } from "./types";
+import {
+  budgetGauge,
+  exceedsBudget,
+  formatUsd,
+  hasActiveTasks,
+  remainingBudget,
+  runnableTaskIds,
+  toSessionFilter,
+  toSpawnRequest,
+  toTaskFilter,
+  toTaskSelection,
+} from "./memory";
+import type { MemoryBudgetWindowStatus, MemorySessionRow, MemoryStatus } from "./types";
 
 function window(overrides: Partial<MemoryBudgetWindowStatus> = {}): MemoryBudgetWindowStatus {
   return {
@@ -65,4 +76,36 @@ test("exceedsBudget checks token-only budgets too", () => {
   const estimate = { task_count: 1, input_tokens: 4500, output_tokens_cap: 0, cost_usd: "0", unpriced_count: 1 };
   assert.equal(exceedsBudget(estimate, tokenOnly), true);
   assert.equal(exceedsBudget({ ...estimate, input_tokens: 4000 }, tokenOnly), false);
+});
+
+test("outdated reasons only narrow the outdated state", () => {
+  const form = { week: "2026-W36", state: "outdated", outdatedReason: "prompt_version", taskStatus: "", model: "", channel: "" } as const;
+  assert.deepEqual(toSessionFilter(form), {
+    week: "2026-W36",
+    state: ["outdated"],
+    outdated_reason: "prompt_version",
+    task_status: null,
+    model: null,
+    channel: null,
+  });
+  assert.equal(toSessionFilter({ ...form, state: "current" }).outdated_reason, null);
+});
+
+test("session picks spawn by targets or by filter", () => {
+  const filter = toSessionFilter({ week: "", state: "outdated", outdatedReason: "", taskStatus: "", model: "", channel: "" });
+  assert.deepEqual(toSpawnRequest({ kind: "ids", ids: ["s1"] }, filter), { kind: "session_extract", targets: ["s1"] });
+  assert.deepEqual(toSpawnRequest({ kind: "matching" }, filter), { kind: "session_extract", filter });
+});
+
+test("runnableTaskIds skips picked sessions without a task", () => {
+  const row = (session_id: string, taskId: number | null): MemorySessionRow => ({
+    session_id,
+    title: null,
+    channel_type: "web",
+    created_at: "2026-09-01T00:00:00Z",
+    week_key: null,
+    extraction: null,
+    task: taskId === null ? null : { id: taskId, status: "pending", blocked_reason: null },
+  });
+  assert.deepEqual(runnableTaskIds([row("a", 1), row("b", null), row("c", 3)], ["a", "b"]), [1]);
 });

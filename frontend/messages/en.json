@@ -92,9 +92,6 @@
             "dismiss": "Dismiss",
             "pickPage": "Select all tasks on this page",
             "pickTask": "Select {target}",
-            "pickMatching": "Select all {count} matching tasks",
-            "pickedMatching": "All {count} matching tasks are selected.",
-            "clearPick": "Clear selection",
             "columns": {
                 "kind": "Kind",
                 "target": "Target",
@@ -126,15 +123,6 @@
                 "queuedAt": "Queued",
                 "started": "Started",
                 "finished": "Finished",
-                "model": "Model",
-                "prompt": "Prompt version",
-                "inputFormat": "Input format",
-                "carapace": "carapace",
-                "inputHash": "Input hash",
-                "usage": "Usage",
-                "cost": "Cost",
-                "unpriced": "no pricing",
-                "duration": "Duration",
                 "estimate": "Estimate",
                 "openResult": "Open result"
             }
@@ -154,6 +142,103 @@
             "roleDefault": "Role default",
             "cancel": "Cancel",
             "confirm": "Run"
+        },
+        "provenance": {
+            "model": "Model",
+            "prompt": "Prompt version",
+            "inputFormat": "Input format",
+            "carapace": "carapace",
+            "inputHash": "Input hash",
+            "usage": "Usage",
+            "cost": "Cost",
+            "unpriced": "no pricing",
+            "duration": "Duration",
+            "created": "Created",
+            "task": "Task"
+        },
+        "pick": {
+            "pickMatching": "Select all {count} matching",
+            "pickedMatching": "All {count} matching are selected.",
+            "clear": "Clear selection"
+        },
+        "sessions": {
+            "filters": {
+                "week": "Week",
+                "state": "Extraction",
+                "anyState": "Any extraction",
+                "reason": "Outdated reason",
+                "anyReason": "Any reason",
+                "taskStatus": "Task status",
+                "anyTaskStatus": "Any task status",
+                "model": "Model",
+                "anyModel": "Any model",
+                "channel": "Channel",
+                "anyChannel": "Any channel"
+            },
+            "states": {
+                "missing": "not extracted",
+                "current": "current",
+                "outdated": "outdated"
+            },
+            "matching": "{count} matching",
+            "dismiss": "Dismiss",
+            "pickPage": "Select all sessions on this page",
+            "pickSession": "Select {title}",
+            "columns": {
+                "date": "Date",
+                "title": "Title / abstract",
+                "facts": "Facts",
+                "factsHint": "You · People · Surroundings",
+                "model": "Model",
+                "status": "Status",
+                "cost": "Cost"
+            },
+            "untitled": "Untitled session",
+            "task": "task {status}",
+            "empty": "No sessions match these filters.",
+            "loadMore": "Load more",
+            "runPicked": "Run selected ({count})",
+            "runNeedsRows": "Running needs explicitly selected rows; respawn works on all matching sessions.",
+            "respawnPicked": "Respawn selected ({count})",
+            "spawned": "{count, plural, one {Spawned # task.} other {Spawned # tasks.}}",
+            "queued": "{count, plural, one {Queued # task.} other {Queued # tasks.}}"
+        },
+        "outdatedReasons": {
+            "prompt_version": "prompt changed",
+            "model": "model changed",
+            "input_format_version": "input format changed"
+        },
+        "drawer": {
+            "openSession": "Open session",
+            "close": "Close",
+            "notEligible": "This session is not part of memory (private, excluded job, or unknown).",
+            "notExtracted": "Not extracted yet.",
+            "taskStatus": "Task is {status}.",
+            "history": "Earlier versions",
+            "outcomes": "Outcomes",
+            "openLoops": "Open loops",
+            "onMyMind": "On my mind",
+            "friction": "Friction",
+            "factCategories": {
+                "user": "You",
+                "social": "People",
+                "surroundings": "Surroundings"
+            },
+            "confidence": {
+                "low": "low confidence",
+                "medium": "medium confidence",
+                "high": "high confidence"
+            },
+            "durability": {
+                "durable": "durable",
+                "dated": "dated"
+            },
+            "validUntil": "until {date}",
+            "sourceKind": {
+                "user_said": "user said",
+                "observed": "observed"
+            },
+            "provenance": "Provenance"
         }
     },
     "account": {
@@ -1003,7 +1088,8 @@
         "mobile": {
             "details": "Details",
             "done": "Done"
-        }
+        },
+        "memoryChip": "Memory"
     },
     "message": {
         "copy": "Copy message",
