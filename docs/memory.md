@@ -157,12 +157,12 @@ pending ──run──▶ queued ──claim──▶ running ──▶ done
 - Retry reuses the task (`attempts` goes up). Nothing is retried automatically; transient HTTP errors are already retried by the model transport.
 - On server start, tasks left `running` return to `queued`.
 - A failed call that was billed still counts: tasks accumulate billed tokens and cost over all attempts, and spend includes failed tasks.
-- Right before a session task runs, its eligibility is checked again. A session that turned private or was deleted cancels the task (and purges its extractions). A session with an agent turn in progress goes back to the queue.
+- Right before a session task runs, its eligibility is checked again. A session that turned private or was deleted cancels the task (and purges its extractions). A session with an agent turn in progress stays queued and is tried again on a later tick.
 - `mirror` tasks are free and run automatically, in manual mode too. Auto mode governs LLM spend only.
 
 ### Spawning rules
 
-The spawner polls the session table every few minutes. It is not hooked into the session engine.
+The spawner polls the session table every five minutes. It is not hooked into the session engine.
 
 A `session_extract` task is spawned when all of these hold:
 
@@ -181,7 +181,7 @@ A `week_digest` or `month_digest` task is spawned when all of these hold:
 
 The settled rule keeps a backfill from re-spawning the same weekly digest after every single extraction.
 
-**Only input changes spawn automatically.** A continued session (new input) gets a new task. A changed prompt, model or input format never does: the affected records show as outdated, and you respawn them in bulk from the Sessions tab. Otherwise a prompt tweak plus auto mode would re-bill the whole archive.
+**Only input changes spawn automatically.** A continued session (new input) gets a new task. A done, failed or cancelled task for unchanged input is never repeated by the spawner: retrying or respawning it is your call. A changed prompt, model or input format never does: the affected records show as outdated, and you respawn them in bulk from the Sessions tab. Otherwise a prompt tweak plus auto mode would re-bill the whole archive.
 
 Manual spawns are always possible: any session, and any digest including the running week. Manual spawns go through the same eligibility checks; skipped targets are reported with their reason. A respawn can carry a model override.
 
@@ -210,7 +210,7 @@ default_models:
 - `null` disables a limit. `0` is a real limit that allows no spend.
 - **Spend** is the sum over your tasks in the current day and month window, in your timezone, including failed but billed attempts. Running tasks count with their estimate.
 - **Gate**: before a task runs, every configured limit must hold: `spend + estimate <= limit`. The gate applies to manual runs too. Tasks that do not fit stay `queued` with `blocked_reason = "budget"`, and the UI marks them. Raising the budget, or the next window, unblocks them.
-- **Auto mode** (off by default): the worker queues `pending` tasks itself, as far as the remaining budget covers, in this order: session extractions newest first, then settled week digests, then settled month digests.
+- **Auto mode** (off by default): the worker queues `pending` tasks itself, as far as the remaining budget covers after the tasks already queued, in this order: session extractions, then week digests, then month digests, each newest period first.
 - **Estimates** are exact on the input side (the input is deterministic) and capped on the output side (a per-kind output token ceiling, also enforced on the call). Cost uses the per-model pricing carapace already uses for session budgets. Models without known pricing show tokens only, which is what the token limits are for.
 - An input larger than the model's context fails the task with `input too large`.
 
@@ -238,7 +238,7 @@ memory/months/2026-09.md
 
 - Each file starts with YAML front matter (provenance, and coverage for digests), followed by a Markdown body. In session files, `#42` refers to event 42 of that session.
 - The mirror owns `memory/` completely. Each run writes exactly the files for the current records and deletes everything else there, so deleted or purged records lose their files, and pushed edits under `memory/` are reverted. Everything outside `memory/` is untouched.
-- Runs are debounced: records changed by a batch of tasks produce **one commit** (`🧠 memory: update mirror (N records)`), not one per task. Unchanged records produce no diff and no commit.
+- Runs are debounced: a pending mirror runs once no LLM task of yours is queued or running, or after two minutes at the latest. A batch of tasks therefore produces **one commit** (`🧠 memory: update mirror (N records)`), not one per task. Unchanged records produce no diff and no commit.
 - The mirror uses the same commit, push and per-repo locking path as the session archive.
 
 See [persistent-context.md](persistent-context.md) for how the knowledge repo reaches the agent.
