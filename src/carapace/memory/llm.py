@@ -12,9 +12,9 @@ from pydantic_ai import Agent
 from pydantic_ai.settings import ModelSettings
 from pydantic_ai.usage import UsageLimits
 
-from ..llm import ModelFactory, model_settings_for_config
+from ..llm import ModelFactory, model_settings_for_config, resolve_available_model_entry
 from ..models.config import Config
-from ..usage import LlmRequestLogCapability, UsageTracker, provider_cost_usd_from_messages
+from ..usage import LlmRequestLogCapability, UsageTracker, count_text_tokens, provider_cost_usd_from_messages
 from .prompts import PromptTemplate
 
 
@@ -26,6 +26,22 @@ class StructuredCall[OutputT: BaseModel]:
     # None when the model has no known pricing and the provider reported no cost.
     cost_usd: Decimal | None
     duration_ms: int
+
+
+class InputTooLargeError(ValueError):
+    pass
+
+
+def prompt_tokens(template: PromptTemplate, user_prompt: str, model: str) -> int:
+    """Input token estimate for one call: instructions plus user prompt."""
+    return count_text_tokens(f"{template.system}\n\n{user_prompt}", model_name=model)
+
+
+def ensure_fits_context(config: Config, model: str, input_tokens: int) -> None:
+    """Fail before spending anything when the input cannot fit; unknown context windows pass."""
+    max_input_tokens = resolve_available_model_entry(config, model).max_input_tokens
+    if max_input_tokens is not None and input_tokens > max_input_tokens:
+        raise InputTooLargeError(f"input too large: ~{input_tokens:,} tokens, {model} accepts {max_input_tokens:,}")
 
 
 def capped_model_settings(config: Config, model: str, output_tokens_cap: int) -> ModelSettings:

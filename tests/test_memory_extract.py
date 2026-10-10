@@ -14,7 +14,7 @@ from pydantic_ai.usage import RequestUsage
 from carapace.memory.budget import estimate_cost
 from carapace.memory.handlers import SESSION_EXTRACT_OUTPUT_CAP, SessionExtractHandler
 from carapace.memory.input import render_extraction_input
-from carapace.memory.llm import capped_model_settings
+from carapace.memory.llm import InputTooLargeError, capped_model_settings
 from carapace.memory.models import (
     ExtractionResult,
     MemoryTask,
@@ -180,3 +180,16 @@ def test_thinking_model_raises_the_cap() -> None:
 
     assert settings.get("max_tokens") == ANTHROPIC_THINKING_BUDGET_MAP["high"] + 8192
     assert settings.get("thinking") == "high"
+
+
+async def test_run_fails_before_calling_the_model_when_input_exceeds_context() -> None:
+    entry = AvailableModelEntry(provider="anthropic", name="claude-haiku-4-5", max_input_tokens=100)
+    config = Config(agent=AgentConfig(model=MODEL, sentinel_model=MODEL, title_model=MODEL, available_models=[entry]))
+    recorder = _Recorder()
+
+    with pytest.raises(InputTooLargeError, match="input too large"):
+        await _handler(recorder, config=config).run(_task(), MODEL)
+    assert recorder.messages == []
+
+    estimate = await _handler(recorder, config=config).estimate(_task(), MODEL)
+    assert estimate.input_tokens > 100

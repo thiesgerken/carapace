@@ -10,10 +10,9 @@ from .. import get_version
 from ..llm import ModelFactory
 from ..models.config import Config
 from ..models.user import UserConfig
-from ..usage import count_text_tokens
 from .budget import estimate_cost
 from .input import ExtractionInput, first_user_message_at, render_extraction_input
-from .llm import capped_model_settings, run_structured
+from .llm import capped_model_settings, ensure_fits_context, prompt_tokens, run_structured
 from .models import (
     ExtractionResult,
     MemoryTask,
@@ -71,7 +70,7 @@ class SessionExtractHandler:
     async def estimate(self, task: MemoryTask, model: str) -> TaskEstimate:
         prepared = self._prepare(task)
         output_cap = capped_model_settings(self._config, model, SESSION_EXTRACT_OUTPUT_CAP)["max_tokens"]
-        input_tokens = count_text_tokens(f"{SESSION_EXTRACT.system}\n\n{prepared.user_prompt}", model_name=model)
+        input_tokens = prompt_tokens(SESSION_EXTRACT, prepared.user_prompt, model)
         return TaskEstimate(
             model=model,
             input_tokens=input_tokens,
@@ -81,6 +80,7 @@ class SessionExtractHandler:
 
     async def run(self, task: MemoryTask, model: str) -> TaskOutcome:
         prepared = self._prepare(task)
+        ensure_fits_context(self._config, model, prompt_tokens(SESSION_EXTRACT, prepared.user_prompt, model))
         call = await run_structured(
             SESSION_EXTRACT,
             SessionExtraction,
