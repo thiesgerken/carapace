@@ -68,6 +68,7 @@ def _job_to_row(job: JobDefinition) -> JobRow:
         enabled=job.enabled,
         name=job.name,
         prompt=job.prompt,
+        memory_enabled=job.memory_enabled,
         data=job,
     )
 

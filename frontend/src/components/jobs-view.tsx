@@ -89,6 +89,7 @@ function createEmptyJob(): JobDefinition {
     agent_model_name: null,
     sentinel_model_name: null,
     title_model_name: null,
+    memory_enabled: false,
   };
 }
 

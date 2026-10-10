@@ -334,7 +334,7 @@ def usage_limits_for_remaining_budget(
     return UsageLimits(output_tokens_limit=remaining_output, request_limit=request_limit)
 
 
-LlmSource = Literal["agent", "sentinel", "titler", "compaction"]
+LlmSource = Literal["agent", "sentinel", "titler", "compaction", "memory"]
 LlmRequestPhase = Literal["processing_prompt", "thinking", "generating"]
 LlmRequestOutcome = Literal["completed", "interrupted"]
 

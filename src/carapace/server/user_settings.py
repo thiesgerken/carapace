@@ -12,6 +12,7 @@ from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 from ..api_keys import Access, Scope
 from ..auth import AuthStore, UserIdentity, normalize_username
 from ..credentials.registry import file_credential_backend_allowed_from_env
+from ..memory.models import ModelRole
 from ..models.credentials import (
     BitwardenCredentialBackendConfig,
     CredentialsConfig,
@@ -19,7 +20,8 @@ from ..models.credentials import (
 )
 from ..models.matrix import MatrixChannelConfig, MatrixTokensFile
 from ..models.session import SessionBudget
-from ..models.user import UserConfig, UserDefaultModelsConfig, UserGitConfig
+from ..models.user import UserConfig, UserDefaultModelsConfig, UserGitConfig, UserMemoryConfig, validate_timezone
+from ..user_defaults import effective_memory_model
 from .auth import require
 from .state import server_module
 
@@ -85,6 +87,9 @@ class ServerDefaultModels(SettingsModel):
     agent: str
     sentinel: str
     title: str
+    # Effective platform defaults, fallbacks already applied.
+    memory_low: str
+    memory_high: str
 
 
 class ServerDefaults(SettingsModel):
@@ -139,6 +144,8 @@ class PublicUserSettings(SettingsModel):
     agent_icon: str = ""
     default_models: UserDefaultModelsConfig
     default_budget: SessionBudget
+    timezone: str
+    memory: UserMemoryConfig
     matrix: PublicMatrixSettings
     credentials: PublicCredentialsSettings
     git: PublicGitSettings
@@ -217,7 +224,15 @@ class UserSettingsPatch(SettingsModel):
 
     default_models: UserDefaultModelsConfig | None = None
     default_budget: SessionBudget | None = None
+    timezone: str | None = None
+    memory: UserMemoryConfig | None = None
     matrix: MatrixSettingsPatch | None = None
+
+    @field_validator("timezone", mode="after")
+    @classmethod
+    def _validate_timezone(cls, value: str | None) -> str | None:
+        return None if value is None else validate_timezone(value)
+
     credentials: CredentialsConfig | None = None
     git: GitSettingsPatch | None = None
 
@@ -354,7 +369,7 @@ def _available_model_ids() -> set[str]:
 
 def _validate_default_models(default_models: UserDefaultModelsConfig) -> None:
     available = _available_model_ids()
-    for field_name in ("agent", "sentinel", "title"):
+    for field_name in ("agent", "sentinel", "title", "memory_low", "memory_high"):
         model_id = getattr(default_models, field_name)
         if model_id is None:
             continue
@@ -466,6 +481,8 @@ def _settings_response(username: str) -> UserSettingsResponse:
                 agent=server._config.agent.model,
                 sentinel=server._config.agent.sentinel_model,
                 title=server._config.agent.title_model,
+                memory_low=effective_memory_model(server._config, UserConfig(), ModelRole.memory_low),
+                memory_high=effective_memory_model(server._config, UserConfig(), ModelRole.memory_high),
             ),
             budget=server._config.agent.default_session_budget,
         ),
@@ -477,6 +494,8 @@ def _settings_response(username: str) -> UserSettingsResponse:
             agent_icon=config.agent_icon,
             default_models=config.default_models,
             default_budget=config.budgets,
+            timezone=config.timezone,
+            memory=config.memory,
             matrix=_public_matrix(config.channels.matrix),
             credentials=_public_credentials(config.credentials),
             git=_public_git(config.git),
@@ -557,6 +576,12 @@ async def update_user_settings(
 
     if "default_budget" in body.model_fields_set:
         next_config.budgets = body.default_budget or SessionBudget()
+
+    if body.timezone is not None:
+        next_config.timezone = body.timezone
+
+    if "memory" in body.model_fields_set:
+        next_config.memory = body.memory or UserMemoryConfig()
 
     if body.matrix is not None:
         _apply_matrix_patch(next_config, body.matrix)
