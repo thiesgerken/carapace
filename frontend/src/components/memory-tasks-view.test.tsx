@@ -45,6 +45,7 @@ const STATUS: MemoryStatus = {
   queue: { pending: 120, queued: 0, running: 0, done: 0, failed: 0, cancelled: 0 },
   blocked: 0,
   models: { memory_low: "haiku", memory_high: "opus" },
+  sessions_without_transcript: 0,
 };
 
 const TASKS: MemoryTaskListResponse = {

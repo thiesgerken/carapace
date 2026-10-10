@@ -42,7 +42,10 @@ from ..git.http import GitHttpHandler
 from ..jobs import JobsScheduler, JobsStore
 from ..knowledge import KnowledgeRepoRegistry
 from ..llm import make_model_factory
+from ..memory.handlers import SessionExtractHandler
+from ..memory.models import TaskKind
 from ..memory.service import MemoryService
+from ..memory.store import MemoryStore
 from ..models.config import Config
 from ..models.credentials import CredentialValueKind
 from ..models.user import UserConfig
@@ -195,6 +198,10 @@ def _create_sandbox_runtime(config: Config, data_dir: Path) -> ContainerRuntime:
         host_data_dir=Path(host_data_dir_env) if host_data_dir_env else None,
         network_name=config.sandbox.network_name,
     )
+
+
+def _enabled_usernames() -> list[str]:
+    return [name for name, user in _auth_store.load_users().users.items() if user.enabled]
 
 
 def _user_config(username: str) -> UserConfig:
@@ -475,11 +482,23 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
     )
     _jobs_store = JobsStore(_session_factory)
     _jobs_scheduler = JobsScheduler(_jobs_store)
-    # ponytail: constructed but not started; the worker loop (service.run) lands in Phase 1.
+    memory_store = MemoryStore(_session_factory)
     _memory_service = MemoryService(
         config=_config,
-        session_factory=_session_factory,
+        store=memory_store,
+        sessions=session_mgr,
+        jobs=_jobs_store,
+        handlers={
+            TaskKind.session_extract: SessionExtractHandler(
+                config=_config,
+                load_events=session_mgr.load_events,
+                user_config_for=_user_config,
+                model_factory=model_factory,
+            ),
+        },
         user_config_for=_user_config,
+        users=_enabled_usernames,
+        is_agent_running=_engine.is_agent_running,
     )
 
     # Git HTTP handler — serves the knowledge repo on the sandbox API
@@ -541,6 +560,7 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
         warm_pool_task = asyncio.create_task(_warm_pool_loop(_sandbox_mgr, _config.sandbox.warm_pool_size))
     archive_task = asyncio.create_task(_session_archive_loop())
     jobs_task = asyncio.create_task(_jobs_scheduler_loop())
+    memory_task = asyncio.create_task(_memory_service.run())
 
     def matrix_channel_factory(username: str, user_config: UserConfig) -> MatrixChannelHandle:
         from ..channels.matrix import MatrixChannel
@@ -577,6 +597,7 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
         warm_pool_task.cancel()
     archive_task.cancel()
     jobs_task.cancel()
+    memory_task.cancel()
     await _matrix_channel_manager.stop_all()
     sandbox_server.should_exit = True
     internal_server.should_exit = True

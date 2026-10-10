@@ -131,6 +131,28 @@ class MemoryStore:
             db.flush()
             return _task(row)
 
+    def record_spawn_failure(self, user: str, kind: TaskKind, target: str, error: str, now: datetime) -> MemoryTask:
+        """A failed task for a target the spawner could not even prepare (e.g. a malformed transcript).
+
+        It surfaces the problem in the Tasks tab with a retry button, and its timestamp keeps the
+        spawner from retrying the same unchanged input on every sweep.
+        """
+        with self._session_factory.begin() as db:
+            row = MemoryTaskRow(
+                user=user,
+                kind=kind.value,
+                target=target,
+                status=TaskStatus.failed.value,
+                spawned_by=SpawnedBy.auto.value,
+                error=error,
+                **_UNBILLED,
+                created_at=now,
+                finished_at=now,
+            )
+            db.add(row)
+            db.flush()
+            return _task(row)
+
     def set_estimate(self, task_id: int, estimate: TaskEstimate) -> None:
         with self._session_factory.begin() as db:
             db.execute(
@@ -244,6 +266,29 @@ class MemoryStore:
                 .values(blocked_reason=reason.value if reason is not None else None)
             )
 
+    def cancel_task(self, task_id: int, reason: str, now: datetime) -> bool:
+        """Open -> cancelled with the reason kept as error, e.g. the session turned private."""
+        with self._session_factory.begin() as db:
+            result = db.execute(
+                update(MemoryTaskRow)
+                .where(MemoryTaskRow.id == task_id, MemoryTaskRow.status.in_(_OPEN))
+                .values(status=TaskStatus.cancelled.value, error=reason, finished_at=now, blocked_reason=None)
+            )
+            return result.rowcount == 1  # type: ignore[missing-attribute]
+
+    def fail_unclaimed(self, task_id: int, error: str, now: datetime) -> bool:
+        """pending/queued -> failed, for tasks that broke before they could run (estimation)."""
+        with self._session_factory.begin() as db:
+            result = db.execute(
+                update(MemoryTaskRow)
+                .where(
+                    MemoryTaskRow.id == task_id,
+                    MemoryTaskRow.status.in_([TaskStatus.pending.value, TaskStatus.queued.value]),
+                )
+                .values(status=TaskStatus.failed.value, error=error, finished_at=now, blocked_reason=None)
+            )
+            return result.rowcount == 1  # type: ignore[missing-attribute]
+
     def claim(self, task_id: int, now: datetime) -> bool:
         """queued -> running, atomically: False if someone else claimed or cancelled it first."""
         with self._session_factory.begin() as db:
@@ -331,6 +376,20 @@ class MemoryStore:
                 total = total.plus(estimate)
         return total
 
+    def queued_spend(self, user: str) -> Spend:
+        """The estimates of the user's queued tasks: spend that is promised but not yet claimed."""
+        with self._session_factory() as db:
+            estimates = db.scalars(
+                select(MemoryTaskRow.estimate).where(
+                    MemoryTaskRow.user == user, MemoryTaskRow.status == TaskStatus.queued
+                )
+            ).all()
+        total = Spend()
+        for estimate in estimates:
+            if estimate is not None:
+                total = total.plus(estimate)
+        return total
+
     def status_counts(self, user: str) -> tuple[dict[TaskStatus, int], int]:
         """Task count per status, and how many queued tasks the budget holds back."""
         with self._session_factory() as db:
@@ -360,6 +419,28 @@ class MemoryStore:
                 )
             ).all()
         return {row.target: _task(row) for row in rows}
+
+    def latest_task_times(self, user: str, kind: TaskKind) -> dict[str, datetime]:
+        """When each target last got a task of *kind*, open or finished.
+
+        The spawner only revisits a target whose sources changed after that: a done, failed or
+        cancelled task for unchanged input is the user's call to repeat, not the spawner's.
+        """
+        with self._session_factory() as db:
+            rows = db.execute(
+                select(MemoryTaskRow.target, func.max(MemoryTaskRow.created_at))
+                .where(MemoryTaskRow.user == user, MemoryTaskRow.kind == kind)
+                .group_by(MemoryTaskRow.target)
+            ).all()
+        return {target: at for target, at in rows}
+
+    def session_titles(self, session_ids: list[str]) -> dict[str, str | None]:
+        """Titles of the given sessions, for task labels."""
+        with self._session_factory() as db:
+            rows = db.execute(
+                select(SessionRow.session_id, SessionRow.title).where(SessionRow.session_id.in_(session_ids))
+            ).all()
+        return {session_id: title for session_id, title in rows}
 
     # --- extractions and facts ---
 
