@@ -176,6 +176,10 @@ class AgentConfig(ConfigModel):
     title_model: str = "anthropic:claude-haiku-4-5"
     # Model used for compaction summaries. None -> fall back to title_model.
     compaction_model: str | None = None
+    # Session extraction. None -> compaction model, then title model.
+    memory_low_model: str | None = None
+    # Weekly/monthly memory digests. None -> agent model.
+    memory_high_model: str | None = None
     compaction: CompactionConfig = Field(default_factory=CompactionConfig)
     default_session_budget: SessionBudget = Field(default_factory=SessionBudget)
 
@@ -203,7 +207,14 @@ class AgentConfig(ConfigModel):
         if self.sentinel_domain_batch_window_ms < 0:
             raise ValueError("agent.sentinel_domain_batch_window_ms must be >= 0")
         catalog = {e.model_id: e for e in self.available_models}
-        for field_name in ("model", "sentinel_model", "title_model", "compaction_model"):
+        for field_name in (
+            "model",
+            "sentinel_model",
+            "title_model",
+            "compaction_model",
+            "memory_low_model",
+            "memory_high_model",
+        ):
             mid = getattr(self, field_name)
             if mid is None:
                 continue

@@ -842,6 +842,8 @@ def test_admin_platform_settings_updates_db_and_runtime(client, admin_auth_heade
         "sentinel": "local:test",
         "title": "local:test",
         "compaction": None,
+        "memory_low": None,
+        "memory_high": None,
     }
     assert srv._config.agent.model == "local:test"
     assert srv._engine.config.agent.model == "local:test"

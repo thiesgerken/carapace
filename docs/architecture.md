@@ -24,6 +24,7 @@ flowchart TB
         GitStore[Git Store]
         CredentialRegistry[Credential Registry]
         Proxy[HTTP Forward Proxy]
+        MemorySvc["Memory Service<br/>(task queue + worker)"]
     end
 
     subgraph sandbox [Sandbox Container]
@@ -44,6 +45,7 @@ flowchart TB
         SecurityPolicy[SECURITY.md]
         WorkspaceFiles["AGENTS.md · SOUL.md · USER.md"]
         Skills[skills/]
+        MemoryMirror["memory/ (generated)"]
     end
 
     WebUI --> Server
@@ -66,6 +68,10 @@ flowchart TB
     Container -->|GET /credentials| CredentialRegistry
     CredentialRegistry --> Vault
     GitStore --> Sentinel
+
+    Server --> MemorySvc
+    MemorySvc -.->|reads events| SessionMgr
+    MemorySvc -->|mirror commits| MemoryMirror
 
     knowledgedir -.->|git clone| Container
     WorkspaceFiles -.-> Container
@@ -103,6 +109,18 @@ The HTTP/WebSocket entry point. `src/carapace/server/__init__.py` is the public 
 ### Session Engine
 
 The central coordinator. Receives inbound messages from all channel subscribers (WebSocket, Matrix), manages session lifecycle, routes approval requests, runs agent turns, and broadcasts results back to subscribers. `session/engine.py` is now the lifecycle and dependency-wiring facade; model selection, slash commands, approvals, transcript helpers, turn execution, and usage/budget logic live in focused `session/` modules. See [sessions-and-channels.md](sessions-and-channels.md).
+
+### Memory Service
+
+Long-term memory (`memory/`): distills archived sessions into per-session extractions and weekly and monthly digests, runs every LLM call as a task in a per-user queue with estimates and a budget, and mirrors the results into the knowledge repo under `memory/`. `MemoryService` is the only entry point: the server's lifespan constructs it with its collaborators and starts its worker loop as one background task, and `server/memory.py` is a thin router over it. See [memory.md](memory.md).
+
+The package keeps strict boundaries:
+
+- **Dependency direction**: `server → memory → (database, session manager read-only, knowledge, git, llm, usage)`. `memory` never imports `server`, and the session engine never imports `memory`.
+- **No engine hooks**: the spawner polls the sessions table and reads events through `SessionManager`. Nothing in the turn path knows about memory.
+- **Pure core, thin shell**: input rendering, periods, coverage, budget math and Markdown rendering are pure functions. IO lives in the store, the LLM calls, the worker and the mirror handler.
+- **One SQL owner**: only `memory/store.py` queries the memory tables.
+- **One protocol for task kinds**: each kind has a `TaskHandler` (estimate + run), dispatched from a plain `dict[TaskKind, TaskHandler]`.
 
 ### Session Manager
 
@@ -220,6 +238,27 @@ This map describes the Python modules under `src/carapace/`. It is meant as a na
 | `git/http.py`     | Sandbox-facing Git Smart HTTP backend wrapper around `git http-backend`. |
 | `git/store.py`    | Knowledge repo initialization, commit/push/pull, and hook management.    |
 
+### Memory package
+
+| Module                   | Responsibility                                                                                         |
+| ------------------------ | ------------------------------------------------------------------------------------------------------ |
+| `memory/__init__.py`     | Package marker only; no re-exports, which would create an import cycle.                                 |
+| `memory/models.py`       | Extraction and digest schemas, provenance, task enums and records, API view models.                    |
+| `memory/periods.py`      | Pure period math: ISO weeks in the user timezone, week-to-month by Thursday, period ends.              |
+| `memory/input.py`        | Pure rendering of session events into the extraction input (clamping, seq labels, hash, token count). |
+| `memory/digest_input.py` | Pure rendering of extractions or weekly digests into the digest input text.                           |
+| `memory/coverage.py`     | Pure coverage of a digest (which source records it consumed) and the hash that marks it stale.        |
+| `memory/prompts.py`      | Prompt templates and their computed `prompt_version`s.                                                 |
+| `memory/budget.py`       | Pure spend windows, budget gate and estimate math.                                                     |
+| `memory/llm.py`          | Single-shot pydantic-ai calls for extractions and digests, with usage and cost.                       |
+| `memory/handlers.py`     | `TaskHandler` protocol and one handler per task kind (extract, week, month, mirror).                  |
+| `memory/outdated.py`     | What a fresh run would record per task kind, and why a stored record is outdated.                      |
+| `memory/render.py`       | Pure rendering of current records into the `memory/` Markdown mirror.                                  |
+| `memory/store.py`        | `MemoryStore`, the only module that queries the memory tables.                                         |
+| `memory/spawner.py`      | Eligibility, staleness and settled rules: which tasks to spawn and which records to purge.            |
+| `memory/worker.py`       | Queue loop: auto-mode promotion, budget gate, claim, dispatch, record results.                         |
+| `memory/service.py`      | `MemoryService` facade used by the server.                                                              |
+
 ### Models package
 
 | Module                  | Responsibility                                                         |
@@ -277,6 +316,7 @@ This map describes the Python modules under `src/carapace/`. It is meant as a na
 | `server/__init__.py`      | FastAPI app facade, startup/shutdown lifecycle, shared state, REST routes not yet split out, internal API, sandbox API, and `main()`. |
 | `server/auth.py`          | Login/logout, cookie-session FastAPI dependencies, WebSocket auth, and admin user-management routes.                                  |
 | `server/codex_auth.py`    | ChatGPT subscription status, login, and disconnect routes.                                                                            |
+| `server/memory.py`        | Long-term memory routes (`/api/memory`): status, tasks, sessions, periods, facts; delegates to `MemoryService`.                       |
 | `server/notifications.py` | Notification subscription, test, and presence routes.                                                                                 |
 | `server/state.py`         | Helper for extracted route modules to access the mutable `carapace.server` facade.                                                    |
 | `server/websocket.py`     | Chat WebSocket route, `WebSocketSubscriber`, and small web-facing metadata/model routes.                                              |

@@ -15,7 +15,8 @@
         "disconnect": "Trennen",
         "github": "thiesgerken/carapace",
         "apiKeys": "API-Schlüssel",
-        "knowledge": "Wissen"
+        "knowledge": "Wissen",
+        "memory": "Gedächtnis"
     },
     "knowledge": {
         "title": "Wissens-Repository",
@@ -45,6 +46,258 @@
             "oauthHint": "Kein OAuth-Token hinterlegt. Erzeuge eines mit",
             "oauthHintStore": "und speichere das JSON im obigen Vault-Eintrag.",
             "hints": "Hinweise"
+        }
+    },
+    "memory": {
+        "title": "Gedächtnis",
+        "sections": "Gedächtnis-Bereiche",
+        "tabs": {
+            "timeline": "Zeitleiste",
+            "sessions": "Sitzungen",
+            "facts": "Fakten",
+            "tasks": "Aufgaben"
+        },
+        "status": {
+            "loading": "Gedächtnis-Status wird geladen…",
+            "autoModeOn": "Auto-Modus an",
+            "autoModeOff": "Auto-Modus aus",
+            "autoModeHint": "Auto-Modus und Budgets in den Einstellungen ändern",
+            "today": "Heute",
+            "tokens": "Tokens",
+            "noLimit": "kein Limit",
+            "queue": "Warteschlange",
+            "blocked": "{count} vom Budget zurückgehalten"
+        },
+        "taskStatuses": {
+            "pending": "ausstehend",
+            "queued": "eingereiht",
+            "running": "läuft",
+            "done": "fertig",
+            "failed": "fehlgeschlagen",
+            "cancelled": "abgebrochen"
+        },
+        "tasks": {
+            "filters": {
+                "status": "Status",
+                "anyStatus": "Alle Status",
+                "kind": "Art",
+                "anyKind": "Alle Arten",
+                "month": "Monat",
+                "model": "Modell",
+                "anyModel": "Alle Modelle"
+            },
+            "matching": "{count} Treffer",
+            "estimate": "ca. {cost}",
+            "dismiss": "Ausblenden",
+            "pickPage": "Alle Aufgaben dieser Seite auswählen",
+            "pickTask": "{target} auswählen",
+            "columns": {
+                "kind": "Art",
+                "target": "Ziel",
+                "status": "Status",
+                "model": "Modell",
+                "version": "Vers.",
+                "cost": "Kosten/Schätz.",
+                "actions": "Aktionen"
+            },
+            "empty": "Keine Aufgaben passen zu diesen Filtern.",
+            "blockedBudget": "⏸ Budget",
+            "retry": "Erneut versuchen",
+            "loadMore": "Mehr laden",
+            "runNewest": "Neueste {count} ausführen",
+            "runPicked": "Auswahl ausführen ({count})",
+            "cancelPicked": "Auswahl abbrechen ({count})",
+            "queued": "{count, plural, one {# Aufgabe eingereiht.} other {# Aufgaben eingereiht.}}",
+            "cancelled": "{count, plural, one {# Aufgabe abgebrochen.} other {# Aufgaben abgebrochen.}}",
+            "retried": "{count, plural, one {# Aufgabe wird erneut versucht.} other {# Aufgaben werden erneut versucht.}}",
+            "detail": {
+                "id": "Aufgabe",
+                "spawnedBy": "Erzeugt",
+                "spawnedByValue": {
+                    "auto": "automatisch",
+                    "manual": "manuell"
+                },
+                "attempts": "Versuche",
+                "created": "Erstellt",
+                "queuedAt": "Eingereiht",
+                "started": "Gestartet",
+                "finished": "Beendet",
+                "estimate": "Schätzung",
+                "openResult": "Ergebnis öffnen"
+            }
+        },
+        "run": {
+            "title": "Gedächtnis-Aufgaben ausführen",
+            "estimating": "Wird geschätzt…",
+            "tasks": "Aufgaben",
+            "inputTokens": "Eingabe-Tokens",
+            "tokens": "Tokens",
+            "cost": "Geschätzte Kosten",
+            "unpriced": "{count, plural, one {# Aufgabe ohne Preis} other {# Aufgaben ohne Preis}}",
+            "remaining": "Restbudget",
+            "noLimit": "kein Limit",
+            "overBudget": "Das übersteigt das Restbudget. Aufgaben darüber hinaus warten in der Warteschlange, bis das Budgetfenster zurückgesetzt wird.",
+            "model": "Modell",
+            "roleDefault": "Standard der Rolle",
+            "cancel": "Abbrechen",
+            "confirm": "Ausführen"
+        },
+        "provenance": {
+            "model": "Modell",
+            "prompt": "Prompt-Version",
+            "inputFormat": "Eingabeformat",
+            "carapace": "carapace",
+            "inputHash": "Eingabe-Hash",
+            "usage": "Verbrauch",
+            "cost": "Kosten",
+            "unpriced": "kein Preis",
+            "duration": "Dauer",
+            "created": "Erstellt",
+            "task": "Aufgabe"
+        },
+        "pick": {
+            "pickMatching": "Alle {count} Treffer auswählen",
+            "pickedMatching": "Alle {count} Treffer sind ausgewählt.",
+            "clear": "Auswahl aufheben"
+        },
+        "sessions": {
+            "filters": {
+                "week": "Woche",
+                "state": "Extraktion",
+                "anyState": "Jede Extraktion",
+                "reason": "Grund für veraltet",
+                "anyReason": "Jeder Grund",
+                "taskStatus": "Aufgabenstatus",
+                "anyTaskStatus": "Jeder Aufgabenstatus",
+                "model": "Modell",
+                "anyModel": "Alle Modelle",
+                "channel": "Kanal",
+                "anyChannel": "Alle Kanäle"
+            },
+            "states": {
+                "missing": "nicht extrahiert",
+                "current": "aktuell",
+                "outdated": "veraltet"
+            },
+            "matching": "{count} Treffer",
+            "dismiss": "Ausblenden",
+            "pickPage": "Alle Sitzungen dieser Seite auswählen",
+            "pickSession": "{title} auswählen",
+            "columns": {
+                "date": "Datum",
+                "title": "Titel / Zusammenfassung",
+                "facts": "Fakten",
+                "factsHint": "Du · Personen · Umgebung",
+                "model": "Modell",
+                "status": "Status",
+                "cost": "Kosten"
+            },
+            "untitled": "Unbenannte Sitzung",
+            "task": "Aufgabe {status}",
+            "empty": "Keine Sitzungen passen zu diesen Filtern.",
+            "loadMore": "Mehr laden",
+            "runPicked": "Auswahl ausführen ({count})",
+            "runNeedsRows": "Ausführen braucht einzeln ausgewählte Zeilen; Neu erzeugen wirkt auf alle Treffer.",
+            "respawnPicked": "Auswahl neu erzeugen ({count})",
+            "spawned": "{count, plural, one {# Aufgabe erzeugt.} other {# Aufgaben erzeugt.}}",
+            "queued": "{count, plural, one {# Aufgabe eingereiht.} other {# Aufgaben eingereiht.}}",
+            "spawnedWithSkips": "{count, plural, one {# Aufgabe erzeugt} other {# Aufgaben erzeugt}}; übersprungen: {reasons}."
+        },
+        "outdatedReasons": {
+            "prompt_version": "Prompt geändert",
+            "model": "Modell geändert",
+            "input_format_version": "Eingabeformat geändert"
+        },
+        "drawer": {
+            "openSession": "Sitzung öffnen",
+            "close": "Schließen",
+            "notEligible": "Diese Sitzung gehört nicht zum Gedächtnis (privat, ausgeschlossener Job oder unbekannt).",
+            "notExtracted": "Noch nicht extrahiert.",
+            "taskStatus": "Aufgabe ist {status}.",
+            "history": "Frühere Versionen",
+            "outcomes": "Ergebnisse",
+            "openLoops": "Offene Punkte",
+            "onMyMind": "Beschäftigt mich",
+            "friction": "Reibung",
+            "factCategories": {
+                "user": "Du",
+                "social": "Personen",
+                "surroundings": "Umgebung"
+            },
+            "confidence": {
+                "low": "geringe Sicherheit",
+                "medium": "mittlere Sicherheit",
+                "high": "hohe Sicherheit"
+            },
+            "durability": {
+                "durable": "dauerhaft",
+                "dated": "befristet"
+            },
+            "validUntil": "bis {date}",
+            "sourceKind": {
+                "user_said": "vom Nutzer gesagt",
+                "observed": "beobachtet"
+            },
+            "provenance": "Herkunft"
+        },
+        "timeline": {
+            "tree": "Zeiträume",
+            "empty": "Noch keine Zeiträume. Sie erscheinen, sobald Sitzungen für das Gedächtnis erzeugt wurden.",
+            "pickPeriod": "Woche oder Monat auswählen.",
+            "unknownPeriod": "Dieser Zeitraum hat keine Sitzungen.",
+            "badges": {
+                "current": "aktuell",
+                "stale": "veraltet",
+                "notRun": "nicht ausgeführt"
+            },
+            "staleReasons": {
+                "sources": "Quellen geändert",
+                "prompt_version": "Prompt geändert",
+                "model": "Modell geändert",
+                "input_format_version": "Eingabeformat geändert"
+            },
+            "weekTitle": "Woche {key}",
+            "regenerate": "Neu erzeugen",
+            "generate": "Erzeugen",
+            "coverageSessions": "{covered}/{total} Sitzungen",
+            "coverageWeeks": "{covered}/{total} Wochen",
+            "task": "Aufgabe {status}",
+            "prompt": "Prompt {version}",
+            "noDigest": "Noch keine Zusammenfassung.",
+            "summary": "Zusammenfassung",
+            "onMyMind": "Beschäftigt mich",
+            "highlights": "Höhepunkte",
+            "openLoops": "Offene Punkte",
+            "learned": "Gelernt",
+            "factCategories": {
+                "user": "Du",
+                "social": "Personen",
+                "surroundings": "Umgebung"
+            },
+            "sourceSessions": "{count, plural, one {Sitzung (#)} other {Sitzungen (#)}}",
+            "sourceWeeks": "{count, plural, one {Woche (#)} other {Wochen (#)}}",
+            "notExtracted": "nicht extrahiert",
+            "history": "{count, plural, one {Frühere Version (#)} other {Frühere Versionen (#)}}",
+            "historyCoverage": "{count, plural, one {Aus # Quelle erzeugt} other {Aus # Quellen erzeugt}}",
+            "alreadyQueued": "Für diesen Zeitraum ist bereits eine Aufgabe eingereiht oder läuft.",
+            "notSpawned": "Keine Aufgabe erzeugt: {reasons}."
+        },
+        "facts": {
+            "category": "Kategorie",
+            "noSubject": "Unbekannt",
+            "empty": "Keine Fakten passen zu diesen Filtern.",
+            "seen": "gesehen {first} – {last}",
+            "expired": "Abgelaufen: valid_until ist überschritten",
+            "filters": {
+                "confidence": "Sicherheit",
+                "anyConfidence": "Jede Sicherheit",
+                "durability": "Dauer",
+                "anyDurability": "Jede Dauer",
+                "sourceKind": "Quelle",
+                "anySourceKind": "Jede Quelle",
+                "month": "Monat",
+                "text": "Text filtern"
+            }
         }
     },
     "account": {
@@ -84,7 +337,8 @@
             "defaultBudgets": "Standardbudgets",
             "matrix": "Matrix",
             "credentials": "Zugangsdaten",
-            "gitRemote": "Git-Remote"
+            "gitRemote": "Git-Remote",
+            "memory": "Gedächtnis"
         },
         "fields": {
             "agentName": "Name",
@@ -114,11 +368,20 @@
             "basicAuthUsername": "Basic-Auth-Benutzername",
             "basicAuthPassword": "Basic-Auth-Passwort",
             "expose": "Freigeben",
-            "hide": "Ausblenden"
+            "hide": "Ausblenden",
+            "memoryAutoMode": "Auto-Modus",
+            "memoryCostPerDay": "Kosten pro Tag (USD)",
+            "memoryCostPerMonth": "Kosten pro Monat (USD)",
+            "memoryTokensPerDay": "Eingabe-Tokens pro Tag",
+            "memoryTokensPerMonth": "Eingabe-Tokens pro Monat",
+            "timezone": "Zeitzone",
+            "memoryLow": "Modell für Sitzungsextraktion",
+            "memoryHigh": "Modell für Zusammenfassungen"
         },
         "defaults": {
             "serverDefault": "Serverstandard",
-            "currentModel": "{model}"
+            "currentModel": "{model}",
+            "noLimit": "Kein Limit"
         },
         "placeholders": {
             "addRoom": "Raum hinzufügen, Enter oder Komma",
@@ -158,7 +421,11 @@
         },
         "hints": {
             "agentName": "Wird statt „carapace“ im Tab-Titel, in der Seitenleiste und im Eingabefeld angezeigt. Leer lassen für Standard.",
-            "agentIcon": "Ein einzelnes Emoji als Favicon und Logo in der Seitenleiste. Leer lassen für Standard."
+            "agentIcon": "Ein einzelnes Emoji als Favicon und Logo in der Seitenleiste. Leer lassen für Standard.",
+            "memoryAutoMode": "Ausstehende Gedächtnis-Aufgaben automatisch ausführen, solange das Budget reicht. Aus heißt: Aufgaben laufen nur, wenn du sie startest.",
+            "timezone": "Bestimmt Wochen, Monate und Budgetfenster des Gedächtnisses.",
+            "memoryLow": "memory_low: fasst einzelne Sitzungen zusammen. Ein günstiges Modell reicht.",
+            "memoryHigh": "memory_high: schreibt Wochen- und Monatszusammenfassungen. Ein stärkeres Modell lohnt sich."
         },
         "chatgpt": {
             "description": "Nutze dein eigenes ChatGPT-Abo für openai-codex-Modelle statt der API-Schlüssel der Plattform. Die Nutzung zählt gegen die Limits deines Abos; Kostenangaben zeigen den entsprechenden API-Preis.",
@@ -238,13 +505,17 @@
             "apiKeySource": "API-Key-Quelle",
             "apiKey": "API-Key",
             "secretReference": "Secret-Referenz",
-            "compaction": "Compaction"
+            "compaction": "Compaction",
+            "memoryLow": "Gedächtnis: Sitzungsextraktion",
+            "memoryHigh": "Gedächtnis: Zusammenfassungen"
         },
         "placeholders": {
             "selectModel": "Modell auswählen",
             "unlimited": "Unbegrenzt",
             "generatedId": "provider:name",
-            "keepSecret": "Konfiguriertes Secret behalten"
+            "keepSecret": "Konfiguriertes Secret behalten",
+            "memoryLowDefault": "Kompaktierungs- oder Titelmodell",
+            "memoryHighDefault": "Agentenmodell"
         },
         "actions": {
             "save": "Speichern",
@@ -894,7 +1165,8 @@
         "mobile": {
             "details": "Details",
             "done": "Fertig"
-        }
+        },
+        "memoryChip": "Gedächtnis"
     },
     "message": {
         "copy": "Nachricht kopieren",
@@ -1039,7 +1311,9 @@
             "timeZone": "Zeitzone",
             "inputOptional": "Eingabe (optional)",
             "archivePreviousSessions": "Vorherige Sitzungen archivieren",
-            "archivePreviousSessionsHelp": "Beim Start einer neuen Sitzung alle noch offenen früheren Sitzungen dieses Jobs archivieren."
+            "archivePreviousSessionsHelp": "Beim Start einer neuen Sitzung alle noch offenen früheren Sitzungen dieses Jobs archivieren.",
+            "memoryEnabled": "Ins Gedächtnis aufnehmen",
+            "memoryEnabledHelp": "Sitzungen dieses Jobs fließen wie normale Sitzungen ins Langzeitgedächtnis ein."
         },
         "placeholders": {
             "name": "Nächtliche Inbox-Prüfung",

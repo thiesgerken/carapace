@@ -39,6 +39,7 @@ jobs:
     agent_model_name: null
     sentinel_model_name: null
     title_model_name: null
+    memory_enabled: false
 ```
 
 ## Job fields
@@ -59,6 +60,7 @@ jobs:
 | `agent_model_name`      | Optional agent model override for fresh sessions                                                           |
 | `sentinel_model_name`   | Optional sentinel model override for fresh sessions                                                        |
 | `title_model_name`      | Optional title-model override for fresh sessions                                                           |
+| `memory_enabled`        | Include this job's sessions in [long-term memory](memory.md) (default `false`)                             |
 
 ## Trigger model
 
@@ -136,6 +138,7 @@ The web app exposes jobs in Settings:
 - choose cron expressions and time zones
 - switch between fresh-session and persistent-session modes
 - override agent, sentinel, and title models for fresh-session jobs
+- include the job's sessions in long-term memory ("Include in memory")
 
 Job-linked sessions also show recent job metadata in the chat view.
 
@@ -181,9 +184,11 @@ Cron-triggered runs use `trigger_kind="cron"`. Manual API-triggered runs use `tr
 - Jobs target normal carapace sessions, so sandbox lifecycle, credential approval rules, knowledge commits, and notifications still apply.
 - Unattended job sessions can emit `unattended_turn_completed` and `unattended_turn_failed` notifications.
 - If a target session is already busy when a job tries to run, the run is rejected.
+- Job sessions stay out of long-term memory unless `memory_enabled` is set, so a recurring job does not flood the weekly digests with near-identical runs.
 
 ## Related docs
 
 - [sessions-and-channels.md](sessions-and-channels.md) for session lifecycle and controls
+- [memory.md](memory.md) for long-term memory and which sessions it includes
 - [notifications.md](notifications.md) for unattended completion notifications
 - [quickstart.md](quickstart.md) for deployment and basic configuration

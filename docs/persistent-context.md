@@ -1,6 +1,6 @@
 # Persistent Context and Workspace Files
 
-carapace does not have a separate agent memory directory in the current runtime model. Persistent context is ordinary content in the Git-backed knowledge repo: top-level workspace files, skills, and archived session snapshots.
+Persistent context is ordinary content in the Git-backed knowledge repo: top-level workspace files, skills, archived session snapshots, and the generated `memory/` mirror.
 
 ---
 
@@ -20,6 +20,19 @@ Top-level Markdown files in the knowledge repo define the agent's identity, user
 When session commit/autosave is enabled, conversation snapshots are written into the knowledge repo under `sessions/YYYY/MM/<session_id>/conversation.json`. These archives are plain files, so the agent can search them with tools such as `rg` when it needs prior context.
 
 Session runtime state still lives under `$CARAPACE_DATA_DIR/sessions/`; archived session files are the Git-backed copy intended for long-term recall and review.
+
+## Memory mirror
+
+[Long-term memory](memory.md) distills archived sessions into per-session extractions and weekly and monthly digests. Its source of truth is carapace's database; a one-way mirror renders the current records into the knowledge repo so the agent can read and search them like any other file:
+
+```
+memory/README.md
+memory/sessions/YYYY/MM/<session_id>.md
+memory/weeks/YYYY-Www.md
+memory/months/YYYY-MM.md
+```
+
+The mirror owns `memory/`: each run rewrites it from the database in one commit and deletes files of removed records, so edits pushed there are reverted. Change memory in the Memory area of the web UI instead.
 
 ## How editing works
 

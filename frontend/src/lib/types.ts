@@ -145,6 +145,7 @@ export interface JobDefinition {
   agent_model_name?: string | null;
   sentinel_model_name?: string | null;
   title_model_name?: string | null;
+  memory_enabled: boolean;
 }
 
 export interface JobsFile {
@@ -599,6 +600,7 @@ export type ChatMessage =
       toolId?: string;
       parentToolId?: string;
       compaction?: CompactionAnnotation;
+      eventIndex?: number;
       children?: Array<{
         kind: "tool_call";
         tool: string;
@@ -647,3 +649,366 @@ export type ChatMessage =
       eventIndex?: number;
       turnTerminal?: boolean;
     };
+
+// Memory (/api/memory). Mirrors src/carapace/memory/models.py.
+// Decimal amounts arrive as strings, datetimes and dates as ISO strings.
+
+export type MemoryTaskKind = "session_extract" | "week_digest" | "month_digest" | "mirror";
+export type MemoryTaskStatus = "pending" | "queued" | "running" | "done" | "failed" | "cancelled";
+export type MemoryBlockedReason = "budget";
+export type MemorySpawnedBy = "auto" | "manual";
+export type MemoryModelRole = "memory_low" | "memory_high";
+export type MemoryDigestLevel = "week" | "month";
+export type MemoryFactCategory = "user" | "social" | "surroundings";
+export type MemoryFactSourceKind = "user_said" | "observed";
+export type MemoryConfidence = "low" | "medium" | "high";
+export type MemoryDurability = "durable" | "dated";
+export type MemoryOutdatedReason = "prompt_version" | "model" | "input_format_version";
+export type MemoryExtractionState = "missing" | "current" | "outdated";
+
+export interface MemoryFact {
+  category: MemoryFactCategory;
+  statement: string;
+  subject: string | null;
+  source_seqs: number[];
+  source_kind: MemoryFactSourceKind;
+  confidence: MemoryConfidence;
+  durability: MemoryDurability;
+  valid_until: string | null;
+}
+
+export interface MemorySessionExtraction {
+  abstract: string;
+  outcomes: string[];
+  open_loops: string[];
+  on_my_mind: string[];
+  facts: MemoryFact[];
+  friction: string[];
+  tags: string[];
+}
+
+export interface MemoryDigestTheme {
+  theme: string;
+  /** Session ids (week digests) or week keys (month digests). */
+  refs: string[];
+}
+
+/** A deduplicated fact; user_said only if every merged source was. */
+export interface MemoryDigestFact {
+  category: MemoryFactCategory;
+  statement: string;
+  subject: string | null;
+  source_kind: MemoryFactSourceKind;
+  confidence: MemoryConfidence;
+  durability: MemoryDurability;
+  valid_until: string | null;
+  /** Session ids (week digests) or week keys (month digests). */
+  refs: string[];
+}
+
+export interface MemoryPeriodDigest {
+  summary: string;
+  on_my_mind: MemoryDigestTheme[];
+  highlights: string[];
+  open_loops: string[];
+  learned: MemoryDigestFact[];
+}
+
+export interface MemoryProvenance {
+  carapace_version: string;
+  model: string;
+  prompt_version: string;
+  input_format_version: number;
+  input_hash: string;
+  input_tokens: number;
+  output_tokens: number;
+  /** null when the model has no known pricing. */
+  cost_usd: string | null;
+  duration_ms: number;
+  task_id: number;
+  created_at: string;
+}
+
+export interface MemoryTaskEstimate {
+  model: string;
+  input_tokens: number;
+  output_tokens_cap: number;
+  cost_usd: string | null;
+}
+
+export interface MemoryCoverageEntry {
+  source_id: string;
+  source_hash: string;
+}
+
+export interface MemoryTask {
+  id: number;
+  user: string;
+  kind: MemoryTaskKind;
+  target: string;
+  status: MemoryTaskStatus;
+  /** Session's week for extractions, the target for digests. */
+  week_key: string | null;
+  month_key: string | null;
+  /** Model of the latest estimate, or the model that ran once finished. */
+  model: string | null;
+  blocked_reason: MemoryBlockedReason | null;
+  spawned_by: MemorySpawnedBy;
+  model_override: string | null;
+  attempts: number;
+  estimate: MemoryTaskEstimate | null;
+  provenance: MemoryProvenance | null;
+  result_id: number | null;
+  error: string | null;
+  created_at: string;
+  queued_at: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+}
+
+export interface MemoryTaskView extends MemoryTask {
+  target_label: string;
+}
+
+export interface MemoryExtractionRecord {
+  id: number;
+  session_id: string;
+  week_key: string;
+  month_key: string;
+  is_current: boolean;
+  input_hash: string;
+  provenance: MemoryProvenance;
+  extraction: MemorySessionExtraction;
+  created_at: string;
+}
+
+export interface MemoryDigestRecord {
+  id: number;
+  level: MemoryDigestLevel;
+  period_key: string;
+  is_current: boolean;
+  coverage: MemoryCoverageEntry[];
+  coverage_hash: string;
+  provenance: MemoryProvenance;
+  digest: MemoryPeriodDigest;
+  created_at: string;
+}
+
+export interface MemoryBudgetWindowStatus {
+  window_start: string;
+  spent_cost_usd: string;
+  spent_input_tokens: number;
+  limit_cost_usd: string | null;
+  limit_input_tokens: number | null;
+}
+
+export interface MemoryStatus {
+  auto_mode: boolean;
+  timezone: string;
+  day: MemoryBudgetWindowStatus;
+  month: MemoryBudgetWindowStatus;
+  queue: Record<MemoryTaskStatus, number>;
+  /** Queued tasks held back by the budget gate. */
+  blocked: number;
+  models: Record<MemoryModelRole, string>;
+  /** Legacy sessions without a stored transcript, skipped by memory (as of the last sweep). */
+  sessions_without_transcript: number;
+}
+
+/** GET /tasks query params (lists repeat the param) and the `filter` of a selection. */
+export interface MemoryTaskFilter {
+  status?: MemoryTaskStatus[] | null;
+  kind?: MemoryTaskKind[] | null;
+  /** Week (2026-W36) or month (2026-09) key. */
+  period?: string | null;
+  model?: string | null;
+}
+
+/** Exactly one of ids or filter; newest limits a filter to its newest N. */
+export interface MemoryTaskSelection {
+  ids?: number[] | null;
+  filter?: MemoryTaskFilter | null;
+  newest?: number | null;
+}
+
+/** Body of POST /tasks/estimate and POST /tasks/run. */
+export interface MemoryTaskRunRequest {
+  selection: MemoryTaskSelection;
+  model_override?: string | null;
+}
+
+/** Body of POST /tasks/retry. */
+export interface MemoryTaskIdsRequest {
+  ids: number[];
+}
+
+/** Body of POST /tasks/spawn: explicit targets, or (session_extract only) every session matching a filter. */
+export interface MemoryTaskSpawnRequest {
+  kind: MemoryTaskKind;
+  targets?: string[] | null;
+  filter?: MemorySessionFilter | null;
+  model_override?: string | null;
+}
+
+export interface MemoryTaskCountResponse {
+  count: number;
+}
+
+export interface MemorySpawnSkip {
+  target: string;
+  /** An ineligibility reason (private, job_excluded, agent_running, no_transcript, no_user_message, deleted) or why the target got no task. */
+  reason: string;
+}
+
+export interface MemoryTaskSpawnResponse {
+  task_ids: number[];
+  skipped: MemorySpawnSkip[];
+}
+
+export interface MemoryEstimateTotal {
+  task_count: number;
+  input_tokens: number;
+  output_tokens_cap: number;
+  /** Sum over priced tasks; unpriced_count tasks had no known pricing. */
+  cost_usd: string;
+  unpriced_count: number;
+}
+
+export interface MemoryTaskListResponse {
+  items: MemoryTaskView[];
+  next_cursor: string | null;
+  total: number;
+  estimate: MemoryEstimateTotal;
+}
+
+export interface MemoryTaskRef {
+  id: number;
+  status: MemoryTaskStatus;
+  blocked_reason: MemoryBlockedReason | null;
+}
+
+export interface MemoryFactCounts {
+  user: number;
+  social: number;
+  surroundings: number;
+}
+
+export interface MemoryExtractionSummary {
+  id: number;
+  abstract: string;
+  fact_counts: MemoryFactCounts;
+  model: string;
+  prompt_version: string;
+  cost_usd: string | null;
+  created_at: string;
+  /** Empty when current. */
+  outdated: MemoryOutdatedReason[];
+}
+
+/** GET /sessions query params. */
+export interface MemorySessionFilter {
+  week?: string | null;
+  state?: MemoryExtractionState[] | null;
+  task_status?: MemoryTaskStatus[] | null;
+  model?: string | null;
+  channel?: string | null;
+  /** Matched against the current extraction, for bulk respawns. */
+  outdated_reason?: MemoryOutdatedReason | null;
+}
+
+export interface MemorySessionRow {
+  session_id: string;
+  title: string | null;
+  channel_type: string;
+  created_at: string;
+  /** From the current extraction or the open task; null until first spawned. */
+  week_key: string | null;
+  extraction: MemoryExtractionSummary | null;
+  task: MemoryTaskRef | null;
+}
+
+export interface MemorySessionListResponse {
+  items: MemorySessionRow[];
+  next_cursor: string | null;
+  total: number;
+}
+
+export interface MemorySessionDetail {
+  session: MemorySessionRow;
+  current: MemoryExtractionRecord | null;
+  /** Earlier extractions, newest first. */
+  history: MemoryExtractionRecord[];
+}
+
+export interface MemoryDigestSummary {
+  id: number;
+  model: string;
+  prompt_version: string;
+  carapace_version: string;
+  cost_usd: string | null;
+  created_at: string;
+  /** Empty when current. */
+  outdated: MemoryOutdatedReason[];
+}
+
+export interface MemoryPeriodNode {
+  level: MemoryDigestLevel;
+  key: string;
+  start: string;
+  end: string;
+  /** Week: extracted/eligible sessions. Month: weeks with a current digest/weeks. */
+  covered: number;
+  total: number;
+  digest: MemoryDigestSummary | null;
+  /** Current digest's coverage no longer matches the period's sources. */
+  stale: boolean;
+  task: MemoryTaskRef | null;
+}
+
+export interface MemoryMonthNode extends MemoryPeriodNode {
+  weeks: MemoryPeriodNode[];
+}
+
+export interface MemoryPeriodTree {
+  months: MemoryMonthNode[];
+}
+
+export interface MemoryPeriodDetail {
+  node: MemoryPeriodNode;
+  current: MemoryDigestRecord | null;
+  history: MemoryDigestRecord[];
+  /** Sources: sessions for a week, weeks for a month (the other list is empty). */
+  sessions: MemorySessionRow[];
+  weeks: MemoryPeriodNode[];
+}
+
+/** GET /facts query params. */
+export interface MemoryFactFilter {
+  category?: MemoryFactCategory[] | null;
+  subject?: string | null;
+  confidence?: MemoryConfidence[] | null;
+  durability?: MemoryDurability[] | null;
+  source_kind?: MemoryFactSourceKind[] | null;
+  period?: string | null;
+}
+
+export interface MemoryFactView {
+  id: number;
+  extraction_id: number;
+  session_id: string;
+  session_title: string | null;
+  category: MemoryFactCategory;
+  subject: string | null;
+  statement: string;
+  source_kind: MemoryFactSourceKind;
+  confidence: MemoryConfidence;
+  durability: MemoryDurability;
+  valid_until: string | null;
+  source_seqs: number[];
+  week_key: string;
+  created_at: string;
+}
+
+export interface MemoryFactListResponse {
+  items: MemoryFactView[];
+}

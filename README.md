@@ -35,6 +35,7 @@ carapace is a self-hosted AI agent with a web UI, CLI, and Matrix channel for op
 - 🔑 Context-scoped credentials. Secrets stay in your vault, with native Bitwarden support, and are only injected or fetched on demand for exec calls that have the matching approved skill context. Neither the agent nor the backend have a giant `.env` with all of your secrets.
 - 👥 Multi-user. Bootstrap an admin user, then manage users, roles, passwords, per-user models, Matrix, Git, and credential backends from Settings. Invite your family!
 - 📊 Diagrams in chat. ` ```mermaid ` blocks render as diagrams in the web UI (source toggle, copy, SVG download), and a bundled `mermaid` skill teaches the agent when and how to draw them.
+- 🧠 Long-term memory you can inspect. Archived sessions are distilled into per-session extractions and weekly and monthly digests of what was on your mind and what was learned about you, each with full provenance (model, prompt version, input, cost). LLM work runs as tasks in a budgeted queue that you control, and the results are mirrored as Markdown into your knowledge repo.
 - ⏰ Built-in jobs and scheduling. Saved jobs can run on demand or by cron, either in fresh unattended sessions or in reused attended sessions.
 - 🌐 Bring your own LLM — tested with Gemini, LMStudio and llama.cpp. The agent loop is handled by [Pydantic AI](https://github.com/pydantic/pydantic-ai), which supports lots of LLM backends.
 
@@ -105,6 +106,7 @@ carapace treats long-term agent state as a repository, not as an opaque internal
 - Skills are plain files in AgentSkills format.
 - Durable context is markdown and other plain files on disk.
 - Session histories can be archived into the owning user's knowledge repo and pushed upstream.
+- Long-term memory is mirrored into `memory/` as Markdown, with provenance in every file.
 
 That makes the system inspectable in a way most agent projects are not. You can review what changed, diff it, sync it, and audit how the agent's knowledge evolves over time.
 
@@ -164,6 +166,7 @@ See [docs/architecture.md](docs/architecture.md) for the diagrams and fuller arc
 | [docs/jobs.md](docs/jobs.md)                                   | Saved jobs, cron scheduling, persistent-session jobs, and job API          |
 | [docs/notifications.md](docs/notifications.md)                 | Web Push delivery, presence tracking, suppression, and notification APIs   |
 | [docs/persistent-context.md](docs/persistent-context.md)       | Persistent context, workspace files, and archived session snapshots        |
+| [docs/memory.md](docs/memory.md)                               | Long-term memory: extractions, digests, tasks, budget, mirror, Memory UI   |
 | [docs/sandbox.md](docs/sandbox.md)                             | Docker/Kubernetes sandboxes, proxy behavior, and exec-scoped tunnels       |
 | [docs/sessions-and-channels.md](docs/sessions-and-channels.md) | Session lifecycle, session controls, Matrix behavior, and approvals        |
 | [docs/compaction.md](docs/compaction.md)                       | Session compaction: `/compact`, fold/tool strategies, agent view           |

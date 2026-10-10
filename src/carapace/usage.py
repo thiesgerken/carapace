@@ -51,7 +51,7 @@ class ModelUsage(BaseModel):
     cost_usd: Decimal = Decimal(0)
 
 
-def _price_for_usage(model_key: str, u: ModelUsage) -> Decimal | None:
+def price_for_usage(model_key: str, u: ModelUsage) -> Decimal | None:
     provider_cost = u.cost_usd if u.cost_usd else None
     provider_id, _, model_ref = model_key.partition(":")
     if not model_ref:
@@ -153,7 +153,7 @@ class UsageTracker(BaseModel):
         costs: dict[str, Decimal] = {}
         total = Decimal(0)
         for model_key, u in self.models.items():
-            p = _price_for_usage(model_key, u)
+            p = price_for_usage(model_key, u)
             if p is not None:
                 costs[model_key] = p
                 total += p
@@ -166,7 +166,7 @@ class UsageTracker(BaseModel):
         for category, by_model in self.category_by_model.items():
             cat_total = Decimal(0)
             for model_key, u in by_model.items():
-                p = _price_for_usage(model_key, u)
+                p = price_for_usage(model_key, u)
                 if p is not None:
                     cat_total += p
             costs[category] = cat_total
@@ -334,7 +334,7 @@ def usage_limits_for_remaining_budget(
     return UsageLimits(output_tokens_limit=remaining_output, request_limit=request_limit)
 
 
-LlmSource = Literal["agent", "sentinel", "titler", "compaction"]
+LlmSource = Literal["agent", "sentinel", "titler", "compaction", "memory"]
 LlmRequestPhase = Literal["processing_prompt", "thinking", "generating"]
 LlmRequestOutcome = Literal["completed", "interrupted"]
 

@@ -42,6 +42,10 @@ from ..git.http import GitHttpHandler
 from ..jobs import JobsScheduler, JobsStore
 from ..knowledge import KnowledgeRepoRegistry
 from ..llm import make_model_factory
+from ..memory.handlers import DigestHandler, MirrorHandler, SessionExtractHandler
+from ..memory.models import DigestLevel, TaskKind
+from ..memory.service import MemoryService
+from ..memory.store import MemoryStore
 from ..models.config import Config
 from ..models.credentials import CredentialValueKind
 from ..models.user import UserConfig
@@ -65,6 +69,7 @@ from .history import router as history_router
 from .jobs import _jobs_scheduler_loop
 from .jobs import router as jobs_router
 from .knowledge import router as knowledge_router
+from .memory import router as memory_router
 from .notifications import _set_notification_presence as _set_notification_presence
 from .notifications import router as notifications_router
 from .platform_settings import router as platform_settings_router
@@ -104,6 +109,7 @@ _auth_store: AuthStore
 _api_key_store: ApiKeyStore
 _platform_store: PlatformSettingsStore
 _codex_accounts: CodexAccounts
+_memory_service: MemoryService
 
 
 def _enabled_user_git_configs(auth_store: AuthStore) -> dict[str, KnowledgeGitConfig]:
@@ -192,6 +198,17 @@ def _create_sandbox_runtime(config: Config, data_dir: Path) -> ContainerRuntime:
         host_data_dir=Path(host_data_dir_env) if host_data_dir_env else None,
         network_name=config.sandbox.network_name,
     )
+
+
+def _enabled_usernames() -> list[str]:
+    return [name for name, user in _auth_store.load_users().users.items() if user.enabled]
+
+
+def _user_config(username: str) -> UserConfig:
+    user = _auth_store.get_user(username)
+    if user is None:
+        raise KeyError(username)
+    return user.config
 
 
 def _credential_config_fingerprint(username: str) -> str:
@@ -316,7 +333,8 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
         _auth_store, \
         _api_key_store, \
         _platform_store, \
-        _codex_accounts
+        _codex_accounts, \
+        _memory_service
 
     # 1. Build config from env (CARAPACE_DATA_DIR + CARAPACE_* subsections; no config file)
     _config = build_config()
@@ -467,6 +485,44 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
     )
     _jobs_store = JobsStore(_session_factory)
     _jobs_scheduler = JobsScheduler(_jobs_store)
+    memory_store = MemoryStore(_session_factory)
+    _memory_service = MemoryService(
+        config=_config,
+        store=memory_store,
+        sessions=session_mgr,
+        jobs=_jobs_store,
+        handlers={
+            TaskKind.session_extract: SessionExtractHandler(
+                config=_config,
+                load_events=session_mgr.load_events,
+                user_config_for=_user_config,
+                model_factory=model_factory,
+            ),
+            TaskKind.week_digest: DigestHandler(
+                level=DigestLevel.week,
+                config=_config,
+                current_extractions=memory_store.current_extractions,
+                current_digests=memory_store.current_digests,
+                model_factory=model_factory,
+            ),
+            TaskKind.month_digest: DigestHandler(
+                level=DigestLevel.month,
+                config=_config,
+                current_extractions=memory_store.current_extractions,
+                current_digests=memory_store.current_digests,
+                model_factory=model_factory,
+            ),
+            TaskKind.mirror: MirrorHandler(
+                current_extractions=memory_store.current_extractions,
+                current_digests=memory_store.current_digests,
+                knowledge_repo_for_user=_knowledge_repo_registry.ensure_user_repo,
+                push_if_configured=_knowledge_git_runtime.push_if_configured,
+            ),
+        },
+        user_config_for=_user_config,
+        users=_enabled_usernames,
+        is_agent_running=_engine.is_agent_running,
+    )
 
     # Git HTTP handler — serves the knowledge repo on the sandbox API
     _git_handler = GitHttpHandler(
@@ -527,6 +583,7 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
         warm_pool_task = asyncio.create_task(_warm_pool_loop(_sandbox_mgr, _config.sandbox.warm_pool_size))
     archive_task = asyncio.create_task(_session_archive_loop())
     jobs_task = asyncio.create_task(_jobs_scheduler_loop())
+    memory_task = asyncio.create_task(_memory_service.run())
 
     def matrix_channel_factory(username: str, user_config: UserConfig) -> MatrixChannelHandle:
         from ..channels.matrix import MatrixChannel
@@ -563,6 +620,7 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
         warm_pool_task.cancel()
     archive_task.cancel()
     jobs_task.cancel()
+    memory_task.cancel()
     await _matrix_channel_manager.stop_all()
     sandbox_server.should_exit = True
     internal_server.should_exit = True
@@ -745,6 +803,7 @@ router.include_router(sessions_router)
 router.include_router(history_router)
 router.include_router(jobs_router)
 router.include_router(knowledge_router)
+router.include_router(memory_router)
 router.include_router(session_sandbox_router)
 router.include_router(notifications_router)
 router.include_router(platform_settings_router)

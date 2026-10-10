@@ -64,6 +64,8 @@ src/carapace/          # main package
     __init__.py        # re-exports (GitHttpHandler, GitStore)
     http.py            # Git HTTP Smart Protocol handler (git http-backend CGI)
     store.py           # Git CLI wrapper (init, commit, push, pull, hooks)
+  memory/
+    service.py         # MemoryService facade: long-term memory tasks, worker, queries (see docs/memory.md)
   security/
     __init__.py        # public API: evaluate(), evaluate_domain(), safe-list
     sentinel.py        # LLM-powered security agent (shadow conversation)
