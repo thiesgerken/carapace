@@ -45,6 +45,7 @@ from ..llm import make_model_factory
 from ..memory.handlers import SessionExtractHandler
 from ..memory.models import TaskKind
 from ..memory.service import MemoryService
+from ..memory.store import MemoryStore
 from ..models.config import Config
 from ..models.credentials import CredentialValueKind
 from ..models.user import UserConfig
@@ -481,9 +482,10 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
     )
     _jobs_store = JobsStore(_session_factory)
     _jobs_scheduler = JobsScheduler(_jobs_store)
+    memory_store = MemoryStore(_session_factory)
     _memory_service = MemoryService(
         config=_config,
-        session_factory=_session_factory,
+        store=memory_store,
         sessions=session_mgr,
         jobs=_jobs_store,
         handlers={

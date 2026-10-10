@@ -41,6 +41,12 @@ from .store import MemoryStore
 MALFORMED_TRANSCRIPT_ERRORS = (KeyError, ValueError, TypeError)
 
 
+def _in_progress(task: MemoryTask | None) -> bool:
+    """Queued or running tasks stand. A pending one is respawned (and replaced, with a fresh
+    estimate) when its sources changed, so the gate never prices stale input."""
+    return task is not None and task.status is not TaskStatus.pending
+
+
 class Spawner:
     def __init__(
         self,
@@ -144,7 +150,7 @@ class Spawner:
             if state.attributes.private:
                 records_changed |= self._purge(user, session_id, session_id in current, open_tasks.get(session_id), now)
                 continue
-            if session_id in open_tasks or self.quick_ineligibility(state) is not None:
+            if _in_progress(open_tasks.get(session_id)) or self.quick_ineligibility(state) is not None:
                 continue
             if not state.attributes.archived and state.last_active > settled_before:
                 continue
@@ -223,7 +229,11 @@ class Spawner:
         last_spawned = self._store.latest_task_times(user, TaskKind.week_digest)
 
         for week, sources in by_week.items():
-            if week in open_digests or week in busy_weeks or not period_ended(DigestLevel.week, week, now, tz):
+            if (
+                _in_progress(open_digests.get(week))
+                or week in busy_weeks
+                or not period_ended(DigestLevel.week, week, now, tz)
+            ):
                 continue
             if not self._digest_due(
                 digests.get(week), coverage_hash(week_coverage(sources)), sources, last_spawned.get(week)
@@ -248,7 +258,11 @@ class Spawner:
         last_spawned = self._store.latest_task_times(user, TaskKind.month_digest)
 
         for month, sources in by_month.items():
-            if month in open_digests or month in busy_months or not period_ended(DigestLevel.month, month, now, tz):
+            if (
+                _in_progress(open_digests.get(month))
+                or month in busy_months
+                or not period_ended(DigestLevel.month, month, now, tz)
+            ):
                 continue
             if not self._digest_due(
                 digests.get(month), coverage_hash(month_coverage(sources)), sources, last_spawned.get(month)
