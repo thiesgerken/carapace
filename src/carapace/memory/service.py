@@ -186,14 +186,22 @@ class MemoryService:
         return TaskCountResponse(count=count)
 
     async def spawn_tasks(self, user: str, request: TaskSpawnRequest) -> TaskSpawnResponse:
-        """Manual spawn/respawn for explicit targets; identity never blocks it, eligibility does."""
-        if request.targets is None:
-            raise NotImplementedError("spawning by session filter lands with the session views")
+        """Manual spawn/respawn for explicit targets or every session a filter matches.
+
+        Identity never blocks a manual spawn, eligibility does: the filter selects through the same
+        query as GET /sessions, and every target then passes the spawner's full eligibility check.
+        """
+        if request.filter is not None:
+            targets = [c.state.session_id for c in self.matching_sessions(user, request.filter)]
+        elif request.targets is not None:
+            targets = request.targets
+        else:
+            raise ValueError("spawn requests carry targets or a filter")
         now = self._clock()
         user_config = self._user_config_for(user)
         task_ids: list[int] = []
         skipped: list[SpawnSkip] = []
-        for target in request.targets:
+        for target in targets:
             try:
                 reason = await self._spawn_one(user, user_config, request, target, now, task_ids)
             except MALFORMED_TRANSCRIPT_ERRORS as exc:
