@@ -345,10 +345,31 @@ class TaskIdsRequest(MemoryApiModel):
     ids: list[int] = Field(min_length=1)
 
 
+class SessionMemoryFilter(MemoryApiModel):
+    week: str | None = None
+    state: list[ExtractionState] | None = None
+    task_status: list[TaskStatus] | None = None
+    model: str | None = None
+    channel: str | None = None
+    # Matched against the current extraction's projection columns, for bulk respawns.
+    outdated_reason: OutdatedReason | None = None
+
+
 class TaskSpawnRequest(MemoryApiModel):
+    """Explicit targets, or (session extractions only) every session matching a filter."""
+
     kind: TaskKind
-    targets: list[str] = Field(min_length=1)
+    targets: list[str] | None = Field(default=None, min_length=1)
+    filter: SessionMemoryFilter | None = None
     model_override: str | None = None
+
+    @model_validator(mode="after")
+    def _validate_targets(self) -> TaskSpawnRequest:
+        if (self.targets is None) == (self.filter is None):
+            raise ValueError("spawn either explicit targets or a session filter")
+        if self.filter is not None and self.kind is not TaskKind.session_extract:
+            raise ValueError("a session filter can only spawn session_extract tasks")
+        return self
 
 
 class TaskCountResponse(MemoryApiModel):
@@ -411,20 +432,12 @@ class ExtractionSummary(MemoryApiModel):
     outdated: list[OutdatedReason]
 
 
-class SessionMemoryFilter(MemoryApiModel):
-    week: str | None = None
-    state: list[ExtractionState] | None = None
-    task_status: list[TaskStatus] | None = None
-    model: str | None = None
-    channel: str | None = None
-
-
 class SessionMemoryRow(MemoryApiModel):
     session_id: str
     title: str | None
     channel_type: str
-    # First user message; defines the session's period. None if the session has none yet.
-    started_at: datetime | None
+    created_at: datetime
+    # From the current extraction or the open task; None until the session was first spawned.
     week_key: str | None
     extraction: ExtractionSummary | None
     task: TaskRef | None
