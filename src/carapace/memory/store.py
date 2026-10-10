@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from decimal import ROUND_HALF_UP, Decimal
 
-from sqlalchemy import ColumnElement, case, delete, func, or_, select, update
+from sqlalchemy import ColumnElement, and_, case, delete, exists, func, not_, or_, select, update
 from sqlalchemy.orm import Session
 
 from ..database.engine import SessionFactory
@@ -16,8 +16,10 @@ from ..database.models import (
     MemoryFactRow,
     MemorySessionExtractionRow,
     MemoryTaskRow,
+    SessionEventRow,
     SessionRow,
 )
+from ..models.session import SessionState
 from .budget import Spend
 from .models import (
     OPEN_TASK_STATUSES,
@@ -27,19 +29,24 @@ from .models import (
     DigestResult,
     ExtractionRecord,
     ExtractionResult,
+    ExtractionState,
     FactFilter,
     FactView,
     MemoryTask,
     MirrorResult,
+    OutdatedReason,
     Provenance,
+    SessionMemoryFilter,
     SpawnedBy,
     TaskEstimate,
     TaskFilter,
     TaskKind,
     TaskOutcome,
+    TaskRef,
     TaskSelection,
     TaskStatus,
 )
+from .outdated import CurrentVersions
 from .periods import month_key_for_week, period_weeks
 
 _OPEN = [s.value for s in OPEN_TASK_STATUSES]
@@ -59,6 +66,20 @@ class TaskPage:
     items: list[MemoryTask]
     next_cursor: str | None
     total: int
+
+
+@dataclass(frozen=True)
+class SessionCandidate:
+    """A session as the memory views list it, before eligibility (which needs Python) is applied."""
+
+    state: SessionState
+    title: str | None
+    channel_type: str
+    created_at: datetime
+    # From the current extraction, else the latest task; None until the session was first spawned.
+    week_key: str | None
+    extraction_id: int | None
+    task: TaskRef | None
 
 
 def task_periods(kind: TaskKind, target: str, session_week_key: str | None) -> tuple[str | None, str | None]:
@@ -171,7 +192,7 @@ class MemoryStore:
         cursor over (month_key, week_key, id) with NULLs is the upgrade if that bites.
         """
         clauses = [MemoryTaskRow.user == user, *_filter_clauses(task_filter)]
-        offset = _parse_cursor(cursor) if cursor is not None else 0
+        offset = parse_cursor(cursor) if cursor is not None else 0
         with self._session_factory() as db:
             total = db.scalar(select(func.count()).select_from(MemoryTaskRow).where(*clauses)) or 0
             rows = db.scalars(
@@ -442,6 +463,91 @@ class MemoryStore:
             ).all()
         return {session_id: title for session_id, title in rows}
 
+    # --- session views ---
+
+    def session_candidates(
+        self,
+        user: str,
+        session_filter: SessionMemoryFilter,
+        versions: CurrentVersions,
+        session_id: str | None = None,
+    ) -> list[SessionCandidate]:
+        """The user's sessions with an event transcript, joined with their current extraction and
+        latest extraction task, filtered and newest first.
+
+        *versions* are what a fresh extraction would record; the ``outdated`` state and reasons are
+        matched against the extraction's projection columns. Sessions without events (legacy, no
+        timestamps) never appear.
+        """
+        extraction = MemorySessionExtractionRow
+        latest_ids = (
+            select(func.max(MemoryTaskRow.id).label("id"))
+            .where(MemoryTaskRow.user == user, MemoryTaskRow.kind == TaskKind.session_extract)
+            .group_by(MemoryTaskRow.target)
+            .subquery()
+        )
+        task = (
+            select(
+                MemoryTaskRow.id,
+                MemoryTaskRow.target,
+                MemoryTaskRow.status,
+                MemoryTaskRow.blocked_reason,
+                MemoryTaskRow.week_key,
+            )
+            .join(latest_ids, latest_ids.c.id == MemoryTaskRow.id)
+            .subquery()
+        )
+        week_key = func.coalesce(extraction.week_key, task.c.week_key)
+        clauses: list[ColumnElement[bool]] = [
+            SessionRow.user == user,
+            SessionRow.state.is_not(None),
+            exists().where(SessionEventRow.session_id == SessionRow.session_id),
+            *_session_clauses(session_filter, versions, week_key, task.c.status),
+        ]
+        if session_id is not None:
+            clauses.append(SessionRow.session_id == session_id)
+        query = (
+            select(
+                SessionRow.state,
+                SessionRow.title,
+                SessionRow.channel_type,
+                SessionRow.created_at,
+                week_key,
+                extraction.id,
+                task.c.id,
+                task.c.status,
+                task.c.blocked_reason,
+            )
+            .outerjoin(
+                extraction,
+                and_(extraction.session_id == SessionRow.session_id, extraction.is_current.is_(True)),
+            )
+            .outerjoin(task, task.c.target == SessionRow.session_id)
+            .where(*clauses)
+            .order_by(SessionRow.created_at.desc(), SessionRow.session_id)
+        )
+        with self._session_factory() as db:
+            rows = db.execute(query).all()
+        return [_session_candidate(*row) for row in rows]
+
+    def extractions_by_id(self, extraction_ids: list[int]) -> dict[int, ExtractionRecord]:
+        with self._session_factory() as db:
+            rows = db.scalars(
+                select(MemorySessionExtractionRow).where(MemorySessionExtractionRow.id.in_(extraction_ids))
+            ).all()
+        return {row.id: ExtractionRecord.model_validate(row, from_attributes=True) for row in rows}
+
+    def latest_tasks(self, user: str, kind: TaskKind) -> dict[str, MemoryTask]:
+        """The newest task of *kind* per target, whatever its status."""
+        latest_ids = (
+            select(func.max(MemoryTaskRow.id))
+            .where(MemoryTaskRow.user == user, MemoryTaskRow.kind == kind)
+            .group_by(MemoryTaskRow.target)
+        )
+        with self._session_factory() as db:
+            rows = db.scalars(select(MemoryTaskRow).where(MemoryTaskRow.id.in_(latest_ids))).all()
+        return {row.target: _task(row) for row in rows}
+
     # --- extractions and facts ---
 
     def current_extraction(self, user: str, session_id: str) -> ExtractionRecord | None:
@@ -564,7 +670,7 @@ def _fact_view_fields(row: MemoryFactRow) -> dict[str, object]:
     return {name: getattr(row, name) for name in FactView.model_fields if name != "session_title"}
 
 
-def _parse_cursor(cursor: str) -> int:
+def parse_cursor(cursor: str) -> int:
     if not cursor.isdigit():
         raise ValueError(f"invalid cursor {cursor!r}")
     return int(cursor)
@@ -581,6 +687,71 @@ def _filter_clauses(task_filter: TaskFilter) -> list[ColumnElement[bool]]:
         clauses.append(or_(MemoryTaskRow.week_key == task_filter.period, MemoryTaskRow.month_key == task_filter.period))
     if task_filter.model:
         clauses.append(MemoryTaskRow.model == task_filter.model)
+    return clauses
+
+
+def _session_candidate(
+    state: SessionState | None,
+    title: str | None,
+    channel_type: str,
+    created_at: datetime,
+    week_key: str | None,
+    extraction_id: int | None,
+    task_id: int | None,
+    task_status: str | None,
+    blocked_reason: str | None,
+) -> SessionCandidate:
+    if state is None:
+        raise ValueError("session candidates are selected with a state")
+    task = None
+    if task_id is not None and task_status is not None:
+        task = TaskRef(
+            id=task_id,
+            status=TaskStatus(task_status),
+            blocked_reason=BlockedReason(blocked_reason) if blocked_reason is not None else None,
+        )
+    return SessionCandidate(
+        state=state,
+        title=title,
+        channel_type=channel_type,
+        created_at=created_at,
+        week_key=week_key,
+        extraction_id=extraction_id,
+        task=task,
+    )
+
+
+def _session_clauses(
+    session_filter: SessionMemoryFilter,
+    versions: CurrentVersions,
+    week_key: ColumnElement[str],
+    task_status: ColumnElement[str | None],
+) -> list[ColumnElement[bool]]:
+    extraction = MemorySessionExtractionRow
+    differs = {
+        OutdatedReason.prompt_version: extraction.prompt_version != versions.prompt_version,
+        OutdatedReason.model: extraction.model != versions.model,
+        OutdatedReason.input_format_version: extraction.input_format_version != versions.input_format_version,
+    }
+    outdated = or_(*differs.values())
+    by_state = {
+        ExtractionState.missing: extraction.id.is_(None),
+        ExtractionState.current: and_(extraction.id.is_not(None), not_(outdated)),
+        ExtractionState.outdated: and_(extraction.id.is_not(None), outdated),
+    }
+    clauses: list[ColumnElement[bool]] = []
+    if session_filter.week:
+        clauses.append(week_key == session_filter.week)
+    if session_filter.state:
+        clauses.append(or_(*(by_state[state] for state in session_filter.state)))
+    if session_filter.outdated_reason:
+        clauses.append(differs[session_filter.outdated_reason])
+    if session_filter.task_status:
+        clauses.append(task_status.in_([s.value for s in session_filter.task_status]))
+    if session_filter.model:
+        clauses.append(extraction.model == session_filter.model)
+    if session_filter.channel:
+        clauses.append(SessionRow.channel_type == session_filter.channel)
     return clauses
 
 
