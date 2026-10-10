@@ -1,12 +1,15 @@
 from __future__ import annotations
 
-from collections.abc import Callable
+import os
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any, Protocol
 from zoneinfo import ZoneInfo
 
 from .. import get_version
+from ..knowledge import KnowledgeRepoResolver
 from ..llm import ModelFactory
 from ..models.config import Config
 from ..models.user import UserConfig
@@ -21,8 +24,12 @@ from .llm import (
     run_structured,
 )
 from .models import (
+    DigestLevel,
+    DigestRecord,
+    ExtractionRecord,
     ExtractionResult,
     MemoryTask,
+    MirrorResult,
     ModelRole,
     Provenance,
     SessionExtraction,
@@ -32,6 +39,7 @@ from .models import (
 )
 from .periods import month_key_for_week, week_key
 from .prompts import SESSION_EXTRACT
+from .render import MIRROR_ROOT, render_mirror
 
 
 class TaskHandler(Protocol):
@@ -154,3 +162,92 @@ def _provenance(task: MemoryTask, model: str, prepared: _PreparedExtraction, usa
         task_id=task.id,
         created_at=datetime.now(tz=UTC),
     )
+
+
+class MirrorHandler:
+    """Writes the user's current memory records into ``memory/`` of their knowledge repo.
+
+    One commit per run however many records changed; the worker debounces runs, so a backfill of
+    many extractions ends up in few commits.
+    """
+
+    kind = TaskKind.mirror
+    model_role = None
+
+    def __init__(
+        self,
+        *,
+        current_extractions: Callable[[str], list[ExtractionRecord]],
+        current_digests: Callable[[str, DigestLevel], list[DigestRecord]],
+        knowledge_repo_for_user: KnowledgeRepoResolver,
+        push_if_configured: Callable[[str], Awaitable[None]],
+    ) -> None:
+        self._current_extractions = current_extractions
+        self._current_digests = current_digests
+        self._knowledge_repo_for_user = knowledge_repo_for_user
+        self._push_if_configured = push_if_configured
+
+    async def estimate(self, user: str, target: str, model: str) -> TaskEstimate:
+        raise ValueError("mirror tasks are free and never estimated")
+
+    async def run(self, task: MemoryTask, model: str | None) -> TaskOutcome:
+        if model is not None:
+            raise ValueError("mirror tasks run without a model")
+        digests = [
+            *self._current_digests(task.user, DigestLevel.week),
+            *self._current_digests(task.user, DigestLevel.month),
+        ]
+        files = render_mirror(self._current_extractions(task.user), digests)
+
+        handle = self._knowledge_repo_for_user(task.user)
+        if not (handle.knowledge_dir / ".git").exists():
+            await handle.git_store.ensure_repo()
+        commit = None
+        # `git add memory` stages removals too, so new, changed and deleted files form one commit;
+        # GitStore's index lock keeps it apart from concurrent session archive commits.
+        if _sync_mirror(handle.knowledge_dir, files) and await handle.git_store.commit(
+            [MIRROR_ROOT], f"🧠 memory: update mirror ({len(files) - 1} records)"
+        ):
+            commit = await handle.git_store.head_sha()
+            await self._push_if_configured(task.user)
+        return TaskOutcome(provenance=None, result=MirrorResult(commit=commit))
+
+
+def _sync_mirror(knowledge_dir: Path, files: dict[str, str]) -> bool:
+    """Make ``memory/`` contain exactly *files*. Returns whether anything on disk changed.
+
+    The agent can push anything into the knowledge repo, symlinks included. Every symlink under
+    ``memory/`` is removed before writing, so a write can never be redirected outside the mirror.
+    """
+    mirror_dir = knowledge_dir / MIRROR_ROOT
+    changed = False
+    if mirror_dir.is_symlink():
+        mirror_dir.unlink()
+        changed = True
+    existing: set[str] = set()
+    for dirpath, dirnames, filenames in os.walk(mirror_dir):
+        directory = Path(dirpath)
+        for name in [*dirnames, *filenames]:
+            path = directory / name
+            if path.is_symlink():
+                path.unlink()
+                changed = True
+            elif name in filenames:
+                existing.add(path.relative_to(knowledge_dir).as_posix())
+        dirnames[:] = [name for name in dirnames if (directory / name).is_dir()]
+
+    for stale in existing - files.keys():
+        (knowledge_dir / stale).unlink()
+        changed = True
+    for relative, content in files.items():
+        target = knowledge_dir / relative
+        if relative in existing and target.read_text(encoding="utf-8") == content:
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content, encoding="utf-8")
+        changed = True
+
+    for dirpath, _, _ in sorted(os.walk(mirror_dir), key=lambda entry: len(entry[0]), reverse=True):
+        if dirpath != str(mirror_dir) and not any(Path(dirpath).iterdir()):
+            Path(dirpath).rmdir()
+    return changed
