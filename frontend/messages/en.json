@@ -57,8 +57,230 @@
             "facts": "Facts",
             "tasks": "Tasks"
         },
-        "statusPlaceholder": "Auto mode, budget and queue status will appear here.",
-        "comingSoon": "Nothing here yet."
+        "comingSoon": "Nothing here yet.",
+        "status": {
+            "loading": "Loading memory status…",
+            "autoModeOn": "Auto mode on",
+            "autoModeOff": "Auto mode off",
+            "autoModeHint": "Change auto mode and budgets in your settings",
+            "today": "Today",
+            "tokens": "tokens",
+            "noLimit": "no limit",
+            "queue": "Queue",
+            "blocked": "{count} held by budget"
+        },
+        "taskStatuses": {
+            "pending": "pending",
+            "queued": "queued",
+            "running": "running",
+            "done": "done",
+            "failed": "failed",
+            "cancelled": "cancelled"
+        },
+        "tasks": {
+            "filters": {
+                "status": "Status",
+                "anyStatus": "Any status",
+                "kind": "Kind",
+                "anyKind": "Any kind",
+                "month": "Month",
+                "model": "Model",
+                "anyModel": "Any model"
+            },
+            "matching": "{count} matching",
+            "estimate": "est. {cost}",
+            "dismiss": "Dismiss",
+            "pickPage": "Select all tasks on this page",
+            "pickTask": "Select {target}",
+            "columns": {
+                "kind": "Kind",
+                "target": "Target",
+                "status": "Status",
+                "model": "Model",
+                "version": "Ver.",
+                "cost": "Cost/est.",
+                "actions": "Actions"
+            },
+            "empty": "No tasks match these filters.",
+            "blockedBudget": "⏸ budget",
+            "retry": "Retry",
+            "loadMore": "Load more",
+            "runNewest": "Run newest {count}",
+            "runPicked": "Run selected ({count})",
+            "cancelPicked": "Cancel selected ({count})",
+            "queued": "{count, plural, one {Queued # task.} other {Queued # tasks.}}",
+            "cancelled": "{count, plural, one {Cancelled # task.} other {Cancelled # tasks.}}",
+            "retried": "{count, plural, one {Retrying # task.} other {Retrying # tasks.}}",
+            "detail": {
+                "id": "Task",
+                "spawnedBy": "Spawned",
+                "spawnedByValue": {
+                    "auto": "automatically",
+                    "manual": "manually"
+                },
+                "attempts": "Attempts",
+                "created": "Created",
+                "queuedAt": "Queued",
+                "started": "Started",
+                "finished": "Finished",
+                "estimate": "Estimate",
+                "openResult": "Open result"
+            }
+        },
+        "run": {
+            "title": "Run memory tasks",
+            "estimating": "Estimating…",
+            "tasks": "Tasks",
+            "inputTokens": "Input tokens",
+            "tokens": "tokens",
+            "cost": "Estimated cost",
+            "unpriced": "{count, plural, one {# task without pricing} other {# tasks without pricing}}",
+            "remaining": "Remaining budget",
+            "noLimit": "no limit",
+            "overBudget": "This exceeds the remaining budget. Tasks beyond it wait in the queue until the budget window resets.",
+            "model": "Model",
+            "roleDefault": "Role default",
+            "cancel": "Cancel",
+            "confirm": "Run"
+        },
+        "provenance": {
+            "model": "Model",
+            "prompt": "Prompt version",
+            "inputFormat": "Input format",
+            "carapace": "carapace",
+            "inputHash": "Input hash",
+            "usage": "Usage",
+            "cost": "Cost",
+            "unpriced": "no pricing",
+            "duration": "Duration",
+            "created": "Created",
+            "task": "Task"
+        },
+        "pick": {
+            "pickMatching": "Select all {count} matching",
+            "pickedMatching": "All {count} matching are selected.",
+            "clear": "Clear selection"
+        },
+        "sessions": {
+            "filters": {
+                "week": "Week",
+                "state": "Extraction",
+                "anyState": "Any extraction",
+                "reason": "Outdated reason",
+                "anyReason": "Any reason",
+                "taskStatus": "Task status",
+                "anyTaskStatus": "Any task status",
+                "model": "Model",
+                "anyModel": "Any model",
+                "channel": "Channel",
+                "anyChannel": "Any channel"
+            },
+            "states": {
+                "missing": "not extracted",
+                "current": "current",
+                "outdated": "outdated"
+            },
+            "matching": "{count} matching",
+            "dismiss": "Dismiss",
+            "pickPage": "Select all sessions on this page",
+            "pickSession": "Select {title}",
+            "columns": {
+                "date": "Date",
+                "title": "Title / abstract",
+                "facts": "Facts",
+                "factsHint": "You · People · Surroundings",
+                "model": "Model",
+                "status": "Status",
+                "cost": "Cost"
+            },
+            "untitled": "Untitled session",
+            "task": "task {status}",
+            "empty": "No sessions match these filters.",
+            "loadMore": "Load more",
+            "runPicked": "Run selected ({count})",
+            "runNeedsRows": "Running needs explicitly selected rows; respawn works on all matching sessions.",
+            "respawnPicked": "Respawn selected ({count})",
+            "spawned": "{count, plural, one {Spawned # task.} other {Spawned # tasks.}}",
+            "queued": "{count, plural, one {Queued # task.} other {Queued # tasks.}}"
+        },
+        "outdatedReasons": {
+            "prompt_version": "prompt changed",
+            "model": "model changed",
+            "input_format_version": "input format changed"
+        },
+        "drawer": {
+            "openSession": "Open session",
+            "close": "Close",
+            "notEligible": "This session is not part of memory (private, excluded job, or unknown).",
+            "notExtracted": "Not extracted yet.",
+            "taskStatus": "Task is {status}.",
+            "history": "Earlier versions",
+            "outcomes": "Outcomes",
+            "openLoops": "Open loops",
+            "onMyMind": "On my mind",
+            "friction": "Friction",
+            "factCategories": {
+                "user": "You",
+                "social": "People",
+                "surroundings": "Surroundings"
+            },
+            "confidence": {
+                "low": "low confidence",
+                "medium": "medium confidence",
+                "high": "high confidence"
+            },
+            "durability": {
+                "durable": "durable",
+                "dated": "dated"
+            },
+            "validUntil": "until {date}",
+            "sourceKind": {
+                "user_said": "user said",
+                "observed": "observed"
+            },
+            "provenance": "Provenance"
+        },
+        "timeline": {
+            "tree": "Periods",
+            "empty": "No periods yet. Periods appear once sessions are spawned for memory.",
+            "pickPeriod": "Select a week or month.",
+            "unknownPeriod": "This period has no sessions.",
+            "badges": {
+                "current": "current",
+                "stale": "stale",
+                "notRun": "not run"
+            },
+            "staleReasons": {
+                "sources": "sources changed",
+                "prompt_version": "prompt changed",
+                "model": "model changed",
+                "input_format_version": "input format changed"
+            },
+            "weekTitle": "Week {key}",
+            "regenerate": "Regenerate",
+            "generate": "Generate",
+            "coverageSessions": "{covered}/{total} sessions",
+            "coverageWeeks": "{covered}/{total} weeks",
+            "task": "task {status}",
+            "prompt": "prompt {version}",
+            "noDigest": "No digest yet.",
+            "summary": "Summary",
+            "onMyMind": "On my mind",
+            "highlights": "Highlights",
+            "openLoops": "Open loops",
+            "learned": "Learned",
+            "factCategories": {
+                "user": "You",
+                "social": "People",
+                "surroundings": "Surroundings"
+            },
+            "sourceSessions": "{count, plural, one {Session (#)} other {Sessions (#)}}",
+            "sourceWeeks": "{count, plural, one {Week (#)} other {Weeks (#)}}",
+            "notExtracted": "not extracted",
+            "history": "{count, plural, one {Earlier version (#)} other {Earlier versions (#)}}",
+            "historyCoverage": "{count, plural, one {Built from # source} other {Built from # sources}}",
+            "alreadyQueued": "A digest task for this period is already queued or running."
+        }
     },
     "account": {
         "menu": "Account menu",
@@ -907,7 +1129,8 @@
         "mobile": {
             "details": "Details",
             "done": "Done"
-        }
+        },
+        "memoryChip": "Memory"
     },
     "message": {
         "copy": "Copy message",

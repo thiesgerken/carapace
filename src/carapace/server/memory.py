@@ -17,6 +17,7 @@ from ..memory.models import (
     FactListResponse,
     FactSourceKind,
     MemoryStatus,
+    OutdatedReason,
     PeriodDetail,
     PeriodTree,
     SessionMemoryDetail,
@@ -101,10 +102,18 @@ async def list_sessions(
     task_status: Annotated[list[TaskStatus] | None, Query()] = None,
     model: str | None = None,
     channel: str | None = None,
+    outdated_reason: OutdatedReason | None = None,
     cursor: str | None = None,
     limit: int = Query(default=100, ge=1, le=500),
 ) -> SessionMemoryListResponse:
-    session_filter = SessionMemoryFilter(week=week, state=state, task_status=task_status, model=model, channel=channel)
+    session_filter = SessionMemoryFilter(
+        week=week,
+        state=state,
+        task_status=task_status,
+        model=model,
+        channel=channel,
+        outdated_reason=outdated_reason,
+    )
     return await _service().list_sessions(user.username, session_filter, cursor, limit)
 
 

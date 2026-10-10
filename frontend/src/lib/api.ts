@@ -4,6 +4,21 @@ import type {
   JobDefinition,
   JobRunResult,
   JobsFile,
+  MemoryDigestLevel,
+  MemoryEstimateTotal,
+  MemoryPeriodDetail,
+  MemoryPeriodTree,
+  MemorySessionDetail,
+  MemorySessionFilter,
+  MemorySessionListResponse,
+  MemoryStatus,
+  MemoryTaskCountResponse,
+  MemoryTaskFilter,
+  MemoryTaskListResponse,
+  MemoryTaskRunRequest,
+  MemoryTaskSelection,
+  MemoryTaskSpawnRequest,
+  MemoryTaskSpawnResponse,
   NotificationPreferencesPatch,
   NotificationSubscriptionCreateRequest,
   NotificationSubscriptionRecord,
@@ -1758,4 +1773,104 @@ export function knowledgeRawUrl(
 ): string {
   const query = opts.download ? "?raw=1&download=1" : "?raw=1";
   return `${server}${knowledgeBrowsePath(path)}${query}`;
+}
+
+function memoryTaskQuery(filter: MemoryTaskFilter, cursor: string | null): string {
+  const params = new URLSearchParams();
+  for (const status of filter.status ?? []) params.append("status", status);
+  for (const kind of filter.kind ?? []) params.append("kind", kind);
+  if (filter.period) params.set("period", filter.period);
+  if (filter.model) params.set("model", filter.model);
+  if (cursor) params.set("cursor", cursor);
+  return params.toString();
+}
+
+async function postMemory<T>(server: string, path: string, body: unknown, failure: string): Promise<T> {
+  const res = await fetch(`${server}/api/memory${path}`, {
+    method: "POST",
+    headers: headers(""),
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(await readErrorMessage(res, failure));
+  return (await res.json()) as T;
+}
+
+export async function getMemoryStatus(server: string): Promise<MemoryStatus> {
+  const res = await fetch(`${server}/api/memory/status`);
+  if (!res.ok) throw new Error(await readErrorMessage(res, "Failed to load memory status"));
+  return (await res.json()) as MemoryStatus;
+}
+
+export async function listMemoryTasks(
+  server: string,
+  filter: MemoryTaskFilter,
+  cursor: string | null = null,
+): Promise<MemoryTaskListResponse> {
+  const res = await fetch(`${server}/api/memory/tasks?${memoryTaskQuery(filter, cursor)}`);
+  if (!res.ok) throw new Error(await readErrorMessage(res, "Failed to list memory tasks"));
+  return (await res.json()) as MemoryTaskListResponse;
+}
+
+export function estimateMemoryTasks(server: string, body: MemoryTaskRunRequest): Promise<MemoryEstimateTotal> {
+  return postMemory(server, "/tasks/estimate", body, "Failed to estimate memory tasks");
+}
+
+export function runMemoryTasks(server: string, body: MemoryTaskRunRequest): Promise<MemoryTaskCountResponse> {
+  return postMemory(server, "/tasks/run", body, "Failed to run memory tasks");
+}
+
+export function cancelMemoryTasks(server: string, selection: MemoryTaskSelection): Promise<MemoryTaskCountResponse> {
+  return postMemory(server, "/tasks/cancel", selection, "Failed to cancel memory tasks");
+}
+
+export function retryMemoryTasks(server: string, ids: number[]): Promise<MemoryTaskCountResponse> {
+  return postMemory(server, "/tasks/retry", { ids }, "Failed to retry memory tasks");
+}
+
+export function spawnMemoryTasks(server: string, body: MemoryTaskSpawnRequest): Promise<MemoryTaskSpawnResponse> {
+  return postMemory(server, "/tasks/spawn", body, "Failed to spawn memory tasks");
+}
+
+function memorySessionQuery(filter: MemorySessionFilter, cursor: string | null): string {
+  const params = new URLSearchParams();
+  if (filter.week) params.set("week", filter.week);
+  for (const state of filter.state ?? []) params.append("state", state);
+  for (const status of filter.task_status ?? []) params.append("task_status", status);
+  if (filter.model) params.set("model", filter.model);
+  if (filter.channel) params.set("channel", filter.channel);
+  if (filter.outdated_reason) params.set("outdated_reason", filter.outdated_reason);
+  if (cursor) params.set("cursor", cursor);
+  return params.toString();
+}
+
+export async function listMemorySessions(
+  server: string,
+  filter: MemorySessionFilter,
+  cursor: string | null = null,
+): Promise<MemorySessionListResponse> {
+  const res = await fetch(`${server}/api/memory/sessions?${memorySessionQuery(filter, cursor)}`);
+  if (!res.ok) throw new Error(await readErrorMessage(res, "Failed to list memory sessions"));
+  return (await res.json()) as MemorySessionListResponse;
+}
+
+/** Null when the session is not eligible for memory (private, excluded job, or unknown). */
+export async function getMemorySession(server: string, sessionId: string): Promise<MemorySessionDetail | null> {
+  const res = await fetch(`${server}/api/memory/sessions/${encodeURIComponent(sessionId)}`);
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(await readErrorMessage(res, "Failed to load session memory"));
+  return (await res.json()) as MemorySessionDetail;
+}
+
+export async function getMemoryPeriods(server: string): Promise<MemoryPeriodTree> {
+  const res = await fetch(`${server}/api/memory/periods`);
+  if (!res.ok) throw new Error(await readErrorMessage(res, "Failed to load memory periods"));
+  return (await res.json()) as MemoryPeriodTree;
+}
+
+/** Null when the key is invalid or the period has no sessions. */
+export async function getMemoryPeriod(server: string, level: MemoryDigestLevel, key: string): Promise<MemoryPeriodDetail | null> {
+  const res = await fetch(`${server}/api/memory/periods/${level}/${encodeURIComponent(key)}`);
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(await readErrorMessage(res, "Failed to load memory period"));
+  return (await res.json()) as MemoryPeriodDetail;
 }
