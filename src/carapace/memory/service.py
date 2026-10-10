@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import Counter, defaultdict
 from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
@@ -10,23 +11,34 @@ from ..models.user import UserConfig
 from ..session import SessionManager
 from ..user_defaults import effective_memory_model
 from .budget import budget_windows, sum_estimates
+from .coverage import coverage_hash, month_coverage, week_coverage
 from .handlers import TaskHandler
 from .input import first_user_message_at
 from .models import (
     BudgetWindowStatus,
     DigestLevel,
+    DigestRecord,
+    DigestSummary,
     EffectiveMemoryModels,
     EstimateTotal,
+    ExtractionRecord,
+    ExtractionSummary,
+    FactCategory,
+    FactCounts,
     FactFilter,
     FactListResponse,
+    Ineligible,
     MemoryStatus,
     MemoryTask,
     ModelRole,
+    MonthNode,
     PeriodDetail,
+    PeriodNode,
     PeriodTree,
     SessionMemoryDetail,
     SessionMemoryFilter,
     SessionMemoryListResponse,
+    SessionMemoryRow,
     SpawnedBy,
     SpawnSkip,
     TaskCountResponse,
@@ -34,6 +46,7 @@ from .models import (
     TaskFilter,
     TaskKind,
     TaskListResponse,
+    TaskRef,
     TaskRunRequest,
     TaskSelection,
     TaskSpawnRequest,
@@ -41,9 +54,10 @@ from .models import (
     TaskStatus,
     TaskView,
 )
-from .periods import period_dates, week_key
+from .outdated import CurrentVersions, current_versions, outdated_reasons
+from .periods import month_key_for_week, period_dates, week_key
 from .spawner import MALFORMED_TRANSCRIPT_ERRORS, Spawner
-from .store import MemoryStore
+from .store import MemoryStore, SessionCandidate, parse_cursor
 from .worker import DEFAULT_TIMING, MemoryWorker, WorkerTiming
 
 _DIGEST_LEVELS = {TaskKind.week_digest: DigestLevel.week, TaskKind.month_digest: DigestLevel.month}
@@ -172,14 +186,22 @@ class MemoryService:
         return TaskCountResponse(count=count)
 
     async def spawn_tasks(self, user: str, request: TaskSpawnRequest) -> TaskSpawnResponse:
-        """Manual spawn/respawn for explicit targets; identity never blocks it, eligibility does."""
-        if request.targets is None:
-            raise NotImplementedError("spawning by session filter lands with the session views")
+        """Manual spawn/respawn for explicit targets or every session a filter matches.
+
+        Identity never blocks a manual spawn, eligibility does: the filter selects through the same
+        query as GET /sessions, and every target then passes the spawner's full eligibility check.
+        """
+        if request.filter is not None:
+            targets = [c.state.session_id for c in self.matching_sessions(user, request.filter)]
+        elif request.targets is not None:
+            targets = request.targets
+        else:
+            raise ValueError("spawn requests carry targets or a filter")
         now = self._clock()
         user_config = self._user_config_for(user)
         task_ids: list[int] = []
         skipped: list[SpawnSkip] = []
-        for target in request.targets:
+        for target in targets:
             try:
                 reason = await self._spawn_one(user, user_config, request, target, now, task_ids)
             except MALFORMED_TRANSCRIPT_ERRORS as exc:
@@ -241,23 +263,157 @@ class MemoryService:
 
     # --- views ---
 
+    def matching_sessions(self, user: str, session_filter: SessionMemoryFilter) -> list[SessionCandidate]:
+        """Sessions the memory views list, filtered, newest first.
+
+        The one selection behind GET /sessions and spawning by filter, so both always agree.
+        Private sessions and job sessions without memory_enabled are left out; a running agent
+        turn is transient, so such sessions stay listed.
+
+        ponytail: eligibility needs Python, so every matching session of the user loads before
+        paging; fine for thousands of sessions per user, push the private/job rules into SQL beyond.
+        """
+        versions = self._extraction_versions(user)
+        candidates = self._store.session_candidates(user, session_filter, versions)
+        return [c for c in candidates if self._listed(c)]
+
     async def list_sessions(
         self, user: str, session_filter: SessionMemoryFilter, cursor: str | None, limit: int
     ) -> SessionMemoryListResponse:
-        # ponytail: the session views land in task 5b.
-        return SessionMemoryListResponse(items=[], next_cursor=None, total=0)
+        matching = self.matching_sessions(user, session_filter)
+        offset = parse_cursor(cursor) if cursor is not None else 0
+        page = matching[offset : offset + limit]
+        return SessionMemoryListResponse(
+            items=self._session_rows(user, page),
+            next_cursor=str(offset + limit) if offset + limit < len(matching) else None,
+            total=len(matching),
+        )
 
     async def session_detail(self, user: str, session_id: str) -> SessionMemoryDetail | None:
-        return None
+        """None when the session does not exist, belongs to someone else or is not listed."""
+        versions = self._extraction_versions(user)
+        candidates = self._store.session_candidates(user, SessionMemoryFilter(), versions, session_id=session_id)
+        listed = [c for c in candidates if self._listed(c)]
+        if not listed:
+            return None
+        return SessionMemoryDetail(
+            session=self._session_rows(user, listed)[0],
+            current=self._store.current_extraction(user, session_id),
+            history=self._store.extraction_history(user, session_id),
+        )
 
     async def periods(self, user: str) -> PeriodTree:
-        return PeriodTree(months=[])
+        return PeriodTree(months=self._period_tree(user))
 
     async def period_detail(self, user: str, level: DigestLevel, key: str) -> PeriodDetail | None:
-        return None
+        """None when the period key is invalid or the period has no sources."""
+        try:
+            period_dates(level, key)
+        except ValueError:
+            return None
+        months = self._period_tree(user)
+        if level is DigestLevel.month:
+            month = next((m for m in months if m.key == key), None)
+            if month is None:
+                return None
+            node = PeriodNode.model_validate(month.model_dump(exclude={"weeks"}))
+            weeks, sessions = month.weeks, []
+        else:
+            node = next((w for m in months for w in m.weeks if w.key == key), None)
+            if node is None:
+                return None
+            weeks, sessions = [], self._session_rows(user, self.matching_sessions(user, SessionMemoryFilter(week=key)))
+        return PeriodDetail(
+            node=node,
+            current=self._store.current_digest(user, level, key),
+            history=self._store.digest_history(user, level, key),
+            sessions=sessions,
+            weeks=weeks,
+        )
 
     async def facts(self, user: str, fact_filter: FactFilter) -> FactListResponse:
         return FactListResponse(items=self._store.facts(user, fact_filter))
+
+    def _listed(self, candidate: SessionCandidate) -> bool:
+        return self._spawner.quick_ineligibility(candidate.state) in (None, Ineligible.agent_running)
+
+    def _extraction_versions(self, user: str) -> CurrentVersions:
+        return current_versions(self._config, self._user_config_for(user), TaskKind.session_extract)
+
+    def _session_rows(self, user: str, candidates: list[SessionCandidate]) -> list[SessionMemoryRow]:
+        records = self._store.extractions_by_id([c.extraction_id for c in candidates if c.extraction_id is not None])
+        versions = self._extraction_versions(user)
+        return [
+            SessionMemoryRow(
+                session_id=c.state.session_id,
+                title=c.title,
+                channel_type=c.channel_type,
+                created_at=c.created_at,
+                week_key=c.week_key,
+                extraction=_extraction_summary(records[c.extraction_id], versions)
+                if c.extraction_id is not None
+                else None,
+                task=c.task,
+            )
+            for c in candidates
+        ]
+
+    def _period_tree(self, user: str) -> list[MonthNode]:
+        """Months newest first, each with its weeks in order.
+
+        A week's sources are its listed sessions with a known week (extracted or spawned) plus its
+        current extractions; staleness uses the same coverage the spawner compares.
+        """
+        user_config = self._user_config_for(user)
+        week_versions = current_versions(self._config, user_config, TaskKind.week_digest)
+        month_versions = current_versions(self._config, user_config, TaskKind.month_digest)
+        sessions_by_week: dict[str, set[str]] = defaultdict(set)
+        for candidate in self.matching_sessions(user, SessionMemoryFilter()):
+            if candidate.week_key is not None:
+                sessions_by_week[candidate.week_key].add(candidate.state.session_id)
+        extractions_by_week: dict[str, list[ExtractionRecord]] = defaultdict(list)
+        for record in self._store.current_extractions(user):
+            extractions_by_week[record.week_key].append(record)
+            sessions_by_week[record.week_key].add(record.session_id)
+        week_digests = {d.period_key: d for d in self._store.current_digests(user, DigestLevel.week)}
+        month_digests = {d.period_key: d for d in self._store.current_digests(user, DigestLevel.month)}
+        week_tasks = self._store.latest_tasks(user, TaskKind.week_digest)
+        month_tasks = self._store.latest_tasks(user, TaskKind.month_digest)
+
+        weeks_by_month: dict[str, list[str]] = defaultdict(list)
+        for week in sorted(sessions_by_week.keys() | week_digests.keys()):
+            weeks_by_month[month_key_for_week(week)].append(week)
+        for month in month_digests:
+            weeks_by_month.setdefault(month, [])
+
+        months = []
+        for month in sorted(weeks_by_month, reverse=True):
+            weeks = [
+                _period_node(
+                    DigestLevel.week,
+                    week,
+                    covered=len(extractions_by_week[week]),
+                    total=len(sessions_by_week[week]),
+                    digest=week_digests.get(week),
+                    sources_hash=coverage_hash(week_coverage(extractions_by_week[week])),
+                    task=week_tasks.get(week),
+                    versions=week_versions,
+                )
+                for week in weeks_by_month[month]
+            ]
+            week_sources = [week_digests[w] for w in weeks_by_month[month] if w in week_digests]
+            node = _period_node(
+                DigestLevel.month,
+                month,
+                covered=len(week_sources),
+                total=len(weeks),
+                digest=month_digests.get(month),
+                sources_hash=coverage_hash(month_coverage(week_sources)),
+                task=month_tasks.get(month),
+                versions=month_versions,
+            )
+            months.append(MonthNode(**node.model_dump(), weeks=weeks))
+        return months
 
     # --- helpers ---
 
@@ -279,3 +435,54 @@ class MemoryService:
         if model_override is None or model_override == task.estimate.model:
             return task.estimate
         return await self._handlers[task.kind].estimate(task.user, task.target, model_override)
+
+
+def _extraction_summary(record: ExtractionRecord, versions: CurrentVersions) -> ExtractionSummary:
+    counts = Counter(fact.category for fact in record.extraction.facts)
+    return ExtractionSummary(
+        id=record.id,
+        abstract=record.extraction.abstract,
+        fact_counts=FactCounts(**{category.value: counts[category] for category in FactCategory}),
+        model=record.provenance.model,
+        prompt_version=record.provenance.prompt_version,
+        cost_usd=record.provenance.cost_usd,
+        created_at=record.created_at,
+        outdated=outdated_reasons(record.provenance, versions),
+    )
+
+
+def _period_node(
+    level: DigestLevel,
+    key: str,
+    *,
+    covered: int,
+    total: int,
+    digest: DigestRecord | None,
+    sources_hash: str,
+    task: MemoryTask | None,
+    versions: CurrentVersions,
+) -> PeriodNode:
+    start, end = period_dates(level, key)
+    return PeriodNode(
+        level=level,
+        key=key,
+        start=start,
+        end=end,
+        covered=covered,
+        total=total,
+        digest=_digest_summary(digest, versions) if digest is not None else None,
+        stale=digest is not None and digest.coverage_hash != sources_hash,
+        task=TaskRef(id=task.id, status=task.status, blocked_reason=task.blocked_reason) if task is not None else None,
+    )
+
+
+def _digest_summary(record: DigestRecord, versions: CurrentVersions) -> DigestSummary:
+    return DigestSummary(
+        id=record.id,
+        model=record.provenance.model,
+        prompt_version=record.provenance.prompt_version,
+        carapace_version=record.provenance.carapace_version,
+        cost_usd=record.provenance.cost_usd,
+        created_at=record.created_at,
+        outdated=outdated_reasons(record.provenance, versions),
+    )
