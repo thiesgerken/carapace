@@ -42,8 +42,8 @@ from ..git.http import GitHttpHandler
 from ..jobs import JobsScheduler, JobsStore
 from ..knowledge import KnowledgeRepoRegistry
 from ..llm import make_model_factory
-from ..memory.handlers import SessionExtractHandler
-from ..memory.models import TaskKind
+from ..memory.handlers import DigestHandler, SessionExtractHandler
+from ..memory.models import DigestLevel, TaskKind
 from ..memory.service import MemoryService
 from ..memory.store import MemoryStore
 from ..models.config import Config
@@ -493,6 +493,20 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
                 config=_config,
                 load_events=session_mgr.load_events,
                 user_config_for=_user_config,
+                model_factory=model_factory,
+            ),
+            TaskKind.week_digest: DigestHandler(
+                level=DigestLevel.week,
+                config=_config,
+                current_extractions=memory_store.current_extractions,
+                current_digests=memory_store.current_digests,
+                model_factory=model_factory,
+            ),
+            TaskKind.month_digest: DigestHandler(
+                level=DigestLevel.month,
+                config=_config,
+                current_extractions=memory_store.current_extractions,
+                current_digests=memory_store.current_digests,
                 model_factory=model_factory,
             ),
         },
