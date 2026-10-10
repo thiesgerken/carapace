@@ -4,8 +4,8 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
-from carapace.memory.budget import Spend, affordable_count, budget_windows, fits, spend_of, sum_estimates
-from carapace.memory.models import Provenance, TaskEstimate
+from carapace.memory.budget import Spend, affordable_count, budget_windows, fits, sum_estimates
+from carapace.memory.models import TaskEstimate
 from carapace.models.user import MemoryBudget
 
 
@@ -59,23 +59,3 @@ def test_sum_estimates():
     assert total.output_tokens_cap == 200
     assert total.cost_usd == Decimal("0.10")
     assert total.unpriced_count == 1
-
-
-def test_spend_of():
-    def provenance(cost: str | None, tokens: int) -> Provenance:
-        return Provenance(
-            carapace_version="0",
-            model="m",
-            prompt_version="p",
-            input_format_version=1,
-            input_hash="h",
-            input_tokens=tokens,
-            output_tokens=1,
-            cost_usd=Decimal(cost) if cost else None,
-            duration_ms=1,
-            task_id=1,
-            created_at=datetime.now(tz=UTC),
-        )
-
-    assert spend_of([provenance("0.25", 10), provenance(None, 5)]) == Spend(Decimal("0.25"), 15)
-    assert spend_of([provenance("0.25", 10)], [_estimate("0.05", tokens=100)]) == Spend(Decimal("0.30"), 110)

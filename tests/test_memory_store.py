@@ -391,6 +391,21 @@ def test_spend_reserves_running_tasks_and_counts_billed_failures(store: MemorySt
     assert store.spend("alice", NOW) == Spend(Decimal("0.04"), 2200)
 
 
+def test_retry_keeps_what_earlier_attempts_billed(store: MemoryStore):
+    task = _spawn_extract(store, "s1")
+    _run_to_running(store, task.id)
+    assert store.record_failure(task.id, "output validation failed", NOW, _provenance(task.id, cost="0.03"))
+    billed_once = Spend(Decimal("0.03"), 1200)
+    assert store.spend("alice", NOW) == billed_once
+
+    assert store.retry("alice", [task.id], NOW) == 1
+    assert store.spend("alice", NOW) == billed_once
+    assert store.claim(task.id, NOW)
+    result = ExtractionResult(session_id="s1", week_key="2026-W37", month_key="2026-09", extraction=_extraction())
+    assert store.record_outcome(task.id, TaskOutcome(provenance=_provenance(task.id, cost="0.02"), result=result), NOW)
+    assert store.spend("alice", NOW) == Spend(Decimal("0.05"), 2400)
+
+
 def test_current_extractions_follow_session_order(store: MemoryStore, db_factory):
     with db_factory.begin() as db:
         for session_id, hours in (("s1", 0), ("s2", 1), ("s3", 2)):
