@@ -245,6 +245,12 @@ class MemoryTaskRow(Base):
     # Session id, week key (2026-W36), month key (2026-09) or the username (mirror).
     target: Mapped[str] = mapped_column(String(256))
     status: Mapped[str] = mapped_column(String(16), index=True)
+    # Period the target falls into, for period filters: the session's week (first user message)
+    # for extractions, the target itself for digests. NULL for mirror (and month digests' week).
+    week_key: Mapped[str | None] = mapped_column(String(16), nullable=True, index=True)
+    month_key: Mapped[str | None] = mapped_column(String(16), nullable=True, index=True)
+    # Model of the latest estimate, replaced by the model that actually ran on completion.
+    model: Mapped[str | None] = mapped_column(String(256), nullable=True)
     blocked_reason: Mapped[str | None] = mapped_column(String(32), nullable=True)
     spawned_by: Mapped[str] = mapped_column(String(16))
     model_override: Mapped[str | None] = mapped_column(Text, nullable=True)

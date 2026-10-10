@@ -752,6 +752,11 @@ export interface MemoryTask {
   kind: MemoryTaskKind;
   target: string;
   status: MemoryTaskStatus;
+  /** Session's week for extractions, the target for digests. */
+  week_key: string | null;
+  month_key: string | null;
+  /** Model of the latest estimate, or the model that ran once finished. */
+  model: string | null;
   blocked_reason: MemoryBlockedReason | null;
   spawned_by: MemorySpawnedBy;
   model_override: string | null;

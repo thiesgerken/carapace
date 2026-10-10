@@ -6,7 +6,7 @@ import pytest
 from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
 from pydantic import ValidationError
-from sqlalchemy import update
+from sqlalchemy import text, update
 from sqlalchemy.exc import IntegrityError
 
 from carapace.database.base import Base
@@ -23,8 +23,11 @@ def test_migrations_match_rows(tmp_path):
     run_migrations(engine)
     with engine.connect() as conn:
         diff = compare_metadata(MigrationContext.configure(conn), Base.metadata)
+        # compare_metadata ignores partial index predicates, and batch table rebuilds can drop them.
+        open_index = conn.scalar(text("SELECT sql FROM sqlite_master WHERE name = 'uq_memory_tasks_open'"))
     engine.dispose()
     assert diff == []
+    assert open_index is not None and "WHERE status IN ('pending', 'queued', 'running')" in open_index
 
 
 def _task(status: str) -> MemoryTaskRow:
