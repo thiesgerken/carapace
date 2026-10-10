@@ -34,7 +34,7 @@ The model never sees the raw session. A pure, versioned renderer (`memory/input.
 
 - It starts at the first user message.
 - User and assistant text are included in full.
-- Slash commands, approvals, command results and other non-conversational events are dropped. Thinking is not stored in events, so it never appears.
+- Slash commands, approvals, command results, thinking and other non-conversational events are dropped.
 - A tool call becomes its name plus JSON arguments. Tool calls and results are clamped to 1,000 characters (the first 600 and the last 400, with an `[… 12,345 chars elided …]` marker), because errors and exit codes live at the end of outputs.
 - A non-zero exit code goes into the result label (`[#7 tool_result exec exit=1]`), so failures stay visible.
 - Each attachment becomes one placeholder line (`[attachment: image/png, screenshot.png]`).

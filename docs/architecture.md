@@ -242,7 +242,7 @@ This map describes the Python modules under `src/carapace/`. It is meant as a na
 
 | Module                   | Responsibility                                                                                         |
 | ------------------------ | ------------------------------------------------------------------------------------------------------ |
-| `memory/__init__.py`     | Re-exports `MemoryService`.                                                                             |
+| `memory/__init__.py`     | Package marker only; no re-exports, which would create an import cycle.                                 |
 | `memory/models.py`       | Extraction and digest schemas, provenance, task enums and records, API view models.                    |
 | `memory/periods.py`      | Pure period math: ISO weeks in the user timezone, week-to-month by Thursday, period ends.              |
 | `memory/input.py`        | Pure rendering of session events into the extraction input (clamping, seq labels, hash, token count). |
