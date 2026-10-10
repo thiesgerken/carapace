@@ -13,7 +13,9 @@ import pytest
 from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, UserPromptPart
 
 import carapace.usage as usage_mod
+from carapace.session.open_approvals import ORPHANED_APPROVAL_MESSAGE
 from carapace.usage import LlmRequestState, ModelUsage
+from carapace.ws_models import ApprovalRequest
 from tests.session_helpers import _FakeSubscriber, _make_engine, _patch_sentinel, _without_timestamps
 
 
@@ -280,6 +282,165 @@ def test_submit_cancel_noop_when_inactive(tmp_path: Path, db_factory):
         await engine.submit_cancel("nonexistent")
 
     asyncio.run(_run())
+
+
+def test_submit_cancel_closes_pending_tool_approval(tmp_path: Path, db_factory):
+    """A tool approval the cancelled turn waited on is denied by the system inside the turn."""
+
+    async def _run() -> None:
+        engine = _make_engine(tmp_path, session_factory=db_factory)
+        sid = engine.session_mgr.create_session(user="thies").session_id
+        engine.subscribe(sid, _FakeSubscriber())
+        active = engine.get_active(sid)
+        assert active is not None
+
+        async def _turn_awaiting_approval(*_args: Any, **kwargs: Any) -> tuple[list[Any], str, str]:
+            await kwargs["send_approval_request"](ApprovalRequest(tool_call_id="call-1", tool="exec", args={}))
+            await kwargs["collect_approvals"]({"call-1"})
+            return [], "unreachable", ""
+
+        with patch("carapace.session.engine.run_agent_turn", new=_turn_awaiting_approval):
+            await engine.submit_message(sid, "hello")
+            await asyncio.sleep(0.05)
+            assert active.pending_approval_requests
+            await engine.submit_cancel(sid)
+
+        events = _without_timestamps(engine.session_mgr.load_events(sid))
+        assert [event["role"] for event in events] == ["user", "approval_request", "approval_response", "assistant"]
+        assert events[2] == {
+            "role": "approval_response",
+            "tool_call_id": "call-1",
+            "decision": "denied",
+            "decision_source": "system",
+            "message": ORPHANED_APPROVAL_MESSAGE,
+        }
+        assert active.pending_approval_requests == []
+
+    with _patch_sentinel():
+        asyncio.run(_run())
+
+
+def test_failed_turn_closes_pending_escalation_and_releases_its_waiter(tmp_path: Path, db_factory):
+    """An escalation still open when the turn fails is denied and its callback stops waiting."""
+
+    async def _run() -> None:
+        engine = _make_engine(tmp_path, session_factory=db_factory)
+        sid = engine.session_mgr.create_session(user="thies").session_id
+        engine.subscribe(sid, _FakeSubscriber())
+        active = engine.get_active(sid)
+        assert active is not None
+        escalate = engine._make_escalation_cb(active)
+        waiters: list[asyncio.Task[Any]] = []
+
+        async def _turn_failing_during_escalation(*_args: Any, **_kwargs: Any) -> tuple[list[Any], str, str]:
+            # Escalations block in proxy/git/credential request tasks, not in the turn task.
+            waiters.append(
+                asyncio.create_task(escalate(sid, "evil.example", {"kind": "domain_access", "command": "curl"}))
+            )
+            await asyncio.sleep(0)
+            raise RuntimeError("model exploded")
+
+        with patch("carapace.session.engine.run_agent_turn", new=_turn_failing_during_escalation):
+            await engine.submit_message(sid, "hello")
+            assert active.agent_task is not None
+            await active.agent_task
+
+        decision = await asyncio.wait_for(waiters[0], timeout=1)
+        assert decision.allowed is False
+        assert active.pending_escalations == []
+
+        events = _without_timestamps(engine.session_mgr.load_events(sid))
+        assert [event["role"] for event in events] == [
+            "user",
+            "domain_access_approval",
+            "domain_access_approval",
+            "assistant",
+        ]
+        assert events[2] == {
+            "role": "domain_access_approval",
+            "request_id": events[1]["request_id"],
+            "domain": "evil.example",
+            "command": "curl",
+            "decision": "deny",
+            "decision_source": "system",
+            "message": ORPHANED_APPROVAL_MESSAGE,
+        }
+
+    with _patch_sentinel():
+        asyncio.run(_run())
+
+
+def test_cancel_closes_escalation_whose_waiter_saw_the_cancel_first(tmp_path: Path, db_factory):
+    """The escalation waiter can consume submit_cancel's signal before the turn finalizes.
+
+    It then drops its pending entry without writing a response, so only the event log still
+    shows the request as open.
+    """
+
+    async def _run() -> None:
+        engine = _make_engine(tmp_path, session_factory=db_factory)
+        sid = engine.session_mgr.create_session(user="thies").session_id
+        engine.subscribe(sid, _FakeSubscriber())
+        active = engine.get_active(sid)
+        assert active is not None
+        escalate = engine._make_escalation_cb(active)
+        waiters: list[asyncio.Task[Any]] = []
+
+        async def _turn_with_suspending_cleanup(*_args: Any, **_kwargs: Any) -> tuple[list[Any], str, str]:
+            waiters.append(
+                asyncio.create_task(escalate(sid, "evil.example", {"kind": "domain_access", "command": "curl"}))
+            )
+            try:
+                await asyncio.sleep(999)
+            finally:
+                # Tool and stream cleanup suspends while the cancellation unwinds.
+                await asyncio.sleep(0.01)
+            return [], "unreachable", ""
+
+        with patch("carapace.session.engine.run_agent_turn", new=_turn_with_suspending_cleanup):
+            await engine.submit_message(sid, "hello")
+            await asyncio.sleep(0.05)
+            await engine.submit_cancel(sid)
+
+        assert (await asyncio.wait_for(waiters[0], timeout=1)).allowed is False
+        assert active.pending_escalations == []
+        events = _without_timestamps(engine.session_mgr.load_events(sid))
+        assert [event["role"] for event in events] == [
+            "user",
+            "domain_access_approval",
+            "domain_access_approval",
+            "assistant",
+        ]
+        assert events[2]["decision"] == "deny"
+        assert events[2]["decision_source"] == "system"
+
+    with _patch_sentinel():
+        asyncio.run(_run())
+
+
+def test_turn_without_approvals_leaves_events_alone(tmp_path: Path, db_factory):
+    """A turn that raised no approval request appends no closing events."""
+
+    async def _run() -> None:
+        engine = _make_engine(tmp_path, session_factory=db_factory)
+        sid = engine.session_mgr.create_session(user="thies").session_id
+        engine.subscribe(sid, _FakeSubscriber())
+        active = engine.get_active(sid)
+        assert active is not None
+
+        async def _plain_turn(*_args: Any, **_kwargs: Any) -> tuple[list[Any], str, str, None]:
+            return [], "done", "", None
+
+        with patch("carapace.session.engine.run_agent_turn", new=_plain_turn):
+            await engine.submit_message(sid, "hello")
+            assert active.agent_task is not None
+            await active.agent_task
+
+        events = _without_timestamps(engine.session_mgr.load_events(sid))
+        assert [event["role"] for event in events] == ["user", "assistant"]
+
+    with _patch_sentinel():
+        asyncio.run(_run())
 
 
 def test_retry_latest_turn_rewinds_and_restarts(tmp_path: Path, db_factory):

@@ -457,6 +457,9 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
         model_factory=model_factory,
         notification_router=_notification_router,
     )
+    # A restart kills turns without running their finalization, so their open approval
+    # requests are closed here, before any channel or job can activate a session.
+    _engine.close_orphaned_approval_requests()
     _session_archive = SessionArchiveService(
         session_mgr=session_mgr,
         config=_config.sessions.commit,
