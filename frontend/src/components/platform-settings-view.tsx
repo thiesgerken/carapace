@@ -372,6 +372,10 @@ export function buildPlatformSettingsPatch(draft: PlatformDraft, t: Translate): 
   }
   const compactionModel = draft.defaultModels.compaction.trim();
   if (compactionModel) checkDefault(t("fields.compaction"), compactionModel);
+  const memoryLowModel = draft.defaultModels.memory_low?.trim() || null;
+  if (memoryLowModel) checkDefault(t("fields.memoryLow"), memoryLowModel);
+  const memoryHighModel = draft.defaultModels.memory_high?.trim() || null;
+  if (memoryHighModel) checkDefault(t("fields.memoryHigh"), memoryHighModel);
   return {
     default_models: {
       ...draft.defaultModels,
@@ -379,6 +383,8 @@ export function buildPlatformSettingsPatch(draft: PlatformDraft, t: Translate): 
       sentinel: draft.defaultModels.sentinel.trim(),
       title: draft.defaultModels.title.trim(),
       compaction: compactionModel || null,
+      memory_low: memoryLowModel,
+      memory_high: memoryHighModel,
     },
     default_budget: budgetFromDraft(draft, t),
     compaction: {
@@ -509,6 +515,8 @@ export function PlatformSettingsView({ server, token }: { server: string; token:
   const sentinelOptions = useMemo(() => withSelectedModelOption(modelOptions, draft?.defaultModels.sentinel), [draft?.defaultModels.sentinel, modelOptions]);
   const titleOptions = useMemo(() => withSelectedModelOption(modelOptions, draft?.defaultModels.title), [draft?.defaultModels.title, modelOptions]);
   const compactionOptions = useMemo(() => withSelectedModelOption(modelOptions, draft?.defaultModels.compaction), [draft?.defaultModels.compaction, modelOptions]);
+  const memoryLowOptions = useMemo(() => withSelectedModelOption(modelOptions, draft?.defaultModels.memory_low), [draft?.defaultModels.memory_low, modelOptions]);
+  const memoryHighOptions = useMemo(() => withSelectedModelOption(modelOptions, draft?.defaultModels.memory_high), [draft?.defaultModels.memory_high, modelOptions]);
 
   function updateDraft(patch: Partial<PlatformDraft>): void {
     setNotice(null);
@@ -577,7 +585,7 @@ export function PlatformSettingsView({ server, token }: { server: string; token:
         </div>
 
         <Section title={t("sections.defaultModels")}>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <Field label={t("fields.agent")}>
               <ModelPicker value={draft.defaultModels.agent} entries={agentOptions} onChange={(agent) => updateDraft({ defaultModels: { ...draft.defaultModels, agent: agent ?? "" } })} disabled={fieldsDisabled} defaultLabel={t("placeholders.selectModel")} />
             </Field>
@@ -589,6 +597,12 @@ export function PlatformSettingsView({ server, token }: { server: string; token:
             </Field>
             <Field label={t("fields.compaction")}>
               <ModelPicker value={draft.defaultModels.compaction} entries={compactionOptions} onChange={(model) => updateDraft({ defaultModels: { ...draft.defaultModels, compaction: model ?? "" } })} disabled={fieldsDisabled} defaultLabel={t("compaction.modelDefault")} />
+            </Field>
+            <Field label={t("fields.memoryLow")}>
+              <ModelPicker value={draft.defaultModels.memory_low} entries={memoryLowOptions} onChange={(memory_low) => updateDraft({ defaultModels: { ...draft.defaultModels, memory_low } })} disabled={fieldsDisabled} defaultLabel={t("placeholders.memoryLowDefault")} />
+            </Field>
+            <Field label={t("fields.memoryHigh")}>
+              <ModelPicker value={draft.defaultModels.memory_high} entries={memoryHighOptions} onChange={(memory_high) => updateDraft({ defaultModels: { ...draft.defaultModels, memory_high } })} disabled={fieldsDisabled} defaultLabel={t("placeholders.memoryHighDefault")} />
             </Field>
           </div>
         </Section>
