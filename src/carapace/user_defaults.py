@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from .memory.models import ModelRole
 from .models.config import Config
 from .models.session import SessionBudget, SessionState
 from .models.user import UserConfig
@@ -36,3 +37,17 @@ def apply_job_model_defaults(
     state.sentinel_model_name = sentinel_model_name or defaults.sentinel
     state.title_model_name = title_model_name or defaults.title
     state.compaction_model_name = defaults.compaction
+
+
+def effective_memory_model(config: Config, user_config: UserConfig, role: ModelRole) -> str:
+    agent = config.agent
+    match role:
+        case ModelRole.memory_low:
+            return (
+                user_config.default_models.memory_low
+                or agent.memory_low_model
+                or agent.compaction_model
+                or agent.title_model
+            )
+        case ModelRole.memory_high:
+            return user_config.default_models.memory_high or agent.memory_high_model or agent.model

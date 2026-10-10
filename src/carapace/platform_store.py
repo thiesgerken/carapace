@@ -19,6 +19,8 @@ _AGENT_SCALAR_FIELDS = (
     "sentinel_model",
     "title_model",
     "compaction_model",
+    "memory_low_model",
+    "memory_high_model",
     "compaction",
     "default_session_budget",
     "max_parallel_llm",
