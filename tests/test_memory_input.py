@@ -3,6 +3,8 @@ from __future__ import annotations
 import hashlib
 from typing import Any
 
+import pytest
+
 from carapace.memory.input import INPUT_FORMAT_VERSION, clamp, render_extraction_input
 from carapace.usage import count_text_tokens
 
@@ -59,6 +61,17 @@ def test_drops_slash_commands_and_non_conversational_events() -> None:
     ]
 
     assert render_extraction_input(events).text == "[#0 user]\nhello\n\n[#10 assistant]\nbye"
+
+
+def test_slash_text_without_command_event_is_a_user_message() -> None:
+    events = [_user("/etc/hosts is broken, fix it"), _assistant("Fixed.")]
+
+    assert render_extraction_input(events).text == "[#0 user]\n/etc/hosts is broken, fix it\n\n[#1 assistant]\nFixed."
+
+
+def test_tool_event_without_tool_name_fails_loudly() -> None:
+    with pytest.raises(KeyError):
+        render_extraction_input([_user("go"), {"role": "tool_call", "args": {}}])
 
 
 def test_keeps_partial_assistant_text() -> None:
