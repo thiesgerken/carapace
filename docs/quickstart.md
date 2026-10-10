@@ -70,7 +70,7 @@ Most first-run configuration now lives in the web UI:
 
 - **Settings** -> **Admin** -> **Platform** manages the model catalog, platform default agent/sentinel/title models, OpenAI-compatible base URLs, OpenRouter API keys, reasoning options, and default session budget.
 - **Settings** -> **Admin** -> **Users** manages local users, roles, passwords, profile fields, enabled/disabled state, and assignment of existing single-user data.
-- **Settings** -> **Account** manages each user's default models and budget, Matrix channel, Git remote, and credential backends.
+- **Settings** -> **Account** manages each user's default models and budget, ChatGPT subscription for `openai-codex` models ([details](chatgpt-subscription.md)), Matrix channel, Git remote, and credential backends.
 - **Settings** -> **Jobs** manages saved jobs and schedules.
 
 The old mental model was “edit `data/config.yaml`, then restart”. There is no `config.yaml` anymore: operator/bootstrap config comes from environment variables (`CARAPACE_DATA_DIR`, `CARAPACE_DATABASE_URL`, `CARAPACE_AUTH_COOKIE__SECURE`, …) and platform settings live in the database, edited through Settings. The UI keeps write-only secrets out of API responses.

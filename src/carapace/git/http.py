@@ -118,16 +118,19 @@ class GitHttpHandler:
         lock: contextlib.AbstractAsyncContextManager[object] = _push_lock if is_push else contextlib.nullcontext()
         async with lock:
             try:
+                # No stdin pipe without a body: git http-backend may exit before
+                # communicate() closes it, and uvloop raises RuntimeError on writing
+                # to the closed transport (asyncio only swallows BrokenPipe).
                 proc = await asyncio.create_subprocess_exec(
                     "git",
                     "http-backend",
-                    stdin=asyncio.subprocess.PIPE,
+                    stdin=asyncio.subprocess.PIPE if body else asyncio.subprocess.DEVNULL,
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
                     env=cgi_env,
                 )
                 stdout, stderr = await asyncio.wait_for(
-                    proc.communicate(input=body),
+                    proc.communicate(input=body or None),
                     timeout=120,
                 )
             except TimeoutError:

@@ -20,6 +20,7 @@ from .runtime import (
     ContainerRuntime,
     ExecResult,
     Mount,
+    PoolSandbox,
     SandboxConfig,
     SandboxInspection,
 )
@@ -32,6 +33,8 @@ _PersistentVolumeClaim = new_class(
     asyncio=True,
     plural="persistentvolumeclaims",
 )
+
+_SANDBOX_CONTAINER = "sandbox"
 
 _QUANTITY_SUFFIXES: dict[str, int] = {
     "": 1,
@@ -56,6 +59,22 @@ def _sanitize_pod_name(name: str) -> str:
     # Strip any characters that aren't alphanumeric or hyphens
     sanitized = "".join(c for c in sanitized if c.isalnum() or c == "-")
     return sanitized[:63].strip("-")
+
+
+def _is_terminating(sts: StatefulSet) -> bool:
+    return bool(sts.raw.get("metadata", {}).get("deletionTimestamp"))
+
+
+def _sandbox_container_index(sts: StatefulSet) -> int:
+    for index, container in enumerate(sts.raw["spec"]["template"]["spec"]["containers"]):
+        if container["name"] == _SANDBOX_CONTAINER:
+            return index
+    raise ValueError(f"StatefulSet {sts.name} has no {_SANDBOX_CONTAINER!r} container")
+
+
+def _sandbox_image(sts: StatefulSet) -> str:
+    """Return the image the StatefulSet's pod template runs in the sandbox container."""
+    return sts.raw["spec"]["template"]["spec"]["containers"][_sandbox_container_index(sts)]["image"]
 
 
 def _default_command(command: str | list[str] | None) -> list[str]:
@@ -440,7 +459,7 @@ class KubernetesRuntime(ContainerRuntime):
                     "spec": {
                         "containers": [
                             {
-                                "name": "sandbox",
+                                "name": _SANDBOX_CONTAINER,
                                 "image": config.image,
                                 "command": _default_command(config.command),
                                 **({"env": env_vars} if env_vars else {}),
@@ -486,15 +505,28 @@ class KubernetesRuntime(ContainerRuntime):
         await self._wait_for_running(pod_name, timeout=120)
         return pod_name
 
-    async def _scale_statefulset(self, name: str, replicas: int) -> None:
-        sts_name = _sanitize_pod_name(name)
+    async def _get_statefulset(self, name: str) -> StatefulSet:
         api = await self._ensure_api()
-        sts = await StatefulSet.get(sts_name, namespace=self._namespace, api=api)
+        return await StatefulSet.get(_sanitize_pod_name(name), namespace=self._namespace, api=api)
+
+    async def _scale_statefulset(self, sts: StatefulSet, replicas: int) -> None:
         await sts.scale(replicas)
-        logger.info(f"Scaled StatefulSet {sts_name} to {replicas} replicas")
+        logger.info(f"Scaled StatefulSet {sts.name} to {replicas} replicas")
 
         if replicas > 0:
-            await self._wait_for_running(f"{sts_name}-0", timeout=120)
+            await self._wait_for_running(f"{sts.name}-0", timeout=120)
+
+    async def _set_sandbox_image(self, sts: StatefulSet, image: str) -> None:
+        index = _sandbox_container_index(sts)
+        current = _sandbox_image(sts)
+        if current == image:
+            return
+        # kr8s's default merge patch would replace the whole containers list.
+        await sts.patch(
+            [{"op": "replace", "path": f"/spec/template/spec/containers/{index}/image", "value": image}],
+            type="json",
+        )
+        logger.info(f"Switched StatefulSet {sts.name} from image {current} to {image}")
 
     # ------------------------------------------------------------------
     # Sandbox lifecycle (public protocol)
@@ -504,14 +536,24 @@ class KubernetesRuntime(ContainerRuntime):
         """Create a StatefulSet-backed sandbox with a per-session PVC."""
         return await self._create_statefulset(config)
 
-    async def resume_sandbox(self, name: str) -> None:
-        """Scale the StatefulSet back to 1 replica (PVC is retained)."""
-        await self._scale_statefulset(name, 1)
+    async def resume_sandbox(self, name: str, image: str) -> None:
+        """Scale the StatefulSet back to 1 replica (PVC is retained).
+
+        Scaling up from zero starts a fresh pod, and only /workspace and /tmp (both on
+        the PVC) survive it, so switching the template to *image* first loses nothing.
+        A StatefulSet that still has a replica keeps its image: a template change would
+        make the controller replace that pod as soon as it becomes ready, possibly
+        while a session is using it.
+        """
+        sts = await self._get_statefulset(name)
+        if sts.replicas == 0:
+            await self._set_sandbox_image(sts, image)
+        await self._scale_statefulset(sts, 1)
 
     async def suspend_sandbox(self, name: str, container_id: str) -> None:
         """Scale the StatefulSet to 0 — PVC survives for later resume."""
         try:
-            await self._scale_statefulset(name, 0)
+            await self._scale_statefulset(await self._get_statefulset(name), 0)
         except Exception:
             logger.opt(exception=True).warning(f"Scale-down failed for {name}, deleting pod")
             await self._delete_pod_if_exists(container_id)
@@ -537,38 +579,42 @@ class KubernetesRuntime(ContainerRuntime):
             return f"{sts_name}-0"
         return None
 
-    async def list_sandboxes(self) -> dict[str, str]:
-        """List all carapace-managed StatefulSets, returning ``{session_id: pod_name}``."""
+    async def list_sandboxes(self) -> dict[str, list[str]]:
+        """List live carapace-managed StatefulSets, returning ``{session_id: [pod_name, ...]}``.
+
+        StatefulSets being deleted are skipped: a foreground delete keeps one around,
+        still labelled with its session, until its pod has terminated.
+        """
         api = await self._ensure_api()
-        result: dict[str, str] = {}
+        result: dict[str, list[str]] = {}
         async for sts in StatefulSet.list(
             namespace=self._namespace,
             label_selector="app.kubernetes.io/managed-by=carapace-server",
             api=api,
         ):
             sts = cast(StatefulSet, sts)
-            if sts.labels.get("carapace.pool") == "true":
+            if sts.labels.get("carapace.pool") == "true" or _is_terminating(sts):
                 continue
             session_id = sts.labels.get("carapace.session")
             if session_id:
-                result[session_id] = f"{sts.name}-0"
+                result.setdefault(session_id, []).append(f"{sts.name}-0")
         return result
 
-    async def list_pool_sandboxes(self) -> dict[str, str]:
-        """List unattached warm-pool StatefulSets, returning ``{sandbox_id: pod_name}``."""
+    async def list_pool_sandboxes(self) -> dict[str, PoolSandbox]:
+        """List unattached warm-pool StatefulSets, keyed by sandbox id."""
         api = await self._ensure_api()
-        result: dict[str, str] = {}
+        result: dict[str, PoolSandbox] = {}
         async for sts in StatefulSet.list(
             namespace=self._namespace,
             label_selector="app.kubernetes.io/managed-by=carapace-server",
             api=api,
         ):
             sts = cast(StatefulSet, sts)
-            if sts.labels.get("carapace.pool") != "true":
+            if sts.labels.get("carapace.pool") != "true" or _is_terminating(sts):
                 continue
             sandbox_id = sts.labels.get("carapace.sandbox") or sts.labels.get("carapace.session")
             if sandbox_id:
-                result[sandbox_id] = f"{sts.name}-0"
+                result[sandbox_id] = PoolSandbox(container_id=f"{sts.name}-0", image=_sandbox_image(sts))
         return result
 
     async def claim_warm_sandbox(self, name: str, session_id: str) -> bool:

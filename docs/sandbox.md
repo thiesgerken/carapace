@@ -160,11 +160,12 @@ Important semantics:
 
 ## Container lifecycle
 
-- **Creation**: A container is created (or ensured running) when a session needs it — typically on the first tool call
+- **Creation**: A container is created (or ensured running) when a session needs it — typically on the first tool call. Startup is serialized per session: concurrent callers, such as parallel `use_skill` calls in a fresh session, wait for the first one to finish starting the sandbox instead of each claiming or creating their own.
 - **Reuse**: The container stays running for the session's duration. Multiple tool calls reuse the same container.
 - **Idle timeout**: Configurable (default: 60 min). In Docker mode, idle containers are destroyed. In Kubernetes mode, the StatefulSet is scaled to 0 replicas — the PVC is retained, so venvs and workspace state survive.
 - **Warm pool**: If `CARAPACE_SANDBOX_WARM_POOL_SIZE > 0`, carapace maintains that many unattached base-image sandboxes ahead of time. On Kubernetes, new sessions claim one of these warm sandboxes before falling back to cold creation. The claimed sandbox keeps its own unique `sandbox_id` (for example `pool-3f9c…`) while still being attached to the session.
-- **Re-warming**: When the user sends a new message after the container expired, a new container is created (Docker: fresh container with the same bind mounts; Kubernetes: StatefulSet scaled back to 1 replica, PVC still attached). Carapace reruns the image-provided activator for each active skill and restores command shims. Approved skill credentials are made available before activation.
+- **Re-warming**: When the session needs its sandbox again after the container expired, a new container is created (Docker: fresh container with the same bind mounts; Kubernetes: StatefulSet scaled back to 1 replica, PVC still attached). Whenever a sandbox is freshly created, claimed or resumed, whatever triggered it (a command, `use_skill`, a git pull/push from the UI, or starting the sandbox or uploading a file from the web UI), carapace reruns the image-provided activator for each active skill and restores command shims before any caller gets to use the sandbox. Approved skill credentials are made available before activation. The same applies when a command finds its container gone and the sandbox is recreated for the retry, even if the runtime has already restarted the container on its own.
+- **Image changes**: In Docker mode every resume recreates the container, so it always uses the configured `CARAPACE_SANDBOX_BASE_IMAGE`. In Kubernetes mode, stale warm-pool members are replaced and scaled-down session sandboxes switch to the configured image when they resume; running sandboxes are left alone (see [kubernetes.md](kubernetes.md#changing-the-sandbox-image)).
 - **Reset** (`/reload`): Fully destroys the container and workspace (including the PVC in Kubernetes mode) and creates a fresh sandbox with a new git clone on the next command.
 
 ## Runtimes

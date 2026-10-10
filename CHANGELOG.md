@@ -1,6 +1,403 @@
 # CHANGELOG
 
 
+## v0.158.8 (2026-10-10)
+
+
+### Other
+
+
+- Merge pull request #302 from thiesgerken/fix/sentinel-full-tool-args
+  ([`59307a0`](https://github.com/thiesgerken/carapace/commit/59307a054b73b0ae1934e044c5bc71c2da0e0c0c))
+
+- Merge pull request #303 from thiesgerken/fix/close-orphaned-approvals
+  ([`f16d6b6`](https://github.com/thiesgerken/carapace/commit/f16d6b629963fedc8991631e3421bf945611a18b))
+
+- ✅ test(session): cover cancel race and approval-free turn end
+  ([`4d4c01b`](https://github.com/thiesgerken/carapace/commit/4d4c01b10ac2433985f179edf43d29ab176cdc72))
+
+  The escalation waiter can consume submit_cancel's signal before the turn finalizes and drop its pending entry without writing a response; the turn-end close must still find the request through the event log.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01BfEEfE6o9yQAj8U8ULL61L
+
+### 🔒 Security
+
+
+- 🔒️ fix(sentinel): evaluate tool calls with untruncated arguments
+  ([`59307a0`](https://github.com/thiesgerken/carapace/commit/59307a054b73b0ae1934e044c5bc71c2da0e0c0c))
+
+- 🔒️ fix(sentinel): evaluate tool calls with untruncated arguments
+  ([`138b9d6`](https://github.com/thiesgerken/carapace/commit/138b9d65bd7daa0e79b7c5b3919c49f183741ab2))
+
+  The EVALUATE line cut every argument to 80 chars, so the sentinel never reviewed anything past ~77 chars of an exec command (and escalated calls it could not fully see). The action log history and the log/UI subject label stay truncated.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01BfEEfE6o9yQAj8U8ULL61L
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix(session): close approval requests no turn can answer anymore
+  ([`f16d6b6`](https://github.com/thiesgerken/carapace/commit/f16d6b629963fedc8991631e3421bf945611a18b))
+
+- 🐛 fix(session): close approval requests no turn can answer anymore
+  ([`b059102`](https://github.com/thiesgerken/carapace/commit/b059102a50440e4c13d93add5d9232014049f990))
+
+  An approval request (tool, domain access, git push, credential) stayed actionable in the UI forever once the turn that raised it died: a cancel, a failure, or a server restart left no response event, and answers went into a queue nobody read.
+
+  Turns now deny their still-open requests with a system response event before writing their terminal assistant event, and release blocked escalation callbacks. Server startup closes requests left behind by the previous process, using a SQL prefilter to find candidate sessions.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01BfEEfE6o9yQAj8U8ULL61L
+
+## v0.158.7 (2026-10-10)
+
+
+### ⬆️ Dependencies
+
+
+- ⬆️ chore: upgrade pnpm to 12.10.1
+  ([`ec0825c`](https://github.com/thiesgerken/carapace/commit/ec0825c76536aaca99252cc2cde04b692c820028))
+
+  Co-authored-by: renovate[bot] <29139614+renovate[bot]@users.noreply.github.com>
+
+## v0.158.6 (2026-10-07)
+
+
+### ⬆️ Dependencies
+
+
+- ⬆️ chore: upgrade pnpm to 12.9.1
+  ([`d3a7fc7`](https://github.com/thiesgerken/carapace/commit/d3a7fc79af8f6e34513e57735f15f0a816f349b9))
+
+  Co-authored-by: renovate[bot] <29139614+renovate[bot]@users.noreply.github.com>
+
+## v0.158.5 (2026-10-06)
+
+
+### ⬆️ Dependencies
+
+
+- ⬆️ chore: upgrade pnpm to 12.9.0
+  ([`fe84369`](https://github.com/thiesgerken/carapace/commit/fe843694ef3e122a9b3041ca0d6b50eebdaa425b))
+
+  Co-authored-by: renovate[bot] <29139614+renovate[bot]@users.noreply.github.com>
+
+## v0.158.4 (2026-10-05)
+
+
+### 🔧 Configuration
+
+
+- 🔧 chore(frontend): commit Next.js-generated agent rules
+  ([`93e5cf2`](https://github.com/thiesgerken/carapace/commit/93e5cf26c6a62b23239c05206efdfa7de7b7bb27))
+
+  `next dev` writes frontend/AGENTS.md and frontend/CLAUDE.md on every run. Committing them keeps the working tree clean.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01EZLdaw4sVDnNvQa4xkMTi4
+
+## v0.158.3 (2026-10-04)
+
+
+### 🐛 Bug Fixes
+
+
+- 🐛Merge pull request #300 from thiesgerken/fix/sandbox-image-drift
+  ([`0bceb73`](https://github.com/thiesgerken/carapace/commit/0bceb7383672f964d3895b841b251d7da378e151))
+
+- 🐛 fix(sandbox): replace stale warm-pool members and update image on resume
+  ([`0bceb73`](https://github.com/thiesgerken/carapace/commit/0bceb7383672f964d3895b841b251d7da378e151))
+
+- 🐛 fix(sandbox): replace warm-pool members and resumed sandboxes on base-image change
+  ([`4bded0e`](https://github.com/thiesgerken/carapace/commit/4bded0ed5fbc3b6856fcccd0c9443bd4746389f1))
+
+  Pool maintenance destroys unclaimed warm-pool members whose StatefulSet template runs a different image than CARAPACE_SANDBOX_BASE_IMAGE and refills the pool from the configured image; claims skip stale members meanwhile. Resuming a Kubernetes sandbox from zero replicas first switches its template to the configured image. Running sandboxes are never touched.
+
+  Closes #294
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01YDCtmFHoYV4FvYgdMxX3UL
+
+## v0.158.2 (2026-10-04)
+
+
+### ⬆️ Dependencies
+
+
+- ⬆️ chore: upgrade pnpm to 12.8.2
+  ([`bab24bc`](https://github.com/thiesgerken/carapace/commit/bab24bc961a854e08b2ebbcac53613b368ef0345))
+
+  Co-authored-by: renovate[bot] <29139614+renovate[bot]@users.noreply.github.com>
+
+## v0.158.1 (2026-10-03)
+
+
+### Other
+
+
+- Merge pull request #297 from thiesgerken/renovate/all-routine-dependencies
+  ([`450414f`](https://github.com/thiesgerken/carapace/commit/450414f6ce30a33e0ae722f4a992e14c2634e59c))
+
+### ⬆️ Dependencies
+
+
+- ⬆️ chore: upgrade all routine dependency updates
+  ([`450414f`](https://github.com/thiesgerken/carapace/commit/450414f6ce30a33e0ae722f4a992e14c2634e59c))
+
+- ⬆️ chore: upgrade all routine dependency updates
+  ([`d688e1d`](https://github.com/thiesgerken/carapace/commit/d688e1d9281b8f04292d789e2fa539204e613e23))
+
+## v0.158.0 (2026-10-03)
+
+
+### ✨ Features
+
+
+- ✨Merge pull request #298 from thiesgerken/feat/codex-subscription-auth
+  ([`5337005`](https://github.com/thiesgerken/carapace/commit/5337005f5170592869b181c4028382170c48535a))
+
+- ✨ feat: per-user ChatGPT subscription models (openai-codex)
+  ([`5337005`](https://github.com/thiesgerken/carapace/commit/5337005f5170592869b181c4028382170c48535a))
+
+- ✨ feat(frontend): connect a ChatGPT subscription in account settings
+  ([`c9be9e7`](https://github.com/thiesgerken/carapace/commit/c9be9e784ac7e4e9f44f056c202b5bc5098a4502))
+
+  New "ChatGPT subscription" section: Connect fetches the authorize URL and shows the paste-back steps (the redirect lands on a failing localhost page whose URL carries code and state), Complete posts the pasted URL, and the section shows the connected email with Reconnect/Disconnect. It acts through its own endpoints rather than the settings save draft.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01SXTai7x3FfwhLFZYk8ApNL
+
+- ✨ feat: per-user ChatGPT subscription (openai-codex) models
+  ([`c37b0a9`](https://github.com/thiesgerken/carapace/commit/c37b0a9e0f27237833c92ceb8947b57e3fa3684c))
+
+  Admins can register openai-codex:<model> catalog rows; each request then authenticates with the session owner's own ChatGPT subscription.
+
+  - user_codex_credentials table (migration 0005) holds each user's OAuth
+    tokens, outside User.config so settings saves cannot clobber a rotated
+    single-use refresh token.
+  - CodexAccounts owns the paste-back login flow (pending PKCE flows in
+    memory), disconnect, and one OpenAICodexProvider per user so token
+    refreshes stay single-flight per user.
+  - The model factory takes an explicit user (factory(name, user=...)),
+    threaded from the session owner into agent, sentinel, title and
+    compaction models. The engine-wide cached default agent model is gone;
+    agent models are cached per session instead.
+  - A Codex request without a connected subscription fails with an
+    actionable CodexNotConnectedError instead of an opaque 401.
+  - /api/user/codex endpoints: status, start login, complete login with the
+    pasted redirect URL, disconnect.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01SXTai7x3FfwhLFZYk8ApNL
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix(frontend): offer openai-codex in the admin provider presets
+  ([`e278c0d`](https://github.com/thiesgerken/carapace/commit/e278c0dd4cefc61c2d121d5b055b0244e3996198))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01SXTai7x3FfwhLFZYk8ApNL
+
+- 🐛 fix: ask to reconnect when a ChatGPT subscription grant is revoked
+  ([`c05d51c`](https://github.com/thiesgerken/carapace/commit/c05d51c3e3eb3ba808eebfb63aab9ef99469dffc))
+
+  A revoked grant or a refresh token spent by another client surfaces as CredentialsRefreshError. The turn runner now reports it as a "reconnect under Settings" message (upstream detail goes to the log) instead of a traceback with a raw token-endpoint error.
+
+  Also drop the OpenAIError base from CodexNotConnectedError: the OpenAI SDK only wraps httpx RequestError/SSL/EndOfStream, so any other exception from the auth flow already propagates unchanged.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01SXTai7x3FfwhLFZYk8ApNL
+
+### 🔒 Security
+
+
+- 🔒️ fix: compare the Codex login state in constant time
+  ([`8efa925`](https://github.com/thiesgerken/carapace/commit/8efa925405fa2dbc1c9c1cfea79d33ee6091df5a))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01SXTai7x3FfwhLFZYk8ApNL
+
+### Other
+
+
+- 📝 docs: using a ChatGPT subscription for openai-codex models
+  ([`45a307f`](https://github.com/thiesgerken/carapace/commit/45a307f6446123552076acf950aefde8ebfbcb18))
+
+  Covers the admin catalog setup, the per-user paste-back login and why it exists (OpenAI pins the redirect URI to localhost), why a laptop's ~/.codex/auth.json must not be imported (single-use rotating refresh tokens), storage in user_codex_credentials, cost display and the API.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01SXTai7x3FfwhLFZYk8ApNL
+
+### ⬆️ Dependencies
+
+
+- ⬆️ chore: bump pydantic-ai to 2.54
+  ([`b0cb7f8`](https://github.com/thiesgerken/carapace/commit/b0cb7f8f2af36218919afb201add18523eee4b70))
+
+  The OpenAI Codex provider (ChatGPT subscription auth) needs a recent pydantic-ai; pin the floor so it cannot resolve older.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01SXTai7x3FfwhLFZYk8ApNL
+
+## v0.157.6 (2026-10-03)
+
+
+### Other
+
+
+- Merge pull request #291 from thiesgerken/renovate/all-routine-dependencies
+  ([`73ccd85`](https://github.com/thiesgerken/carapace/commit/73ccd85c74431d571cc390745dd8d5269813f557))
+
+- 📝 docs: describe serialized sandbox startup and skill setup reruns
+  ([`1146725`](https://github.com/thiesgerken/carapace/commit/1146725db43d611b8c9e4489667f11913df22358))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01372d9vXzGD7GtFRpm5LoNN
+
+### ⬆️ Dependencies
+
+
+- ⬆️ chore: upgrade all routine dependency updates
+  ([`73ccd85`](https://github.com/thiesgerken/carapace/commit/73ccd85c74431d571cc390745dd8d5269813f557))
+
+- ⬆️ chore: upgrade all routine dependency updates
+  ([`54f9fe4`](https://github.com/thiesgerken/carapace/commit/54f9fe45a17c0f5149a8c30a4b820524dd564ad6))
+
+### 🐛 Bug Fixes
+
+
+- 🐛Merge pull request #296 from thiesgerken/fix/sandbox-startup-race
+  ([`69fe31a`](https://github.com/thiesgerken/carapace/commit/69fe31aa808507204f9e920f84223ff1221f719f))
+
+- 🐛 fix: sandbox startup race on parallel tool calls
+  ([`69fe31a`](https://github.com/thiesgerken/carapace/commit/69fe31aa808507204f9e920f84223ff1221f719f))
+
+- 🐛 fix: never prune per-session startup locks
+  ([`22c8df3`](https://github.com/thiesgerken/carapace/commit/22c8df39f5bd56e069fce8225e0530042da19a57))
+
+  destroy_session could drop the startup lock while a parallel call held or waited on it, letting the next caller start on a fresh lock concurrently. The locks now live only on SandboxManager and are kept for the process lifetime; one Lock per session is negligible.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01372d9vXzGD7GtFRpm5LoNN
+
+- 🐛 fix: scope duplicate sandbox detection to the affected session
+  ([`2d8807f`](https://github.com/thiesgerken/carapace/commit/2d8807f6363a337da5a117fd975d5cd6fc48bb83))
+
+  Raising DuplicateSandboxError inside the global list_sandboxes() broke sandbox startup for every k8s session not yet attached once any single session had two live StatefulSets. list_sandboxes() now returns every live sandbox per session ({session_id: [id, ...]}, Docker and k8s), the lifecycle raises only when its own session has more than one, and orphan cleanup destroys all sandboxes of a deleted session. The server startup catch is gone.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01372d9vXzGD7GtFRpm5LoNN
+
+- 🐛 fix: don't pipe stdin to git http-backend for bodyless requests
+  ([`e064376`](https://github.com/thiesgerken/carapace/commit/e0643766ba3289a1b5f2475ddd8d190232fcc5d5))
+
+  A clone's GET info/refs failed with HTTP 500 when git http-backend exited before communicate() closed its stdin: uvloop raises RuntimeError on the closed transport, which asyncio does not suppress. Requests without a body now spawn the backend with stdin from /dev/null.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01372d9vXzGD7GtFRpm5LoNN
+
+- 🐛 fix: ignore terminating StatefulSets when listing k8s sandboxes
+  ([`ee9dd5a`](https://github.com/thiesgerken/carapace/commit/ee9dd5ac0d83ae2b05dd8e7f23f79276f5aab537))
+
+  A failed warm claim foreground-deletes the pool StatefulSet, which keeps its carapace.session label until the pod is gone. list_sandboxes picked whichever StatefulSet came last, so a concurrent start could resolve the session to the terminating pool sandbox and fail the ownership check. Terminating StatefulSets are now skipped (also for the warm pool), and two live StatefulSets for one session raise DuplicateSandboxError instead of silently picking one. Startup orphan cleanup logs and skips on that error rather than keeping the server down.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01372d9vXzGD7GtFRpm5LoNN
+
+- 🐛 fix: serialize sandbox startup per session and own skill setup rerun
+  ([`57c6cfd`](https://github.com/thiesgerken/carapace/commit/57c6cfd1c259af72d0272a3b82765bf5da7c06fa))
+
+  Parallel tool calls in a fresh session could both run ensure_session, claim/create twice and trip the ownership check on a terminating pool sandbox. SandboxManager.ensure_session now runs the lifecycle and the activated-skill setup rerun under a per-session startup lock and returns just the SessionContainer, so every caller (activate_skill, git pull/push, REST start/upload) gets restored skills on resume, not only the exec path. ContainerGone recovery goes through recreate_session, which recreates under the same lock and always reruns skill setup.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01372d9vXzGD7GtFRpm5LoNN
+
+## v0.157.5 (2026-10-01)
+
+
+### ⬆️ Dependencies
+
+
+- ⬆️ chore: upgrade pnpm to 12.8.1
+  ([`b6d4fa1`](https://github.com/thiesgerken/carapace/commit/b6d4fa14c23f032bdc1d0bea5b78220226e62a3f))
+
+  Co-authored-by: renovate[bot] <29139614+renovate[bot]@users.noreply.github.com>
+
+## v0.157.4 (2026-09-30)
+
+
+### ⬆️ Dependencies
+
+
+- ⬆️ chore: upgrade pnpm to 12.7.0
+  ([`8508dc4`](https://github.com/thiesgerken/carapace/commit/8508dc44ce51db51f57b93ef05799ae9645bc9b5))
+
+  Co-authored-by: renovate[bot] <29139614+renovate[bot]@users.noreply.github.com>
+
+## v0.157.3 (2026-09-28)
+
+
+### ⬆️ Dependencies
+
+
+- ⬆️ chore: Lock file maintenance
+  ([`55a055c`](https://github.com/thiesgerken/carapace/commit/55a055ccb69a00ece93dd1e23466033d83b1ae87))
+
+- ⬆️ chore: Lock file maintenance
+  ([`55a055c`](https://github.com/thiesgerken/carapace/commit/55a055ccb69a00ece93dd1e23466033d83b1ae87))
+
+- ⬆️ chore: migrate stdio MCP bridge to mcp 2
+  ([`55a055c`](https://github.com/thiesgerken/carapace/commit/55a055ccb69a00ece93dd1e23466033d83b1ae87))
+
+  Lock maintenance pulls pydantic-ai 2.51 -> fastmcp 4 -> mcp 2.x, which renames the camelCase model fields and drops mcp.server.fastmcp. Bump the sandbox's bridge venv to mcp 2 so production runs the same SDK the tests do.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  ---------
+
+  Co-authored-by: renovate[bot] <29139614+renovate[bot]@users.noreply.github.com>
+
+  Co-authored-by: Thies Gerken <thies.gerken@lector.ai>
+
+  Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
+
+## v0.157.2 (2026-09-28)
+
+
+### ⬆️ Dependencies
+
+
+- ⬆️ chore: upgrade pnpm to 12.6.0
+  ([`e6d24b3`](https://github.com/thiesgerken/carapace/commit/e6d24b389b4f2dd12cac6628c56034872a0be457))
+
+  Co-authored-by: renovate[bot] <29139614+renovate[bot]@users.noreply.github.com>
+
+- ⬆️ chore: upgrade mermaid to 12.0.0
+  ([`e63ed53`](https://github.com/thiesgerken/carapace/commit/e63ed537f3bf6a2b8df7970ffa69d10138423bc9))
+
+  Co-authored-by: renovate[bot] <29139614+renovate[bot]@users.noreply.github.com>
+
 ## v0.157.1 (2026-09-28)
 
 

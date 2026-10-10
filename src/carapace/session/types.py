@@ -107,6 +107,8 @@ class ActiveSession:
     """In-memory state for a currently active session."""
 
     state: SessionState
+    # Username of the session owner: models are built for this user (per-user provider credentials).
+    owner: str
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     security: SessionSecurity | None = None
     sentinel: Sentinel | None = None

@@ -93,11 +93,21 @@ Set **`CARAPACE_SANDBOX_K8S_OWNER_REF=false`** to omit `ownerReferences` entirel
 
 ### Idle lifecycle
 
-When a session is idle (configurable timeout, default 60 min), the StatefulSet is scaled to **0 replicas**. The PVC is retained (`whenScaled: Retain`), preserving the workspace, skill venvs, and all session files. When the session resumes, the StatefulSet is scaled back to 1 replica — the pod mounts the existing PVC and is immediately ready (no git clone or venv rebuild needed).
+When a session is idle (configurable timeout, default 60 min), the StatefulSet is scaled to **0 replicas**. The PVC is retained (`whenScaled: Retain`), preserving the workspace, skill venvs, and all session files. When the session resumes, the StatefulSet is scaled back to 1 replica — the pod mounts the existing PVC, so no git clone is needed. The image-provided activator still reruns for active skills, which restores anything kept outside the PVC (see [sandbox.md](sandbox.md#container-lifecycle)).
 
-If `CARAPACE_SANDBOX_WARM_POOL_SIZE` is greater than `0`, the server also keeps that many unattached generic warm sandboxes ready. New sessions can claim one of those prestarted StatefulSets instead of waiting for a full cold start. After a successful claim, carapace immediately refills the pool toward the configured target. The claimed sandbox keeps its original unique `sandbox_id` such as `pool-3f9c…`, which is persisted in the session snapshot and shown in the web UI's sandbox inspector.
+If `CARAPACE_SANDBOX_WARM_POOL_SIZE` is greater than `0`, the server also keeps that many unattached generic warm sandboxes ready. New sessions can claim one of those prestarted StatefulSets instead of waiting for a full cold start. After a successful claim, carapace immediately refills the pool toward the configured target. The claimed sandbox keeps its original unique `sandbox_id` such as `pool-3f9c…`, which is persisted in the session snapshot and shown in the web UI's sandbox inspector. If a claim fails (for example the knowledge repo clone fails), the claimed pool StatefulSet is deleted and the session falls back to a cold-created sandbox. StatefulSets that are already being deleted are ignored when resolving a session's sandbox. Two live StatefulSets labelled with the same session are treated as an error for that session only: starting its sandbox fails until one of them is removed manually, while other sessions are unaffected. Startup orphan cleanup removes every StatefulSet of a deleted session.
 
 When a session is permanently deleted (or the user runs `/reload`), the entire StatefulSet is deleted. The PVC is automatically cleaned up via the retention policy (`whenDeleted: Delete`).
+
+### Changing the sandbox image
+
+`CARAPACE_SANDBOX_BASE_IMAGE` is read at server startup, so an image change takes effect with the server rollout. Existing sandbox StatefulSets are brought in line as follows:
+
+- **Unclaimed warm-pool members** hold no user data. Pool maintenance (at startup and every 60 s) deletes members whose pod template uses a different image and refills the pool from the configured one. Until then, new sessions skip stale members when claiming and fall back to another member or a cold create.
+- **Session sandboxes scaled to 0** get their pod template switched to the configured image right before they are scaled back up. Scaling up from 0 starts a fresh pod anyway, and the workspace and `/tmp` live on the PVC, so nothing is lost.
+- **Running session sandboxes** are never touched. They pick up the new image the next time they are resumed after an idle scale-down.
+
+Images are compared as plain reference strings. Re-pushing a mutable tag such as `:latest` under the same name is not detected, which is another reason to pin a specific version tag.
 
 ## Configuration
 
@@ -254,7 +264,9 @@ with an external-URL (`database.url`) or SQLite-on-the-data-PVC option. See the
 Runtime platform settings — the model catalog and scalar `agent`/`sessions` config edited in
 the admin UI — also live in the database (`models` + `platform_settings` tables). A fresh DB
 starts **empty**; until an admin configures the catalog, the server runs on the built-in
-default models. The admin UI is the source of truth. Operator/bootstrap config
+default models. The admin UI is the source of truth. Per-user ChatGPT subscription tokens for
+`openai-codex` models are stored in the `user_codex_credentials` table; their login works without
+the server being reachable on `localhost` (see [chatgpt-subscription.md](chatgpt-subscription.md)). Operator/bootstrap config
 (`CARAPACE_DATA_DIR`, `CARAPACE_DATABASE_URL`, `CARAPACE_LOG_LEVEL`, `CARAPACE_SERVER_*`,
 `CARAPACE_AUTH_*`, `CARAPACE_SANDBOX_*`, …) comes from env vars — there is no config file.
 

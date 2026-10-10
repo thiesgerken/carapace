@@ -212,13 +212,7 @@ export interface HistoryMessage {
   domain?: string;
   decision?: string;
   tool_call_id?: string;
-  decision_source?:
-    | "safe-list"
-    | "sentinel"
-    | "user"
-    | "skill"
-    | "bypass"
-    | "unknown";
+  decision_source?: "user" | "system";
   message?: string;
   explanation?: string;
   risk_level?: string;

@@ -1,6 +1,6 @@
 [project]
 name = "carapace"
-version = "0.157.1"
+version = "0.158.8"
 description = "Security-first personal AI agent with rule-based information flow control"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -18,7 +18,7 @@ dependencies = [
 
 [project.optional-dependencies]
 server = [
-    "pydantic-ai>=2,<3",
+    "pydantic-ai>=2.54,<3",
     "pyyaml>=6,<7",
     "croniter>=6,<7",
     "tenacity>=9,<10",

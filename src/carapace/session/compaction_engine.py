@@ -246,6 +246,7 @@ class SessionCompactionMixin:
                         usage_tracker=active.usage_tracker,
                         before_llm_call=lambda: self._assert_llm_budget_available(active),
                         model_factory=self._model_factory,
+                        user=active.owner,
                         model_settings=self._resolve_model_settings(model),
                         usage_limits=self._remaining_aux_usage_limits(active),
                     )

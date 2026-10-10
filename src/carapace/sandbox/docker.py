@@ -20,6 +20,7 @@ from .runtime import (
     ContainerRuntime,
     ExecResult,
     Mount,
+    PoolSandbox,
     SandboxConfig,
     SandboxInspection,
 )
@@ -246,8 +247,8 @@ class DockerRuntime(ContainerRuntime):
         )
         return await self.create(container_config)
 
-    async def resume_sandbox(self, name: str) -> None:
-        """Docker containers cannot be resumed — always raises."""
+    async def resume_sandbox(self, name: str, image: str) -> None:
+        """Docker containers cannot be resumed; always raises so the caller recreates from *image*."""
         raise RuntimeError(f"Docker container {name} cannot be resumed, must be recreated")
 
     async def suspend_sandbox(self, name: str, container_id: str) -> None:
@@ -271,19 +272,23 @@ class DockerRuntime(ContainerRuntime):
 
         return await asyncio.to_thread(_check)
 
-    async def list_sandboxes(self) -> dict[str, str]:
-        """List all carapace-managed containers, returning ``{session_id: container_id}``."""
+    async def list_sandboxes(self) -> dict[str, list[str]]:
+        """List all carapace-managed containers, returning ``{session_id: [container_id, ...]}``."""
 
-        def _list() -> dict[str, str]:
+        def _list() -> dict[str, list[str]]:
             containers = self._client.containers.list(
                 all=True,
                 filters={"label": ["carapace.managed=true"]},
             )
-            return {c.labels["carapace.session"]: c.id or "" for c in containers if "carapace.session" in c.labels}
+            result: dict[str, list[str]] = {}
+            for c in containers:
+                if "carapace.session" in c.labels:
+                    result.setdefault(c.labels["carapace.session"], []).append(c.id or "")
+            return result
 
         return await asyncio.to_thread(_list)
 
-    async def list_pool_sandboxes(self) -> dict[str, str]:
+    async def list_pool_sandboxes(self) -> dict[str, PoolSandbox]:
         """Docker does not participate in warm-pool inventory."""
         return {}
 

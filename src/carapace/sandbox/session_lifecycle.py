@@ -15,7 +15,7 @@ from sqlalchemy.exc import IntegrityError
 from ..database.engine import SessionFactory
 from ..database.models import SandboxTokenRow
 from ..security.context import ApprovalSource, ApprovalVerdict
-from .runtime import ContainerRuntime, SandboxConfig
+from .runtime import ContainerRuntime, DuplicateSandboxError, PoolSandbox, SandboxConfig
 from .state import load_sandbox_snapshot
 
 
@@ -275,6 +275,9 @@ class SandboxSessionLifecycle:
         ``needs_runtime_setup`` is True when the sandbox runtime was newly created or
         resumed after being stopped. In those cases, skill setup must rerun because
         runtime-only state like generated command shims is lost.
+
+        Not serialized here: callers go through ``SandboxManager``, which holds the
+        per-session startup lock around this call and the skill setup rerun.
         """
         sandbox_id = self.sandbox_id_for_session(session_id)
         sandbox_name = self.sandbox_name_for_id(sandbox_id)
@@ -286,7 +289,7 @@ class SandboxSessionLifecycle:
                 sc.last_used = time.time()
                 return sc, False
             try:
-                await self._runtime.resume_sandbox(sandbox_name)
+                await self._runtime.resume_sandbox(sandbox_name, self._base_image)
                 sc.last_used = time.time()
                 await self.wait_for_ready(sc.container_id, session_id)
                 await self.log_assignment(
@@ -304,7 +307,14 @@ class SandboxSessionLifecycle:
         else:
             existing_id = await self._runtime.sandbox_exists(sandbox_name)
             if self._runtime.runtime_kind == "kubernetes":
-                owned = (await self._runtime.list_sandboxes()).get(session_id)
+                owned_ids = (await self._runtime.list_sandboxes()).get(session_id, [])
+                if len(owned_ids) > 1:
+                    # No safe way to pick one; attaching to either could hijack the
+                    # sandbox the other code path is still using or tearing down.
+                    raise DuplicateSandboxError(
+                        f"Session {session_id} has more than one live sandbox: {', '.join(owned_ids)}"
+                    )
+                owned = owned_ids[0] if owned_ids else None
                 if existing_id and owned != existing_id:
                     # The sandbox at our snapshot's name is labelled for a different
                     # session. Pool ids are random uuids, so this should never happen;
@@ -322,7 +332,7 @@ class SandboxSessionLifecycle:
                         logger.info(f"Re-attached to running sandbox {sandbox_name} for session {session_id}")
                         needs_runtime_setup = False
                     else:
-                        await self._runtime.resume_sandbox(sandbox_name)
+                        await self._runtime.resume_sandbox(sandbox_name, self._base_image)
                         await self.wait_for_ready(existing_id, session_id)
                         logger.info(f"Resumed orphaned sandbox {sandbox_name} for session {session_id}")
                         needs_runtime_setup = True
@@ -422,20 +432,33 @@ class SandboxSessionLifecycle:
         # recreates, or destroys a pool entry while a claim is mid-flight.
         async with self._warm_claim_lock:
             pool = await self._runtime.list_pool_sandboxes()
-            for sandbox_id in sorted(pool):
-                await self.ensure_warm_sandbox(sandbox_id)
+            for sandbox_id, member in sorted(pool.items()):
+                if member.image == self._base_image:
+                    await self.ensure_warm_sandbox(sandbox_id)
+                else:
+                    await self._destroy_stale_warm_sandbox(sandbox_id, member)
 
             pool = await self._runtime.list_pool_sandboxes()
             while len(pool) > target_size:
                 sandbox_id = sorted(pool)[-1]
-                container_id = pool.pop(sandbox_id)
+                member = pool.pop(sandbox_id)
                 sandbox_name = self.sandbox_name_for_id(sandbox_id)
-                await self._runtime.destroy_sandbox(sandbox_id, sandbox_name, container_id)
+                await self._runtime.destroy_sandbox(sandbox_id, sandbox_name, member.container_id)
 
-            while len(pool) < target_size:
-                sandbox_id = self.new_pool_sandbox_id()
-                pool[sandbox_id] = await self.ensure_warm_sandbox(sandbox_id)
-            return len(pool)
+            for _ in range(target_size - len(pool)):
+                await self.ensure_warm_sandbox(self.new_pool_sandbox_id())
+            return target_size
+
+    async def _destroy_stale_warm_sandbox(self, sandbox_id: str, member: PoolSandbox) -> None:
+        """Destroy a pool member running an outdated image, for the refill to recreate.
+
+        An unclaimed member's PVC holds no user data, so replacing it loses nothing.
+        """
+        sandbox_name = self.sandbox_name_for_id(sandbox_id)
+        logger.info(
+            f"Destroying warm sandbox {sandbox_name}: image {member.image} differs from configured {self._base_image}"
+        )
+        await self._runtime.destroy_sandbox(sandbox_id, sandbox_name, member.container_id)
 
     async def claim_warm_sandbox(self, session_id: str, env: dict[str, str]) -> SessionContainer | None:
         """Attach an existing warm sandbox to *session_id* when supported by the runtime."""
@@ -445,15 +468,16 @@ class SandboxSessionLifecycle:
         async with self._warm_claim_lock:
             assigned = {sc.sandbox_id for sc in self._state.sessions.values() if sc.sandbox_id}
             pool = await self._runtime.list_pool_sandboxes()
-            for sandbox_id in sorted(pool):
-                if sandbox_id in assigned:
+            for sandbox_id, member in sorted(pool.items()):
+                # Stale members are left for ensure_warm_pool to replace.
+                if sandbox_id in assigned or member.image != self._base_image:
                     continue
 
-                container_id = pool[sandbox_id]
+                container_id = member.container_id
                 sandbox_name = self.sandbox_name_for_id(sandbox_id)
                 try:
                     if not await self._runtime.is_running(container_id):
-                        await self._runtime.resume_sandbox(sandbox_name)
+                        await self._runtime.resume_sandbox(sandbox_name, self._base_image)
                         await self.wait_for_ready(container_id, session_id)
                     claimed = await self._runtime.claim_warm_sandbox(sandbox_name, session_id)
                     if not claimed:
@@ -506,7 +530,7 @@ class SandboxSessionLifecycle:
             if await self._runtime.is_running(existing_id):
                 return existing_id
             try:
-                await self._runtime.resume_sandbox(sandbox_name)
+                await self._runtime.resume_sandbox(sandbox_name, self._base_image)
                 await self.wait_for_ready(existing_id, sandbox_id)
                 logger.info(f"Resumed warm sandbox {sandbox_name}")
                 return existing_id
@@ -737,12 +761,16 @@ class SandboxSessionLifecycle:
     async def cleanup_orphaned_sandboxes(self, known_sessions: set[str]) -> int:
         """Destroy sandbox resources whose session no longer exists on disk."""
         live = await self._runtime.list_sandboxes()
-        orphans = {sid: cid for sid, cid in live.items() if sid not in known_sessions}
-        for sid, container_id in orphans.items():
-            sandbox_name = self.sandbox_name_for_live_resource(sid, container_id)
-            await self._runtime.destroy_sandbox(sid, sandbox_name, container_id)
-            logger.info(f"Removed orphaned sandbox for deleted session {sid}")
-        return len(orphans)
+        removed = 0
+        for sid, container_ids in live.items():
+            if sid in known_sessions:
+                continue
+            for container_id in container_ids:
+                sandbox_name = self.sandbox_name_for_live_resource(sid, container_id)
+                await self._runtime.destroy_sandbox(sid, sandbox_name, container_id)
+                logger.info(f"Removed orphaned sandbox {sandbox_name} for deleted session {sid}")
+                removed += 1
+        return removed
 
     def set_session_env(self, session_id: str, env: dict[str, str]) -> None:
         """Merge *env* into the persistent session environment."""

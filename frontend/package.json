@@ -1,6 +1,6 @@
 {
   "name": "frontend",
-  "version": "0.157.1",
+  "version": "0.158.8",
   "private": true,
   "scripts": {
     "prepare:emoji": "node ./scripts/prepare-emoji-assets.mjs",
@@ -21,7 +21,7 @@
     "cronstrue": "^3.14.0",
     "diff": "^9.0.0",
     "emoji-regex": "^11.0.0",
-    "katex": "^0.18.0",
+    "katex": "^0.19.0",
     "lucide-react": "^1.14.0",
     "mermaid": "^12.0.0",
     "next": "^16.2.6",

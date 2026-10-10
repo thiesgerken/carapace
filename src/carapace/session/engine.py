@@ -23,13 +23,13 @@ from pydantic_ai.messages import (
     ModelMessage,
     ToolCallPart,
 )
-from pydantic_ai.models import Model
 
 from ..agent.deps import Deps
 from ..agent.loop import run_agent_turn as _run_agent_turn
 from ..credentials import SessionCredentialRegistry
 from ..git.store import GitStore
 from ..knowledge import KnowledgeRepoHandle, KnowledgeRepoResolver
+from ..llm import ModelFactory
 from ..models.compaction import SessionCompaction
 from ..models.config import Config
 from ..models.credentials import CredentialRegistryProtocol
@@ -125,17 +125,15 @@ class SessionEngine(
         config: Config,
         data_dir: Path,
         session_mgr: SessionManager,
-        agent_model: Model | None,
         sandbox_mgr: SandboxManager,
         credential_registry_for_session: Callable[[str], Awaitable[CredentialRegistryProtocol]],
         knowledge_repo_for_session: KnowledgeRepoResolver,
-        model_factory: Callable[[str], Model] | None = None,
+        model_factory: ModelFactory | None = None,
         notification_router: NotificationRouter | None = None,
     ) -> None:
         self._config = config
         self._data_dir = data_dir
         self._session_mgr = session_mgr
-        self._agent_model = agent_model
         self._sandbox_mgr = sandbox_mgr
         self._model_factory = model_factory
         self._credential_registry_for_session = credential_registry_for_session
@@ -215,11 +213,18 @@ class SessionEngine(
     def sandbox_mgr(self) -> SandboxManager:
         return self._sandbox_mgr
 
-    @property
-    def agent_model(self) -> Model | None:
-        return self._agent_model
-
     # -- session lifecycle --
+
+    def close_orphaned_approval_requests(self) -> None:
+        """Deny approval requests whose turn died with the previous server process.
+
+        Only valid at startup: with an active session, a running turn could still answer
+        its requests.
+        """
+        if self._active:
+            raise RuntimeError("Orphaned approvals can only be closed before any session is active")
+        for session_id in self._session_mgr.session_ids_with_open_approval_requests():
+            self._close_open_approval_requests(session_id)
 
     def _ensure_active(self, session_id: str) -> ActiveSession:
         """Return or create the in-memory ``ActiveSession`` for *session_id*."""
@@ -229,6 +234,7 @@ class SessionEngine(
         state = self._session_mgr.resume_session(session_id)
         if state is None:
             raise KeyError(f"Session {session_id} not found on disk")
+        owner = self._session_mgr.load_meta(session_id).user
 
         security = SessionSecurity(
             session_id,
@@ -242,6 +248,7 @@ class SessionEngine(
         knowledge_dir = self._knowledge_dir_for_session(session_id)
         sentinel = Sentinel(
             model=self._config.agent.sentinel_model,
+            user=owner,
             knowledge_dir=knowledge_dir,
             skills_dir=knowledge_dir / "skills",
             unattended=state.attributes.unattended,
@@ -259,6 +266,7 @@ class SessionEngine(
 
         active = ActiveSession(
             state=state,
+            owner=owner,
             security=security,
             sentinel=sentinel,
             usage_tracker=usage_tracker,
@@ -454,16 +462,10 @@ class SessionEngine(
         agent_model_id = active.agent_model_name or self._config.agent.model
         agent_model = active.agent_model
         if agent_model is None:
-            if active.agent_model_name is None:
-                if self._agent_model is None:
-                    # Cache the platform default: it is built on first use (startup has no
-                    # credentials yet) and each build opens its own HTTP client. Admin catalog
-                    # changes replace it via apply_platform_model_config.
-                    self._agent_model = self._resolve_model(self._config.agent.model)
-                agent_model = self._agent_model
-            else:
-                agent_model = self._resolve_model(active.agent_model_name)
-                active.agent_model = agent_model
+            # Built on first use (startup has no provider credentials yet) and cached per session,
+            # never shared across sessions: the model carries its owner's provider credentials.
+            agent_model = self._resolve_model(agent_model_id, active.owner)
+            active.agent_model = agent_model
 
         def _append_session_events(events: list[dict[str, Any]]) -> None:
             self._session_mgr.append_events(session_id, events)
@@ -791,6 +793,7 @@ class SessionEngine(
                         usage_tracker=active.usage_tracker,
                         before_llm_call=lambda: self._assert_llm_budget_available(active),
                         model_factory=self._model_factory,
+                        user=active.owner,
                         model_settings=self._resolve_model_settings(
                             active.title_model_name or self._config.agent.title_model
                         ),
