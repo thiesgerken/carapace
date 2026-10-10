@@ -11,12 +11,13 @@ from pydantic_ai.profiles.anthropic import ANTHROPIC_THINKING_BUDGET_MAP
 from pydantic_ai.usage import RequestUsage
 
 from carapace.memory.budget import estimate_cost
-from carapace.memory.handlers import SESSION_EXTRACT_OUTPUT_CAP, SessionExtractHandler, TaskRunError
+from carapace.memory.handlers import SESSION_EXTRACT_OUTPUT_CAP, SessionExtractHandler, TaskHandler, TaskRunError
 from carapace.memory.input import render_extraction_input
 from carapace.memory.llm import InputTooLargeError, LlmCallError, capped_model_settings
 from carapace.memory.models import (
     ExtractionResult,
     MemoryTask,
+    ModelRole,
     SessionExtraction,
     SpawnedBy,
     TaskKind,
@@ -233,3 +234,9 @@ async def test_run_fails_before_calling_the_model_when_input_exceeds_context() -
 
     estimate = await _handler(recorder, config=config).estimate("alice", "s1", MODEL)
     assert estimate.input_tokens > 100
+
+
+def test_handler_satisfies_the_protocol() -> None:
+    handlers: dict[TaskKind, TaskHandler] = {TaskKind.session_extract: _handler(_Recorder())}
+
+    assert handlers[TaskKind.session_extract].model_role is ModelRole.memory_low

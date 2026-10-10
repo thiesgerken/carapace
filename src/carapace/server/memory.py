@@ -91,8 +91,6 @@ async def retry_tasks(body: TaskIdsRequest, user: _Writer) -> TaskCountResponse:
 
 @router.post("/tasks/spawn", response_model=TaskSpawnResponse)
 async def spawn_tasks(body: TaskSpawnRequest, user: _Writer) -> TaskSpawnResponse:
-    if body.filter is not None:
-        raise HTTPException(status_code=501, detail="Spawning by session filter is not available yet")
     return await _service().spawn_tasks(user.username, body)
 
 
