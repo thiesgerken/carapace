@@ -35,6 +35,7 @@ function status(day: MemoryBudgetWindowStatus, month: MemoryBudgetWindowStatus):
     queue: { pending: 0, queued: 0, running: 0, done: 0, failed: 0, cancelled: 0 },
     blocked: 0,
     models: { memory_low: "low", memory_high: "high" },
+    sessions_without_transcript: 0,
   };
 }
 
