@@ -441,20 +441,6 @@ class MemoryStore:
             ).all()
         return {row.target: _task(row) for row in rows}
 
-    def latest_task_times(self, user: str, kind: TaskKind) -> dict[str, datetime]:
-        """When each target last got a task of *kind*, open or finished.
-
-        The spawner only revisits a target whose sources changed after that: a done, failed or
-        cancelled task for unchanged input is the user's call to repeat, not the spawner's.
-        """
-        with self._session_factory() as db:
-            rows = db.execute(
-                select(MemoryTaskRow.target, func.max(MemoryTaskRow.created_at))
-                .where(MemoryTaskRow.user == user, MemoryTaskRow.kind == kind)
-                .group_by(MemoryTaskRow.target)
-            ).all()
-        return {target: at for target, at in rows}
-
     def session_titles(self, session_ids: list[str]) -> dict[str, str | None]:
         """Titles of the given sessions, for task labels."""
         with self._session_factory() as db:
