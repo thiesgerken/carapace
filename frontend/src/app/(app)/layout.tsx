@@ -94,8 +94,8 @@ function AppChrome({ children }: { children: ReactNode }) {
           >
             {sidebarOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
           </button>
-          <div className="flex items-baseline gap-2">
-            <span className="text-sm font-semibold">
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <span className="min-w-0 truncate text-sm font-semibold">
               {isSettings ? t("navigation.settings") : brand}
             </span>
             {isSettings ? null : (

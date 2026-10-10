@@ -4,6 +4,9 @@ import test from "node:test";
 import {
   budgetGauge,
   exceedsBudget,
+  factMatchesText,
+  groupFacts,
+  isExpiredFact,
   formatUsd,
   groupMonthsByYear,
   monthLabel,
@@ -17,7 +20,7 @@ import {
   toTaskFilter,
   toTaskSelection,
 } from "./memory";
-import type { MemoryBudgetWindowStatus, MemoryMonthNode, MemoryPeriodNode, MemorySessionRow, MemoryStatus } from "./types";
+import type { MemoryBudgetWindowStatus, MemoryFactView, MemoryMonthNode, MemoryPeriodNode, MemorySessionRow, MemoryStatus } from "./types";
 
 function window(overrides: Partial<MemoryBudgetWindowStatus> = {}): MemoryBudgetWindowStatus {
   return {
@@ -39,6 +42,7 @@ function status(day: MemoryBudgetWindowStatus, month: MemoryBudgetWindowStatus):
     queue: { pending: 0, queued: 0, running: 0, done: 0, failed: 0, cancelled: 0 },
     blocked: 0,
     models: { memory_low: "low", memory_high: "high" },
+    sessions_without_transcript: 0,
   };
 }
 
@@ -152,4 +156,48 @@ test("periodLevel and year grouping follow the period keys", () => {
 test("monthLabel names the key's month, not the month of its first Monday", () => {
   assert.equal(monthLabel("2026-09", "en", true), "September 2026");
   assert.equal(monthLabel("2026-09", "en", false), "September");
+});
+
+function fact(overrides: Partial<MemoryFactView>): MemoryFactView {
+  return {
+    id: 1,
+    extraction_id: 1,
+    session_id: "s1",
+    session_title: "Talos upgrade",
+    category: "social",
+    subject: "Anna",
+    statement: "Anna is moving to Hamburg.",
+    source_kind: "user_said",
+    confidence: "high",
+    durability: "dated",
+    valid_until: "2026-10-31",
+    source_seqs: [4],
+    week_key: "2026-W36",
+    created_at: "2026-09-08T07:12:00Z",
+    ...overrides,
+  };
+}
+
+test("groupFacts merges normalized statement + subject and tracks first and last seen", () => {
+  const groups = groupFacts([
+    fact({ id: 1, week_key: "2026-W36" }),
+    fact({ id: 2, week_key: "2026-W09", statement: "anna is  moving to Hamburg", subject: "anna " }),
+    fact({ id: 3, statement: "Anna has a cat." }),
+  ]);
+  assert.equal(groups.length, 2);
+  const moving = groups.find((group) => group.occurrences.length === 2)!;
+  assert.deepEqual(moving.occurrences.map((f) => f.id), [2, 1]);
+  assert.equal(moving.firstSeen, "2026-W09");
+  assert.equal(moving.lastSeen, "2026-W36");
+  assert.equal(moving.latest.id, 1);
+});
+
+test("dated facts expire after valid_until; text filter covers statement, subject and session", () => {
+  assert.equal(isExpiredFact(fact({}), "2026-11-01"), true);
+  assert.equal(isExpiredFact(fact({}), "2026-10-31"), false);
+  assert.equal(isExpiredFact(fact({ durability: "durable", valid_until: null }), "2030-01-01"), false);
+  const [group] = groupFacts([fact({})]);
+  assert.equal(factMatchesText(group, "hamburg"), true);
+  assert.equal(factMatchesText(group, "talos"), true);
+  assert.equal(factMatchesText(group, "berlin"), false);
 });

@@ -753,6 +753,11 @@ export interface MemoryTask {
   kind: MemoryTaskKind;
   target: string;
   status: MemoryTaskStatus;
+  /** Session's week for extractions, the target for digests. */
+  week_key: string | null;
+  month_key: string | null;
+  /** Model of the latest estimate, or the model that ran once finished. */
+  model: string | null;
   blocked_reason: MemoryBlockedReason | null;
   spawned_by: MemorySpawnedBy;
   model_override: string | null;
@@ -812,6 +817,8 @@ export interface MemoryStatus {
   /** Queued tasks held back by the budget gate. */
   blocked: number;
   models: Record<MemoryModelRole, string>;
+  /** Legacy sessions without a stored transcript, skipped by memory (as of the last sweep). */
+  sessions_without_transcript: number;
 }
 
 /** GET /tasks query params (lists repeat the param) and the `filter` of a selection. */
@@ -853,8 +860,15 @@ export interface MemoryTaskCountResponse {
   count: number;
 }
 
+export interface MemorySpawnSkip {
+  target: string;
+  /** An ineligibility reason (private, job_excluded, agent_running, no_transcript, no_user_message, deleted) or why the target got no task. */
+  reason: string;
+}
+
 export interface MemoryTaskSpawnResponse {
   task_ids: number[];
+  skipped: MemorySpawnSkip[];
 }
 
 export interface MemoryEstimateTotal {

@@ -86,6 +86,7 @@ const STATUS: MemoryStatus = {
   queue: { pending: 0, queued: 0, running: 0, done: 0, failed: 0, cancelled: 0 },
   blocked: 0,
   models: { memory_low: "haiku", memory_high: "opus" },
+  sessions_without_transcript: 0,
 };
 
 test("week detail links refs to sessions, keeps history collapsed and regenerates via spawn + run dialog", async () => {

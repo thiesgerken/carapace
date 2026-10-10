@@ -19,6 +19,9 @@ function task(id: number, target_label: string): MemoryTaskView {
     target: `session-${id}`,
     target_label,
     status: "pending",
+    week_key: "2026-W36",
+    month_key: "2026-09",
+    model: "haiku",
     blocked_reason: null,
     spawned_by: "auto",
     model_override: null,
@@ -42,6 +45,7 @@ const STATUS: MemoryStatus = {
   queue: { pending: 120, queued: 0, running: 0, done: 0, failed: 0, cancelled: 0 },
   blocked: 0,
   models: { memory_low: "haiku", memory_high: "opus" },
+  sessions_without_transcript: 0,
 };
 
 const TASKS: MemoryTaskListResponse = {

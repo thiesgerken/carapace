@@ -80,6 +80,20 @@ class OutdatedReason(StrEnum):
     input_format_version = "input_format_version"
 
 
+class Ineligible(StrEnum):
+    """Why a session never gets an extraction task (checked for automatic and manual spawns)."""
+
+    private = "private"
+    # A job session whose job did not opt in with memory_enabled.
+    job_excluded = "job_excluded"
+    agent_running = "agent_running"
+    # Legacy sessions without session_events rows: no timestamps, so no period.
+    no_transcript = "no_transcript"
+    no_user_message = "no_user_message"
+    # The session was deleted after its task was spawned.
+    deleted = "deleted"
+
+
 class ExtractionState(StrEnum):
     missing = "missing"
     current = "current"
@@ -218,6 +232,11 @@ class MemoryTask(BaseModel):
     kind: TaskKind
     target: str
     status: TaskStatus
+    # Period the target falls into: the session's week for extractions, the target for digests.
+    week_key: str | None = None
+    month_key: str | None = None
+    # Model of the latest estimate, replaced by the model that actually ran on completion.
+    model: str | None = None
     blocked_reason: BlockedReason | None = None
     spawned_by: SpawnedBy
     model_override: str | None = None
@@ -289,6 +308,8 @@ class MemoryStatus(MemoryApiModel):
     # Queued tasks held back by the budget gate.
     blocked: int
     models: EffectiveMemoryModels
+    # Legacy sessions without a stored transcript, skipped by memory (as of the last sweep).
+    sessions_without_transcript: int
 
 
 class TaskFilter(MemoryApiModel):
@@ -355,8 +376,15 @@ class TaskCountResponse(MemoryApiModel):
     count: int
 
 
+class SpawnSkip(MemoryApiModel):
+    target: str
+    # An Ineligible value, or why the target could not get a task (already open, not found, ...).
+    reason: str
+
+
 class TaskSpawnResponse(MemoryApiModel):
     task_ids: list[int]
+    skipped: list[SpawnSkip]
 
 
 class EstimateTotal(MemoryApiModel):
