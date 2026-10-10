@@ -6,6 +6,8 @@ import type {
   JobsFile,
   MemoryDigestLevel,
   MemoryEstimateTotal,
+  MemoryFactFilter,
+  MemoryFactListResponse,
   MemoryPeriodDetail,
   MemoryPeriodTree,
   MemorySessionDetail,
@@ -1873,4 +1875,17 @@ export async function getMemoryPeriod(server: string, level: MemoryDigestLevel, 
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(await readErrorMessage(res, "Failed to load memory period"));
   return (await res.json()) as MemoryPeriodDetail;
+}
+
+export async function listMemoryFacts(server: string, filter: MemoryFactFilter): Promise<MemoryFactListResponse> {
+  const params = new URLSearchParams();
+  for (const category of filter.category ?? []) params.append("category", category);
+  if (filter.subject) params.set("subject", filter.subject);
+  for (const confidence of filter.confidence ?? []) params.append("confidence", confidence);
+  for (const durability of filter.durability ?? []) params.append("durability", durability);
+  for (const kind of filter.source_kind ?? []) params.append("source_kind", kind);
+  if (filter.period) params.set("period", filter.period);
+  const res = await fetch(`${server}/api/memory/facts?${params.toString()}`);
+  if (!res.ok) throw new Error(await readErrorMessage(res, "Failed to load memory facts"));
+  return (await res.json()) as MemoryFactListResponse;
 }

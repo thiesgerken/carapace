@@ -57,7 +57,6 @@
             "facts": "Fakten",
             "tasks": "Aufgaben"
         },
-        "comingSoon": "Hier gibt es noch nichts.",
         "status": {
             "loading": "Gedächtnis-Status wird geladen…",
             "autoModeOn": "Auto-Modus an",
@@ -280,6 +279,23 @@
             "history": "{count, plural, one {Frühere Version (#)} other {Frühere Versionen (#)}}",
             "historyCoverage": "{count, plural, one {Aus # Quelle erzeugt} other {Aus # Quellen erzeugt}}",
             "alreadyQueued": "Für diesen Zeitraum ist bereits eine Aufgabe eingereiht oder läuft."
+        },
+        "facts": {
+            "category": "Kategorie",
+            "noSubject": "Unbekannt",
+            "empty": "Keine Fakten passen zu diesen Filtern.",
+            "seen": "gesehen {first} – {last}",
+            "expired": "Abgelaufen: valid_until ist überschritten",
+            "filters": {
+                "confidence": "Sicherheit",
+                "anyConfidence": "Jede Sicherheit",
+                "durability": "Dauer",
+                "anyDurability": "Jede Dauer",
+                "sourceKind": "Quelle",
+                "anySourceKind": "Jede Quelle",
+                "month": "Monat",
+                "text": "Text filtern"
+            }
         }
     },
     "account": {
