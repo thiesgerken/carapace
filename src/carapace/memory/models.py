@@ -80,6 +80,18 @@ class OutdatedReason(StrEnum):
     input_format_version = "input_format_version"
 
 
+class Ineligible(StrEnum):
+    """Why a session never gets an extraction task (checked for automatic and manual spawns)."""
+
+    private = "private"
+    # A job session whose job did not opt in with memory_enabled.
+    job_excluded = "job_excluded"
+    agent_running = "agent_running"
+    # Legacy sessions without session_events rows: no timestamps, so no period.
+    no_transcript = "no_transcript"
+    no_user_message = "no_user_message"
+
+
 class ExtractionState(StrEnum):
     missing = "missing"
     current = "current"
