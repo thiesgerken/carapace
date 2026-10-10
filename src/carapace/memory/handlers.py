@@ -37,9 +37,13 @@ from .prompts import SESSION_EXTRACT
 class TaskHandler(Protocol):
     """Executes one task kind. The worker dispatches through ``dict[TaskKind, TaskHandler]``."""
 
-    kind: TaskKind
+    # Read-only, so implementations may narrow the types (a class attribute ModelRole.memory_low).
+    @property
+    def kind(self) -> TaskKind: ...
+
     # None for tasks without an LLM call (mirror): they get no estimate and run with model None.
-    model_role: ModelRole | None
+    @property
+    def model_role(self) -> ModelRole | None: ...
 
     async def estimate(self, user: str, target: str, model: str) -> TaskEstimate:
         """Called before the task exists: the store only spawns estimated LLM tasks."""

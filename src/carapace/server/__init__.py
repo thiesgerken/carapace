@@ -42,6 +42,8 @@ from ..git.http import GitHttpHandler
 from ..jobs import JobsScheduler, JobsStore
 from ..knowledge import KnowledgeRepoRegistry
 from ..llm import make_model_factory
+from ..memory.handlers import SessionExtractHandler
+from ..memory.models import TaskKind
 from ..memory.service import MemoryService
 from ..models.config import Config
 from ..models.credentials import CredentialValueKind
@@ -484,7 +486,14 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
         session_factory=_session_factory,
         sessions=session_mgr,
         jobs=_jobs_store,
-        handlers={},
+        handlers={
+            TaskKind.session_extract: SessionExtractHandler(
+                config=_config,
+                load_events=session_mgr.load_events,
+                user_config_for=_user_config,
+                model_factory=model_factory,
+            ),
+        },
         user_config_for=_user_config,
         users=_enabled_usernames,
         is_agent_running=_engine.is_agent_running,
