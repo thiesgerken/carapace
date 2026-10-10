@@ -82,8 +82,9 @@ async def run_structured[OutputT: BaseModel](
 ) -> StructuredCall[OutputT]:
     """Run *user_prompt* (built by ``template.user_prompt``) and return the validated output.
 
-    ``max_tokens`` from *model_settings* (see ``capped_model_settings``) also caps the output
-    tokens of the whole run, output retries included; exceeding it raises and fails the task.
+    Exactly one model request: no output retries, so the estimate (one prompt, ``max_tokens`` from
+    *model_settings*) is an honest upper bound. An invalid output fails the task; a manual retry
+    goes through the budget gate again.
     """
     agent = Agent(
         model_factory(model, user=user),
@@ -91,7 +92,7 @@ async def run_structured[OutputT: BaseModel](
         instructions=template.system,
         model_settings=model_settings,
         capabilities=[LlmRequestLogCapability(source="memory")],
-        retries={"output": 2},
+        retries={"output": 0},
     )
     usage = RunUsage()
     started = time.monotonic()
@@ -100,7 +101,9 @@ async def run_structured[OutputT: BaseModel](
     with capture_run_messages() as messages:
         try:
             result = await agent.run(
-                user_prompt, usage=usage, usage_limits=UsageLimits(output_tokens_limit=model_settings["max_tokens"])
+                user_prompt,
+                usage=usage,
+                usage_limits=UsageLimits(request_limit=1, output_tokens_limit=model_settings["max_tokens"]),
             )
         except AgentRunError as exc:
             raise LlmCallError(str(exc), _call_usage(model, usage, messages, started)) from exc

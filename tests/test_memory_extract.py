@@ -155,7 +155,7 @@ async def test_exceeded_output_cap_fails_with_billed_usage() -> None:
     assert isinstance(failed.value.__cause__, LlmCallError)
 
 
-async def test_rejected_outputs_count_every_billed_attempt() -> None:
+async def test_rejected_output_fails_after_one_billed_call() -> None:
     invalid = {**EXTRACTION, "facts": [{**EXTRACTION["facts"][0], "subject": None}]}  # social fact without subject
     calls = 0
 
@@ -178,10 +178,10 @@ async def test_rejected_outputs_count_every_billed_attempt() -> None:
     with pytest.raises(TaskRunError) as failed:
         await handler.run(_task(), MODEL)
 
-    assert calls == 3  # first attempt plus two output retries
+    assert calls == 1  # no output retries: the estimate covers exactly one call
     provenance = failed.value.provenance
-    assert (provenance.input_tokens, provenance.output_tokens) == (3000, 300)
-    assert provenance.cost_usd is not None and provenance.cost_usd >= Decimal("0.03")
+    assert (provenance.input_tokens, provenance.output_tokens) == (1000, 100)
+    assert provenance.cost_usd is not None and provenance.cost_usd >= Decimal("0.01")
 
 
 async def test_run_requires_a_model() -> None:
