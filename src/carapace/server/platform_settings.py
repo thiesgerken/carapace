@@ -37,10 +37,12 @@ class PlatformDefaultModels(PlatformSettingsModel):
     sentinel: str
     title: str
     compaction: str | None = None  # None -> fall back to the title model
+    memory_low: str | None = None  # None -> compaction model, then title model
+    memory_high: str | None = None  # None -> agent model
 
-    @field_validator("compaction", mode="before")
+    @field_validator("compaction", "memory_low", "memory_high", mode="before")
     @classmethod
-    def _normalize_compaction(cls, value: str | None) -> str | None:
+    def _normalize_optional_model(cls, value: str | None) -> str | None:
         if value is None:
             return None
         normalized = value.strip()
@@ -191,6 +193,8 @@ def _response() -> PlatformSettingsResponse:
                 sentinel=server._config.agent.sentinel_model,
                 title=server._config.agent.title_model,
                 compaction=server._config.agent.compaction_model,
+                memory_low=server._config.agent.memory_low_model,
+                memory_high=server._config.agent.memory_high_model,
             ),
             default_budget=server._config.agent.default_session_budget,
             compaction=PlatformCompaction.model_validate(server._config.agent.compaction.model_dump(mode="json")),
@@ -257,6 +261,8 @@ def _agent_config_from_patch(body: PlatformSettingsPatch, existing_agent: AgentC
         sentinel_model=body.default_models.sentinel,
         title_model=body.default_models.title,
         compaction_model=body.default_models.compaction,
+        memory_low_model=body.default_models.memory_low,
+        memory_high_model=body.default_models.memory_high,
         compaction=CompactionConfig(
             keep_turns=body.compaction.keep_turns,
             verbatim_tool_turns=body.compaction.verbatim_tool_turns,

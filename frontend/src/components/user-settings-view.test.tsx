@@ -93,3 +93,28 @@ test("buildUserSettingsPatch omits unchanged credentials when file backends are 
   assert.equal(patch.default_budget?.tool_calls, 4);
   assert.equal(Object.hasOwn(patch, "credentials"), false);
 });
+
+test("buildUserSettingsPatch keeps default models the view does not edit", () => {
+  const settings = userSettingsResponse({ tool_calls: 3 });
+  settings.settings.default_models = {
+    agent: "anthropic:default",
+    compaction: "anthropic:title",
+    memory_low: "anthropic:title",
+  };
+  const draft: Parameters<typeof buildUserSettingsPatch>[0] = {
+    agentName: "",
+    agentIcon: "",
+    defaultModels: settings.settings.default_models,
+    budget: { input_tokens: "", output_tokens: "", cost_usd: "", tool_calls: "3" },
+    matrix: settings.settings.matrix,
+    matrixPassword: "",
+    credentials: [],
+    git: settings.settings.git,
+    gitToken: "",
+  };
+
+  const patch = buildUserSettingsPatch(draft, settings, (key) => key);
+
+  assert.equal(patch.default_models?.compaction, "anthropic:title");
+  assert.equal(patch.default_models?.memory_low, "anthropic:title");
+});

@@ -8,6 +8,7 @@ import {
   getPlatformSettings,
   updatePlatformSettings,
   type AvailableModelInfo,
+  type PlatformDefaultModelsSettings,
   type PlatformModelEntryInfo,
   type PlatformModelEntryPatchInput,
   type PlatformSettingsPatchInput,
@@ -38,12 +39,8 @@ interface ModelDraft {
 }
 
 interface PlatformDraft {
-  defaultModels: {
-    agent: string;
-    sentinel: string;
-    title: string;
-    compaction: string;
-  };
+  // Keeps every stored default model so the ones this view does not edit pass through on save.
+  defaultModels: Omit<PlatformDefaultModelsSettings, "compaction"> & { compaction: string };
   budget: Record<keyof Required<SessionBudgetSettings>, string>;
   compaction: {
     keepTurns: string;
@@ -255,12 +252,7 @@ function modelDraftFromSettings(model: PlatformModelEntryInfo): ModelDraft {
 function draftFromSettings(response: PlatformSettingsResponseInfo): PlatformDraft {
   const { default_models, compaction } = response.settings;
   return {
-    defaultModels: {
-      agent: default_models.agent,
-      sentinel: default_models.sentinel,
-      title: default_models.title,
-      compaction: default_models.compaction ?? "",
-    },
+    defaultModels: { ...default_models, compaction: default_models.compaction ?? "" },
     budget: budgetDraftFromSettings(response.settings.default_budget),
     compaction: {
       keepTurns: String(compaction.keep_turns),
@@ -382,6 +374,7 @@ export function buildPlatformSettingsPatch(draft: PlatformDraft, t: Translate): 
   if (compactionModel) checkDefault(t("fields.compaction"), compactionModel);
   return {
     default_models: {
+      ...draft.defaultModels,
       agent: draft.defaultModels.agent.trim(),
       sentinel: draft.defaultModels.sentinel.trim(),
       title: draft.defaultModels.title.trim(),

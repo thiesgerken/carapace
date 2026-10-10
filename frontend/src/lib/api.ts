@@ -1013,6 +1013,9 @@ export interface UserDefaultModelsSettings {
   agent?: string | null;
   sentinel?: string | null;
   title?: string | null;
+  compaction?: string | null;
+  memory_low?: string | null;
+  memory_high?: string | null;
 }
 
 export interface MatrixSettingsInfo {
@@ -1116,13 +1119,17 @@ export interface PlatformCompactionSettings {
   tool_output_floor_tokens: number;
 }
 
+export interface PlatformDefaultModelsSettings {
+  agent: string;
+  sentinel: string;
+  title: string;
+  compaction: string | null;
+  memory_low: string | null;
+  memory_high: string | null;
+}
+
 export interface PlatformSettingsInfo {
-  default_models: {
-    agent: string;
-    sentinel: string;
-    title: string;
-    compaction: string | null;
-  };
+  default_models: PlatformDefaultModelsSettings;
   default_budget: SessionBudgetSettings;
   compaction: PlatformCompactionSettings;
   available_models: PlatformModelEntryInfo[];
@@ -1153,12 +1160,7 @@ export interface PlatformModelEntryPatchInput {
 }
 
 export interface PlatformSettingsPatchInput {
-  default_models: {
-    agent: string;
-    sentinel: string;
-    title: string;
-    compaction: string | null;
-  };
+  default_models: PlatformDefaultModelsSettings;
   default_budget: SessionBudgetSettings;
   compaction: PlatformCompactionSettings;
   available_models: PlatformModelEntryPatchInput[];
@@ -1192,6 +1194,9 @@ function decodeDefaultModels(raw: unknown): UserDefaultModelsSettings {
     agent: readString(raw, "agent") ?? null,
     sentinel: readString(raw, "sentinel") ?? null,
     title: readString(raw, "title") ?? null,
+    compaction: readString(raw, "compaction") ?? null,
+    memory_low: readString(raw, "memory_low") ?? null,
+    memory_high: readString(raw, "memory_high") ?? null,
   };
 }
 
@@ -1349,6 +1354,8 @@ function decodePlatformSettingsResponse(
         sentinel: readString(defaults, "sentinel") ?? "",
         title: readString(defaults, "title") ?? "",
         compaction: readString(defaults, "compaction") ?? null,
+        memory_low: readString(defaults, "memory_low") ?? null,
+        memory_high: readString(defaults, "memory_high") ?? null,
       },
       default_budget: decodeBudget(settings.default_budget),
       compaction: decodeCompaction(settings.compaction),

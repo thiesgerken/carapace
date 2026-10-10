@@ -42,6 +42,7 @@ from ..git.http import GitHttpHandler
 from ..jobs import JobsScheduler, JobsStore
 from ..knowledge import KnowledgeRepoRegistry
 from ..llm import make_model_factory
+from ..memory.service import MemoryService
 from ..models.config import Config
 from ..models.credentials import CredentialValueKind
 from ..models.user import UserConfig
@@ -65,6 +66,7 @@ from .history import router as history_router
 from .jobs import _jobs_scheduler_loop
 from .jobs import router as jobs_router
 from .knowledge import router as knowledge_router
+from .memory import router as memory_router
 from .notifications import _set_notification_presence as _set_notification_presence
 from .notifications import router as notifications_router
 from .platform_settings import router as platform_settings_router
@@ -104,6 +106,7 @@ _auth_store: AuthStore
 _api_key_store: ApiKeyStore
 _platform_store: PlatformSettingsStore
 _codex_accounts: CodexAccounts
+_memory_service: MemoryService
 
 
 def _enabled_user_git_configs(auth_store: AuthStore) -> dict[str, KnowledgeGitConfig]:
@@ -192,6 +195,13 @@ def _create_sandbox_runtime(config: Config, data_dir: Path) -> ContainerRuntime:
         host_data_dir=Path(host_data_dir_env) if host_data_dir_env else None,
         network_name=config.sandbox.network_name,
     )
+
+
+def _user_config(username: str) -> UserConfig:
+    user = _auth_store.get_user(username)
+    if user is None:
+        raise KeyError(username)
+    return user.config
 
 
 def _credential_config_fingerprint(username: str) -> str:
@@ -316,7 +326,8 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
         _auth_store, \
         _api_key_store, \
         _platform_store, \
-        _codex_accounts
+        _codex_accounts, \
+        _memory_service
 
     # 1. Build config from env (CARAPACE_DATA_DIR + CARAPACE_* subsections; no config file)
     _config = build_config()
@@ -464,6 +475,12 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
     )
     _jobs_store = JobsStore(_session_factory)
     _jobs_scheduler = JobsScheduler(_jobs_store)
+    # ponytail: constructed but not started; the worker loop (service.run) lands in Phase 1.
+    _memory_service = MemoryService(
+        config=_config,
+        session_factory=_session_factory,
+        user_config_for=_user_config,
+    )
 
     # Git HTTP handler — serves the knowledge repo on the sandbox API
     _git_handler = GitHttpHandler(
@@ -742,6 +759,7 @@ router.include_router(sessions_router)
 router.include_router(history_router)
 router.include_router(jobs_router)
 router.include_router(knowledge_router)
+router.include_router(memory_router)
 router.include_router(session_sandbox_router)
 router.include_router(notifications_router)
 router.include_router(platform_settings_router)
