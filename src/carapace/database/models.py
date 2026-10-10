@@ -257,6 +257,12 @@ class MemoryTaskRow(Base):
     attempts: Mapped[int] = mapped_column(Integer, default=0)
     estimate: Mapped[TaskEstimate | None] = mapped_column(PydanticJson(TaskEstimate), nullable=True)
     provenance: Mapped[Provenance | None] = mapped_column(PydanticJson(Provenance), nullable=True)
+    # What every attempt so far was billed, summed; a retry never resets it. Cost in integer
+    # micro-USD because SQLite stores NUMERIC as float. billed_at is the latest billed finish.
+    billed_input_tokens: Mapped[int] = mapped_column(BigInteger, default=0)
+    billed_output_tokens: Mapped[int] = mapped_column(BigInteger, default=0)
+    billed_cost_micro_usd: Mapped[int] = mapped_column(BigInteger, default=0)
+    billed_at: Mapped[datetime | None] = mapped_column(UtcDateTime, nullable=True, index=True)
     # Produced extraction or digest id (table depends on kind).
     result_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)

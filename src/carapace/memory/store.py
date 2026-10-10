@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
+from decimal import ROUND_HALF_UP, Decimal
 
 from sqlalchemy import ColumnElement, case, delete, func, or_, select, update
 from sqlalchemy.orm import Session
@@ -17,7 +18,7 @@ from ..database.models import (
     MemoryTaskRow,
     SessionRow,
 )
-from .budget import Spend, spend_of
+from .budget import Spend
 from .models import (
     OPEN_TASK_STATUSES,
     BlockedReason,
@@ -122,7 +123,7 @@ class MemoryStore:
                 return None
             if row is None:
                 row = MemoryTaskRow(
-                    user=user, kind=kind.value, target=target, status=TaskStatus.pending.value, attempts=0
+                    user=user, kind=kind.value, target=target, status=TaskStatus.pending.value, **_UNBILLED
                 )
                 db.add(row)
             for name, value in values.items():
@@ -310,6 +311,8 @@ class MemoryStore:
                 case MirrorResult():
                     result_id = None
             row.status = TaskStatus.done.value
+            if outcome.provenance is not None:
+                _add_billing(row, outcome.provenance, now)
             row.provenance = outcome.provenance
             row.result_id = result_id
             row.error = None
@@ -321,36 +324,47 @@ class MemoryStore:
     def record_failure(self, task_id: int, error: str, now: datetime, provenance: Provenance | None = None) -> bool:
         """running -> failed with the error kept. False when the task is no longer running.
 
-        *provenance* carries the usage of a call that failed after it was billed; it counts
-        towards spend like a finished call.
+        *provenance* carries the usage of a call that failed after it was billed; it adds to the
+        task's billed totals like a finished call.
         """
         with self._session_factory.begin() as db:
-            result = db.execute(
-                update(MemoryTaskRow)
-                .where(MemoryTaskRow.id == task_id, MemoryTaskRow.status == TaskStatus.running)
-                .values(status=TaskStatus.failed.value, error=error, finished_at=now, provenance=provenance)
-            )
-            return result.rowcount == 1  # type: ignore[missing-attribute]
+            row = db.get(MemoryTaskRow, task_id, with_for_update=True)
+            if row is None or row.status != TaskStatus.running:
+                return False
+            row.status = TaskStatus.failed.value
+            row.error = error
+            row.finished_at = now
+            if provenance is not None:
+                _add_billing(row, provenance, now)
+                row.provenance = provenance
+            return True
 
     def spend(self, user: str, since: datetime) -> Spend:
-        """Committed spend in a window: billed calls finished since *since*, plus every running task
-        at its estimate, a reservation that keeps parallel claims from overshooting a limit."""
-        # ponytail: sums JSON in Python (a month is a few thousand rows at most); move cost and
-        # tokens into columns if the budget check ever shows up in profiles.
+        """Committed spend in a window: what tasks billed since *since* over all their attempts, plus
+        every running task at its estimate, a reservation that keeps parallel claims from
+        overshooting a limit.
+
+        ponytail: a task's billed totals count in the window of its latest billed finish, so a
+        failure yesterday plus a retry today lands entirely in today. Per-attempt rows if exact
+        windows ever matter.
+        """
         with self._session_factory() as db:
-            provenances = db.scalars(
-                select(MemoryTaskRow.provenance).where(
-                    MemoryTaskRow.user == user,
-                    MemoryTaskRow.status.in_([TaskStatus.done.value, TaskStatus.failed.value]),
-                    MemoryTaskRow.finished_at >= since,
-                )
-            ).all()
+            tokens, micro_usd = db.execute(
+                select(
+                    func.coalesce(func.sum(MemoryTaskRow.billed_input_tokens), 0),
+                    func.coalesce(func.sum(MemoryTaskRow.billed_cost_micro_usd), 0),
+                ).where(MemoryTaskRow.user == user, MemoryTaskRow.billed_at >= since)
+            ).one()
             reservations = db.scalars(
                 select(MemoryTaskRow.estimate).where(
                     MemoryTaskRow.user == user, MemoryTaskRow.status == TaskStatus.running
                 )
             ).all()
-        return spend_of((p for p in provenances if p is not None), (e for e in reservations if e is not None))
+        total = Spend(Decimal(micro_usd) / _MICRO, tokens)
+        for estimate in reservations:
+            if estimate is not None:
+                total = total.plus(estimate)
+        return total
 
     def status_counts(self, user: str) -> tuple[dict[TaskStatus, int], int]:
         """Task count per status, and how many queued tasks the budget holds back."""
@@ -496,6 +510,18 @@ class MemoryStore:
                 .order_by(MemoryDigestRow.id.desc())
             ).all()
         return [DigestRecord.model_validate(row, from_attributes=True) for row in rows]
+
+
+_MICRO = Decimal(1_000_000)
+_UNBILLED = {"attempts": 0, "billed_input_tokens": 0, "billed_output_tokens": 0, "billed_cost_micro_usd": 0}
+
+
+def _add_billing(row: MemoryTaskRow, provenance: Provenance, now: datetime) -> None:
+    row.billed_input_tokens += provenance.input_tokens
+    row.billed_output_tokens += provenance.output_tokens
+    if provenance.cost_usd is not None:
+        row.billed_cost_micro_usd += int((provenance.cost_usd * _MICRO).to_integral_value(ROUND_HALF_UP))
+    row.billed_at = now
 
 
 def _task(row: MemoryTaskRow) -> MemoryTask:
