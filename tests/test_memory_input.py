@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import hashlib
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
 
-from carapace.memory.input import INPUT_FORMAT_VERSION, clamp, render_extraction_input
+from carapace.memory.input import INPUT_FORMAT_VERSION, clamp, first_user_message_at, render_extraction_input
 from carapace.usage import count_text_tokens
 
 
@@ -173,3 +174,18 @@ def test_no_user_message_renders_empty() -> None:
 
     assert result.text == ""
     assert result.token_estimate == 0
+
+
+def test_first_user_message_at_skips_slash_commands() -> None:
+    events = [
+        _user("/help", timestamp="2026-09-01T08:00:00+00:00"),
+        {"role": "command", "command": "help", "data": {}},
+        _user("/etc/hosts is broken", timestamp="2026-09-02T09:30:00+00:00"),
+        _user("later", timestamp="2026-09-03T10:00:00+00:00"),
+    ]
+
+    assert first_user_message_at(events) == datetime(2026, 9, 2, 9, 30, tzinfo=UTC)
+
+
+def test_first_user_message_at_without_user_message() -> None:
+    assert first_user_message_at([_user("/help"), {"role": "command", "command": "help", "data": {}}]) is None

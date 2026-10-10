@@ -86,7 +86,7 @@ test("outdated reasons only narrow the outdated state", () => {
   assert.deepEqual(toSessionFilter(form), {
     week: "2026-W36",
     state: ["outdated"],
-    outdated_reason: ["prompt_version"],
+    outdated_reason: "prompt_version",
     task_status: null,
     model: null,
     channel: null,

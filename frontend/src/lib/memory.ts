@@ -117,7 +117,7 @@ export function toSessionFilter(form: SessionFilterForm): MemorySessionFilter {
   return {
     week: form.week || null,
     state: form.state ? [form.state] : null,
-    outdated_reason: form.state === "outdated" && form.outdatedReason ? [form.outdatedReason] : null,
+    outdated_reason: form.state === "outdated" && form.outdatedReason ? form.outdatedReason : null,
     task_status: form.taskStatus ? [form.taskStatus] : null,
     model: form.model || null,
     channel: form.channel || null,

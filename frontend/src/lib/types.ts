@@ -606,6 +606,7 @@ export type ChatMessage =
       toolId?: string;
       parentToolId?: string;
       compaction?: CompactionAnnotation;
+      eventIndex?: number;
       children?: Array<{
         kind: "tool_call";
         tool: string;
@@ -840,10 +841,9 @@ export interface MemoryTaskIdsRequest {
   ids: number[];
 }
 
-/** Body of POST /tasks/spawn. */
+/** Body of POST /tasks/spawn: explicit targets, or (session_extract only) every session matching a filter. */
 export interface MemoryTaskSpawnRequest {
   kind: MemoryTaskKind;
-  /** Exactly one of targets or filter (session_extract only). */
   targets?: string[] | null;
   filter?: MemorySessionFilter | null;
   model_override?: string | null;
@@ -904,16 +904,16 @@ export interface MemorySessionFilter {
   task_status?: MemoryTaskStatus[] | null;
   model?: string | null;
   channel?: string | null;
-  /** Narrows state = outdated to these reasons. */
-  outdated_reason?: MemoryOutdatedReason[] | null;
+  /** Matched against the current extraction, for bulk respawns. */
+  outdated_reason?: MemoryOutdatedReason | null;
 }
 
 export interface MemorySessionRow {
   session_id: string;
   title: string | null;
   channel_type: string;
-  /** Session creation time. */
   created_at: string;
+  /** From the current extraction or the open task; null until first spawned. */
   week_key: string | null;
   extraction: MemoryExtractionSummary | null;
   task: MemoryTaskRef | null;
