@@ -1,6 +1,27 @@
 # CHANGELOG
 
 
+## v0.158.9 (2026-10-10)
+
+
+### ⬆️ Dependencies
+
+
+- ⬆️ chore: upgrade katex to 0.19.0
+  ([`2e79142`](https://github.com/thiesgerken/carapace/commit/2e79142b64826ea75e55c72cdfc1048176e7cd94))
+
+  Co-authored-by: renovate[bot] <29139614+renovate[bot]@users.noreply.github.com>
+
+- ⬆️ chore: upgrade all routine dependency updates
+  ([`8b64d52`](https://github.com/thiesgerken/carapace/commit/8b64d5291878d1cc053701a5ba9204943d26f6ca))
+
+  Co-authored-by: renovate[bot] <29139614+renovate[bot]@users.noreply.github.com>
+
+- ⬆️ chore: upgrade astral-sh/setup-uv action to v10.3.0
+  ([`50126ec`](https://github.com/thiesgerken/carapace/commit/50126ec49cca4532bd6f044c95cddf77f2e24b76))
+
+  Co-authored-by: renovate[bot] <29139614+renovate[bot]@users.noreply.github.com>
+
 ## v0.158.8 (2026-10-10)
 
 
