@@ -239,6 +239,46 @@
                 "observed": "observed"
             },
             "provenance": "Provenance"
+        },
+        "timeline": {
+            "tree": "Periods",
+            "empty": "No periods yet. Periods appear once sessions are spawned for memory.",
+            "pickPeriod": "Select a week or month.",
+            "unknownPeriod": "This period has no sessions.",
+            "badges": {
+                "current": "current",
+                "stale": "stale",
+                "notRun": "not run"
+            },
+            "staleReasons": {
+                "sources": "sources changed",
+                "prompt_version": "prompt changed",
+                "model": "model changed",
+                "input_format_version": "input format changed"
+            },
+            "weekTitle": "Week {key}",
+            "regenerate": "Regenerate",
+            "generate": "Generate",
+            "coverageSessions": "{covered}/{total} sessions",
+            "coverageWeeks": "{covered}/{total} weeks",
+            "task": "task {status}",
+            "prompt": "prompt {version}",
+            "noDigest": "No digest yet.",
+            "summary": "Summary",
+            "onMyMind": "On my mind",
+            "highlights": "Highlights",
+            "openLoops": "Open loops",
+            "learned": "Learned",
+            "factCategories": {
+                "user": "You",
+                "social": "People",
+                "surroundings": "Surroundings"
+            },
+            "sourceSessions": "{count, plural, one {Session (#)} other {Sessions (#)}}",
+            "sourceWeeks": "{count, plural, one {Week (#)} other {Weeks (#)}}",
+            "notExtracted": "not extracted",
+            "history": "{count, plural, one {Earlier version (#)} other {Earlier versions (#)}}",
+            "historyCoverage": "{count, plural, one {Built from # source} other {Built from # sources}}"
         }
     },
     "account": {

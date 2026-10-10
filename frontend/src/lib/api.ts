@@ -4,7 +4,10 @@ import type {
   JobDefinition,
   JobRunResult,
   JobsFile,
+  MemoryDigestLevel,
   MemoryEstimateTotal,
+  MemoryPeriodDetail,
+  MemoryPeriodTree,
   MemorySessionDetail,
   MemorySessionFilter,
   MemorySessionListResponse,
@@ -1856,4 +1859,18 @@ export async function getMemorySession(server: string, sessionId: string): Promi
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(await readErrorMessage(res, "Failed to load session memory"));
   return (await res.json()) as MemorySessionDetail;
+}
+
+export async function getMemoryPeriods(server: string): Promise<MemoryPeriodTree> {
+  const res = await fetch(`${server}/api/memory/periods`);
+  if (!res.ok) throw new Error(await readErrorMessage(res, "Failed to load memory periods"));
+  return (await res.json()) as MemoryPeriodTree;
+}
+
+/** Null when the key is invalid or the period has no sessions. */
+export async function getMemoryPeriod(server: string, level: MemoryDigestLevel, key: string): Promise<MemoryPeriodDetail | null> {
+  const res = await fetch(`${server}/api/memory/periods/${level}/${encodeURIComponent(key)}`);
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(await readErrorMessage(res, "Failed to load memory period"));
+  return (await res.json()) as MemoryPeriodDetail;
 }
