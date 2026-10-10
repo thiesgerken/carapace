@@ -245,12 +245,24 @@ class MemoryTaskRow(Base):
     # Session id, week key (2026-W36), month key (2026-09) or the username (mirror).
     target: Mapped[str] = mapped_column(String(256))
     status: Mapped[str] = mapped_column(String(16), index=True)
+    # Period the target falls into, for period filters: the session's week (first user message)
+    # for extractions, the target itself for digests. NULL for mirror (and month digests' week).
+    week_key: Mapped[str | None] = mapped_column(String(16), nullable=True, index=True)
+    month_key: Mapped[str | None] = mapped_column(String(16), nullable=True, index=True)
+    # Model of the latest estimate, replaced by the model that actually ran on completion.
+    model: Mapped[str | None] = mapped_column(String(256), nullable=True)
     blocked_reason: Mapped[str | None] = mapped_column(String(32), nullable=True)
     spawned_by: Mapped[str] = mapped_column(String(16))
     model_override: Mapped[str | None] = mapped_column(Text, nullable=True)
     attempts: Mapped[int] = mapped_column(Integer, default=0)
     estimate: Mapped[TaskEstimate | None] = mapped_column(PydanticJson(TaskEstimate), nullable=True)
     provenance: Mapped[Provenance | None] = mapped_column(PydanticJson(Provenance), nullable=True)
+    # What every attempt so far was billed, summed; a retry never resets it. Cost in integer
+    # micro-USD because SQLite stores NUMERIC as float. billed_at is the latest billed finish.
+    billed_input_tokens: Mapped[int] = mapped_column(BigInteger, default=0)
+    billed_output_tokens: Mapped[int] = mapped_column(BigInteger, default=0)
+    billed_cost_micro_usd: Mapped[int] = mapped_column(BigInteger, default=0)
+    billed_at: Mapped[datetime | None] = mapped_column(UtcDateTime, nullable=True, index=True)
     # Produced extraction or digest id (table depends on kind).
     result_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
