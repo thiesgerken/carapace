@@ -5,12 +5,17 @@ import type {
   JobRunResult,
   JobsFile,
   MemoryEstimateTotal,
+  MemorySessionDetail,
+  MemorySessionFilter,
+  MemorySessionListResponse,
   MemoryStatus,
   MemoryTaskCountResponse,
   MemoryTaskFilter,
   MemoryTaskListResponse,
   MemoryTaskRunRequest,
   MemoryTaskSelection,
+  MemoryTaskSpawnRequest,
+  MemoryTaskSpawnResponse,
   NotificationPreferencesPatch,
   NotificationSubscriptionCreateRequest,
   NotificationSubscriptionRecord,
@@ -1817,4 +1822,38 @@ export function cancelMemoryTasks(server: string, selection: MemoryTaskSelection
 
 export function retryMemoryTasks(server: string, ids: number[]): Promise<MemoryTaskCountResponse> {
   return postMemory(server, "/tasks/retry", { ids }, "Failed to retry memory tasks");
+}
+
+export function spawnMemoryTasks(server: string, body: MemoryTaskSpawnRequest): Promise<MemoryTaskSpawnResponse> {
+  return postMemory(server, "/tasks/spawn", body, "Failed to spawn memory tasks");
+}
+
+function memorySessionQuery(filter: MemorySessionFilter, cursor: string | null): string {
+  const params = new URLSearchParams();
+  if (filter.week) params.set("week", filter.week);
+  for (const state of filter.state ?? []) params.append("state", state);
+  for (const status of filter.task_status ?? []) params.append("task_status", status);
+  if (filter.model) params.set("model", filter.model);
+  if (filter.channel) params.set("channel", filter.channel);
+  if (filter.outdated_reason) params.set("outdated_reason", filter.outdated_reason);
+  if (cursor) params.set("cursor", cursor);
+  return params.toString();
+}
+
+export async function listMemorySessions(
+  server: string,
+  filter: MemorySessionFilter,
+  cursor: string | null = null,
+): Promise<MemorySessionListResponse> {
+  const res = await fetch(`${server}/api/memory/sessions?${memorySessionQuery(filter, cursor)}`);
+  if (!res.ok) throw new Error(await readErrorMessage(res, "Failed to list memory sessions"));
+  return (await res.json()) as MemorySessionListResponse;
+}
+
+/** Null when the session is not eligible for memory (private, excluded job, or unknown). */
+export async function getMemorySession(server: string, sessionId: string): Promise<MemorySessionDetail | null> {
+  const res = await fetch(`${server}/api/memory/sessions/${encodeURIComponent(sessionId)}`);
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(await readErrorMessage(res, "Failed to load session memory"));
+  return (await res.json()) as MemorySessionDetail;
 }
