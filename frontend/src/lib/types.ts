@@ -845,10 +845,11 @@ export interface MemoryTaskIdsRequest {
   ids: number[];
 }
 
-/** Body of POST /tasks/spawn. */
+/** Body of POST /tasks/spawn: explicit targets, or (session_extract only) every session matching a filter. */
 export interface MemoryTaskSpawnRequest {
   kind: MemoryTaskKind;
-  targets: string[];
+  targets?: string[] | null;
+  filter?: MemorySessionFilter | null;
   model_override?: string | null;
 }
 
@@ -907,14 +908,16 @@ export interface MemorySessionFilter {
   task_status?: MemoryTaskStatus[] | null;
   model?: string | null;
   channel?: string | null;
+  /** Matched against the current extraction, for bulk respawns. */
+  outdated_reason?: MemoryOutdatedReason | null;
 }
 
 export interface MemorySessionRow {
   session_id: string;
   title: string | null;
   channel_type: string;
-  /** First user message; defines the session's period. */
-  started_at: string | null;
+  created_at: string;
+  /** From the current extraction or the open task; null until first spawned. */
   week_key: string | null;
   extraction: MemoryExtractionSummary | null;
   task: MemoryTaskRef | null;

@@ -57,8 +57,104 @@
             "facts": "Fakten",
             "tasks": "Aufgaben"
         },
-        "statusPlaceholder": "Hier erscheinen Auto-Modus, Budget und Warteschlange.",
-        "comingSoon": "Hier gibt es noch nichts."
+        "comingSoon": "Hier gibt es noch nichts.",
+        "status": {
+            "loading": "Gedächtnis-Status wird geladen…",
+            "autoModeOn": "Auto-Modus an",
+            "autoModeOff": "Auto-Modus aus",
+            "autoModeHint": "Auto-Modus und Budgets in den Einstellungen ändern",
+            "today": "Heute",
+            "tokens": "Tokens",
+            "noLimit": "kein Limit",
+            "queue": "Warteschlange",
+            "blocked": "{count} vom Budget zurückgehalten"
+        },
+        "taskStatuses": {
+            "pending": "ausstehend",
+            "queued": "eingereiht",
+            "running": "läuft",
+            "done": "fertig",
+            "failed": "fehlgeschlagen",
+            "cancelled": "abgebrochen"
+        },
+        "tasks": {
+            "filters": {
+                "status": "Status",
+                "anyStatus": "Alle Status",
+                "kind": "Art",
+                "anyKind": "Alle Arten",
+                "month": "Monat",
+                "model": "Modell",
+                "anyModel": "Alle Modelle"
+            },
+            "matching": "{count} Treffer",
+            "estimate": "ca. {cost}",
+            "dismiss": "Ausblenden",
+            "pickPage": "Alle Aufgaben dieser Seite auswählen",
+            "pickTask": "{target} auswählen",
+            "pickMatching": "Alle {count} passenden Aufgaben auswählen",
+            "pickedMatching": "Alle {count} passenden Aufgaben sind ausgewählt.",
+            "clearPick": "Auswahl aufheben",
+            "columns": {
+                "kind": "Art",
+                "target": "Ziel",
+                "status": "Status",
+                "model": "Modell",
+                "version": "Vers.",
+                "cost": "Kosten/Schätz.",
+                "actions": "Aktionen"
+            },
+            "empty": "Keine Aufgaben passen zu diesen Filtern.",
+            "blockedBudget": "⏸ Budget",
+            "retry": "Erneut versuchen",
+            "loadMore": "Mehr laden",
+            "runNewest": "Neueste {count} ausführen",
+            "runPicked": "Auswahl ausführen ({count})",
+            "cancelPicked": "Auswahl abbrechen ({count})",
+            "queued": "{count, plural, one {# Aufgabe eingereiht.} other {# Aufgaben eingereiht.}}",
+            "cancelled": "{count, plural, one {# Aufgabe abgebrochen.} other {# Aufgaben abgebrochen.}}",
+            "retried": "{count, plural, one {# Aufgabe wird erneut versucht.} other {# Aufgaben werden erneut versucht.}}",
+            "detail": {
+                "id": "Aufgabe",
+                "spawnedBy": "Erzeugt",
+                "spawnedByValue": {
+                    "auto": "automatisch",
+                    "manual": "manuell"
+                },
+                "attempts": "Versuche",
+                "created": "Erstellt",
+                "queuedAt": "Eingereiht",
+                "started": "Gestartet",
+                "finished": "Beendet",
+                "model": "Modell",
+                "prompt": "Prompt-Version",
+                "inputFormat": "Eingabeformat",
+                "carapace": "carapace",
+                "inputHash": "Eingabe-Hash",
+                "usage": "Verbrauch",
+                "cost": "Kosten",
+                "unpriced": "kein Preis",
+                "duration": "Dauer",
+                "estimate": "Schätzung",
+                "openResult": "Ergebnis öffnen"
+            }
+        },
+        "run": {
+            "title": "Gedächtnis-Aufgaben ausführen",
+            "estimating": "Wird geschätzt…",
+            "tasks": "Aufgaben",
+            "inputTokens": "Eingabe-Tokens",
+            "tokens": "Tokens",
+            "cost": "Geschätzte Kosten",
+            "unpriced": "{count, plural, one {# Aufgabe ohne Preis} other {# Aufgaben ohne Preis}}",
+            "remaining": "Restbudget",
+            "noLimit": "kein Limit",
+            "overBudget": "Das übersteigt das Restbudget. Aufgaben darüber hinaus warten in der Warteschlange, bis das Budgetfenster zurückgesetzt wird.",
+            "model": "Modell",
+            "roleDefault": "Standard der Rolle",
+            "cancel": "Abbrechen",
+            "confirm": "Ausführen"
+        }
     },
     "account": {
         "menu": "Kontomenü",

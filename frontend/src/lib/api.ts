@@ -4,6 +4,13 @@ import type {
   JobDefinition,
   JobRunResult,
   JobsFile,
+  MemoryEstimateTotal,
+  MemoryStatus,
+  MemoryTaskCountResponse,
+  MemoryTaskFilter,
+  MemoryTaskListResponse,
+  MemoryTaskRunRequest,
+  MemoryTaskSelection,
   NotificationPreferencesPatch,
   NotificationSubscriptionCreateRequest,
   NotificationSubscriptionRecord,
@@ -1758,4 +1765,56 @@ export function knowledgeRawUrl(
 ): string {
   const query = opts.download ? "?raw=1&download=1" : "?raw=1";
   return `${server}${knowledgeBrowsePath(path)}${query}`;
+}
+
+function memoryTaskQuery(filter: MemoryTaskFilter, cursor: string | null): string {
+  const params = new URLSearchParams();
+  for (const status of filter.status ?? []) params.append("status", status);
+  for (const kind of filter.kind ?? []) params.append("kind", kind);
+  if (filter.period) params.set("period", filter.period);
+  if (filter.model) params.set("model", filter.model);
+  if (cursor) params.set("cursor", cursor);
+  return params.toString();
+}
+
+async function postMemory<T>(server: string, path: string, body: unknown, failure: string): Promise<T> {
+  const res = await fetch(`${server}/api/memory${path}`, {
+    method: "POST",
+    headers: headers(""),
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(await readErrorMessage(res, failure));
+  return (await res.json()) as T;
+}
+
+export async function getMemoryStatus(server: string): Promise<MemoryStatus> {
+  const res = await fetch(`${server}/api/memory/status`);
+  if (!res.ok) throw new Error(await readErrorMessage(res, "Failed to load memory status"));
+  return (await res.json()) as MemoryStatus;
+}
+
+export async function listMemoryTasks(
+  server: string,
+  filter: MemoryTaskFilter,
+  cursor: string | null = null,
+): Promise<MemoryTaskListResponse> {
+  const res = await fetch(`${server}/api/memory/tasks?${memoryTaskQuery(filter, cursor)}`);
+  if (!res.ok) throw new Error(await readErrorMessage(res, "Failed to list memory tasks"));
+  return (await res.json()) as MemoryTaskListResponse;
+}
+
+export function estimateMemoryTasks(server: string, body: MemoryTaskRunRequest): Promise<MemoryEstimateTotal> {
+  return postMemory(server, "/tasks/estimate", body, "Failed to estimate memory tasks");
+}
+
+export function runMemoryTasks(server: string, body: MemoryTaskRunRequest): Promise<MemoryTaskCountResponse> {
+  return postMemory(server, "/tasks/run", body, "Failed to run memory tasks");
+}
+
+export function cancelMemoryTasks(server: string, selection: MemoryTaskSelection): Promise<MemoryTaskCountResponse> {
+  return postMemory(server, "/tasks/cancel", selection, "Failed to cancel memory tasks");
+}
+
+export function retryMemoryTasks(server: string, ids: number[]): Promise<MemoryTaskCountResponse> {
+  return postMemory(server, "/tasks/retry", { ids }, "Failed to retry memory tasks");
 }
