@@ -1,6 +1,59 @@
 # CHANGELOG
 
 
+## v0.158.8 (2026-10-10)
+
+
+### Other
+
+
+- Merge pull request #302 from thiesgerken/fix/sentinel-full-tool-args
+  ([`59307a0`](https://github.com/thiesgerken/carapace/commit/59307a054b73b0ae1934e044c5bc71c2da0e0c0c))
+
+- Merge pull request #303 from thiesgerken/fix/close-orphaned-approvals
+  ([`f16d6b6`](https://github.com/thiesgerken/carapace/commit/f16d6b629963fedc8991631e3421bf945611a18b))
+
+- ✅ test(session): cover cancel race and approval-free turn end
+  ([`4d4c01b`](https://github.com/thiesgerken/carapace/commit/4d4c01b10ac2433985f179edf43d29ab176cdc72))
+
+  The escalation waiter can consume submit_cancel's signal before the turn finalizes and drop its pending entry without writing a response; the turn-end close must still find the request through the event log.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01BfEEfE6o9yQAj8U8ULL61L
+
+### 🔒 Security
+
+
+- 🔒️ fix(sentinel): evaluate tool calls with untruncated arguments
+  ([`59307a0`](https://github.com/thiesgerken/carapace/commit/59307a054b73b0ae1934e044c5bc71c2da0e0c0c))
+
+- 🔒️ fix(sentinel): evaluate tool calls with untruncated arguments
+  ([`138b9d6`](https://github.com/thiesgerken/carapace/commit/138b9d65bd7daa0e79b7c5b3919c49f183741ab2))
+
+  The EVALUATE line cut every argument to 80 chars, so the sentinel never reviewed anything past ~77 chars of an exec command (and escalated calls it could not fully see). The action log history and the log/UI subject label stay truncated.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01BfEEfE6o9yQAj8U8ULL61L
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix(session): close approval requests no turn can answer anymore
+  ([`f16d6b6`](https://github.com/thiesgerken/carapace/commit/f16d6b629963fedc8991631e3421bf945611a18b))
+
+- 🐛 fix(session): close approval requests no turn can answer anymore
+  ([`b059102`](https://github.com/thiesgerken/carapace/commit/b059102a50440e4c13d93add5d9232014049f990))
+
+  An approval request (tool, domain access, git push, credential) stayed actionable in the UI forever once the turn that raised it died: a cancel, a failure, or a server restart left no response event, and answers went into a queue nobody read.
+
+  Turns now deny their still-open requests with a system response event before writing their terminal assistant event, and release blocked escalation callbacks. Server startup closes requests left behind by the previous process, using a SQL prefilter to find candidate sessions.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01BfEEfE6o9yQAj8U8ULL61L
+
 ## v0.158.7 (2026-10-10)
 
 
