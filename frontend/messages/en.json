@@ -57,7 +57,6 @@
             "facts": "Facts",
             "tasks": "Tasks"
         },
-        "comingSoon": "Nothing here yet.",
         "status": {
             "loading": "Loading memory status…",
             "autoModeOn": "Auto mode on",
@@ -280,6 +279,23 @@
             "history": "{count, plural, one {Earlier version (#)} other {Earlier versions (#)}}",
             "historyCoverage": "{count, plural, one {Built from # source} other {Built from # sources}}",
             "alreadyQueued": "A digest task for this period is already queued or running."
+        },
+        "facts": {
+            "category": "Category",
+            "noSubject": "Unknown",
+            "empty": "No facts match these filters.",
+            "seen": "seen {first} – {last}",
+            "expired": "Expired: valid_until has passed",
+            "filters": {
+                "confidence": "Confidence",
+                "anyConfidence": "Any confidence",
+                "durability": "Durability",
+                "anyDurability": "Any durability",
+                "sourceKind": "Source",
+                "anySourceKind": "Any source",
+                "month": "Month",
+                "text": "Filter text"
+            }
         }
     },
     "account": {
