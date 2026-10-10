@@ -124,7 +124,7 @@ Week and month digests share one shape:
 - `open_loops`: still open at the end of the period
 - `learned`: deduplicated facts grouped by category, with refs
 
-`learned` is built only from the facts of the level below and keeps each fact's `category` and `source_kind`. It is never derived from prose, so tool output cannot turn into a fact about you one level up.
+The digest prompt builds `learned` only from the facts of the level below, never from summaries or other prose, and keeps each fact's `category` and `source_kind`. A merged entry is `user_said` only if all its facts are. The same validation as for session facts applies: an `observed` entry can only be a `surroundings` fact, so tool output cannot turn into a fact about you one level up.
 
 ### Coverage and staleness
 
