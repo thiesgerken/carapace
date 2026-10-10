@@ -40,23 +40,21 @@ def test_unpriced_and_free_tasks():
     # Unpriced work adds no cost, so only token limits bound it.
     assert fits(budget, Spend(), Spend(), _estimate(None, tokens=1000))
     assert not fits(budget, Spend(), Spend(), _estimate(None, tokens=1001))
-    # No estimate (mirror) is free.
-    assert fits(budget, Spend(Decimal(5), 10**9), Spend(Decimal(5), 10**9), None)
 
 
 def test_affordable_count_stops_at_first_unaffordable_task():
     budget = MemoryBudget(cost_usd_per_day=Decimal("1.00"))
-    estimates = [_estimate("0.40"), None, _estimate("0.40"), _estimate("0.40"), _estimate("0.01")]
-    assert affordable_count(budget, Spend(), Spend(), estimates) == 3
+    estimates = [_estimate("0.40"), _estimate("0.40"), _estimate("0.40"), _estimate("0.01")]
+    assert affordable_count(budget, Spend(), Spend(), estimates) == 2
     assert affordable_count(budget, Spend(Decimal("0.70")), Spend(), estimates) == 0
     assert (
-        affordable_count(MemoryBudget(cost_usd_per_day=None, cost_usd_per_month=None), Spend(), Spend(), estimates) == 5
+        affordable_count(MemoryBudget(cost_usd_per_day=None, cost_usd_per_month=None), Spend(), Spend(), estimates) == 4
     )
 
 
 def test_sum_estimates():
-    total = sum_estimates([_estimate("0.10"), _estimate(None, tokens=500), None])
-    assert total.task_count == 3
+    total = sum_estimates([_estimate("0.10"), _estimate(None, tokens=500)])
+    assert total.task_count == 2
     assert total.input_tokens == 1500
     assert total.output_tokens_cap == 200
     assert total.cost_usd == Decimal("0.10")
@@ -80,3 +78,4 @@ def test_spend_of():
         )
 
     assert spend_of([provenance("0.25", 10), provenance(None, 5)]) == Spend(Decimal("0.25"), 15)
+    assert spend_of([provenance("0.25", 10)], [_estimate("0.05", tokens=100)]) == Spend(Decimal("0.30"), 110)

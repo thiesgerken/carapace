@@ -30,6 +30,7 @@ from .models import (
     FactView,
     MemoryTask,
     MirrorResult,
+    Provenance,
     SpawnedBy,
     TaskEstimate,
     TaskFilter,
@@ -96,6 +97,8 @@ class MemoryStore:
 
         Returns None when the target already has a queued or running task: that one stands.
         """
+        if (estimate is None) != (kind is TaskKind.mirror):
+            raise ValueError(f"{kind} tasks need an estimate exactly when they make an LLM call")
         week_key, month_key = task_periods(kind, target, session_week_key)
         values = {
             "spawned_by": spawned_by.value,
@@ -139,16 +142,20 @@ class MemoryStore:
             return _task(row) if row is not None and row.user == user else None
 
     def list_tasks(self, user: str, task_filter: TaskFilter, cursor: str | None, limit: int) -> TaskPage:
-        """Newest task first, keyset-paginated by id."""
+        """Newest period first, the order "run newest N" selects in, so the top N rows are what runs.
+
+        ponytail: offset cursor, so rows shift if tasks appear between pages; a compound keyset
+        cursor over (month_key, week_key, id) with NULLs is the upgrade if that bites.
+        """
         clauses = [MemoryTaskRow.user == user, *_filter_clauses(task_filter)]
+        offset = _parse_cursor(cursor) if cursor is not None else 0
         with self._session_factory() as db:
             total = db.scalar(select(func.count()).select_from(MemoryTaskRow).where(*clauses)) or 0
-            page = select(MemoryTaskRow).where(*clauses)
-            if cursor is not None:
-                page = page.where(MemoryTaskRow.id < _parse_cursor(cursor))
-            rows = db.scalars(page.order_by(MemoryTaskRow.id.desc()).limit(limit + 1)).all()
+            rows = db.scalars(
+                select(MemoryTaskRow).where(*clauses).order_by(*_NEWEST_FIRST).offset(offset).limit(limit + 1)
+            ).all()
         items = [_task(row) for row in rows[:limit]]
-        next_cursor = str(items[-1].id) if len(rows) > limit else None
+        next_cursor = str(offset + limit) if len(rows) > limit else None
         return TaskPage(items=items, next_cursor=next_cursor, total=total)
 
     def select_tasks(self, user: str, selection: TaskSelection, statuses: set[TaskStatus]) -> list[MemoryTask]:
@@ -276,29 +283,39 @@ class MemoryStore:
                 row.model = outcome.provenance.model
             return True
 
-    def record_failure(self, task_id: int, error: str, now: datetime) -> bool:
-        """running -> failed with the error kept. False when the task is no longer running."""
+    def record_failure(self, task_id: int, error: str, now: datetime, provenance: Provenance | None = None) -> bool:
+        """running -> failed with the error kept. False when the task is no longer running.
+
+        *provenance* carries the usage of a call that failed after it was billed; it counts
+        towards spend like a finished call.
+        """
         with self._session_factory.begin() as db:
             result = db.execute(
                 update(MemoryTaskRow)
                 .where(MemoryTaskRow.id == task_id, MemoryTaskRow.status == TaskStatus.running)
-                .values(status=TaskStatus.failed.value, error=error, finished_at=now)
+                .values(status=TaskStatus.failed.value, error=error, finished_at=now, provenance=provenance)
             )
             return result.rowcount == 1  # type: ignore[missing-attribute]
 
     def spend(self, user: str, since: datetime) -> Spend:
-        """What the user's tasks finished since *since* cost."""
-        # ponytail: sums provenance JSON in Python (a month is a few thousand rows at most); move
-        # cost and tokens into columns if the budget check ever shows up in profiles.
+        """Committed spend in a window: billed calls finished since *since*, plus every running task
+        at its estimate, a reservation that keeps parallel claims from overshooting a limit."""
+        # ponytail: sums JSON in Python (a month is a few thousand rows at most); move cost and
+        # tokens into columns if the budget check ever shows up in profiles.
         with self._session_factory() as db:
             provenances = db.scalars(
                 select(MemoryTaskRow.provenance).where(
                     MemoryTaskRow.user == user,
-                    MemoryTaskRow.status == TaskStatus.done,
+                    MemoryTaskRow.status.in_([TaskStatus.done.value, TaskStatus.failed.value]),
                     MemoryTaskRow.finished_at >= since,
                 )
             ).all()
-        return spend_of(p for p in provenances if p is not None)
+            reservations = db.scalars(
+                select(MemoryTaskRow.estimate).where(
+                    MemoryTaskRow.user == user, MemoryTaskRow.status == TaskStatus.running
+                )
+            ).all()
+        return spend_of((p for p in provenances if p is not None), (e for e in reservations if e is not None))
 
     def status_counts(self, user: str) -> tuple[dict[TaskStatus, int], int]:
         """Task count per status, and how many queued tasks the budget holds back."""
@@ -358,13 +375,20 @@ class MemoryStore:
         return [ExtractionRecord.model_validate(row, from_attributes=True) for row in rows]
 
     def current_extractions(self, user: str, week_key: str | None = None) -> list[ExtractionRecord]:
-        """Current extractions of the user, optionally of one week, oldest first."""
+        """Current extractions of the user, optionally of one week, in session order.
+
+        Chronological by session, not by extraction: digests keep the later source on conflicts,
+        and a re-extraction must not move an old session behind newer ones.
+        """
         clauses = [MemorySessionExtractionRow.user == user, MemorySessionExtractionRow.is_current.is_(True)]
         if week_key is not None:
             clauses.append(MemorySessionExtractionRow.week_key == week_key)
         with self._session_factory() as db:
             rows = db.scalars(
-                select(MemorySessionExtractionRow).where(*clauses).order_by(MemorySessionExtractionRow.id)
+                select(MemorySessionExtractionRow)
+                .join(SessionRow, SessionRow.session_id == MemorySessionExtractionRow.session_id)
+                .where(*clauses)
+                .order_by(SessionRow.created_at, SessionRow.session_id)
             ).all()
         return [ExtractionRecord.model_validate(row, from_attributes=True) for row in rows]
 

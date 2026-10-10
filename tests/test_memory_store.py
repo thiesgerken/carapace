@@ -7,6 +7,7 @@ import pytest
 from sqlalchemy import delete, func, select
 
 from carapace.database.models import MemoryFactRow, MemorySessionExtractionRow, SessionRow, User
+from carapace.memory.budget import Spend
 from carapace.memory.models import (
     BlockedReason,
     CoverageEntry,
@@ -137,37 +138,57 @@ def test_spawn_derives_periods_and_replaces_pending(store: MemoryStore):
         spawned_by=SpawnedBy.manual,
         now=NOW,
         session_week_key="2026-W40",
+        estimate=_estimate(model="test:high"),
         model_override="test:high",
     )
     assert again is not None and again.id == first.id
     assert (again.spawned_by, again.model_override, again.model) == (SpawnedBy.manual, "test:high", "test:high")
 
-    week = store.spawn("alice", TaskKind.week_digest, "2026-W36", spawned_by=SpawnedBy.auto, now=NOW)
-    month = store.spawn("alice", TaskKind.month_digest, "2026-09", spawned_by=SpawnedBy.auto, now=NOW)
+    week = store.spawn(
+        "alice",
+        TaskKind.week_digest,
+        "2026-W36",
+        spawned_by=SpawnedBy.auto,
+        now=NOW,
+        estimate=_estimate(model="test:high"),
+    )
+    month = store.spawn(
+        "alice",
+        TaskKind.month_digest,
+        "2026-09",
+        spawned_by=SpawnedBy.auto,
+        now=NOW,
+        estimate=_estimate(model="test:high"),
+    )
     assert week is not None and (week.week_key, week.month_key) == ("2026-W36", "2026-09")
     assert month is not None and (month.week_key, month.month_key) == (None, "2026-09")
 
     with pytest.raises(ValueError, match="week key"):
-        store.spawn("alice", TaskKind.session_extract, "s2", spawned_by=SpawnedBy.auto, now=NOW)
+        store.spawn("alice", TaskKind.session_extract, "s2", spawned_by=SpawnedBy.auto, now=NOW, estimate=_estimate())
+    # LLM tasks never go unestimated (that would bypass the budget gate); mirrors never get one.
+    with pytest.raises(ValueError, match="estimate"):
+        store.spawn("alice", TaskKind.week_digest, "2026-W37", spawned_by=SpawnedBy.auto, now=NOW)
+    with pytest.raises(ValueError, match="estimate"):
+        store.spawn("alice", TaskKind.mirror, "alice", spawned_by=SpawnedBy.auto, now=NOW, estimate=_estimate())
 
 
 def test_spawn_leaves_queued_and_running_tasks_alone(store: MemoryStore):
+    def respawn():
+        return store.spawn(
+            "alice",
+            TaskKind.session_extract,
+            "s1",
+            spawned_by=SpawnedBy.auto,
+            now=NOW,
+            session_week_key="2026-W37",
+            estimate=_estimate(),
+        )
+
     task = _spawn_extract(store, "s1")
     store.run("alice", TaskSelection(ids=[task.id]), None, NOW)
-    assert (
-        store.spawn(
-            "alice", TaskKind.session_extract, "s1", spawned_by=SpawnedBy.auto, now=NOW, session_week_key="2026-W37"
-        )
-        is None
-    )
-
+    assert respawn() is None
     store.claim(task.id, NOW)
-    assert (
-        store.spawn(
-            "alice", TaskKind.session_extract, "s1", spawned_by=SpawnedBy.auto, now=NOW, session_week_key="2026-W37"
-        )
-        is None
-    )
+    assert respawn() is None
 
 
 def test_spawn_after_finish_creates_a_new_task(store: MemoryStore):
@@ -179,7 +200,14 @@ def test_spawn_after_finish_creates_a_new_task(store: MemoryStore):
 def test_period_filter_resolves_sessions_through_their_week(store: MemoryStore):
     sept = _spawn_extract(store, "s1", "2026-W36")  # Aug 31 to Sep 6: September
     aug = _spawn_extract(store, "s2", "2026-W35")
-    digest = store.spawn("alice", TaskKind.week_digest, "2026-W36", spawned_by=SpawnedBy.auto, now=NOW)
+    digest = store.spawn(
+        "alice",
+        TaskKind.week_digest,
+        "2026-W36",
+        spawned_by=SpawnedBy.auto,
+        now=NOW,
+        estimate=_estimate(model="test:high"),
+    )
     assert digest is not None
 
     september = TaskFilter(period="2026-09")
@@ -211,12 +239,17 @@ def test_selection_is_scoped_to_the_user(store: MemoryStore):
     assert store.get_task("bob", bobs.id) is not None
 
 
-def test_list_tasks_paginates_newest_first(store: MemoryStore):
-    ids = [_spawn_extract(store, s).id for s in ("s1", "s2", "s3")]
+def test_list_tasks_paginates_in_run_newest_order(store: MemoryStore):
+    mid = _spawn_extract(store, "s1", "2026-W33")
+    new = _spawn_extract(store, "s2", "2026-W37")
+    old = _spawn_extract(store, "s3", "2026-W30")
     page = store.list_tasks("alice", TaskFilter(), None, 2)
-    assert [t.id for t in page.items] == ids[:0:-1] and page.total == 3 and page.next_cursor is not None
+    assert [t.id for t in page.items] == [new.id, mid.id] and page.total == 3 and page.next_cursor is not None
     rest = store.list_tasks("alice", TaskFilter(), page.next_cursor, 2)
-    assert [t.id for t in rest.items] == ids[:1] and rest.next_cursor is None
+    assert [t.id for t in rest.items] == [old.id] and rest.next_cursor is None
+    # The top N rows are exactly what "run newest N" queues.
+    newest = store.select_tasks("alice", TaskSelection(filter=TaskFilter(), newest=2), {TaskStatus.pending})
+    assert [t.id for t in newest] == [t.id for t in page.items]
 
 
 def test_claim_is_atomic_and_counts_attempts(store: MemoryStore):
@@ -305,7 +338,14 @@ def test_purge_and_session_delete_cascade(store: MemoryStore, db_factory):
 
 def test_digest_versions(store: MemoryStore):
     def finish_digest(summary: str) -> int:
-        task = store.spawn("alice", TaskKind.week_digest, "2026-W36", spawned_by=SpawnedBy.auto, now=NOW)
+        task = store.spawn(
+            "alice",
+            TaskKind.week_digest,
+            "2026-W36",
+            spawned_by=SpawnedBy.auto,
+            now=NOW,
+            estimate=_estimate(model="test:high"),
+        )
         assert task is not None
         _run_to_running(store, task.id)
         result = DigestResult(
@@ -336,6 +376,33 @@ def test_mirror_outcome_has_no_record(store: MemoryStore):
     assert done is not None and (done.status, done.result_id) == (TaskStatus.done, None)
 
 
+def test_spend_reserves_running_tasks_and_counts_billed_failures(store: MemoryStore):
+    running = _spawn_extract(store, "s1")  # estimate 0.01, 1000 input tokens
+    _run_to_running(store, running.id)
+    assert store.spend("alice", NOW) == Spend(Decimal("0.01"), 1000)
+
+    failed = _spawn_extract(store, "s2")
+    _run_to_running(store, failed.id)
+    assert store.record_failure(failed.id, "output validation failed", NOW, _provenance(failed.id, cost="0.03"))
+    unbilled = _spawn_extract(store, "s3")
+    _run_to_running(store, unbilled.id)
+    assert store.record_failure(unbilled.id, "input too large", NOW)
+    # Running reservation 0.01 + billed failure 0.03; the unbilled failure costs nothing.
+    assert store.spend("alice", NOW) == Spend(Decimal("0.04"), 2200)
+
+
+def test_current_extractions_follow_session_order(store: MemoryStore, db_factory):
+    with db_factory.begin() as db:
+        for session_id, hours in (("s1", 0), ("s2", 1), ("s3", 2)):
+            row = db.get(SessionRow, session_id)
+            assert row is not None
+            row.created_at = NOW + timedelta(hours=hours)
+    _finish_extraction(store, "s1", "monday")
+    _finish_extraction(store, "s2", "friday")
+    _finish_extraction(store, "s1", "monday again")  # a re-extraction must not move s1 behind s2
+    assert [r.session_id for r in store.current_extractions("alice", "2026-W37")] == ["s1", "s2"]
+
+
 def test_spend_counts_finished_tasks_in_window(store: MemoryStore):
     _finish_extraction(store, "s1")  # costs 0.02, finished at NOW
     _finish_extraction(store, "s2")
@@ -358,8 +425,22 @@ def test_status_counts(store: MemoryStore):
 
 def test_queue_order(store: MemoryStore):
     old = _spawn_extract(store, "s1", "2026-W30")
-    month = store.spawn("alice", TaskKind.month_digest, "2026-09", spawned_by=SpawnedBy.auto, now=NOW)
-    week = store.spawn("alice", TaskKind.week_digest, "2026-W36", spawned_by=SpawnedBy.auto, now=NOW)
+    month = store.spawn(
+        "alice",
+        TaskKind.month_digest,
+        "2026-09",
+        spawned_by=SpawnedBy.auto,
+        now=NOW,
+        estimate=_estimate(model="test:high"),
+    )
+    week = store.spawn(
+        "alice",
+        TaskKind.week_digest,
+        "2026-W36",
+        spawned_by=SpawnedBy.auto,
+        now=NOW,
+        estimate=_estimate(model="test:high"),
+    )
     new = _spawn_extract(store, "s2", "2026-W37")
     store.spawn("alice", TaskKind.mirror, "alice", spawned_by=SpawnedBy.auto, now=NOW)
     assert month is not None and week is not None
