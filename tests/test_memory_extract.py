@@ -5,16 +5,15 @@ from decimal import Decimal
 from typing import Any
 
 import pytest
-from pydantic_ai.exceptions import UsageLimitExceeded
 from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, ToolCallPart, UserPromptPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.profiles.anthropic import ANTHROPIC_THINKING_BUDGET_MAP
 from pydantic_ai.usage import RequestUsage
 
 from carapace.memory.budget import estimate_cost
-from carapace.memory.handlers import SESSION_EXTRACT_OUTPUT_CAP, SessionExtractHandler
+from carapace.memory.handlers import SESSION_EXTRACT_OUTPUT_CAP, SessionExtractHandler, TaskRunError
 from carapace.memory.input import render_extraction_input
-from carapace.memory.llm import InputTooLargeError, capped_model_settings
+from carapace.memory.llm import InputTooLargeError, LlmCallError, capped_model_settings
 from carapace.memory.models import (
     ExtractionResult,
     MemoryTask,
@@ -142,17 +141,58 @@ async def test_run_sends_sandwich_prompt_in_user_timezone() -> None:
     assert recorder.info.model_settings.get("max_tokens") == SESSION_EXTRACT_OUTPUT_CAP
 
 
-async def test_run_fails_when_output_exceeds_cap() -> None:
+async def test_exceeded_output_cap_fails_with_billed_usage() -> None:
     recorder = _Recorder(RequestUsage(input_tokens=1200, output_tokens=SESSION_EXTRACT_OUTPUT_CAP + 1))
 
-    with pytest.raises(UsageLimitExceeded):
+    with pytest.raises(TaskRunError) as failed:
         await _handler(recorder).run(_task(), MODEL)
+
+    provenance = failed.value.provenance
+    assert (provenance.input_tokens, provenance.output_tokens) == (1200, SESSION_EXTRACT_OUTPUT_CAP + 1)
+    assert provenance.cost_usd is not None and provenance.cost_usd >= Decimal("0.0123")
+    assert provenance.task_id == 7
+    assert provenance.input_hash == render_extraction_input(EVENTS).input_hash
+    assert isinstance(failed.value.__cause__, LlmCallError)
+
+
+async def test_rejected_outputs_count_every_billed_attempt() -> None:
+    invalid = {**EXTRACTION, "facts": [{**EXTRACTION["facts"][0], "subject": None}]}  # social fact without subject
+    calls = 0
+
+    def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        nonlocal calls
+        calls += 1
+        return ModelResponse(
+            parts=[ToolCallPart(info.output_tools[0].name, invalid)],
+            usage=RequestUsage(input_tokens=1000, output_tokens=100),
+            provider_details={"cost": 0.01},
+        )
+
+    handler = SessionExtractHandler(
+        config=Config(),
+        load_events=lambda session_id: EVENTS,
+        user_config_for=lambda user: UserConfig(),
+        model_factory=lambda name, *, user: FunctionModel(respond),
+    )
+
+    with pytest.raises(TaskRunError) as failed:
+        await handler.run(_task(), MODEL)
+
+    assert calls == 3  # first attempt plus two output retries
+    provenance = failed.value.provenance
+    assert (provenance.input_tokens, provenance.output_tokens) == (3000, 300)
+    assert provenance.cost_usd is not None and provenance.cost_usd >= Decimal("0.03")
+
+
+async def test_run_requires_a_model() -> None:
+    with pytest.raises(ValueError, match="needs a model"):
+        await _handler(_Recorder()).run(_task(), None)
 
 
 async def test_estimate_counts_prompt_and_caps_output() -> None:
     handler = _handler(_Recorder())
 
-    estimate = await handler.estimate(_task(), MODEL)
+    estimate = await handler.estimate("alice", "s1", MODEL)
 
     user_prompt = SESSION_EXTRACT.user_prompt(render_extraction_input(EVENTS).text, session_date="2026-09-07")
     expected_input = count_text_tokens(f"{SESSION_EXTRACT.system}\n\n{user_prompt}", model_name=MODEL)
@@ -167,7 +207,7 @@ async def test_session_without_user_message_fails_loudly() -> None:
     handler = _handler(_Recorder(), events=EVENTS[:2])
 
     with pytest.raises(ValueError, match="no user message"):
-        await handler.estimate(_task(), MODEL)
+        await handler.estimate("alice", "s1", MODEL)
     with pytest.raises(ValueError, match="no user message"):
         await handler.run(_task(), MODEL)
 
@@ -191,5 +231,5 @@ async def test_run_fails_before_calling_the_model_when_input_exceeds_context() -
         await _handler(recorder, config=config).run(_task(), MODEL)
     assert recorder.messages == []
 
-    estimate = await _handler(recorder, config=config).estimate(_task(), MODEL)
+    estimate = await _handler(recorder, config=config).estimate("alice", "s1", MODEL)
     assert estimate.input_tokens > 100

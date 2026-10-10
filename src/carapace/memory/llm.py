@@ -8,9 +8,11 @@ from decimal import Decimal
 from typing import cast
 
 from pydantic import BaseModel
-from pydantic_ai import Agent
+from pydantic_ai import Agent, capture_run_messages
+from pydantic_ai.exceptions import AgentRunError
+from pydantic_ai.messages import ModelMessage
 from pydantic_ai.settings import ModelSettings
-from pydantic_ai.usage import UsageLimits
+from pydantic_ai.usage import RunUsage, UsageLimits
 
 from ..llm import ModelFactory, model_settings_for_config, resolve_available_model_entry
 from ..models.config import Config
@@ -19,13 +21,26 @@ from .prompts import PromptTemplate
 
 
 @dataclass(frozen=True, slots=True)
-class StructuredCall[OutputT: BaseModel]:
-    output: OutputT
+class CallUsage:
     input_tokens: int
     output_tokens: int
     # None when the model has no known pricing and the provider reported no cost.
     cost_usd: Decimal | None
     duration_ms: int
+
+
+@dataclass(frozen=True, slots=True)
+class StructuredCall[OutputT: BaseModel]:
+    output: OutputT
+    usage: CallUsage
+
+
+class LlmCallError(Exception):
+    """The call failed after the provider may already have billed it; *usage* is what it cost."""
+
+    def __init__(self, message: str, usage: CallUsage) -> None:
+        super().__init__(message)
+        self.usage = usage
 
 
 class InputTooLargeError(ValueError):
@@ -78,17 +93,26 @@ async def run_structured[OutputT: BaseModel](
         capabilities=[LlmRequestLogCapability(source="memory")],
         retries={"output": 2},
     )
+    usage = RunUsage()
     started = time.monotonic()
-    result = await agent.run(user_prompt, usage_limits=UsageLimits(output_tokens_limit=model_settings["max_tokens"]))
-    duration_ms = round((time.monotonic() - started) * 1000)
+    # The run accumulates into *usage* and *messages* in place, so both survive a failed run:
+    # rejected outputs and exceeded caps are billed and must count against the budget.
+    with capture_run_messages() as messages:
+        try:
+            result = await agent.run(
+                user_prompt, usage=usage, usage_limits=UsageLimits(output_tokens_limit=model_settings["max_tokens"])
+            )
+        except AgentRunError as exc:
+            raise LlmCallError(str(exc), _call_usage(model, usage, messages, started)) from exc
+    return StructuredCall(output=result.output, usage=_call_usage(model, usage, messages, started))
 
-    usage = result.usage
+
+def _call_usage(model: str, usage: RunUsage, messages: list[ModelMessage], started: float) -> CallUsage:
     tracker = UsageTracker()
-    tracker.record(model, "memory", usage, cost_usd=provider_cost_usd_from_messages(result.new_messages()))
-    return StructuredCall(
-        output=result.output,
+    tracker.record(model, "memory", usage, cost_usd=provider_cost_usd_from_messages(messages))
+    return CallUsage(
         input_tokens=usage.input_tokens or 0,
         output_tokens=usage.output_tokens or 0,
         cost_usd=tracker.estimated_cost().get(model),
-        duration_ms=duration_ms,
+        duration_ms=round((time.monotonic() - started) * 1000),
     )
