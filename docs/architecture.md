@@ -247,10 +247,12 @@ This map describes the Python modules under `src/carapace/`. It is meant as a na
 | `memory/periods.py`      | Pure period math: ISO weeks in the user timezone, week-to-month by Thursday, period ends.              |
 | `memory/input.py`        | Pure rendering of session events into the extraction input (clamping, seq labels, hash, token count). |
 | `memory/digest_input.py` | Pure rendering of extractions or weekly digests into digest input, plus coverage hashing.             |
+| `memory/coverage.py`     | Pure coverage of a digest (which source records it consumed) and the hash that marks it stale.        |
 | `memory/prompts.py`      | Prompt templates and their computed `prompt_version`s.                                                 |
 | `memory/budget.py`       | Pure spend windows, budget gate and estimate math.                                                     |
 | `memory/llm.py`          | Single-shot pydantic-ai calls for extractions and digests, with usage and cost.                       |
 | `memory/handlers.py`     | `TaskHandler` protocol and one handler per task kind (extract, week, month, mirror).                  |
+| `memory/outdated.py`     | What a fresh run would record per task kind, and why a stored record is outdated.                      |
 | `memory/render.py`       | Pure rendering of current records into the `memory/` Markdown mirror.                                  |
 | `memory/store.py`        | `MemoryStore`, the only module that queries the memory tables.                                         |
 | `memory/spawner.py`      | Eligibility, staleness and settled rules: which tasks to spawn and which records to purge.            |
