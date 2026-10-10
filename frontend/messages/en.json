@@ -200,7 +200,8 @@
             "runNeedsRows": "Running needs explicitly selected rows; respawn works on all matching sessions.",
             "respawnPicked": "Respawn selected ({count})",
             "spawned": "{count, plural, one {Spawned # task.} other {Spawned # tasks.}}",
-            "queued": "{count, plural, one {Queued # task.} other {Queued # tasks.}}"
+            "queued": "{count, plural, one {Queued # task.} other {Queued # tasks.}}",
+            "spawnedWithSkips": "{count, plural, one {Spawned # task} other {Spawned # tasks}}; skipped: {reasons}."
         },
         "outdatedReasons": {
             "prompt_version": "prompt changed",
@@ -278,7 +279,8 @@
             "notExtracted": "not extracted",
             "history": "{count, plural, one {Earlier version (#)} other {Earlier versions (#)}}",
             "historyCoverage": "{count, plural, one {Built from # source} other {Built from # sources}}",
-            "alreadyQueued": "A digest task for this period is already queued or running."
+            "alreadyQueued": "A digest task for this period is already queued or running.",
+            "notSpawned": "No task created: {reasons}."
         },
         "facts": {
             "category": "Category",

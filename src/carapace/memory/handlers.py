@@ -8,13 +8,17 @@ from pathlib import Path
 from typing import Any, Protocol
 from zoneinfo import ZoneInfo
 
+from pydantic import BaseModel
+
 from .. import get_version
 from ..knowledge import KnowledgeRepoResolver
 from ..llm import ModelFactory
 from ..models.config import Config
 from ..models.user import UserConfig
 from .budget import estimate_cost
-from .input import ExtractionInput, first_user_message_at, render_extraction_input
+from .coverage import coverage_hash, month_coverage, week_coverage
+from .digest_input import render_month_input, render_week_input
+from .input import first_user_message_at, render_extraction_input
 from .llm import (
     CallUsage,
     LlmCallError,
@@ -24,21 +28,24 @@ from .llm import (
     run_structured,
 )
 from .models import (
+    CoverageEntry,
     DigestLevel,
     DigestRecord,
+    DigestResult,
     ExtractionRecord,
     ExtractionResult,
     MemoryTask,
     MirrorResult,
     ModelRole,
+    PeriodDigest,
     Provenance,
     SessionExtraction,
     TaskEstimate,
     TaskKind,
     TaskOutcome,
 )
-from .periods import month_key_for_week, week_key
-from .prompts import SESSION_EXTRACT
+from .periods import month_key_for_week, month_weeks, period_dates, week_key
+from .prompts import MONTH_DIGEST, SESSION_EXTRACT, WEEK_DIGEST, PromptTemplate
 from .render import MIRROR_ROOT, render_mirror
 
 
@@ -74,12 +81,77 @@ class TaskRunError(Exception):
 
 # Upper bound for one extraction's output; abstract, lists and facts of a long session fit well below.
 SESSION_EXTRACT_OUTPUT_CAP = 4000
+# A digest restates themes, highlights and deduplicated facts of up to a month of sources.
+DIGEST_OUTPUT_CAP = 6000
+
+
+@dataclass(frozen=True, slots=True)
+class _LlmCall:
+    """What an LLM task sends, fixed before it is estimated or run."""
+
+    template: PromptTemplate
+    user_prompt: str
+    output_cap: int
+    input_hash: str
+    input_format_version: int
+
+
+def _estimate(config: Config, call: _LlmCall, model: str) -> TaskEstimate:
+    output_cap = capped_model_settings(config, model, call.output_cap)["max_tokens"]
+    input_tokens = prompt_tokens(call.template, call.user_prompt, model)
+    return TaskEstimate(
+        model=model,
+        input_tokens=input_tokens,
+        output_tokens_cap=output_cap,
+        cost_usd=estimate_cost(model, input_tokens, output_cap),
+    )
+
+
+async def _run_llm[OutputT: BaseModel](
+    task: MemoryTask,
+    model: str,
+    call: _LlmCall,
+    output_type: type[OutputT],
+    *,
+    config: Config,
+    model_factory: ModelFactory,
+) -> tuple[OutputT, Provenance]:
+    """Run the call; a billed failure raises ``TaskRunError`` carrying what it cost."""
+    ensure_fits_context(config, model, prompt_tokens(call.template, call.user_prompt, model))
+
+    def provenance(usage: CallUsage) -> Provenance:
+        return Provenance(
+            carapace_version=get_version(),
+            model=model,
+            prompt_version=call.template.version(output_type),
+            input_format_version=call.input_format_version,
+            input_hash=call.input_hash,
+            input_tokens=usage.input_tokens,
+            output_tokens=usage.output_tokens,
+            cost_usd=usage.cost_usd,
+            duration_ms=usage.duration_ms,
+            task_id=task.id,
+            created_at=datetime.now(tz=UTC),
+        )
+
+    try:
+        result = await run_structured(
+            call.template,
+            output_type,
+            call.user_prompt,
+            model=model,
+            user=task.user,
+            model_factory=model_factory,
+            model_settings=capped_model_settings(config, model, call.output_cap),
+        )
+    except LlmCallError as exc:
+        raise TaskRunError(str(exc), provenance=provenance(exc.usage)) from exc
+    return result.output, provenance(result.usage)
 
 
 @dataclass(frozen=True, slots=True)
 class _PreparedExtraction:
-    rendered: ExtractionInput
-    user_prompt: str
+    call: _LlmCall
     week_key: str
 
 
@@ -101,40 +173,22 @@ class SessionExtractHandler:
         self._model_factory = model_factory
 
     async def estimate(self, user: str, target: str, model: str) -> TaskEstimate:
-        prepared = self._prepare(user, target)
-        output_cap = capped_model_settings(self._config, model, SESSION_EXTRACT_OUTPUT_CAP)["max_tokens"]
-        input_tokens = prompt_tokens(SESSION_EXTRACT, prepared.user_prompt, model)
-        return TaskEstimate(
-            model=model,
-            input_tokens=input_tokens,
-            output_tokens_cap=output_cap,
-            cost_usd=estimate_cost(model, input_tokens, output_cap),
-        )
+        return _estimate(self._config, self._prepare(user, target).call, model)
 
     async def run(self, task: MemoryTask, model: str | None) -> TaskOutcome:
         if model is None:
             raise ValueError("session extraction needs a model")
         prepared = self._prepare(task.user, task.target)
-        ensure_fits_context(self._config, model, prompt_tokens(SESSION_EXTRACT, prepared.user_prompt, model))
-        try:
-            call = await run_structured(
-                SESSION_EXTRACT,
-                SessionExtraction,
-                prepared.user_prompt,
-                model=model,
-                user=task.user,
-                model_factory=self._model_factory,
-                model_settings=capped_model_settings(self._config, model, SESSION_EXTRACT_OUTPUT_CAP),
-            )
-        except LlmCallError as exc:
-            raise TaskRunError(str(exc), provenance=_provenance(task, model, prepared, exc.usage)) from exc
+        extraction, provenance = await _run_llm(
+            task, model, prepared.call, SessionExtraction, config=self._config, model_factory=self._model_factory
+        )
         result = ExtractionResult(
             session_id=task.target,
             week_key=prepared.week_key,
             month_key=month_key_for_week(prepared.week_key),
-            extraction=call.output,
+            extraction=extraction,
         )
-        return TaskOutcome(provenance=_provenance(task, model, prepared, call.usage), result=result)
+        return TaskOutcome(provenance=provenance, result=result)
 
     def _prepare(self, user: str, session_id: str) -> _PreparedExtraction:
         events = self._load_events(session_id)
@@ -143,29 +197,100 @@ class SessionExtractHandler:
             raise ValueError(f"session {session_id} has no user message to extract")
         tz = ZoneInfo(self._user_config_for(user).timezone)
         rendered = render_extraction_input(events)
+        session_date = started_at.astimezone(tz).date().isoformat()
         return _PreparedExtraction(
-            rendered=rendered,
-            user_prompt=SESSION_EXTRACT.user_prompt(
-                rendered.text, session_date=started_at.astimezone(tz).date().isoformat()
+            call=_LlmCall(
+                template=SESSION_EXTRACT,
+                user_prompt=SESSION_EXTRACT.user_prompt(rendered.text, session_date=session_date),
+                output_cap=SESSION_EXTRACT_OUTPUT_CAP,
+                input_hash=rendered.input_hash,
+                input_format_version=rendered.input_format_version,
             ),
             week_key=week_key(started_at, tz),
         )
 
 
-def _provenance(task: MemoryTask, model: str, prepared: _PreparedExtraction, usage: CallUsage) -> Provenance:
-    return Provenance(
-        carapace_version=get_version(),
-        model=model,
-        prompt_version=SESSION_EXTRACT.version(SessionExtraction),
-        input_format_version=prepared.rendered.input_format_version,
-        input_hash=prepared.rendered.input_hash,
-        input_tokens=usage.input_tokens,
-        output_tokens=usage.output_tokens,
-        cost_usd=usage.cost_usd,
-        duration_ms=usage.duration_ms,
-        task_id=task.id,
-        created_at=datetime.now(tz=UTC),
-    )
+@dataclass(frozen=True, slots=True)
+class _PreparedDigest:
+    call: _LlmCall
+    coverage: list[CoverageEntry]
+
+
+class DigestHandler:
+    """Week or month digest, one instance per level.
+
+    A week reads its sessions' current extractions, a month the current digests of its weeks
+    (those whose Thursday falls into it). Partial coverage is fine: the digest records what it
+    consumed and goes stale when more arrives.
+    """
+
+    model_role = ModelRole.memory_high
+
+    def __init__(
+        self,
+        *,
+        level: DigestLevel,
+        config: Config,
+        current_extractions: Callable[[str, str], list[ExtractionRecord]],
+        current_digests: Callable[[str, DigestLevel, list[str]], list[DigestRecord]],
+        model_factory: ModelFactory,
+    ) -> None:
+        self.level = level
+        self.kind = TaskKind.week_digest if level is DigestLevel.week else TaskKind.month_digest
+        self._config = config
+        self._current_extractions = current_extractions
+        self._current_digests = current_digests
+        self._model_factory = model_factory
+
+    async def estimate(self, user: str, target: str, model: str) -> TaskEstimate:
+        return _estimate(self._config, self._prepare(user, target).call, model)
+
+    async def run(self, task: MemoryTask, model: str | None) -> TaskOutcome:
+        if model is None:
+            raise ValueError(f"{self.level} digests need a model")
+        prepared = self._prepare(task.user, task.target)
+        digest, provenance = await _run_llm(
+            task, model, prepared.call, PeriodDigest, config=self._config, model_factory=self._model_factory
+        )
+        result = DigestResult(
+            level=self.level,
+            period_key=task.target,
+            coverage=prepared.coverage,
+            coverage_hash=coverage_hash(prepared.coverage),
+            digest=digest,
+        )
+        return TaskOutcome(provenance=provenance, result=result)
+
+    def _prepare(self, user: str, period_key: str) -> _PreparedDigest:
+        match self.level:
+            case DigestLevel.week:
+                extractions = self._current_extractions(user, period_key)
+                rendered, coverage = render_week_input(extractions), week_coverage(extractions)
+                first_day, last_day = period_dates(self.level, period_key)
+                template = WEEK_DIGEST
+                user_prompt = WEEK_DIGEST.user_prompt(
+                    rendered.text,
+                    period_key=period_key,
+                    first_day=first_day.isoformat(),
+                    last_day=last_day.isoformat(),
+                )
+            case DigestLevel.month:
+                weeks = self._current_digests(user, DigestLevel.week, month_weeks(period_key))
+                rendered, coverage = render_month_input(weeks), month_coverage(weeks)
+                template = MONTH_DIGEST
+                user_prompt = MONTH_DIGEST.user_prompt(rendered.text, period_key=period_key)
+        if not coverage:
+            raise ValueError(f"{self.level} {period_key} has no current sources to digest")
+        return _PreparedDigest(
+            call=_LlmCall(
+                template=template,
+                user_prompt=user_prompt,
+                output_cap=DIGEST_OUTPUT_CAP,
+                input_hash=rendered.input_hash,
+                input_format_version=rendered.input_format_version,
+            ),
+            coverage=coverage,
+        )
 
 
 class MirrorHandler:
