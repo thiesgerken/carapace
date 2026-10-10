@@ -180,11 +180,6 @@ class MemoryStore:
                 update(MemoryTaskRow).where(MemoryTaskRow.id == task_id).values(estimate=estimate, model=estimate.model)
             )
 
-    def get_task(self, user: str, task_id: int) -> MemoryTask | None:
-        with self._session_factory() as db:
-            row = db.get(MemoryTaskRow, task_id)
-            return _task(row) if row is not None and row.user == user else None
-
     def list_tasks(self, user: str, task_filter: TaskFilter, cursor: str | None, limit: int) -> TaskPage:
         """Newest period first, the order "run newest N" selects in, so the top N rows are what runs.
 

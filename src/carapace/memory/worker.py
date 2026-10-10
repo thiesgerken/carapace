@@ -111,7 +111,7 @@ class MemoryWorker:
         await self._dispatch(now)
 
     async def drain(self) -> None:
-        """Wait for every running task (tests and shutdown)."""
+        """Wait until no task this worker started is still running. Tests use it after a tick."""
         while self._running:
             await asyncio.gather(*list(self._running.values()), return_exceptions=True)
 
