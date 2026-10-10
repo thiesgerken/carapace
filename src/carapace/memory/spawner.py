@@ -99,6 +99,21 @@ class Spawner:
             return Ineligible.no_user_message
         return None
 
+    def recheck(self, task: MemoryTask, now: datetime) -> Ineligible | None:
+        """Eligibility of a session_extract task's session right before it runs.
+
+        Things change between spawn and run (private, deleted, a new agent turn). A session
+        that turned private is purged here, as in the sweep.
+        """
+        state = self._sessions.load_state(task.target)
+        if state is None:
+            return Ineligible.deleted
+        reason = self.ineligibility(state, self._sessions.load_events(task.target))
+        if reason is Ineligible.private and self._store.current_extraction(task.user, task.target) is not None:
+            self._store.purge_extractions(task.target)
+            self._on_records_changed(task.user, now)
+        return reason
+
     def _job_opted_in(self, state: SessionState) -> bool:
         if state.latest_job_run is None:
             return False

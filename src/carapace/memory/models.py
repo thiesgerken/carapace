@@ -90,6 +90,8 @@ class Ineligible(StrEnum):
     # Legacy sessions without session_events rows: no timestamps, so no period.
     no_transcript = "no_transcript"
     no_user_message = "no_user_message"
+    # The session was deleted after its task was spawned.
+    deleted = "deleted"
 
 
 class ExtractionState(StrEnum):
@@ -306,6 +308,8 @@ class MemoryStatus(MemoryApiModel):
     # Queued tasks held back by the budget gate.
     blocked: int
     models: EffectiveMemoryModels
+    # Legacy sessions without a stored transcript, skipped by memory (as of the last sweep).
+    sessions_without_transcript: int
 
 
 class TaskFilter(MemoryApiModel):
@@ -351,8 +355,15 @@ class TaskCountResponse(MemoryApiModel):
     count: int
 
 
+class SpawnSkip(MemoryApiModel):
+    target: str
+    # An Ineligible value, or why the target could not get a task (already open, not found, ...).
+    reason: str
+
+
 class TaskSpawnResponse(MemoryApiModel):
     task_ids: list[int]
+    skipped: list[SpawnSkip]
 
 
 class EstimateTotal(MemoryApiModel):

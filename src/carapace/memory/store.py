@@ -144,8 +144,8 @@ class MemoryStore:
                 target=target,
                 status=TaskStatus.failed.value,
                 spawned_by=SpawnedBy.auto.value,
-                attempts=0,
                 error=error,
+                **_UNBILLED,
                 created_at=now,
                 finished_at=now,
             )
@@ -265,6 +265,16 @@ class MemoryStore:
                 .where(MemoryTaskRow.id == task_id, MemoryTaskRow.status == TaskStatus.queued)
                 .values(blocked_reason=reason.value if reason is not None else None)
             )
+
+    def cancel_task(self, task_id: int, reason: str, now: datetime) -> bool:
+        """Open -> cancelled with the reason kept as error, e.g. the session turned private."""
+        with self._session_factory.begin() as db:
+            result = db.execute(
+                update(MemoryTaskRow)
+                .where(MemoryTaskRow.id == task_id, MemoryTaskRow.status.in_(_OPEN))
+                .values(status=TaskStatus.cancelled.value, error=reason, finished_at=now, blocked_reason=None)
+            )
+            return result.rowcount == 1  # type: ignore[missing-attribute]
 
     def fail_unclaimed(self, task_id: int, error: str, now: datetime) -> bool:
         """pending/queued -> failed, for tasks that broke before they could run (estimation)."""
@@ -409,6 +419,14 @@ class MemoryStore:
                 .group_by(MemoryTaskRow.target)
             ).all()
         return {target: at for target, at in rows}
+
+    def session_titles(self, session_ids: list[str]) -> dict[str, str | None]:
+        """Titles of the given sessions, for task labels."""
+        with self._session_factory() as db:
+            rows = db.execute(
+                select(SessionRow.session_id, SessionRow.title).where(SessionRow.session_id.in_(session_ids))
+            ).all()
+        return {session_id: title for session_id, title in rows}
 
     # --- extractions and facts ---
 

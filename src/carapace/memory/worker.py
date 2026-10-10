@@ -15,8 +15,18 @@ from ..models.config import Config
 from ..models.user import UserConfig
 from ..user_defaults import effective_memory_model
 from .budget import Spend, affordable_count, budget_windows, fits
-from .handlers import TaskHandler
-from .models import BlockedReason, MemoryTask, SpawnedBy, TaskEstimate, TaskKind, TaskSelection, TaskStatus
+from .handlers import TaskHandler, TaskRunError
+from .models import (
+    BlockedReason,
+    Ineligible,
+    MemoryTask,
+    SpawnedBy,
+    TaskEstimate,
+    TaskKind,
+    TaskSelection,
+    TaskStatus,
+)
+from .spawner import MALFORMED_TRANSCRIPT_ERRORS
 from .store import MemoryStore
 
 # How many queued tasks one tick looks at; budget-blocked ones are re-checked every tick.
@@ -34,11 +44,7 @@ class WorkerTiming:
     mirror_debounce: timedelta = timedelta(minutes=2)
 
 
-@dataclass(frozen=True)
-class _InFlight:
-    user: str
-    estimate: TaskEstimate | None
-    job: asyncio.Task[None]
+DEFAULT_TIMING = WorkerTiming()
 
 
 class MemoryWorker:
@@ -51,8 +57,9 @@ class MemoryWorker:
         user_config_for: Callable[[str], UserConfig],
         users: Callable[[], list[str]],
         sweep: Callable[[datetime], Awaitable[None]],
+        recheck_session: Callable[[MemoryTask, datetime], Ineligible | None],
         max_parallel: int,
-        timing: WorkerTiming = WorkerTiming(),
+        timing: WorkerTiming = DEFAULT_TIMING,
         clock: Callable[[], datetime] = lambda: datetime.now(tz=UTC),
     ) -> None:
         self._store = store
@@ -61,11 +68,12 @@ class MemoryWorker:
         self._user_config_for = user_config_for
         self._users = users
         self._sweep = sweep
+        self._recheck_session = recheck_session
         self._max_parallel = max_parallel
         self._timing = timing
         self._clock = clock
         self._wake = asyncio.Event()
-        self._in_flight: dict[int, _InFlight] = {}
+        self._running: dict[int, asyncio.Task[None]] = {}
         # Users whose records changed while their mirror was running: it must run once more.
         self._mirror_dirty: set[str] = set()
         self._last_sweep: datetime | None = None
@@ -84,11 +92,11 @@ class MemoryWorker:
         self._wake.set()
 
     def abort(self, task_ids: list[int]) -> None:
-        """Stop the LLM calls of tasks the store already marked cancelled."""
+        """Stop the calls of tasks the store already marked cancelled."""
         for task_id in task_ids:
-            in_flight = self._in_flight.get(task_id)
-            if in_flight is not None:
-                in_flight.job.cancel()
+            job = self._running.get(task_id)
+            if job is not None:
+                job.cancel()
 
     async def tick(self) -> None:
         now = self._clock()
@@ -104,21 +112,31 @@ class MemoryWorker:
 
     async def drain(self) -> None:
         """Wait for every running task (tests and shutdown)."""
-        while self._in_flight:
-            await asyncio.gather(*(f.job for f in list(self._in_flight.values())), return_exceptions=True)
+        while self._running:
+            await asyncio.gather(*list(self._running.values()), return_exceptions=True)
+
+    def note_records_changed(self, user: str, now: datetime) -> None:
+        """Schedule a mirror of the user's records (spawns or refreshes the pending one)."""
+        if TaskKind.mirror not in self._handlers:
+            return
+        if self._store.spawn(user, TaskKind.mirror, user, spawned_by=SpawnedBy.auto, now=now) is None:
+            self._mirror_dirty.add(user)
 
     # --- promotion ---
 
     async def _promote(self, user: str, user_config: UserConfig, now: datetime) -> None:
         """Auto mode: queue as many pending LLM tasks, in priority order, as the budget covers."""
-        pending = self._store.pending_for_promotion(user, _PROMOTION_WINDOW)
-        if not pending:
-            return
-        estimates = [await self._current_estimate(task, user_config) for task in pending]
+        candidates: list[tuple[MemoryTask, TaskEstimate]] = []
+        for task in self._store.pending_for_promotion(user, _PROMOTION_WINDOW):
+            if task.kind not in self._handlers:
+                continue
+            estimate = await self._estimate_or_fail(task, user_config, now)
+            if estimate is not None:
+                candidates.append((task, estimate))
         day, month = self._spend(user, user_config, now)
-        count = affordable_count(user_config.memory.budget, day, month, estimates)
+        count = affordable_count(user_config.memory.budget, day, month, [e for _, e in candidates])
         if count:
-            self._store.run(user, TaskSelection(ids=[task.id for task in pending[:count]]), None, now)
+            self._store.run(user, TaskSelection(ids=[t.id for t, _ in candidates[:count]]), None, now)
 
     def _promote_mirror(self, user: str, now: datetime) -> None:
         """Mirrors are free and run in manual mode too, batched behind a debounce."""
@@ -131,52 +149,74 @@ class MemoryWorker:
             return
         self._store.run(user, TaskSelection(ids=[mirror.id]), None, now)
 
-    def note_records_changed(self, user: str, now: datetime) -> None:
-        """Schedule a mirror of the user's records (spawns or refreshes the pending one)."""
-        mirror = self._store.spawn(user, TaskKind.mirror, user, spawned_by=SpawnedBy.auto, now=now)
-        if mirror is None:
-            self._mirror_dirty.add(user)
-
     # --- dispatch ---
 
     async def _dispatch(self, now: datetime) -> None:
-        spend_cache: dict[str, tuple[Spend, Spend]] = {}
+        # Per user and pass: committed spend, grown by each task this pass claims.
+        spend: dict[str, tuple[Spend, Spend]] = {}
         for task in self._store.next_queued(_DISPATCH_WINDOW):
-            if len(self._in_flight) >= self._max_parallel:
+            if len(self._running) >= self._max_parallel:
                 return
-            if task.id in self._in_flight:
+            if task.id in self._running:
+                continue
+            handler = self._handlers.get(task.kind)
+            if handler is None:
+                self._store.fail_unclaimed(task.id, f"no handler registered for {task.kind}", now)
+                continue
+            if task.kind is TaskKind.session_extract and not self._session_still_eligible(task, now):
                 continue
             user_config = self._user_config_for(task.user)
-            estimate = await self._current_estimate(task, user_config)
-            if task.user not in spend_cache:
-                spend_cache[task.user] = self._spend(task.user, user_config, now)
-            day, month = spend_cache[task.user]
-            if not fits(user_config.memory.budget, day, month, estimate):
-                if task.blocked_reason is not BlockedReason.budget:
-                    self._store.set_blocked(task.id, BlockedReason.budget)
+            estimate: TaskEstimate | None = None
+            if handler.model_role is not None:
+                estimate = await self._estimate_or_fail(task, user_config, now)
+                if estimate is None:
+                    continue
+                if task.user not in spend:
+                    spend[task.user] = self._spend(task.user, user_config, now)
+                day, month = spend[task.user]
+                if not fits(user_config.memory.budget, day, month, estimate):
+                    if task.blocked_reason is not BlockedReason.budget:
+                        self._store.set_blocked(task.id, BlockedReason.budget)
+                    continue
+                if not self._store.claim(task.id, now):
+                    continue
+                spend[task.user] = (day.plus(estimate), month.plus(estimate))
+            elif not self._store.claim(task.id, now):
                 continue
-            if not self._store.claim(task.id, now):
-                continue
-            if estimate is not None:
-                spend_cache[task.user] = (day.plus(estimate), month.plus(estimate))
-            model = self._model_for(task, user_config)
-            job = asyncio.create_task(self._execute(task, model), name=f"memory-task-{task.id}")
-            self._in_flight[task.id] = _InFlight(task.user, estimate, job)
-            job.add_done_callback(lambda _, task_id=task.id: self._finished(task_id))
+            self._start(task, self._model_for(task, user_config))
+
+    def _session_still_eligible(self, task: MemoryTask, now: datetime) -> bool:
+        """Re-check right before running; an ineligible session's task is cancelled at no cost."""
+        try:
+            reason = self._recheck_session(task, now)
+        except MALFORMED_TRANSCRIPT_ERRORS as exc:
+            self._store.fail_unclaimed(task.id, f"cannot prepare transcript: {type(exc).__name__}: {exc}", now)
+            return False
+        if reason is None:
+            return True
+        if reason is not Ineligible.agent_running:  # a running turn only means "not yet"
+            self._store.cancel_task(task.id, f"session became ineligible: {reason}", now)
+        return False
+
+    def _start(self, task: MemoryTask, model: str | None) -> None:
+        job = asyncio.create_task(self._execute(task, model), name=f"memory-task-{task.id}")
+        self._running[task.id] = job
+        job.add_done_callback(lambda _, task_id=task.id: self._finished(task_id))
 
     def _finished(self, task_id: int) -> None:
-        self._in_flight.pop(task_id, None)
+        self._running.pop(task_id, None)
         self.wake()
 
     async def _execute(self, task: MemoryTask, model: str | None) -> None:
-        handler = self._handlers.get(task.kind)
         try:
-            if handler is None:
-                raise LookupError(f"no handler registered for {task.kind}")
-            outcome = await handler.run(task, model)
+            outcome = await self._handlers[task.kind].run(task, model)
         except asyncio.CancelledError:
             logger.info(f"Memory task {task.id} ({task.kind} {task.target}) cancelled while running")
             raise
+        except TaskRunError as exc:
+            logger.exception(f"Memory task {task.id} ({task.kind} {task.target}) failed after billing")
+            self._store.record_failure(task.id, str(exc), self._clock(), exc.provenance)
+            return
         except Exception as exc:
             # The failure is the task's result: stored on the row, shown in the UI, retryable.
             logger.exception(f"Memory task {task.id} ({task.kind} {task.target}) failed")
@@ -186,38 +226,40 @@ class MemoryWorker:
         if not self._store.record_outcome(task.id, outcome, now):
             logger.info(f"Memory task {task.id} finished after it was cancelled; result discarded")
             return
-        if task.kind is TaskKind.mirror:
-            if task.user in self._mirror_dirty:
-                self._mirror_dirty.discard(task.user)
-                self.note_records_changed(task.user, now)
-        else:
+        if task.kind is not TaskKind.mirror:
+            self.note_records_changed(task.user, now)
+        elif task.user in self._mirror_dirty:
+            self._mirror_dirty.discard(task.user)
             self.note_records_changed(task.user, now)
 
     # --- helpers ---
 
     def _model_for(self, task: MemoryTask, user_config: UserConfig) -> str | None:
-        handler = self._handlers.get(task.kind)
-        if handler is None or handler.model_role is None:
+        role = self._handlers[task.kind].model_role
+        if role is None:
             return None
-        return task.model_override or effective_memory_model(self._config, user_config, handler.model_role)
+        return task.model_override or effective_memory_model(self._config, user_config, role)
 
-    async def _current_estimate(self, task: MemoryTask, user_config: UserConfig) -> TaskEstimate | None:
-        """The task's estimate for the model it would run with now, refreshed when that changed."""
+    async def _estimate_or_fail(self, task: MemoryTask, user_config: UserConfig, now: datetime) -> TaskEstimate | None:
+        """The task's estimate for the model it would run with now, refreshed when that changed.
+
+        None, with the task failed, when estimating raised: such a task could never pass the gate.
+        """
         model = self._model_for(task, user_config)
         if model is None:
-            return None
+            raise ValueError(f"{task.kind} makes no LLM call and has no estimate")
         if task.estimate is not None and task.estimate.model == model:
             return task.estimate
-        estimate = await self._handlers[task.kind].estimate(task, model)
+        try:
+            estimate = await self._handlers[task.kind].estimate(task.user, task.target, model)
+        except Exception as exc:
+            # Same contract as a failed run: the error lands on the task, visible and retryable.
+            logger.exception(f"Memory task {task.id} ({task.kind} {task.target}): estimate failed")
+            self._store.fail_unclaimed(task.id, f"estimate failed: {type(exc).__name__}: {exc}", now)
+            return None
         self._store.set_estimate(task.id, estimate)
         return estimate
 
     def _spend(self, user: str, user_config: UserConfig, now: datetime) -> tuple[Spend, Spend]:
-        """Finished spend plus the estimates of the user's running tasks, per budget window."""
         windows = budget_windows(now, ZoneInfo(user_config.timezone))
-        day = self._store.spend(user, windows.day_start)
-        month = self._store.spend(user, windows.month_start)
-        for in_flight in self._in_flight.values():
-            if in_flight.user == user and in_flight.estimate is not None:
-                day, month = day.plus(in_flight.estimate), month.plus(in_flight.estimate)
-        return day, month
+        return self._store.spend(user, windows.day_start), self._store.spend(user, windows.month_start)
