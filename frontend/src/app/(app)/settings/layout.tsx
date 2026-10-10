@@ -7,7 +7,7 @@ import { useTranslations } from "next-intl";
 import { useAppShell } from "@/components/app-shell-context";
 import { useBrand } from "@/hooks/use-brand";
 import type { SettingsTab } from "@/lib/settings-tabs";
-import { tabbedPageClassName, tabLinkClassName } from "@/lib/tab-styles";
+import { handleTabListKeyDown, tabbedPageClassName, tabLinkClassName } from "@/lib/tabs";
 
 export default function SettingsLayout({ children }: { children: ReactNode }) {
   const t = useTranslations();
@@ -55,6 +55,7 @@ export default function SettingsLayout({ children }: { children: ReactNode }) {
 
           <div
             role="tablist"
+            onKeyDown={handleTabListKeyDown}
             aria-label={tJobs("settingsSections")}
             className="flex flex-wrap items-end gap-x-4 gap-y-2 border-b border-border/80"
           >
