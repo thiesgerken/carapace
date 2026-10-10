@@ -1299,6 +1299,12 @@ function decodeMemorySettings(raw: unknown): MemorySettingsInfo {
   };
 }
 
+function requireString(record: Record<string, unknown>, key: string): string {
+  const value = readString(record, key);
+  if (value === undefined) throw new Error(`Invalid settings response: missing ${key}`);
+  return value;
+}
+
 function decodeUserSettingsResponse(raw: unknown): UserSettingsResponseInfo {
   if (!isRecord(raw)) throw new Error("Invalid settings response");
   const capabilities = isRecord(raw.capabilities) ? raw.capabilities : {};
@@ -1332,7 +1338,7 @@ function decodeUserSettingsResponse(raw: unknown): UserSettingsResponseInfo {
       agent_icon: readString(settings, "agent_icon") ?? "",
       default_models: decodeDefaultModels(settings.default_models),
       default_budget: decodeBudget(settings.default_budget),
-      timezone: readString(settings, "timezone") ?? "",
+      timezone: requireString(settings, "timezone"),
       memory: decodeMemorySettings(settings.memory),
       matrix: decodeMatrixSettings(settings.matrix),
       credentials: decodeCredentialsSettings(settings.credentials),
