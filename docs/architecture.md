@@ -246,7 +246,7 @@ This map describes the Python modules under `src/carapace/`. It is meant as a na
 | `memory/models.py`       | Extraction and digest schemas, provenance, task enums and records, API view models.                    |
 | `memory/periods.py`      | Pure period math: ISO weeks in the user timezone, week-to-month by Thursday, period ends.              |
 | `memory/input.py`        | Pure rendering of session events into the extraction input (clamping, seq labels, hash, token count). |
-| `memory/digest_input.py` | Pure rendering of extractions or weekly digests into digest input, plus coverage hashing.             |
+| `memory/digest_input.py` | Pure rendering of extractions or weekly digests into the digest input text.                           |
 | `memory/coverage.py`     | Pure coverage of a digest (which source records it consumed) and the hash that marks it stale.        |
 | `memory/prompts.py`      | Prompt templates and their computed `prompt_version`s.                                                 |
 | `memory/budget.py`       | Pure spend windows, budget gate and estimate math.                                                     |
