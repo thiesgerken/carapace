@@ -1067,11 +1067,27 @@ export interface GitSettingsInfo {
   token_set: boolean;
 }
 
+/** Null disables that limit. Costs are decimal strings. */
+export interface MemoryBudgetSettings {
+  cost_usd_per_day: string | null;
+  cost_usd_per_month: string | null;
+  input_tokens_per_day: number | null;
+  input_tokens_per_month: number | null;
+}
+
+export interface MemorySettingsInfo {
+  auto_mode: boolean;
+  budget: MemoryBudgetSettings;
+}
+
 export interface UserSettingsInfo {
   agent_name: string;
   agent_icon: string;
   default_models: UserDefaultModelsSettings;
   default_budget: SessionBudgetSettings;
+  /** IANA zone; defines memory weeks, months and budget windows. */
+  timezone: string;
+  memory: MemorySettingsInfo;
   matrix: MatrixSettingsInfo;
   credentials: CredentialsSettingsInfo;
   git: GitSettingsInfo;
@@ -1086,6 +1102,8 @@ export interface UserSettingsResponseInfo {
       agent: string;
       sentinel: string;
       title: string;
+      memory_low: string;
+      memory_high: string;
     };
     budget: SessionBudgetSettings;
   };
@@ -1098,6 +1116,8 @@ export interface UserSettingsPatchInput {
   agent_icon?: string | null;
   default_models?: UserDefaultModelsSettings | null;
   default_budget?: SessionBudgetSettings | null;
+  timezone?: string | null;
+  memory?: MemorySettingsInfo | null;
   matrix?: Partial<{
     enabled: boolean;
     homeserver: string | null;
@@ -1263,6 +1283,22 @@ function decodeGitSettings(raw: unknown): GitSettingsInfo {
   };
 }
 
+function decodeMemorySettings(raw: unknown): MemorySettingsInfo {
+  if (!isRecord(raw) || !isRecord(raw.budget)) throw new Error("Invalid memory settings");
+  const budget = raw.budget;
+  const cost = (key: string) => readString(budget, key) ?? null;
+  const tokens = (key: string) => readNumber(budget, key) ?? null;
+  return {
+    auto_mode: readBoolean(raw, "auto_mode"),
+    budget: {
+      cost_usd_per_day: cost("cost_usd_per_day"),
+      cost_usd_per_month: cost("cost_usd_per_month"),
+      input_tokens_per_day: tokens("input_tokens_per_day"),
+      input_tokens_per_month: tokens("input_tokens_per_month"),
+    },
+  };
+}
+
 function decodeUserSettingsResponse(raw: unknown): UserSettingsResponseInfo {
   if (!isRecord(raw)) throw new Error("Invalid settings response");
   const capabilities = isRecord(raw.capabilities) ? raw.capabilities : {};
@@ -1285,6 +1321,8 @@ function decodeUserSettingsResponse(raw: unknown): UserSettingsResponseInfo {
         agent: readString(serverModels, "agent") ?? "",
         sentinel: readString(serverModels, "sentinel") ?? "",
         title: readString(serverModels, "title") ?? "",
+        memory_low: readString(serverModels, "memory_low") ?? "",
+        memory_high: readString(serverModels, "memory_high") ?? "",
       },
       budget: decodeBudget(serverDefaults.budget),
     },
@@ -1294,6 +1332,8 @@ function decodeUserSettingsResponse(raw: unknown): UserSettingsResponseInfo {
       agent_icon: readString(settings, "agent_icon") ?? "",
       default_models: decodeDefaultModels(settings.default_models),
       default_budget: decodeBudget(settings.default_budget),
+      timezone: readString(settings, "timezone") ?? "",
+      memory: decodeMemorySettings(settings.memory),
       matrix: decodeMatrixSettings(settings.matrix),
       credentials: decodeCredentialsSettings(settings.credentials),
       git: decodeGitSettings(settings.git),
