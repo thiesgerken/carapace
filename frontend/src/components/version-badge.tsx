@@ -41,18 +41,24 @@ export function VersionBadge({
     ...(hasMismatch ? ["", t("mismatchTooltip")] : []),
   ].join("\n");
 
+  // Takes the row's leftover space and shows the badge only if it fits whole. The zero-width,
+  // full-height spacer opens the first flex line, so a badge too wide for the slot wraps onto the
+  // second line, which the fixed height clips away. No truncation into neighbouring text.
   return (
-    <span
-      title={tooltip}
-      className={cn("inline-flex cursor-help items-center gap-1 text-xs font-medium text-muted-foreground", className)}
-    >
-      <span className={textClassName}>v{visibleVersion}</span>
-      {hasMismatch ? (
-        <>
-          <AlertTriangle className={cn("h-3.5 w-3.5 text-amber-600", iconClassName)} />
-          <span className="sr-only">{t("mismatchSr")}</span>
-        </>
-      ) : null}
+    <span className="flex h-4 min-w-0 flex-1 flex-wrap overflow-hidden">
+      <span aria-hidden="true" className="h-4 w-0" />
+      <span
+        title={tooltip}
+        className={cn("inline-flex h-4 cursor-help items-center gap-1 text-xs font-medium text-muted-foreground", className)}
+      >
+        <span className={textClassName}>v{visibleVersion}</span>
+        {hasMismatch ? (
+          <>
+            <AlertTriangle className={cn("h-3.5 w-3.5 text-amber-600", iconClassName)} />
+            <span className="sr-only">{t("mismatchSr")}</span>
+          </>
+        ) : null}
+      </span>
     </span>
   );
 }
