@@ -8,6 +8,7 @@ file. Output is deterministic, so unchanged records produce no diff and no commi
 from __future__ import annotations
 
 import posixpath
+import re
 from collections.abc import Iterable, Mapping, Sequence
 from datetime import date
 from typing import Any
@@ -86,13 +87,15 @@ def render_session(record: ExtractionRecord) -> str:
     }
     body = [
         f"# Session {record.session_id}",
-        extraction.abstract,
+        _prose(extraction.abstract),
         _section("Outcomes", extraction.outcomes),
         _section("Open loops", extraction.open_loops),
         _section("On my mind", extraction.on_my_mind),
         _fact_sections(facts),
         _section("Friction", extraction.friction),
-        "## Tags\n\n" + " ".join(f"`{tag}`" for tag in extraction.tags) if extraction.tags else "",
+        "## Tags\n\n" + " ".join(f"`{_one_line(tag).replace('`', '')}`" for tag in extraction.tags)
+        if extraction.tags
+        else "",
     ]
     return _document(front_matter, body)
 
@@ -119,7 +122,7 @@ def render_digest(record: DigestRecord, ref_paths: Mapping[str, str]) -> str:
     }
     body = [
         f"# {_period_title(record)}",
-        digest.summary,
+        _prose(digest.summary),
         _section("On my mind", [_theme_line(theme, refs(theme.refs)) for theme in digest.on_my_mind]),
         _section("Highlights", digest.highlights),
         _section("Open loops", digest.open_loops),
@@ -167,7 +170,21 @@ def _fact_sections(facts: Mapping[FactCategory, list[str]], *, heading: str = "F
 def _section(title: str, lines: Sequence[str], *, level: int = 2) -> str:
     if not lines:
         return ""
-    return f"{'#' * level} {title}\n\n" + "\n".join(f"- {line}" for line in lines)
+    return f"{'#' * level} {title}\n\n" + "\n".join(f"- {_one_line(line)}" for line in lines)
+
+
+# LLM text can echo tool output. These files are read and grepped by the agent, so model output must
+# not be able to forge headings, list items or other block structure in them.
+_BLOCK_MARKER = re.compile(r"^([ \t]*)([#>*+|`-]|\d+[.)])", re.MULTILINE)
+
+
+def _one_line(text: str) -> str:
+    return " ".join(text.split())
+
+
+def _prose(text: str) -> str:
+    """Keep paragraphs, but escape line starts that Markdown would read as block structure."""
+    return _BLOCK_MARKER.sub(r"\1\\\2", text.strip())
 
 
 def _document(front_matter: dict[str, Any], body: list[str]) -> str:
