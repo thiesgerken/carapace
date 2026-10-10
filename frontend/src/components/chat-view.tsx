@@ -2942,7 +2942,12 @@ export function ChatView({
       ) : null}
 
       {memoryDrawerOpen ? (
-        <MemoryExtractionDrawer server={server} sessionId={sessionId} onClose={() => setMemoryDrawerOpen(false)} />
+        <MemoryExtractionDrawer
+          server={server}
+          sessionId={sessionId}
+          onClose={() => setMemoryDrawerOpen(false)}
+          onSourceNavigate={() => setMemoryDrawerOpen(false)}
+        />
       ) : null}
     </div>
   );

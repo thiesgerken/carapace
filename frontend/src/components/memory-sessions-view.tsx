@@ -15,6 +15,7 @@ import {
   MEMORY_OUTDATED_REASONS,
   MEMORY_TASK_STATUSES,
   runnableTaskIds,
+  summarizeSkips,
   toSessionFilter,
   toSpawnRequest,
   type SessionFilterForm,
@@ -107,8 +108,12 @@ export function MemorySessionsView({ server, token }: { server: string; token: s
     setBusy(true);
     setError(null);
     try {
-      const { task_ids } = await spawnMemoryTasks(server, toSpawnRequest(pick, filter));
-      setNotice(t("spawned", { count: task_ids.length }));
+      const { task_ids, skipped } = await spawnMemoryTasks(server, toSpawnRequest(pick, filter));
+      setNotice(
+        skipped.length > 0
+          ? t("spawnedWithSkips", { count: task_ids.length, reasons: summarizeSkips(skipped) })
+          : t("spawned", { count: task_ids.length }),
+      );
       setPick(NO_PICK);
       if (task_ids.length > 0) setRunSelection({ ids: task_ids });
       await refreshStatus();

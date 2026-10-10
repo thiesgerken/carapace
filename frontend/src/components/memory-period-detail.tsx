@@ -9,7 +9,7 @@ import { useMemoryStatus } from "@/components/memory-status";
 import { buttonClassName, MemoryProvenanceList } from "@/components/memory-ui";
 import { getMemoryPeriod, spawnMemoryTasks } from "@/lib/api";
 import { formatAbsoluteTime } from "@/lib/format-time";
-import { formatUsd, monthLabel, periodBadge, periodLevel, type PeriodBadge } from "@/lib/memory";
+import { formatUsd, monthLabel, periodBadge, periodLevel, summarizeSkips, type PeriodBadge } from "@/lib/memory";
 import type {
   MemoryDigestFact,
   MemoryDigestRecord,
@@ -101,9 +101,13 @@ export function MemoryPeriodDetailView({ server, token, periodKey }: { server: s
     setError(null);
     setNotice(null);
     try {
-      const { task_ids } = await spawnMemoryTasks(server, { kind: level === "week" ? "week_digest" : "month_digest", targets: [periodKey] });
+      const { task_ids, skipped } = await spawnMemoryTasks(server, {
+        kind: level === "week" ? "week_digest" : "month_digest",
+        targets: [periodKey],
+      });
       if (task_ids.length > 0) setRunSelection({ ids: task_ids });
-      else setNotice(t("alreadyQueued"));
+      else if (skipped.every((skip) => skip.reason === "already_open")) setNotice(t("alreadyQueued"));
+      else setNotice(t("notSpawned", { reasons: summarizeSkips(skipped) }));
       await refreshStatus();
     } catch (spawnError) {
       setError(spawnError instanceof Error ? spawnError.message : String(spawnError));
