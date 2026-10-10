@@ -16,6 +16,7 @@ from carapace.memory.models import (
     ExtractionResult,
     Fact,
     FactFilter,
+    MemoryTask,
     MirrorResult,
     PeriodDigest,
     Provenance,
@@ -61,6 +62,12 @@ def store(db_factory) -> MemoryStore:
                 )
             )
     return MemoryStore(db_factory)
+
+
+def _get(store: MemoryStore, user: str, task_id: int) -> MemoryTask | None:
+    """One task of the user, whatever its status, through the regular selection reader."""
+    tasks = store.select_tasks(user, TaskSelection(ids=[task_id]), set(TaskStatus))
+    return tasks[0] if tasks else None
 
 
 def _estimate(cost: str = "0.01", model: str = "test:low") -> TaskEstimate:
@@ -235,8 +242,8 @@ def test_run_newest_n_and_model_override(store: MemoryStore):
 def test_selection_is_scoped_to_the_user(store: MemoryStore):
     bobs = _spawn_extract(store, "b1", user="bob")
     assert store.run("alice", TaskSelection(ids=[bobs.id]), None, NOW) == 0
-    assert store.get_task("alice", bobs.id) is None
-    assert store.get_task("bob", bobs.id) is not None
+    assert _get(store, "alice", bobs.id) is None
+    assert _get(store, "bob", bobs.id) is not None
 
 
 def test_list_tasks_paginates_in_run_newest_order(store: MemoryStore):
@@ -259,7 +266,7 @@ def test_claim_is_atomic_and_counts_attempts(store: MemoryStore):
     store.set_blocked(task.id, BlockedReason.budget)
     assert store.claim(task.id, NOW)
     assert not store.claim(task.id, NOW)
-    claimed = store.get_task("alice", task.id)
+    claimed = _get(store, "alice", task.id)
     assert claimed is not None
     assert (claimed.status, claimed.attempts, claimed.blocked_reason) == (TaskStatus.running, 1, None)
 
@@ -269,13 +276,13 @@ def test_failure_retry_and_requeue(store: MemoryStore):
     _run_to_running(store, task.id)
     assert store.record_failure(task.id, "input too large", NOW)
     assert not store.record_failure(task.id, "again", NOW)
-    failed = store.get_task("alice", task.id)
+    failed = _get(store, "alice", task.id)
     assert failed is not None and (failed.status, failed.error) == (TaskStatus.failed, "input too large")
 
     assert store.retry("alice", [task.id], NOW) == 1
     assert store.claim(task.id, NOW)
     assert store.requeue_running() == 1
-    requeued = store.get_task("alice", task.id)
+    requeued = _get(store, "alice", task.id)
     assert requeued is not None
     assert (requeued.status, requeued.attempts, requeued.error, requeued.started_at) == (
         TaskStatus.queued,
@@ -303,7 +310,7 @@ def test_re_extraction_keeps_history_and_rewrites_facts(store: MemoryStore):
     assert [r.provenance.task_id for r in store.extraction_history("alice", "s1")] == [first]
     assert [f.statement for f in store.facts("alice", FactFilter())] == ["likes coffee"]
 
-    done = store.get_task("alice", second)
+    done = _get(store, "alice", second)
     assert done is not None
     assert (done.status, done.result_id, done.model) == (TaskStatus.done, current.id, "test:low")
 
@@ -372,7 +379,7 @@ def test_mirror_outcome_has_no_record(store: MemoryStore):
     assert task is not None and task.estimate is None
     _run_to_running(store, task.id)
     assert store.record_outcome(task.id, TaskOutcome(provenance=None, result=MirrorResult(commit="abc")), NOW)
-    done = store.get_task("alice", task.id)
+    done = _get(store, "alice", task.id)
     assert done is not None and (done.status, done.result_id) == (TaskStatus.done, None)
 
 
@@ -475,7 +482,7 @@ def test_extraction_needs_provenance(store: MemoryStore):
     result = ExtractionResult(session_id="s1", week_key="2026-W37", month_key="2026-09", extraction=_extraction())
     with pytest.raises(ValueError, match="provenance"):
         store.record_outcome(task.id, TaskOutcome(provenance=None, result=result), NOW)
-    still = store.get_task("alice", task.id)
+    still = _get(store, "alice", task.id)
     assert still is not None and still.status is TaskStatus.running
 
 

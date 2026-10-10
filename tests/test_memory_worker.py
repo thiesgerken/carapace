@@ -161,8 +161,7 @@ class Env:
         return task
 
     def task(self, task_id: int) -> MemoryTask:
-        task = self.store.get_task("alice", task_id)
-        assert task is not None
+        [task] = self.store.select_tasks("alice", TaskSelection(ids=[task_id]), set(TaskStatus))
         return task
 
     async def tick(self) -> None:
