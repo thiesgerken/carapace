@@ -10,6 +10,7 @@ import { useMemoryStatus } from "@/components/memory-status";
 import { cancelMemoryTasks, listMemoryTasks, retryMemoryTasks } from "@/lib/api";
 import { formatAbsoluteTime } from "@/lib/format-time";
 import {
+  formatTokenEstimate,
   formatTokens,
   formatUsd,
   MEMORY_TASK_KINDS,
@@ -130,8 +131,16 @@ export function MemoryTasksView({ server, token }: { server: string; token: stri
   }
 
   function costCell(task: MemoryTaskView): string {
-    if (task.provenance?.cost_usd != null) return formatUsd(task.provenance.cost_usd, locale);
-    if (task.estimate?.cost_usd != null) return `~${formatUsd(task.estimate.cost_usd, locale)}`;
+    if (task.provenance) {
+      return task.provenance.cost_usd !== null
+        ? formatUsd(task.provenance.cost_usd, locale)
+        : `${formatTokens(task.provenance.input_tokens, locale)} in · ${formatTokens(task.provenance.output_tokens, locale)} out`;
+    }
+    if (task.estimate) {
+      return task.estimate.cost_usd !== null
+        ? `~${formatUsd(task.estimate.cost_usd, locale)}`
+        : formatTokenEstimate(task.estimate.input_tokens, task.estimate.output_tokens_cap, locale);
+    }
     return "—";
   }
 
@@ -161,7 +170,13 @@ export function MemoryTasksView({ server, token }: { server: string; token: stri
           </select>
           <span className="ml-auto text-sm tabular-nums text-muted-foreground">
             {t("matching", { count: total })}
-            {page && Number(page.estimate.cost_usd) > 0 ? ` · ${t("estimate", { cost: formatUsd(page.estimate.cost_usd, locale) })}` : null}
+            {page && page.estimate.task_count > 0
+              ? ` · ${t("estimate", {
+                cost: page.estimate.unpriced_count === page.estimate.task_count
+                  ? formatTokenEstimate(page.estimate.input_tokens, page.estimate.output_tokens_cap, locale)
+                  : formatUsd(page.estimate.cost_usd, locale),
+              })}`
+              : null}
           </span>
         </div>
 

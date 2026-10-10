@@ -19,9 +19,12 @@ interface MemoryExtractionDrawerProps {
   server: string;
   sessionId: string;
   onClose: () => void;
+  /** Called when a fact source link is followed. A drawer over the linked chat closes here;
+   * elsewhere the navigation unmounts it, and closing first would race the navigation. */
+  onSourceNavigate?: () => void;
 }
 
-export function MemoryExtractionDrawer({ server, sessionId, onClose }: MemoryExtractionDrawerProps) {
+export function MemoryExtractionDrawer({ server, sessionId, onClose, onSourceNavigate }: MemoryExtractionDrawerProps) {
   const t = useTranslations("memory.drawer");
   const dialogRef = useRef<HTMLDialogElement | null>(null);
   const [detail, setDetail] = useState<MemorySessionDetail | null | undefined>(undefined);
@@ -83,7 +86,7 @@ export function MemoryExtractionDrawer({ server, sessionId, onClose }: MemoryExt
           ) : (
             <>
               {detail.current ? (
-                <ExtractionRecord record={detail.current} sessionId={sessionId} linkSources />
+                <ExtractionRecord record={detail.current} sessionId={sessionId} linkSources onSourceNavigate={onSourceNavigate} />
               ) : (
                 <p className="text-sm text-muted-foreground">
                   {t("notExtracted")}
@@ -122,7 +125,12 @@ function HistoryEntry({ record, sessionId }: { record: MemoryExtractionRecord; s
   );
 }
 
-function ExtractionRecord({ record, sessionId, linkSources }: { record: MemoryExtractionRecord; sessionId: string; linkSources: boolean }) {
+function ExtractionRecord({ record, sessionId, linkSources, onSourceNavigate }: {
+  record: MemoryExtractionRecord;
+  sessionId: string;
+  linkSources: boolean;
+  onSourceNavigate?: () => void;
+}) {
   const t = useTranslations("memory.drawer");
   const { extraction } = record;
   const lists: [string, string[]][] = [
@@ -161,7 +169,7 @@ function ExtractionRecord({ record, sessionId, linkSources }: { record: MemoryEx
             <h4 className="mb-1 text-xs font-medium text-muted-foreground">{t(`factCategories.${category}`)}</h4>
             <ul className="space-y-2">
               {facts.map((fact) => (
-                <FactItem key={`${fact.statement}-${fact.subject}`} fact={fact} sessionId={sessionId} linkSources={linkSources} />
+                <FactItem key={`${fact.statement}-${fact.subject}`} fact={fact} sessionId={sessionId} linkSources={linkSources} onSourceNavigate={onSourceNavigate} />
               ))}
             </ul>
           </section>
@@ -176,7 +184,12 @@ function ExtractionRecord({ record, sessionId, linkSources }: { record: MemoryEx
   );
 }
 
-function FactItem({ fact, sessionId, linkSources }: { fact: MemoryFact; sessionId: string; linkSources: boolean }) {
+function FactItem({ fact, sessionId, linkSources, onSourceNavigate }: {
+  fact: MemoryFact;
+  sessionId: string;
+  linkSources: boolean;
+  onSourceNavigate?: () => void;
+}) {
   const t = useTranslations("memory.drawer");
   const locale = useLocale();
   const meta = [
@@ -196,8 +209,7 @@ function FactItem({ fact, sessionId, linkSources }: { fact: MemoryFact; sessionI
           <Link
             key={seq}
             href={sessionEventHref(sessionId, seq)}
-            // Inside the chat view the drawer would otherwise stay open over the event it just linked to.
-            onClick={(event) => event.currentTarget.closest("dialog")?.close()}
+            onClick={onSourceNavigate}
             className="font-mono underline underline-offset-2 hover:text-foreground"
           >
             #{seq}

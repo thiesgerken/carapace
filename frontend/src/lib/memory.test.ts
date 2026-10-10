@@ -14,6 +14,7 @@ import {
   periodBadge,
   periodLevel,
   remainingBudget,
+  summarizeSkips,
   runnableTaskIds,
   toSessionFilter,
   toSpawnRequest,
@@ -200,4 +201,16 @@ test("dated facts expire after valid_until; text filter covers statement, subjec
   assert.equal(factMatchesText(group, "hamburg"), true);
   assert.equal(factMatchesText(group, "talos"), true);
   assert.equal(factMatchesText(group, "berlin"), false);
+});
+
+test("summarizeSkips counts repeated reasons", () => {
+  assert.equal(summarizeSkips([{ target: "2026-W37", reason: "no_handler" }]), "no_handler");
+  assert.equal(
+    summarizeSkips([
+      { target: "a", reason: "private" },
+      { target: "b", reason: "already_open" },
+      { target: "c", reason: "private" },
+    ]),
+    "private ×2, already_open",
+  );
 });
