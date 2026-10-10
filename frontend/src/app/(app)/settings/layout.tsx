@@ -7,14 +7,7 @@ import { useTranslations } from "next-intl";
 import { useAppShell } from "@/components/app-shell-context";
 import { useBrand } from "@/hooks/use-brand";
 import type { SettingsTab } from "@/lib/settings-tabs";
-import { cn } from "@/lib/utils";
-
-const tabButtonClassName = (selected: boolean): string => cn(
-  "rounded-t-lg border border-b-0 px-4 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-  selected
-    ? "relative z-10 -mb-px border-border bg-background text-foreground"
-    : "border-transparent text-muted-foreground hover:border-border/60 hover:bg-background/70 hover:text-foreground",
-);
+import { tabbedPageClassName, tabLinkClassName } from "@/lib/tab-styles";
 
 export default function SettingsLayout({ children }: { children: ReactNode }) {
   const t = useTranslations();
@@ -45,7 +38,7 @@ export default function SettingsLayout({ children }: { children: ReactNode }) {
         aria-selected={selected}
         aria-controls={`settings-panel-${value}`}
         tabIndex={selected ? 0 : -1}
-        className={tabButtonClassName(selected)}
+        className={tabLinkClassName(selected)}
       >
         {label}
       </Link>
@@ -53,7 +46,7 @@ export default function SettingsLayout({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-[radial-gradient(circle_at_top_left,_color-mix(in_oklch,var(--accent)_55%,transparent),transparent_35%),linear-gradient(180deg,color-mix(in_oklch,var(--background)_96%,var(--muted))_0%,var(--background)_100%)]">
+    <div className={tabbedPageClassName}>
       <div className="px-5 pt-4 sm:px-6">
         <div className="flex flex-col">
           <div className="pb-4">

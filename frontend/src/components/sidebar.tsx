@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { Archive, ArchiveRestore, Bot, BookOpen, Loader2, Lock, LogOut, Mail, MessageSquare, Pin, Save, Settings2, Star, Trash2 } from "lucide-react";
+import { Archive, ArchiveRestore, Bot, BookOpen, Brain, Loader2, Lock, LogOut, Mail, MessageSquare, Pin, Save, Settings2, Star, Trash2 } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { EmojiText } from "@/components/emoji-text";
 import { useAppLocale } from "@/components/locale-provider";
@@ -613,6 +613,14 @@ export function Sidebar({
             className="inline-flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           >
             <BookOpen className="h-4 w-4" />
+          </Link>
+          <Link
+            href="/memory"
+            title={t("navigation.memory")}
+            aria-label={t("navigation.memory")}
+            className="inline-flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          >
+            <Brain className="h-4 w-4" />
           </Link>
           <button
             type="button"

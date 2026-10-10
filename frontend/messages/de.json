@@ -15,7 +15,8 @@
         "disconnect": "Trennen",
         "github": "thiesgerken/carapace",
         "apiKeys": "API-Schlüssel",
-        "knowledge": "Wissen"
+        "knowledge": "Wissen",
+        "memory": "Gedächtnis"
     },
     "knowledge": {
         "title": "Wissens-Repository",
@@ -46,6 +47,18 @@
             "oauthHintStore": "und speichere das JSON im obigen Vault-Eintrag.",
             "hints": "Hinweise"
         }
+    },
+    "memory": {
+        "title": "Gedächtnis",
+        "sections": "Gedächtnis-Bereiche",
+        "tabs": {
+            "timeline": "Zeitleiste",
+            "sessions": "Sitzungen",
+            "facts": "Fakten",
+            "tasks": "Aufgaben"
+        },
+        "statusPlaceholder": "Hier erscheinen Auto-Modus, Budget und Warteschlange.",
+        "comingSoon": "Hier gibt es noch nichts."
     },
     "account": {
         "menu": "Kontomenü",
