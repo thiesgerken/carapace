@@ -239,6 +239,47 @@
                 "observed": "beobachtet"
             },
             "provenance": "Herkunft"
+        },
+        "timeline": {
+            "tree": "Zeiträume",
+            "empty": "Noch keine Zeiträume. Sie erscheinen, sobald Sitzungen für das Gedächtnis erzeugt wurden.",
+            "pickPeriod": "Woche oder Monat auswählen.",
+            "unknownPeriod": "Dieser Zeitraum hat keine Sitzungen.",
+            "badges": {
+                "current": "aktuell",
+                "stale": "veraltet",
+                "notRun": "nicht ausgeführt"
+            },
+            "staleReasons": {
+                "sources": "Quellen geändert",
+                "prompt_version": "Prompt geändert",
+                "model": "Modell geändert",
+                "input_format_version": "Eingabeformat geändert"
+            },
+            "weekTitle": "Woche {key}",
+            "regenerate": "Neu erzeugen",
+            "generate": "Erzeugen",
+            "coverageSessions": "{covered}/{total} Sitzungen",
+            "coverageWeeks": "{covered}/{total} Wochen",
+            "task": "Aufgabe {status}",
+            "prompt": "Prompt {version}",
+            "noDigest": "Noch keine Zusammenfassung.",
+            "summary": "Zusammenfassung",
+            "onMyMind": "Beschäftigt mich",
+            "highlights": "Höhepunkte",
+            "openLoops": "Offene Punkte",
+            "learned": "Gelernt",
+            "factCategories": {
+                "user": "Du",
+                "social": "Personen",
+                "surroundings": "Umgebung"
+            },
+            "sourceSessions": "{count, plural, one {Sitzung (#)} other {Sitzungen (#)}}",
+            "sourceWeeks": "{count, plural, one {Woche (#)} other {Wochen (#)}}",
+            "notExtracted": "nicht extrahiert",
+            "history": "{count, plural, one {Frühere Version (#)} other {Frühere Versionen (#)}}",
+            "historyCoverage": "{count, plural, one {Aus # Quelle erzeugt} other {Aus # Quellen erzeugt}}",
+            "alreadyQueued": "Für diesen Zeitraum ist bereits eine Aufgabe eingereiht oder läuft."
         }
     },
     "account": {

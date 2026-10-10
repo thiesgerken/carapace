@@ -1,5 +1,8 @@
 import type {
   MemoryBudgetWindowStatus,
+  MemoryDigestLevel,
+  MemoryMonthNode,
+  MemoryPeriodNode,
   MemoryEstimateTotal,
   MemoryExtractionState,
   MemoryOutdatedReason,
@@ -133,4 +136,37 @@ export function toSpawnRequest(pick: SessionPick, filter: MemorySessionFilter): 
 /** Task ids behind the picked rows; sessions without a task have nothing to run. */
 export function runnableTaskIds(rows: MemorySessionRow[], ids: string[]): number[] {
   return rows.flatMap((row) => (row.task && ids.includes(row.session_id) ? [row.task.id] : []));
+}
+
+/** Week keys are ISO weeks (2026-W36), month keys calendar months (2026-09). */
+export function periodLevel(key: string): MemoryDigestLevel {
+  return key.includes("-W") ? "week" : "month";
+}
+
+export type PeriodBadge =
+  | { kind: "current" }
+  | { kind: "stale"; reasons: ("sources" | MemoryOutdatedReason)[] }
+  | { kind: "notRun" };
+
+export function periodBadge(node: MemoryPeriodNode): PeriodBadge {
+  if (node.digest === null) return { kind: "notRun" };
+  const reasons = [...(node.stale ? (["sources"] as const) : []), ...node.digest.outdated];
+  return reasons.length > 0 ? { kind: "stale", reasons } : { kind: "current" };
+}
+
+/** Month nodes start on the Monday of their first week, so the name comes from the key. */
+export function monthLabel(key: string, locale: string, withYear: boolean): string {
+  const [year, month] = key.split("-").map(Number);
+  return new Intl.DateTimeFormat(locale, { month: "long", ...(withYear ? { year: "numeric" } : {}), timeZone: "UTC" })
+    .format(Date.UTC(year, month - 1, 1));
+}
+
+/** Months arrive newest first; years keep that order. */
+export function groupMonthsByYear(months: MemoryMonthNode[]): [string, MemoryMonthNode[]][] {
+  const years = new Map<string, MemoryMonthNode[]>();
+  for (const month of months) {
+    const year = month.key.slice(0, 4);
+    years.set(year, [...(years.get(year) ?? []), month]);
+  }
+  return [...years];
 }

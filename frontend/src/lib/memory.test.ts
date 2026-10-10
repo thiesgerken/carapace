@@ -5,7 +5,11 @@ import {
   budgetGauge,
   exceedsBudget,
   formatUsd,
+  groupMonthsByYear,
+  monthLabel,
   hasActiveTasks,
+  periodBadge,
+  periodLevel,
   remainingBudget,
   runnableTaskIds,
   toSessionFilter,
@@ -13,7 +17,7 @@ import {
   toTaskFilter,
   toTaskSelection,
 } from "./memory";
-import type { MemoryBudgetWindowStatus, MemorySessionRow, MemoryStatus } from "./types";
+import type { MemoryBudgetWindowStatus, MemoryMonthNode, MemoryPeriodNode, MemorySessionRow, MemoryStatus } from "./types";
 
 function window(overrides: Partial<MemoryBudgetWindowStatus> = {}): MemoryBudgetWindowStatus {
   return {
@@ -108,4 +112,44 @@ test("runnableTaskIds skips picked sessions without a task", () => {
     task: taskId === null ? null : { id: taskId, status: "pending", blocked_reason: null },
   });
   assert.deepEqual(runnableTaskIds([row("a", 1), row("b", null), row("c", 3)], ["a", "b"]), [1]);
+});
+
+function periodNode(overrides: Partial<MemoryPeriodNode> = {}): MemoryPeriodNode {
+  return {
+    level: "week",
+    key: "2026-W36",
+    start: "2026-08-31",
+    end: "2026-09-06",
+    covered: 12,
+    total: 14,
+    digest: null,
+    stale: false,
+    task: null,
+    ...overrides,
+  };
+}
+
+test("periodBadge distinguishes not run, current and stale with reasons", () => {
+  const digest = { id: 1, model: "opus", prompt_version: "a1", carapace_version: "0.158.7", cost_usd: "0.08", created_at: "2026-09-08T07:12:00Z", outdated: [] };
+  assert.deepEqual(periodBadge(periodNode()), { kind: "notRun" });
+  assert.deepEqual(periodBadge(periodNode({ digest })), { kind: "current" });
+  assert.deepEqual(
+    periodBadge(periodNode({ digest: { ...digest, outdated: ["prompt_version"] }, stale: true })),
+    { kind: "stale", reasons: ["sources", "prompt_version"] },
+  );
+});
+
+test("periodLevel and year grouping follow the period keys", () => {
+  assert.equal(periodLevel("2026-W36"), "week");
+  assert.equal(periodLevel("2026-09"), "month");
+  const month = (key: string): MemoryMonthNode => ({ ...periodNode({ level: "month", key }), weeks: [] });
+  assert.deepEqual(
+    groupMonthsByYear([month("2027-01"), month("2026-12"), month("2026-11")]).map(([year, months]) => [year, months.map((m) => m.key)]),
+    [["2027", ["2027-01"]], ["2026", ["2026-12", "2026-11"]]],
+  );
+});
+
+test("monthLabel names the key's month, not the month of its first Monday", () => {
+  assert.equal(monthLabel("2026-09", "en", true), "September 2026");
+  assert.equal(monthLabel("2026-09", "en", false), "September");
 });
