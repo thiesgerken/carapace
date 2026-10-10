@@ -202,28 +202,28 @@ class MirrorHandler:
         handle = self._knowledge_repo_for_user(task.user)
         if not (handle.knowledge_dir / ".git").exists():
             await handle.git_store.ensure_repo()
-        commit = None
-        # `git add memory` stages removals too, so new, changed and deleted files form one commit;
-        # GitStore's index lock keeps it apart from concurrent session archive commits.
-        if _sync_mirror(handle.knowledge_dir, files) and await handle.git_store.commit(
+        _sync_mirror(handle.knowledge_dir, files)
+        # Always commit, not only after a disk change: a run that wrote files but never committed
+        # (crash, failed commit) must be caught up by the next one. `git add memory` stages
+        # removals too, so new, changed and deleted files form one commit; GitStore's index lock
+        # keeps it apart from concurrent session archive commits.
+        commit = await handle.git_store.commit_returning_sha(
             [MIRROR_ROOT], f"🧠 memory: update mirror ({len(files) - 1} records)"
-        ):
-            commit = await handle.git_store.head_sha()
+        )
+        if commit is not None:
             await self._push_if_configured(task.user)
         return TaskOutcome(provenance=None, result=MirrorResult(commit=commit))
 
 
-def _sync_mirror(knowledge_dir: Path, files: dict[str, str]) -> bool:
-    """Make ``memory/`` contain exactly *files*. Returns whether anything on disk changed.
+def _sync_mirror(knowledge_dir: Path, files: dict[str, str]) -> None:
+    """Make ``memory/`` contain exactly *files*.
 
     The agent can push anything into the knowledge repo, symlinks included. Every symlink under
     ``memory/`` is removed before writing, so a write can never be redirected outside the mirror.
     """
     mirror_dir = knowledge_dir / MIRROR_ROOT
-    changed = False
     if mirror_dir.is_symlink():
         mirror_dir.unlink()
-        changed = True
     existing: set[str] = set()
     for dirpath, dirnames, filenames in os.walk(mirror_dir):
         directory = Path(dirpath)
@@ -231,23 +231,19 @@ def _sync_mirror(knowledge_dir: Path, files: dict[str, str]) -> bool:
             path = directory / name
             if path.is_symlink():
                 path.unlink()
-                changed = True
             elif name in filenames:
                 existing.add(path.relative_to(knowledge_dir).as_posix())
         dirnames[:] = [name for name in dirnames if (directory / name).is_dir()]
 
     for stale in existing - files.keys():
         (knowledge_dir / stale).unlink()
-        changed = True
     for relative, content in files.items():
         target = knowledge_dir / relative
         if relative in existing and target.read_text(encoding="utf-8") == content:
             continue
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(content, encoding="utf-8")
-        changed = True
 
     for dirpath, _, _ in sorted(os.walk(mirror_dir), key=lambda entry: len(entry[0]), reverse=True):
         if dirpath != str(mirror_dir) and not any(Path(dirpath).iterdir()):
             Path(dirpath).rmdir()
-    return changed

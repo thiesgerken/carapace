@@ -171,3 +171,22 @@ async def test_uncommitted_edits_are_restored_without_a_commit(mirror: _Mirror) 
 
     assert await mirror.run() is None
     assert await mirror.git("status", "--porcelain") == ""
+
+
+async def test_files_written_by_a_crashed_run_are_committed_by_the_next(
+    mirror: _Mirror, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def crash(*args: object, **kwargs: object) -> str | None:
+        raise RuntimeError("git commit failed")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(mirror.git_store, "commit_returning_sha", crash)
+        with pytest.raises(RuntimeError):
+            await mirror.run()
+    assert mirror.files() == render_mirror([EXTRACTION], [WEEK, MONTH])
+
+    commit = await mirror.run()
+
+    assert commit == await mirror.git("rev-parse", "HEAD")
+    assert await mirror.git("status", "--porcelain") == ""
+    assert mirror.pushes == ["alice"]

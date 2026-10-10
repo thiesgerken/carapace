@@ -178,6 +178,13 @@ class TestGitStoreCommit:
         result = await store.commit(["test.md"], "add test file")
         assert result is True
 
+    async def test_commit_returning_sha(self, store: GitStore):
+        (store.repo_dir / "test.md").write_text("hello")
+        sha = await store.commit_returning_sha(["test.md"], "add test file")
+        assert sha is not None
+        assert sha == await store.head_sha()
+        assert await store.commit_returning_sha(["test.md"], "unchanged") is None
+
     async def test_commit_nothing_staged(self, store: GitStore):
         result = await store.commit([], "empty commit")
         assert result is False
