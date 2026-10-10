@@ -4,7 +4,9 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 from pydantic import ValidationError
+from sqlalchemy import select
 
+from carapace.database.models import JobRow
 from carapace.jobs import JobsScheduler, JobsStore, build_job_run_message
 from carapace.models.jobs import JobDefinition
 
@@ -17,6 +19,17 @@ def test_jobs_store_roundtrip(db_factory):
 
     loaded = store.load()
     assert [entry.id for entry in loaded.jobs] == ["daily"]
+
+
+def test_jobs_store_update_keeps_memory_enabled_projection(db_factory):
+    store = JobsStore(db_factory)
+    job = JobDefinition(user="thies", id="daily", name="Daily", prompt="Summarize.")
+    store.create_job(job)
+
+    store.update_job("daily", job.model_copy(update={"memory_enabled": True}))
+
+    with db_factory() as db:
+        assert db.scalar(select(JobRow.memory_enabled).where(JobRow.id == "daily")) is True
 
 
 def test_archive_previous_sessions_conflicts_with_persistent_session():

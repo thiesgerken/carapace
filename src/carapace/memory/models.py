@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -89,18 +89,17 @@ class ExtractionState(StrEnum):
 # --- LLM output schemas ---
 
 
-class Fact(BaseModel):
+class _FactBase(BaseModel):
     category: FactCategory
     statement: str
     subject: str | None = None
-    source_seqs: list[int]
     source_kind: FactSourceKind
     confidence: Confidence
     durability: Durability
     valid_until: date | None = None
 
     @model_validator(mode="after")
-    def _validate_provenance_rules(self) -> Fact:
+    def _validate_provenance_rules(self) -> Self:
         if self.category is FactCategory.social and not self.subject:
             raise ValueError("social facts need a subject")
         # Tool output must not become facts about the user or their people: those end up in a
@@ -108,6 +107,10 @@ class Fact(BaseModel):
         if self.source_kind is FactSourceKind.observed and self.category is not FactCategory.surroundings:
             raise ValueError("observed facts may only be surroundings facts")
         return self
+
+
+class Fact(_FactBase):
+    source_seqs: list[int]
 
 
 class SessionExtraction(BaseModel):
@@ -126,10 +129,10 @@ class DigestTheme(BaseModel):
     refs: list[str]
 
 
-class DigestFact(BaseModel):
-    category: FactCategory
-    statement: str
-    subject: str | None = None
+class DigestFact(_FactBase):
+    """A deduplicated fact; ``user_said`` only if every merged source was."""
+
+    # Session ids (week digests) or week keys (month digests) the fact came from.
     refs: list[str]
 
 

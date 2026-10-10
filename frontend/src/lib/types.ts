@@ -698,10 +698,16 @@ export interface MemoryDigestTheme {
   refs: string[];
 }
 
+/** A deduplicated fact; user_said only if every merged source was. */
 export interface MemoryDigestFact {
   category: MemoryFactCategory;
   statement: string;
   subject: string | null;
+  source_kind: MemoryFactSourceKind;
+  confidence: MemoryConfidence;
+  durability: MemoryDurability;
+  valid_until: string | null;
+  /** Session ids (week digests) or week keys (month digests). */
   refs: string[];
 }
 

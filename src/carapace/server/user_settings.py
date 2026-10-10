@@ -227,14 +227,13 @@ class UserSettingsPatch(SettingsModel):
     timezone: str | None = None
     memory: UserMemoryConfig | None = None
     matrix: MatrixSettingsPatch | None = None
+    credentials: CredentialsConfig | None = None
+    git: GitSettingsPatch | None = None
 
     @field_validator("timezone", mode="after")
     @classmethod
     def _validate_timezone(cls, value: str | None) -> str | None:
         return None if value is None else validate_timezone(value)
-
-    credentials: CredentialsConfig | None = None
-    git: GitSettingsPatch | None = None
 
     @model_validator(mode="after")
     def _validate_nonempty_patch(self) -> UserSettingsPatch:

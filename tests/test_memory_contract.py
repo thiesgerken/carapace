@@ -12,7 +12,7 @@ from sqlalchemy.exc import IntegrityError
 from carapace.database.base import Base
 from carapace.database.engine import create_engine_and_factory, run_migrations
 from carapace.database.models import MemoryTaskRow, User
-from carapace.memory.models import Fact, ModelRole, TaskSelection
+from carapace.memory.models import DigestFact, Fact, ModelRole, TaskSelection
 from carapace.models.config import AgentConfig, AvailableModelEntry, Config, DatabaseConfig
 from carapace.models.user import UserConfig
 from carapace.user_defaults import effective_memory_model
@@ -63,14 +63,15 @@ def test_one_open_task_per_target(db_factory):
         db.add(_task("queued"))
 
 
-def test_fact_provenance_rules():
-    base = {"statement": "x", "source_seqs": [1], "confidence": "high", "durability": "durable"}
-    Fact.model_validate(base | {"category": "surroundings", "source_kind": "observed"})
-    Fact.model_validate(base | {"category": "social", "subject": "Anna", "source_kind": "user_said"})
+@pytest.mark.parametrize(("model", "sources"), [(Fact, {"source_seqs": [1]}), (DigestFact, {"refs": ["2026-W36"]})])
+def test_fact_provenance_rules(model: type[Fact | DigestFact], sources: dict[str, list]):
+    base = {"statement": "x", "confidence": "high", "durability": "durable"} | sources
+    model.model_validate(base | {"category": "surroundings", "source_kind": "observed"})
+    model.model_validate(base | {"category": "social", "subject": "Anna", "source_kind": "user_said"})
     with pytest.raises(ValidationError, match="observed facts"):
-        Fact.model_validate(base | {"category": "user", "source_kind": "observed"})
+        model.model_validate(base | {"category": "user", "source_kind": "observed"})
     with pytest.raises(ValidationError, match="subject"):
-        Fact.model_validate(base | {"category": "social", "source_kind": "user_said"})
+        model.model_validate(base | {"category": "social", "source_kind": "user_said"})
 
 
 def test_task_selection_needs_ids_xor_filter():

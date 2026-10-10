@@ -442,7 +442,9 @@ export function buildUserSettingsPatch(
   const body: UserSettingsPatchInput = {
     agent_name: draft.agentName.trim(),
     agent_icon: draft.agentIcon.trim(),
+    // Spread so stored models this view does not edit pass through unchanged.
     default_models: {
+      ...draft.defaultModels,
       agent: draft.defaultModels.agent?.trim() || null,
       sentinel: draft.defaultModels.sentinel?.trim() || null,
       title: draft.defaultModels.title?.trim() || null,
