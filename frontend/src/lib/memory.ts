@@ -1,5 +1,6 @@
 import type {
   MemoryBudgetWindowStatus,
+  MemorySpawnSkip,
   MemoryFactView,
   MemoryDigestLevel,
   MemoryMonthNode,
@@ -45,6 +46,18 @@ export function formatUsd(value: string | number, locale: string): string {
 
 export function formatTokens(value: number, locale: string): string {
   return new Intl.NumberFormat(locale, { notation: "compact" }).format(value);
+}
+
+/** What a run may consume when cost is unknown (models without pricing): exact input, capped output. */
+export function formatTokenEstimate(inputTokens: number, outputTokensCap: number, locale: string): string {
+  return `${formatTokens(inputTokens, locale)} in · ≤${formatTokens(outputTokensCap, locale)} out`;
+}
+
+/** Skip reasons of a spawn, counted: "no_handler" or "private ×3, already_open". */
+export function summarizeSkips(skipped: MemorySpawnSkip[]): string {
+  const counts = new Map<string, number>();
+  for (const { reason } of skipped) counts.set(reason, (counts.get(reason) ?? 0) + 1);
+  return [...counts].map(([reason, count]) => (count > 1 ? `${reason} ×${count}` : reason)).join(", ");
 }
 
 export type BudgetGauge =

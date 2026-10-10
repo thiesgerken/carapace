@@ -6,7 +6,7 @@ import { useLocale, useTranslations } from "next-intl";
 import { useMemoryStatus } from "@/components/memory-status";
 import { ModelPicker } from "@/components/model-picker";
 import { estimateMemoryTasks, fetchModels, runMemoryTasks, type AvailableModelInfo } from "@/lib/api";
-import { exceedsBudget, formatTokens, formatUsd, remainingBudget } from "@/lib/memory";
+import { exceedsBudget, formatTokenEstimate, formatTokens, formatUsd, remainingBudget } from "@/lib/memory";
 import type { MemoryEstimateTotal, MemoryTaskSelection } from "@/lib/types";
 
 interface MemoryRunDialogProps {
@@ -89,8 +89,10 @@ export function MemoryRunDialog({ server, token, selection, onClose, onQueued }:
             <dd className="tabular-nums">{formatTokens(estimate.input_tokens, locale)}</dd>
             <dt className="text-muted-foreground">{t("cost")}</dt>
             <dd className="tabular-nums">
-              ~{formatUsd(estimate.cost_usd, locale)}
-              {estimate.unpriced_count > 0 ? (
+              {estimate.unpriced_count === estimate.task_count
+                ? formatTokenEstimate(estimate.input_tokens, estimate.output_tokens_cap, locale)
+                : `~${formatUsd(estimate.cost_usd, locale)}`}
+              {estimate.unpriced_count > 0 && estimate.unpriced_count < estimate.task_count ? (
                 <span className="ml-2 text-muted-foreground">{t("unpriced", { count: estimate.unpriced_count })}</span>
               ) : null}
             </dd>
