@@ -4,13 +4,23 @@ import type {
   JobDefinition,
   JobRunResult,
   JobsFile,
+  MemoryDigestLevel,
   MemoryEstimateTotal,
+  MemoryFactFilter,
+  MemoryFactListResponse,
+  MemoryPeriodDetail,
+  MemoryPeriodTree,
+  MemorySessionDetail,
+  MemorySessionFilter,
+  MemorySessionListResponse,
   MemoryStatus,
   MemoryTaskCountResponse,
   MemoryTaskFilter,
   MemoryTaskListResponse,
   MemoryTaskRunRequest,
   MemoryTaskSelection,
+  MemoryTaskSpawnRequest,
+  MemoryTaskSpawnResponse,
   NotificationPreferencesPatch,
   NotificationSubscriptionCreateRequest,
   NotificationSubscriptionRecord,
@@ -1067,11 +1077,27 @@ export interface GitSettingsInfo {
   token_set: boolean;
 }
 
+/** Null disables that limit. Costs are decimal strings. */
+export interface MemoryBudgetSettings {
+  cost_usd_per_day: string | null;
+  cost_usd_per_month: string | null;
+  input_tokens_per_day: number | null;
+  input_tokens_per_month: number | null;
+}
+
+export interface MemorySettingsInfo {
+  auto_mode: boolean;
+  budget: MemoryBudgetSettings;
+}
+
 export interface UserSettingsInfo {
   agent_name: string;
   agent_icon: string;
   default_models: UserDefaultModelsSettings;
   default_budget: SessionBudgetSettings;
+  /** IANA zone; defines memory weeks, months and budget windows. */
+  timezone: string;
+  memory: MemorySettingsInfo;
   matrix: MatrixSettingsInfo;
   credentials: CredentialsSettingsInfo;
   git: GitSettingsInfo;
@@ -1086,6 +1112,8 @@ export interface UserSettingsResponseInfo {
       agent: string;
       sentinel: string;
       title: string;
+      memory_low: string;
+      memory_high: string;
     };
     budget: SessionBudgetSettings;
   };
@@ -1098,6 +1126,8 @@ export interface UserSettingsPatchInput {
   agent_icon?: string | null;
   default_models?: UserDefaultModelsSettings | null;
   default_budget?: SessionBudgetSettings | null;
+  timezone?: string | null;
+  memory?: MemorySettingsInfo | null;
   matrix?: Partial<{
     enabled: boolean;
     homeserver: string | null;
@@ -1263,6 +1293,28 @@ function decodeGitSettings(raw: unknown): GitSettingsInfo {
   };
 }
 
+function decodeMemorySettings(raw: unknown): MemorySettingsInfo {
+  if (!isRecord(raw) || !isRecord(raw.budget)) throw new Error("Invalid memory settings");
+  const budget = raw.budget;
+  const cost = (key: string) => readString(budget, key) ?? null;
+  const tokens = (key: string) => readNumber(budget, key) ?? null;
+  return {
+    auto_mode: readBoolean(raw, "auto_mode"),
+    budget: {
+      cost_usd_per_day: cost("cost_usd_per_day"),
+      cost_usd_per_month: cost("cost_usd_per_month"),
+      input_tokens_per_day: tokens("input_tokens_per_day"),
+      input_tokens_per_month: tokens("input_tokens_per_month"),
+    },
+  };
+}
+
+function requireString(record: Record<string, unknown>, key: string): string {
+  const value = readString(record, key);
+  if (value === undefined) throw new Error(`Invalid settings response: missing ${key}`);
+  return value;
+}
+
 function decodeUserSettingsResponse(raw: unknown): UserSettingsResponseInfo {
   if (!isRecord(raw)) throw new Error("Invalid settings response");
   const capabilities = isRecord(raw.capabilities) ? raw.capabilities : {};
@@ -1285,6 +1337,8 @@ function decodeUserSettingsResponse(raw: unknown): UserSettingsResponseInfo {
         agent: readString(serverModels, "agent") ?? "",
         sentinel: readString(serverModels, "sentinel") ?? "",
         title: readString(serverModels, "title") ?? "",
+        memory_low: readString(serverModels, "memory_low") ?? "",
+        memory_high: readString(serverModels, "memory_high") ?? "",
       },
       budget: decodeBudget(serverDefaults.budget),
     },
@@ -1294,6 +1348,8 @@ function decodeUserSettingsResponse(raw: unknown): UserSettingsResponseInfo {
       agent_icon: readString(settings, "agent_icon") ?? "",
       default_models: decodeDefaultModels(settings.default_models),
       default_budget: decodeBudget(settings.default_budget),
+      timezone: requireString(settings, "timezone"),
+      memory: decodeMemorySettings(settings.memory),
       matrix: decodeMatrixSettings(settings.matrix),
       credentials: decodeCredentialsSettings(settings.credentials),
       git: decodeGitSettings(settings.git),
@@ -1817,4 +1873,65 @@ export function cancelMemoryTasks(server: string, selection: MemoryTaskSelection
 
 export function retryMemoryTasks(server: string, ids: number[]): Promise<MemoryTaskCountResponse> {
   return postMemory(server, "/tasks/retry", { ids }, "Failed to retry memory tasks");
+}
+
+export function spawnMemoryTasks(server: string, body: MemoryTaskSpawnRequest): Promise<MemoryTaskSpawnResponse> {
+  return postMemory(server, "/tasks/spawn", body, "Failed to spawn memory tasks");
+}
+
+function memorySessionQuery(filter: MemorySessionFilter, cursor: string | null): string {
+  const params = new URLSearchParams();
+  if (filter.week) params.set("week", filter.week);
+  for (const state of filter.state ?? []) params.append("state", state);
+  for (const status of filter.task_status ?? []) params.append("task_status", status);
+  if (filter.model) params.set("model", filter.model);
+  if (filter.channel) params.set("channel", filter.channel);
+  if (filter.outdated_reason) params.set("outdated_reason", filter.outdated_reason);
+  if (cursor) params.set("cursor", cursor);
+  return params.toString();
+}
+
+export async function listMemorySessions(
+  server: string,
+  filter: MemorySessionFilter,
+  cursor: string | null = null,
+): Promise<MemorySessionListResponse> {
+  const res = await fetch(`${server}/api/memory/sessions?${memorySessionQuery(filter, cursor)}`);
+  if (!res.ok) throw new Error(await readErrorMessage(res, "Failed to list memory sessions"));
+  return (await res.json()) as MemorySessionListResponse;
+}
+
+/** Null when the session is not eligible for memory (private, excluded job, or unknown). */
+export async function getMemorySession(server: string, sessionId: string): Promise<MemorySessionDetail | null> {
+  const res = await fetch(`${server}/api/memory/sessions/${encodeURIComponent(sessionId)}`);
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(await readErrorMessage(res, "Failed to load session memory"));
+  return (await res.json()) as MemorySessionDetail;
+}
+
+export async function getMemoryPeriods(server: string): Promise<MemoryPeriodTree> {
+  const res = await fetch(`${server}/api/memory/periods`);
+  if (!res.ok) throw new Error(await readErrorMessage(res, "Failed to load memory periods"));
+  return (await res.json()) as MemoryPeriodTree;
+}
+
+/** Null when the key is invalid or the period has no sessions. */
+export async function getMemoryPeriod(server: string, level: MemoryDigestLevel, key: string): Promise<MemoryPeriodDetail | null> {
+  const res = await fetch(`${server}/api/memory/periods/${level}/${encodeURIComponent(key)}`);
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(await readErrorMessage(res, "Failed to load memory period"));
+  return (await res.json()) as MemoryPeriodDetail;
+}
+
+export async function listMemoryFacts(server: string, filter: MemoryFactFilter): Promise<MemoryFactListResponse> {
+  const params = new URLSearchParams();
+  for (const category of filter.category ?? []) params.append("category", category);
+  if (filter.subject) params.set("subject", filter.subject);
+  for (const confidence of filter.confidence ?? []) params.append("confidence", confidence);
+  for (const durability of filter.durability ?? []) params.append("durability", durability);
+  for (const kind of filter.source_kind ?? []) params.append("source_kind", kind);
+  if (filter.period) params.set("period", filter.period);
+  const res = await fetch(`${server}/api/memory/facts?${params.toString()}`);
+  if (!res.ok) throw new Error(await readErrorMessage(res, "Failed to load memory facts"));
+  return (await res.json()) as MemoryFactListResponse;
 }

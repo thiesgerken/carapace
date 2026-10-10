@@ -19,6 +19,9 @@ function task(id: number, target_label: string): MemoryTaskView {
     target: `session-${id}`,
     target_label,
     status: "pending",
+    week_key: "2026-W36",
+    month_key: "2026-09",
+    model: "haiku",
     blocked_reason: null,
     spawned_by: "auto",
     model_override: null,
@@ -98,8 +101,8 @@ test("select all matching runs the whole filter, not just the visible page", asy
     await click(view.container.querySelector('input[aria-label="Select all tasks on this page"]')!);
     button("Run selected (2)");
 
-    await click(button("Select all 120 matching tasks"));
-    assert.match(text(), /All 120 matching tasks are selected\./);
+    await click(button("Select all 120 matching"));
+    assert.match(text(), /All 120 matching are selected\./);
 
     await click(button("Run selected (120)"));
     await settle();

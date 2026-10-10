@@ -4,6 +4,7 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Ban, Loader2, Play, RotateCcw } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
+import { buttonClassName, controlClassName, DetailList, MemoryProvenanceList, PickMatchingRow } from "@/components/memory-ui";
 import { MemoryRunDialog } from "@/components/memory-run-dialog";
 import { useMemoryStatus } from "@/components/memory-status";
 import { cancelMemoryTasks, listMemoryTasks, retryMemoryTasks } from "@/lib/api";
@@ -25,8 +26,6 @@ const NEWEST_BATCH = 50;
 const DEFAULT_FORM: TaskFilterForm = { status: "pending", kind: "", period: "", model: "" };
 const NO_PICK: TaskPick = { kind: "ids", ids: [] };
 
-const controlClassName = "rounded-lg border border-border bg-background px-2.5 py-1.5 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/30";
-const buttonClassName = "inline-flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-1.5 text-sm font-medium transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50";
 
 function taskModel(task: MemoryTaskView): string | null {
   return task.provenance?.model ?? task.model_override ?? task.estimate?.model ?? null;
@@ -196,20 +195,13 @@ export function MemoryTasksView({ server, token }: { server: string; token: stri
                 <th className="w-10 px-3 py-2"><span className="sr-only">{t("columns.actions")}</span></th>
               </tr>
               {allVisiblePicked && total > items.length ? (
-                <tr>
-                  <td colSpan={8} className="bg-muted/50 px-3 py-1.5 text-center text-xs">
-                    {pick.kind === "matching" ? (
-                      <>
-                        {t("pickedMatching", { count: total })}{" "}
-                        <button type="button" onClick={() => setPick(NO_PICK)} className="font-medium underline underline-offset-2">{t("clearPick")}</button>
-                      </>
-                    ) : (
-                      <button type="button" onClick={() => setPick({ kind: "matching" })} className="font-medium underline underline-offset-2">
-                        {t("pickMatching", { count: total })}
-                      </button>
-                    )}
-                  </td>
-                </tr>
+                <PickMatchingRow
+                  colSpan={8}
+                  total={total}
+                  matching={pick.kind === "matching"}
+                  onPickMatching={() => setPick({ kind: "matching" })}
+                  onClear={() => setPick(NO_PICK)}
+                />
               ) : null}
             </thead>
             <tbody>
@@ -340,46 +332,25 @@ function MemoryTaskDetail({ task }: { task: MemoryTaskView }) {
   const t = useTranslations("memory.tasks.detail");
   const locale = useLocale();
   const time = (iso: string | null) => (iso ? formatAbsoluteTime(iso, locale) : "—");
-  const provenance = task.provenance;
   const href = resultHref(task);
-
-  const rows: [string, string][] = [
-    [t("id"), String(task.id)],
-    [t("spawnedBy"), t(`spawnedByValue.${task.spawned_by}`)],
-    [t("attempts"), String(task.attempts)],
-    [t("created"), time(task.created_at)],
-    [t("queuedAt"), time(task.queued_at)],
-    [t("started"), time(task.started_at)],
-    [t("finished"), time(task.finished_at)],
-    ...(provenance
-      ? ([
-        [t("model"), provenance.model],
-        [t("prompt"), provenance.prompt_version],
-        [t("inputFormat"), String(provenance.input_format_version)],
-        [t("carapace"), provenance.carapace_version],
-        [t("inputHash"), provenance.input_hash.slice(0, 12)],
-        [t("usage"), `${formatTokens(provenance.input_tokens, locale)} in · ${formatTokens(provenance.output_tokens, locale)} out`],
-        [t("cost"), provenance.cost_usd === null ? t("unpriced") : formatUsd(provenance.cost_usd, locale)],
-        [t("duration"), `${(provenance.duration_ms / 1000).toFixed(1)} s`],
-      ] satisfies [string, string][])
-      : []),
-    ...(task.estimate && !provenance
-      ? ([
-        [t("estimate"), `${formatTokens(task.estimate.input_tokens, locale)} in · ≤${formatTokens(task.estimate.output_tokens_cap, locale)} out`],
-      ] satisfies [string, string][])
-      : []),
-  ];
 
   return (
     <div className="space-y-2 pt-2 text-xs">
-      <dl className="grid grid-cols-[max-content_1fr] gap-x-6 gap-y-1 sm:grid-cols-[max-content_1fr_max-content_1fr]">
-        {rows.map(([label, value]) => (
-          <Fragment key={label}>
-            <dt className="text-muted-foreground">{label}</dt>
-            <dd className="font-mono">{value}</dd>
-          </Fragment>
-        ))}
-      </dl>
+      <DetailList
+        rows={[
+          [t("id"), String(task.id)],
+          [t("spawnedBy"), t(`spawnedByValue.${task.spawned_by}`)],
+          [t("attempts"), String(task.attempts)],
+          [t("created"), time(task.created_at)],
+          [t("queuedAt"), time(task.queued_at)],
+          [t("started"), time(task.started_at)],
+          [t("finished"), time(task.finished_at)],
+          ...(task.estimate && !task.provenance
+            ? ([[t("estimate"), `${formatTokens(task.estimate.input_tokens, locale)} in · ≤${formatTokens(task.estimate.output_tokens_cap, locale)} out`]] satisfies [string, string][])
+            : []),
+        ]}
+      />
+      {task.provenance ? <MemoryProvenanceList provenance={task.provenance} /> : null}
       {task.error ? <pre className="whitespace-pre-wrap rounded-md bg-background p-2 font-mono text-destructive">{task.error}</pre> : null}
       {href ? <Link href={href} className="inline-block font-medium underline underline-offset-2">{t("openResult")}</Link> : null}
     </div>

@@ -15,7 +15,7 @@ from zoneinfo import ZoneInfo
 
 from ..models.user import MemoryBudget
 from ..usage import ModelUsage, price_for_usage
-from .models import EstimateTotal, Provenance, TaskEstimate
+from .models import EstimateTotal, TaskEstimate
 from .periods import local_midnight_utc
 
 
@@ -42,16 +42,6 @@ def budget_windows(now: datetime, tz: ZoneInfo) -> BudgetWindows:
         day_start=local_midnight_utc(today, tz),
         month_start=local_midnight_utc(today.replace(day=1), tz),
     )
-
-
-def spend_of(provenances: Iterable[Provenance], reservations: Iterable[TaskEstimate] = ()) -> Spend:
-    """Actual spend of billed calls plus the estimates reserved by running ones."""
-    total = Spend()
-    for p in provenances:
-        total = Spend(total.cost_usd + (p.cost_usd or 0), total.input_tokens + p.input_tokens)
-    for estimate in reservations:
-        total = total.plus(estimate)
-    return total
 
 
 def estimate_cost(model: str, input_tokens: int, output_tokens: int) -> Decimal | None:

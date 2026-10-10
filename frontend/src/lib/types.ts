@@ -606,6 +606,7 @@ export type ChatMessage =
       toolId?: string;
       parentToolId?: string;
       compaction?: CompactionAnnotation;
+      eventIndex?: number;
       children?: Array<{
         kind: "tool_call";
         tool: string;
