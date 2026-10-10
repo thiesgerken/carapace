@@ -1,6 +1,11 @@
 import type {
   MemoryBudgetWindowStatus,
   MemoryEstimateTotal,
+  MemoryExtractionState,
+  MemoryOutdatedReason,
+  MemorySessionFilter,
+  MemorySessionRow,
+  MemoryTaskSpawnRequest,
   MemoryStatus,
   MemoryTaskFilter,
   MemoryTaskKind,
@@ -89,4 +94,43 @@ export type TaskPick = { kind: "ids"; ids: number[] } | { kind: "matching" };
 
 export function toTaskSelection(pick: TaskPick, filter: MemoryTaskFilter): MemoryTaskSelection {
   return pick.kind === "ids" ? { ids: pick.ids } : { filter };
+}
+
+export const MEMORY_EXTRACTION_STATES: readonly MemoryExtractionState[] = ["missing", "current", "outdated"];
+export const MEMORY_OUTDATED_REASONS: readonly MemoryOutdatedReason[] = ["prompt_version", "model", "input_format_version"];
+
+export interface SessionFilterForm {
+  /** ISO week key from <input type="week">, e.g. 2026-W36. */
+  week: string;
+  state: MemoryExtractionState | "";
+  /** Only applies while state is "outdated". */
+  outdatedReason: MemoryOutdatedReason | "";
+  taskStatus: MemoryTaskStatus | "";
+  model: string;
+  channel: string;
+}
+
+export function toSessionFilter(form: SessionFilterForm): MemorySessionFilter {
+  return {
+    week: form.week || null,
+    state: form.state ? [form.state] : null,
+    outdated_reason: form.state === "outdated" && form.outdatedReason ? [form.outdatedReason] : null,
+    task_status: form.taskStatus ? [form.taskStatus] : null,
+    model: form.model || null,
+    channel: form.channel || null,
+  };
+}
+
+/** Either explicit sessions or everything the current filter matches (across all pages). */
+export type SessionPick = { kind: "ids"; ids: string[] } | { kind: "matching" };
+
+export function toSpawnRequest(pick: SessionPick, filter: MemorySessionFilter): MemoryTaskSpawnRequest {
+  return pick.kind === "ids"
+    ? { kind: "session_extract", targets: pick.ids }
+    : { kind: "session_extract", filter };
+}
+
+/** Task ids behind the picked rows; sessions without a task have nothing to run. */
+export function runnableTaskIds(rows: MemorySessionRow[], ids: string[]): number[] {
+  return rows.flatMap((row) => (row.task && ids.includes(row.session_id) ? [row.task.id] : []));
 }

@@ -843,7 +843,9 @@ export interface MemoryTaskIdsRequest {
 /** Body of POST /tasks/spawn. */
 export interface MemoryTaskSpawnRequest {
   kind: MemoryTaskKind;
-  targets: string[];
+  /** Exactly one of targets or filter (session_extract only). */
+  targets?: string[] | null;
+  filter?: MemorySessionFilter | null;
   model_override?: string | null;
 }
 
@@ -902,14 +904,16 @@ export interface MemorySessionFilter {
   task_status?: MemoryTaskStatus[] | null;
   model?: string | null;
   channel?: string | null;
+  /** Narrows state = outdated to these reasons. */
+  outdated_reason?: MemoryOutdatedReason[] | null;
 }
 
 export interface MemorySessionRow {
   session_id: string;
   title: string | null;
   channel_type: string;
-  /** First user message; defines the session's period. */
-  started_at: string | null;
+  /** Session creation time. */
+  created_at: string;
   week_key: string | null;
   extraction: MemoryExtractionSummary | null;
   task: MemoryTaskRef | null;

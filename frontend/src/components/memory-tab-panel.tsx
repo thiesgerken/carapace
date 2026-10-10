@@ -2,6 +2,7 @@
 
 import { useTranslations } from "next-intl";
 import { useAppShell } from "@/components/app-shell-context";
+import { MemorySessionsView } from "@/components/memory-sessions-view";
 import { MemoryTasksView } from "@/components/memory-tasks-view";
 import type { MemoryTab } from "@/lib/memory-tabs";
 
@@ -17,6 +18,8 @@ export function MemoryTabPanel({ tab }: { tab: MemoryTab }) {
     >
       {tab === "tasks" ? (
         <MemoryTasksView server={server} token={token} />
+      ) : tab === "sessions" ? (
+        <MemorySessionsView server={server} token={token} />
       ) : (
         <div className="flex flex-1 items-center justify-center p-6 text-sm text-muted-foreground">{t("comingSoon")}</div>
       )}
