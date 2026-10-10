@@ -278,7 +278,8 @@
             "sourceWeeks": "{count, plural, one {Woche (#)} other {Wochen (#)}}",
             "notExtracted": "nicht extrahiert",
             "history": "{count, plural, one {Frühere Version (#)} other {Frühere Versionen (#)}}",
-            "historyCoverage": "{count, plural, one {Aus # Quelle erzeugt} other {Aus # Quellen erzeugt}}"
+            "historyCoverage": "{count, plural, one {Aus # Quelle erzeugt} other {Aus # Quellen erzeugt}}",
+            "alreadyQueued": "Für diesen Zeitraum ist bereits eine Aufgabe eingereiht oder läuft."
         }
     },
     "account": {

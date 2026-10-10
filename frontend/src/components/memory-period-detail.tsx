@@ -9,7 +9,7 @@ import { useMemoryStatus } from "@/components/memory-status";
 import { buttonClassName, MemoryProvenanceList } from "@/components/memory-ui";
 import { getMemoryPeriod, spawnMemoryTasks } from "@/lib/api";
 import { formatAbsoluteTime } from "@/lib/format-time";
-import { formatUsd, periodBadge, periodLevel, type PeriodBadge } from "@/lib/memory";
+import { formatUsd, monthLabel, periodBadge, periodLevel, type PeriodBadge } from "@/lib/memory";
 import type {
   MemoryDigestFact,
   MemoryDigestRecord,
@@ -75,6 +75,7 @@ export function MemoryPeriodDetailView({ server, token, periodKey }: { server: s
   const [error, setError] = useState<string | null>(null);
   const [runSelection, setRunSelection] = useState<MemoryTaskSelection | null>(null);
   const [spawning, setSpawning] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
   const level = periodLevel(periodKey);
 
   // `status` changes on every poll and after every action; see MemoryStatusProvider.
@@ -98,9 +99,11 @@ export function MemoryPeriodDetailView({ server, token, periodKey }: { server: s
   async function regenerate(): Promise<void> {
     setSpawning(true);
     setError(null);
+    setNotice(null);
     try {
       const { task_ids } = await spawnMemoryTasks(server, { kind: level === "week" ? "week_digest" : "month_digest", targets: [periodKey] });
       if (task_ids.length > 0) setRunSelection({ ids: task_ids });
+      else setNotice(t("alreadyQueued"));
       await refreshStatus();
     } catch (spawnError) {
       setError(spawnError instanceof Error ? spawnError.message : String(spawnError));
@@ -121,7 +124,7 @@ export function MemoryPeriodDetailView({ server, token, periodKey }: { server: s
       <header className="space-y-1">
         <div className="flex flex-wrap items-baseline justify-between gap-3">
           <h2 className="text-lg font-semibold tracking-tight">
-            {node.level === "week" ? t("weekTitle", { key: node.key }) : new Intl.DateTimeFormat(locale, { month: "long", year: "numeric", timeZone: "UTC" }).format(Date.parse(node.start))}
+            {node.level === "week" ? t("weekTitle", { key: node.key }) : monthLabel(node.key, locale, true)}
           </h2>
           <button type="button" onClick={() => void regenerate()} disabled={spawning} className={buttonClassName}>
             {spawning ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
@@ -136,6 +139,7 @@ export function MemoryPeriodDetailView({ server, token, periodKey }: { server: s
           <PeriodBadgeMark badge={periodBadge(node)} />
           {node.task && node.task.status !== "done" ? <span>· {t("task", { status: node.task.status })}</span> : null}
         </div>
+        {notice ? <p className="text-sm text-muted-foreground">{notice}</p> : null}
         {current ? (
           <div className="font-mono text-xs text-muted-foreground">
             {current.provenance.model} · {t("prompt", { version: current.provenance.prompt_version })} · carapace {current.provenance.carapace_version}

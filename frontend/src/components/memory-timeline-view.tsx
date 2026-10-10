@@ -8,7 +8,7 @@ import { useLocale, useTranslations } from "next-intl";
 import { MemoryPeriodDetailView, PeriodBadgeMark, periodHref } from "@/components/memory-period-detail";
 import { useMemoryStatus } from "@/components/memory-status";
 import { getMemoryPeriods } from "@/lib/api";
-import { groupMonthsByYear, periodBadge } from "@/lib/memory";
+import { groupMonthsByYear, monthLabel, periodBadge } from "@/lib/memory";
 import type { MemoryPeriodNode, MemoryPeriodTree } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -55,7 +55,6 @@ export function MemoryTimelineView({ server, token }: { server: string; token: s
   }, [server, status]);
 
   const selectedKey = requestedKey ?? tree?.months[0]?.key ?? null;
-  const monthLabel = (node: MemoryPeriodNode) => new Intl.DateTimeFormat(locale, { month: "long", timeZone: "UTC" }).format(Date.parse(node.start));
 
   return (
     <div className="grid min-h-0 flex-1 lg:grid-cols-[18rem_minmax(0,1fr)]">
@@ -74,7 +73,7 @@ export function MemoryTimelineView({ server, token }: { server: string; token: s
                 <li key={month.key}>
                   <details open={month.key === selectedKey || month.weeks.some((week) => week.key === selectedKey)}>
                     <summary className="flex cursor-pointer items-center">
-                      <NodeLink node={month} label={monthLabel(month)} selected={month.key === selectedKey} />
+                      <NodeLink node={month} label={monthLabel(month.key, locale, false)} selected={month.key === selectedKey} />
                     </summary>
                     <ul className="ml-4 space-y-0.5">
                       {month.weeks.map((week) => (

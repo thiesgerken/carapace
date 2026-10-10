@@ -278,7 +278,8 @@
             "sourceWeeks": "{count, plural, one {Week (#)} other {Weeks (#)}}",
             "notExtracted": "not extracted",
             "history": "{count, plural, one {Earlier version (#)} other {Earlier versions (#)}}",
-            "historyCoverage": "{count, plural, one {Built from # source} other {Built from # sources}}"
+            "historyCoverage": "{count, plural, one {Built from # source} other {Built from # sources}}",
+            "alreadyQueued": "A digest task for this period is already queued or running."
         }
     },
     "account": {

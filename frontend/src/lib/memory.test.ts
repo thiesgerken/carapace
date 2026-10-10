@@ -6,6 +6,7 @@ import {
   exceedsBudget,
   formatUsd,
   groupMonthsByYear,
+  monthLabel,
   hasActiveTasks,
   periodBadge,
   periodLevel,
@@ -146,4 +147,9 @@ test("periodLevel and year grouping follow the period keys", () => {
     groupMonthsByYear([month("2027-01"), month("2026-12"), month("2026-11")]).map(([year, months]) => [year, months.map((m) => m.key)]),
     [["2027", ["2027-01"]], ["2026", ["2026-12", "2026-11"]]],
   );
+});
+
+test("monthLabel names the key's month, not the month of its first Monday", () => {
+  assert.equal(monthLabel("2026-09", "en", true), "September 2026");
+  assert.equal(monthLabel("2026-09", "en", false), "September");
 });

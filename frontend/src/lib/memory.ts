@@ -154,6 +154,13 @@ export function periodBadge(node: MemoryPeriodNode): PeriodBadge {
   return reasons.length > 0 ? { kind: "stale", reasons } : { kind: "current" };
 }
 
+/** Month nodes start on the Monday of their first week, so the name comes from the key. */
+export function monthLabel(key: string, locale: string, withYear: boolean): string {
+  const [year, month] = key.split("-").map(Number);
+  return new Intl.DateTimeFormat(locale, { month: "long", ...(withYear ? { year: "numeric" } : {}), timeZone: "UTC" })
+    .format(Date.UTC(year, month - 1, 1));
+}
+
 /** Months arrive newest first; years keep that order. */
 export function groupMonthsByYear(months: MemoryMonthNode[]): [string, MemoryMonthNode[]][] {
   const years = new Map<string, MemoryMonthNode[]>();
