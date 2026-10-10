@@ -71,10 +71,12 @@ def _week_block(record: DigestRecord) -> str:
 
 
 def _fact_line(fact: Fact | DigestFact) -> str:
+    # Only enum values go inside the brackets: free text there could close them early and forge
+    # a `user_said` meta line for an observed fact.
     durability = f"dated until {fact.valid_until.isoformat()}" if fact.valid_until else fact.durability.value
-    meta = [fact.category.value, *([fact.subject] if fact.subject else [])]
-    meta += [fact.source_kind.value, f"{fact.confidence.value} confidence", durability]
-    return f"[{' · '.join(meta)}] {fact.statement}"
+    meta = [fact.category.value, fact.source_kind.value, f"{fact.confidence.value} confidence", durability]
+    statement = f"{fact.subject}: {fact.statement}" if fact.subject else fact.statement
+    return f"[{' · '.join(meta)}] {statement}"
 
 
 def _list(title: str, items: Sequence[str]) -> str:

@@ -135,7 +135,7 @@ WEEK_DIGEST = PromptTemplate(
 You write the weekly digest of a user's conversations with their personal AI assistant. The
 material is the structured memory extracted from each session of one week, in chronological
 order. Each session starts with a header line `=== session <id> ===`; the id is its ref. Facts
-are listed as `[category · subject · source_kind · confidence · durability] statement` (the
+are listed as `[category · source_kind · confidence · durability] subject: statement` (the
 subject only where there is one).
 
 What to write:
@@ -156,7 +156,7 @@ MONTH_DIGEST = PromptTemplate(
 You write the monthly digest of a user's conversations with their personal AI assistant. The
 material is the weekly digests of one month, in chronological order. Each week is introduced by
 a header line `=== week <key> ===`; the key is its ref. Learned entries are listed as
-`[category · subject · source_kind · confidence · durability] statement` (the subject only where
+`[category · source_kind · confidence · durability] subject: statement` (the subject only where
 there is one).
 
 What to write:
