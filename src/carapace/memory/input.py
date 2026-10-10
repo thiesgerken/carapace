@@ -31,6 +31,8 @@ class ExtractionInput(BaseModel):
     input_hash: str
     token_estimate: int
     input_format_version: int
+    # Seqs of the rendered blocks: the only ones a fact may cite.
+    seqs: frozenset[int]
 
 
 def render_extraction_input(events: list[dict[str, Any]]) -> ExtractionInput:
@@ -39,13 +41,14 @@ def render_extraction_input(events: list[dict[str, Any]]) -> ExtractionInput:
     An event's list index is its ``seq``: session events are stored with contiguous seqs from 0.
     """
     start = next((seq for seq in range(len(events)) if _is_user_message(events, seq)), len(events))
-    blocks = [block for seq in range(start, len(events)) if (block := _render_event(events, seq)) is not None]
-    text = "\n\n".join(blocks)
+    blocks = {seq: block for seq in range(start, len(events)) if (block := _render_event(events, seq)) is not None}
+    text = "\n\n".join(blocks.values())
     return ExtractionInput(
         text=text,
         input_hash=hashlib.sha256(text.encode()).hexdigest(),
         token_estimate=count_text_tokens(text),
         input_format_version=INPUT_FORMAT_VERSION,
+        seqs=frozenset(blocks),
     )
 
 

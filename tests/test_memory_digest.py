@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 import pytest
+from loguru import logger
 from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, ToolCallPart, UserPromptPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.usage import RequestUsage
@@ -200,3 +201,46 @@ def test_one_handler_per_level_satisfies_the_protocol() -> None:
 
     assert set(handlers) == {TaskKind.week_digest, TaskKind.month_digest}
     assert {h.model_role for h in handlers.values()} == {ModelRole.memory_high}
+
+
+async def test_refs_outside_the_coverage_are_dropped() -> None:
+    learned = DIGEST["learned"][0]
+    output = {
+        **DIGEST,
+        "on_my_mind": [
+            {"theme": "Talos upgrade", "refs": ["s-talos", "a"]},
+            {"theme": "Invented sources only", "refs": ["ghost"]},
+        ],
+        "learned": [{**learned, "refs": ["s-talos", "x"]}, {**learned, "refs": ["a"]}],
+    }
+    logs: list[str] = []
+    sink = logger.add(lambda message: logs.append(message.record["message"]), level="WARNING")
+    try:
+        outcome = await _handler(DigestLevel.week, _Model(output=output), _Sources([EXTRACTION], [])).run(
+            _task(TaskKind.week_digest, "2026-W36"), MODEL
+        )
+    finally:
+        logger.remove(sink)
+
+    assert isinstance(outcome.result, DigestResult)
+    digest = outcome.result.digest
+    assert [(t.theme, t.refs) for t in digest.on_my_mind] == [
+        ("Talos upgrade", ["s-talos"]),
+        ("Invented sources only", []),
+    ]
+    assert [f.refs for f in digest.learned] == [["s-talos"]]
+    assert logs == [
+        "memory task 21 (week_digest 2026-W36): dropped 4 unknown source refs and 1 untraceable entries "
+        "from the model output"
+    ]
+
+
+async def test_month_refs_are_week_keys() -> None:
+    output = {**DIGEST, "on_my_mind": [{"theme": "Talos", "refs": ["2026-W36", "s-talos"]}], "learned": []}
+
+    outcome = await _handler(DigestLevel.month, _Model(output=output), _Sources([], [WEEK])).run(
+        _task(TaskKind.month_digest, "2026-09"), MODEL
+    )
+
+    assert isinstance(outcome.result, DigestResult)
+    assert outcome.result.digest.on_my_mind[0].refs == ["2026-W36"]
