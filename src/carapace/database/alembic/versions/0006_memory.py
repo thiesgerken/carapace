@@ -52,6 +52,10 @@ def upgrade() -> None:
         sa.Column("attempts", sa.Integer(), nullable=False),
         sa.Column("estimate", _JSON, nullable=True),
         sa.Column("provenance", _JSON, nullable=True),
+        sa.Column("billed_input_tokens", sa.BigInteger(), nullable=False),
+        sa.Column("billed_output_tokens", sa.BigInteger(), nullable=False),
+        sa.Column("billed_cost_micro_usd", sa.BigInteger(), nullable=False),
+        sa.Column("billed_at", carapace.database.base.UtcDateTime(timezone=True), nullable=True),
         sa.Column("result_id", sa.BigInteger(), nullable=True),
         sa.Column("error", sa.Text(), nullable=True),
         sa.Column("created_at", carapace.database.base.UtcDateTime(timezone=True), nullable=False),
@@ -64,6 +68,7 @@ def upgrade() -> None:
     op.create_index("ix_memory_tasks_status", "memory_tasks", ["status"])
     op.create_index("ix_memory_tasks_week_key", "memory_tasks", ["week_key"])
     op.create_index("ix_memory_tasks_month_key", "memory_tasks", ["month_key"])
+    op.create_index("ix_memory_tasks_billed_at", "memory_tasks", ["billed_at"])
     op.create_index(
         "uq_memory_tasks_open",
         "memory_tasks",

@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
+from decimal import ROUND_HALF_UP, Decimal
 
 from sqlalchemy import ColumnElement, case, delete, func, or_, select, update
 from sqlalchemy.orm import Session
@@ -17,7 +18,7 @@ from ..database.models import (
     MemoryTaskRow,
     SessionRow,
 )
-from .budget import Spend, spend_of
+from .budget import Spend
 from .models import (
     OPEN_TASK_STATUSES,
     BlockedReason,
@@ -122,11 +123,33 @@ class MemoryStore:
                 return None
             if row is None:
                 row = MemoryTaskRow(
-                    user=user, kind=kind.value, target=target, status=TaskStatus.pending.value, attempts=0
+                    user=user, kind=kind.value, target=target, status=TaskStatus.pending.value, **_UNBILLED
                 )
                 db.add(row)
             for name, value in values.items():
                 setattr(row, name, value)
+            db.flush()
+            return _task(row)
+
+    def record_spawn_failure(self, user: str, kind: TaskKind, target: str, error: str, now: datetime) -> MemoryTask:
+        """A failed task for a target the spawner could not even prepare (e.g. a malformed transcript).
+
+        It surfaces the problem in the Tasks tab with a retry button, and its timestamp keeps the
+        spawner from retrying the same unchanged input on every sweep.
+        """
+        with self._session_factory.begin() as db:
+            row = MemoryTaskRow(
+                user=user,
+                kind=kind.value,
+                target=target,
+                status=TaskStatus.failed.value,
+                spawned_by=SpawnedBy.auto.value,
+                error=error,
+                **_UNBILLED,
+                created_at=now,
+                finished_at=now,
+            )
+            db.add(row)
             db.flush()
             return _task(row)
 
@@ -243,6 +266,29 @@ class MemoryStore:
                 .values(blocked_reason=reason.value if reason is not None else None)
             )
 
+    def cancel_task(self, task_id: int, reason: str, now: datetime) -> bool:
+        """Open -> cancelled with the reason kept as error, e.g. the session turned private."""
+        with self._session_factory.begin() as db:
+            result = db.execute(
+                update(MemoryTaskRow)
+                .where(MemoryTaskRow.id == task_id, MemoryTaskRow.status.in_(_OPEN))
+                .values(status=TaskStatus.cancelled.value, error=reason, finished_at=now, blocked_reason=None)
+            )
+            return result.rowcount == 1  # type: ignore[missing-attribute]
+
+    def fail_unclaimed(self, task_id: int, error: str, now: datetime) -> bool:
+        """pending/queued -> failed, for tasks that broke before they could run (estimation)."""
+        with self._session_factory.begin() as db:
+            result = db.execute(
+                update(MemoryTaskRow)
+                .where(
+                    MemoryTaskRow.id == task_id,
+                    MemoryTaskRow.status.in_([TaskStatus.pending.value, TaskStatus.queued.value]),
+                )
+                .values(status=TaskStatus.failed.value, error=error, finished_at=now, blocked_reason=None)
+            )
+            return result.rowcount == 1  # type: ignore[missing-attribute]
+
     def claim(self, task_id: int, now: datetime) -> bool:
         """queued -> running, atomically: False if someone else claimed or cancelled it first."""
         with self._session_factory.begin() as db:
@@ -275,6 +321,8 @@ class MemoryStore:
                 case MirrorResult():
                     result_id = None
             row.status = TaskStatus.done.value
+            if outcome.provenance is not None:
+                _add_billing(row, outcome.provenance, now)
             row.provenance = outcome.provenance
             row.result_id = result_id
             row.error = None
@@ -286,36 +334,47 @@ class MemoryStore:
     def record_failure(self, task_id: int, error: str, now: datetime, provenance: Provenance | None = None) -> bool:
         """running -> failed with the error kept. False when the task is no longer running.
 
-        *provenance* carries the usage of a call that failed after it was billed; it counts
-        towards spend like a finished call.
+        *provenance* carries the usage of a call that failed after it was billed; it adds to the
+        task's billed totals like a finished call.
         """
         with self._session_factory.begin() as db:
-            result = db.execute(
-                update(MemoryTaskRow)
-                .where(MemoryTaskRow.id == task_id, MemoryTaskRow.status == TaskStatus.running)
-                .values(status=TaskStatus.failed.value, error=error, finished_at=now, provenance=provenance)
-            )
-            return result.rowcount == 1  # type: ignore[missing-attribute]
+            row = db.get(MemoryTaskRow, task_id, with_for_update=True)
+            if row is None or row.status != TaskStatus.running:
+                return False
+            row.status = TaskStatus.failed.value
+            row.error = error
+            row.finished_at = now
+            if provenance is not None:
+                _add_billing(row, provenance, now)
+                row.provenance = provenance
+            return True
 
     def spend(self, user: str, since: datetime) -> Spend:
-        """Committed spend in a window: billed calls finished since *since*, plus every running task
-        at its estimate, a reservation that keeps parallel claims from overshooting a limit."""
-        # ponytail: sums JSON in Python (a month is a few thousand rows at most); move cost and
-        # tokens into columns if the budget check ever shows up in profiles.
+        """Committed spend in a window: what tasks billed since *since* over all their attempts, plus
+        every running task at its estimate, a reservation that keeps parallel claims from
+        overshooting a limit.
+
+        ponytail: a task's billed totals count in the window of its latest billed finish, so a
+        failure yesterday plus a retry today lands entirely in today. Per-attempt rows if exact
+        windows ever matter.
+        """
         with self._session_factory() as db:
-            provenances = db.scalars(
-                select(MemoryTaskRow.provenance).where(
-                    MemoryTaskRow.user == user,
-                    MemoryTaskRow.status.in_([TaskStatus.done.value, TaskStatus.failed.value]),
-                    MemoryTaskRow.finished_at >= since,
-                )
-            ).all()
+            tokens, micro_usd = db.execute(
+                select(
+                    func.coalesce(func.sum(MemoryTaskRow.billed_input_tokens), 0),
+                    func.coalesce(func.sum(MemoryTaskRow.billed_cost_micro_usd), 0),
+                ).where(MemoryTaskRow.user == user, MemoryTaskRow.billed_at >= since)
+            ).one()
             reservations = db.scalars(
                 select(MemoryTaskRow.estimate).where(
                     MemoryTaskRow.user == user, MemoryTaskRow.status == TaskStatus.running
                 )
             ).all()
-        return spend_of((p for p in provenances if p is not None), (e for e in reservations if e is not None))
+        total = Spend(Decimal(micro_usd) / _MICRO, tokens)
+        for estimate in reservations:
+            if estimate is not None:
+                total = total.plus(estimate)
+        return total
 
     def status_counts(self, user: str) -> tuple[dict[TaskStatus, int], int]:
         """Task count per status, and how many queued tasks the budget holds back."""
@@ -346,6 +405,28 @@ class MemoryStore:
                 )
             ).all()
         return {row.target: _task(row) for row in rows}
+
+    def latest_task_times(self, user: str, kind: TaskKind) -> dict[str, datetime]:
+        """When each target last got a task of *kind*, open or finished.
+
+        The spawner only revisits a target whose sources changed after that: a done, failed or
+        cancelled task for unchanged input is the user's call to repeat, not the spawner's.
+        """
+        with self._session_factory() as db:
+            rows = db.execute(
+                select(MemoryTaskRow.target, func.max(MemoryTaskRow.created_at))
+                .where(MemoryTaskRow.user == user, MemoryTaskRow.kind == kind)
+                .group_by(MemoryTaskRow.target)
+            ).all()
+        return {target: at for target, at in rows}
+
+    def session_titles(self, session_ids: list[str]) -> dict[str, str | None]:
+        """Titles of the given sessions, for task labels."""
+        with self._session_factory() as db:
+            rows = db.execute(
+                select(SessionRow.session_id, SessionRow.title).where(SessionRow.session_id.in_(session_ids))
+            ).all()
+        return {session_id: title for session_id, title in rows}
 
     # --- extractions and facts ---
 
@@ -447,6 +528,18 @@ class MemoryStore:
                 .order_by(MemoryDigestRow.id.desc())
             ).all()
         return [DigestRecord.model_validate(row, from_attributes=True) for row in rows]
+
+
+_MICRO = Decimal(1_000_000)
+_UNBILLED = {"attempts": 0, "billed_input_tokens": 0, "billed_output_tokens": 0, "billed_cost_micro_usd": 0}
+
+
+def _add_billing(row: MemoryTaskRow, provenance: Provenance, now: datetime) -> None:
+    row.billed_input_tokens += provenance.input_tokens
+    row.billed_output_tokens += provenance.output_tokens
+    if provenance.cost_usd is not None:
+        row.billed_cost_micro_usd += int((provenance.cost_usd * _MICRO).to_integral_value(ROUND_HALF_UP))
+    row.billed_at = now
 
 
 def _task(row: MemoryTaskRow) -> MemoryTask:
