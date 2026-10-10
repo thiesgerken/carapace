@@ -569,6 +569,11 @@ function eventIndexForMessage(message: ChatMessage): number | undefined {
   return undefined;
 }
 
+/** Any persisted message's event, for deep-link anchors (wider than the fork/reset targets above). */
+function anchorEventIndex(message: ChatMessage): number | undefined {
+  return "eventIndex" in message && typeof message.eventIndex === "number" ? message.eventIndex : undefined;
+}
+
 function groupChildToolCalls(messages: ChatMessage[]): ChatMessage[] {
   const parentIndex = new Map<string, number>();
   for (let index = 0; index < messages.length; index++) {
@@ -725,6 +730,7 @@ function projectHistoryToMessages(history: HistoryMessage[]): ChatMessage[] {
         toolId: normalizeOptionalString(entry.tool_id),
         parentToolId: normalizeOptionalString(entry.parent_tool_id),
         compaction: entry.compaction,
+        eventIndex: typeof entry.event_index === "number" ? entry.event_index : undefined,
       });
 
       const queue = pendingToolCallIndices.get(tool) ?? [];
@@ -897,6 +903,7 @@ function projectHistoryToMessages(history: HistoryMessage[]): ChatMessage[] {
         approvalExplanation: entry.approval_explanation,
         toolId: normalizeOptionalString(entry.tool_id),
         parentToolId: normalizeOptionalString(entry.parent_tool_id),
+        eventIndex: typeof entry.event_index === "number" ? entry.event_index : undefined,
       });
       continue;
     }
@@ -1717,7 +1724,8 @@ export function ChatView({
         if (!cancelled) setHasMemory(detail?.current != null);
       })
       // The chip is optional chrome: a failing memory API must not disturb the chat.
-      .catch(() => {
+      .catch((memoryError: unknown) => {
+        console.warn("Memory chip unavailable", memoryError);
         if (!cancelled) setHasMemory(false);
       });
     return () => {
@@ -2817,7 +2825,7 @@ export function ChatView({
                   const canReset = canFork && i < messages.length - 1;
                   const canRetry = actionable && enclosingTerminal === latestTerminalIndex;
                   return (
-                    <div key={i} data-event-index={eventIndexForMessage(msg)} className="rounded-lg">
+                    <div key={i} data-event-index={anchorEventIndex(msg)} className="rounded-lg">
                       <Message
                         message={msg}
                         server={server}
@@ -2841,7 +2849,7 @@ export function ChatView({
                   item.type === "message" ? (
                     renderMessage(item.index)
                   ) : (
-                    <div key={`g-${item.start}`} data-event-index={eventIndexForMessage(messages[item.start])} className="rounded-lg">
+                    <div key={`g-${item.start}`} data-event-index={anchorEventIndex(messages[item.start])} className="rounded-lg">
                       <ToolCallGroup
                         items={item.indices.map((j) => messages[j])}
                         inProgress={item.inProgress}

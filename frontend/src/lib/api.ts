@@ -1835,7 +1835,7 @@ function memorySessionQuery(filter: MemorySessionFilter, cursor: string | null):
   for (const status of filter.task_status ?? []) params.append("task_status", status);
   if (filter.model) params.set("model", filter.model);
   if (filter.channel) params.set("channel", filter.channel);
-  for (const reason of filter.outdated_reason ?? []) params.append("outdated_reason", reason);
+  if (filter.outdated_reason) params.set("outdated_reason", filter.outdated_reason);
   if (cursor) params.set("cursor", cursor);
   return params.toString();
 }
