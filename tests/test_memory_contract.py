@@ -12,7 +12,7 @@ from sqlalchemy.exc import IntegrityError
 from carapace.database.base import Base
 from carapace.database.engine import create_engine_and_factory, run_migrations
 from carapace.database.models import MemoryTaskRow, User
-from carapace.memory.models import DigestFact, Fact, ModelRole, TaskSelection
+from carapace.memory.models import DigestFact, Fact, ModelRole, TaskSelection, TaskSpawnRequest
 from carapace.models.config import AgentConfig, AvailableModelEntry, Config, DatabaseConfig
 from carapace.models.user import UserConfig
 from carapace.user_defaults import effective_memory_model
@@ -111,3 +111,16 @@ def test_memory_model_fallbacks():
     user.default_models.memory_low, user.default_models.memory_high = "test:agent", "test:title"
     assert effective_memory_model(config, user, ModelRole.memory_low) == "test:agent"
     assert effective_memory_model(config, user, ModelRole.memory_high) == "test:title"
+
+
+def test_spawn_request_needs_targets_xor_filter():
+    TaskSpawnRequest(kind="week_digest", targets=["2026-W36"])
+    TaskSpawnRequest(kind="session_extract", filter={"outdated_reason": "prompt_version"})
+    for bad in (
+        {"kind": "session_extract"},
+        {"kind": "session_extract", "targets": ["s1"], "filter": {}},
+        {"kind": "week_digest", "filter": {}},
+        {"kind": "session_extract", "targets": []},
+    ):
+        with pytest.raises(ValidationError):
+            TaskSpawnRequest.model_validate(bad)
