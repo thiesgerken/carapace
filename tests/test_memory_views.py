@@ -433,26 +433,48 @@ def test_home_open_loops_cover_the_last_week_newest_session_first(setup):
     assert service.open_loops("bob") == []
 
 
-def test_home_this_week_prefers_last_weeks_digest_over_this_weeks_sessions(setup):
+def test_home_this_week_shows_the_current_weeks_sessions_before_last_weeks_digest(setup):
     service, sessions, store = setup
     assert service.this_week("alice") is None
 
+    _extract(store, _session(sessions, "last week"), week="2026-W38")
+    theme = DigestTheme(theme="Talos upgrade", refs=["s1"])
+    coverage = store.current_extractions("alice", "2026-W38")
+    _digest(store, DigestLevel.week, "2026-W38", coverage, on_my_mind=(theme,), highlights=("Upgraded.",))
+
+    digest_week = service.this_week("alice")
+    assert digest_week is not None
+    assert (digest_week.source, digest_week.period_key) == ("week_digest", "2026-W38")
+    assert (digest_week.themes, digest_week.highlights, digest_week.sessions) == ([theme], ["Upgraded."], [])
+
     _extract(store, _session(sessions, "monday"), week="2026-W39")
     _extract(store, _session(sessions, "hidden", private=True), week="2026-W39")
-    _extract(store, _session(sessions, "last week"), week="2026-W38")
 
     sessions_week = service.this_week("alice")
     assert sessions_week is not None
     assert (sessions_week.source, sessions_week.period_key) == ("sessions", "2026-W39")
     assert [s.title for s in sessions_week.sessions] == ["monday"]
 
-    theme = DigestTheme(theme="Talos upgrade", refs=["s1"])
-    _digest(store, DigestLevel.week, "2026-W38", [], on_my_mind=(theme,), highlights=("Upgraded.",))
 
-    digest_week = service.this_week("alice")
-    assert digest_week is not None
-    assert (digest_week.source, digest_week.period_key) == ("week_digest", "2026-W38")
-    assert (digest_week.themes, digest_week.highlights, digest_week.sessions) == ([theme], ["Upgraded."], [])
+@pytest.mark.parametrize("change", ["private", "deleted"])
+def test_home_this_week_skips_a_digest_covering_a_session_no_longer_visible(setup, change):
+    service, sessions, store = setup
+    kept, gone = _session(sessions, "kept"), _session(sessions, "gone")
+    for session_id in (kept, gone):
+        _extract(store, session_id, week="2026-W38")
+    _digest(store, DigestLevel.week, "2026-W38", store.current_extractions("alice", "2026-W38"))
+    assert service.this_week("alice") is not None
+
+    # Until the sweep purges it, a private session's extraction and the digest stay current.
+    if change == "private":
+        state = sessions.load_state(gone)
+        assert state is not None
+        state.attributes.private = True
+        sessions.save_state(state)
+    else:
+        assert sessions.delete_session(gone)
+
+    assert service.this_week("alice") is None
 
 
 @pytest.mark.parametrize(
