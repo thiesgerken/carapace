@@ -8,6 +8,7 @@ import { ApiKeysView } from "@/components/api-keys-view";
 import { JobsView } from "@/components/jobs-view";
 import { PlatformSettingsView } from "@/components/platform-settings-view";
 import { PreferencesView } from "@/components/preferences-view";
+import { PromptPreviewView } from "@/components/prompt-preview-view";
 import { UserSettingsView } from "@/components/user-settings-view";
 import { ADMIN_SETTINGS_TABS, type SettingsTab } from "@/lib/settings-tabs";
 
@@ -40,6 +41,12 @@ export function SettingsTabPanel({ tab }: { tab: SettingsTab }) {
       return (
         <div id="settings-panel-account" role="tabpanel" aria-labelledby="settings-tab-account" className={panelClassName}>
           <UserSettingsView server={shell.server} token={shell.token} />
+        </div>
+      );
+    case "prompts":
+      return (
+        <div id="settings-panel-prompts" role="tabpanel" aria-labelledby="settings-tab-prompts" className={panelClassName}>
+          <PromptPreviewView server={shell.server} />
         </div>
       );
     case "jobs":

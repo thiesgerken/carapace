@@ -18,6 +18,7 @@ function userSettingsResponse(defaultBudget: { tool_calls: number }): UserSettin
         memory_high: "anthropic:default",
       },
       budget: {},
+      memory_prompt_budget_tokens: 4000,
     },
     available_models: [
       { id: "anthropic:default", provider: "anthropic", name: "default" },
@@ -31,6 +32,7 @@ function userSettingsResponse(defaultBudget: { tool_calls: number }): UserSettin
       memory: {
         auto_mode: false,
         budget: { cost_usd_per_day: "1.00", cost_usd_per_month: "10.00", input_tokens_per_day: null, input_tokens_per_month: null },
+        prompt_budget_tokens: null,
       },
       matrix: {
         enabled: false,
@@ -78,6 +80,7 @@ test("buildUserSettingsPatch omits unchanged credentials when file backends are 
     memory: {
       autoMode: false,
       budget: { cost_usd_per_day: "1.00", cost_usd_per_month: "10.00", input_tokens_per_day: "", input_tokens_per_month: "" },
+      promptBudget: "",
     },
     matrix: settings.settings.matrix,
     matrixPassword: "",
@@ -122,6 +125,7 @@ test("buildUserSettingsPatch keeps default models the view does not edit", () =>
     memory: {
       autoMode: false,
       budget: { cost_usd_per_day: "1.00", cost_usd_per_month: "10.00", input_tokens_per_day: "", input_tokens_per_month: "" },
+      promptBudget: "",
     },
     matrix: settings.settings.matrix,
     matrixPassword: "",
@@ -147,6 +151,7 @@ test("buildUserSettingsPatch sends memory settings, keeping a zero limit and cle
     memory: {
       autoMode: true,
       budget: { cost_usd_per_day: "0", cost_usd_per_month: "", input_tokens_per_day: "50,000", input_tokens_per_month: "" },
+      promptBudget: "0",
     },
     matrix: settings.settings.matrix,
     matrixPassword: "",
@@ -162,5 +167,6 @@ test("buildUserSettingsPatch sends memory settings, keeping a zero limit and cle
   assert.deepEqual(patch.memory, {
     auto_mode: true,
     budget: { cost_usd_per_day: "0", cost_usd_per_month: null, input_tokens_per_day: 50000, input_tokens_per_month: null },
+    prompt_budget_tokens: 0,
   });
 });

@@ -33,7 +33,7 @@ from ..llm import ModelFactory
 from ..models.compaction import SessionCompaction
 from ..models.config import Config
 from ..models.credentials import CredentialRegistryProtocol
-from ..models.session import SessionAttributes, SessionState
+from ..models.session import MemorySnapshot, SessionAttributes, SessionState
 from ..models.skills import SkillInfo
 from ..models.tooling import ToolCallCallback, ToolResult
 from ..notifications.router import NotificationRouter
@@ -128,6 +128,7 @@ class SessionEngine(
         sandbox_mgr: SandboxManager,
         credential_registry_for_session: Callable[[str], Awaitable[CredentialRegistryProtocol]],
         knowledge_repo_for_session: KnowledgeRepoResolver,
+        memory_block_for: Callable[[str, SessionState], str],
         model_factory: ModelFactory | None = None,
         notification_router: NotificationRouter | None = None,
     ) -> None:
@@ -138,6 +139,8 @@ class SessionEngine(
         self._model_factory = model_factory
         self._credential_registry_for_session = credential_registry_for_session
         self._knowledge_repo_for_session = knowledge_repo_for_session
+        # (owner, session state) -> the memory block for the session's agent prompt.
+        self._memory_block_for = memory_block_for
         self._notification_router = notification_router
         self._active: dict[str, ActiveSession] = {}
         self._llm_semaphore = asyncio.Semaphore(config.agent.max_parallel_llm)
@@ -493,6 +496,13 @@ class SessionEngine(
             activated_skills=[],
             credential_registry=self._session_credential_registry(session_id),
         )
+
+    def _ensure_memory_snapshot(self, active: ActiveSession) -> None:
+        if active.state.memory is not None:
+            return
+        text = self._memory_block_for(active.owner, active.state)
+        active.state.memory = MemorySnapshot(text=text, as_of=datetime.now(tz=UTC))
+        self._session_mgr.save_state(active.state)
 
     async def submit_message(
         self,

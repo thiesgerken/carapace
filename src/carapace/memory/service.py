@@ -8,9 +8,10 @@ from zoneinfo import ZoneInfo
 from ..jobs import JobsStore
 from ..llm import resolve_available_model_entry
 from ..models.config import Config
+from ..models.session import SessionState
 from ..models.user import UserConfig
 from ..session import SessionManager
-from ..user_defaults import effective_memory_model
+from ..user_defaults import effective_memory_model, effective_memory_prompt_budget
 from .budget import budget_windows, sum_estimates
 from .coverage import coverage_hash, month_coverage, week_coverage
 from .handlers import TaskHandler
@@ -63,6 +64,7 @@ from .models import (
 )
 from .outdated import CurrentVersions, current_versions, outdated_reasons
 from .periods import month_key_for_week, period_dates, week_key, week_start
+from .prompt_block import EMPTY_MEMORY_BLOCK, MemoryBlock, build_memory_block
 from .spawner import MALFORMED_TRANSCRIPT_ERRORS, Spawner
 from .store import MemoryStore, SessionCandidate, parse_cursor
 from .worker import DEFAULT_TIMING, MemoryWorker, WorkerTiming
@@ -95,6 +97,7 @@ class MemoryService:
         self._sessions = sessions
         self._handlers = handlers
         self._user_config_for = user_config_for
+        self._jobs = jobs
         self._clock = clock
         # Shared with the handlers, which read records through the same store.
         self._store = store
@@ -129,6 +132,33 @@ class MemoryService:
     async def run(self) -> None:
         """Worker loop: spawn, promote, claim, execute. Started once by the server lifespan."""
         await self._worker.run()
+
+    def session_prompt_block(self, user: str, state: SessionState) -> MemoryBlock:
+        """The block for *state*'s agent prompt: job sessions only with their job's memory_context,
+        other unattended sessions never (nobody chose to give them personal context).
+
+        Job sessions go by channel, like extraction eligibility: a persistent session a job runs in
+        is the user's chat and keeps its block, although its latest_job_run stays set.
+        """
+        if state.channel_type == "job":
+            job = self._jobs.get_job(state.latest_job_run.job_id) if state.latest_job_run is not None else None
+            if job is None or not job.memory_context:
+                return EMPTY_MEMORY_BLOCK
+        elif state.attributes.unattended:
+            return EMPTY_MEMORY_BLOCK
+        return self.prompt_block(user, state.session_id)
+
+    def prompt_block(self, user: str, exclude_session_id: str) -> MemoryBlock:
+        """The memory block for the agent prompt of an interactive session starting now."""
+        config, user_config = self._current_config(), self._user_config_for(user)
+        return build_memory_block(
+            self._store,
+            user,
+            budget_tokens=effective_memory_prompt_budget(config, user_config),
+            now=self._clock(),
+            tz=ZoneInfo(user_config.timezone),
+            exclude_session_id=exclude_session_id,
+        )
 
     # --- status and tasks ---
 

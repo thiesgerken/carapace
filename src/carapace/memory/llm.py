@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from pydantic_ai import Agent, capture_run_messages
 from pydantic_ai.exceptions import AgentRunError
 from pydantic_ai.messages import ModelMessage
+from pydantic_ai.models import Model
 from pydantic_ai.settings import ModelSettings
 from pydantic_ai.usage import RunUsage, UsageLimits
 
@@ -74,6 +75,20 @@ def capped_model_settings(config: Config, model: str, output_tokens_cap: int) ->
     return cast(ModelSettings, settings)
 
 
+def structured_agent[OutputT: BaseModel](
+    system: str, output_type: type[OutputT], model: Model | None, *, model_settings: ModelSettings | None
+) -> Agent[None, OutputT]:
+    """*model* None leaves it to the run, as the prompt preview does."""
+    return Agent(
+        model,
+        output_type=output_type,
+        instructions=system,
+        model_settings=model_settings,
+        capabilities=[LlmRequestLogCapability(source="memory")],
+        retries={"output": 0},
+    )
+
+
 async def run_structured[OutputT: BaseModel](
     system: str,
     output_type: type[OutputT],
@@ -90,14 +105,7 @@ async def run_structured[OutputT: BaseModel](
     *model_settings*) is an honest upper bound. An invalid output fails the task; a manual retry
     goes through the budget gate again.
     """
-    agent = Agent(
-        model_factory(model, user=user),
-        output_type=output_type,
-        instructions=system,
-        model_settings=model_settings,
-        capabilities=[LlmRequestLogCapability(source="memory")],
-        retries={"output": 0},
-    )
+    agent = structured_agent(system, output_type, model_factory(model, user=user), model_settings=model_settings)
     usage = RunUsage()
     started = time.monotonic()
     # The run accumulates into *usage* and *messages* in place, so both survive a failed run:

@@ -22,9 +22,12 @@ from carapace.memory.models import (
     TaskSpawnRequest,
     TaskStatus,
 )
+from carapace.memory.prompt_block import EMPTY_MEMORY_BLOCK, MemoryBlock
 from carapace.memory.service import MemoryService, ModelOverrideError
 from carapace.memory.store import MemoryStore
 from carapace.models.config import Config
+from carapace.models.jobs import JobDefinition
+from carapace.models.session import SessionJobRunContext, SessionState
 from carapace.models.user import UserConfig
 from carapace.session import SessionManager
 
@@ -205,3 +208,31 @@ async def test_unregistered_model_overrides_are_rejected_up_front(setup):
         with pytest.raises(ModelOverrideError):
             await call("alice", run)
     assert (await service.status("alice")).queue[TaskStatus.pending] == 1
+
+
+def test_only_jobs_with_memory_context_and_interactive_sessions_get_the_prompt_block(setup, db_factory, monkeypatch):
+    service, sessions = setup
+    block = MemoryBlock(text="# Memory", tokens=3)
+    monkeypatch.setattr(service, "prompt_block", lambda _user, _session_id: block)
+    jobs = JobsStore(db_factory)
+    jobs.create_job(JobDefinition(user="alice", id="digest", name="Digest", prompt="p", memory_context=True))
+    # Extracted into memory, but reading it is a separate opt-in.
+    jobs.create_job(JobDefinition(user="alice", id="nightly", name="Nightly", prompt="p", memory_enabled=True))
+
+    def job_run(state: SessionState, job_id: str) -> SessionState:
+        state.latest_job_run = SessionJobRunContext(job_id=job_id, trigger_kind="manual", triggered_at=NOW)
+        return state
+
+    def job_session(job_id: str, *, unattended: bool = True) -> SessionState:
+        return job_run(sessions.create_session("job", user="alice", unattended=unattended), job_id)
+
+    assert service.session_prompt_block("alice", sessions.create_session("web", user="alice")) == block
+    assert service.session_prompt_block("alice", job_session("digest")) == block
+    assert service.session_prompt_block("alice", job_session("nightly")) == EMPTY_MEMORY_BLOCK
+    assert service.session_prompt_block("alice", job_session("nightly", unattended=False)) == EMPTY_MEMORY_BLOCK
+    assert service.session_prompt_block("alice", job_session("deleted")) == EMPTY_MEMORY_BLOCK
+    # A persistent session the nightly job runs in is still the user's chat.
+    persistent = job_run(sessions.create_session("web", user="alice"), "nightly")
+    assert service.session_prompt_block("alice", persistent) == block
+    unattended = sessions.create_session("api", user="alice", unattended=True)
+    assert service.session_prompt_block("alice", unattended) == EMPTY_MEMORY_BLOCK
