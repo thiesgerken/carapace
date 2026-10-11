@@ -215,6 +215,17 @@ class SessionEngine(
 
     # -- session lifecycle --
 
+    def close_orphaned_approval_requests(self) -> None:
+        """Deny approval requests whose turn died with the previous server process.
+
+        Only valid at startup: with an active session, a running turn could still answer
+        its requests.
+        """
+        if self._active:
+            raise RuntimeError("Orphaned approvals can only be closed before any session is active")
+        for session_id in self._session_mgr.session_ids_with_open_approval_requests():
+            self._close_open_approval_requests(session_id)
+
     def _ensure_active(self, session_id: str) -> ActiveSession:
         """Return or create the in-memory ``ActiveSession`` for *session_id*."""
         if session_id in self._active:

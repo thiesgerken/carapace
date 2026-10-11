@@ -1,6 +1,122 @@
 # CHANGELOG
 
 
+## v0.158.10 (2026-10-11)
+
+
+### Other
+
+
+- Merge pull request #304 from thiesgerken/renovate/lock-file-maintenance
+  ([`d4f6f22`](https://github.com/thiesgerken/carapace/commit/d4f6f22f105bdba6e93c3275da080cad4d4b0c71))
+
+- Merge remote-tracking branch 'origin/main' into renovate/lock-file-maintenance
+  ([`f381187`](https://github.com/thiesgerken/carapace/commit/f381187422b06ae335cf95588e8ff11a0ab0955c))
+
+  uv.lock conflict resolved by taking main's lock and re-running uv lock --upgrade.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01BNMtu8vm7FweAiGQC4rjVH
+
+- Merge remote-tracking branch 'origin/main' into renovate/lock-file-maintenance
+  ([`908650b`](https://github.com/thiesgerken/carapace/commit/908650bc4883339558011aa7291a57e69fbbef42))
+
+  # Conflicts: #	frontend/pnpm-lock.yaml
+
+- Merge remote-tracking branch 'origin/main' into renovate/lock-file-maintenance
+  ([`ebaa588`](https://github.com/thiesgerken/carapace/commit/ebaa58851a98883d60448bd66fffc09c81d97efc))
+
+### ⬆️ Dependencies
+
+
+- ⬆️ chore: Lock file maintenance
+  ([`d4f6f22`](https://github.com/thiesgerken/carapace/commit/d4f6f22f105bdba6e93c3275da080cad4d4b0c71))
+
+- ⬆️ chore: migrate stdio MCP bridge to mcp 2
+  ([`528fc9a`](https://github.com/thiesgerken/carapace/commit/528fc9a40d5fe84eb9e9b564c59539de7b5eb0e2))
+
+  Lock maintenance pulls pydantic-ai 2.51 -> fastmcp 4 -> mcp 2.x, which renames the camelCase model fields and drops mcp.server.fastmcp. Bump the sandbox's bridge venv to mcp 2 so production runs the same SDK the tests do.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+- ⬆️ chore: Lock file maintenance
+  ([`4dabf5d`](https://github.com/thiesgerken/carapace/commit/4dabf5db82fac2ae23060509d3bf2875a0fc60a2))
+
+## v0.158.9 (2026-10-10)
+
+
+### ⬆️ Dependencies
+
+
+- ⬆️ chore: upgrade katex to 0.19.0
+  ([`2e79142`](https://github.com/thiesgerken/carapace/commit/2e79142b64826ea75e55c72cdfc1048176e7cd94))
+
+  Co-authored-by: renovate[bot] <29139614+renovate[bot]@users.noreply.github.com>
+
+- ⬆️ chore: upgrade all routine dependency updates
+  ([`8b64d52`](https://github.com/thiesgerken/carapace/commit/8b64d5291878d1cc053701a5ba9204943d26f6ca))
+
+  Co-authored-by: renovate[bot] <29139614+renovate[bot]@users.noreply.github.com>
+
+- ⬆️ chore: upgrade astral-sh/setup-uv action to v10.3.0
+  ([`50126ec`](https://github.com/thiesgerken/carapace/commit/50126ec49cca4532bd6f044c95cddf77f2e24b76))
+
+  Co-authored-by: renovate[bot] <29139614+renovate[bot]@users.noreply.github.com>
+
+## v0.158.8 (2026-10-10)
+
+
+### Other
+
+
+- Merge pull request #302 from thiesgerken/fix/sentinel-full-tool-args
+  ([`59307a0`](https://github.com/thiesgerken/carapace/commit/59307a054b73b0ae1934e044c5bc71c2da0e0c0c))
+
+- Merge pull request #303 from thiesgerken/fix/close-orphaned-approvals
+  ([`f16d6b6`](https://github.com/thiesgerken/carapace/commit/f16d6b629963fedc8991631e3421bf945611a18b))
+
+- ✅ test(session): cover cancel race and approval-free turn end
+  ([`4d4c01b`](https://github.com/thiesgerken/carapace/commit/4d4c01b10ac2433985f179edf43d29ab176cdc72))
+
+  The escalation waiter can consume submit_cancel's signal before the turn finalizes and drop its pending entry without writing a response; the turn-end close must still find the request through the event log.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01BfEEfE6o9yQAj8U8ULL61L
+
+### 🔒 Security
+
+
+- 🔒️ fix(sentinel): evaluate tool calls with untruncated arguments
+  ([`59307a0`](https://github.com/thiesgerken/carapace/commit/59307a054b73b0ae1934e044c5bc71c2da0e0c0c))
+
+- 🔒️ fix(sentinel): evaluate tool calls with untruncated arguments
+  ([`138b9d6`](https://github.com/thiesgerken/carapace/commit/138b9d65bd7daa0e79b7c5b3919c49f183741ab2))
+
+  The EVALUATE line cut every argument to 80 chars, so the sentinel never reviewed anything past ~77 chars of an exec command (and escalated calls it could not fully see). The action log history and the log/UI subject label stay truncated.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01BfEEfE6o9yQAj8U8ULL61L
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix(session): close approval requests no turn can answer anymore
+  ([`f16d6b6`](https://github.com/thiesgerken/carapace/commit/f16d6b629963fedc8991631e3421bf945611a18b))
+
+- 🐛 fix(session): close approval requests no turn can answer anymore
+  ([`b059102`](https://github.com/thiesgerken/carapace/commit/b059102a50440e4c13d93add5d9232014049f990))
+
+  An approval request (tool, domain access, git push, credential) stayed actionable in the UI forever once the turn that raised it died: a cancel, a failure, or a server restart left no response event, and answers went into a queue nobody read.
+
+  Turns now deny their still-open requests with a system response event before writing their terminal assistant event, and release blocked escalation callbacks. Server startup closes requests left behind by the previous process, using a SQL prefilter to find candidate sessions.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01BfEEfE6o9yQAj8U8ULL61L
+
 ## v0.158.7 (2026-10-10)
 
 

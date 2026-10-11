@@ -235,7 +235,9 @@ class SessionApprovalMixin:
                 msg = await active.escalation_queue.get()
                 if msg is None:
                     await self._clear_pending_notification(active, session_id, notif_id)
-                    active.pending_escalations.clear()
+                    active.pending_escalations = [
+                        p for p in active.pending_escalations if p["request_id"] != request_id
+                    ]
                     return UserEscalationDecision(allowed=False)
                 if msg.request_id == request_id:
                     decision = msg.decision

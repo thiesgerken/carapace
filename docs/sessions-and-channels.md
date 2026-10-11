@@ -282,3 +282,9 @@ A separate approval flow handles domain requests from sandbox containers:
 4. If sentinel escalates, a `ProxyApprovalRequest` is sent to subscribers
 5. User decides (allow/deny)
 6. Decision is applied and the proxy responds
+
+### Unanswered requests
+
+An approval request (tool, domain access, git push, or credential) can only be answered while the turn that raised it is still running. When a turn ends with a request still open (cancelled, failed, or completed while an escalation was pending), carapace closes it before the turn's final assistant message: it appends the regular response event with `decision` `denied` (tool) or `deny` (escalation), `decision_source: "system"`, and the message "Turn ended before a decision was made." Any escalation callback still blocked on the request is released with a denial.
+
+A server restart kills turns without that cleanup, so the server closes such leftover requests in the same way at startup, before any session is activated. Clients therefore never see an actionable request that nothing waits for anymore.

@@ -12,7 +12,7 @@ import yaml
 from loguru import logger
 from pydantic import BaseModel, field_validator
 from pydantic_ai import ModelMessage
-from sqlalchemy import delete, func, select
+from sqlalchemy import and_, case, delete, func, or_, select
 
 from ..database.engine import SessionFactory
 from ..database.models import (
@@ -30,6 +30,7 @@ from ..models.session import SessionAttributes, SessionBudget, SessionState
 from ..sandbox.state import SessionSandboxSnapshot
 from ..usage import LlmRequestLog, LlmRequestState, UsageTracker
 from ..usernames import normalize_username
+from .open_approvals import ESCALATION_RESPONSE_FIELDS, TOOL_APPROVAL_REQUEST_ROLE, TOOL_APPROVAL_RESPONSE_ROLE
 
 
 class SessionMeta(BaseModel):
@@ -439,6 +440,26 @@ class SessionManager:
             self._rewrite_events(session_id, events)
             self._notify_change()
             return result
+
+    def session_ids_with_open_approval_requests(self) -> list[str]:
+        """Sessions that have more approval requests than responses in their event log.
+
+        A cheap SQL prefilter so callers don't load every session's events; they still pair
+        requests with responses on the loaded events to find the open ones.
+        """
+        role = SessionEventRow.data["role"].as_string()
+        decided = SessionEventRow.data["decision"].as_string().is_not(None)
+        escalation = role.in_(ESCALATION_RESPONSE_FIELDS)
+        is_request = or_(role == TOOL_APPROVAL_REQUEST_ROLE, and_(escalation, ~decided))
+        is_response = or_(role == TOOL_APPROVAL_RESPONSE_ROLE, and_(escalation, decided))
+        stmt = (
+            select(SessionEventRow.session_id)
+            .where(or_(role.in_([TOOL_APPROVAL_REQUEST_ROLE, TOOL_APPROVAL_RESPONSE_ROLE]), escalation))
+            .group_by(SessionEventRow.session_id)
+            .having(func.sum(case((is_request, 1), else_=0)) > func.sum(case((is_response, 1), else_=0)))
+        )
+        with self._session_factory() as db:
+            return list(db.scalars(stmt).all())
 
     # --- Audit log (append-only) ---
 

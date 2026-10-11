@@ -53,6 +53,7 @@ from ..usage import (
 from ..ws_models import ApprovalRequest, ApprovalResponse, Attachment, FinalStatus, TurnUsage
 from .attachments import augment_prompt
 from .manager import SessionManager
+from .open_approvals import closing_events_for_open_approvals
 from .transcript import completed_event_turns
 from .types import ActiveSession, SessionSubscriber, TurnExecutionResult
 
@@ -599,6 +600,7 @@ class SessionTurnMixin(SessionTurnHost):
         final_status: FinalStatus | None = None,
         turn_record_start: int = 0,
     ) -> None:
+        self._close_turn_approvals(active, session_id)
         self._session_mgr.save_history(session_id, messages)
         self._session_mgr.save_state(active.state)
         self._save_turn_progress(session_id, active)
@@ -667,6 +669,7 @@ class SessionTurnMixin(SessionTurnHost):
         terminal_message: str | None = None,
         save_progress: bool = False,
     ) -> None:
+        self._close_turn_approvals(active, session_id)
         active.llm_request_thinking.clear()
         if save_progress:
             if active.llm_request_state is not None:
@@ -696,6 +699,30 @@ class SessionTurnMixin(SessionTurnHost):
                     "unattended_turn_failed",
                 )
                 active.pending_notifications[notif_id] = delivered.delivered_subscription_ids
+
+    def _close_turn_approvals(self, active: ActiveSession, session_id: str) -> None:
+        """Deny the approvals this turn still waits on: nothing can act on a later answer.
+
+        Runs before the turn's terminal assistant event is written, so the closing events stay
+        inside the turn's event span (fork and reset cut at that event).
+        """
+        self._close_open_approval_requests(session_id)
+        active.pending_approval_requests.clear()
+        # Escalation callbacks block in proxy, git, and credential request tasks, not in the turn
+        # task, so they outlive the turn. Answers that raced in are dropped (their request is now
+        # closed as denied), and each waiter is woken with the cancel signal so it denies instead
+        # of consuming answers meant for a later request.
+        while not active.escalation_queue.empty():
+            active.escalation_queue.get_nowait()
+        for _ in active.pending_escalations:
+            active.escalation_queue.put_nowait(None)
+        active.pending_escalations.clear()
+
+    def _close_open_approval_requests(self, session_id: str) -> None:
+        closing = closing_events_for_open_approvals(self._session_mgr.load_events(session_id))
+        if closing:
+            logger.info(f"Closing {len(closing)} unanswered approval request(s) in session {session_id}")
+            self._session_mgr.append_events(session_id, closing)
 
     def _save_user_message_on_failure(
         self,
