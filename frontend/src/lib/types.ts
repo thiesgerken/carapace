@@ -655,6 +655,8 @@ export type ChatMessage =
 
 export type MemoryTaskKind = "session_extract" | "week_digest" | "month_digest" | "mirror";
 export type MemoryTaskStatus = "pending" | "queued" | "running" | "done" | "failed" | "cancelled";
+/** "activity": last change first. "period": newest target period first, the order "run newest N" picks. */
+export type MemoryTaskSort = "activity" | "period";
 export type MemoryBlockedReason = "budget";
 export type MemorySpawnedBy = "auto" | "manual";
 export type MemoryModelRole = "memory_low" | "memory_high";

@@ -98,7 +98,12 @@
                 "model": "Model",
                 "version": "Ver.",
                 "cost": "Cost/est.",
-                "actions": "Actions"
+                "actions": "Actions",
+                "activity": "Last activity"
+            },
+            "sortBy": {
+                "period": "Sort by target period (the order “Run newest” picks)",
+                "activity": "Sort by last activity"
             },
             "empty": "No tasks match these filters.",
             "blockedBudget": "⏸ budget",
