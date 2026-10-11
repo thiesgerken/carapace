@@ -176,7 +176,7 @@ class AgentConfig(ConfigModel):
     title_model: str = "anthropic:claude-haiku-4-5"
     # Model used for compaction summaries. None -> fall back to title_model.
     compaction_model: str | None = None
-    # Session extraction. None -> compaction model, then title model.
+    # Session extraction. None -> sentinel model (the cheap tier).
     memory_low_model: str | None = None
     # Weekly/monthly memory digests. None -> agent model.
     memory_high_model: str | None = None

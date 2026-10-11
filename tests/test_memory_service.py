@@ -142,7 +142,7 @@ async def test_estimate_run_and_status(setup):
     assert (await service.run_tasks("alice", TaskRunRequest(selection=selection))).count == 2
     status = await service.status("alice")
     assert status.queue[TaskStatus.queued] == 2 and status.queue[TaskStatus.pending] == 0
-    assert status.models.memory_low == Config().agent.title_model
+    assert status.models.memory_low == Config().agent.sentinel_model
     assert status.sessions_without_transcript == 0
 
     listing = await service.list_tasks("alice", TaskFilter(status=[TaskStatus.queued]), TaskSort.activity, None, 10)
