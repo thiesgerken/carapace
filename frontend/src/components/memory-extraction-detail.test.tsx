@@ -3,12 +3,10 @@ import test from "node:test";
 import { NextIntlClientProvider } from "next-intl";
 
 import messages from "../../messages/en.json";
-import { installDom, renderReact, runInAct } from "../../test/react-test-utils";
+import { installDom, renderReact } from "../../test/react-test-utils";
 import type { MemoryExtractionRecord, MemorySessionDetail } from "@/lib/types";
 
-import { MemoryExtractionDrawer } from "./memory-extraction-drawer";
-
-const SERVER = "https://carapace.example.test";
+import { MemoryExtractionDetail } from "./memory-extraction-detail";
 
 function record(id: number, is_current: boolean, statement: string): MemoryExtractionRecord {
   return {
@@ -63,19 +61,13 @@ test("only the current extraction links fact sources to events", async () => {
   const restore = installDom();
   // next/link's prefetch observer reaches for `self`, which jsdom globals don't install.
   Object.defineProperty(globalThis, "self", { configurable: true, writable: true, value: window });
-  const originalFetch = globalThis.fetch;
-  window.HTMLDialogElement.prototype.showModal = function showModal(this: HTMLDialogElement) {
-    this.open = true;
-  };
-  globalThis.fetch = (async () => new Response(JSON.stringify(DETAIL))) as typeof fetch;
 
   try {
     const view = await renderReact(
       <NextIntlClientProvider locale="en" messages={messages} timeZone="UTC">
-        <MemoryExtractionDrawer server={SERVER} sessionId="s1" onClose={() => {}} />
+        <MemoryExtractionDetail sessionId="s1" state={{ detail: DETAIL, error: null }} />
       </NextIntlClientProvider>,
     );
-    await runInAct(() => new Promise((resolve) => setTimeout(resolve, 0)));
 
     const factSources = (statement: string) => {
       const fact = Array.from(view.container.querySelectorAll("li")).find((item) => item.textContent?.includes(statement));
@@ -89,7 +81,6 @@ test("only the current extraction links fact sources to events", async () => {
 
     await view.unmount();
   } finally {
-    globalThis.fetch = originalFetch;
     delete (globalThis as { self?: unknown }).self;
     restore();
   }
@@ -98,10 +89,6 @@ test("only the current extraction links fact sources to events", async () => {
 test("a session without an extraction shows its task status as a badge", async () => {
   const restore = installDom();
   Object.defineProperty(globalThis, "self", { configurable: true, writable: true, value: window });
-  const originalFetch = globalThis.fetch;
-  window.HTMLDialogElement.prototype.showModal = function showModal(this: HTMLDialogElement) {
-    this.open = true;
-  };
   const detail: MemorySessionDetail = {
     session: {
       ...DETAIL.session,
@@ -110,22 +97,19 @@ test("a session without an extraction shows its task status as a badge", async (
     current: null,
     history: [],
   };
-  globalThis.fetch = (async () => new Response(JSON.stringify(detail))) as typeof fetch;
 
   try {
     const view = await renderReact(
       <NextIntlClientProvider locale="en" messages={messages} timeZone="UTC">
-        <MemoryExtractionDrawer server={SERVER} sessionId="s1" onClose={() => {}} />
+        <MemoryExtractionDetail sessionId="s1" state={{ detail, error: null }} />
       </NextIntlClientProvider>,
     );
-    await runInAct(() => new Promise((resolve) => setTimeout(resolve, 0)));
 
     assert.match(view.container.textContent ?? "", /Task is failed\./);
     assert.ok(view.container.querySelector("svg.lucide-circle-x, svg.lucide-x-circle"), "no failed badge icon");
 
     await view.unmount();
   } finally {
-    globalThis.fetch = originalFetch;
     delete (globalThis as { self?: unknown }).self;
     restore();
   }

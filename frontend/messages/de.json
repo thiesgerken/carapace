@@ -257,8 +257,6 @@
             "input_format_version": "Eingabeformat geändert"
         },
         "drawer": {
-            "openSession": "Sitzung öffnen",
-            "close": "Schließen",
             "notEligible": "Diese Sitzung gehört nicht zum Gedächtnis (privat, ausgeschlossener Job oder unbekannt).",
             "notExtracted": "Noch nicht extrahiert.",
             "taskStatus": "Aufgabe ist <status></status>.",
@@ -1222,7 +1220,11 @@
             "details": "Details",
             "done": "Fertig"
         },
-        "memoryChip": "Gedächtnis"
+        "memoryChip": "Gedächtnis",
+        "memory": {
+            "title": "Gedächtnis",
+            "openInMemory": "Im Gedächtnis öffnen"
+        }
     },
     "message": {
         "copy": "Nachricht kopieren",
