@@ -1,8 +1,9 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { Check, CircleHelp, FileText, KeyRound, Loader2, Plus, Save, Trash2, X } from "lucide-react";
-import { useTranslations } from "next-intl";
+import { useFormatter, useTranslations } from "next-intl";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
@@ -48,6 +49,7 @@ interface UserSettingsDraft {
 interface MemoryDraft {
   autoMode: boolean;
   budget: Record<keyof MemoryBudgetSettings, string>;
+  promptBudget: string;
 }
 
 type CredentialBackendDraftType = "file" | "bitwarden";
@@ -303,6 +305,7 @@ function memoryDraftFromSettings(memory: MemorySettingsInfo): MemoryDraft {
       input_tokens_per_day: budgetValue(memory.budget.input_tokens_per_day),
       input_tokens_per_month: budgetValue(memory.budget.input_tokens_per_month),
     },
+    promptBudget: budgetValue(memory.prompt_budget_tokens),
   };
 }
 
@@ -401,6 +404,7 @@ function comparableMemory(memory: MemoryDraft): unknown {
     cost_usd_per_month: cost(memory.budget.cost_usd_per_month),
     input_tokens_per_day: normalized(memory.budget.input_tokens_per_day),
     input_tokens_per_month: normalized(memory.budget.input_tokens_per_month),
+    prompt_budget_tokens: normalized(memory.promptBudget),
   };
 }
 
@@ -474,6 +478,7 @@ function memoryFromDraft(memory: MemoryDraft, t: Translate): MemorySettingsInfo 
       input_tokens_per_day: parseOptionalBudgetInteger(memory.budget.input_tokens_per_day, t("fields.memoryTokensPerDay"), t),
       input_tokens_per_month: parseOptionalBudgetInteger(memory.budget.input_tokens_per_month, t("fields.memoryTokensPerMonth"), t),
     },
+    prompt_budget_tokens: parseOptionalBudgetInteger(memory.promptBudget, t("fields.memoryPromptBudget"), t),
   };
 }
 
@@ -535,6 +540,7 @@ export function buildUserSettingsPatch(
 
 export function UserSettingsView({ server, token }: { server: string; token: string }) {
   const t = useTranslations("accountSettings");
+  const format = useFormatter();
   const { onRefreshCurrentUser } = useAppShell();
   const [settings, setSettings] = useState<UserSettingsResponseInfo | null>(null);
   const [draft, setDraft] = useState<UserSettingsDraft | null>(null);
@@ -834,6 +840,21 @@ export function UserSettingsView({ server, token }: { server: string; token: str
                 />
               </Field>
             </div>
+            <div className="grid gap-4 lg:grid-cols-3">
+              <Field label={t("fields.memoryPromptBudget")} hint={t("hints.memoryPromptBudget")}>
+                <input
+                  inputMode="numeric"
+                  value={draft.memory.promptBudget}
+                  onChange={(event) => updateDraft({ memory: { ...draft.memory, promptBudget: event.target.value } })}
+                  placeholder={t("defaults.serverDefaultTokens", { tokens: format.number(settings.server_defaults.memory_prompt_budget_tokens) })}
+                  className={inputClassName}
+                />
+              </Field>
+            </div>
+            <Link href="/settings/prompts" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground underline-offset-2 hover:text-foreground hover:underline">
+              <FileText className="h-4 w-4" />
+              {t("fields.previewPrompts")}
+            </Link>
           </div>
         </Section>
 

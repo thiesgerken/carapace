@@ -26,6 +26,8 @@ import type {
   NotificationPreferencesPatch,
   NotificationSubscriptionCreateRequest,
   NotificationSubscriptionRecord,
+  PromptPreview,
+  PromptRole,
   SessionArchiveCommitResponse,
   SessionAttributesPatch,
   SessionInfo,
@@ -1090,6 +1092,8 @@ export interface MemoryBudgetSettings {
 export interface MemorySettingsInfo {
   auto_mode: boolean;
   budget: MemoryBudgetSettings;
+  /** Memory tokens in the agent's system prompt; null uses the platform default, 0 turns it off. */
+  prompt_budget_tokens: number | null;
 }
 
 export interface UserSettingsInfo {
@@ -1118,6 +1122,7 @@ export interface UserSettingsResponseInfo {
       memory_high: string;
     };
     budget: SessionBudgetSettings;
+    memory_prompt_budget_tokens: number;
   };
   available_models: AvailableModelInfo[];
   settings: UserSettingsInfo;
@@ -1308,11 +1313,18 @@ function decodeMemorySettings(raw: unknown): MemorySettingsInfo {
       input_tokens_per_day: tokens("input_tokens_per_day"),
       input_tokens_per_month: tokens("input_tokens_per_month"),
     },
+    prompt_budget_tokens: readNumber(raw, "prompt_budget_tokens") ?? null,
   };
 }
 
 function requireString(record: Record<string, unknown>, key: string): string {
   const value = readString(record, key);
+  if (value === undefined) throw new Error(`Invalid settings response: missing ${key}`);
+  return value;
+}
+
+function requireNumber(record: Record<string, unknown>, key: string): number {
+  const value = readNumber(record, key);
   if (value === undefined) throw new Error(`Invalid settings response: missing ${key}`);
   return value;
 }
@@ -1343,6 +1355,7 @@ function decodeUserSettingsResponse(raw: unknown): UserSettingsResponseInfo {
         memory_high: readString(serverModels, "memory_high") ?? "",
       },
       budget: decodeBudget(serverDefaults.budget),
+      memory_prompt_budget_tokens: requireNumber(serverDefaults, "memory_prompt_budget_tokens"),
     },
     available_models: decodeAvailableModels(raw.available_models),
     settings: {
@@ -1937,4 +1950,10 @@ export async function listMemoryFacts(server: string, filter: MemoryFactFilter):
   const res = await fetch(`${server}/api/memory/facts?${params.toString()}`);
   if (!res.ok) throw new Error(await readErrorMessage(res, "Failed to load memory facts"));
   return (await res.json()) as MemoryFactListResponse;
+}
+
+export async function getPromptPreview(server: string, role: PromptRole): Promise<PromptPreview> {
+  const res = await fetch(`${server}/api/prompts/preview?role=${role}`);
+  if (!res.ok) throw new Error(await readErrorMessage(res, "Failed to load prompt preview"));
+  return (await res.json()) as PromptPreview;
 }

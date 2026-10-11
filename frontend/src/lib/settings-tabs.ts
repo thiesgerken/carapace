@@ -1,6 +1,7 @@
 export const SETTINGS_TABS = [
   "preferences",
   "account",
+  "prompts",
   "jobs",
   "api-keys",
   "platform-models",
