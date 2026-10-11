@@ -338,7 +338,7 @@ The list is sorted by last activity (when the task finished, started, was queued
 
 The page without an open session (`/`) is where you pick things up:
 
-- **Composer:** typing there and sending creates a session (with the options from the ▾ next to it) and sends the message into it.
+- **Composer:** pinned at the bottom where a session's composer sits, so the session takes over in place. Sending creates a session (with the options from the ▾ in the input row) and sends the message into it.
 - **Notice chips** under the composer, only when something needs attention:
   - pending approvals, linking to the most recently active waiting session;
   - failed memory tasks, linking to the Tasks tab filtered to failed;
