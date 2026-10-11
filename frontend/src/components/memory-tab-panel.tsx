@@ -27,7 +27,7 @@ export function MemoryTabPanel({ tab }: { tab: MemoryTab }) {
       id={`memory-panel-${tab}`}
       role="tabpanel"
       aria-labelledby={`memory-tab-${tab}`}
-      className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background/65"
+      className="flex min-h-0 flex-1 flex-col overflow-clip bg-background/65"
     >
       <MemoryTabContent tab={tab} server={server} token={token} />
     </div>

@@ -2742,7 +2742,7 @@ export function ChatView({
   );
 
   return (
-    <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+    <div className="flex h-full min-h-0 flex-1 flex-col overflow-clip">
       {/* Status bar */}
       {status !== "connected" && (
         <div className="flex items-center gap-2 border-b border-border px-4 py-2 text-xs text-muted-foreground">
