@@ -1554,6 +1554,11 @@
         "tokens": "{count, plural, one {# token} other {# tokens}}",
         "memoryBudget": "Memory budget",
         "memoryOff": "Off",
-        "cacheEnd": "End of cacheable prefix"
+        "cacheEnd": "End of cacheable prefix",
+        "view": "View",
+        "views": {
+            "rendered": "Rendered",
+            "raw": "Raw"
+        }
     }
 }

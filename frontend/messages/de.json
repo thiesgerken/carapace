@@ -1554,6 +1554,11 @@
         "tokens": "{count, plural, one {# Token} other {# Tokens}}",
         "memoryBudget": "Gedächtnis-Budget",
         "memoryOff": "Aus",
-        "cacheEnd": "Ende des cachebaren Präfixes"
+        "cacheEnd": "Ende des cachebaren Präfixes",
+        "view": "Ansicht",
+        "views": {
+            "rendered": "Gerendert",
+            "raw": "Roh"
+        }
     }
 }

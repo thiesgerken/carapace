@@ -3,9 +3,20 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { ChevronRight, Loader2 } from "lucide-react";
 import { useFormatter, useTranslations } from "next-intl";
+import { MarkdownContent } from "@/components/markdown-content";
 import { getPromptPreview } from "@/lib/api";
-import { PROMPT_ROLES, type PromptPreview, type PromptRole } from "@/lib/types";
+import { fencedCodeBlock } from "@/lib/sandbox-read";
+import { PROMPT_ROLES, type PromptPreview, type PromptRole, type PromptSection } from "@/lib/types";
 import { cn } from "@/lib/utils";
+
+type View = "rendered" | "raw";
+
+const pillClassName = (selected: boolean): string => cn(
+  "rounded-full border px-3 py-1.5 text-sm transition-colors",
+  selected
+    ? "border-[#236b86]/60 bg-[#236b86]/10 text-foreground dark:border-sky-400/50 dark:bg-sky-400/10"
+    : "border-border text-muted-foreground hover:bg-muted hover:text-foreground",
+);
 
 type Outcome = { role: PromptRole; preview: PromptPreview } | { role: PromptRole; error: string };
 
@@ -35,29 +46,27 @@ function usePromptPreview(server: string, role: PromptRole): { preview: PromptPr
 export function PromptPreviewView({ server }: { server: string }) {
   const t = useTranslations("promptPreview");
   const [role, setRole] = useState<PromptRole>("agent");
+  const [view, setView] = useState<View>("rendered");
   const { preview, error } = usePromptPreview(server, role);
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-6">
       <div className="mx-auto flex w-full max-w-5xl flex-col gap-4">
-        <div role="radiogroup" aria-label={t("role")} className="flex flex-wrap gap-1.5">
-          {PROMPT_ROLES.map((value) => (
-            <button
-              key={value}
-              type="button"
-              role="radio"
-              aria-checked={value === role}
-              onClick={() => setRole(value)}
-              className={cn(
-                "rounded-full border px-3 py-1.5 text-sm transition-colors",
-                value === role
-                  ? "border-[#236b86]/60 bg-[#236b86]/10 text-foreground dark:border-sky-400/50 dark:bg-sky-400/10"
-                  : "border-border text-muted-foreground hover:bg-muted hover:text-foreground",
-              )}
-            >
-              {t(`roles.${value}`)}
-            </button>
-          ))}
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div role="radiogroup" aria-label={t("role")} className="flex flex-wrap gap-1.5">
+            {PROMPT_ROLES.map((value) => (
+              <button key={value} type="button" role="radio" aria-checked={value === role} onClick={() => setRole(value)} className={pillClassName(value === role)}>
+                {t(`roles.${value}`)}
+              </button>
+            ))}
+          </div>
+          <div role="radiogroup" aria-label={t("view")} className="flex gap-1.5">
+            {(["rendered", "raw"] as const).map((value) => (
+              <button key={value} type="button" role="radio" aria-checked={value === view} onClick={() => setView(value)} className={pillClassName(value === view)}>
+                {t(`views.${value}`)}
+              </button>
+            ))}
+          </div>
         </div>
 
         {error ? (
@@ -65,14 +74,14 @@ export function PromptPreviewView({ server }: { server: string }) {
         ) : preview === null ? (
           <Loader2 className="mx-auto mt-8 h-5 w-5 animate-spin text-muted-foreground" />
         ) : (
-          <PreviewBody preview={preview} />
+          <PreviewBody preview={preview} view={view} />
         )}
       </div>
     </div>
   );
 }
 
-function PreviewBody({ preview }: { preview: PromptPreview }) {
+function PreviewBody({ preview, view }: { preview: PromptPreview; view: View }) {
   const t = useTranslations("promptPreview");
   const format = useFormatter();
 
@@ -89,14 +98,7 @@ function PreviewBody({ preview }: { preview: PromptPreview }) {
       <div className="space-y-2">
         {preview.sections.map((section, index) => (
           <div key={section.key} className="space-y-2">
-            <details className="group/section rounded-2xl border border-border bg-background/88 shadow-sm">
-              <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 [&::-webkit-details-marker]:hidden">
-                <ChevronRight aria-hidden="true" className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-open/section:rotate-90" />
-                <span className="min-w-0 flex-1 truncate text-sm font-medium">{section.title}</span>
-                <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{t("tokens", { count: section.tokens })}</span>
-              </summary>
-              <pre className="max-h-[32rem] overflow-auto whitespace-pre-wrap break-words border-t border-border/60 px-4 py-3 font-mono text-xs leading-relaxed">{section.text}</pre>
-            </details>
+            <SectionBlock section={section} view={view} />
             {index === preview.cacheable_until ? (
               <div role="separator" className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.12em] text-[#236b86] dark:text-sky-400">
                 <span className="h-px flex-1 border-t border-dashed border-current" />
@@ -109,6 +111,35 @@ function PreviewBody({ preview }: { preview: PromptPreview }) {
       </div>
     </>
   );
+}
+
+function SectionBlock({ section, view }: { section: PromptSection; view: View }) {
+  const t = useTranslations("promptPreview");
+  // Bodies mount on first open only, so Shiki never runs for sections nobody looks at.
+  const [opened, setOpened] = useState(false);
+
+  return (
+    <details onToggle={(event) => event.currentTarget.open && setOpened(true)} className="group/section rounded-2xl border border-border bg-background/88 shadow-sm">
+      <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 [&::-webkit-details-marker]:hidden">
+        <ChevronRight aria-hidden="true" className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-open/section:rotate-90" />
+        <span className="min-w-0 flex-1 truncate text-sm font-medium">{section.title}</span>
+        <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{t("tokens", { count: section.tokens })}</span>
+      </summary>
+      {opened ? <SectionText section={section} view={view} /> : null}
+    </details>
+  );
+}
+
+function SectionText({ section, view }: { section: PromptSection; view: View }) {
+  const frameClassName = "max-h-[32rem] overflow-auto border-t border-border/60 px-4 py-3";
+  // The tool definitions are JSON, not Markdown: highlighted in both views.
+  if (section.key === "tools") {
+    return <div className={frameClassName}><MarkdownContent content={fencedCodeBlock("json", section.text)} /></div>;
+  }
+  if (view === "rendered") {
+    return <div className={frameClassName}><MarkdownContent content={section.text} /></div>;
+  }
+  return <pre className={cn(frameClassName, "whitespace-pre-wrap break-words font-mono text-xs leading-relaxed")}>{section.text}</pre>;
 }
 
 function Stat({ label, value }: { label: string; value: ReactNode }) {
