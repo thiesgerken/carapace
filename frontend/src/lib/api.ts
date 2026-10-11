@@ -1874,10 +1874,6 @@ export function cancelMemoryTasks(server: string, selection: MemoryTaskSelection
   return postMemory(server, "/tasks/cancel", selection, "Failed to cancel memory tasks");
 }
 
-export function retryMemoryTasks(server: string, ids: number[]): Promise<MemoryTaskCountResponse> {
-  return postMemory(server, "/tasks/retry", { ids }, "Failed to retry memory tasks");
-}
-
 export function spawnMemoryTasks(server: string, body: MemoryTaskSpawnRequest): Promise<MemoryTaskSpawnResponse> {
   return postMemory(server, "/tasks/spawn", body, "Failed to spawn memory tasks");
 }

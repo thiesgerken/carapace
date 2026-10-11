@@ -138,7 +138,7 @@ A digest records which source records it consumed (`source_id`, `source_hash`) a
 
 Partial runs are allowed: a weekly digest over 12 of 14 sessions is fine. The UI shows `12/14`, and the digest turns stale when the rest arrive.
 
-A queued digest does not start while its period still has queued or running source tasks (session extractions for a week; session extractions and week digests for a month). It stays `queued` with `blocked_reason = "dependencies"` and starts once they finish. Pending, failed or cancelled sources do not hold it back, since nobody would run them: the digest then covers what exists. The task list shows both cases on the digest's row and links to the period's source tasks, and the run dialog offers to add missing pending sources to the selection.
+A queued digest does not start while its period still has queued or running source tasks (session extractions for a week; session extractions and week digests for a month). It stays `queued` with `blocked_reason = "dependencies"` and starts once they finish. Pending, failed or cancelled sources do not hold it back, since nobody would run them: the digest then covers what exists. The task list shows both cases on the digest's row and links to the period's source tasks, and the run dialog offers to add missing pending sources, and failed ones without a current record, to the selection.
 
 A record is **outdated** when it was produced with an older prompt version, another model or an older input format than the current one. Outdated records are never re-run automatically (see [Spawning rules](#spawning-rules)).
 
@@ -157,12 +157,12 @@ A record is **outdated** when it was produced with an older prompt version, anot
 
 ```
 pending ──run──▶ queued ──claim──▶ running ──▶ done
-   │                │                  └─────▶ failed ──retry──▶ queued
+   │                │                  └─────▶ failed ──run──▶ queued
    └──cancel──▶ cancelled ◀──cancel──┘
 ```
 
 - There is at most one open task (`pending`, `queued` or `running`) per user, kind and target. A newer spawn for the same target replaces a `pending` one.
-- Retry reuses the task (`attempts` goes up). Nothing is retried automatically; transient HTTP errors are already retried by the model transport.
+- A run queues the pending and failed tasks of a selection. A failed task is reused (`attempts` goes up) and keeps its model override unless the run brings one. Cancelled tasks stay out: cancelling is a deliberate stop, undone by respawning. Nothing is retried automatically; transient HTTP errors are already retried by the model transport.
 - On server start, tasks left `running` return to `queued`.
 - A failed call that was billed still counts: tasks accumulate billed tokens and cost over all attempts, and spend includes failed tasks.
 - Right before a session task runs, its eligibility is checked again. A session that turned private or was deleted cancels the task (and purges its extractions). A session with an agent turn in progress stays queued and is tried again on a later tick.
@@ -303,8 +303,8 @@ The queue. Filter by status, kind, period (week or month) and model. Besides sin
 
 The list is sorted by last activity (when the task finished, started, was queued or was created) by default. Click the **Target** header to sort by target period instead, the order **Run newest 50** picks in. The **Model** column shows the model a task ran with, or for open tasks the model it would run with now: its override, otherwise the current role default. The model filter matches by the same rule.
 
-- **Run newest 50**, **Run selected**, **Cancel selected**, and **Retry** on failed rows.
-- The **run dialog** shows the task count, input tokens, estimated cost, remaining budget (and a warning when the run exceeds it) and lets you override the model for this run. When selected digests have pending sources outside the selection, it warns and offers **Add N dependencies**, which runs them too (`include_dependencies` on the run request), so the digests wait for them.
+- **Run newest 50**, **Run selected**, **Cancel selected**, and **Retry** on failed rows (a run of that one task).
+- The **run dialog** shows the task count (pending and failed tasks; mirrors and tasks whose input cannot be prepared run without an estimate), input tokens, estimated cost, remaining budget (and a warning when the run exceeds it) and lets you override the model for this run. When selected digests have pending or failed sources outside the selection, it warns and offers **Add N dependencies**, which runs them too (`include_dependencies` on the run request), so the digests wait for them.
 - A digest's status shows **waiting for N extractions** while it is blocked on its sources, or **N extractions missing** when sources are pending, failed or cancelled (sources for months). Clicking it filters the list to the period's source tasks.
 - Clicking a task's target shows its details: attempts, timings, estimate, provenance and usage, the error, and a link to the record it produced.
 
@@ -324,10 +324,9 @@ All endpoints live under `/api/memory`, are scoped to the authenticated user and
 | --- | --- |
 | `GET /status` | auto mode, budget gauges, queue counts, effective models, outdated records without an open task |
 | `GET /tasks` | filter by status, kind, period, model; `sort=activity` (default) or `period`; cursor pagination; total and estimate |
-| `POST /tasks/estimate` | estimate for task ids or a filter |
-| `POST /tasks/run` | run task ids, a filter, or the newest N of a filter; optional model override |
+| `POST /tasks/estimate` | estimate for the pending and failed tasks of task ids or a filter |
+| `POST /tasks/run` | run the pending and failed tasks of task ids, a filter, or the newest N of a filter; optional model override |
 | `POST /tasks/cancel` | cancel task ids or a filter |
-| `POST /tasks/retry` | retry failed task ids |
 | `POST /tasks/spawn` | spawn or respawn for explicit targets or a session filter; optional model override |
 | `POST /tasks/spawn-outdated` | spawn pending manual tasks for every outdated record without an open task; returns created counts per kind and the skipped targets |
 | `GET /sessions` | sessions with extraction state; filters as in the Sessions tab |

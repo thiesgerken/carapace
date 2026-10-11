@@ -15,7 +15,7 @@ import {
 import { MemoryRunDialog } from "@/components/memory-run-dialog";
 import { MemoryTaskDetail } from "@/components/memory-task-detail";
 import { useMemoryStatus } from "@/components/memory-status";
-import { cancelMemoryTasks, listMemoryTasks, retryMemoryTasks } from "@/lib/api";
+import { cancelMemoryTasks, listMemoryTasks, runMemoryTasks } from "@/lib/api";
 import { formatAbsoluteTime, formatRelativeTime } from "@/lib/format-time";
 import {
   formatTokenEstimate,
@@ -315,7 +315,7 @@ export function MemoryTasksView({ server, token }: { server: string; token: stri
                             <button
                               type="button"
                               disabled={busy}
-                              onClick={() => void act(() => retryMemoryTasks(server, [task.id]), (count) => t("retried", { count }))}
+                              onClick={() => void act(() => runMemoryTasks(server, { selection: { ids: [task.id] } }), (count) => t("retried", { count }))}
                               title={t("retry")}
                               aria-label={t("retry")}
                               className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"

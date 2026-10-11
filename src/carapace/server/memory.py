@@ -26,7 +26,6 @@ from ..memory.models import (
     SessionMemoryListResponse,
     TaskCountResponse,
     TaskFilter,
-    TaskIdsRequest,
     TaskKind,
     TaskListResponse,
     TaskRunRequest,
@@ -91,11 +90,6 @@ async def run_tasks(body: TaskRunRequest, user: _Writer) -> TaskCountResponse:
 @router.post("/tasks/cancel", response_model=TaskCountResponse)
 async def cancel_tasks(body: TaskSelection, user: _Writer) -> TaskCountResponse:
     return await _service().cancel_tasks(user.username, body)
-
-
-@router.post("/tasks/retry", response_model=TaskCountResponse)
-async def retry_tasks(body: TaskIdsRequest, user: _Writer) -> TaskCountResponse:
-    return await _service().retry_tasks(user.username, body.ids)
 
 
 @router.post("/tasks/spawn", response_model=TaskSpawnResponse)
