@@ -292,7 +292,7 @@ The same fact from several sessions (same statement and subject, ignoring case, 
 
 The queue. Filter by status, kind, month and model; the header shows the number of matching tasks and their estimated cost. "Run all of September" is: filter month 2026-09, select all matching, run. The month filter places session tasks by their session's week, not by when the task was created.
 
-The list is sorted by last activity (when the task finished, started, was queued or was created) by default. Click the **Target** header to sort by target period instead, the order **Run newest 50** picks in. The **Model** column shows the model a task ran with, or for open tasks the model it would run with now: its override, otherwise the current role default.
+The list is sorted by last activity (when the task finished, started, was queued or was created) by default. Click the **Target** header to sort by target period instead, the order **Run newest 50** picks in. The **Model** column shows the model a task ran with, or for open tasks the model it would run with now: its override, otherwise the current role default. The model filter matches by the same rule.
 
 - **Run newest 50**, **Run selected**, **Cancel selected**, and **Retry** on failed rows.
 - The **run dialog** shows the task count, input tokens, estimated cost, remaining budget (and a warning when the run exceeds it) and lets you override the model for this run. When selected digests have pending sources outside the selection, it warns and offers **Add N dependencies**, which runs them too (`include_dependencies` on the selection), so the digests wait for them.

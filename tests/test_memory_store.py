@@ -277,6 +277,32 @@ def test_list_tasks_by_activity_puts_the_last_change_first(store: MemoryStore):
     assert [t.id for t in page.items] == [retried.id, finished.id, untouched.id]
 
 
+def test_model_filter_matches_what_a_task_ran_or_will_run_with(store: MemoryStore):
+    stale = _spawn_extract(store, "s1")  # estimated with test:low before the default changed
+    picked = _spawn_extract(store, "s2")
+    store.run("alice", TaskSelection(ids=[picked.id]), "test:picked", NOW)
+    billed = _spawn_extract(store, "s3")
+    store.run("alice", TaskSelection(ids=[billed.id]), None, NOW)
+    assert store.claim(billed.id, NOW)
+    store.record_failure(billed.id, "boom", NOW, _provenance(billed.id, model="test:ran"))
+    defaults = {TaskKind.session_extract: "test:new-default"}
+
+    def matching(model: str) -> set[int]:
+        page = store.list_tasks("alice", TaskFilter(model=model), None, 10, default_models=defaults)
+        return {t.id for t in page.items}
+
+    assert matching("test:new-default") == {stale.id}
+    assert matching("test:low") == set()
+    assert matching("test:picked") == {picked.id}
+    assert matching("test:ran") == {billed.id}
+    selection = TaskSelection(filter=TaskFilter(model="test:new-default"))
+    assert [t.id for t in store.select_tasks("alice", selection, {TaskStatus.pending}, default_models=defaults)] == [
+        stale.id
+    ]
+    with pytest.raises(ValueError, match="default model"):
+        store.list_tasks("alice", TaskFilter(model="test:low"), None, 10)
+
+
 def test_claim_is_atomic_and_counts_attempts(store: MemoryStore):
     task = _spawn_extract(store, "s1")
     assert not store.claim(task.id, NOW)  # pending, not queued

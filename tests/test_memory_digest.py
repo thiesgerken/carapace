@@ -102,7 +102,7 @@ class _Sources:
 def _handler(level: DigestLevel, model: _Model, sources: _Sources) -> DigestHandler:
     return DigestHandler(
         level=level,
-        config=Config(),
+        current_config=Config,
         current_extractions=sources.current_extractions,
         current_digests=sources.current_digests,
         model_factory=lambda name, *, user: FunctionModel(model),

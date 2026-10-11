@@ -26,6 +26,7 @@ from genai_prices import UpdatePrices
 from loguru import logger
 from pydantic import BaseModel
 from pydantic_ai.exceptions import UsageLimitExceeded
+from pydantic_ai.models import Model
 from sqlalchemy import Engine
 
 from .. import get_version
@@ -41,7 +42,7 @@ from ..database.engine import SessionFactory, create_engine_and_factory, run_mig
 from ..git.http import GitHttpHandler
 from ..jobs import JobsScheduler, JobsStore
 from ..knowledge import KnowledgeRepoRegistry
-from ..llm import make_model_factory
+from ..llm import ModelFactory, make_model_factory
 from ..memory.handlers import DigestHandler, MirrorHandler, SessionExtractHandler
 from ..memory.models import DigestLevel, TaskKind
 from ..memory.service import MemoryService
@@ -90,6 +91,7 @@ load_dotenv()
 
 _data_dir: Path
 _config: Config
+_model_factory: ModelFactory
 _engine_db: Engine
 _session_factory: SessionFactory
 _engine: SessionEngine
@@ -204,6 +206,16 @@ def _enabled_usernames() -> list[str]:
     return [name for name, user in _auth_store.load_users().users.items() if user.enabled]
 
 
+# Admins swap ``_config`` and ``_model_factory`` at runtime (platform settings). Memory reads them
+# through these on every use, so a model added or removed applies without a restart.
+def _live_config() -> Config:
+    return _config
+
+
+def _live_model_factory(model_name: str, *, user: str) -> Model:
+    return _model_factory(model_name, user=user)
+
+
 def _user_config(username: str) -> UserConfig:
     user = _auth_store.get_user(username)
     if user is None:
@@ -315,6 +327,7 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
     global \
         _data_dir, \
         _config, \
+        _model_factory, \
         _engine_db, \
         _session_factory, \
         _engine, \
@@ -369,7 +382,7 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
     session_mgr = SessionManager(_session_factory, _data_dir, on_change=_session_list_cache.invalidate_sync)
     # No eager default-model construction: a fresh install has no provider credentials yet, and
     # the admin needs the server up to configure them. SessionEngine resolves on first use.
-    model_factory = make_model_factory(_config, _codex_accounts.provider_for)
+    _model_factory = make_model_factory(_config, _codex_accounts.provider_for)
 
     runtime = _create_sandbox_runtime(_config, _data_dir)
 
@@ -472,7 +485,7 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
         sandbox_mgr=_sandbox_mgr,
         credential_registry_for_session=_credential_registry_for_session,
         knowledge_repo_for_session=knowledge_repo_for_session,
-        model_factory=model_factory,
+        model_factory=_model_factory,
         notification_router=_notification_router,
     )
     # A restart kills turns without running their finalization, so their open approval
@@ -487,30 +500,30 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
     _jobs_scheduler = JobsScheduler(_jobs_store)
     memory_store = MemoryStore(_session_factory)
     _memory_service = MemoryService(
-        config=_config,
+        current_config=_live_config,
         store=memory_store,
         sessions=session_mgr,
         jobs=_jobs_store,
         handlers={
             TaskKind.session_extract: SessionExtractHandler(
-                config=_config,
+                current_config=_live_config,
                 load_events=session_mgr.load_events,
                 user_config_for=_user_config,
-                model_factory=model_factory,
+                model_factory=_live_model_factory,
             ),
             TaskKind.week_digest: DigestHandler(
                 level=DigestLevel.week,
-                config=_config,
+                current_config=_live_config,
                 current_extractions=memory_store.current_extractions,
                 current_digests=memory_store.current_digests,
-                model_factory=model_factory,
+                model_factory=_live_model_factory,
             ),
             TaskKind.month_digest: DigestHandler(
                 level=DigestLevel.month,
-                config=_config,
+                current_config=_live_config,
                 current_extractions=memory_store.current_extractions,
                 current_digests=memory_store.current_digests,
-                model_factory=model_factory,
+                model_factory=_live_model_factory,
             ),
             TaskKind.mirror: MirrorHandler(
                 current_extractions=memory_store.current_extractions,
