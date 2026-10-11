@@ -57,7 +57,7 @@ const TASKS: MemoryTaskListResponse = {
   estimate: { task_count: 120, input_tokens: 144000, output_tokens_cap: 96000, cost_usd: "0.36", unpriced_count: 0 },
 };
 
-const ESTIMATE = { task_count: 120, input_tokens: 144000, output_tokens_cap: 96000, cost_usd: "0.36", unpriced_count: 0 };
+const ESTIMATE = { task_count: 120, input_tokens: 144000, output_tokens_cap: 96000, cost_usd: "0.36", unpriced_count: 0, unestimated: 0, missing_dependencies: 0 };
 
 test("select all matching runs the whole filter, not just the visible page", async () => {
   const restore = installDom();

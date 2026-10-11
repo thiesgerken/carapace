@@ -16,6 +16,7 @@ from .coverage import coverage_hash, month_coverage, week_coverage
 from .handlers import TaskHandler
 from .input import first_user_message_at
 from .models import (
+    RUNNABLE_TASK_STATUSES,
     BudgetWindowStatus,
     DigestLevel,
     DigestRecord,
@@ -182,19 +183,23 @@ class MemoryService:
         )
 
     async def estimate_tasks(self, user: str, request: TaskRunRequest) -> RunEstimate:
-        """What running the pending tasks of a selection would cost, with the requested model."""
+        """What running a selection would cost: each task re-estimated for the model it would run with."""
         self._check_override(request.model_override)
         default_models = self._default_models(user)
         tasks = self._store.select_tasks(
             user,
             request.selection,
-            {TaskStatus.pending},
+            set(RUNNABLE_TASK_STATUSES),
             default_models=default_models,
             include_dependencies=request.include_dependencies,
         )
-        total = sum_estimates([await self._estimate_for(t, request.model_override) for t in tasks if t.estimate])
+        estimates = [
+            await self._estimate_for(t, request.model_override or t.model_override or default_models.get(t.kind))
+            for t in tasks
+        ]
+        total = sum_estimates(e for e in estimates if e is not None)
         missing = self._store.missing_dependencies(user, request.selection, default_models=default_models)
-        return RunEstimate(**total.model_dump(), missing_dependencies=missing)
+        return RunEstimate(**total.model_dump(), unestimated=estimates.count(None), missing_dependencies=missing)
 
     async def run_tasks(self, user: str, request: TaskRunRequest) -> TaskCountResponse:
         self._check_override(request.model_override)
@@ -216,11 +221,6 @@ class MemoryService:
         ]
         count = self._store.cancel(user, selection, self._clock(), default_models=defaults)
         self._worker.abort(running)
-        self._worker.wake()
-        return TaskCountResponse(count=count)
-
-    async def retry_tasks(self, user: str, task_ids: list[int]) -> TaskCountResponse:
-        count = self._store.retry(user, task_ids, self._clock())
         self._worker.wake()
         return TaskCountResponse(count=count)
 
@@ -522,12 +522,20 @@ class MemoryService:
             for task in tasks
         ]
 
-    async def _estimate_for(self, task: MemoryTask, model_override: str | None) -> TaskEstimate:
-        if task.estimate is None:
-            raise ValueError(f"task {task.id} has no estimate")
-        if model_override is None or model_override == task.estimate.model:
+    async def _estimate_for(self, task: MemoryTask, model: str | None) -> TaskEstimate | None:
+        """*task*'s estimate for *model*, reusing the stored one when it was made for that model.
+
+        None for a task without a model (it makes no LLM call) and for one whose input cannot be
+        prepared: queued anyway, it fails again at the worker's estimate, before anything is billed.
+        """
+        if model is None:
+            return None
+        if task.estimate is not None and task.estimate.model == model:
             return task.estimate
-        return await self._handlers[task.kind].estimate(task.user, task.target, model_override)
+        try:
+            return await self._handlers[task.kind].estimate(task.user, task.target, model)
+        except MALFORMED_TRANSCRIPT_ERRORS:
+            return None
 
 
 def _extraction_summary(record: ExtractionRecord, versions: CurrentVersions) -> ExtractionSummary:

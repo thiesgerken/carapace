@@ -29,6 +29,8 @@ class TaskStatus(StrEnum):
 # At most one open task per (user, kind, target); the partial unique index on memory_tasks
 # spells out the same set.
 OPEN_TASK_STATUSES = frozenset({TaskStatus.pending, TaskStatus.queued, TaskStatus.running})
+# What a run queues. Cancelled stays out: cancelling is a deliberate stop, undone by respawning.
+RUNNABLE_TASK_STATUSES = frozenset({TaskStatus.pending, TaskStatus.failed})
 
 
 class BlockedReason(StrEnum):
@@ -395,10 +397,6 @@ class TaskRunRequest(MemoryApiModel):
     include_dependencies: bool = False
 
 
-class TaskIdsRequest(MemoryApiModel):
-    ids: list[int] = Field(min_length=1)
-
-
 class SessionMemoryFilter(MemoryApiModel):
     week: str | None = None
     state: list[ExtractionState] | None = None
@@ -456,6 +454,8 @@ class EstimateTotal(MemoryApiModel):
 
 
 class RunEstimate(EstimateTotal):
+    # Tasks the run queues without an estimate: mirrors, and tasks whose input cannot be prepared.
+    unestimated: int
     # Pending source tasks of the selection's digests that it leaves out (include_dependencies runs them too).
     missing_dependencies: int
 

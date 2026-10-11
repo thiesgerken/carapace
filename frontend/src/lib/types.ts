@@ -866,11 +866,6 @@ export interface MemoryTaskRunRequest {
   include_dependencies?: boolean;
 }
 
-/** Body of POST /tasks/retry. */
-export interface MemoryTaskIdsRequest {
-  ids: number[];
-}
-
 /** Body of POST /tasks/spawn: explicit targets, or (session_extract only) every session matching a filter. */
 export interface MemoryTaskSpawnRequest {
   kind: MemoryTaskKind;
@@ -905,6 +900,8 @@ export interface MemoryEstimateTotal {
 
 /** Response of POST /tasks/estimate. */
 export interface MemoryRunEstimate extends MemoryEstimateTotal {
+  /** Tasks the run queues without an estimate: mirrors, and tasks whose input cannot be prepared. */
+  unestimated: number;
   /** Pending source tasks of the selection's digests that it leaves out; include_dependencies runs them too. */
   missing_dependencies: number;
 }

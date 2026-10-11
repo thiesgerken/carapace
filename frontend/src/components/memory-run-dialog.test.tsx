@@ -23,9 +23,9 @@ const STATUS: MemoryStatus = {
   outdated: { session_extract: 0, week_digest: 0, month_digest: 0 },
 };
 
-const EMPTY_ESTIMATE = { task_count: 0, input_tokens: 0, output_tokens_cap: 0, cost_usd: "0", unpriced_count: 0, missing_dependencies: 0 };
+const EMPTY_ESTIMATE = { task_count: 0, input_tokens: 0, output_tokens_cap: 0, cost_usd: "0", unpriced_count: 0, unestimated: 0, missing_dependencies: 0 };
 
-test("a selection without pending tasks says so, and re-picking the current model keeps the estimate", async () => {
+test("a selection with nothing to run says so, and re-picking the current model keeps the estimate", async () => {
   const restore = installDom();
   const originalFetch = globalThis.fetch;
   // jsdom has no <dialog> modality.
@@ -58,7 +58,7 @@ test("a selection without pending tasks says so, and re-picking the current mode
     const text = () => view.container.textContent ?? "";
     const runButton = () => Array.from(view.container.querySelectorAll("button")).find((element) => element.textContent?.trim() === "Run");
 
-    assert.match(text(), /No pending tasks in this selection\./);
+    assert.match(text(), /Nothing to run in this selection\./);
     assert.equal(runButton()?.disabled, true);
 
     const trigger = Array.from(view.container.querySelectorAll("button")).find((element) => element.textContent?.includes("Role default (opus)"));
@@ -68,7 +68,7 @@ test("a selection without pending tasks says so, and re-picking the current mode
     await settle();
 
     assert.doesNotMatch(text(), /Estimating/);
-    assert.match(text(), /No pending tasks in this selection\./);
+    assert.match(text(), /Nothing to run in this selection\./);
     assert.equal(estimates, 1);
 
     await view.unmount();
@@ -88,7 +88,7 @@ test("missing dependencies can be added to the selection before running", async 
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const path = new URL(String(input)).pathname;
     if (init?.body) posted.push({ path, body: JSON.parse(String(init.body)) });
-    const estimate = { task_count: 1, input_tokens: 1000, output_tokens_cap: 100, cost_usd: "0.01", unpriced_count: 0, missing_dependencies: 2 };
+    const estimate = { task_count: 1, input_tokens: 1000, output_tokens_cap: 100, cost_usd: "0.01", unpriced_count: 0, unestimated: 0, missing_dependencies: 2 };
     const body = {
       "/api/memory/status": STATUS,
       "/api/memory/tasks/estimate": estimate,
@@ -124,6 +124,43 @@ test("missing dependencies can be added to the selection before running", async 
       ["/api/memory/tasks/estimate", true],
       ["/api/memory/tasks/run", true],
     ]);
+    await view.unmount();
+  } finally {
+    globalThis.fetch = originalFetch;
+    restore();
+  }
+});
+
+test("the task count includes tasks without an estimate, which still run", async () => {
+  const restore = installDom();
+  const originalFetch = globalThis.fetch;
+  window.HTMLDialogElement.prototype.showModal = function showModal(this: HTMLDialogElement) {
+    this.open = true;
+  };
+  const estimate = { ...EMPTY_ESTIMATE, task_count: 2, input_tokens: 2000, output_tokens_cap: 200, cost_usd: "0.02", unestimated: 1 };
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const path = new URL(String(input)).pathname;
+    const body = { "/api/memory/status": STATUS, "/api/memory/tasks/estimate": estimate, "/api/models": [] }[path];
+    assert.ok(body !== undefined, `unexpected request ${path}`);
+    return new Response(JSON.stringify(body), { headers: { "Content-Type": "application/json" } });
+  }) as typeof fetch;
+
+  try {
+    const view = await renderReact(
+      <NextIntlClientProvider locale="en" messages={messages} timeZone="UTC">
+        <MemoryStatusProvider server={SERVER}>
+          <MemoryRunDialog server={SERVER} token="" selection={{ ids: [17, 18, 19] }} kinds={["session_extract"]} onClose={() => {}} onQueued={() => {}} />
+        </MemoryStatusProvider>
+      </NextIntlClientProvider>,
+    );
+    await runInAct(() => new Promise((resolve) => setTimeout(resolve, 0)));
+    const text = view.container.textContent ?? "";
+    const runButton = Array.from(view.container.querySelectorAll("button")).find((element) => element.textContent?.trim() === "Run");
+
+    assert.match(text, /Tasks3/);
+    assert.match(text, /1 task has no estimate/);
+    assert.equal(runButton?.disabled, false);
+
     await view.unmount();
   } finally {
     globalThis.fetch = originalFetch;

@@ -23,6 +23,7 @@ from ..models.session import SessionState
 from .budget import Spend
 from .models import (
     OPEN_TASK_STATUSES,
+    RUNNABLE_TASK_STATUSES,
     BlockedReason,
     DependencySummary,
     DigestLevel,
@@ -249,22 +250,24 @@ class MemoryStore:
         default_models: Mapping[TaskKind, str] | None = None,
         include_dependencies: bool = False,
     ) -> int:
-        """pending -> queued; *include_dependencies* adds the pending sources of the selected digests."""
-        values: dict[str, object] = {"status": TaskStatus.queued.value, "queued_at": now, "blocked_reason": None}
-        if model_override is not None:
-            values |= {"model_override": model_override, "model": model_override}
-        return self._transition(user, selection, {TaskStatus.pending}, values, default_models, include_dependencies)
+        """pending or failed -> queued; *include_dependencies* adds the pending sources of the selected digests.
 
-    def retry(self, user: str, task_ids: list[int], now: datetime) -> int:
-        """failed -> queued. The row is reused; attempts grows on the next claim."""
-        values = {
+        A failed task is reused (``attempts`` grows on the next claim) and keeps its override unless
+        the run brings one.
+        """
+        values: dict[str, object] = {
             "status": TaskStatus.queued.value,
             "queued_at": now,
+            "blocked_reason": None,
             "error": None,
             "started_at": None,
             "finished_at": None,
         }
-        return self._transition(user, TaskSelection(ids=task_ids), {TaskStatus.failed}, values, None)
+        if model_override is not None:
+            values |= {"model_override": model_override, "model": model_override}
+        return self._transition(
+            user, selection, set(RUNNABLE_TASK_STATUSES), values, default_models, include_dependencies
+        )
 
     def cancel(
         self,
