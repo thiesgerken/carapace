@@ -22,6 +22,7 @@ from .models import (
     DigestSummary,
     EffectiveMemoryModels,
     ExtractionRecord,
+    ExtractionState,
     ExtractionSummary,
     FactCategory,
     FactCounts,
@@ -32,6 +33,7 @@ from .models import (
     MemoryTask,
     ModelRole,
     MonthNode,
+    OutdatedSpawnResponse,
     PeriodDetail,
     PeriodNode,
     PeriodTree,
@@ -46,6 +48,7 @@ from .models import (
     TaskEstimate,
     TaskFilter,
     TaskKind,
+    TaskKindCounts,
     TaskListResponse,
     TaskRef,
     TaskRunRequest,
@@ -157,6 +160,9 @@ class MemoryService:
                 memory_high=effective_memory_model(self._current_config(), user_config, ModelRole.memory_high),
             ),
             sessions_without_transcript=self._spawner.sessions_without_transcript.get(user, 0),
+            outdated=TaskKindCounts(
+                **{kind.value: len(targets) for kind, targets in self._outdated_targets(user).items()}
+            ),
         )
 
     async def list_tasks(
@@ -242,6 +248,31 @@ class MemoryService:
             if reason is not None:
                 skipped.append(SpawnSkip(target=target, reason=reason))
         return TaskSpawnResponse(task_ids=task_ids, skipped=skipped)
+
+    async def spawn_outdated(self, user: str) -> OutdatedSpawnResponse:
+        """Manual respawn of every outdated record without an open task; the tasks start pending."""
+        created: dict[str, int] = {}
+        skipped: list[SpawnSkip] = []
+        for kind, targets in self._outdated_targets(user).items():
+            spawned = await self.spawn_tasks(user, TaskSpawnRequest(kind=kind, targets=targets)) if targets else None
+            created[kind.value] = len(spawned.task_ids) if spawned else 0
+            skipped += spawned.skipped if spawned else []
+        return OutdatedSpawnResponse(created=TaskKindCounts(**created), skipped=skipped)
+
+    def _outdated_targets(self, user: str) -> dict[TaskKind, list[str]]:
+        """Targets of the user's outdated records per kind, sources first, minus those with an open task."""
+        config, user_config = self._current_config(), self._user_config_for(user)
+        sessions = self.matching_sessions(user, SessionMemoryFilter(state=[ExtractionState.outdated]))
+        found = {TaskKind.session_extract: [c.state.session_id for c in sessions]}
+        for kind, level in _DIGEST_LEVELS.items():
+            versions = current_versions(config, user_config, kind)
+            digests = self._store.current_digests(user, level)
+            found[kind] = [d.period_key for d in digests if outdated_reasons(d.provenance, versions)]
+        targets = {}
+        for kind, keys in found.items():
+            open_tasks = self._store.open_tasks(user, kind)
+            targets[kind] = [key for key in keys if key not in open_tasks]
+        return targets
 
     def _default_models(self, user: str) -> dict[TaskKind, str]:
         """The model each LLM task kind runs with when it has no override, as of now."""

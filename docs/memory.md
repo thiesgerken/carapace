@@ -189,7 +189,9 @@ A `week_digest` or `month_digest` task is spawned when all of these hold:
 
 The settled rule keeps a backfill from re-spawning the same weekly digest after every single extraction.
 
-**Only input changes spawn automatically.** A continued session (new input) gets a new task. A done, failed or cancelled task for unchanged input is never repeated by the spawner: retrying or respawning it is your call. A changed prompt, model or input format never does: the affected records show as outdated, and you respawn them in bulk from the Sessions tab. Otherwise a prompt tweak plus auto mode would re-bill the whole archive.
+**Only input changes spawn automatically.** A continued session (new input) gets a new task. A done, failed or cancelled task for unchanged input is never repeated by the spawner: retrying or respawning it is your call. A changed prompt, model or input format never does: the affected records show as outdated, and you respawn them in bulk (see below). Otherwise a prompt tweak plus auto mode would re-bill the whole archive.
+
+**Refresh outdated records** in the status strip above the Memory tabs shows how many outdated session extractions, week digests and month digests have no open task, and is disabled at zero. After a short inline confirmation it spawns a manual `pending` task with an estimate for each of them (`POST /tasks/spawn-outdated`) and reports how many extraction and digest tasks it created, plus any records it skipped and why (for example, a digest whose period has no current sources left). Skipped records stay outdated and keep counting. Nothing is queued: you run them from the Tasks tab like any other selection, or auto mode promotes them within the budget. Digests wait for their period's extractions as described under [Coverage and staleness](#coverage-and-staleness), so one run over everything re-extracts first and digests afterwards.
 
 Manual spawns are always possible: any session, and any digest including the running week. Manual spawns go through the same eligibility checks; skipped targets are reported with their reason. A respawn can carry a model override.
 
@@ -318,13 +320,14 @@ All endpoints live under `/api/memory`, are scoped to the authenticated user and
 
 | Method + path | Purpose |
 | --- | --- |
-| `GET /status` | auto mode, budget gauges, queue counts, effective models |
+| `GET /status` | auto mode, budget gauges, queue counts, effective models, outdated records without an open task |
 | `GET /tasks` | filter by status, kind, period, model; `sort=activity` (default) or `period`; cursor pagination; total and estimate |
 | `POST /tasks/estimate` | estimate for task ids or a filter |
 | `POST /tasks/run` | run task ids, a filter, or the newest N of a filter; optional model override |
 | `POST /tasks/cancel` | cancel task ids or a filter |
 | `POST /tasks/retry` | retry failed task ids |
 | `POST /tasks/spawn` | spawn or respawn for explicit targets or a session filter; optional model override |
+| `POST /tasks/spawn-outdated` | spawn pending manual tasks for every outdated record without an open task; returns created counts per kind and the skipped targets |
 | `GET /sessions` | sessions with extraction state; filters as in the Sessions tab |
 | `GET /sessions/{id}` | current extraction and version history |
 | `GET /periods` | tree of months and weeks with coverage and stale flags |

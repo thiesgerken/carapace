@@ -17,6 +17,7 @@ from ..memory.models import (
     FactSourceKind,
     MemoryStatus,
     OutdatedReason,
+    OutdatedSpawnResponse,
     PeriodDetail,
     PeriodTree,
     RunEstimate,
@@ -103,6 +104,11 @@ async def spawn_tasks(body: TaskSpawnRequest, user: _Writer) -> TaskSpawnRespons
         return await _service().spawn_tasks(user.username, body)
     except ModelOverrideError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post("/tasks/spawn-outdated", response_model=OutdatedSpawnResponse)
+async def spawn_outdated(user: _Writer) -> OutdatedSpawnResponse:
+    return await _service().spawn_outdated(user.username)
 
 
 @router.get("/sessions", response_model=SessionMemoryListResponse)

@@ -87,6 +87,7 @@ const STATUS: MemoryStatus = {
   blocked: 0,
   models: { memory_low: "haiku", memory_high: "opus" },
   sessions_without_transcript: 0,
+  outdated: { session_extract: 0, week_digest: 0, month_digest: 0 },
 };
 
 test("week detail links refs to sessions, keeps history collapsed and regenerates via spawn + run dialog", async () => {
