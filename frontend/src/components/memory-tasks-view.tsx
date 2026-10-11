@@ -178,6 +178,33 @@ export function MemoryTasksView({ server, token }: { server: string; token: stri
               })}`
               : null}
           </span>
+          <button
+            type="button"
+            disabled={busy || total === 0}
+            onClick={() => setRunSelection({ filter, newest: NEWEST_BATCH })}
+            className={buttonClassName}
+          >
+            <Play className="h-4 w-4" />
+            {t("runNewest", { count: NEWEST_BATCH })}
+          </button>
+          <button
+            type="button"
+            disabled={busy || pickedCount === 0}
+            onClick={() => setRunSelection(toTaskSelection(pick, filter))}
+            className={buttonClassName}
+          >
+            <Play className="h-4 w-4" />
+            {t("runPicked", { count: pickedCount })}
+          </button>
+          <button
+            type="button"
+            disabled={busy || pickedCount === 0}
+            onClick={() => void act(() => cancelMemoryTasks(server, toTaskSelection(pick, filter)), (count) => t("cancelled", { count }))}
+            className={buttonClassName}
+          >
+            <Ban className="h-4 w-4" />
+            {t("cancelPicked", { count: pickedCount })}
+          </button>
         </div>
 
         {error ? <div className="rounded-lg border border-border bg-background px-4 py-2 text-sm text-destructive">{error}</div> : null}
@@ -294,36 +321,6 @@ export function MemoryTasksView({ server, token }: { server: string; token: stri
             {t("loadMore")}
           </button>
         ) : null}
-
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            disabled={busy || total === 0}
-            onClick={() => setRunSelection({ filter, newest: NEWEST_BATCH })}
-            className={buttonClassName}
-          >
-            <Play className="h-4 w-4" />
-            {t("runNewest", { count: NEWEST_BATCH })}
-          </button>
-          <button
-            type="button"
-            disabled={busy || pickedCount === 0}
-            onClick={() => setRunSelection(toTaskSelection(pick, filter))}
-            className={buttonClassName}
-          >
-            <Play className="h-4 w-4" />
-            {t("runPicked", { count: pickedCount })}
-          </button>
-          <button
-            type="button"
-            disabled={busy || pickedCount === 0}
-            onClick={() => void act(() => cancelMemoryTasks(server, toTaskSelection(pick, filter)), (count) => t("cancelled", { count }))}
-            className={buttonClassName}
-          >
-            <Ban className="h-4 w-4" />
-            {t("cancelPicked", { count: pickedCount })}
-          </button>
-        </div>
       </div>
 
       {runSelection ? (
