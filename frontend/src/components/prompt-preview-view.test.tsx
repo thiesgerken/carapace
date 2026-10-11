@@ -76,6 +76,8 @@ test("the preview shows sections, the cache boundary and the memory budget, and 
       return details;
     };
     assert.match(text(), /900 \/ 4,000/);
+    const fill = view.container.querySelector<HTMLElement>('[role="meter"] > div');
+    assert.equal(fill?.style.width, "22.5%");
     const summaries = Array.from(view.container.querySelectorAll("summary"), (summary) => summary.textContent);
     assert.deepEqual(summaries, [
       "Tool definitions (1)40 tokens",
