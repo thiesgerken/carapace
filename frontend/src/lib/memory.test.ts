@@ -10,6 +10,7 @@ import {
   formatUsd,
   groupMonthsByYear,
   monthLabel,
+  roleDefaultModels,
   hasActiveTasks,
   periodBadge,
   periodLevel,
@@ -213,4 +214,13 @@ test("summarizeSkips counts repeated reasons", () => {
     ]),
     "private ×2, already_open",
   );
+});
+
+test("roleDefaultModels names one model per role in the selection", () => {
+  const models = { memory_low: "low-model", memory_high: "high-model" };
+  assert.equal(roleDefaultModels(["session_extract"], models), "low-model");
+  assert.equal(roleDefaultModels(["week_digest", "month_digest"], models), "high-model");
+  assert.equal(roleDefaultModels(["session_extract", "week_digest", "mirror"], models), "low: low-model · high: high-model");
+  assert.equal(roleDefaultModels(["session_extract", "week_digest"], { memory_low: "same", memory_high: "same" }), "same");
+  assert.equal(roleDefaultModels(["mirror"], models), null);
 });

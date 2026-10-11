@@ -139,6 +139,7 @@
             "overBudget": "Das übersteigt das Restbudget. Aufgaben darüber hinaus warten in der Warteschlange, bis das Budgetfenster zurückgesetzt wird.",
             "model": "Modell",
             "roleDefault": "Standard der Rolle",
+            "roleDefaultResolved": "Standard der Rolle ({models})",
             "cancel": "Abbrechen",
             "confirm": "Ausführen"
         },

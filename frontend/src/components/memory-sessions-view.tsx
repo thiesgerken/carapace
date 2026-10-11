@@ -294,6 +294,7 @@ export function MemorySessionsView({ server, token }: { server: string; token: s
           server={server}
           token={token}
           selection={runSelection}
+          kinds={["session_extract"]}
           onClose={() => setRunSelection(null)}
           onQueued={(count) => {
             setNotice(t("queued", { count }));
