@@ -75,7 +75,7 @@ class MemoryService:
     def __init__(
         self,
         *,
-        config: Config,
+        current_config: Callable[[], Config],
         store: MemoryStore,
         sessions: SessionManager,
         jobs: JobsStore,
@@ -86,7 +86,7 @@ class MemoryService:
         timing: WorkerTiming = DEFAULT_TIMING,
         clock: Callable[[], datetime] = lambda: datetime.now(tz=UTC),
     ) -> None:
-        self._config = config
+        self._current_config = current_config
         self._sessions = sessions
         self._handlers = handlers
         self._user_config_for = user_config_for
@@ -98,7 +98,7 @@ class MemoryService:
             sessions=sessions,
             jobs=jobs,
             handlers=handlers,
-            config=config,
+            current_config=current_config,
             user_config_for=user_config_for,
             users=users,
             is_agent_running=is_agent_running,
@@ -107,12 +107,12 @@ class MemoryService:
         self._worker = MemoryWorker(
             store=self._store,
             handlers=handlers,
-            config=config,
+            current_config=current_config,
             user_config_for=user_config_for,
             users=users,
             sweep=self._spawner.sweep,
             recheck_session=self._spawner.recheck,
-            max_parallel=config.agent.max_parallel_llm,
+            max_parallel=current_config().agent.max_parallel_llm,
             timing=timing,
             clock=clock,
         )
@@ -153,8 +153,8 @@ class MemoryService:
             queue=counts,
             blocked=blocked,
             models=EffectiveMemoryModels(
-                memory_low=effective_memory_model(self._config, user_config, ModelRole.memory_low),
-                memory_high=effective_memory_model(self._config, user_config, ModelRole.memory_high),
+                memory_low=effective_memory_model(self._current_config(), user_config, ModelRole.memory_low),
+                memory_high=effective_memory_model(self._current_config(), user_config, ModelRole.memory_high),
             ),
             sessions_without_transcript=self._spawner.sessions_without_transcript.get(user, 0),
         )
@@ -162,8 +162,11 @@ class MemoryService:
     async def list_tasks(
         self, user: str, task_filter: TaskFilter, sort: TaskSort, cursor: str | None, limit: int
     ) -> TaskListResponse:
-        page = self._store.list_tasks(user, task_filter, cursor, limit, sort)
-        matching = self._store.select_tasks(user, TaskSelection(filter=task_filter), set(TaskStatus))
+        defaults = self._default_models(user)
+        page = self._store.list_tasks(user, task_filter, cursor, limit, sort, default_models=defaults)
+        matching = self._store.select_tasks(
+            user, TaskSelection(filter=task_filter), set(TaskStatus), default_models=defaults
+        )
         return TaskListResponse(
             items=self._views(user, page.items),
             next_cursor=page.next_cursor,
@@ -174,18 +177,25 @@ class MemoryService:
     async def estimate_tasks(self, user: str, request: TaskRunRequest) -> EstimateTotal:
         """What running the pending tasks of a selection would cost, with the requested model."""
         self._check_override(request.model_override)
-        tasks = self._store.select_tasks(user, request.selection, {TaskStatus.pending})
+        tasks = self._store.select_tasks(
+            user, request.selection, {TaskStatus.pending}, default_models=self._default_models(user)
+        )
         return sum_estimates([await self._estimate_for(t, request.model_override) for t in tasks if t.estimate])
 
     async def run_tasks(self, user: str, request: TaskRunRequest) -> TaskCountResponse:
         self._check_override(request.model_override)
-        count = self._store.run(user, request.selection, request.model_override, self._clock())
+        count = self._store.run(
+            user, request.selection, request.model_override, self._clock(), default_models=self._default_models(user)
+        )
         self._worker.wake()
         return TaskCountResponse(count=count)
 
     async def cancel_tasks(self, user: str, selection: TaskSelection) -> TaskCountResponse:
-        running = [t.id for t in self._store.select_tasks(user, selection, {TaskStatus.running})]
-        count = self._store.cancel(user, selection, self._clock())
+        defaults = self._default_models(user)
+        running = [
+            t.id for t in self._store.select_tasks(user, selection, {TaskStatus.running}, default_models=defaults)
+        ]
+        count = self._store.cancel(user, selection, self._clock(), default_models=defaults)
         self._worker.abort(running)
         self._worker.wake()
         return TaskCountResponse(count=count)
@@ -221,12 +231,21 @@ class MemoryService:
                 skipped.append(SpawnSkip(target=target, reason=reason))
         return TaskSpawnResponse(task_ids=task_ids, skipped=skipped)
 
+    def _default_models(self, user: str) -> dict[TaskKind, str]:
+        """The model each LLM task kind runs with when it has no override, as of now."""
+        config, user_config = self._current_config(), self._user_config_for(user)
+        return {
+            kind: effective_memory_model(config, user_config, handler.model_role)
+            for kind, handler in self._handlers.items()
+            if handler.model_role is not None
+        }
+
     def _check_override(self, model: str | None) -> None:
         """Reject an override up front, rather than letting each task fail in the worker."""
         if model is None:
             return
         try:
-            resolve_available_model_entry(self._config, model)
+            resolve_available_model_entry(self._current_config(), model)
         except ValueError as exc:
             raise ModelOverrideError(str(exc)) from exc
 
@@ -264,7 +283,9 @@ class MemoryService:
             return "no_handler"
         estimate = None
         if handler.model_role is not None:
-            model = request.model_override or effective_memory_model(self._config, user_config, handler.model_role)
+            model = request.model_override or effective_memory_model(
+                self._current_config(), user_config, handler.model_role
+            )
             estimate = await handler.estimate(user, target, model)
         task = self._store.spawn(
             user,
@@ -358,7 +379,7 @@ class MemoryService:
         return self._spawner.quick_ineligibility(candidate.state) in (None, Ineligible.agent_running)
 
     def _extraction_versions(self, user: str) -> CurrentVersions:
-        return current_versions(self._config, self._user_config_for(user), TaskKind.session_extract)
+        return current_versions(self._current_config(), self._user_config_for(user), TaskKind.session_extract)
 
     def _session_rows(self, user: str, candidates: list[SessionCandidate]) -> list[SessionMemoryRow]:
         records = self._store.extractions_by_id([c.extraction_id for c in candidates if c.extraction_id is not None])
@@ -385,8 +406,8 @@ class MemoryService:
         current extractions; staleness uses the same coverage the spawner compares.
         """
         user_config = self._user_config_for(user)
-        week_versions = current_versions(self._config, user_config, TaskKind.week_digest)
-        month_versions = current_versions(self._config, user_config, TaskKind.month_digest)
+        week_versions = current_versions(self._current_config(), user_config, TaskKind.week_digest)
+        month_versions = current_versions(self._current_config(), user_config, TaskKind.month_digest)
         sessions_by_week: dict[str, set[str]] = defaultdict(set)
         for candidate in self.matching_sessions(user, SessionMemoryFilter()):
             if candidate.week_key is not None:

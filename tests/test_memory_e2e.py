@@ -29,12 +29,13 @@ from carapace.memory.models import (
     TaskKind,
     TaskRunRequest,
     TaskSelection,
+    TaskSpawnRequest,
     TaskStatus,
 )
-from carapace.memory.service import MemoryService
+from carapace.memory.service import MemoryService, ModelOverrideError
 from carapace.memory.store import MemoryStore
 from carapace.memory.worker import WorkerTiming
-from carapace.models.config import Config
+from carapace.models.config import AvailableModelEntry, Config
 from carapace.models.jobs import JobDefinition
 from carapace.models.session import SessionJobRunContext
 from carapace.models.user import MemoryBudget, UserConfig, UserMemoryConfig
@@ -142,20 +143,20 @@ class Pipeline:
         def digest_handler(level: DigestLevel) -> DigestHandler:
             return DigestHandler(
                 level=level,
-                config=self.config,
+                current_config=lambda: self.config,
                 current_extractions=self.store.current_extractions,
                 current_digests=self.store.current_digests,
                 model_factory=model_factory,
             )
 
         self.service = MemoryService(
-            config=self.config,
+            current_config=lambda: self.config,
             store=self.store,
             sessions=self.sessions,
             jobs=self.jobs,
             handlers={
                 TaskKind.session_extract: SessionExtractHandler(
-                    config=self.config,
+                    current_config=lambda: self.config,
                     load_events=self.sessions.load_events,
                     user_config_for=self.user_configs.__getitem__,
                     model_factory=model_factory,
@@ -353,3 +354,23 @@ async def test_memory_pipeline_end_to_end(pipeline: Pipeline) -> None:
     # Ineligible sessions never got a task of any kind.
     every_target = {t.target for kind in TaskKind for t in p.tasks("alice", kind)}
     assert private not in every_target and job not in every_target
+
+
+async def test_a_model_added_at_runtime_is_usable_without_a_restart(pipeline: Pipeline) -> None:
+    p = pipeline
+    session = p.session("alice", "2026-09-09T10:00:00+00:00")
+    added = "anthropic:claude-added-later"
+    request = TaskSpawnRequest(kind=TaskKind.session_extract, targets=[session], model_override=added)
+    with pytest.raises(ModelOverrideError):
+        await p.service.spawn_tasks("alice", request)
+
+    # What a platform-settings PATCH does: swap in a new Config object.
+    catalog = [*p.config.agent.available_models, AvailableModelEntry.model_validate(added)]
+    p.config = p.config.model_copy(update={"agent": p.config.agent.model_copy(update={"available_models": catalog})})
+    spawned = await p.service.spawn_tasks("alice", request)
+    await p.service.run_tasks("alice", TaskRunRequest(selection=TaskSelection(ids=spawned.task_ids)))
+    await p.settle()
+
+    [task] = p.tasks("alice", TaskKind.session_extract)
+    assert task.status is TaskStatus.done
+    assert task.provenance is not None and task.provenance.model == added

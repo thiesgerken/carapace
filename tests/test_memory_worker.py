@@ -155,7 +155,7 @@ class Env:
                 TaskKind.week_digest: self.week_digest,
                 TaskKind.mirror: self.mirror,
             },
-            config=Config(),
+            current_config=Config,
             user_config_for=lambda _: self.user_config,
             users=lambda: ["alice"],
             sweep=self._sweep,

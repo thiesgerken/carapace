@@ -145,3 +145,70 @@ test("week detail links refs to sessions, keeps history collapsed and regenerate
     restore();
   }
 });
+
+async function renderWithTask(task: MemoryPeriodDetail["node"]["task"], current: MemoryDigestRecord | null = DETAIL.current) {
+  const posts: { path: string; body: unknown }[] = [];
+  const detail: MemoryPeriodDetail = {
+    ...DETAIL,
+    current,
+    node: { ...DETAIL.node, task, digest: current ? DETAIL.node.digest : null },
+  };
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const path = new URL(String(input)).pathname;
+    if (init?.method === "POST") posts.push({ path, body: JSON.parse(String(init.body)) });
+    const body = {
+      "/api/memory/status": STATUS,
+      "/api/memory/periods/week/2026-W36": detail,
+      "/api/memory/tasks/cancel": { count: 1 },
+      "/api/memory/tasks/estimate": { task_count: 1, input_tokens: 9000, output_tokens_cap: 2000, cost_usd: "0.09", unpriced_count: 0 },
+      "/api/models": [],
+    }[path];
+    assert.ok(body !== undefined, `unexpected request ${path}`);
+    return new Response(JSON.stringify(body));
+  }) as typeof fetch;
+  const view = await renderReact(
+    <NextIntlClientProvider locale="en" messages={messages} timeZone="UTC">
+      <MemoryStatusProvider server={SERVER}>
+        <MemoryPeriodDetailView server={SERVER} token="" periodKey="2026-W36" />
+      </MemoryStatusProvider>
+    </NextIntlClientProvider>,
+  );
+  await runInAct(() => new Promise((resolve) => setTimeout(resolve, 0)));
+  const header = () => view.container.querySelector("header")!;
+  const button = (label: string) => Array.from(header().querySelectorAll("button")).find((element) => element.textContent?.trim() === label);
+  return { view, posts, header, button };
+}
+
+test("the header action follows the period's digest task", async () => {
+  const restore = installDom();
+  Object.defineProperty(globalThis, "self", { configurable: true, writable: true, value: window });
+  window.HTMLDialogElement.prototype.showModal = function showModal(this: HTMLDialogElement) {
+    this.open = true;
+  };
+  const originalFetch = globalThis.fetch;
+  try {
+    const running = await renderWithTask({ id: 5, status: "running", blocked_reason: null });
+    assert.equal(running.button("Regenerate"), undefined);
+    assert.match(running.header().textContent ?? "", /running/);
+    await click(running.header().querySelector('button[aria-label="Cancel task"]')!);
+    assert.deepEqual(running.posts, [{ path: "/api/memory/tasks/cancel", body: { ids: [5] } }]);
+    await running.view.unmount();
+
+    // A pending task is queued as is: no second spawn.
+    const pending = await renderWithTask({ id: 6, status: "pending", blocked_reason: null });
+    assert.equal(pending.button("Regenerate"), undefined);
+    await click(pending.button("Run")!);
+    await runInAct(() => new Promise((resolve) => setTimeout(resolve, 0)));
+    assert.deepEqual(pending.posts, [{ path: "/api/memory/tasks/estimate", body: { selection: { ids: [6] }, model_override: null } }]);
+    await pending.view.unmount();
+
+    const neverRun = await renderWithTask(null, null);
+    assert.ok(neverRun.button("Generate"));
+    assert.doesNotMatch(neverRun.header().textContent ?? "", /—/);
+    await neverRun.view.unmount();
+  } finally {
+    globalThis.fetch = originalFetch;
+    delete (globalThis as { self?: unknown }).self;
+    restore();
+  }
+});
