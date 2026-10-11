@@ -117,7 +117,7 @@ Earlier versions are kept. When a session is re-extracted (new input, another mo
 ### Periods
 
 - Weeks are ISO weeks (Monday start) in **your timezone** (a user setting, default `Europe/Berlin`).
-- A session belongs to the week of its **first user message**. This is stable under re-extraction: a session revived two weeks later still counts towards its original week.
+- A session belongs to the week of its **first user message**. This is stable under re-extraction: a session revived two weeks later still counts towards its original week. Events stored before carapace stamped every event on write carry no timestamp; for those sessions the session's creation time stands in. The extraction prompt only gets the session date, never per-event times, so nothing else is missing from it.
 - An ISO week belongs to the month of its **Thursday**. 2026-W36 (Aug 31 to Sep 6) belongs to 2026-09. Each week is in exactly one month, so the timeline tree stays consistent. A session's month follows from its week, not from its calendar date.
 
 ### Digests

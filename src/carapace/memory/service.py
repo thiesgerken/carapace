@@ -311,7 +311,7 @@ class MemoryService:
             events = self._sessions.load_events(target)
             if (ineligible := self._spawner.ineligibility(state, events)) is not None:
                 return ineligible.value
-            first_message_at = first_user_message_at(events)
+            first_message_at = first_user_message_at(events, state.created_at)
             if first_message_at is None:
                 raise ValueError("eligible session without a user message")
             session_week_key = week_key(first_message_at, ZoneInfo(user_config.timezone))

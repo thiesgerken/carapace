@@ -55,10 +55,17 @@ def render_extraction_input(events: list[dict[str, Any]]) -> ExtractionInput:
     )
 
 
-def first_user_message_at(events: list[dict[str, Any]]) -> datetime | None:
-    """When the session's first conversational user message was sent; it decides the session's period."""
+def first_user_message_at(events: list[dict[str, Any]], session_created_at: datetime) -> datetime | None:
+    """When the session's first conversational user message was sent; it decides the session's period.
+
+    Events stored before events were stamped on write carry no timestamp. The session's creation
+    then stands in: a real time of the same session, and it only has to pick the week.
+    """
     seq = next((seq for seq in range(len(events)) if _is_user_message(events, seq)), None)
-    return None if seq is None else datetime.fromisoformat(events[seq]["timestamp"])
+    if seq is None:
+        return None
+    timestamp = events[seq].get("timestamp")
+    return datetime.fromisoformat(timestamp) if timestamp else session_created_at
 
 
 def _is_user_message(events: list[dict[str, Any]], seq: int) -> bool:

@@ -159,6 +159,7 @@ class Pipeline:
             handlers={
                 TaskKind.session_extract: SessionExtractHandler(
                     current_config=lambda: self.config,
+                    load_state=self.sessions.load_state,
                     load_events=self.sessions.load_events,
                     user_config_for=self.user_configs.__getitem__,
                     prompt_prefix_for=lambda user: shared_prompt_prefix(self.repos[user].knowledge_dir, []),

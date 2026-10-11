@@ -105,7 +105,7 @@ class Spawner:
             return reason
         if not events:
             return Ineligible.no_transcript
-        if first_user_message_at(events) is None:
+        if first_user_message_at(events, state.created_at) is None:
             return Ineligible.no_user_message
         return None
 
@@ -194,7 +194,7 @@ class Spawner:
                 return None
             if current.input_hash == rendered.input_hash:
                 return None
-        first_message_at = first_user_message_at(events)
+        first_message_at = first_user_message_at(events, state.created_at)
         if first_message_at is None:
             raise ValueError("eligible session without a user message")
         await self._spawn(

@@ -15,6 +15,7 @@ from .. import get_version
 from ..knowledge import KnowledgeRepoResolver
 from ..llm import ModelFactory
 from ..models.config import Config
+from ..models.session import SessionState
 from ..models.user import UserConfig
 from .budget import estimate_cost
 from .coverage import coverage_hash, month_coverage, week_coverage
@@ -176,12 +177,14 @@ class SessionExtractHandler:
         self,
         *,
         current_config: Callable[[], Config],
+        load_state: Callable[[str], SessionState | None],
         load_events: Callable[[str], list[dict[str, Any]]],
         user_config_for: Callable[[str], UserConfig],
         prompt_prefix_for: Callable[[str], str],
         model_factory: ModelFactory,
     ) -> None:
         self._current_config = current_config
+        self._load_state = load_state
         self._load_events = load_events
         self._user_config_for = user_config_for
         self._prompt_prefix_for = prompt_prefix_for
@@ -212,8 +215,11 @@ class SessionExtractHandler:
         return TaskOutcome(provenance=provenance, result=result)
 
     def _prepare(self, user: str, session_id: str) -> _PreparedExtraction:
+        state = self._load_state(session_id)
+        if state is None:
+            raise ValueError(f"session {session_id} no longer exists")
         events = self._load_events(session_id)
-        started_at = first_user_message_at(events)
+        started_at = first_user_message_at(events, state.created_at)
         if started_at is None:
             raise ValueError(f"session {session_id} has no user message to extract")
         tz = ZoneInfo(self._user_config_for(user).timezone)
