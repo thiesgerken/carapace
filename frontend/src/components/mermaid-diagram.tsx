@@ -5,6 +5,8 @@ import { useTheme } from "next-themes";
 import { Check, Code, Copy, Download, Image as ImageIcon } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
+import { stripRemoteSvgImages } from "@/lib/remote-images";
+
 type MermaidState = { svg: string } | { error: string } | null;
 
 /* mermaid.render() removes any element already carrying the id it is given — including an
@@ -46,7 +48,7 @@ export function MermaidDiagram({ code }: { code: string }) {
       if (cancelled) return;
 
       const { svg } = await mermaid.render(`mermaid-${(renderCount += 1)}`, code);
-      if (!cancelled) setState({ svg });
+      if (!cancelled) setState({ svg: stripRemoteSvgImages(svg) });
     };
 
     renderQueue = renderQueue.then(run).catch((error: unknown) => {
