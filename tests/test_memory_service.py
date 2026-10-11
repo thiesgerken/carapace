@@ -38,6 +38,8 @@ class FakeHandler:
         self.model_role = role
 
     async def estimate(self, user: str, target: str, model: str) -> TaskEstimate:
+        if target == "broken":
+            raise ValueError("cannot prepare the input")
         cost = Decimal("0.02") if model == OVERRIDE else Decimal("0.01")
         return TaskEstimate(model=model, input_tokens=100, output_tokens_cap=10, cost_usd=cost)
 
@@ -148,6 +150,24 @@ async def test_estimate_run_and_status(setup):
     listing = await service.list_tasks("alice", TaskFilter(status=[TaskStatus.queued]), TaskSort.activity, None, 10)
     assert (listing.total, listing.estimate.cost_usd) == (2, Decimal("0.02"))
     assert (await service.cancel_tasks("alice", selection)).count == 2
+
+
+async def test_runs_cover_failed_tasks_and_estimate_them_afresh(setup):
+    service, sessions = setup
+    store: MemoryStore = service._store
+    spawn = TaskSpawnRequest(kind=TaskKind.session_extract, targets=[_session(sessions), _session(sessions)])
+    _, cancelled = (await service.spawn_tasks("alice", spawn)).task_ids
+    await service.cancel_tasks("alice", TaskSelection(ids=[cancelled]))
+    # Spawn failures carry no estimate: one can be estimated now, the other still cannot be prepared.
+    store.record_spawn_failure("alice", TaskKind.session_extract, _session(sessions), "fixed since", NOW)
+    store.record_spawn_failure("alice", TaskKind.session_extract, "broken", "still broken", NOW)
+    run = TaskRunRequest(selection=TaskSelection(filter=TaskFilter()))
+
+    estimate = await service.estimate_tasks("alice", run)
+    assert (estimate.task_count, estimate.cost_usd, estimate.unestimated) == (2, Decimal("0.02"), 1)
+    assert (await service.run_tasks("alice", run)).count == 3
+    status = await service.status("alice")
+    assert (status.queue[TaskStatus.queued], status.queue[TaskStatus.failed]) == (3, 0)
 
 
 async def test_spawn_by_filter_uses_the_session_query_and_eligibility(setup):

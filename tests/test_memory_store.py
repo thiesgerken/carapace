@@ -271,7 +271,7 @@ def test_list_tasks_by_activity_puts_the_last_change_first(store: MemoryStore):
     store.record_failure(retried.id, "boom", NOW + timedelta(minutes=4))
     store.cancel_task(finished.id, "stop", NOW + timedelta(minutes=5))
     # A retry is the latest change, and its earlier start must not count as one.
-    store.retry("alice", [retried.id], NOW + timedelta(minutes=6))
+    store.run("alice", TaskSelection(ids=[retried.id]), None, NOW + timedelta(minutes=6))
 
     page = store.list_tasks("alice", TaskFilter(), None, 10)
     assert [t.id for t in page.items] == [retried.id, finished.id, untouched.id]
@@ -323,7 +323,7 @@ def test_failure_retry_and_requeue(store: MemoryStore):
     failed = _get(store, "alice", task.id)
     assert failed is not None and (failed.status, failed.error) == (TaskStatus.failed, "input too large")
 
-    assert store.retry("alice", [task.id], NOW) == 1
+    assert store.run("alice", TaskSelection(ids=[task.id]), None, NOW) == 1
     assert store.claim(task.id, NOW)
     assert store.requeue_running() == 1
     requeued = _get(store, "alice", task.id)
@@ -334,6 +334,29 @@ def test_failure_retry_and_requeue(store: MemoryStore):
         None,
         None,
     )
+
+
+def test_run_requeues_failed_tasks_keeping_their_override_unless_the_run_brings_one(store: MemoryStore):
+    kept, replaced = _spawn_extract(store, "s1"), _spawn_extract(store, "s2")
+    for task in (kept, replaced):
+        assert store.run("alice", TaskSelection(ids=[task.id]), "test:picked", NOW) == 1
+        assert store.claim(task.id, NOW)
+        assert store.record_failure(task.id, "boom", NOW)
+    cancelled = _spawn_extract(store, "s3")
+    assert store.cancel("alice", TaskSelection(ids=[cancelled.id]), NOW) == 1
+
+    later = NOW + timedelta(minutes=1)
+    assert store.run("alice", TaskSelection(ids=[kept.id, cancelled.id]), None, later) == 1
+    assert store.run("alice", TaskSelection(ids=[replaced.id]), "test:rerun", later) == 1
+    requeued = {t.id: t for t in store.select_tasks("alice", TaskSelection(filter=TaskFilter()), set(TaskStatus))}
+    assert [
+        (t.status, t.model_override, t.error, t.started_at, t.finished_at)
+        for t in (requeued[kept.id], requeued[replaced.id])
+    ] == [
+        (TaskStatus.queued, "test:picked", None, None, None),
+        (TaskStatus.queued, "test:rerun", None, None, None),
+    ]
+    assert requeued[cancelled.id].status is TaskStatus.cancelled
 
 
 def test_cancelled_running_task_discards_its_result(store: MemoryStore):
@@ -449,7 +472,7 @@ def test_retry_keeps_what_earlier_attempts_billed(store: MemoryStore):
     billed_once = Spend(Decimal("0.03"), 1200)
     assert store.spend("alice", NOW) == billed_once
 
-    assert store.retry("alice", [task.id], NOW) == 1
+    assert store.run("alice", TaskSelection(ids=[task.id]), None, NOW) == 1
     assert store.spend("alice", NOW) == billed_once
     assert store.claim(task.id, NOW)
     result = ExtractionResult(session_id="s1", week_key="2026-W37", month_key="2026-09", extraction=_extraction())
@@ -586,22 +609,34 @@ def test_dependencies_of_no_digests_skip_the_query(store: MemoryStore):
     assert store.dependencies("alice", [_spawn_extract(store, "s1")]) == {}
 
 
-def test_running_with_dependencies_adds_the_pending_sources_of_selected_digests(store: MemoryStore):
+def test_running_with_dependencies_adds_the_runnable_sources_of_selected_digests(store: MemoryStore):
     pending = _spawn_extract(store, "s1")
+    failed = _spawn_extract(store, "s4")
+    _run_to_running(store, failed.id)
+    assert store.record_failure(failed.id, "boom", NOW)
+    _finish_extraction(store, "s3")
+    failed_with_record = _spawn_extract(store, "s3")  # its earlier extraction stays current
+    _run_to_running(store, failed_with_record.id)
+    assert store.record_failure(failed_with_record.id, "boom", NOW)
     queued = _spawn_extract(store, "s2")
     store.run("alice", TaskSelection(ids=[queued.id]), None, NOW)
-    other_week = _spawn_extract(store, "s3", week="2026-W38")
+    other_week = _spawn_extract(store, "s6", week="2026-W38")
     week = store.spawn(
         "alice", TaskKind.week_digest, "2026-W37", spawned_by=SpawnedBy.auto, now=NOW, estimate=_estimate()
     )
     assert week is not None
     selection = TaskSelection(ids=[week.id])
 
-    assert store.missing_dependencies("alice", selection) == 1
-    assert len(store.select_tasks("alice", selection, {TaskStatus.pending}, include_dependencies=True)) == 2
-    assert store.run("alice", selection, None, NOW, include_dependencies=True) == 2
+    assert store.missing_dependencies("alice", selection) == 2
+    assert len(store.select_tasks("alice", selection, {TaskStatus.pending}, include_dependencies=True)) == 3
+    assert store.run("alice", selection, None, NOW, include_dependencies=True) == 3
     statuses = {
         t.id: t.status for t in store.select_tasks("alice", TaskSelection(filter=TaskFilter()), set(TaskStatus))
     }
-    assert (statuses[pending.id], statuses[other_week.id]) == (TaskStatus.queued, TaskStatus.pending)
+    assert [statuses[t.id] for t in (pending, failed, failed_with_record, other_week)] == [
+        TaskStatus.queued,
+        TaskStatus.queued,
+        TaskStatus.failed,
+        TaskStatus.pending,
+    ]
     assert store.missing_dependencies("alice", TaskSelection(ids=[pending.id])) == 0

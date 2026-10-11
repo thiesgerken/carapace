@@ -106,7 +106,7 @@ test("week detail links refs to sessions, keeps history collapsed and regenerate
       "/api/memory/status": STATUS,
       "/api/memory/periods/week/2026-W36": DETAIL,
       "/api/memory/tasks/spawn": { task_ids: [77] },
-      "/api/memory/tasks/estimate": { task_count: 1, input_tokens: 9000, output_tokens_cap: 2000, cost_usd: "0.09", unpriced_count: 0 },
+      "/api/memory/tasks/estimate": { task_count: 1, input_tokens: 9000, output_tokens_cap: 2000, cost_usd: "0.09", unpriced_count: 0, unestimated: 0, missing_dependencies: 0 },
       "/api/models": [],
     }[path];
     assert.ok(body !== undefined, `unexpected request ${path}`);
@@ -161,7 +161,7 @@ async function renderWithTask(task: MemoryPeriodDetail["node"]["task"], current:
       "/api/memory/status": STATUS,
       "/api/memory/periods/week/2026-W36": detail,
       "/api/memory/tasks/cancel": { count: 1 },
-      "/api/memory/tasks/estimate": { task_count: 1, input_tokens: 9000, output_tokens_cap: 2000, cost_usd: "0.09", unpriced_count: 0 },
+      "/api/memory/tasks/estimate": { task_count: 1, input_tokens: 9000, output_tokens_cap: 2000, cost_usd: "0.09", unpriced_count: 0, unestimated: 0, missing_dependencies: 0 },
       "/api/models": [],
     }[path];
     assert.ok(body !== undefined, `unexpected request ${path}`);

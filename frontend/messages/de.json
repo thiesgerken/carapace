@@ -177,10 +177,11 @@
             "model": "Modell",
             "roleDefault": "Standard der Rolle",
             "roleDefaultResolved": "Standard der Rolle ({models})",
-            "nothingToRun": "Keine ausstehenden Aufgaben in dieser Auswahl. Nur ausstehende Aufgaben laufen; fehlgeschlagene lassen sich im Tab Aufgaben erneut versuchen.",
+            "nothingToRun": "Nichts auszuführen in dieser Auswahl. Nur ausstehende und fehlgeschlagene Aufgaben laufen.",
+            "unestimated": "{count, plural, one {# Aufgabe ohne Schätzung.} other {# Aufgaben ohne Schätzung.}} Spiegel kosten nichts. Eine Aufgabe, deren Eingabe sich nicht vorbereiten lässt, schlägt vor jedem Aufruf erneut fehl.",
             "cancel": "Abbrechen",
             "confirm": "Ausführen",
-            "missingDependencies": "{count, plural, one {Ein ausgewählter Digest hat # ausstehende Quelle außerhalb der Auswahl und liefe ohne sie.} other {Ausgewählte Digests haben # ausstehende Quellen außerhalb der Auswahl und liefen ohne sie.}}",
+            "missingDependencies": "{count, plural, one {Ein ausgewählter Digest hat # ausstehende oder fehlgeschlagene Quelle außerhalb der Auswahl und liefe ohne sie.} other {Ausgewählte Digests haben # ausstehende oder fehlgeschlagene Quellen außerhalb der Auswahl und liefen ohne sie.}}",
             "addDependencies": "{count, plural, one {# Abhängigkeit hinzufügen} other {# Abhängigkeiten hinzufügen}}",
             "dependenciesAdded": "{count, plural, one {# Abhängigkeit hinzugefügt; die Digests warten darauf.} other {# Abhängigkeiten hinzugefügt; die Digests warten darauf.}}"
         },

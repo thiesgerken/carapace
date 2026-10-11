@@ -73,6 +73,7 @@ export function MemoryRunDialog({ server, token, selection, kinds, onClose, onQu
   // Keyed by model and dependency choice: a stale outcome reads as loading, and re-picking the current model keeps its estimate.
   const current = outcome?.model === modelOverride && outcome.includeDependencies === includeDependencies ? outcome : null;
   const estimate = current && "total" in current ? current.total : null;
+  const runCount = estimate ? estimate.task_count + estimate.unestimated : null;
   const error = (current && "error" in current ? current.error : null) ?? runError;
   const remaining = status ? remainingBudget(status) : null;
   const overBudget = estimate !== null && status !== null && exceedsBudget(estimate, status);
@@ -93,17 +94,17 @@ export function MemoryRunDialog({ server, token, selection, kinds, onClose, onQu
             <Loader2 className="h-4 w-4 animate-spin" />
             {t("estimating")}
           </div>
-        ) : estimate?.task_count === 0 ? (
+        ) : runCount === 0 ? (
           <p className="text-sm text-muted-foreground">{t("nothingToRun")}</p>
         ) : estimate ? (
           <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-1.5 text-sm">
             <dt className="text-muted-foreground">{t("tasks")}</dt>
-            <dd className="tabular-nums">{estimate.task_count.toLocaleString(locale)}</dd>
+            <dd className="tabular-nums">{runCount?.toLocaleString(locale)}</dd>
             <dt className="text-muted-foreground">{t("inputTokens")}</dt>
             <dd className="tabular-nums">{formatTokens(estimate.input_tokens, locale)}</dd>
             <dt className="text-muted-foreground">{t("cost")}</dt>
             <dd className="tabular-nums">
-              {estimate.unpriced_count === estimate.task_count
+              {estimate.task_count > 0 && estimate.unpriced_count === estimate.task_count
                 ? formatTokenEstimate(estimate.input_tokens, estimate.output_tokens_cap, locale)
                 : `~${formatUsd(estimate.cost_usd, locale)}`}
               {estimate.unpriced_count > 0 && estimate.unpriced_count < estimate.task_count ? (
@@ -119,6 +120,8 @@ export function MemoryRunDialog({ server, token, selection, kinds, onClose, onQu
             </dd>
           </dl>
         ) : null}
+
+        {estimate && estimate.unestimated > 0 ? <p className="text-sm text-muted-foreground">{t("unestimated", { count: estimate.unestimated })}</p> : null}
 
         {overBudget ? <p className="text-sm text-amber-700 dark:text-amber-400">{t("overBudget")}</p> : null}
 
@@ -167,7 +170,7 @@ export function MemoryRunDialog({ server, token, selection, kinds, onClose, onQu
           <button
             type="button"
             onClick={() => void handleRun()}
-            disabled={running || estimate === null || estimate.task_count === 0}
+            disabled={running || !runCount}
             className="inline-flex items-center gap-2 rounded-lg bg-foreground px-4 py-2 text-sm font-medium text-background transition-colors hover:bg-foreground/90 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}

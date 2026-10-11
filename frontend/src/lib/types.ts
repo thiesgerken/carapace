@@ -862,13 +862,8 @@ export interface MemoryTaskSelection {
 export interface MemoryTaskRunRequest {
   selection: MemoryTaskSelection;
   model_override?: string | null;
-  /** Adds the pending source tasks of the selected digests, so the digests wait for them. */
+  /** Adds the pending and failed source tasks of the selected digests, so the digests wait for them. */
   include_dependencies?: boolean;
-}
-
-/** Body of POST /tasks/retry. */
-export interface MemoryTaskIdsRequest {
-  ids: number[];
 }
 
 /** Body of POST /tasks/spawn: explicit targets, or (session_extract only) every session matching a filter. */
@@ -905,7 +900,9 @@ export interface MemoryEstimateTotal {
 
 /** Response of POST /tasks/estimate. */
 export interface MemoryRunEstimate extends MemoryEstimateTotal {
-  /** Pending source tasks of the selection's digests that it leaves out; include_dependencies runs them too. */
+  /** Tasks the run queues without an estimate: mirrors, and tasks whose input cannot be prepared. */
+  unestimated: number;
+  /** Pending and failed source tasks of the selection's digests that it leaves out; include_dependencies runs them too. */
   missing_dependencies: number;
 }
 
