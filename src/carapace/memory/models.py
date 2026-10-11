@@ -33,6 +33,8 @@ OPEN_TASK_STATUSES = frozenset({TaskStatus.pending, TaskStatus.queued, TaskStatu
 
 class BlockedReason(StrEnum):
     budget = "budget"
+    # A digest whose period still has queued or running source tasks.
+    dependencies = "dependencies"
 
 
 class TaskSort(StrEnum):
@@ -438,9 +440,23 @@ class EstimateTotal(MemoryApiModel):
     unpriced_count: int
 
 
+class DependencySummary(MemoryApiModel):
+    """A digest's source tasks in its period: session extractions for a week, session extractions
+    and week digests for a month. Each source counts by its latest task."""
+
+    # Queued or running: the digest is not claimed until they finish.
+    waiting: int
+    # Nobody runs pending tasks, so the digest does not wait for them; the run dialog offers to add them.
+    pending_ids: list[int]
+    # Sources without a current record whose latest attempt failed or was cancelled.
+    failed: int
+
+
 class TaskView(MemoryTask):
     # Human label for the target: session title, or the period key for digests.
     target_label: str
+    # None for tasks that are not digests.
+    dependencies: DependencySummary | None
 
 
 class TaskListResponse(MemoryApiModel):

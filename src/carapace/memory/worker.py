@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+from collections import defaultdict
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -33,6 +34,7 @@ from .store import MemoryStore
 _DISPATCH_WINDOW = 200
 # How many pending tasks auto mode considers per user and tick.
 _PROMOTION_WINDOW = 500
+_DIGEST_KINDS = (TaskKind.week_digest, TaskKind.month_digest)
 
 
 @dataclass(frozen=True)
@@ -158,7 +160,15 @@ class MemoryWorker:
     async def _dispatch(self, now: datetime) -> None:
         # Per user and pass: committed spend, grown by each task this pass claims.
         spend: dict[str, tuple[Spend, Spend]] = {}
-        for task in self._store.next_queued(_DISPATCH_WINDOW):
+        queued = self._store.next_queued(_DISPATCH_WINDOW)
+        waiting = self._waiting_for_sources(queued)
+        # Ahead of the parallelism cap, so the reason stays right while every slot is busy.
+        for task in queued:
+            if task.id in waiting and task.blocked_reason is not BlockedReason.dependencies:
+                self._store.set_blocked(task.id, BlockedReason.dependencies)
+            elif task.id not in waiting and task.blocked_reason is BlockedReason.dependencies:
+                self._store.set_blocked(task.id, None)
+        for task in queued:
             if len(self._running) >= self._max_parallel:
                 return
             if task.id in self._running:
@@ -167,10 +177,16 @@ class MemoryWorker:
             if handler is None:
                 self._store.fail_unclaimed(task.id, f"no handler registered for {task.kind}", now)
                 continue
+            if task.id in waiting:
+                continue
             user_config = self._user_config_for(task.user)
             estimate: TaskEstimate | None = None
             if handler.model_role is not None:
-                estimate = await self._estimate_or_fail(task, user_config, now)
+                # A digest's input grows as its sources finish, so its spawn-time estimate may cover
+                # partial input. A budget-blocked digest keeps its estimate: sources finishing later
+                # pass through the dependency block, which clears the reason and refreshes it then.
+                refresh = task.kind in _DIGEST_KINDS and task.blocked_reason is not BlockedReason.budget
+                estimate = await self._estimate_or_fail(task, user_config, now, refresh=refresh)
                 if estimate is None:
                     continue
                 if task.user not in spend:
@@ -190,6 +206,23 @@ class MemoryWorker:
                 day, month = spend[task.user]
                 spend[task.user] = (day.plus(estimate), month.plus(estimate))
             self._start(task, self._model_for(task, user_config))
+
+    def _waiting_for_sources(self, tasks: list[MemoryTask]) -> set[int]:
+        """Digests among *tasks* whose period still has queued or running source tasks.
+
+        A digest run next to its extractions would digest partial coverage, go stale and respawn.
+        Pending sources do not hold it back: nobody runs them, so it would wait forever.
+        """
+        digests_by_user: dict[str, list[MemoryTask]] = defaultdict(list)
+        for task in tasks:
+            if task.kind in _DIGEST_KINDS:
+                digests_by_user[task.user].append(task)
+        return {
+            task_id
+            for user, digests in digests_by_user.items()
+            for task_id, sources in self._store.dependencies(user, digests).items()
+            if sources.waiting
+        }
 
     def _session_still_eligible(self, task: MemoryTask, now: datetime) -> bool:
         """Re-check right before running; an ineligible session's task is cancelled at no cost."""
@@ -246,15 +279,18 @@ class MemoryWorker:
             return None
         return task.model_override or effective_memory_model(self._current_config(), user_config, role)
 
-    async def _estimate_or_fail(self, task: MemoryTask, user_config: UserConfig, now: datetime) -> TaskEstimate | None:
-        """The task's estimate for the model it would run with now, refreshed when that changed.
+    async def _estimate_or_fail(
+        self, task: MemoryTask, user_config: UserConfig, now: datetime, *, refresh: bool = False
+    ) -> TaskEstimate | None:
+        """The task's estimate for the model it would run with now, refreshed when that changed or
+        when *refresh* asks for it.
 
         None, with the task failed, when estimating raised: such a task could never pass the gate.
         """
         model = self._model_for(task, user_config)
         if model is None:
             raise ValueError(f"{task.kind} makes no LLM call and has no estimate")
-        if task.estimate is not None and task.estimate.model == model:
+        if not refresh and task.estimate is not None and task.estimate.model == model:
             return task.estimate
         try:
             estimate = await self._handlers[task.kind].estimate(task.user, task.target, model)
@@ -263,7 +299,8 @@ class MemoryWorker:
             logger.exception(f"Memory task {task.id} ({task.kind} {task.target}): estimate failed")
             self._store.fail_unclaimed(task.id, f"estimate failed: {type(exc).__name__}: {exc}", now)
             return None
-        self._store.set_estimate(task.id, estimate)
+        if estimate != task.estimate:
+            self._store.set_estimate(task.id, estimate)
         return estimate
 
     def _spend(self, user: str, user_config: UserConfig, now: datetime) -> tuple[Spend, Spend]:
