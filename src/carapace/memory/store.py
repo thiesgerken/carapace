@@ -189,12 +189,21 @@ class MemoryStore:
             )
 
     def list_tasks(
-        self, user: str, task_filter: TaskFilter, cursor: str | None, limit: int, sort: TaskSort = TaskSort.activity
+        self,
+        user: str,
+        task_filter: TaskFilter,
+        cursor: str | None,
+        limit: int,
+        sort: TaskSort = TaskSort.activity,
+        *,
+        default_models: Mapping[TaskKind, str] | None = None,
     ) -> TaskPage:
-        """ponytail: offset cursor, so rows shift if tasks appear or change between pages; a keyset
+        """*default_models* (each kind's current role default) is required to filter by model.
+
+        ponytail: offset cursor, so rows shift if tasks appear or change between pages; a keyset
         cursor over the sort columns (with NULLs) is the upgrade if that bites.
         """
-        clauses = [MemoryTaskRow.user == user, *_filter_clauses(task_filter)]
+        clauses = [MemoryTaskRow.user == user, *_filter_clauses(task_filter, default_models)]
         offset = parse_cursor(cursor) if cursor is not None else 0
         with self._session_factory() as db:
             total = db.scalar(select(func.count()).select_from(MemoryTaskRow).where(*clauses)) or 0
@@ -205,19 +214,34 @@ class MemoryStore:
         next_cursor = str(offset + limit) if len(rows) > limit else None
         return TaskPage(items=items, next_cursor=next_cursor, total=total)
 
-    def select_tasks(self, user: str, selection: TaskSelection, statuses: set[TaskStatus]) -> list[MemoryTask]:
+    def select_tasks(
+        self,
+        user: str,
+        selection: TaskSelection,
+        statuses: set[TaskStatus],
+        *,
+        default_models: Mapping[TaskKind, str] | None = None,
+    ) -> list[MemoryTask]:
         """Tasks of a selection that are in one of *statuses*, newest period first."""
         with self._session_factory() as db:
-            ids = _selected_ids(db, user, selection, statuses)
+            ids = _selected_ids(db, user, selection, statuses, default_models)
             rows = db.scalars(select(MemoryTaskRow).where(MemoryTaskRow.id.in_(ids)).order_by(*_NEWEST_FIRST)).all()
         return [_task(row) for row in rows]
 
-    def run(self, user: str, selection: TaskSelection, model_override: str | None, now: datetime) -> int:
+    def run(
+        self,
+        user: str,
+        selection: TaskSelection,
+        model_override: str | None,
+        now: datetime,
+        *,
+        default_models: Mapping[TaskKind, str] | None = None,
+    ) -> int:
         """pending -> queued."""
         values: dict[str, object] = {"status": TaskStatus.queued.value, "queued_at": now, "blocked_reason": None}
         if model_override is not None:
             values |= {"model_override": model_override, "model": model_override}
-        return self._transition(user, selection, {TaskStatus.pending}, values)
+        return self._transition(user, selection, {TaskStatus.pending}, values, default_models)
 
     def retry(self, user: str, task_ids: list[int], now: datetime) -> int:
         """failed -> queued. The row is reused; attempts grows on the next claim."""
@@ -228,18 +252,30 @@ class MemoryStore:
             "started_at": None,
             "finished_at": None,
         }
-        return self._transition(user, TaskSelection(ids=task_ids), {TaskStatus.failed}, values)
+        return self._transition(user, TaskSelection(ids=task_ids), {TaskStatus.failed}, values, None)
 
-    def cancel(self, user: str, selection: TaskSelection, now: datetime) -> int:
+    def cancel(
+        self,
+        user: str,
+        selection: TaskSelection,
+        now: datetime,
+        *,
+        default_models: Mapping[TaskKind, str] | None = None,
+    ) -> int:
         """Any open task -> cancelled. A running task's result is discarded when it arrives."""
         values = {"status": TaskStatus.cancelled.value, "finished_at": now, "blocked_reason": None}
-        return self._transition(user, selection, set(OPEN_TASK_STATUSES), values)
+        return self._transition(user, selection, set(OPEN_TASK_STATUSES), values, default_models)
 
     def _transition(
-        self, user: str, selection: TaskSelection, from_statuses: set[TaskStatus], values: Mapping[str, object]
+        self,
+        user: str,
+        selection: TaskSelection,
+        from_statuses: set[TaskStatus],
+        values: Mapping[str, object],
+        default_models: Mapping[TaskKind, str] | None,
     ) -> int:
         with self._session_factory.begin() as db:
-            ids = _selected_ids(db, user, selection, from_statuses)
+            ids = _selected_ids(db, user, selection, from_statuses, default_models)
             if not ids:
                 return 0
             # ponytail: one IN list; chunk it if selections ever outgrow SQLite's parameter limit.
@@ -377,6 +413,7 @@ class MemoryStore:
             if provenance is not None:
                 _add_billing(row, provenance, now)
                 row.provenance = provenance
+                row.model = provenance.model
             return True
 
     def spend(self, user: str, since: datetime) -> Spend:
@@ -671,7 +708,9 @@ def parse_cursor(cursor: str) -> int:
     return int(cursor)
 
 
-def _filter_clauses(task_filter: TaskFilter) -> list[ColumnElement[bool]]:
+def _filter_clauses(
+    task_filter: TaskFilter, default_models: Mapping[TaskKind, str] | None
+) -> list[ColumnElement[bool]]:
     clauses: list[ColumnElement[bool]] = []
     if task_filter.status:
         clauses.append(MemoryTaskRow.status.in_([s.value for s in task_filter.status]))
@@ -681,8 +720,25 @@ def _filter_clauses(task_filter: TaskFilter) -> list[ColumnElement[bool]]:
         # Week and month keys never collide (2026-W36 vs 2026-09), so one OR serves both.
         clauses.append(or_(MemoryTaskRow.week_key == task_filter.period, MemoryTaskRow.month_key == task_filter.period))
     if task_filter.model:
-        clauses.append(MemoryTaskRow.model == task_filter.model)
+        if default_models is None:
+            raise ValueError("filtering tasks by model needs each kind's current default model")
+        clauses.append(_runs_with(task_filter.model, default_models))
     return clauses
+
+
+def _runs_with(model: str, default_models: Mapping[TaskKind, str]) -> ColumnElement[bool]:
+    """The model a task ran with, else its override, else its kind's current role default.
+
+    A billed task carries provenance, and ``model`` then holds the model that ran. Without one,
+    ``model`` is only the spawn-time estimate, which the worker resolves again before running.
+    """
+    default_kinds = [kind.value for kind, default in default_models.items() if default == model]
+    billed = MemoryTaskRow.billed_at.is_not(None)
+    return or_(
+        and_(billed, MemoryTaskRow.model == model),
+        and_(not_(billed), MemoryTaskRow.model_override == model),
+        and_(not_(billed), MemoryTaskRow.model_override.is_(None), MemoryTaskRow.kind.in_(default_kinds)),
+    )
 
 
 def _session_candidate(
@@ -767,12 +823,18 @@ def _fact_clauses(fact_filter: FactFilter) -> list[ColumnElement[bool]]:
     return clauses
 
 
-def _selected_ids(db: Session, user: str, selection: TaskSelection, statuses: set[TaskStatus]) -> list[int]:
+def _selected_ids(
+    db: Session,
+    user: str,
+    selection: TaskSelection,
+    statuses: set[TaskStatus],
+    default_models: Mapping[TaskKind, str] | None,
+) -> list[int]:
     clauses = [MemoryTaskRow.user == user, MemoryTaskRow.status.in_([s.value for s in statuses])]
     if selection.ids is not None:
         clauses.append(MemoryTaskRow.id.in_(selection.ids))
     if selection.filter is not None:
-        clauses.extend(_filter_clauses(selection.filter))
+        clauses.extend(_filter_clauses(selection.filter, default_models))
     query = select(MemoryTaskRow.id).where(*clauses).order_by(*_NEWEST_FIRST)
     if selection.newest is not None:
         query = query.limit(selection.newest)

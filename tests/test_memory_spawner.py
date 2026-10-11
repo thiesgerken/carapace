@@ -85,7 +85,7 @@ class Env:
             sessions=self.sessions,
             jobs=self.jobs,
             handlers=self.handlers,  # type: ignore[arg-type]
-            config=Config(),
+            current_config=Config,
             user_config_for=lambda _: self.user_config,
             users=lambda: ["alice"],
             is_agent_running=lambda session_id: session_id in self.running,

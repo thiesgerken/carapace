@@ -123,7 +123,7 @@ class Env:
         self.worker = MemoryWorker(
             store=self.store,
             handlers={TaskKind.session_extract: self.extract, TaskKind.mirror: self.mirror},  # type: ignore[dict-item]
-            config=Config(),
+            current_config=Config,
             user_config_for=lambda _: self.user_config,
             users=lambda: ["alice"],
             sweep=self._sweep,

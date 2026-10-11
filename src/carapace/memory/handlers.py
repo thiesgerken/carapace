@@ -172,25 +172,30 @@ class SessionExtractHandler:
     def __init__(
         self,
         *,
-        config: Config,
+        current_config: Callable[[], Config],
         load_events: Callable[[str], list[dict[str, Any]]],
         user_config_for: Callable[[str], UserConfig],
         model_factory: ModelFactory,
     ) -> None:
-        self._config = config
+        self._current_config = current_config
         self._load_events = load_events
         self._user_config_for = user_config_for
         self._model_factory = model_factory
 
     async def estimate(self, user: str, target: str, model: str) -> TaskEstimate:
-        return _estimate(self._config, self._prepare(user, target).call, model)
+        return _estimate(self._current_config(), self._prepare(user, target).call, model)
 
     async def run(self, task: MemoryTask, model: str | None) -> TaskOutcome:
         if model is None:
             raise ValueError("session extraction needs a model")
         prepared = self._prepare(task.user, task.target)
         output, provenance = await _run_llm(
-            task, model, prepared.call, SessionExtractionOutput, config=self._config, model_factory=self._model_factory
+            task,
+            model,
+            prepared.call,
+            SessionExtractionOutput,
+            config=self._current_config(),
+            model_factory=self._model_factory,
         )
         extraction = _traceable_extraction(task, output, prepared.seqs, prepared.user_seqs)
         result = ExtractionResult(
@@ -243,27 +248,32 @@ class DigestHandler:
         self,
         *,
         level: DigestLevel,
-        config: Config,
+        current_config: Callable[[], Config],
         current_extractions: Callable[[str, str], list[ExtractionRecord]],
         current_digests: Callable[[str, DigestLevel, list[str]], list[DigestRecord]],
         model_factory: ModelFactory,
     ) -> None:
         self.level = level
         self.kind = TaskKind.week_digest if level is DigestLevel.week else TaskKind.month_digest
-        self._config = config
+        self._current_config = current_config
         self._current_extractions = current_extractions
         self._current_digests = current_digests
         self._model_factory = model_factory
 
     async def estimate(self, user: str, target: str, model: str) -> TaskEstimate:
-        return _estimate(self._config, self._prepare(user, target).call, model)
+        return _estimate(self._current_config(), self._prepare(user, target).call, model)
 
     async def run(self, task: MemoryTask, model: str | None) -> TaskOutcome:
         if model is None:
             raise ValueError(f"{self.level} digests need a model")
         prepared = self._prepare(task.user, task.target)
         output, provenance = await _run_llm(
-            task, model, prepared.call, PeriodDigestOutput, config=self._config, model_factory=self._model_factory
+            task,
+            model,
+            prepared.call,
+            PeriodDigestOutput,
+            config=self._current_config(),
+            model_factory=self._model_factory,
         )
         digest = _traceable_digest(task, output, {entry.source_id for entry in prepared.coverage})
         result = DigestResult(
