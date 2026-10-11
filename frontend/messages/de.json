@@ -140,6 +140,7 @@
             "model": "Modell",
             "roleDefault": "Standard der Rolle",
             "roleDefaultResolved": "Standard der Rolle ({models})",
+            "nothingToRun": "Keine ausstehenden Aufgaben in dieser Auswahl. Nur ausstehende Aufgaben laufen; fehlgeschlagene werden über ihre Zeile erneut versucht.",
             "cancel": "Abbrechen",
             "confirm": "Ausführen"
         },
