@@ -13,6 +13,9 @@ the call path against pydantic-ai's TestModel instead, for CI smoke tests.
     uv run python scripts/memory_eval.py --test-model path/to/conversation.json
     uv run python scripts/memory_eval.py --call --model anthropic:claude-haiku-4-5 --limit 3 data/
 
+``--knowledge-dir`` puts that repo's SOUL.md and USER.md ahead of the instructions, as the
+handler does with the user's knowledge repo; without it the eval runs on the instructions alone.
+
 Real calls resolve the model with pydantic-ai's ``infer_model`` (provider API key from the
 environment), not carapace's model registry.
 """
@@ -39,7 +42,7 @@ from carapace.memory.handlers import SESSION_EXTRACT_OUTPUT_CAP
 from carapace.memory.input import ExtractionInput, render_extraction_input
 from carapace.memory.llm import LlmCallError, prompt_tokens, run_structured
 from carapace.memory.models import SessionExtractionOutput
-from carapace.memory.prompts import SESSION_EXTRACT
+from carapace.memory.prompts import SESSION_EXTRACT, system_prompt
 
 DEFAULT_MODEL = "anthropic:claude-haiku-4-5"
 
@@ -89,12 +92,12 @@ def load_sessions(paths: list[Path]) -> list[Session]:
     return sorted(latest.values(), key=lambda s: s.created_at)
 
 
-def prepare(session: Session, model: str) -> Prepared:
+def prepare(session: Session, model: str, system: str) -> Prepared:
     rendered = render_extraction_input(session.events)
     # Archives carry no event timestamps, so the session's creation date stands in for the
     # first user message (the handler uses the latter, in the user's timezone).
     user_prompt = SESSION_EXTRACT.user_prompt(rendered.text, session_date=session.created_at.date().isoformat())
-    input_tokens = prompt_tokens(SESSION_EXTRACT, user_prompt, model)
+    input_tokens = prompt_tokens(system, user_prompt, model)
     return Prepared(
         session=session,
         rendered=rendered,
@@ -138,7 +141,7 @@ def _percentile(values: list[Decimal], fraction: float) -> Decimal:
     return ordered[min(len(ordered) - 1, int(fraction * len(ordered)))]
 
 
-async def run_calls(prepared: list[Prepared], model: str, resolve: Model | None) -> int:
+async def run_calls(prepared: list[Prepared], model: str, system: str, resolve: Model | None) -> int:
     failures = 0
     for p in prepared:
         if not p.rendered.text:
@@ -146,7 +149,7 @@ async def run_calls(prepared: list[Prepared], model: str, resolve: Model | None)
         print(f"\n=== {p.session.session_id} {p.session.title or ''}")
         try:
             call = await run_structured(
-                SESSION_EXTRACT,
+                system,
                 SessionExtractionOutput,
                 p.user_prompt,
                 model=model,
@@ -170,6 +173,7 @@ def main() -> None:
     parser.add_argument("paths", nargs="+", type=Path, help="conversation.json files or directories")
     parser.add_argument("--model", default=DEFAULT_MODEL, help=f"pydantic-ai model id (default {DEFAULT_MODEL})")
     parser.add_argument("--limit", type=int, help="only the N most recent sessions")
+    parser.add_argument("--knowledge-dir", type=Path, help="knowledge repo whose SOUL.md and USER.md lead the prompt")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--call", action="store_true", help="send sessions to the real model (costs money)")
     mode.add_argument("--test-model", action="store_true", help="run the call path against TestModel")
@@ -178,12 +182,13 @@ def main() -> None:
     sessions = load_sessions(args.paths)
     if args.limit is not None:
         sessions = sessions[-args.limit :]
-    prepared = [prepare(session, args.model) for session in sessions]
+    system = system_prompt(SESSION_EXTRACT, args.knowledge_dir) if args.knowledge_dir else SESSION_EXTRACT.system
+    prepared = [prepare(session, args.model, system) for session in sessions]
     print_estimates(prepared, args.model)
 
     if args.call or args.test_model:
         test_model = TestModel(custom_output_args=_TEST_OUTPUT.model_dump()) if args.test_model else None
-        sys.exit(1 if asyncio.run(run_calls(prepared, args.model, test_model)) else 0)
+        sys.exit(1 if asyncio.run(run_calls(prepared, args.model, system, test_model)) else 0)
 
 
 if __name__ == "__main__":

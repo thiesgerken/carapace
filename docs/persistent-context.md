@@ -6,7 +6,7 @@ Persistent context is ordinary content in the Git-backed knowledge repo: top-lev
 
 ## Workspace files
 
-Top-level Markdown files in the knowledge repo define the agent's identity, user context, and policy. They are cloned into each session sandbox at `/workspace/` and loaded into the agent's system prompt at session start.
+Top-level Markdown files in the knowledge repo define the agent's identity, user context, and policy. They are cloned into each session sandbox at `/workspace/` and loaded into the agent's system prompt at session start. `SOUL.md` and `USER.md` also lead the prompts of [long-term memory](memory.md#persona-context).
 
 | File          | Purpose                                                                            | Agent-writable?                      |
 | ------------- | ---------------------------------------------------------------------------------- | ------------------------------------ |
