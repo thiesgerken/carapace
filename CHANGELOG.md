@@ -1,6 +1,39 @@
 # CHANGELOG
 
 
+## v0.160.1 (2026-10-11)
+
+
+### Other
+
+
+- Merge pull request #374 from thiesgerken/memory/month-digest-cap
+  ([`6b2b489`](https://github.com/thiesgerken/carapace/commit/6b2b48955a4d63152ccfd9c2152f1a0c982337d5))
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix: raise the digest output caps
+  ([`6b2b489`](https://github.com/thiesgerken/carapace/commit/6b2b48955a4d63152ccfd9c2152f1a0c982337d5))
+
+- 🐛 fix: raise the week digest output cap to 20,000
+  ([`d173d96`](https://github.com/thiesgerken/carapace/commit/d173d9668ff9586bc6d8c817982e27c5749a2516))
+
+  6,000 is not enough for week digests either once reasoning tokens count against the cap.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01UEby7vKYviYQnMZfk7pjtE
+
+- 🐛 fix: give month digests their own output cap
+  ([`37cf001`](https://github.com/thiesgerken/carapace/commit/37cf001b5666c4048a425333bcc49d851552b47b))
+
+  Month digests share no cap with week digests anymore: 50,000 output tokens instead of 6,000, which a month digest exceeded in prod. Reasoning tokens count towards max_tokens on OpenAI/Codex and on Anthropic with thinking, which the comments now say.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01UEby7vKYviYQnMZfk7pjtE
+
 ## v0.160.0 (2026-10-11)
 
 
