@@ -8,11 +8,11 @@ import { useLocale, useTranslations } from "next-intl";
 import { MemoryPeriodDetailView, PeriodBadgeMark, periodHref } from "@/components/memory-period-detail";
 import { useMemoryStatus } from "@/components/memory-status";
 import { getMemoryPeriods } from "@/lib/api";
-import { groupMonthsByYear, monthLabel, periodBadge } from "@/lib/memory";
+import { groupMonthsByYear, monthLabel, periodBadge, weekLabel } from "@/lib/memory";
 import type { MemoryPeriodNode, MemoryPeriodTree } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-function NodeLink({ node, label, selected }: { node: MemoryPeriodNode; label: string; selected: boolean }) {
+function NodeLink({ node, label, hint, selected }: { node: MemoryPeriodNode; label: string; hint?: string; selected: boolean }) {
   return (
     <Link
       href={periodHref(node.key)}
@@ -22,7 +22,10 @@ function NodeLink({ node, label, selected }: { node: MemoryPeriodNode; label: st
         selected && "bg-accent text-accent-foreground",
       )}
     >
-      <span className="flex-1 truncate">{label}</span>
+      <span className="flex-1 truncate">
+        {label}
+        {hint ? <span className="ml-2 text-xs text-muted-foreground">{hint}</span> : null}
+      </span>
       <span className="tabular-nums text-xs text-muted-foreground">{node.digest || node.covered > 0 ? `${node.covered}/${node.total}` : null}</span>
       <PeriodBadgeMark badge={periodBadge(node)} />
     </Link>
@@ -78,7 +81,7 @@ export function MemoryTimelineView({ server, token }: { server: string; token: s
                     <ul className="ml-4 space-y-0.5">
                       {month.weeks.map((week) => (
                         <li key={week.key}>
-                          <NodeLink node={week} label={week.key.slice(5)} selected={week.key === selectedKey} />
+                          <NodeLink node={week} label={week.key.slice(5)} hint={weekLabel(week.key, locale, false)} selected={week.key === selectedKey} />
                         </li>
                       ))}
                     </ul>

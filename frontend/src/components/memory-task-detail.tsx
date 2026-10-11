@@ -8,7 +8,7 @@ import { useMemorySessionDetail } from "@/components/memory-extraction-detail";
 import { DetailList } from "@/components/memory-ui";
 import { getMemoryPeriod } from "@/lib/api";
 import { formatAbsoluteTime } from "@/lib/format-time";
-import { formatTokens, formatUsd, missingSourceCount, monthLabel, taskRunModel } from "@/lib/memory";
+import { formatTokens, formatUsd, missingSourceCount, monthLabel, taskRunModel, weekLabel } from "@/lib/memory";
 import type { MemoryDigestLevel, MemoryModelRole, MemoryPeriodDetail, MemoryTaskView } from "@/lib/types";
 
 /**
@@ -165,6 +165,7 @@ function DigestTaskSubject({ server, task }: { server: string; task: MemoryTaskV
   return (
     <div className="space-y-2">
       <SubjectHeader href={href} label={label}>
+        {level === "week" ? <span className="text-xs text-muted-foreground">{weekLabel(task.target, locale, true)}</span> : null}
         <span className="text-xs text-muted-foreground">
           {produced
             ? t(level === "week" ? "sourceSessions" : "sourceWeeks", { count: sources.length })

@@ -32,6 +32,7 @@ import {
   toTaskSelection,
   type TaskFilterForm,
   type TaskPick,
+  weekLabel,
 } from "@/lib/memory";
 import type { MemoryTaskListResponse, MemoryTaskSelection, MemoryTaskSort, MemoryTaskView } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -281,6 +282,7 @@ export function MemoryTasksView({ server, token }: { server: string; token: stri
                       <td className="whitespace-nowrap px-3 py-2 text-xs">{tKinds(task.kind)}</td>
                       <td className="px-3 py-2">
                         {task.target_label}
+                        {task.kind === "week_digest" ? <span className="ml-2 text-xs text-muted-foreground">{weekLabel(task.target, locale, true)}</span> : null}
                         {task.status === "failed" && task.error ? (
                           <div className="mt-0.5 line-clamp-1 text-xs text-destructive">{task.error}</div>
                         ) : null}

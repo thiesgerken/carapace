@@ -223,6 +223,30 @@ export function monthLabel(key: string, locale: string, withYear: boolean): stri
     .format(Date.UTC(year, month - 1, 1));
 }
 
+const DAY_MS = 86_400_000;
+
+/** Monday to Sunday of an ISO week key, and the month its digest rolls into: the month of its Thursday (periods.month_key_for_week). */
+export function isoWeek(key: string): { start: Date; end: Date; monthKey: string } {
+  const match = /^(\d{4})-W(\d{2})$/.exec(key);
+  if (match === null) throw new Error(`invalid week key ${key}`);
+  // Week 1 is the week containing January 4th.
+  const jan4 = new Date(Date.UTC(Number(match[1]), 0, 4));
+  const start = jan4.getTime() - ((jan4.getUTCDay() + 6) % 7) * DAY_MS + (Number(match[2]) - 1) * 7 * DAY_MS;
+  const thursday = new Date(start + 3 * DAY_MS);
+  return {
+    start: new Date(start),
+    end: new Date(start + 6 * DAY_MS),
+    monthKey: `${thursday.getUTCFullYear()}-${String(thursday.getUTCMonth() + 1).padStart(2, "0")}`,
+  };
+}
+
+/** E.g. "July 2026 · Jul 27 – Aug 2": the week's month first, since a boundary week can sit in the other one. */
+export function weekLabel(key: string, locale: string, withMonth: boolean): string {
+  const { start, end, monthKey } = isoWeek(key);
+  const range = new Intl.DateTimeFormat(locale, { day: "numeric", month: "short", timeZone: "UTC" }).formatRange(start, end);
+  return withMonth ? `${monthLabel(monthKey, locale, true)} · ${range}` : range;
+}
+
 /** Months arrive newest first; years keep that order. */
 export function groupMonthsByYear(months: MemoryMonthNode[]): [string, MemoryMonthNode[]][] {
   const years = new Map<string, MemoryMonthNode[]>();

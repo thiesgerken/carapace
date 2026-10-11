@@ -9,6 +9,7 @@ import {
   isExpiredFact,
   formatUsd,
   groupMonthsByYear,
+  isoWeek,
   monthLabel,
   roleDefaultModels,
   hasActiveTasks,
@@ -25,6 +26,7 @@ import {
   toSpawnRequest,
   toTaskFilter,
   toTaskSelection,
+  weekLabel,
 } from "./memory";
 import type { MemoryBudgetWindowStatus, MemoryFactView, MemoryMonthNode, MemoryPeriodNode, MemorySessionRow, MemoryStatus, MemoryTask } from "./types";
 
@@ -215,6 +217,17 @@ test("periodLevel and year grouping follow the period keys", () => {
     groupMonthsByYear([month("2027-01"), month("2026-12"), month("2026-11")]).map(([year, months]) => [year, months.map((m) => m.key)]),
     [["2027", ["2027-01"]], ["2026", ["2026-12", "2026-11"]]],
   );
+});
+
+test("a week belongs to the month of its Thursday", () => {
+  const day = (date: Date) => date.toISOString().slice(0, 10);
+  const first = isoWeek("2026-W01");
+  assert.deepEqual([day(first.start), day(first.end), first.monthKey], ["2025-12-29", "2026-01-04", "2026-01"]);
+  const julyAugust = isoWeek("2026-W31");
+  assert.deepEqual([day(julyAugust.start), day(julyAugust.end), julyAugust.monthKey], ["2026-07-27", "2026-08-02", "2026-07"]);
+  const augustSeptember = isoWeek("2026-W36");
+  assert.deepEqual([day(augustSeptember.start), augustSeptember.monthKey], ["2026-08-31", "2026-09"]);
+  assert.match(weekLabel("2026-W31", "de", true), /^Juli 2026 · /);
 });
 
 test("monthLabel names the key's month, not the month of its first Monday", () => {
