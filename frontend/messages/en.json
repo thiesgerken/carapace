@@ -86,6 +86,7 @@
             "filters": {
                 "status": "Status",
                 "anyStatus": "Any status",
+                "unfinished": "Unfinished",
                 "kind": "Kind",
                 "anyKind": "Any kind",
                 "period": "Period",

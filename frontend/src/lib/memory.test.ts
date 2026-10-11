@@ -82,6 +82,11 @@ test("selections send ids or the filter, never both", () => {
   assert.deepEqual(toTaskSelection({ kind: "matching" }, filter), { filter });
 });
 
+test("the unfinished filter sends every status that is not done or cancelled", () => {
+  const filter = toTaskFilter({ status: "unfinished", kind: "", period: "", model: "" });
+  assert.deepEqual(filter.status, ["pending", "queued", "running", "failed"]);
+});
+
 function memoryTask(overrides: Partial<MemoryTask> = {}): MemoryTask {
   return {
     id: 1,
