@@ -827,6 +827,19 @@ export interface MemoryStatus {
   models: Record<MemoryModelRole, string>;
   /** Legacy sessions without a stored transcript, skipped by memory (as of the last sweep). */
   sessions_without_transcript: number;
+  /** Outdated records without an open task: what POST /tasks/spawn-outdated would spawn. */
+  outdated: MemoryTaskKindCounts;
+}
+
+export interface MemoryTaskKindCounts {
+  session_extract: number;
+  week_digest: number;
+  month_digest: number;
+}
+
+export interface MemoryOutdatedSpawnResponse {
+  created: MemoryTaskKindCounts;
+  skipped: MemorySpawnSkip[];
 }
 
 /** GET /tasks query params (lists repeat the param) and the `filter` of a selection. */

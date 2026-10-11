@@ -27,7 +27,7 @@ export default function MemoryLayout({ children }: { children: ReactNode }) {
         <div className="px-5 pt-4 sm:px-6">
           <h1 className="pb-4 text-2xl font-semibold tracking-tight">{t("title")}</h1>
 
-          <MemoryStatusStrip />
+          <MemoryStatusStrip server={server} />
 
           <div
             role="tablist"

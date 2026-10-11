@@ -2,9 +2,11 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
+import { Loader2, RefreshCw } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
-import { getMemoryStatus } from "@/lib/api";
-import { budgetGauge, formatTokens, formatUsd, hasActiveTasks } from "@/lib/memory";
+import { buttonClassName } from "@/components/memory-ui";
+import { getMemoryStatus, spawnOutdatedMemoryTasks } from "@/lib/api";
+import { budgetGauge, formatTokens, formatUsd, hasActiveTasks, summarizeSkips } from "@/lib/memory";
 import type { MemoryBudgetWindowStatus, MemoryStatus } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -97,7 +99,72 @@ function BudgetMeter({ label, window }: { label: string; window: MemoryBudgetWin
   );
 }
 
-export function MemoryStatusStrip() {
+/** Creates pending tasks for every outdated record; outdated records are never respawned automatically. */
+function RefreshOutdated({ server, status }: { server: string; status: MemoryStatus }) {
+  const t = useTranslations("memory.status");
+  const { refreshStatus } = useMemoryStatus();
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState<{ text: string; error: boolean } | null>(null);
+  const { session_extract, week_digest, month_digest } = status.outdated;
+  const count = session_extract + week_digest + month_digest;
+
+  async function create(): Promise<void> {
+    setBusy(true);
+    try {
+      const { created, skipped } = await spawnOutdatedMemoryTasks(server);
+      const digests = created.week_digest + created.month_digest;
+      const text = t("outdatedCreated", { extractions: created.session_extract, digests });
+      // Skipped records stay outdated, so the button keeps counting them; say why.
+      const skips = skipped.length > 0 ? ` ${t("outdatedSkipped", { count: skipped.length, reasons: summarizeSkips(skipped) })}` : "";
+      setNotice({ text: text + skips, error: false });
+      await refreshStatus();
+    } catch (spawnError) {
+      setNotice({ text: spawnError instanceof Error ? spawnError.message : String(spawnError), error: true });
+    } finally {
+      setBusy(false);
+      setConfirming(false);
+    }
+  }
+
+  if (confirming) {
+    return (
+      <span className="flex flex-wrap items-center gap-2">
+        <span>
+          {t("outdatedConfirm", { count })}
+          {status.auto_mode ? ` ${t("outdatedConfirmAuto")}` : null}
+        </span>
+        <button type="button" disabled={busy} onClick={() => void create()} className={buttonClassName}>
+          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+          {t("outdatedCreate")}
+        </button>
+        <button type="button" disabled={busy} onClick={() => setConfirming(false)} className={buttonClassName}>
+          {t("outdatedCancel")}
+        </button>
+      </span>
+    );
+  }
+  return (
+    <span className="flex flex-wrap items-center gap-2">
+      <button
+        type="button"
+        disabled={count === 0}
+        title={t("outdatedHint")}
+        onClick={() => {
+          setNotice(null);
+          setConfirming(true);
+        }}
+        className={buttonClassName}
+      >
+        <RefreshCw className="h-4 w-4" />
+        {t("outdatedButton", { count })}
+      </button>
+      {notice ? <span className={notice.error ? "text-destructive" : "text-muted-foreground"}>{notice.text}</span> : null}
+    </span>
+  );
+}
+
+export function MemoryStatusStrip({ server }: { server: string }) {
   const t = useTranslations("memory.status");
   const tStatuses = useTranslations("memory.taskStatuses");
   const locale = useLocale();
@@ -129,6 +196,9 @@ export function MemoryStatusStrip() {
         </Link>
         <BudgetMeter label={t("today")} window={status.day} />
         <BudgetMeter label={monthLabel} window={status.month} />
+        <span className="ml-auto">
+          <RefreshOutdated server={server} status={status} />
+        </span>
       </div>
       <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-1 text-muted-foreground">
         <span>

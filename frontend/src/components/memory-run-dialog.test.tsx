@@ -20,6 +20,7 @@ const STATUS: MemoryStatus = {
   blocked: 0,
   models: { memory_low: "haiku", memory_high: "opus" },
   sessions_without_transcript: 0,
+  outdated: { session_extract: 0, week_digest: 0, month_digest: 0 },
 };
 
 const EMPTY_ESTIMATE = { task_count: 0, input_tokens: 0, output_tokens_cap: 0, cost_usd: "0", unpriced_count: 0, missing_dependencies: 0 };
