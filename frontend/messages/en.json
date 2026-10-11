@@ -260,6 +260,8 @@
             "weekTitle": "Week {key}",
             "regenerate": "Regenerate",
             "generate": "Generate",
+            "run": "Run",
+            "cancelTask": "Cancel task",
             "coverageSessions": "{covered}/{total} sessions",
             "coverageWeeks": "{covered}/{total} weeks",
             "task": "task <status></status>",

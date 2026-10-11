@@ -260,6 +260,8 @@
             "weekTitle": "Woche {key}",
             "regenerate": "Neu erzeugen",
             "generate": "Erzeugen",
+            "run": "Ausführen",
+            "cancelTask": "Aufgabe abbrechen",
             "coverageSessions": "{covered}/{total} Sitzungen",
             "coverageWeeks": "{covered}/{total} Wochen",
             "task": "Aufgabe <status></status>",
