@@ -1,21 +1,19 @@
 "use client";
 
 import { Fragment, useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import { ArrowDown, Ban, Loader2, Play, RotateCcw } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
 import {
   buttonClassName,
   controlClassName,
-  DetailList,
   ExpandButton,
-  MemoryProvenanceList,
   PickMatchingRow,
   SelectionBar,
   TaskStatusBadge,
   togglesRow,
 } from "@/components/memory-ui";
 import { MemoryRunDialog } from "@/components/memory-run-dialog";
+import { MemoryTaskDetail } from "@/components/memory-task-detail";
 import { useMemoryStatus } from "@/components/memory-status";
 import { cancelMemoryTasks, listMemoryTasks, retryMemoryTasks } from "@/lib/api";
 import { formatAbsoluteTime, formatRelativeTime } from "@/lib/format-time";
@@ -39,20 +37,6 @@ const NEWEST_BATCH = 50;
 const DEFAULT_FORM: TaskFilterForm = { status: "pending", kind: "", period: "", model: "" };
 const NO_PICK: TaskPick = { kind: "ids", ids: [] };
 const COLUMN_COUNT = 9;
-
-/** Where the produced record is shown. The Sessions and Timeline tabs read these query params. */
-function resultHref(task: MemoryTaskView): string | null {
-  if (task.result_id === null) return null;
-  switch (task.kind) {
-    case "session_extract":
-      return `/memory/sessions?session=${encodeURIComponent(task.target)}`;
-    case "week_digest":
-    case "month_digest":
-      return `/memory/timeline?period=${encodeURIComponent(task.target)}`;
-    case "mirror":
-      return null;
-  }
-}
 
 export function MemoryTasksView({ server, token }: { server: string; token: string }) {
   const t = useTranslations("memory.tasks");
@@ -306,7 +290,7 @@ export function MemoryTasksView({ server, token }: { server: string; token: stri
                       <td className="whitespace-nowrap px-3 py-2 text-xs text-muted-foreground" title={formatAbsoluteTime(taskActivityAt(task), locale)}>
                         {formatRelativeTime(taskActivityAt(task), locale, now, tSidebar("time.justNow"))}
                       </td>
-                      <td className="px-3 py-2 text-right tabular-nums">{costCell(task)}</td>
+                      <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">{costCell(task)}</td>
                       <td className="px-3 py-1.5">
                         <div className="flex items-center justify-end gap-1">
                           {task.status === "failed" ? (
@@ -333,7 +317,7 @@ export function MemoryTasksView({ server, token }: { server: string; token: stri
                     {expanded ? (
                       <tr id={taskDetailId(task.id)} className="border-b border-border/60 bg-muted/40">
                         <td colSpan={COLUMN_COUNT} className="px-3 pb-3">
-                          <MemoryTaskDetail task={task} />
+                          <MemoryTaskDetail server={server} task={task} />
                         </td>
                       </tr>
                     ) : null}
@@ -383,34 +367,6 @@ function SortableHeader({ label, title, active, onSort }: { label: string; title
   );
 }
 
-function MemoryTaskDetail({ task }: { task: MemoryTaskView }) {
-  const t = useTranslations("memory.tasks.detail");
-  const locale = useLocale();
-  const time = (iso: string | null) => (iso ? formatAbsoluteTime(iso, locale) : "—");
-  const href = resultHref(task);
-
-  return (
-    <div className="space-y-2 pt-2 text-xs">
-      <DetailList
-        rows={[
-          [t("id"), String(task.id)],
-          [t("spawnedBy"), t(`spawnedByValue.${task.spawned_by}`)],
-          [t("attempts"), String(task.attempts)],
-          [t("created"), time(task.created_at)],
-          [t("queuedAt"), time(task.queued_at)],
-          [t("started"), time(task.started_at)],
-          [t("finished"), time(task.finished_at)],
-          ...(task.estimate && !task.provenance
-            ? ([[t("estimate"), `${formatTokens(task.estimate.input_tokens, locale)} in · ≤${formatTokens(task.estimate.output_tokens_cap, locale)} out`]] satisfies [string, string][])
-            : []),
-        ]}
-      />
-      {task.provenance ? <MemoryProvenanceList provenance={task.provenance} /> : null}
-      {task.error ? <pre className="whitespace-pre-wrap rounded-md bg-background p-2 font-mono text-destructive">{task.error}</pre> : null}
-      {href ? <Link href={href} className="inline-block font-medium underline underline-offset-2">{t("openResult")}</Link> : null}
-    </div>
-  );
-}
 
 function taskDetailId(taskId: number): string {
   return `memory-task-detail-${taskId}`;

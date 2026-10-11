@@ -131,13 +131,16 @@
                     "auto": "automatisch",
                     "manual": "manuell"
                 },
-                "attempts": "Versuche",
+                "attempts": "{count, plural, one {# Versuch} other {# Versuche}}",
                 "created": "Erstellt",
                 "queuedAt": "Eingereiht",
                 "started": "Gestartet",
                 "finished": "Beendet",
                 "estimate": "Schätzung",
-                "openResult": "Ergebnis öffnen"
+                "details": "Details",
+                "facts": "{count, plural, one {# Fakt} other {# Fakten}}",
+                "superseded": "Durch ein neueres Ergebnis ersetzt.",
+                "resultGone": "Das Ergebnis dieser Aufgabe existiert nicht mehr."
             }
         },
         "run": {
@@ -180,6 +183,7 @@
         "sessions": {
             "filters": {
                 "week": "Woche",
+                "weekPlaceholder": "Woche (JJJJ-Www)",
                 "state": "Extraktion",
                 "anyState": "Jede Extraktion",
                 "reason": "Grund für veraltet",
@@ -217,9 +221,9 @@
             "openChat": "Chat-Sitzung {title} öffnen",
             "empty": "Keine Sitzungen passen zu diesen Filtern.",
             "loadMore": "Mehr laden",
-            "runPicked": "Auswahl ausführen ({count})",
+            "runPicked": "{count, plural, one {# Aufgabe} other {# Aufgaben}} ausführen",
             "runNeedsRows": "Ausführen braucht einzeln ausgewählte Zeilen; Neu erzeugen wirkt auf alle Treffer.",
-            "respawnPicked": "Auswahl neu erzeugen ({count})",
+            "respawnPicked": "Auswahl neu erzeugen",
             "spawned": "{count, plural, one {# Aufgabe erzeugt.} other {# Aufgaben erzeugt.}}",
             "queued": "{count, plural, one {# Aufgabe eingereiht.} other {# Aufgaben eingereiht.}}",
             "spawnedWithSkips": "{count, plural, one {# Aufgabe erzeugt} other {# Aufgaben erzeugt}}; übersprungen: {reasons}."
