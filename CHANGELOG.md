@@ -1,6 +1,705 @@
 # CHANGELOG
 
 
+## v0.159.0 (2026-10-11)
+
+
+### ✨ Features
+
+
+- ✨Merge pull request #310 from thiesgerken/feat/long-term-memory
+  ([`2eb56d2`](https://github.com/thiesgerken/carapace/commit/2eb56d2b0966202fc27a99c3b35bfb9c16169343))
+
+- ✨ feat: long-term memory (integration)
+  ([`2eb56d2`](https://github.com/thiesgerken/carapace/commit/2eb56d2b0966202fc27a99c3b35bfb9c16169343))
+
+- ✨ feat: per-category fact files in the memory mirror
+  ([`72ce86c`](https://github.com/thiesgerken/carapace/commit/72ce86cb8c53f88576698f637a7672de8a2b6cd9))
+
+- ✨ feat: add failed digest sources with "Add N dependencies"
+  ([`64dd1fd`](https://github.com/thiesgerken/carapace/commit/64dd1fdbdbede7bc9b5223727282bdfd189dbcc6))
+
+  A run covers pending and failed tasks, so include_dependencies now adds failed source tasks without a current record too, alongside the pending ones. A digest no longer stays short of a failed extraction after the user added its dependencies.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01B3cWr83aDuHP8JQDvLxrgC
+
+- ✨ feat: per-category fact files in the memory mirror
+  ([`77000f2`](https://github.com/thiesgerken/carapace/commit/77000f21f2132c52c53c1f83ae3ebba1c74db9f5))
+
+  The mirror now also writes memory/facts/<category>.md: all facts of the current extractions in that category, newest session first, each linked to its session file. Render-only, no new state.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01UEby7vKYviYQnMZfk7pjtE
+
+- ✨ feat: timeline as a month calendar
+  ([`03ea82d`](https://github.com/thiesgerken/carapace/commit/03ea82d99212b2d36b084927c292d5bcb38ff6ed))
+
+- ✨ feat: refresh all outdated memory records with one button
+  ([`3a55c66`](https://github.com/thiesgerken/carapace/commit/3a55c66bf64c74e65de3b0689ccae4cdfa8432c9))
+
+  POST /memory/tasks/spawn-outdated spawns a pending manual task with an estimate for every outdated session extraction, week digest and month digest that has no open task, and returns the counts per kind. The status reports the same counts, and the status strip shows a "Refresh N outdated records" button with an inline confirmation. The sweep still never respawns outdated records.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01B3cWr83aDuHP8JQDvLxrgC
+
+- ✨ feat: timeline as a month calendar
+  ([`7748398`](https://github.com/thiesgerken/carapace/commit/774839872423960ddecf8e9dc8af5a3c659d7fb5))
+
+  Rows are the month's ISO weeks (Thursday rule), the week column carries the week digest's coverage, badge and open task, day cells count the week's sessions per day, and a month digest row sits above. Arrows and a month select move between months with data.
+
+  GET /memory/periods week nodes gain `days` (sessions per day, Monday first), placed by session creation date and clamped into the week.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01XZGdh4voK9HLfWh9aHHBpo
+
+- ✨ feat: memory prompts lead with SOUL.md and USER.md
+  ([`a9b35b7`](https://github.com/thiesgerken/carapace/commit/a9b35b7371fd637741a1eaf1005b08839254de87))
+
+  Extraction and digest system prompts start with the user's SOUL.md and USER.md, so the model writes as the user's agent and uses their name. A new shared rule keeps both files context only: facts and digest content come from the material alone. The files stay out of the prompt version, and their tokens count towards estimates.
+
+  The agent's workspace layout lists the read-only memory/ mirror.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01B3cWr83aDuHP8JQDvLxrgC
+
+- ✨ feat(memory): show digest dependencies in the task list and run dialog
+  ([`8c1aa03`](https://github.com/thiesgerken/carapace/commit/8c1aa03e27e8c79caab90ef90ab584f81617b648))
+
+  A digest's status cell says "waiting for N extractions" while it is blocked on its sources, or "N extractions missing" when sources are pending, failed or cancelled; clicking it filters the list to the period's source tasks.
+
+  The run dialog warns when selected digests have pending sources outside the selection and offers "Add N dependencies". The selection carries include_dependencies, so this works for filter selections too, and the estimate response reports missing_dependencies.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01B3cWr83aDuHP8JQDvLxrgC
+
+- ✨ feat: sort memory tasks by last activity or period
+  ([`4ec4acf`](https://github.com/thiesgerken/carapace/commit/4ec4acf3573c6b68bdd0e2a162094b0a43ed3a95))
+
+- ✨ feat: sort memory tasks by last activity or period
+  ([`0e21e60`](https://github.com/thiesgerken/carapace/commit/0e21e608f358878e760d39c21ffdb48d8879b3cf))
+
+  The Tasks table was always ordered by target period, so recent work was hard to find. GET /api/memory/tasks takes sort=activity (default, last change first) or sort=period. The table shows a "Last activity" column, and the Target and Last activity headers set the sort.
+
+  The Model column now shows the model a task ran with or would run with now (provenance, override, current role default), not the spawn-time estimate model, and the model filter options follow the same rule. A retry clears started_at, so a retried task's activity is its re-queue, not its old start.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01UEby7vKYviYQnMZfk7pjtE
+
+- ✨ feat(memory): digests wait for their queued and running sources
+  ([`eff6018`](https://github.com/thiesgerken/carapace/commit/eff601854d6cfc74ff81754e239121c025da6420))
+
+  A queued digest whose period still has queued or running source tasks (session extractions for a week; session extractions and week digests for a month) is no longer claimed. It stays queued with blocked_reason=dependencies until they finish. Pending sources do not block, since nobody runs them.
+
+  Task views of digests carry a dependency summary (waiting, pending ids, failed), computed for a whole list page in one query.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01B3cWr83aDuHP8JQDvLxrgC
+
+### Other
+
+
+- Merge pull request #370 from thiesgerken/memory/facts-mirror
+  ([`72ce86c`](https://github.com/thiesgerken/carapace/commit/72ce86cb8c53f88576698f637a7672de8a2b6cd9))
+
+- Merge branch 'feat/long-term-memory' into memory/facts-mirror
+  ([`32ca8fb`](https://github.com/thiesgerken/carapace/commit/32ca8fbf773bd43225012485f5cbcbb50ace766a))
+
+- Merge pull request #369 from thiesgerken/memory/run-failed
+  ([`6e36c5d`](https://github.com/thiesgerken/carapace/commit/6e36c5d06b71e095c02703e5c7adc1284f782520))
+
+  [Funes (Dev)] Run failed memory tasks from a selection
+
+- 💬 copy: keep free mirrors apart from tasks that fail again
+  ([`57c94e6`](https://github.com/thiesgerken/carapace/commit/57c94e6bda23909833572559b18c50d8f71b084f))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01B3cWr83aDuHP8JQDvLxrgC
+
+- Merge pull request #368 from thiesgerken/memory/anthropic-only-cache
+  ([`1057ab6`](https://github.com/thiesgerken/carapace/commit/1057ab68acf90140d08f962e3e1581f2e0baea44))
+
+- Merge pull request #367 from thiesgerken/memory/filter-active-default
+  ([`a1caae8`](https://github.com/thiesgerken/carapace/commit/a1caae803d2adb6a7f7df70bdb536eac6567ba6f))
+
+- Merge pull request #366 from thiesgerken/memory/filter-bar
+  ([`f2473f9`](https://github.com/thiesgerken/carapace/commit/f2473f93f67e4ab0058743b40de3e029999ef992))
+
+- Merge branch 'feat/long-term-memory' into memory/filter-bar
+  ([`cb2ed68`](https://github.com/thiesgerken/carapace/commit/cb2ed68f9d198f88bf66ac699da78a2c45a75ac0))
+
+- Merge pull request #365 from thiesgerken/memory/timeline-calendar
+  ([`03ea82d`](https://github.com/thiesgerken/carapace/commit/03ea82d99212b2d36b084927c292d5bcb38ff6ed))
+
+- Merge pull request #364 from thiesgerken/memory/respawn-outdated
+  ([`85db9b6`](https://github.com/thiesgerken/carapace/commit/85db9b62ada9d96b81565e55de0cc11cc7beb2aa))
+
+  [Funes (Dev)] Refresh all outdated memory records with one button
+
+- 📝 docs: outdated refresh reports skipped records
+  ([`bba15de`](https://github.com/thiesgerken/carapace/commit/bba15deb62017a6490962d15e0ccca8ab5affa22))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01B3cWr83aDuHP8JQDvLxrgC
+
+- 🥅 fix: report records the outdated refresh could not spawn
+  ([`de90c63`](https://github.com/thiesgerken/carapace/commit/de90c6340b0dbde15b7c8f9ef7afb437d4566786))
+
+  A record that keeps failing eligibility or estimation stays outdated, so the button keeps counting it. The response now carries the skipped targets with their reasons, and the notice names them.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01B3cWr83aDuHP8JQDvLxrgC
+
+- Merge pull request #363 from thiesgerken/memory/anthropic-prompt-cache
+  ([`eb64123`](https://github.com/thiesgerken/carapace/commit/eb641231ae98d9d496baeac2381ed6e25977da00))
+
+- Merge pull request #360 from thiesgerken/memory/shared-prompt-prefix
+  ([`dba601f`](https://github.com/thiesgerken/carapace/commit/dba601f3191fd2c474901fc784a9b178709c9983))
+
+- 📝 docs: caching depends on the provider, Anthropic breakpoints aren't set
+  ([`a38140d`](https://github.com/thiesgerken/carapace/commit/a38140d037726ddd08cf527a18d7a58b85a420d3))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01UEby7vKYviYQnMZfk7pjtE
+
+- Merge remote-tracking branch 'origin/feat/long-term-memory' into memory/shared-prompt-prefix
+  ([`b251f11`](https://github.com/thiesgerken/carapace/commit/b251f11c0b106129a6fe7eb43cdfd413481b78a7))
+
+- Merge pull request #361 from thiesgerken/memory/soul-user-context
+  ([`d559a96`](https://github.com/thiesgerken/carapace/commit/d559a96ddb587f8fae06b5916c94e182fa52c59f))
+
+  [Funes (Dev)] Memory prompts lead with SOUL.md and USER.md
+
+- 💬 prompt: label each shared prefix file with its name
+  ([`d54b2c7`](https://github.com/thiesgerken/carapace/commit/d54b2c71c328cfabbdc183c8e0f227fedcb539b7))
+
+  Role instructions refer to SOUL.md and USER.md by name; the files' own headings are user-written, so the prefix puts a `# <file name>` heading on each.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01UEby7vKYviYQnMZfk7pjtE
+
+- Merge pull request #358 from thiesgerken/memory/week-labels
+  ([`8f98047`](https://github.com/thiesgerken/carapace/commit/8f980477c084a3e106e367a68a989f9d06e537aa))
+
+- Merge remote-tracking branch 'origin/feat/long-term-memory' into memory/week-labels
+  ([`4241f12`](https://github.com/thiesgerken/carapace/commit/4241f12de83c4649b331da086dc900e91f8704e8))
+
+- Merge pull request #356 from thiesgerken/memory/seed-memory-models
+  ([`8311715`](https://github.com/thiesgerken/carapace/commit/8311715bc9419a06fe659901ebd9429089288235))
+
+  🗃️ Seed memory models from the agent and sentinel tiers
+
+- 🗃️ migration: strip the memory user settings on downgrade below 0006
+  ([`6b37c5d`](https://github.com/thiesgerken/carapace/commit/6b37c5d18e9638d68446053e128e31a29dfae17d))
+
+  The pre-memory UserConfig forbids unknown keys and every post-0006 config is a full dump, so a downgrade drops timezone, memory and the memory default models from each user.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01UEby7vKYviYQnMZfk7pjtE
+
+- 🗃️ migration: seed the memory models from the agent and sentinel tiers
+  ([`a95e3c8`](https://github.com/thiesgerken/carapace/commit/a95e3c89db7b4915d08d0c9bd20ba287ef852ffc))
+
+  0006 copies sentinel → memory_low and agent → memory_high, for the platform 'agent' row and each user's default_models, only where the target is unset and the source is set. The platform row only exists once an admin saved platform settings, so the runtime fallback for memory_low becomes the sentinel model too and fresh installs get the same mapping.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01UEby7vKYviYQnMZfk7pjtE
+
+- Merge pull request #357 from thiesgerken/memory/tasks-unfinished-filter
+  ([`46b832a`](https://github.com/thiesgerken/carapace/commit/46b832a13cbca99bc257d101d9b06488935c4b5e))
+
+- 📝 docs: tasks tab opens on the Unfinished status filter
+  ([`0cccf91`](https://github.com/thiesgerken/carapace/commit/0cccf91c2ad649ce2f9f56612a53e1ef2e0ddd2d))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01XZGdh4voK9HLfWh9aHHBpo
+
+- Merge pull request #355 from thiesgerken/memory/task-detail-dependencies
+  ([`365a017`](https://github.com/thiesgerken/carapace/commit/365a0176fd97df05294a51fe1fd8810afe990eb6))
+
+- Merge pull request #354 from thiesgerken/memory/digest-dependencies-ui
+  ([`6e4553d`](https://github.com/thiesgerken/carapace/commit/6e4553de8950fe1255aea393eae1edb68ab45257))
+
+  [Funes (Dev)] ✨ Memory: digest dependencies in the task list and run dialog
+
+- Merge remote-tracking branch 'origin/feat/long-term-memory' into memory/digest-dependencies-ui
+  ([`09becc2`](https://github.com/thiesgerken/carapace/commit/09becc220a2c667d128c19b86ec32d8ba8b2676f))
+
+  # Conflicts: #	frontend/messages/de.json #	frontend/messages/en.json #	frontend/src/components/memory-tasks-view.tsx
+
+- Merge pull request #353 from thiesgerken/memory/tasks-tab-bundle
+  ([`ee98824`](https://github.com/thiesgerken/carapace/commit/ee9882473b36877ca26f7ded31d382a3b903ab94))
+
+- ✅ test: task fixture carries #351's dependencies field
+  ([`afb1c53`](https://github.com/thiesgerken/carapace/commit/afb1c5323d6a4dc23528602c10cc0d727b9bc124))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01XZGdh4voK9HLfWh9aHHBpo
+
+- Merge branch 'feat/long-term-memory' into memory/tasks-tab-bundle
+  ([`381f5bc`](https://github.com/thiesgerken/carapace/commit/381f5bc0503f5a8f83b6f300d64063218294dfe1))
+
+- Merge pull request #351 from thiesgerken/memory/digest-dependencies
+  ([`dab1838`](https://github.com/thiesgerken/carapace/commit/dab183878229dba48a96e79f36d6d513ad648b97))
+
+  [Funes (Dev)] ✨ Memory: digests wait for their running extractions
+
+- Merge remote-tracking branch 'origin/feat/long-term-memory' into memory/tasks-tab-bundle
+  ([`1d2e165`](https://github.com/thiesgerken/carapace/commit/1d2e16595e9c64b440f3acbfef8e707f4e2800b1))
+
+- ✅ test: a done task's expansion shows the record it produced
+  ([`addc0be`](https://github.com/thiesgerken/carapace/commit/addc0beff06a043924d1b9969567c2e10aa9191d))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01XZGdh4voK9HLfWh9aHHBpo
+
+- Merge remote-tracking branch 'origin/memory/sessions-inline-extraction' into memory/tasks-tab-bundle
+  ([`164788d`](https://github.com/thiesgerken/carapace/commit/164788d3b89a4d7a54e8ca418e548ec8d72fdd33))
+
+- Merge remote-tracking branch 'origin/memory/digest-dependencies' into memory/digest-dependencies-ui
+  ([`25dc917`](https://github.com/thiesgerken/carapace/commit/25dc917223593fe555573997696f62b05afecf2e))
+
+  # Conflicts: #	src/carapace/memory/service.py #	src/carapace/memory/store.py
+
+- Merge remote-tracking branch 'origin/feat/long-term-memory' into memory/digest-dependencies
+  ([`0735ace`](https://github.com/thiesgerken/carapace/commit/0735acea94786e81f396355fe9f69f6184a913a6))
+
+  # Conflicts: #	tests/test_memory_worker.py
+
+- Merge pull request #350 from thiesgerken/memory/live-config
+  ([`0bb054a`](https://github.com/thiesgerken/carapace/commit/0bb054a149ff80ad23538d3a4241a9c75e47041d))
+
+- Merge branch 'feat/long-term-memory' into memory/live-config
+  ([`1a5dc46`](https://github.com/thiesgerken/carapace/commit/1a5dc46d460fb852a169e3033859c7b02463b939))
+
+- Merge pull request #352 from thiesgerken/memory/period-action
+  ([`4f88654`](https://github.com/thiesgerken/carapace/commit/4f886545511aa5bbd7678685f9ddd2991c52e9af))
+
+- Merge branch 'feat/long-term-memory' into memory/period-action
+  ([`6e8a8a5`](https://github.com/thiesgerken/carapace/commit/6e8a8a502f18ea39168b25ca365e605ae1474bdd))
+
+- Merge pull request #348 from thiesgerken/memory/sessions-inline-extraction
+  ([`49a3a96`](https://github.com/thiesgerken/carapace/commit/49a3a9674a4ad300553e9c26dad568b033e142c6))
+
+- Merge branch 'feat/long-term-memory' into memory/sessions-inline-extraction
+  ([`f4fe78c`](https://github.com/thiesgerken/carapace/commit/f4fe78c1296a1389a50654012dba222744391f6f))
+
+- Merge remote-tracking branch 'origin/feat/long-term-memory' into memory/sessions-inline-extraction
+  ([`7a8085a`](https://github.com/thiesgerken/carapace/commit/7a8085a8da6aad2d68067e5b9dc7e1a5098abfe1))
+
+  The moved taskStatus line in memory-extraction-detail.tsx takes #346's t.rich + taskStatusTag, now covered by a drawer test.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01XZGdh4voK9HLfWh9aHHBpo
+
+- Merge remote-tracking branch 'origin/feat/long-term-memory' into memory/period-action
+  ([`a3fa508`](https://github.com/thiesgerken/carapace/commit/a3fa50826b010a417fdcb584eb4cc8b085cdda01))
+
+- Merge remote-tracking branch 'origin/feat/long-term-memory' into memory/live-config
+  ([`e1186c2`](https://github.com/thiesgerken/carapace/commit/e1186c21bd76e7dba897e8510604db42b75d3db5))
+
+- Merge remote-tracking branch 'origin/feat/long-term-memory' into memory/live-config
+  ([`61c8f66`](https://github.com/thiesgerken/carapace/commit/61c8f66393d6bd243f72be919bf949c3f8936b15))
+
+- Merge remote-tracking branch 'origin/memory/task-sorting' into memory/live-config
+  ([`77e4d94`](https://github.com/thiesgerken/carapace/commit/77e4d943f04338900b70168f2edb7dc3f62c894f))
+
+- Merge remote-tracking branch 'origin/feat/long-term-memory' into memory/digest-dependencies
+  ([`8326f75`](https://github.com/thiesgerken/carapace/commit/8326f7556ad9d7676257dba0d98b061a7f70cd6e))
+
+  # Conflicts: #	frontend/src/lib/types.ts
+
+- Merge pull request #347 from thiesgerken/memory/task-sorting
+  ([`4ec4acf`](https://github.com/thiesgerken/carapace/commit/4ec4acf3573c6b68bdd0e2a162094b0a43ed3a95))
+
+- Merge branch 'feat/long-term-memory' into memory/task-sorting
+  ([`938be50`](https://github.com/thiesgerken/carapace/commit/938be5034c7f4fe2e316ebea5f84c1ef4f5dcbe1))
+
+- Merge pull request #346 from thiesgerken/memory/task-status-badge
+  ([`c2ad10d`](https://github.com/thiesgerken/carapace/commit/c2ad10d702343dc40fa39586915627c496bbcba2))
+
+- Merge branch 'feat/long-term-memory' into memory/task-status-badge
+  ([`1d737a8`](https://github.com/thiesgerken/carapace/commit/1d737a8f4218a829a0a10c55472cfb7e83dbc254))
+
+- Merge pull request #345 from thiesgerken/memory/validate-model-override
+  ([`33aa077`](https://github.com/thiesgerken/carapace/commit/33aa0775ed62bb7bafbae188927516084db8a10e))
+
+  🥅 fix: reject unregistered memory model overrides with 422
+
+- Merge branch 'feat/long-term-memory' into memory/validate-model-override
+  ([`26cf6ea`](https://github.com/thiesgerken/carapace/commit/26cf6ea0b7405f8e9a6550737e4ca61ee651b52c))
+
+- Merge pull request #349 from thiesgerken/fix/codex-test-token-drift
+  ([`0978a0b`](https://github.com/thiesgerken/carapace/commit/0978a0bea7c7d7bd1c3296fe15cece078c58638c))
+
+  💚 fix: stop re-minting codex tokens in test assertions (into integration)
+
+- 💚 fix: stop re-minting codex tokens in test assertions
+  ([`0dbbaf0`](https://github.com/thiesgerken/carapace/commit/0dbbaf0ebb181933340fc45a8ed8c63f3302ab84))
+
+  The fake access token embeds exp=int(now + 1 day), so minting it again at assertion time differs whenever the test crosses a second boundary. Keep the credentials object that was connected and compare against it.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01UEby7vKYviYQnMZfk7pjtE
+
+- Merge pull request #344 from thiesgerken/memory/cost-precision
+  ([`4810377`](https://github.com/thiesgerken/carapace/commit/48103778707ba169ffa49622c772f7e171e98dc5))
+
+- Merge pull request #343 from thiesgerken/memory/run-dialog-estimate-hang
+  ([`bbc3387`](https://github.com/thiesgerken/carapace/commit/bbc3387ea89a8c02d8a822176820c10502163ed9))
+
+- Merge remote-tracking branch 'origin/feat/long-term-memory' into memory/run-dialog-estimate-hang
+  ([`4e5127c`](https://github.com/thiesgerken/carapace/commit/4e5127cb4442bd3809dda48a0f2da489a60c35c2))
+
+- 📝 docs: state that memory model overrides must be registered
+  ([`1dde0a9`](https://github.com/thiesgerken/carapace/commit/1dde0a94a5abb334bfc28bf74952d8f206f04739))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01UEby7vKYviYQnMZfk7pjtE
+
+- 🥅 fix: reject unregistered memory model overrides with 422
+  ([`7d56f6a`](https://github.com/thiesgerken/carapace/commit/7d56f6ab5d846fd3352cf1b4936dda7beca4f327))
+
+  estimate, run and spawn accepted any model_override and the tasks failed later in the worker. Validate against the catalog the handlers resolve models from.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01UEby7vKYviYQnMZfk7pjtE
+
+- Merge pull request #342 from thiesgerken/memory/run-dialog-role-default
+  ([`8a76eeb`](https://github.com/thiesgerken/carapace/commit/8a76eebe19298f375555a84400718822dc5660ea))
+
+- Merge pull request #341 from thiesgerken/memory/tasks-toolbar-top
+  ([`934e190`](https://github.com/thiesgerken/carapace/commit/934e1908b6eab36fc6fe4f2881a6ede3706b06a6))
+
+- Merge remote-tracking branch 'origin/main' into feat/long-term-memory
+  ([`1e40129`](https://github.com/thiesgerken/carapace/commit/1e4012920c3647222e448b3a58398e4a593c3191))
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix: run failed memory tasks from a selection
+  ([`c17f442`](https://github.com/thiesgerken/carapace/commit/c17f442facaef835a7baf392526b631e24c43ce8))
+
+  "Run selected" only queued pending tasks, so failed ones in the selection were skipped silently. A run now queues pending and failed tasks; a failed task is reset like a retry and keeps its override unless the run brings one. The run estimate re-estimates every task for the model it would run with and reports tasks without an estimate, so the dialog's count matches what runs. Retry becomes a run of one failed task; POST /tasks/retry is gone.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01B3cWr83aDuHP8JQDvLxrgC
+
+- 🐛 fix: prompt cache breakpoints for Anthropic only
+  ([`1057ab6`](https://github.com/thiesgerken/carapace/commit/1057ab68acf90140d08f962e3e1581f2e0baea44))
+
+- 🐛 fix: set prompt cache breakpoints for Anthropic only
+  ([`a30408b`](https://github.com/thiesgerken/carapace/commit/a30408b12c6569f0d1cb5679c94b789efcdfedfc))
+
+  pydantic-ai's unified `cache` setting also translates to OpenAI's `prompt_cache_options`, which the Codex backend rejects with a 400 ("prompt_cache_options is not supported on this model"). Set the Anthropic and Bedrock cache keys directly; other providers ignore them and cache prefixes on their own.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01UEby7vKYviYQnMZfk7pjtE
+
+- 🐛 fix: filters highlight only when they differ from the tab's default
+  ([`a1caae8`](https://github.com/thiesgerken/carapace/commit/a1caae803d2adb6a7f7df70bdb536eac6567ba6f))
+
+- 🐛 fix: filters highlight only when they differ from the tab's default
+  ([`f5afb7f`](https://github.com/thiesgerken/carapace/commit/f5afb7f11a72b27ef722c3fd0e47173d73e57078))
+
+  The Tasks tab's default "Unfinished" status showed as an active filter because the highlight checked for a non-empty value. Each control now gets `active` from its view, compared against that view's defaults, the same rule reset already used.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01XZGdh4voK9HLfWh9aHHBpo
+
+- 🐛 fix: task expansion names the run model, not the stale estimate's
+  ([`d7fe905`](https://github.com/thiesgerken/carapace/commit/d7fe9052dadf01d753404d357830682f3f088d3a))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01XZGdh4voK9HLfWh9aHHBpo
+
+- 🐛 fix: memory follows runtime model changes and filters by effective model
+  ([`0bb054a`](https://github.com/thiesgerken/carapace/commit/0bb054a149ff80ad23538d3a4241a9c75e47041d))
+
+- 🐛 fix: memory follows runtime model changes and filters by effective model
+  ([`7360c7e`](https://github.com/thiesgerken/carapace/commit/7360c7eea20d8d4f7345fce74a6ca83626a73dc8))
+
+  Memory kept the startup Config and model factory, so a model added or removed in the platform settings only reached it after a restart. The service, worker, spawner and handlers now read the live config through a provider, and the handlers get a factory that delegates to the current one.
+
+  The task model filter matched the stored model column, i.e. the spawn-time estimate model for open tasks. It now follows the Model column's rule: the model a billed task ran with, else its override, else the kind's current role default. A billed failure now also records the model that ran.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01UEby7vKYviYQnMZfk7pjtE
+
+- 🐛 Memory: run dialog no longer hangs on Estimating
+  ([`bbc3387`](https://github.com/thiesgerken/carapace/commit/bbc3387ea89a8c02d8a822176820c10502163ed9))
+
+- 🐛 fix: run dialog no longer hangs on Estimating after re-picking the model
+  ([`819775c`](https://github.com/thiesgerken/carapace/commit/819775c25092c266f925e529c2eb10b180564b94))
+
+  The picker's onChange cleared the estimate, but picking the current model changes nothing the estimate effect depends on, so no new estimate came. Outcomes are now keyed by the model they were computed for. An empty estimate says there is nothing to run, and the modal no longer clips the model picker's dropdown.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01XZGdh4voK9HLfWh9aHHBpo
+
+- 🐛 fix(memory): dispatch sources before digests; keep budget-blocked estimates
+  ([`9138d17`](https://github.com/thiesgerken/carapace/commit/9138d177684d0c4e857867c5fb10726242a21747))
+
+  Queued tasks are dispatched in kind order (extractions, week digests, month digests) before queued_at, so a window full of waiting digests cannot crowd out the extractions they wait for. Budget-blocked digests are not re-estimated every tick.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01B3cWr83aDuHP8JQDvLxrgC
+
+- 🐛 fix(memory): re-estimate digests at dispatch, before the budget gate
+  ([`567b504`](https://github.com/thiesgerken/carapace/commit/567b50423023e1ae7ef1bfb1d847eb1c201adf02))
+
+  A digest's input grows as its sources finish, so its spawn-time estimate may cover partial input and let the gate underestimate it.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01B3cWr83aDuHP8JQDvLxrgC
+
+### 💄 UI/UX
+
+
+- 💄 ui: one filter bar for the sessions, facts and tasks toolbars
+  ([`f2473f9`](https://github.com/thiesgerken/carapace/commit/f2473f93f67e4ab0058743b40de3e029999ef992))
+
+- 💄 ui: one filter bar for the sessions, facts and tasks toolbars
+  ([`c66b116`](https://github.com/thiesgerken/carapace/commit/c66b116719e1d694a2932d3163470dc38e7ddf9e))
+
+  Icons in every control, one control height, set filters highlighted, a reset action, dependent filters hidden until they apply, and a week or month picker on the timeline's month calendar instead of text boxes.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01XZGdh4voK9HLfWh9aHHBpo
+
+- 💄 ui: week keys show their date range and the month they roll into
+  ([`8f98047`](https://github.com/thiesgerken/carapace/commit/8f980477c084a3e106e367a68a989f9d06e537aa))
+
+- 💄 ui: tasks tab defaults to an "Unfinished" status filter
+  ([`46b832a`](https://github.com/thiesgerken/carapace/commit/46b832a13cbca99bc257d101d9b06488935c4b5e))
+
+- 💄 ui: tasks tab defaults to an "Unfinished" status filter
+  ([`6b6898f`](https://github.com/thiesgerken/carapace/commit/6b6898f4ecc95ce04a283803978654c1c20bcc58))
+
+  Unfinished sends pending, queued, running and failed. Failed stays in because it needs attention; done and cancelled are the finished ones.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01XZGdh4voK9HLfWh9aHHBpo
+
+- 💄 ui: a month's week list shows only each week's date range
+  ([`036d968`](https://github.com/thiesgerken/carapace/commit/036d968eb8a81d9bc2b964d4c9b9a0dfa6362c82))
+
+  Every row belongs to that month, so repeating it is noise.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01XZGdh4voK9HLfWh9aHHBpo
+
+- 💄 ui: week keys show their date range and the month they roll into
+  ([`e503579`](https://github.com/thiesgerken/carapace/commit/e503579c3ed55d355a38af32a952ee4a2bb293c2))
+
+  A week belongs to the month of its Thursday (periods.month_key_for_week), so a boundary week like 2026-W36 reads "September 2026 · Aug 31 – Sep 6". The timeline tree shows only the range, since the week already sits under its month there.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01XZGdh4voK9HLfWh9aHHBpo
+
+- 💄 Memory: expanded digest tasks show waiting and missing sources
+  ([`365a017`](https://github.com/thiesgerken/carapace/commit/365a0176fd97df05294a51fe1fd8810afe990eb6))
+
+- 💄 ui: expanded digest tasks show their waiting and missing sources
+  ([`1f08bba`](https://github.com/thiesgerken/carapace/commit/1f08bba1342672e15ef1f24ffe6dbd921d35229d))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01XZGdh4voK9HLfWh9aHHBpo
+
+- 💄 Memory: Tasks tab rework (expansion by importance, selection bar, kind labels)
+  ([`ee98824`](https://github.com/thiesgerken/carapace/commit/ee9882473b36877ca26f7ded31d382a3b903ab94))
+
+- 💄 ui: task rows expand to what the task is about; Sessions tab gets the same filter row and selection bar
+  ([`6b68d87`](https://github.com/thiesgerken/carapace/commit/6b68d8791a5979d6f8de9205911c3e64b55e4b56))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01XZGdh4voK9HLfWh9aHHBpo
+
+- 💄 ui: one-line task filters, selection bar, kind labels and a chevron on the Tasks tab
+  ([`8288fa3`](https://github.com/thiesgerken/carapace/commit/8288fa368938e20629d398d331da3ff9e92943ee))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01XZGdh4voK9HLfWh9aHHBpo
+
+- 💄 ui: period header action follows the digest task
+  ([`4f88654`](https://github.com/thiesgerken/carapace/commit/4f886545511aa5bbd7678685f9ddd2991c52e9af))
+
+- 💄 Memory: session extractions expand inline
+  ([`49a3a96`](https://github.com/thiesgerken/carapace/commit/49a3a9674a4ad300553e9c26dad568b033e142c6))
+
+- 💄 ui: title-only session rows and a fact total with breakdown tooltip
+  ([`68e0d7b`](https://github.com/thiesgerken/carapace/commit/68e0d7b65520c19db901fd759e4a9bc4a6caae5b))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01XZGdh4voK9HLfWh9aHHBpo
+
+- 💄 ui: refresh the expanded session detail with the status poll
+  ([`ad91d92`](https://github.com/thiesgerken/carapace/commit/ad91d92ae85536c233bc9d28bf2ddb668cd88444))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01XZGdh4voK9HLfWh9aHHBpo
+
+- 💄 ui: expand session extractions inline on the memory Sessions tab
+  ([`00a2e74`](https://github.com/thiesgerken/carapace/commit/00a2e74c37576ebbeefdaf0add2bd53ed9948fd9))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01XZGdh4voK9HLfWh9aHHBpo
+
+- 💄 ui: period header action follows the digest task
+  ([`7c41678`](https://github.com/thiesgerken/carapace/commit/7c41678abb285799af7f794e899a86a98b746003))
+
+  The header kept offering Generate while a digest task was queued or running. Queued/running now show the task badge with a cancel icon, a pending task gets Run (its existing task through the run dialog), and only otherwise Generate or Regenerate. The "not run" dash no longer shows up as an empty header segment.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01UEby7vKYviYQnMZfk7pjtE
+
+- 💄 Memory: task status badges
+  ([`c2ad10d`](https://github.com/thiesgerken/carapace/commit/c2ad10d702343dc40fa39586915627c496bbcba2))
+
+- 💄 Memory: sub-cent costs no longer read as $0.00
+  ([`4810377`](https://github.com/thiesgerken/carapace/commit/48103778707ba169ffa49622c772f7e171e98dc5))
+
+- 💄 ui: show sub-cent memory costs with two significant digits
+  ([`7b7cb28`](https://github.com/thiesgerken/carapace/commit/7b7cb28ea03593578e7b5f4341d0a00e00056ebd))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01XZGdh4voK9HLfWh9aHHBpo
+
+- 💄 ui: clear the run error on model change; point the empty hint to the Tasks tab
+  ([`56bd81e`](https://github.com/thiesgerken/carapace/commit/56bd81e169693d9caa2d0526e87c95d55e3495cf))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01XZGdh4voK9HLfWh9aHHBpo
+
+- 💄 ui: color and icon per memory task status
+  ([`3df563f`](https://github.com/thiesgerken/carapace/commit/3df563f71f4da5c58128f606d499f9b3af7f8d9c))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01XZGdh4voK9HLfWh9aHHBpo
+
+- 💄 Memory: run dialog names the role-default model
+  ([`8a76eeb`](https://github.com/thiesgerken/carapace/commit/8a76eebe19298f375555a84400718822dc5660ea))
+
+- 💄 ui: name the resolved model in the run dialog's role default
+  ([`5c93774`](https://github.com/thiesgerken/carapace/commit/5c9377410d2d4e5650dcd2a7b7c5130e80e412aa))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01XZGdh4voK9HLfWh9aHHBpo
+
+- 💄 Memory: task and session actions above the table
+  ([`934e190`](https://github.com/thiesgerken/carapace/commit/934e1908b6eab36fc6fe4f2881a6ede3706b06a6))
+
+- 💄 ui: move memory session actions into the filter row
+  ([`3cf6680`](https://github.com/thiesgerken/carapace/commit/3cf6680015784c09b5506bbf1fc1c7aa266745db))
+
+  Same scroll-out-of-view problem as the tasks tab.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01XZGdh4voK9HLfWh9aHHBpo
+
+- 💄 ui: move memory task actions into the filter row
+  ([`a5f5c06`](https://github.com/thiesgerken/carapace/commit/a5f5c06cde9b0d28bfd80aa0556a807ac3aa5b52))
+
+  A long task list scrolled the run and cancel buttons out of view.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01XZGdh4voK9HLfWh9aHHBpo
+
+### ⚡ Performance
+
+
+- ⚡️ Prompt caching for agent, compaction and memory
+  ([`eb64123`](https://github.com/thiesgerken/carapace/commit/eb641231ae98d9d496baeac2381ed6e25977da00))
+
+- ⚡️ perf: prompt caching for the roles that share the prompt prefix
+  ([`fadc38c`](https://github.com/thiesgerken/carapace/commit/fadc38cec0d3b61ef35c20e17bcb90dc1b151595))
+
+  Agent turns, compaction and memory tasks set pydantic-ai's unified `cache` model setting, which places Anthropic breakpoints after the tools and the static instructions (agent turns also cache the conversation). The agent's date and session ID move into a dynamic instruction behind the breakpoint. Memory estimates price the system prompt as a cache write.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01UEby7vKYviYQnMZfk7pjtE
+
+### ♻️ Refactoring
+
+
+- ♻️ One shared system prompt prefix for agent, compaction and memory
+  ([`dba601f`](https://github.com/thiesgerken/carapace/commit/dba601f3191fd2c474901fc784a9b178709c9983))
+
+- ♻️ refactor: memory tasks lead with the agent's shared prompt prefix
+  ([`d0d84ad`](https://github.com/thiesgerken/carapace/commit/d0d84ad65d3a0a9fd33a0ec8f5eaafa9eb85cd49))
+
+  Extraction and digests get the full prefix (AGENTS.md, SOUL.md, USER.md, skill catalog) instead of SOUL.md and USER.md alone, via a per-user prompt_prefix_for. The shared rule now says the prefix's operating instructions don't apply to memory tasks and that it is never a source.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01UEby7vKYviYQnMZfk7pjtE
+
+- ♻️ refactor: one shared system prompt prefix for agent and compaction
+  ([`d14702d`](https://github.com/thiesgerken/carapace/commit/d14702d9c4bc3d76628995a062170e83175b02e2))
+
+  AGENTS.md, SOUL.md, USER.md and the skill catalog become a prefix that agent turns and compaction summaries both lead with, so compaction runs as the user's agent and providers can cache the stable part. Role instructions follow it, volatile session info stays last.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01UEby7vKYviYQnMZfk7pjtE
+
+- ♻️ refactor(memory): include_dependencies belongs to the run request
+  ([`597505e`](https://github.com/thiesgerken/carapace/commit/597505efba328045dc27877d41f1278be55d1765))
+
+  On the selection it also reached /tasks/cancel, which would have cancelled the pending sources too. The run request is the only place where adding a digest's sources means something.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01B3cWr83aDuHP8JQDvLxrgC
+
 ## v0.158.10 (2026-10-11)
 
 
@@ -85,6 +784,341 @@
 
   Claude-Session: https://claude.ai/code/session_01BfEEfE6o9yQAj8U8ULL61L
 
+- Merge pull request #339 from thiesgerken/memory/enforce-user-said
+  ([`0c3470f`](https://github.com/thiesgerken/carapace/commit/0c3470fd25c5ff8ca6821ff53f2ec228fc045ef9))
+
+- ✅ test(memory): pin digest input format version against the outdated check
+  ([`c379450`](https://github.com/thiesgerken/carapace/commit/c3794507c1ca7fea5037235bf200fb3318cfb72e))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01B3cWr83aDuHP8JQDvLxrgC
+
+- Merge remote-tracking branch 'origin/feat/long-term-memory' into memory/enforce-user-said
+  ([`e0d1bbe`](https://github.com/thiesgerken/carapace/commit/e0d1bbeadcc5d7fddd06c7dc6348b0b21dfc4294))
+
+- Merge pull request #338 from thiesgerken/memory/review-nits
+  ([`6302aba`](https://github.com/thiesgerken/carapace/commit/6302abadfe5d1095fcc6105cffea382f5fb5486e))
+
+  🔥 chore(memory): review nits from the branch pass
+
+- 🔥 chore(memory): drop test-only store.get_task, correct worker.drain docstring
+  ([`14dc536`](https://github.com/thiesgerken/carapace/commit/14dc536cc8fbd450741ead1e03a3e124d18ed5e9))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01UEby7vKYviYQnMZfk7pjtE
+
+- Merge pull request #337 from thiesgerken/memory/validate-refs
+  ([`5322e08`](https://github.com/thiesgerken/carapace/commit/5322e089566664bcd32cb1cb9a7d0088f7eb7389))
+
+- Merge pull request #336 from thiesgerken/memory/e2e-pipeline
+  ([`d981448`](https://github.com/thiesgerken/carapace/commit/d98144809b791ad5cf47a8b203ff3b6444567402))
+
+  ✅ test(memory): end-to-end pipeline test, plus a digest respawn fix
+
+- Merge remote-tracking branch 'origin/feat/long-term-memory' into memory/e2e-pipeline
+  ([`c83fd8c`](https://github.com/thiesgerken/carapace/commit/c83fd8c15dff032b135e9a5e458581a90816313e))
+
+- ✅ test(memory): end-to-end pipeline test; respawn digests after a source disappears
+  ([`7b6fd64`](https://github.com/thiesgerken/carapace/commit/7b6fd64fda915c40b945c352e46c1e7ea7d3a02d))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01UEby7vKYviYQnMZfk7pjtE
+
+- Merge pull request #328 from thiesgerken/memory/docs
+  ([`5b774b0`](https://github.com/thiesgerken/carapace/commit/5b774b0e5e7e523c76fc14f8bd63e54c6810c44b))
+
+  📝 docs: long-term memory
+
+- 📝 docs: state which learned rules the prompt and the validator enforce
+  ([`60e02bf`](https://github.com/thiesgerken/carapace/commit/60e02bf4657e7df8ea01a082bd58011f53b7761e))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01XZGdh4voK9HLfWh9aHHBpo
+
+- Merge remote-tracking branch 'origin/feat/long-term-memory' into memory/docs
+  ([`2dfb2f1`](https://github.com/thiesgerken/carapace/commit/2dfb2f1ed23a439cdff26c20335c3d6bb137b34f))
+
+- 📝 docs: memory package has no re-exports; thinking events are dropped
+  ([`fcba76e`](https://github.com/thiesgerken/carapace/commit/fcba76ec6dc769b28fab39cf46802ea8cbccca82))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01XZGdh4voK9HLfWh9aHHBpo
+
+- Merge remote-tracking branch 'origin/feat/long-term-memory' into memory/docs
+  ([`b829f37`](https://github.com/thiesgerken/carapace/commit/b829f37926975316a11349fed819227220b03a1a))
+
+- 📝 docs: coverage hashing lives in coverage.py
+  ([`c7be433`](https://github.com/thiesgerken/carapace/commit/c7be43303766f42e837e0236426490081b9f9613))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01XZGdh4voK9HLfWh9aHHBpo
+
+- 📝 docs: add coverage and outdated modules to the memory map
+  ([`ec3d368`](https://github.com/thiesgerken/carapace/commit/ec3d3688962fedc6da348672ab9657a649a5cbdd))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01XZGdh4voK9HLfWh9aHHBpo
+
+- 📝 docs: align memory docs with the worker and spawner
+  ([`98e51b9`](https://github.com/thiesgerken/carapace/commit/98e51b95e4d66f8d3206aca6f892a1279e76a202))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01XZGdh4voK9HLfWh9aHHBpo
+
+- 📝 docs: long-term memory
+  ([`2a51636`](https://github.com/thiesgerken/carapace/commit/2a51636edddf8c06871914b1901882139048756a))
+
+  New docs/memory.md covering extraction input and schema, provenance, the pyramid (periods, Thursday rule, coverage, staleness), tasks and their lifecycle, spawning rules, budget and auto mode, model roles, the mirror, deletion and privacy, the Memory UI and the API. persistent-context, jobs, architecture, README and AGENTS.md point to it.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01XZGdh4voK9HLfWh9aHHBpo
+
+- Merge pull request #330 from thiesgerken/memory/digest-handlers
+  ([`b8bda8c`](https://github.com/thiesgerken/carapace/commit/b8bda8cd84947b2ccb81473d48d245569d50b13b))
+
+- Merge remote-tracking branch 'origin/feat/long-term-memory' into memory/digest-handlers
+  ([`e415292`](https://github.com/thiesgerken/carapace/commit/e415292a2fd977d5dbd77b3fe97bbfd970a85f80))
+
+- Merge remote-tracking branch 'origin/feat/long-term-memory' into memory/digest-handlers
+  ([`f4cbc04`](https://github.com/thiesgerken/carapace/commit/f4cbc044fdec9c0d18ec5cc7fab08d6cbebc6660))
+
+  # Conflicts: #	src/carapace/memory/handlers.py
+
+- Merge remote-tracking branch 'origin/memory/queue-worker' into memory/digest-handlers
+  ([`4f920c9`](https://github.com/thiesgerken/carapace/commit/4f920c9aabbcadb5ff7a8c59667024d25b1e2fe0))
+
+- Merge remote-tracking branch 'origin/memory/llm-extract-handler' into memory/digest-handlers
+  ([`454a85d`](https://github.com/thiesgerken/carapace/commit/454a85d46db9bdc4b0e0d485adc5330d9f719834))
+
+- Merge remote-tracking branch 'origin/memory/digest-input' into memory/digest-handlers
+  ([`92fb3c5`](https://github.com/thiesgerken/carapace/commit/92fb3c53366398694e7e09290f8c2e1a42e28e52))
+
+- Merge remote-tracking branch 'origin/feat/long-term-memory' into memory/digest-handlers
+  ([`2c64529`](https://github.com/thiesgerken/carapace/commit/2c6452934a669220a611008678631e540ee592b7))
+
+- Merge pull request #335 from thiesgerken/memory/ui-clickthrough-fixes
+  ([`b24191d`](https://github.com/thiesgerken/carapace/commit/b24191dfa77cd17653be55d977ae2d47b356ba53))
+
+- Merge remote-tracking branch 'origin/feat/long-term-memory' into memory/ui-clickthrough-fixes
+  ([`bafca28`](https://github.com/thiesgerken/carapace/commit/bafca28668a59ea73f6b12f8ffb7c8acad587767))
+
+- Merge pull request #331 from thiesgerken/memory/spawn-filter
+  ([`cb026c4`](https://github.com/thiesgerken/carapace/commit/cb026c47036ddf6dc9a6e517d826caf9f9090ac2))
+
+- Merge branch 'memory/queue-worker' into memory/spawn-filter
+  ([`d8fb4c6`](https://github.com/thiesgerken/carapace/commit/d8fb4c662f3459a4a92c42ab08041e44935ec3cd))
+
+- Merge pull request #333 from thiesgerken/memory/read-endpoints
+  ([`1219d04`](https://github.com/thiesgerken/carapace/commit/1219d04a7cc9a639dc67a4515f4f7920a49d47ae))
+
+- Merge pull request #329 from thiesgerken/memory/queue-worker
+  ([`f8727ce`](https://github.com/thiesgerken/carapace/commit/f8727ce30e095532971c44c66440110380929bd6))
+
+- Merge remote-tracking branch 'origin/feat/long-term-memory' into memory/queue-worker
+  ([`9178653`](https://github.com/thiesgerken/carapace/commit/9178653607592e13cbd9731ab1434e679994a2af))
+
+- Merge pull request #334 from thiesgerken/memory/ui-version-badge
+  ([`c3e8363`](https://github.com/thiesgerken/carapace/commit/c3e8363a3f6aff2a49d811acde2f4fd5d5ea2a7d))
+
+- Merge pull request #327 from thiesgerken/memory/mirror-handler
+  ([`1cc8de8`](https://github.com/thiesgerken/carapace/commit/1cc8de80a42d1cb46269de7ba7380d72e85b7d45))
+
+- Merge remote-tracking branch 'origin/feat/long-term-memory' into memory/mirror-handler
+  ([`2ccf7a6`](https://github.com/thiesgerken/carapace/commit/2ccf7a672cf3dfbcf58166be59e68c8d1be1ce06))
+
+- Merge remote-tracking branch 'origin/memory/llm-extract-handler' into memory/mirror-handler
+  ([`6c040d7`](https://github.com/thiesgerken/carapace/commit/6c040d7f633e032746f07bef701a8a86b86d4a98))
+
+- Merge remote-tracking branch 'origin/memory/digest-input' into memory/mirror-handler
+  ([`d0fcf94`](https://github.com/thiesgerken/carapace/commit/d0fcf941f03a8a6bd9b5ee30334114bb2abce39a))
+
+- Merge remote-tracking branch 'origin/feat/long-term-memory' into memory/mirror-handler
+  ([`c5d4f8a`](https://github.com/thiesgerken/carapace/commit/c5d4f8a8c96fcb623f15735b8b127a4c5ce582ea))
+
+- Merge pull request #332 from thiesgerken/memory/eval-harness
+  ([`2123265`](https://github.com/thiesgerken/carapace/commit/2123265c2af7918a3e75d3dbcc9403872c8770f4))
+
+  🔨 chore(memory): extraction prompt dev harness
+
+- 🔨 chore(memory): add a dev harness for the extraction prompt
+  ([`c23c1b4`](https://github.com/thiesgerken/carapace/commit/c23c1b43f7ef67d009387b1119dcd07770075a4b))
+
+  scripts/memory_eval.py renders archived sessions, prints input sizes and the per-session cost spread, and only calls a model with --call (or TestModel with --test-model for CI).
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01B3cWr83aDuHP8JQDvLxrgC
+
+- Merge remote-tracking branch 'origin/feat/long-term-memory' into memory/eval-harness
+  ([`ee48b68`](https://github.com/thiesgerken/carapace/commit/ee48b685058368bebcbe30c5dd782e643977c787))
+
+- Merge pull request #319 from thiesgerken/memory/llm-extract-handler
+  ([`f80fb9a`](https://github.com/thiesgerken/carapace/commit/f80fb9a056709068f306035eec6dc85bcb449504))
+
+- Merge branch 'feat/long-term-memory' into memory/llm-extract-handler
+  ([`e747259`](https://github.com/thiesgerken/carapace/commit/e7472595b36650d3663a5d779d183f5ff9713f37))
+
+- 🏷️ fix(memory): make TaskHandler kind and model_role read-only
+  ([`3e32940`](https://github.com/thiesgerken/carapace/commit/3e32940a77161d4eacf80ba469a9f7a3969017ed))
+
+  Mutable protocol attributes are invariant, so a handler's narrower class attribute (ModelRole.memory_low) didn't satisfy the protocol.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01B3cWr83aDuHP8JQDvLxrgC
+
+- ✅ test(memory): session and period views against a real database
+  ([`8604865`](https://github.com/thiesgerken/carapace/commit/860486576fca703a042b6f2f62f36290f30d8f78))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01XZGdh4voK9HLfWh9aHHBpo
+
+- Merge remote-tracking branch 'origin/memory/queue-worker' into memory/read-endpoints
+  ([`fc9c3fa`](https://github.com/thiesgerken/carapace/commit/fc9c3fad6c705187e1a9b73754e21e303a900d17))
+
+- Merge remote-tracking branch 'origin/feat/long-term-memory' into memory/queue-worker
+  ([`0687055`](https://github.com/thiesgerken/carapace/commit/068705522ea57954915e4b9eff644d1afe3156ce))
+
+- Merge pull request #317 from thiesgerken/memory/queue-store
+  ([`8eff360`](https://github.com/thiesgerken/carapace/commit/8eff36085e1040ccddf9081717362692be2bed6a))
+
+- Merge pull request #326 from thiesgerken/memory/ui-facts
+  ([`ea47402`](https://github.com/thiesgerken/carapace/commit/ea4740215eddd3aa85e9bab70074dda64145be39))
+
+- Merge remote-tracking branch 'origin/feat/long-term-memory' into memory/ui-facts
+  ([`a663e61`](https://github.com/thiesgerken/carapace/commit/a663e617d3cbe858219300137a06633e4507d5de))
+
+- Merge pull request #325 from thiesgerken/memory/ui-settings
+  ([`a864a60`](https://github.com/thiesgerken/carapace/commit/a864a60958395c21cdcb07b0bc637018d684a926))
+
+- Merge pull request #324 from thiesgerken/memory/digest-input
+  ([`9754954`](https://github.com/thiesgerken/carapace/commit/9754954612f6676efb5e4276d30b7f2f4243a550))
+
+- Merge pull request #323 from thiesgerken/memory/ui-timeline
+  ([`73b1a60`](https://github.com/thiesgerken/carapace/commit/73b1a6082d401d055283da4ecbb541574c1b2ab6))
+
+- Merge remote-tracking branch 'origin/feat/long-term-memory' into memory/ui-timeline
+  ([`a7d8d2d`](https://github.com/thiesgerken/carapace/commit/a7d8d2d2ec0ef8b3c3b02a6be7788abd9a9c346d))
+
+- Merge branch 'memory/ui-sessions' into memory/ui-timeline
+  ([`e3c3736`](https://github.com/thiesgerken/carapace/commit/e3c373667324c167ab3f70653a8d47d77647dd66))
+
+- 🚧 wip(frontend): memory Timeline tab
+  ([`05bdcdb`](https://github.com/thiesgerken/carapace/commit/05bdcdb123b5eb57eb35a671fd4515484de63154))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01XZGdh4voK9HLfWh9aHHBpo
+
+- Merge remote-tracking branch 'origin/memory/llm-extract-handler' into memory/queue-worker
+  ([`fd6111a`](https://github.com/thiesgerken/carapace/commit/fd6111adcf79176bd416980bf5e4e09a2af85ec2))
+
+- Merge remote-tracking branch 'origin/memory/queue-store' into memory/llm-extract-handler
+  ([`755b6f1`](https://github.com/thiesgerken/carapace/commit/755b6f172baca36ff02b7736ea34917368332a82))
+
+  # Conflicts: #	src/carapace/memory/handlers.py
+
+- Merge remote-tracking branch 'origin/memory/queue-store' into memory/llm-extract-handler
+  ([`5570403`](https://github.com/thiesgerken/carapace/commit/55704033c4c72e0bd3cc3054855cb9f1603baf63))
+
+- Merge remote-tracking branch 'origin/feat/long-term-memory' into memory/llm-extract-handler
+  ([`f930d03`](https://github.com/thiesgerken/carapace/commit/f930d0342c68bf9fed91506a50a26200d9718a36))
+
+- 🚧 wip(memory): status fixtures
+  ([`8034dfc`](https://github.com/thiesgerken/carapace/commit/8034dfcbcb18a1de52555b5c5e13bb785675e429))
+
+- Merge branch 'memory/queue-store' into memory/queue-worker
+  ([`d17bc45`](https://github.com/thiesgerken/carapace/commit/d17bc45b23d60df0a0d72501129341d650d0fbf1))
+
+- ✅ test(memory): add task period and model fields to the tasks view fixture
+  ([`12b7f0b`](https://github.com/thiesgerken/carapace/commit/12b7f0b935c9f8039124db1124a32d1ebe0709a4))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01UEby7vKYviYQnMZfk7pjtE
+
+- Merge remote-tracking branch 'origin/feat/long-term-memory' into memory/queue-store
+  ([`077d9f5`](https://github.com/thiesgerken/carapace/commit/077d9f57d13efc041c46160b5c2b478e49075d7b))
+
+- Merge pull request #322 from thiesgerken/memory/ui-sessions
+  ([`b1e7a98`](https://github.com/thiesgerken/carapace/commit/b1e7a98228a9be58917c1e0b8659769f853ca3ea))
+
+- Merge remote-tracking branch 'origin/feat/long-term-memory' into memory/ui-sessions
+  ([`7f5fbcb`](https://github.com/thiesgerken/carapace/commit/7f5fbcb971ff610202da4a150307a27025b4b5c5))
+
+  # Conflicts: #	frontend/src/lib/types.ts
+
+- Merge remote-tracking branch 'origin/feat/long-term-memory' into memory/ui-sessions
+  ([`b33f34f`](https://github.com/thiesgerken/carapace/commit/b33f34f9ca9a5db26100a29e22f87b8f5eecd4ef))
+
+- 🚧 wip(memory): spawner/worker/service tests
+  ([`940f1ff`](https://github.com/thiesgerken/carapace/commit/940f1ffda82fa96c25a0bb56d669249b5d14e9a6))
+
+- Merge remote-tracking branch 'origin/feat/long-term-memory' into memory/queue-worker
+  ([`759cc1b`](https://github.com/thiesgerken/carapace/commit/759cc1bb8d073f600f3288aafd17f58ac3b65e87))
+
+- Merge pull request #318 from thiesgerken/memory/mirror-render
+  ([`6cd10d2`](https://github.com/thiesgerken/carapace/commit/6cd10d2324677e00717deb7a40000c3935545835))
+
+- Merge pull request #321 from thiesgerken/memory/contract-sessions
+  ([`a9f5f26`](https://github.com/thiesgerken/carapace/commit/a9f5f26bef4dfbe1004e268b6d26019f35706e83))
+
+- 🚧 wip(memory): service wiring
+  ([`6b1b83f`](https://github.com/thiesgerken/carapace/commit/6b1b83f747555b338f00b98eb5f21afebc98ed5e))
+
+- Merge branch 'memory/queue-store' into memory/queue-worker
+  ([`9fd3f82`](https://github.com/thiesgerken/carapace/commit/9fd3f828e4bc98ec6f3e77f4c0a11660a69e7616))
+
+- 🚧 wip(memory): spawner, worker, coverage
+  ([`c3473ce`](https://github.com/thiesgerken/carapace/commit/c3473ce44a3ed689a13d7f4bf7ecab47249f0e67))
+
+- Merge remote-tracking branch 'origin/feat/long-term-memory' into memory/queue-worker
+  ([`39045c6`](https://github.com/thiesgerken/carapace/commit/39045c6ed5c4c6b116350946706455659d4508f0))
+
+- Merge pull request #320 from thiesgerken/memory/first-user-message-at
+  ([`5f128e2`](https://github.com/thiesgerken/carapace/commit/5f128e2b871828d2c12f85a79b2798d74b52cef1))
+
+- Merge pull request #316 from thiesgerken/memory/ui-tasks
+  ([`ca16fee`](https://github.com/thiesgerken/carapace/commit/ca16feec9b1b1000cbd047b0dca3b8ee392eb27c))
+
+- Merge remote-tracking branch 'origin/feat/long-term-memory' into memory/queue-store
+  ([`136e7c6`](https://github.com/thiesgerken/carapace/commit/136e7c641b0daa832f552abe913ecebd844376c4))
+
+- Merge pull request #313 from thiesgerken/memory/prompts
+  ([`b8b063c`](https://github.com/thiesgerken/carapace/commit/b8b063c2873d3f9fde939d9182fceda1161e9cb8))
+
+- Merge branch 'feat/long-term-memory' into memory/prompts
+  ([`758640d`](https://github.com/thiesgerken/carapace/commit/758640d929a5bc5799f1d937d11a318353eef0f1))
+
+- Merge pull request #314 from thiesgerken/memory/phase0-contract
+  ([`9dc63d1`](https://github.com/thiesgerken/carapace/commit/9dc63d1e721823950eea1cc2d912b0557e5236dd))
+
+- Merge remote-tracking branch 'origin/feat/long-term-memory' into memory/phase0-contract
+  ([`1370943`](https://github.com/thiesgerken/carapace/commit/1370943a7d7d11d5ddfcda4d9dd21738bc2a0107))
+
+- Merge pull request #312 from thiesgerken/memory/ui-scaffold
+  ([`910713d`](https://github.com/thiesgerken/carapace/commit/910713d50a817b8427ca780c33a638f70088f729))
+
+- Merge pull request #311 from thiesgerken/memory/input-renderer
+  ([`69326ac`](https://github.com/thiesgerken/carapace/commit/69326ac1d2e6f54a4e613f57b055703f019ebb6c))
+
+- 🚧 chore: open long-term memory integration branch
+  ([`b2ab0cf`](https://github.com/thiesgerken/carapace/commit/b2ab0cfb42db5e2a0ddb89d0d7037e20367d0a20))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01NkHyCyWAAKp79dDUaVrZmY
+
 ### 🔒 Security
 
 
@@ -99,6 +1133,45 @@
   Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 
   Claude-Session: https://claude.ai/code/session_01BfEEfE6o9yQAj8U8ULL61L
+
+- 🔒 fix(memory): enforce in code that only the user vouches for facts about the user
+  ([`0c3470f`](https://github.com/thiesgerken/carapace/commit/0c3470fd25c5ff8ca6821ff53f2ec228fc045ef9))
+
+- 🔒 fix(memory): enforce in code that only the user vouches for facts about the user
+  ([`2f2d56a`](https://github.com/thiesgerken/carapace/commit/2f2d56af9effaddcc98539d096cf5f5633873120))
+
+  Facts about the user or their people must be user_said, and every user_said fact must cite a user message. Offending facts are dropped instead of failing the whole billed run: the model's output types no longer validate the provenance rules, and the stored models that subclass them keep validating as a backstop.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01B3cWr83aDuHP8JQDvLxrgC
+
+- 🔒 fix(memory): keep free text out of digest fact meta brackets
+  ([`51f729b`](https://github.com/thiesgerken/carapace/commit/51f729bad0e4b4b84441fbceb46c98a5d8b55173))
+
+  A subject inside the brackets could close them early and forge a user_said meta line; only enum values go there now.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01B3cWr83aDuHP8JQDvLxrgC
+
+- 🔒 fix(memory): keep model text from forging Markdown structure in the mirror
+  ([`3ae728f`](https://github.com/thiesgerken/carapace/commit/3ae728f173cc27db3e0ed4555fb721a7e7d0cf4a))
+
+  Collapse whitespace in list items and tags, and escape block markers at line starts in abstracts and summaries.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01B3cWr83aDuHP8JQDvLxrgC
+
+- 🔒 fix(memory): close injection gaps in memory prompts
+  ([`7d66f94`](https://github.com/thiesgerken/carapace/commit/7d66f9450a2fe743240818104254fb05f859cde4))
+
+  Defuse closing delimiter tags inside the payload, derive digest facts only from source facts while keeping their source kind, and make the context line format part of the prompt version.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01B3cWr83aDuHP8JQDvLxrgC
 
 ### 🐛 Bug Fixes
 
@@ -116,6 +1189,410 @@
   Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 
   Claude-Session: https://claude.ai/code/session_01BfEEfE6o9yQAj8U8ULL61L
+
+- 🐛 fix(memory): drop source refs the model invented
+  ([`5322e08`](https://github.com/thiesgerken/carapace/commit/5322e089566664bcd32cb1cb9a7d0088f7eb7389))
+
+- 🐛 fix(memory): drop source refs the model invented
+  ([`8360e31`](https://github.com/thiesgerken/carapace/commit/8360e31205a761d9b95113214187662f03576e00))
+
+  Fact source seqs must exist in the rendered transcript and digest refs in the digest's coverage. Entries left without any valid source are dropped because they can't be traced; drops are logged with the task id.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01B3cWr83aDuHP8JQDvLxrgC
+
+- 🐛 fix(frontend): memory click-through fixes (source links, spawn skips, unpriced estimates)
+  ([`b24191d`](https://github.com/thiesgerken/carapace/commit/b24191dfa77cd17653be55d977ae2d47b356ba53))
+
+- 🐛 fix(frontend): hide the version badge when the header has no room
+  ([`c3e8363`](https://github.com/thiesgerken/carapace/commit/c3e8363a3f6aff2a49d811acde2f4fd5d5ea2a7d))
+
+- 🐛 fix(frontend): keep the version mismatch warning outside the clip
+  ([`e96a41a`](https://github.com/thiesgerken/carapace/commit/e96a41afb09163faee4cb98af6cd8f7be194e66a))
+
+  Only the version text may disappear for lack of room; a stale frontend after a deploy must stay visible.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01XZGdh4voK9HLfWh9aHHBpo
+
+- 🐛 fix(frontend): hide the version badge when the header has no room for it
+  ([`9cb1ec7`](https://github.com/thiesgerken/carapace/commit/9cb1ec7f0ec37505292c3660971381fc57d63389))
+
+  Since the Memory nav icon, the sidebar header is too tight for the brand, the version and the account name, and the version was drawn through the title. The badge now lives in a slot that takes the leftover width and shows it only if it fits whole: a too-wide badge wraps onto a clipped second flex line. Pure CSS, same for the mobile header.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01XZGdh4voK9HLfWh9aHHBpo
+
+- 🐛 fix(memory): always commit the mirror and read its sha under the index lock
+  ([`e141130`](https://github.com/thiesgerken/carapace/commit/e1411306ed085eddca82cc13ccb122517a721357))
+
+  A run that wrote files but never committed is now caught up by the next run. GitStore.commit_returning_sha reads the new sha under the index lock, so a concurrent archive commit can't be reported as the mirror's.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01B3cWr83aDuHP8JQDvLxrgC
+
+- 🐛 fix(frontend): click-through fixes for source links, spawn skips and unpriced estimates
+  ([`5600142`](https://github.com/thiesgerken/carapace/commit/56001423c57535f8ca6fbb5717941ce8c28b39e4))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01XZGdh4voK9HLfWh9aHHBpo
+
+- 🐛 fix(memory): refresh pending tasks, count queued work in promotion, gate before re-check
+  ([`ed24f95`](https://github.com/thiesgerken/carapace/commit/ed24f950c3ba676f3896646728d3c2e206b82006))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01UEby7vKYviYQnMZfk7pjtE
+
+- 🐛 fix(frontend): require timezone in the user settings response
+  ([`60899d7`](https://github.com/thiesgerken/carapace/commit/60899d7c897322044906d1a597d086d75dca60d0))
+
+  A missing timezone would otherwise be saved back as an empty string and fail server validation on a field the user never touched.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01XZGdh4voK9HLfWh9aHHBpo
+
+- 🐛 fix(frontend): month labels from the period key, notice on duplicate regenerate
+  ([`988625a`](https://github.com/thiesgerken/carapace/commit/988625a393af872263ac879dbc3d133e114caf52))
+
+  Month nodes start on the Monday of their first week, so naming them from node.start showed September as August. Regenerating a period with a digest task already in flight now says so instead of doing nothing.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01XZGdh4voK9HLfWh9aHHBpo
+
+- 🐛 fix(memory): make each memory LLM run exactly one request
+  ([`fb62bb4`](https://github.com/thiesgerken/carapace/commit/fb62bb48051a6928f2295e158d568adac9dc2f42))
+
+  Output retries would resend the full prompt, so the estimate was no upper bound. An invalid output now fails the task with its billed usage.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01B3cWr83aDuHP8JQDvLxrgC
+
+- 🐛 fix(frontend): align outdated_reason with #321, anchor tool calls
+  ([`4c99d0c`](https://github.com/thiesgerken/carapace/commit/4c99d0c2482a81fd5263df55e7a8818887be0785))
+
+  outdated_reason is a single optional value in the merged contract. Tool call messages now carry their event index so fact sources citing tool events land on the right tool group, and the chat chip logs memory API failures instead of hiding them.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01XZGdh4voK9HLfWh9aHHBpo
+
+- 🐛 fix(memory): accumulate billed usage per task so retries keep earlier attempts in spend
+  ([`b24463d`](https://github.com/thiesgerken/carapace/commit/b24463d70b968f5f564aa3bc88d56bd725ddf4aa))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01UEby7vKYviYQnMZfk7pjtE
+
+- 🐛 fix(frontend): budget-aware polling and token-only over-budget warning
+  ([`b2d3317`](https://github.com/thiesgerken/carapace/commit/b2d331790d2507184a07a7c49434675c6f1de5d5))
+
+  Budget-blocked queued tasks no longer keep the status poll alive, and the run dialog warns when an estimate exceeds a token-only budget.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01XZGdh4voK9HLfWh9aHHBpo
+
+- 🐛 fix(memory): reserve running tasks in spend, require estimates, order extractions by session
+  ([`b78ad6b`](https://github.com/thiesgerken/carapace/commit/b78ad6b4f157e62746de7ef09ead744df3c40a53))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01UEby7vKYviYQnMZfk7pjtE
+
+- 🐛 fix(memory): keep unedited default models on settings save, sync job projection, enrich DigestFact
+  ([`5d2e539`](https://github.com/thiesgerken/carapace/commit/5d2e5396ea0454bafb2be60bfd9aaf4a09da9865))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01UEby7vKYviYQnMZfk7pjtE
+
+- 🐛 fix(memory): keep slash-prefixed user messages that were not commands
+  ([`92a64e0`](https://github.com/thiesgerken/carapace/commit/92a64e0981f1163e3818157310fdf5f828325153))
+
+  A "/..." user line is a slash command only when the server answered it with a command event, matching the titler and turn counting. Tool events without a tool name now fail loudly.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01B3cWr83aDuHP8JQDvLxrgC
+
+### ✨ Features
+
+
+- ✨ feat(memory): week and month digest handlers
+  ([`b8bda8c`](https://github.com/thiesgerken/carapace/commit/b8bda8cd84947b2ccb81473d48d245569d50b13b))
+
+- ✨ feat(memory): week and month digest handlers
+  ([`c1d12fc`](https://github.com/thiesgerken/carapace/commit/c1d12fcab22bc6d59593f2a82e4348b3faaf7b66))
+
+  DigestHandler (one instance per level) renders a week's extractions or a month's week digests, runs the memory_high model and returns the digest with its coverage. Extraction and digests share one estimate and run path, including billed-failure provenance. Both levels are registered in the lifespan.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01B3cWr83aDuHP8JQDvLxrgC
+
+- ✨ feat(memory): spawn session extractions by filter
+  ([`cb026c4`](https://github.com/thiesgerken/carapace/commit/cb026c47036ddf6dc9a6e517d826caf9f9090ac2))
+
+- ✨ feat(memory): spawn session extractions by filter
+  ([`bf86e16`](https://github.com/thiesgerken/carapace/commit/bf86e16941f817ff684fa58ed859a446c2bb1eb5))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01UEby7vKYviYQnMZfk7pjtE
+
+- ✨ feat(memory): read-side views (/sessions, /periods)
+  ([`1219d04`](https://github.com/thiesgerken/carapace/commit/1219d04a7cc9a639dc67a4515f4f7920a49d47ae))
+
+- ✨ feat(memory): spawner, worker loop and task endpoints (5a)
+  ([`f8727ce`](https://github.com/thiesgerken/carapace/commit/f8727ce30e095532971c44c66440110380929bd6))
+
+- ✨ feat(memory): MirrorHandler writes memory into the knowledge repo
+  ([`1cc8de8`](https://github.com/thiesgerken/carapace/commit/1cc8de80a42d1cb46269de7ba7380d72e85b7d45))
+
+- ✨ feat(memory): mirror memory records into the knowledge repo
+  ([`fad2c0b`](https://github.com/thiesgerken/carapace/commit/fad2c0bac5159b4049249bc210c4e1ff6a24ebef))
+
+  MirrorHandler renders the user's current records into memory/ and commits new, changed and deleted files as one commit, pushing when a remote is configured. Symlinks under memory/ are removed, never followed.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01B3cWr83aDuHP8JQDvLxrgC
+
+- ✨ feat(memory): session extraction LLM call and handler
+  ([`f80fb9a`](https://github.com/thiesgerken/carapace/commit/f80fb9a056709068f306035eec6dc85bcb449504))
+
+- ✨ feat(memory): periods, budget math and MemoryStore
+  ([`8eff360`](https://github.com/thiesgerken/carapace/commit/8eff36085e1040ccddf9081717362692be2bed6a))
+
+- ✨ feat(frontend): memory Facts tab
+  ([`ea47402`](https://github.com/thiesgerken/carapace/commit/ea4740215eddd3aa85e9bab70074dda64145be39))
+
+- ✨ feat(frontend): memory Facts tab
+  ([`1853568`](https://github.com/thiesgerken/carapace/commit/185356882f1f29355b247592c83e21b75ffb8f60))
+
+  Browse the facts of all current extractions as You / People (grouped by subject) / Surroundings, filtered by confidence, durability, source kind, month and free text. Identical statement + subject pairs merge into one entry with first/last seen and every source session and event. Expired dated facts are greyed out. With all four tabs built, the "coming soon" placeholder is gone.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01XZGdh4voK9HLfWh9aHHBpo
+
+- ✨ feat(frontend): memory settings, platform memory models, job memory switch
+  ([`a864a60`](https://github.com/thiesgerken/carapace/commit/a864a60958395c21cdcb07b0bc637018d684a926))
+
+- ✨ feat(frontend): memory settings, platform memory models, job memory switch
+  ([`9225c21`](https://github.com/thiesgerken/carapace/commit/9225c217c7459cc465241c1029a21aea64a963bf))
+
+  User settings get a Memory section (id="memory", the status strip's auto-mode link target) with the auto mode switch, day/month budgets in cost and input tokens, the timezone and memory_low/memory_high pickers. Platform settings get the memory model defaults, and the job editor an "Include in memory" switch.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01XZGdh4voK9HLfWh9aHHBpo
+
+- ✨ feat(memory): week and month digest material
+  ([`9754954`](https://github.com/thiesgerken/carapace/commit/9754954612f6676efb5e4276d30b7f2f4243a550))
+
+- ✨ feat(memory): render week and month digest material
+  ([`fc6d62a`](https://github.com/thiesgerken/carapace/commit/fc6d62a7c78a4acbeebab9c7baa5d2cd099da815))
+
+  Week material lists each session's extraction, month material each week's digest, with facts carrying category, subject, source kind, confidence and durability. Source header lines carry the refs digests cite, and every text field is one line so sources cannot be forged.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01B3cWr83aDuHP8JQDvLxrgC
+
+- ✨ feat(frontend): memory Timeline tab
+  ([`73b1a60`](https://github.com/thiesgerken/carapace/commit/73b1a6082d401d055283da4ecbb541574c1b2ab6))
+
+- ✨ feat(frontend): memory Timeline tab
+  ([`5392e81`](https://github.com/thiesgerken/carapace/commit/5392e81c90cddad1dc22969a805213e77f59c57d))
+
+  Master/detail over the digest pyramid: a year → month → week tree with coverage and current/stale/not-run badges, and a detail pane with the digest (summary, on my mind, highlights, open loops, learned by category with refs), a provenance line, Regenerate (spawn + run dialog), the period's sources and collapsed earlier versions. ?period=<key> deep links select a node.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01XZGdh4voK9HLfWh9aHHBpo
+
+- ✨ feat(memory): read-side session and period views
+  ([`c3c5b81`](https://github.com/thiesgerken/carapace/commit/c3c5b81a6a1d7d8281aa3ff76dc82b3b0427e57f))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01XZGdh4voK9HLfWh9aHHBpo
+
+- ✨ feat(memory): spawner, worker loop, service wiring and lifespan start
+  ([`354114e`](https://github.com/thiesgerken/carapace/commit/354114eee875d5d3a70d54a872f162e5121baaad))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01UEby7vKYviYQnMZfk7pjtE
+
+- ✨ feat(memory): count billed but failed extraction runs against the budget
+  ([`c02939f`](https://github.com/thiesgerken/carapace/commit/c02939f2b6e96ca98437b09019b1e3396710b0e1))
+
+  The LLM call accumulates usage and messages in place, so a run that fails after the provider billed it raises TaskRunError with full provenance. Handlers estimate from user, target and model, since the store only spawns estimated tasks.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01B3cWr83aDuHP8JQDvLxrgC
+
+- ✨ feat(memory): fail extraction early when input exceeds the context window
+  ([`ea02dc7`](https://github.com/thiesgerken/carapace/commit/ea02dc71ad56d42659f43d88f5a0295c2a8a2e27))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01B3cWr83aDuHP8JQDvLxrgC
+
+- ✨ feat(memory): session extraction LLM call and handler
+  ([`2b482d8`](https://github.com/thiesgerken/carapace/commit/2b482d8d6bcd44b51c39d29e2cd5016235424080))
+
+  Structured pydantic-ai call with an output token cap, provider cost and request logging, plus SessionExtractHandler that estimates and runs one session extraction and builds its provenance.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01B3cWr83aDuHP8JQDvLxrgC
+
+- ✨ feat(frontend): memory Sessions tab, extraction drawer and chat chip
+  ([`b1e7a98`](https://github.com/thiesgerken/carapace/commit/b1e7a98228a9be58917c1e0b8659769f853ca3ea))
+
+- ✨ feat(frontend): memory Sessions tab, extraction drawer and chat chip
+  ([`da17463`](https://github.com/thiesgerken/carapace/commit/da1746393b81c9882a5dd390a5d94dc078b36702))
+
+  The Sessions tab lists eligible sessions with their extraction state, filters (week, extraction state, outdated reason, task status, model, channel), row or "all matching" selection, run and respawn. Respawn spawns server-side and hands the new tasks to the run dialog for the estimate. The extraction drawer (also reachable via ?session= and the chat header chip) shows all schema fields, facts by category, provenance and earlier versions.
+
+  Fact sources link to their event via a new chat deep link (/?session=<id>&event=<seq>), but only for the current extraction: rewinds reuse seqs, so older versions show them as plain text.
+
+  The session-list types (created_at, outdated_reason filter, spawn by filter) mirror Dory's pending #321.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01XZGdh4voK9HLfWh9aHHBpo
+
+- ✨ feat(memory): mirror Markdown renderer
+  ([`6cd10d2`](https://github.com/thiesgerken/carapace/commit/6cd10d2324677e00717deb7a40000c3935545835))
+
+- ✨ feat(memory): render memory records into mirror Markdown
+  ([`6a3db66`](https://github.com/thiesgerken/carapace/commit/6a3db6671afd8b2af25e860ba014d636ab552b94))
+
+  Pure renderer from current extractions and digests to the knowledge repo mirror files: sessions, weeks, months and a generated README, each with YAML front matter carrying provenance and coverage.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01B3cWr83aDuHP8JQDvLxrgC
+
+- ✨ feat(memory): session list contract additions
+  ([`a9f5f26`](https://github.com/thiesgerken/carapace/commit/a9f5f26bef4dfbe1004e268b6d26019f35706e83))
+
+- ✨ feat(memory): session list contract (created_at, outdated filter, spawn by filter)
+  ([`8c254ae`](https://github.com/thiesgerken/carapace/commit/8c254aebc54edb560a67d98eb6edeb308bc50043))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01UEby7vKYviYQnMZfk7pjtE
+
+- ✨ feat(memory): first_user_message_at and DIGEST_INPUT_FORMAT_VERSION
+  ([`5f128e2`](https://github.com/thiesgerken/carapace/commit/5f128e2b871828d2c12f85a79b2798d74b52cef1))
+
+- ✨ feat(memory): first user message instant and digest input format version
+  ([`a066a44`](https://github.com/thiesgerken/carapace/commit/a066a44b8b2ff8ebee757b786c06079bebd3917d))
+
+  The spawner needs both: the instant that decides a session's period and the digest input format version it compares digests against.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01B3cWr83aDuHP8JQDvLxrgC
+
+- ✨ feat(frontend): memory status strip and Tasks tab
+  ([`ca16fee`](https://github.com/thiesgerken/carapace/commit/ca16feec9b1b1000cbd047b0dca3b8ee392eb27c))
+
+- ✨ feat(frontend): memory status strip and Tasks tab
+  ([`22f72a6`](https://github.com/thiesgerken/carapace/commit/22f72a6fa96b8a5505f2a8563c5d2955c6f1fe3d))
+
+  The status strip shows auto mode, day/month budget gauges, queue counts and effective models, polling while tasks are queued or running. The Tasks tab lists the queue with filters, page and "all matching" selection, a run dialog with estimate, remaining budget and model override, cancel/retry and an expandable task detail.
+
+  Tablists (Memory and Settings) get Left/Right/Home/End navigation so keyboard users can reach the tabs outside the tab order.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01XZGdh4voK9HLfWh9aHHBpo
+
+- ✨ feat(memory): extraction and digest prompts
+  ([`b8b063c`](https://github.com/thiesgerken/carapace/commit/b8b063c2873d3f9fde939d9182fceda1161e9cb8))
+
+- ✨ feat(memory): draft extraction and digest prompts
+  ([`741c7ed`](https://github.com/thiesgerken/carapace/commit/741c7edefecce3a04f8cece3583726522c2570c4))
+
+  Prompt templates for session extraction and weekly/monthly digests, with prompt versions computed from instructions, delimiter, tail and output schema.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01B3cWr83aDuHP8JQDvLxrgC
+
+- ✨ feat(memory): periods, budget math and MemoryStore
+  ([`08073ea`](https://github.com/thiesgerken/carapace/commit/08073ea56f68ca68cd8fe84c3f78364d7f7a5977))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01UEby7vKYviYQnMZfk7pjtE
+
+- ✨ feat(memory): phase 0 contract
+  ([`9dc63d1`](https://github.com/thiesgerken/carapace/commit/9dc63d1e721823950eea1cc2d912b0557e5236dd))
+
+- ✨ feat(frontend): scaffold Memory area
+  ([`910713d`](https://github.com/thiesgerken/carapace/commit/910713d50a817b8427ca780c33a638f70088f729))
+
+- ✨ feat(frontend): scaffold Memory area with tabbed route
+  ([`e15d58c`](https://github.com/thiesgerken/carapace/commit/e15d58c1a55cad254c2b9888b7bc086b2c5ba9a4))
+
+  Adds /memory/[tab] (timeline, sessions, facts, tasks) following the Settings tab pattern, a sidebar entry next to Knowledge, a status strip placeholder and en/de strings. Tab link and page background styles move to a shared module so Settings and Memory stay in sync.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01XZGdh4voK9HLfWh9aHHBpo
+
+- ✨ feat(memory): extraction input renderer
+  ([`69326ac`](https://github.com/thiesgerken/carapace/commit/69326ac1d2e6f54a4e613f57b055703f019ebb6c))
+
+- ✨ feat(memory): render session events into extraction input
+  ([`9c888ae`](https://github.com/thiesgerken/carapace/commit/9c888aed1af2b43cc1a9693dca88448681d3eb88))
+
+  Pure, versioned renderer from session events to the text a memory extraction model reads, plus its hash and token estimate.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01B3cWr83aDuHP8JQDvLxrgC
+
+- ✨ feat(memory): phase 0 contract (models, schema, config, API stub, TS types)
+  ([`5992062`](https://github.com/thiesgerken/carapace/commit/5992062cb2fc5fd6a54308c945a8dce5cdeb854a))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01UEby7vKYviYQnMZfk7pjtE
+
+### ♻️ Refactoring
+
+
+- ♻️ refactor(memory): pass the MemoryStore into MemoryService so handlers can share it
+  ([`bfbbf5d`](https://github.com/thiesgerken/carapace/commit/bfbbf5dda9974c5526983a8e834a6e9648f5ee2f))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01UEby7vKYviYQnMZfk7pjtE
+
+- ♻️ refactor(memory): fold task period columns into migration 0006
+  ([`fc1b059`](https://github.com/thiesgerken/carapace/commit/fc1b05950e290a0533c73bfab5b6674fafff5dbe))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01UEby7vKYviYQnMZfk7pjtE
 
 ## v0.158.7 (2026-10-10)
 
