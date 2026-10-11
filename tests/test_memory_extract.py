@@ -216,7 +216,11 @@ async def test_estimate_counts_prompt_and_caps_output() -> None:
     assert estimate.input_tokens == expected_input
     assert estimate.output_tokens_cap == SESSION_EXTRACT_OUTPUT_CAP
     assert estimate.cost_usd is not None
-    assert estimate.cost_usd == estimate_cost(MODEL, expected_input, SESSION_EXTRACT_OUTPUT_CAP)
+    # The system prompt goes through the prompt cache and is priced as a cache write (the upper bound).
+    cached = count_text_tokens(system, model_name=MODEL)
+    assert estimate.cost_usd == estimate_cost(MODEL, expected_input, SESSION_EXTRACT_OUTPUT_CAP, cached_tokens=cached)
+    uncached = estimate_cost(MODEL, expected_input, SESSION_EXTRACT_OUTPUT_CAP)
+    assert uncached is not None and estimate.cost_usd > uncached
 
 
 async def test_session_without_user_message_fails_loudly() -> None:
@@ -228,7 +232,7 @@ async def test_session_without_user_message_fails_loudly() -> None:
         await handler.run(_task(), MODEL)
 
 
-def test_thinking_model_raises_the_cap() -> None:
+def test_capped_settings_raise_the_cap_for_thinking_and_cache_the_system_prompt() -> None:
     entry = AvailableModelEntry(provider="anthropic", name="claude-haiku-4-5", thinking="high")
     config = Config(agent=AgentConfig(model=MODEL, sentinel_model=MODEL, title_model=MODEL, available_models=[entry]))
 
@@ -236,6 +240,7 @@ def test_thinking_model_raises_the_cap() -> None:
 
     assert settings.get("max_tokens") == ANTHROPIC_THINKING_BUDGET_MAP["high"] + 8192
     assert settings.get("thinking") == "high"
+    assert settings.get("cache") == {"messages": False}  # the system prompt only
 
 
 async def test_run_fails_before_calling_the_model_when_input_exceeds_context() -> None:

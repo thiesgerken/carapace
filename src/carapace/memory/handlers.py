@@ -27,6 +27,7 @@ from .llm import (
     ensure_fits_context,
     prompt_tokens,
     run_structured,
+    system_tokens,
 )
 from .models import (
     CoverageEntry,
@@ -113,7 +114,7 @@ def _estimate(config: Config, call: _LlmCall, model: str) -> TaskEstimate:
         model=model,
         input_tokens=input_tokens,
         output_tokens_cap=output_cap,
-        cost_usd=estimate_cost(model, input_tokens, output_cap),
+        cost_usd=estimate_cost(model, input_tokens, output_cap, cached_tokens=system_tokens(call.system, model)),
     )
 
 

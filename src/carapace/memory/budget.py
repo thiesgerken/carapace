@@ -47,9 +47,15 @@ def budget_windows(now: datetime, tz: ZoneInfo) -> BudgetWindows:
     )
 
 
-def estimate_cost(model: str, input_tokens: int, output_tokens: int) -> Decimal | None:
-    """Price of a call at the model's list price. None when the model has no pricing data."""
-    return price_for_usage(model, ModelUsage(input_tokens=input_tokens, output_tokens=output_tokens))
+def estimate_cost(model: str, input_tokens: int, output_tokens: int, *, cached_tokens: int = 0) -> Decimal | None:
+    """Price of a call at the model's list price. None when the model has no pricing data.
+
+    *cached_tokens* of the input go through the prompt cache and are priced as cache writes: a
+    write costs more than a read or uncached input, so the estimate stays an upper bound. Models
+    without a cache write price charge them as plain input.
+    """
+    usage = ModelUsage(input_tokens=input_tokens, output_tokens=output_tokens, cache_write_tokens=cached_tokens)
+    return price_for_usage(model, usage)
 
 
 def fits(budget: MemoryBudget, day: Spend, month: Spend, estimate: TaskEstimate) -> bool:
