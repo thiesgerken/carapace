@@ -98,7 +98,12 @@
                 "model": "Modell",
                 "version": "Vers.",
                 "cost": "Kosten/Schätz.",
-                "actions": "Aktionen"
+                "actions": "Aktionen",
+                "activity": "Letzte Aktivität"
+            },
+            "sortBy": {
+                "period": "Nach Zielzeitraum sortieren (Reihenfolge von „Neueste ausführen“)",
+                "activity": "Nach letzter Aktivität sortieren"
             },
             "empty": "Keine Aufgaben passen zu diesen Filtern.",
             "blockedBudget": "⏸ Budget",
