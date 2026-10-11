@@ -8,11 +8,13 @@ from datetime import datetime
 from decimal import ROUND_HALF_UP, Decimal
 
 from sqlalchemy import ColumnElement, and_, case, delete, exists, func, not_, or_, select, update
+from sqlalchemy.dialects import postgresql, sqlite
 from sqlalchemy.orm import Session
 
 from ..database.engine import SessionFactory
 from ..database.models import (
     MemoryDigestRow,
+    MemoryDismissedLoopRow,
     MemoryFactRow,
     MemorySessionExtractionRow,
     MemoryTaskRow,
@@ -53,6 +55,8 @@ from .outdated import CurrentVersions
 from .periods import month_key_for_week, period_weeks
 
 _OPEN = [s.value for s in OPEN_TASK_STATUSES]
+# The databases carapace runs on; both spell ON CONFLICT the same way.
+_UPSERT_INSERTS = {"sqlite": sqlite.insert, "postgresql": postgresql.insert}
 
 # Sources before their digests: auto mode promotes in this order, and dispatch looks at queued tasks
 # in it, so a window full of waiting digests can never crowd out the extractions they wait for.
@@ -91,6 +95,15 @@ class SessionCandidate:
     week_key: str | None
     extraction_id: int | None
     task: TaskRef | None
+
+
+@dataclass(frozen=True)
+class VisibleExtraction:
+    """A current extraction with the session it came from, as the home page shows it."""
+
+    record: ExtractionRecord
+    title: str | None
+    last_active: datetime
 
 
 def task_periods(kind: TaskKind, target: str, session_week_key: str | None) -> tuple[str | None, str | None]:
@@ -660,13 +673,70 @@ class MemoryStore:
             ).all()
         return [ExtractionRecord.model_validate(row, from_attributes=True) for row in rows]
 
+    def visible_extractions(
+        self, user: str, *, active_since: datetime | None = None, week_key: str | None = None
+    ) -> list[VisibleExtraction]:
+        """Current extractions of the user's non-private sessions, most recently active first.
+
+        Owner and privacy are checked on the session row at read time: the extractions of a session
+        that turned private are only purged by the next sweep.
+        """
+        extraction = MemorySessionExtractionRow
+        clauses = [extraction.user == user, extraction.is_current.is_(True), SessionRow.user == user]
+        if active_since is not None:
+            clauses.append(SessionRow.last_active >= active_since)
+        if week_key is not None:
+            clauses.append(extraction.week_key == week_key)
+        with self._session_factory() as db:
+            rows = db.execute(
+                select(extraction, SessionRow.title, SessionRow.last_active, SessionRow.state)
+                .join(SessionRow, SessionRow.session_id == extraction.session_id)
+                .where(*clauses)
+                .order_by(SessionRow.last_active.desc(), SessionRow.session_id)
+            ).all()
+            return [
+                VisibleExtraction(
+                    record=ExtractionRecord.model_validate(row, from_attributes=True),
+                    title=title,
+                    last_active=last_active,
+                )
+                for row, title, last_active, state in rows
+                if state is not None and not state.attributes.private
+            ]
+
     def purge_extractions(self, session_id: str) -> int:
-        """Drop every extraction (and, by cascade, fact) of a session, e.g. once it turned private."""
+        """Drop every extraction (and, by cascade, fact) of a session, e.g. once it turned private,
+        and the dismissals of its open loops along with them."""
         with self._session_factory.begin() as db:
+            db.execute(delete(MemoryDismissedLoopRow).where(MemoryDismissedLoopRow.session_id == session_id))
             result = db.execute(
                 delete(MemorySessionExtractionRow).where(MemorySessionExtractionRow.session_id == session_id)
             )
             return result.rowcount  # type: ignore[missing-attribute]
+
+    # --- dismissed open loops ---
+
+    def dismissed_loop_ids(self, user: str) -> set[str]:
+        with self._session_factory() as db:
+            return set(db.scalars(select(MemoryDismissedLoopRow.loop_id).where(MemoryDismissedLoopRow.user == user)))
+
+    def dismiss_loop(self, user: str, session_id: str, loop_id: str, now: datetime) -> None:
+        """Idempotent: concurrent dismissals of one loop keep the first, without a check-then-insert race."""
+        with self._session_factory.begin() as db:
+            insert = _UPSERT_INSERTS[db.get_bind().dialect.name]
+            db.execute(
+                insert(MemoryDismissedLoopRow)
+                .values(user=user, loop_id=loop_id, session_id=session_id, dismissed_at=now)
+                .on_conflict_do_nothing(index_elements=["user", "loop_id"])
+            )
+
+    def undismiss_loop(self, user: str, loop_id: str) -> None:
+        with self._session_factory.begin() as db:
+            db.execute(
+                delete(MemoryDismissedLoopRow).where(
+                    MemoryDismissedLoopRow.user == user, MemoryDismissedLoopRow.loop_id == loop_id
+                )
+            )
 
     def facts(self, user: str, fact_filter: FactFilter) -> list[FactView]:
         """Facts of current extractions, newest week first."""

@@ -1,11 +1,12 @@
 "use client";
 
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import { useAppShell } from "@/components/app-shell-context";
 import { useBrand } from "@/hooks/use-brand";
 import { ChatView } from "@/components/chat-view";
-import { NewSessionButton } from "@/components/new-session-button";
+import { HomeView } from "@/components/home-view";
+import type { NewSessionOptions } from "@/components/new-session-button";
 import type { SessionInfo } from "@/lib/types";
 
 const MAX_DOCUMENT_TITLE_LENGTH = 30;
@@ -15,6 +16,15 @@ export default function ChatPage() {
   const shell = useAppShell();
   const { name: brand } = useBrand();
   const { activeSessionId, activeSession } = shell;
+  // A session started from the home composer, waiting for its chat view to send the first message.
+  const [pendingStart, setPendingStart] = useState<{ sessionId: string; content: string } | null>(null);
+
+  const onStart = useCallback(async (content: string, options: NewSessionOptions) => {
+    const session = await shell.onNewSession(options);
+    if (session === null) return false;
+    setPendingStart({ sessionId: session.session_id, content });
+    return true;
+  }, [shell]);
 
   const onActiveTitleUpdate = useCallback((title: string) => {
     if (!activeSessionId) return;
@@ -57,17 +67,17 @@ export default function ChatPage() {
         onOpenJobSettings={shell.onOpenJobSettings}
         onUpdateSessionAttributes={shell.onUpdateSessionAttributes}
         onDeleteSession={onActiveDelete}
+        initialMessage={pendingStart?.sessionId === activeSessionId ? pendingStart.content : undefined}
+        onInitialMessageSent={() => setPendingStart(null)}
       />
     );
   }
 
   return (
-    <div className="flex flex-1 items-center justify-center">
-      <div className="text-center">
-        <p className="text-lg font-medium text-foreground/80">{t("app.name")}</p>
-        <p className="mt-1 text-sm text-muted-foreground">{t("home.empty.description")}</p>
-        <NewSessionButton onCreate={shell.onNewSession} disabled={shell.loading} className="mt-4" />
-      </div>
-    </div>
+    <HomeView
+      server={shell.server}
+      agentName={shell.currentUser?.agentName?.trim() || t("app.name")}
+      onStart={onStart}
+    />
   );
 }

@@ -1073,3 +1073,41 @@ export interface PromptPreview {
   memory_budget_tokens: number | null;
   memory_used_tokens: number | null;
 }
+
+// Home
+
+export interface HomeOpenLoop {
+  /** Stable across reloads; what dismissing refers to. */
+  id: string;
+  text: string;
+  session_id: string;
+  session_title: string | null;
+  session_last_active: string;
+  week_key: string;
+}
+
+export interface HomeThisWeek {
+  /** The current week's sessions, or last week's digest while the week has none yet. */
+  source: "week_digest" | "sessions";
+  period_key: string;
+  /** `refs` are session ids. */
+  themes: { theme: string; refs: string[] }[];
+  highlights: string[];
+  sessions: { session_id: string; title: string | null; abstract: string }[];
+}
+
+export interface HomeNotices {
+  /** Sessions with a pending approval or escalation, most recently active first. */
+  pending_approvals: { session_id: string; session_title: string | null }[];
+  failed_memory_tasks: number;
+  outdated_memory_records: number;
+  /** Only set when a memory budget is close to its limit. Amounts are decimal strings. */
+  memory_budget: { used_usd: string; limit_usd: string; window: "day" | "month" } | null;
+}
+
+export interface HomeData {
+  /** Newest first. */
+  open_loops: HomeOpenLoop[];
+  this_week: HomeThisWeek | null;
+  notices: HomeNotices;
+}

@@ -3895,3 +3895,52 @@ def test_prompt_preview_returns_the_role_preview(client: TestClient, auth_header
     assert body["memory_used_tokens"] == 0
     assert [section["key"] for section in body["sections"]][-1] == "volatile"
     assert client.get("/api/prompts/preview", params={"role": "nope"}, headers=auth_headers).status_code == 422
+
+
+def test_home_lists_only_the_users_sessions_awaiting_approval(
+    client: TestClient, auth_headers, admin_auth_headers, monkeypatch
+) -> None:
+    memory = SimpleNamespace(
+        open_loops=lambda _user: [],
+        this_week=lambda _user: None,
+        failed_task_count=lambda _user: 2,
+        outdated_record_count=lambda _user: 0,
+        budget_notice=lambda _user: None,
+    )
+    monkeypatch.setattr(srv, "_memory_service", memory, raising=False)
+    mine, idle, theirs = (
+        _create_session(auth_headers),
+        _create_session(auth_headers),
+        _create_session(admin_auth_headers),
+    )
+    srv._engine.get_or_activate(idle)
+    srv._engine.get_or_activate(mine).pending_escalations.append({"request_id": "r1", "kind": "domain_access"})
+    srv._engine.get_or_activate(theirs).pending_approval_requests.append({"tool_call_id": "tc1"})
+
+    response = client.get("/api/home", headers=auth_headers)
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "open_loops": [],
+        "this_week": None,
+        "notices": {
+            "pending_approvals": [{"session_id": mine, "session_title": None}],
+            "failed_memory_tasks": 2,
+            "outdated_memory_records": 0,
+            "memory_budget": None,
+        },
+    }
+
+
+def test_home_open_loop_dismissal_routes(client: TestClient, auth_headers, monkeypatch) -> None:
+    calls: list[tuple[str, str, str]] = []
+    memory = SimpleNamespace(
+        dismiss_loop=lambda user, loop_id: calls.append(("dismiss", user, loop_id)) or loop_id == "known",
+        undismiss_loop=lambda user, loop_id: calls.append(("undismiss", user, loop_id)),
+    )
+    monkeypatch.setattr(srv, "_memory_service", memory, raising=False)
+
+    assert client.post("/api/home/open-loops/known/dismiss", headers=auth_headers).status_code == 204
+    assert client.post("/api/home/open-loops/unknown/dismiss", headers=auth_headers).status_code == 404
+    assert client.delete("/api/home/open-loops/unknown/dismiss", headers=auth_headers).status_code == 204
+    assert calls == [("dismiss", "thies", "known"), ("dismiss", "thies", "unknown"), ("undismiss", "thies", "unknown")]

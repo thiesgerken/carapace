@@ -1,7 +1,7 @@
 "use client";
 
 import { useTranslations } from "next-intl";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ArrowUp, Clock, Loader2, Mic, MicOff, Paperclip, Square, X } from "lucide-react";
 import { cn, formatBytes } from "@/lib/utils";
 import { getChatDraft, saveChatDraft } from "@/lib/storage";
@@ -117,6 +117,8 @@ interface ChatInputProps {
     file: File,
     opts?: { onProgress?: (fraction: number) => void; signal?: AbortSignal },
   ) => Promise<UploadedFile>;
+  /** Extra control in the input row, before the voice and send buttons. */
+  accessory?: ReactNode;
 }
 
 function resizeTextarea(el: HTMLTextAreaElement) {
@@ -140,6 +142,7 @@ export function ChatInput({
   usage,
   sandboxRunning = false,
   uploadFile,
+  accessory,
 }: ChatInputProps) {
   const t = useTranslations("chatInput");
   const [value, setValue] = useState(() => getChatDraft(sessionId));
@@ -672,11 +675,13 @@ export function ChatInput({
             rows={1}
             disabled={disabled}
             className={cn(
-              "flex-1 resize-none bg-transparent text-base sm:text-sm outline-none",
+              // Padded to the 32px of the row's buttons, so a single line sits centred next to them.
+              "flex-1 resize-none bg-transparent py-1 text-base sm:py-1.5 sm:text-sm outline-none",
               "placeholder:text-muted-foreground/50",
               disabled && "cursor-not-allowed text-muted-foreground",
             )}
           />
+          {accessory}
           {uploadFile && !disabled && (
             <button
               type="button"

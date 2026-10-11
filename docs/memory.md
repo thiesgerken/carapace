@@ -280,8 +280,8 @@ Interactive sessions get it, including a persistent session a job runs in. Sessi
 
 ## Deletion and privacy
 
-- **Private sessions** never get tasks. A session that turns private after extraction has its extractions purged on the next sweep (or when a queued task for it is dispatched).
-- **Deleted sessions**: their extractions and facts are deleted with them. Digests covering them turn stale, and the mirror removes their files.
+- **Private sessions** never get tasks. A session that turns private after extraction has its extractions and its dismissed open loops purged on the next sweep (or when a queued task for it is dispatched).
+- **Deleted sessions**: their extractions, facts and dismissed open loops are deleted with them. Digests covering them turn stale, and the mirror removes their files.
 - A session's frozen memory block (see [In the agent's prompt](#in-the-agents-prompt)) keeps what it showed until that session is compacted, including text from sessions deleted since.
 - Digests can still contain text derived from a deleted or private session until they are regenerated. Stale digests are flagged in the Timeline, and regenerating takes one click.
 - **Job sessions** are excluded unless the job opts in with `memory_enabled`.
@@ -325,7 +325,7 @@ The same fact from several sessions (same statement and subject, ignoring case, 
 
 ### Tasks
 
-The queue. Filter by status, kind, period (week or month) and model. Besides single statuses, the status filter offers **Unfinished** (pending, queued, running and failed; failed stays because it needs attention), which is what the tab opens on. The header shows the number of matching tasks and their estimated cost. "Run all of September" is: filter month 2026-09, select all matching, run. The month filter places session tasks by their session's week, not by when the task was created.
+The queue. Filter by status, kind, period (week or month) and model. Besides single statuses, the status filter offers **Unfinished** (pending, queued, running and failed; failed stays because it needs attention), which is what the tab opens on, unless `?status=` preselects another (the home page links to `?status=failed`). The header shows the number of matching tasks and their estimated cost. "Run all of September" is: filter month 2026-09, select all matching, run. The month filter places session tasks by their session's week, not by when the task was created.
 
 The list is sorted by last activity (when the task finished, started, was queued or was created) by default. Click the **Target** header to sort by target period instead, the order **Run newest 50** picks in. The **Model** column shows the model a task ran with, or for open tasks the model it would run with now: its override, otherwise the current role default. The model filter matches by the same rule.
 
@@ -333,6 +333,21 @@ The list is sorted by last activity (when the task finished, started, was queued
 - The **run dialog** shows the task count (pending and failed tasks; mirrors and tasks whose input cannot be prepared run without an estimate), input tokens, estimated cost, remaining budget (and a warning when the run exceeds it) and lets you override the model for this run. When selected digests have pending or failed sources outside the selection, it warns and offers **Add N dependencies**, which runs them too (`include_dependencies` on the run request), so the digests wait for them.
 - A digest's status shows **waiting for N extractions** while it is blocked on its sources, or **N extractions missing** when sources are pending, failed or cancelled (sources for months). Clicking it filters the list to the period's source tasks.
 - Clicking a task's target shows its details: attempts, timings, estimate, provenance and usage, the error, and a link to the record it produced.
+
+### Home page
+
+The page without an open session (`/`) is where you pick things up:
+
+- **Composer:** pinned at the bottom where a session's composer sits, so the session takes over in place. Sending creates a session (with the options from the ▾ in the input row) and sends the message into it.
+- **Notice chips** under the composer, only when something needs attention:
+  - pending approvals, linking to the most recently active waiting session;
+  - failed memory tasks, linking to the Tasks tab filtered to failed;
+  - outdated memory records;
+  - a memory budget close to its limit, linking to the memory settings.
+- **Open loops:** from the extractions of sessions active in the last 7 days, newest first, each with **Continue** into its session. The to-do circle on the left (**Done**) dismisses a loop; an inline **Undo** brings it back for a few seconds.
+- **This week:** the abstracts of the current week's sessions, or the themes and highlights of last week's digest while the week has no sessions yet. Links into that week's period view.
+
+All memory text on the page is rendered as plain text, and every link is built from session ids and period keys, never from the text. Without memory records, the page shows only the composer and a pointer to the Memory area.
 
 ### Settings
 
@@ -363,6 +378,16 @@ All endpoints live under `/api/memory`, are scoped to the authenticated user and
 | `GET /facts` | facts of current extractions; filter by category, subject, confidence, durability, source kind, period |
 
 Memory settings use the existing user-settings and platform-settings endpoints.
+
+`GET /api/home` sits outside `/api/memory` but uses the same scope, and feeds the home page:
+
+- the open loops of the current extractions of sessions active in the last 7 days, newest session first
+- the abstracts of the current week's sessions, or, while the week has none yet, last week's digest themes and highlights
+- notices: sessions waiting for an approval, failed tasks, outdated records, and a cost window that has used 80% of its limit
+
+Private and foreign sessions are filtered on the session row at read time, so an extraction the sweep has not purged yet never shows up. Last week's digest is left out while it covers a session that is no longer visible.
+
+Open loops can be dismissed (`POST /api/home/open-loops/{id}/dismiss`, undone with `DELETE` on the same path; both idempotent and need write access). A loop's `id` hashes its session id and its text, with case and whitespace normalized. A dismissal therefore survives a re-extraction that keeps the loop's wording, but a reworded loop counts as new and shows up again. Dismissals live in `memory_dismissed_loops` and are only accepted for the user's current open loops.
 
 ## Related docs
 

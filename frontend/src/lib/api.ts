@@ -1,6 +1,7 @@
 import type {
   AgentHistoryResponse,
   HistoryMessage,
+  HomeData,
   JobDefinition,
   JobRunResult,
   JobsFile,
@@ -1956,4 +1957,21 @@ export async function getPromptPreview(server: string, role: PromptRole): Promis
   const res = await fetch(`${server}/api/prompts/preview?role=${role}`);
   if (!res.ok) throw new Error(await readErrorMessage(res, "Failed to load prompt preview"));
   return (await res.json()) as PromptPreview;
+}
+
+export async function getHome(server: string): Promise<HomeData> {
+  const res = await fetch(`${server}/api/home`);
+  if (!res.ok) throw new Error(await readErrorMessage(res, "Failed to load the home page"));
+  return (await res.json()) as HomeData;
+}
+
+/**
+ * Hides an open loop from the home page, or with `dismissed: false` brings it back. Dismissing answers
+ * 404 for a loop that is no longer among the user's current ones (it aged out), which leaves it
+ * exactly as dismissed as asked.
+ */
+export async function setOpenLoopDismissed(server: string, id: string, dismissed: boolean): Promise<void> {
+  const res = await fetch(`${server}/api/home/open-loops/${encodeURIComponent(id)}/dismiss`, { method: dismissed ? "POST" : "DELETE" });
+  if (dismissed && res.status === 404) return;
+  if (!res.ok) throw new Error(await readErrorMessage(res, dismissed ? "Failed to dismiss the open loop" : "Failed to restore the open loop"));
 }

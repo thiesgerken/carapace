@@ -618,8 +618,30 @@
         }
     },
     "home": {
-        "empty": {
-            "description": "Select a session or start a new one"
+        "untitledSession": "Untitled session",
+        "justNow": "just now",
+        "noMemory": "Open loops and this week's picture show up here once <link>memory</link> has processed your sessions.",
+        "openLoops": {
+            "title": "Open loops",
+            "empty": "Nothing left open.",
+            "continue": "Continue",
+            "dismiss": "Done",
+            "dismissed": "Done: {text}",
+            "undo": "Undo"
+        },
+        "thisWeek": {
+            "title": "This week",
+            "empty": "Nothing recorded for this week yet.",
+            "highlights": "Highlights"
+        },
+        "notices": {
+            "untitledSession": "Untitled session",
+            "approval": "Approval waiting: {title}",
+            "approvals": "{count} sessions waiting for approval",
+            "failedTasks": "{count, plural, one {# failed memory task} other {# failed memory tasks}}",
+            "outdatedRecords": "{count, plural, one {# outdated memory record} other {# outdated memory records}}",
+            "budgetDay": "Memory budget today: {used} of {limit}",
+            "budgetMonth": "Memory budget this month: {used} of {limit}"
         }
     },
     "connect": {
