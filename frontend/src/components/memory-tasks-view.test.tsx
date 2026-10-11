@@ -224,3 +224,46 @@ test("a digest waiting for its extractions says so and links to them", async () 
     restore();
   }
 });
+
+test("the default filters are not highlighted, a changed one is and can be reset", async () => {
+  const restore = installDom();
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const body = { "/api/memory/status": STATUS, "/api/memory/tasks": TASKS }[new URL(String(input)).pathname];
+    assert.ok(body !== undefined, `unexpected request ${String(input)}`);
+    return new Response(JSON.stringify(body), { headers: { "Content-Type": "application/json" } });
+  }) as typeof fetch;
+
+  try {
+    const view = await renderReact(
+      <NextIntlClientProvider locale="en" messages={messages} timeZone="UTC">
+        <MemoryStatusProvider server={SERVER}>
+          <MemoryTasksView server={SERVER} token="" />
+        </MemoryStatusProvider>
+      </NextIntlClientProvider>,
+    );
+    const settle = () => runInAct(() => new Promise((resolve) => setTimeout(resolve, 0)));
+    await settle();
+    const active = () => Array.from(view.container.querySelectorAll("[data-active]")).map((element) => element.getAttribute("aria-label"));
+    const resetShown = () => Array.from(view.container.querySelectorAll("button")).some((element) => element.textContent === "Reset filters");
+
+    // "Unfinished" is the tab's default, not a narrowing the user chose.
+    const status = view.container.querySelector<HTMLSelectElement>('select[aria-label="Status"]')!;
+    assert.equal(status.value, "unfinished");
+    assert.deepEqual(active(), []);
+    assert.equal(resetShown(), false);
+
+    await runInAct(() => {
+      status.value = "";
+      status.dispatchEvent(new window.Event("change", { bubbles: true }));
+    });
+    await settle();
+    assert.deepEqual(active(), ["Status"]);
+    assert.equal(resetShown(), true);
+
+    await view.unmount();
+  } finally {
+    globalThis.fetch = originalFetch;
+    restore();
+  }
+});

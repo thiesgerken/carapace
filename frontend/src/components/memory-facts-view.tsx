@@ -112,6 +112,7 @@ export function MemoryFactsView({ server }: { server: string }) {
             label={t("filters.confidence")}
             anyLabel={t("filters.anyConfidence")}
             value={form.confidence}
+            active={form.confidence !== DEFAULT_FORM.confidence}
             options={CONFIDENCES.map((value) => ({ value, label: tFact(`confidence.${value}`) }))}
             onChange={(confidence) => setForm({ ...form, confidence })}
           />
@@ -120,6 +121,7 @@ export function MemoryFactsView({ server }: { server: string }) {
             label={t("filters.durability")}
             anyLabel={t("filters.anyDurability")}
             value={form.durability}
+            active={form.durability !== DEFAULT_FORM.durability}
             options={DURABILITIES.map((value) => ({ value, label: tFact(`durability.${value}`) }))}
             onChange={(durability) => setForm({ ...form, durability })}
           />
@@ -128,11 +130,12 @@ export function MemoryFactsView({ server }: { server: string }) {
             label={t("filters.sourceKind")}
             anyLabel={t("filters.anySourceKind")}
             value={form.sourceKind}
+            active={form.sourceKind !== DEFAULT_FORM.sourceKind}
             options={SOURCE_KINDS.map((value) => ({ value, label: tFact(`sourceKind.${value}`) }))}
             onChange={(sourceKind) => setForm({ ...form, sourceKind })}
           />
-          <PeriodPicker label={t("filters.period")} value={form.period} allowMonth onChange={(period) => setForm({ ...form, period })} />
-          <FilterSearch label={t("filters.text")} value={query} onChange={setQuery} />
+          <PeriodPicker label={t("filters.period")} value={form.period} active={form.period !== DEFAULT_FORM.period} allowMonth onChange={(period) => setForm({ ...form, period })} />
+          <FilterSearch label={t("filters.text")} value={query} active={query !== ""} onChange={setQuery} />
         </FilterBar>
 
         {error ? <div className="rounded-lg border border-border bg-background px-4 py-2 text-sm text-destructive">{error}</div> : null}

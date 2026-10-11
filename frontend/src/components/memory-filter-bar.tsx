@@ -8,7 +8,7 @@ import { monthLabel, periodLevel, periodMonth, weekLabel } from "@/lib/memory";
 import { cn } from "@/lib/utils";
 
 const controlClassName = "h-9 rounded-lg border bg-background text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30";
-/** A set filter stands out, so a narrowed list never passes for the whole one. */
+/** A filter changed from its tab's default stands out, so a narrowed list never passes for the default one. */
 function stateClassName(active: boolean): string {
   return active ? "border-[#236b86]/60 bg-[#236b86]/10 dark:border-sky-400/50 dark:bg-sky-400/10" : "border-border";
 }
@@ -45,11 +45,13 @@ export function FilterBar({ count, canReset, onReset, actions, children }: {
   );
 }
 
-export function FilterSelect<T extends string>({ icon: Icon, label, anyLabel, value, options, onChange }: {
+export function FilterSelect<T extends string>({ icon: Icon, label, anyLabel, value, active, options, onChange }: {
   icon: LucideIcon;
   label: string;
   anyLabel: string;
   value: T | "";
+  /** Differs from the tab's default; see FilterBar. */
+  active: boolean;
   options: readonly { value: T; label: string }[];
   onChange: (value: T | "") => void;
 }) {
@@ -61,7 +63,8 @@ export function FilterSelect<T extends string>({ icon: Icon, label, anyLabel, va
         title={label}
         value={value}
         onChange={(event) => onChange(event.target.value as T | "")}
-        className={cn(controlClassName, stateClassName(value !== ""), "appearance-none pl-8 pr-8")}
+        data-active={active || undefined}
+        className={cn(controlClassName, stateClassName(active), "appearance-none pl-8 pr-8")}
       >
         <option value="">{anyLabel}</option>
         {options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
@@ -71,7 +74,7 @@ export function FilterSelect<T extends string>({ icon: Icon, label, anyLabel, va
   );
 }
 
-export function FilterSearch({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+export function FilterSearch({ label, value, active, onChange }: { label: string; value: string; active: boolean; onChange: (value: string) => void }) {
   return (
     <span className="relative inline-flex min-w-40 flex-1">
       <Search aria-hidden="true" className={iconClassName} />
@@ -81,7 +84,8 @@ export function FilterSearch({ label, value, onChange }: { label: string; value:
         placeholder={label}
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className={cn(controlClassName, stateClassName(value !== ""), "w-full pl-8 pr-2.5")}
+        data-active={active || undefined}
+        className={cn(controlClassName, stateClassName(active), "w-full pl-8 pr-2.5")}
       />
     </span>
   );
@@ -98,10 +102,11 @@ const PANEL_WIDTH = 288;
  * A week (and with `allowMonth` also a month) picked from a month calendar in a native popover,
  * which brings light dismiss, Escape and the top layer. `<input type="week">` is Chromium-only.
  */
-export function PeriodPicker({ label, value, allowMonth, onChange }: {
+export function PeriodPicker({ label, value, active, allowMonth, onChange }: {
   label: string;
   /** A week key, a month key when `allowMonth`, or "" for none. */
   value: string;
+  active: boolean;
   allowMonth: boolean;
   onChange: (value: string) => void;
 }) {
@@ -134,7 +139,8 @@ export function PeriodPicker({ label, value, allowMonth, onChange }: {
           setPosition({ top: rect.bottom + 4, left: Math.max(8, Math.min(rect.left, window.innerWidth - PANEL_WIDTH - 8)) });
           if (value) setShown(periodMonth(value));
         }}
-        className={cn(controlClassName, stateClassName(value !== ""), "whitespace-nowrap pl-8 text-left", value ? "pr-8" : "pr-2.5 text-muted-foreground")}
+        data-active={active || undefined}
+        className={cn(controlClassName, stateClassName(active), "whitespace-nowrap pl-8 text-left", value ? "pr-8" : "pr-2.5 text-muted-foreground")}
       >
         {text}
       </button>
