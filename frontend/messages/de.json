@@ -82,7 +82,7 @@
                 "anyStatus": "Alle Status",
                 "kind": "Art",
                 "anyKind": "Alle Arten",
-                "month": "Monat",
+                "period": "Zeitraum",
                 "model": "Modell",
                 "anyModel": "Alle Modelle"
             },
@@ -129,7 +129,12 @@
                 "finished": "Beendet",
                 "estimate": "Schätzung",
                 "openResult": "Ergebnis öffnen"
-            }
+            },
+            "waitingExtractions": "⏳ wartet auf {count, plural, one {# Extraktion} other {# Extraktionen}}",
+            "waitingSources": "⏳ wartet auf {count, plural, one {# Quelle} other {# Quellen}}",
+            "missingExtractions": "{count, plural, one {# Extraktion fehlt} other {# Extraktionen fehlen}}",
+            "missingSources": "{count, plural, one {# Quelle fehlt} other {# Quellen fehlen}}",
+            "showSources": "Quellaufgaben dieses Zeitraums anzeigen"
         },
         "run": {
             "title": "Gedächtnis-Aufgaben ausführen",
@@ -147,7 +152,10 @@
             "roleDefaultResolved": "Standard der Rolle ({models})",
             "nothingToRun": "Keine ausstehenden Aufgaben in dieser Auswahl. Nur ausstehende Aufgaben laufen; fehlgeschlagene lassen sich im Tab Aufgaben erneut versuchen.",
             "cancel": "Abbrechen",
-            "confirm": "Ausführen"
+            "confirm": "Ausführen",
+            "missingDependencies": "{count, plural, one {Ein ausgewählter Digest hat # ausstehende Quelle außerhalb der Auswahl und liefe ohne sie.} other {Ausgewählte Digests haben # ausstehende Quellen außerhalb der Auswahl und liefen ohne sie.}}",
+            "addDependencies": "{count, plural, one {# Abhängigkeit hinzufügen} other {# Abhängigkeiten hinzufügen}}",
+            "dependenciesAdded": "{count, plural, one {# Abhängigkeit hinzugefügt; die Digests warten darauf.} other {# Abhängigkeiten hinzugefügt; die Digests warten darauf.}}"
         },
         "provenance": {
             "model": "Modell",

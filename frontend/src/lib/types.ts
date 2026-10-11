@@ -843,6 +843,8 @@ export interface MemoryTaskSelection {
   ids?: number[] | null;
   filter?: MemoryTaskFilter | null;
   newest?: number | null;
+  /** Adds the pending source tasks of the selected digests. */
+  include_dependencies?: boolean;
 }
 
 /** Body of POST /tasks/estimate and POST /tasks/run. */
@@ -886,6 +888,12 @@ export interface MemoryEstimateTotal {
   /** Sum over priced tasks; unpriced_count tasks had no known pricing. */
   cost_usd: string;
   unpriced_count: number;
+}
+
+/** Response of POST /tasks/estimate. */
+export interface MemoryRunEstimate extends MemoryEstimateTotal {
+  /** Pending source tasks of the selection's digests that it leaves out; include_dependencies adds them. */
+  missing_dependencies: number;
 }
 
 export interface MemoryTaskListResponse {

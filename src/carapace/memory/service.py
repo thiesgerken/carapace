@@ -21,7 +21,6 @@ from .models import (
     DigestRecord,
     DigestSummary,
     EffectiveMemoryModels,
-    EstimateTotal,
     ExtractionRecord,
     ExtractionSummary,
     FactCategory,
@@ -36,6 +35,7 @@ from .models import (
     PeriodDetail,
     PeriodNode,
     PeriodTree,
+    RunEstimate,
     SessionMemoryDetail,
     SessionMemoryFilter,
     SessionMemoryListResponse,
@@ -171,11 +171,13 @@ class MemoryService:
             estimate=sum_estimates(t.estimate for t in matching if t.estimate is not None),
         )
 
-    async def estimate_tasks(self, user: str, request: TaskRunRequest) -> EstimateTotal:
+    async def estimate_tasks(self, user: str, request: TaskRunRequest) -> RunEstimate:
         """What running the pending tasks of a selection would cost, with the requested model."""
         self._check_override(request.model_override)
         tasks = self._store.select_tasks(user, request.selection, {TaskStatus.pending})
-        return sum_estimates([await self._estimate_for(t, request.model_override) for t in tasks if t.estimate])
+        total = sum_estimates([await self._estimate_for(t, request.model_override) for t in tasks if t.estimate])
+        missing = self._store.missing_dependencies(user, request.selection)
+        return RunEstimate(**total.model_dump(), missing_dependencies=missing)
 
     async def run_tasks(self, user: str, request: TaskRunRequest) -> TaskCountResponse:
         self._check_override(request.model_override)

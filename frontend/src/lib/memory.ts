@@ -1,5 +1,6 @@
 import type {
   MemoryBudgetWindowStatus,
+  MemoryDependencySummary,
   MemorySpawnSkip,
   MemoryFactView,
   MemoryDigestLevel,
@@ -127,9 +128,19 @@ export function remainingBudget(status: MemoryStatus): { usd: number | null; tok
 export interface TaskFilterForm {
   status: MemoryTaskStatus | "";
   kind: MemoryTaskKind | "";
-  /** Month key from <input type="month">, e.g. 2026-09. */
+  /** Month key from <input type="month">, e.g. 2026-09, or a week key set by a digest's source link. */
   period: string;
   model: string;
+}
+
+/** The filter listing a digest's source tasks: a week's extractions, or everything in a month. */
+export function sourceTasksForm(digest: Pick<MemoryTask, "kind" | "target">): TaskFilterForm {
+  return { status: "", kind: digest.kind === "week_digest" ? "session_extract" : "", period: digest.target, model: "" };
+}
+
+/** Sources a digest would run without: pending ones, plus failed or cancelled ones without a current record. */
+export function missingSourceCount(dependencies: MemoryDependencySummary): number {
+  return dependencies.pending_ids.length + dependencies.failed;
 }
 
 export function toTaskFilter(form: TaskFilterForm): MemoryTaskFilter {

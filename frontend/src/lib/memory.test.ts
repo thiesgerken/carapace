@@ -12,6 +12,7 @@ import {
   monthLabel,
   roleDefaultModels,
   hasActiveTasks,
+  missingSourceCount,
   periodBadge,
   periodLevel,
   remainingBudget,
@@ -19,6 +20,7 @@ import {
   taskActivityAt,
   taskRunModel,
   runnableTaskIds,
+  sourceTasksForm,
   toSessionFilter,
   toSpawnRequest,
   toTaskFilter,
@@ -278,4 +280,10 @@ test("roleDefaultModels names one model per role in the selection", () => {
   assert.equal(roleDefaultModels(["session_extract", "week_digest", "mirror"], models), "low: low-model · high: high-model");
   assert.equal(roleDefaultModels(["session_extract", "week_digest"], { memory_low: "same", memory_high: "same" }), "same");
   assert.equal(roleDefaultModels(["mirror"], models), null);
+});
+
+test("a digest's source link filters to its period's sources", () => {
+  assert.deepEqual(sourceTasksForm({ kind: "week_digest", target: "2026-W36" }), { status: "", kind: "session_extract", period: "2026-W36", model: "" });
+  assert.deepEqual(sourceTasksForm({ kind: "month_digest", target: "2026-09" }), { status: "", kind: "", period: "2026-09", model: "" });
+  assert.equal(missingSourceCount({ waiting: 4, pending_ids: [1, 2], failed: 1 }), 3);
 });

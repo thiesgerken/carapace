@@ -15,6 +15,9 @@ import {
   formatUsd,
   MEMORY_TASK_KINDS,
   MEMORY_TASK_STATUSES,
+  missingSourceCount,
+  periodLevel,
+  sourceTasksForm,
   taskActivityAt,
   taskRunModel,
   toTaskFilter,
@@ -160,9 +163,9 @@ export function MemoryTasksView({ server, token }: { server: string; token: stri
             {MEMORY_TASK_KINDS.map((value) => <option key={value} value={value}>{value}</option>)}
           </select>
           <input
-            type="month"
-            aria-label={t("filters.month")}
-            title={t("filters.month")}
+            type={form.period && periodLevel(form.period) === "week" ? "week" : "month"}
+            aria-label={t("filters.period")}
+            title={t("filters.period")}
             value={form.period}
             onChange={(event) => updateForm({ period: event.target.value })}
             className={controlClassName}
@@ -286,6 +289,7 @@ export function MemoryTasksView({ server, token }: { server: string; token: stri
                       <td className="px-3 py-2">
                         <TaskStatusBadge status={task.status} />
                         {task.blocked_reason === "budget" ? <div className="text-xs text-amber-700 dark:text-amber-400">{t("blockedBudget")}</div> : null}
+                        <DependencyHint task={task} onShowSources={() => updateForm(sourceTasksForm(task))} />
                       </td>
                       <td className="px-3 py-2 font-mono text-xs">{taskRunModel(task, models) ?? "—"}</td>
                       <td className="px-3 py-2 font-mono text-xs">{task.provenance?.carapace_version ?? "—"}</td>
@@ -347,6 +351,31 @@ export function MemoryTasksView({ server, token }: { server: string; token: stri
         />
       ) : null}
     </div>
+  );
+}
+
+/** Why a digest waits, or which sources it would run without, linked to the period's source tasks. */
+function DependencyHint({ task, onShowSources }: { task: MemoryTaskView; onShowSources: () => void }) {
+  const t = useTranslations("memory.tasks");
+  const dependencies = task.dependencies;
+  if (dependencies === null || task.status === "done" || task.status === "cancelled") return null;
+  const week = task.kind === "week_digest";
+  const missing = missingSourceCount(dependencies);
+  const text = task.blocked_reason === "dependencies"
+    ? t(week ? "waitingExtractions" : "waitingSources", { count: dependencies.waiting })
+    : missing > 0
+      ? t(week ? "missingExtractions" : "missingSources", { count: missing })
+      : null;
+  if (text === null) return null;
+  return (
+    <button
+      type="button"
+      title={t("showSources")}
+      onClick={onShowSources}
+      className="block text-left text-xs text-amber-700 underline-offset-2 hover:underline dark:text-amber-400"
+    >
+      {text}
+    </button>
   );
 }
 

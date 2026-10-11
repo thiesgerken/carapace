@@ -170,3 +170,51 @@ test("headers sort server-side and the model column shows what the task will run
     restore();
   }
 });
+
+test("a digest waiting for its extractions says so and links to them", async () => {
+  const restore = installDom();
+  const originalFetch = globalThis.fetch;
+  const queries: string[] = [];
+  const digest: MemoryTaskView = {
+    ...task(3, "2026-W36"),
+    kind: "week_digest",
+    target: "2026-W36",
+    status: "queued",
+    blocked_reason: "dependencies",
+    dependencies: { waiting: 2, pending_ids: [], failed: 0 },
+  };
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = new URL(String(input));
+    if (url.pathname === "/api/memory/tasks") queries.push(`${url.searchParams.getAll("kind")}|${url.searchParams.get("period")}`);
+    const body = {
+      "/api/memory/status": STATUS,
+      "/api/memory/tasks": { ...TASKS, items: [digest], next_cursor: null },
+    }[url.pathname];
+    assert.ok(body !== undefined, `unexpected request ${url.pathname}`);
+    return new Response(JSON.stringify(body), { headers: { "Content-Type": "application/json" } });
+  }) as typeof fetch;
+
+  try {
+    const view = await renderReact(
+      <NextIntlClientProvider locale="en" messages={messages} timeZone="UTC">
+        <MemoryStatusProvider server={SERVER}>
+          <MemoryTasksView server={SERVER} token="" />
+        </MemoryStatusProvider>
+      </NextIntlClientProvider>,
+    );
+    const settle = () => runInAct(() => new Promise((resolve) => setTimeout(resolve, 0)));
+    await settle();
+    const hint = Array.from(view.container.querySelectorAll("button")).find((element) => element.textContent === "⏳ waiting for 2 extractions");
+    assert.ok(hint);
+
+    await click(hint);
+    await settle();
+    assert.equal(queries.at(-1), "session_extract|2026-W36");
+    assert.equal(view.container.querySelector<HTMLInputElement>('input[aria-label="Period"]')?.type, "week");
+
+    await view.unmount();
+  } finally {
+    globalThis.fetch = originalFetch;
+    restore();
+  }
+});

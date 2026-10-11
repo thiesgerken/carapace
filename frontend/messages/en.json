@@ -82,7 +82,7 @@
                 "anyStatus": "Any status",
                 "kind": "Kind",
                 "anyKind": "Any kind",
-                "month": "Month",
+                "period": "Period",
                 "model": "Model",
                 "anyModel": "Any model"
             },
@@ -129,7 +129,12 @@
                 "finished": "Finished",
                 "estimate": "Estimate",
                 "openResult": "Open result"
-            }
+            },
+            "waitingExtractions": "⏳ waiting for {count, plural, one {# extraction} other {# extractions}}",
+            "waitingSources": "⏳ waiting for {count, plural, one {# source} other {# sources}}",
+            "missingExtractions": "{count, plural, one {# extraction missing} other {# extractions missing}}",
+            "missingSources": "{count, plural, one {# source missing} other {# sources missing}}",
+            "showSources": "Show this period's source tasks"
         },
         "run": {
             "title": "Run memory tasks",
@@ -147,7 +152,10 @@
             "roleDefaultResolved": "Role default ({models})",
             "nothingToRun": "No pending tasks in this selection. Only pending tasks run; retry failed tasks on the Tasks tab.",
             "cancel": "Cancel",
-            "confirm": "Run"
+            "confirm": "Run",
+            "missingDependencies": "{count, plural, one {A selected digest has # pending source outside the selection; it would run without it.} other {Selected digests have # pending sources outside the selection; they would run without them.}}",
+            "addDependencies": "{count, plural, one {Add # dependency} other {Add # dependencies}}",
+            "dependenciesAdded": "{count, plural, one {# dependency added; the digests wait for it.} other {# dependencies added; the digests wait for them.}}"
         },
         "provenance": {
             "model": "Model",

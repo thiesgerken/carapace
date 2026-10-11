@@ -5,11 +5,11 @@ import type {
   JobRunResult,
   JobsFile,
   MemoryDigestLevel,
-  MemoryEstimateTotal,
   MemoryFactFilter,
   MemoryFactListResponse,
   MemoryPeriodDetail,
   MemoryPeriodTree,
+  MemoryRunEstimate,
   MemorySessionDetail,
   MemorySessionFilter,
   MemorySessionListResponse,
@@ -1861,7 +1861,7 @@ export async function listMemoryTasks(
   return (await res.json()) as MemoryTaskListResponse;
 }
 
-export function estimateMemoryTasks(server: string, body: MemoryTaskRunRequest): Promise<MemoryEstimateTotal> {
+export function estimateMemoryTasks(server: string, body: MemoryTaskRunRequest): Promise<MemoryRunEstimate> {
   return postMemory(server, "/tasks/estimate", body, "Failed to estimate memory tasks");
 }
 

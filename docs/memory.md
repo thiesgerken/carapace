@@ -295,7 +295,8 @@ The queue. Filter by status, kind, month and model; the header shows the number 
 The list is sorted by last activity (when the task finished, started, was queued or was created) by default. Click the **Target** header to sort by target period instead, the order **Run newest 50** picks in. The **Model** column shows the model a task ran with, or for open tasks the model it would run with now: its override, otherwise the current role default.
 
 - **Run newest 50**, **Run selected**, **Cancel selected**, and **Retry** on failed rows.
-- The **run dialog** shows the task count, input tokens, estimated cost, remaining budget (and a warning when the run exceeds it) and lets you override the model for this run.
+- The **run dialog** shows the task count, input tokens, estimated cost, remaining budget (and a warning when the run exceeds it) and lets you override the model for this run. When selected digests have pending sources outside the selection, it warns and offers **Add N dependencies**, which runs them too (`include_dependencies` on the selection), so the digests wait for them.
+- A digest's status shows **waiting for N extractions** while it is blocked on its sources, or **N extractions missing** when sources are pending, failed or cancelled (sources for months). Clicking it filters the list to the period's source tasks.
 - Clicking a task's target shows its details: attempts, timings, estimate, provenance and usage, the error, and a link to the record it produced.
 
 ### Settings

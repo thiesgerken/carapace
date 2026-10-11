@@ -370,6 +370,8 @@ class TaskSelection(MemoryApiModel):
     ids: list[int] | None = None
     filter: TaskFilter | None = None
     newest: int | None = Field(default=None, ge=1)
+    # Adds the pending source tasks of the selected digests, so they run before them (see dependencies).
+    include_dependencies: bool = False
 
     @model_validator(mode="after")
     def _validate_selection(self) -> TaskSelection:
@@ -438,6 +440,11 @@ class EstimateTotal(MemoryApiModel):
     # Sum over priced tasks only; unpriced_count says how many had no known pricing.
     cost_usd: Decimal
     unpriced_count: int
+
+
+class RunEstimate(EstimateTotal):
+    # Pending source tasks of the selection's digests that it leaves out (include_dependencies adds them).
+    missing_dependencies: int
 
 
 class DependencySummary(MemoryApiModel):
