@@ -43,11 +43,21 @@ The mirror owns `memory/`: each run rewrites it from the database in one commit 
 
 ## System prompt loading
 
-When an agent turn starts, `build_system_prompt()` loads the following into the system prompt:
+Every role that acts as the user's agent starts its system prompt with the same **shared prefix** (`prompt_prefix.shared_prompt_prefix()`):
 
-1. `AGENTS.md` — behavioral guide
-2. `SOUL.md` — personality
-3. `USER.md` — context about the human
-4. Skill catalog — names and descriptions only
-5. Sandbox environment info — explains container paths and available tools
-6. Session ID
+1. `AGENTS.md`: behavioral guide
+2. `SOUL.md`: personality
+3. `USER.md`: context about the human
+4. Skill catalog: names and descriptions only
+
+The roles are agent turns, compaction summaries, session extraction, and week and month digests. Each role puts its own instructions after the prefix:
+
+- **Agent turns** (`build_system_prompt()`): sandbox environment, response format, then the session's mode (unattended, ask), and last the date and session ID.
+- **Compaction**: the fold or tool-output summary instructions.
+- **Memory tasks**: the extraction or digest instructions. Dates and periods travel in the user prompt.
+
+The sentinel and the titler stay out on purpose. The sentinel must judge the agent independently, and `SOUL.md`/`USER.md` are agent-writable. A title isn't worth the prefix tokens.
+
+### Prefix caching
+
+Providers cache prompts by prefix, so the order is stable first, volatile last. Nothing per session or per call (the current date, the session ID, a role split) may come before the long shared text. Each role's own prefix is what gets cached between its calls. Two roles share a cache entry only when they run on the same model, and some providers cache tool definitions ahead of the system prompt, so the agent (with tools) and the tool-less roles may still miss each other. carapace builds nothing provider-specific for caching.

@@ -32,6 +32,10 @@ The model is always told that content was compacted: folded blocks become a clea
 message, and compacted tool outputs are prefixed with a note that the full output can be obtained by
 re-running the tool.
 
+Summaries run as the agent itself: their system prompt leads with the agent's shared prefix
+(`AGENTS.md`, `SOUL.md`, `USER.md`, skill catalog), followed by the compaction instructions. See
+[system prompt loading](persistent-context.md#system-prompt-loading).
+
 ## The `/compact` command
 
 ```
