@@ -122,7 +122,7 @@ def test_build_system_prompt_ask_mode_mentions_read_only_limits(tmp_path: Path):
 
 def test_build_system_prompt_leads_with_the_shared_prefix_and_ends_volatile(tmp_path: Path):
     for name in ("AGENTS.md", "SOUL.md", "USER.md"):
-        (tmp_path / name).write_text(f"# {name}")
+        (tmp_path / name).write_text(f"{name.removesuffix('.md').lower()} content\n")
     catalog = [SkillInfo(name="web", description="Search the web.", path=tmp_path / "skills" / "web")]
     state = SessionState.now(session_id="s1", ask_mode=True)
     deps = Deps(
@@ -146,7 +146,12 @@ def test_build_system_prompt_leads_with_the_shared_prefix_and_ends_volatile(tmp_
     prefix = shared_prompt_prefix(tmp_path, catalog)
     assert prompt.startswith(prefix)
     assert prefix == "\n\n---\n\n".join(
-        ["# AGENTS.md", "# SOUL.md", "# USER.md", "# Available Skills\n\n- **web**: Search the web."]
+        [
+            "# AGENTS.md\n\nagents content",
+            "# SOUL.md\n\nsoul content",
+            "# USER.md\n\nuser content",
+            "# Available Skills\n\n- **web**: Search the web.",
+        ]
     )
     sections = ["# Sandbox Environment", "# Response format", "# Read-Only Session", "# Session Info"]
     positions = [prompt.index(section) for section in sections]

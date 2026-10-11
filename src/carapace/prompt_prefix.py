@@ -19,11 +19,18 @@ _PREFIX_FILES = ("AGENTS.md", "SOUL.md", "USER.md")
 
 
 def shared_prompt_prefix(knowledge_dir: Path, skill_catalog: Sequence[SkillInfo]) -> str:
-    sections = [load_workspace_file(knowledge_dir, name) for name in _PREFIX_FILES]
+    # Each file is labeled with its name: role instructions refer to the files by name, and a
+    # file's own headings are user-written and can't be relied on.
+    sections = [_workspace_file_section(knowledge_dir, name) for name in _PREFIX_FILES]
     if skill_catalog:
         skills = "\n".join(f"- **{skill.name}**: {skill.description.strip()}" for skill in skill_catalog)
         sections.append(f"# Available Skills\n\n{skills}")
     return join_prompt_sections(*sections)
+
+
+def _workspace_file_section(knowledge_dir: Path, name: str) -> str:
+    content = load_workspace_file(knowledge_dir, name).strip()
+    return f"# {name}\n\n{content}" if content else ""
 
 
 def join_prompt_sections(*sections: str) -> str:

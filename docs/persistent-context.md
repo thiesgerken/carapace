@@ -50,6 +50,8 @@ Every role that acts as the user's agent starts its system prompt with the same 
 3. `USER.md`: context about the human
 4. Skill catalog: names and descriptions only
 
+Each file sits under a `# <file name>` heading (`# SOUL.md`), so role instructions can refer to the files by name whatever headings they contain. Missing or empty files are left out.
+
 The roles are agent turns, compaction summaries, session extraction, and week and month digests. Each role puts its own instructions after the prefix:
 
 - **Agent turns** (`build_system_prompt()`): sandbox environment, response format, then the session's mode (unattended, ask), and last the date and session ID.
