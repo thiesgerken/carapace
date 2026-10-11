@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from decimal import Decimal
-from pathlib import Path
 from typing import Any
 
 import pytest
@@ -33,7 +32,6 @@ from carapace.models.user import UserConfig
 from carapace.usage import count_text_tokens
 
 MODEL = "anthropic:claude-haiku-4-5"
-NO_KNOWLEDGE = Path("/nonexistent-knowledge")
 
 # Sunday 22:30 UTC is already Monday in Berlin: the session belongs to the next ISO week.
 EVENTS: list[dict[str, Any]] = [
@@ -104,21 +102,18 @@ def _handler(
     *,
     events: list[dict[str, Any]] = EVENTS,
     config: Config | None = None,
-    knowledge_dir: Path = NO_KNOWLEDGE,
+    prompt_prefix: str = "",
 ) -> SessionExtractHandler:
     return SessionExtractHandler(
         current_config=lambda: config or Config(),
         load_events=lambda session_id: events if session_id == "s1" else [],
         user_config_for=lambda user: UserConfig(timezone="Europe/Berlin"),
-        knowledge_dir_for=lambda user: knowledge_dir,
+        prompt_prefix_for=lambda user: prompt_prefix,
         model_factory=lambda name, *, user: FunctionModel(recorder),
     )
 
 
-def _workspace(tmp_path: Path) -> Path:
-    (tmp_path / "SOUL.md").write_text("# Soul\n\nYou are Pip.\n")
-    (tmp_path / "USER.md").write_text("# User\n\nThe user is Alice.\n")
-    return tmp_path
+PREFIX = "# SOUL.md\n\nYou are Pip.\n\n---\n\n# USER.md\n\nThe user is Alice."
 
 
 async def test_run_returns_extraction_with_provenance() -> None:
@@ -145,17 +140,17 @@ async def test_run_returns_extraction_with_provenance() -> None:
     assert provenance.duration_ms >= 0
 
 
-async def test_run_sends_sandwich_prompt_in_user_timezone(tmp_path: Path) -> None:
+async def test_run_sends_sandwich_prompt_in_user_timezone() -> None:
     recorder = _Recorder()
 
-    await _handler(recorder, knowledge_dir=_workspace(tmp_path)).run(_task(), MODEL)
+    await _handler(recorder, prompt_prefix=PREFIX).run(_task(), MODEL)
 
     assert recorder.user_prompt() == SESSION_EXTRACT.user_prompt(
         render_extraction_input(EVENTS).text, session_date="2026-09-07"
     )
     assert recorder.info is not None
-    assert recorder.info.instructions == system_prompt(SESSION_EXTRACT, tmp_path)
-    assert recorder.info.instructions.startswith("# Soul")
+    assert recorder.info.instructions == system_prompt(SESSION_EXTRACT, PREFIX)
+    assert recorder.info.instructions.startswith("# SOUL.md")
     assert recorder.info.model_settings is not None
     assert recorder.info.model_settings.get("max_tokens") == SESSION_EXTRACT_OUTPUT_CAP
 
@@ -191,7 +186,7 @@ async def test_rejected_output_fails_after_one_billed_call() -> None:
         current_config=Config,
         load_events=lambda session_id: EVENTS,
         user_config_for=lambda user: UserConfig(),
-        knowledge_dir_for=lambda user: NO_KNOWLEDGE,
+        prompt_prefix_for=lambda user: "",
         model_factory=lambda name, *, user: FunctionModel(respond),
     )
 
@@ -209,13 +204,13 @@ async def test_run_requires_a_model() -> None:
         await _handler(_Recorder()).run(_task(), None)
 
 
-async def test_estimate_counts_prompt_and_caps_output(tmp_path: Path) -> None:
-    handler = _handler(_Recorder(), knowledge_dir=_workspace(tmp_path))
+async def test_estimate_counts_prompt_and_caps_output() -> None:
+    handler = _handler(_Recorder(), prompt_prefix=PREFIX)
 
     estimate = await handler.estimate("alice", "s1", MODEL)
 
     user_prompt = SESSION_EXTRACT.user_prompt(render_extraction_input(EVENTS).text, session_date="2026-09-07")
-    system = system_prompt(SESSION_EXTRACT, tmp_path)
+    system = system_prompt(SESSION_EXTRACT, PREFIX)
     expected_input = count_text_tokens(f"{system}\n\n{user_prompt}", model_name=MODEL)
     assert estimate.model == MODEL
     assert estimate.input_tokens == expected_input
