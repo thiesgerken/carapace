@@ -222,7 +222,7 @@ default_models:
 | `memory_low` | session extraction | `default_models.memory_low` | `agent.memory_low_model` | compaction model, then title model |
 | `memory_high` | week and month digests | `default_models.memory_high` | `agent.memory_high_model` | agent model |
 
-A cheap, haiku-class or local model is enough for `memory_low`. Digests benefit from a stronger `memory_high` model. Memory roles are not session roles: `/model` and per-session overrides do not affect them. A run can override the model per task (run dialog, respawn).
+A cheap, haiku-class or local model is enough for `memory_low`. Digests benefit from a stronger `memory_high` model. Memory roles are not session roles: `/model` and per-session overrides do not affect them. A run can override the model per task (run dialog, respawn). An override must be a registered, enabled model in `agent.available_models`; estimate, run and spawn reject anything else with 422.
 
 ---
 
