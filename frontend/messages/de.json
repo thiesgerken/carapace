@@ -76,6 +76,12 @@
             "failed": "fehlgeschlagen",
             "cancelled": "abgebrochen"
         },
+        "taskKinds": {
+            "session_extract": "Sitzungsextraktion",
+            "week_digest": "Wochen-Digest",
+            "month_digest": "Monats-Digest",
+            "mirror": "Spiegel"
+        },
         "tasks": {
             "filters": {
                 "status": "Status",
@@ -83,6 +89,7 @@
                 "kind": "Art",
                 "anyKind": "Alle Arten",
                 "month": "Monat",
+                "monthPlaceholder": "Monat (JJJJ-MM)",
                 "model": "Modell",
                 "anyModel": "Alle Modelle"
             },
@@ -108,10 +115,12 @@
             "empty": "Keine Aufgaben passen zu diesen Filtern.",
             "blockedBudget": "⏸ Budget",
             "retry": "Erneut versuchen",
+            "expand": "Details zu {target} anzeigen",
+            "collapse": "Details zu {target} ausblenden",
             "loadMore": "Mehr laden",
             "runNewest": "Neueste {count} ausführen",
-            "runPicked": "Auswahl ausführen ({count})",
-            "cancelPicked": "Auswahl abbrechen ({count})",
+            "runPicked": "Auswahl ausführen",
+            "cancelPicked": "Auswahl abbrechen",
             "queued": "{count, plural, one {# Aufgabe eingereiht.} other {# Aufgaben eingereiht.}}",
             "cancelled": "{count, plural, one {# Aufgabe abgebrochen.} other {# Aufgaben abgebrochen.}}",
             "retried": "{count, plural, one {# Aufgabe wird erneut versucht.} other {# Aufgaben werden erneut versucht.}}",
@@ -165,6 +174,7 @@
         "pick": {
             "pickMatching": "Alle {count} Treffer auswählen",
             "pickedMatching": "Alle {count} Treffer sind ausgewählt.",
+            "selected": "{count} ausgewählt",
             "clear": "Auswahl aufheben"
         },
         "sessions": {

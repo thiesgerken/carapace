@@ -99,13 +99,18 @@ test("select all matching runs the whole filter, not just the visible page", asy
     assert.match(text(), /Weekend trip/);
     assert.match(text(), /120 matching · est\. \$0\.36/);
 
+    const buttonLabels = () => Array.from(view.container.querySelectorAll("button")).map((element) => element.textContent?.trim());
+    assert.ok(!buttonLabels().includes("Run selected"), "selection actions only appear with a selection");
+
     await click(view.container.querySelector('input[aria-label="Select all tasks on this page"]')!);
-    button("Run selected (2)");
+    assert.match(text(), /2 selected/);
+    button("Run selected");
 
     await click(button("Select all 120 matching"));
     assert.match(text(), /All 120 matching are selected\./);
 
-    await click(button("Run selected (120)"));
+    assert.match(text(), /120 selected/);
+    await click(button("Run selected"));
     await settle();
     const filter = { status: ["pending"], kind: null, period: null, model: null };
     assert.deepEqual(posts.at(-1), { path: "/api/memory/tasks/estimate", body: { selection: { filter }, model_override: null } });

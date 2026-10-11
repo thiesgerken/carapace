@@ -76,6 +76,12 @@
             "failed": "failed",
             "cancelled": "cancelled"
         },
+        "taskKinds": {
+            "session_extract": "session extraction",
+            "week_digest": "week digest",
+            "month_digest": "month digest",
+            "mirror": "mirror"
+        },
         "tasks": {
             "filters": {
                 "status": "Status",
@@ -83,6 +89,7 @@
                 "kind": "Kind",
                 "anyKind": "Any kind",
                 "month": "Month",
+                "monthPlaceholder": "Month (YYYY-MM)",
                 "model": "Model",
                 "anyModel": "Any model"
             },
@@ -108,10 +115,12 @@
             "empty": "No tasks match these filters.",
             "blockedBudget": "⏸ budget",
             "retry": "Retry",
+            "expand": "Show details of {target}",
+            "collapse": "Hide details of {target}",
             "loadMore": "Load more",
             "runNewest": "Run newest {count}",
-            "runPicked": "Run selected ({count})",
-            "cancelPicked": "Cancel selected ({count})",
+            "runPicked": "Run selected",
+            "cancelPicked": "Cancel selected",
             "queued": "{count, plural, one {Queued # task.} other {Queued # tasks.}}",
             "cancelled": "{count, plural, one {Cancelled # task.} other {Cancelled # tasks.}}",
             "retried": "{count, plural, one {Retrying # task.} other {Retrying # tasks.}}",
@@ -165,6 +174,7 @@
         "pick": {
             "pickMatching": "Select all {count} matching",
             "pickedMatching": "All {count} matching are selected.",
+            "selected": "{count} selected",
             "clear": "Clear selection"
         },
         "sessions": {

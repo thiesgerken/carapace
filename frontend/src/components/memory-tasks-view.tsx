@@ -4,7 +4,17 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { ArrowDown, Ban, Loader2, Play, RotateCcw } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
-import { buttonClassName, controlClassName, DetailList, MemoryProvenanceList, PickMatchingRow, TaskStatusBadge } from "@/components/memory-ui";
+import {
+  buttonClassName,
+  controlClassName,
+  DetailList,
+  ExpandButton,
+  MemoryProvenanceList,
+  PickMatchingRow,
+  SelectionBar,
+  TaskStatusBadge,
+  togglesRow,
+} from "@/components/memory-ui";
 import { MemoryRunDialog } from "@/components/memory-run-dialog";
 import { useMemoryStatus } from "@/components/memory-status";
 import { cancelMemoryTasks, listMemoryTasks, retryMemoryTasks } from "@/lib/api";
@@ -47,6 +57,7 @@ function resultHref(task: MemoryTaskView): string | null {
 export function MemoryTasksView({ server, token }: { server: string; token: string }) {
   const t = useTranslations("memory.tasks");
   const tStatuses = useTranslations("memory.taskStatuses");
+  const tKinds = useTranslations("memory.taskKinds");
   const tSidebar = useTranslations("sidebar");
   const locale = useLocale();
   const { status, refreshStatus } = useMemoryStatus();
@@ -150,64 +161,51 @@ export function MemoryTasksView({ server, token }: { server: string; token: stri
   return (
     <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6">
       <div className="space-y-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <select aria-label={t("filters.status")} value={form.status} onChange={(event) => updateForm({ status: event.target.value as TaskFilterForm["status"] })} className={controlClassName}>
-            <option value="">{t("filters.anyStatus")}</option>
-            {MEMORY_TASK_STATUSES.map((value) => <option key={value} value={value}>{tStatuses(value)}</option>)}
-          </select>
-          <select aria-label={t("filters.kind")} value={form.kind} onChange={(event) => updateForm({ kind: event.target.value as TaskFilterForm["kind"] })} className={controlClassName}>
-            <option value="">{t("filters.anyKind")}</option>
-            {MEMORY_TASK_KINDS.map((value) => <option key={value} value={value}>{value}</option>)}
-          </select>
-          <input
-            type="month"
-            aria-label={t("filters.month")}
-            title={t("filters.month")}
-            value={form.period}
-            onChange={(event) => updateForm({ period: event.target.value })}
-            className={controlClassName}
-          />
-          <select aria-label={t("filters.model")} value={form.model} onChange={(event) => updateForm({ model: event.target.value })} className={controlClassName}>
-            <option value="">{t("filters.anyModel")}</option>
-            {modelOptions.map((value) => <option key={value} value={value}>{value}</option>)}
-          </select>
-          <span className="ml-auto text-sm tabular-nums text-muted-foreground">
-            {t("matching", { count: total })}
-            {page && page.estimate.task_count > 0
-              ? ` · ${t("estimate", {
-                cost: page.estimate.unpriced_count === page.estimate.task_count
-                  ? formatTokenEstimate(page.estimate.input_tokens, page.estimate.output_tokens_cap, locale)
-                  : formatUsd(page.estimate.cost_usd, locale),
-              })}`
-              : null}
-          </span>
-          <button
-            type="button"
-            disabled={busy || total === 0}
-            onClick={() => setRunSelection({ filter, newest: NEWEST_BATCH })}
-            className={buttonClassName}
-          >
-            <Play className="h-4 w-4" />
-            {t("runNewest", { count: NEWEST_BATCH })}
-          </button>
-          <button
-            type="button"
-            disabled={busy || pickedCount === 0}
-            onClick={() => setRunSelection(toTaskSelection(pick, filter))}
-            className={buttonClassName}
-          >
-            <Play className="h-4 w-4" />
-            {t("runPicked", { count: pickedCount })}
-          </button>
-          <button
-            type="button"
-            disabled={busy || pickedCount === 0}
-            onClick={() => void act(() => cancelMemoryTasks(server, toTaskSelection(pick, filter)), (count) => t("cancelled", { count }))}
-            className={buttonClassName}
-          >
-            <Ban className="h-4 w-4" />
-            {t("cancelPicked", { count: pickedCount })}
-          </button>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <select aria-label={t("filters.status")} value={form.status} onChange={(event) => updateForm({ status: event.target.value as TaskFilterForm["status"] })} className={controlClassName}>
+              <option value="">{t("filters.anyStatus")}</option>
+              {MEMORY_TASK_STATUSES.map((value) => <option key={value} value={value}>{tStatuses(value)}</option>)}
+            </select>
+            <select aria-label={t("filters.kind")} value={form.kind} onChange={(event) => updateForm({ kind: event.target.value as TaskFilterForm["kind"] })} className={controlClassName}>
+              <option value="">{t("filters.anyKind")}</option>
+              {MEMORY_TASK_KINDS.map((value) => <option key={value} value={value}>{tKinds(value)}</option>)}
+            </select>
+            <input
+              type="month"
+              aria-label={t("filters.month")}
+              title={t("filters.month")}
+              placeholder={t("filters.monthPlaceholder")}
+              value={form.period}
+              onChange={(event) => updateForm({ period: event.target.value })}
+              className={controlClassName}
+            />
+            <select aria-label={t("filters.model")} value={form.model} onChange={(event) => updateForm({ model: event.target.value })} className={controlClassName}>
+              <option value="">{t("filters.anyModel")}</option>
+              {modelOptions.map((value) => <option key={value} value={value}>{value}</option>)}
+            </select>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="text-sm tabular-nums text-muted-foreground">
+              {t("matching", { count: total })}
+              {page && page.estimate.task_count > 0
+                ? ` · ${t("estimate", {
+                  cost: page.estimate.unpriced_count === page.estimate.task_count
+                    ? formatTokenEstimate(page.estimate.input_tokens, page.estimate.output_tokens_cap, locale)
+                    : formatUsd(page.estimate.cost_usd, locale),
+                })}`
+                : null}
+            </span>
+            <button
+              type="button"
+              disabled={busy || total === 0}
+              onClick={() => setRunSelection({ filter, newest: NEWEST_BATCH })}
+              className={buttonClassName}
+            >
+              <Play className="h-4 w-4" />
+              {t("runNewest", { count: NEWEST_BATCH })}
+            </button>
+          </div>
         </div>
 
         {error ? <div className="rounded-lg border border-border bg-background px-4 py-2 text-sm text-destructive">{error}</div> : null}
@@ -216,6 +214,24 @@ export function MemoryTasksView({ server, token }: { server: string; token: stri
             <span>{notice}</span>
             <button type="button" onClick={() => setNotice(null)} className="text-xs text-muted-foreground underline underline-offset-2">{t("dismiss")}</button>
           </div>
+        ) : null}
+
+        {pickedCount > 0 ? (
+          <SelectionBar count={pickedCount} onClear={() => setPick(NO_PICK)}>
+            <button type="button" disabled={busy} onClick={() => setRunSelection(toTaskSelection(pick, filter))} className={buttonClassName}>
+              <Play className="h-4 w-4" />
+              {t("runPicked")}
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void act(() => cancelMemoryTasks(server, toTaskSelection(pick, filter)), (count) => t("cancelled", { count }))}
+              className={buttonClassName}
+            >
+              <Ban className="h-4 w-4" />
+              {t("cancelPicked")}
+            </button>
+          </SelectionBar>
         ) : null}
 
         <div className="overflow-x-auto rounded-lg border border-border bg-background">
@@ -259,7 +275,12 @@ export function MemoryTasksView({ server, token }: { server: string; token: stri
                 const expanded = expandedId === task.id;
                 return (
                   <Fragment key={task.id}>
-                    <tr className={cn("border-b border-border/60 align-top last:border-b-0", expanded && "bg-muted/40")}>
+                    <tr
+                      onClick={(event) => {
+                        if (togglesRow(event.target)) setExpandedId(expanded ? null : task.id);
+                      }}
+                      className={cn("cursor-pointer border-b border-border/60 align-top last:border-b-0 hover:bg-muted/30", expanded && "bg-muted/40")}
+                    >
                       <td className="px-3 py-2">
                         <input
                           type="checkbox"
@@ -269,16 +290,9 @@ export function MemoryTasksView({ server, token }: { server: string; token: stri
                           onChange={() => togglePicked(task.id)}
                         />
                       </td>
-                      <td className="px-3 py-2 font-mono text-xs">{task.kind}</td>
+                      <td className="whitespace-nowrap px-3 py-2 text-xs">{tKinds(task.kind)}</td>
                       <td className="px-3 py-2">
-                        <button
-                          type="button"
-                          aria-expanded={expanded}
-                          onClick={() => setExpandedId(expanded ? null : task.id)}
-                          className="text-left hover:underline"
-                        >
-                          {task.target_label}
-                        </button>
+                        {task.target_label}
                         {task.status === "failed" && task.error ? (
                           <div className="mt-0.5 line-clamp-1 text-xs text-destructive">{task.error}</div>
                         ) : null}
@@ -293,23 +307,31 @@ export function MemoryTasksView({ server, token }: { server: string; token: stri
                         {formatRelativeTime(taskActivityAt(task), locale, now, tSidebar("time.justNow"))}
                       </td>
                       <td className="px-3 py-2 text-right tabular-nums">{costCell(task)}</td>
-                      <td className="px-3 py-2">
-                        {task.status === "failed" ? (
-                          <button
-                            type="button"
-                            disabled={busy}
-                            onClick={() => void act(() => retryMemoryTasks(server, [task.id]), (count) => t("retried", { count }))}
-                            title={t("retry")}
-                            aria-label={t("retry")}
-                            className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
-                          >
-                            <RotateCcw className="h-3.5 w-3.5" />
-                          </button>
-                        ) : null}
+                      <td className="px-3 py-1.5">
+                        <div className="flex items-center justify-end gap-1">
+                          {task.status === "failed" ? (
+                            <button
+                              type="button"
+                              disabled={busy}
+                              onClick={() => void act(() => retryMemoryTasks(server, [task.id]), (count) => t("retried", { count }))}
+                              title={t("retry")}
+                              aria-label={t("retry")}
+                              className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
+                            >
+                              <RotateCcw className="h-3.5 w-3.5" />
+                            </button>
+                          ) : null}
+                          <ExpandButton
+                            expanded={expanded}
+                            controls={taskDetailId(task.id)}
+                            label={t(expanded ? "collapse" : "expand", { target: task.target_label })}
+                            onToggle={() => setExpandedId(expanded ? null : task.id)}
+                          />
+                        </div>
                       </td>
                     </tr>
                     {expanded ? (
-                      <tr className="border-b border-border/60 bg-muted/40">
+                      <tr id={taskDetailId(task.id)} className="border-b border-border/60 bg-muted/40">
                         <td colSpan={COLUMN_COUNT} className="px-3 pb-3">
                           <MemoryTaskDetail task={task} />
                         </td>
@@ -388,4 +410,8 @@ function MemoryTaskDetail({ task }: { task: MemoryTaskView }) {
       {href ? <Link href={href} className="inline-block font-medium underline underline-offset-2">{t("openResult")}</Link> : null}
     </div>
   );
+}
+
+function taskDetailId(taskId: number): string {
+  return `memory-task-detail-${taskId}`;
 }
