@@ -189,25 +189,31 @@ class MemoryService:
         ]
 
     def this_week(self, user: str) -> ThisWeek | None:
+        """The current week's sessions, or last week's digest while the week has none yet."""
         now, tz = self._clock(), ZoneInfo(self._user_config_for(user).timezone)
-        last_week = week_key(now - timedelta(days=7), tz)
-        if (record := self._store.current_digest(user, DigestLevel.week, last_week)) is not None:
-            digest = record.digest
-            return ThisWeek(
-                source="week_digest",
-                period_key=last_week,
-                themes=digest.on_my_mind,
-                highlights=digest.highlights,
-                sessions=[],
-            )
         current_week = week_key(now, tz)
-        sessions = [
+        if sessions := [
             ThisWeekSession(session_id=v.record.session_id, title=v.title, abstract=v.record.extraction.abstract)
             for v in self._store.visible_extractions(user, week_key=current_week)
-        ]
-        if not sessions:
+        ]:
+            return ThisWeek(source="sessions", period_key=current_week, themes=[], highlights=[], sessions=sessions)
+        last_week = week_key(now - timedelta(days=7), tz)
+        record = self._store.current_digest(user, DigestLevel.week, last_week)
+        if record is None or not self._covers_only_visible_sessions(user, record):
             return None
-        return ThisWeek(source="sessions", period_key=current_week, themes=[], highlights=[], sessions=sessions)
+        return ThisWeek(
+            source="week_digest",
+            period_key=last_week,
+            themes=record.digest.on_my_mind,
+            highlights=record.digest.highlights,
+            sessions=[],
+        )
+
+    def _covers_only_visible_sessions(self, user: str, week_digest: DigestRecord) -> bool:
+        """A digest stays current until the sweep purges a session that turned private or was
+        deleted, and until then it still carries that session's themes."""
+        visible = {v.record.session_id for v in self._store.visible_extractions(user, week_key=week_digest.period_key)}
+        return all(entry.source_id in visible for entry in week_digest.coverage)
 
     def failed_task_count(self, user: str) -> int:
         counts, _ = self._store.status_counts(user)
