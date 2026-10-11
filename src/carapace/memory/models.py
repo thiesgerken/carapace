@@ -343,6 +343,12 @@ class EffectiveMemoryModels(MemoryApiModel):
     memory_high: str
 
 
+class TaskKindCounts(MemoryApiModel):
+    session_extract: int
+    week_digest: int
+    month_digest: int
+
+
 class MemoryStatus(MemoryApiModel):
     auto_mode: bool
     timezone: str
@@ -354,6 +360,8 @@ class MemoryStatus(MemoryApiModel):
     models: EffectiveMemoryModels
     # Legacy sessions without a stored transcript, skipped by memory (as of the last sweep).
     sessions_without_transcript: int
+    # Outdated records without an open task: what POST /tasks/spawn-outdated would spawn.
+    outdated: TaskKindCounts
 
 
 class TaskFilter(MemoryApiModel):

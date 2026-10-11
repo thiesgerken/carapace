@@ -51,6 +51,7 @@ function status(day: MemoryBudgetWindowStatus, month: MemoryBudgetWindowStatus):
     blocked: 0,
     models: { memory_low: "low", memory_high: "high" },
     sessions_without_transcript: 0,
+    outdated: { session_extract: 0, week_digest: 0, month_digest: 0 },
   };
 }
 

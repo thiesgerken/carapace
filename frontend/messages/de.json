@@ -66,7 +66,14 @@
             "tokens": "Tokens",
             "noLimit": "kein Limit",
             "queue": "Warteschlange",
-            "blocked": "{count} vom Budget zurückgehalten"
+            "blocked": "{count} vom Budget zurückgehalten",
+            "outdatedButton": "{count, plural, one {# veralteten Eintrag} other {# veraltete Einträge}} erneuern",
+            "outdatedHint": "Einträge, die mit einem älteren Prompt, Modell oder Eingabeformat erstellt wurden. Erzeugt ausstehende Tasks; ausführen unter Tasks.",
+            "outdatedConfirm": "{count, plural, one {# ausstehenden Task} other {# ausstehende Tasks}} erstellen?",
+            "outdatedConfirmAuto": "Der Auto-Modus reiht sie sofort ein.",
+            "outdatedCreate": "Erstellen",
+            "outdatedCancel": "Abbrechen",
+            "outdatedCreated": "{extractions, plural, one {# Extraktions-Task} other {# Extraktions-Tasks}} und {digests, plural, one {# Digest-Task} other {# Digest-Tasks}} erstellt."
         },
         "taskStatuses": {
             "pending": "ausstehend",

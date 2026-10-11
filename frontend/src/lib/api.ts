@@ -14,6 +14,7 @@ import type {
   MemorySessionFilter,
   MemorySessionListResponse,
   MemoryStatus,
+  MemoryTaskKindCounts,
   MemoryTaskCountResponse,
   MemoryTaskFilter,
   MemoryTaskListResponse,
@@ -1879,6 +1880,10 @@ export function retryMemoryTasks(server: string, ids: number[]): Promise<MemoryT
 
 export function spawnMemoryTasks(server: string, body: MemoryTaskSpawnRequest): Promise<MemoryTaskSpawnResponse> {
   return postMemory(server, "/tasks/spawn", body, "Failed to spawn memory tasks");
+}
+
+export function spawnOutdatedMemoryTasks(server: string): Promise<MemoryTaskKindCounts> {
+  return postMemory(server, "/tasks/spawn-outdated", {}, "Failed to spawn tasks for outdated memory");
 }
 
 function memorySessionQuery(filter: MemorySessionFilter, cursor: string | null): string {
