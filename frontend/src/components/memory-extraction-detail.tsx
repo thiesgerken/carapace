@@ -25,7 +25,8 @@ type Outcome = { sessionId: string } & ({ detail: MemorySessionDetail | null } |
 
 const IDLE: MemorySessionDetailState = { detail: undefined, error: null };
 
-export function useMemorySessionDetail(server: string, sessionId: string | null): MemorySessionDetailState {
+/** Refetches whenever `refreshKey` changes; the previous outcome stays visible meanwhile. */
+export function useMemorySessionDetail(server: string, sessionId: string | null, refreshKey?: unknown): MemorySessionDetailState {
   const [outcome, setOutcome] = useState<Outcome | null>(null);
 
   useEffect(() => {
@@ -41,7 +42,7 @@ export function useMemorySessionDetail(server: string, sessionId: string | null)
     return () => {
       cancelled = true;
     };
-  }, [server, sessionId]);
+  }, [server, sessionId, refreshKey]);
 
   // Keyed by session: an outcome for another session reads as loading.
   if (outcome === null || outcome.sessionId !== sessionId) return IDLE;

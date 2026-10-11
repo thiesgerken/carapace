@@ -38,8 +38,9 @@ export function MemorySessionsView({ server, token }: { server: string; token: s
   const pathname = usePathname();
   // The expanded row lives in the URL, so /memory/sessions?session=… deep links open it.
   const expandedId = useSearchParams().get("session");
-  const expanded = useMemorySessionDetail(server, expandedId);
   const { status, refreshStatus } = useMemoryStatus();
+  // Polled with the rows, so the expanded detail never lags behind its live row.
+  const expanded = useMemorySessionDetail(server, expandedId, status);
   const [form, setForm] = useState(DEFAULT_FORM);
   const filter = useMemo(() => toSessionFilter(form), [form]);
   const [page, setPage] = useState<MemorySessionListResponse | null>(null);
