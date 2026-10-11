@@ -69,57 +69,73 @@ export function HomeView({ server, agentName, onStart }: {
   }
 
   const hasMemory = data !== null && (data.open_loops.length > 0 || data.this_week !== null);
+  const thisWeek = data && hasMemory ? <ThisWeekBlock week={data.this_week} /> : null;
 
+  // The chat view's frame: a column with the composer pinned at its foot, and the inspector's 22rem
+  // on the right from lg up, so the composer stays put when the started session takes over.
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto px-4 py-8 sm:px-6 sm:py-12">
-      <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
-        <div className="mx-auto w-full max-w-3xl space-y-3">
-          <div className="flex items-end gap-2">
-            <div className="min-w-0 flex-1">
-              <ChatInput
-                key={composerKey}
-                sessionId={HOME_DRAFT_KEY}
-                onSend={(content) => void start(content)}
-                connected
-                disabled={starting}
-                agentName={agentName}
-                className="border-t-0 bg-transparent p-0"
-              />
-            </div>
-            <SessionOptionsDropdown options={options} onChange={setOptions} disabled={starting} className="h-[3.125rem] rounded-xl" />
-          </div>
-          {data ? <NoticeChips notices={data.notices} /> : null}
-        </div>
-
-        {error ? (
-          <p className="text-center text-sm text-destructive">{error}</p>
-        ) : data === null ? null : hasMemory ? (
-          <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
-            <Block title={t("openLoops.title")}>
-              {data.open_loops.length === 0 ? (
-                <p className="text-sm text-muted-foreground">{t("openLoops.empty")}</p>
+    <div className="flex h-full min-h-0 flex-1 flex-col overflow-clip">
+      <div className="min-h-0 flex flex-1 flex-col lg:grid lg:grid-cols-[minmax(0,1fr)_22rem]">
+        <div className="min-h-0 flex flex-1 flex-col">
+          <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
+            <div className="mx-auto max-w-3xl space-y-4">
+              {data ? <NoticeChips notices={data.notices} /> : null}
+              {error ? (
+                <p className="text-sm text-destructive">{error}</p>
+              ) : data === null ? null : hasMemory ? (
+                <>
+                  <Block title={t("openLoops.title")}>
+                    {data.open_loops.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">{t("openLoops.empty")}</p>
+                    ) : (
+                      <ul className="divide-y divide-border/60">
+                        {data.open_loops.map((loop, index) => (
+                          <OpenLoopItem key={`${loop.session_id}-${index}`} loop={loop} />
+                        ))}
+                      </ul>
+                    )}
+                  </Block>
+                  <div className="lg:hidden">{thisWeek}</div>
+                </>
               ) : (
-                <ul className="divide-y divide-border/60">
-                  {data.open_loops.map((loop, index) => (
-                    <OpenLoopItem key={`${loop.session_id}-${index}`} loop={loop} />
-                  ))}
-                </ul>
+                <p className="py-8 text-center text-sm text-muted-foreground">
+                  {t.rich("noMemory", { link: (chunks) => <Link href="/memory" className="underline underline-offset-2 hover:text-foreground">{chunks}</Link> })}
+                </p>
               )}
-            </Block>
-            <Block
-              title={t("thisWeek.title")}
-              action={data.this_week ? <PeriodLink periodKey={data.this_week.period_key} /> : null}
-            >
-              {data.this_week ? <ThisWeek week={data.this_week} /> : <p className="text-sm text-muted-foreground">{t("thisWeek.empty")}</p>}
-            </Block>
+            </div>
           </div>
-        ) : (
-          <p className="text-center text-sm text-muted-foreground">
-            {t.rich("noMemory", { link: (chunks) => <Link href="/memory" className="underline underline-offset-2 hover:text-foreground">{chunks}</Link> })}
-          </p>
-        )}
+          <ChatInput
+            key={composerKey}
+            sessionId={HOME_DRAFT_KEY}
+            onSend={(content) => void start(content)}
+            connected
+            disabled={starting}
+            agentName={agentName}
+            accessory={(
+              <SessionOptionsDropdown
+                options={options}
+                onChange={setOptions}
+                disabled={starting}
+                openUpward
+                className="rounded-lg border-0 bg-transparent p-2 text-muted-foreground"
+              />
+            )}
+          />
+        </div>
+        <aside className="hidden min-h-0 border-l border-border bg-muted/20 lg:block">
+          <div className="h-full overflow-y-auto p-3">{thisWeek}</div>
+        </aside>
       </div>
     </div>
+  );
+}
+
+function ThisWeekBlock({ week }: { week: HomeThisWeek | null }) {
+  const t = useTranslations("home");
+  return (
+    <Block title={t("thisWeek.title")} action={week ? <PeriodLink periodKey={week.period_key} /> : null}>
+      {week ? <ThisWeek week={week} /> : <p className="text-sm text-muted-foreground">{t("thisWeek.empty")}</p>}
+    </Block>
   );
 }
 
@@ -245,7 +261,7 @@ function NoticeChips({ notices }: { notices: HomeNotices }) {
   if (chips.length === 0) return null;
 
   return (
-    <ul className="flex flex-wrap justify-center gap-2">
+    <ul className="flex flex-wrap gap-2">
       {chips.map(({ key, href, icon: Icon, label, urgent }) => (
         <li key={key}>
           <Link

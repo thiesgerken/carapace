@@ -67,11 +67,14 @@ export function SessionOptionsDropdown({
   options,
   onChange,
   disabled = false,
+  openUpward = false,
   className,
 }: {
   options: NewSessionOptions;
   onChange: (options: NewSessionOptions) => void;
   disabled?: boolean;
+  /** For a control pinned to the bottom of the screen. */
+  openUpward?: boolean;
   className?: string;
 }) {
   const t = useTranslations("newSessionButton");
@@ -117,14 +120,17 @@ export function SessionOptionsDropdown({
           className,
         )}
       >
-        <ChevronDown className={cn("h-4 w-4 transition-transform", open && "rotate-180")} />
+        <ChevronDown className={cn("h-4 w-4 transition-transform", open !== openUpward && "rotate-180")} />
       </button>
 
       {open ? (
         <div
           role="dialog"
           aria-label={t("chooseOptions")}
-          className="absolute right-0 top-full z-20 mt-1 min-w-80 rounded-xl border border-border bg-background p-3 shadow-lg"
+          className={cn(
+            "absolute right-0 z-20 min-w-80 rounded-xl border border-border bg-background p-3 shadow-lg",
+            openUpward ? "bottom-full mb-1" : "top-full mt-1",
+          )}
         >
           <SessionOptionTiles
             items={SESSION_OPTION_ORDER.map((key) => ({
