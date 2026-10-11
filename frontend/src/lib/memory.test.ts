@@ -48,8 +48,12 @@ function status(day: MemoryBudgetWindowStatus, month: MemoryBudgetWindowStatus):
   };
 }
 
-test("formatUsd keeps a third digit for sub-dollar amounts", () => {
+test("formatUsd keeps sub-cent costs visible and budgets at two decimals", () => {
+  assert.equal(formatUsd("0.00213", "en"), "$0.0021");
+  assert.equal(formatUsd("0.0004", "en"), "$0.0004");
   assert.equal(formatUsd("0.004", "en"), "$0.004");
+  assert.equal(formatUsd("0.123", "en"), "$0.123");
+  assert.equal(formatUsd("1", "en"), "$1.00");
   assert.equal(formatUsd("3.1", "en"), "$3.10");
   assert.equal(formatUsd("0", "en"), "$0.00");
 });
