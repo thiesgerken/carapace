@@ -22,7 +22,6 @@ from pydantic_ai.toolsets import CombinedToolset, FunctionToolset
 from pydantic_ai.toolsets.abstract import AbstractToolset
 
 from .. import security as security
-from ..config import load_workspace_file
 from ..credentials import CredentialBackendError
 from ..llm import model_settings_for_config, model_supports_vision
 from ..models.credentials import CredentialMetadata
@@ -34,6 +33,7 @@ from ..models.skills import (
     SkillMcpOAuthAuth,
 )
 from ..models.tooling import SentFileInfo, ToolResult, normalize_tool_call_args
+from ..prompt_prefix import join_prompt_sections, shared_prompt_prefix
 from ..sandbox.manager import READ_TOOL_MAX_LINE_WINDOW, UploadError, UploadTooLargeError
 from ..sandbox.runtime import SkillActivationError
 from ..sandbox.skill_activation import SKILL_COMMAND_SHIM_DIR
@@ -958,31 +958,7 @@ async def build_skill_mcp_toolset(ctx: RunContext[Deps]) -> AbstractToolset[Deps
 
 
 def build_system_prompt(deps: Deps) -> str:
-    parts: list[str] = []
-
-    agents_md = load_workspace_file(deps.knowledge_dir, "AGENTS.md")
-    if agents_md:
-        parts.append(agents_md)
-
-    soul_md = load_workspace_file(deps.knowledge_dir, "SOUL.md")
-    if soul_md:
-        parts.append(soul_md)
-
-    user_md = load_workspace_file(deps.knowledge_dir, "USER.md")
-    if user_md:
-        parts.append(user_md)
-
-    if deps.skill_catalog:
-        catalog_lines = ["# Available Skills", ""]
-        for skill in deps.skill_catalog:
-            catalog_lines.append(f"- **{skill.name}**: {skill.description.strip()}")
-        catalog_lines.append("")
-        catalog_lines.append(
-            "Use `use_skill` to activate a skill before using it. "
-            + "That makes the skill available in the sandbox and runs the image-provided "
-            + "sandbox activator."
-        )
-        parts.append("\n".join(catalog_lines))
+    parts = [shared_prompt_prefix(deps.knowledge_dir, deps.skill_catalog)]
 
     parts.append(
         "# Sandbox Environment\n"
@@ -1051,7 +1027,7 @@ def build_system_prompt(deps: Deps) -> str:
         f"# Session Info\nToday's date: {today:%A}, {today:%Y-%m-%d}\nSession ID: {deps.session_state.session_id}"
     )
 
-    return "\n\n---\n\n".join(parts)
+    return join_prompt_sections(*parts)
 
 
 def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | DeferredToolRequests]:

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import Any
 
 import pytest
@@ -100,23 +99,21 @@ class _Sources:
         return self.weeks
 
 
-def _handler(
-    level: DigestLevel, model: _Model, sources: _Sources, knowledge_dir: Path = Path("/nonexistent-knowledge")
-) -> DigestHandler:
+def _handler(level: DigestLevel, model: _Model, sources: _Sources, prompt_prefix: str = "") -> DigestHandler:
     return DigestHandler(
         level=level,
         current_config=Config,
         current_extractions=sources.current_extractions,
         current_digests=sources.current_digests,
-        knowledge_dir_for=lambda user: knowledge_dir,
+        prompt_prefix_for=lambda user: prompt_prefix,
         model_factory=lambda name, *, user: FunctionModel(model),
     )
 
 
-async def test_week_digest_from_the_weeks_extractions(tmp_path: Path) -> None:
-    (tmp_path / "USER.md").write_text("# User\n\nThe user is Alice.\n")
+async def test_week_digest_from_the_weeks_extractions() -> None:
+    prefix = "# USER.md\n\nThe user is Alice."
     model, sources = _Model(), _Sources([EXTRACTION], [])
-    handler = _handler(DigestLevel.week, model, sources, tmp_path)
+    handler = _handler(DigestLevel.week, model, sources, prefix)
 
     outcome = await handler.run(_task(TaskKind.week_digest, "2026-W36"), MODEL)
 
@@ -133,7 +130,7 @@ async def test_week_digest_from_the_weeks_extractions(tmp_path: Path) -> None:
     assert model.prompts == [
         WEEK_DIGEST.user_prompt(rendered.text, period_key="2026-W36", first_day="2026-08-31", last_day="2026-09-06")
     ]
-    assert model.instructions == [f"# User\n\nThe user is Alice.\n\n{WEEK_DIGEST.system}"]
+    assert model.instructions == [f"{prefix}\n\n---\n\n{WEEK_DIGEST.system}"]
     provenance = outcome.provenance
     assert provenance is not None
     assert provenance.prompt_version == WEEK_DIGEST.version(PeriodDigestOutput)

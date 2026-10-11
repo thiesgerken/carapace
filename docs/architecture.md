@@ -195,6 +195,7 @@ This map describes the Python modules under `src/carapace/`. It is meant as a na
 | `jobs.py`      | Job file persistence, cron scheduling, and job-run prompt construction.                       |
 | `llm.py`       | Pydantic AI model factory and model settings helpers.                                         |
 | `payloads.py`  | Defensive helpers for coercing untrusted payload shapes.                                      |
+| `prompt_prefix.py` | System prompt prefix shared by the agent, compaction and memory tasks (see [persistent context](persistent-context.md#system-prompt-loading)). |
 | `skills.py`    | Skill registry, frontmatter parsing, and carapace skill metadata loading.                     |
 | `usage.py`     | Usage tracking, cost estimation, budget gauges, and LLM request activity records.             |
 | `ws_models.py` | WebSocket protocol models and client-message parser.                                          |

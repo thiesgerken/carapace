@@ -6,7 +6,7 @@ Persistent context is ordinary content in the Git-backed knowledge repo: top-lev
 
 ## Workspace files
 
-Top-level Markdown files in the knowledge repo define the agent's identity, user context, and policy. They are cloned into each session sandbox at `/workspace/` and loaded into the agent's system prompt at session start. `SOUL.md` and `USER.md` also lead the prompts of [long-term memory](memory.md#persona-context).
+Top-level Markdown files in the knowledge repo define the agent's identity, user context, and policy. They are cloned into each session sandbox at `/workspace/` and loaded into the agent's system prompt at session start. They also lead the prompts of compaction and [long-term memory](memory.md#persona-context), see [system prompt loading](#system-prompt-loading).
 
 | File          | Purpose                                                                            | Agent-writable?                      |
 | ------------- | ---------------------------------------------------------------------------------- | ------------------------------------ |
@@ -43,11 +43,25 @@ The mirror owns `memory/`: each run rewrites it from the database in one commit 
 
 ## System prompt loading
 
-When an agent turn starts, `build_system_prompt()` loads the following into the system prompt:
+Every role that acts as the user's agent starts its system prompt with the same **shared prefix** (`prompt_prefix.shared_prompt_prefix()`):
 
-1. `AGENTS.md` — behavioral guide
-2. `SOUL.md` — personality
-3. `USER.md` — context about the human
-4. Skill catalog — names and descriptions only
-5. Sandbox environment info — explains container paths and available tools
-6. Session ID
+1. `AGENTS.md`: behavioral guide
+2. `SOUL.md`: personality
+3. `USER.md`: context about the human
+4. Skill catalog: names and descriptions only
+
+Each file sits under a `# <file name>` heading (`# SOUL.md`), so role instructions can refer to the files by name whatever headings they contain. Missing or empty files are left out.
+
+The roles are agent turns, compaction summaries, session extraction, and week and month digests. Each role puts its own instructions after the prefix:
+
+- **Agent turns** (`build_system_prompt()`): sandbox environment, response format, then the session's mode (unattended, ask), and last the date and session ID.
+- **Compaction**: the fold or tool-output summary instructions.
+- **Memory tasks**: the extraction or digest instructions. Dates and periods travel in the user prompt.
+
+The sentinel and the titler stay out on purpose. The sentinel must judge the agent independently, and `SOUL.md`/`USER.md` are agent-writable. A title isn't worth the prefix tokens.
+
+### Prefix caching
+
+Prompt caching depends on the provider. Some (OpenAI, for example) cache matching prompt prefixes automatically. Anthropic caches only up to explicit `cache_control` breakpoints, and carapace sets none, so nothing is cached there today. The order is built so that any prefix cache can hit: stable first, volatile last. Nothing per session or per call (the current date, the session ID, a role split) may come before the long shared text.
+
+Where caching applies, each role's own prefix is what gets reused between its calls. Two roles share a cache entry only when they run on the same model, and some providers put tool definitions ahead of the system prompt, so the agent (with tools) and the tool-less roles may still miss each other. carapace builds nothing provider-specific for caching.

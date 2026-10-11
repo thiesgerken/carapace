@@ -98,7 +98,7 @@ class _LlmCall:
     """What an LLM task sends, fixed before it is estimated or run."""
 
     template: PromptTemplate
-    # SOUL.md and USER.md ahead of the template's instructions, see ``system_prompt``.
+    # The agent's shared prompt prefix ahead of the template's instructions, see ``system_prompt``.
     system: str
     user_prompt: str
     output_cap: int
@@ -177,13 +177,13 @@ class SessionExtractHandler:
         current_config: Callable[[], Config],
         load_events: Callable[[str], list[dict[str, Any]]],
         user_config_for: Callable[[str], UserConfig],
-        knowledge_dir_for: Callable[[str], Path],
+        prompt_prefix_for: Callable[[str], str],
         model_factory: ModelFactory,
     ) -> None:
         self._current_config = current_config
         self._load_events = load_events
         self._user_config_for = user_config_for
-        self._knowledge_dir_for = knowledge_dir_for
+        self._prompt_prefix_for = prompt_prefix_for
         self._model_factory = model_factory
 
     async def estimate(self, user: str, target: str, model: str) -> TaskEstimate:
@@ -221,7 +221,7 @@ class SessionExtractHandler:
         return _PreparedExtraction(
             call=_LlmCall(
                 template=SESSION_EXTRACT,
-                system=system_prompt(SESSION_EXTRACT, self._knowledge_dir_for(user)),
+                system=system_prompt(SESSION_EXTRACT, self._prompt_prefix_for(user)),
                 user_prompt=SESSION_EXTRACT.user_prompt(rendered.text, session_date=session_date),
                 output_cap=SESSION_EXTRACT_OUTPUT_CAP,
                 input_hash=rendered.input_hash,
@@ -256,7 +256,7 @@ class DigestHandler:
         current_config: Callable[[], Config],
         current_extractions: Callable[[str, str], list[ExtractionRecord]],
         current_digests: Callable[[str, DigestLevel, list[str]], list[DigestRecord]],
-        knowledge_dir_for: Callable[[str], Path],
+        prompt_prefix_for: Callable[[str], str],
         model_factory: ModelFactory,
     ) -> None:
         self.level = level
@@ -264,7 +264,7 @@ class DigestHandler:
         self._current_config = current_config
         self._current_extractions = current_extractions
         self._current_digests = current_digests
-        self._knowledge_dir_for = knowledge_dir_for
+        self._prompt_prefix_for = prompt_prefix_for
         self._model_factory = model_factory
 
     async def estimate(self, user: str, target: str, model: str) -> TaskEstimate:
@@ -315,7 +315,7 @@ class DigestHandler:
         return _PreparedDigest(
             call=_LlmCall(
                 template=template,
-                system=system_prompt(template, self._knowledge_dir_for(user)),
+                system=system_prompt(template, self._prompt_prefix_for(user)),
                 user_prompt=user_prompt,
                 output_cap=DIGEST_OUTPUT_CAP,
                 input_hash=rendered.input_hash,

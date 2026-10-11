@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from pathlib import Path
 
 import pytest
 from pydantic import BaseModel
@@ -75,14 +74,10 @@ def test_tail_names_the_delimiter(template: PromptTemplate) -> None:
     assert f"<{template.tag}>…</{template.tag}>" in template.tail
 
 
-def test_system_prompt_leads_with_soul_and_user(tmp_path: Path) -> None:
-    (tmp_path / "SOUL.md").write_text("# Soul\n\nYou are Pip.\n")
-    (tmp_path / "USER.md").write_text("# User\n\nThe user is Alice.\n")
-
-    assert system_prompt(WEEK_DIGEST, tmp_path) == (
-        f"# Soul\n\nYou are Pip.\n\n# User\n\nThe user is Alice.\n\n{WEEK_DIGEST.system}"
-    )
+def test_system_prompt_leads_with_the_shared_prefix() -> None:
+    prefix = "# USER.md\n\nThe user is Alice."
+    assert system_prompt(WEEK_DIGEST, prefix) == f"{prefix}\n\n---\n\n{WEEK_DIGEST.system}"
 
 
-def test_system_prompt_without_workspace_files_is_the_template(tmp_path: Path) -> None:
-    assert system_prompt(SESSION_EXTRACT, tmp_path) == SESSION_EXTRACT.system
+def test_system_prompt_without_a_prefix_is_the_template() -> None:
+    assert system_prompt(SESSION_EXTRACT, "") == SESSION_EXTRACT.system

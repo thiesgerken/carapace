@@ -13,8 +13,9 @@ the call path against pydantic-ai's TestModel instead, for CI smoke tests.
     uv run python scripts/memory_eval.py --test-model path/to/conversation.json
     uv run python scripts/memory_eval.py --call --model anthropic:claude-haiku-4-5 --limit 3 data/
 
-``--knowledge-dir`` puts that repo's SOUL.md and USER.md ahead of the instructions, as the
-handler does with the user's knowledge repo; without it the eval runs on the instructions alone.
+``--knowledge-dir`` puts that repo's shared prompt prefix (AGENTS.md, SOUL.md, USER.md, skill
+catalog) ahead of the instructions, as the handler does with the user's knowledge repo; without it
+the eval runs on the instructions alone.
 
 Real calls resolve the model with pydantic-ai's ``infer_model`` (provider API key from the
 environment), not carapace's model registry.
@@ -43,6 +44,8 @@ from carapace.memory.input import ExtractionInput, render_extraction_input
 from carapace.memory.llm import LlmCallError, prompt_tokens, run_structured
 from carapace.memory.models import SessionExtractionOutput
 from carapace.memory.prompts import SESSION_EXTRACT, system_prompt
+from carapace.prompt_prefix import shared_prompt_prefix
+from carapace.skills import SkillRegistry
 
 DEFAULT_MODEL = "anthropic:claude-haiku-4-5"
 
@@ -173,7 +176,7 @@ def main() -> None:
     parser.add_argument("paths", nargs="+", type=Path, help="conversation.json files or directories")
     parser.add_argument("--model", default=DEFAULT_MODEL, help=f"pydantic-ai model id (default {DEFAULT_MODEL})")
     parser.add_argument("--limit", type=int, help="only the N most recent sessions")
-    parser.add_argument("--knowledge-dir", type=Path, help="knowledge repo whose SOUL.md and USER.md lead the prompt")
+    parser.add_argument("--knowledge-dir", type=Path, help="knowledge repo whose shared prompt prefix leads the prompt")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--call", action="store_true", help="send sessions to the real model (costs money)")
     mode.add_argument("--test-model", action="store_true", help="run the call path against TestModel")
@@ -182,7 +185,12 @@ def main() -> None:
     sessions = load_sessions(args.paths)
     if args.limit is not None:
         sessions = sessions[-args.limit :]
-    system = system_prompt(SESSION_EXTRACT, args.knowledge_dir) if args.knowledge_dir else SESSION_EXTRACT.system
+    prefix = (
+        shared_prompt_prefix(args.knowledge_dir, SkillRegistry(args.knowledge_dir / "skills").scan())
+        if args.knowledge_dir
+        else ""
+    )
+    system = system_prompt(SESSION_EXTRACT, prefix)
     prepared = [prepare(session, args.model, system) for session in sessions]
     print_estimates(prepared, args.model)
 

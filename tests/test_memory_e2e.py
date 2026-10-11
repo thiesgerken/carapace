@@ -39,6 +39,7 @@ from carapace.models.config import AvailableModelEntry, Config
 from carapace.models.jobs import JobDefinition
 from carapace.models.session import SessionJobRunContext
 from carapace.models.user import MemoryBudget, UserConfig, UserMemoryConfig
+from carapace.prompt_prefix import shared_prompt_prefix
 from carapace.session import SessionManager
 from carapace.skills import SkillRegistry
 
@@ -146,7 +147,7 @@ class Pipeline:
                 current_config=lambda: self.config,
                 current_extractions=self.store.current_extractions,
                 current_digests=self.store.current_digests,
-                knowledge_dir_for=lambda user: self.repos[user].knowledge_dir,
+                prompt_prefix_for=lambda user: shared_prompt_prefix(self.repos[user].knowledge_dir, []),
                 model_factory=model_factory,
             )
 
@@ -160,7 +161,7 @@ class Pipeline:
                     current_config=lambda: self.config,
                     load_events=self.sessions.load_events,
                     user_config_for=self.user_configs.__getitem__,
-                    knowledge_dir_for=lambda user: self.repos[user].knowledge_dir,
+                    prompt_prefix_for=lambda user: shared_prompt_prefix(self.repos[user].knowledge_dir, []),
                     model_factory=model_factory,
                 ),
                 TaskKind.week_digest: digest_handler(DigestLevel.week),
