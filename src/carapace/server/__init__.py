@@ -512,6 +512,7 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
         handlers={
             TaskKind.session_extract: SessionExtractHandler(
                 current_config=_live_config,
+                load_state=session_mgr.load_state,
                 load_events=session_mgr.load_events,
                 user_config_for=_user_config,
                 prompt_prefix_for=prompt_prefix_for_user,

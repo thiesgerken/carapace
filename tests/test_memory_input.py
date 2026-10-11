@@ -9,6 +9,8 @@ import pytest
 from carapace.memory.input import INPUT_FORMAT_VERSION, clamp, first_user_message_at, render_extraction_input
 from carapace.usage import count_text_tokens
 
+CREATED_AT = datetime(2026, 9, 1, 7, tzinfo=UTC)
+
 
 def _user(content: str, **extra: Any) -> dict[str, Any]:
     return {"role": "user", "content": content, **extra}
@@ -184,11 +186,19 @@ def test_first_user_message_at_skips_slash_commands() -> None:
         _user("later", timestamp="2026-09-03T10:00:00+00:00"),
     ]
 
-    assert first_user_message_at(events) == datetime(2026, 9, 2, 9, 30, tzinfo=UTC)
+    assert first_user_message_at(events, CREATED_AT) == datetime(2026, 9, 2, 9, 30, tzinfo=UTC)
 
 
 def test_first_user_message_at_without_user_message() -> None:
-    assert first_user_message_at([_user("/help"), {"role": "command", "command": "help", "data": {}}]) is None
+    events = [_user("/help"), {"role": "command", "command": "help", "data": {}}]
+    assert first_user_message_at(events, CREATED_AT) is None
+
+
+def test_first_user_message_without_timestamp_falls_back_to_the_session_creation() -> None:
+    # Events stored before stamping on write existed carry no timestamp key at all.
+    events = [_user("hi"), _assistant("hello"), _user("later", timestamp="2026-09-03T10:00:00+00:00")]
+
+    assert first_user_message_at(events, CREATED_AT) == CREATED_AT
 
 
 def test_seqs_are_those_of_rendered_blocks() -> None:

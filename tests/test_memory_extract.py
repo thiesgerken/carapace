@@ -28,6 +28,7 @@ from carapace.memory.models import (
 from carapace.memory.outdated import current_versions
 from carapace.memory.prompts import SESSION_EXTRACT, system_prompt
 from carapace.models.config import AgentConfig, AvailableModelEntry, Config
+from carapace.models.session import SessionState
 from carapace.models.user import UserConfig
 from carapace.usage import count_text_tokens
 
@@ -40,6 +41,12 @@ EVENTS: list[dict[str, Any]] = [
     {"role": "user", "content": "My sister Anna moves to Lisbon.", "timestamp": "2026-09-06T22:30:00+00:00"},
     {"role": "assistant", "content": "Noted.", "timestamp": "2026-09-06T22:30:05+00:00"},
 ]
+
+STATE = SessionState(
+    session_id="s1",
+    created_at=datetime(2026, 9, 1, 8, tzinfo=UTC),
+    last_active=datetime(2026, 9, 6, 22, 30, tzinfo=UTC),
+)
 
 EXTRACTION: dict[str, Any] = {
     "abstract": "The user mentioned their sister's move.",
@@ -106,6 +113,7 @@ def _handler(
 ) -> SessionExtractHandler:
     return SessionExtractHandler(
         current_config=lambda: config or Config(),
+        load_state=lambda session_id: STATE if session_id == "s1" else None,
         load_events=lambda session_id: events if session_id == "s1" else [],
         user_config_for=lambda user: UserConfig(timezone="Europe/Berlin"),
         prompt_prefix_for=lambda user: prompt_prefix,
@@ -138,6 +146,19 @@ async def test_run_returns_extraction_with_provenance() -> None:
     assert provenance.cost_usd is not None and provenance.cost_usd >= Decimal("0.0123")
     assert provenance.task_id == 7
     assert provenance.duration_ms >= 0
+
+
+async def test_events_without_timestamps_date_the_session_by_its_creation() -> None:
+    recorder = _Recorder()
+    events = [{k: v for k, v in event.items() if k != "timestamp"} for event in EVENTS]
+
+    outcome = await _handler(recorder, events=events).run(_task(), MODEL)
+
+    assert isinstance(outcome.result, ExtractionResult)
+    assert outcome.result.week_key == "2026-W36"  # STATE.created_at, Tuesday 2026-09-01
+    assert recorder.user_prompt() == SESSION_EXTRACT.user_prompt(
+        render_extraction_input(events).text, session_date="2026-09-01"
+    )
 
 
 async def test_run_sends_sandwich_prompt_in_user_timezone() -> None:
@@ -184,6 +205,7 @@ async def test_rejected_output_fails_after_one_billed_call() -> None:
 
     handler = SessionExtractHandler(
         current_config=Config,
+        load_state=lambda session_id: STATE,
         load_events=lambda session_id: EVENTS,
         user_config_for=lambda user: UserConfig(),
         prompt_prefix_for=lambda user: "",
