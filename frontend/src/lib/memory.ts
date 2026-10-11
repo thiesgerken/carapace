@@ -66,15 +66,17 @@ export function exceedsBudget(estimate: MemoryEstimateTotal, status: MemoryStatu
     || (remaining.tokens !== null && estimate.input_tokens > remaining.tokens);
 }
 
-/** Decimal strings from the API; tiny per-task costs need a third digit to not read as $0.00. */
+/**
+ * Decimal strings from the API. A typical extraction costs fractions of a cent, so sub-cent amounts
+ * keep two significant digits ($0.0021, never $0.00). Exact zero and budgets stay at two decimals.
+ */
 export function formatUsd(value: string | number, locale: string): string {
   const amount = Number(value);
-  return new Intl.NumberFormat(locale, {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: 2,
-    maximumFractionDigits: amount !== 0 && Math.abs(amount) < 1 ? 3 : 2,
-  }).format(amount);
+  const magnitude = Math.abs(amount);
+  const digits = amount !== 0 && magnitude < 0.01
+    ? { maximumSignificantDigits: 2 }
+    : { minimumFractionDigits: 2, maximumFractionDigits: amount !== 0 && magnitude < 1 ? 3 : 2 };
+  return new Intl.NumberFormat(locale, { style: "currency", currency: "USD", ...digits }).format(amount);
 }
 
 export function formatTokens(value: number, locale: string): string {

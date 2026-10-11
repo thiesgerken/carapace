@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
 from ..jobs import JobsStore
+from ..llm import resolve_available_model_entry
 from ..models.config import Config
 from ..models.user import UserConfig
 from ..session import SessionManager
@@ -62,6 +63,10 @@ from .store import MemoryStore, SessionCandidate, parse_cursor
 from .worker import DEFAULT_TIMING, MemoryWorker, WorkerTiming
 
 _DIGEST_LEVELS = {TaskKind.week_digest: DigestLevel.week, TaskKind.month_digest: DigestLevel.month}
+
+
+class ModelOverrideError(ValueError):
+    """A requested model override the worker could not run with."""
 
 
 class MemoryService:
@@ -168,10 +173,12 @@ class MemoryService:
 
     async def estimate_tasks(self, user: str, request: TaskRunRequest) -> EstimateTotal:
         """What running the pending tasks of a selection would cost, with the requested model."""
+        self._check_override(request.model_override)
         tasks = self._store.select_tasks(user, request.selection, {TaskStatus.pending})
         return sum_estimates([await self._estimate_for(t, request.model_override) for t in tasks if t.estimate])
 
     async def run_tasks(self, user: str, request: TaskRunRequest) -> TaskCountResponse:
+        self._check_override(request.model_override)
         count = self._store.run(user, request.selection, request.model_override, self._clock())
         self._worker.wake()
         return TaskCountResponse(count=count)
@@ -194,6 +201,7 @@ class MemoryService:
         Identity never blocks a manual spawn, eligibility does: the filter selects through the same
         query as GET /sessions, and every target then passes the spawner's full eligibility check.
         """
+        self._check_override(request.model_override)
         if request.filter is not None:
             targets = [c.state.session_id for c in self.matching_sessions(user, request.filter)]
         elif request.targets is not None:
@@ -212,6 +220,15 @@ class MemoryService:
             if reason is not None:
                 skipped.append(SpawnSkip(target=target, reason=reason))
         return TaskSpawnResponse(task_ids=task_ids, skipped=skipped)
+
+    def _check_override(self, model: str | None) -> None:
+        """Reject an override up front, rather than letting each task fail in the worker."""
+        if model is None:
+            return
+        try:
+            resolve_available_model_entry(self._config, model)
+        except ValueError as exc:
+            raise ModelOverrideError(str(exc)) from exc
 
     async def _spawn_one(
         self,

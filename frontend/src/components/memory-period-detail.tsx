@@ -6,7 +6,7 @@ import { Loader2, RefreshCw } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
 import { MemoryRunDialog } from "@/components/memory-run-dialog";
 import { useMemoryStatus } from "@/components/memory-status";
-import { buttonClassName, MemoryProvenanceList } from "@/components/memory-ui";
+import { buttonClassName, MemoryProvenanceList, taskStatusTag } from "@/components/memory-ui";
 import { getMemoryPeriod, spawnMemoryTasks } from "@/lib/api";
 import { formatAbsoluteTime } from "@/lib/format-time";
 import { formatUsd, monthLabel, periodBadge, periodLevel, summarizeSkips, type PeriodBadge } from "@/lib/memory";
@@ -141,7 +141,7 @@ export function MemoryPeriodDetailView({ server, token, periodKey }: { server: s
           <span>{t(node.level === "week" ? "coverageSessions" : "coverageWeeks", { covered: node.covered, total: node.total })}</span>
           <span>·</span>
           <PeriodBadgeMark badge={periodBadge(node)} />
-          {node.task && node.task.status !== "done" ? <span>· {t("task", { status: node.task.status })}</span> : null}
+          {node.task && node.task.status !== "done" ? <span>· {t.rich("task", { status: taskStatusTag(node.task.status) })}</span> : null}
         </div>
         {notice ? <p className="text-sm text-muted-foreground">{notice}</p> : null}
         {current ? (

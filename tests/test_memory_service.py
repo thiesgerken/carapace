@@ -21,13 +21,14 @@ from carapace.memory.models import (
     TaskSpawnRequest,
     TaskStatus,
 )
-from carapace.memory.service import MemoryService
+from carapace.memory.service import MemoryService, ModelOverrideError
 from carapace.memory.store import MemoryStore
 from carapace.models.config import Config
 from carapace.models.user import UserConfig
 from carapace.session import SessionManager
 
 NOW = datetime(2026, 9, 21, 12, tzinfo=UTC)
+OVERRIDE = "anthropic:claude-sonnet-4-6"  # in the default catalog, but not the memory roles' default
 
 
 class FakeHandler:
@@ -36,7 +37,7 @@ class FakeHandler:
         self.model_role = role
 
     async def estimate(self, user: str, target: str, model: str) -> TaskEstimate:
-        cost = Decimal("0.02") if model.endswith("override") else Decimal("0.01")
+        cost = Decimal("0.02") if model == OVERRIDE else Decimal("0.01")
         return TaskEstimate(model=model, input_tokens=100, output_tokens_cap=10, cost_usd=cost)
 
     async def run(self, task: MemoryTask, model: str | None) -> TaskOutcome:
@@ -131,7 +132,7 @@ async def test_estimate_run_and_status(setup):
 
     estimate = await service.estimate_tasks("alice", TaskRunRequest(selection=selection))
     assert (estimate.task_count, estimate.cost_usd) == (2, Decimal("0.02"))
-    override = await service.estimate_tasks("alice", TaskRunRequest(selection=selection, model_override="m-override"))
+    override = await service.estimate_tasks("alice", TaskRunRequest(selection=selection, model_override=OVERRIDE))
     assert override.cost_usd == Decimal("0.04")
 
     assert (await service.run_tasks("alice", TaskRunRequest(selection=selection))).count == 2
@@ -163,3 +164,20 @@ async def test_spawn_by_filter_uses_the_session_query_and_eligibility(setup):
         "alice", TaskSpawnRequest(kind=TaskKind.session_extract, filter=SessionMemoryFilter())
     )
     assert sorted(again.task_ids) == sorted(response.task_ids)
+
+
+async def test_unregistered_model_overrides_are_rejected_up_front(setup):
+    service, sessions = setup
+    session = _session(sessions)
+    spawn = TaskSpawnRequest(kind=TaskKind.session_extract, targets=[session], model_override="m:unknown")
+    with pytest.raises(ModelOverrideError, match="not registered"):
+        await service.spawn_tasks("alice", spawn)
+
+    ids = (
+        await service.spawn_tasks("alice", TaskSpawnRequest(kind=TaskKind.session_extract, targets=[session]))
+    ).task_ids
+    run = TaskRunRequest(selection=TaskSelection(ids=ids), model_override="m:unknown")
+    for call in (service.estimate_tasks, service.run_tasks):
+        with pytest.raises(ModelOverrideError):
+            await call("alice", run)
+    assert (await service.status("alice")).queue[TaskStatus.pending] == 1
