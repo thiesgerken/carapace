@@ -23,7 +23,7 @@ from pydantic_ai.toolsets.abstract import AbstractToolset
 
 from .. import security as security
 from ..credentials import CredentialBackendError
-from ..llm import model_settings_for_config, model_supports_vision
+from ..llm import model_settings_for_config, model_supports_vision, with_prompt_cache
 from ..models.credentials import CredentialMetadata
 from ..models.skills import (
     ContextGrant,
@@ -1022,12 +1022,12 @@ def build_system_prompt(deps: Deps) -> str:
             + "The security sentinel will enforce this policy, but you must plan around it yourself."
         )
 
-    today = date.today()
-    parts.append(
-        f"# Session Info\nToday's date: {today:%A}, {today:%Y-%m-%d}\nSession ID: {deps.session_state.session_id}"
-    )
-
     return join_prompt_sections(*parts)
+
+
+def build_session_info(deps: Deps) -> str:
+    today = date.today()
+    return f"# Session Info\nToday's date: {today:%A}, {today:%Y-%m-%d}\nSession ID: {deps.session_state.session_id}"
 
 
 def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | DeferredToolRequests]:
@@ -1048,9 +1048,13 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
         deps.agent_model,
         deps_type=Deps,
         output_type=output_type,  # type: ignore[arg-type]
-        instructions=system_prompt,
+        # A callable is a dynamic instruction: the prompt cache breakpoint goes before it, so the
+        # date and session ID don't split the cached prefix.
+        instructions=[system_prompt, lambda: build_session_info(deps)],
         capabilities=[LlmRequestLogCapability(source="agent")],
-        model_settings=model_settings_for_config(deps.config, deps.agent_model_id, default_thinking=True),
+        model_settings=with_prompt_cache(
+            model_settings_for_config(deps.config, deps.agent_model_id, default_thinking=True), conversation=True
+        ),
         retries={"tools": 1, "output": 3},
     )
 

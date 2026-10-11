@@ -62,6 +62,15 @@ The sentinel and the titler stay out on purpose. The sentinel must judge the age
 
 ### Prefix caching
 
-Prompt caching depends on the provider. Some (OpenAI, for example) cache matching prompt prefixes automatically. Anthropic caches only up to explicit `cache_control` breakpoints, and carapace sets none, so nothing is cached there today. The order is built so that any prefix cache can hit: stable first, volatile last. Nothing per session or per call (the current date, the session ID, a role split) may come before the long shared text.
+The order is built so that a prefix cache can hit: stable first, volatile last. Nothing per session or per call (the current date, the session ID, a role split) may come before the long shared text.
 
-Where caching applies, each role's own prefix is what gets reused between its calls. Two roles share a cache entry only when they run on the same model, and some providers put tool definitions ahead of the system prompt, so the agent (with tools) and the tool-less roles may still miss each other. carapace builds nothing provider-specific for caching.
+Some providers (OpenAI, Gemini) cache matching prompt prefixes on their own. Others, Anthropic among them, cache only up to explicit breakpoints. The roles that lead with the shared prefix turn on pydantic-ai's provider-agnostic `cache` model setting (`llm.with_prompt_cache()`), which places those breakpoints where a provider needs them:
+
+- **Agent turns**: after the tool definitions and after the stable instructions, plus the growing conversation, so every request of a turn reads the history written by the previous one. The date and session ID are a separate dynamic instruction behind the breakpoint, so they don't split the cached prefix.
+- **Compaction and memory tasks**: the system prompt only. Their user prompt is a one-off and is never read back.
+
+The sentinel and the titler set no breakpoints.
+
+Each role's own prefix is what gets reused between its calls. Two roles share a cache entry only when they run on the same model, and providers that put tool definitions ahead of the system prompt (Anthropic does) keep the agent (with tools) and the tool-less roles apart. Anthropic only caches prompts above a model-specific minimum length, and an entry lives for 5 minutes after its last use.
+
+Usage and cost count cache writes and reads at their own rates (an Anthropic write costs 1.25x the input price, a read 0.1x). Memory estimates price the system prompt as a cache write, so they stay an upper bound.

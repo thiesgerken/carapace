@@ -18,6 +18,7 @@ from loguru import logger
 from pydantic_ai.settings import ModelSettings
 from pydantic_ai.usage import UsageLimits
 
+from ..llm import with_prompt_cache
 from ..models.compaction import CompactionNode, CompactionReport, SessionCompaction
 from ..models.skills import SkillInfo
 from ..prompt_prefix import shared_prompt_prefix
@@ -256,7 +257,7 @@ class SessionCompactionMixin:
                         before_llm_call=lambda: self._assert_llm_budget_available(active),
                         model_factory=self._model_factory,
                         user=active.owner,
-                        model_settings=self._resolve_model_settings(model),
+                        model_settings=with_prompt_cache(self._resolve_model_settings(model), conversation=False),
                         usage_limits=self._remaining_aux_usage_limits(active),
                     )
         except Exception as exc:
