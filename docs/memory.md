@@ -364,6 +364,14 @@ All endpoints live under `/api/memory`, are scoped to the authenticated user and
 
 Memory settings use the existing user-settings and platform-settings endpoints.
 
+`GET /api/home` sits outside `/api/memory` but uses the same scope, and feeds the home page:
+
+- the open loops of the current extractions of sessions active in the last 7 days, newest session first
+- last week's digest themes and highlights once that digest exists, else the abstracts of the current week's sessions
+- notices: sessions waiting for an approval, failed tasks, outdated records, and a cost window that has used 80% of its limit
+
+Private and foreign sessions are filtered on the session row at read time, so an extraction the sweep has not purged yet never shows up.
+
 ## Related docs
 
 - [persistent-context.md](persistent-context.md) for the knowledge repo and the `memory/` mirror
