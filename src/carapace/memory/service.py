@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from collections import Counter, defaultdict
 from collections.abc import Callable, Mapping
 from datetime import UTC, date, datetime, timedelta
@@ -78,6 +79,12 @@ _DIGEST_LEVELS = {TaskKind.week_digest: DigestLevel.week, TaskKind.month_digest:
 # Long enough to span a weekend, short enough that unanswered loops age out without a dismiss.
 _HOME_WINDOW = timedelta(days=7)
 _BUDGET_NOTICE_SHARE = Decimal("0.8")
+
+
+def open_loop_id(session_id: str, text: str) -> str:
+    """Stable across re-extractions as long as the loop's text stays the same (up to case and spacing)."""
+    normalized = " ".join(text.split()).casefold()
+    return hashlib.sha256(f"{session_id}\n{normalized}".encode()).hexdigest()[:16]
 
 
 class ModelOverrideError(ValueError):
@@ -171,13 +178,29 @@ class MemoryService:
     # --- home page ---
 
     def open_loops(self, user: str) -> list[OpenLoop]:
-        """Open loops of the sessions active in the last week, newest session first.
+        """Open loops of the sessions active in the last week, newest session first, minus dismissed ones.
 
         Digest loops stay out: they link to no session and repeat the session loops.
         """
+        dismissed = self._store.dismissed_loop_ids(user)
+        return [loop for loop in self._recent_open_loops(user) if loop.id not in dismissed]
+
+    def dismiss_loop(self, user: str, loop_id: str) -> bool:
+        """False if *loop_id* is none of the user's current open loops, so no arbitrary rows get written."""
+        loop = next((loop for loop in self._recent_open_loops(user) if loop.id == loop_id), None)
+        if loop is None:
+            return False
+        self._store.dismiss_loop(user, loop.session_id, loop_id, self._clock())
+        return True
+
+    def undismiss_loop(self, user: str, loop_id: str) -> None:
+        self._store.undismiss_loop(user, loop_id)
+
+    def _recent_open_loops(self, user: str) -> list[OpenLoop]:
         since = self._clock() - _HOME_WINDOW
         return [
             OpenLoop(
+                id=open_loop_id(visible.record.session_id, loop),
                 text=loop,
                 session_id=visible.record.session_id,
                 session_title=visible.title,

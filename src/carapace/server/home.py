@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from ..api_keys import Access, Scope
@@ -16,6 +16,7 @@ router = APIRouter()
 
 # Almost everything on the home page comes from memory, which shares the knowledge scope.
 _Reader = Annotated[UserIdentity, Depends(require(Scope.knowledge, Access.read))]
+_Writer = Annotated[UserIdentity, Depends(require(Scope.knowledge, Access.write))]
 
 
 class PendingApproval(BaseModel):
@@ -52,3 +53,15 @@ async def get_home(user: _Reader) -> HomeResponse:
             memory_budget=memory.budget_notice(user.username),
         ),
     )
+
+
+@router.post("/home/open-loops/{loop_id}/dismiss", status_code=204)
+async def dismiss_open_loop(loop_id: str, user: _Writer) -> None:
+    if not server._memory_service.dismiss_loop(user.username, loop_id):
+        raise HTTPException(status_code=404, detail="Open loop not found")
+
+
+@router.delete("/home/open-loops/{loop_id}/dismiss", status_code=204)
+async def undismiss_open_loop(loop_id: str, user: _Writer) -> None:
+    # No 404 for a missing row: the undo must keep working once the loop itself has aged out.
+    server._memory_service.undismiss_loop(user.username, loop_id)

@@ -280,8 +280,8 @@ Interactive sessions get it, including a persistent session a job runs in. Sessi
 
 ## Deletion and privacy
 
-- **Private sessions** never get tasks. A session that turns private after extraction has its extractions purged on the next sweep (or when a queued task for it is dispatched).
-- **Deleted sessions**: their extractions and facts are deleted with them. Digests covering them turn stale, and the mirror removes their files.
+- **Private sessions** never get tasks. A session that turns private after extraction has its extractions and its dismissed open loops purged on the next sweep (or when a queued task for it is dispatched).
+- **Deleted sessions**: their extractions, facts and dismissed open loops are deleted with them. Digests covering them turn stale, and the mirror removes their files.
 - A session's frozen memory block (see [In the agent's prompt](#in-the-agents-prompt)) keeps what it showed until that session is compacted, including text from sessions deleted since.
 - Digests can still contain text derived from a deleted or private session until they are regenerated. Stale digests are flagged in the Timeline, and regenerating takes one click.
 - **Job sessions** are excluded unless the job opts in with `memory_enabled`.
@@ -386,6 +386,8 @@ Memory settings use the existing user-settings and platform-settings endpoints.
 - notices: sessions waiting for an approval, failed tasks, outdated records, and a cost window that has used 80% of its limit
 
 Private and foreign sessions are filtered on the session row at read time, so an extraction the sweep has not purged yet never shows up. Last week's digest is left out while it covers a session that is no longer visible.
+
+Open loops can be dismissed (`POST /api/home/open-loops/{id}/dismiss`, undone with `DELETE` on the same path; both idempotent and need write access). A loop's `id` hashes its session id and its text, with case and whitespace normalized. A dismissal therefore survives a re-extraction that keeps the loop's wording, but a reworded loop counts as new and shows up again. Dismissals live in `memory_dismissed_loops` and are only accepted for the user's current open loops.
 
 ## Related docs
 
