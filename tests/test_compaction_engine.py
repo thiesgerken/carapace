@@ -519,3 +519,31 @@ def test_summaries_lead_with_the_agents_shared_prompt_prefix() -> None:
     assert asyncio.run(_run()) == "short"
     [instructions] = seen
     assert instructions is not None and instructions.startswith("# AGENTS.md\n\n---\n\n# Compaction")
+
+
+def test_memory_block_is_frozen_per_session_until_compaction(tmp_path: Path, db_factory) -> None:
+    async def _run() -> None:
+        builds: list[tuple[str, str]] = []
+
+        def memory_block_for(user: str, session_id: str) -> str:
+            builds.append((user, session_id))
+            return f"memory #{len(builds)}"
+
+        with _patch_sentinel():
+            engine = _make_engine(tmp_path, session_factory=db_factory, memory_block_for=memory_block_for)
+        sid = engine.session_mgr.create_session(user="thies").session_id
+        active = engine.get_or_activate(sid)
+        _seed(engine, sid, 10)
+
+        engine._ensure_memory_snapshot(active)
+        engine._ensure_memory_snapshot(active)
+        stored = engine.session_mgr.load_state(sid)
+        assert stored is not None and stored.memory is not None and stored.memory.text == "memory #1"
+        assert builds == [("thies", sid)]
+
+        await engine.run_compaction(active, mode="fold", keep_turns=3)
+        engine._ensure_memory_snapshot(active)
+
+        assert active.state.memory is not None and active.state.memory.text == "memory #2"
+
+    asyncio.run(_run())

@@ -1002,6 +1002,11 @@ def build_system_prompt(deps: Deps) -> str:
         "For LaTeX math, use $...$ inline and $$...$$ on their own lines for display equations."
     )
 
+    # After the fixed instructions and before the modes: modes can change within a session, the
+    # block is frozen per session (see MemorySnapshot).
+    if deps.session_state.memory is not None:
+        parts.append(deps.session_state.memory.text)
+
     if deps.session_state.attributes.unattended:
         parts.append(
             "# Unattended Session\n"

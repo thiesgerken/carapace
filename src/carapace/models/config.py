@@ -180,6 +180,8 @@ class AgentConfig(ConfigModel):
     memory_low_model: str | None = None
     # Weekly/monthly memory digests. None -> agent model.
     memory_high_model: str | None = None
+    # Default for the memory block in the agent's system prompt (users can override it). 0 turns it off.
+    memory_prompt_budget_tokens: int = Field(default=4000, ge=0)
     compaction: CompactionConfig = Field(default_factory=CompactionConfig)
     default_session_budget: SessionBudget = Field(default_factory=SessionBudget)
 

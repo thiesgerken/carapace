@@ -95,6 +95,7 @@ class ServerDefaultModels(SettingsModel):
 class ServerDefaults(SettingsModel):
     models: ServerDefaultModels
     budget: SessionBudget
+    memory_prompt_budget_tokens: int
 
 
 class PublicBasicAuth(SettingsModel):
@@ -484,6 +485,7 @@ def _settings_response(username: str) -> UserSettingsResponse:
                 memory_high=effective_memory_model(server._config, UserConfig(), ModelRole.memory_high),
             ),
             budget=server._config.agent.default_session_budget,
+            memory_prompt_budget_tokens=server._config.agent.memory_prompt_budget_tokens,
         ),
         available_models=[
             entry.model_dump(mode="json", by_alias=True) for entry in server._engine.enabled_model_entries

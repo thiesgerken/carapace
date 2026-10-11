@@ -138,6 +138,7 @@ def _setup_server(tmp_path, monkeypatch, db_factory):
         sandbox_mgr=sandbox_mgr,
         credential_registry_for_session=credential_registry_for_session,
         knowledge_repo_for_session=knowledge_repo_for_session,
+        memory_block_for=lambda _user, _session_id: "",
     )
     srv._session_archive = SessionArchiveService(
         session_mgr=session_mgr,
