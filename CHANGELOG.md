@@ -1,6 +1,39 @@
 # CHANGELOG
 
 
+## v0.159.2 (2026-10-11)
+
+
+### Other
+
+
+- Merge pull request #372 from thiesgerken/fix/settings-anchor-scroll
+  ([`750b6c8`](https://github.com/thiesgerken/carapace/commit/750b6c8f4598699f61575f12c852377c482d1fb1))
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix: keep the app shell in place on hash links
+  ([`750b6c8`](https://github.com/thiesgerken/carapace/commit/750b6c8f4598699f61575f12c852377c482d1fb1))
+
+- 🐛 fix: let the embedded users section shrink below its content
+  ([`b0e6b1b`](https://github.com/thiesgerken/carapace/commit/b0e6b1b5ad7db20d8ffbaa6423d569e8dd509fa3))
+
+  overflow:clip, unlike hidden, does not reset a flex item's min-height:auto, so in the settings column the section grew to its content height and the inner panes stopped scrolling.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01XZGdh4voK9HLfWh9aHHBpo
+
+- 🐛 fix: keep the app shell in place on hash links
+  ([`b557bbd`](https://github.com/thiesgerken/carapace/commit/b557bbdff202499a5ecd891ee7d4555934a38203))
+
+  The shell and page frames used overflow:hidden, which still makes them scroll containers. A hash jump or scrollIntoView (e.g. a direct load of /settings/account#memory) scrolled them whenever anything overflowed, pushing the header out of view and leaving a blank strip at the bottom. overflow:clip cannot be scrolled, so only the inner panes move.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01XZGdh4voK9HLfWh9aHHBpo
+
 ## v0.159.1 (2026-10-11)
 
 
