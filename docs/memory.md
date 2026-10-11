@@ -290,7 +290,7 @@ The same fact from several sessions (same statement and subject, ignoring case, 
 
 ### Tasks
 
-The queue. Filter by status, kind, month and model; the header shows the number of matching tasks and their estimated cost. "Run all of September" is: filter month 2026-09, select all matching, run. The month filter places session tasks by their session's week, not by when the task was created.
+The queue. Filter by status, kind, month and model. Besides single statuses, the status filter offers **Unfinished** (pending, queued, running and failed; failed stays because it needs attention), which is what the tab opens on. The header shows the number of matching tasks and their estimated cost. "Run all of September" is: filter month 2026-09, select all matching, run. The month filter places session tasks by their session's week, not by when the task was created.
 
 The list is sorted by last activity (when the task finished, started, was queued or was created) by default. Click the **Target** header to sort by target period instead, the order **Run newest 50** picks in. The **Model** column shows the model a task ran with, or for open tasks the model it would run with now: its override, otherwise the current role default. The model filter matches by the same rule.
 
