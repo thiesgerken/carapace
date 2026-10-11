@@ -273,6 +273,8 @@ function OpenLoopItem({ loop, focusDismiss, onDismiss }: { loop: HomeOpenLoop; f
         className={cn(
           checkCircleClassName,
           "group/check border-muted-foreground/40 text-[#236b86] dark:text-sky-400",
+          // A 20px circle, but a 44px tap target (the inset counts from inside the 2px border).
+          "relative after:absolute after:-inset-3.5 after:content-['']",
           "hover:border-[#236b86] focus-visible:border-[#236b86] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:hover:border-sky-400 dark:focus-visible:border-sky-400",
         )}
       >
