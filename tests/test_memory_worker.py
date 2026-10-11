@@ -87,9 +87,10 @@ class WeekDigestHandler:
 
     def __init__(self) -> None:
         self.runs: list[str] = []
+        self.cost = Decimal("0.10")
 
     async def estimate(self, user: str, target: str, model: str) -> TaskEstimate:
-        return TaskEstimate(model=model, input_tokens=100, output_tokens_cap=10, cost_usd=Decimal("0.10"))
+        return TaskEstimate(model=model, input_tokens=100, output_tokens_cap=10, cost_usd=self.cost)
 
     async def run(self, task: MemoryTask, model: str | None) -> TaskOutcome:
         assert model is not None
@@ -421,3 +422,14 @@ async def test_pending_extractions_do_not_hold_a_digest_back(env: Env):
     digest = env.queued_week_digest()
     await env.tick()
     assert env.task(digest.id).status is TaskStatus.done
+
+
+async def test_a_digest_is_gated_on_its_estimate_at_dispatch(env: Env):
+    digest = env.queued_week_digest()  # estimated at 0.10 when its week had fewer extractions
+    env.week_digest.cost = Decimal("2.00")
+    await env.tick()
+
+    gated = env.task(digest.id)
+    assert (gated.status, gated.blocked_reason) == (TaskStatus.queued, BlockedReason.budget)
+    assert gated.estimate is not None and gated.estimate.cost_usd == Decimal("2.00")
+    assert env.week_digest.runs == []

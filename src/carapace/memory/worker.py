@@ -34,6 +34,7 @@ from .store import MemoryStore
 _DISPATCH_WINDOW = 200
 # How many pending tasks auto mode considers per user and tick.
 _PROMOTION_WINDOW = 500
+_DIGEST_KINDS = (TaskKind.week_digest, TaskKind.month_digest)
 
 
 @dataclass(frozen=True)
@@ -181,7 +182,9 @@ class MemoryWorker:
             user_config = self._user_config_for(task.user)
             estimate: TaskEstimate | None = None
             if handler.model_role is not None:
-                estimate = await self._estimate_or_fail(task, user_config, now)
+                # A digest's input grows as its sources finish, so its spawn-time estimate may cover
+                # partial input; rendering it again is cheap (no transcripts, no LLM).
+                estimate = await self._estimate_or_fail(task, user_config, now, refresh=task.kind in _DIGEST_KINDS)
                 if estimate is None:
                     continue
                 if task.user not in spend:
@@ -210,7 +213,7 @@ class MemoryWorker:
         """
         digests_by_user: dict[str, list[MemoryTask]] = defaultdict(list)
         for task in tasks:
-            if task.kind in (TaskKind.week_digest, TaskKind.month_digest):
+            if task.kind in _DIGEST_KINDS:
                 digests_by_user[task.user].append(task)
         return {
             task_id
@@ -274,15 +277,18 @@ class MemoryWorker:
             return None
         return task.model_override or effective_memory_model(self._config, user_config, role)
 
-    async def _estimate_or_fail(self, task: MemoryTask, user_config: UserConfig, now: datetime) -> TaskEstimate | None:
-        """The task's estimate for the model it would run with now, refreshed when that changed.
+    async def _estimate_or_fail(
+        self, task: MemoryTask, user_config: UserConfig, now: datetime, *, refresh: bool = False
+    ) -> TaskEstimate | None:
+        """The task's estimate for the model it would run with now, refreshed when that changed or
+        when *refresh* asks for it.
 
         None, with the task failed, when estimating raised: such a task could never pass the gate.
         """
         model = self._model_for(task, user_config)
         if model is None:
             raise ValueError(f"{task.kind} makes no LLM call and has no estimate")
-        if task.estimate is not None and task.estimate.model == model:
+        if not refresh and task.estimate is not None and task.estimate.model == model:
             return task.estimate
         try:
             estimate = await self._handlers[task.kind].estimate(task.user, task.target, model)
@@ -291,7 +297,8 @@ class MemoryWorker:
             logger.exception(f"Memory task {task.id} ({task.kind} {task.target}): estimate failed")
             self._store.fail_unclaimed(task.id, f"estimate failed: {type(exc).__name__}: {exc}", now)
             return None
-        self._store.set_estimate(task.id, estimate)
+        if estimate != task.estimate:
+            self._store.set_estimate(task.id, estimate)
         return estimate
 
     def _spend(self, user: str, user_config: UserConfig, now: datetime) -> tuple[Spend, Spend]:
