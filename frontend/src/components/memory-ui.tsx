@@ -1,7 +1,7 @@
 "use client";
 
-import { Fragment } from "react";
-import { Ban, CheckCircle2, Clock, Hourglass, Loader2, XCircle, type LucideIcon } from "lucide-react";
+import { Fragment, type ReactNode } from "react";
+import { Ban, CheckCircle2, ChevronRight, Clock, Hourglass, Loader2, XCircle, type LucideIcon } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
 import { formatAbsoluteTime } from "@/lib/format-time";
 import { formatTokens, formatUsd } from "@/lib/memory";
@@ -36,6 +36,40 @@ export function taskStatusTag(status: MemoryTaskStatus) {
   return function TaskStatusTag() {
     return <TaskStatusBadge status={status} />;
   };
+}
+
+/** Shown above a table only while rows are selected, so the bulk actions never sit there disabled. */
+export function SelectionBar({ count, onClear, children }: { count: number; onClear: () => void; children: ReactNode }) {
+  const t = useTranslations("memory.pick");
+  return (
+    <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-muted/40 px-3 py-1.5 text-sm">
+      <span className="font-medium tabular-nums">{t("selected", { count })}</span>
+      {children}
+      <button type="button" onClick={onClear} className="ml-auto text-xs text-muted-foreground hover:text-foreground">{t("clear")}</button>
+    </div>
+  );
+}
+
+/** The chevron that expands a table row; `controls` is the id of the expanded detail row. */
+export function ExpandButton({ expanded, controls, label, onToggle }: { expanded: boolean; controls: string; label: string; onToggle: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-expanded={expanded}
+      aria-controls={expanded ? controls : undefined}
+      aria-label={label}
+      title={label}
+      className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+    >
+      <ChevronRight className={cn("h-4 w-4 transition-transform", expanded && "rotate-90")} />
+    </button>
+  );
+}
+
+/** Row clicks expand the row, except on controls that have their own action. */
+export function togglesRow(target: EventTarget): boolean {
+  return !(target instanceof Element && target.closest("a, button, input, label, select"));
 }
 
 /** Table header row offering to widen a full-page selection to everything the filter matches. */

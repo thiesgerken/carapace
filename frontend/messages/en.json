@@ -76,6 +76,12 @@
             "failed": "failed",
             "cancelled": "cancelled"
         },
+        "taskKinds": {
+            "session_extract": "session extraction",
+            "week_digest": "week digest",
+            "month_digest": "month digest",
+            "mirror": "mirror"
+        },
         "tasks": {
             "filters": {
                 "status": "Status",
@@ -83,6 +89,7 @@
                 "kind": "Kind",
                 "anyKind": "Any kind",
                 "period": "Period",
+                "periodPlaceholder": "Period (YYYY-MM or YYYY-Www)",
                 "model": "Model",
                 "anyModel": "Any model"
             },
@@ -108,10 +115,12 @@
             "empty": "No tasks match these filters.",
             "blockedBudget": "⏸ budget",
             "retry": "Retry",
+            "expand": "Show details of {target}",
+            "collapse": "Hide details of {target}",
             "loadMore": "Load more",
             "runNewest": "Run newest {count}",
-            "runPicked": "Run selected ({count})",
-            "cancelPicked": "Cancel selected ({count})",
+            "runPicked": "Run selected",
+            "cancelPicked": "Cancel selected",
             "queued": "{count, plural, one {Queued # task.} other {Queued # tasks.}}",
             "cancelled": "{count, plural, one {Cancelled # task.} other {Cancelled # tasks.}}",
             "retried": "{count, plural, one {Retrying # task.} other {Retrying # tasks.}}",
@@ -122,13 +131,16 @@
                     "auto": "automatically",
                     "manual": "manually"
                 },
-                "attempts": "Attempts",
+                "attempts": "{count, plural, one {# attempt} other {# attempts}}",
                 "created": "Created",
                 "queuedAt": "Queued",
                 "started": "Started",
                 "finished": "Finished",
                 "estimate": "Estimate",
-                "openResult": "Open result"
+                "details": "Details",
+                "facts": "{count, plural, one {# fact} other {# facts}}",
+                "superseded": "Superseded by a newer result.",
+                "resultGone": "The result of this task no longer exists."
             },
             "waitingExtractions": "⏳ waiting for {count, plural, one {# extraction} other {# extractions}}",
             "waitingSources": "⏳ waiting for {count, plural, one {# source} other {# sources}}",
@@ -173,11 +185,13 @@
         "pick": {
             "pickMatching": "Select all {count} matching",
             "pickedMatching": "All {count} matching are selected.",
+            "selected": "{count} selected",
             "clear": "Clear selection"
         },
         "sessions": {
             "filters": {
                 "week": "Week",
+                "weekPlaceholder": "Week (YYYY-Www)",
                 "state": "Extraction",
                 "anyState": "Any extraction",
                 "reason": "Outdated reason",
@@ -215,9 +229,9 @@
             "openChat": "Open the chat session {title}",
             "empty": "No sessions match these filters.",
             "loadMore": "Load more",
-            "runPicked": "Run selected ({count})",
+            "runPicked": "Run {count, plural, one {# task} other {# tasks}}",
             "runNeedsRows": "Running needs explicitly selected rows; respawn works on all matching sessions.",
-            "respawnPicked": "Respawn selected ({count})",
+            "respawnPicked": "Respawn selected",
             "spawned": "{count, plural, one {Spawned # task.} other {Spawned # tasks.}}",
             "queued": "{count, plural, one {Queued # task.} other {Queued # tasks.}}",
             "spawnedWithSkips": "{count, plural, one {Spawned # task} other {Spawned # tasks}}; skipped: {reasons}."
