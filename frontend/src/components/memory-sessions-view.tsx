@@ -184,6 +184,20 @@ export function MemorySessionsView({ server, token }: { server: string; token: s
             {channelOptions.map((value) => <option key={value} value={value}>{value}</option>)}
           </select>
           <span className="ml-auto text-sm tabular-nums text-muted-foreground">{t("matching", { count: total })}</span>
+          <button
+            type="button"
+            disabled={busy || taskIds.length === 0}
+            onClick={() => setRunSelection({ ids: taskIds })}
+            title={pick.kind === "matching" ? t("runNeedsRows") : undefined}
+            className={buttonClassName}
+          >
+            <Play className="h-4 w-4" />
+            {t("runPicked", { count: taskIds.length })}
+          </button>
+          <button type="button" disabled={busy || pickedCount === 0} onClick={() => void respawn()} className={buttonClassName}>
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+            {t("respawnPicked", { count: pickedCount })}
+          </button>
         </div>
 
         {error ? <div className="rounded-lg border border-border bg-background px-4 py-2 text-sm text-destructive">{error}</div> : null}
@@ -270,23 +284,6 @@ export function MemorySessionsView({ server, token }: { server: string; token: s
             {t("loadMore")}
           </button>
         ) : null}
-
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            disabled={busy || taskIds.length === 0}
-            onClick={() => setRunSelection({ ids: taskIds })}
-            title={pick.kind === "matching" ? t("runNeedsRows") : undefined}
-            className={buttonClassName}
-          >
-            <Play className="h-4 w-4" />
-            {t("runPicked", { count: taskIds.length })}
-          </button>
-          <button type="button" disabled={busy || pickedCount === 0} onClick={() => void respawn()} className={buttonClassName}>
-            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-            {t("respawnPicked", { count: pickedCount })}
-          </button>
-        </div>
       </div>
 
       {runSelection ? (
