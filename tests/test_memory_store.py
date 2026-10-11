@@ -5,8 +5,15 @@ from decimal import Decimal
 
 import pytest
 from sqlalchemy import delete, func, select
+from sqlalchemy.exc import IntegrityError
 
-from carapace.database.models import MemoryFactRow, MemorySessionExtractionRow, SessionRow, User
+from carapace.database.models import (
+    MemoryDismissedLoopRow,
+    MemoryFactRow,
+    MemorySessionExtractionRow,
+    SessionRow,
+    User,
+)
 from carapace.memory.budget import Spend
 from carapace.memory.models import (
     BlockedReason,
@@ -640,3 +647,14 @@ def test_running_with_dependencies_adds_the_runnable_sources_of_selected_digests
         TaskStatus.pending,
     ]
     assert store.missing_dependencies("alice", TaskSelection(ids=[pending.id])) == 0
+
+
+def test_a_concurrent_dismissal_of_the_same_loop_is_a_no_op(store: MemoryStore, db_factory):
+    # No existence check before the insert: a second request is exactly the race's losing insert.
+    store.dismiss_loop("alice", "s1", "loop-1", NOW)
+    store.dismiss_loop("alice", "s1", "loop-1", NOW + timedelta(seconds=1))
+    with pytest.raises(IntegrityError):
+        store.dismiss_loop("alice", "gone", "loop-2", NOW)  # other constraint violations still raise
+
+    with db_factory() as db:
+        assert db.scalars(select(MemoryDismissedLoopRow.dismissed_at)).all() == [NOW]
