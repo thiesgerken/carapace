@@ -91,8 +91,14 @@ class TaskRunError(Exception):
 
 # Upper bound for one extraction's output; abstract, lists and facts of a long session fit well below.
 SESSION_EXTRACT_OUTPUT_CAP = 4000
-# A digest restates themes, highlights and deduplicated facts of up to a month of sources.
-DIGEST_OUTPUT_CAP = 6000
+# Digest caps are passed as `max_tokens`, and reasoning models (OpenAI, Codex, Anthropic with
+# thinking) spend part of it on reasoning tokens. Synthesizing many sources takes far more reasoning
+# than the visible digest, so the caps are well above its size. Estimates reserve the whole cap,
+# so they are an upper bound far above typical spend.
+# A week digest restates themes, highlights and deduplicated facts of one week's sessions.
+WEEK_DIGEST_OUTPUT_CAP = 20_000
+# A month digest merges up to five week digests.
+MONTH_DIGEST_OUTPUT_CAP = 50_000
 
 
 @dataclass(frozen=True, slots=True)
@@ -305,7 +311,7 @@ class DigestHandler:
                 extractions = self._current_extractions(user, period_key)
                 rendered, coverage = render_week_input(extractions), week_coverage(extractions)
                 first_day, last_day = period_dates(self.level, period_key)
-                template = WEEK_DIGEST
+                template, output_cap = WEEK_DIGEST, WEEK_DIGEST_OUTPUT_CAP
                 user_prompt = WEEK_DIGEST.user_prompt(
                     rendered.text,
                     period_key=period_key,
@@ -315,7 +321,7 @@ class DigestHandler:
             case DigestLevel.month:
                 weeks = self._current_digests(user, DigestLevel.week, month_weeks(period_key))
                 rendered, coverage = render_month_input(weeks), month_coverage(weeks)
-                template = MONTH_DIGEST
+                template, output_cap = MONTH_DIGEST, MONTH_DIGEST_OUTPUT_CAP
                 user_prompt = MONTH_DIGEST.user_prompt(rendered.text, period_key=period_key)
         if not coverage:
             raise ValueError(f"{self.level} {period_key} has no current sources to digest")
@@ -324,7 +330,7 @@ class DigestHandler:
                 template=template,
                 system=system_prompt(template, self._prompt_prefix_for(user)),
                 user_prompt=user_prompt,
-                output_cap=DIGEST_OUTPUT_CAP,
+                output_cap=output_cap,
                 input_hash=rendered.input_hash,
                 input_format_version=rendered.input_format_version,
             ),

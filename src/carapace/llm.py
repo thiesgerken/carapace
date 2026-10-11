@@ -122,7 +122,7 @@ def model_settings_for_entry(
         # requests where max_tokens <= thinking.budget_tokens. pydantic_ai translates a unified
         # thinking level into an Anthropic budget only for budget-based models (those without
         # adaptive thinking, e.g. haiku-4-5), so we must raise max_tokens above that budget.
-        # Other providers (openai, openrouter, google) bill thinking separately and ignore this.
+        # Other providers have no budget to exceed; OpenAI still counts reasoning towards max_tokens.
         budget = ANTHROPIC_THINKING_BUDGET_MAP.get(thinking)
         if entry.provider == "anthropic" and budget is not None and "max_tokens" not in settings:
             settings["max_tokens"] = budget + _THINKING_OUTPUT_RESERVE
