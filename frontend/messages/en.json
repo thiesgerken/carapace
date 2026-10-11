@@ -140,7 +140,7 @@
             "model": "Model",
             "roleDefault": "Role default",
             "roleDefaultResolved": "Role default ({models})",
-            "nothingToRun": "No pending tasks in this selection. Only pending tasks run; failed tasks are retried from their row.",
+            "nothingToRun": "No pending tasks in this selection. Only pending tasks run; retry failed tasks on the Tasks tab.",
             "cancel": "Cancel",
             "confirm": "Run"
         },

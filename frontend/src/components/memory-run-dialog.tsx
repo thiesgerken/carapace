@@ -125,7 +125,10 @@ export function MemoryRunDialog({ server, token, selection, kinds, onClose, onQu
           <ModelPicker
             value={modelOverride}
             entries={models}
-            onChange={setModelOverride}
+            onChange={(model) => {
+              setModelOverride(model);
+              setRunError(null);
+            }}
             disabled={running}
             defaultLabel={defaultModels ? t("roleDefaultResolved", { models: defaultModels }) : t("roleDefault")}
           />
