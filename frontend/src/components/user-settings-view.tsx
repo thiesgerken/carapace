@@ -783,32 +783,16 @@ export function UserSettingsView({ server, token }: { server: string; token: str
         </Section>
 
         <Section id="memory" title={t("sections.memory")}>
-          <div className="space-y-4">
-            <SwitchRow
-              checked={draft.memory.autoMode}
-              label={t("fields.memoryAutoMode")}
-              description={t("hints.memoryAutoMode")}
-              disabled={saving}
-              onCheckedChange={(autoMode) => updateDraft({ memory: { ...draft.memory, autoMode } })}
-            />
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              {([
-                ["cost_usd_per_day", "fields.memoryCostPerDay"],
-                ["cost_usd_per_month", "fields.memoryCostPerMonth"],
-                ["input_tokens_per_day", "fields.memoryTokensPerDay"],
-                ["input_tokens_per_month", "fields.memoryTokensPerMonth"],
-              ] as const).map(([key, label]) => (
-                <BudgetInput
-                  key={key}
-                  label={t(label)}
-                  placeholder={t("defaults.noLimit")}
-                  value={draft.memory.budget[key]}
-                  onChange={(value) => updateDraft({ memory: { ...draft.memory, budget: { ...draft.memory.budget, [key]: value } } })}
-                />
-              ))}
-            </div>
-            <div className="grid gap-4 lg:grid-cols-3">
-              <Field label={t("fields.timezone")} hint={t("hints.timezone")}>
+          <div className="space-y-5">
+            <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+              <SwitchRow
+                checked={draft.memory.autoMode}
+                label={t("fields.memoryAutoMode")}
+                description={t("hints.memoryAutoMode")}
+                disabled={saving}
+                onCheckedChange={(autoMode) => updateDraft({ memory: { ...draft.memory, autoMode } })}
+              />
+              <Field label={t("fields.timezone")} help={t("hints.timezone")}>
                 <input
                   list="memory-timezones"
                   value={draft.timezone}
@@ -819,42 +803,68 @@ export function UserSettingsView({ server, token }: { server: string; token: str
                   {timeZones.map((zone) => <option key={zone} value={zone} />)}
                 </datalist>
               </Field>
-              <Field label={t("fields.memoryLow")} help={t("hints.memoryLow")}>
-                <ModelPicker
-                  value={draft.defaultModels.memory_low}
-                  entries={memoryLowOptions}
-                  onChange={(memory_low) => updateDraft({ defaultModels: { ...draft.defaultModels, memory_low } })}
-                  disabled={saving}
-                  defaultLabel={t("defaults.serverDefault")}
-                  defaultDescription={t("defaults.currentModel", { model: settings.server_defaults.models.memory_low })}
-                />
-              </Field>
-              <Field label={t("fields.memoryHigh")} help={t("hints.memoryHigh")}>
-                <ModelPicker
-                  value={draft.defaultModels.memory_high}
-                  entries={memoryHighOptions}
-                  onChange={(memory_high) => updateDraft({ defaultModels: { ...draft.defaultModels, memory_high } })}
-                  disabled={saving}
-                  defaultLabel={t("defaults.serverDefault")}
-                  defaultDescription={t("defaults.currentModel", { model: settings.server_defaults.models.memory_high })}
-                />
-              </Field>
             </div>
-            <div className="grid gap-4 lg:grid-cols-3">
-              <Field label={t("fields.memoryPromptBudget")} hint={t("hints.memoryPromptBudget")}>
-                <input
-                  inputMode="numeric"
-                  value={draft.memory.promptBudget}
-                  onChange={(event) => updateDraft({ memory: { ...draft.memory, promptBudget: event.target.value } })}
-                  placeholder={t("defaults.serverDefaultTokens", { tokens: format.number(settings.server_defaults.memory_prompt_budget_tokens) })}
-                  className={inputClassName}
-                />
-              </Field>
-            </div>
-            <Link href="/settings/prompts" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground underline-offset-2 hover:text-foreground hover:underline">
-              <FileText className="h-4 w-4" />
-              {t("fields.previewPrompts")}
-            </Link>
+            <FieldGroup title={t("groups.memoryBudget")}>
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                {([
+                  ["cost_usd_per_day", "fields.memoryCostPerDay"],
+                  ["cost_usd_per_month", "fields.memoryCostPerMonth"],
+                  ["input_tokens_per_day", "fields.memoryTokensPerDay"],
+                  ["input_tokens_per_month", "fields.memoryTokensPerMonth"],
+                ] as const).map(([key, label]) => (
+                  <BudgetInput
+                    key={key}
+                    label={t(label)}
+                    placeholder={t("defaults.noLimit")}
+                    value={draft.memory.budget[key]}
+                    onChange={(value) => updateDraft({ memory: { ...draft.memory, budget: { ...draft.memory.budget, [key]: value } } })}
+                  />
+                ))}
+              </div>
+            </FieldGroup>
+            <FieldGroup title={t("groups.memoryModels")}>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label={t("fields.memoryLow")} help={t("hints.memoryLow")}>
+                  <ModelPicker
+                    value={draft.defaultModels.memory_low}
+                    entries={memoryLowOptions}
+                    onChange={(memory_low) => updateDraft({ defaultModels: { ...draft.defaultModels, memory_low } })}
+                    disabled={saving}
+                    defaultLabel={t("defaults.serverDefault")}
+                    defaultDescription={t("defaults.currentModel", { model: settings.server_defaults.models.memory_low })}
+                  />
+                </Field>
+                <Field label={t("fields.memoryHigh")} help={t("hints.memoryHigh")}>
+                  <ModelPicker
+                    value={draft.defaultModels.memory_high}
+                    entries={memoryHighOptions}
+                    onChange={(memory_high) => updateDraft({ defaultModels: { ...draft.defaultModels, memory_high } })}
+                    disabled={saving}
+                    defaultLabel={t("defaults.serverDefault")}
+                    defaultDescription={t("defaults.currentModel", { model: settings.server_defaults.models.memory_high })}
+                  />
+                </Field>
+              </div>
+            </FieldGroup>
+            <FieldGroup title={t("groups.memoryAgentPrompt")}>
+              <div className="flex flex-wrap items-end gap-3">
+                <div className="w-full sm:w-64">
+                  <Field label={t("fields.memoryPromptBudget")} help={t("hints.memoryPromptBudget")}>
+                    <input
+                      inputMode="numeric"
+                      value={draft.memory.promptBudget}
+                      onChange={(event) => updateDraft({ memory: { ...draft.memory, promptBudget: event.target.value } })}
+                      placeholder={t("defaults.serverDefaultTokens", { tokens: format.number(settings.server_defaults.memory_prompt_budget_tokens) })}
+                      className={inputClassName}
+                    />
+                  </Field>
+                </div>
+                <Link href="/settings/prompts" className={cn(secondaryButtonClassName, "rounded-xl py-2.5")}>
+                  <FileText className="h-4 w-4" />
+                  {t("fields.previewPrompts")}
+                </Link>
+              </div>
+            </FieldGroup>
           </div>
         </Section>
 
@@ -952,6 +962,15 @@ function Section({ id, title, children }: { id?: string; title: string; children
       <h2 className="mb-4 text-sm font-semibold uppercase tracking-[0.14em] text-muted-foreground">{title}</h2>
       {children}
     </section>
+  );
+}
+
+function FieldGroup({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-3 border-t border-border/60 pt-4">
+      <h3 className="text-sm font-medium">{title}</h3>
+      {children}
+    </div>
   );
 }
 
@@ -1160,6 +1179,8 @@ function BudgetInput({ label, placeholder, value, onBlur, onChange }: { label: s
   );
 }
 
+const secondaryButtonClassName = "inline-flex min-h-9 items-center justify-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-sm font-medium transition-colors hover:bg-muted/60 disabled:cursor-not-allowed disabled:opacity-50";
+
 function SecondaryButton({
   children,
   onClick,
@@ -1174,7 +1195,7 @@ function SecondaryButton({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className="inline-flex min-h-9 items-center justify-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-sm font-medium transition-colors hover:bg-muted/60 disabled:cursor-not-allowed disabled:opacity-50"
+      className={secondaryButtonClassName}
     >
       {children}
     </button>
