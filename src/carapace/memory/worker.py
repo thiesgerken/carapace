@@ -53,7 +53,7 @@ class MemoryWorker:
         *,
         store: MemoryStore,
         handlers: Mapping[TaskKind, TaskHandler],
-        config: Config,
+        current_config: Callable[[], Config],
         user_config_for: Callable[[str], UserConfig],
         users: Callable[[], list[str]],
         sweep: Callable[[datetime], Awaitable[None]],
@@ -64,7 +64,7 @@ class MemoryWorker:
     ) -> None:
         self._store = store
         self._handlers = handlers
-        self._config = config
+        self._current_config = current_config
         self._user_config_for = user_config_for
         self._users = users
         self._sweep = sweep
@@ -244,7 +244,7 @@ class MemoryWorker:
         role = self._handlers[task.kind].model_role
         if role is None:
             return None
-        return task.model_override or effective_memory_model(self._config, user_config, role)
+        return task.model_override or effective_memory_model(self._current_config(), user_config, role)
 
     async def _estimate_or_fail(self, task: MemoryTask, user_config: UserConfig, now: datetime) -> TaskEstimate | None:
         """The task's estimate for the model it would run with now, refreshed when that changed.

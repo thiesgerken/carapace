@@ -55,7 +55,7 @@ class Spawner:
         sessions: SessionManager,
         jobs: JobsStore,
         handlers: Mapping[TaskKind, TaskHandler],
-        config: Config,
+        current_config: Callable[[], Config],
         user_config_for: Callable[[str], UserConfig],
         users: Callable[[], list[str]],
         is_agent_running: Callable[[str], bool],
@@ -65,7 +65,7 @@ class Spawner:
         self._sessions = sessions
         self._jobs = jobs
         self._handlers = handlers
-        self._config = config
+        self._current_config = current_config
         self._user_config_for = user_config_for
         self._users = users
         self._is_agent_running = is_agent_running
@@ -139,7 +139,7 @@ class Spawner:
         self._known_extractions[user] = {record.id for record in current.values()}
         open_tasks = self._store.open_tasks(user, TaskKind.session_extract)
         latest_tasks = self._store.latest_tasks(user, TaskKind.session_extract)
-        settled_before = now - timedelta(hours=self._config.sessions.commit.autosave_inactivity_hours)
+        settled_before = now - timedelta(hours=self._current_config().sessions.commit.autosave_inactivity_hours)
         records_changed = False
         without_transcript = 0
 
@@ -308,7 +308,7 @@ class Spawner:
             return
         if handler.model_role is None:
             raise ValueError(f"{kind} is not an LLM task and is never spawned by the sweep")
-        model = effective_memory_model(self._config, user_config, handler.model_role)
+        model = effective_memory_model(self._current_config(), user_config, handler.model_role)
         estimate = await handler.estimate(user, target, model)
         task = self._store.spawn(
             user,

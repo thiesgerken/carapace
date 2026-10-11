@@ -293,6 +293,7 @@ def _runtime_model_factory(config: Config, *, user: str) -> ModelFactory:
 
 def _apply_runtime_config(config: Config, *, model_factory: ModelFactory) -> None:
     server.__dict__["_config"] = config
+    server.__dict__["_model_factory"] = model_factory
     server._engine.apply_platform_model_config(config, model_factory=model_factory)
 
 
