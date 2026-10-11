@@ -1,6 +1,154 @@
 # CHANGELOG
 
 
+## v0.161.0 (2026-10-11)
+
+
+### Other
+
+
+- Merge pull request #375 from thiesgerken/feat/memory-in-prompt
+  ([`a56292a`](https://github.com/thiesgerken/carapace/commit/a56292a500d6b5b83ae25cc266d49ad336a18388))
+
+- Merge pull request #383 from thiesgerken/settings/memory-section-layout
+  ([`f2f08a9`](https://github.com/thiesgerken/carapace/commit/f2f08a9d45c2135517ebf71b764fd91dd30efa99))
+
+- Merge pull request #380 from thiesgerken/settings/prompt-preview-highlight
+  ([`6772c60`](https://github.com/thiesgerken/carapace/commit/6772c60fd4c1039401c91865603f106d6a0d61dd))
+
+- Merge pull request #379 from thiesgerken/memory/job-memory-context
+  ([`874ede7`](https://github.com/thiesgerken/carapace/commit/874ede7581a7828c6134ab38cb4fbfa528b6ab22))
+
+- Merge pull request #377 from thiesgerken/settings/prompt-preview
+  ([`14118cb`](https://github.com/thiesgerken/carapace/commit/14118cb9297efdf5fb86768e284fd2b2df95ca6b))
+
+- Merge branch 'feat/memory-in-prompt' into settings/prompt-preview
+  ([`b121085`](https://github.com/thiesgerken/carapace/commit/b12108530314894dcdbc311ca0e6c238344bd078))
+
+- Merge pull request #378 from thiesgerken/memory/prompt-preview
+  ([`7e44518`](https://github.com/thiesgerken/carapace/commit/7e445183b5ebb5b3f3776a09087375390375461a))
+
+- Merge pull request #376 from thiesgerken/memory/prompt-block
+  ([`be36726`](https://github.com/thiesgerken/carapace/commit/be36726fc11280a116c4001ae36d3fae2d43565b))
+
+- 🎉 init: integration branch for memory in the agent prompt
+  ([`a5984a2`](https://github.com/thiesgerken/carapace/commit/a5984a2fc15a26c6ed9a3a9439518496b9daa153))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01NkHyCyWAAKp79dDUaVrZmY
+
+### ✨ Features
+
+
+- ✨ feat: memory in the agent's system prompt, with prompt preview
+  ([`a56292a`](https://github.com/thiesgerken/carapace/commit/a56292a500d6b5b83ae25cc266d49ad336a18388))
+
+- ✨ feat: highlighted tool definitions and Markdown rendering in the prompt preview
+  ([`6772c60`](https://github.com/thiesgerken/carapace/commit/6772c60fd4c1039401c91865603f106d6a0d61dd))
+
+- ✨ feat: token share bar for the prompt preview's sections
+  ([`dae8361`](https://github.com/thiesgerken/carapace/commit/dae83618778df34b36af5fe19df62f0045cd610c))
+
+  A stacked bar above the sections sizes each segment by its token share, in the chat context gauge's palette, with the cache boundary as a tick. Hovering or focusing a segment names it with tokens and share; clicking opens its section and scrolls to it. Section headers carry a matching colour dot. The memory section stays raw text in the rendered view too, so Markdown images in distilled, untrusted content are never fetched.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01XZGdh4voK9HLfWh9aHHBpo
+
+- ✨ feat: highlight tool definitions and render prompt sections as Markdown
+  ([`9e33e72`](https://github.com/thiesgerken/carapace/commit/9e33e729b55a284a900f0a7d5df9edffe8806f23))
+
+  The System prompts page highlights the tool definitions as JSON with the chat's Shiki setup and renders the other sections with the chat's Markdown renderer, with a Rendered / Raw toggle to see the exact text. Section bodies mount on first open, so Shiki only runs for sections someone looks at. The agent's memory section is titled just "Memory".
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01XZGdh4voK9HLfWh9aHHBpo
+
+- ✨ feat: per-job memory_context flag for the memory block
+  ([`874ede7`](https://github.com/thiesgerken/carapace/commit/874ede7581a7828c6134ab38cb4fbfa528b6ab22))
+
+- ✨ feat: per-job memory_context flag for the memory block
+  ([`afd2f0c`](https://github.com/thiesgerken/carapace/commit/afd2f0c7665aa4e3999a48f46eac27c75e97207f))
+
+  Job sessions get the memory block only when their job sets memory_context (default off); other unattended sessions never get it. Independent of memory_enabled, so a job reading memory is not extracted back into it by default. The job editor gets the toggle.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01B3cWr83aDuHP8JQDvLxrgC
+
+- ✨ feat: memory prompt budget setting and system prompt preview page
+  ([`14118cb`](https://github.com/thiesgerken/carapace/commit/14118cb9297efdf5fb86768e284fd2b2df95ca6b))
+
+- ✨ feat: prompt preview endpoint for every LLM role
+  ([`7e44518`](https://github.com/thiesgerken/carapace/commit/7e445183b5ebb5b3f3776a09087375390375461a))
+
+- ✨ feat: prompt preview endpoint for every LLM role
+  ([`376b2a8`](https://github.com/thiesgerken/carapace/commit/376b2a8ca38567c76c4443e74b68284a6593ad42))
+
+  GET /api/prompts/preview?role=... runs each role's real agent (built by the same function its real calls use) against a model that only records the first request, and returns the tool definitions plus the prompt's assembly sections with token counts, the cacheable prefix and, for the agent, the memory budget usage. Sections that no longer add up to the recorded instructions fail with PromptDriftError.
+
+  The agent's fixed instructions, the sentinel's instructions and policy loader, and the titler, compaction and memory agent constructors move into named functions so the preview reuses them.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01B3cWr83aDuHP8JQDvLxrgC
+
+- ✨ feat: memory block in the main agent's system prompt
+  ([`be36726`](https://github.com/thiesgerken/carapace/commit/be36726fc11280a116c4001ae36d3fae2d43565b))
+
+- ✨ feat: memory block in the main agent's system prompt
+  ([`55b1f5a`](https://github.com/thiesgerken/carapace/commit/55b1f5ad77b5cdd629a3aa0e5d2d983f580944d5))
+
+  A deterministic, budgeted block of the newest memory records: the current week's sessions, week digests for the rest of the month, month digests before, each period falling back a level without a digest. Rendered oldest first and marked as data. Frozen per session in the session state and only refreshed by compaction, so it never breaks the cached conversation. Budget is a user setting with a platform default.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01B3cWr83aDuHP8JQDvLxrgC
+
+- ✨ feat: memory prompt budget setting and a system prompt preview page
+  ([`5d04acc`](https://github.com/thiesgerken/carapace/commit/5d04accfc4e14f35a0d44f55578aa1c7c852fde1))
+
+  Adds the memory prompt budget to the account's memory settings (empty uses the platform default, 0 turns it off) and a Settings → System prompts page that shows each role's simulated prompt section by section with token counts, the cacheable prefix boundary and, for the agent, memory budget usage. Built against the preview contract from #375.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01XZGdh4voK9HLfWh9aHHBpo
+
+### 💄 UI/UX
+
+
+- 💄 style: group the memory settings section
+  ([`f2f08a9`](https://github.com/thiesgerken/carapace/commit/f2f08a9d45c2135517ebf71b764fd91dd30efa99))
+
+- 💄 style: group the memory settings into budget, models and agent prompt
+  ([`40f8499`](https://github.com/thiesgerken/carapace/commit/40f8499a14e0940695e4e39117c5df495fccd0f2))
+
+  Auto mode and time zone share the first row; the four limits, the two memory models and the agent prompt budget each get a labelled group with an even grid. The System prompts link sits next to the budget field as a secondary button, and long hints moved into help tooltips.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01XZGdh4voK9HLfWh9aHHBpo
+
+- 💄 style: label the agent's memory stat just "Memory"
+  ([`06fa952`](https://github.com/thiesgerken/carapace/commit/06fa95252d22f05fb6ef93480619e903171daf4e))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01XZGdh4voK9HLfWh9aHHBpo
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix: gate the job memory block on the job channel
+  ([`daf16c1`](https://github.com/thiesgerken/carapace/commit/daf16c17d064bc1fc40ec104f0f4d62c7d02e496))
+
+  A persistent session a job runs in is the user's chat and keeps latest_job_run forever, so gating on it would strip that chat's block after every compaction. Job sessions are now recognized by channel, like extraction eligibility.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01B3cWr83aDuHP8JQDvLxrgC
+
 ## v0.160.3 (2026-10-11)
 
 
