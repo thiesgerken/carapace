@@ -62,4 +62,6 @@ The sentinel and the titler stay out on purpose. The sentinel must judge the age
 
 ### Prefix caching
 
-Providers cache prompts by prefix, so the order is stable first, volatile last. Nothing per session or per call (the current date, the session ID, a role split) may come before the long shared text. Each role's own prefix is what gets cached between its calls. Two roles share a cache entry only when they run on the same model, and some providers cache tool definitions ahead of the system prompt, so the agent (with tools) and the tool-less roles may still miss each other. carapace builds nothing provider-specific for caching.
+Prompt caching depends on the provider. Some (OpenAI, for example) cache matching prompt prefixes automatically. Anthropic caches only up to explicit `cache_control` breakpoints, and carapace sets none, so nothing is cached there today. The order is built so that any prefix cache can hit: stable first, volatile last. Nothing per session or per call (the current date, the session ID, a role split) may come before the long shared text.
+
+Where caching applies, each role's own prefix is what gets reused between its calls. Two roles share a cache entry only when they run on the same model, and some providers put tool definitions ahead of the system prompt, so the agent (with tools) and the tool-less roles may still miss each other. carapace builds nothing provider-specific for caching.
