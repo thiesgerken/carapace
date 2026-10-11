@@ -7,7 +7,7 @@ from alembic import command
 from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
 from pydantic import ValidationError
-from sqlalchemy import insert, select, text, update
+from sqlalchemy import JSON, String, column, insert, select, table, text, update
 from sqlalchemy.exc import IntegrityError
 
 from carapace.database.base import Base
@@ -31,7 +31,13 @@ def test_migrations_match_rows(tmp_path):
     assert open_index is not None and "WHERE status IN ('pending', 'queued', 'running')" in open_index
 
 
-def test_migration_seeds_memory_models_from_the_existing_tiers(tmp_path):
+# main's UserConfig, which forbids unknown keys: a downgrade below 0006 must leave only these.
+_PRE_MEMORY_USER_KEYS = {"agent_icon", "agent_name", "budgets", "channels", "credentials", "default_models", "git"}
+_PRE_MEMORY_DEFAULT_MODELS = {"agent", "sentinel", "title", "compaction"}
+_raw_users = table("users", column("username", String), column("config", JSON))
+
+
+def test_migration_round_trips_the_memory_user_settings(tmp_path):
     engine, _ = create_engine_and_factory(DatabaseConfig(url=f"sqlite+pysqlite:///{tmp_path}/m.db"))
     cfg = _alembic_config(str(engine.url))
     now = datetime.now(tz=UTC)
@@ -64,11 +70,23 @@ def test_migration_seeds_memory_models_from_the_existing_tiers(tmp_path):
         command.upgrade(cfg, "head")
         agent = conn.scalar(select(PlatformSettingRow.data).where(PlatformSettingRow.key == "agent"))
         seeded = dict(conn.execute(select(User.username, User.config)).all())
+        command.downgrade(cfg, "0005")
+        downgraded = dict(conn.execute(select(_raw_users.c.username, _raw_users.c.config)).all())
     engine.dispose()
 
     assert (agent["memory_low_model"], agent["memory_high_model"]) == ("m:cheap", "m:set")
     memory_models = {name: (c.default_models.memory_low, c.default_models.memory_high) for name, c in seeded.items()}
     assert memory_models == {"seeded": ("u:cheap", "u:agent"), "unset": (None, None), "kept": ("u:low", "u:agent")}
+    # The rows were written as full current dumps, so this catches any user setting newer than main.
+    for config in downgraded.values():
+        assert config.keys() <= _PRE_MEMORY_USER_KEYS
+        assert config["default_models"].keys() <= _PRE_MEMORY_DEFAULT_MODELS
+    assert downgraded["kept"]["default_models"] == {
+        "agent": "u:agent",
+        "sentinel": "u:cheap",
+        "title": None,
+        "compaction": None,
+    }
 
 
 def _task(status: str) -> MemoryTaskRow:

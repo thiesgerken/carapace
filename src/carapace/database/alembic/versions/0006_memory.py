@@ -193,7 +193,19 @@ def _seed_memory_models() -> None:
             )
 
 
+def _strip_memory_user_settings() -> None:
+    """Drop the memory keys from every user config: the pre-memory ``UserConfig`` forbids unknown keys."""
+    bind = op.get_bind()
+    for username, config in bind.execute(sa.select(_users.c.username, _users.c.config)).all():
+        stripped = {key: value for key, value in config.items() if key not in ("timezone", "memory")}
+        stripped["default_models"] = {
+            key: value for key, value in config["default_models"].items() if key not in ("memory_low", "memory_high")
+        }
+        bind.execute(_users.update().where(_users.c.username == username).values(config=stripped))
+
+
 def downgrade() -> None:
+    _strip_memory_user_settings()
     op.drop_table("memory_digests")
     op.drop_table("memory_facts")
     op.drop_table("memory_session_extractions")
