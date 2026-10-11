@@ -100,9 +100,10 @@ def _redirect_url(authorize_url: str, *, code: str = "auth-code") -> str:
 
 
 def test_store_round_trips_credentials(store: CodexCredentialStore) -> None:
-    store.connect("thies", _credentials("acct-1"), email="thies@example.com")
+    credentials = _credentials("acct-1")
+    store.connect("thies", credentials, email="thies@example.com")
 
-    assert store.load("thies") == _credentials("acct-1")
+    assert store.load("thies") == credentials
     connection = store.connection("thies")
     assert connection is not None
     assert connection.email == "thies@example.com"
@@ -124,15 +125,16 @@ def test_store_rotate_never_recreates_a_disconnected_row(store: CodexCredentialS
 
 
 async def test_credential_source_loads_and_saves_its_users_row(store: CodexCredentialStore) -> None:
+    ada = _credentials("acct-ada")
     store.connect("thies", _credentials("acct-thies"), email=None)
-    store.connect("ada", _credentials("acct-ada"), email=None)
+    store.connect("ada", ada, email=None)
     source = UserCodexCredentialSource(store, "thies")
 
     rotated = _credentials("acct-thies", refresh_token="refresh-2")
     await source.save(rotated)
 
     assert await source.load() == rotated
-    assert store.load("ada") == _credentials("acct-ada")
+    assert store.load("ada") == ada
 
 
 # --- login flow ---
@@ -266,7 +268,8 @@ def _codex_config() -> Config:
 async def test_factory_builds_codex_models_with_each_users_credentials(
     store: CodexCredentialStore, codex_requests: list[httpx2.Request]
 ) -> None:
-    store.connect("thies", _credentials("acct-thies"), email=None)
+    thies = _credentials("acct-thies")
+    store.connect("thies", thies, email=None)
     store.connect("ada", _credentials("acct-ada"), email=None)
     accounts = CodexAccounts(store)
     factory = make_model_factory(_codex_config(), accounts.provider_for)
@@ -279,7 +282,7 @@ async def test_factory_builds_codex_models_with_each_users_credentials(
     await ada_model.client.models.list()
 
     assert [r.headers["chatgpt-account-id"] for r in codex_requests] == ["acct-thies", "acct-ada"]
-    assert codex_requests[0].headers["authorization"] == f"Bearer {_access_token('acct-thies')}"
+    assert codex_requests[0].headers["authorization"] == f"Bearer {thies.access_token}"
 
 
 def test_factory_shares_one_provider_per_user(store: CodexCredentialStore) -> None:
@@ -320,12 +323,13 @@ async def test_codex_request_with_revoked_grant_raises_refresh_error(
     monkeypatch.setattr(
         codex_auth, "retry_http_client", lambda: httpx2.AsyncClient(transport=httpx2.MockTransport(handler))
     )
-    store.connect("thies", _credentials("acct-thies"), email=None)
+    credentials = _credentials("acct-thies")
+    store.connect("thies", credentials, email=None)
     model = make_model_factory(_codex_config(), CodexAccounts(store).provider_for)(_CODEX_MODEL, user="thies")
 
     with pytest.raises(CredentialsRefreshError, match="refresh token reused"):
         await model.client.models.list()
-    assert store.load("thies") == _credentials("acct-thies")
+    assert store.load("thies") == credentials
 
 
 # --- pricing ---
