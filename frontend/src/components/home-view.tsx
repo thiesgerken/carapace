@@ -228,8 +228,10 @@ function OpenLoopList({ server, loops }: { server: string; loops: HomeOpenLoop[]
           {visible.map((loop) => (
             <li key={loop.id} className="group/loop py-3 first:pt-0 last:pb-0">
               {phases.get(loop.id) === "undo" ? (
-                <div role="status" className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Check aria-hidden="true" className="h-4 w-4 shrink-0" />
+                <div role="status" className="flex items-center gap-3 text-sm text-muted-foreground">
+                  <span aria-hidden="true" className={cn(checkCircleClassName, "border-[#236b86] bg-[#236b86] text-white dark:border-sky-400 dark:bg-sky-400 dark:text-background")}>
+                    <Check className="h-3 w-3" strokeWidth={3} />
+                  </span>
                   <span className="min-w-0 flex-1 truncate">{t("dismissed", { text: loop.text })}</span>
                   <button
                     type="button"
@@ -252,46 +254,49 @@ function OpenLoopList({ server, loops }: { server: string; loops: HomeOpenLoop[]
   );
 }
 
+/** The to-do circle: hollow while open, filled once dismissed (in the undo row). */
+const checkCircleClassName = "mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition-colors";
+
 function OpenLoopItem({ loop, focusDismiss, onDismiss }: { loop: HomeOpenLoop; focusDismiss: boolean; onDismiss: () => void }) {
   const t = useTranslations("home");
   const locale = useLocale();
   const [now] = useState(() => Date.now());
 
   return (
-    <div className="flex flex-col gap-1.5 sm:flex-row sm:items-start sm:gap-4">
-      <div className="min-w-0 flex-1 space-y-1">
-        <p className="text-sm leading-relaxed">{loop.text}</p>
-        <p className="truncate text-xs text-muted-foreground">
-          {loop.session_title ?? t("untitledSession")}
-          {" · "}
-          <time dateTime={loop.session_last_active} title={formatAbsoluteTime(loop.session_last_active, locale)}>
-            {formatRelativeTime(loop.session_last_active, locale, now, t("justNow"))}
-          </time>
-        </p>
-      </div>
-      <div className="flex shrink-0 items-center gap-1 self-start">
+    <div className="flex items-start gap-3">
+      <button
+        type="button"
+        onClick={onDismiss}
+        autoFocus={focusDismiss}
+        aria-label={t("openLoops.dismiss")}
+        title={t("openLoops.dismiss")}
+        className={cn(
+          checkCircleClassName,
+          "group/check border-muted-foreground/40 text-[#236b86] dark:text-sky-400",
+          "hover:border-[#236b86] focus-visible:border-[#236b86] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:hover:border-sky-400 dark:focus-visible:border-sky-400",
+        )}
+      >
+        {/* The check previews on hover and focus; touch screens have neither and tap straight to done. */}
+        <Check aria-hidden="true" className="h-3 w-3 opacity-0 transition-opacity group-hover/check:opacity-100 group-focus-visible/check:opacity-100" strokeWidth={3} />
+      </button>
+      <div className="flex min-w-0 flex-1 flex-col gap-1.5 sm:flex-row sm:items-start sm:gap-4">
+        <div className="min-w-0 flex-1 space-y-1">
+          <p className="text-sm leading-relaxed">{loop.text}</p>
+          <p className="truncate text-xs text-muted-foreground">
+            {loop.session_title ?? t("untitledSession")}
+            {" · "}
+            <time dateTime={loop.session_last_active} title={formatAbsoluteTime(loop.session_last_active, locale)}>
+              {formatRelativeTime(loop.session_last_active, locale, now, t("justNow"))}
+            </time>
+          </p>
+        </div>
         <Link
           href={sessionHref(loop.session_id)}
-          className="inline-flex items-center gap-1 text-sm font-medium text-[#236b86] hover:underline dark:text-sky-400"
+          className="inline-flex shrink-0 items-center gap-1 self-start text-sm font-medium text-[#236b86] hover:underline dark:text-sky-400"
         >
           {t("openLoops.continue")}
           <ArrowRight className="h-3.5 w-3.5" />
         </Link>
-        <button
-          type="button"
-          onClick={onDismiss}
-          autoFocus={focusDismiss}
-          aria-label={t("openLoops.dismiss")}
-          title={t("openLoops.dismiss")}
-          className={cn(
-            "rounded-md p-1 text-muted-foreground transition-opacity hover:bg-muted hover:text-foreground",
-            "focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-            // Pointer devices reveal it with the row; touch screens have no hover, so it stays visible there.
-            "[@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover/loop:opacity-100 [@media(hover:hover)]:group-focus-within/loop:opacity-100",
-          )}
-        >
-          <Check aria-hidden="true" className="h-4 w-4" />
-        </button>
       </div>
     </div>
   );
