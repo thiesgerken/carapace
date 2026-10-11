@@ -22,6 +22,12 @@ frontend:
       memory: 64Mi
     limits:
       memory: 128Mi
+  csp:
+    # -- Extra origins images may load from, besides the frontend's own origin, data: and blob:
+    # (Content-Security-Policy img-src). Needed when the API is served from another origin, e.g.
+    # ["https://api.example.com"]. Keep it short: every origin listed here can receive data from
+    # injected image URLs.
+    imgSrcExtra: []
 
 # -- Server ports
 server:
