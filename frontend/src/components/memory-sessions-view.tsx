@@ -1,14 +1,14 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useState, type MouseEvent } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { ChevronRight, Loader2, MessageSquare, Play, RefreshCw } from "lucide-react";
+import { Loader2, MessageSquare, Play, RefreshCw } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
 import { MemoryExtractionDetail, useMemorySessionDetail } from "@/components/memory-extraction-detail";
 import { MemoryRunDialog } from "@/components/memory-run-dialog";
 import { useMemoryStatus } from "@/components/memory-status";
-import { buttonClassName, controlClassName, PickMatchingRow, taskStatusTag } from "@/components/memory-ui";
+import { buttonClassName, controlClassName, ExpandButton, PickMatchingRow, SelectionBar, taskStatusTag, togglesRow } from "@/components/memory-ui";
 import { listMemorySessions, spawnMemoryTasks } from "@/lib/api";
 import {
   formatUsd,
@@ -97,12 +97,6 @@ export function MemorySessionsView({ server, token }: { server: string; token: s
     router.replace(sessionId === expandedId ? pathname : `${pathname}?session=${encodeURIComponent(sessionId)}`, { scroll: false });
   }
 
-  /** Clicking empty row space toggles too; the checkbox, links and buttons keep their own action. */
-  function handleRowClick(event: MouseEvent<HTMLTableRowElement>, sessionId: string): void {
-    if ((event.target as HTMLElement).closest("a, button, input, label")) return;
-    toggleExpanded(sessionId);
-  }
-
   const expandedRowPresent = rows.some((row) => row.session_id === expandedId);
   useEffect(() => {
     if (expandedId && expandedRowPresent) document.getElementById(sessionRowId(expandedId))?.scrollIntoView({ block: "nearest" });
@@ -166,56 +160,45 @@ export function MemorySessionsView({ server, token }: { server: string; token: s
   return (
     <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6">
       <div className="space-y-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <input
-            type="week"
-            aria-label={t("filters.week")}
-            title={t("filters.week")}
-            value={form.week}
-            onChange={(event) => updateForm({ week: event.target.value })}
-            className={controlClassName}
-          />
-          <select aria-label={t("filters.state")} value={form.state} onChange={(event) => updateForm({ state: event.target.value as SessionFilterForm["state"] })} className={controlClassName}>
-            <option value="">{t("filters.anyState")}</option>
-            {MEMORY_EXTRACTION_STATES.map((value) => <option key={value} value={value}>{t(`states.${value}`)}</option>)}
-          </select>
-          <select
-            aria-label={t("filters.reason")}
-            value={form.outdatedReason}
-            disabled={form.state !== "outdated"}
-            onChange={(event) => updateForm({ outdatedReason: event.target.value as SessionFilterForm["outdatedReason"] })}
-            className={controlClassName}
-          >
-            <option value="">{t("filters.anyReason")}</option>
-            {MEMORY_OUTDATED_REASONS.map((value) => <option key={value} value={value}>{tReasons(value)}</option>)}
-          </select>
-          <select aria-label={t("filters.taskStatus")} value={form.taskStatus} onChange={(event) => updateForm({ taskStatus: event.target.value as SessionFilterForm["taskStatus"] })} className={controlClassName}>
-            <option value="">{t("filters.anyTaskStatus")}</option>
-            {MEMORY_TASK_STATUSES.map((value) => <option key={value} value={value}>{tStatuses(value)}</option>)}
-          </select>
-          <select aria-label={t("filters.model")} value={form.model} onChange={(event) => updateForm({ model: event.target.value })} className={controlClassName}>
-            <option value="">{t("filters.anyModel")}</option>
-            {modelOptions.map((value) => <option key={value} value={value}>{value}</option>)}
-          </select>
-          <select aria-label={t("filters.channel")} value={form.channel} onChange={(event) => updateForm({ channel: event.target.value })} className={controlClassName}>
-            <option value="">{t("filters.anyChannel")}</option>
-            {channelOptions.map((value) => <option key={value} value={value}>{value}</option>)}
-          </select>
-          <span className="ml-auto text-sm tabular-nums text-muted-foreground">{t("matching", { count: total })}</span>
-          <button
-            type="button"
-            disabled={busy || taskIds.length === 0}
-            onClick={() => setRunSelection({ ids: taskIds })}
-            title={pick.kind === "matching" ? t("runNeedsRows") : undefined}
-            className={buttonClassName}
-          >
-            <Play className="h-4 w-4" />
-            {t("runPicked", { count: taskIds.length })}
-          </button>
-          <button type="button" disabled={busy || pickedCount === 0} onClick={() => void respawn()} className={buttonClassName}>
-            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-            {t("respawnPicked", { count: pickedCount })}
-          </button>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              type="week"
+              aria-label={t("filters.week")}
+              title={t("filters.week")}
+              placeholder={t("filters.weekPlaceholder")}
+              value={form.week}
+              onChange={(event) => updateForm({ week: event.target.value })}
+              className={controlClassName}
+            />
+            <select aria-label={t("filters.state")} value={form.state} onChange={(event) => updateForm({ state: event.target.value as SessionFilterForm["state"] })} className={controlClassName}>
+              <option value="">{t("filters.anyState")}</option>
+              {MEMORY_EXTRACTION_STATES.map((value) => <option key={value} value={value}>{t(`states.${value}`)}</option>)}
+            </select>
+            <select
+              aria-label={t("filters.reason")}
+              value={form.outdatedReason}
+              disabled={form.state !== "outdated"}
+              onChange={(event) => updateForm({ outdatedReason: event.target.value as SessionFilterForm["outdatedReason"] })}
+              className={controlClassName}
+            >
+              <option value="">{t("filters.anyReason")}</option>
+              {MEMORY_OUTDATED_REASONS.map((value) => <option key={value} value={value}>{tReasons(value)}</option>)}
+            </select>
+            <select aria-label={t("filters.taskStatus")} value={form.taskStatus} onChange={(event) => updateForm({ taskStatus: event.target.value as SessionFilterForm["taskStatus"] })} className={controlClassName}>
+              <option value="">{t("filters.anyTaskStatus")}</option>
+              {MEMORY_TASK_STATUSES.map((value) => <option key={value} value={value}>{tStatuses(value)}</option>)}
+            </select>
+            <select aria-label={t("filters.model")} value={form.model} onChange={(event) => updateForm({ model: event.target.value })} className={controlClassName}>
+              <option value="">{t("filters.anyModel")}</option>
+              {modelOptions.map((value) => <option key={value} value={value}>{value}</option>)}
+            </select>
+            <select aria-label={t("filters.channel")} value={form.channel} onChange={(event) => updateForm({ channel: event.target.value })} className={controlClassName}>
+              <option value="">{t("filters.anyChannel")}</option>
+              {channelOptions.map((value) => <option key={value} value={value}>{value}</option>)}
+            </select>
+          </div>
+          <span className="text-sm tabular-nums text-muted-foreground">{t("matching", { count: total })}</span>
         </div>
 
         {error ? <div className="rounded-lg border border-border bg-background px-4 py-2 text-sm text-destructive">{error}</div> : null}
@@ -224,6 +207,22 @@ export function MemorySessionsView({ server, token }: { server: string; token: s
             <span>{notice}</span>
             <button type="button" onClick={() => setNotice(null)} className="text-xs text-muted-foreground underline underline-offset-2">{t("dismiss")}</button>
           </div>
+        ) : null}
+
+        {pickedCount > 0 ? (
+          <SelectionBar count={pickedCount} onClear={() => setPick(NO_PICK)}>
+            {taskIds.length > 0 ? (
+              <button type="button" disabled={busy} onClick={() => setRunSelection({ ids: taskIds })} className={buttonClassName}>
+                <Play className="h-4 w-4" />
+                {t("runPicked", { count: taskIds.length })}
+              </button>
+            ) : null}
+            <button type="button" disabled={busy} onClick={() => void respawn()} className={buttonClassName}>
+              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+              {t("respawnPicked")}
+            </button>
+            {pick.kind === "matching" ? <span className="text-xs text-muted-foreground">{t("runNeedsRows")}</span> : null}
+          </SelectionBar>
         ) : null}
 
         <div className="overflow-x-auto rounded-lg border border-border bg-background">
@@ -270,7 +269,9 @@ export function MemorySessionsView({ server, token }: { server: string; token: s
                   <Fragment key={row.session_id}>
                     <tr
                       id={sessionRowId(row.session_id)}
-                      onClick={(event) => handleRowClick(event, row.session_id)}
+                      onClick={(event) => {
+                        if (togglesRow(event.target)) toggleExpanded(row.session_id);
+                      }}
                       className={cn("cursor-pointer border-b border-border/60 align-top last:border-b-0 hover:bg-muted/30", isExpanded && "bg-muted/40")}
                     >
                       <td className="px-3 py-2">
@@ -307,16 +308,12 @@ export function MemorySessionsView({ server, token }: { server: string; token: s
                         {row.extraction?.cost_usd != null ? formatUsd(row.extraction.cost_usd, locale) : "—"}
                       </td>
                       <td className="px-3 py-1.5">
-                        <button
-                          type="button"
-                          onClick={() => toggleExpanded(row.session_id)}
-                          aria-expanded={isExpanded}
-                          aria-controls={isExpanded ? sessionDetailId(row.session_id) : undefined}
-                          aria-label={t(isExpanded ? "collapse" : "expand", { title })}
-                          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
-                        >
-                          <ChevronRight className={cn("h-4 w-4 transition-transform", isExpanded && "rotate-90")} />
-                        </button>
+                        <ExpandButton
+                          expanded={isExpanded}
+                          controls={sessionDetailId(row.session_id)}
+                          label={t(isExpanded ? "collapse" : "expand", { title })}
+                          onToggle={() => toggleExpanded(row.session_id)}
+                        />
                       </td>
                     </tr>
                     {isExpanded ? (
