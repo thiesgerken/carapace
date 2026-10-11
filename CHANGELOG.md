@@ -1,6 +1,48 @@
 # CHANGELOG
 
 
+## v0.158.10 (2026-10-11)
+
+
+### Other
+
+
+- Merge pull request #304 from thiesgerken/renovate/lock-file-maintenance
+  ([`d4f6f22`](https://github.com/thiesgerken/carapace/commit/d4f6f22f105bdba6e93c3275da080cad4d4b0c71))
+
+- Merge remote-tracking branch 'origin/main' into renovate/lock-file-maintenance
+  ([`f381187`](https://github.com/thiesgerken/carapace/commit/f381187422b06ae335cf95588e8ff11a0ab0955c))
+
+  uv.lock conflict resolved by taking main's lock and re-running uv lock --upgrade.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01BNMtu8vm7FweAiGQC4rjVH
+
+- Merge remote-tracking branch 'origin/main' into renovate/lock-file-maintenance
+  ([`908650b`](https://github.com/thiesgerken/carapace/commit/908650bc4883339558011aa7291a57e69fbbef42))
+
+  # Conflicts: #	frontend/pnpm-lock.yaml
+
+- Merge remote-tracking branch 'origin/main' into renovate/lock-file-maintenance
+  ([`ebaa588`](https://github.com/thiesgerken/carapace/commit/ebaa58851a98883d60448bd66fffc09c81d97efc))
+
+### ⬆️ Dependencies
+
+
+- ⬆️ chore: Lock file maintenance
+  ([`d4f6f22`](https://github.com/thiesgerken/carapace/commit/d4f6f22f105bdba6e93c3275da080cad4d4b0c71))
+
+- ⬆️ chore: migrate stdio MCP bridge to mcp 2
+  ([`528fc9a`](https://github.com/thiesgerken/carapace/commit/528fc9a40d5fe84eb9e9b564c59539de7b5eb0e2))
+
+  Lock maintenance pulls pydantic-ai 2.51 -> fastmcp 4 -> mcp 2.x, which renames the camelCase model fields and drops mcp.server.fastmcp. Bump the sandbox's bridge venv to mcp 2 so production runs the same SDK the tests do.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+- ⬆️ chore: Lock file maintenance
+  ([`4dabf5d`](https://github.com/thiesgerken/carapace/commit/4dabf5db82fac2ae23060509d3bf2875a0fc60a2))
+
 ## v0.158.9 (2026-10-10)
 
 
