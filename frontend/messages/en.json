@@ -139,6 +139,8 @@
             "overBudget": "This exceeds the remaining budget. Tasks beyond it wait in the queue until the budget window resets.",
             "model": "Model",
             "roleDefault": "Role default",
+            "roleDefaultResolved": "Role default ({models})",
+            "nothingToRun": "No pending tasks in this selection. Only pending tasks run; retry failed tasks on the Tasks tab.",
             "cancel": "Cancel",
             "confirm": "Run"
         },

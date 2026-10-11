@@ -213,6 +213,7 @@ export function MemoryPeriodDetailView({ server, token, periodKey }: { server: s
           server={server}
           token={token}
           selection={runSelection}
+          kinds={[level === "week" ? "week_digest" : "month_digest"]}
           onClose={() => setRunSelection(null)}
           onQueued={() => void refreshStatus()}
         />

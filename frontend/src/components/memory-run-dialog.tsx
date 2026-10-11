@@ -6,27 +6,32 @@ import { useLocale, useTranslations } from "next-intl";
 import { useMemoryStatus } from "@/components/memory-status";
 import { ModelPicker } from "@/components/model-picker";
 import { estimateMemoryTasks, fetchModels, runMemoryTasks, type AvailableModelInfo } from "@/lib/api";
-import { exceedsBudget, formatTokenEstimate, formatTokens, formatUsd, remainingBudget } from "@/lib/memory";
-import type { MemoryEstimateTotal, MemoryTaskSelection } from "@/lib/types";
+import { exceedsBudget, formatTokenEstimate, formatTokens, formatUsd, remainingBudget, roleDefaultModels } from "@/lib/memory";
+import type { MemoryEstimateTotal, MemoryTaskKind, MemoryTaskSelection } from "@/lib/types";
 
 interface MemoryRunDialogProps {
   server: string;
   token: string;
   selection: MemoryTaskSelection;
+  /** Kinds of the selected tasks, to name the models the role default resolves to. */
+  kinds: readonly MemoryTaskKind[];
   onClose: () => void;
   onQueued: (count: number) => void;
 }
 
-export function MemoryRunDialog({ server, token, selection, onClose, onQueued }: MemoryRunDialogProps) {
+/** An estimate outcome, tagged with the model override it was computed for. */
+type EstimateOutcome = { model: string | null } & ({ total: MemoryEstimateTotal } | { error: string });
+
+export function MemoryRunDialog({ server, token, selection, kinds, onClose, onQueued }: MemoryRunDialogProps) {
   const t = useTranslations("memory.run");
   const locale = useLocale();
   const { status } = useMemoryStatus();
   const dialogRef = useRef<HTMLDialogElement | null>(null);
   const [models, setModels] = useState<AvailableModelInfo[]>([]);
   const [modelOverride, setModelOverride] = useState<string | null>(null);
-  const [estimate, setEstimate] = useState<MemoryEstimateTotal | null>(null);
+  const [outcome, setOutcome] = useState<EstimateOutcome | null>(null);
   const [running, setRunning] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [runError, setRunError] = useState<string | null>(null);
 
   useEffect(() => {
     dialogRef.current?.showModal();
@@ -39,11 +44,11 @@ export function MemoryRunDialog({ server, token, selection, onClose, onQueued }:
   useEffect(() => {
     let cancelled = false;
     estimateMemoryTasks(server, { selection, model_override: modelOverride })
-      .then((result) => {
-        if (!cancelled) setEstimate(result);
+      .then((total) => {
+        if (!cancelled) setOutcome({ model: modelOverride, total });
       })
       .catch((estimateError: unknown) => {
-        if (!cancelled) setError(estimateError instanceof Error ? estimateError.message : String(estimateError));
+        if (!cancelled) setOutcome({ model: modelOverride, error: estimateError instanceof Error ? estimateError.message : String(estimateError) });
       });
     return () => {
       cancelled = true;
@@ -52,35 +57,42 @@ export function MemoryRunDialog({ server, token, selection, onClose, onQueued }:
 
   async function handleRun(): Promise<void> {
     setRunning(true);
-    setError(null);
+    setRunError(null);
     try {
       const { count } = await runMemoryTasks(server, { selection, model_override: modelOverride });
       onQueued(count);
       dialogRef.current?.close();
-    } catch (runError) {
-      setError(runError instanceof Error ? runError.message : String(runError));
+    } catch (caught) {
+      setRunError(caught instanceof Error ? caught.message : String(caught));
       setRunning(false);
     }
   }
 
+  // Keyed by model: a stale outcome reads as loading, and re-picking the current model keeps its estimate.
+  const current = outcome?.model === modelOverride ? outcome : null;
+  const estimate = current && "total" in current ? current.total : null;
+  const error = (current && "error" in current ? current.error : null) ?? runError;
   const remaining = status ? remainingBudget(status) : null;
   const overBudget = estimate !== null && status !== null && exceedsBudget(estimate, status);
+  const defaultModels = status ? roleDefaultModels(kinds, status.models) : null;
 
   return (
     <dialog
       ref={dialogRef}
       onClose={onClose}
       aria-labelledby="memory-run-title"
-      className="m-auto w-[min(32rem,calc(100vw-2rem))] rounded-2xl border border-border bg-background p-0 text-foreground shadow-xl backdrop:bg-black/40"
+      className="m-auto w-[min(32rem,calc(100vw-2rem))] overflow-visible rounded-2xl border border-border bg-background p-0 text-foreground shadow-xl backdrop:bg-black/40"
     >
       <div className="space-y-4 p-5">
         <h2 id="memory-run-title" className="text-lg font-semibold tracking-tight">{t("title")}</h2>
 
-        {estimate === null && error === null ? (
+        {current === null ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" />
             {t("estimating")}
           </div>
+        ) : estimate?.task_count === 0 ? (
+          <p className="text-sm text-muted-foreground">{t("nothingToRun")}</p>
         ) : estimate ? (
           <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-1.5 text-sm">
             <dt className="text-muted-foreground">{t("tasks")}</dt>
@@ -115,12 +127,10 @@ export function MemoryRunDialog({ server, token, selection, onClose, onQueued }:
             entries={models}
             onChange={(model) => {
               setModelOverride(model);
-              setEstimate(null);
-              setError(null);
+              setRunError(null);
             }}
             disabled={running}
-            defaultLabel={t("roleDefault")}
-            defaultDescription={status ? `memory_low: ${status.models.memory_low} · memory_high: ${status.models.memory_high}` : undefined}
+            defaultLabel={defaultModels ? t("roleDefaultResolved", { models: defaultModels }) : t("roleDefault")}
           />
         </div>
 

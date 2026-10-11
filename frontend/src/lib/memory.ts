@@ -7,6 +7,7 @@ import type {
   MemoryPeriodNode,
   MemoryEstimateTotal,
   MemoryExtractionState,
+  MemoryModelRole,
   MemoryOutdatedReason,
   MemorySessionFilter,
   MemorySessionRow,
@@ -21,6 +22,21 @@ import type {
 export const MEMORY_TASK_STATUSES: readonly MemoryTaskStatus[] = ["pending", "queued", "running", "done", "failed", "cancelled"];
 export const MEMORY_TASK_KINDS: readonly MemoryTaskKind[] = ["session_extract", "week_digest", "month_digest", "mirror"];
 
+const TASK_MODEL_ROLES: Record<MemoryTaskKind, MemoryModelRole | null> = {
+  session_extract: "memory_low",
+  week_digest: "memory_high",
+  month_digest: "memory_high",
+  mirror: null,
+};
+
+/** The model(s) a run of these task kinds resolves to without an override; null when none needs a model. */
+export function roleDefaultModels(kinds: readonly MemoryTaskKind[], models: Record<MemoryModelRole, string>): string | null {
+  const roles = (["memory_low", "memory_high"] as const).filter((role) => kinds.some((kind) => TASK_MODEL_ROLES[kind] === role));
+  if (roles.length === 0) return null;
+  if (roles.length === 1 || models.memory_low === models.memory_high) return models[roles[0]];
+  return `low: ${models.memory_low} · high: ${models.memory_high}`;
+}
+
 /** Budget-blocked tasks stay queued until the budget moves, so they don't count as progress to poll for. */
 export function hasActiveTasks(status: MemoryStatus): boolean {
   return status.queue.queued - status.blocked + status.queue.running > 0;
@@ -33,15 +49,17 @@ export function exceedsBudget(estimate: MemoryEstimateTotal, status: MemoryStatu
     || (remaining.tokens !== null && estimate.input_tokens > remaining.tokens);
 }
 
-/** Decimal strings from the API; tiny per-task costs need a third digit to not read as $0.00. */
+/**
+ * Decimal strings from the API. A typical extraction costs fractions of a cent, so sub-cent amounts
+ * keep two significant digits ($0.0021, never $0.00). Exact zero and budgets stay at two decimals.
+ */
 export function formatUsd(value: string | number, locale: string): string {
   const amount = Number(value);
-  return new Intl.NumberFormat(locale, {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: 2,
-    maximumFractionDigits: amount !== 0 && Math.abs(amount) < 1 ? 3 : 2,
-  }).format(amount);
+  const magnitude = Math.abs(amount);
+  const digits = amount !== 0 && magnitude < 0.01
+    ? { maximumSignificantDigits: 2 }
+    : { minimumFractionDigits: 2, maximumFractionDigits: amount !== 0 && magnitude < 1 ? 3 : 2 };
+  return new Intl.NumberFormat(locale, { style: "currency", currency: "USD", ...digits }).format(amount);
 }
 
 export function formatTokens(value: number, locale: string): string {
