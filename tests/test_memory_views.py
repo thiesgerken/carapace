@@ -307,6 +307,21 @@ async def test_period_tree_coverage_and_staleness(listed):
     assert (month.weeks[0].stale, month.stale) == (True, False)
 
 
+async def test_period_tree_counts_sessions_per_day(setup):
+    service, sessions, store = setup
+    for title, created in (("tuesday", "2026-09-08T12:00:00+00:00"), ("later", "2026-10-01T12:00:00+00:00")):
+        session_id = _session(sessions, title)
+        state = sessions.load_state(session_id)
+        assert state is not None
+        state.created_at = datetime.fromisoformat(created)
+        sessions.save_state(state)
+        _extract(store, session_id)
+
+    [month] = (await service.periods("alice")).months
+    # The session created after its week still counts in it, on the week's last day.
+    assert month.weeks[0].days == [0, 1, 0, 0, 0, 0, 1]
+
+
 async def test_period_detail(listed):
     service, store, ids = listed
     week = _digest(store, DigestLevel.week, "2026-W37", store.current_extractions("alice", "2026-W37"))

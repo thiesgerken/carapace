@@ -987,8 +987,13 @@ export interface MemoryPeriodNode {
   task: MemoryTaskRef | null;
 }
 
+export interface MemoryWeekNode extends MemoryPeriodNode {
+  /** The week's sessions per day, Monday first. */
+  days: number[];
+}
+
 export interface MemoryMonthNode extends MemoryPeriodNode {
-  weeks: MemoryPeriodNode[];
+  weeks: MemoryWeekNode[];
 }
 
 export interface MemoryPeriodTree {

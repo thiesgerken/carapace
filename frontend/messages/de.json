@@ -275,7 +275,12 @@
             "provenance": "Herkunft"
         },
         "timeline": {
-            "tree": "Zeiträume",
+            "calendar": "Kalender",
+            "previousMonth": "Vorheriger Monat",
+            "nextMonth": "Nächster Monat",
+            "jumpToMonth": "Monat",
+            "monthDigest": "Monats-Digest",
+            "sessionsOnDay": "{count, plural, one {# Sitzung} other {# Sitzungen}}",
             "empty": "Noch keine Zeiträume. Sie erscheinen, sobald Sitzungen für das Gedächtnis erzeugt wurden.",
             "pickPeriod": "Woche oder Monat auswählen.",
             "unknownPeriod": "Dieser Zeitraum hat keine Sitzungen.",

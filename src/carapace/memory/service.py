@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections import Counter, defaultdict
 from collections.abc import Callable, Mapping
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from zoneinfo import ZoneInfo
 
 from ..jobs import JobsStore
@@ -55,9 +55,10 @@ from .models import (
     TaskSpawnResponse,
     TaskStatus,
     TaskView,
+    WeekNode,
 )
 from .outdated import CurrentVersions, current_versions, outdated_reasons
-from .periods import month_key_for_week, period_dates, week_key
+from .periods import month_key_for_week, period_dates, week_key, week_start
 from .spawner import MALFORMED_TRANSCRIPT_ERRORS, Spawner
 from .store import MemoryStore, SessionCandidate, parse_cursor
 from .worker import DEFAULT_TIMING, MemoryWorker, WorkerTiming
@@ -420,8 +421,11 @@ class MemoryService:
         user_config = self._user_config_for(user)
         week_versions = current_versions(self._current_config(), user_config, TaskKind.week_digest)
         month_versions = current_versions(self._current_config(), user_config, TaskKind.month_digest)
+        tz = ZoneInfo(user_config.timezone)
         sessions_by_week: dict[str, set[str]] = defaultdict(set)
+        created_on: dict[str, date] = {}
         for candidate in self.matching_sessions(user, SessionMemoryFilter()):
+            created_on[candidate.state.session_id] = candidate.created_at.astimezone(tz).date()
             if candidate.week_key is not None:
                 sessions_by_week[candidate.week_key].add(candidate.state.session_id)
         extractions_by_week: dict[str, list[ExtractionRecord]] = defaultdict(list)
@@ -442,15 +446,18 @@ class MemoryService:
         months = []
         for month in sorted(weeks_by_month, reverse=True):
             weeks = [
-                _period_node(
-                    DigestLevel.week,
-                    week,
-                    covered=len(extractions_by_week[week]),
-                    total=len(sessions_by_week[week]),
-                    digest=week_digests.get(week),
-                    sources_hash=coverage_hash(week_coverage(extractions_by_week[week])),
-                    task=week_tasks.get(week),
-                    versions=week_versions,
+                WeekNode(
+                    **_period_node(
+                        DigestLevel.week,
+                        week,
+                        covered=len(extractions_by_week[week]),
+                        total=len(sessions_by_week[week]),
+                        digest=week_digests.get(week),
+                        sources_hash=coverage_hash(week_coverage(extractions_by_week[week])),
+                        task=week_tasks.get(week),
+                        versions=week_versions,
+                    ).model_dump(),
+                    days=_sessions_per_day(week, [created_on[s] for s in sessions_by_week[week] if s in created_on]),
                 )
                 for week in weeks_by_month[month]
             ]
@@ -529,6 +536,16 @@ def _period_node(
         stale=digest is not None and digest.coverage_hash != sources_hash,
         task=TaskRef(id=task.id, status=task.status, blocked_reason=task.blocked_reason) if task is not None else None,
     )
+
+
+def _sessions_per_day(week: str, created_on: list[date]) -> list[int]:
+    """Monday first. A session's week comes from its first user message, but finding that date means
+    loading every transcript, so the day is its creation date, clamped into the week where they differ."""
+    start = week_start(week)
+    days = [0] * 7
+    for day in created_on:
+        days[min(max((day - start).days, 0), 6)] += 1
+    return days
 
 
 def _digest_summary(record: DigestRecord, versions: CurrentVersions) -> DigestSummary:
