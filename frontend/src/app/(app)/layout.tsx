@@ -43,8 +43,11 @@ function AppChrome({ children }: { children: ReactNode }) {
     return <ConnectForm onConnect={shell.onConnect} />;
   }
 
+  // The shell and the page frames below it clip rather than hide: an overflow:hidden box is still a
+  // scroll container, so a hash jump or scrollIntoView shifts the whole shell (header out of view,
+  // blank strip below) as soon as anything overflows it. Only the inner panes may scroll.
   return (
-    <div className="flex h-dvh overflow-hidden">
+    <div className="flex h-dvh overflow-clip">
       {/* Mobile overlay */}
       {sidebarOpen && (
         <div
@@ -85,7 +88,7 @@ function AppChrome({ children }: { children: ReactNode }) {
       </aside>
 
       {/* Main content */}
-      <main className="flex min-h-0 flex-1 flex-col min-w-0 overflow-hidden">
+      <main className="flex min-h-0 flex-1 flex-col min-w-0 overflow-clip">
         {/* Mobile header */}
         <div className="flex items-center gap-3 border-b border-border px-4 py-2 md:hidden">
           <button
