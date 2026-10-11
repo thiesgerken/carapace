@@ -61,6 +61,18 @@ The roles are agent turns, compaction summaries, session extraction, and week an
 
 The sentinel and the titler stay out on purpose. The sentinel must judge the agent independently, and `SOUL.md`/`USER.md` are agent-writable. A title isn't worth the prefix tokens.
 
+### Prompt preview
+
+`GET /api/prompts/preview?role=<role>` (knowledge read scope) shows what one role sends now: `agent`, `sentinel`, `titler`, `compaction`, `session_extract`, `week_digest` or `month_digest`. The response lists the request's sections in order, each with its token estimate:
+
+- tool definitions (Anthropic sends them ahead of the system prompt)
+- shared prefix, role instructions, and the memory block (agent) or `SECURITY.md` (sentinel)
+- the volatile tail (the agent's session info), or a user prompt with labelled placeholder material (memory tasks)
+
+`cacheable_until` is the index of the last section inside the cached prefix (null for the sentinel and the titler, which set no breakpoint). For the agent, `memory_budget_tokens` and `memory_used_tokens` show the budget and what the block uses. The agent is previewed as a fresh session with default attributes, so its memory block is what a session starting now would get. Compaction shows the fold instructions; tool-output compaction uses shorter ones.
+
+The preview builds each role's real agent with the function its real calls use (`create_agent()`, the sentinel's agent, `title_agent()`, `summary_agent()`, `structured_agent()`) and runs it against a model that only records the first request, so no provider is called. The tool definitions come straight from that request. The sections are the assembly pieces the instructions are joined from, and if they no longer add up to the recorded instructions, the endpoint fails (`PromptDriftError`) instead of showing a prompt the role does not send.
+
 ### Prefix caching
 
 The order is built so that a prefix cache can hit: stable first, volatile last. Nothing per session or per call (the current date, the session ID, a role split) may come before the long shared text.

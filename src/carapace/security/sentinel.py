@@ -32,7 +32,7 @@ from .context import (
     UserVouchedEntry,
 )
 
-_SENTINEL_SYSTEM_PREFIX = """\
+SENTINEL_INSTRUCTIONS = """\
 You are the security gate for an AI agent system called carapace.
 You evaluate tool calls, proxy domain requests, and credential access
 requests to decide whether they should be allowed, escalated to the
@@ -85,7 +85,12 @@ def _build_system_prompt(security_md: str, *, unattended: bool, ask_mode: bool) 
         if ask_mode
         else ""
     )
-    return _SENTINEL_SYSTEM_PREFIX + mode_text + ask_mode_text + security_md
+    return SENTINEL_INSTRUCTIONS + mode_text + ask_mode_text + security_md
+
+
+def load_security_md(knowledge_dir: Path) -> str:
+    path = knowledge_dir / "SECURITY.md"
+    return path.read_text() if path.exists() else ""
 
 
 type _SentinelOutput = SentinelVerdict | UnattendedSentinelVerdict
@@ -199,6 +204,15 @@ class Sentinel:
         self._eval_tool_seq: int = 0
         self._lock = asyncio.Lock()
 
+    @property
+    def agent(self) -> Agent[Path, _SentinelOutput]:
+        """The agent evaluations run on; its deps are the skills directory."""
+        return self._agent
+
+    @property
+    def skills_dir(self) -> Path:
+        return self._skills_dir
+
     def set_model(self, model: str) -> None:
         """Switch the sentinel model, recreating the internal agent."""
         self._model = model
@@ -232,16 +246,10 @@ class Sentinel:
 
     def _load_system_prompt(self, _ctx: RunContext[Path]) -> str:
         return _build_system_prompt(
-            self._load_security_md(),
+            load_security_md(self._knowledge_dir),
             unattended=self._unattended,
             ask_mode=self._ask_mode,
         )
-
-    def _load_security_md(self) -> str:
-        path = self._knowledge_dir / "SECURITY.md"
-        if path.exists():
-            return path.read_text()
-        return ""
 
     def _read_skill_file_cached(self, skills_dir: Path, skill_name: str, path: str) -> str:
         skill_dir = skills_dir / skill_name

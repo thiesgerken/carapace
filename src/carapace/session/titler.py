@@ -7,19 +7,31 @@ from typing import Any
 
 from loguru import logger
 from pydantic_ai import Agent
-from pydantic_ai.models import infer_model
+from pydantic_ai.models import Model, infer_model
 from pydantic_ai.settings import ModelSettings
 from pydantic_ai.usage import UsageLimits
 
 from ..llm import ModelFactory
 from ..usage import LlmRequestLogCapability, UsageTracker, provider_cost_usd_from_messages
 
-_SYSTEM_PROMPT = """\
+TITLE_INSTRUCTIONS = """\
 Generate a very short title (3-8 words) for a chat conversation.
 The title MUST start with a single emoji that captures the topic.
 Do NOT use quotes around the title.
 Reply with ONLY the title, nothing else.
 """
+
+
+def title_agent(model: Model | None, *, model_settings: ModelSettings | None) -> Agent[None, str]:
+    """*model* None leaves it to the run, as the prompt preview does."""
+    return Agent(
+        model,
+        output_type=str,
+        instructions=TITLE_INSTRUCTIONS,
+        model_settings=model_settings,
+        capabilities=[LlmRequestLogCapability(source="titler")],
+        retries={"tools": 1, "output": 2},
+    )
 
 
 async def generate_title(
@@ -62,14 +74,7 @@ async def generate_title(
     prompt = "\n".join(lines)[:2000]
 
     resolved = model_factory(model, user=user) if model_factory is not None else infer_model(model)
-    agent: Agent[None, str] = Agent(
-        resolved,
-        output_type=str,
-        instructions=_SYSTEM_PROMPT,
-        model_settings=model_settings,
-        capabilities=[LlmRequestLogCapability(source="titler")],
-        retries={"tools": 1, "output": 2},
-    )
+    agent = title_agent(resolved, model_settings=model_settings)
     try:
         if before_llm_call is not None:
             before_llm_call()
