@@ -86,6 +86,7 @@
             "filters": {
                 "status": "Status",
                 "anyStatus": "Alle Status",
+                "unfinished": "Unerledigt",
                 "kind": "Art",
                 "anyKind": "Alle Arten",
                 "period": "Zeitraum",
