@@ -70,7 +70,7 @@ def test_agent_previews_a_fresh_session_with_its_memory_block(tmp_path: Path) ->
     assert result.cacheable_until == 3  # tools, prefix and instructions and memory are cached, session info is not
     memory = result.sections[3]
     assert memory.text == MEMORY.text
-    assert "new session" in memory.title
+    assert memory.title == "Memory"
     assert (result.memory_budget_tokens, result.memory_used_tokens) == (4000, 42)
     assert "The user is Thies." in result.sections[1].text
     assert '"name": "exec"' in tool_names(result)

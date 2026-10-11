@@ -137,7 +137,7 @@ async def _agent(inputs: PreviewInputs) -> PromptPreview:
         *_tool_sections(request, model),
         _section("shared_prefix", "Shared prefix", shared_prompt_prefix(deps.knowledge_dir, deps.skill_catalog), model),
         _section("role_instructions", "Agent instructions", agent_instructions(), model),
-        _section("memory", "Memory (what a new session would get now)", memory.text, model),
+        _section("memory", "Memory", memory.text, model),
     ]
     cacheable_until = len(sections) - 1
     sections.append(_section("volatile", "Session info (volatile)", build_session_info(deps), model))

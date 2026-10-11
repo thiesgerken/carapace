@@ -1552,8 +1552,13 @@
         "model": "Modell",
         "totalTokens": "Tokens gesamt",
         "tokens": "{count, plural, one {# Token} other {# Tokens}}",
-        "memoryBudget": "Gedächtnis-Budget",
+        "memoryBudget": "Gedächtnis",
         "memoryOff": "Aus",
-        "cacheEnd": "Ende des cachebaren Präfixes"
+        "cacheEnd": "Ende des cachebaren Präfixes",
+        "view": "Ansicht",
+        "views": {
+            "rendered": "Gerendert",
+            "raw": "Roh"
+        }
     }
 }

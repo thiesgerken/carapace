@@ -337,7 +337,7 @@ The list is sorted by last activity (when the task finished, started, was queued
 ### Settings
 
 - **Settings → Account → Memory** (`/settings/account#memory`): auto mode, the four budget limits, timezone, the `memory_low` and `memory_high` models, and the memory prompt budget (tokens of memory in a new session's agent prompt; empty uses the platform default, 0 turns it off).
-- **Settings → System prompts** (`/settings/prompts`): the complete simulated system prompt of every role (agent, sentinel, titler, compaction, session extraction, week and month digests) with its model, each section with its token count, the total, where the cacheable prefix ends and, for the agent, how much of the memory budget is used.
+- **Settings → System prompts** (`/settings/prompts`): the complete simulated system prompt of every role (agent, sentinel, titler, compaction, session extraction, week and month digests) with its model, each section with its token count, the total, where the cacheable prefix ends and, for the agent, how much of the memory budget is used. A bar above the sections shows each section's share of the tokens; clicking a segment opens that section. Sections show rendered Markdown by default, or the exact raw text; the tool definitions are highlighted JSON and the memory block is raw text either way, since it is distilled from untrusted session content.
 - **Settings → Admin → Models**: platform defaults for `memory_low` and `memory_high`.
 - **Settings → Jobs**: "Include in memory" (`memory_enabled`) and "Give the job memory context" (`memory_context`) per job.
 
