@@ -18,16 +18,18 @@ from carapace.memory.models import (
     TaskOutcome,
     TaskRunRequest,
     TaskSelection,
+    TaskSort,
     TaskSpawnRequest,
     TaskStatus,
 )
-from carapace.memory.service import MemoryService
+from carapace.memory.service import MemoryService, ModelOverrideError
 from carapace.memory.store import MemoryStore
 from carapace.models.config import Config
 from carapace.models.user import UserConfig
 from carapace.session import SessionManager
 
 NOW = datetime(2026, 9, 21, 12, tzinfo=UTC)
+OVERRIDE = "anthropic:claude-sonnet-4-6"  # in the default catalog, but not the memory roles' default
 
 
 class FakeHandler:
@@ -36,7 +38,7 @@ class FakeHandler:
         self.model_role = role
 
     async def estimate(self, user: str, target: str, model: str) -> TaskEstimate:
-        cost = Decimal("0.02") if model.endswith("override") else Decimal("0.01")
+        cost = Decimal("0.02") if model == OVERRIDE else Decimal("0.01")
         return TaskEstimate(model=model, input_tokens=100, output_tokens_cap=10, cost_usd=cost)
 
     async def run(self, task: MemoryTask, model: str | None) -> TaskOutcome:
@@ -105,7 +107,7 @@ async def test_manual_spawn_reports_skips(setup):
     again = await service.spawn_tasks("alice", TaskSpawnRequest(kind=TaskKind.session_extract, targets=[ok]))
     assert again.task_ids == response.task_ids  # a pending task is replaced in place
 
-    [view] = (await service.list_tasks("alice", TaskFilter(), None, 10)).items
+    [view] = (await service.list_tasks("alice", TaskFilter(), TaskSort.activity, None, 10)).items
     assert (view.target_label, view.week_key, view.spawned_by) == ("Weekend trip", "2026-W38", "manual")
     assert view.dependencies is None
 
@@ -117,7 +119,7 @@ async def test_manual_digest_spawn_validates_the_period(setup):
     )
     assert len(response.task_ids) == 1
     assert [(s.target, s.reason) for s in response.skipped] == [("2025-W53", "invalid_period")]
-    [digest] = (await service.list_tasks("alice", TaskFilter(), None, 10)).items
+    [digest] = (await service.list_tasks("alice", TaskFilter(), TaskSort.activity, None, 10)).items
     assert digest.dependencies == DependencySummary(waiting=0, pending_ids=[], failed=0)
     no_handler = await service.spawn_tasks("alice", TaskSpawnRequest(kind=TaskKind.month_digest, targets=["2026-09"]))
     assert [s.reason for s in no_handler.skipped] == ["no_handler"]
@@ -134,7 +136,7 @@ async def test_estimate_run_and_status(setup):
 
     estimate = await service.estimate_tasks("alice", TaskRunRequest(selection=selection))
     assert (estimate.task_count, estimate.cost_usd) == (2, Decimal("0.02"))
-    override = await service.estimate_tasks("alice", TaskRunRequest(selection=selection, model_override="m-override"))
+    override = await service.estimate_tasks("alice", TaskRunRequest(selection=selection, model_override=OVERRIDE))
     assert override.cost_usd == Decimal("0.04")
 
     assert (await service.run_tasks("alice", TaskRunRequest(selection=selection))).count == 2
@@ -143,7 +145,7 @@ async def test_estimate_run_and_status(setup):
     assert status.models.memory_low == Config().agent.title_model
     assert status.sessions_without_transcript == 0
 
-    listing = await service.list_tasks("alice", TaskFilter(status=[TaskStatus.queued]), None, 10)
+    listing = await service.list_tasks("alice", TaskFilter(status=[TaskStatus.queued]), TaskSort.activity, None, 10)
     assert (listing.total, listing.estimate.cost_usd) == (2, Decimal("0.02"))
     assert (await service.cancel_tasks("alice", selection)).count == 2
 
@@ -157,7 +159,7 @@ async def test_spawn_by_filter_uses_the_session_query_and_eligibility(setup):
     response = await service.spawn_tasks(
         "alice", TaskSpawnRequest(kind=TaskKind.session_extract, filter=SessionMemoryFilter())
     )
-    tasks = (await service.list_tasks("alice", TaskFilter(), None, 10)).items
+    tasks = (await service.list_tasks("alice", TaskFilter(), TaskSort.activity, None, 10)).items
     assert {t.target for t in tasks} == {first, second}
     assert len(response.task_ids) == 2 and response.skipped == []
 
@@ -166,3 +168,20 @@ async def test_spawn_by_filter_uses_the_session_query_and_eligibility(setup):
         "alice", TaskSpawnRequest(kind=TaskKind.session_extract, filter=SessionMemoryFilter())
     )
     assert sorted(again.task_ids) == sorted(response.task_ids)
+
+
+async def test_unregistered_model_overrides_are_rejected_up_front(setup):
+    service, sessions = setup
+    session = _session(sessions)
+    spawn = TaskSpawnRequest(kind=TaskKind.session_extract, targets=[session], model_override="m:unknown")
+    with pytest.raises(ModelOverrideError, match="not registered"):
+        await service.spawn_tasks("alice", spawn)
+
+    ids = (
+        await service.spawn_tasks("alice", TaskSpawnRequest(kind=TaskKind.session_extract, targets=[session]))
+    ).task_ids
+    run = TaskRunRequest(selection=TaskSelection(ids=ids), model_override="m:unknown")
+    for call in (service.estimate_tasks, service.run_tasks):
+        with pytest.raises(ModelOverrideError):
+            await call("alice", run)
+    assert (await service.status("alice")).queue[TaskStatus.pending] == 1

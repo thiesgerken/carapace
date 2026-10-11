@@ -37,6 +37,11 @@ class BlockedReason(StrEnum):
     dependencies = "dependencies"
 
 
+class TaskSort(StrEnum):
+    activity = "activity"  # last change first
+    period = "period"  # newest target period first, the order "run newest N" selects in
+
+
 class SpawnedBy(StrEnum):
     auto = "auto"
     manual = "manual"

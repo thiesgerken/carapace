@@ -30,11 +30,12 @@ from ..memory.models import (
     TaskListResponse,
     TaskRunRequest,
     TaskSelection,
+    TaskSort,
     TaskSpawnRequest,
     TaskSpawnResponse,
     TaskStatus,
 )
-from ..memory.service import MemoryService
+from ..memory.service import MemoryService, ModelOverrideError
 from .auth import require
 from .state import server_module
 
@@ -62,21 +63,28 @@ async def list_tasks(
     kind: Annotated[list[TaskKind] | None, Query()] = None,
     period: str | None = None,
     model: str | None = None,
+    sort: TaskSort = TaskSort.activity,
     cursor: str | None = None,
     limit: int = Query(default=100, ge=1, le=500),
 ) -> TaskListResponse:
     task_filter = TaskFilter(status=status, kind=kind, period=period, model=model)
-    return await _service().list_tasks(user.username, task_filter, cursor, limit)
+    return await _service().list_tasks(user.username, task_filter, sort, cursor, limit)
 
 
 @router.post("/tasks/estimate", response_model=EstimateTotal)
 async def estimate_tasks(body: TaskRunRequest, user: _Reader) -> EstimateTotal:
-    return await _service().estimate_tasks(user.username, body)
+    try:
+        return await _service().estimate_tasks(user.username, body)
+    except ModelOverrideError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.post("/tasks/run", response_model=TaskCountResponse)
 async def run_tasks(body: TaskRunRequest, user: _Writer) -> TaskCountResponse:
-    return await _service().run_tasks(user.username, body)
+    try:
+        return await _service().run_tasks(user.username, body)
+    except ModelOverrideError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.post("/tasks/cancel", response_model=TaskCountResponse)
@@ -91,7 +99,10 @@ async def retry_tasks(body: TaskIdsRequest, user: _Writer) -> TaskCountResponse:
 
 @router.post("/tasks/spawn", response_model=TaskSpawnResponse)
 async def spawn_tasks(body: TaskSpawnRequest, user: _Writer) -> TaskSpawnResponse:
-    return await _service().spawn_tasks(user.username, body)
+    try:
+        return await _service().spawn_tasks(user.username, body)
+    except ModelOverrideError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.get("/sessions", response_model=SessionMemoryListResponse)

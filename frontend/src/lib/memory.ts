@@ -13,6 +13,7 @@ import type {
   MemorySessionRow,
   MemoryTaskSpawnRequest,
   MemoryStatus,
+  MemoryTask,
   MemoryTaskFilter,
   MemoryTaskKind,
   MemoryTaskSelection,
@@ -37,6 +38,22 @@ export function roleDefaultModels(kinds: readonly MemoryTaskKind[], models: Reco
   return `low: ${models.memory_low} · high: ${models.memory_high}`;
 }
 
+/**
+ * The model a task ran with, or would run with now. Not the estimate's model: that is the role
+ * default at spawn time, and the worker resolves the role again when the task runs.
+ */
+export function taskRunModel(task: MemoryTask, models: Record<MemoryModelRole, string> | null): string | null {
+  if (task.provenance) return task.provenance.model;
+  if (task.model_override) return task.model_override;
+  const role = TASK_MODEL_ROLES[task.kind];
+  return role && models ? models[role] : null;
+}
+
+/** When the task last changed: the timestamp the "activity" sort orders by. */
+export function taskActivityAt(task: MemoryTask): string {
+  return task.finished_at ?? task.started_at ?? task.queued_at ?? task.created_at;
+}
+
 /** Budget-blocked tasks stay queued until the budget moves, so they don't count as progress to poll for. */
 export function hasActiveTasks(status: MemoryStatus): boolean {
   return status.queue.queued - status.blocked + status.queue.running > 0;
@@ -49,15 +66,17 @@ export function exceedsBudget(estimate: MemoryEstimateTotal, status: MemoryStatu
     || (remaining.tokens !== null && estimate.input_tokens > remaining.tokens);
 }
 
-/** Decimal strings from the API; tiny per-task costs need a third digit to not read as $0.00. */
+/**
+ * Decimal strings from the API. A typical extraction costs fractions of a cent, so sub-cent amounts
+ * keep two significant digits ($0.0021, never $0.00). Exact zero and budgets stay at two decimals.
+ */
 export function formatUsd(value: string | number, locale: string): string {
   const amount = Number(value);
-  return new Intl.NumberFormat(locale, {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: 2,
-    maximumFractionDigits: amount !== 0 && Math.abs(amount) < 1 ? 3 : 2,
-  }).format(amount);
+  const magnitude = Math.abs(amount);
+  const digits = amount !== 0 && magnitude < 0.01
+    ? { maximumSignificantDigits: 2 }
+    : { minimumFractionDigits: 2, maximumFractionDigits: amount !== 0 && magnitude < 1 ? 3 : 2 };
+  return new Intl.NumberFormat(locale, { style: "currency", currency: "USD", ...digits }).format(amount);
 }
 
 export function formatTokens(value: number, locale: string): string {

@@ -224,7 +224,7 @@ default_models:
 | `memory_low` | session extraction | `default_models.memory_low` | `agent.memory_low_model` | compaction model, then title model |
 | `memory_high` | week and month digests | `default_models.memory_high` | `agent.memory_high_model` | agent model |
 
-A cheap, haiku-class or local model is enough for `memory_low`. Digests benefit from a stronger `memory_high` model. Memory roles are not session roles: `/model` and per-session overrides do not affect them. A run can override the model per task (run dialog, respawn).
+A cheap, haiku-class or local model is enough for `memory_low`. Digests benefit from a stronger `memory_high` model. Memory roles are not session roles: `/model` and per-session overrides do not affect them. A run can override the model per task (run dialog, respawn). An override must be a registered, enabled model in `agent.available_models`; estimate, run and spawn reject anything else with 422.
 
 ---
 
@@ -292,6 +292,8 @@ The same fact from several sessions (same statement and subject, ignoring case, 
 
 The queue. Filter by status, kind, month and model; the header shows the number of matching tasks and their estimated cost. "Run all of September" is: filter month 2026-09, select all matching, run. The month filter places session tasks by their session's week, not by when the task was created.
 
+The list is sorted by last activity (when the task finished, started, was queued or was created) by default. Click the **Target** header to sort by target period instead, the order **Run newest 50** picks in. The **Model** column shows the model a task ran with, or for open tasks the model it would run with now: its override, otherwise the current role default.
+
 - **Run newest 50**, **Run selected**, **Cancel selected**, and **Retry** on failed rows.
 - The **run dialog** shows the task count, input tokens, estimated cost, remaining budget (and a warning when the run exceeds it) and lets you override the model for this run.
 - Clicking a task's target shows its details: attempts, timings, estimate, provenance and usage, the error, and a link to the record it produced.
@@ -311,7 +313,7 @@ All endpoints live under `/api/memory`, are scoped to the authenticated user and
 | Method + path | Purpose |
 | --- | --- |
 | `GET /status` | auto mode, budget gauges, queue counts, effective models |
-| `GET /tasks` | filter by status, kind, period, model; cursor pagination; total and estimate |
+| `GET /tasks` | filter by status, kind, period, model; `sort=activity` (default) or `period`; cursor pagination; total and estimate |
 | `POST /tasks/estimate` | estimate for task ids or a filter |
 | `POST /tasks/run` | run task ids, a filter, or the newest N of a filter; optional model override |
 | `POST /tasks/cancel` | cancel task ids or a filter |
