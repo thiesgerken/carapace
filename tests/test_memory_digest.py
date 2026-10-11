@@ -11,7 +11,13 @@ from pydantic_ai.usage import RequestUsage
 
 from carapace.memory.coverage import coverage_hash, month_coverage, week_coverage
 from carapace.memory.digest_input import DIGEST_INPUT_FORMAT_VERSION, render_month_input, render_week_input
-from carapace.memory.handlers import DIGEST_OUTPUT_CAP, DigestHandler, TaskHandler, TaskRunError
+from carapace.memory.handlers import (
+    MONTH_DIGEST_OUTPUT_CAP,
+    WEEK_DIGEST_OUTPUT_CAP,
+    DigestHandler,
+    TaskHandler,
+    TaskRunError,
+)
 from carapace.memory.models import (
     DigestLevel,
     DigestRecord,
@@ -175,20 +181,26 @@ async def test_estimate_uses_the_digest_output_cap() -> None:
         "alice", "2026-W36", MODEL
     )
 
-    assert estimate.output_tokens_cap == DIGEST_OUTPUT_CAP
+    assert estimate.output_tokens_cap == WEEK_DIGEST_OUTPUT_CAP
     assert estimate.input_tokens > render_week_input([EXTRACTION]).token_estimate
     assert estimate.cost_usd is not None
 
 
+async def test_month_digests_get_their_own_output_cap() -> None:
+    estimate = await _handler(DigestLevel.month, _Model(), _Sources([], [WEEK])).estimate("alice", "2026-09", MODEL)
+
+    assert estimate.output_tokens_cap == MONTH_DIGEST_OUTPUT_CAP > WEEK_DIGEST_OUTPUT_CAP
+
+
 async def test_billed_failure_carries_provenance() -> None:
-    model = _Model(output_tokens=DIGEST_OUTPUT_CAP + 1)
+    model = _Model(output_tokens=WEEK_DIGEST_OUTPUT_CAP + 1)
 
     with pytest.raises(TaskRunError) as failed:
         await _handler(DigestLevel.week, model, _Sources([EXTRACTION], [])).run(
             _task(TaskKind.week_digest, "2026-W36"), MODEL
         )
 
-    assert failed.value.provenance.output_tokens == DIGEST_OUTPUT_CAP + 1
+    assert failed.value.provenance.output_tokens == WEEK_DIGEST_OUTPUT_CAP + 1
     assert failed.value.provenance.prompt_version == WEEK_DIGEST.version(PeriodDigestOutput)
 
 
