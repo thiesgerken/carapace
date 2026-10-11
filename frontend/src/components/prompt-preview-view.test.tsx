@@ -19,7 +19,7 @@ function preview(role: PromptPreview["role"]): PromptPreview {
         { key: "tools", title: "Tool definitions (1)", text: '[\n  {\n    "name": "read"\n  }\n]', tokens: 40 },
         { key: "shared", title: "Shared prefix", text: "# AGENTS.md\n\nYou are **carapace**.", tokens: 1200 },
         { key: "instructions", title: "Agent instructions", text: "Use tools.", tokens: 300 },
-        { key: "memory", title: "Memory", text: "W41: Talos upgrade.", tokens: 900 },
+        { key: "memory", title: "Memory", text: "W41: Talos upgrade. ![x](https://tracker.example/p.png)", tokens: 900 },
         { key: "volatile", title: "Volatile tail", text: "Session s1", tokens: 20 },
       ],
       total_tokens: 2420,
@@ -78,6 +78,22 @@ test("the preview shows sections, the cache boundary and the memory budget, and 
     assert.match(text(), /900 \/ 4,000/);
     const fill = view.container.querySelector<HTMLElement>('[role="meter"] > div');
     assert.equal(fill?.style.width, "22.5%");
+
+    // One segment per section, sized by tokens; the cache tick sits after the memory section (2,440 of 2,460).
+    const segments = Array.from(view.container.querySelectorAll<HTMLButtonElement>('button[aria-label*=" tokens · "]'));
+    assert.deepEqual(segments.map((segment) => segment.style.flexGrow), ["40", "1200", "300", "900", "20"]);
+    assert.equal(segments[1].getAttribute("aria-label"), "Shared prefix · 1,200 tokens · 49.6%");
+    const tick = view.container.querySelector<HTMLElement>('[title="End of cacheable prefix"]');
+    assert.equal(Number.parseFloat(tick?.style.left ?? ""), (2440 / 2460) * 100);
+    const scrolled: Element[] = [];
+    window.Element.prototype.scrollIntoView = function scrollIntoView(this: Element) {
+      scrolled.push(this);
+    };
+    await click(segments[3]);
+    await settle();
+    const memory = view.container.querySelector<HTMLDetailsElement>("#prompt-section-memory");
+    assert.equal(memory?.open, true);
+    assert.deepEqual(scrolled, [memory]);
     const summaries = Array.from(view.container.querySelectorAll("summary"), (summary) => summary.textContent);
     assert.deepEqual(summaries, [
       "Tool definitions (1)40 tokens",
@@ -94,6 +110,9 @@ test("the preview shows sections, the cache boundary and the memory budget, and 
     const shared = await openSection("Shared prefix");
     assert.equal(shared.querySelector("h1")?.textContent, "AGENTS.md");
     assert.equal(shared.querySelector("strong")?.textContent, "carapace");
+    const memorySection = await openSection("Memory");
+    assert.equal(memorySection.querySelector("img"), null);
+    assert.equal(memorySection.querySelector("pre")?.textContent, "W41: Talos upgrade. ![x](https://tracker.example/p.png)");
     const tools = await openSection("Tool definitions");
     assert.match(tools.querySelector("pre")?.textContent ?? "", /"name": "read"/);
 

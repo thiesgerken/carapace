@@ -18,6 +18,11 @@ const pillClassName = (selected: boolean): string => cn(
     : "border-border text-muted-foreground hover:bg-muted hover:text-foreground",
 );
 
+/** The chat's context gauge palette; sections take colours in order, repeating past six. */
+const SECTION_COLORS = ["bg-sky-500/80", "bg-emerald-500/80", "bg-violet-500/80", "bg-amber-500/80", "bg-orange-500/80", "bg-rose-500/80"];
+const sectionColor = (index: number): string => SECTION_COLORS[index % SECTION_COLORS.length];
+const sectionElementId = (key: string): string => `prompt-section-${key}`;
+
 type Outcome = { role: PromptRole; preview: PromptPreview } | { role: PromptRole; error: string };
 
 function usePromptPreview(server: string, role: PromptRole): { preview: PromptPreview | null; error: string | null } {
@@ -93,12 +98,13 @@ function PreviewBody({ preview, view }: { preview: PromptPreview; view: View }) 
         {preview.memory_budget_tokens !== null && preview.memory_used_tokens !== null ? (
           <MemoryBudget budget={preview.memory_budget_tokens} used={preview.memory_used_tokens} />
         ) : null}
+        <SectionShareBar preview={preview} />
       </div>
 
       <div className="space-y-2">
         {preview.sections.map((section, index) => (
           <div key={section.key} className="space-y-2">
-            <SectionBlock section={section} view={view} />
+            <SectionBlock section={section} color={sectionColor(index)} view={view} />
             {index === preview.cacheable_until ? (
               <div role="separator" className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.12em] text-[#236b86] dark:text-sky-400">
                 <span className="h-px flex-1 border-t border-dashed border-current" />
@@ -113,15 +119,75 @@ function PreviewBody({ preview, view }: { preview: PromptPreview; view: View }) 
   );
 }
 
-function SectionBlock({ section, view }: { section: PromptSection; view: View }) {
+/** Each section's share of the prompt; a segment expands its section and scrolls to it. */
+function SectionShareBar({ preview }: { preview: PromptPreview }) {
+  const t = useTranslations("promptPreview");
+  const format = useFormatter();
+  const [active, setActive] = useState<PromptSection | null>(null);
+  const { sections, cacheable_until: cacheableUntil } = preview;
+  const sum = sections.reduce((total, section) => total + section.tokens, 0);
+  const cacheEndPercent = cacheableUntil === null || sum === 0
+    ? null
+    : (sections.slice(0, cacheableUntil + 1).reduce((total, section) => total + section.tokens, 0) / sum) * 100;
+
+  function describe(section: PromptSection): string {
+    const share = format.number(section.tokens / preview.total_tokens, { style: "percent", maximumFractionDigits: 1 });
+    return `${section.title} · ${t("tokens", { count: section.tokens })} · ${share}`;
+  }
+
+  function reveal(section: PromptSection): void {
+    const details = document.getElementById(sectionElementId(section.key)) as HTMLDetailsElement | null;
+    if (details === null) return;
+    details.open = true;
+    details.scrollIntoView({ block: "start", behavior: "smooth" });
+  }
+
+  return (
+    <div className="basis-full space-y-1.5 border-t border-border/60 pt-3">
+      <div className="relative">
+        <div className="flex h-3 gap-0.5 overflow-hidden rounded-full bg-muted">
+          {sections.map((section, index) => (
+            <button
+              key={section.key}
+              type="button"
+              aria-label={describe(section)}
+              onClick={() => reveal(section)}
+              onMouseEnter={() => setActive(section)}
+              onMouseLeave={() => setActive(null)}
+              onFocus={() => setActive(section)}
+              onBlur={() => setActive(null)}
+              style={{ flexGrow: section.tokens, flexBasis: 0 }}
+              className={cn(sectionColor(index), "min-w-0 transition-opacity hover:opacity-80 focus-visible:opacity-80 focus-visible:outline-none")}
+            />
+          ))}
+        </div>
+        {cacheEndPercent !== null ? (
+          <div
+            title={t("cacheEnd")}
+            className="pointer-events-none absolute -bottom-1 -top-1 w-0.5 -translate-x-1/2 rounded-full bg-[#236b86] dark:bg-sky-400"
+            style={{ left: `${cacheEndPercent}%` }}
+          />
+        ) : null}
+      </div>
+      <div className="min-h-4 truncate text-xs text-muted-foreground">{active ? describe(active) : null}</div>
+    </div>
+  );
+}
+
+function SectionBlock({ section, color, view }: { section: PromptSection; color: string; view: View }) {
   const t = useTranslations("promptPreview");
   // Bodies mount on first open only, so Shiki never runs for sections nobody looks at.
   const [opened, setOpened] = useState(false);
 
   return (
-    <details onToggle={(event) => event.currentTarget.open && setOpened(true)} className="group/section rounded-2xl border border-border bg-background/88 shadow-sm">
+    <details
+      id={sectionElementId(section.key)}
+      onToggle={(event) => event.currentTarget.open && setOpened(true)}
+      className="group/section scroll-mt-4 rounded-2xl border border-border bg-background/88 shadow-sm"
+    >
       <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 [&::-webkit-details-marker]:hidden">
         <ChevronRight aria-hidden="true" className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-open/section:rotate-90" />
+        <span aria-hidden="true" className={cn("h-2 w-2 shrink-0 rounded-full", color)} />
         <span className="min-w-0 flex-1 truncate text-sm font-medium">{section.title}</span>
         <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{t("tokens", { count: section.tokens })}</span>
       </summary>
@@ -136,7 +202,9 @@ function SectionText({ section, view }: { section: PromptSection; view: View }) 
   if (section.key === "tools") {
     return <div className={frameClassName}><MarkdownContent content={fencedCodeBlock("json", section.text)} /></div>;
   }
-  if (view === "rendered") {
+  // Memory is distilled from past sessions, tool output included, so it is untrusted: rendering it
+  // would turn a Markdown image in there into a live request to any host.
+  if (view === "rendered" && section.key !== "memory") {
     return <div className={frameClassName}><MarkdownContent content={section.text} /></div>;
   }
   return <pre className={cn(frameClassName, "whitespace-pre-wrap break-words font-mono text-xs leading-relaxed")}>{section.text}</pre>;
