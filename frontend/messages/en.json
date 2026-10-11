@@ -432,7 +432,7 @@
             "timezone": "Time zone",
             "memoryLow": "Session extraction model",
             "memoryHigh": "Digest model",
-            "memoryPromptBudget": "Memory in the agent prompt (tokens)",
+            "memoryPromptBudget": "Memory tokens",
             "previewPrompts": "Preview system prompts"
         },
         "defaults": {
@@ -508,6 +508,11 @@
             "errors": {
                 "generic": "ChatGPT subscription request failed"
             }
+        },
+        "groups": {
+            "memoryBudget": "Budget",
+            "memoryModels": "Models",
+            "memoryAgentPrompt": "Agent prompt"
         }
     },
     "platformSettings": {

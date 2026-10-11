@@ -432,7 +432,7 @@
             "timezone": "Zeitzone",
             "memoryLow": "Modell für Sitzungsextraktion",
             "memoryHigh": "Modell für Zusammenfassungen",
-            "memoryPromptBudget": "Gedächtnis im Agenten-Prompt (Tokens)",
+            "memoryPromptBudget": "Gedächtnis-Tokens",
             "previewPrompts": "Systemprompts ansehen"
         },
         "defaults": {
@@ -508,6 +508,11 @@
             "errors": {
                 "generic": "Anfrage zum ChatGPT-Abo fehlgeschlagen"
             }
+        },
+        "groups": {
+            "memoryBudget": "Budget",
+            "memoryModels": "Modelle",
+            "memoryAgentPrompt": "Agenten-Prompt"
         }
     },
     "platformSettings": {
