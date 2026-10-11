@@ -216,7 +216,7 @@ test("a digest waiting for its extractions says so and links to them", async () 
     await click(hint);
     await settle();
     assert.equal(queries.at(-1), "session_extract|2026-W36");
-    assert.equal(view.container.querySelector<HTMLInputElement>('input[aria-label="Period"]')?.type, "week");
+    assert.match(view.container.querySelector('button[aria-label="Period"]')?.textContent ?? "", /^W36 · /);
 
     await view.unmount();
   } finally {

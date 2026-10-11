@@ -90,6 +90,13 @@
             "month_digest": "Monats-Digest",
             "mirror": "Spiegel"
         },
+        "filterBar": {
+            "reset": "Filter zurücksetzen",
+            "clear": "Leeren",
+            "previousMonth": "Vorheriger Monat",
+            "nextMonth": "Nächster Monat",
+            "wholeMonth": "Ganzen Monat wählen"
+        },
         "tasks": {
             "filters": {
                 "status": "Status",
@@ -98,7 +105,6 @@
                 "kind": "Art",
                 "anyKind": "Alle Arten",
                 "period": "Zeitraum",
-                "periodPlaceholder": "Zeitraum (JJJJ-MM oder JJJJ-Www)",
                 "model": "Modell",
                 "anyModel": "Alle Modelle"
             },
@@ -200,7 +206,6 @@
         "sessions": {
             "filters": {
                 "week": "Woche",
-                "weekPlaceholder": "Woche (JJJJ-Www)",
                 "state": "Extraktion",
                 "anyState": "Jede Extraktion",
                 "reason": "Grund für veraltet",
@@ -344,9 +349,10 @@
                 "anyDurability": "Jede Dauer",
                 "sourceKind": "Quelle",
                 "anySourceKind": "Jede Quelle",
-                "month": "Monat",
+                "period": "Zeitraum",
                 "text": "Text filtern"
-            }
+            },
+            "matching": "{count, plural, one {# Fakt} other {# Fakten}}"
         }
     },
     "account": {
