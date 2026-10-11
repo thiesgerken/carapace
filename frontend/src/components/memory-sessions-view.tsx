@@ -3,12 +3,13 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Loader2, MessageSquare, Play, RefreshCw } from "lucide-react";
+import { Activity, Cpu, ListChecks, Loader2, MessageSquare, MessagesSquare, Play, RefreshCw, TriangleAlert } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
 import { MemoryExtractionDetail, useMemorySessionDetail } from "@/components/memory-extraction-detail";
 import { MemoryRunDialog } from "@/components/memory-run-dialog";
 import { useMemoryStatus } from "@/components/memory-status";
-import { buttonClassName, controlClassName, ExpandButton, PickMatchingRow, SelectionBar, taskStatusTag, togglesRow } from "@/components/memory-ui";
+import { differsFrom, FilterBar, FilterSelect, PeriodPicker } from "@/components/memory-filter-bar";
+import { buttonClassName, ExpandButton, PickMatchingRow, SelectionBar, taskStatusTag, togglesRow } from "@/components/memory-ui";
 import { listMemorySessions, spawnMemoryTasks } from "@/lib/api";
 import {
   formatUsd,
@@ -160,46 +161,51 @@ export function MemorySessionsView({ server, token }: { server: string; token: s
   return (
     <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6">
       <div className="space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex flex-wrap items-center gap-2">
-            <input
-              type="week"
-              aria-label={t("filters.week")}
-              title={t("filters.week")}
-              placeholder={t("filters.weekPlaceholder")}
-              value={form.week}
-              onChange={(event) => updateForm({ week: event.target.value })}
-              className={controlClassName}
-            />
-            <select aria-label={t("filters.state")} value={form.state} onChange={(event) => updateForm({ state: event.target.value as SessionFilterForm["state"] })} className={controlClassName}>
-              <option value="">{t("filters.anyState")}</option>
-              {MEMORY_EXTRACTION_STATES.map((value) => <option key={value} value={value}>{t(`states.${value}`)}</option>)}
-            </select>
-            <select
-              aria-label={t("filters.reason")}
+        <FilterBar count={t("matching", { count: total })} canReset={differsFrom(form, DEFAULT_FORM)} onReset={() => updateForm(DEFAULT_FORM)}>
+          <PeriodPicker label={t("filters.week")} value={form.week} allowMonth={false} onChange={(week) => updateForm({ week })} />
+          <FilterSelect
+            icon={ListChecks}
+            label={t("filters.state")}
+            anyLabel={t("filters.anyState")}
+            value={form.state}
+            options={MEMORY_EXTRACTION_STATES.map((value) => ({ value, label: t(`states.${value}`) }))}
+            onChange={(state) => updateForm({ state, outdatedReason: "" })}
+          />
+          {form.state === "outdated" ? (
+            <FilterSelect
+              icon={TriangleAlert}
+              label={t("filters.reason")}
+              anyLabel={t("filters.anyReason")}
               value={form.outdatedReason}
-              disabled={form.state !== "outdated"}
-              onChange={(event) => updateForm({ outdatedReason: event.target.value as SessionFilterForm["outdatedReason"] })}
-              className={controlClassName}
-            >
-              <option value="">{t("filters.anyReason")}</option>
-              {MEMORY_OUTDATED_REASONS.map((value) => <option key={value} value={value}>{tReasons(value)}</option>)}
-            </select>
-            <select aria-label={t("filters.taskStatus")} value={form.taskStatus} onChange={(event) => updateForm({ taskStatus: event.target.value as SessionFilterForm["taskStatus"] })} className={controlClassName}>
-              <option value="">{t("filters.anyTaskStatus")}</option>
-              {MEMORY_TASK_STATUSES.map((value) => <option key={value} value={value}>{tStatuses(value)}</option>)}
-            </select>
-            <select aria-label={t("filters.model")} value={form.model} onChange={(event) => updateForm({ model: event.target.value })} className={controlClassName}>
-              <option value="">{t("filters.anyModel")}</option>
-              {modelOptions.map((value) => <option key={value} value={value}>{value}</option>)}
-            </select>
-            <select aria-label={t("filters.channel")} value={form.channel} onChange={(event) => updateForm({ channel: event.target.value })} className={controlClassName}>
-              <option value="">{t("filters.anyChannel")}</option>
-              {channelOptions.map((value) => <option key={value} value={value}>{value}</option>)}
-            </select>
-          </div>
-          <span className="text-sm tabular-nums text-muted-foreground">{t("matching", { count: total })}</span>
-        </div>
+              options={MEMORY_OUTDATED_REASONS.map((value) => ({ value, label: tReasons(value) }))}
+              onChange={(outdatedReason) => updateForm({ outdatedReason })}
+            />
+          ) : null}
+          <FilterSelect
+            icon={Activity}
+            label={t("filters.taskStatus")}
+            anyLabel={t("filters.anyTaskStatus")}
+            value={form.taskStatus}
+            options={MEMORY_TASK_STATUSES.map((value) => ({ value, label: tStatuses(value) }))}
+            onChange={(taskStatus) => updateForm({ taskStatus })}
+          />
+          <FilterSelect
+            icon={Cpu}
+            label={t("filters.model")}
+            anyLabel={t("filters.anyModel")}
+            value={form.model}
+            options={modelOptions.map((value) => ({ value, label: value }))}
+            onChange={(model) => updateForm({ model })}
+          />
+          <FilterSelect
+            icon={MessagesSquare}
+            label={t("filters.channel")}
+            anyLabel={t("filters.anyChannel")}
+            value={form.channel}
+            options={channelOptions.map((value) => ({ value, label: value }))}
+            onChange={(channel) => updateForm({ channel })}
+          />
+        </FilterBar>
 
         {error ? <div className="rounded-lg border border-border bg-background px-4 py-2 text-sm text-destructive">{error}</div> : null}
         {notice ? (

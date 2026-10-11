@@ -266,6 +266,8 @@ See [persistent-context.md](persistent-context.md) for how the knowledge repo re
 
 The Memory area lives at `/memory`, with four tabs. A **status strip** on top of every tab shows auto mode (it links to the settings), today's and this month's spend against the budget, queue counts (pending, queued, running, failed, held by budget) and the effective `memory_low` and `memory_high` models. While tasks are queued or running, the strip and the open tab refresh every few seconds.
 
+Sessions, Facts and Tasks share one filter bar. Set filters are highlighted, **Reset filters** appears once anything differs from the tab's defaults, and the result count sits on the right. Weeks and months are picked from a month calendar (pick a week row, or the month name where a whole month is allowed); the × clears the pick. A filter that only applies to another one's value appears only then.
+
 ### Timeline
 
 A month calendar. Rows are the month's ISO weeks (the weeks whose Thursday falls in it), Monday first; days of a boundary week outside the month are muted. The week column shows each week's coverage (`12/14` sessions), its digest badge (`✓` current, `⚠` stale or outdated, hover for the reason, `—` not run yet) and the digest task's status while it is open or failed. Day cells count the week's sessions per day; a session's week comes from its first user message, its day from its creation date (clamped into the week). The **Month digest** row above carries the month's coverage (weeks with a current digest) and badge. The arrows and the month select move between months with data. Where a week appears outside its month (Tasks tab, a week's header), it names the month it belongs to, e.g. 2026-W36 shows "September 2026 · Aug 31 – Sep 6".
@@ -276,7 +278,7 @@ Clicking a week row or the month digest row shows that digest: summary, on my mi
 
 ### Sessions
 
-All eligible sessions with their extraction state: date, title and abstract, fact counts (You · People · Surroundings), model, status and cost. Filter by week, extraction state (not extracted, current, outdated), outdated reason (prompt, model, input format), task status, model and channel.
+All eligible sessions with their extraction state: date, title and abstract, fact counts (You · People · Surroundings), model, status and cost. Filter by week, extraction state (not extracted, current, outdated), outdated reason (prompt, model, input format; shown once the state filter is outdated), task status, model and channel.
 
 Select rows, or **select all N matching** a filter, then:
 
@@ -289,13 +291,13 @@ Sessions with a current extraction show a **Memory** chip in the chat header tha
 
 ### Facts
 
-The facts of all current extractions, as **You**, **People** (grouped by subject) and **Surroundings**. Filter by confidence, durability, source kind and month, plus a free-text filter over statement, subject and session title.
+The facts of all current extractions, as **You**, **People** (grouped by subject) and **Surroundings**. Filter by confidence, durability, source kind and period (week or month), plus a free-text filter over statement, subject and session title.
 
 The same fact from several sessions (same statement and subject, ignoring case, spacing and trailing punctuation) appears once, with when it was first and last seen and links to every source session and event. Dated facts whose `valid_until` has passed are greyed out.
 
 ### Tasks
 
-The queue. Filter by status, kind, month and model. Besides single statuses, the status filter offers **Unfinished** (pending, queued, running and failed; failed stays because it needs attention), which is what the tab opens on. The header shows the number of matching tasks and their estimated cost. "Run all of September" is: filter month 2026-09, select all matching, run. The month filter places session tasks by their session's week, not by when the task was created.
+The queue. Filter by status, kind, period (week or month) and model. Besides single statuses, the status filter offers **Unfinished** (pending, queued, running and failed; failed stays because it needs attention), which is what the tab opens on. The header shows the number of matching tasks and their estimated cost. "Run all of September" is: filter month 2026-09, select all matching, run. The month filter places session tasks by their session's week, not by when the task was created.
 
 The list is sorted by last activity (when the task finished, started, was queued or was created) by default. Click the **Target** header to sort by target period instead, the order **Run newest 50** picks in. The **Model** column shows the model a task ran with, or for open tasks the model it would run with now: its override, otherwise the current role default. The model filter matches by the same rule.
 

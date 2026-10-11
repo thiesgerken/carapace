@@ -82,6 +82,13 @@
             "month_digest": "month digest",
             "mirror": "mirror"
         },
+        "filterBar": {
+            "reset": "Reset filters",
+            "clear": "Clear",
+            "previousMonth": "Previous month",
+            "nextMonth": "Next month",
+            "wholeMonth": "Pick the whole month"
+        },
         "tasks": {
             "filters": {
                 "status": "Status",
@@ -90,7 +97,6 @@
                 "kind": "Kind",
                 "anyKind": "Any kind",
                 "period": "Period",
-                "periodPlaceholder": "Period (YYYY-MM or YYYY-Www)",
                 "model": "Model",
                 "anyModel": "Any model"
             },
@@ -192,7 +198,6 @@
         "sessions": {
             "filters": {
                 "week": "Week",
-                "weekPlaceholder": "Week (YYYY-Www)",
                 "state": "Extraction",
                 "anyState": "Any extraction",
                 "reason": "Outdated reason",
@@ -336,9 +341,10 @@
                 "anyDurability": "Any durability",
                 "sourceKind": "Source",
                 "anySourceKind": "Any source",
-                "month": "Month",
+                "period": "Period",
                 "text": "Filter text"
-            }
+            },
+            "matching": "{count, plural, one {# fact} other {# facts}}"
         }
     },
     "account": {

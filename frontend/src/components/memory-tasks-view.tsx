@@ -1,11 +1,11 @@
 "use client";
 
 import { Fragment, useEffect, useMemo, useState } from "react";
-import { ArrowDown, Ban, Loader2, Play, RotateCcw } from "lucide-react";
+import { Activity, ArrowDown, Ban, Cpu, Loader2, Play, RotateCcw, Shapes } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
+import { differsFrom, FilterBar, FilterSelect, PeriodPicker } from "@/components/memory-filter-bar";
 import {
   buttonClassName,
-  controlClassName,
   ExpandButton,
   PickMatchingRow,
   SelectionBar,
@@ -24,7 +24,6 @@ import {
   MEMORY_TASK_KINDS,
   MEMORY_TASK_STATUSES,
   missingSourceCount,
-  periodLevel,
   sourceTasksForm,
   taskActivityAt,
   taskRunModel,
@@ -149,33 +148,9 @@ export function MemoryTasksView({ server, token }: { server: string; token: stri
   return (
     <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6">
       <div className="space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex flex-wrap items-center gap-2">
-            <select aria-label={t("filters.status")} value={form.status} onChange={(event) => updateForm({ status: event.target.value as TaskFilterForm["status"] })} className={controlClassName}>
-              <option value="">{t("filters.anyStatus")}</option>
-              <option value="unfinished">{t("filters.unfinished")}</option>
-              {MEMORY_TASK_STATUSES.map((value) => <option key={value} value={value}>{tStatuses(value)}</option>)}
-            </select>
-            <select aria-label={t("filters.kind")} value={form.kind} onChange={(event) => updateForm({ kind: event.target.value as TaskFilterForm["kind"] })} className={controlClassName}>
-              <option value="">{t("filters.anyKind")}</option>
-              {MEMORY_TASK_KINDS.map((value) => <option key={value} value={value}>{tKinds(value)}</option>)}
-            </select>
-            <input
-              type={form.period && periodLevel(form.period) === "week" ? "week" : "month"}
-              aria-label={t("filters.period")}
-              title={t("filters.period")}
-              placeholder={t("filters.periodPlaceholder")}
-              value={form.period}
-              onChange={(event) => updateForm({ period: event.target.value })}
-              className={controlClassName}
-            />
-            <select aria-label={t("filters.model")} value={form.model} onChange={(event) => updateForm({ model: event.target.value })} className={controlClassName}>
-              <option value="">{t("filters.anyModel")}</option>
-              {modelOptions.map((value) => <option key={value} value={value}>{value}</option>)}
-            </select>
-          </div>
-          <div className="flex items-center gap-3">
-            <span className="text-sm tabular-nums text-muted-foreground">
+        <FilterBar
+          count={(
+            <>
               {t("matching", { count: total })}
               {page && page.estimate.task_count > 0
                 ? ` · ${t("estimate", {
@@ -184,18 +159,51 @@ export function MemoryTasksView({ server, token }: { server: string; token: stri
                     : formatUsd(page.estimate.cost_usd, locale),
                 })}`
                 : null}
-            </span>
+            </>
+          )}
+          canReset={differsFrom(form, DEFAULT_FORM)}
+          onReset={() => updateForm(DEFAULT_FORM)}
+          actions={(
             <button
               type="button"
               disabled={busy || total === 0}
               onClick={() => setRunSelection({ filter, newest: NEWEST_BATCH })}
-              className={buttonClassName}
+              className={cn(buttonClassName, "h-9")}
             >
               <Play className="h-4 w-4" />
               {t("runNewest", { count: NEWEST_BATCH })}
             </button>
-          </div>
-        </div>
+          )}
+        >
+          <FilterSelect
+            icon={Activity}
+            label={t("filters.status")}
+            anyLabel={t("filters.anyStatus")}
+            value={form.status}
+            options={[
+              { value: "unfinished" as const, label: t("filters.unfinished") },
+              ...MEMORY_TASK_STATUSES.map((value) => ({ value, label: tStatuses(value) })),
+            ]}
+            onChange={(status) => updateForm({ status })}
+          />
+          <FilterSelect
+            icon={Shapes}
+            label={t("filters.kind")}
+            anyLabel={t("filters.anyKind")}
+            value={form.kind}
+            options={MEMORY_TASK_KINDS.map((value) => ({ value, label: tKinds(value) }))}
+            onChange={(kind) => updateForm({ kind })}
+          />
+          <PeriodPicker label={t("filters.period")} value={form.period} allowMonth onChange={(period) => updateForm({ period })} />
+          <FilterSelect
+            icon={Cpu}
+            label={t("filters.model")}
+            anyLabel={t("filters.anyModel")}
+            value={form.model}
+            options={modelOptions.map((value) => ({ value, label: value }))}
+            onChange={(model) => updateForm({ model })}
+          />
+        </FilterBar>
 
         {error ? <div className="rounded-lg border border-border bg-background px-4 py-2 text-sm text-destructive">{error}</div> : null}
         {notice ? (

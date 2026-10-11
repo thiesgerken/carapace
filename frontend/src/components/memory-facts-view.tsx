@@ -2,11 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Loader2 } from "lucide-react";
+import { Gauge, Loader2, Quote, Timer } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
 import { sessionEventHref } from "@/components/memory-extraction-detail";
 import { useMemoryStatus } from "@/components/memory-status";
-import { controlClassName } from "@/components/memory-ui";
+import { differsFrom, FilterBar, FilterSearch, FilterSelect, PeriodPicker } from "@/components/memory-filter-bar";
 import { listMemoryFacts } from "@/lib/api";
 import { factMatchesText, groupFacts, isExpiredFact, type FactGroup } from "@/lib/memory";
 import type {
@@ -28,7 +28,7 @@ interface FactFilterForm {
   confidence: MemoryConfidence | "";
   durability: MemoryDurability | "";
   sourceKind: MemoryFactSourceKind | "";
-  /** Month key from <input type="month">. */
+  /** Week or month key. */
   period: string;
 }
 
@@ -83,8 +83,15 @@ export function MemoryFactsView({ server }: { server: string }) {
   return (
     <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6">
       <div className="space-y-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <div role="group" aria-label={t("category")} className="inline-flex rounded-lg border border-border bg-background p-0.5">
+        <FilterBar
+          count={t("matching", { count: groups.length })}
+          canReset={differsFrom(form, DEFAULT_FORM) || query !== ""}
+          onReset={() => {
+            setForm(DEFAULT_FORM);
+            setQuery("");
+          }}
+        >
+          <div role="group" aria-label={t("category")} className="inline-flex h-9 rounded-lg border border-border bg-background p-0.5">
             {CATEGORIES.map((value) => (
               <button
                 key={value}
@@ -92,7 +99,7 @@ export function MemoryFactsView({ server }: { server: string }) {
                 aria-pressed={category === value}
                 onClick={() => setCategory(value)}
                 className={cn(
-                  "rounded-md px-3 py-1 text-sm font-medium transition-colors",
+                  "rounded-md px-3 text-sm font-medium transition-colors",
                   category === value ? "bg-foreground text-background" : "text-muted-foreground hover:bg-muted hover:text-foreground",
                 )}
               >
@@ -100,35 +107,33 @@ export function MemoryFactsView({ server }: { server: string }) {
               </button>
             ))}
           </div>
-          <select aria-label={t("filters.confidence")} value={form.confidence} onChange={(event) => setForm({ ...form, confidence: event.target.value as FactFilterForm["confidence"] })} className={controlClassName}>
-            <option value="">{t("filters.anyConfidence")}</option>
-            {CONFIDENCES.map((value) => <option key={value} value={value}>{tFact(`confidence.${value}`)}</option>)}
-          </select>
-          <select aria-label={t("filters.durability")} value={form.durability} onChange={(event) => setForm({ ...form, durability: event.target.value as FactFilterForm["durability"] })} className={controlClassName}>
-            <option value="">{t("filters.anyDurability")}</option>
-            {DURABILITIES.map((value) => <option key={value} value={value}>{tFact(`durability.${value}`)}</option>)}
-          </select>
-          <select aria-label={t("filters.sourceKind")} value={form.sourceKind} onChange={(event) => setForm({ ...form, sourceKind: event.target.value as FactFilterForm["sourceKind"] })} className={controlClassName}>
-            <option value="">{t("filters.anySourceKind")}</option>
-            {SOURCE_KINDS.map((value) => <option key={value} value={value}>{tFact(`sourceKind.${value}`)}</option>)}
-          </select>
-          <input
-            type="month"
-            aria-label={t("filters.month")}
-            title={t("filters.month")}
-            value={form.period}
-            onChange={(event) => setForm({ ...form, period: event.target.value })}
-            className={controlClassName}
+          <FilterSelect
+            icon={Gauge}
+            label={t("filters.confidence")}
+            anyLabel={t("filters.anyConfidence")}
+            value={form.confidence}
+            options={CONFIDENCES.map((value) => ({ value, label: tFact(`confidence.${value}`) }))}
+            onChange={(confidence) => setForm({ ...form, confidence })}
           />
-          <input
-            type="search"
-            aria-label={t("filters.text")}
-            placeholder={t("filters.text")}
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            className={cn(controlClassName, "min-w-40 flex-1")}
+          <FilterSelect
+            icon={Timer}
+            label={t("filters.durability")}
+            anyLabel={t("filters.anyDurability")}
+            value={form.durability}
+            options={DURABILITIES.map((value) => ({ value, label: tFact(`durability.${value}`) }))}
+            onChange={(durability) => setForm({ ...form, durability })}
           />
-        </div>
+          <FilterSelect
+            icon={Quote}
+            label={t("filters.sourceKind")}
+            anyLabel={t("filters.anySourceKind")}
+            value={form.sourceKind}
+            options={SOURCE_KINDS.map((value) => ({ value, label: tFact(`sourceKind.${value}`) }))}
+            onChange={(sourceKind) => setForm({ ...form, sourceKind })}
+          />
+          <PeriodPicker label={t("filters.period")} value={form.period} allowMonth onChange={(period) => setForm({ ...form, period })} />
+          <FilterSearch label={t("filters.text")} value={query} onChange={setQuery} />
+        </FilterBar>
 
         {error ? <div className="rounded-lg border border-border bg-background px-4 py-2 text-sm text-destructive">{error}</div> : null}
 
