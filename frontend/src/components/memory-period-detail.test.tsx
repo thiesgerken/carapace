@@ -135,7 +135,7 @@ test("week detail links refs to sessions, keeps history collapsed and regenerate
     await click(regenerate!);
     await settle();
     assert.deepEqual(posts[0], { path: "/api/memory/tasks/spawn", body: { kind: "week_digest", targets: ["2026-W36"] } });
-    assert.deepEqual(posts[1], { path: "/api/memory/tasks/estimate", body: { selection: { ids: [77] }, model_override: null } });
+    assert.deepEqual(posts[1], { path: "/api/memory/tasks/estimate", body: { selection: { ids: [77] }, model_override: null, include_dependencies: false } });
     assert.ok(view.container.querySelector("dialog[open]"));
 
     await view.unmount();
@@ -199,7 +199,7 @@ test("the header action follows the period's digest task", async () => {
     assert.equal(pending.button("Regenerate"), undefined);
     await click(pending.button("Run")!);
     await runInAct(() => new Promise((resolve) => setTimeout(resolve, 0)));
-    assert.deepEqual(pending.posts, [{ path: "/api/memory/tasks/estimate", body: { selection: { ids: [6] }, model_override: null } }]);
+    assert.deepEqual(pending.posts, [{ path: "/api/memory/tasks/estimate", body: { selection: { ids: [6] }, model_override: null, include_dependencies: false } }]);
     await pending.view.unmount();
 
     const neverRun = await renderWithTask(null, null);

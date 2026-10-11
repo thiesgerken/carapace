@@ -849,6 +849,8 @@ export interface MemoryTaskSelection {
 export interface MemoryTaskRunRequest {
   selection: MemoryTaskSelection;
   model_override?: string | null;
+  /** Adds the pending source tasks of the selected digests, so the digests wait for them. */
+  include_dependencies?: boolean;
 }
 
 /** Body of POST /tasks/retry. */
@@ -886,6 +888,12 @@ export interface MemoryEstimateTotal {
   /** Sum over priced tasks; unpriced_count tasks had no known pricing. */
   cost_usd: string;
   unpriced_count: number;
+}
+
+/** Response of POST /tasks/estimate. */
+export interface MemoryRunEstimate extends MemoryEstimateTotal {
+  /** Pending source tasks of the selection's digests that it leaves out; include_dependencies runs them too. */
+  missing_dependencies: number;
 }
 
 export interface MemoryTaskListResponse {

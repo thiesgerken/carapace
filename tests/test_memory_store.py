@@ -584,3 +584,24 @@ def test_dependencies_count_each_source_by_its_latest_task(store: MemoryStore):
 
 def test_dependencies_of_no_digests_skip_the_query(store: MemoryStore):
     assert store.dependencies("alice", [_spawn_extract(store, "s1")]) == {}
+
+
+def test_running_with_dependencies_adds_the_pending_sources_of_selected_digests(store: MemoryStore):
+    pending = _spawn_extract(store, "s1")
+    queued = _spawn_extract(store, "s2")
+    store.run("alice", TaskSelection(ids=[queued.id]), None, NOW)
+    other_week = _spawn_extract(store, "s3", week="2026-W38")
+    week = store.spawn(
+        "alice", TaskKind.week_digest, "2026-W37", spawned_by=SpawnedBy.auto, now=NOW, estimate=_estimate()
+    )
+    assert week is not None
+    selection = TaskSelection(ids=[week.id])
+
+    assert store.missing_dependencies("alice", selection) == 1
+    assert len(store.select_tasks("alice", selection, {TaskStatus.pending}, include_dependencies=True)) == 2
+    assert store.run("alice", selection, None, NOW, include_dependencies=True) == 2
+    statuses = {
+        t.id: t.status for t in store.select_tasks("alice", TaskSelection(filter=TaskFilter()), set(TaskStatus))
+    }
+    assert (statuses[pending.id], statuses[other_week.id]) == (TaskStatus.queued, TaskStatus.pending)
+    assert store.missing_dependencies("alice", TaskSelection(ids=[pending.id])) == 0

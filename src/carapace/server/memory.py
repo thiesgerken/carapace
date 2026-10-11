@@ -10,7 +10,6 @@ from ..memory.models import (
     Confidence,
     DigestLevel,
     Durability,
-    EstimateTotal,
     ExtractionState,
     FactCategory,
     FactFilter,
@@ -20,6 +19,7 @@ from ..memory.models import (
     OutdatedReason,
     PeriodDetail,
     PeriodTree,
+    RunEstimate,
     SessionMemoryDetail,
     SessionMemoryFilter,
     SessionMemoryListResponse,
@@ -71,8 +71,8 @@ async def list_tasks(
     return await _service().list_tasks(user.username, task_filter, sort, cursor, limit)
 
 
-@router.post("/tasks/estimate", response_model=EstimateTotal)
-async def estimate_tasks(body: TaskRunRequest, user: _Reader) -> EstimateTotal:
+@router.post("/tasks/estimate", response_model=RunEstimate)
+async def estimate_tasks(body: TaskRunRequest, user: _Reader) -> RunEstimate:
     try:
         return await _service().estimate_tasks(user.username, body)
     except ModelOverrideError as exc:

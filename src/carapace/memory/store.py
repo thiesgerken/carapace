@@ -223,12 +223,21 @@ class MemoryStore:
         statuses: set[TaskStatus],
         *,
         default_models: Mapping[TaskKind, str] | None = None,
+        include_dependencies: bool = False,
     ) -> list[MemoryTask]:
         """Tasks of a selection that are in one of *statuses*, newest period first."""
         with self._session_factory() as db:
-            ids = _selected_ids(db, user, selection, statuses, default_models)
+            ids = _selected_ids(db, user, selection, statuses, default_models, include_dependencies)
             rows = db.scalars(select(MemoryTaskRow).where(MemoryTaskRow.id.in_(ids)).order_by(*_NEWEST_FIRST)).all()
         return [_task(row) for row in rows]
+
+    def missing_dependencies(
+        self, user: str, selection: TaskSelection, *, default_models: Mapping[TaskKind, str] | None = None
+    ) -> int:
+        """Pending source tasks of the selection's pending digests that the selection leaves out."""
+        with self._session_factory() as db:
+            selected = _selected_ids(db, user, selection, {TaskStatus.pending}, default_models)
+            return len(_pending_source_ids(db, user, selected))
 
     def run(
         self,
@@ -238,12 +247,13 @@ class MemoryStore:
         now: datetime,
         *,
         default_models: Mapping[TaskKind, str] | None = None,
+        include_dependencies: bool = False,
     ) -> int:
-        """pending -> queued."""
+        """pending -> queued; *include_dependencies* adds the pending sources of the selected digests."""
         values: dict[str, object] = {"status": TaskStatus.queued.value, "queued_at": now, "blocked_reason": None}
         if model_override is not None:
             values |= {"model_override": model_override, "model": model_override}
-        return self._transition(user, selection, {TaskStatus.pending}, values, default_models)
+        return self._transition(user, selection, {TaskStatus.pending}, values, default_models, include_dependencies)
 
     def retry(self, user: str, task_ids: list[int], now: datetime) -> int:
         """failed -> queued. The row is reused; attempts grows on the next claim."""
@@ -275,9 +285,10 @@ class MemoryStore:
         from_statuses: set[TaskStatus],
         values: Mapping[str, object],
         default_models: Mapping[TaskKind, str] | None,
+        include_dependencies: bool = False,
     ) -> int:
         with self._session_factory.begin() as db:
-            ids = _selected_ids(db, user, selection, from_statuses, default_models)
+            ids = _selected_ids(db, user, selection, from_statuses, default_models, include_dependencies)
             if not ids:
                 return 0
             # ponytail: one IN list; chunk it if selections ever outgrow SQLite's parameter limit.
@@ -500,39 +511,8 @@ class MemoryStore:
         months = {t.target for t in tasks if t.kind is TaskKind.month_digest}
         if not weeks and not months:
             return {}
-        task = MemoryTaskRow
-        is_extract = task.kind == TaskKind.session_extract
-        latest_ids = (
-            select(func.max(task.id))
-            .where(
-                task.user == user,
-                or_(
-                    and_(is_extract, or_(task.week_key.in_(weeks), task.month_key.in_(months))),
-                    and_(task.kind == TaskKind.week_digest, task.month_key.in_(months)),
-                ),
-            )
-            .group_by(task.kind, task.target)
-        )
-        current_extraction = exists().where(
-            MemorySessionExtractionRow.session_id == task.target, MemorySessionExtractionRow.is_current.is_(True)
-        )
-        current_week_digest = exists().where(
-            MemoryDigestRow.user == user,
-            MemoryDigestRow.level == DigestLevel.week,
-            MemoryDigestRow.period_key == task.target,
-            MemoryDigestRow.is_current.is_(True),
-        )
-        has_current = case((is_extract, current_extraction), else_=current_week_digest)
         with self._session_factory() as db:
-            rows = db.execute(
-                select(task.id, task.kind, task.week_key, task.month_key, task.status, has_current)
-                .where(task.id.in_(latest_ids))
-                .order_by(task.id)
-            ).all()
-        sources = [
-            _Source(task_id, TaskKind(kind), week_key, month_key, TaskStatus(status), bool(has_current_record))
-            for task_id, kind, week_key, month_key, status, has_current_record in rows
-        ]
+            sources = _sources(db, user, weeks, months)
         return {
             t.id: _dependency_summary(t, sources)
             for t in tasks
@@ -762,6 +742,63 @@ class _Source:
     has_current_record: bool
 
 
+def _sources(db: Session, user: str, weeks: set[str], months: set[str]) -> list[_Source]:
+    """The latest task of every source of the week digests of *weeks* and month digests of *months*:
+    session extractions of a week; session extractions and week digests of a month."""
+    task = MemoryTaskRow
+    is_extract = task.kind == TaskKind.session_extract
+    latest_ids = (
+        select(func.max(task.id))
+        .where(
+            task.user == user,
+            or_(
+                and_(is_extract, or_(task.week_key.in_(weeks), task.month_key.in_(months))),
+                and_(task.kind == TaskKind.week_digest, task.month_key.in_(months)),
+            ),
+        )
+        .group_by(task.kind, task.target)
+    )
+    current_extraction = exists().where(
+        MemorySessionExtractionRow.session_id == task.target, MemorySessionExtractionRow.is_current.is_(True)
+    )
+    current_week_digest = exists().where(
+        MemoryDigestRow.user == user,
+        MemoryDigestRow.level == DigestLevel.week,
+        MemoryDigestRow.period_key == task.target,
+        MemoryDigestRow.is_current.is_(True),
+    )
+    has_current = case((is_extract, current_extraction), else_=current_week_digest)
+    rows = db.execute(
+        select(task.id, task.kind, task.week_key, task.month_key, task.status, has_current)
+        .where(task.id.in_(latest_ids))
+        .order_by(task.id)
+    ).all()
+    return [
+        _Source(task_id, TaskKind(kind), week_key, month_key, TaskStatus(status), bool(has_current_record))
+        for task_id, kind, week_key, month_key, status, has_current_record in rows
+    ]
+
+
+def _pending_source_ids(db: Session, user: str, task_ids: list[int]) -> list[int]:
+    """Pending source tasks of the digests among *task_ids* that are not in *task_ids* themselves."""
+    digests = db.execute(
+        select(MemoryTaskRow.kind, MemoryTaskRow.target).where(
+            MemoryTaskRow.id.in_(task_ids),
+            MemoryTaskRow.kind.in_([TaskKind.week_digest.value, TaskKind.month_digest.value]),
+        )
+    ).all()
+    weeks = {target for kind, target in digests if kind == TaskKind.week_digest}
+    months = {target for kind, target in digests if kind == TaskKind.month_digest}
+    if not weeks and not months:
+        return []
+    selected = set(task_ids)
+    return [
+        s.task_id
+        for s in _sources(db, user, weeks, months)
+        if s.status is TaskStatus.pending and s.task_id not in selected
+    ]
+
+
 def _dependency_summary(digest: MemoryTask, sources: list[_Source]) -> DependencySummary:
     if digest.kind is TaskKind.week_digest:
         mine = [s for s in sources if s.kind is TaskKind.session_extract and s.week_key == digest.target]
@@ -905,6 +942,7 @@ def _selected_ids(
     selection: TaskSelection,
     statuses: set[TaskStatus],
     default_models: Mapping[TaskKind, str] | None,
+    include_dependencies: bool = False,
 ) -> list[int]:
     clauses = [MemoryTaskRow.user == user, MemoryTaskRow.status.in_([s.value for s in statuses])]
     if selection.ids is not None:
@@ -914,7 +952,10 @@ def _selected_ids(
     query = select(MemoryTaskRow.id).where(*clauses).order_by(*_NEWEST_FIRST)
     if selection.newest is not None:
         query = query.limit(selection.newest)
-    return list(db.scalars(query).all())
+    ids = list(db.scalars(query).all())
+    if include_dependencies:
+        ids += _pending_source_ids(db, user, ids)
+    return ids
 
 
 def _write_extraction(db: Session, user: str, result: ExtractionResult, outcome: TaskOutcome, now: datetime) -> int:

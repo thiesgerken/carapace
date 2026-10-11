@@ -135,7 +135,7 @@ async def test_estimate_run_and_status(setup):
     selection = TaskSelection(ids=ids)
 
     estimate = await service.estimate_tasks("alice", TaskRunRequest(selection=selection))
-    assert (estimate.task_count, estimate.cost_usd) == (2, Decimal("0.02"))
+    assert (estimate.task_count, estimate.cost_usd, estimate.missing_dependencies) == (2, Decimal("0.02"), 0)
     override = await service.estimate_tasks("alice", TaskRunRequest(selection=selection, model_override=OVERRIDE))
     assert override.cost_usd == Decimal("0.04")
 

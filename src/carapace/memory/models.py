@@ -383,6 +383,8 @@ class TaskSelection(MemoryApiModel):
 class TaskRunRequest(MemoryApiModel):
     selection: TaskSelection
     model_override: str | None = None
+    # Adds the pending source tasks of the selected digests, so the digests wait for them.
+    include_dependencies: bool = False
 
 
 class TaskIdsRequest(MemoryApiModel):
@@ -438,6 +440,11 @@ class EstimateTotal(MemoryApiModel):
     # Sum over priced tasks only; unpriced_count says how many had no known pricing.
     cost_usd: Decimal
     unpriced_count: int
+
+
+class RunEstimate(EstimateTotal):
+    # Pending source tasks of the selection's digests that it leaves out (include_dependencies runs them too).
+    missing_dependencies: int
 
 
 class DependencySummary(MemoryApiModel):

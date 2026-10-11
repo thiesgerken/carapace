@@ -22,7 +22,7 @@ const STATUS: MemoryStatus = {
   sessions_without_transcript: 0,
 };
 
-const EMPTY_ESTIMATE = { task_count: 0, input_tokens: 0, output_tokens_cap: 0, cost_usd: "0", unpriced_count: 0 };
+const EMPTY_ESTIMATE = { task_count: 0, input_tokens: 0, output_tokens_cap: 0, cost_usd: "0", unpriced_count: 0, missing_dependencies: 0 };
 
 test("a selection without pending tasks says so, and re-picking the current model keeps the estimate", async () => {
   const restore = installDom();
@@ -70,6 +70,59 @@ test("a selection without pending tasks says so, and re-picking the current mode
     assert.match(text(), /No pending tasks in this selection\./);
     assert.equal(estimates, 1);
 
+    await view.unmount();
+  } finally {
+    globalThis.fetch = originalFetch;
+    restore();
+  }
+});
+
+test("missing dependencies can be added to the selection before running", async () => {
+  const restore = installDom();
+  const originalFetch = globalThis.fetch;
+  window.HTMLDialogElement.prototype.showModal = function showModal(this: HTMLDialogElement) {
+    this.open = true;
+  };
+  const posted: { path: string; body: { include_dependencies?: boolean } }[] = [];
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const path = new URL(String(input)).pathname;
+    if (init?.body) posted.push({ path, body: JSON.parse(String(init.body)) });
+    const estimate = { task_count: 1, input_tokens: 1000, output_tokens_cap: 100, cost_usd: "0.01", unpriced_count: 0, missing_dependencies: 2 };
+    const body = {
+      "/api/memory/status": STATUS,
+      "/api/memory/tasks/estimate": estimate,
+      "/api/memory/tasks/run": { count: 3 },
+      "/api/models": [],
+    }[path];
+    assert.ok(body !== undefined, `unexpected request ${path}`);
+    return new Response(JSON.stringify(body), { headers: { "Content-Type": "application/json" } });
+  }) as typeof fetch;
+
+  try {
+    const view = await renderReact(
+      <NextIntlClientProvider locale="en" messages={messages} timeZone="UTC">
+        <MemoryStatusProvider server={SERVER}>
+          <MemoryRunDialog server={SERVER} token="" selection={{ ids: [17] }} kinds={["week_digest"]} onClose={() => {}} onQueued={() => {}} />
+        </MemoryStatusProvider>
+      </NextIntlClientProvider>,
+    );
+    const settle = () => runInAct(() => new Promise((resolve) => setTimeout(resolve, 0)));
+    await settle();
+    const button = (label: string) => Array.from(view.container.querySelectorAll("button")).find((element) => element.textContent?.trim() === label);
+
+    assert.match(view.container.textContent ?? "", /2 pending sources outside the selection/);
+    await click(button("Add 2 dependencies")!);
+    await settle();
+    assert.match(view.container.textContent ?? "", /2 dependencies added/);
+    await click(button("Run")!);
+    await settle();
+
+    const selections = posted.map(({ path, body }) => [path, body.include_dependencies ?? false]);
+    assert.deepEqual(selections, [
+      ["/api/memory/tasks/estimate", false],
+      ["/api/memory/tasks/estimate", true],
+      ["/api/memory/tasks/run", true],
+    ]);
     await view.unmount();
   } finally {
     globalThis.fetch = originalFetch;
