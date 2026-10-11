@@ -60,7 +60,7 @@ def setup(db_factory, tmp_path):
             )
     sessions = SessionManager(db_factory, tmp_path)
     service = MemoryService(
-        config=Config(),
+        current_config=Config,
         store=MemoryStore(db_factory),
         sessions=sessions,
         jobs=JobsStore(db_factory),

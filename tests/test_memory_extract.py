@@ -101,7 +101,7 @@ def _handler(
     recorder: _Recorder, *, events: list[dict[str, Any]] = EVENTS, config: Config | None = None
 ) -> SessionExtractHandler:
     return SessionExtractHandler(
-        config=config or Config(),
+        current_config=lambda: config or Config(),
         load_events=lambda session_id: events if session_id == "s1" else [],
         user_config_for=lambda user: UserConfig(timezone="Europe/Berlin"),
         model_factory=lambda name, *, user: FunctionModel(recorder),
@@ -174,7 +174,7 @@ async def test_rejected_output_fails_after_one_billed_call() -> None:
         )
 
     handler = SessionExtractHandler(
-        config=Config(),
+        current_config=Config,
         load_events=lambda session_id: EVENTS,
         user_config_for=lambda user: UserConfig(),
         model_factory=lambda name, *, user: FunctionModel(respond),
