@@ -317,7 +317,7 @@ export function MemoryTasksView({ server, token }: { server: string; token: stri
                     {expanded ? (
                       <tr id={taskDetailId(task.id)} className="border-b border-border/60 bg-muted/40">
                         <td colSpan={COLUMN_COUNT} className="px-3 pb-3">
-                          <MemoryTaskDetail server={server} task={task} />
+                          <MemoryTaskDetail server={server} task={task} models={models} />
                         </td>
                       </tr>
                     ) : null}

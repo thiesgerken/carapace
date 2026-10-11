@@ -77,6 +77,8 @@ const DETAIL: MemoryPeriodDetail = {
   weeks: [],
 };
 
+const MODELS = { memory_low: "haiku", memory_high: "opus" };
+
 function weekDigestTask(resultId: number): MemoryTaskView {
   return {
     id: resultId,
@@ -103,7 +105,7 @@ function weekDigestTask(resultId: number): MemoryTaskView {
   };
 }
 
-async function renderTask(task: MemoryTaskView): Promise<string> {
+async function renderTask(task: MemoryTaskView, models = MODELS): Promise<string> {
   const restore = installDom();
   // next/link's prefetch observer reaches for `self`, which jsdom globals don't install.
   Object.defineProperty(globalThis, "self", { configurable: true, writable: true, value: window });
@@ -112,7 +114,7 @@ async function renderTask(task: MemoryTaskView): Promise<string> {
   try {
     const view = await renderReact(
       <NextIntlClientProvider locale="en" messages={messages} timeZone="UTC">
-        <MemoryTaskDetail server={SERVER} task={task} />
+        <MemoryTaskDetail server={SERVER} task={task} models={models} />
       </NextIntlClientProvider>,
     );
     await runInAct(() => new Promise((resolve) => setTimeout(resolve, 0)));
@@ -138,4 +140,18 @@ test("the current result needs no superseded hint", async () => {
   const text = await renderTask(weekDigestTask(2));
   assert.match(text, /Mostly infra work on the homelab cluster\./);
   assert.doesNotMatch(text, /Superseded/);
+});
+
+test("an open task names the model it would run with now, not the stale estimate's", async () => {
+  const task: MemoryTaskView = {
+    ...weekDigestTask(2),
+    status: "pending",
+    model: "sonnet",
+    provenance: null,
+    result_id: null,
+    estimate: { model: "sonnet", input_tokens: 900, output_tokens_cap: 6000, cost_usd: null },
+  };
+  const text = await renderTask(task);
+  assert.match(text, /opus · Estimate 900 in · ≤6K out/);
+  assert.doesNotMatch(text, /sonnet/);
 });

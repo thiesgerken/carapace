@@ -8,14 +8,19 @@ import { useMemorySessionDetail } from "@/components/memory-extraction-detail";
 import { DetailList } from "@/components/memory-ui";
 import { getMemoryPeriod } from "@/lib/api";
 import { formatAbsoluteTime } from "@/lib/format-time";
-import { formatTokens, formatUsd, monthLabel } from "@/lib/memory";
-import type { MemoryDigestLevel, MemoryPeriodDetail, MemoryTaskView } from "@/lib/types";
+import { formatTokens, formatUsd, monthLabel, taskRunModel } from "@/lib/memory";
+import type { MemoryDigestLevel, MemoryModelRole, MemoryPeriodDetail, MemoryTaskView } from "@/lib/types";
 
 /**
  * The expanded task row, most important first: the error, what the task is about (with the
  * record it produced inline), its numbers, then the provenance collapsed.
  */
-export function MemoryTaskDetail({ server, task }: { server: string; task: MemoryTaskView }) {
+export function MemoryTaskDetail({ server, task, models }: {
+  server: string;
+  task: MemoryTaskView;
+  /** Effective role models, so an open task names the model it would run with now. */
+  models: Record<MemoryModelRole, string> | null;
+}) {
   const t = useTranslations("memory.tasks.detail");
   const tProvenance = useTranslations("memory.provenance");
   const locale = useLocale();
@@ -29,7 +34,7 @@ export function MemoryTaskDetail({ server, task }: { server: string; task: Memor
       ) : null}
       {task.kind === "session_extract" ? <SessionTaskSubject server={server} task={task} /> : null}
       {task.kind === "week_digest" || task.kind === "month_digest" ? <DigestTaskSubject server={server} task={task} /> : null}
-      <p className="text-xs tabular-nums text-muted-foreground">{taskNumbers(task, locale, t)}</p>
+      <p className="text-xs tabular-nums text-muted-foreground">{taskNumbers(task, taskRunModel(task, models), locale, t)}</p>
       <details className="text-xs">
         <summary className="cursor-pointer text-muted-foreground hover:text-foreground">{t("details")}</summary>
         <div className="pt-2">
@@ -57,12 +62,12 @@ export function MemoryTaskDetail({ server, task }: { server: string; task: Memor
   );
 }
 
-function taskNumbers(task: MemoryTaskView, locale: string, t: ReturnType<typeof useTranslations>): string {
+function taskNumbers(task: MemoryTaskView, model: string | null, locale: string, t: ReturnType<typeof useTranslations>): string {
   const attempts = t("attempts", { count: task.attempts });
   const { provenance, estimate } = task;
   if (provenance) {
     return [
-      provenance.model,
+      model,
       provenance.cost_usd === null ? null : formatUsd(provenance.cost_usd, locale),
       `${formatTokens(provenance.input_tokens, locale)} in · ${formatTokens(provenance.output_tokens, locale)} out`,
       `${(provenance.duration_ms / 1000).toFixed(1)} s`,
@@ -71,13 +76,13 @@ function taskNumbers(task: MemoryTaskView, locale: string, t: ReturnType<typeof 
   }
   if (estimate) {
     return [
-      task.model ?? estimate.model,
+      model,
       estimate.cost_usd === null ? null : `~${formatUsd(estimate.cost_usd, locale)}`,
       `${t("estimate")} ${formatTokens(estimate.input_tokens, locale)} in · ≤${formatTokens(estimate.output_tokens_cap, locale)} out`,
       attempts,
     ].filter(Boolean).join(" · ");
   }
-  return attempts;
+  return [model, attempts].filter(Boolean).join(" · ");
 }
 
 /** A task's own output, which after a regenerate is no longer the current record. */
