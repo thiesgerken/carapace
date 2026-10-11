@@ -1,6 +1,39 @@
 # CHANGELOG
 
 
+## v0.160.0 (2026-10-11)
+
+
+### Other
+
+
+- Merge pull request #373 from thiesgerken/memory/chat-sidebar-extraction
+  ([`2ac0088`](https://github.com/thiesgerken/carapace/commit/2ac0088dc26db72b44ab8a04a369635890429352))
+
+### ✨ Features
+
+
+- ✨ feat: show the session's memory in the chat inspector
+  ([`2ac0088`](https://github.com/thiesgerken/carapace/commit/2ac0088dc26db72b44ab8a04a369635890429352))
+
+- ✨ feat: show the session's memory in the chat inspector
+  ([`6106f0b`](https://github.com/thiesgerken/carapace/commit/6106f0be3af3533ca32178ca57a21ca214a2aaec))
+
+  A collapsible Memory card in the chat inspector (desktop column and the mobile Details sheet) shows the extraction state, an unfinished task, the abstract, facts by category with links to their events, and a link to the session in the Memory tab. The header chip opens and scrolls to it, which replaces the extraction drawer (removed in the previous commit).
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01XZGdh4voK9HLfWh9aHHBpo
+
+- ✨ feat: show the session's memory in the chat inspector
+  ([`18324b2`](https://github.com/thiesgerken/carapace/commit/18324b230292dd1422236d739a44bf406a7948c2))
+
+  A collapsible Memory card in the chat inspector (desktop column and the mobile Details sheet) shows the extraction state, an unfinished task, the abstract, facts by category with links to their events, and a link to the session in the Memory tab. The header chip opens and scrolls to it, which replaces the extraction drawer.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01XZGdh4voK9HLfWh9aHHBpo
+
 ## v0.159.2 (2026-10-11)
 
 
