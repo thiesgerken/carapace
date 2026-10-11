@@ -59,6 +59,8 @@ class JobDefinitionInput(BaseModel):
     agent_model_name: str | None = None
     sentinel_model_name: str | None = None
     title_model_name: str | None = None
+    # Sessions of this job are excluded from long-term memory unless it opts in.
+    memory_enabled: bool = False
 
     @model_validator(mode="after")
     def _validate_job(self) -> JobDefinitionInput:

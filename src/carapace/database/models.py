@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
-from sqlalchemy import BigInteger, Boolean, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, Date, ForeignKey, Index, Integer, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column
 
+from ..memory.models import PeriodDigest, Provenance, SessionExtraction, TaskEstimate
 from ..models.compaction import SessionCompaction
 from ..models.jobs import JobDefinition
 from ..models.session import SessionState
@@ -57,8 +58,9 @@ class JobRow(Base):
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
     name: Mapped[str] = mapped_column(Text)
     prompt: Mapped[str] = mapped_column(Text)
-    # Full job definition (triggers, modes, model overrides); id/user/enabled/name/prompt
-    # above are queryable projections kept in sync on write.
+    memory_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Full job definition (triggers, modes, model overrides); id/user/enabled/name/prompt/
+    # memory_enabled above are queryable projections kept in sync on write.
     data: Mapped[JobDefinition] = mapped_column(PydanticJson(JobDefinition))
 
 
@@ -226,3 +228,145 @@ class PlatformSettingRow(Base):
     # Section key ('agent' scalar settings, 'sessions' SessionsConfig dump).
     key: Mapped[str] = mapped_column(String(64), primary_key=True)
     data: Mapped[dict[str, Any]] = mapped_column(JsonType)
+
+
+# Partial index predicates, valid on both SQLite and PostgreSQL.
+_OPEN_MEMORY_TASK = text("status IN ('pending', 'queued', 'running')")
+_IS_CURRENT = text("is_current")
+
+
+class MemoryTaskRow(Base):
+    __tablename__ = "memory_tasks"
+
+    id: Mapped[int] = mapped_column(AutoBigInt, primary_key=True, autoincrement=True)
+    user: Mapped[str] = mapped_column(String(256), ForeignKey("users.username", ondelete="CASCADE"), index=True)
+    # TaskKind / TaskStatus / BlockedReason / SpawnedBy values (memory.models).
+    kind: Mapped[str] = mapped_column(String(32))
+    # Session id, week key (2026-W36), month key (2026-09) or the username (mirror).
+    target: Mapped[str] = mapped_column(String(256))
+    status: Mapped[str] = mapped_column(String(16), index=True)
+    # Period the target falls into, for period filters: the session's week (first user message)
+    # for extractions, the target itself for digests. NULL for mirror (and month digests' week).
+    week_key: Mapped[str | None] = mapped_column(String(16), nullable=True, index=True)
+    month_key: Mapped[str | None] = mapped_column(String(16), nullable=True, index=True)
+    # Model of the latest estimate, replaced by the model that actually ran on completion.
+    model: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    blocked_reason: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    spawned_by: Mapped[str] = mapped_column(String(16))
+    model_override: Mapped[str | None] = mapped_column(Text, nullable=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    estimate: Mapped[TaskEstimate | None] = mapped_column(PydanticJson(TaskEstimate), nullable=True)
+    provenance: Mapped[Provenance | None] = mapped_column(PydanticJson(Provenance), nullable=True)
+    # What every attempt so far was billed, summed; a retry never resets it. Cost in integer
+    # micro-USD because SQLite stores NUMERIC as float. billed_at is the latest billed finish.
+    billed_input_tokens: Mapped[int] = mapped_column(BigInteger, default=0)
+    billed_output_tokens: Mapped[int] = mapped_column(BigInteger, default=0)
+    billed_cost_micro_usd: Mapped[int] = mapped_column(BigInteger, default=0)
+    billed_at: Mapped[datetime | None] = mapped_column(UtcDateTime, nullable=True, index=True)
+    # Produced extraction or digest id (table depends on kind).
+    result_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime)
+    queued_at: Mapped[datetime | None] = mapped_column(UtcDateTime, nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(UtcDateTime, nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(UtcDateTime, nullable=True)
+
+    __table_args__ = (
+        Index(
+            "uq_memory_tasks_open",
+            "user",
+            "kind",
+            "target",
+            unique=True,
+            sqlite_where=_OPEN_MEMORY_TASK,
+            postgresql_where=_OPEN_MEMORY_TASK,
+        ),
+    )
+
+
+class MemorySessionExtractionRow(Base):
+    __tablename__ = "memory_session_extractions"
+
+    id: Mapped[int] = mapped_column(AutoBigInt, primary_key=True, autoincrement=True)
+    user: Mapped[str] = mapped_column(String(256), ForeignKey("users.username", ondelete="CASCADE"), index=True)
+    session_id: Mapped[str] = mapped_column(
+        String(256), ForeignKey("sessions.session_id", ondelete="CASCADE"), index=True
+    )
+    week_key: Mapped[str] = mapped_column(String(16), index=True)
+    month_key: Mapped[str] = mapped_column(String(16), index=True)
+    # Older rows stay as version history (other models, prompt versions, inputs).
+    is_current: Mapped[bool] = mapped_column(Boolean)
+    input_hash: Mapped[str] = mapped_column(String(64))
+    # Projections of provenance, kept queryable for "outdated" filters.
+    model: Mapped[str] = mapped_column(String(256))
+    prompt_version: Mapped[str] = mapped_column(String(64))
+    input_format_version: Mapped[int] = mapped_column(Integer)
+    provenance: Mapped[Provenance] = mapped_column(PydanticJson(Provenance))
+    extraction: Mapped[SessionExtraction] = mapped_column(PydanticJson(SessionExtraction))
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime)
+
+    __table_args__ = (
+        Index(
+            "uq_memory_session_extractions_current",
+            "session_id",
+            unique=True,
+            sqlite_where=_IS_CURRENT,
+            postgresql_where=_IS_CURRENT,
+        ),
+    )
+
+
+class MemoryFactRow(Base):
+    """Queryable projection of the facts in current extractions, rewritten on re-extraction."""
+
+    __tablename__ = "memory_facts"
+
+    id: Mapped[int] = mapped_column(AutoBigInt, primary_key=True, autoincrement=True)
+    user: Mapped[str] = mapped_column(String(256), ForeignKey("users.username", ondelete="CASCADE"), index=True)
+    extraction_id: Mapped[int] = mapped_column(
+        AutoBigInt, ForeignKey("memory_session_extractions.id", ondelete="CASCADE"), index=True
+    )
+    session_id: Mapped[str] = mapped_column(String(256))
+    category: Mapped[str] = mapped_column(String(16), index=True)
+    subject: Mapped[str | None] = mapped_column(Text, nullable=True)
+    statement: Mapped[str] = mapped_column(Text)
+    source_kind: Mapped[str] = mapped_column(String(16))
+    confidence: Mapped[str] = mapped_column(String(16))
+    durability: Mapped[str] = mapped_column(String(16))
+    valid_until: Mapped[date | None] = mapped_column(Date, nullable=True)
+    source_seqs: Mapped[list[int]] = mapped_column(JsonType)
+    week_key: Mapped[str] = mapped_column(String(16), index=True)
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime)
+
+
+class MemoryDigestRow(Base):
+    __tablename__ = "memory_digests"
+
+    id: Mapped[int] = mapped_column(AutoBigInt, primary_key=True, autoincrement=True)
+    user: Mapped[str] = mapped_column(String(256), ForeignKey("users.username", ondelete="CASCADE"))
+    level: Mapped[str] = mapped_column(String(8))
+    period_key: Mapped[str] = mapped_column(String(16))
+    is_current: Mapped[bool] = mapped_column(Boolean)
+    # list[CoverageEntry] dumps: the source records this digest consumed.
+    coverage: Mapped[list[dict[str, str]]] = mapped_column(JsonType)
+    coverage_hash: Mapped[str] = mapped_column(String(64))
+    # Projections of provenance, kept queryable for "outdated" filters.
+    model: Mapped[str] = mapped_column(String(256))
+    prompt_version: Mapped[str] = mapped_column(String(64))
+    input_format_version: Mapped[int] = mapped_column(Integer)
+    provenance: Mapped[Provenance] = mapped_column(PydanticJson(Provenance))
+    digest: Mapped[PeriodDigest] = mapped_column(PydanticJson(PeriodDigest))
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime)
+
+    __table_args__ = (
+        Index("ix_memory_digests_period", "user", "level", "period_key"),
+        Index(
+            "uq_memory_digests_current",
+            "user",
+            "level",
+            "period_key",
+            unique=True,
+            sqlite_where=_IS_CURRENT,
+            postgresql_where=_IS_CURRENT,
+        ),
+    )

@@ -2,9 +2,11 @@
 
 import { useTranslations } from "next-intl";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Archive, ArchiveRestore, Bot, Check, Copy, ExternalLink, Eye, Globe, Link2, Link2Off, Loader2, Lock, MessageSquare, Pin, Play, RotateCcw, Save, Settings2, Square, Star, Terminal, Trash2 } from "lucide-react";
+import { Archive, ArchiveRestore, Bot, Brain, Check, Copy, ExternalLink, Eye, Globe, Link2, Link2Off, Loader2, Lock, MessageSquare, Pin, Play, RotateCcw, Save, Settings2, Square, Star, Terminal, Trash2 } from "lucide-react";
 import { EmojiText } from "@/components/emoji-text";
+import { MemoryExtractionDrawer } from "@/components/memory-extraction-drawer";
 import { SandboxGitControls } from "@/components/git-sync";
 import { ModelPicker, withSelectedModelOption } from "@/components/model-picker";
 import { SessionOptionTiles } from "@/components/session-option-tiles";
@@ -20,6 +22,7 @@ import {
   fetchSandbox,
   fetchModels,
   forkSession,
+  getMemorySession,
   getWebSocketTicket,
   type SlashCommand,
   startSandbox,
@@ -566,6 +569,11 @@ function eventIndexForMessage(message: ChatMessage): number | undefined {
   return undefined;
 }
 
+/** Any persisted message's event, for deep-link anchors (wider than the fork/reset targets above). */
+function anchorEventIndex(message: ChatMessage): number | undefined {
+  return "eventIndex" in message && typeof message.eventIndex === "number" ? message.eventIndex : undefined;
+}
+
 function groupChildToolCalls(messages: ChatMessage[]): ChatMessage[] {
   const parentIndex = new Map<string, number>();
   for (let index = 0; index < messages.length; index++) {
@@ -722,6 +730,7 @@ function projectHistoryToMessages(history: HistoryMessage[]): ChatMessage[] {
         toolId: normalizeOptionalString(entry.tool_id),
         parentToolId: normalizeOptionalString(entry.parent_tool_id),
         compaction: entry.compaction,
+        eventIndex: typeof entry.event_index === "number" ? entry.event_index : undefined,
       });
 
       const queue = pendingToolCallIndices.get(tool) ?? [];
@@ -894,6 +903,7 @@ function projectHistoryToMessages(history: HistoryMessage[]): ChatMessage[] {
         approvalExplanation: entry.approval_explanation,
         toolId: normalizeOptionalString(entry.tool_id),
         parentToolId: normalizeOptionalString(entry.parent_tool_id),
+        eventIndex: typeof entry.event_index === "number" ? entry.event_index : undefined,
       });
       continue;
     }
@@ -1064,6 +1074,10 @@ export function ChatView({
   const scrollRef = useRef<HTMLDivElement>(null);
   const mobileInspectorTouchStartRef = useRef<{ x: number; y: number } | null>(null);
   const isAtBottomRef = useRef(true);
+  const targetEvent = useSearchParams().get("event");
+  const scrolledToEventRef = useRef<string | null>(null);
+  const [hasMemory, setHasMemory] = useState(false);
+  const [memoryDrawerOpen, setMemoryDrawerOpen] = useState(false);
   const lastThinkingStartedAtRef = useRef<string | null>(null);
   const queueRef = useRef<string | null>(null);
   const queuedAttachmentsRef = useRef<Attachment[]>([]);
@@ -1702,6 +1716,37 @@ export function ChatView({
   const terminalIndices = completedTurnMessageIndices(messages);
   const latestTerminalIndex = terminalIndices.length > 0 ? terminalIndices[terminalIndices.length - 1] : -1;
   const turnActionsDisabled = waiting || loadingHistory || status !== "connected" || turnActionBusyIndex !== null;
+
+  useEffect(() => {
+    let cancelled = false;
+    getMemorySession(server, sessionId)
+      .then((detail) => {
+        if (!cancelled) setHasMemory(detail?.current != null);
+      })
+      // The chip is optional chrome: a failing memory API must not disturb the chat.
+      .catch((memoryError: unknown) => {
+        console.warn("Memory chip unavailable", memoryError);
+        if (!cancelled) setHasMemory(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [server, sessionId]);
+
+  // Deep link from memory fact sources (?event=<seq>). Not every event renders (approvals,
+  // collapsed tool groups), so land on the nearest rendered anchor at or before the seq.
+  useEffect(() => {
+    if (targetEvent === null || loadingHistory || targetEvent === scrolledToEventRef.current) return;
+    const target = Number(targetEvent);
+    const anchors = Array.from(scrollRef.current?.querySelectorAll<HTMLElement>("[data-event-index]") ?? []);
+    // DOM order is event order, so the last anchor at or before the target is the closest.
+    const anchor = anchors.filter((element) => Number(element.dataset.eventIndex) <= target).at(-1);
+    if (!anchor) return;
+    scrolledToEventRef.current = targetEvent;
+    isAtBottomRef.current = false;
+    anchor.scrollIntoView({ block: "center" });
+    anchor.animate?.([{ backgroundColor: "color-mix(in oklch, var(--accent) 80%, transparent)" }, { backgroundColor: "transparent" }], { duration: 2000 });
+  }, [targetEvent, loadingHistory, messages]);
 
   // Auto-scroll only when already at bottom
   useEffect(() => {
@@ -2713,8 +2758,20 @@ export function ChatView({
           <div className="border-b border-border px-3 py-2.5 sm:px-4 sm:py-3">
             <div className="flex items-center justify-between gap-3 sm:items-start">
               <div className="min-w-0">
-                <div className="truncate text-sm font-semibold text-foreground">
-                  {session?.title?.trim() ? <EmojiText text={sessionDisplayTitle} /> : sessionDisplayTitle}
+                <div className="flex min-w-0 items-center gap-2">
+                  <div className="truncate text-sm font-semibold text-foreground">
+                    {session?.title?.trim() ? <EmojiText text={sessionDisplayTitle} /> : sessionDisplayTitle}
+                  </div>
+                  {hasMemory ? (
+                    <button
+                      type="button"
+                      onClick={() => setMemoryDrawerOpen(true)}
+                      className="inline-flex shrink-0 items-center gap-1 rounded-full bg-accent px-2 py-0.5 text-[11px] font-medium text-accent-foreground transition-colors hover:bg-accent/70"
+                    >
+                      <Brain className="h-3 w-3" />
+                      {t("memoryChip")}
+                    </button>
+                  ) : null}
                 </div>
                 <div className="mt-1 hidden truncate font-mono text-xs text-muted-foreground sm:block">
                   {sessionId}
@@ -2768,36 +2825,38 @@ export function ChatView({
                   const canReset = canFork && i < messages.length - 1;
                   const canRetry = actionable && enclosingTerminal === latestTerminalIndex;
                   return (
-                    <Message
-                      key={i}
-                      message={msg}
-                      server={server}
-                      sessionId={sessionId}
-                      activeLlmActivity={llmActivity}
-                      canFork={canFork}
-                      canRetry={canRetry}
-                      canReset={canReset}
-                      actionDisabled={turnActionsDisabled}
-                      onApproval={handleApproval}
-                      onEscalation={handleEscalation}
-                      onCredentialApproval={handleCredentialEscalation}
-                      onFork={canFork ? () => void handleFork(i) : undefined}
-                      onRetry={canRetry ? handleRetry : undefined}
-                      onReset={canReset ? () => void handleReset(i) : undefined}
-                    />
+                    <div key={i} data-event-index={anchorEventIndex(msg)} className="rounded-lg">
+                      <Message
+                        message={msg}
+                        server={server}
+                        sessionId={sessionId}
+                        activeLlmActivity={llmActivity}
+                        canFork={canFork}
+                        canRetry={canRetry}
+                        canReset={canReset}
+                        actionDisabled={turnActionsDisabled}
+                        onApproval={handleApproval}
+                        onEscalation={handleEscalation}
+                        onCredentialApproval={handleCredentialEscalation}
+                        onFork={canFork ? () => void handleFork(i) : undefined}
+                        onRetry={canRetry ? handleRetry : undefined}
+                        onReset={canReset ? () => void handleReset(i) : undefined}
+                      />
+                    </div>
                   );
                 };
                 return groupRenderItems(messages).map((item) =>
                   item.type === "message" ? (
                     renderMessage(item.index)
                   ) : (
-                    <ToolCallGroup
-                      key={`g-${item.start}`}
-                      items={item.indices.map((j) => messages[j])}
-                      inProgress={item.inProgress}
-                    >
-                      {item.indices.map((j) => renderMessage(j))}
-                    </ToolCallGroup>
+                    <div key={`g-${item.start}`} data-event-index={anchorEventIndex(messages[item.start])} className="rounded-lg">
+                      <ToolCallGroup
+                        items={item.indices.map((j) => messages[j])}
+                        inProgress={item.inProgress}
+                      >
+                        {item.indices.map((j) => renderMessage(j))}
+                      </ToolCallGroup>
+                    </div>
                   ),
                 );
               })()}
@@ -2880,6 +2939,15 @@ export function ChatView({
             </div>
           </div>
         </div>
+      ) : null}
+
+      {memoryDrawerOpen ? (
+        <MemoryExtractionDrawer
+          server={server}
+          sessionId={sessionId}
+          onClose={() => setMemoryDrawerOpen(false)}
+          onSourceNavigate={() => setMemoryDrawerOpen(false)}
+        />
       ) : null}
     </div>
   );

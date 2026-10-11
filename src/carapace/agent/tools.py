@@ -22,9 +22,8 @@ from pydantic_ai.toolsets import CombinedToolset, FunctionToolset
 from pydantic_ai.toolsets.abstract import AbstractToolset
 
 from .. import security as security
-from ..config import load_workspace_file
 from ..credentials import CredentialBackendError
-from ..llm import model_settings_for_config, model_supports_vision
+from ..llm import model_settings_for_config, model_supports_vision, with_prompt_cache
 from ..models.credentials import CredentialMetadata
 from ..models.skills import (
     ContextGrant,
@@ -34,6 +33,7 @@ from ..models.skills import (
     SkillMcpOAuthAuth,
 )
 from ..models.tooling import SentFileInfo, ToolResult, normalize_tool_call_args
+from ..prompt_prefix import join_prompt_sections, shared_prompt_prefix
 from ..sandbox.manager import READ_TOOL_MAX_LINE_WINDOW, UploadError, UploadTooLargeError
 from ..sandbox.runtime import SkillActivationError
 from ..sandbox.skill_activation import SKILL_COMMAND_SHIM_DIR
@@ -958,31 +958,7 @@ async def build_skill_mcp_toolset(ctx: RunContext[Deps]) -> AbstractToolset[Deps
 
 
 def build_system_prompt(deps: Deps) -> str:
-    parts: list[str] = []
-
-    agents_md = load_workspace_file(deps.knowledge_dir, "AGENTS.md")
-    if agents_md:
-        parts.append(agents_md)
-
-    soul_md = load_workspace_file(deps.knowledge_dir, "SOUL.md")
-    if soul_md:
-        parts.append(soul_md)
-
-    user_md = load_workspace_file(deps.knowledge_dir, "USER.md")
-    if user_md:
-        parts.append(user_md)
-
-    if deps.skill_catalog:
-        catalog_lines = ["# Available Skills", ""]
-        for skill in deps.skill_catalog:
-            catalog_lines.append(f"- **{skill.name}**: {skill.description.strip()}")
-        catalog_lines.append("")
-        catalog_lines.append(
-            "Use `use_skill` to activate a skill before using it. "
-            + "That makes the skill available in the sandbox and runs the image-provided "
-            + "sandbox activator."
-        )
-        parts.append("\n".join(catalog_lines))
+    parts = [shared_prompt_prefix(deps.knowledge_dir, deps.skill_catalog)]
 
     parts.append(
         "# Sandbox Environment\n"
@@ -997,6 +973,8 @@ def build_system_prompt(deps: Deps) -> str:
         "- `/workspace/sessions/YYYY/MM/<session_id>/conversation.json` "
         "— archived conversation snapshots committed to the knowledge repo\n"
         "- `/workspace/skills/` — activated skills (populated by `use_skill`)\n"
+        "- `/workspace/memory/` — distilled long-term memory generated from archived sessions "
+        "(`README.md`, `sessions/`, `weeks/`, `months/`, `facts/`); read-only, the mirror reverts edits pushed there\n"
         "Use `rg` to search archived conversations by session ID, message text, "
         "tool names, or JSON fields when you need prior context.\n"
         "Call `use_skill(skill_name)` to activate a skill before running its scripts.\n"
@@ -1044,12 +1022,12 @@ def build_system_prompt(deps: Deps) -> str:
             + "The security sentinel will enforce this policy, but you must plan around it yourself."
         )
 
-    today = date.today()
-    parts.append(
-        f"# Session Info\nToday's date: {today:%A}, {today:%Y-%m-%d}\nSession ID: {deps.session_state.session_id}"
-    )
+    return join_prompt_sections(*parts)
 
-    return "\n\n---\n\n".join(parts)
+
+def build_session_info(deps: Deps) -> str:
+    today = date.today()
+    return f"# Session Info\nToday's date: {today:%A}, {today:%Y-%m-%d}\nSession ID: {deps.session_state.session_id}"
 
 
 def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | DeferredToolRequests]:
@@ -1070,9 +1048,13 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
         deps.agent_model,
         deps_type=Deps,
         output_type=output_type,  # type: ignore[arg-type]
-        instructions=system_prompt,
+        # A callable is a dynamic instruction: the prompt cache breakpoint goes before it, so the
+        # date and session ID don't split the cached prefix.
+        instructions=[system_prompt, lambda: build_session_info(deps)],
         capabilities=[LlmRequestLogCapability(source="agent")],
-        model_settings=model_settings_for_config(deps.config, deps.agent_model_id, default_thinking=True),
+        model_settings=with_prompt_cache(
+            model_settings_for_config(deps.config, deps.agent_model_id, default_thinking=True), conversation=True
+        ),
         retries={"tools": 1, "output": 3},
     )
 

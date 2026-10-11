@@ -7,6 +7,7 @@ from pathlib import Path
 
 from loguru import logger
 from pydantic_ai.messages import (
+    ModelMessage,
     ModelRequest,
     ModelResponse,
     TextPart,
@@ -15,8 +16,10 @@ from pydantic_ai.messages import (
     ToolReturnPart,
     UserPromptPart,
 )
+from pydantic_ai.models.function import AgentInfo, FunctionModel
 
 from carapace.session.compaction import is_fold_message, split_lead_folds, tool_return_is_compacted
+from carapace.session.compaction_summarizer import summarize_tool_output
 from carapace.session.transcript import completed_model_turn_end_indexes
 from tests.session_helpers import _make_engine, _patch_sentinel
 
@@ -490,3 +493,29 @@ def test_compact_noop_when_short(tmp_path: Path, db_factory) -> None:
         assert report.message == "Nothing to compact."
 
     asyncio.run(_run())
+
+
+def test_summaries_lead_with_the_agents_shared_prompt_prefix() -> None:
+    seen: list[str | None] = []
+
+    def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        seen.append(info.instructions)
+        return ModelResponse(parts=[TextPart(content="short")])
+
+    async def _run() -> str:
+        return await summarize_tool_output(
+            "exec",
+            "long output",
+            prompt_prefix="# AGENTS.md",
+            model="test:m",
+            user="thies",
+            usage_tracker=None,
+            before_llm_call=None,
+            model_factory=lambda _name, *, user: FunctionModel(respond),
+            model_settings=None,
+            usage_limits=None,
+        )
+
+    assert asyncio.run(_run()) == "short"
+    [instructions] = seen
+    assert instructions is not None and instructions.startswith("# AGENTS.md\n\n---\n\n# Compaction")

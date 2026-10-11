@@ -1,7 +1,8 @@
 """LLM-backed summarization for compaction (folded turns + large tool outputs).
 
-Mirrors ``titler.generate_title``: a lightweight aux agent call logged under the
-``compaction`` source so it shows up in usage without masquerading as an agent turn.
+A lightweight aux agent call logged under the ``compaction`` source so it shows up in usage
+without masquerading as an agent turn. Unlike the titler, it leads with the agent's shared prompt
+prefix: it summarizes the agent's own conversation.
 """
 
 from __future__ import annotations
@@ -16,11 +17,15 @@ from pydantic_ai.settings import ModelSettings
 from pydantic_ai.usage import UsageLimits
 
 from ..llm import ModelFactory
+from ..prompt_prefix import join_prompt_sections
 from ..usage import LlmRequestLogCapability, UsageTracker, provider_cost_usd_from_messages
 
 _FOLD_SYSTEM = """\
-You compress the older part of an ongoing assistant conversation to save context, while keeping
-enough that the assistant can continue seamlessly, as if it still remembered everything.
+# Compaction
+
+For this call you are not talking to the user. You compress the older part of an ongoing
+conversation between the user and you ("the assistant") to save context, while keeping enough
+that you can continue seamlessly, as if you still remembered everything.
 
 Write a chronological narrative — a story of what happened, in past tense — NOT a bullet list and
 NOT just the final outcome. Walk through the conversation in order: what the user asked for, what
@@ -64,7 +69,10 @@ chronological narrative as described, naming the files, URLs, skills, and identi
 Output ONLY the compacted history — no preamble, no commentary, no closing remarks."""
 
 _TOOL_SYSTEM = """\
-You compress a single tool output to save context in an ongoing assistant session.
+# Compaction
+
+For this call you are not talking to the user. You compress a single tool output from one of your
+ongoing sessions to save context.
 Keep the parts an agent would need later: key results, identifiers, counts, errors, and notable
 values. Drop repetition and boilerplate. Be faithful — never invent. Reply with ONLY the summary.
 """
@@ -79,6 +87,7 @@ async def _run_summary(
     system: str,
     text: str,
     *,
+    prompt_prefix: str,
     model: str,
     user: str,
     usage_tracker: UsageTracker | None,
@@ -91,7 +100,7 @@ async def _run_summary(
     agent: Agent[None, str] = Agent(
         resolved,
         output_type=str,
-        instructions=system,
+        instructions=join_prompt_sections(prompt_prefix, system),
         model_settings=model_settings,
         capabilities=[LlmRequestLogCapability(source="compaction")],
         retries={"tools": 1, "output": 2},

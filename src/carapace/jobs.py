@@ -61,15 +61,21 @@ def build_job_run_message(
     return "\n".join(sections).strip()
 
 
+def _job_columns(job: JobDefinition) -> dict[str, object]:
+    """Column values for a job row: the full definition plus its queryable projections."""
+    return {
+        "id": job.id,
+        "user": job.user,
+        "enabled": job.enabled,
+        "name": job.name,
+        "prompt": job.prompt,
+        "memory_enabled": job.memory_enabled,
+        "data": job,
+    }
+
+
 def _job_to_row(job: JobDefinition) -> JobRow:
-    return JobRow(
-        id=job.id,
-        user=job.user,
-        enabled=job.enabled,
-        name=job.name,
-        prompt=job.prompt,
-        data=job,
-    )
+    return JobRow(**_job_columns(job))
 
 
 def _row_to_job(row: JobRow) -> JobDefinition:
@@ -120,18 +126,7 @@ class JobsStore:
 
     def update_job(self, job_id: str, job: JobDefinition) -> JobDefinition:
         with self._session_factory.begin() as db:
-            result = db.execute(
-                update(JobRow)
-                .where(JobRow.id == job_id)
-                .values(
-                    id=job.id,
-                    user=job.user,
-                    enabled=job.enabled,
-                    name=job.name,
-                    prompt=job.prompt,
-                    data=job,
-                )
-            )
+            result = db.execute(update(JobRow).where(JobRow.id == job_id).values(**_job_columns(job)))
             if result.rowcount == 0:  # type: ignore[missing-attribute]
                 raise KeyError(job_id)
         return job

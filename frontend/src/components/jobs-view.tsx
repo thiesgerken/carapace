@@ -89,6 +89,7 @@ function createEmptyJob(): JobDefinition {
     agent_model_name: null,
     sentinel_model_name: null,
     title_model_name: null,
+    memory_enabled: false,
   };
 }
 
@@ -801,6 +802,15 @@ export function JobsView({
                     description={t("fields.enabledHelp")}
                     disabled={saving || running}
                     onCheckedChange={(enabled) => updateDraft({ enabled })}
+                    className="rounded-xl border border-border/70 bg-background px-3 py-3"
+                  />
+
+                  <SwitchRow
+                    checked={draft.memory_enabled}
+                    label={t("fields.memoryEnabled")}
+                    description={t("fields.memoryEnabledHelp")}
+                    disabled={saving || running}
+                    onCheckedChange={(memory_enabled) => updateDraft({ memory_enabled })}
                     className="rounded-xl border border-border/70 bg-background px-3 py-3"
                   />
 

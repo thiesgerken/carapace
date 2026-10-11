@@ -392,6 +392,8 @@ test("user settings helpers decode write-only status and patch payloads", async 
         settings: {
           default_models: { agent: "anthropic:default" },
           default_budget: { tool_calls: 3, cost_usd: "1.50" },
+          timezone: "Europe/Berlin",
+          memory: { auto_mode: true, budget: { cost_usd_per_day: "1.00", cost_usd_per_month: null, input_tokens_per_day: 50000, input_tokens_per_month: null } },
           matrix: {
             enabled: true,
             homeserver: "https://matrix.example.test",
@@ -436,6 +438,11 @@ test("user settings helpers decode write-only status and patch payloads", async 
   );
 
   assert.equal(settings.settings.matrix.password_set, true);
+  assert.equal(settings.settings.timezone, "Europe/Berlin");
+  assert.deepEqual(settings.settings.memory, {
+    auto_mode: true,
+    budget: { cost_usd_per_day: "1.00", cost_usd_per_month: null, input_tokens_per_day: 50000, input_tokens_per_month: null },
+  });
   assert.equal(settings.settings.credentials.backends.vault?.type, "bitwarden");
   assert.equal(patched.settings.git.token_set, true);
   assert.equal(

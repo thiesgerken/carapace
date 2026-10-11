@@ -231,11 +231,20 @@ class GitStore:
 
     async def commit(self, paths: list[str], message: str, *, session_id: str = "server") -> bool:
         """Stage the given paths and commit. Returns True if a commit was made."""
+        return await self.commit_returning_sha(paths, message, session_id=session_id) is not None
+
+    async def commit_returning_sha(self, paths: list[str], message: str, *, session_id: str = "server") -> str | None:
+        """Like ``commit``, but returns the new commit's sha (``None`` if nothing was staged).
+
+        The sha is read under the index lock, so it can't be another writer's concurrent commit.
+        """
         async with self._index_lock:
             for p in paths:
                 await self._run("add", "--", p)
 
-            return await self._commit_staged_paths(message, session_id=session_id)
+            if not await self._commit_staged_paths(message, session_id=session_id):
+                return None
+            return await self.head_sha()
 
     async def commit_removals(self, paths: list[str], message: str, *, session_id: str = "server") -> bool:
         """Stage tracked path removals and commit. Returns True if a commit was made."""

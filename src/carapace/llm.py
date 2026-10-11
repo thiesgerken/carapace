@@ -141,6 +141,27 @@ def model_settings_for_config(
     return model_settings_for_entry(entry, default_thinking=default_thinking)
 
 
+def with_prompt_cache(settings: ModelSettings | None, *, conversation: bool) -> ModelSettings:
+    """*settings* plus prompt caching, for a role that leads with the shared prompt prefix.
+
+    Breakpoints go after the tool definitions and the static instructions, and with
+    *conversation* also on the growing message history. One-off calls never reread their user
+    prompt, so they cache the prefix only. Only Anthropic (direct or on Bedrock) needs explicit
+    breakpoints. pydantic-ai's unified `cache` setting would also send OpenAI's
+    `prompt_cache_options`, which models like the Codex backend reject, so this sets the
+    provider-specific keys, which every other provider ignores.
+    """
+    cache = {
+        "anthropic_cache_instructions": True,
+        "anthropic_cache_tool_definitions": True,
+        "anthropic_cache": conversation,
+        "bedrock_cache_instructions": True,
+        "bedrock_cache_tool_definitions": True,
+        "bedrock_cache_messages": conversation,
+    }
+    return cast(ModelSettings, {**(settings or {}), **cache})
+
+
 class ModelFactory(Protocol):
     """Builds a registered model for the user whose request it will serve.
 

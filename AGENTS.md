@@ -49,6 +49,7 @@ src/carapace/          # main package
   models.py            # Pydantic models and dataclasses
   ws_models.py         # WebSocket message protocol models
   usage.py             # token usage tracking (ModelUsage, UsageTracker)
+  prompt_prefix.py     # shared system prompt prefix (AGENTS/SOUL/USER.md, skill catalog)
   skills.py            # skill registry
   credentials.py       # password-manager-backed credentials
   agent/
@@ -64,6 +65,8 @@ src/carapace/          # main package
     __init__.py        # re-exports (GitHttpHandler, GitStore)
     http.py            # Git HTTP Smart Protocol handler (git http-backend CGI)
     store.py           # Git CLI wrapper (init, commit, push, pull, hooks)
+  memory/
+    service.py         # MemoryService facade: long-term memory tasks, worker, queries (see docs/memory.md)
   security/
     __init__.py        # public API: evaluate(), evaluate_domain(), safe-list
     sentinel.py        # LLM-powered security agent (shadow conversation)
@@ -110,3 +113,4 @@ data/                  # runtime data directory (config, sessions, notifications
 - Skills follow the open [AgentSkills](https://agentskills.io/) format
 - All runtime state lives under `$CARAPACE_DATA_DIR` (defaults to `./data`)
 - Secrets come from a password manager, never stored in the repo
+- Prefix caching: LLM system prompts put the stable shared prefix first (`prompt_prefix.shared_prompt_prefix()`), then role instructions, and anything volatile (current time, session ID, per-call data) last. Never put volatile text or a per-role split before the long shared text (see `docs/persistent-context.md`)

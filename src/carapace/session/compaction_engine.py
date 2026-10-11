@@ -11,13 +11,17 @@ import asyncio
 import uuid
 from contextlib import AbstractContextManager
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
 from loguru import logger
 from pydantic_ai.settings import ModelSettings
 from pydantic_ai.usage import UsageLimits
 
+from ..llm import with_prompt_cache
 from ..models.compaction import CompactionNode, CompactionReport, SessionCompaction
+from ..models.skills import SkillInfo
+from ..prompt_prefix import shared_prompt_prefix
 from ..usage import count_message_tokens, count_text_tokens
 from .compaction import (
     AppliedToolReturn,
@@ -50,6 +54,8 @@ class SessionCompactionMixin:
 
         async def _broadcast(self, active: ActiveSession, method: str, *args: Any, **kwargs: Any) -> None: ...
         def _assert_llm_budget_available(self, active: ActiveSession) -> None: ...
+        def _knowledge_dir_for_session(self, session_id: str) -> Path: ...
+        def _skill_catalog_for_session(self, session_id: str) -> list[SkillInfo]: ...
         def _resolve_model_settings(self, name: str) -> ModelSettings | None: ...
         def _remaining_aux_usage_limits(self, active: ActiveSession) -> UsageLimits | None: ...
         def agent_model_id_for_gauge(self, active: ActiveSession) -> str: ...
@@ -241,13 +247,17 @@ class SessionCompactionMixin:
                 with self.llm_request_recording(active, track_activity=False):
                     self._assert_llm_budget_available(active)
                     model = self._compaction_model(active)
+                    session_id = active.state.session_id
                     return await call(
+                        prompt_prefix=shared_prompt_prefix(
+                            self._knowledge_dir_for_session(session_id), self._skill_catalog_for_session(session_id)
+                        ),
                         model=model,
                         usage_tracker=active.usage_tracker,
                         before_llm_call=lambda: self._assert_llm_budget_available(active),
                         model_factory=self._model_factory,
                         user=active.owner,
-                        model_settings=self._resolve_model_settings(model),
+                        model_settings=with_prompt_cache(self._resolve_model_settings(model), conversation=False),
                         usage_limits=self._remaining_aux_usage_limits(active),
                     )
         except Exception as exc:

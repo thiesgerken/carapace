@@ -20,6 +20,8 @@ function draftWithModel(model: PlatformDraft["models"][number]): PlatformDraft {
       sentinel: id,
       title: id,
       compaction: "",
+      memory_low: null,
+      memory_high: null,
     },
     budget: {
       input_tokens: "",
@@ -35,6 +37,31 @@ function draftWithModel(model: PlatformDraft["models"][number]): PlatformDraft {
     models: [model],
   };
 }
+
+test("buildPlatformSettingsPatch keeps default models the view does not edit", () => {
+  const draft = draftWithModel({
+    rowId: "model-1",
+    provider: "anthropic",
+    name: "claude-haiku-4-5",
+    id: "",
+    maxInputTokens: "",
+    thinking: "",
+    thinkingBudgetTokens: "",
+    baseUrl: "",
+    vision: false,
+    enabled: true,
+    apiKeySource: "none",
+    apiKeyValue: "",
+    apiKeyConfigured: false,
+    apiKeyConfiguredSource: "none",
+  });
+  draft.defaultModels.memory_low = "anthropic:claude-haiku-4-5";
+
+  const patch = buildPlatformSettingsPatch(draft, translate);
+
+  assert.equal(patch.default_models.memory_low, "anthropic:claude-haiku-4-5");
+  assert.equal(patch.default_models.memory_high, null);
+});
 
 test("buildPlatformSettingsPatch omits OpenAI-only fields for other providers", () => {
   const patch = buildPlatformSettingsPatch(
