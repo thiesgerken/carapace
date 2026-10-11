@@ -180,6 +180,7 @@ export function MemoryTasksView({ server, token }: { server: string; token: stri
             label={t("filters.status")}
             anyLabel={t("filters.anyStatus")}
             value={form.status}
+            active={form.status !== DEFAULT_FORM.status}
             options={[
               { value: "unfinished" as const, label: t("filters.unfinished") },
               ...MEMORY_TASK_STATUSES.map((value) => ({ value, label: tStatuses(value) })),
@@ -191,15 +192,17 @@ export function MemoryTasksView({ server, token }: { server: string; token: stri
             label={t("filters.kind")}
             anyLabel={t("filters.anyKind")}
             value={form.kind}
+            active={form.kind !== DEFAULT_FORM.kind}
             options={MEMORY_TASK_KINDS.map((value) => ({ value, label: tKinds(value) }))}
             onChange={(kind) => updateForm({ kind })}
           />
-          <PeriodPicker label={t("filters.period")} value={form.period} allowMonth onChange={(period) => updateForm({ period })} />
+          <PeriodPicker label={t("filters.period")} value={form.period} active={form.period !== DEFAULT_FORM.period} allowMonth onChange={(period) => updateForm({ period })} />
           <FilterSelect
             icon={Cpu}
             label={t("filters.model")}
             anyLabel={t("filters.anyModel")}
             value={form.model}
+            active={form.model !== DEFAULT_FORM.model}
             options={modelOptions.map((value) => ({ value, label: value }))}
             onChange={(model) => updateForm({ model })}
           />

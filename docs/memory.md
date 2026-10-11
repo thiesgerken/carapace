@@ -268,7 +268,7 @@ See [persistent-context.md](persistent-context.md) for how the knowledge repo re
 
 The Memory area lives at `/memory`, with four tabs. A **status strip** on top of every tab shows auto mode (it links to the settings), today's and this month's spend against the budget, queue counts (pending, queued, running, failed, held by budget) and the effective `memory_low` and `memory_high` models. While tasks are queued or running, the strip and the open tab refresh every few seconds.
 
-Sessions, Facts and Tasks share one filter bar. Set filters are highlighted, **Reset filters** appears once anything differs from the tab's defaults, and the result count sits on the right. Weeks and months are picked from a month calendar (pick a week row, or the month name where a whole month is allowed); the × clears the pick. A filter that only applies to another one's value appears only then.
+Sessions, Facts and Tasks share one filter bar. Filters that differ from the tab's defaults are highlighted (the Tasks tab's default **Unfinished** is not), **Reset filters** appears once any does, and the result count sits on the right. Weeks and months are picked from a month calendar (pick a week row, or the month name where a whole month is allowed); the × clears the pick. A filter that only applies to another one's value appears only then.
 
 ### Timeline
 

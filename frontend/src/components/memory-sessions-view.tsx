@@ -162,12 +162,13 @@ export function MemorySessionsView({ server, token }: { server: string; token: s
     <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6">
       <div className="space-y-3">
         <FilterBar count={t("matching", { count: total })} canReset={differsFrom(form, DEFAULT_FORM)} onReset={() => updateForm(DEFAULT_FORM)}>
-          <PeriodPicker label={t("filters.week")} value={form.week} allowMonth={false} onChange={(week) => updateForm({ week })} />
+          <PeriodPicker label={t("filters.week")} value={form.week} active={form.week !== DEFAULT_FORM.week} allowMonth={false} onChange={(week) => updateForm({ week })} />
           <FilterSelect
             icon={ListChecks}
             label={t("filters.state")}
             anyLabel={t("filters.anyState")}
             value={form.state}
+            active={form.state !== DEFAULT_FORM.state}
             options={MEMORY_EXTRACTION_STATES.map((value) => ({ value, label: t(`states.${value}`) }))}
             onChange={(state) => updateForm({ state, outdatedReason: "" })}
           />
@@ -177,6 +178,7 @@ export function MemorySessionsView({ server, token }: { server: string; token: s
               label={t("filters.reason")}
               anyLabel={t("filters.anyReason")}
               value={form.outdatedReason}
+              active={form.outdatedReason !== DEFAULT_FORM.outdatedReason}
               options={MEMORY_OUTDATED_REASONS.map((value) => ({ value, label: tReasons(value) }))}
               onChange={(outdatedReason) => updateForm({ outdatedReason })}
             />
@@ -186,6 +188,7 @@ export function MemorySessionsView({ server, token }: { server: string; token: s
             label={t("filters.taskStatus")}
             anyLabel={t("filters.anyTaskStatus")}
             value={form.taskStatus}
+            active={form.taskStatus !== DEFAULT_FORM.taskStatus}
             options={MEMORY_TASK_STATUSES.map((value) => ({ value, label: tStatuses(value) }))}
             onChange={(taskStatus) => updateForm({ taskStatus })}
           />
@@ -194,6 +197,7 @@ export function MemorySessionsView({ server, token }: { server: string; token: s
             label={t("filters.model")}
             anyLabel={t("filters.anyModel")}
             value={form.model}
+            active={form.model !== DEFAULT_FORM.model}
             options={modelOptions.map((value) => ({ value, label: value }))}
             onChange={(model) => updateForm({ model })}
           />
@@ -202,6 +206,7 @@ export function MemorySessionsView({ server, token }: { server: string; token: s
             label={t("filters.channel")}
             anyLabel={t("filters.anyChannel")}
             value={form.channel}
+            active={form.channel !== DEFAULT_FORM.channel}
             options={channelOptions.map((value) => ({ value, label: value }))}
             onChange={(channel) => updateForm({ channel })}
           />
