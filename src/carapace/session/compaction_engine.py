@@ -113,6 +113,10 @@ class SessionCompactionMixin:
         )
 
         if not nothing:
+            # The rewritten history breaks the conversation cache anyway, so the next turn
+            # refreshes the frozen memory block at no extra cost.
+            active.state.memory = None
+            self._session_mgr.save_state(active.state)
             self._session_mgr.save_history(session_id, history)
             self._session_mgr.save_compaction(session_id, tree)
             self._session_mgr.save_events(session_id, events)

@@ -75,6 +75,7 @@ from .memory import router as memory_router
 from .notifications import _set_notification_presence as _set_notification_presence
 from .notifications import router as notifications_router
 from .platform_settings import router as platform_settings_router
+from .prompts import router as prompts_router
 from .runtime import KnowledgeGitConfig, KnowledgeGitRuntime, MatrixChannelHandle, MatrixChannelManager
 from .session_sandbox import router as session_sandbox_router
 from .sessions import router as sessions_router
@@ -490,6 +491,8 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
         sandbox_mgr=_sandbox_mgr,
         credential_registry_for_session=_credential_registry_for_session,
         knowledge_repo_for_session=knowledge_repo_for_session,
+        # Late-bound: the memory service is built after the engine, and only turns call this.
+        memory_block_for=lambda user, session_id: _memory_service.prompt_block(user, session_id).text,
         model_factory=_model_factory,
         notification_router=_notification_router,
     )
@@ -826,6 +829,7 @@ router.include_router(history_router)
 router.include_router(jobs_router)
 router.include_router(knowledge_router)
 router.include_router(memory_router)
+router.include_router(prompts_router)
 router.include_router(session_sandbox_router)
 router.include_router(notifications_router)
 router.include_router(platform_settings_router)

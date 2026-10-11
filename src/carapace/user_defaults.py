@@ -46,3 +46,8 @@ def effective_memory_model(config: Config, user_config: UserConfig, role: ModelR
             return user_config.default_models.memory_low or agent.memory_low_model or agent.sentinel_model
         case ModelRole.memory_high:
             return user_config.default_models.memory_high or agent.memory_high_model or agent.model
+
+
+def effective_memory_prompt_budget(config: Config, user_config: UserConfig) -> int:
+    budget = user_config.memory.prompt_budget_tokens
+    return config.agent.memory_prompt_budget_tokens if budget is None else budget

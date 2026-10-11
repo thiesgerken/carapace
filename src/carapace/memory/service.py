@@ -10,7 +10,7 @@ from ..llm import resolve_available_model_entry
 from ..models.config import Config
 from ..models.user import UserConfig
 from ..session import SessionManager
-from ..user_defaults import effective_memory_model
+from ..user_defaults import effective_memory_model, effective_memory_prompt_budget
 from .budget import budget_windows, sum_estimates
 from .coverage import coverage_hash, month_coverage, week_coverage
 from .handlers import TaskHandler
@@ -63,6 +63,7 @@ from .models import (
 )
 from .outdated import CurrentVersions, current_versions, outdated_reasons
 from .periods import month_key_for_week, period_dates, week_key, week_start
+from .prompt_block import MemoryBlock, build_memory_block
 from .spawner import MALFORMED_TRANSCRIPT_ERRORS, Spawner
 from .store import MemoryStore, SessionCandidate, parse_cursor
 from .worker import DEFAULT_TIMING, MemoryWorker, WorkerTiming
@@ -129,6 +130,18 @@ class MemoryService:
     async def run(self) -> None:
         """Worker loop: spawn, promote, claim, execute. Started once by the server lifespan."""
         await self._worker.run()
+
+    def prompt_block(self, user: str, exclude_session_id: str) -> MemoryBlock:
+        """The memory block for the agent prompt of a session starting now."""
+        config, user_config = self._current_config(), self._user_config_for(user)
+        return build_memory_block(
+            self._store,
+            user,
+            budget_tokens=effective_memory_prompt_budget(config, user_config),
+            now=self._clock(),
+            tz=ZoneInfo(user_config.timezone),
+            exclude_session_id=exclude_session_id,
+        )
 
     # --- status and tasks ---
 

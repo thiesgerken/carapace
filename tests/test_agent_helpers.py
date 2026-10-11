@@ -2,7 +2,7 @@
 
 import json
 from collections.abc import Callable
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -22,7 +22,7 @@ from carapace.agent.deps import Deps
 from carapace.credentials import CredentialRegistry
 from carapace.git.store import GitStore
 from carapace.models.config import AvailableModelEntry, Config
-from carapace.models.session import SessionState
+from carapace.models.session import MemorySnapshot, SessionState
 from carapace.models.skills import SkillInfo
 from carapace.prompt_prefix import shared_prompt_prefix
 from carapace.sandbox.manager import SandboxManager
@@ -105,6 +105,29 @@ def test_build_system_prompt_unattended_mentions_task_outputs(tmp_path: Path):
     assert "This session is unattended" in prompt
     assert "task_done" in prompt
     assert "task_failed" in prompt
+
+
+def test_build_system_prompt_puts_the_memory_block_between_fixed_instructions_and_modes(tmp_path: Path):
+    state = SessionState.now(session_id="s1", ask_mode=True)
+    state.memory = MemorySnapshot(text="# Memory\n\n<memory>\nrecent work\n</memory>", as_of=datetime.now(tz=UTC))
+    deps = Deps(
+        config=Config(),
+        data_dir=tmp_path,
+        knowledge_dir=tmp_path,
+        session_state=state,
+        sandbox=MagicMock(spec=SandboxManager),
+        security=SessionSecurity("s1", ask_mode=True),
+        sentinel=MagicMock(spec=Sentinel),
+        git_store=MagicMock(spec=GitStore),
+        agent_model=MagicMock(spec=Model),
+        agent_model_id="anthropic:claude-sonnet-4-6",
+        usage_tracker=UsageTracker(),
+        credential_registry=CredentialRegistry(),
+    )
+
+    prompt = build_system_prompt(deps)
+
+    assert prompt.index("# Response format") < prompt.index("# Memory") < prompt.index("# Read-Only Session")
 
 
 def test_build_system_prompt_ask_mode_mentions_read_only_limits(tmp_path: Path):

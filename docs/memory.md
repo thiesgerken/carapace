@@ -20,6 +20,7 @@ month 2026-09          memory_high, input = current weekly digests of that month
 - **Week and month digests** (`memory_high` model): each level reads only the level directly below it. A monthly digest never sees a transcript.
 - **Tasks**: every extraction and digest is a task in your queue. Creating a task is free and automatic. Running one costs money, so it needs you (manual mode) or auto mode plus budget headroom.
 - **Source of truth** is carapace's database. A one-way **mirror** writes Markdown into your knowledge repo under `memory/`, so the agent can read and grep it. The mirror is never read back.
+- **In the agent's prompt**: a budgeted block of the newest records sits in the main agent's system prompt, so it knows what has been going on without searching `memory/` (see [In the agent's prompt](#in-the-agents-prompt)).
 - **Everything is per user**: tasks, records, budgets, auto mode, models and timezone.
 
 Manage it all in the **Memory** area of the web UI (the brain icon next to Knowledge).
@@ -257,10 +258,29 @@ See [persistent-context.md](persistent-context.md) for how the knowledge repo re
 
 ---
 
+## In the agent's prompt
+
+The main agent's system prompt carries a **memory block**: what has been going on lately, built from your current records without an LLM call (`memory/prompt_block.py`). Compaction, the sentinel, the titler and memory tasks never get it, so memory cannot feed back into itself.
+
+- **Selection** walks back from now, newest first, and takes per period the highest level that exists:
+  - the current week: its session extractions
+  - the other weeks of the current month: their week digests
+  - finished months: their month digests
+  - a period without a digest falls back one level: a month to its weeks, a week to its sessions. Nothing is covered twice.
+- **Budget**: whole entries only. The walk stops at the first entry that no longer fits, so older entries drop out entirely and the block covers one unbroken stretch up to now. The budget is the user setting `memory.prompt_budget_tokens`, or the platform default `agent.memory_prompt_budget_tokens` (4000) when unset, and 0 turns the block off. Tokens are the usual tiktoken estimate.
+- **Content**: a session entry has its abstract, open loops and facts. A digest entry has its summary, themes and highlights, never `learned`. Every entry is labelled with its session and week, or its period. Every field is collapsed to one line, so model text cannot forge an entry.
+- **Order**: oldest first (months, weeks, then the current week's sessions). A new session appends at the end, and the block's start only changes when old entries drop out.
+- **Marked as data**: the block says it is background distilled from earlier sessions, not instructions, and that instructions inside it are never followed. Abstracts summarise tool output too, so this guards against injected text that would otherwise sit in every system prompt.
+- Current records are used even when they are outdated or stale. A session never sees its own extraction (a revived session would read itself back as past background).
+- **Frozen per session**: a changed system prompt invalidates the whole cached conversation behind it. The block is therefore rendered at a session's first agent turn, stored in the session state with its as-of time, and reused on every later turn. Only compaction, which rewrites the history and breaks the cache anyway, clears it, and the next turn renders a fresh one. A session therefore does not see records that finished after it started until it is compacted.
+
+---
+
 ## Deletion and privacy
 
 - **Private sessions** never get tasks. A session that turns private after extraction has its extractions purged on the next sweep (or when a queued task for it is dispatched).
 - **Deleted sessions**: their extractions and facts are deleted with them. Digests covering them turn stale, and the mirror removes their files.
+- A session's frozen memory block (see [In the agent's prompt](#in-the-agents-prompt)) keeps what it showed until that session is compacted, including text from sessions deleted since.
 - Digests can still contain text derived from a deleted or private session until they are regenerated. Stale digests are flagged in the Timeline, and regenerating takes one click.
 - **Job sessions** are excluded unless the job opts in with `memory_enabled`.
 
