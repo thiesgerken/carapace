@@ -338,7 +338,8 @@ async def test_outdated_records_get_manual_pending_tasks(listed):
 
     expected = TaskKindCounts(session_extract=1, week_digest=1, month_digest=0)  # the month has an open task
     assert (await service.status("alice")).outdated == expected
-    assert await service.spawn_outdated("alice") == expected
+    spawned = await service.spawn_outdated("alice")
+    assert (spawned.created, spawned.skipped) == (expected, [])
 
     extraction = store.open_tasks("alice", TaskKind.session_extract)[ids["outdated"]]
     digest = store.open_tasks("alice", TaskKind.week_digest)["2026-W37"]
@@ -346,3 +347,20 @@ async def test_outdated_records_get_manual_pending_tasks(listed):
         assert (task.status, task.spawned_by) == (TaskStatus.pending, SpawnedBy.manual)
         assert task.estimate is not None
     assert (await service.status("alice")).outdated == TaskKindCounts(session_extract=0, week_digest=0, month_digest=0)
+
+
+async def test_outdated_records_that_cannot_spawn_are_reported(listed):
+    service, store, _ = listed
+    _digest(store, DigestLevel.week, "2026-W37", store.current_extractions("alice", "2026-W37"))
+    # What the real digest handler raises once the period's extractions are gone.
+    service._handlers[TaskKind.week_digest].estimate = _no_sources  # type: ignore[method-assign]
+
+    spawned = await service.spawn_outdated("alice")
+
+    assert spawned.created == TaskKindCounts(session_extract=1, week_digest=0, month_digest=0)
+    assert [skip.target for skip in spawned.skipped] == ["2026-W37"]
+    assert "no current sources" in spawned.skipped[0].reason
+
+
+async def _no_sources(user: str, target: str, model: str) -> TaskEstimate:
+    raise ValueError(f"week {target} has no current sources to digest")

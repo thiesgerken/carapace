@@ -33,6 +33,7 @@ from .models import (
     MemoryTask,
     ModelRole,
     MonthNode,
+    OutdatedSpawnResponse,
     PeriodDetail,
     PeriodNode,
     PeriodTree,
@@ -248,13 +249,15 @@ class MemoryService:
                 skipped.append(SpawnSkip(target=target, reason=reason))
         return TaskSpawnResponse(task_ids=task_ids, skipped=skipped)
 
-    async def spawn_outdated(self, user: str) -> TaskKindCounts:
+    async def spawn_outdated(self, user: str) -> OutdatedSpawnResponse:
         """Manual respawn of every outdated record without an open task; the tasks start pending."""
         created: dict[str, int] = {}
+        skipped: list[SpawnSkip] = []
         for kind, targets in self._outdated_targets(user).items():
             spawned = await self.spawn_tasks(user, TaskSpawnRequest(kind=kind, targets=targets)) if targets else None
             created[kind.value] = len(spawned.task_ids) if spawned else 0
-        return TaskKindCounts(**created)
+            skipped += spawned.skipped if spawned else []
+        return OutdatedSpawnResponse(created=TaskKindCounts(**created), skipped=skipped)
 
     def _outdated_targets(self, user: str) -> dict[TaskKind, list[str]]:
         """Targets of the user's outdated records per kind, sources first, minus those with an open task."""

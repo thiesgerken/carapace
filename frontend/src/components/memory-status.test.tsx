@@ -36,7 +36,7 @@ test("refreshing outdated records confirms, spawns once and reports the created 
     if (path === "/api/memory/tasks/spawn-outdated") {
       assert.equal(init?.method, "POST");
       spawns += 1;
-      return Response.json(created);
+      return Response.json({ created, skipped: [{ target: "2026-W37", reason: "no sources" }] });
     }
     assert.equal(path, "/api/memory/status", `unexpected request ${path}`);
     return Response.json(status(spawns ? { session_extract: 0, week_digest: 0, month_digest: 0 } : created));
@@ -68,7 +68,7 @@ test("refreshing outdated records confirms, spawns once and reports the created 
     await click(button("Create"));
     await settle();
     assert.equal(spawns, 1);
-    assert.match(text(), /Created 3 extraction tasks and 1 digest task\./);
+    assert.match(text(), /Created 3 extraction tasks and 1 digest task\. Skipped 1: no sources\./);
     assert.equal(button("Refresh 0 outdated records").disabled, true);
     await view.unmount();
   } finally {

@@ -6,7 +6,7 @@ import { Loader2, RefreshCw } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
 import { buttonClassName } from "@/components/memory-ui";
 import { getMemoryStatus, spawnOutdatedMemoryTasks } from "@/lib/api";
-import { budgetGauge, formatTokens, formatUsd, hasActiveTasks } from "@/lib/memory";
+import { budgetGauge, formatTokens, formatUsd, hasActiveTasks, summarizeSkips } from "@/lib/memory";
 import type { MemoryBudgetWindowStatus, MemoryStatus } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -112,9 +112,12 @@ function RefreshOutdated({ server, status }: { server: string; status: MemorySta
   async function create(): Promise<void> {
     setBusy(true);
     try {
-      const created = await spawnOutdatedMemoryTasks(server);
+      const { created, skipped } = await spawnOutdatedMemoryTasks(server);
       const digests = created.week_digest + created.month_digest;
-      setNotice({ text: t("outdatedCreated", { extractions: created.session_extract, digests }), error: false });
+      const text = t("outdatedCreated", { extractions: created.session_extract, digests });
+      // Skipped records stay outdated, so the button keeps counting them; say why.
+      const skips = skipped.length > 0 ? ` ${t("outdatedSkipped", { count: skipped.length, reasons: summarizeSkips(skipped) })}` : "";
+      setNotice({ text: text + skips, error: false });
       await refreshStatus();
     } catch (spawnError) {
       setNotice({ text: spawnError instanceof Error ? spawnError.message : String(spawnError), error: true });

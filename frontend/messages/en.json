@@ -73,7 +73,8 @@
             "outdatedConfirmAuto": "Auto mode queues them right away.",
             "outdatedCreate": "Create",
             "outdatedCancel": "Cancel",
-            "outdatedCreated": "Created {extractions, plural, one {# extraction task} other {# extraction tasks}} and {digests, plural, one {# digest task} other {# digest tasks}}."
+            "outdatedCreated": "Created {extractions, plural, one {# extraction task} other {# extraction tasks}} and {digests, plural, one {# digest task} other {# digest tasks}}.",
+            "outdatedSkipped": "Skipped {count}: {reasons}."
         },
         "taskStatuses": {
             "pending": "pending",

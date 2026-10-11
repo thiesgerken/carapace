@@ -17,6 +17,7 @@ from ..memory.models import (
     FactSourceKind,
     MemoryStatus,
     OutdatedReason,
+    OutdatedSpawnResponse,
     PeriodDetail,
     PeriodTree,
     RunEstimate,
@@ -27,7 +28,6 @@ from ..memory.models import (
     TaskFilter,
     TaskIdsRequest,
     TaskKind,
-    TaskKindCounts,
     TaskListResponse,
     TaskRunRequest,
     TaskSelection,
@@ -106,8 +106,8 @@ async def spawn_tasks(body: TaskSpawnRequest, user: _Writer) -> TaskSpawnRespons
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
-@router.post("/tasks/spawn-outdated", response_model=TaskKindCounts)
-async def spawn_outdated(user: _Writer) -> TaskKindCounts:
+@router.post("/tasks/spawn-outdated", response_model=OutdatedSpawnResponse)
+async def spawn_outdated(user: _Writer) -> OutdatedSpawnResponse:
     return await _service().spawn_outdated(user.username)
 
 

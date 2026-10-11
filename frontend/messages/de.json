@@ -73,7 +73,8 @@
             "outdatedConfirmAuto": "Der Auto-Modus reiht sie sofort ein.",
             "outdatedCreate": "Erstellen",
             "outdatedCancel": "Abbrechen",
-            "outdatedCreated": "{extractions, plural, one {# Extraktions-Task} other {# Extraktions-Tasks}} und {digests, plural, one {# Digest-Task} other {# Digest-Tasks}} erstellt."
+            "outdatedCreated": "{extractions, plural, one {# Extraktions-Task} other {# Extraktions-Tasks}} und {digests, plural, one {# Digest-Task} other {# Digest-Tasks}} erstellt.",
+            "outdatedSkipped": "{count} übersprungen: {reasons}."
         },
         "taskStatuses": {
             "pending": "ausstehend",

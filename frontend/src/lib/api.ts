@@ -13,8 +13,8 @@ import type {
   MemorySessionDetail,
   MemorySessionFilter,
   MemorySessionListResponse,
+  MemoryOutdatedSpawnResponse,
   MemoryStatus,
-  MemoryTaskKindCounts,
   MemoryTaskCountResponse,
   MemoryTaskFilter,
   MemoryTaskListResponse,
@@ -1882,7 +1882,7 @@ export function spawnMemoryTasks(server: string, body: MemoryTaskSpawnRequest): 
   return postMemory(server, "/tasks/spawn", body, "Failed to spawn memory tasks");
 }
 
-export function spawnOutdatedMemoryTasks(server: string): Promise<MemoryTaskKindCounts> {
+export function spawnOutdatedMemoryTasks(server: string): Promise<MemoryOutdatedSpawnResponse> {
   return postMemory(server, "/tasks/spawn-outdated", {}, "Failed to spawn tasks for outdated memory");
 }
 

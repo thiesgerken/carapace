@@ -441,6 +441,11 @@ class TaskSpawnResponse(MemoryApiModel):
     skipped: list[SpawnSkip]
 
 
+class OutdatedSpawnResponse(MemoryApiModel):
+    created: TaskKindCounts
+    skipped: list[SpawnSkip]
+
+
 class EstimateTotal(MemoryApiModel):
     task_count: int
     input_tokens: int

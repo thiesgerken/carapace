@@ -837,6 +837,11 @@ export interface MemoryTaskKindCounts {
   month_digest: number;
 }
 
+export interface MemoryOutdatedSpawnResponse {
+  created: MemoryTaskKindCounts;
+  skipped: MemorySpawnSkip[];
+}
+
 /** GET /tasks query params (lists repeat the param) and the `filter` of a selection. */
 export interface MemoryTaskFilter {
   status?: MemoryTaskStatus[] | null;
