@@ -1,6 +1,30 @@
 # CHANGELOG
 
 
+## v0.159.1 (2026-10-11)
+
+
+### Other
+
+
+- Merge pull request #371 from thiesgerken/memory/untimestamped-events
+  ([`d38095c`](https://github.com/thiesgerken/carapace/commit/d38095c112ce355aa5b20847f487e237616bae3e))
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix: memory spawn for sessions whose events carry no timestamp
+  ([`d38095c`](https://github.com/thiesgerken/carapace/commit/d38095c112ce355aa5b20847f487e237616bae3e))
+
+- 🐛 fix: date memory sessions whose events carry no timestamp
+  ([`0d44bd1`](https://github.com/thiesgerken/carapace/commit/0d44bd11ad3a54f1d9bc484ebdb48a27b2382abc))
+
+  Sessions stored before events were stamped on write have events without a timestamp key, so first_user_message_at raised KeyError and every such session failed to spawn ("cannot prepare transcript: KeyError: 'timestamp"). The session's created_at now stands in, passed explicitly by the spawner, the manual spawn and the extraction handler.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01B3cWr83aDuHP8JQDvLxrgC
+
 ## v0.159.0 (2026-10-11)
 
 
