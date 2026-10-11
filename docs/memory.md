@@ -71,11 +71,16 @@ Each fact:
 
 Output is always English, whatever language the conversation was in.
 
+### Persona context
+
+The system prompt of every extraction and digest starts with your `SOUL.md` and `USER.md` from the knowledge repo, followed by the task's instructions. The model writes as your own agent and uses the name `USER.md` gives you instead of "the user", and it can tell who the people and projects in a session are. Both files are context only: they are not part of the material, so nothing in them becomes a fact or a digest entry (see the guards below). Their tokens count towards every task's estimate.
+
 ### Guards
 
 Memory output lands in your knowledge repo and is meant to feed a generated system prompt later, so the prompts are strict about what may become a fact:
 
 - Facts about you and your social connections must come from what you said (`user_said`). Tool output may only yield `surroundings` facts. This is the main guard against tool output injecting "facts" about you, and it is enforced in code, not only asked of the model: a `user_said` fact must cite at least one of your own messages, and facts breaking these rules are dropped from the output before anything is stored. One bad fact never fails the whole run.
+- `SOUL.md` and `USER.md` are context for interpretation, never a source. Facts, outcomes, themes and open loops come only from the transcript (or a digest's sources), so `USER.md` content cannot reappear as something you said.
 - Passwords, keys and tokens are never recorded.
 - The transcript sits inside delimiters, followed by a restated instruction tail. A closing delimiter inside the transcript is escaped, so tool output cannot break out of the data region.
 - Every fact must stay traceable. Source seqs that are not in the rendered transcript, and digest refs outside the digest's sources, are removed from the model output. A fact or `learned` entry left without any valid source is dropped; themes keep their text. Each run that drops something logs a warning with the task id.
@@ -91,7 +96,7 @@ Every extraction, every digest and every finished task records:
 | --- | --- |
 | `carapace_version` | carapace version at run time |
 | `model` | resolved model name |
-| `prompt_version` | 12-character sha256 prefix over system prompt, context line, tail and output JSON schema |
+| `prompt_version` | 12-character sha256 prefix over the task's instructions, context line, tail and output JSON schema. `SOUL.md` and `USER.md` are left out, so editing them does not mark records outdated |
 | `input_format_version` | version of the input or digest renderer |
 | `input_hash` | hash of the exact text sent to the model |
 | `input_tokens`, `output_tokens`, `cost_usd` | usage and provider cost (`cost_usd` is empty for models without known pricing) |

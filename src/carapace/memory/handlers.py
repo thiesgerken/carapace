@@ -53,7 +53,7 @@ from .models import (
     violated_provenance_rule,
 )
 from .periods import month_key_for_week, month_weeks, period_dates, week_key
-from .prompts import MONTH_DIGEST, SESSION_EXTRACT, WEEK_DIGEST, PromptTemplate
+from .prompts import MONTH_DIGEST, SESSION_EXTRACT, WEEK_DIGEST, PromptTemplate, system_prompt
 from .render import MIRROR_ROOT, render_mirror
 
 
@@ -98,6 +98,8 @@ class _LlmCall:
     """What an LLM task sends, fixed before it is estimated or run."""
 
     template: PromptTemplate
+    # SOUL.md and USER.md ahead of the template's instructions, see ``system_prompt``.
+    system: str
     user_prompt: str
     output_cap: int
     input_hash: str
@@ -106,7 +108,7 @@ class _LlmCall:
 
 def _estimate(config: Config, call: _LlmCall, model: str) -> TaskEstimate:
     output_cap = capped_model_settings(config, model, call.output_cap)["max_tokens"]
-    input_tokens = prompt_tokens(call.template, call.user_prompt, model)
+    input_tokens = prompt_tokens(call.system, call.user_prompt, model)
     return TaskEstimate(
         model=model,
         input_tokens=input_tokens,
@@ -125,7 +127,7 @@ async def _run_llm[OutputT: BaseModel](
     model_factory: ModelFactory,
 ) -> tuple[OutputT, Provenance]:
     """Run the call; a billed failure raises ``TaskRunError`` carrying what it cost."""
-    ensure_fits_context(config, model, prompt_tokens(call.template, call.user_prompt, model))
+    ensure_fits_context(config, model, prompt_tokens(call.system, call.user_prompt, model))
 
     def provenance(usage: CallUsage) -> Provenance:
         return Provenance(
@@ -144,7 +146,7 @@ async def _run_llm[OutputT: BaseModel](
 
     try:
         result = await run_structured(
-            call.template,
+            call.system,
             output_type,
             call.user_prompt,
             model=model,
@@ -175,11 +177,13 @@ class SessionExtractHandler:
         current_config: Callable[[], Config],
         load_events: Callable[[str], list[dict[str, Any]]],
         user_config_for: Callable[[str], UserConfig],
+        knowledge_dir_for: Callable[[str], Path],
         model_factory: ModelFactory,
     ) -> None:
         self._current_config = current_config
         self._load_events = load_events
         self._user_config_for = user_config_for
+        self._knowledge_dir_for = knowledge_dir_for
         self._model_factory = model_factory
 
     async def estimate(self, user: str, target: str, model: str) -> TaskEstimate:
@@ -217,6 +221,7 @@ class SessionExtractHandler:
         return _PreparedExtraction(
             call=_LlmCall(
                 template=SESSION_EXTRACT,
+                system=system_prompt(SESSION_EXTRACT, self._knowledge_dir_for(user)),
                 user_prompt=SESSION_EXTRACT.user_prompt(rendered.text, session_date=session_date),
                 output_cap=SESSION_EXTRACT_OUTPUT_CAP,
                 input_hash=rendered.input_hash,
@@ -251,6 +256,7 @@ class DigestHandler:
         current_config: Callable[[], Config],
         current_extractions: Callable[[str, str], list[ExtractionRecord]],
         current_digests: Callable[[str, DigestLevel, list[str]], list[DigestRecord]],
+        knowledge_dir_for: Callable[[str], Path],
         model_factory: ModelFactory,
     ) -> None:
         self.level = level
@@ -258,6 +264,7 @@ class DigestHandler:
         self._current_config = current_config
         self._current_extractions = current_extractions
         self._current_digests = current_digests
+        self._knowledge_dir_for = knowledge_dir_for
         self._model_factory = model_factory
 
     async def estimate(self, user: str, target: str, model: str) -> TaskEstimate:
@@ -308,6 +315,7 @@ class DigestHandler:
         return _PreparedDigest(
             call=_LlmCall(
                 template=template,
+                system=system_prompt(template, self._knowledge_dir_for(user)),
                 user_prompt=user_prompt,
                 output_cap=DIGEST_OUTPUT_CAP,
                 input_hash=rendered.input_hash,

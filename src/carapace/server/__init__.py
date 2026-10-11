@@ -424,6 +424,9 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
     def knowledge_repo_for_session(session_id: str):
         return _knowledge_repo_registry.get_for_session(session_id, resolve_session_owner)
 
+    def knowledge_dir_for_user(user: str) -> Path:
+        return _knowledge_repo_registry.get_for_user(user).knowledge_dir
+
     _sandbox_mgr = SandboxManager(
         runtime=runtime,
         data_dir=_data_dir,
@@ -509,6 +512,7 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
                 current_config=_live_config,
                 load_events=session_mgr.load_events,
                 user_config_for=_user_config,
+                knowledge_dir_for=knowledge_dir_for_user,
                 model_factory=_live_model_factory,
             ),
             TaskKind.week_digest: DigestHandler(
@@ -516,6 +520,7 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
                 current_config=_live_config,
                 current_extractions=memory_store.current_extractions,
                 current_digests=memory_store.current_digests,
+                knowledge_dir_for=knowledge_dir_for_user,
                 model_factory=_live_model_factory,
             ),
             TaskKind.month_digest: DigestHandler(
@@ -523,6 +528,7 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
                 current_config=_live_config,
                 current_extractions=memory_store.current_extractions,
                 current_digests=memory_store.current_digests,
+                knowledge_dir_for=knowledge_dir_for_user,
                 model_factory=_live_model_factory,
             ),
             TaskKind.mirror: MirrorHandler(
