@@ -43,7 +43,8 @@ const FULL: HomeData = {
   },
 };
 
-async function renderHome(data: HomeData) {
+/** `holdDismiss` keeps every POST open until it resolves. */
+async function renderHome(data: HomeData, holdDismiss?: Promise<void>) {
   const restore = installDom();
   // next/link's prefetch observer reaches for `self`, which jsdom globals don't install.
   Object.defineProperty(globalThis, "self", { configurable: true, writable: true, value: window });
@@ -56,6 +57,7 @@ async function renderHome(data: HomeData) {
     if (path === "/api/home") return Response.json(data);
     assert.match(path, /^\/api\/home\/open-loops\/[^/]+\/dismiss$/);
     mutations.push(`${init?.method} ${path}`);
+    if (init?.method === "POST" && holdDismiss) await holdDismiss;
     return new Response(null, { status: 204 });
   }) as typeof fetch;
   const view = await renderReact(
@@ -140,6 +142,31 @@ test("dismissing a loop hides it with an undo, and the last one leaves the empty
     assert.match(home.view.container.textContent ?? "", /Nothing left open\./);
   } finally {
     t.mock.timers.reset();
+    await home.cleanup();
+  }
+});
+
+test("a quick undo waits for its dismissal to reach the server", async () => {
+  let release = () => {};
+  const home = await renderHome(FULL, new Promise((resolve) => {
+    release = resolve;
+  }));
+  const flush = () => runInAct(async () => {});
+  const button = (label: string) => {
+    const found = Array.from(home.view.container.querySelectorAll("button")).find((element) => element.getAttribute("aria-label") === label || element.textContent === label);
+    assert.ok(found, `no button ${label}`);
+    return found;
+  };
+  try {
+    await click(button("Done"));
+    await click(button("Undo"));
+    await flush();
+    assert.deepEqual(home.mutations, ["POST /api/home/open-loops/loop-1/dismiss"]);
+
+    release();
+    await flush();
+    assert.deepEqual(home.mutations, ["POST /api/home/open-loops/loop-1/dismiss", "DELETE /api/home/open-loops/loop-1/dismiss"]);
+  } finally {
     await home.cleanup();
   }
 });

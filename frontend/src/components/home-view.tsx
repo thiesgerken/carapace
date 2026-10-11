@@ -158,6 +158,8 @@ function OpenLoopList({ server, loops }: { server: string; loops: HomeOpenLoop[]
   const [error, setError] = useState<string | null>(null);
   const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
   const frame = useRef<HTMLDivElement>(null);
+  // The last request per loop: a quick Undo must not reach the server before its dismissal.
+  const requests = useRef(new Map<string, Promise<void>>());
 
   useEffect(() => {
     const pending = timers.current;
@@ -178,6 +180,14 @@ function OpenLoopList({ server, loops }: { server: string; loops: HomeOpenLoop[]
     timers.current.delete(id);
   }
 
+  function request(id: string, dismissed: boolean): Promise<void> {
+    const previous = requests.current.get(id) ?? Promise.resolve();
+    // A failed predecessor is already reported by its own caller; the next request runs regardless.
+    const next = previous.catch(() => {}).then(() => setOpenLoopDismissed(server, id, dismissed));
+    requests.current.set(id, next);
+    return next;
+  }
+
   function dismiss(loop: HomeOpenLoop): void {
     setError(null);
     setRestoredId(null);
@@ -188,7 +198,7 @@ function OpenLoopList({ server, loops }: { server: string; loops: HomeOpenLoop[]
       if (document.activeElement?.getAttribute("data-undo-id") === loop.id) frame.current?.focus();
       setPhase(loop.id, "gone");
     }, UNDO_MS));
-    setOpenLoopDismissed(server, loop.id, true).catch((dismissError: unknown) => {
+    request(loop.id, true).catch((dismissError: unknown) => {
       stopTimer(loop.id);
       setPhase(loop.id, null);
       setError(dismissError instanceof Error ? dismissError.message : String(dismissError));
@@ -200,7 +210,7 @@ function OpenLoopList({ server, loops }: { server: string; loops: HomeOpenLoop[]
     setError(null);
     setPhase(loop.id, null);
     setRestoredId(loop.id);
-    setOpenLoopDismissed(server, loop.id, false).catch((undoError: unknown) => {
+    request(loop.id, false).catch((undoError: unknown) => {
       setPhase(loop.id, "gone");
       setError(undoError instanceof Error ? undoError.message : String(undoError));
     });
