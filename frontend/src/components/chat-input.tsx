@@ -117,6 +117,7 @@ interface ChatInputProps {
     file: File,
     opts?: { onProgress?: (fraction: number) => void; signal?: AbortSignal },
   ) => Promise<UploadedFile>;
+  className?: string;
 }
 
 function resizeTextarea(el: HTMLTextAreaElement) {
@@ -140,6 +141,7 @@ export function ChatInput({
   usage,
   sandboxRunning = false,
   uploadFile,
+  className,
 }: ChatInputProps) {
   const t = useTranslations("chatInput");
   const [value, setValue] = useState(() => getChatDraft(sessionId));
@@ -531,7 +533,7 @@ export function ChatInput({
   }
 
   return (
-    <div className="border-t border-border bg-background px-4 py-3">
+    <div className={cn("border-t border-border bg-background px-4 py-3", className)}>
       {queuedMessage && (
         <div className="mx-auto max-w-3xl mb-2 flex items-center gap-1.5 text-xs text-muted-foreground">
           <Clock className="h-3 w-3" />

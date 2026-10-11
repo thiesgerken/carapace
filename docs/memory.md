@@ -325,7 +325,7 @@ The same fact from several sessions (same statement and subject, ignoring case, 
 
 ### Tasks
 
-The queue. Filter by status, kind, period (week or month) and model. Besides single statuses, the status filter offers **Unfinished** (pending, queued, running and failed; failed stays because it needs attention), which is what the tab opens on. The header shows the number of matching tasks and their estimated cost. "Run all of September" is: filter month 2026-09, select all matching, run. The month filter places session tasks by their session's week, not by when the task was created.
+The queue. Filter by status, kind, period (week or month) and model. Besides single statuses, the status filter offers **Unfinished** (pending, queued, running and failed; failed stays because it needs attention), which is what the tab opens on, unless `?status=` preselects another (the home page links to `?status=failed`). The header shows the number of matching tasks and their estimated cost. "Run all of September" is: filter month 2026-09, select all matching, run. The month filter places session tasks by their session's week, not by when the task was created.
 
 The list is sorted by last activity (when the task finished, started, was queued or was created) by default. Click the **Target** header to sort by target period instead, the order **Run newest 50** picks in. The **Model** column shows the model a task ran with, or for open tasks the model it would run with now: its override, otherwise the current role default. The model filter matches by the same rule.
 
@@ -333,6 +333,21 @@ The list is sorted by last activity (when the task finished, started, was queued
 - The **run dialog** shows the task count (pending and failed tasks; mirrors and tasks whose input cannot be prepared run without an estimate), input tokens, estimated cost, remaining budget (and a warning when the run exceeds it) and lets you override the model for this run. When selected digests have pending or failed sources outside the selection, it warns and offers **Add N dependencies**, which runs them too (`include_dependencies` on the run request), so the digests wait for them.
 - A digest's status shows **waiting for N extractions** while it is blocked on its sources, or **N extractions missing** when sources are pending, failed or cancelled (sources for months). Clicking it filters the list to the period's source tasks.
 - Clicking a task's target shows its details: attempts, timings, estimate, provenance and usage, the error, and a link to the record it produced.
+
+### Home page
+
+The page without an open session (`/`) is where you pick things up:
+
+- **Composer:** typing there and sending creates a session (with the options from the ▾ next to it) and sends the message into it.
+- **Notice chips** under the composer, only when something needs attention:
+  - pending approvals, linking to the most recently active waiting session;
+  - failed memory tasks, linking to the Tasks tab filtered to failed;
+  - outdated memory records;
+  - a memory budget close to its limit, linking to the memory settings.
+- **Open loops:** from the extractions of sessions active in the last 7 days, newest first, each with **Continue** into its session.
+- **This week:** the abstracts of the current week's sessions, or the themes and highlights of last week's digest while the week has no sessions yet. Links into that week's period view.
+
+All memory text on the page is rendered as plain text, and every link is built from session ids and period keys, never from the text. Without memory records, the page shows only the composer and a pointer to the Memory area.
 
 ### Settings
 

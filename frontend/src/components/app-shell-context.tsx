@@ -101,7 +101,8 @@ export interface AppShell {
   onConnect: (user: AuthUserInfo) => void;
   onDisconnect: () => void;
   onSelectSession: (id: string) => void;
-  onNewSession: (options?: NewSessionOptions) => Promise<void>;
+  /** Resolves to the created session, or null when creating it failed. */
+  onNewSession: (options?: NewSessionOptions) => Promise<SessionInfo | null>;
   onGoHome: () => void;
   onOpenSettings: (tab?: string) => void;
   onOpenJobSettings: (jobId: string) => void;
@@ -432,8 +433,10 @@ export function AppShellProvider({ children }: { children: ReactNode }) {
       const session = await createSession(server, token, options);
       setSessions((prev) => sortSessions([session, ...prev]));
       router.push(`/?session=${session.session_id}`);
+      return session;
     } catch {
       // handled in UI
+      return null;
     } finally {
       setCreatingSession(false);
     }
