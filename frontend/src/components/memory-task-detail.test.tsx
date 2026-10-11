@@ -86,6 +86,7 @@ function weekDigestTask(resultId: number): MemoryTaskView {
     kind: "week_digest",
     target: "2026-W36",
     target_label: "2026-W36",
+    dependencies: null,
     status: "done",
     week_key: "2026-W36",
     month_key: "2026-09",
