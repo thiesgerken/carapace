@@ -287,7 +287,7 @@ async def test_memory_pipeline_end_to_end(pipeline: Pipeline) -> None:
     rendered = render_extraction_input(p.sessions.load_events(sunday))
     assert (record.input_hash, record.provenance.input_hash) == (rendered.input_hash, rendered.input_hash)
     assert record.provenance.input_format_version == INPUT_FORMAT_VERSION
-    assert record.provenance.model == p.config.agent.title_model  # memory_low falls back to the title model
+    assert record.provenance.model == p.config.agent.sentinel_model  # memory_low falls back to the sentinel model
     assert record.provenance.input_tokens == BILLED_INPUT_TOKENS and record.provenance.cost_usd is not None
     sunday_task = extracts[sunday]
     assert record.provenance.task_id == sunday_task.id

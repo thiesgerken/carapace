@@ -43,11 +43,6 @@ def effective_memory_model(config: Config, user_config: UserConfig, role: ModelR
     agent = config.agent
     match role:
         case ModelRole.memory_low:
-            return (
-                user_config.default_models.memory_low
-                or agent.memory_low_model
-                or agent.compaction_model
-                or agent.title_model
-            )
+            return user_config.default_models.memory_low or agent.memory_low_model or agent.sentinel_model
         case ModelRole.memory_high:
             return user_config.default_models.memory_high or agent.memory_high_model or agent.model

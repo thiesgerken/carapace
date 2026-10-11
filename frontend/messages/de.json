@@ -550,7 +550,7 @@
             "unlimited": "Unbegrenzt",
             "generatedId": "provider:name",
             "keepSecret": "Konfiguriertes Secret behalten",
-            "memoryLowDefault": "Kompaktierungs- oder Titelmodell",
+            "memoryLowDefault": "Sentinel-Modell",
             "memoryHighDefault": "Agentenmodell"
         },
         "actions": {
