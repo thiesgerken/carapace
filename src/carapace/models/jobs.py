@@ -61,6 +61,10 @@ class JobDefinitionInput(BaseModel):
     title_model_name: str | None = None
     # Sessions of this job are excluded from long-term memory unless it opts in.
     memory_enabled: bool = False
+    # The job's agent gets the memory block in its system prompt. Separate from memory_enabled on
+    # purpose: a job that reads memory (a daily digest) must not be extracted back into it unless
+    # it also opts in there, or its own summaries of memory would feed the next digests.
+    memory_context: bool = False
 
     @model_validator(mode="after")
     def _validate_job(self) -> JobDefinitionInput:

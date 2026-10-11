@@ -262,6 +262,8 @@ See [persistent-context.md](persistent-context.md) for how the knowledge repo re
 
 The main agent's system prompt carries a **memory block**: what has been going on lately, built from your current records without an LLM call (`memory/prompt_block.py`). Compaction, the sentinel, the titler and memory tasks never get it, so memory cannot feed back into itself.
 
+Interactive sessions get it. Job sessions get it only when their job sets `memory_context` (see [jobs.md](jobs.md)), and other unattended sessions never do. `memory_context` is independent of `memory_enabled`, so a job that reads memory isn't extracted back into it by default.
+
 - **Selection** walks back from now, newest first, and takes per period the highest level that exists:
   - the current week: its session extractions
   - the other weeks of the current month: their week digests
@@ -337,7 +339,7 @@ The list is sorted by last activity (when the task finished, started, was queued
 - **Settings → Account → Memory** (`/settings/account#memory`): auto mode, the four budget limits, timezone, the `memory_low` and `memory_high` models, and the memory prompt budget (tokens of memory in a new session's agent prompt; empty uses the platform default, 0 turns it off).
 - **Settings → System prompts** (`/settings/prompts`): the complete simulated system prompt of every role (agent, sentinel, titler, compaction, session extraction, week and month digests) with its model, each section with its token count, the total, where the cacheable prefix ends and, for the agent, how much of the memory budget is used.
 - **Settings → Admin → Models**: platform defaults for `memory_low` and `memory_high`.
-- **Settings → Jobs**: "Include in memory" per job (`memory_enabled`).
+- **Settings → Jobs**: "Include in memory" (`memory_enabled`) and "Give the job memory context" (`memory_context`) per job.
 
 ---
 
@@ -365,5 +367,5 @@ Memory settings use the existing user-settings and platform-settings endpoints.
 ## Related docs
 
 - [persistent-context.md](persistent-context.md) for the knowledge repo and the `memory/` mirror
-- [jobs.md](jobs.md) for `memory_enabled`
+- [jobs.md](jobs.md) for `memory_enabled` and `memory_context`
 - [architecture.md](architecture.md) for the `memory` package and its boundaries

@@ -40,6 +40,7 @@ jobs:
     sentinel_model_name: null
     title_model_name: null
     memory_enabled: false
+    memory_context: false
 ```
 
 ## Job fields
@@ -61,6 +62,7 @@ jobs:
 | `sentinel_model_name`   | Optional sentinel model override for fresh sessions                                                        |
 | `title_model_name`      | Optional title-model override for fresh sessions                                                           |
 | `memory_enabled`        | Include this job's sessions in [long-term memory](memory.md) (default `false`)                             |
+| `memory_context`        | Give the job's agent the [memory block](memory.md#in-the-agents-prompt) in its system prompt (default `false`) |
 
 ## Trigger model
 
@@ -185,6 +187,7 @@ Cron-triggered runs use `trigger_kind="cron"`. Manual API-triggered runs use `tr
 - Unattended job sessions can emit `unattended_turn_completed` and `unattended_turn_failed` notifications.
 - If a target session is already busy when a job tries to run, the run is rejected.
 - Job sessions stay out of long-term memory unless `memory_enabled` is set, so a recurring job does not flood the weekly digests with near-identical runs.
+- A job's agent only sees the memory block when `memory_context` is set, for example a daily digest job that should know the user and the recent history. It costs input tokens on every run and exposes recent personal context to the job. The two flags are separate on purpose: a job that reads memory is not extracted back into it unless it also sets `memory_enabled`, so its own summaries of memory don't feed the next digests.
 
 ## Related docs
 

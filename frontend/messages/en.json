@@ -1376,7 +1376,9 @@
             "archivePreviousSessions": "Archive previous sessions",
             "archivePreviousSessionsHelp": "When a new session starts, archive any earlier sessions still open from this job.",
             "memoryEnabled": "Include in memory",
-            "memoryEnabledHelp": "Sessions of this job are distilled into long-term memory like regular sessions."
+            "memoryEnabledHelp": "Sessions of this job are distilled into long-term memory like regular sessions.",
+            "memoryContext": "Give the job memory context",
+            "memoryContextHelp": "The job's agent sees recent memory in its prompt. Costs input tokens on every run and exposes recent personal context to the job."
         },
         "placeholders": {
             "name": "Nightly inbox review",

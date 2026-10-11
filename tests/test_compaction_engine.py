@@ -18,6 +18,7 @@ from pydantic_ai.messages import (
 )
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
+from carapace.models.session import SessionState
 from carapace.session.compaction import is_fold_message, split_lead_folds, tool_return_is_compacted
 from carapace.session.compaction_summarizer import summarize_tool_output
 from carapace.session.transcript import completed_model_turn_end_indexes
@@ -525,8 +526,8 @@ def test_memory_block_is_frozen_per_session_until_compaction(tmp_path: Path, db_
     async def _run() -> None:
         builds: list[tuple[str, str]] = []
 
-        def memory_block_for(user: str, session_id: str) -> str:
-            builds.append((user, session_id))
+        def memory_block_for(user: str, state: SessionState) -> str:
+            builds.append((user, state.session_id))
             return f"memory #{len(builds)}"
 
         with _patch_sentinel():

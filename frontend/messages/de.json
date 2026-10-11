@@ -1376,7 +1376,9 @@
             "archivePreviousSessions": "Vorherige Sitzungen archivieren",
             "archivePreviousSessionsHelp": "Beim Start einer neuen Sitzung alle noch offenen früheren Sitzungen dieses Jobs archivieren.",
             "memoryEnabled": "Ins Gedächtnis aufnehmen",
-            "memoryEnabledHelp": "Sitzungen dieses Jobs fließen wie normale Sitzungen ins Langzeitgedächtnis ein."
+            "memoryEnabledHelp": "Sitzungen dieses Jobs fließen wie normale Sitzungen ins Langzeitgedächtnis ein.",
+            "memoryContext": "Gedächtnis als Kontext",
+            "memoryContextHelp": "Der Agent des Jobs sieht das jüngste Gedächtnis in seinem Prompt. Kostet bei jedem Lauf Input-Tokens und gibt dem Job Einblick in persönlichen Kontext der letzten Zeit."
         },
         "placeholders": {
             "name": "Nächtliche Inbox-Prüfung",
