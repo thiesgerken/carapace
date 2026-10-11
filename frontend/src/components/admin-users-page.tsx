@@ -247,7 +247,7 @@ export function AdminUsersPage({ embedded = false, server: serverProp, currentUs
   const ContentElement = embedded ? "section" : "main";
 
   const mainContent = (
-    <ContentElement className={cn("flex min-w-0 flex-1 flex-col overflow-clip", embedded && "bg-background/65")}>
+    <ContentElement className={cn("flex min-h-0 min-w-0 flex-1 flex-col overflow-clip", embedded && "bg-background/65")}>
         {!embedded ? (
           <header className="border-b border-border/80 bg-background/70 px-4 py-3 backdrop-blur sm:px-6">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
