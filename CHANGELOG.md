@@ -1,6 +1,30 @@
 # CHANGELOG
 
 
+## v0.160.3 (2026-10-11)
+
+
+### Other
+
+
+- Merge pull request #382 from thiesgerken/fix/img-src-csp
+  ([`94b9b9c`](https://github.com/thiesgerken/carapace/commit/94b9b9c58657cb88e7b1b7ebee1f13ba04bb981f))
+
+### 🔒 Security
+
+
+- 🔒️ feat: restrict image sources with a Content-Security-Policy
+  ([`94b9b9c`](https://github.com/thiesgerken/carapace/commit/94b9b9c58657cb88e7b1b7ebee1f13ba04bb981f))
+
+- 🔒️ feat: restrict image sources with a Content-Security-Policy
+  ([`0dc2916`](https://github.com/thiesgerken/carapace/commit/0dc29169ec23b3138efa787cfcacd672bbe87247))
+
+  The frontend's nginx now sends `img-src 'self' data: blob:` plus extra origins from CARAPACE_CSP_IMG_SRC_EXTRA, rendered from a template at container start so one image serves every deployment. Helm exposes it as frontend.csp.imgSrcExtra, Docker Compose passes the env through.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01UEby7vKYviYQnMZfk7pjtE
+
 ## v0.160.2 (2026-10-11)
 
 
