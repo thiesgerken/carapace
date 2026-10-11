@@ -241,7 +241,7 @@ export function MemorySessionsView({ server, token }: { server: string; token: s
                 </th>
                 <th className="px-3 py-2 font-medium">{t("columns.date")}</th>
                 <th className="px-3 py-2 font-medium">{t("columns.title")}</th>
-                <th className="px-3 py-2 font-medium" title={t("columns.factsHint")}>{t("columns.facts")}</th>
+                <th className="px-3 py-2 font-medium">{t("columns.facts")}</th>
                 <th className="px-3 py-2 font-medium">{t("columns.model")}</th>
                 <th className="px-3 py-2 font-medium">{t("columns.status")}</th>
                 <th className="px-3 py-2 text-right font-medium">{t("columns.cost")}</th>
@@ -297,9 +297,10 @@ export function MemorySessionsView({ server, token }: { server: string; token: s
                             <MessageSquare className="h-3.5 w-3.5" />
                           </Link>
                         </div>
-                        {row.extraction ? <div className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{row.extraction.abstract}</div> : null}
                       </td>
-                      <td className="whitespace-nowrap px-3 py-2 tabular-nums">{counts ? `${counts.user}·${counts.social}·${counts.surroundings}` : "—"}</td>
+                      <td className="whitespace-nowrap px-3 py-2 tabular-nums" title={counts ? t("factsBreakdown", { ...counts }) : undefined}>
+                        {counts ? counts.user + counts.social + counts.surroundings : "—"}
+                      </td>
                       <td className="px-3 py-2 font-mono text-xs">{row.extraction?.model ?? "—"}</td>
                       <td className="px-3 py-2">{statusCell(row)}</td>
                       <td className="px-3 py-2 text-right tabular-nums">

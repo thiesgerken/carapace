@@ -187,15 +187,15 @@
             "columns": {
                 "details": "Details",
                 "date": "Date",
-                "title": "Title / abstract",
+                "title": "Title",
                 "facts": "Facts",
-                "factsHint": "You · People · Surroundings",
                 "model": "Model",
                 "status": "Status",
                 "cost": "Cost"
             },
             "untitled": "Untitled session",
             "task": "task {status}",
+            "factsBreakdown": "You {user} · People {social} · Surroundings {surroundings}",
             "expand": "Show the extraction of {title}",
             "collapse": "Hide the extraction of {title}",
             "openChat": "Open the chat session {title}",
