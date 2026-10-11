@@ -367,6 +367,7 @@ class MemoryStatus(MemoryApiModel):
 
 
 class OpenLoop(MemoryApiModel):
+    id: str
     text: str
     session_id: str
     session_title: str | None

@@ -3930,3 +3930,17 @@ def test_home_lists_only_the_users_sessions_awaiting_approval(
             "memory_budget": None,
         },
     }
+
+
+def test_home_open_loop_dismissal_routes(client: TestClient, auth_headers, monkeypatch) -> None:
+    calls: list[tuple[str, str, str]] = []
+    memory = SimpleNamespace(
+        dismiss_loop=lambda user, loop_id: calls.append(("dismiss", user, loop_id)) or loop_id == "known",
+        undismiss_loop=lambda user, loop_id: calls.append(("undismiss", user, loop_id)),
+    )
+    monkeypatch.setattr(srv, "_memory_service", memory, raising=False)
+
+    assert client.post("/api/home/open-loops/known/dismiss", headers=auth_headers).status_code == 204
+    assert client.post("/api/home/open-loops/unknown/dismiss", headers=auth_headers).status_code == 404
+    assert client.delete("/api/home/open-loops/unknown/dismiss", headers=auth_headers).status_code == 204
+    assert calls == [("dismiss", "thies", "known"), ("dismiss", "thies", "unknown"), ("undismiss", "thies", "unknown")]
