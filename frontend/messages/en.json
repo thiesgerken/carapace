@@ -257,8 +257,6 @@
             "input_format_version": "input format changed"
         },
         "drawer": {
-            "openSession": "Open session",
-            "close": "Close",
             "notEligible": "This session is not part of memory (private, excluded job, or unknown).",
             "notExtracted": "Not extracted yet.",
             "taskStatus": "Task is <status></status>.",
@@ -1222,7 +1220,11 @@
             "details": "Details",
             "done": "Done"
         },
-        "memoryChip": "Memory"
+        "memoryChip": "Memory",
+        "memory": {
+            "title": "Memory",
+            "openInMemory": "Open in Memory"
+        }
     },
     "message": {
         "copy": "Copy message",

@@ -6,7 +6,8 @@ import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Archive, ArchiveRestore, Bot, Brain, Check, Copy, ExternalLink, Eye, Globe, Link2, Link2Off, Loader2, Lock, MessageSquare, Pin, Play, RotateCcw, Save, Settings2, Square, Star, Terminal, Trash2 } from "lucide-react";
 import { EmojiText } from "@/components/emoji-text";
-import { MemoryExtractionDrawer } from "@/components/memory-extraction-drawer";
+import { ChatMemorySection } from "@/components/chat-memory-section";
+import { useMemorySessionDetail } from "@/components/memory-extraction-detail";
 import { SandboxGitControls } from "@/components/git-sync";
 import { ModelPicker, withSelectedModelOption } from "@/components/model-picker";
 import { SessionOptionTiles } from "@/components/session-option-tiles";
@@ -22,7 +23,6 @@ import {
   fetchSandbox,
   fetchModels,
   forkSession,
-  getMemorySession,
   getWebSocketTicket,
   type SlashCommand,
   startSandbox,
@@ -1076,8 +1076,9 @@ export function ChatView({
   const isAtBottomRef = useRef(true);
   const targetEvent = useSearchParams().get("event");
   const scrolledToEventRef = useRef<string | null>(null);
-  const [hasMemory, setHasMemory] = useState(false);
-  const [memoryDrawerOpen, setMemoryDrawerOpen] = useState(false);
+  const memoryState = useMemorySessionDetail(server, sessionId);
+  const hasMemory = memoryState.detail?.current != null;
+  const [memoryOpen, setMemoryOpen] = useState(false);
   const lastThinkingStartedAtRef = useRef<string | null>(null);
   const queueRef = useRef<string | null>(null);
   const queuedAttachmentsRef = useRef<Attachment[]>([]);
@@ -1717,21 +1718,15 @@ export function ChatView({
   const latestTerminalIndex = terminalIndices.length > 0 ? terminalIndices[terminalIndices.length - 1] : -1;
   const turnActionsDisabled = waiting || loadingHistory || status !== "connected" || turnActionBusyIndex !== null;
 
-  useEffect(() => {
-    let cancelled = false;
-    getMemorySession(server, sessionId)
-      .then((detail) => {
-        if (!cancelled) setHasMemory(detail?.current != null);
-      })
-      // The chip is optional chrome: a failing memory API must not disturb the chat.
-      .catch((memoryError: unknown) => {
-        console.warn("Memory chip unavailable", memoryError);
-        if (!cancelled) setHasMemory(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [server, sessionId]);
+  function showMemorySection(): void {
+    setMemoryOpen(true);
+    if (!window.matchMedia("(min-width: 64rem)").matches) setMobileInspectorOpen(true);
+    // The section renders in the desktop column and in the mobile sheet; scroll to the visible one once open.
+    requestAnimationFrame(() => {
+      const sections = Array.from(document.querySelectorAll<HTMLElement>("[data-memory-section]"));
+      sections.find((section) => section.offsetParent !== null)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    });
+  }
 
   // Deep link from memory fact sources (?event=<seq>). Not every event renders (approvals,
   // collapsed tool groups), so land on the nearest rendered anchor at or before the seq.
@@ -2523,6 +2518,14 @@ export function ChatView({
         </div>
       </section>
 
+      <ChatMemorySection
+        sessionId={sessionId}
+        state={memoryState}
+        open={memoryOpen}
+        onOpenChange={setMemoryOpen}
+        onSourceNavigate={() => setMobileInspectorOpen(false)}
+      />
+
       <section className="rounded-2xl border border-border/70 bg-background/90 p-3 shadow-sm">
         <div className="flex items-center justify-between gap-2">
           <div className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
@@ -2765,7 +2768,7 @@ export function ChatView({
                   {hasMemory ? (
                     <button
                       type="button"
-                      onClick={() => setMemoryDrawerOpen(true)}
+                      onClick={showMemorySection}
                       className="inline-flex shrink-0 items-center gap-1 rounded-full bg-accent px-2 py-0.5 text-[11px] font-medium text-accent-foreground transition-colors hover:bg-accent/70"
                     >
                       <Brain className="h-3 w-3" />
@@ -2941,14 +2944,6 @@ export function ChatView({
         </div>
       ) : null}
 
-      {memoryDrawerOpen ? (
-        <MemoryExtractionDrawer
-          server={server}
-          sessionId={sessionId}
-          onClose={() => setMemoryDrawerOpen(false)}
-          onSourceNavigate={() => setMemoryDrawerOpen(false)}
-        />
-      ) : null}
     </div>
   );
 }

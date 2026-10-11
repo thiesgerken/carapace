@@ -9,7 +9,7 @@ import { getMemorySession } from "@/lib/api";
 import { formatAbsoluteTime } from "@/lib/format-time";
 import type { MemoryExtractionRecord, MemoryFact, MemoryFactCategory, MemorySessionDetail } from "@/lib/types";
 
-const FACT_CATEGORIES: readonly MemoryFactCategory[] = ["user", "social", "surroundings"];
+export const FACT_CATEGORIES: readonly MemoryFactCategory[] = ["user", "social", "surroundings"];
 
 export function sessionEventHref(sessionId: string, seq: number): string {
   return `/?session=${encodeURIComponent(sessionId)}&event=${seq}`;
@@ -49,13 +49,8 @@ export function useMemorySessionDetail(server: string, sessionId: string | null,
   return "error" in outcome ? { detail: undefined, error: outcome.error } : { detail: outcome.detail, error: null };
 }
 
-/** The current extraction and earlier versions of one session; shared by the drawer and the sessions table. */
-export function MemoryExtractionDetail({ sessionId, state, onSourceNavigate }: {
-  sessionId: string;
-  state: MemorySessionDetailState;
-  /** Called when a fact source link is followed; see MemoryExtractionDrawer. */
-  onSourceNavigate?: () => void;
-}) {
+/** The current extraction and earlier versions of one session, as the sessions table expands it. */
+export function MemoryExtractionDetail({ sessionId, state }: { sessionId: string; state: MemorySessionDetailState }) {
   const t = useTranslations("memory.drawer");
   const { detail, error } = state;
 
@@ -66,7 +61,7 @@ export function MemoryExtractionDetail({ sessionId, state, onSourceNavigate }: {
   return (
     <div className="space-y-6">
       {detail.current ? (
-        <ExtractionRecord record={detail.current} sessionId={sessionId} linkSources onSourceNavigate={onSourceNavigate} />
+        <ExtractionRecord record={detail.current} sessionId={sessionId} linkSources />
       ) : (
         <p className="text-sm text-muted-foreground">
           {t("notExtracted")}
@@ -101,12 +96,7 @@ function HistoryEntry({ record, sessionId }: { record: MemoryExtractionRecord; s
   );
 }
 
-function ExtractionRecord({ record, sessionId, linkSources, onSourceNavigate }: {
-  record: MemoryExtractionRecord;
-  sessionId: string;
-  linkSources: boolean;
-  onSourceNavigate?: () => void;
-}) {
+function ExtractionRecord({ record, sessionId, linkSources }: { record: MemoryExtractionRecord; sessionId: string; linkSources: boolean }) {
   const t = useTranslations("memory.drawer");
   const { extraction } = record;
   const lists: [string, string[]][] = [
@@ -145,7 +135,7 @@ function ExtractionRecord({ record, sessionId, linkSources, onSourceNavigate }: 
             <h4 className="mb-1 text-xs font-medium text-muted-foreground">{t(`factCategories.${category}`)}</h4>
             <ul className="space-y-2">
               {facts.map((fact) => (
-                <FactItem key={`${fact.statement}-${fact.subject}`} fact={fact} sessionId={sessionId} linkSources={linkSources} onSourceNavigate={onSourceNavigate} />
+                <FactItem key={`${fact.statement}-${fact.subject}`} fact={fact} sessionId={sessionId} linkSources={linkSources} />
               ))}
             </ul>
           </section>
@@ -160,10 +150,11 @@ function ExtractionRecord({ record, sessionId, linkSources, onSourceNavigate }: 
   );
 }
 
-function FactItem({ fact, sessionId, linkSources, onSourceNavigate }: {
+export function FactItem({ fact, sessionId, linkSources, onSourceNavigate }: {
   fact: MemoryFact;
   sessionId: string;
   linkSources: boolean;
+  /** Called when a source link is followed, e.g. to close a sheet over the linked chat. */
   onSourceNavigate?: () => void;
 }) {
   const t = useTranslations("memory.drawer");

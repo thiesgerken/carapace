@@ -289,9 +289,11 @@ Select rows, or **select all N matching** a filter, then:
 - **Run selected** runs the selected sessions' tasks, after the estimate.
 - **Respawn selected** creates fresh tasks (for example, after a prompt change: filter outdated by prompt, select all matching, respawn) and opens the run dialog for them.
 
-Clicking a session opens the **extraction drawer**: all schema fields, facts by category, provenance and earlier versions. Fact sources (`#42`) open the chat at that event (`/?session=<id>&event=42`). Only the current extraction links its sources: rewinding a session reuses event numbers, so sources of older versions are shown as plain text.
+Clicking a session expands its **extraction**: all schema fields, facts by category, provenance and earlier versions. Fact sources (`#42`) open the chat at that event (`/?session=<id>&event=42`). Only the current extraction links its sources: rewinding a session reuses event numbers, so sources of older versions are shown as plain text.
 
-Sessions with a current extraction show a **Memory** chip in the chat header that opens the same drawer. `/memory/sessions?session=<id>` opens the drawer directly.
+`/memory/sessions?session=<id>` expands a session directly.
+
+In the chat, the session's inspector (the right-hand column, or **Details** on mobile) has a collapsible **Memory** card: the extraction state (current, outdated with reason, not extracted), an unfinished task's status, the abstract, the facts by category with their sources, and a link to the session in the Memory tab. Sessions memory doesn't cover (private, excluded jobs) show no card. Sessions with a current extraction also show a **Memory** chip in the chat header, which opens the card.
 
 ### Facts
 
