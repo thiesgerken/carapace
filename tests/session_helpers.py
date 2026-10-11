@@ -16,6 +16,7 @@ from carapace.git.store import GitStore
 from carapace.knowledge import KnowledgeRepoHandle
 from carapace.models.config import Config
 from carapace.models.credentials import CredentialRegistryProtocol
+from carapace.models.session import SessionState
 from carapace.models.tooling import ToolResult
 from carapace.sandbox.manager import SandboxManager
 from carapace.security.context import ApprovalSource, ApprovalVerdict
@@ -189,7 +190,7 @@ def _make_engine(
     config: Config | None = None,
     credential_registry: CredentialRegistryProtocol | None = None,
     knowledge_repo_for_session: Callable[[str], KnowledgeRepoHandle] | None = None,
-    memory_block_for: Callable[[str, str], str] = lambda _user, _session_id: "",
+    memory_block_for: Callable[[str, SessionState], str] = lambda _user, _state: "",
 ) -> SessionEngine:
     ensure_data_dir(tmp_path)
     if config is None:

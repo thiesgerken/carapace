@@ -146,6 +146,7 @@ export interface JobDefinition {
   sentinel_model_name?: string | null;
   title_model_name?: string | null;
   memory_enabled: boolean;
+  memory_context: boolean;
 }
 
 export interface JobsFile {

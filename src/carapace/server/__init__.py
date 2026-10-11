@@ -492,7 +492,7 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
         credential_registry_for_session=_credential_registry_for_session,
         knowledge_repo_for_session=knowledge_repo_for_session,
         # Late-bound: the memory service is built after the engine, and only turns call this.
-        memory_block_for=lambda user, session_id: _memory_service.prompt_block(user, session_id).text,
+        memory_block_for=lambda user, state: _memory_service.session_prompt_block(user, state).text,
         model_factory=_model_factory,
         notification_router=_notification_router,
     )

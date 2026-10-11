@@ -128,7 +128,7 @@ class SessionEngine(
         sandbox_mgr: SandboxManager,
         credential_registry_for_session: Callable[[str], Awaitable[CredentialRegistryProtocol]],
         knowledge_repo_for_session: KnowledgeRepoResolver,
-        memory_block_for: Callable[[str, str], str],
+        memory_block_for: Callable[[str, SessionState], str],
         model_factory: ModelFactory | None = None,
         notification_router: NotificationRouter | None = None,
     ) -> None:
@@ -139,7 +139,7 @@ class SessionEngine(
         self._model_factory = model_factory
         self._credential_registry_for_session = credential_registry_for_session
         self._knowledge_repo_for_session = knowledge_repo_for_session
-        # (owner, session id) -> the memory block for the agent prompt, leaving out that session.
+        # (owner, session state) -> the memory block for the session's agent prompt.
         self._memory_block_for = memory_block_for
         self._notification_router = notification_router
         self._active: dict[str, ActiveSession] = {}
@@ -500,7 +500,7 @@ class SessionEngine(
     def _ensure_memory_snapshot(self, active: ActiveSession) -> None:
         if active.state.memory is not None:
             return
-        text = self._memory_block_for(active.owner, active.state.session_id)
+        text = self._memory_block_for(active.owner, active.state)
         active.state.memory = MemorySnapshot(text=text, as_of=datetime.now(tz=UTC))
         self._session_mgr.save_state(active.state)
 
