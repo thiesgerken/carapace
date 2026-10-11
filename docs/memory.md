@@ -221,7 +221,7 @@ default_models:
 
 | Role | Used for | User setting | Platform default | Fallback |
 | --- | --- | --- | --- | --- |
-| `memory_low` | session extraction | `default_models.memory_low` | `agent.memory_low_model` | compaction model, then title model |
+| `memory_low` | session extraction | `default_models.memory_low` | `agent.memory_low_model` | sentinel model |
 | `memory_high` | week and month digests | `default_models.memory_high` | `agent.memory_high_model` | agent model |
 
 A cheap, haiku-class or local model is enough for `memory_low`. Digests benefit from a stronger `memory_high` model. Memory roles are not session roles: `/model` and per-session overrides do not affect them. A run can override the model per task (run dialog, respawn). An override must be a registered, enabled model in `agent.available_models`; estimate, run and spawn reject anything else with 422.
@@ -290,7 +290,7 @@ The same fact from several sessions (same statement and subject, ignoring case, 
 
 ### Tasks
 
-The queue. Filter by status, kind, month and model; the header shows the number of matching tasks and their estimated cost. "Run all of September" is: filter month 2026-09, select all matching, run. The month filter places session tasks by their session's week, not by when the task was created.
+The queue. Filter by status, kind, month and model. Besides single statuses, the status filter offers **Unfinished** (pending, queued, running and failed; failed stays because it needs attention), which is what the tab opens on. The header shows the number of matching tasks and their estimated cost. "Run all of September" is: filter month 2026-09, select all matching, run. The month filter places session tasks by their session's week, not by when the task was created.
 
 The list is sorted by last activity (when the task finished, started, was queued or was created) by default. Click the **Target** header to sort by target period instead, the order **Run newest 50** picks in. The **Model** column shows the model a task ran with, or for open tasks the model it would run with now: its override, otherwise the current role default. The model filter matches by the same rule.
 

@@ -38,7 +38,7 @@ import type { MemoryTaskListResponse, MemoryTaskSelection, MemoryTaskSort, Memor
 import { cn } from "@/lib/utils";
 
 const NEWEST_BATCH = 50;
-const DEFAULT_FORM: TaskFilterForm = { status: "pending", kind: "", period: "", model: "" };
+const DEFAULT_FORM: TaskFilterForm = { status: "unfinished", kind: "", period: "", model: "" };
 const NO_PICK: TaskPick = { kind: "ids", ids: [] };
 const COLUMN_COUNT = 9;
 
@@ -153,6 +153,7 @@ export function MemoryTasksView({ server, token }: { server: string; token: stri
           <div className="flex flex-wrap items-center gap-2">
             <select aria-label={t("filters.status")} value={form.status} onChange={(event) => updateForm({ status: event.target.value as TaskFilterForm["status"] })} className={controlClassName}>
               <option value="">{t("filters.anyStatus")}</option>
+              <option value="unfinished">{t("filters.unfinished")}</option>
               {MEMORY_TASK_STATUSES.map((value) => <option key={value} value={value}>{tStatuses(value)}</option>)}
             </select>
             <select aria-label={t("filters.kind")} value={form.kind} onChange={(event) => updateForm({ kind: event.target.value as TaskFilterForm["kind"] })} className={controlClassName}>

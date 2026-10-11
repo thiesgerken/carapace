@@ -37,7 +37,7 @@ class PlatformDefaultModels(PlatformSettingsModel):
     sentinel: str
     title: str
     compaction: str | None = None  # None -> fall back to the title model
-    memory_low: str | None = None  # None -> compaction model, then title model
+    memory_low: str | None = None  # None -> sentinel model
     memory_high: str | None = None  # None -> agent model
 
     @field_validator("compaction", "memory_low", "memory_high", mode="before")

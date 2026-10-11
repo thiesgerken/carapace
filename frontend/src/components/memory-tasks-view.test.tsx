@@ -113,7 +113,7 @@ test("select all matching runs the whole filter, not just the visible page", asy
     assert.match(text(), /120 selected/);
     await click(button("Run selected"));
     await settle();
-    const filter = { status: ["pending"], kind: null, period: null, model: null };
+    const filter = { status: ["pending", "queued", "running", "failed"], kind: null, period: null, model: null };
     assert.deepEqual(posts.at(-1), { path: "/api/memory/tasks/estimate", body: { selection: { filter }, model_override: null, include_dependencies: false } });
 
     await click(button("Run"));

@@ -86,6 +86,7 @@
             "filters": {
                 "status": "Status",
                 "anyStatus": "Any status",
+                "unfinished": "Unfinished",
                 "kind": "Kind",
                 "anyKind": "Any kind",
                 "period": "Period",
@@ -549,7 +550,7 @@
             "unlimited": "Unlimited",
             "generatedId": "provider:name",
             "keepSecret": "Keep configured secret",
-            "memoryLowDefault": "Compaction or title model",
+            "memoryLowDefault": "Sentinel model",
             "memoryHighDefault": "Agent model"
         },
         "actions": {

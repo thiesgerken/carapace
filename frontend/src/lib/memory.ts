@@ -22,6 +22,8 @@ import type {
 } from "./types";
 
 export const MEMORY_TASK_STATUSES: readonly MemoryTaskStatus[] = ["pending", "queued", "running", "done", "failed", "cancelled"];
+/** Failed counts as unfinished: it still needs attention. */
+export const UNFINISHED_TASK_STATUSES: readonly MemoryTaskStatus[] = ["pending", "queued", "running", "failed"];
 export const MEMORY_TASK_KINDS: readonly MemoryTaskKind[] = ["session_extract", "week_digest", "month_digest", "mirror"];
 
 const TASK_MODEL_ROLES: Record<MemoryTaskKind, MemoryModelRole | null> = {
@@ -126,7 +128,7 @@ export function remainingBudget(status: MemoryStatus): { usd: number | null; tok
 }
 
 export interface TaskFilterForm {
-  status: MemoryTaskStatus | "";
+  status: MemoryTaskStatus | "unfinished" | "";
   kind: MemoryTaskKind | "";
   /** Month key from <input type="month">, e.g. 2026-09, or a week key set by a digest's source link. */
   period: string;
@@ -145,7 +147,7 @@ export function missingSourceCount(dependencies: MemoryDependencySummary): numbe
 
 export function toTaskFilter(form: TaskFilterForm): MemoryTaskFilter {
   return {
-    status: form.status ? [form.status] : null,
+    status: form.status === "unfinished" ? [...UNFINISHED_TASK_STATUSES] : form.status ? [form.status] : null,
     kind: form.kind ? [form.kind] : null,
     period: form.period || null,
     model: form.model || null,

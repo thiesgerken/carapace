@@ -28,6 +28,10 @@ _OPEN_MEMORY_TASK = sa.text("status IN ('pending', 'queued', 'running')")
 _IS_CURRENT = sa.text("is_current")
 
 
+_platform_settings = sa.table("platform_settings", sa.column("key", sa.String), sa.column("data", _JSON))
+_users = sa.table("users", sa.column("username", sa.String), sa.column("config", _JSON))
+
+
 def _user_column() -> sa.Column:
     return sa.Column("user", sa.String(length=256), sa.ForeignKey("users.username", ondelete="CASCADE"), nullable=False)
 
@@ -160,8 +164,48 @@ def upgrade() -> None:
         postgresql_where=_IS_CURRENT,
     )
 
+    _seed_memory_models()
+
+
+def _seeded(settings: dict, sources: dict[str, str]) -> dict:
+    """*settings* with each unset target copied from its source, where that source is set."""
+    return settings | {
+        target: settings[source]
+        for target, source in sources.items()
+        if settings.get(target) is None and settings.get(source) is not None
+    }
+
+
+def _seed_memory_models() -> None:
+    """Start memory on the tiers already chosen: low on the cheap sentinel model, high on the agent model."""
+    bind = op.get_bind()
+    agent = bind.scalar(sa.select(_platform_settings.c.data).where(_platform_settings.c.key == "agent"))
+    if agent is not None:
+        seeded = _seeded(agent, {"memory_low_model": "sentinel_model", "memory_high_model": "model"})
+        if seeded != agent:
+            bind.execute(_platform_settings.update().where(_platform_settings.c.key == "agent").values(data=seeded))
+    for username, config in bind.execute(sa.select(_users.c.username, _users.c.config)).all():
+        defaults = config["default_models"]
+        seeded = _seeded(defaults, {"memory_low": "sentinel", "memory_high": "agent"})
+        if seeded != defaults:
+            bind.execute(
+                _users.update().where(_users.c.username == username).values(config=config | {"default_models": seeded})
+            )
+
+
+def _strip_memory_user_settings() -> None:
+    """Drop the memory keys from every user config: the pre-memory ``UserConfig`` forbids unknown keys."""
+    bind = op.get_bind()
+    for username, config in bind.execute(sa.select(_users.c.username, _users.c.config)).all():
+        stripped = {key: value for key, value in config.items() if key not in ("timezone", "memory")}
+        stripped["default_models"] = {
+            key: value for key, value in config["default_models"].items() if key not in ("memory_low", "memory_high")
+        }
+        bind.execute(_users.update().where(_users.c.username == username).values(config=stripped))
+
 
 def downgrade() -> None:
+    _strip_memory_user_settings()
     op.drop_table("memory_digests")
     op.drop_table("memory_facts")
     op.drop_table("memory_session_extractions")
