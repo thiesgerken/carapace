@@ -94,3 +94,39 @@ test("only the current extraction links fact sources to events", async () => {
     restore();
   }
 });
+
+test("a session without an extraction shows its task status as a badge", async () => {
+  const restore = installDom();
+  Object.defineProperty(globalThis, "self", { configurable: true, writable: true, value: window });
+  const originalFetch = globalThis.fetch;
+  window.HTMLDialogElement.prototype.showModal = function showModal(this: HTMLDialogElement) {
+    this.open = true;
+  };
+  const detail: MemorySessionDetail = {
+    session: {
+      ...DETAIL.session,
+      task: { id: 7, status: "failed", blocked_reason: null },
+    },
+    current: null,
+    history: [],
+  };
+  globalThis.fetch = (async () => new Response(JSON.stringify(detail))) as typeof fetch;
+
+  try {
+    const view = await renderReact(
+      <NextIntlClientProvider locale="en" messages={messages} timeZone="UTC">
+        <MemoryExtractionDrawer server={SERVER} sessionId="s1" onClose={() => {}} />
+      </NextIntlClientProvider>,
+    );
+    await runInAct(() => new Promise((resolve) => setTimeout(resolve, 0)));
+
+    assert.match(view.container.textContent ?? "", /Task is failed\./);
+    assert.ok(view.container.querySelector("svg.lucide-circle-x, svg.lucide-x-circle"), "no failed badge icon");
+
+    await view.unmount();
+  } finally {
+    globalThis.fetch = originalFetch;
+    delete (globalThis as { self?: unknown }).self;
+    restore();
+  }
+});
