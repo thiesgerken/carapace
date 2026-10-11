@@ -9,7 +9,7 @@ import { useMemoryStatus } from "@/components/memory-status";
 import { buttonClassName, MemoryProvenanceList, TaskStatusBadge, taskStatusTag } from "@/components/memory-ui";
 import { cancelMemoryTasks, getMemoryPeriod, spawnMemoryTasks } from "@/lib/api";
 import { formatAbsoluteTime } from "@/lib/format-time";
-import { formatUsd, monthLabel, periodBadge, periodLevel, summarizeSkips, type PeriodBadge } from "@/lib/memory";
+import { formatUsd, monthLabel, periodBadge, periodLevel, summarizeSkips, type PeriodBadge, weekLabel } from "@/lib/memory";
 import type {
   MemoryDigestFact,
   MemoryDigestRecord,
@@ -136,7 +136,9 @@ export function MemoryPeriodDetailView({ server, token, periodKey }: { server: s
   const { node, current } = detail;
   const task = node.task;
   const badge = periodBadge(node);
-  const dateRange = new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeZone: "UTC" }).formatRange(Date.parse(node.start), Date.parse(node.end));
+  const dateRange = node.level === "week"
+    ? weekLabel(node.key, locale, true)
+    : new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeZone: "UTC" }).formatRange(Date.parse(node.start), Date.parse(node.end));
 
   return (
     <div className="space-y-5 p-5">
@@ -214,7 +216,10 @@ export function MemoryPeriodDetailView({ server, token, periodKey }: { server: s
             : detail.weeks.map((week) => (
               <li key={week.key} className="flex items-center gap-3 px-3 py-2">
                 <PeriodBadgeMark badge={periodBadge(week)} />
-                <Link href={periodHref(week.key)} className="flex-1 hover:underline">{week.key}</Link>
+                <span className="flex-1">
+                  <Link href={periodHref(week.key)} className="hover:underline">{week.key}</Link>
+                  <span className="ml-2 text-xs text-muted-foreground">{weekLabel(week.key, locale, true)}</span>
+                </span>
                 <span className="tabular-nums text-muted-foreground">{week.covered}/{week.total}</span>
               </li>
             ))}
