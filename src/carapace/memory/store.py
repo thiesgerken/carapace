@@ -8,6 +8,7 @@ from datetime import datetime
 from decimal import ROUND_HALF_UP, Decimal
 
 from sqlalchemy import ColumnElement, and_, case, delete, exists, func, not_, or_, select, update
+from sqlalchemy.dialects import postgresql, sqlite
 from sqlalchemy.orm import Session
 
 from ..database.engine import SessionFactory
@@ -54,6 +55,8 @@ from .outdated import CurrentVersions
 from .periods import month_key_for_week, period_weeks
 
 _OPEN = [s.value for s in OPEN_TASK_STATUSES]
+# The databases carapace runs on; both spell ON CONFLICT the same way.
+_UPSERT_INSERTS = {"sqlite": sqlite.insert, "postgresql": postgresql.insert}
 
 # Sources before their digests: auto mode promotes in this order, and dispatch looks at queued tasks
 # in it, so a window full of waiting digests can never crowd out the extractions they wait for.
@@ -718,9 +721,14 @@ class MemoryStore:
             return set(db.scalars(select(MemoryDismissedLoopRow.loop_id).where(MemoryDismissedLoopRow.user == user)))
 
     def dismiss_loop(self, user: str, session_id: str, loop_id: str, now: datetime) -> None:
+        """Idempotent: concurrent dismissals of one loop keep the first, without a check-then-insert race."""
         with self._session_factory.begin() as db:
-            if db.get(MemoryDismissedLoopRow, (user, loop_id)) is None:
-                db.add(MemoryDismissedLoopRow(user=user, loop_id=loop_id, session_id=session_id, dismissed_at=now))
+            insert = _UPSERT_INSERTS[db.get_bind().dialect.name]
+            db.execute(
+                insert(MemoryDismissedLoopRow)
+                .values(user=user, loop_id=loop_id, session_id=session_id, dismissed_at=now)
+                .on_conflict_do_nothing(index_elements=["user", "loop_id"])
+            )
 
     def undismiss_loop(self, user: str, loop_id: str) -> None:
         with self._session_factory.begin() as db:
