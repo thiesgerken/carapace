@@ -219,14 +219,20 @@ def test_only_jobs_with_memory_context_and_interactive_sessions_get_the_prompt_b
     # Extracted into memory, but reading it is a separate opt-in.
     jobs.create_job(JobDefinition(user="alice", id="nightly", name="Nightly", prompt="p", memory_enabled=True))
 
-    def job_session(job_id: str) -> SessionState:
-        state = sessions.create_session("job", user="alice", unattended=True)
+    def job_run(state: SessionState, job_id: str) -> SessionState:
         state.latest_job_run = SessionJobRunContext(job_id=job_id, trigger_kind="manual", triggered_at=NOW)
         return state
+
+    def job_session(job_id: str, *, unattended: bool = True) -> SessionState:
+        return job_run(sessions.create_session("job", user="alice", unattended=unattended), job_id)
 
     assert service.session_prompt_block("alice", sessions.create_session("web", user="alice")) == block
     assert service.session_prompt_block("alice", job_session("digest")) == block
     assert service.session_prompt_block("alice", job_session("nightly")) == EMPTY_MEMORY_BLOCK
+    assert service.session_prompt_block("alice", job_session("nightly", unattended=False)) == EMPTY_MEMORY_BLOCK
     assert service.session_prompt_block("alice", job_session("deleted")) == EMPTY_MEMORY_BLOCK
+    # A persistent session the nightly job runs in is still the user's chat.
+    persistent = job_run(sessions.create_session("web", user="alice"), "nightly")
+    assert service.session_prompt_block("alice", persistent) == block
     unattended = sessions.create_session("api", user="alice", unattended=True)
     assert service.session_prompt_block("alice", unattended) == EMPTY_MEMORY_BLOCK

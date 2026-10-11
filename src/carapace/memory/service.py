@@ -135,9 +135,13 @@ class MemoryService:
 
     def session_prompt_block(self, user: str, state: SessionState) -> MemoryBlock:
         """The block for *state*'s agent prompt: job sessions only with their job's memory_context,
-        other unattended sessions never (nobody chose to give them personal context)."""
-        if state.latest_job_run is not None:
-            job = self._jobs.get_job(state.latest_job_run.job_id)
+        other unattended sessions never (nobody chose to give them personal context).
+
+        Job sessions go by channel, like extraction eligibility: a persistent session a job runs in
+        is the user's chat and keeps its block, although its latest_job_run stays set.
+        """
+        if state.channel_type == "job":
+            job = self._jobs.get_job(state.latest_job_run.job_id) if state.latest_job_run is not None else None
             if job is None or not job.memory_context:
                 return EMPTY_MEMORY_BLOCK
         elif state.attributes.unattended:

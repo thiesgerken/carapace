@@ -262,7 +262,7 @@ See [persistent-context.md](persistent-context.md) for how the knowledge repo re
 
 The main agent's system prompt carries a **memory block**: what has been going on lately, built from your current records without an LLM call (`memory/prompt_block.py`). Compaction, the sentinel, the titler and memory tasks never get it, so memory cannot feed back into itself.
 
-Interactive sessions get it. Job sessions get it only when their job sets `memory_context` (see [jobs.md](jobs.md)), and other unattended sessions never do. `memory_context` is independent of `memory_enabled`, so a job that reads memory isn't extracted back into it by default.
+Interactive sessions get it, including a persistent session a job runs in. Sessions a job creates get it only when their job sets `memory_context` (see [jobs.md](jobs.md)), and other unattended sessions never do. `memory_context` is independent of `memory_enabled`, so a job that reads memory isn't extracted back into it by default.
 
 - **Selection** walks back from now, newest first, and takes per period the highest level that exists:
   - the current week: its session extractions
