@@ -218,7 +218,7 @@ export function MemoryPeriodDetailView({ server, token, periodKey }: { server: s
                 <PeriodBadgeMark badge={periodBadge(week)} />
                 <span className="flex-1">
                   <Link href={periodHref(week.key)} className="hover:underline">{week.key}</Link>
-                  <span className="ml-2 text-xs text-muted-foreground">{weekLabel(week.key, locale, true)}</span>
+                  <span className="ml-2 text-xs text-muted-foreground">{weekLabel(week.key, locale, false)}</span>
                 </span>
                 <span className="tabular-nums text-muted-foreground">{week.covered}/{week.total}</span>
               </li>

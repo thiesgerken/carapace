@@ -263,7 +263,7 @@ The Memory area lives at `/memory`, with four tabs. A **status strip** on top of
 
 ### Timeline
 
-The pyramid as a tree of years, months and weeks. Each node shows its coverage (`12/14` sessions, or weeks for a month) and a badge: `✓` current, `⚠` stale or outdated (hover for the reason), `—` not run yet. Weeks show their date range. Wherever a week key appears outside the tree (Tasks tab, a month's week list, a week's header), it also names the month it belongs to, e.g. 2026-W36 shows "September 2026 · Aug 31 – Sep 6".
+The pyramid as a tree of years, months and weeks. Each node shows its coverage (`12/14` sessions, or weeks for a month) and a badge: `✓` current, `⚠` stale or outdated (hover for the reason), `—` not run yet. Weeks show their date range. Where a week appears outside its month (Tasks tab, a week's header), it also names the month it belongs to, e.g. 2026-W36 shows "September 2026 · Aug 31 – Sep 6".
 
 Selecting a period shows its digest: summary, on my mind, highlights, open loops and learned (You, People, Surroundings), each with refs. Week refs open the session's extraction, month refs open the week. Below the digest are a provenance line, **Regenerate** (spawns the digest task and opens the run dialog with its estimate), the period's sources and a collapsed list of earlier versions with their provenance.
 
