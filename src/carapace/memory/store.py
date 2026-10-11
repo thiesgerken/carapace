@@ -235,10 +235,10 @@ class MemoryStore:
     def missing_dependencies(
         self, user: str, selection: TaskSelection, *, default_models: Mapping[TaskKind, str] | None = None
     ) -> int:
-        """Pending source tasks of the selection's pending digests that the selection leaves out."""
+        """Runnable source tasks of the selection's runnable digests that the selection leaves out."""
         with self._session_factory() as db:
-            selected = _selected_ids(db, user, selection, {TaskStatus.pending}, default_models)
-            return len(_pending_source_ids(db, user, selected))
+            selected = _selected_ids(db, user, selection, set(RUNNABLE_TASK_STATUSES), default_models)
+            return len(_runnable_source_ids(db, user, selected))
 
     def run(
         self,
@@ -250,7 +250,7 @@ class MemoryStore:
         default_models: Mapping[TaskKind, str] | None = None,
         include_dependencies: bool = False,
     ) -> int:
-        """pending or failed -> queued; *include_dependencies* adds the pending sources of the selected digests.
+        """pending or failed -> queued; *include_dependencies* adds the runnable sources of the selected digests.
 
         A failed task is reused (``attempts`` grows on the next claim) and keeps its override unless
         the run brings one.
@@ -782,8 +782,9 @@ def _sources(db: Session, user: str, weeks: set[str], months: set[str]) -> list[
     ]
 
 
-def _pending_source_ids(db: Session, user: str, task_ids: list[int]) -> list[int]:
-    """Pending source tasks of the digests among *task_ids* that are not in *task_ids* themselves."""
+def _runnable_source_ids(db: Session, user: str, task_ids: list[int]) -> list[int]:
+    """Source tasks the digests among *task_ids* would run without, and a run would queue: pending
+    ones, and failed ones without a current record. Those in *task_ids* themselves are left out."""
     digests = db.execute(
         select(MemoryTaskRow.kind, MemoryTaskRow.target).where(
             MemoryTaskRow.id.in_(task_ids),
@@ -798,7 +799,8 @@ def _pending_source_ids(db: Session, user: str, task_ids: list[int]) -> list[int
     return [
         s.task_id
         for s in _sources(db, user, weeks, months)
-        if s.status is TaskStatus.pending and s.task_id not in selected
+        if (s.status is TaskStatus.pending or (s.status is TaskStatus.failed and not s.has_current_record))
+        and s.task_id not in selected
     ]
 
 
@@ -957,7 +959,7 @@ def _selected_ids(
         query = query.limit(selection.newest)
     ids = list(db.scalars(query).all())
     if include_dependencies:
-        ids += _pending_source_ids(db, user, ids)
+        ids += _runnable_source_ids(db, user, ids)
     return ids
 
 

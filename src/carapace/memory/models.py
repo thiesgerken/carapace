@@ -393,7 +393,7 @@ class TaskSelection(MemoryApiModel):
 class TaskRunRequest(MemoryApiModel):
     selection: TaskSelection
     model_override: str | None = None
-    # Adds the pending source tasks of the selected digests, so the digests wait for them.
+    # Adds the pending and failed source tasks of the selected digests, so the digests wait for them.
     include_dependencies: bool = False
 
 
@@ -456,7 +456,7 @@ class EstimateTotal(MemoryApiModel):
 class RunEstimate(EstimateTotal):
     # Tasks the run queues without an estimate: mirrors, and tasks whose input cannot be prepared.
     unestimated: int
-    # Pending source tasks of the selection's digests that it leaves out (include_dependencies runs them too).
+    # Runnable source tasks of the selection's digests that it leaves out (include_dependencies runs them too).
     missing_dependencies: int
 
 

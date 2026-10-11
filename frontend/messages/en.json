@@ -181,7 +181,7 @@
             "unestimated": "{count, plural, one {# task has no estimate: a mirror, or a task whose input cannot be prepared (it fails again before any call).} other {# tasks have no estimate: mirrors, or tasks whose input cannot be prepared (they fail again before any call).}}",
             "cancel": "Cancel",
             "confirm": "Run",
-            "missingDependencies": "{count, plural, one {A selected digest has # pending source outside the selection; it would run without it.} other {Selected digests have # pending sources outside the selection; they would run without them.}}",
+            "missingDependencies": "{count, plural, one {A selected digest has # pending or failed source outside the selection; it would run without it.} other {Selected digests have # pending or failed sources outside the selection; they would run without them.}}",
             "addDependencies": "{count, plural, one {Add # dependency} other {Add # dependencies}}",
             "dependenciesAdded": "{count, plural, one {# dependency added; the digests wait for it.} other {# dependencies added; the digests wait for them.}}"
         },

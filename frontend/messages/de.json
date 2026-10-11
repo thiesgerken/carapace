@@ -181,7 +181,7 @@
             "unestimated": "{count, plural, one {# Aufgabe ohne Schätzung: ein Spiegel oder eine Aufgabe, deren Eingabe sich nicht vorbereiten lässt (sie schlägt vor jedem Aufruf erneut fehl).} other {# Aufgaben ohne Schätzung: Spiegel oder Aufgaben, deren Eingabe sich nicht vorbereiten lässt (sie schlagen vor jedem Aufruf erneut fehl).}}",
             "cancel": "Abbrechen",
             "confirm": "Ausführen",
-            "missingDependencies": "{count, plural, one {Ein ausgewählter Digest hat # ausstehende Quelle außerhalb der Auswahl und liefe ohne sie.} other {Ausgewählte Digests haben # ausstehende Quellen außerhalb der Auswahl und liefen ohne sie.}}",
+            "missingDependencies": "{count, plural, one {Ein ausgewählter Digest hat # ausstehende oder fehlgeschlagene Quelle außerhalb der Auswahl und liefe ohne sie.} other {Ausgewählte Digests haben # ausstehende oder fehlgeschlagene Quellen außerhalb der Auswahl und liefen ohne sie.}}",
             "addDependencies": "{count, plural, one {# Abhängigkeit hinzufügen} other {# Abhängigkeiten hinzufügen}}",
             "dependenciesAdded": "{count, plural, one {# Abhängigkeit hinzugefügt; die Digests warten darauf.} other {# Abhängigkeiten hinzugefügt; die Digests warten darauf.}}"
         },

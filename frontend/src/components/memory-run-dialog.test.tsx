@@ -111,7 +111,7 @@ test("missing dependencies can be added to the selection before running", async 
     await settle();
     const button = (label: string) => Array.from(view.container.querySelectorAll("button")).find((element) => element.textContent?.trim() === label);
 
-    assert.match(view.container.textContent ?? "", /2 pending sources outside the selection/);
+    assert.match(view.container.textContent ?? "", /2 pending or failed sources outside the selection/);
     await click(button("Add 2 dependencies")!);
     await settle();
     assert.match(view.container.textContent ?? "", /2 dependencies added/);
