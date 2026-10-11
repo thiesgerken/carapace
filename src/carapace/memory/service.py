@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from collections import Counter, defaultdict
 from collections.abc import Callable, Mapping
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 from ..jobs import JobsStore
@@ -31,10 +32,12 @@ from .models import (
     FactFilter,
     FactListResponse,
     Ineligible,
+    MemoryBudgetNotice,
     MemoryStatus,
     MemoryTask,
     ModelRole,
     MonthNode,
+    OpenLoop,
     OutdatedSpawnResponse,
     PeriodDetail,
     PeriodNode,
@@ -60,6 +63,8 @@ from .models import (
     TaskSpawnResponse,
     TaskStatus,
     TaskView,
+    ThisWeek,
+    ThisWeekSession,
     WeekNode,
 )
 from .outdated import CurrentVersions, current_versions, outdated_reasons
@@ -70,6 +75,9 @@ from .store import MemoryStore, SessionCandidate, parse_cursor
 from .worker import DEFAULT_TIMING, MemoryWorker, WorkerTiming
 
 _DIGEST_LEVELS = {TaskKind.week_digest: DigestLevel.week, TaskKind.month_digest: DigestLevel.month}
+# Long enough to span a weekend, short enough that unanswered loops age out without a dismiss.
+_HOME_WINDOW = timedelta(days=7)
+_BUDGET_NOTICE_SHARE = Decimal("0.8")
 
 
 class ModelOverrideError(ValueError):
@@ -159,6 +167,77 @@ class MemoryService:
             tz=ZoneInfo(user_config.timezone),
             exclude_session_id=exclude_session_id,
         )
+
+    # --- home page ---
+
+    def open_loops(self, user: str) -> list[OpenLoop]:
+        """Open loops of the sessions active in the last week, newest session first.
+
+        Digest loops stay out: they link to no session and repeat the session loops.
+        """
+        since = self._clock() - _HOME_WINDOW
+        return [
+            OpenLoop(
+                text=loop,
+                session_id=visible.record.session_id,
+                session_title=visible.title,
+                session_last_active=visible.last_active,
+                week_key=visible.record.week_key,
+            )
+            for visible in self._store.visible_extractions(user, active_since=since)
+            for loop in visible.record.extraction.open_loops
+        ]
+
+    def this_week(self, user: str) -> ThisWeek | None:
+        """The current week's sessions, or last week's digest while the week has none yet."""
+        now, tz = self._clock(), ZoneInfo(self._user_config_for(user).timezone)
+        current_week = week_key(now, tz)
+        if sessions := [
+            ThisWeekSession(session_id=v.record.session_id, title=v.title, abstract=v.record.extraction.abstract)
+            for v in self._store.visible_extractions(user, week_key=current_week)
+        ]:
+            return ThisWeek(source="sessions", period_key=current_week, themes=[], highlights=[], sessions=sessions)
+        last_week = week_key(now - timedelta(days=7), tz)
+        record = self._store.current_digest(user, DigestLevel.week, last_week)
+        if record is None or not self._covers_only_visible_sessions(user, record):
+            return None
+        return ThisWeek(
+            source="week_digest",
+            period_key=last_week,
+            themes=record.digest.on_my_mind,
+            highlights=record.digest.highlights,
+            sessions=[],
+        )
+
+    def _covers_only_visible_sessions(self, user: str, week_digest: DigestRecord) -> bool:
+        """A digest stays current until the sweep purges a session that turned private or was
+        deleted, and until then it still carries that session's themes."""
+        visible = {v.record.session_id for v in self._store.visible_extractions(user, week_key=week_digest.period_key)}
+        return all(entry.source_id in visible for entry in week_digest.coverage)
+
+    def failed_task_count(self, user: str) -> int:
+        counts, _ = self._store.status_counts(user)
+        return counts[TaskStatus.failed]
+
+    def outdated_record_count(self, user: str) -> int:
+        return sum(len(targets) for targets in self._outdated_targets(user).values())
+
+    def budget_notice(self, user: str) -> MemoryBudgetNotice | None:
+        """The cost window closest to its limit, once it has used 80% of it."""
+        user_config = self._user_config_for(user)
+        budget = user_config.memory.budget
+        windows = budget_windows(self._clock(), ZoneInfo(user_config.timezone))
+        limits = (
+            ("day", windows.day_start, budget.cost_usd_per_day),
+            ("month", windows.month_start, budget.cost_usd_per_month),
+        )
+        notices = [
+            MemoryBudgetNotice(used_usd=self._store.spend(user, start).cost_usd, limit_usd=limit, window=window)
+            for window, start, limit in limits
+            if limit  # None is unlimited, and a limit of 0 has no share to approach
+        ]
+        near = [n for n in notices if n.used_usd >= n.limit_usd * _BUDGET_NOTICE_SHARE]
+        return max(near, key=lambda n: n.used_usd / n.limit_usd) if near else None
 
     # --- status and tasks ---
 

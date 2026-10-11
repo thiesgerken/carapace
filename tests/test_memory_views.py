@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import pytest
@@ -13,6 +13,7 @@ from carapace.memory.models import (
     DigestLevel,
     DigestRecord,
     DigestResult,
+    DigestTheme,
     ExtractionResult,
     ExtractionState,
     Fact,
@@ -36,7 +37,7 @@ from carapace.memory.prompts import SESSION_EXTRACT
 from carapace.memory.service import MemoryService
 from carapace.memory.store import MemoryStore
 from carapace.models.config import Config
-from carapace.models.user import UserConfig
+from carapace.models.user import MemoryBudget, UserConfig, UserMemoryConfig
 from carapace.session import SessionManager
 
 NOW = datetime(2026, 9, 21, 12, tzinfo=UTC)
@@ -101,9 +102,11 @@ def _session(
     channel: str = "web",
     private: bool = False,
     events: bool = True,
+    last_active: datetime = NOW,
 ) -> str:
     state = sessions.create_session(channel, user=user, private=private)
     state.title = title
+    state.last_active = last_active
     sessions.save_state(state)
     if events:
         sessions.append_events(
@@ -135,7 +138,14 @@ def _run(store: MemoryStore, task: MemoryTask | None) -> MemoryTask:
     return task
 
 
-def _extract(store: MemoryStore, session_id: str, *, week: str = "2026-W37", prompt: str = CURRENT_PROMPT) -> None:
+def _extract(
+    store: MemoryStore,
+    session_id: str,
+    *,
+    week: str = "2026-W37",
+    prompt: str = CURRENT_PROMPT,
+    open_loops: tuple[str, ...] = (),
+) -> None:
     estimate = TaskEstimate(model=LOW_MODEL, input_tokens=1, output_tokens_cap=1, cost_usd=None)
     task = _run(
         store,
@@ -159,7 +169,13 @@ def _extract(store: MemoryStore, session_id: str, *, week: str = "2026-W37", pro
         durability="durable",
     )
     extraction = SessionExtraction(
-        abstract=f"about {session_id}", outcomes=[], open_loops=[], on_my_mind=[], facts=[fact], friction=[], tags=[]
+        abstract=f"about {session_id}",
+        outcomes=[],
+        open_loops=list(open_loops),
+        on_my_mind=[],
+        facts=[fact],
+        friction=[],
+        tags=[],
     )
     result = ExtractionResult(session_id=session_id, week_key=week, month_key="2026-09", extraction=extraction)
     assert store.record_outcome(
@@ -167,7 +183,15 @@ def _extract(store: MemoryStore, session_id: str, *, week: str = "2026-W37", pro
     )
 
 
-def _digest(store: MemoryStore, level: DigestLevel, key: str, coverage_source: list) -> DigestRecord:
+def _digest(
+    store: MemoryStore,
+    level: DigestLevel,
+    key: str,
+    coverage_source: list,
+    *,
+    on_my_mind: tuple[DigestTheme, ...] = (),
+    highlights: tuple[str, ...] = (),
+) -> DigestRecord:
     kind = TaskKind.week_digest if level is DigestLevel.week else TaskKind.month_digest
     estimate = TaskEstimate(model="test:high", input_tokens=1, output_tokens_cap=1, cost_usd=None)
     task = _run(store, store.spawn("alice", kind, key, spawned_by=SpawnedBy.auto, now=NOW, estimate=estimate))
@@ -177,7 +201,13 @@ def _digest(store: MemoryStore, level: DigestLevel, key: str, coverage_source: l
         period_key=key,
         coverage=coverage,
         coverage_hash=coverage_hash(coverage),
-        digest=PeriodDigest(summary=f"digest {key}", on_my_mind=[], highlights=[], open_loops=[], learned=[]),
+        digest=PeriodDigest(
+            summary=f"digest {key}",
+            on_my_mind=list(on_my_mind),
+            highlights=list(highlights),
+            open_loops=[],
+            learned=[],
+        ),
     )
     assert store.record_outcome(
         task.id, TaskOutcome(provenance=_provenance(task.id, model="test:high"), result=result), NOW
@@ -379,3 +409,90 @@ async def test_outdated_records_that_cannot_spawn_are_reported(listed):
 
 async def _no_sources(user: str, target: str, model: str) -> TaskEstimate:
     raise ValueError(f"week {target} has no current sources to digest")
+
+
+def test_home_open_loops_cover_the_last_week_newest_session_first(setup):
+    service, sessions, store = setup
+    days_ago = [_session(sessions, f"{days} days ago", last_active=NOW - timedelta(days=days)) for days in (3, 1, 8)]
+    turned_private = _session(sessions, "turned private")
+    for session_id, loops in zip([*days_ago, turned_private], [["c"], ["a", "b"], ["stale"], ["secret"]], strict=True):
+        _extract(store, session_id, week="2026-W39", open_loops=tuple(loops))
+    # The sweep purges its extraction later; until then the home page must not show it.
+    state = sessions.load_state(turned_private)
+    assert state is not None
+    state.attributes.private = True
+    sessions.save_state(state)
+
+    loops = service.open_loops("alice")
+
+    assert [(loop.text, loop.session_title) for loop in loops] == [
+        ("a", "1 days ago"),
+        ("b", "1 days ago"),
+        ("c", "3 days ago"),
+    ]
+    assert service.open_loops("bob") == []
+
+
+def test_home_this_week_shows_the_current_weeks_sessions_before_last_weeks_digest(setup):
+    service, sessions, store = setup
+    assert service.this_week("alice") is None
+
+    _extract(store, _session(sessions, "last week"), week="2026-W38")
+    theme = DigestTheme(theme="Talos upgrade", refs=["s1"])
+    coverage = store.current_extractions("alice", "2026-W38")
+    _digest(store, DigestLevel.week, "2026-W38", coverage, on_my_mind=(theme,), highlights=("Upgraded.",))
+
+    digest_week = service.this_week("alice")
+    assert digest_week is not None
+    assert (digest_week.source, digest_week.period_key) == ("week_digest", "2026-W38")
+    assert (digest_week.themes, digest_week.highlights, digest_week.sessions) == ([theme], ["Upgraded."], [])
+
+    _extract(store, _session(sessions, "monday"), week="2026-W39")
+    _extract(store, _session(sessions, "hidden", private=True), week="2026-W39")
+
+    sessions_week = service.this_week("alice")
+    assert sessions_week is not None
+    assert (sessions_week.source, sessions_week.period_key) == ("sessions", "2026-W39")
+    assert [s.title for s in sessions_week.sessions] == ["monday"]
+
+
+@pytest.mark.parametrize("change", ["private", "deleted"])
+def test_home_this_week_skips_a_digest_covering_a_session_no_longer_visible(setup, change):
+    service, sessions, store = setup
+    kept, gone = _session(sessions, "kept"), _session(sessions, "gone")
+    for session_id in (kept, gone):
+        _extract(store, session_id, week="2026-W38")
+    _digest(store, DigestLevel.week, "2026-W38", store.current_extractions("alice", "2026-W38"))
+    assert service.this_week("alice") is not None
+
+    # Until the sweep purges it, a private session's extraction and the digest stay current.
+    if change == "private":
+        state = sessions.load_state(gone)
+        assert state is not None
+        state.attributes.private = True
+        sessions.save_state(state)
+    else:
+        assert sessions.delete_session(gone)
+
+    assert service.this_week("alice") is None
+
+
+@pytest.mark.parametrize(
+    ("day", "month", "expected"),
+    [
+        (Decimal("0.011"), None, None),  # 73% of the day
+        (Decimal("0.01"), Decimal("0.02"), ("day", Decimal("0.01"))),  # 80% of the day, 40% of the month
+        (Decimal("0.009"), Decimal("0.0085"), ("month", Decimal("0.0085"))),  # both close, the month closer
+    ],
+)
+def test_home_budget_notice_shows_the_window_closest_to_its_limit(setup, day, month, expected):
+    service, sessions, store = setup
+    for title in ("one", "two"):  # 0.004 each
+        _extract(store, _session(sessions, title))
+    budget = MemoryBudget(cost_usd_per_day=day, cost_usd_per_month=month)
+    service._user_config_for = lambda _: UserConfig(memory=UserMemoryConfig(budget=budget))
+
+    notice = service.budget_notice("alice")
+
+    assert (None if notice is None else (notice.window, notice.limit_usd)) == expected
+    assert notice is None or notice.used_usd == Decimal("0.008")

@@ -370,6 +370,15 @@ class SessionEngine(
         """Return the ``ActiveSession`` if loaded, else ``None``."""
         return self._active.get(session_id)
 
+    def sessions_awaiting_approval(self, owner: str) -> list[SessionState]:
+        """*owner*'s sessions whose running turn is parked on an approval or escalation, latest first."""
+        waiting = [
+            active.state
+            for active in self._active.values()
+            if active.owner == owner and (active.pending_approval_requests or active.pending_escalations)
+        ]
+        return sorted(waiting, key=lambda state: state.last_active, reverse=True)
+
     def _sync_active_session_policy(self, active: ActiveSession) -> None:
         if active.security is not None:
             active.security.set_policy(
