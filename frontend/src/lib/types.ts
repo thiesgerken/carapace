@@ -1085,7 +1085,7 @@ export interface HomeOpenLoop {
 }
 
 export interface HomeThisWeek {
-  /** A week digest covering the current week, or else the abstracts of its sessions. */
+  /** The current week's sessions, or last week's digest while the week has none yet. */
   source: "week_digest" | "sessions";
   period_key: string;
   /** `refs` are session ids. */

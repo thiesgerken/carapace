@@ -345,7 +345,7 @@ The page without an open session (`/`) is where you pick things up:
   - outdated memory records;
   - a memory budget close to its limit, linking to the memory settings.
 - **Open loops:** from the extractions of sessions active in the last 7 days, newest first, each with **Continue** into its session.
-- **This week:** the themes and highlights of the current week's digest, or the abstracts of its sessions when there is no digest yet. Links into the week's period view.
+- **This week:** the abstracts of the current week's sessions, or the themes and highlights of last week's digest while the week has no sessions yet. Links into that week's period view.
 
 All memory text on the page is rendered as plain text, and every link is built from session ids and period keys, never from the text. Without memory records, the page shows only the composer and a pointer to the Memory area.
 
