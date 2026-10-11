@@ -50,6 +50,7 @@ src/carapace/          # main package
   ws_models.py         # WebSocket message protocol models
   usage.py             # token usage tracking (ModelUsage, UsageTracker)
   prompt_prefix.py     # shared system prompt prefix (AGENTS/SOUL/USER.md, skill catalog)
+  prompt_preview.py    # what every LLM role sends, split into sections (GET /api/prompts/preview)
   skills.py            # skill registry
   credentials.py       # password-manager-backed credentials
   agent/

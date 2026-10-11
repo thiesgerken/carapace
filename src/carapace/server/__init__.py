@@ -9,7 +9,6 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from zoneinfo import ZoneInfo
 
 import logfire
 import loguru
@@ -46,7 +45,6 @@ from ..knowledge import KnowledgeRepoRegistry
 from ..llm import ModelFactory, make_model_factory
 from ..memory.handlers import DigestHandler, MirrorHandler, SessionExtractHandler
 from ..memory.models import DigestLevel, TaskKind
-from ..memory.prompt_block import build_memory_block
 from ..memory.service import MemoryService
 from ..memory.store import MemoryStore
 from ..models.config import Config
@@ -65,7 +63,6 @@ from ..sandbox.runtime import ContainerRuntime
 from ..session import SessionEngine, SessionManager
 from ..session.archive import SessionArchiveService
 from ..usage import SessionBudgetExceededError
-from ..user_defaults import effective_memory_prompt_budget
 from .api_keys import router as api_keys_router
 from .auth import router as auth_router
 from .auth import verify_ws_token
@@ -78,6 +75,7 @@ from .memory import router as memory_router
 from .notifications import _set_notification_presence as _set_notification_presence
 from .notifications import router as notifications_router
 from .platform_settings import router as platform_settings_router
+from .prompts import router as prompts_router
 from .runtime import KnowledgeGitConfig, KnowledgeGitRuntime, MatrixChannelHandle, MatrixChannelManager
 from .session_sandbox import router as session_sandbox_router
 from .sessions import router as sessions_router
@@ -486,19 +484,6 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
         owner_for_session=resolve_session_owner,
     )
 
-    memory_store = MemoryStore(_session_factory)
-
-    def memory_block_for(user: str, session_id: str) -> str:
-        user_config = _user_config(user)
-        return build_memory_block(
-            memory_store,
-            user,
-            budget_tokens=effective_memory_prompt_budget(_config, user_config),
-            now=datetime.now(tz=UTC),
-            tz=ZoneInfo(user_config.timezone),
-            exclude_session_id=session_id,
-        ).text
-
     _engine = SessionEngine(
         config=_config,
         data_dir=_data_dir,
@@ -506,7 +491,8 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
         sandbox_mgr=_sandbox_mgr,
         credential_registry_for_session=_credential_registry_for_session,
         knowledge_repo_for_session=knowledge_repo_for_session,
-        memory_block_for=memory_block_for,
+        # Late-bound: the memory service is built after the engine, and only turns call this.
+        memory_block_for=lambda user, session_id: _memory_service.prompt_block(user, session_id).text,
         model_factory=_model_factory,
         notification_router=_notification_router,
     )
@@ -520,6 +506,7 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
     )
     _jobs_store = JobsStore(_session_factory)
     _jobs_scheduler = JobsScheduler(_jobs_store)
+    memory_store = MemoryStore(_session_factory)
     _memory_service = MemoryService(
         current_config=_live_config,
         store=memory_store,
@@ -842,6 +829,7 @@ router.include_router(history_router)
 router.include_router(jobs_router)
 router.include_router(knowledge_router)
 router.include_router(memory_router)
+router.include_router(prompts_router)
 router.include_router(session_sandbox_router)
 router.include_router(notifications_router)
 router.include_router(platform_settings_router)

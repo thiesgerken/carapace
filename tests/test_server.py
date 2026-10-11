@@ -6,6 +6,7 @@ import base64
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 from urllib.parse import parse_qs, urlsplit
 
@@ -32,6 +33,7 @@ from carapace.database.models import SessionAuditRow
 from carapace.git.store import GitStore
 from carapace.jobs import JobsScheduler, JobsStore
 from carapace.knowledge import KnowledgeRepoRegistry
+from carapace.memory.prompt_block import MemoryBlock
 from carapace.models.config import AgentConfig, AvailableModelEntry, Secret
 from carapace.models.credentials import (
     BasicAuthConfig,
@@ -3879,3 +3881,17 @@ def test_admin_platform_settings_rejects_unknown_compaction_model(client, admin_
         },
     )
     assert resp.status_code >= 400
+
+
+def test_prompt_preview_returns_the_role_preview(client: TestClient, auth_headers, monkeypatch) -> None:
+    memory = MemoryBlock(text="", tokens=0)
+    monkeypatch.setattr(srv, "_memory_service", SimpleNamespace(prompt_block=lambda _user, _sid: memory), raising=False)
+
+    response = client.get("/api/prompts/preview", params={"role": "agent"}, headers=auth_headers)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["role"] == "agent"
+    assert body["memory_used_tokens"] == 0
+    assert [section["key"] for section in body["sections"]][-1] == "volatile"
+    assert client.get("/api/prompts/preview", params={"role": "nope"}, headers=auth_headers).status_code == 422
