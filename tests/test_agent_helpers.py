@@ -1,6 +1,7 @@
 """Tests for agent helper functions (no LLM tokens needed)."""
 
 import json
+from collections.abc import Callable
 from datetime import date
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -8,16 +9,19 @@ from unittest.mock import MagicMock
 import httpx2
 import pytest
 from anthropic import AsyncAnthropic
+from openai import AsyncOpenAI
 from pydantic_ai.exceptions import ModelHTTPError
 from pydantic_ai.models import Model
 from pydantic_ai.models.anthropic import AnthropicModel
+from pydantic_ai.models.openai import OpenAIResponsesModel
 from pydantic_ai.providers.anthropic import AnthropicProvider
+from pydantic_ai.providers.openai import OpenAIProvider
 
 from carapace.agent import build_session_info, build_system_prompt, create_agent
 from carapace.agent.deps import Deps
 from carapace.credentials import CredentialRegistry
 from carapace.git.store import GitStore
-from carapace.models.config import Config
+from carapace.models.config import AvailableModelEntry, Config
 from carapace.models.session import SessionState
 from carapace.models.skills import SkillInfo
 from carapace.prompt_prefix import shared_prompt_prefix
@@ -165,36 +169,43 @@ def test_build_system_prompt_leads_with_the_shared_prefix_and_ends_volatile(tmp_
     assert len(prefix) < positions[0] and positions == sorted(positions)
 
 
-def test_agent_requests_cache_the_stable_instructions_but_not_the_session_info(tmp_path: Path):
+def _capture_agent_request(
+    tmp_path: Path, model_id: str, make_model: Callable[[httpx2.AsyncClient], Model]
+) -> tuple[Deps, dict]:
+    """Runs an agent turn against a mocked provider and returns the deps and the first request sent."""
     requests: list[dict] = []
 
     def capture(request: httpx2.Request) -> httpx2.Response:
         requests.append(json.loads(request.content))
         return httpx2.Response(500)
 
-    client = AsyncAnthropic(
-        api_key="x", max_retries=0, http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(capture))
-    )
-    state = SessionState.now(session_id="s1")
+    config = Config()
+    config.agent.available_models.append(AvailableModelEntry.model_validate(model_id))
     deps = Deps(
-        config=Config(),
+        config=config,
         data_dir=tmp_path,
         knowledge_dir=tmp_path,
-        session_state=state,
+        session_state=SessionState.now(session_id="s1"),
         sandbox=MagicMock(spec=SandboxManager),
         security=SessionSecurity("s1"),
         sentinel=MagicMock(spec=Sentinel),
         git_store=MagicMock(spec=GitStore),
-        agent_model=AnthropicModel("claude-sonnet-4-6", provider=AnthropicProvider(anthropic_client=client)),
-        agent_model_id="anthropic:claude-sonnet-4-6",
+        agent_model=make_model(httpx2.AsyncClient(transport=httpx2.MockTransport(capture))),
+        agent_model_id=model_id,
         usage_tracker=UsageTracker(),
         credential_registry=CredentialRegistry(),
     )
-
     with pytest.raises(ModelHTTPError):
         create_agent(deps).run_sync("hi", deps=deps)
+    return deps, requests[0]
 
-    [request] = requests
+
+def test_agent_requests_cache_the_stable_instructions_but_not_the_session_info(tmp_path: Path):
+    def anthropic(http_client: httpx2.AsyncClient) -> Model:
+        client = AsyncAnthropic(api_key="x", max_retries=0, http_client=http_client)
+        return AnthropicModel("claude-sonnet-4-6", provider=AnthropicProvider(anthropic_client=client))
+
+    deps, request = _capture_agent_request(tmp_path, "anthropic:claude-sonnet-4-6", anthropic)
     breakpoint_ = {"type": "ephemeral", "ttl": "5m"}
     assert request["system"] == [
         {"type": "text", "text": build_system_prompt(deps), "cache_control": breakpoint_},
@@ -202,3 +213,13 @@ def test_agent_requests_cache_the_stable_instructions_but_not_the_session_info(t
     ]
     assert request["tools"][-1]["cache_control"] == breakpoint_
     assert request["cache_control"] == breakpoint_  # the conversation, moved forward by Anthropic
+
+
+def test_agent_requests_send_no_cache_options_to_openai(tmp_path: Path):
+    # Some OpenAI backends (e.g. Codex) reject `prompt_cache_options`, and OpenAI caches prefixes on its own.
+    def openai(http_client: httpx2.AsyncClient) -> Model:
+        client = AsyncOpenAI(api_key="x", max_retries=0, http_client=http_client)
+        return OpenAIResponsesModel("gpt-6.1-sol", provider=OpenAIProvider(openai_client=client))
+
+    _, request = _capture_agent_request(tmp_path, "openai:gpt-6.1-sol", openai)
+    assert "prompt_cache_options" not in request
