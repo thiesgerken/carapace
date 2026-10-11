@@ -30,6 +30,7 @@ from ..memory.models import (
     TaskListResponse,
     TaskRunRequest,
     TaskSelection,
+    TaskSort,
     TaskSpawnRequest,
     TaskSpawnResponse,
     TaskStatus,
@@ -62,11 +63,12 @@ async def list_tasks(
     kind: Annotated[list[TaskKind] | None, Query()] = None,
     period: str | None = None,
     model: str | None = None,
+    sort: TaskSort = TaskSort.activity,
     cursor: str | None = None,
     limit: int = Query(default=100, ge=1, le=500),
 ) -> TaskListResponse:
     task_filter = TaskFilter(status=status, kind=kind, period=period, model=model)
-    return await _service().list_tasks(user.username, task_filter, cursor, limit)
+    return await _service().list_tasks(user.username, task_filter, sort, cursor, limit)
 
 
 @router.post("/tasks/estimate", response_model=EstimateTotal)

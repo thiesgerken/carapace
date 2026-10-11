@@ -50,6 +50,7 @@ from .models import (
     TaskRef,
     TaskRunRequest,
     TaskSelection,
+    TaskSort,
     TaskSpawnRequest,
     TaskSpawnResponse,
     TaskStatus,
@@ -158,8 +159,10 @@ class MemoryService:
             sessions_without_transcript=self._spawner.sessions_without_transcript.get(user, 0),
         )
 
-    async def list_tasks(self, user: str, task_filter: TaskFilter, cursor: str | None, limit: int) -> TaskListResponse:
-        page = self._store.list_tasks(user, task_filter, cursor, limit)
+    async def list_tasks(
+        self, user: str, task_filter: TaskFilter, sort: TaskSort, cursor: str | None, limit: int
+    ) -> TaskListResponse:
+        page = self._store.list_tasks(user, task_filter, cursor, limit, sort)
         matching = self._store.select_tasks(user, TaskSelection(filter=task_filter), set(TaskStatus))
         return TaskListResponse(
             items=self._views(page.items),
