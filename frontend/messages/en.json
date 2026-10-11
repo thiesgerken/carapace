@@ -98,7 +98,12 @@
                 "model": "Model",
                 "version": "Ver.",
                 "cost": "Cost/est.",
-                "actions": "Actions"
+                "actions": "Actions",
+                "activity": "Last activity"
+            },
+            "sortBy": {
+                "period": "Sort by target period (the order “Run newest” picks)",
+                "activity": "Sort by last activity"
             },
             "empty": "No tasks match these filters.",
             "blockedBudget": "⏸ budget",
@@ -139,6 +144,7 @@
             "overBudget": "This exceeds the remaining budget. Tasks beyond it wait in the queue until the budget window resets.",
             "model": "Model",
             "roleDefault": "Role default",
+            "roleDefaultResolved": "Role default ({models})",
             "cancel": "Cancel",
             "confirm": "Run"
         },

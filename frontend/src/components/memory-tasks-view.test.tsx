@@ -121,3 +121,51 @@ test("select all matching runs the whole filter, not just the visible page", asy
     restore();
   }
 });
+
+test("headers sort server-side and the model column shows what the task will run with", async () => {
+  const restore = installDom();
+  const originalFetch = globalThis.fetch;
+  const sorts: (string | null)[] = [];
+  const stale = { ...task(1, "Weekend trip"), estimate: { model: "stale-default", input_tokens: 1, output_tokens_cap: 1, cost_usd: "0.01" } };
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = new URL(String(input));
+    if (url.pathname === "/api/memory/tasks") sorts.push(url.searchParams.get("sort"));
+    const body = {
+      "/api/memory/status": STATUS,
+      "/api/memory/tasks": { ...TASKS, items: [stale], next_cursor: null },
+    }[url.pathname];
+    assert.ok(body !== undefined, `unexpected request ${url.pathname}`);
+    return new Response(JSON.stringify(body), { headers: { "Content-Type": "application/json" } });
+  }) as typeof fetch;
+
+  try {
+    const view = await renderReact(
+      <NextIntlClientProvider locale="en" messages={messages} timeZone="UTC">
+        <MemoryStatusProvider server={SERVER}>
+          <MemoryTasksView server={SERVER} token="" />
+        </MemoryStatusProvider>
+      </NextIntlClientProvider>,
+    );
+    const settle = () => runInAct(() => new Promise((resolve) => setTimeout(resolve, 0)));
+    await settle();
+    const header = (label: string) => view.container.querySelector(`th:has(button[title^="Sort by ${label}"])`)!;
+
+    assert.equal(sorts.at(-1), "activity");
+    assert.equal(header("last activity").getAttribute("aria-sort"), "descending");
+    // STATUS.models.memory_low (the session_extract role), and not the estimate's model, also not as a filter option.
+    const modelCell = view.container.querySelector("tbody tr")!.children[4];
+    assert.equal(modelCell.textContent, "haiku");
+    assert.doesNotMatch(view.container.textContent ?? "", /stale-default/);
+
+    await click(header("target period").querySelector("button")!);
+    await settle();
+    assert.equal(sorts.at(-1), "period");
+    assert.equal(header("target period").getAttribute("aria-sort"), "descending");
+    assert.equal(header("last activity").getAttribute("aria-sort"), "none");
+
+    await view.unmount();
+  } finally {
+    globalThis.fetch = originalFetch;
+    restore();
+  }
+});

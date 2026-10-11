@@ -2,35 +2,33 @@
 
 import { Fragment, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Ban, Loader2, Play, RotateCcw } from "lucide-react";
+import { ArrowDown, Ban, Loader2, Play, RotateCcw } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
 import { buttonClassName, controlClassName, DetailList, MemoryProvenanceList, PickMatchingRow } from "@/components/memory-ui";
 import { MemoryRunDialog } from "@/components/memory-run-dialog";
 import { useMemoryStatus } from "@/components/memory-status";
 import { cancelMemoryTasks, listMemoryTasks, retryMemoryTasks } from "@/lib/api";
-import { formatAbsoluteTime } from "@/lib/format-time";
+import { formatAbsoluteTime, formatRelativeTime } from "@/lib/format-time";
 import {
   formatTokenEstimate,
   formatTokens,
   formatUsd,
   MEMORY_TASK_KINDS,
   MEMORY_TASK_STATUSES,
+  taskActivityAt,
+  taskRunModel,
   toTaskFilter,
   toTaskSelection,
   type TaskFilterForm,
   type TaskPick,
 } from "@/lib/memory";
-import type { MemoryTaskListResponse, MemoryTaskSelection, MemoryTaskView } from "@/lib/types";
+import type { MemoryTaskListResponse, MemoryTaskSelection, MemoryTaskSort, MemoryTaskView } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 const NEWEST_BATCH = 50;
 const DEFAULT_FORM: TaskFilterForm = { status: "pending", kind: "", period: "", model: "" };
 const NO_PICK: TaskPick = { kind: "ids", ids: [] };
-
-
-function taskModel(task: MemoryTaskView): string | null {
-  return task.provenance?.model ?? task.model_override ?? task.estimate?.model ?? null;
-}
+const COLUMN_COUNT = 9;
 
 /** Where the produced record is shown. The Sessions and Timeline tabs read these query params. */
 function resultHref(task: MemoryTaskView): string | null {
@@ -49,10 +47,13 @@ function resultHref(task: MemoryTaskView): string | null {
 export function MemoryTasksView({ server, token }: { server: string; token: string }) {
   const t = useTranslations("memory.tasks");
   const tStatuses = useTranslations("memory.taskStatuses");
+  const tSidebar = useTranslations("sidebar");
   const locale = useLocale();
   const { status, refreshStatus } = useMemoryStatus();
   const [form, setForm] = useState(DEFAULT_FORM);
   const filter = useMemo(() => toTaskFilter(form), [form]);
+  const [sort, setSort] = useState<MemoryTaskSort>("activity");
+  const [now, setNow] = useState(() => Date.now());
   const [page, setPage] = useState<MemoryTaskListResponse | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -66,10 +67,11 @@ export function MemoryTasksView({ server, token }: { server: string; token: stri
   // ponytail: a reload drops pages fetched via "Load more"; keep a page count if that annoys.
   useEffect(() => {
     let cancelled = false;
-    listMemoryTasks(server, filter)
+    listMemoryTasks(server, filter, sort)
       .then((result) => {
         if (cancelled) return;
         setPage(result);
+        setNow(Date.now());
         setError(null);
       })
       .catch((listError: unknown) => {
@@ -78,16 +80,17 @@ export function MemoryTasksView({ server, token }: { server: string; token: stri
     return () => {
       cancelled = true;
     };
-  }, [server, filter, status]);
+  }, [server, filter, sort, status]);
 
   const items = page?.items ?? [];
   const total = page?.total ?? 0;
   const visibleIds = items.map((task) => task.id);
   const allVisiblePicked = pick.kind === "matching" || (items.length > 0 && visibleIds.every((id) => pick.ids.includes(id)));
   const pickedCount = pick.kind === "matching" ? total : pick.ids.length;
+  const models = status?.models ?? null;
   const modelOptions = [...new Set([
-    ...(status ? Object.values(status.models) : []),
-    ...items.map(taskModel).filter((model): model is string => model !== null),
+    ...(models ? Object.values(models) : []),
+    ...items.map((task) => taskRunModel(task, models)).filter((model): model is string => model !== null),
     ...(form.model ? [form.model] : []),
   ])].sort();
 
@@ -106,7 +109,7 @@ export function MemoryTasksView({ server, token }: { server: string; token: stri
     if (!page?.next_cursor) return;
     setLoadingMore(true);
     try {
-      const next = await listMemoryTasks(server, filter, page.next_cursor);
+      const next = await listMemoryTasks(server, filter, sort, page.next_cursor);
       setPage({ ...next, items: [...page.items, ...next.items] });
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : String(loadError));
@@ -229,16 +232,17 @@ export function MemoryTasksView({ server, token }: { server: string; token: stri
                   />
                 </th>
                 <th className="px-3 py-2 font-medium">{t("columns.kind")}</th>
-                <th className="px-3 py-2 font-medium">{t("columns.target")}</th>
+                <SortableHeader label={t("columns.target")} title={t("sortBy.period")} active={sort === "period"} onSort={() => setSort("period")} />
                 <th className="px-3 py-2 font-medium">{t("columns.status")}</th>
                 <th className="px-3 py-2 font-medium">{t("columns.model")}</th>
                 <th className="px-3 py-2 font-medium">{t("columns.version")}</th>
+                <SortableHeader label={t("columns.activity")} title={t("sortBy.activity")} active={sort === "activity"} onSort={() => setSort("activity")} />
                 <th className="px-3 py-2 text-right font-medium">{t("columns.cost")}</th>
                 <th className="w-10 px-3 py-2"><span className="sr-only">{t("columns.actions")}</span></th>
               </tr>
               {allVisiblePicked && total > items.length ? (
                 <PickMatchingRow
-                  colSpan={8}
+                  colSpan={COLUMN_COUNT}
                   total={total}
                   matching={pick.kind === "matching"}
                   onPickMatching={() => setPick({ kind: "matching" })}
@@ -248,9 +252,9 @@ export function MemoryTasksView({ server, token }: { server: string; token: stri
             </thead>
             <tbody>
               {page === null && error === null ? (
-                <tr><td colSpan={8} className="px-3 py-6 text-center text-muted-foreground"><Loader2 className="mx-auto h-4 w-4 animate-spin" /></td></tr>
+                <tr><td colSpan={COLUMN_COUNT} className="px-3 py-6 text-center text-muted-foreground"><Loader2 className="mx-auto h-4 w-4 animate-spin" /></td></tr>
               ) : items.length === 0 ? (
-                <tr><td colSpan={8} className="px-3 py-6 text-center text-muted-foreground">{t("empty")}</td></tr>
+                <tr><td colSpan={COLUMN_COUNT} className="px-3 py-6 text-center text-muted-foreground">{t("empty")}</td></tr>
               ) : items.map((task) => {
                 const expanded = expandedId === task.id;
                 return (
@@ -283,8 +287,11 @@ export function MemoryTasksView({ server, token }: { server: string; token: stri
                         {tStatuses(task.status)}
                         {task.blocked_reason === "budget" ? <div className="text-xs text-amber-700 dark:text-amber-400">{t("blockedBudget")}</div> : null}
                       </td>
-                      <td className="px-3 py-2 font-mono text-xs">{taskModel(task) ?? "—"}</td>
+                      <td className="px-3 py-2 font-mono text-xs">{taskRunModel(task, models) ?? "—"}</td>
                       <td className="px-3 py-2 font-mono text-xs">{task.provenance?.carapace_version ?? "—"}</td>
+                      <td className="whitespace-nowrap px-3 py-2 text-xs text-muted-foreground" title={formatAbsoluteTime(taskActivityAt(task), locale)}>
+                        {formatRelativeTime(taskActivityAt(task), locale, now, tSidebar("time.justNow"))}
+                      </td>
                       <td className="px-3 py-2 text-right tabular-nums">{costCell(task)}</td>
                       <td className="px-3 py-2">
                         {task.status === "failed" ? (
@@ -303,7 +310,7 @@ export function MemoryTasksView({ server, token }: { server: string; token: stri
                     </tr>
                     {expanded ? (
                       <tr className="border-b border-border/60 bg-muted/40">
-                        <td colSpan={8} className="px-3 pb-3">
+                        <td colSpan={COLUMN_COUNT} className="px-3 pb-3">
                           <MemoryTaskDetail task={task} />
                         </td>
                       </tr>
@@ -328,6 +335,9 @@ export function MemoryTasksView({ server, token }: { server: string; token: stri
           server={server}
           token={token}
           selection={runSelection}
+          kinds={runSelection.ids
+            ? items.filter((task) => runSelection.ids?.includes(task.id)).map((task) => task.kind)
+            : runSelection.filter?.kind ?? MEMORY_TASK_KINDS}
           onClose={() => setRunSelection(null)}
           onQueued={(count) => {
             setNotice(t("queued", { count }));
@@ -337,6 +347,17 @@ export function MemoryTasksView({ server, token }: { server: string; token: stri
         />
       ) : null}
     </div>
+  );
+}
+
+function SortableHeader({ label, title, active, onSort }: { label: string; title: string; active: boolean; onSort: () => void }) {
+  return (
+    <th aria-sort={active ? "descending" : "none"} className="px-3 py-2 font-medium">
+      <button type="button" title={title} onClick={onSort} className={cn("inline-flex items-center gap-1 hover:text-foreground", active && "text-foreground")}>
+        {label}
+        {active ? <ArrowDown className="h-3 w-3" /> : null}
+      </button>
+    </th>
   );
 }
 

@@ -6,18 +6,20 @@ import { useLocale, useTranslations } from "next-intl";
 import { useMemoryStatus } from "@/components/memory-status";
 import { ModelPicker } from "@/components/model-picker";
 import { estimateMemoryTasks, fetchModels, runMemoryTasks, type AvailableModelInfo } from "@/lib/api";
-import { exceedsBudget, formatTokenEstimate, formatTokens, formatUsd, remainingBudget } from "@/lib/memory";
-import type { MemoryEstimateTotal, MemoryTaskSelection } from "@/lib/types";
+import { exceedsBudget, formatTokenEstimate, formatTokens, formatUsd, remainingBudget, roleDefaultModels } from "@/lib/memory";
+import type { MemoryEstimateTotal, MemoryTaskKind, MemoryTaskSelection } from "@/lib/types";
 
 interface MemoryRunDialogProps {
   server: string;
   token: string;
   selection: MemoryTaskSelection;
+  /** Kinds of the selected tasks, to name the models the role default resolves to. */
+  kinds: readonly MemoryTaskKind[];
   onClose: () => void;
   onQueued: (count: number) => void;
 }
 
-export function MemoryRunDialog({ server, token, selection, onClose, onQueued }: MemoryRunDialogProps) {
+export function MemoryRunDialog({ server, token, selection, kinds, onClose, onQueued }: MemoryRunDialogProps) {
   const t = useTranslations("memory.run");
   const locale = useLocale();
   const { status } = useMemoryStatus();
@@ -65,6 +67,7 @@ export function MemoryRunDialog({ server, token, selection, onClose, onQueued }:
 
   const remaining = status ? remainingBudget(status) : null;
   const overBudget = estimate !== null && status !== null && exceedsBudget(estimate, status);
+  const defaultModels = status ? roleDefaultModels(kinds, status.models) : null;
 
   return (
     <dialog
@@ -119,8 +122,7 @@ export function MemoryRunDialog({ server, token, selection, onClose, onQueued }:
               setError(null);
             }}
             disabled={running}
-            defaultLabel={t("roleDefault")}
-            defaultDescription={status ? `memory_low: ${status.models.memory_low} · memory_high: ${status.models.memory_high}` : undefined}
+            defaultLabel={defaultModels ? t("roleDefaultResolved", { models: defaultModels }) : t("roleDefault")}
           />
         </div>
 

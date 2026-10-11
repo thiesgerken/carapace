@@ -98,7 +98,12 @@
                 "model": "Modell",
                 "version": "Vers.",
                 "cost": "Kosten/Schätz.",
-                "actions": "Aktionen"
+                "actions": "Aktionen",
+                "activity": "Letzte Aktivität"
+            },
+            "sortBy": {
+                "period": "Nach Zielzeitraum sortieren (Reihenfolge von „Neueste ausführen“)",
+                "activity": "Nach letzter Aktivität sortieren"
             },
             "empty": "Keine Aufgaben passen zu diesen Filtern.",
             "blockedBudget": "⏸ Budget",
@@ -139,6 +144,7 @@
             "overBudget": "Das übersteigt das Restbudget. Aufgaben darüber hinaus warten in der Warteschlange, bis das Budgetfenster zurückgesetzt wird.",
             "model": "Modell",
             "roleDefault": "Standard der Rolle",
+            "roleDefaultResolved": "Standard der Rolle ({models})",
             "cancel": "Abbrechen",
             "confirm": "Ausführen"
         },

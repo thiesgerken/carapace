@@ -27,6 +27,7 @@ from carapace.memory.models import (
     TaskKind,
     TaskOutcome,
     TaskSelection,
+    TaskSort,
     TaskStatus,
 )
 from carapace.memory.store import MemoryStore
@@ -246,17 +247,33 @@ def test_selection_is_scoped_to_the_user(store: MemoryStore):
     assert _get(store, "bob", bobs.id) is not None
 
 
-def test_list_tasks_paginates_in_run_newest_order(store: MemoryStore):
+def test_list_tasks_by_period_paginates_in_run_newest_order(store: MemoryStore):
     mid = _spawn_extract(store, "s1", "2026-W33")
     new = _spawn_extract(store, "s2", "2026-W37")
     old = _spawn_extract(store, "s3", "2026-W30")
-    page = store.list_tasks("alice", TaskFilter(), None, 2)
+    page = store.list_tasks("alice", TaskFilter(), None, 2, TaskSort.period)
     assert [t.id for t in page.items] == [new.id, mid.id] and page.total == 3 and page.next_cursor is not None
-    rest = store.list_tasks("alice", TaskFilter(), page.next_cursor, 2)
+    rest = store.list_tasks("alice", TaskFilter(), page.next_cursor, 2, TaskSort.period)
     assert [t.id for t in rest.items] == [old.id] and rest.next_cursor is None
     # The top N rows are exactly what "run newest N" queues.
     newest = store.select_tasks("alice", TaskSelection(filter=TaskFilter(), newest=2), {TaskStatus.pending})
     assert [t.id for t in newest] == [t.id for t in page.items]
+
+
+def test_list_tasks_by_activity_puts_the_last_change_first(store: MemoryStore):
+    finished = _spawn_extract(store, "s1", "2026-W37")
+    retried = _spawn_extract(store, "s2", "2026-W30")
+    untouched = _spawn_extract(store, "s3", "2026-W33")  # created at NOW, before anything below
+    store.run("alice", TaskSelection(ids=[finished.id, retried.id]), None, NOW + timedelta(minutes=1))
+    for minute, task in ((2, retried), (3, finished)):
+        assert store.claim(task.id, NOW + timedelta(minutes=minute))
+    store.record_failure(retried.id, "boom", NOW + timedelta(minutes=4))
+    store.cancel_task(finished.id, "stop", NOW + timedelta(minutes=5))
+    # A retry is the latest change, and its earlier start must not count as one.
+    store.retry("alice", [retried.id], NOW + timedelta(minutes=6))
+
+    page = store.list_tasks("alice", TaskFilter(), None, 10)
+    assert [t.id for t in page.items] == [retried.id, finished.id, untouched.id]
 
 
 def test_claim_is_atomic_and_counts_attempts(store: MemoryStore):

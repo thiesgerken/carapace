@@ -7,11 +7,13 @@ import type {
   MemoryPeriodNode,
   MemoryEstimateTotal,
   MemoryExtractionState,
+  MemoryModelRole,
   MemoryOutdatedReason,
   MemorySessionFilter,
   MemorySessionRow,
   MemoryTaskSpawnRequest,
   MemoryStatus,
+  MemoryTask,
   MemoryTaskFilter,
   MemoryTaskKind,
   MemoryTaskSelection,
@@ -20,6 +22,37 @@ import type {
 
 export const MEMORY_TASK_STATUSES: readonly MemoryTaskStatus[] = ["pending", "queued", "running", "done", "failed", "cancelled"];
 export const MEMORY_TASK_KINDS: readonly MemoryTaskKind[] = ["session_extract", "week_digest", "month_digest", "mirror"];
+
+const TASK_MODEL_ROLES: Record<MemoryTaskKind, MemoryModelRole | null> = {
+  session_extract: "memory_low",
+  week_digest: "memory_high",
+  month_digest: "memory_high",
+  mirror: null,
+};
+
+/** The model(s) a run of these task kinds resolves to without an override; null when none needs a model. */
+export function roleDefaultModels(kinds: readonly MemoryTaskKind[], models: Record<MemoryModelRole, string>): string | null {
+  const roles = (["memory_low", "memory_high"] as const).filter((role) => kinds.some((kind) => TASK_MODEL_ROLES[kind] === role));
+  if (roles.length === 0) return null;
+  if (roles.length === 1 || models.memory_low === models.memory_high) return models[roles[0]];
+  return `low: ${models.memory_low} · high: ${models.memory_high}`;
+}
+
+/**
+ * The model a task ran with, or would run with now. Not the estimate's model: that is the role
+ * default at spawn time, and the worker resolves the role again when the task runs.
+ */
+export function taskRunModel(task: MemoryTask, models: Record<MemoryModelRole, string> | null): string | null {
+  if (task.provenance) return task.provenance.model;
+  if (task.model_override) return task.model_override;
+  const role = TASK_MODEL_ROLES[task.kind];
+  return role && models ? models[role] : null;
+}
+
+/** When the task last changed: the timestamp the "activity" sort orders by. */
+export function taskActivityAt(task: MemoryTask): string {
+  return task.finished_at ?? task.started_at ?? task.queued_at ?? task.created_at;
+}
 
 /** Budget-blocked tasks stay queued until the budget moves, so they don't count as progress to poll for. */
 export function hasActiveTasks(status: MemoryStatus): boolean {
