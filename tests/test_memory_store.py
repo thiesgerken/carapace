@@ -586,7 +586,7 @@ def test_dependencies_of_no_digests_skip_the_query(store: MemoryStore):
     assert store.dependencies("alice", [_spawn_extract(store, "s1")]) == {}
 
 
-def test_include_dependencies_adds_the_pending_sources_of_selected_digests(store: MemoryStore):
+def test_running_with_dependencies_adds_the_pending_sources_of_selected_digests(store: MemoryStore):
     pending = _spawn_extract(store, "s1")
     queued = _spawn_extract(store, "s2")
     store.run("alice", TaskSelection(ids=[queued.id]), None, NOW)
@@ -598,9 +598,8 @@ def test_include_dependencies_adds_the_pending_sources_of_selected_digests(store
     selection = TaskSelection(ids=[week.id])
 
     assert store.missing_dependencies("alice", selection) == 1
-    with_dependencies = selection.model_copy(update={"include_dependencies": True})
-    assert store.missing_dependencies("alice", with_dependencies) == 1  # measured against the plain selection
-    assert store.run("alice", with_dependencies, None, NOW) == 2
+    assert len(store.select_tasks("alice", selection, {TaskStatus.pending}, include_dependencies=True)) == 2
+    assert store.run("alice", selection, None, NOW, include_dependencies=True) == 2
     statuses = {
         t.id: t.status for t in store.select_tasks("alice", TaskSelection(filter=TaskFilter()), set(TaskStatus))
     }

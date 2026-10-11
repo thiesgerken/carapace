@@ -223,10 +223,11 @@ class MemoryStore:
         statuses: set[TaskStatus],
         *,
         default_models: Mapping[TaskKind, str] | None = None,
+        include_dependencies: bool = False,
     ) -> list[MemoryTask]:
         """Tasks of a selection that are in one of *statuses*, newest period first."""
         with self._session_factory() as db:
-            ids = _selected_ids(db, user, selection, statuses, default_models)
+            ids = _selected_ids(db, user, selection, statuses, default_models, include_dependencies)
             rows = db.scalars(select(MemoryTaskRow).where(MemoryTaskRow.id.in_(ids)).order_by(*_NEWEST_FIRST)).all()
         return [_task(row) for row in rows]
 
@@ -234,9 +235,8 @@ class MemoryStore:
         self, user: str, selection: TaskSelection, *, default_models: Mapping[TaskKind, str] | None = None
     ) -> int:
         """Pending source tasks of the selection's pending digests that the selection leaves out."""
-        without = selection.model_copy(update={"include_dependencies": False})
         with self._session_factory() as db:
-            selected = _selected_ids(db, user, without, {TaskStatus.pending}, default_models)
+            selected = _selected_ids(db, user, selection, {TaskStatus.pending}, default_models)
             return len(_pending_source_ids(db, user, selected))
 
     def run(
@@ -247,12 +247,13 @@ class MemoryStore:
         now: datetime,
         *,
         default_models: Mapping[TaskKind, str] | None = None,
+        include_dependencies: bool = False,
     ) -> int:
-        """pending -> queued."""
+        """pending -> queued; *include_dependencies* adds the pending sources of the selected digests."""
         values: dict[str, object] = {"status": TaskStatus.queued.value, "queued_at": now, "blocked_reason": None}
         if model_override is not None:
             values |= {"model_override": model_override, "model": model_override}
-        return self._transition(user, selection, {TaskStatus.pending}, values, default_models)
+        return self._transition(user, selection, {TaskStatus.pending}, values, default_models, include_dependencies)
 
     def retry(self, user: str, task_ids: list[int], now: datetime) -> int:
         """failed -> queued. The row is reused; attempts grows on the next claim."""
@@ -284,9 +285,10 @@ class MemoryStore:
         from_statuses: set[TaskStatus],
         values: Mapping[str, object],
         default_models: Mapping[TaskKind, str] | None,
+        include_dependencies: bool = False,
     ) -> int:
         with self._session_factory.begin() as db:
-            ids = _selected_ids(db, user, selection, from_statuses, default_models)
+            ids = _selected_ids(db, user, selection, from_statuses, default_models, include_dependencies)
             if not ids:
                 return 0
             # ponytail: one IN list; chunk it if selections ever outgrow SQLite's parameter limit.
@@ -940,6 +942,7 @@ def _selected_ids(
     selection: TaskSelection,
     statuses: set[TaskStatus],
     default_models: Mapping[TaskKind, str] | None,
+    include_dependencies: bool = False,
 ) -> list[int]:
     clauses = [MemoryTaskRow.user == user, MemoryTaskRow.status.in_([s.value for s in statuses])]
     if selection.ids is not None:
@@ -950,7 +953,7 @@ def _selected_ids(
     if selection.newest is not None:
         query = query.limit(selection.newest)
     ids = list(db.scalars(query).all())
-    if selection.include_dependencies and TaskStatus.pending in statuses:
+    if include_dependencies:
         ids += _pending_source_ids(db, user, ids)
     return ids
 

@@ -843,14 +843,14 @@ export interface MemoryTaskSelection {
   ids?: number[] | null;
   filter?: MemoryTaskFilter | null;
   newest?: number | null;
-  /** Adds the pending source tasks of the selected digests. */
-  include_dependencies?: boolean;
 }
 
 /** Body of POST /tasks/estimate and POST /tasks/run. */
 export interface MemoryTaskRunRequest {
   selection: MemoryTaskSelection;
   model_override?: string | null;
+  /** Adds the pending source tasks of the selected digests, so the digests wait for them. */
+  include_dependencies?: boolean;
 }
 
 /** Body of POST /tasks/retry. */
@@ -892,7 +892,7 @@ export interface MemoryEstimateTotal {
 
 /** Response of POST /tasks/estimate. */
 export interface MemoryRunEstimate extends MemoryEstimateTotal {
-  /** Pending source tasks of the selection's digests that it leaves out; include_dependencies adds them. */
+  /** Pending source tasks of the selection's digests that it leaves out; include_dependencies runs them too. */
   missing_dependencies: number;
 }
 

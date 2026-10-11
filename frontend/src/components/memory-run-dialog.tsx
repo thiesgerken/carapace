@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Loader2, Play } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
 import { useMemoryStatus } from "@/components/memory-status";
@@ -19,8 +19,8 @@ interface MemoryRunDialogProps {
   onQueued: (count: number) => void;
 }
 
-/** An estimate outcome, tagged with the model override and selection it was computed for. */
-type EstimateOutcome = { model: string | null; selection: MemoryTaskSelection } & ({ total: MemoryRunEstimate } | { error: string });
+/** An estimate outcome, tagged with the model override and dependency choice it was computed for. */
+type EstimateOutcome = { model: string | null; includeDependencies: boolean } & ({ total: MemoryRunEstimate } | { error: string });
 
 export function MemoryRunDialog({ server, token, selection, kinds, onClose, onQueued }: MemoryRunDialogProps) {
   const t = useTranslations("memory.run");
@@ -30,10 +30,6 @@ export function MemoryRunDialog({ server, token, selection, kinds, onClose, onQu
   const [models, setModels] = useState<AvailableModelInfo[]>([]);
   const [modelOverride, setModelOverride] = useState<string | null>(null);
   const [includeDependencies, setIncludeDependencies] = useState(false);
-  const effectiveSelection = useMemo(
-    () => (includeDependencies ? { ...selection, include_dependencies: true } : selection),
-    [selection, includeDependencies],
-  );
   const [outcome, setOutcome] = useState<EstimateOutcome | null>(null);
   const [running, setRunning] = useState(false);
   const [runError, setRunError] = useState<string | null>(null);
@@ -48,8 +44,8 @@ export function MemoryRunDialog({ server, token, selection, kinds, onClose, onQu
 
   useEffect(() => {
     let cancelled = false;
-    const tag = { model: modelOverride, selection: effectiveSelection };
-    estimateMemoryTasks(server, { selection: effectiveSelection, model_override: modelOverride })
+    const tag = { model: modelOverride, includeDependencies };
+    estimateMemoryTasks(server, { selection, model_override: modelOverride, include_dependencies: includeDependencies })
       .then((total) => {
         if (!cancelled) setOutcome({ ...tag, total });
       })
@@ -59,13 +55,13 @@ export function MemoryRunDialog({ server, token, selection, kinds, onClose, onQu
     return () => {
       cancelled = true;
     };
-  }, [server, effectiveSelection, modelOverride]);
+  }, [server, selection, modelOverride, includeDependencies]);
 
   async function handleRun(): Promise<void> {
     setRunning(true);
     setRunError(null);
     try {
-      const { count } = await runMemoryTasks(server, { selection: effectiveSelection, model_override: modelOverride });
+      const { count } = await runMemoryTasks(server, { selection, model_override: modelOverride, include_dependencies: includeDependencies });
       onQueued(count);
       dialogRef.current?.close();
     } catch (caught) {
@@ -74,8 +70,8 @@ export function MemoryRunDialog({ server, token, selection, kinds, onClose, onQu
     }
   }
 
-  // Keyed by model and selection: a stale outcome reads as loading, and re-picking the current model keeps its estimate.
-  const current = outcome?.model === modelOverride && outcome.selection === effectiveSelection ? outcome : null;
+  // Keyed by model and dependency choice: a stale outcome reads as loading, and re-picking the current model keeps its estimate.
+  const current = outcome?.model === modelOverride && outcome.includeDependencies === includeDependencies ? outcome : null;
   const estimate = current && "total" in current ? current.total : null;
   const error = (current && "error" in current ? current.error : null) ?? runError;
   const remaining = status ? remainingBudget(status) : null;

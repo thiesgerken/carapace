@@ -109,11 +109,11 @@ test("select all matching runs the whole filter, not just the visible page", asy
     await click(button("Run selected (120)"));
     await settle();
     const filter = { status: ["pending"], kind: null, period: null, model: null };
-    assert.deepEqual(posts.at(-1), { path: "/api/memory/tasks/estimate", body: { selection: { filter }, model_override: null } });
+    assert.deepEqual(posts.at(-1), { path: "/api/memory/tasks/estimate", body: { selection: { filter }, model_override: null, include_dependencies: false } });
 
     await click(button("Run"));
     await settle();
-    assert.deepEqual(posts.at(-1), { path: "/api/memory/tasks/run", body: { selection: { filter }, model_override: null } });
+    assert.deepEqual(posts.at(-1), { path: "/api/memory/tasks/run", body: { selection: { filter }, model_override: null, include_dependencies: false } });
     assert.match(text(), /Queued 120 tasks\./);
 
     await view.unmount();

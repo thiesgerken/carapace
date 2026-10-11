@@ -178,7 +178,13 @@ class MemoryService:
         """What running the pending tasks of a selection would cost, with the requested model."""
         self._check_override(request.model_override)
         default_models = self._default_models(user)
-        tasks = self._store.select_tasks(user, request.selection, {TaskStatus.pending}, default_models=default_models)
+        tasks = self._store.select_tasks(
+            user,
+            request.selection,
+            {TaskStatus.pending},
+            default_models=default_models,
+            include_dependencies=request.include_dependencies,
+        )
         total = sum_estimates([await self._estimate_for(t, request.model_override) for t in tasks if t.estimate])
         missing = self._store.missing_dependencies(user, request.selection, default_models=default_models)
         return RunEstimate(**total.model_dump(), missing_dependencies=missing)
@@ -186,7 +192,12 @@ class MemoryService:
     async def run_tasks(self, user: str, request: TaskRunRequest) -> TaskCountResponse:
         self._check_override(request.model_override)
         count = self._store.run(
-            user, request.selection, request.model_override, self._clock(), default_models=self._default_models(user)
+            user,
+            request.selection,
+            request.model_override,
+            self._clock(),
+            default_models=self._default_models(user),
+            include_dependencies=request.include_dependencies,
         )
         self._worker.wake()
         return TaskCountResponse(count=count)

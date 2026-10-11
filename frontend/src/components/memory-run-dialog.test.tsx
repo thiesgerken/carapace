@@ -83,7 +83,7 @@ test("missing dependencies can be added to the selection before running", async 
   window.HTMLDialogElement.prototype.showModal = function showModal(this: HTMLDialogElement) {
     this.open = true;
   };
-  const posted: { path: string; body: { selection: { include_dependencies?: boolean } } }[] = [];
+  const posted: { path: string; body: { include_dependencies?: boolean } }[] = [];
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const path = new URL(String(input)).pathname;
     if (init?.body) posted.push({ path, body: JSON.parse(String(init.body)) });
@@ -117,7 +117,7 @@ test("missing dependencies can be added to the selection before running", async 
     await click(button("Run")!);
     await settle();
 
-    const selections = posted.map(({ path, body }) => [path, body.selection.include_dependencies ?? false]);
+    const selections = posted.map(({ path, body }) => [path, body.include_dependencies ?? false]);
     assert.deepEqual(selections, [
       ["/api/memory/tasks/estimate", false],
       ["/api/memory/tasks/estimate", true],

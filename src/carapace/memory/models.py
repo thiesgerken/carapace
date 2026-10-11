@@ -370,8 +370,6 @@ class TaskSelection(MemoryApiModel):
     ids: list[int] | None = None
     filter: TaskFilter | None = None
     newest: int | None = Field(default=None, ge=1)
-    # Adds the pending source tasks of the selected digests, so they run before them (see dependencies).
-    include_dependencies: bool = False
 
     @model_validator(mode="after")
     def _validate_selection(self) -> TaskSelection:
@@ -385,6 +383,8 @@ class TaskSelection(MemoryApiModel):
 class TaskRunRequest(MemoryApiModel):
     selection: TaskSelection
     model_override: str | None = None
+    # Adds the pending source tasks of the selected digests, so the digests wait for them.
+    include_dependencies: bool = False
 
 
 class TaskIdsRequest(MemoryApiModel):
@@ -443,7 +443,7 @@ class EstimateTotal(MemoryApiModel):
 
 
 class RunEstimate(EstimateTotal):
-    # Pending source tasks of the selection's digests that it leaves out (include_dependencies adds them).
+    # Pending source tasks of the selection's digests that it leaves out (include_dependencies runs them too).
     missing_dependencies: int
 
 
