@@ -316,6 +316,19 @@ class MemorySessionExtractionRow(Base):
     )
 
 
+class MemoryDismissedLoopRow(Base):
+    """An open loop the user dismissed on the home page; ``loop_id`` hashes the session and loop text."""
+
+    __tablename__ = "memory_dismissed_loops"
+
+    user: Mapped[str] = mapped_column(String(256), ForeignKey("users.username", ondelete="CASCADE"), primary_key=True)
+    loop_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    session_id: Mapped[str] = mapped_column(
+        String(256), ForeignKey("sessions.session_id", ondelete="CASCADE"), index=True
+    )
+    dismissed_at: Mapped[datetime] = mapped_column(UtcDateTime)
+
+
 class MemoryFactRow(Base):
     """Queryable projection of the facts in current extractions, rewritten on re-extraction."""
 

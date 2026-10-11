@@ -433,6 +433,42 @@ def test_home_open_loops_cover_the_last_week_newest_session_first(setup):
     assert service.open_loops("bob") == []
 
 
+def test_home_dismissed_loops_stay_hidden_until_undone(setup):
+    service, sessions, store = setup
+    session_id = _session(sessions, "today")
+    _extract(store, session_id, week="2026-W39", open_loops=("Back up etcd.", "Call Anna."))
+    backup, call = (loop.id for loop in service.open_loops("alice"))
+
+    assert service.dismiss_loop("alice", backup)
+    assert service.dismiss_loop("alice", backup)  # idempotent
+    assert [loop.text for loop in service.open_loops("alice")] == ["Call Anna."]
+
+    assert not service.dismiss_loop("bob", call)  # not one of bob's loops
+    assert not service.dismiss_loop("alice", "0123456789abcdef")
+    service.undismiss_loop("bob", backup)  # owner-scoped: leaves alice's dismissal alone
+    assert [loop.id for loop in service.open_loops("alice")] == [call]
+
+    service.undismiss_loop("alice", backup)
+    service.undismiss_loop("alice", backup)  # idempotent
+    assert [loop.id for loop in service.open_loops("alice")] == [backup, call]
+
+    service.dismiss_loop("alice", call)
+    store.purge_extractions(session_id)
+    assert store.dismissed_loop_ids("alice") == set()
+
+
+def test_home_dismissal_survives_reextraction_only_with_the_same_text(setup):
+    service, sessions, store = setup
+    session_id = _session(sessions, "today")
+    _extract(store, session_id, week="2026-W39", open_loops=("Back up etcd.", "Call Anna."))
+    for loop in service.open_loops("alice"):
+        service.dismiss_loop("alice", loop.id)
+
+    _extract(store, session_id, week="2026-W39", open_loops=("back up  etcd.", "Call Anna about the move."))
+
+    assert [loop.text for loop in service.open_loops("alice")] == ["Call Anna about the move."]
+
+
 def test_home_this_week_shows_the_current_weeks_sessions_before_last_weeks_digest(setup):
     service, sessions, store = setup
     assert service.this_week("alice") is None

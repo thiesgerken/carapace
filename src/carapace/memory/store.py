@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from ..database.engine import SessionFactory
 from ..database.models import (
     MemoryDigestRow,
+    MemoryDismissedLoopRow,
     MemoryFactRow,
     MemorySessionExtractionRow,
     MemoryTaskRow,
@@ -701,12 +702,33 @@ class MemoryStore:
             ]
 
     def purge_extractions(self, session_id: str) -> int:
-        """Drop every extraction (and, by cascade, fact) of a session, e.g. once it turned private."""
+        """Drop every extraction (and, by cascade, fact) of a session, e.g. once it turned private,
+        and the dismissals of its open loops along with them."""
         with self._session_factory.begin() as db:
+            db.execute(delete(MemoryDismissedLoopRow).where(MemoryDismissedLoopRow.session_id == session_id))
             result = db.execute(
                 delete(MemorySessionExtractionRow).where(MemorySessionExtractionRow.session_id == session_id)
             )
             return result.rowcount  # type: ignore[missing-attribute]
+
+    # --- dismissed open loops ---
+
+    def dismissed_loop_ids(self, user: str) -> set[str]:
+        with self._session_factory() as db:
+            return set(db.scalars(select(MemoryDismissedLoopRow.loop_id).where(MemoryDismissedLoopRow.user == user)))
+
+    def dismiss_loop(self, user: str, session_id: str, loop_id: str, now: datetime) -> None:
+        with self._session_factory.begin() as db:
+            if db.get(MemoryDismissedLoopRow, (user, loop_id)) is None:
+                db.add(MemoryDismissedLoopRow(user=user, loop_id=loop_id, session_id=session_id, dismissed_at=now))
+
+    def undismiss_loop(self, user: str, loop_id: str) -> None:
+        with self._session_factory.begin() as db:
+            db.execute(
+                delete(MemoryDismissedLoopRow).where(
+                    MemoryDismissedLoopRow.user == user, MemoryDismissedLoopRow.loop_id == loop_id
+                )
+            )
 
     def facts(self, user: str, fact_filter: FactFilter) -> list[FactView]:
         """Facts of current extractions, newest week first."""
