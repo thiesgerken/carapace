@@ -12,13 +12,17 @@ export function isSameOriginUrl(url: string): boolean {
   }
 }
 
-/** Remove SVG `<image>` elements (e.g. mermaid's image shape) whose href points elsewhere. */
+/**
+ * Remove SVG `<image>` (e.g. mermaid's image shape) and `<img>` elements whose URL points elsewhere.
+ * Parsed as HTML: mermaid's strict mode returns DOMPurify's HTML serialization (`<br>`, `&nbsp;`),
+ * which an XML parser rejects.
+ */
 export function stripRemoteSvgImages(svg: string): string {
-  const doc = new window.DOMParser().parseFromString(svg, "image/svg+xml");
-  const remote = Array.from(doc.querySelectorAll("image")).filter(
-    (image) => !isSameOriginUrl(image.getAttribute("href") ?? image.getAttribute("xlink:href") ?? ""),
-  );
-  if (remote.length === 0) return svg;
-  for (const image of remote) image.remove();
-  return new window.XMLSerializer().serializeToString(doc);
+  const template = document.createElement("template");
+  template.innerHTML = svg;
+  for (const image of Array.from(template.content.querySelectorAll("image, img"))) {
+    const url = image.getAttribute("href") ?? image.getAttribute("xlink:href") ?? image.getAttribute("src") ?? "";
+    if (!isSameOriginUrl(url)) image.remove();
+  }
+  return template.innerHTML;
 }

