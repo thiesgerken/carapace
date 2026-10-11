@@ -177,6 +177,10 @@ carapace follows strict veto semantics: if **any** part of the security system s
 
 This makes the system easy to reason about: the strictest judgment always wins.
 
+## Web UI image policy
+
+The frontend's nginx sends `Content-Security-Policy: img-src 'self' data: blob:` (plus the origins in `CARAPACE_CSP_IMG_SRC_EXTRA` / `frontend.csp.imgSrcExtra`), so the browser refuses to fetch images from anywhere else. Injected model output therefore cannot exfiltrate data through image URLs, whether as a Markdown image, a mermaid `<image>` or a CSS `url()` in a diagram style. Only images are restricted: scripts and styles are not covered by this policy.
+
 ## Prompt injection hardening
 
 The sentinel is designed to resist prompt injection:

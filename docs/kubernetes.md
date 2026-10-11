@@ -350,4 +350,5 @@ Labels and `argocd.argoproj.io/tracking-id` keep sandboxes associated with the a
 - **Image tags**: pinned to `appVersion` by default; override with `image.tag`, `frontend.image.tag`, `sandbox.image.tag`
 - **Resources**: sensible defaults are included; override `resources` / `frontend.resources` as needed
 - **Priority class**: set `priorityClassName` to apply to all pods (server, frontend, sandbox)
+- **Image CSP**: the frontend sends `Content-Security-Policy: img-src 'self' data: blob:`. If the API is served from another origin, add it to `frontend.csp.imgSrcExtra` so knowledge images load (Docker Compose: `CARAPACE_CSP_IMG_SRC_EXTRA`, space-separated)
 - **PVC protection**: set `persistence.data.finalizers` and `bitwarden.persistence.finalizers` to `["kubernetes.io/pvc-protection"]` to guard against accidental deletion

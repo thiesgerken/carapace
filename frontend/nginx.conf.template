@@ -1,0 +1,43 @@
+# Rendered by the nginx image's envsubst step at container start, so CARAPACE_CSP_IMG_SRC_EXTRA
+# (space-separated origins, e.g. a backend on another domain) applies without rebuilding.
+server {
+    listen 80;
+    server_name _;
+
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # Images only: rendered model output must not beacon data out through image URLs (Markdown,
+    # mermaid <image>, CSS url()). A location's own add_header drops the server-level ones, so
+    # every location that sets headers repeats this one.
+    set $csp_img_src "img-src 'self' data: blob: ${CARAPACE_CSP_IMG_SRC_EXTRA}";
+    add_header Content-Security-Policy $csp_img_src always;
+
+    location = / {
+        add_header Cache-Control "no-store, no-cache, must-revalidate" always;
+        add_header Content-Security-Policy $csp_img_src always;
+        try_files /index.html =404;
+    }
+
+    location = /service-worker.js {
+        add_header Cache-Control "no-store, no-cache, must-revalidate" always;
+        add_header Content-Security-Policy $csp_img_src always;
+        try_files $uri =404;
+    }
+
+    location ~* \.html$ {
+        add_header Cache-Control "no-store, no-cache, must-revalidate" always;
+        add_header Content-Security-Policy $csp_img_src always;
+        try_files $uri =404;
+    }
+
+    location /_next/static/ {
+        add_header Cache-Control "public, max-age=31536000, immutable" always;
+        add_header Content-Security-Policy $csp_img_src always;
+        try_files $uri =404;
+    }
+
+    location / {
+        try_files $uri $uri.html =404;
+    }
+}

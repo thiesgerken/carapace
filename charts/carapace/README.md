@@ -258,6 +258,7 @@ The Bitwarden CLI binds to a fixed localhost-only internal port (`8088`) inside 
 | `image.tag`                                            | `""` (appVersion)                | Server image tag                                                    |
 | `frontend.enabled`                                     | `true`                           | Deploy the Next.js frontend                                         |
 | `frontend.image.tag`                                   | `""` (appVersion)                | Frontend image tag                                                  |
+| `frontend.csp.imgSrcExtra`                             | `[]`                             | Extra origins allowed in the frontend's CSP `img-src`               |
 | `server.probes.startup.initialDelaySeconds`            | `15`                             | Delay before the server startup probe runs                          |
 | `server.probes`                                        | see `values.yaml`                | Server startup, liveness, and readiness probe timing                |
 | `sandbox.image.tag`                                    | `""` (appVersion)                | Sandbox base image tag                                              |
