@@ -44,14 +44,16 @@ in the Memory area of the web UI.
   the facts learned from it. `#42` refers to event 42 of the session.
 - `weeks/YYYY-Www.md`: the digest of one ISO week, built from that week's sessions.
 - `months/YYYY-MM.md`: the digest of one month, built from the weeks whose Thursday falls into it.
+- `facts/<category>.md`: every fact learned in one category (`user`, `social`, `surroundings`),
+  newest session first, each linked to its session file.
 
-Every file starts with YAML front matter recording how it was produced: model, prompt version,
-input hash, cost and, for digests, which sources it covers.
+Session and digest files start with YAML front matter recording how they were produced: model,
+prompt version, input hash, cost and, for digests, which sources they cover.
 """
 
 
 def render_mirror(extractions: Sequence[ExtractionRecord], digests: Sequence[DigestRecord]) -> dict[str, str]:
-    """Render the current *extractions* and *digests* of one user into mirror files."""
+    """Render the current *extractions* (in session order) and *digests* of one user into mirror files."""
     stale = [f"extraction {r.id}" for r in extractions if not r.is_current]
     stale += [f"digest {r.id}" for r in digests if not r.is_current]
     if stale:
@@ -62,6 +64,7 @@ def render_mirror(extractions: Sequence[ExtractionRecord], digests: Sequence[Dig
     files = {f"{MIRROR_ROOT}/README.md": README}
     files |= {session_path(r): render_session(r) for r in extractions}
     files |= {digest_path(r): render_digest(r, ref_paths) for r in digests}
+    files |= render_facts(extractions)
     return files
 
 
@@ -82,7 +85,7 @@ def render_session(record: ExtractionRecord) -> str:
     }
     extraction = record.extraction
     facts = {
-        category: [f"{_fact_line(f)}{_fact_meta(f, [f'#{seq}' for seq in f.source_seqs])}" for f in group]
+        category: [f"{_fact_line(f)}{_fact_meta(f, _seq_refs(f))}" for f in group]
         for category, group in _by_category(extraction.facts).items()
     }
     body = [
@@ -131,6 +134,27 @@ def render_digest(record: DigestRecord, ref_paths: Mapping[str, str]) -> str:
     return _document(front_matter, body)
 
 
+def render_facts(extractions: Sequence[ExtractionRecord]) -> dict[str, str]:
+    """One file per category that has facts, newest session first (*extractions* are in session order).
+
+    Like periods without sessions, a category without facts gets no file.
+    ponytail: one file per category grows with the whole archive; split by year if it gets too big.
+    """
+    lines: dict[FactCategory, list[str]] = {category: [] for category in FactCategory}
+    for record in reversed(extractions):
+        link = f"[{record.session_id}]({posixpath.relpath(session_path(record), f'{MIRROR_ROOT}/facts')})"
+        for category, group in _by_category(record.extraction.facts).items():
+            lines[category] += [f"{_fact_line(f)}{_fact_meta(f, [link, *_seq_refs(f)])}" for f in group]
+    return {
+        f"{MIRROR_ROOT}/facts/{category.value}.md": _document(
+            {"kind": "facts", "category": category.value},
+            [f"# Facts: {_CATEGORY_HEADINGS[category]}", _list(category_lines)],
+        )
+        for category, category_lines in lines.items()
+        if category_lines
+    }
+
+
 def _period_title(record: DigestRecord) -> str:
     if record.level is DigestLevel.month:
         return f"Month {record.period_key}"
@@ -157,6 +181,10 @@ def _fact_meta(fact: Fact | DigestFact, sources: list[str]) -> str:
     return f" _({' · '.join(meta)})_"
 
 
+def _seq_refs(fact: Fact) -> list[str]:
+    return [f"#{seq}" for seq in fact.source_seqs]
+
+
 def _theme_line(theme: DigestTheme, refs: str) -> str:
     return f"{theme.theme} ({refs})" if refs else theme.theme
 
@@ -170,7 +198,11 @@ def _fact_sections(facts: Mapping[FactCategory, list[str]], *, heading: str = "F
 def _section(title: str, lines: Sequence[str], *, level: int = 2) -> str:
     if not lines:
         return ""
-    return f"{'#' * level} {title}\n\n" + "\n".join(f"- {_one_line(line)}" for line in lines)
+    return f"{'#' * level} {title}\n\n" + _list(lines)
+
+
+def _list(lines: Sequence[str]) -> str:
+    return "\n".join(f"- {_one_line(line)}" for line in lines)
 
 
 # LLM text can echo tool output. These files are read and grepped by the agent, so model output must

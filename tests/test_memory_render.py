@@ -107,6 +107,8 @@ def test_mirror_paths() -> None:
 
     assert sorted(files) == [
         "memory/README.md",
+        "memory/facts/surroundings.md",
+        "memory/facts/user.md",
         "memory/months/2026-09.md",
         "memory/sessions/2026/09/s-talos.md",
         "memory/weeks/2026-W36.md",
@@ -116,6 +118,21 @@ def test_mirror_paths() -> None:
 
 def test_session_file() -> None:
     assert render_mirror([EXTRACTION], [])["memory/sessions/2026/09/s-talos.md"] == SESSION_MD
+
+
+def test_fact_files_list_newest_session_first_and_skip_empty_categories() -> None:
+    later = EXTRACTION.model_copy(update={"session_id": "s-later", "week_key": "2026-W40", "month_key": "2026-10"})
+    files = render_mirror([EXTRACTION, later], [])  # in session order
+
+    assert "memory/facts/social.md" not in files  # no social facts, like a period without sessions
+    assert files["memory/facts/user.md"] == (
+        "---\nkind: facts\ncategory: user\n---\n\n"
+        "# Facts: You\n\n"
+        "- The user prefers upgrading on weekends. _(user_said · medium confidence · durable · "
+        "[s-later](../sessions/2026/10/s-later.md) · #2 · #9)_\n"
+        "- The user prefers upgrading on weekends. _(user_said · medium confidence · durable · "
+        "[s-talos](../sessions/2026/09/s-talos.md) · #2 · #9)_\n"
+    )
 
 
 def test_week_file_links_known_sessions_only() -> None:

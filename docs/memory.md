@@ -244,9 +244,11 @@ memory/README.md                          # explains the layout; edits are overw
 memory/sessions/2026/09/<session_id>.md
 memory/weeks/2026-W36.md
 memory/months/2026-09.md
+memory/facts/user.md                      # also social.md, surroundings.md
 ```
 
 - Each file starts with YAML front matter (provenance, and coverage for digests), followed by a Markdown body. In session files, `#42` refers to event 42 of that session.
+- `facts/<category>.md` collects the facts of all current extractions in one category, newest session first. Each line links to its session file. A category without facts gets no file. It is a view on the session files, so its front matter carries no provenance.
 - The mirror owns `memory/` completely. Each run writes exactly the files for the current records and deletes everything else there, so deleted or purged records lose their files, and pushed edits under `memory/` are reverted. Everything outside `memory/` is untouched.
 - Runs are debounced: a pending mirror runs once no LLM task of yours is queued or running, or after two minutes at the latest. A batch of tasks therefore produces **one commit** (`🧠 memory: update mirror (N records)`), not one per task. Unchanged records produce no diff and no commit.
 - The mirror uses the same commit, push and per-repo locking path as the session archive.
