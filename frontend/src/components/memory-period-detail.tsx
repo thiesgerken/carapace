@@ -2,12 +2,12 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Loader2, RefreshCw } from "lucide-react";
+import { Ban, Loader2, Play, RefreshCw } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
 import { MemoryRunDialog } from "@/components/memory-run-dialog";
 import { useMemoryStatus } from "@/components/memory-status";
-import { buttonClassName, MemoryProvenanceList, taskStatusTag } from "@/components/memory-ui";
-import { getMemoryPeriod, spawnMemoryTasks } from "@/lib/api";
+import { buttonClassName, MemoryProvenanceList, TaskStatusBadge, taskStatusTag } from "@/components/memory-ui";
+import { cancelMemoryTasks, getMemoryPeriod, spawnMemoryTasks } from "@/lib/api";
 import { formatAbsoluteTime } from "@/lib/format-time";
 import { formatUsd, monthLabel, periodBadge, periodLevel, summarizeSkips, type PeriodBadge } from "@/lib/memory";
 import type {
@@ -74,7 +74,7 @@ export function MemoryPeriodDetailView({ server, token, periodKey }: { server: s
   const [detail, setDetail] = useState<MemoryPeriodDetail | null | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
   const [runSelection, setRunSelection] = useState<MemoryTaskSelection | null>(null);
-  const [spawning, setSpawning] = useState(false);
+  const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const level = periodLevel(periodKey);
 
@@ -97,7 +97,7 @@ export function MemoryPeriodDetailView({ server, token, periodKey }: { server: s
 
   /** The spawned digest task starts pending; the run dialog shows its estimate before anything is billed. */
   async function regenerate(): Promise<void> {
-    setSpawning(true);
+    setBusy(true);
     setError(null);
     setNotice(null);
     try {
@@ -112,7 +112,20 @@ export function MemoryPeriodDetailView({ server, token, periodKey }: { server: s
     } catch (spawnError) {
       setError(spawnError instanceof Error ? spawnError.message : String(spawnError));
     } finally {
-      setSpawning(false);
+      setBusy(false);
+    }
+  }
+
+  async function cancel(taskId: number): Promise<void> {
+    setBusy(true);
+    setError(null);
+    try {
+      await cancelMemoryTasks(server, { ids: [taskId] });
+      await refreshStatus();
+    } catch (cancelError) {
+      setError(cancelError instanceof Error ? cancelError.message : String(cancelError));
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -121,6 +134,8 @@ export function MemoryPeriodDetailView({ server, token, periodKey }: { server: s
   if (detail === null) return <p className="p-5 text-sm text-muted-foreground">{t("unknownPeriod")}</p>;
 
   const { node, current } = detail;
+  const task = node.task;
+  const badge = periodBadge(node);
   const dateRange = new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeZone: "UTC" }).formatRange(Date.parse(node.start), Date.parse(node.end));
 
   return (
@@ -130,18 +145,39 @@ export function MemoryPeriodDetailView({ server, token, periodKey }: { server: s
           <h2 className="text-lg font-semibold tracking-tight">
             {node.level === "week" ? t("weekTitle", { key: node.key }) : monthLabel(node.key, locale, true)}
           </h2>
-          <button type="button" onClick={() => void regenerate()} disabled={spawning} className={buttonClassName}>
-            {spawning ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-            {current ? t("regenerate") : t("generate")}
-          </button>
+          {task?.status === "queued" || task?.status === "running" ? (
+            <span className="inline-flex items-center gap-2 text-sm">
+              <TaskStatusBadge status={task.status} />
+              <button
+                type="button"
+                onClick={() => void cancel(task.id)}
+                disabled={busy}
+                title={t("cancelTask")}
+                aria-label={t("cancelTask")}
+                className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
+              >
+                <Ban className="h-3.5 w-3.5" />
+              </button>
+            </span>
+          ) : task?.status === "pending" ? (
+            // The task exists already: queue it through the run dialog rather than spawn another.
+            <button type="button" onClick={() => setRunSelection({ ids: [task.id] })} disabled={busy} className={buttonClassName}>
+              <Play className="h-4 w-4" />
+              {t("run")}
+            </button>
+          ) : (
+            <button type="button" onClick={() => void regenerate()} disabled={busy} className={buttonClassName}>
+              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+              {current ? t("regenerate") : t("generate")}
+            </button>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-x-2 text-sm text-muted-foreground">
           <span>{dateRange}</span>
           <span>·</span>
           <span>{t(node.level === "week" ? "coverageSessions" : "coverageWeeks", { covered: node.covered, total: node.total })}</span>
-          <span>·</span>
-          <PeriodBadgeMark badge={periodBadge(node)} />
-          {node.task && node.task.status !== "done" ? <span>· {t.rich("task", { status: taskStatusTag(node.task.status) })}</span> : null}
+          {badge.kind !== "notRun" ? <><span>·</span><PeriodBadgeMark badge={badge} /></> : null}
+          {task?.status === "failed" || task?.status === "cancelled" ? <span>· {t.rich("task", { status: taskStatusTag(task.status) })}</span> : null}
         </div>
         {notice ? <p className="text-sm text-muted-foreground">{notice}</p> : null}
         {current ? (
