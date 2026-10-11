@@ -4,7 +4,6 @@ import type {
   MemorySpawnSkip,
   MemoryFactView,
   MemoryDigestLevel,
-  MemoryMonthNode,
   MemoryPeriodNode,
   MemoryEstimateTotal,
   MemoryExtractionState,
@@ -247,14 +246,23 @@ export function weekLabel(key: string, locale: string, withMonth: boolean): stri
   return withMonth ? `${monthLabel(monthKey, locale, true)} · ${range}` : range;
 }
 
-/** Months arrive newest first; years keep that order. */
-export function groupMonthsByYear(months: MemoryMonthNode[]): [string, MemoryMonthNode[]][] {
-  const years = new Map<string, MemoryMonthNode[]>();
-  for (const month of months) {
-    const year = month.key.slice(0, 4);
-    years.set(year, [...(years.get(year) ?? []), month]);
+/** Week keys belonging to the month, in order (periods.month_weeks). */
+export function monthWeeks(monthKey: string): string[] {
+  const [year, month] = monthKey.split("-").map(Number);
+  const first = new Date(Date.UTC(year, month - 1, 1));
+  // The month's first Thursday falls in its first week.
+  const weeks = [];
+  for (let thursday = new Date(first.getTime() + ((11 - first.getUTCDay()) % 7) * DAY_MS); thursday.getUTCMonth() === month - 1; thursday = new Date(thursday.getTime() + 7 * DAY_MS)) {
+    // A Thursday's ordinal day in its year fixes the ISO week, and its year is the week's year.
+    const ordinal = (thursday.getTime() - Date.UTC(thursday.getUTCFullYear(), 0, 1)) / DAY_MS;
+    weeks.push(`${thursday.getUTCFullYear()}-W${String(Math.floor(ordinal / 7) + 1).padStart(2, "0")}`);
   }
-  return [...years];
+  return weeks;
+}
+
+/** The month a week or month key falls into, by the Thursday rule for weeks. */
+export function periodMonth(key: string): string {
+  return periodLevel(key) === "week" ? isoWeek(key).monthKey : key;
 }
 
 /** The same fact from several sessions, merged by normalized statement + subject. */

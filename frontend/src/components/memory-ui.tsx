@@ -31,6 +31,18 @@ export function TaskStatusBadge({ status }: { status: MemoryTaskStatus }) {
   );
 }
 
+/** The badge's icon alone, named by its title, for cells too narrow for the label. */
+export function TaskStatusIcon({ status }: { status: MemoryTaskStatus }) {
+  const t = useTranslations("memory.taskStatuses");
+  const { icon: Icon, className } = TASK_STATUS_LOOKS[status];
+  return (
+    <span title={t(status)} className={cn("inline-flex", className)}>
+      <Icon aria-hidden="true" className={cn("h-3.5 w-3.5", status === "running" && "animate-spin")} />
+      <span className="sr-only">{t(status)}</span>
+    </span>
+  );
+}
+
 /** A `t.rich` tag rendering the badge, for sentences like "task <status></status>". */
 export function taskStatusTag(status: MemoryTaskStatus) {
   return function TaskStatusTag() {

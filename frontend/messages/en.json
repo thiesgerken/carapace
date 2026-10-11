@@ -283,7 +283,12 @@
             "provenance": "Provenance"
         },
         "timeline": {
-            "tree": "Periods",
+            "calendar": "Calendar",
+            "previousMonth": "Previous month",
+            "nextMonth": "Next month",
+            "jumpToMonth": "Month",
+            "monthDigest": "Month digest",
+            "sessionsOnDay": "{count, plural, one {# session} other {# sessions}}",
             "empty": "No periods yet. Periods appear once sessions are spawned for memory.",
             "pickPeriod": "Select a week or month.",
             "unknownPeriod": "This period has no sessions.",

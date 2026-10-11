@@ -560,8 +560,13 @@ class PeriodNode(MemoryApiModel):
     task: TaskRef | None
 
 
+class WeekNode(PeriodNode):
+    # The week's sessions per day, Monday first.
+    days: list[int]
+
+
 class MonthNode(PeriodNode):
-    weeks: list[PeriodNode]
+    weeks: list[WeekNode]
 
 
 class PeriodTree(MemoryApiModel):

@@ -270,9 +270,9 @@ The Memory area lives at `/memory`, with four tabs. A **status strip** on top of
 
 ### Timeline
 
-The pyramid as a tree of years, months and weeks. Each node shows its coverage (`12/14` sessions, or weeks for a month) and a badge: `✓` current, `⚠` stale or outdated (hover for the reason), `—` not run yet. Weeks show their date range. Where a week appears outside its month (Tasks tab, a week's header), it also names the month it belongs to, e.g. 2026-W36 shows "September 2026 · Aug 31 – Sep 6".
+A month calendar. Rows are the month's ISO weeks (the weeks whose Thursday falls in it), Monday first; days of a boundary week outside the month are muted. The week column shows each week's coverage (`12/14` sessions), its digest badge (`✓` current, `⚠` stale or outdated, hover for the reason, `—` not run yet) and the digest task's status while it is open or failed. Day cells count the week's sessions per day; a session's week comes from its first user message, its day from its creation date (clamped into the week). The **Month digest** row above carries the month's coverage (weeks with a current digest) and badge. The arrows and the month select move between months with data. Where a week appears outside its month (Tasks tab, a week's header), it names the month it belongs to, e.g. 2026-W36 shows "September 2026 · Aug 31 – Sep 6".
 
-Selecting a period shows its digest: summary, on my mind, highlights, open loops and learned (You, People, Surroundings), each with refs. Week refs open the session's extraction, month refs open the week. Below the digest are a provenance line, **Regenerate** (spawns the digest task and opens the run dialog with its estimate), the period's sources and a collapsed list of earlier versions with their provenance.
+Clicking a week row or the month digest row shows that digest: summary, on my mind, highlights, open loops and learned (You, People, Surroundings), each with refs. Week refs open the session's extraction, month refs open the week. Below the digest are a provenance line, **Regenerate** (spawns the digest task and opens the run dialog with its estimate), the period's sources and a collapsed list of earlier versions with their provenance.
 
 `/memory/timeline?period=2026-W36` links straight to a period.
 
@@ -330,7 +330,7 @@ All endpoints live under `/api/memory`, are scoped to the authenticated user and
 | `POST /tasks/spawn-outdated` | spawn pending manual tasks for every outdated record without an open task; returns created counts per kind and the skipped targets |
 | `GET /sessions` | sessions with extraction state; filters as in the Sessions tab |
 | `GET /sessions/{id}` | current extraction and version history |
-| `GET /periods` | tree of months and weeks with coverage and stale flags |
+| `GET /periods` | months and their weeks with coverage, stale flags and sessions per day |
 | `GET /periods/{level}/{key}` | digest (current and history) and its sources |
 | `GET /facts` | facts of current extractions; filter by category, subject, confidence, durability, source kind, period |
 

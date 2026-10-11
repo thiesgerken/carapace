@@ -8,14 +8,15 @@ import {
   groupFacts,
   isExpiredFact,
   formatUsd,
-  groupMonthsByYear,
   isoWeek,
   monthLabel,
+  monthWeeks,
   roleDefaultModels,
   hasActiveTasks,
   missingSourceCount,
   periodBadge,
   periodLevel,
+  periodMonth,
   remainingBudget,
   summarizeSkips,
   taskActivityAt,
@@ -28,7 +29,7 @@ import {
   toTaskSelection,
   weekLabel,
 } from "./memory";
-import type { MemoryBudgetWindowStatus, MemoryFactView, MemoryMonthNode, MemoryPeriodNode, MemorySessionRow, MemoryStatus, MemoryTask } from "./types";
+import type { MemoryBudgetWindowStatus, MemoryFactView, MemoryPeriodNode, MemorySessionRow, MemoryStatus, MemoryTask } from "./types";
 
 function window(overrides: Partial<MemoryBudgetWindowStatus> = {}): MemoryBudgetWindowStatus {
   return {
@@ -210,14 +211,21 @@ test("periodBadge distinguishes not run, current and stale with reasons", () => 
   );
 });
 
-test("periodLevel and year grouping follow the period keys", () => {
+test("periodLevel and periodMonth follow the period keys", () => {
   assert.equal(periodLevel("2026-W36"), "week");
   assert.equal(periodLevel("2026-09"), "month");
-  const month = (key: string): MemoryMonthNode => ({ ...periodNode({ level: "month", key }), weeks: [] });
-  assert.deepEqual(
-    groupMonthsByYear([month("2027-01"), month("2026-12"), month("2026-11")]).map(([year, months]) => [year, months.map((m) => m.key)]),
-    [["2027", ["2027-01"]], ["2026", ["2026-12", "2026-11"]]],
-  );
+  assert.equal(periodMonth("2026-W36"), "2026-09");
+  assert.equal(periodMonth("2026-09"), "2026-09");
+});
+
+test("a month's weeks are the weeks whose Thursday it contains", () => {
+  // Sep 28 to 30 sit in W40, whose Thursday is October 1st.
+  assert.deepEqual(monthWeeks("2026-09"), ["2026-W36", "2026-W37", "2026-W38", "2026-W39"]);
+  assert.deepEqual(monthWeeks("2026-10"), ["2026-W40", "2026-W41", "2026-W42", "2026-W43", "2026-W44"]);
+  // January 1st 2026 is a Thursday; 2027's first Thursday is January 7th, after the year's W53.
+  assert.equal(monthWeeks("2026-01")[0], "2026-W01");
+  assert.deepEqual(monthWeeks("2026-12").at(-1), "2026-W53");
+  assert.equal(monthWeeks("2027-01")[0], "2027-W01");
 });
 
 test("a week belongs to the month of its Thursday", () => {
