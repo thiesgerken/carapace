@@ -317,6 +317,7 @@ This map describes the Python modules under `src/carapace/`. It is meant as a na
 | `server/__init__.py`      | FastAPI app facade, startup/shutdown lifecycle, shared state, REST routes not yet split out, internal API, sandbox API, and `main()`. |
 | `server/auth.py`          | Login/logout, cookie-session FastAPI dependencies, WebSocket auth, and admin user-management routes.                                  |
 | `server/codex_auth.py`    | ChatGPT subscription status, login, and disconnect routes.                                                                            |
+| `server/home.py`          | Home page route (`/api/home`): open loops, the week so far and notices from `MemoryService` and the engine's active sessions. |
 | `server/memory.py`        | Long-term memory routes (`/api/memory`): status, tasks, sessions, periods, facts; delegates to `MemoryService`.                       |
 | `server/notifications.py` | Notification subscription, test, and presence routes.                                                                                 |
 | `server/state.py`         | Helper for extracted route modules to access the mutable `carapace.server` facade.                                                    |

@@ -68,6 +68,7 @@ from .auth import router as auth_router
 from .auth import verify_ws_token
 from .codex_auth import router as codex_auth_router
 from .history import router as history_router
+from .home import router as home_router
 from .jobs import _jobs_scheduler_loop
 from .jobs import router as jobs_router
 from .knowledge import router as knowledge_router
@@ -830,6 +831,7 @@ router.include_router(jobs_router)
 router.include_router(knowledge_router)
 router.include_router(memory_router)
 router.include_router(prompts_router)
+router.include_router(home_router)
 router.include_router(session_sandbox_router)
 router.include_router(notifications_router)
 router.include_router(platform_settings_router)

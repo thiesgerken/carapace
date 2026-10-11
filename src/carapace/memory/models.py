@@ -366,6 +366,36 @@ class MemoryStatus(MemoryApiModel):
     outdated: TaskKindCounts
 
 
+class OpenLoop(MemoryApiModel):
+    text: str
+    session_id: str
+    session_title: str | None
+    session_last_active: datetime
+    week_key: str
+
+
+class ThisWeekSession(MemoryApiModel):
+    session_id: str
+    title: str | None
+    abstract: str
+
+
+class ThisWeek(MemoryApiModel):
+    """Last week's digest once it exists, else the current week's sessions."""
+
+    source: Literal["week_digest", "sessions"]
+    period_key: str
+    themes: list[DigestTheme]
+    highlights: list[str]
+    sessions: list[ThisWeekSession]
+
+
+class MemoryBudgetNotice(MemoryApiModel):
+    used_usd: Decimal
+    limit_usd: Decimal
+    window: Literal["day", "month"]
+
+
 class TaskFilter(MemoryApiModel):
     status: list[TaskStatus] | None = None
     kind: list[TaskKind] | None = None

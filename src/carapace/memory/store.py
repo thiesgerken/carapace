@@ -93,6 +93,15 @@ class SessionCandidate:
     task: TaskRef | None
 
 
+@dataclass(frozen=True)
+class VisibleExtraction:
+    """A current extraction with the session it came from, as the home page shows it."""
+
+    record: ExtractionRecord
+    title: str | None
+    last_active: datetime
+
+
 def task_periods(kind: TaskKind, target: str, session_week_key: str | None) -> tuple[str | None, str | None]:
     """(week_key, month_key) a task's target falls into; extractions need their session's week."""
     match kind:
@@ -659,6 +668,37 @@ class MemoryStore:
                 .order_by(SessionRow.created_at, SessionRow.session_id)
             ).all()
         return [ExtractionRecord.model_validate(row, from_attributes=True) for row in rows]
+
+    def visible_extractions(
+        self, user: str, *, active_since: datetime | None = None, week_key: str | None = None
+    ) -> list[VisibleExtraction]:
+        """Current extractions of the user's non-private sessions, most recently active first.
+
+        Owner and privacy are checked on the session row at read time: the extractions of a session
+        that turned private are only purged by the next sweep.
+        """
+        extraction = MemorySessionExtractionRow
+        clauses = [extraction.user == user, extraction.is_current.is_(True), SessionRow.user == user]
+        if active_since is not None:
+            clauses.append(SessionRow.last_active >= active_since)
+        if week_key is not None:
+            clauses.append(extraction.week_key == week_key)
+        with self._session_factory() as db:
+            rows = db.execute(
+                select(extraction, SessionRow.title, SessionRow.last_active, SessionRow.state)
+                .join(SessionRow, SessionRow.session_id == extraction.session_id)
+                .where(*clauses)
+                .order_by(SessionRow.last_active.desc(), SessionRow.session_id)
+            ).all()
+            return [
+                VisibleExtraction(
+                    record=ExtractionRecord.model_validate(row, from_attributes=True),
+                    title=title,
+                    last_active=last_active,
+                )
+                for row, title, last_active, state in rows
+                if state is not None and not state.attributes.private
+            ]
 
     def purge_extractions(self, session_id: str) -> int:
         """Drop every extraction (and, by cascade, fact) of a session, e.g. once it turned private."""
