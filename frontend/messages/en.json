@@ -178,7 +178,7 @@
             "roleDefault": "Role default",
             "roleDefaultResolved": "Role default ({models})",
             "nothingToRun": "Nothing to run in this selection. Only pending and failed tasks run.",
-            "unestimated": "{count, plural, one {# task has no estimate: a mirror, or a task whose input cannot be prepared (it fails again before any call).} other {# tasks have no estimate: mirrors, or tasks whose input cannot be prepared (they fail again before any call).}}",
+            "unestimated": "{count, plural, one {# task has no estimate.} other {# tasks have no estimate.}} Mirrors cost nothing. A task whose input cannot be prepared fails again before any call.",
             "cancel": "Cancel",
             "confirm": "Run",
             "missingDependencies": "{count, plural, one {A selected digest has # pending or failed source outside the selection; it would run without it.} other {Selected digests have # pending or failed sources outside the selection; they would run without them.}}",
