@@ -10,11 +10,14 @@ from carapace.database.models import SessionRow, User
 from carapace.memory.handlers import TaskRunError
 from carapace.memory.models import (
     BlockedReason,
+    DigestLevel,
+    DigestResult,
     ExtractionResult,
     Ineligible,
     MemoryTask,
     MirrorResult,
     ModelRole,
+    PeriodDigest,
     Provenance,
     SessionExtraction,
     SpawnedBy,
@@ -78,6 +81,26 @@ class ExtractHandler:
         return TaskOutcome(provenance=_provenance(task, model, "0.50"), result=result)
 
 
+class WeekDigestHandler:
+    kind = TaskKind.week_digest
+    model_role = ModelRole.memory_high
+
+    def __init__(self) -> None:
+        self.runs: list[str] = []
+
+    async def estimate(self, user: str, target: str, model: str) -> TaskEstimate:
+        return TaskEstimate(model=model, input_tokens=100, output_tokens_cap=10, cost_usd=Decimal("0.10"))
+
+    async def run(self, task: MemoryTask, model: str | None) -> TaskOutcome:
+        assert model is not None
+        self.runs.append(task.target)
+        digest = PeriodDigest(summary="s", on_my_mind=[], highlights=[], open_loops=[], learned=[])
+        result = DigestResult(
+            level=DigestLevel.week, period_key=task.target, coverage=[], coverage_hash="c", digest=digest
+        )
+        return TaskOutcome(provenance=_provenance(task, model, "0.10"), result=result)
+
+
 class MirrorHandler:
     kind = TaskKind.mirror
     model_role = None
@@ -116,13 +139,18 @@ class Env:
         self.now = NOW
         self.user_config = UserConfig(memory=UserMemoryConfig(budget=MemoryBudget(cost_usd_per_day=Decimal("1.00"))))
         self.extract = ExtractHandler()
+        self.week_digest = WeekDigestHandler()
         self.mirror = MirrorHandler()
         self.ineligible: dict[str, Ineligible] = {}
         self.rechecked: list[str] = []
         self.sweeps = 0
         self.worker = MemoryWorker(
             store=self.store,
-            handlers={TaskKind.session_extract: self.extract, TaskKind.mirror: self.mirror},  # type: ignore[dict-item]
+            handlers={  # type: ignore[dict-item]
+                TaskKind.session_extract: self.extract,
+                TaskKind.week_digest: self.week_digest,
+                TaskKind.mirror: self.mirror,
+            },
             config=Config(),
             user_config_for=lambda _: self.user_config,
             users=lambda: ["alice"],
@@ -157,6 +185,21 @@ class Env:
 
     def queued(self, session_id: str, cost: str = "0.60") -> MemoryTask:
         task = self.pending(session_id, cost)
+        self.store.run("alice", TaskSelection(ids=[task.id]), None, self.now)
+        return task
+
+    def queued_week_digest(self, week_key: str = "2026-W37") -> MemoryTask:
+        task = self.store.spawn(
+            "alice",
+            TaskKind.week_digest,
+            week_key,
+            spawned_by=SpawnedBy.manual,
+            now=self.now,
+            estimate=TaskEstimate(
+                model=Config().agent.title_model, input_tokens=100, output_tokens_cap=10, cost_usd=Decimal("0.10")
+            ),
+        )
+        assert task is not None
         self.store.run("alice", TaskSelection(ids=[task.id]), None, self.now)
         return task
 
@@ -321,3 +364,60 @@ async def test_budget_blocked_tasks_never_load_transcripts(env: Env):
     await env.tick()
     await env.tick()
     assert env.rechecked == []
+
+
+async def test_a_digest_waits_for_its_queued_and_running_extractions(env: Env):
+    running, queued = env.queued("s1", cost="0.10"), env.queued("s2", cost="0.10")
+    digest = env.queued_week_digest()
+    env.user_config.memory.budget.cost_usd_per_day = Decimal("5.00")
+    env.extract.block = asyncio.Event()
+    await env.worker.tick()
+
+    assert env.task(running.id).status is TaskStatus.running
+    assert env.task(queued.id).status is TaskStatus.running
+    waiting = env.task(digest.id)
+    assert (waiting.status, waiting.blocked_reason) == (TaskStatus.queued, BlockedReason.dependencies)
+
+    env.extract.block.set()
+    await env.worker.drain()
+    await env.tick()
+    assert env.task(digest.id).status is TaskStatus.done
+    assert env.week_digest.runs == ["2026-W37"]
+
+
+async def test_a_released_digest_drops_its_block_even_without_a_free_slot(db_factory):
+    env = Env(db_factory, max_parallel=1)
+    extract = env.queued("s1", cost="0.10")
+    other_week = env.store.spawn(
+        "alice",
+        TaskKind.session_extract,
+        "s2",
+        spawned_by=SpawnedBy.auto,
+        now=env.now,
+        session_week_key="2026-W38",
+        estimate=TaskEstimate(model=Config().agent.title_model, input_tokens=100, output_tokens_cap=10, cost_usd=None),
+    )
+    assert other_week is not None
+    env.store.run("alice", TaskSelection(ids=[other_week.id]), None, env.now)
+    digest = env.queued_week_digest()  # queued last, so the W38 extraction gets the slot first
+    env.extract.block = asyncio.Event()
+    await env.worker.tick()
+    assert env.task(digest.id).blocked_reason is BlockedReason.dependencies
+
+    env.extract.block.set()
+    await env.worker.drain()
+    env.extract.block = asyncio.Event()
+    await env.worker.tick()
+    assert env.task(other_week.id).status is TaskStatus.running
+    released = env.task(digest.id)
+    assert (released.status, released.blocked_reason) == (TaskStatus.queued, None)
+    assert env.task(extract.id).status is TaskStatus.done
+    env.extract.block.set()
+    await env.worker.drain()
+
+
+async def test_pending_extractions_do_not_hold_a_digest_back(env: Env):
+    env.pending("s1")
+    digest = env.queued_week_digest()
+    await env.tick()
+    assert env.task(digest.id).status is TaskStatus.done

@@ -157,7 +157,7 @@ class MemoryService:
         page = self._store.list_tasks(user, task_filter, cursor, limit)
         matching = self._store.select_tasks(user, TaskSelection(filter=task_filter), set(TaskStatus))
         return TaskListResponse(
-            items=self._views(page.items),
+            items=self._views(user, page.items),
             next_cursor=page.next_cursor,
             total=page.total,
             estimate=sum_estimates(t.estimate for t in matching if t.estimate is not None),
@@ -417,14 +417,16 @@ class MemoryService:
 
     # --- helpers ---
 
-    def _views(self, tasks: list[MemoryTask]) -> list[TaskView]:
+    def _views(self, user: str, tasks: list[MemoryTask]) -> list[TaskView]:
         titles = self._store.session_titles([t.target for t in tasks if t.kind is TaskKind.session_extract])
+        dependencies = self._store.dependencies(user, tasks)
         return [
             TaskView(
                 **task.model_dump(),
                 target_label=(titles.get(task.target) or task.target)
                 if task.kind is TaskKind.session_extract
                 else task.target,
+                dependencies=dependencies.get(task.id),
             )
             for task in tasks
         ]

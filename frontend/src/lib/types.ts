@@ -655,7 +655,7 @@ export type ChatMessage =
 
 export type MemoryTaskKind = "session_extract" | "week_digest" | "month_digest" | "mirror";
 export type MemoryTaskStatus = "pending" | "queued" | "running" | "done" | "failed" | "cancelled";
-export type MemoryBlockedReason = "budget";
+export type MemoryBlockedReason = "budget" | "dependencies";
 export type MemorySpawnedBy = "auto" | "manual";
 export type MemoryModelRole = "memory_low" | "memory_high";
 export type MemoryDigestLevel = "week" | "month";
@@ -766,8 +766,20 @@ export interface MemoryTask {
   finished_at: string | null;
 }
 
+/** A digest's source tasks in its period, each counted by its latest task. */
+export interface MemoryDependencySummary {
+  /** Queued or running sources: the digest waits for them. */
+  waiting: number;
+  /** Pending sources: nobody runs them, so the digest does not wait. */
+  pending_ids: number[];
+  /** Sources without a current record whose latest attempt failed or was cancelled. */
+  failed: number;
+}
+
 export interface MemoryTaskView extends MemoryTask {
   target_label: string;
+  /** null for tasks that are not digests. */
+  dependencies: MemoryDependencySummary | null;
 }
 
 export interface MemoryExtractionRecord {

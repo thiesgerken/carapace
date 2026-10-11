@@ -8,6 +8,7 @@ import pytest
 from carapace.database.models import User
 from carapace.jobs import JobsStore
 from carapace.memory.models import (
+    DependencySummary,
     MemoryTask,
     ModelRole,
     SessionMemoryFilter,
@@ -106,6 +107,7 @@ async def test_manual_spawn_reports_skips(setup):
 
     [view] = (await service.list_tasks("alice", TaskFilter(), None, 10)).items
     assert (view.target_label, view.week_key, view.spawned_by) == ("Weekend trip", "2026-W38", "manual")
+    assert view.dependencies is None
 
 
 async def test_manual_digest_spawn_validates_the_period(setup):
@@ -115,6 +117,8 @@ async def test_manual_digest_spawn_validates_the_period(setup):
     )
     assert len(response.task_ids) == 1
     assert [(s.target, s.reason) for s in response.skipped] == [("2025-W53", "invalid_period")]
+    [digest] = (await service.list_tasks("alice", TaskFilter(), None, 10)).items
+    assert digest.dependencies == DependencySummary(waiting=0, pending_ids=[], failed=0)
     no_handler = await service.spawn_tasks("alice", TaskSpawnRequest(kind=TaskKind.month_digest, targets=["2026-09"]))
     assert [s.reason for s in no_handler.skipped] == ["no_handler"]
 

@@ -133,6 +133,8 @@ A digest records which source records it consumed (`source_id`, `source_hash`) a
 
 Partial runs are allowed: a weekly digest over 12 of 14 sessions is fine. The UI shows `12/14`, and the digest turns stale when the rest arrive.
 
+A queued digest does not start while its period still has queued or running source tasks (session extractions for a week; session extractions and week digests for a month). It stays `queued` with `blocked_reason = "dependencies"` and starts once they finish. Pending, failed or cancelled sources do not hold it back, since nobody would run them: the digest then covers what exists. The task list shows both cases on the digest's row and links to the period's source tasks, and the run dialog offers to add missing pending sources to the selection.
+
 A record is **outdated** when it was produced with an older prompt version, another model or an older input format than the current one. Outdated records are never re-run automatically (see [Spawning rules](#spawning-rules)).
 
 ---

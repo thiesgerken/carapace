@@ -11,6 +11,7 @@ from carapace.memory.budget import Spend
 from carapace.memory.models import (
     BlockedReason,
     CoverageEntry,
+    DependencySummary,
     DigestLevel,
     DigestResult,
     ExtractionResult,
@@ -503,3 +504,40 @@ def test_fact_valid_until_roundtrip(store: MemoryStore):
     store.record_outcome(task.id, TaskOutcome(provenance=_provenance(task.id), result=result), NOW)
     view = store.facts("alice", FactFilter(durability=["dated"]))[0]
     assert (view.valid_until, view.source_seqs, view.source_kind) == (date(2026, 10, 1), [3, 4], "observed")
+
+
+def test_dependencies_count_each_source_by_its_latest_task(store: MemoryStore):
+    _finish_extraction(store, "s1")
+    cancelled_respawn = _spawn_extract(store, "s1")  # s1 keeps its current extraction
+    store.cancel("alice", TaskSelection(ids=[cancelled_respawn.id]), NOW)
+    queued = _spawn_extract(store, "s2")
+    store.run("alice", TaskSelection(ids=[queued.id]), None, NOW)
+    failed = _spawn_extract(store, "s3")
+    _run_to_running(store, failed.id)
+    store.record_failure(failed.id, "boom", NOW)
+    pending = _spawn_extract(store, "s4")
+    next_week = _spawn_extract(store, "s5", week="2026-W38")
+    store.run("alice", TaskSelection(ids=[next_week.id]), None, NOW)
+    _spawn_extract(store, "b1", user="bob")
+    pending_week_digest = store.spawn(
+        "alice", TaskKind.week_digest, "2026-W36", spawned_by=SpawnedBy.auto, now=NOW, estimate=_estimate()
+    )
+    assert pending_week_digest is not None
+    week = store.spawn(
+        "alice", TaskKind.week_digest, "2026-W37", spawned_by=SpawnedBy.auto, now=NOW, estimate=_estimate()
+    )
+    month = store.spawn(
+        "alice", TaskKind.month_digest, "2026-09", spawned_by=SpawnedBy.auto, now=NOW, estimate=_estimate()
+    )
+    assert week is not None and month is not None
+
+    summaries = store.dependencies("alice", [week, month, pending])
+
+    assert summaries == {
+        week.id: DependencySummary(waiting=1, pending_ids=[pending.id], failed=1),
+        month.id: DependencySummary(waiting=2, pending_ids=[pending.id, pending_week_digest.id, week.id], failed=1),
+    }
+
+
+def test_dependencies_of_no_digests_skip_the_query(store: MemoryStore):
+    assert store.dependencies("alice", [_spawn_extract(store, "s1")]) == {}

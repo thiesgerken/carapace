@@ -18,6 +18,7 @@ function task(id: number, target_label: string): MemoryTaskView {
     kind: "session_extract",
     target: `session-${id}`,
     target_label,
+    dependencies: null,
     status: "pending",
     week_key: "2026-W36",
     month_key: "2026-09",

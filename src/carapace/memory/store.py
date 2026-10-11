@@ -24,6 +24,7 @@ from .budget import Spend
 from .models import (
     OPEN_TASK_STATUSES,
     BlockedReason,
+    DependencySummary,
     DigestLevel,
     DigestRecord,
     DigestResult,
@@ -420,7 +421,7 @@ class MemoryStore:
                 .where(
                     MemoryTaskRow.user == user,
                     MemoryTaskRow.status == TaskStatus.queued,
-                    MemoryTaskRow.blocked_reason.is_not(None),
+                    MemoryTaskRow.blocked_reason == BlockedReason.budget,
                 )
             )
         counts = dict.fromkeys(TaskStatus, 0) | {TaskStatus(status): count for status, count in rows}
@@ -435,6 +436,55 @@ class MemoryStore:
                 )
             ).all()
         return {row.target: _task(row) for row in rows}
+
+    def dependencies(self, user: str, tasks: list[MemoryTask]) -> dict[int, DependencySummary]:
+        """The source tasks of each digest among *tasks*, one query for all of them.
+
+        Sources are the latest task per target: session extractions of a week; session extractions
+        and week digests of a month.
+        """
+        weeks = {t.target for t in tasks if t.kind is TaskKind.week_digest}
+        months = {t.target for t in tasks if t.kind is TaskKind.month_digest}
+        if not weeks and not months:
+            return {}
+        task = MemoryTaskRow
+        is_extract = task.kind == TaskKind.session_extract
+        latest_ids = (
+            select(func.max(task.id))
+            .where(
+                task.user == user,
+                or_(
+                    and_(is_extract, or_(task.week_key.in_(weeks), task.month_key.in_(months))),
+                    and_(task.kind == TaskKind.week_digest, task.month_key.in_(months)),
+                ),
+            )
+            .group_by(task.kind, task.target)
+        )
+        current_extraction = exists().where(
+            MemorySessionExtractionRow.session_id == task.target, MemorySessionExtractionRow.is_current.is_(True)
+        )
+        current_week_digest = exists().where(
+            MemoryDigestRow.user == user,
+            MemoryDigestRow.level == DigestLevel.week,
+            MemoryDigestRow.period_key == task.target,
+            MemoryDigestRow.is_current.is_(True),
+        )
+        has_current = case((is_extract, current_extraction), else_=current_week_digest)
+        with self._session_factory() as db:
+            rows = db.execute(
+                select(task.id, task.kind, task.week_key, task.month_key, task.status, has_current)
+                .where(task.id.in_(latest_ids))
+                .order_by(task.id)
+            ).all()
+        sources = [
+            _Source(task_id, TaskKind(kind), week_key, month_key, TaskStatus(status), bool(has_current_record))
+            for task_id, kind, week_key, month_key, status, has_current_record in rows
+        ]
+        return {
+            t.id: _dependency_summary(t, sources)
+            for t in tasks
+            if t.kind in (TaskKind.week_digest, TaskKind.month_digest)
+        }
 
     def session_titles(self, session_ids: list[str]) -> dict[str, str | None]:
         """Titles of the given sessions, for task labels."""
@@ -645,6 +695,30 @@ def _add_billing(row: MemoryTaskRow, provenance: Provenance, now: datetime) -> N
 
 def _task(row: MemoryTaskRow) -> MemoryTask:
     return MemoryTask.model_validate(row, from_attributes=True)
+
+
+@dataclass(frozen=True)
+class _Source:
+    """The latest task of one digest source."""
+
+    task_id: int
+    kind: TaskKind
+    week_key: str | None
+    month_key: str | None
+    status: TaskStatus
+    has_current_record: bool
+
+
+def _dependency_summary(digest: MemoryTask, sources: list[_Source]) -> DependencySummary:
+    if digest.kind is TaskKind.week_digest:
+        mine = [s for s in sources if s.kind is TaskKind.session_extract and s.week_key == digest.target]
+    else:
+        mine = [s for s in sources if s.month_key == digest.target]
+    return DependencySummary(
+        waiting=sum(s.status in (TaskStatus.queued, TaskStatus.running) for s in mine),
+        pending_ids=[s.task_id for s in mine if s.status is TaskStatus.pending],
+        failed=sum(s.status in (TaskStatus.failed, TaskStatus.cancelled) and not s.has_current_record for s in mine),
+    )
 
 
 def _fact_view_fields(row: MemoryFactRow) -> dict[str, object]:

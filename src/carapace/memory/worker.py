@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+from collections import defaultdict
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -158,7 +159,15 @@ class MemoryWorker:
     async def _dispatch(self, now: datetime) -> None:
         # Per user and pass: committed spend, grown by each task this pass claims.
         spend: dict[str, tuple[Spend, Spend]] = {}
-        for task in self._store.next_queued(_DISPATCH_WINDOW):
+        queued = self._store.next_queued(_DISPATCH_WINDOW)
+        waiting = self._waiting_for_sources(queued)
+        # Ahead of the parallelism cap, so the reason stays right while every slot is busy.
+        for task in queued:
+            if task.id in waiting and task.blocked_reason is not BlockedReason.dependencies:
+                self._store.set_blocked(task.id, BlockedReason.dependencies)
+            elif task.id not in waiting and task.blocked_reason is BlockedReason.dependencies:
+                self._store.set_blocked(task.id, None)
+        for task in queued:
             if len(self._running) >= self._max_parallel:
                 return
             if task.id in self._running:
@@ -166,6 +175,8 @@ class MemoryWorker:
             handler = self._handlers.get(task.kind)
             if handler is None:
                 self._store.fail_unclaimed(task.id, f"no handler registered for {task.kind}", now)
+                continue
+            if task.id in waiting:
                 continue
             user_config = self._user_config_for(task.user)
             estimate: TaskEstimate | None = None
@@ -190,6 +201,23 @@ class MemoryWorker:
                 day, month = spend[task.user]
                 spend[task.user] = (day.plus(estimate), month.plus(estimate))
             self._start(task, self._model_for(task, user_config))
+
+    def _waiting_for_sources(self, tasks: list[MemoryTask]) -> set[int]:
+        """Digests among *tasks* whose period still has queued or running source tasks.
+
+        A digest run next to its extractions would digest partial coverage, go stale and respawn.
+        Pending sources do not hold it back: nobody runs them, so it would wait forever.
+        """
+        digests_by_user: dict[str, list[MemoryTask]] = defaultdict(list)
+        for task in tasks:
+            if task.kind in (TaskKind.week_digest, TaskKind.month_digest):
+                digests_by_user[task.user].append(task)
+        return {
+            task_id
+            for user, digests in digests_by_user.items()
+            for task_id, sources in self._store.dependencies(user, digests).items()
+            if sources.waiting
+        }
 
     def _session_still_eligible(self, task: MemoryTask, now: datetime) -> bool:
         """Re-check right before running; an ineligible session's task is cancelled at no cost."""
