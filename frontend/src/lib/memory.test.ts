@@ -16,13 +16,15 @@ import {
   periodLevel,
   remainingBudget,
   summarizeSkips,
+  taskActivityAt,
+  taskRunModel,
   runnableTaskIds,
   toSessionFilter,
   toSpawnRequest,
   toTaskFilter,
   toTaskSelection,
 } from "./memory";
-import type { MemoryBudgetWindowStatus, MemoryFactView, MemoryMonthNode, MemoryPeriodNode, MemorySessionRow, MemoryStatus } from "./types";
+import type { MemoryBudgetWindowStatus, MemoryFactView, MemoryMonthNode, MemoryPeriodNode, MemorySessionRow, MemoryStatus, MemoryTask } from "./types";
 
 function window(overrides: Partial<MemoryBudgetWindowStatus> = {}): MemoryBudgetWindowStatus {
   return {
@@ -72,6 +74,55 @@ test("selections send ids or the filter, never both", () => {
   assert.deepEqual(filter, { status: ["pending"], kind: null, period: "2026-09", model: null });
   assert.deepEqual(toTaskSelection({ kind: "ids", ids: [1, 2] }, filter), { ids: [1, 2] });
   assert.deepEqual(toTaskSelection({ kind: "matching" }, filter), { filter });
+});
+
+function memoryTask(overrides: Partial<MemoryTask> = {}): MemoryTask {
+  return {
+    id: 1,
+    user: "ada",
+    kind: "session_extract",
+    target: "s1",
+    status: "pending",
+    week_key: "2026-W36",
+    month_key: "2026-09",
+    model: "stale",
+    blocked_reason: null,
+    spawned_by: "auto",
+    model_override: null,
+    attempts: 0,
+    estimate: { model: "stale", input_tokens: 1, output_tokens_cap: 1, cost_usd: "0.01" },
+    provenance: null,
+    result_id: null,
+    error: null,
+    created_at: "2026-09-04T10:00:00Z",
+    queued_at: null,
+    started_at: null,
+    finished_at: null,
+    ...overrides,
+  };
+}
+
+test("taskRunModel ignores the spawn-time estimate model", () => {
+  const models = { memory_low: "low", memory_high: "high" };
+  assert.equal(taskRunModel(memoryTask(), models), "low");
+  assert.equal(taskRunModel(memoryTask({ kind: "week_digest" }), models), "high");
+  assert.equal(taskRunModel(memoryTask({ model_override: "picked" }), models), "picked");
+  const provenance = {
+    carapace_version: "0", model: "ran", prompt_version: "p", input_format_version: 1, input_hash: "h",
+    input_tokens: 1, output_tokens: 1, cost_usd: null, duration_ms: 1, task_id: 1, created_at: "2026-09-04T10:00:00Z",
+  };
+  assert.equal(taskRunModel(memoryTask({ model_override: "picked", provenance }), models), "ran");
+  assert.equal(taskRunModel(memoryTask({ kind: "mirror", estimate: null }), models), null);
+  assert.equal(taskRunModel(memoryTask(), null), null);
+});
+
+test("taskActivityAt takes the latest lifecycle timestamp", () => {
+  assert.equal(taskActivityAt(memoryTask()), "2026-09-04T10:00:00Z");
+  assert.equal(taskActivityAt(memoryTask({ queued_at: "2026-09-05T08:00:00Z" })), "2026-09-05T08:00:00Z");
+  assert.equal(
+    taskActivityAt(memoryTask({ queued_at: "2026-09-05T08:00:00Z", started_at: "2026-09-05T08:01:00Z", finished_at: "2026-09-05T08:02:00Z" })),
+    "2026-09-05T08:02:00Z",
+  );
 });
 
 test("budget-blocked queued tasks don't keep the poll alive", () => {

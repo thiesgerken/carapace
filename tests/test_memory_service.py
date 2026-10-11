@@ -17,6 +17,7 @@ from carapace.memory.models import (
     TaskOutcome,
     TaskRunRequest,
     TaskSelection,
+    TaskSort,
     TaskSpawnRequest,
     TaskStatus,
 )
@@ -104,7 +105,7 @@ async def test_manual_spawn_reports_skips(setup):
     again = await service.spawn_tasks("alice", TaskSpawnRequest(kind=TaskKind.session_extract, targets=[ok]))
     assert again.task_ids == response.task_ids  # a pending task is replaced in place
 
-    [view] = (await service.list_tasks("alice", TaskFilter(), None, 10)).items
+    [view] = (await service.list_tasks("alice", TaskFilter(), TaskSort.activity, None, 10)).items
     assert (view.target_label, view.week_key, view.spawned_by) == ("Weekend trip", "2026-W38", "manual")
 
 
@@ -139,7 +140,7 @@ async def test_estimate_run_and_status(setup):
     assert status.models.memory_low == Config().agent.title_model
     assert status.sessions_without_transcript == 0
 
-    listing = await service.list_tasks("alice", TaskFilter(status=[TaskStatus.queued]), None, 10)
+    listing = await service.list_tasks("alice", TaskFilter(status=[TaskStatus.queued]), TaskSort.activity, None, 10)
     assert (listing.total, listing.estimate.cost_usd) == (2, Decimal("0.02"))
     assert (await service.cancel_tasks("alice", selection)).count == 2
 
@@ -153,7 +154,7 @@ async def test_spawn_by_filter_uses_the_session_query_and_eligibility(setup):
     response = await service.spawn_tasks(
         "alice", TaskSpawnRequest(kind=TaskKind.session_extract, filter=SessionMemoryFilter())
     )
-    tasks = (await service.list_tasks("alice", TaskFilter(), None, 10)).items
+    tasks = (await service.list_tasks("alice", TaskFilter(), TaskSort.activity, None, 10)).items
     assert {t.target for t in tasks} == {first, second}
     assert len(response.task_ids) == 2 and response.skipped == []
 

@@ -13,6 +13,7 @@ import type {
   MemorySessionRow,
   MemoryTaskSpawnRequest,
   MemoryStatus,
+  MemoryTask,
   MemoryTaskFilter,
   MemoryTaskKind,
   MemoryTaskSelection,
@@ -35,6 +36,22 @@ export function roleDefaultModels(kinds: readonly MemoryTaskKind[], models: Reco
   if (roles.length === 0) return null;
   if (roles.length === 1 || models.memory_low === models.memory_high) return models[roles[0]];
   return `low: ${models.memory_low} · high: ${models.memory_high}`;
+}
+
+/**
+ * The model a task ran with, or would run with now. Not the estimate's model: that is the role
+ * default at spawn time, and the worker resolves the role again when the task runs.
+ */
+export function taskRunModel(task: MemoryTask, models: Record<MemoryModelRole, string> | null): string | null {
+  if (task.provenance) return task.provenance.model;
+  if (task.model_override) return task.model_override;
+  const role = TASK_MODEL_ROLES[task.kind];
+  return role && models ? models[role] : null;
+}
+
+/** When the task last changed: the timestamp the "activity" sort orders by. */
+export function taskActivityAt(task: MemoryTask): string {
+  return task.finished_at ?? task.started_at ?? task.queued_at ?? task.created_at;
 }
 
 /** Budget-blocked tasks stay queued until the budget moves, so they don't count as progress to poll for. */

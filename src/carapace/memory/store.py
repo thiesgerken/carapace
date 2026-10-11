@@ -44,6 +44,7 @@ from .models import (
     TaskOutcome,
     TaskRef,
     TaskSelection,
+    TaskSort,
     TaskStatus,
 )
 from .outdated import CurrentVersions
@@ -59,6 +60,13 @@ _PROMOTION_RANK = case(
 )
 # "Newest" means newest period, not newest task: a backfill spawns everything at once.
 _NEWEST_FIRST = (MemoryTaskRow.month_key.desc(), MemoryTaskRow.week_key.desc(), MemoryTaskRow.id.desc())
+_LAST_ACTIVITY_FIRST = (
+    func.coalesce(
+        MemoryTaskRow.finished_at, MemoryTaskRow.started_at, MemoryTaskRow.queued_at, MemoryTaskRow.created_at
+    ).desc(),
+    MemoryTaskRow.id.desc(),
+)
+_TASK_ORDER = {TaskSort.activity: _LAST_ACTIVITY_FIRST, TaskSort.period: _NEWEST_FIRST}
 
 
 @dataclass(frozen=True)
@@ -180,18 +188,18 @@ class MemoryStore:
                 update(MemoryTaskRow).where(MemoryTaskRow.id == task_id).values(estimate=estimate, model=estimate.model)
             )
 
-    def list_tasks(self, user: str, task_filter: TaskFilter, cursor: str | None, limit: int) -> TaskPage:
-        """Newest period first, the order "run newest N" selects in, so the top N rows are what runs.
-
-        ponytail: offset cursor, so rows shift if tasks appear between pages; a compound keyset
-        cursor over (month_key, week_key, id) with NULLs is the upgrade if that bites.
+    def list_tasks(
+        self, user: str, task_filter: TaskFilter, cursor: str | None, limit: int, sort: TaskSort = TaskSort.activity
+    ) -> TaskPage:
+        """ponytail: offset cursor, so rows shift if tasks appear or change between pages; a keyset
+        cursor over the sort columns (with NULLs) is the upgrade if that bites.
         """
         clauses = [MemoryTaskRow.user == user, *_filter_clauses(task_filter)]
         offset = parse_cursor(cursor) if cursor is not None else 0
         with self._session_factory() as db:
             total = db.scalar(select(func.count()).select_from(MemoryTaskRow).where(*clauses)) or 0
             rows = db.scalars(
-                select(MemoryTaskRow).where(*clauses).order_by(*_NEWEST_FIRST).offset(offset).limit(limit + 1)
+                select(MemoryTaskRow).where(*clauses).order_by(*_TASK_ORDER[sort]).offset(offset).limit(limit + 1)
             ).all()
         items = [_task(row) for row in rows[:limit]]
         next_cursor = str(offset + limit) if len(rows) > limit else None
@@ -213,7 +221,13 @@ class MemoryStore:
 
     def retry(self, user: str, task_ids: list[int], now: datetime) -> int:
         """failed -> queued. The row is reused; attempts grows on the next claim."""
-        values = {"status": TaskStatus.queued.value, "queued_at": now, "error": None, "finished_at": None}
+        values = {
+            "status": TaskStatus.queued.value,
+            "queued_at": now,
+            "error": None,
+            "started_at": None,
+            "finished_at": None,
+        }
         return self._transition(user, TaskSelection(ids=task_ids), {TaskStatus.failed}, values)
 
     def cancel(self, user: str, selection: TaskSelection, now: datetime) -> int:

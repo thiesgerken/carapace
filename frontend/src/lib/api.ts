@@ -17,6 +17,7 @@ import type {
   MemoryTaskCountResponse,
   MemoryTaskFilter,
   MemoryTaskListResponse,
+  MemoryTaskSort,
   MemoryTaskRunRequest,
   MemoryTaskSelection,
   MemoryTaskSpawnRequest,
@@ -1823,8 +1824,8 @@ export function knowledgeRawUrl(
   return `${server}${knowledgeBrowsePath(path)}${query}`;
 }
 
-function memoryTaskQuery(filter: MemoryTaskFilter, cursor: string | null): string {
-  const params = new URLSearchParams();
+function memoryTaskQuery(filter: MemoryTaskFilter, sort: MemoryTaskSort, cursor: string | null): string {
+  const params = new URLSearchParams({ sort });
   for (const status of filter.status ?? []) params.append("status", status);
   for (const kind of filter.kind ?? []) params.append("kind", kind);
   if (filter.period) params.set("period", filter.period);
@@ -1852,9 +1853,10 @@ export async function getMemoryStatus(server: string): Promise<MemoryStatus> {
 export async function listMemoryTasks(
   server: string,
   filter: MemoryTaskFilter,
+  sort: MemoryTaskSort,
   cursor: string | null = null,
 ): Promise<MemoryTaskListResponse> {
-  const res = await fetch(`${server}/api/memory/tasks?${memoryTaskQuery(filter, cursor)}`);
+  const res = await fetch(`${server}/api/memory/tasks?${memoryTaskQuery(filter, sort, cursor)}`);
   if (!res.ok) throw new Error(await readErrorMessage(res, "Failed to list memory tasks"));
   return (await res.json()) as MemoryTaskListResponse;
 }
