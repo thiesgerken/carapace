@@ -23,13 +23,14 @@ Session runtime state still lives under `$CARAPACE_DATA_DIR/sessions/`; archived
 
 ## Memory mirror
 
-[Long-term memory](memory.md) distills archived sessions into per-session extractions and weekly and monthly digests. Its source of truth is carapace's database; a one-way mirror renders the current records into the knowledge repo so the agent can read and search them like any other file:
+[Long-term memory](memory.md) distills archived sessions into per-session extractions and weekly and monthly digests, plus one file per fact category collecting the facts of all sessions. Its source of truth is carapace's database; a one-way mirror renders the current records into the knowledge repo so the agent can read and search them like any other file:
 
 ```
 memory/README.md
 memory/sessions/YYYY/MM/<session_id>.md
 memory/weeks/YYYY-Www.md
 memory/months/YYYY-MM.md
+memory/facts/<category>.md
 ```
 
 The mirror owns `memory/`: each run rewrites it from the database in one commit and deletes files of removed records, so edits pushed there are reverted. Change memory in the Memory area of the web UI instead.

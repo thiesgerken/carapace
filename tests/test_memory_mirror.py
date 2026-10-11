@@ -103,11 +103,14 @@ async def test_removed_records_delete_their_files_in_one_commit(mirror: _Mirror)
     assert commit is not None
     assert sorted(mirror.files()) == ["memory/README.md", "memory/weeks/2026-W36.md"]
     assert not (mirror.knowledge_dir / "memory" / "sessions").exists()
+    assert not (mirror.knowledge_dir / "memory" / "facts").exists()
     assert not (mirror.knowledge_dir / "memory" / "months").exists()
     assert await mirror.git("status", "--porcelain") == ""
     changed = await mirror.git("show", "--name-status", "--format=", "HEAD")
     # The week file changes too: its session ref is no longer a link.
     assert sorted(changed.splitlines()) == [
+        "D\tmemory/facts/surroundings.md",
+        "D\tmemory/facts/user.md",
         "D\tmemory/months/2026-09.md",
         "D\tmemory/sessions/2026/09/s-talos.md",
         "M\tmemory/weeks/2026-W36.md",
