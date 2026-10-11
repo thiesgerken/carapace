@@ -18,7 +18,7 @@ from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.providers.openai_codex import OpenAICodexProvider
 from pydantic_ai.providers.openrouter import OpenRouterProvider
 from pydantic_ai.retries import AsyncHTTPX2TenacityTransport, RetryConfig, wait_retry_after
-from pydantic_ai.settings import CacheConfig, ModelSettings
+from pydantic_ai.settings import ModelSettings
 from tenacity import retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from .models.config import CODEX_PROVIDER, Config, agent_available_model_entries
@@ -144,12 +144,22 @@ def model_settings_for_config(
 def with_prompt_cache(settings: ModelSettings | None, *, conversation: bool) -> ModelSettings:
     """*settings* plus prompt caching, for a role that leads with the shared prompt prefix.
 
-    pydantic-ai places the breakpoints after the tool definitions and the static instructions, and
-    with *conversation* also on the growing message history, on providers that need them
-    (Anthropic). One-off calls never reread their user prompt, so they cache the prefix only.
+    Breakpoints go after the tool definitions and the static instructions, and with
+    *conversation* also on the growing message history. One-off calls never reread their user
+    prompt, so they cache the prefix only. Only Anthropic (direct or on Bedrock) needs explicit
+    breakpoints. pydantic-ai's unified `cache` setting would also send OpenAI's
+    `prompt_cache_options`, which models like the Codex backend reject, so this sets the
+    provider-specific keys, which every other provider ignores.
     """
-    cache = True if conversation else CacheConfig(messages=False)
-    return cast(ModelSettings, {**(settings or {}), "cache": cache})
+    cache = {
+        "anthropic_cache_instructions": True,
+        "anthropic_cache_tool_definitions": True,
+        "anthropic_cache": conversation,
+        "bedrock_cache_instructions": True,
+        "bedrock_cache_tool_definitions": True,
+        "bedrock_cache_messages": conversation,
+    }
+    return cast(ModelSettings, {**(settings or {}), **cache})
 
 
 class ModelFactory(Protocol):

@@ -64,7 +64,7 @@ The sentinel and the titler stay out on purpose. The sentinel must judge the age
 
 The order is built so that a prefix cache can hit: stable first, volatile last. Nothing per session or per call (the current date, the session ID, a role split) may come before the long shared text.
 
-Some providers (OpenAI, Gemini) cache matching prompt prefixes on their own. Others, Anthropic among them, cache only up to explicit breakpoints. The roles that lead with the shared prefix turn on pydantic-ai's provider-agnostic `cache` model setting (`llm.with_prompt_cache()`), which places those breakpoints where a provider needs them:
+Some providers (OpenAI, Gemini) cache matching prompt prefixes on their own. Anthropic (direct or on Bedrock) caches only up to explicit breakpoints. The roles that lead with the shared prefix set those breakpoints through the Anthropic and Bedrock cache settings (`llm.with_prompt_cache()`), which other providers ignore. pydantic-ai's provider-agnostic `cache` setting is off limits: it also sends OpenAI's `prompt_cache_options`, which some backends (Codex) reject with a 400. The breakpoints:
 
 - **Agent turns**: after the tool definitions and after the stable instructions, plus the growing conversation, so every request of a turn reads the history written by the previous one. The date and session ID are a separate dynamic instruction behind the breakpoint, so they don't split the cached prefix.
 - **Compaction and memory tasks**: the system prompt only. Their user prompt is a one-off and is never read back.

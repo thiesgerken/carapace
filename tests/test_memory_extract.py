@@ -240,7 +240,7 @@ def test_capped_settings_raise_the_cap_for_thinking_and_cache_the_system_prompt(
 
     assert settings.get("max_tokens") == ANTHROPIC_THINKING_BUDGET_MAP["high"] + 8192
     assert settings.get("thinking") == "high"
-    assert settings.get("cache") == {"messages": False}  # the system prompt only
+    assert settings.get("anthropic_cache_instructions") and not settings.get("anthropic_cache")  # system prompt only
 
 
 async def test_run_fails_before_calling_the_model_when_input_exceeds_context() -> None:
