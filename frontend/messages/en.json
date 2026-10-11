@@ -185,6 +185,7 @@
             "pickPage": "Select all sessions on this page",
             "pickSession": "Select {title}",
             "columns": {
+                "details": "Details",
                 "date": "Date",
                 "title": "Title / abstract",
                 "facts": "Facts",
@@ -195,6 +196,9 @@
             },
             "untitled": "Untitled session",
             "task": "task {status}",
+            "expand": "Show the extraction of {title}",
+            "collapse": "Hide the extraction of {title}",
+            "openChat": "Open the chat session {title}",
             "empty": "No sessions match these filters.",
             "loadMore": "Load more",
             "runPicked": "Run selected ({count})",

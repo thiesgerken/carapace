@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Loader2 } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
-import { sessionEventHref } from "@/components/memory-extraction-drawer";
+import { sessionEventHref } from "@/components/memory-extraction-detail";
 import { useMemoryStatus } from "@/components/memory-status";
 import { controlClassName } from "@/components/memory-ui";
 import { listMemoryFacts } from "@/lib/api";

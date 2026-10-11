@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState, type MouseEvent } from "react";
+import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Loader2, Play, RefreshCw } from "lucide-react";
+import { ChevronRight, Loader2, MessageSquare, Play, RefreshCw } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
-import { MemoryExtractionDrawer } from "@/components/memory-extraction-drawer";
+import { MemoryExtractionDetail, useMemorySessionDetail } from "@/components/memory-extraction-detail";
 import { MemoryRunDialog } from "@/components/memory-run-dialog";
 import { useMemoryStatus } from "@/components/memory-status";
 import { buttonClassName, controlClassName, PickMatchingRow } from "@/components/memory-ui";
@@ -26,7 +27,7 @@ import { cn } from "@/lib/utils";
 
 const DEFAULT_FORM: SessionFilterForm = { week: "", state: "", outdatedReason: "", taskStatus: "", model: "", channel: "" };
 const NO_PICK: SessionPick = { kind: "ids", ids: [] };
-const COLUMNS = 7;
+const COLUMNS = 8;
 
 export function MemorySessionsView({ server, token }: { server: string; token: string }) {
   const t = useTranslations("memory.sessions");
@@ -35,7 +36,9 @@ export function MemorySessionsView({ server, token }: { server: string; token: s
   const locale = useLocale();
   const router = useRouter();
   const pathname = usePathname();
-  const drawerSessionId = useSearchParams().get("session");
+  // The expanded row lives in the URL, so /memory/sessions?session=… deep links open it.
+  const expandedId = useSearchParams().get("session");
+  const expanded = useMemorySessionDetail(server, expandedId);
   const { status, refreshStatus } = useMemoryStatus();
   const [form, setForm] = useState(DEFAULT_FORM);
   const filter = useMemo(() => toSessionFilter(form), [form]);
@@ -64,7 +67,10 @@ export function MemorySessionsView({ server, token }: { server: string; token: s
     };
   }, [server, filter, status]);
 
-  const rows = page?.items ?? [];
+  const loadedRows = page?.items ?? [];
+  // A deep-linked session outside the loaded page or filter is pinned on top, so it can still expand.
+  const pinnedRow = expanded.detail && !loadedRows.some((row) => row.session_id === expandedId) ? expanded.detail.session : null;
+  const rows = pinnedRow ? [pinnedRow, ...loadedRows] : loadedRows;
   const total = page?.total ?? 0;
   const visibleIds = rows.map((row) => row.session_id);
   const allVisiblePicked = pick.kind === "matching" || (rows.length > 0 && visibleIds.every((id) => pick.ids.includes(id)));
@@ -86,9 +92,20 @@ export function MemorySessionsView({ server, token }: { server: string; token: s
       : current);
   }
 
-  function openDrawer(sessionId: string | null): void {
-    router.replace(sessionId ? `${pathname}?session=${encodeURIComponent(sessionId)}` : pathname);
+  function toggleExpanded(sessionId: string): void {
+    router.replace(sessionId === expandedId ? pathname : `${pathname}?session=${encodeURIComponent(sessionId)}`, { scroll: false });
   }
+
+  /** Clicking empty row space toggles too; the checkbox, links and buttons keep their own action. */
+  function handleRowClick(event: MouseEvent<HTMLTableRowElement>, sessionId: string): void {
+    if ((event.target as HTMLElement).closest("a, button, input, label")) return;
+    toggleExpanded(sessionId);
+  }
+
+  const expandedRowPresent = rows.some((row) => row.session_id === expandedId);
+  useEffect(() => {
+    if (expandedId && expandedRowPresent) document.getElementById(sessionRowId(expandedId))?.scrollIntoView({ block: "nearest" });
+  }, [expandedId, expandedRowPresent]);
 
   async function loadMore(): Promise<void> {
     if (!page?.next_cursor) return;
@@ -227,6 +244,7 @@ export function MemorySessionsView({ server, token }: { server: string; token: s
                 <th className="px-3 py-2 font-medium">{t("columns.model")}</th>
                 <th className="px-3 py-2 font-medium">{t("columns.status")}</th>
                 <th className="px-3 py-2 text-right font-medium">{t("columns.cost")}</th>
+                <th className="w-10 px-3 py-2"><span className="sr-only">{t("columns.details")}</span></th>
               </tr>
               {allVisiblePicked && total > rows.length ? (
                 <PickMatchingRow
@@ -245,33 +263,68 @@ export function MemorySessionsView({ server, token }: { server: string; token: s
                 <tr><td colSpan={COLUMNS} className="px-3 py-6 text-center text-muted-foreground">{t("empty")}</td></tr>
               ) : rows.map((row) => {
                 const counts = row.extraction?.fact_counts;
+                const isExpanded = row.session_id === expandedId;
+                const title = row.title?.trim() || t("untitled");
                 return (
-                  <tr key={row.session_id} className="border-b border-border/60 align-top last:border-b-0">
-                    <td className="px-3 py-2">
-                      <input
-                        type="checkbox"
-                        aria-label={t("pickSession", { title: row.title ?? row.session_id })}
-                        checked={pick.kind === "matching" || pick.ids.includes(row.session_id)}
-                        disabled={pick.kind === "matching"}
-                        onChange={() => togglePicked(row.session_id)}
-                      />
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2 tabular-nums">
-                      {new Intl.DateTimeFormat(locale, { dateStyle: "medium" }).format(Date.parse(row.created_at))}
-                    </td>
-                    <td className="max-w-md px-3 py-2">
-                      <button type="button" onClick={() => openDrawer(row.session_id)} className="text-left font-medium hover:underline">
-                        {row.title?.trim() || t("untitled")}
-                      </button>
-                      {row.extraction ? <div className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{row.extraction.abstract}</div> : null}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2 tabular-nums">{counts ? `${counts.user}·${counts.social}·${counts.surroundings}` : "—"}</td>
-                    <td className="px-3 py-2 font-mono text-xs">{row.extraction?.model ?? "—"}</td>
-                    <td className="px-3 py-2">{statusCell(row)}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">
-                      {row.extraction?.cost_usd != null ? formatUsd(row.extraction.cost_usd, locale) : "—"}
-                    </td>
-                  </tr>
+                  <Fragment key={row.session_id}>
+                    <tr
+                      id={sessionRowId(row.session_id)}
+                      onClick={(event) => handleRowClick(event, row.session_id)}
+                      className={cn("cursor-pointer border-b border-border/60 align-top last:border-b-0 hover:bg-muted/30", isExpanded && "bg-muted/40")}
+                    >
+                      <td className="px-3 py-2">
+                        <input
+                          type="checkbox"
+                          aria-label={t("pickSession", { title: row.title ?? row.session_id })}
+                          checked={pick.kind === "matching" || pick.ids.includes(row.session_id)}
+                          disabled={pick.kind === "matching"}
+                          onChange={() => togglePicked(row.session_id)}
+                        />
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2 tabular-nums">
+                        {new Intl.DateTimeFormat(locale, { dateStyle: "medium" }).format(Date.parse(row.created_at))}
+                      </td>
+                      <td className="max-w-md px-3 py-2">
+                        <div className="flex items-start gap-1.5">
+                          <span className="font-medium">{title}</span>
+                          <Link
+                            href={`/?session=${encodeURIComponent(row.session_id)}`}
+                            aria-label={t("openChat", { title })}
+                            title={t("openChat", { title })}
+                            className="mt-0.5 shrink-0 text-muted-foreground hover:text-foreground"
+                          >
+                            <MessageSquare className="h-3.5 w-3.5" />
+                          </Link>
+                        </div>
+                        {row.extraction ? <div className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{row.extraction.abstract}</div> : null}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2 tabular-nums">{counts ? `${counts.user}·${counts.social}·${counts.surroundings}` : "—"}</td>
+                      <td className="px-3 py-2 font-mono text-xs">{row.extraction?.model ?? "—"}</td>
+                      <td className="px-3 py-2">{statusCell(row)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">
+                        {row.extraction?.cost_usd != null ? formatUsd(row.extraction.cost_usd, locale) : "—"}
+                      </td>
+                      <td className="px-3 py-1.5">
+                        <button
+                          type="button"
+                          onClick={() => toggleExpanded(row.session_id)}
+                          aria-expanded={isExpanded}
+                          aria-controls={isExpanded ? sessionDetailId(row.session_id) : undefined}
+                          aria-label={t(isExpanded ? "collapse" : "expand", { title })}
+                          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+                        >
+                          <ChevronRight className={cn("h-4 w-4 transition-transform", isExpanded && "rotate-90")} />
+                        </button>
+                      </td>
+                    </tr>
+                    {isExpanded ? (
+                      <tr id={sessionDetailId(row.session_id)} className="border-b border-border/60 bg-muted/40 last:border-b-0">
+                        <td colSpan={COLUMNS} className="px-5 pb-5 pt-2">
+                          <MemoryExtractionDetail sessionId={row.session_id} state={expanded} />
+                        </td>
+                      </tr>
+                    ) : null}
+                  </Fragment>
                 );
               })}
             </tbody>
@@ -300,10 +353,14 @@ export function MemorySessionsView({ server, token }: { server: string; token: s
           }}
         />
       ) : null}
-
-      {drawerSessionId ? (
-        <MemoryExtractionDrawer key={drawerSessionId} server={server} sessionId={drawerSessionId} onClose={() => openDrawer(null)} />
-      ) : null}
     </div>
   );
+}
+
+function sessionRowId(sessionId: string): string {
+  return `memory-session-${sessionId}`;
+}
+
+function sessionDetailId(sessionId: string): string {
+  return `memory-session-detail-${sessionId}`;
 }
