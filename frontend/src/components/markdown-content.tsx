@@ -12,6 +12,7 @@ import type { PluggableList } from "unified";
 
 import { splitEmojiText } from "@/lib/emoji";
 import { MERMAID_PROP, rehypeMermaid } from "@/lib/rehype-mermaid";
+import { isSameOriginUrl } from "@/lib/remote-images";
 import { MarkdownPre } from "./markdown-code-pre";
 import { MermaidDiagram } from "./mermaid-diagram";
 
@@ -138,6 +139,24 @@ function MarkdownDiv({ ...props }: MarkdownDivProps) {
   return <div {...divProps} />;
 }
 
+type MarkdownImageProps = ComponentPropsWithoutRef<"img"> & { node?: unknown };
+
+/** A remote image becomes a link showing its URL, so it is only fetched on a click. */
+export function MarkdownImage({ alt, src, ...props }: MarkdownImageProps) {
+  delete props.node;
+  const url = typeof src === "string" ? src : "";
+  if (isSameOriginUrl(url)) {
+    // eslint-disable-next-line @next/next/no-img-element -- arbitrary Markdown images, next/image needs known sizes
+    return <img {...props} src={url} alt={alt ?? ""} />;
+  }
+  if (!url) return null;
+  return (
+    <a href={url} target="_blank" rel="noreferrer noopener">
+      {url}
+    </a>
+  );
+}
+
 export function MarkdownContent({ content }: { content: string }) {
   const remarkPlugins = useMemo(() => [remarkGfm, remarkMath], []);
   const rehypePluginsAsync = useMemo((): PluggableList => {
@@ -155,9 +174,10 @@ export function MarkdownContent({ content }: { content: string }) {
 
   const components = useMemo<Components>(
     () => ({
-        a: (props) => (
+      a: (props) => (
         <a {...props} target="_blank" rel="noreferrer noopener" />
       ),
+      img: MarkdownImage,
       pre: MarkdownPre,
       div: MarkdownDiv,
     }),

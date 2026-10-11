@@ -185,3 +185,5 @@ The sentinel is designed to resist prompt injection:
 2. **Adversarial awareness.** The sentinel's system prompt includes explicit warnings about prompt injection attempts in action log entries.
 3. **Restricted file access.** The sentinel can only read trusted skill directories, not the agent's potentially compromised workspace.
 4. **Structured output.** The sentinel returns a `SentinelVerdict` Pydantic model, not free-form text, reducing the attack surface for output manipulation.
+
+The web UI never loads remote images from rendered Markdown or Mermaid diagrams: a non-same-origin Markdown image is shown as a link with its URL, and remote SVG `<image>`s are dropped, so injected text cannot exfiltrate data through image URLs without a click.
