@@ -59,9 +59,10 @@ export default function SettingsLayout({ children }: { children: ReactNode }) {
             aria-label={tJobs("settingsSections")}
             className="flex flex-wrap items-end gap-x-4 gap-y-2 border-b border-border/80"
           >
-            <div className="flex items-end gap-1">
+            <div className="flex flex-wrap items-end gap-1">
               {tab("preferences", t("navigation.preferences"))}
               {tab("account", t("navigation.account"))}
+              {tab("prompts", t("navigation.systemPrompts"))}
               {tab("jobs", t("navigation.jobs"))}
               {tab("api-keys", t("navigation.apiKeys"))}
             </div>

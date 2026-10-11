@@ -314,7 +314,8 @@ The list is sorted by last activity (when the task finished, started, was queued
 
 ### Settings
 
-- **Settings → Account → Memory** (`/settings/account#memory`): auto mode, the four budget limits, timezone, and the `memory_low` and `memory_high` models.
+- **Settings → Account → Memory** (`/settings/account#memory`): auto mode, the four budget limits, timezone, the `memory_low` and `memory_high` models, and the memory prompt budget (tokens of memory in a new session's agent prompt; empty uses the platform default, 0 turns it off).
+- **Settings → System prompts** (`/settings/prompts`): the complete simulated system prompt of every role (agent, sentinel, titler, compaction, session extraction, week and month digests) with its model, each section with its token count, the total, where the cacheable prefix ends and, for the agent, how much of the memory budget is used.
 - **Settings → Admin → Models**: platform defaults for `memory_low` and `memory_high`.
 - **Settings → Jobs**: "Include in memory" per job (`memory_enabled`).
 

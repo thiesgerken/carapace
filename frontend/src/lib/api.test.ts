@@ -385,6 +385,7 @@ test("user settings helpers decode write-only status and patch payloads", async 
             title: "anthropic:title",
           },
           budget: {},
+          memory_prompt_budget_tokens: 4000,
         },
         available_models: [
           { id: "anthropic:default", provider: "anthropic", name: "default" },
@@ -393,7 +394,7 @@ test("user settings helpers decode write-only status and patch payloads", async 
           default_models: { agent: "anthropic:default" },
           default_budget: { tool_calls: 3, cost_usd: "1.50" },
           timezone: "Europe/Berlin",
-          memory: { auto_mode: true, budget: { cost_usd_per_day: "1.00", cost_usd_per_month: null, input_tokens_per_day: 50000, input_tokens_per_month: null } },
+          memory: { auto_mode: true, budget: { cost_usd_per_day: "1.00", cost_usd_per_month: null, input_tokens_per_day: 50000, input_tokens_per_month: null }, prompt_budget_tokens: 2000 },
           matrix: {
             enabled: true,
             homeserver: "https://matrix.example.test",
@@ -442,7 +443,9 @@ test("user settings helpers decode write-only status and patch payloads", async 
   assert.deepEqual(settings.settings.memory, {
     auto_mode: true,
     budget: { cost_usd_per_day: "1.00", cost_usd_per_month: null, input_tokens_per_day: 50000, input_tokens_per_month: null },
+    prompt_budget_tokens: 2000,
   });
+  assert.equal(settings.server_defaults.memory_prompt_budget_tokens, 4000);
   assert.equal(settings.settings.credentials.backends.vault?.type, "bitwarden");
   assert.equal(patched.settings.git.token_set, true);
   assert.equal(

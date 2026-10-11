@@ -16,7 +16,8 @@
         "github": "thiesgerken/carapace",
         "apiKeys": "API Keys",
         "knowledge": "Knowledge",
-        "memory": "Memory"
+        "memory": "Memory",
+        "systemPrompts": "System prompts"
     },
     "knowledge": {
         "title": "Knowledge Repository",
@@ -430,12 +431,15 @@
             "memoryTokensPerMonth": "Input tokens per month",
             "timezone": "Time zone",
             "memoryLow": "Session extraction model",
-            "memoryHigh": "Digest model"
+            "memoryHigh": "Digest model",
+            "memoryPromptBudget": "Memory in the agent prompt (tokens)",
+            "previewPrompts": "Preview system prompts"
         },
         "defaults": {
             "serverDefault": "Server default",
             "currentModel": "{model}",
-            "noLimit": "No limit"
+            "noLimit": "No limit",
+            "serverDefaultTokens": "Server default ({tokens})"
         },
         "placeholders": {
             "addRoom": "Add room, Enter or comma",
@@ -479,7 +483,8 @@
             "memoryAutoMode": "Run pending memory tasks automatically while the budget allows. Off means tasks only run when you start them.",
             "timezone": "Defines memory weeks, months and budget windows.",
             "memoryLow": "memory_low: summarizes single sessions. A cheap model is enough.",
-            "memoryHigh": "memory_high: writes weekly and monthly digests. Use a stronger model."
+            "memoryHigh": "memory_high: writes weekly and monthly digests. Use a stronger model.",
+            "memoryPromptBudget": "How much recent memory a new session's system prompt includes. Empty uses the server default, 0 turns it off."
         },
         "chatgpt": {
             "description": "Use your own ChatGPT subscription for openai-codex models instead of the platform's API keys. Usage counts against your subscription limits; cost figures show the equivalent API price.",
@@ -1530,5 +1535,23 @@
         "agentSummary": "Compacted summary",
         "agentEmpty": "No history yet.",
         "agentError": "Could not load agent view. Check your connection or permissions."
+    },
+    "promptPreview": {
+        "role": "Role",
+        "roles": {
+            "agent": "Agent",
+            "sentinel": "Sentinel",
+            "titler": "Titler",
+            "compaction": "Compaction",
+            "session_extract": "Session extraction",
+            "week_digest": "Week digest",
+            "month_digest": "Month digest"
+        },
+        "model": "Model",
+        "totalTokens": "Total tokens",
+        "tokens": "{count, plural, one {# token} other {# tokens}}",
+        "memoryBudget": "Memory budget",
+        "memoryOff": "Off",
+        "cacheEnd": "End of cacheable prefix"
     }
 }

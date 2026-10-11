@@ -1049,3 +1049,26 @@ export interface MemoryFactView {
 export interface MemoryFactListResponse {
   items: MemoryFactView[];
 }
+
+export const PROMPT_ROLES = ["agent", "sentinel", "titler", "compaction", "session_extract", "week_digest", "month_digest"] as const;
+export type PromptRole = (typeof PROMPT_ROLES)[number];
+
+export interface PromptSection {
+  key: string;
+  title: string;
+  text: string;
+  tokens: number;
+}
+
+/** A role's system prompt as the backend would assemble it now (the agent as a fresh session). */
+export interface PromptPreview {
+  role: PromptRole;
+  model: string;
+  sections: PromptSection[];
+  total_tokens: number;
+  /** Index of the last section in the cacheable prefix; null when nothing is cached. */
+  cacheable_until: number | null;
+  /** Agent only; null for the other roles. */
+  memory_budget_tokens: number | null;
+  memory_used_tokens: number | null;
+}
