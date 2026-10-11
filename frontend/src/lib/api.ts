@@ -1964,3 +1964,9 @@ export async function getHome(server: string): Promise<HomeData> {
   if (!res.ok) throw new Error(await readErrorMessage(res, "Failed to load the home page"));
   return (await res.json()) as HomeData;
 }
+
+/** Hides an open loop from the home page, or with `dismissed: false` brings it back. */
+export async function setOpenLoopDismissed(server: string, id: string, dismissed: boolean): Promise<void> {
+  const res = await fetch(`${server}/api/home/open-loops/${encodeURIComponent(id)}/dismiss`, { method: dismissed ? "POST" : "DELETE" });
+  if (!res.ok) throw new Error(await readErrorMessage(res, dismissed ? "Failed to dismiss the open loop" : "Failed to restore the open loop"));
+}

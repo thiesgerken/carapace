@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import test, { type TestContext } from "node:test";
 import { NextIntlClientProvider } from "next-intl";
 
 import messages from "../../messages/en.json";
-import { installDom, renderReact, runInAct } from "../../test/react-test-utils";
+import { click, installDom, renderReact, runInAct } from "../../test/react-test-utils";
 import type { HomeData } from "@/lib/types";
 
 import { HomeView } from "./home-view";
@@ -19,13 +19,14 @@ const EMPTY: HomeData = {
 const FULL: HomeData = {
   open_loops: [
     {
+      id: "loop-1",
       text: "Upgrade the **third** node ![x](https://tracker.example/p.png)",
       session_id: "s1",
       session_title: "Talos upgrade",
       session_last_active: "2026-10-11T10:00:00Z",
       week_key: "2026-W41",
     },
-    { text: "Book the train.", session_id: "s2", session_title: null, session_last_active: "2026-10-09T10:00:00Z", week_key: "2026-W41" },
+    { id: "loop-2", text: "Book the train.", session_id: "s2", session_title: null, session_last_active: "2026-10-09T10:00:00Z", week_key: "2026-W41" },
   ],
   this_week: {
     source: "week_digest",
@@ -49,9 +50,13 @@ async function renderHome(data: HomeData) {
   // The composer asks for the pointer type; jsdom has no matchMedia.
   window.matchMedia = ((query: string) => ({ matches: false, media: query, addEventListener() {}, removeEventListener() {} })) as unknown as typeof window.matchMedia;
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = (async (input: RequestInfo | URL) => {
-    assert.equal(new URL(String(input)).pathname, "/api/home");
-    return Response.json(data);
+  const mutations: string[] = [];
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const path = new URL(String(input)).pathname;
+    if (path === "/api/home") return Response.json(data);
+    assert.match(path, /^\/api\/home\/open-loops\/[^/]+\/dismiss$/);
+    mutations.push(`${init?.method} ${path}`);
+    return new Response(null, { status: 204 });
   }) as typeof fetch;
   const view = await renderReact(
     <NextIntlClientProvider locale="en" messages={messages} timeZone="UTC">
@@ -61,6 +66,7 @@ async function renderHome(data: HomeData) {
   await runInAct(() => new Promise((resolve) => setTimeout(resolve, 0)));
   return {
     view,
+    mutations,
     links: () => Array.from(view.container.querySelectorAll("a"), (link) => [link.textContent, link.getAttribute("href")]),
     async cleanup() {
       await view.unmount();
@@ -101,6 +107,39 @@ test("without memory, home is the composer and one line pointing to the Memory a
     assert.equal(home.view.container.querySelectorAll("section").length, 0);
     assert.deepEqual(home.links(), [["memory", "/memory"]]);
   } finally {
+    await home.cleanup();
+  }
+});
+
+test("dismissing a loop hides it with an undo, and the last one leaves the empty state", async (t: TestContext) => {
+  const home = await renderHome(FULL);
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const flush = () => runInAct(async () => {});
+  const button = (label: string) => {
+    const found = Array.from(home.view.container.querySelectorAll("button")).find((element) => element.getAttribute("aria-label") === label || element.textContent === label);
+    assert.ok(found, `no button ${label}`);
+    return found;
+  };
+  const loops = () => Array.from(home.view.container.querySelectorAll("li.group\\/loop"), (item) => item.textContent ?? "");
+  try {
+    await click(button("Done"));
+    await flush();
+    assert.deepEqual(home.mutations, ["POST /api/home/open-loops/loop-1/dismiss"]);
+    assert.match(loops()[0], /^Done: Upgrade the/);
+    assert.equal(home.view.container.ownerDocument.activeElement?.textContent, "Undo");
+
+    await click(button("Undo"));
+    await flush();
+    assert.deepEqual(home.mutations.at(-1), "DELETE /api/home/open-loops/loop-1/dismiss");
+    assert.match(loops()[0], /^Upgrade the/);
+
+    await click(button("Done"));
+    await click(button("Done"));
+    await runInAct(async () => t.mock.timers.tick(6000));
+    assert.deepEqual(loops(), []);
+    assert.match(home.view.container.textContent ?? "", /Nothing left open\./);
+  } finally {
+    t.mock.timers.reset();
     await home.cleanup();
   }
 });

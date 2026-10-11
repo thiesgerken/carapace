@@ -1,17 +1,17 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { ArrowRight, CircleAlert, Clock, RefreshCw, ShieldAlert, Wallet, type LucideIcon } from "lucide-react";
+import { ArrowRight, Check, CircleAlert, Clock, RefreshCw, ShieldAlert, Wallet, type LucideIcon } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
 import { ChatInput } from "@/components/chat-input";
 import { SessionOptionsDropdown, type NewSessionOptions } from "@/components/new-session-button";
 import { periodHref } from "@/components/memory-period-detail";
-import { getHome } from "@/lib/api";
+import { getHome, setOpenLoopDismissed } from "@/lib/api";
 import { formatAbsoluteTime, formatRelativeTime } from "@/lib/format-time";
 import { formatUsd, weekLabel } from "@/lib/memory";
 import { saveChatDraft } from "@/lib/storage";
-import type { HomeData, HomeNotices, HomeThisWeek } from "@/lib/types";
+import type { HomeData, HomeNotices, HomeOpenLoop, HomeThisWeek } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 /** Draft key of the home composer; session ids never take this form. */
@@ -85,15 +85,7 @@ export function HomeView({ server, agentName, onStart }: {
               ) : data === null ? null : hasMemory ? (
                 <>
                   <Block title={t("openLoops.title")}>
-                    {data.open_loops.length === 0 ? (
-                      <p className="text-sm text-muted-foreground">{t("openLoops.empty")}</p>
-                    ) : (
-                      <ul className="divide-y divide-border/60">
-                        {data.open_loops.map((loop, index) => (
-                          <OpenLoopItem key={`${loop.session_id}-${index}`} loop={loop} />
-                        ))}
-                      </ul>
-                    )}
+                    <OpenLoopList server={server} loops={data.open_loops} />
                   </Block>
                   <div className="lg:hidden">{thisWeek}</div>
                 </>
@@ -151,13 +143,112 @@ function Block({ title, action, children }: { title: string; action?: ReactNode;
   );
 }
 
-function OpenLoopItem({ loop }: { loop: HomeData["open_loops"][number] }) {
+/** How long a dismissed loop can still be brought back. */
+const UNDO_MS = 6000;
+
+/**
+ * Dismissing hides a loop at once and keeps an undo row in its place for a few seconds; the server
+ * call runs meanwhile, and a failure brings the loop back with the error.
+ */
+function OpenLoopList({ server, loops }: { server: string; loops: HomeOpenLoop[] }) {
+  const t = useTranslations("home.openLoops");
+  // Absent: open. "undo": dismissed, undo row showing. "gone": dismissed for good.
+  const [phases, setPhases] = useState<ReadonlyMap<string, "undo" | "gone">>(new Map());
+  const [restoredId, setRestoredId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  const frame = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const pending = timers.current;
+    return () => pending.forEach(clearTimeout);
+  }, []);
+
+  function setPhase(id: string, phase: "undo" | "gone" | null): void {
+    setPhases((current) => {
+      const next = new Map(current);
+      if (phase === null) next.delete(id);
+      else next.set(id, phase);
+      return next;
+    });
+  }
+
+  function stopTimer(id: string): void {
+    clearTimeout(timers.current.get(id));
+    timers.current.delete(id);
+  }
+
+  function dismiss(loop: HomeOpenLoop): void {
+    setError(null);
+    setRestoredId(null);
+    setPhase(loop.id, "undo");
+    timers.current.set(loop.id, setTimeout(() => {
+      timers.current.delete(loop.id);
+      // The undo button is about to vanish; keep keyboard focus inside the block.
+      if (document.activeElement?.getAttribute("data-undo-id") === loop.id) frame.current?.focus();
+      setPhase(loop.id, "gone");
+    }, UNDO_MS));
+    setOpenLoopDismissed(server, loop.id, true).catch((dismissError: unknown) => {
+      stopTimer(loop.id);
+      setPhase(loop.id, null);
+      setError(dismissError instanceof Error ? dismissError.message : String(dismissError));
+    });
+  }
+
+  function undo(loop: HomeOpenLoop): void {
+    stopTimer(loop.id);
+    setError(null);
+    setPhase(loop.id, null);
+    setRestoredId(loop.id);
+    setOpenLoopDismissed(server, loop.id, false).catch((undoError: unknown) => {
+      setPhase(loop.id, "gone");
+      setError(undoError instanceof Error ? undoError.message : String(undoError));
+    });
+  }
+
+  const visible = loops.filter((loop) => phases.get(loop.id) !== "gone");
+
+  return (
+    <div ref={frame} tabIndex={-1} className="space-y-2 outline-none">
+      {error ? <p className="text-xs text-destructive">{error}</p> : null}
+      {visible.length === 0 ? (
+        <p className="text-sm text-muted-foreground">{t("empty")}</p>
+      ) : (
+        <ul className="divide-y divide-border/60">
+          {visible.map((loop) => (
+            <li key={loop.id} className="group/loop py-3 first:pt-0 last:pb-0">
+              {phases.get(loop.id) === "undo" ? (
+                <div role="status" className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Check aria-hidden="true" className="h-4 w-4 shrink-0" />
+                  <span className="min-w-0 flex-1 truncate">{t("dismissed", { text: loop.text })}</span>
+                  <button
+                    type="button"
+                    data-undo-id={loop.id}
+                    autoFocus
+                    onClick={() => undo(loop)}
+                    className="shrink-0 rounded-md px-1.5 py-0.5 font-medium text-[#236b86] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:text-sky-400"
+                  >
+                    {t("undo")}
+                  </button>
+                </div>
+              ) : (
+                <OpenLoopItem loop={loop} focusDismiss={loop.id === restoredId} onDismiss={() => dismiss(loop)} />
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function OpenLoopItem({ loop, focusDismiss, onDismiss }: { loop: HomeOpenLoop; focusDismiss: boolean; onDismiss: () => void }) {
   const t = useTranslations("home");
   const locale = useLocale();
   const [now] = useState(() => Date.now());
 
   return (
-    <li className="flex flex-col gap-1.5 py-3 first:pt-0 last:pb-0 sm:flex-row sm:items-start sm:gap-4">
+    <div className="flex flex-col gap-1.5 sm:flex-row sm:items-start sm:gap-4">
       <div className="min-w-0 flex-1 space-y-1">
         <p className="text-sm leading-relaxed">{loop.text}</p>
         <p className="truncate text-xs text-muted-foreground">
@@ -168,14 +259,31 @@ function OpenLoopItem({ loop }: { loop: HomeData["open_loops"][number] }) {
           </time>
         </p>
       </div>
-      <Link
-        href={sessionHref(loop.session_id)}
-        className="inline-flex shrink-0 items-center gap-1 self-start text-sm font-medium text-[#236b86] hover:underline dark:text-sky-400"
-      >
-        {t("openLoops.continue")}
-        <ArrowRight className="h-3.5 w-3.5" />
-      </Link>
-    </li>
+      <div className="flex shrink-0 items-center gap-1 self-start">
+        <Link
+          href={sessionHref(loop.session_id)}
+          className="inline-flex items-center gap-1 text-sm font-medium text-[#236b86] hover:underline dark:text-sky-400"
+        >
+          {t("openLoops.continue")}
+          <ArrowRight className="h-3.5 w-3.5" />
+        </Link>
+        <button
+          type="button"
+          onClick={onDismiss}
+          autoFocus={focusDismiss}
+          aria-label={t("openLoops.dismiss")}
+          title={t("openLoops.dismiss")}
+          className={cn(
+            "rounded-md p-1 text-muted-foreground transition-opacity hover:bg-muted hover:text-foreground",
+            "focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+            // Pointer devices reveal it with the row; touch screens have no hover, so it stays visible there.
+            "[@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover/loop:opacity-100 [@media(hover:hover)]:group-focus-within/loop:opacity-100",
+          )}
+        >
+          <Check aria-hidden="true" className="h-4 w-4" />
+        </button>
+      </div>
+    </div>
   );
 }
 
