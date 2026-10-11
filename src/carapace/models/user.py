@@ -79,6 +79,8 @@ class MemoryBudget(UserConfigModel):
 class UserMemoryConfig(UserConfigModel):
     auto_mode: bool = False
     budget: MemoryBudget = MemoryBudget()
+    # Tokens of memory in the agent's system prompt. None -> platform default, 0 turns it off.
+    prompt_budget_tokens: int | None = Field(default=None, ge=0)
 
 
 class UserConfig(UserConfigModel):

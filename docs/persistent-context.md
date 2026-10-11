@@ -55,7 +55,7 @@ Each file sits under a `# <file name>` heading (`# SOUL.md`), so role instructio
 
 The roles are agent turns, compaction summaries, session extraction, and week and month digests. Each role puts its own instructions after the prefix:
 
-- **Agent turns** (`build_system_prompt()`): sandbox environment, response format, then the session's mode (unattended, ask), and last the date and session ID.
+- **Agent turns** (`build_system_prompt()`): sandbox environment, response format, the memory block (see [memory.md](memory.md#in-the-agents-prompt)), then the session's mode (unattended, ask), and last the date and session ID. The memory block is frozen per session and only refreshed by compaction, so it doesn't break the cached conversation. It goes before the modes because those can change within a session.
 - **Compaction**: the fold or tool-output summary instructions.
 - **Memory tasks**: the extraction or digest instructions. Dates and periods travel in the user prompt.
 

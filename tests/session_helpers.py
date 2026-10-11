@@ -189,6 +189,7 @@ def _make_engine(
     config: Config | None = None,
     credential_registry: CredentialRegistryProtocol | None = None,
     knowledge_repo_for_session: Callable[[str], KnowledgeRepoHandle] | None = None,
+    memory_block_for: Callable[[str, str], str] = lambda _user, _session_id: "",
 ) -> SessionEngine:
     ensure_data_dir(tmp_path)
     if config is None:
@@ -223,5 +224,6 @@ def _make_engine(
         sandbox_mgr=sandbox_mgr,
         credential_registry_for_session=credential_registry_for_session,
         knowledge_repo_for_session=knowledge_repo_for_session,
+        memory_block_for=memory_block_for,
         model_factory=lambda _name, *, user: TestModel(),
     )

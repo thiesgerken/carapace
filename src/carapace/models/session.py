@@ -75,6 +75,18 @@ class SessionAttributes(BaseModel):
         return self
 
 
+class MemorySnapshot(BaseModel):
+    """The memory block of the agent's system prompt, frozen for a session.
+
+    A changed system prompt invalidates the whole cached conversation behind it, so the block is
+    rendered once and only refreshed when compaction rewrites the history anyway.
+    """
+
+    # Empty when memory in the prompt is off or nothing was selected.
+    text: str
+    as_of: datetime
+
+
 class SessionJobRunContext(BaseModel):
     job_id: str
     trigger_kind: Literal["api", "cron", "manual"]
@@ -104,6 +116,8 @@ class SessionState(BaseModel):
     knowledge_last_archive_path: str | None = None
     knowledge_last_export_hash: str | None = None
     knowledge_last_commit_trigger: str | None = None
+    # None until the session's first agent prompt is built, and again after compaction.
+    memory: MemorySnapshot | None = None
 
     @classmethod
     def now(

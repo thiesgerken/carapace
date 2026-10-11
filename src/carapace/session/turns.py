@@ -140,6 +140,8 @@ class SessionTurnHost(Protocol):
         tool_result_callback: Callable[[ToolResult], None] | None = None,
     ) -> Deps: ...
 
+    def _ensure_memory_snapshot(self, active: ActiveSession) -> None: ...
+
     def _record_tool_call_event(
         self,
         session_id: str,
@@ -426,6 +428,7 @@ class SessionTurnMixin(SessionTurnHost):
         fresh = self._session_mgr.resume_session(session_id)
         if fresh:
             active.state = fresh
+        self._ensure_memory_snapshot(active)
 
         deps = self._build_deps(
             active,
