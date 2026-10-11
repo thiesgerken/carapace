@@ -8,7 +8,7 @@ import { useLocale, useTranslations } from "next-intl";
 import { MemoryExtractionDetail, useMemorySessionDetail } from "@/components/memory-extraction-detail";
 import { MemoryRunDialog } from "@/components/memory-run-dialog";
 import { useMemoryStatus } from "@/components/memory-status";
-import { buttonClassName, controlClassName, PickMatchingRow } from "@/components/memory-ui";
+import { buttonClassName, controlClassName, PickMatchingRow, taskStatusTag } from "@/components/memory-ui";
 import { listMemorySessions, spawnMemoryTasks } from "@/lib/api";
 import {
   formatUsd,
@@ -155,7 +155,7 @@ export function MemorySessionsView({ server, token }: { server: string; token: s
         ) : null}
         {row.task && row.task.status !== "done" ? (
           <div className="text-xs text-muted-foreground">
-            {t("task", { status: tStatuses(row.task.status) })}
+            {t.rich("task", { status: taskStatusTag(row.task.status) })}
             {row.task.blocked_reason === "budget" ? ` ⏸` : null}
           </div>
         ) : null}

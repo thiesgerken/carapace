@@ -4,7 +4,7 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Ban, Loader2, Play, RotateCcw } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
-import { buttonClassName, controlClassName, DetailList, MemoryProvenanceList, PickMatchingRow } from "@/components/memory-ui";
+import { buttonClassName, controlClassName, DetailList, MemoryProvenanceList, PickMatchingRow, TaskStatusBadge } from "@/components/memory-ui";
 import { MemoryRunDialog } from "@/components/memory-run-dialog";
 import { useMemoryStatus } from "@/components/memory-status";
 import { cancelMemoryTasks, listMemoryTasks, retryMemoryTasks } from "@/lib/api";
@@ -280,7 +280,7 @@ export function MemoryTasksView({ server, token }: { server: string; token: stri
                         ) : null}
                       </td>
                       <td className="px-3 py-2">
-                        {tStatuses(task.status)}
+                        <TaskStatusBadge status={task.status} />
                         {task.blocked_reason === "budget" ? <div className="text-xs text-amber-700 dark:text-amber-400">{t("blockedBudget")}</div> : null}
                       </td>
                       <td className="px-3 py-2 font-mono text-xs">{taskModel(task) ?? "—"}</td>

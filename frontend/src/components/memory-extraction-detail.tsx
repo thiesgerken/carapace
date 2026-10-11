@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Loader2 } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
-import { MemoryProvenanceList } from "@/components/memory-ui";
+import { MemoryProvenanceList, taskStatusTag } from "@/components/memory-ui";
 import { getMemorySession } from "@/lib/api";
 import { formatAbsoluteTime } from "@/lib/format-time";
 import type { MemoryExtractionRecord, MemoryFact, MemoryFactCategory, MemorySessionDetail } from "@/lib/types";
@@ -70,7 +70,7 @@ export function MemoryExtractionDetail({ sessionId, state, onSourceNavigate }: {
       ) : (
         <p className="text-sm text-muted-foreground">
           {t("notExtracted")}
-          {detail.session.task ? ` ${t("taskStatus", { status: detail.session.task.status })}` : null}
+          {detail.session.task ? <> {t.rich("taskStatus", { status: taskStatusTag(detail.session.task.status) })}</> : null}
         </p>
       )}
       {detail.history.length > 0 ? (
