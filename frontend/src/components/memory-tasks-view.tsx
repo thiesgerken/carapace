@@ -328,6 +328,9 @@ export function MemoryTasksView({ server, token }: { server: string; token: stri
           server={server}
           token={token}
           selection={runSelection}
+          kinds={runSelection.ids
+            ? items.filter((task) => runSelection.ids?.includes(task.id)).map((task) => task.kind)
+            : runSelection.filter?.kind ?? MEMORY_TASK_KINDS}
           onClose={() => setRunSelection(null)}
           onQueued={(count) => {
             setNotice(t("queued", { count }));
