@@ -17,7 +17,6 @@ from pydantic_ai.usage import RunUsage, UsageLimits
 from ..llm import ModelFactory, model_settings_for_config, resolve_available_model_entry
 from ..models.config import Config
 from ..usage import LlmRequestLogCapability, UsageTracker, count_text_tokens, provider_cost_usd_from_messages
-from .prompts import PromptTemplate
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,9 +46,9 @@ class InputTooLargeError(ValueError):
     pass
 
 
-def prompt_tokens(template: PromptTemplate, user_prompt: str, model: str) -> int:
-    """Input token estimate for one call: instructions plus user prompt."""
-    return count_text_tokens(f"{template.system}\n\n{user_prompt}", model_name=model)
+def prompt_tokens(system: str, user_prompt: str, model: str) -> int:
+    """Input token estimate for one call: system prompt plus user prompt."""
+    return count_text_tokens(f"{system}\n\n{user_prompt}", model_name=model)
 
 
 def ensure_fits_context(config: Config, model: str, input_tokens: int) -> None:
@@ -71,7 +70,7 @@ def capped_model_settings(config: Config, model: str, output_tokens_cap: int) ->
 
 
 async def run_structured[OutputT: BaseModel](
-    template: PromptTemplate,
+    system: str,
     output_type: type[OutputT],
     user_prompt: str,
     *,
@@ -80,7 +79,7 @@ async def run_structured[OutputT: BaseModel](
     model_factory: ModelFactory,
     model_settings: ModelSettings,
 ) -> StructuredCall[OutputT]:
-    """Run *user_prompt* (built by ``template.user_prompt``) and return the validated output.
+    """Run *user_prompt* under the *system* prompt and return the validated output.
 
     Exactly one model request: no output retries, so the estimate (one prompt, ``max_tokens`` from
     *model_settings*) is an honest upper bound. An invalid output fails the task; a manual retry
@@ -89,7 +88,7 @@ async def run_structured[OutputT: BaseModel](
     agent = Agent(
         model_factory(model, user=user),
         output_type=output_type,
-        instructions=template.system,
+        instructions=system,
         model_settings=model_settings,
         capabilities=[LlmRequestLogCapability(source="memory")],
         retries={"output": 0},

@@ -997,6 +997,8 @@ def build_system_prompt(deps: Deps) -> str:
         "- `/workspace/sessions/YYYY/MM/<session_id>/conversation.json` "
         "— archived conversation snapshots committed to the knowledge repo\n"
         "- `/workspace/skills/` — activated skills (populated by `use_skill`)\n"
+        "- `/workspace/memory/` — distilled long-term memory generated from archived sessions "
+        "(`README.md`, `sessions/`, `weeks/`, `months/`); read-only, the mirror reverts edits pushed there\n"
         "Use `rg` to search archived conversations by session ID, message text, "
         "tool names, or JSON fields when you need prior context.\n"
         "Call `use_skill(skill_name)` to activate a skill before running its scripts.\n"
