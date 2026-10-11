@@ -77,6 +77,9 @@ interface ChatViewProps {
   onOpenJobSettings?: (jobId: string) => void;
   onUpdateSessionAttributes?: (sessionId: string, attributes: SessionAttributesPatch) => Promise<SessionInfo>;
   onDeleteSession?: () => Promise<void>;
+  /** Sent once the session is connected and its history loaded, e.g. typed into the home composer. */
+  initialMessage?: string;
+  onInitialMessageSent?: () => void;
 }
 
 const SANDBOX_STARTUP_TOOL_NAMES = new Set(["use_skill", "read", "write", "str_replace", "exec", "send_file"]);
@@ -1032,6 +1035,8 @@ export function ChatView({
   onOpenJobSettings,
   onUpdateSessionAttributes,
   onDeleteSession,
+  initialMessage,
+  onInitialMessageSent,
 }: ChatViewProps) {
   const t = useTranslations("chatView");
   const tc = useTranslations("compaction");
@@ -1785,6 +1790,16 @@ export function ChatView({
       setWaiting(true);
     }
   }
+
+  const initialMessageSentRef = useRef(false);
+  useEffect(() => {
+    if (!initialMessage || initialMessageSentRef.current || status !== "connected" || loadingHistory) return;
+    initialMessageSentRef.current = true;
+    handleSend(initialMessage);
+    onInitialMessageSent?.();
+    // handleSend and the callback are fresh every render; the ref keeps this to one send.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialMessage, status, loadingHistory]);
 
   function handleInterrupt(content: string) {
     resetRollbackRef.current = null;

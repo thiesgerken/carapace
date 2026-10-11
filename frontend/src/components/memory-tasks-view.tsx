@@ -33,7 +33,7 @@ import {
   type TaskPick,
   weekLabel,
 } from "@/lib/memory";
-import type { MemoryTaskListResponse, MemoryTaskSelection, MemoryTaskSort, MemoryTaskView } from "@/lib/types";
+import type { MemoryTaskListResponse, MemoryTaskSelection, MemoryTaskSort, MemoryTaskStatus, MemoryTaskView } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 const NEWEST_BATCH = 50;
@@ -41,14 +41,23 @@ const DEFAULT_FORM: TaskFilterForm = { status: "unfinished", kind: "", period: "
 const NO_PICK: TaskPick = { kind: "ids", ids: [] };
 const COLUMN_COUNT = 9;
 
-export function MemoryTasksView({ server, token }: { server: string; token: string }) {
+export function MemoryTasksView({ server, token, initialStatus = null }: {
+  server: string;
+  token: string;
+  /** Preselects the status filter (from ?status=, e.g. the home page's link to failed tasks); unknown values are ignored. */
+  initialStatus?: string | null;
+}) {
   const t = useTranslations("memory.tasks");
   const tStatuses = useTranslations("memory.taskStatuses");
   const tKinds = useTranslations("memory.taskKinds");
   const tSidebar = useTranslations("sidebar");
   const locale = useLocale();
   const { status, refreshStatus } = useMemoryStatus();
-  const [form, setForm] = useState(DEFAULT_FORM);
+  const [form, setForm] = useState<TaskFilterForm>(() => (
+    MEMORY_TASK_STATUSES.some((status) => status === initialStatus)
+      ? { ...DEFAULT_FORM, status: initialStatus as MemoryTaskStatus }
+      : DEFAULT_FORM
+  ));
   const filter = useMemo(() => toTaskFilter(form), [form]);
   const [sort, setSort] = useState<MemoryTaskSort>("activity");
   const [now, setNow] = useState(() => Date.now());

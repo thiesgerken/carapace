@@ -1,6 +1,7 @@
 import type {
   AgentHistoryResponse,
   HistoryMessage,
+  HomeData,
   JobDefinition,
   JobRunResult,
   JobsFile,
@@ -1956,4 +1957,10 @@ export async function getPromptPreview(server: string, role: PromptRole): Promis
   const res = await fetch(`${server}/api/prompts/preview?role=${role}`);
   if (!res.ok) throw new Error(await readErrorMessage(res, "Failed to load prompt preview"));
   return (await res.json()) as PromptPreview;
+}
+
+export async function getHome(server: string): Promise<HomeData> {
+  const res = await fetch(`${server}/api/home`);
+  if (!res.ok) throw new Error(await readErrorMessage(res, "Failed to load the home page"));
+  return (await res.json()) as HomeData;
 }
