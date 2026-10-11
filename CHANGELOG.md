@@ -1,6 +1,197 @@
 # CHANGELOG
 
 
+## v0.162.0 (2026-10-11)
+
+
+### ✨ Features
+
+
+- ✨Merge pull request #384 from thiesgerken/feat/home-dashboard
+  ([`525e4f9`](https://github.com/thiesgerken/carapace/commit/525e4f95a2299d0ddeeaba0d3062e89b187082e6))
+
+- ✨ feat: home page with composer, open loops and this week
+  ([`525e4f9`](https://github.com/thiesgerken/carapace/commit/525e4f95a2299d0ddeeaba0d3062e89b187082e6))
+
+- ✨ feat: dismiss open loops on the home page, with undo
+  ([`d6f6c8b`](https://github.com/thiesgerken/carapace/commit/d6f6c8b357b2eac7ea0a94715be4dfe425cdfe0f))
+
+- ✨ feat: dismiss open loops on the home page, with undo
+  ([`eb6d90f`](https://github.com/thiesgerken/carapace/commit/eb6d90f8e781e1f37b74a3948cd2ef4f25fb7ad7))
+
+  Each open loop gets a Done (✓) button next to Continue, shown on hover or focus with a pointer and always on touch screens. Dismissing hides the loop at once and leaves an inline Undo for six seconds while the dismiss request runs; a failed request brings the loop back with the error. Focus moves to Undo, back to the restored loop's button, and to the block when the undo row expires. Built against the open-loop id and POST/DELETE /api/home/open-loops/{id}/dismiss contract.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01XZGdh4voK9HLfWh9aHHBpo
+
+- ✨ feat: dismiss open loops on the home page
+  ([`bf2461a`](https://github.com/thiesgerken/carapace/commit/bf2461af4d6f2a0abf813c9cf0ad4538a044d2cc))
+
+- ✨ feat: dismiss open loops on the home page
+  ([`fe8eaff`](https://github.com/thiesgerken/carapace/commit/fe8eaffd05bb9499cd36f78d1ff1eb5e08fb30f3))
+
+  Open loops get a stable id (session id plus normalized text), and the user can dismiss and restore them. Dismissals survive re-extraction while the wording stays the same and go away with the session or its purged extractions.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01B3cWr83aDuHP8JQDvLxrgC
+
+- ✨ feat: home page with composer, open loops and this week
+  ([`1ad01e1`](https://github.com/thiesgerken/carapace/commit/1ad01e11fbcae8a6fde1a030f0f02d035c3b11e7))
+
+- ✨ feat: GET /api/home with open loops, the week so far and notices
+  ([`234d2bf`](https://github.com/thiesgerken/carapace/commit/234d2bf15c94246df9e4a9f15c2d9f3a3e089b52))
+
+- ✨ feat: GET /api/home with open loops, the week so far and notices
+  ([`7054f10`](https://github.com/thiesgerken/carapace/commit/7054f10e5fd398fcac32796912a04b36a3075d15))
+
+  The home page needs the last week's open loops with a link back into each session, a short picture of the current week, and notices that only show up when something needs attention. Everything comes from existing memory records and the engine's active sessions; privacy and ownership are checked on the session row at read time.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01B3cWr83aDuHP8JQDvLxrgC
+
+- ✨ feat: home page with a composer, open loops and this week
+  ([`aa47f67`](https://github.com/thiesgerken/carapace/commit/aa47f67adc8e736689ad07187d06f7d1ede1f24d))
+
+  The empty home screen becomes a place to pick things up: a composer that starts a session with the typed message (the session-options ▾ next to it), notice chips for pending approvals, failed and outdated memory and a memory budget near its limit, the open loops of the last week with a link back into each session, and this week's digest or session abstracts. Without memory it is the composer and one line.
+
+  The message reaches the new session through ChatView's initialMessage, sent once the socket is connected and history loaded. The Tasks tab accepts ?status= so the failed-tasks chip can land on a filtered list. Built against the GET /api/home contract from #384, on mocks.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01XZGdh4voK9HLfWh9aHHBpo
+
+### Other
+
+
+- Merge pull request #392 from thiesgerken/home/loop-checkbox
+  ([`c5b678d`](https://github.com/thiesgerken/carapace/commit/c5b678d7909f720622ddea670a3cbdee8251c0c7))
+
+- Merge pull request #391 from thiesgerken/home/dismiss-upsert
+  ([`34c0213`](https://github.com/thiesgerken/carapace/commit/34c0213f7781568986d67d7a4fa37308bb8b1746))
+
+- Merge branch 'feat/home-dashboard' into home/dismiss-upsert
+  ([`822c742`](https://github.com/thiesgerken/carapace/commit/822c742ae3a0cc8fff6f12d365e6d23c1c0d5419))
+
+- Merge pull request #390 from thiesgerken/home/dismiss-open-loops
+  ([`d6f6c8b`](https://github.com/thiesgerken/carapace/commit/d6f6c8b357b2eac7ea0a94715be4dfe425cdfe0f))
+
+- Merge branch 'feat/home-dashboard' into home/dismiss-open-loops
+  ([`46a965c`](https://github.com/thiesgerken/carapace/commit/46a965c6bbd47af67e9ec58c751a3188dc7b9150))
+
+- Merge pull request #389 from thiesgerken/home/dismiss-loops
+  ([`bf2461a`](https://github.com/thiesgerken/carapace/commit/bf2461af4d6f2a0abf813c9cf0ad4538a044d2cc))
+
+- Merge pull request #388 from thiesgerken/home/composer-bottom
+  ([`e7c389d`](https://github.com/thiesgerken/carapace/commit/e7c389dcee68c49ce857e5fc223983edf631318a))
+
+- Merge pull request #387 from thiesgerken/home/dashboard-ui
+  ([`1ad01e1`](https://github.com/thiesgerken/carapace/commit/1ad01e11fbcae8a6fde1a030f0f02d035c3b11e7))
+
+- Merge branch 'feat/home-dashboard' into home/dashboard-ui
+  ([`c6e5f88`](https://github.com/thiesgerken/carapace/commit/c6e5f88e77dfe33a4025942b672d2de58396211d))
+
+- Merge pull request #386 from thiesgerken/home/this-week-flip
+  ([`6f33d22`](https://github.com/thiesgerken/carapace/commit/6f33d220be0744ee91f7d285c3819cbed2de9061))
+
+- Merge pull request #385 from thiesgerken/home/api
+  ([`234d2bf`](https://github.com/thiesgerken/carapace/commit/234d2bf15c94246df9e4a9f15c2d9f3a3e089b52))
+
+- 📝 docs: describe the home page's this-week order after #386
+  ([`c1d95f1`](https://github.com/thiesgerken/carapace/commit/c1d95f100b9ff669da9be350aa19f7d9fc977d3c))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01XZGdh4voK9HLfWh9aHHBpo
+
+- 🎉 init: integration branch for the home dashboard
+  ([`d9f2622`](https://github.com/thiesgerken/carapace/commit/d9f262210f2a9fb21c8f29bb106b132a249c9d54))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01NkHyCyWAAKp79dDUaVrZmY
+
+### 💄 UI/UX
+
+
+- 💄 style: dismiss open loops with a to-do circle on the left
+  ([`c5b678d`](https://github.com/thiesgerken/carapace/commit/c5b678d7909f720622ddea670a3cbdee8251c0c7))
+
+- 💄 style: give the open-loop circle a 44px tap target
+  ([`a36de5b`](https://github.com/thiesgerken/carapace/commit/a36de5bd41986198d74a9ddb2efbf84915e174c5))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01XZGdh4voK9HLfWh9aHHBpo
+
+- 💄 style: dismiss open loops with a to-do circle on the left
+  ([`dc12450`](https://github.com/thiesgerken/carapace/commit/dc12450628dcec4334fddba62b70f9e6db5654be))
+
+  The bare ✓ after "Continue →" read oddly. Each loop now starts with a round to-do circle: hollow while open, previewing a check on hover and focus, filled in the undo row. Continue stands alone on the right. Undo, per-loop request ordering and focus handling are unchanged.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01XZGdh4voK9HLfWh9aHHBpo
+
+- 💄 style: pin the home composer where a session's composer sits
+  ([`e7c389d`](https://github.com/thiesgerken/carapace/commit/e7c389dcee68c49ce857e5fc223983edf631318a))
+
+- 💄 style: pin the home composer where a session's composer sits
+  ([`0cf7542`](https://github.com/thiesgerken/carapace/commit/0cf7542a6639d24143569572b443158e5aac74ef))
+
+  The home page now uses the chat view's frame: the composer at the foot of the main column, in the same place and width as in a session, with open loops above it in the same column width and This week in the inspector's column on desktop (below the loops on mobile). The session options ▾ moved into the input row and opens upward. The composer's textarea is padded to the height of its buttons, so a single line sits centred instead of low; this also fixes the chat composer.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01XZGdh4voK9HLfWh9aHHBpo
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix: dismiss open loops with an upsert instead of check-then-insert
+  ([`34c0213`](https://github.com/thiesgerken/carapace/commit/34c0213f7781568986d67d7a4fa37308bb8b1746))
+
+- 🐛 fix: send an open loop's undo only after its dismissal
+  ([`4c55384`](https://github.com/thiesgerken/carapace/commit/4c5538496b20b775f09a53ee275d30ba800609c5))
+
+  Dismiss and undo fired independent requests, so a quick Undo could reach the server first: the DELETE was a no-op, the late POST dismissed the loop, and the page showed a loop the server had hidden. Each loop's requests now chain on the previous one.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01XZGdh4voK9HLfWh9aHHBpo
+
+- 🐛 fix: treat dismissing an aged-out open loop as done
+  ([`b7ec13a`](https://github.com/thiesgerken/carapace/commit/b7ec13a0e53cdac6ad5922cdd8e05f47c8771b05))
+
+  The backend answers 404 when the loop is no longer among the user's current ones; restoring it with an error would show a loop that is not open anymore.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01XZGdh4voK9HLfWh9aHHBpo
+
+- 🐛 fix: dismiss open loops with an upsert instead of check-then-insert
+  ([`fd94e84`](https://github.com/thiesgerken/carapace/commit/fd94e84406956bdd3e52f44683598f2da4a55cd9))
+
+  Two dismiss requests for one loop could both pass the existence check, and the losing insert's primary-key conflict surfaced as a 500. INSERT ... ON CONFLICT DO NOTHING makes the dismissal idempotent without a race window.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01B3cWr83aDuHP8JQDvLxrgC
+
+- 🐛 fix: show the current week on the home page and guard last week's digest
+  ([`6f33d22`](https://github.com/thiesgerken/carapace/commit/6f33d220be0744ee91f7d285c3819cbed2de9061))
+
+- 🐛 fix: show the current week on the home page and guard last week's digest
+  ([`523fb49`](https://github.com/thiesgerken/carapace/commit/523fb4915f14040c3795c9268d24bd43e1ef5689))
+
+  "This week" now shows the current week's sessions and falls back to last week's digest only while the week has none yet. The digest is skipped while it covers a session that turned private or was deleted, since it stays current until the sweep purges that session.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01B3cWr83aDuHP8JQDvLxrgC
+
 ## v0.161.0 (2026-10-11)
 
 
