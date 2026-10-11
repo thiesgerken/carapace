@@ -156,3 +156,16 @@ test("an open task names the model it would run with now, not the stale estimate
   assert.match(text, /opus · Estimate 900 in · ≤6K out/);
   assert.doesNotMatch(text, /sonnet/);
 });
+
+test("an open digest shows both its waiting and missing sources", async () => {
+  const task: MemoryTaskView = {
+    ...weekDigestTask(2),
+    status: "queued",
+    blocked_reason: "dependencies",
+    provenance: null,
+    result_id: null,
+    dependencies: { waiting: 2, pending_ids: [5], failed: 1 },
+  };
+  const text = await renderTask(task);
+  assert.match(text, /waiting for 2 extractions · 2 extractions missing/);
+});

@@ -8,7 +8,7 @@ import { useMemorySessionDetail } from "@/components/memory-extraction-detail";
 import { DetailList } from "@/components/memory-ui";
 import { getMemoryPeriod } from "@/lib/api";
 import { formatAbsoluteTime } from "@/lib/format-time";
-import { formatTokens, formatUsd, monthLabel, taskRunModel } from "@/lib/memory";
+import { formatTokens, formatUsd, missingSourceCount, monthLabel, taskRunModel } from "@/lib/memory";
 import type { MemoryDigestLevel, MemoryModelRole, MemoryPeriodDetail, MemoryTaskView } from "@/lib/types";
 
 /**
@@ -170,6 +170,7 @@ function DigestTaskSubject({ server, task }: { server: string; task: MemoryTaskV
             ? t(level === "week" ? "sourceSessions" : "sourceWeeks", { count: sources.length })
             : t(level === "week" ? "coverageSessions" : "coverageWeeks", { covered: node.covered, total: node.total })}
         </span>
+        <DependencyCounts task={task} />
       </SubjectHeader>
       <ResultNote produced={produced} isCurrent={produced?.is_current ?? true} />
       {sources.length > 0 ? (
@@ -191,6 +192,21 @@ function DigestTaskSubject({ server, task }: { server: string; task: MemoryTaskV
       ) : null}
     </div>
   );
+}
+
+/** An open or failed digest's waiting and missing sources; the status cell shows only the more pressing one. */
+function DependencyCounts({ task }: { task: MemoryTaskView }) {
+  const t = useTranslations("memory.tasks");
+  const { dependencies } = task;
+  if (dependencies === null || task.status === "done" || task.status === "cancelled") return null;
+  const week = task.kind === "week_digest";
+  const missing = missingSourceCount(dependencies);
+  const parts = [
+    dependencies.waiting > 0 ? t(week ? "waitingExtractions" : "waitingSources", { count: dependencies.waiting }) : null,
+    missing > 0 ? t(week ? "missingExtractions" : "missingSources", { count: missing }) : null,
+  ].filter(Boolean);
+  if (parts.length === 0) return null;
+  return <span className="text-xs text-amber-700 dark:text-amber-400">{parts.join(" · ")}</span>;
 }
 
 type PeriodOutcome = { key: string } & ({ detail: MemoryPeriodDetail | null } | { error: string });
