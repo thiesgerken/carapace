@@ -1077,6 +1077,8 @@ export interface PromptPreview {
 // Home
 
 export interface HomeOpenLoop {
+  /** Stable across reloads; what dismissing refers to. */
+  id: string;
   text: string;
   session_id: string;
   session_title: string | null;

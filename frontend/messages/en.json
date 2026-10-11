@@ -624,7 +624,10 @@
         "openLoops": {
             "title": "Open loops",
             "empty": "Nothing left open.",
-            "continue": "Continue"
+            "continue": "Continue",
+            "dismiss": "Done",
+            "dismissed": "Done: {text}",
+            "undo": "Undo"
         },
         "thisWeek": {
             "title": "This week",

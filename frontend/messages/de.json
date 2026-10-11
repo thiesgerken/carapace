@@ -624,7 +624,10 @@
         "openLoops": {
             "title": "Offene Punkte",
             "empty": "Nichts offen.",
-            "continue": "Weitermachen"
+            "continue": "Weitermachen",
+            "dismiss": "Erledigt",
+            "dismissed": "Erledigt: {text}",
+            "undo": "Rückgängig"
         },
         "thisWeek": {
             "title": "Diese Woche",
