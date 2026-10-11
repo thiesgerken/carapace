@@ -7,6 +7,7 @@ from decimal import Decimal
 import pytest
 
 from carapace.database.models import SessionRow, User
+from carapace.memory import worker as worker_module
 from carapace.memory.handlers import TaskRunError
 from carapace.memory.models import (
     BlockedReason,
@@ -88,8 +89,10 @@ class WeekDigestHandler:
     def __init__(self) -> None:
         self.runs: list[str] = []
         self.cost = Decimal("0.10")
+        self.estimates = 0
 
     async def estimate(self, user: str, target: str, model: str) -> TaskEstimate:
+        self.estimates += 1
         return TaskEstimate(model=model, input_tokens=100, output_tokens_cap=10, cost_usd=self.cost)
 
     async def run(self, task: MemoryTask, model: str | None) -> TaskOutcome:
@@ -433,3 +436,17 @@ async def test_a_digest_is_gated_on_its_estimate_at_dispatch(env: Env):
     assert (gated.status, gated.blocked_reason) == (TaskStatus.queued, BlockedReason.budget)
     assert gated.estimate is not None and gated.estimate.cost_usd == Decimal("2.00")
     assert env.week_digest.runs == []
+
+    await env.tick()  # budget-blocked digests are not re-rendered every tick
+    assert env.week_digest.estimates == 1
+
+
+async def test_waiting_digests_never_crowd_extractions_out_of_the_dispatch_window(env: Env, monkeypatch):
+    monkeypatch.setattr(worker_module, "_DISPATCH_WINDOW", 1)
+    digest = env.queued_week_digest()  # queued before the extraction it waits for
+    extract = env.queued("s1", cost="0.10")
+
+    await env.tick()
+    assert env.task(extract.id).status is TaskStatus.done
+    await env.tick()
+    assert env.task(digest.id).status is TaskStatus.done

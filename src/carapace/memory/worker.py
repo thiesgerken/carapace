@@ -183,8 +183,10 @@ class MemoryWorker:
             estimate: TaskEstimate | None = None
             if handler.model_role is not None:
                 # A digest's input grows as its sources finish, so its spawn-time estimate may cover
-                # partial input; rendering it again is cheap (no transcripts, no LLM).
-                estimate = await self._estimate_or_fail(task, user_config, now, refresh=task.kind in _DIGEST_KINDS)
+                # partial input. A budget-blocked digest keeps its estimate: sources finishing later
+                # pass through the dependency block, which clears the reason and refreshes it then.
+                refresh = task.kind in _DIGEST_KINDS and task.blocked_reason is not BlockedReason.budget
+                estimate = await self._estimate_or_fail(task, user_config, now, refresh=refresh)
                 if estimate is None:
                     continue
                 if task.user not in spend:

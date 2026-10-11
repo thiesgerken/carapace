@@ -52,8 +52,9 @@ from .periods import month_key_for_week, period_weeks
 
 _OPEN = [s.value for s in OPEN_TASK_STATUSES]
 
-# Auto mode promotes session extractions first, then week digests, then month digests.
-_PROMOTION_RANK = case(
+# Sources before their digests: auto mode promotes in this order, and dispatch looks at queued tasks
+# in it, so a window full of waiting digests can never crowd out the extractions they wait for.
+_KIND_RANK = case(
     (MemoryTaskRow.kind == TaskKind.session_extract, 0),
     (MemoryTaskRow.kind == TaskKind.week_digest, 1),
     else_=2,
@@ -250,12 +251,13 @@ class MemoryStore:
             return result.rowcount  # type: ignore[missing-attribute]
 
     def next_queued(self, limit: int) -> list[MemoryTask]:
-        """Oldest queued first across users, budget-blocked ones included for re-evaluation."""
+        """Sources before digests, then oldest queued first across users; blocked ones included
+        for re-evaluation."""
         with self._session_factory() as db:
             rows = db.scalars(
                 select(MemoryTaskRow)
                 .where(MemoryTaskRow.status == TaskStatus.queued)
-                .order_by(MemoryTaskRow.queued_at, MemoryTaskRow.id)
+                .order_by(_KIND_RANK, MemoryTaskRow.queued_at, MemoryTaskRow.id)
                 .limit(limit)
             ).all()
         return [_task(row) for row in rows]
@@ -270,7 +272,7 @@ class MemoryStore:
                     MemoryTaskRow.status == TaskStatus.pending,
                     MemoryTaskRow.kind != TaskKind.mirror,
                 )
-                .order_by(_PROMOTION_RANK, *_NEWEST_FIRST)
+                .order_by(_KIND_RANK, *_NEWEST_FIRST)
                 .limit(limit)
             ).all()
         return [_task(row) for row in rows]
