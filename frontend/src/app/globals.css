@@ -292,6 +292,8 @@ body {
   color: inherit;
 }
 .prose ul, .prose ol { margin: 0.5em 0; padding-left: 1.5em; }
+.prose ul { list-style: disc; }
+.prose ol { list-style: decimal; }
 .prose li { margin: 0.2em 0; }
 .prose h1, .prose h2, .prose h3, .prose h4 {
   font-weight: 600;
