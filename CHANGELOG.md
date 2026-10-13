@@ -1,6 +1,30 @@
 # CHANGELOG
 
 
+## v0.162.2 (2026-10-13)
+
+
+### Other
+
+
+- Merge pull request #394 from thiesgerken/fix/prose-list-markers
+  ([`16f4bef`](https://github.com/thiesgerken/carapace/commit/16f4befe81ba8b55eaa9ba3d1db8b43705b81ea0))
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix: render bullets and numbers in markdown lists
+  ([`16f4bef`](https://github.com/thiesgerken/carapace/commit/16f4befe81ba8b55eaa9ba3d1db8b43705b81ea0))
+
+- 🐛 fix: render bullets and numbers in markdown lists
+  ([`34e0d90`](https://github.com/thiesgerken/carapace/commit/34e0d90cbe76487232a3e45732146afbc3dc9ed2))
+
+  Tailwind preflight resets list-style to none and the custom .prose rules only set padding, so lists rendered as bare indented text.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01JasFnKGyCz2br8gfGnvWba
+
 ## v0.162.1 (2026-10-13)
 
 
