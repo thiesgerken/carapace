@@ -1,6 +1,17 @@
 # CHANGELOG
 
 
+## v0.162.4 (2026-10-17)
+
+
+### ⬆️ Dependencies
+
+
+- ⬆️ chore: upgrade pnpm to 12.13.0
+  ([`d395bfc`](https://github.com/thiesgerken/carapace/commit/d395bfc571824aa0e39e3ca3e12afd2c6c496aa7))
+
+  Co-authored-by: renovate[bot] <29139614+renovate[bot]@users.noreply.github.com>
+
 ## v0.162.3 (2026-10-16)
 
 
