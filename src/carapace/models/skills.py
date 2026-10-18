@@ -150,6 +150,7 @@ class SkillMcpDecl(BaseModel):
 class SkillCarapaceConfig(BaseModel):
     """Parsed carapace config declared inline in SKILL.md frontmatter."""
 
+    disabled: Annotated[bool, Field(strict=True)] = False
     network: SkillNetworkConfig = SkillNetworkConfig()
     credentials: list[SkillCredentialDecl] = []
     commands: list[SkillCommandDecl] = []

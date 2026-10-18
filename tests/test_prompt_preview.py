@@ -77,6 +77,24 @@ def test_agent_previews_a_fresh_session_with_its_memory_block(tmp_path: Path) ->
     assert "Session ID: prompt-preview" in result.sections[4].text
 
 
+@pytest.mark.parametrize("role", [PromptRole.agent, PromptRole.compaction, PromptRole.session_extract])
+def test_disabled_skill_is_excluded_from_prompt_preview(role: PromptRole, tmp_path: Path) -> None:
+    directory = tmp_path / "skills" / "private-search"
+    directory.mkdir(parents=True)
+    skill_md = directory / "SKILL.md"
+    text = (
+        "---\nname: private-search\ndescription: Unique private coverage\n"
+        "metadata:\n  carapace:\n    disabled: true\n---\nInstructions.\n"
+    )
+    skill_md.write_text(text)
+
+    assert "Unique private coverage" not in "\n".join(section.text for section in preview(role, tmp_path).sections)
+
+    skill_md.write_text(text.replace("disabled: true", "disabled: false"))
+
+    assert "Unique private coverage" in "\n".join(section.text for section in preview(role, tmp_path).sections)
+
+
 def test_sentinel_and_titler_set_no_cache_breakpoint(tmp_path: Path) -> None:
     sentinel = preview(PromptRole.sentinel, tmp_path)
     titler = preview(PromptRole.titler, tmp_path)

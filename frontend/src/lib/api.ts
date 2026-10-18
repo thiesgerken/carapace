@@ -1773,6 +1773,7 @@ export interface SkillMcpDecl {
 }
 
 export interface SkillCarapaceConfig {
+  disabled: boolean;
   network: { domains: string[]; tunnels: SkillNetworkTunnel[] };
   credentials: SkillCredentialDecl[];
   commands: SkillCommandDecl[];

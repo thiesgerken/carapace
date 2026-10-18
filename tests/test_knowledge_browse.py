@@ -237,6 +237,23 @@ def test_list_dir_strips_frontmatter_into_skill(tmp_path: Path) -> None:
     assert carapace.mcp[0].auth is not None and carapace.mcp[0].auth.vault_path == "vault/abc"
 
 
+def test_disabled_skill_remains_browsable_and_readable(tmp_path: Path) -> None:
+    root = _make_repo(tmp_path)
+    text = (
+        "---\nname: private-search\ndescription: Private search\n"
+        "metadata:\n  carapace:\n    disabled: true\n---\nEditable instructions.\n"
+    )
+    directory = _skill(root, "private-search", text)
+
+    assert "private-search" in [entry.name for entry in list_dir(root, root / "skills").entries]
+    listing = list_dir(root, directory.resolve())
+    assert listing.doc == "Editable instructions.\n"
+    assert listing.skill is not None
+    assert listing.skill.carapace is not None and listing.skill.carapace.disabled
+    skill_md = resolve_target(root, "skills/private-search/SKILL.md")
+    assert read_text_content(skill_md, skill_md.stat().st_size) == text
+
+
 def test_list_dir_skill_without_carapace_metadata(tmp_path: Path) -> None:
     root = _make_repo(tmp_path)
     _skill(root, "plain", "---\nname: plain\ndescription: No metadata\n---\n\nBody.\n")

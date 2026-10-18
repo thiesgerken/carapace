@@ -93,6 +93,8 @@ metadata:
 
 ### Fields
 
+**`disabled`** — optional boolean, default `false`. Set `metadata.carapace.disabled: true` to exclude a skill from automatic discovery, agent catalogs, shared prompts, and prompt previews, and reject direct `use_skill` activation before credential access, approvals, MCP connections, sandbox preparation, or grants. The files remain browsable and editable in the Knowledge UI/API. Set it to `false` (or remove it) to opt in, then start a new session. This controls discovery and future activation, not live revocation: already-active skills, tools, and grants remain available, including in resumed sessions.
+
 **`network.domains`** — list of domains the skill needs to access. These are registered as a **context grant** when the skill is activated. The domains are only allowed during commands that explicitly request the skill's context (see [Context-scoped access](#context-scoped-access) below). Supports wildcard matching (`*.example.com`).
 
 **`network.tunnels`** — list of exec-scoped TCP tunnels the skill needs. Each tunnel declaration has:
@@ -300,7 +302,7 @@ Like dependency installation, `setup.sh` receives approved activation credential
 
 ## Discovery (progressive disclosure)
 
-At startup, carapace loads only `name` and `description` from each skill's frontmatter (~100 tokens per skill). These are injected into the agent's system prompt as a skill catalog. The agent sees what's available without the full instructions consuming context.
+At startup, carapace loads only `name` and `description` from each enabled skill's frontmatter (~100 tokens per skill). These are injected into the agent's system prompt as a skill catalog. The agent sees what's available without the full instructions consuming context. Skills with `metadata.carapace.disabled: true` are omitted.
 
 The full `SKILL.md` body is loaded only when the agent decides a skill is relevant — via the `use_skill` tool.
 
@@ -337,6 +339,23 @@ These are seeded into every knowledge repo on first run and can be edited or del
 | `create-skill` | Write and refine skills.                                                       |
 | `credentials`  | List, fetch, and use secrets from the vault.                                   |
 | `example`      | Reference skill showing Python and Node providers, tunnels, and setup scripts.  |
+| `ferret`       | Personal indexed-source discovery over native HTTP MCP (disabled until configured). |
 | `mermaid`      | Write Mermaid diagrams; the web UI renders ` ```mermaid ` fences as pictures.   |
 | `web`          | Web search and page fetch.                                                     |
 | `wikipedia`    | Wikipedia search and article fetch.                                            |
+
+### Enable Ferret
+
+Ferret is bundled **disabled by default**. It provides read-only discovery over the user's indexed sources, not public metasearch or routine code navigation. Once enabled, its catalog description directs the agent to search Ferret first for anything the user may have stored, received, or discussed, unless the exact target or a clearly better lookup path is known. Knowing the origin alone does not imply its search is better.
+
+Edit the copied `skills/ferret/SKILL.md` in your knowledge repository:
+
+1. Replace `https://ferret.example.invalid/mcp` with your deployment's HTTPS `/mcp` URL. The deployment must include Ferret MCP support and route that endpoint.
+2. Create a Ferret API key with only `search:read`, optionally restricted to the source roots the agent should read. Omit source restrictions for all your sources; an explicit empty list is invalid. No ingest/write scope or OAuth is needed.
+3. Store the actual key in the vault and point `auth.vault_path` at that entry (the bundled reference is `vault/ferret-api-key`). Never put the key in chat or the skill file.
+4. List your actual indexed sources in the frontmatter `description` as a coverage hint. After activation, `ferret_list_sources` supplies the current sources authorized for the key.
+5. Set `metadata.carapace.disabled: false` and start a new session.
+
+The native MCP connection is made by the backend, so no sandbox domains, credential injection, client scripts, or extra dependencies are needed. The exposed tools are `ferret_search`, `ferret_get_document`, and `ferret_list_sources`. Agents can answer from indexed text or optionally follow origin links with source-specific skills for freshness or actions.
+
+Normal bootstrap seeds missing bundled skill directories and preserves existing directories and user edits. Explicit `reset-assets` overwrites bundled skill customization, including Ferret's endpoint, vault reference, description, and disabled flag.
