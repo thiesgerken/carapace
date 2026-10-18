@@ -1,6 +1,27 @@
 # CHANGELOG
 
 
+## v0.163.0 (2026-10-18)
+
+
+### ✨ Features
+
+
+- ✨Merge pull request #398 from thiesgerken/feat/ferret-skill
+  ([`5cdd9ca`](https://github.com/thiesgerken/carapace/commit/5cdd9ca1c49cf8b54504351ba987a1924885a2a9))
+
+- ✨ Bundle opt-in Ferret discovery and honor disabled skills
+  ([`5cdd9ca`](https://github.com/thiesgerken/carapace/commit/5cdd9ca1c49cf8b54504351ba987a1924885a2a9))
+
+- ✨ feat(skills): bundle opt-in Ferret discovery and honor disabled skills
+  ([`e6fc2ef`](https://github.com/thiesgerken/carapace/commit/e6fc2ef5386d5a77c3d4ddfd5f46adbf6cb95dca))
+
+### Other
+
+
+- 📝 docs(skills): separate operator setup and make Web opt-in
+  ([`27ecccd`](https://github.com/thiesgerken/carapace/commit/27ecccddc20fdeb7818ca2d14f5c495beceec567))
+
 ## v0.162.4 (2026-10-17)
 
 
