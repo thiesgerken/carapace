@@ -93,6 +93,8 @@ metadata:
 
 ### Fields
 
+**`disabled`** — optional boolean, default `false`. Set `metadata.carapace.disabled: true` to exclude a skill from automatic discovery, agent catalogs, shared prompts, and prompt previews, and reject direct `use_skill` activation before credential access, approvals, MCP connections, sandbox preparation, or grants. The files remain browsable and editable in the Knowledge UI/API. Set it to `false` (or remove it) to opt in, then start a new session. This controls discovery and future activation, not live revocation: already-active skills, tools, and grants remain available, including in resumed sessions.
+
 **`network.domains`** — list of domains the skill needs to access. These are registered as a **context grant** when the skill is activated. The domains are only allowed during commands that explicitly request the skill's context (see [Context-scoped access](#context-scoped-access) below). Supports wildcard matching (`*.example.com`).
 
 **`network.tunnels`** — list of exec-scoped TCP tunnels the skill needs. Each tunnel declaration has:
@@ -300,7 +302,7 @@ Like dependency installation, `setup.sh` receives approved activation credential
 
 ## Discovery (progressive disclosure)
 
-At startup, carapace loads only `name` and `description` from each skill's frontmatter (~100 tokens per skill). These are injected into the agent's system prompt as a skill catalog. The agent sees what's available without the full instructions consuming context.
+At startup, carapace loads only `name` and `description` from each enabled skill's frontmatter (~100 tokens per skill). These are injected into the agent's system prompt as a skill catalog. The agent sees what's available without the full instructions consuming context. Skills with `metadata.carapace.disabled: true` are omitted.
 
 The full `SKILL.md` body is loaded only when the agent decides a skill is relevant — via the `use_skill` tool.
 
@@ -337,6 +339,9 @@ These are seeded into every knowledge repo on first run and can be edited or del
 | `create-skill` | Write and refine skills.                                                       |
 | `credentials`  | List, fetch, and use secrets from the vault.                                   |
 | `example`      | Reference skill showing Python and Node providers, tunnels, and setup scripts.  |
+| `ferret`       | Personal indexed-source discovery over native HTTP MCP. Disabled by default; [setup](../src/carapace/assets/skills/ferret/SETUP.md). |
 | `mermaid`      | Write Mermaid diagrams; the web UI renders ` ```mermaid ` fences as pictures.   |
-| `web`          | Web search and page fetch.                                                     |
+| `web`          | Web search and page fetch. Disabled by default; requires a Brave Search API key at `vault/brave-api-key` before enabling. |
 | `wikipedia`    | Wikipedia search and article fetch.                                            |
+
+Configure disabled bundled skills in their copied `SKILL.md`, set `metadata.carapace.disabled: false`, and start a new session. Normal bootstrap seeds missing bundled skill directories without overwriting existing copies or user edits, including Web copies without a disabled flag. Explicit `reset-assets` overwrites bundled customization and restores shipped opt-out defaults.

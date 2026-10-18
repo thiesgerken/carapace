@@ -1088,6 +1088,8 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
         Call before using a skill.
         """
         registry = SkillRegistry(ctx.deps.knowledge_dir / "skills")
+        if registry.is_disabled(skill_name):
+            return f"Skill '{skill_name}' is disabled. Enable it in metadata.carapace.disabled before activation."
 
         carapace_cfg = registry.get_carapace_config(skill_name)
         declared_domains = carapace_cfg.network.domains if carapace_cfg else []

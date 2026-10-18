@@ -19,6 +19,12 @@ class SkillDocument:
     metadata: dict[str, Any]
     body: str
 
+    @property
+    def disabled(self) -> bool:
+        # Opt-out must survive validation failures in unrelated runtime declarations.
+        config = self.metadata.get("carapace")
+        return isinstance(config, dict) and config.get("disabled") is True
+
 
 def parse_skill_document(text: str, *, fallback_name: str) -> SkillDocument:
     """Split *text* into frontmatter and body, tolerating missing or invalid YAML."""
@@ -84,6 +90,12 @@ class SkillRegistry:
         self._catalog = catalog
         return catalog
 
+    def is_disabled(self, skill_name: str) -> bool:
+        """Read the current opt-out flag without validating runtime declarations."""
+        skill_dir = self.skills_dir / skill_name
+        skill_md = skill_dir / "SKILL.md"
+        return skill_md.exists() and self._load_frontmatter(skill_md, skill_dir).disabled
+
     def get_full_instructions(self, skill_name: str) -> str | None:
         """Load the full SKILL.md body for a skill (activation)."""
         skill_dir = self.skills_dir / skill_name
@@ -109,6 +121,8 @@ class SkillRegistry:
 
     def _parse_frontmatter(self, skill_md: Path, skill_dir: Path) -> SkillInfo | None:
         frontmatter = self._load_frontmatter(skill_md, skill_dir)
+        if frontmatter.disabled:
+            return None
 
         return SkillInfo(
             name=frontmatter.name,
