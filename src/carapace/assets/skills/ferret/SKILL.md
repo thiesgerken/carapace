@@ -1,7 +1,10 @@
 ---
 name: ferret
 # Before enabling, list your actual indexed sources in this description as a coverage hint.
+# Operator setup: SETUP.md (configure the endpoint and vault reference before enabling).
 description: >-
+  Search engine for almost all of the user's important data.
+  Searches X, Y, Z (TODO: add specific sources here!).
   Search Ferret FIRST when looking for anything the user may have stored,
   received, or discussed. Skip only when the exact target or a clearly better
   lookup path is known. Knowing the origin alone is not a reason to skip:
@@ -21,29 +24,8 @@ metadata:
 
 # Ferret
 
-Use the native HTTP MCP tools `ferret_search`, `ferret_get_document`, and
-`ferret_list_sources`. The backend connects to Ferret; no sandbox network grants,
-scripts, dependencies, or environment-variable credential injection are needed.
-
-## Manual opt-in
-
-Before enabling this skill in your knowledge repository:
-
-1. Replace the placeholder `url` with your Ferret deployment's HTTPS `/mcp`
-   endpoint. The deployment must include MCP support and route `/mcp` to Ferret.
-2. Create a Ferret API key with only `search:read`. Optionally restrict it to the
-   source roots the agent should read. Omit restrictions for all your sources;
-   an explicit empty source-root list is invalid. Do not grant `ingest:write`.
-3. Store the key in the vault and set `auth.vault_path` to that entry. Never put
-   the actual key in this file or chat. Ferret uses API-key bearer auth, not
-   OAuth or a browser session cookie.
-4. Customize the frontmatter description with your actual indexed sources so
-   the always-visible catalog explains coverage. Do not guess the user's sources.
-5. Set `metadata.carapace.disabled: false` and start a new session.
-
-The flag controls discovery and future activation, not revocation of existing
-activations or resumed sessions. Normal bootstrap preserves your skill edits;
-explicit `reset-assets` overwrites bundled customization.
+Use `ferret_search`, `ferret_get_document`, and `ferret_list_sources` to discover
+and read indexed content.
 
 ## Discovery workflow
 

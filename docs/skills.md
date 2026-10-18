@@ -339,23 +339,9 @@ These are seeded into every knowledge repo on first run and can be edited or del
 | `create-skill` | Write and refine skills.                                                       |
 | `credentials`  | List, fetch, and use secrets from the vault.                                   |
 | `example`      | Reference skill showing Python and Node providers, tunnels, and setup scripts.  |
-| `ferret`       | Personal indexed-source discovery over native HTTP MCP (disabled until configured). |
+| `ferret`       | Personal indexed-source discovery over native HTTP MCP. Disabled by default; [setup](../src/carapace/assets/skills/ferret/SETUP.md). |
 | `mermaid`      | Write Mermaid diagrams; the web UI renders ` ```mermaid ` fences as pictures.   |
-| `web`          | Web search and page fetch.                                                     |
+| `web`          | Web search and page fetch. Disabled by default; requires a Brave Search API key at `vault/brave-api-key` before enabling. |
 | `wikipedia`    | Wikipedia search and article fetch.                                            |
 
-### Enable Ferret
-
-Ferret is bundled **disabled by default**. It provides read-only discovery over the user's indexed sources, not public metasearch or routine code navigation. Once enabled, its catalog description directs the agent to search Ferret first for anything the user may have stored, received, or discussed, unless the exact target or a clearly better lookup path is known. Knowing the origin alone does not imply its search is better.
-
-Edit the copied `skills/ferret/SKILL.md` in your knowledge repository:
-
-1. Replace `https://ferret.example.invalid/mcp` with your deployment's HTTPS `/mcp` URL. The deployment must include Ferret MCP support and route that endpoint.
-2. Create a Ferret API key with only `search:read`, optionally restricted to the source roots the agent should read. Omit source restrictions for all your sources; an explicit empty list is invalid. No ingest/write scope or OAuth is needed.
-3. Store the actual key in the vault and point `auth.vault_path` at that entry (the bundled reference is `vault/ferret-api-key`). Never put the key in chat or the skill file.
-4. List your actual indexed sources in the frontmatter `description` as a coverage hint. After activation, `ferret_list_sources` supplies the current sources authorized for the key.
-5. Set `metadata.carapace.disabled: false` and start a new session.
-
-The native MCP connection is made by the backend, so no sandbox domains, credential injection, client scripts, or extra dependencies are needed. The exposed tools are `ferret_search`, `ferret_get_document`, and `ferret_list_sources`. Agents can answer from indexed text or optionally follow origin links with source-specific skills for freshness or actions.
-
-Normal bootstrap seeds missing bundled skill directories and preserves existing directories and user edits. Explicit `reset-assets` overwrites bundled skill customization, including Ferret's endpoint, vault reference, description, and disabled flag.
+Configure disabled bundled skills in their copied `SKILL.md`, set `metadata.carapace.disabled: false`, and start a new session. Normal bootstrap seeds missing bundled skill directories without overwriting existing copies or user edits, including Web copies without a disabled flag. Explicit `reset-assets` overwrites bundled customization and restores shipped opt-out defaults.

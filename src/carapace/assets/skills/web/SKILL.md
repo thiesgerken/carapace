@@ -1,5 +1,6 @@
 ---
 name: web
+# Before enabling, store a Brave Search API key at vault/brave-api-key or update the vault reference.
 description: >-
   Search the web and fetch page content. Use web_search to find information
   across the web via Brave Search. Use web_fetch to retrieve and extract
@@ -7,6 +8,7 @@ description: >-
   something up online, find recent information, or read a webpage.
 metadata:
   carapace:
+    disabled: true
     network:
       domains:
         - api.search.brave.com
