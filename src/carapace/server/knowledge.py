@@ -19,7 +19,7 @@ from ..git.store import GitStore
 from ..models.credentials import CredentialRegistryProtocol
 from ..models.git import FileCommit
 from ..models.skills import SkillCarapaceConfig
-from ..session.sent_files import guess_mime
+from ..session.sent_files import INLINE_MIME_TYPES, guess_mime
 from ..skills import SkillDocument, parse_skill_document
 from .auth import require
 from .state import server_module
@@ -31,10 +31,6 @@ router = APIRouter()
 # Files above this size are download-only: the browser inlines contents into the
 # listing response, and huge blobs would bloat it for no benefit.
 MAX_INLINE_TEXT_BYTES = 1024 * 1024
-
-# Types safe to render inline on the app origin. SVG is deliberately absent: it
-# carries script.
-INLINE_MIME_TYPES = frozenset({"image/png", "image/jpeg", "image/gif", "image/webp", "image/avif"})
 
 # Markers for the directory conventions the browser renders specially.
 SKILL_DOC = "SKILL.md"
