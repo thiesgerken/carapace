@@ -149,12 +149,12 @@ async def download_sent_file(
             raise HTTPException(status_code=404, detail="Artifact not found")
         # Render the persisted snapshot, not the knowledge repo's possibly newer revision.
         return FileResponse(blob, media_type=info.mime, headers=artifact_headers())
-    disposition = "attachment" if download else "inline"
+    inline = not download and info.mime in sent_files.INLINE_MIME_TYPES
     return FileResponse(
         blob,
-        media_type=info.mime,
+        media_type=info.mime if inline else "application/octet-stream",
         filename=info.name,
-        content_disposition_type=disposition,
+        content_disposition_type="inline" if inline else "attachment",
     )
 
 

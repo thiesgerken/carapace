@@ -17,6 +17,10 @@ from ..models.tooling import SentFileInfo
 
 _FILE_ID_RE = re.compile(r"^[0-9a-f]{16}$")
 
+# Types safe to render inline on the app origin. SVG is deliberately absent: it
+# carries script.
+INLINE_MIME_TYPES = frozenset({"image/png", "image/jpeg", "image/gif", "image/webp", "image/avif"})
+
 
 def files_dir(data_dir: Path, session_id: str) -> Path:
     return data_dir / "sessions" / session_id / "files"
