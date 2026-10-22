@@ -3748,6 +3748,43 @@ def test_sent_artifact_renders_the_snapshot_with_sandbox_headers(
     assert client.get(url, headers=admin_auth_headers).status_code == 404
 
 
+@pytest.mark.parametrize(
+    ("name", "download", "expected_mime", "expected_disposition"),
+    [
+        ("page.html", False, "application/octet-stream", "attachment"),
+        ("drawing.svg", False, "application/octet-stream", "attachment"),
+        ("notes.txt", False, "application/octet-stream", "attachment"),
+        ("chart.png", False, "image/png", "inline"),
+        ("chart.png", True, "application/octet-stream", "attachment"),
+    ],
+)
+def test_sent_file_download_only_inlines_raster_images(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    name: str,
+    download: bool,
+    expected_mime: str,
+    expected_disposition: str,
+) -> None:
+    sid = _make_session()
+    data_dir = srv._engine.session_mgr.data_dir
+    payload = b"<script>alert(document.cookie)</script>"
+    file_id, blob = sent_files.reserve(data_dir, sid, name)
+    blob.write_bytes(payload)
+    sent_files.finalize(data_dir, sid, file_id, name, len(payload))
+
+    response = client.get(
+        f"/api/sessions/{sid}/files/{file_id}",
+        headers=auth_headers,
+        params={"download": "1"} if download else {},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == expected_mime
+    assert response.headers["content-disposition"] == f'{expected_disposition}; filename="{name}"'
+    assert response.content == payload
+
+
 def test_upload_sandbox_file_starts_sandbox_when_not_running(client, auth_headers):
     sid = _make_session()
     ensure = AsyncMock(return_value=None)
