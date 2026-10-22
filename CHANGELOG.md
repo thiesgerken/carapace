@@ -1,6 +1,27 @@
 # CHANGELOG
 
 
+## v0.164.0 (2026-10-22)
+
+
+### Other
+
+
+- Merge pull request #409 from thiesgerken/feat/organic-brand
+  ([`9bacd5e`](https://github.com/thiesgerken/carapace/commit/9bacd5e0094733bea57cb0b7310792e96d140539))
+
+- 🎨 fix: align turtle feet with wordmark baseline
+  ([`4eef6cf`](https://github.com/thiesgerken/carapace/commit/4eef6cfb866fc6dc2451749bf19651c64d7e00a9))
+
+### ✨ Features
+
+
+- ✨ Adopt organic turtle and Fraunces branding
+  ([`9bacd5e`](https://github.com/thiesgerken/carapace/commit/9bacd5e0094733bea57cb0b7310792e96d140539))
+
+- ✨ feat: adopt organic turtle and Fraunces branding
+  ([`c12404c`](https://github.com/thiesgerken/carapace/commit/c12404c6816665bc91075338c18731711a127345))
+
 ## v0.163.2 (2026-10-22)
 
 
