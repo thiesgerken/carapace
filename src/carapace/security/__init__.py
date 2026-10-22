@@ -711,9 +711,7 @@ async def evaluate_push_with(
         detail = f"[sentinel: deny] {verdict.explanation}"
     else:
         # Extract changed file names from unified diff headers
-        changed_files = sorted(
-            {m.group(1) for m in re.finditer(r"^\+\+\+ b/(.+)$", diff, re.MULTILINE) if m.group(1) != "/dev/null"}
-        )
+        changed_files = sorted({m.group(1) for m in re.finditer(r"^(?:\+\+\+ b/|--- a/)(.+)$", diff, re.MULTILINE)})
         user_decision = await session.escalate_to_user(
             f"git push {ref}",
             {

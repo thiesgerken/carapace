@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
+from html.parser import HTMLParser
 from pathlib import Path
 from typing import Annotated, Literal
 
@@ -21,6 +22,7 @@ from ..models.git import FileCommit
 from ..models.skills import SkillCarapaceConfig
 from ..session.sent_files import guess_mime
 from ..skills import SkillDocument, parse_skill_document
+from .artifact_rendering import artifact_headers
 from .auth import require
 from .state import server_module
 
@@ -69,7 +71,7 @@ class KnowledgeEntry(BaseModel):
     commit: FileCommit | None = None
     # Recognized directory conventions get a `kind` plus a human label the client
     # renders where a file would show its size.
-    kind: Literal["session", "skill"] | None = None
+    kind: Literal["session", "skill", "artifact"] | None = None
     label: str | None = None
     session_id: str | None = None
 
@@ -169,6 +171,55 @@ def resolve_target(root: Path, raw_path: str) -> Path:
     return target
 
 
+def resolve_artifact_file(root: Path, slug: str, path: str) -> Path:
+    directory = resolve_target(root, f"artifacts/{slug}")
+    if directory != root / "artifacts" / slug or not directory.is_dir():
+        raise HTTPException(status_code=404, detail="Not found")
+    if not resolve_target(directory, "index.html").is_file():
+        raise HTTPException(status_code=404, detail="Not found")
+    target = resolve_target(directory, path or "index.html")
+    if not target.is_file():
+        raise HTTPException(status_code=404, detail="Not found")
+    return target
+
+
+class _ArtifactTitleParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.in_title = False
+        self.finished = False
+        self.parts: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag == "title":
+            self.in_title = True
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in {"title", "head"}:
+            self.in_title = False
+            self.finished = True
+
+    def handle_data(self, data: str) -> None:
+        if self.in_title:
+            self.parts.append(data)
+
+
+def artifact_title(directory: Path, root: Path) -> str | None:
+    relative = directory.relative_to(root).parts
+    if len(relative) != 2 or relative[0] != "artifacts":
+        return None
+    entry = contained_target(directory / "index.html", directory)
+    if entry is None or not entry.is_file():
+        return None
+    parser = _ArtifactTitleParser()
+    with entry.open(encoding="utf-8", errors="replace") as document:
+        while chunk := document.read(4096):
+            parser.feed(chunk)
+            if parser.finished:
+                break
+    return " ".join("".join(parser.parts).split()) or None
+
+
 def build_entry(child: Path, root: Path) -> KnowledgeEntry:
     resolved = contained_target(child, root)
     if resolved is None:
@@ -182,6 +233,11 @@ def build_entry(child: Path, root: Path) -> KnowledgeEntry:
             size=stat.st_size,
             modified=datetime.fromtimestamp(stat.st_mtime, tz=UTC),
         )
+    relative = resolved.relative_to(root).parts
+    if len(relative) == 2 and relative[0] == "artifacts":
+        index = contained_target(resolved / "index.html", resolved)
+        if index is not None and index.is_file():
+            return KnowledgeEntry(name=child.name, type="dir", kind="artifact", label=artifact_title(resolved, root))
     archive = session_archive_entry(resolved, root)
     if archive is not None:
         title, session_id = archive
@@ -340,3 +396,15 @@ async def browse_knowledge(
         # else it cannot display (an SVG, say) is still worth showing as source.
         content=None if mime in INLINE_MIME_TYPES else read_text_content(target, size),
     )
+
+
+@router.get("/artifacts/{slug}/")
+@router.get("/artifacts/{slug}/{path:path}")
+async def render_artifact(
+    user: Annotated[UserIdentity, Depends(require(Scope.knowledge, Access.read))],
+    slug: str,
+    path: str = "index.html",
+) -> FileResponse:
+    handle = server._knowledge_repo_registry.get_for_user(user.username)
+    target = resolve_artifact_file(handle.knowledge_dir.resolve(), slug, path)
+    return FileResponse(target, media_type=guess_mime(target.name), headers=artifact_headers())

@@ -25,11 +25,13 @@ import { useEffect, useState, type ReactNode } from "react";
 import { useTranslations } from "next-intl";
 
 import { useAppShell } from "@/components/app-shell-context";
+import { ArtifactPreview } from "@/components/artifact-preview";
 import { useAppLocale } from "@/components/locale-provider";
 import { GlobalGitPanel, KNOWLEDGE_GIT_CHANGED_EVENT, useGlobalGit } from "@/components/git-sync";
 import { MarkdownContent } from "@/components/markdown-content";
 import {
   browseKnowledge,
+  knowledgeArtifactUrl,
   knowledgeRawUrl,
   type KnowledgeBrowseResult,
   type KnowledgeEntry,
@@ -171,7 +173,7 @@ function EntryRow({
         href={knowledgeBrowseHref(entryPath)}
         className="min-w-0 flex-1 truncate rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
-        {entry.name}
+        {entry.kind === "artifact" ? entry.label ?? entry.name : entry.name}
       </Link>
       {/* Flexible middle column, the first thing to go as the row narrows: the session
           title where there is one, the commit otherwise. A session's commit subject
@@ -392,6 +394,16 @@ function FileContent({
   largeFileLabel: string;
   tooLargeLabel: string;
 }) {
+  if (/^artifacts\/[^/]+\/.+\.html$/i.test(file.path)) {
+    return (
+      <ArtifactPreview
+        key={file.path}
+        src={knowledgeArtifactUrl(server, file.path)}
+        sourceUrl={knowledgeRawUrl(server, file.path)}
+        title={file.name}
+      />
+    );
+  }
   if (INLINE_IMAGE_TYPES.has(file.mime)) {
     return (
       // eslint-disable-next-line @next/next/no-img-element
@@ -564,6 +576,7 @@ export function KnowledgeView() {
           </>
         ) : result?.type === "file" ? (
           <FileContent
+            key={`${result.path}:${reloadToken}`}
             server={server}
             file={result}
             noPreviewLabel={t("noPreview")}

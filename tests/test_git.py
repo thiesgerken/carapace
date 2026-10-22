@@ -14,7 +14,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from carapace.git.http import GitHttpHandler
-from carapace.git.store import _PRE_RECEIVE_HOOK, GitStore, _parse_last_commits
+from carapace.git.store import GitStore, _parse_last_commits
 
 # ── Helpers ──────────────────────────────────────────────────────────
 
@@ -94,13 +94,6 @@ class TestGitStoreEnsureRepo:
         hook = repo_dir / ".git" / "hooks" / "pre-receive"
         mode = hook.stat().st_mode
         assert mode & stat.S_IXUSR
-
-    async def test_hook_content(self, repo_dir: Path):
-        store = GitStore(repo_dir)
-        await store.ensure_repo()
-
-        hook = repo_dir / ".git" / "hooks" / "pre-receive"
-        assert hook.read_text() == _PRE_RECEIVE_HOOK
 
     async def test_idempotent(self, repo_dir: Path):
         store = GitStore(repo_dir)

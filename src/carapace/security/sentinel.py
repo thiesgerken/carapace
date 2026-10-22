@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 from collections.abc import Callable
 from datetime import timedelta
 from os import stat_result
@@ -730,6 +731,16 @@ class Sentinel:
             prompt_parts.append(f"Ref: {ref}")
             prompt_parts.append(f"Is default branch: {is_default_branch}")
             prompt_parts.append(f"Commits:\n{commits}")
+            if re.search(
+                r'^(?:(?:\+\+\+|---) "?[ab]/|diff --git "?a/|(?:rename|copy) (?:from|to) "?)artifacts/',
+                diff,
+                re.MULTILINE,
+            ):
+                prompt_parts.append(
+                    "Artifact security notice: Artifact scripts run in the user's browser outside the sandbox "
+                    "egress proxy. Treat external navigation (location, window.open, meta refresh, or auto-clicked "
+                    "links) carrying embedded private data as exfiltration. CSP does not prevent self-navigation."
+                )
             # Truncate large diffs to avoid exceeding context limits
             if len(diff) > 8192:
                 diff = diff[:8192] + "\n... (diff truncated)"

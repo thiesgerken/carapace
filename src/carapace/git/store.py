@@ -74,6 +74,23 @@ EVALUATED=0
 while read old_sha new_sha ref; do
     EVALUATED=$((EVALUATED + 1))
 
+    if [ "$new_sha" != "$NULL_SHA" ]; then
+        # Inspect the incoming tree, not the still-current working tree. NUL
+        # delimiters keep agent-controlled filenames from changing the totals.
+        oversized=$(git ls-tree -r -l -z "$new_sha" -- artifacts/ | jq -Rrs '
+            [split("\\u0000")[] | capture("^[0-7]+ blob [0-9a-f]+ +(?<size>[0-9]+)\\tartifacts/(?<slug>[^/]+)/") |
+                .size |= tonumber] |
+            group_by(.slug) |
+            map(select((map(.size) | add) > 10485760) |
+                "DENIED: artifact \\(.[0].slug) exceeds the 10 MiB directory limit") |
+            join("\\n")
+        ')
+        if [ -n "$oversized" ]; then
+            echo "$oversized" >&2
+            exit 1
+        fi
+    fi
+
     if [ "$old_sha" = "$NULL_SHA" ]; then
         # New branch: show all commits and diff against empty tree
         changes=$(git log --oneline "$new_sha" 2>/dev/null)

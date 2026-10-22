@@ -486,3 +486,29 @@ async def test_resolve_vault_status_unconfigured_backend():
     cfg = SkillCarapaceConfig.model_validate({"credentials": [{"vault_path": "vault/x", "env_var": "A"}]})
     registry = _FakeRegistry(present=set(), unconfigured={"vault/x"})
     assert await resolve_vault_status(cfg, registry) == {"vault/x": "unconfigured"}
+
+
+def test_artifact_directory_label_uses_its_html_title(tmp_path: Path) -> None:
+    root = _make_repo(tmp_path)
+    directory = root / "artifacts" / "report"
+    directory.mkdir(parents=True)
+    (directory / "index.html").write_text(
+        "<head><title> Quarterly &amp;\n report </title></head>" + "x" * (MAX_INLINE_TEXT_BYTES + 1)
+    )
+    entry = build_entry(directory, root.resolve())
+    assert entry.kind == "artifact"
+    assert entry.label == "Quarterly & report"
+
+
+def test_only_artifact_directories_with_contained_entry_points_get_the_kind(tmp_path: Path) -> None:
+    root = _make_repo(tmp_path)
+    directory = root / "artifacts" / "report"
+    directory.mkdir(parents=True)
+    assert build_entry(directory, root.resolve()).kind is None
+    (root / "private.html").write_text("<title>Private</title>")
+    (directory / "index.html").symlink_to(root / "private.html")
+    assert build_entry(directory, root.resolve()).kind is None
+    ordinary = root / "notes"
+    ordinary.mkdir()
+    (ordinary / "index.html").write_text("<title>Not an artifact</title>")
+    assert build_entry(ordinary, root.resolve()).kind is None

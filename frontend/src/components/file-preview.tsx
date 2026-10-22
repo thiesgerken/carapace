@@ -4,8 +4,9 @@ import { useEffect, useState } from "react";
 import { Download, File as FileIcon } from "lucide-react";
 import { fetchSentFile, sentFileUrl } from "@/lib/api";
 import { cn, formatBytes } from "@/lib/utils";
+import { ArtifactPreview } from "@/components/artifact-preview";
 
-/** Renders a persisted file: inline image preview for images, plus a name/size/download chip. */
+/** Renders a persisted file with its preview and download chip. */
 export function FilePreview({
   fileId,
   name,
@@ -58,6 +59,14 @@ export function FilePreview({
 
   return (
     <div className={cn("rounded-md border border-border/40 bg-muted/25 p-2", className)}>
+      {mime === "text/html" && canFetch && (
+        <ArtifactPreview
+          key={fileId}
+          src={sentFileUrl(server, sessionId, fileId, { artifact: true })}
+          sourceUrl={sentFileUrl(server, sessionId, fileId)}
+          title={name}
+        />
+      )}
       {isImage && previewUrl && (
         <a href={previewUrl} target="_blank" rel="noreferrer" className="block">
           {/* eslint-disable-next-line @next/next/no-img-element -- blob: object URL, next/image can't optimize it */}
