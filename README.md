@@ -129,11 +129,13 @@ cp .env.example .env
 # fill in ANTHROPIC_API_KEY and CARAPACE_TOKEN
 # CARAPACE_TOKEN is only the initial password for the bootstrap admin user
 
-docker compose build
+docker compose --profile build pull
 docker compose up -d
 ```
 
 This starts the proxy at `http://localhost:3001`, serving the frontend and routing `/api` to the backend internally.
+
+Published images target Linux x64. On Apple Silicon, use the [native ARM Linux build instructions](docs/development.md#native-linux-images-on-apple-silicon) and local Compose overlay instead of x86 emulation. Nix is the single build/check definition for the server, frontend, and Bitwarden images; only the sandbox remains a Dockerfile. The maintained Compose and Helm configurations run the application images non-root with read-only roots.
 
 Optional CLI connection:
 
@@ -182,6 +184,7 @@ Use the included Helm chart in [charts/carapace](charts/carapace) and see [chart
 ## Development
 
 ```bash
+nix develop
 uv sync --dev
 uv run pytest
 pnpm --dir frontend install
@@ -191,17 +194,17 @@ pnpm --dir frontend lint
 For local development without Docker Compose:
 
 ```bash
-docker compose build sandbox
-uv run carapace-server
+docker build -t carapace-sandbox:local sandbox
+CARAPACE_SANDBOX_BASE_IMAGE=carapace-sandbox:local uv run carapace-server
 pnpm --dir frontend dev
 uv run carapace
 ```
 
-Additional prerequisites: Python 3.12+, `uv`, Node.js 24+, and `pnpm`.
+The dev shell supplies Python 3.14, uv, Node.js 24, pinned pnpm, Helm, and Skopeo. See [docs/development.md](docs/development.md) for host services, sandboxed checks, image builds, and dependency refreshes.
 
 ## Contributing
 
-Issues and pull requests are welcome. Before opening a PR, run the backend tests, frontend lint, and chart linting where relevant. The repo uses `prek` hooks and CI also covers tests, frontend lint, and Helm lint.
+Issues and pull requests are welcome. Before opening a PR, run the relevant Nix checks and runtime smoke. The repo uses `prek` hooks; CI verifies Linux x64 images without registry write access, then a trusted workflow publishes the verified archives and chart.
 
 ## License
 

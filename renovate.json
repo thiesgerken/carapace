@@ -4,6 +4,9 @@
     "config:best-practices",
     ":preserveSemverRanges"
   ],
+  "nix": {
+    "enabled": true
+  },
   "lockFileMaintenance": {
     "enabled": true,
     "automerge": false
@@ -33,11 +36,10 @@
       "pinDigests": false
     },
     {
-      "description": "pnpm releases often and its minor/patch bumps are routine; the groupName splits them out of the grouped update PR so they can merge on green by themselves",
-      "matchDepNames": ["pnpm"],
-      "matchUpdateTypes": ["minor", "patch"],
-      "groupName": "pnpm",
-      "automerge": true
+      "description": "pnpm and frontend lock updates require the documented Nix dependency-cache refresh before merge",
+      "matchManagers": ["npm"],
+      "matchFileNames": ["frontend/package.json"],
+      "automerge": false
     }
   ],
   "prHourlyLimit": 0,
