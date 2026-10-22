@@ -57,6 +57,51 @@ to treat external navigation carrying embedded private data as exfiltration.
 Deletions count as touched paths too. This review is best effort against
 obfuscated code; it does not prevent document navigation.
 
+## Sharing
+
+The knowledge artifact view has a **Share publicly** switch. Enabling it asks for
+confirmation that anyone with the link can see the page, including future agent
+changes. While sharing is on, the view shows the public link and a copy action.
+Sharing is controlled by the authenticated user, not by files in the knowledge
+repository.
+
+Sharing state lives in the database, keyed by owner and slug. A row is created on
+the first enable action. Enabling an already-shared artifact preserves its token
+and sharing timestamp. Disabling clears the token immediately; enabling after
+that issues a new token, and old links stay invalid. Share tokens are never stored
+in the repo or provided to the agent.
+
+Management endpoints require a browser cookie session. API keys are rejected,
+even with `knowledge:write`, because the agent can hold a scoped API key and must
+not be able to publish artifacts or read share tokens.
+
+- `GET /api/artifacts/<slug>/share` returns the current URL and sharing timestamp,
+  or null values while sharing is off.
+- `PUT /api/artifacts/<slug>/share` enables sharing and returns its URL.
+- `DELETE /api/artifacts/<slug>/share` disables sharing, even if the artifact was
+  deleted or renamed.
+
+The API returns the public path relative to the backend origin. The UI resolves
+it against that origin to display and copy an absolute URL.
+
+`GET /api/public/a/<token>` requires no login and serves only the resolved owner's
+`artifacts/<slug>/index.html`. It reuses the authenticated renderer's confinement
+checks and unchanged CSP headers, with `Referrer-Policy: no-referrer` and
+`Cache-Control: no-store`. Unknown or revoked tokens, missing artifacts, and
+escaping paths all return the same 404 response. There are no asset paths.
+
+The route is under `/api` so existing production routing sends it to the backend.
+The Helm HTTPRoute sends `/api` to the server and other paths to static frontend
+nginx; a top-level `/a/...` URL would reach the static server instead.
+
+Shared links serve the current knowledge working tree, not a chat snapshot.
+Renaming or deleting the directory makes its link return 404; the link does not
+follow renames. A push touching a currently shared artifact adds a notice to the
+sentinel context that the artifact is publicly reachable without authentication
+and the change is a publication. Only the shared artifacts actually touched are
+named, including deletions and renames. The sentinel receives slugs, not tokens.
+YOLO mode bypasses this review like other push evaluation.
+
 ## Size limit
 
 The Git pre-receive hook totals the uncompressed blob sizes under each

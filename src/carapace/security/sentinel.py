@@ -708,6 +708,7 @@ class Sentinel:
         commits: str,
         diff: str,
         *,
+        shared_artifacts: set[str],
         usage_tracker: UsageTracker | None = None,
         assert_llm_budget_available: Callable[[], None] | None = None,
         usage_limits: UsageLimits | None = None,
@@ -731,11 +732,20 @@ class Sentinel:
             prompt_parts.append(f"Ref: {ref}")
             prompt_parts.append(f"Is default branch: {is_default_branch}")
             prompt_parts.append(f"Commits:\n{commits}")
-            if any(path.startswith("artifacts/") for path in touched_paths(diff)):
+            paths = touched_paths(diff)
+            if any(path.startswith("artifacts/") for path in paths):
                 prompt_parts.append(
                     "Artifact security notice: Artifact scripts run in the user's browser outside the sandbox "
                     "egress proxy. Treat external navigation (location, window.open, meta refresh, or auto-clicked "
                     "links) carrying embedded private data as exfiltration. CSP does not prevent self-navigation."
+                )
+            public_slugs = shared_artifacts.intersection(
+                path.split("/", 2)[1] for path in paths if path.startswith("artifacts/") and path.count("/") >= 2
+            )
+            if public_slugs:
+                prompt_parts.append(
+                    f"Publicly shared artifacts touched: {', '.join(sorted(public_slugs))}. "
+                    "These artifacts are publicly reachable without authentication; this push is a publication."
                 )
             # Truncate large diffs to avoid exceeding context limits
             if len(diff) > 8192:
