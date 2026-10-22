@@ -19,6 +19,13 @@
         "memory": "Gedächtnis",
         "systemPrompts": "Systemprompts"
     },
+    "artifacts": {
+        "source": "Quelltext anzeigen",
+        "preview": "Vorschau anzeigen",
+        "openInNewTab": "In neuem Tab öffnen",
+        "loading": "Quelltext wird geladen…",
+        "sourceError": "Artefakt-Quelltext konnte nicht geladen werden."
+    },
     "knowledge": {
         "title": "Wissens-Repository",
         "root": "Wissen",

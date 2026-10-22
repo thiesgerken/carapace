@@ -6,6 +6,7 @@ import base64
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 from urllib.parse import parse_qs, urlsplit
@@ -3653,6 +3654,98 @@ def test_ws_unknown_command_is_agent_message(client, auth_headers, monkeypatch):
 def _make_session(user: str = "thies") -> str:
     state = srv._engine.session_mgr.create_session(user=user)
     return state.session_id
+
+
+def _make_artifact(slug: str = "report") -> Path:
+    root = srv._knowledge_repo_registry.get_for_user("thies").knowledge_dir
+    directory = root / "artifacts" / slug
+    directory.mkdir(parents=True)
+    (directory / "index.html").write_text("<title>Quarterly &amp; report</title><h1>Current report</h1>")
+    return directory
+
+
+def test_artifact_response_always_sandboxes_the_entry_point(client: TestClient, auth_headers: dict[str, str]) -> None:
+    directory = _make_artifact()
+    response = client.get("/api/artifacts/report", headers=auth_headers)
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "text/html; charset=utf-8"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    directives = response.headers["content-security-policy"].split("; ")
+    assert "sandbox allow-scripts" in directives
+    assert "default-src 'none'" in directives
+    assert "connect-src 'none'" in directives
+    assert "form-action 'none'" in directives
+    assert "frame-ancestors 'self'" in directives
+    assert "img-src data: blob:" in directives
+    assert response.text == (directory / "index.html").read_text()
+
+
+def test_artifact_routes_require_the_owners_authentication(
+    client: TestClient, admin_auth_headers: dict[str, str]
+) -> None:
+    _make_artifact()
+    assert client.get("/api/artifacts/report").status_code == 401
+    assert client.get("/api/artifacts/report", headers=admin_auth_headers).status_code == 404
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "/api/artifacts/%2e",
+        "/api/artifacts/%2e%2e",
+        "/api/artifacts/a%5Cb",
+        "/api/artifacts/report%2Fother",
+        "/api/artifacts/report/chart.png",
+        "/api/artifacts/report/page.html",
+        "/api/artifacts/report/.git/config",
+        "/api/artifacts/alias",
+    ],
+)
+def test_artifact_route_rejects_invalid_slugs_and_adjacent_files(
+    client: TestClient, auth_headers: dict[str, str], url: str
+) -> None:
+    directory = _make_artifact()
+    (directory.parent / "index.html").write_text("<h1>Not a slug</h1>")
+    (directory.parent / "alias").symlink_to(directory, target_is_directory=True)
+    (directory / "chart.png").write_bytes(b"PNGDATA")
+    (directory / "page.html").write_text("<h1>Not the entry point</h1>")
+    assert client.get(url, headers=auth_headers).status_code == 404
+
+
+def test_artifact_route_requires_an_entry_point(client: TestClient, auth_headers: dict[str, str]) -> None:
+    directory = _make_artifact()
+    (directory / "index.html").unlink()
+    (directory / "page.html").write_text("not an artifact")
+    assert client.get("/api/artifacts/report", headers=auth_headers).status_code == 404
+
+
+def test_artifact_route_rejects_an_escaping_entry_point(client: TestClient, auth_headers: dict[str, str]) -> None:
+    directory = _make_artifact()
+    outside = directory.parent.parent / "private.html"
+    outside.write_text("<h1>Private</h1>")
+    (directory / "index.html").unlink()
+    (directory / "index.html").symlink_to(outside)
+    assert client.get("/api/artifacts/report", headers=auth_headers).status_code == 404
+
+
+def test_sent_artifact_renders_the_snapshot_with_sandbox_headers(
+    client: TestClient, auth_headers: dict[str, str], admin_auth_headers: dict[str, str]
+) -> None:
+    _make_artifact()
+    sid = _make_session()
+    data_dir = srv._engine.session_mgr.data_dir
+    payload = b"<h1>Original report</h1>"
+    file_id, blob = sent_files.reserve(data_dir, sid, "index.html")
+    blob.write_bytes(payload)
+    sent_files.finalize(data_dir, sid, file_id, "index.html", len(payload))
+    url = f"/api/sessions/{sid}/files/{file_id}?artifact=1"
+    response = client.get(url, headers=auth_headers)
+    assert response.status_code == 200
+    assert response.content == payload
+    assert response.headers["content-type"] == "text/html; charset=utf-8"
+    assert response.headers["content-security-policy"].startswith("sandbox allow-scripts;")
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert client.get(url, headers=admin_auth_headers).status_code == 404
 
 
 @pytest.mark.parametrize(

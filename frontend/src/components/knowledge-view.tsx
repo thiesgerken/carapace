@@ -25,11 +25,13 @@ import { useEffect, useState, type ReactNode } from "react";
 import { useTranslations } from "next-intl";
 
 import { useAppShell } from "@/components/app-shell-context";
+import { ArtifactPreview } from "@/components/artifact-preview";
 import { useAppLocale } from "@/components/locale-provider";
 import { GlobalGitPanel, KNOWLEDGE_GIT_CHANGED_EVENT, useGlobalGit } from "@/components/git-sync";
 import { MarkdownContent } from "@/components/markdown-content";
 import {
   browseKnowledge,
+  knowledgeArtifactUrl,
   knowledgeRawUrl,
   type KnowledgeBrowseResult,
   type KnowledgeEntry,
@@ -184,6 +186,13 @@ function EntryRow({
         >
           {entry.label ?? untitledLabel}
         </Link>
+      ) : entry.kind === "artifact" && entry.label ? (
+        <span
+          title={entry.label}
+          className="hidden min-w-0 max-w-[40%] shrink basis-[40%] truncate text-xs text-muted-foreground lg:block"
+        >
+          {entry.label}
+        </span>
       ) : entry.commit ? (
         <span className="group/commit hidden min-w-0 max-w-[40%] shrink basis-[40%] items-baseline gap-2 text-xs text-muted-foreground lg:flex">
           <CopyHash commit={entry.commit} copyLabel={copyHashLabel} copiedLabel={copiedLabel} />
@@ -392,6 +401,17 @@ function FileContent({
   largeFileLabel: string;
   tooLargeLabel: string;
 }) {
+  const artifact = /^artifacts\/([^/]+)\/index\.html$/.exec(file.path);
+  if (artifact) {
+    return (
+      <ArtifactPreview
+        key={file.path}
+        src={knowledgeArtifactUrl(server, artifact[1])}
+        sourceUrl={knowledgeRawUrl(server, file.path)}
+        title={file.name}
+      />
+    );
+  }
   if (INLINE_IMAGE_TYPES.has(file.mime)) {
     return (
       // eslint-disable-next-line @next/next/no-img-element
@@ -564,6 +584,7 @@ export function KnowledgeView() {
           </>
         ) : result?.type === "file" ? (
           <FileContent
+            key={`${result.path}:${reloadToken}`}
             server={server}
             file={result}
             noPreviewLabel={t("noPreview")}

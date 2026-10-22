@@ -766,9 +766,9 @@ export function sentFileUrl(
   server: string,
   sessionId: string,
   fileId: string,
-  opts: { download?: boolean } = {},
+  opts: { download?: boolean; artifact?: boolean } = {},
 ): string {
-  const query = opts.download ? "?download=1" : "";
+  const query = opts.download ? "?download=1" : opts.artifact ? "?artifact=1" : "";
   return `${server}/api/sessions/${sessionId}/files/${fileId}${query}`;
 }
 
@@ -1727,9 +1727,9 @@ export interface KnowledgeEntry {
   modified: string | null;
   /** Newest commit touching this entry; null for uncommitted paths. */
   commit: { hash: string; short: string; subject: string; committed_at: string } | null;
-  /** Recognized directory convention: a session archive or a skill dir. */
-  kind: "session" | "skill" | null;
-  /** Human label shown in place of a file's size (a session's title). */
+  /** Recognized directory convention. */
+  kind: "session" | "skill" | "artifact" | null;
+  /** Human label, such as a session or artifact title. */
   label: string | null;
   session_id: string | null;
 }
@@ -1838,6 +1838,10 @@ export function knowledgeRawUrl(
 ): string {
   const query = opts.download ? "?raw=1&download=1" : "?raw=1";
   return `${server}${knowledgeBrowsePath(path)}${query}`;
+}
+
+export function knowledgeArtifactUrl(server: string, slug: string): string {
+  return `${server}/api/artifacts/${encodeURIComponent(slug)}`;
 }
 
 function memoryTaskQuery(filter: MemoryTaskFilter, sort: MemoryTaskSort, cursor: string | null): string {

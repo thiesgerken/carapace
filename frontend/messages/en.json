@@ -19,6 +19,13 @@
         "memory": "Memory",
         "systemPrompts": "System prompts"
     },
+    "artifacts": {
+        "source": "Show source",
+        "preview": "Show preview",
+        "openInNewTab": "Open in new tab",
+        "loading": "Loading source…",
+        "sourceError": "Failed to load artifact source."
+    },
     "knowledge": {
         "title": "Knowledge Repository",
         "root": "Knowledge",

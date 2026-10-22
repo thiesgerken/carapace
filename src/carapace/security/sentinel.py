@@ -13,6 +13,7 @@ from pydantic_ai.models import infer_model
 from pydantic_ai.settings import ModelSettings
 from pydantic_ai.usage import UsageLimits
 
+from ..git.diff import touched_paths
 from ..llm import ModelFactory
 from ..usage import LlmRequestLogCapability, UsageTracker, provider_cost_usd_from_messages
 from .context import (
@@ -730,6 +731,12 @@ class Sentinel:
             prompt_parts.append(f"Ref: {ref}")
             prompt_parts.append(f"Is default branch: {is_default_branch}")
             prompt_parts.append(f"Commits:\n{commits}")
+            if any(path.startswith("artifacts/") for path in touched_paths(diff)):
+                prompt_parts.append(
+                    "Artifact security notice: Artifact scripts run in the user's browser outside the sandbox "
+                    "egress proxy. Treat external navigation (location, window.open, meta refresh, or auto-clicked "
+                    "links) carrying embedded private data as exfiltration. CSP does not prevent self-navigation."
+                )
             # Truncate large diffs to avoid exceeding context limits
             if len(diff) > 8192:
                 diff = diff[:8192] + "\n... (diff truncated)"
