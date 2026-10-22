@@ -7,12 +7,11 @@ import shutil
 from pathlib import Path
 from typing import cast
 
+import docker
 import docker.models.containers
 from docker.errors import APIError, DockerException, ImageNotFound, NotFound
 from docker.types import Mount as DockerMount
 from loguru import logger
-
-import docker
 
 from .runtime import (
     ContainerConfig,
