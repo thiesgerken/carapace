@@ -6,6 +6,16 @@ Artifacts are HTML pages stored in the user's knowledge repository at
 inline (data: URIs, inline SVG/CSS/JS, or the allowed CDNs).
 Changes use the normal sentinel-reviewed Git push workflow.
 
+## Agent workflow
+
+The agent writes `/workspace/artifacts/<slug>/index.html`, commits and pushes it,
+then uses `send_file` to show a snapshot in chat. Every push updates the live
+knowledge view and any existing shared link; old chat snapshots stay unchanged.
+See the bundled [artifacts skill](../src/carapace/assets/skills/artifacts/SKILL.md)
+for the authoring contract and checks. The sandbox ships no browser, so inspect
+the rendered page's narrow layout, light/dark appearance, and keyboard controls
+yourself.
+
 ## Browsing and chat snapshots
 
 The knowledge browser marks artifact directories with an artifact icon and uses
