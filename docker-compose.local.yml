@@ -1,0 +1,15 @@
+services:
+  carapace:
+    image: carapace:local
+    pull_policy: never
+    environment:
+      CARAPACE_SANDBOX_BASE_IMAGE: carapace-sandbox:local
+  frontend:
+    image: carapace-frontend:local
+    pull_policy: never
+  bw:
+    image: carapace-bitwarden-cli:local
+    pull_policy: never
+  sandbox:
+    image: carapace-sandbox:local
+    pull_policy: never

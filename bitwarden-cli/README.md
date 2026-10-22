@@ -1,8 +1,8 @@
 # Bitwarden CLI sidecar image
 
-Small Alpine image that runs the official [`@bitwarden/cli`](https://www.npmjs.com/package/@bitwarden/cli): on startup it configures the server URL, logs in (API key or password), unlocks the vault, then **`exec`s `bw serve`** bound to `127.0.0.1` inside the container. carapace talks to that HTTP API from the main app or from another container on the same pod/network.
+Runtime-only Nix image using nixpkgs `bitwarden-cli`: on startup it configures the server URL, logs in (API key or password), unlocks the vault, then **`exec`s `bw serve`** bound to `127.0.0.1` inside the container. carapace talks to that HTTP API from the main app or from another container on the same pod/network.
 
-The entrypoint is [`entrypoint.sh`](./entrypoint.sh). Build with [`Dockerfile`](./Dockerfile); optional build arg `BW_CLI_VERSION` pins the npm package (default in the Dockerfile).
+The entrypoint is [`entrypoint.sh`](./entrypoint.sh). Build with `nix build .#bitwarden-image` on Linux x64, or `nix build .#packages.aarch64-linux.bitwarden-image` on Apple Silicon with the native Linux builder. The flake lock pins the CLI and its runtime. The image runs as UID/GID 999 with a read-only root; mount writable storage at `/var/lib/bitwarden-cli` and `/tmp`.
 
 ## Environment variables
 
@@ -22,6 +22,8 @@ The entrypoint is [`entrypoint.sh`](./entrypoint.sh). Build with [`Dockerfile`](
 `BW_NOINTERACTION=true` is set by the entrypoint for non-interactive use.
 
 The entrypoint sets **`BITWARDENCLI_APPDATA_DIR`** to `$BW_DATA_DIR/appdata` (Bitwarden CLI upstream) so login/device state is stored on disk. Without a volume on `BW_DATA_DIR`, a new container looks like a new client and many vaults send a “new login” email.
+
+Compose volumes created by the root-running image may need a one-time cache reset or ownership change to `999:999`; follow the [upgrade instructions](../docs/quickstart.md). Kubernetes applies the existing fsGroup 999 recursively when mounting the PVC, so chart users do not need a manual migration.
 
 ## Secret files (optional)
 
@@ -65,4 +67,4 @@ Progress messages go to **stderr** so they show promptly in `docker compose logs
 
 ## Vaultwarden / CLI compatibility
 
-If `bw login` fails with errors such as `TypeError` around account crypto, the Vaultwarden version may be too old for the bundled CLI. See the Dockerfile comment and project docs for version notes.
+Vaultwarden **1.35.5 or newer** is required for API-key login with the bundled Bitwarden CLI 2026.4.2. Older servers can fail with `TypeError: ... toWrappedAccountCryptographicState`; see [vaultwarden#6912](https://github.com/dani-garcia/vaultwarden/issues/6912). Upgrade the server rather than pinning an older CLI.

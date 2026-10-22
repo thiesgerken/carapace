@@ -87,7 +87,7 @@ if [ -n "$BW_CLIENTID" ] && [ -n "$BW_CLIENTSECRET" ]; then
   log "[entrypoint] login method: API key"
   # `bw login --check` only proves an access token exists. After a failed API-key login the CLI can
   # leave a token with no usable account crypto (TypeError: toWrappedAccountCryptographicState on
-  # null — often Vaultwarden older than bw 2026.2.x). Require unlock + unlock --check before reuse.
+  # null on Vaultwarden < 1.35.5 with bw CLI 2026.2+). Require unlock + unlock --check before reuse.
   reuse_ok=false
   if bw login --check >/dev/null 2>&1; then
     log "[entrypoint] access token present — verifying vault unlock"
@@ -108,7 +108,7 @@ if [ -n "$BW_CLIENTID" ] && [ -n "$BW_CLIENTSECRET" ]; then
     bw logout 2>/dev/null || true
     log "[entrypoint] running: bw login --apikey"
     if ! bw login --apikey; then
-      log "[entrypoint] login failed — bw logout and retry once (Vaultwarden vs CLI mismatch often causes TypeError here; upgrade server or pin older @bitwarden/cli)"
+      log "[entrypoint] login failed — bw logout and retry once (Vaultwarden must be >= 1.35.5 for bw CLI 2026.2+)"
       bw logout 2>/dev/null || true
       bw login --apikey
     fi
