@@ -31,6 +31,19 @@ tree. Both views require self-contained HTML; adjacent files are not served by t
 artifact renderer. Opaque-origin subresource requests do not carry the app's
 `SameSite=Lax` session cookie.
 
+Sent files render outside collapsed tool-activity groups, including images and
+downloads. A chat snapshot sent from `/workspace/artifacts/<slug>/index.html`
+offers **Open current version**, without sharing controls on the snapshot.
+Other sent HTML files retain their inline snapshot without a live-view link.
+
+Opening an artifact directory or its `index.html` shows the live artifact directly.
+Both use the same `ArtifactToolbar` as the sidebar-free `/artifacts?slug=<slug>`
+viewer: the HTML title (falling back to the slug), sharing/link/copy, source, and
+open-in-new-tab actions. Inline live views also offer full screen; the full-screen
+viewer adds knowledge and back navigation instead. The query parameter keeps the
+page compatible with static export. The artifact listing shows a shared badge
+from owner-scoped metadata, without exposing tokens.
+
 ## Rendering policy
 
 `GET /api/artifacts/<slug>` serves only `artifacts/<slug>/index.html`.
@@ -69,7 +82,7 @@ obfuscated code; it does not prevent document navigation.
 
 ## Sharing
 
-The knowledge artifact view has a **Share publicly** switch. Enabling it asks for
+The full-screen artifact viewer has a **Share publicly** switch. Enabling it asks for
 confirmation that anyone with the link can see the page, including future agent
 changes. While sharing is on, the view shows the public link and a copy action.
 Sharing is controlled by the authenticated user, not by files in the knowledge

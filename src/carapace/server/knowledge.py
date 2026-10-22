@@ -70,6 +70,7 @@ class KnowledgeEntry(BaseModel):
     kind: Literal["session", "skill", "artifact"] | None = None
     label: str | None = None
     session_id: str | None = None
+    shared: bool = False
 
 
 def session_archive_entry(directory: Path, root: Path) -> tuple[str | None, str] | None:
@@ -113,16 +114,22 @@ class KnowledgeSkill(BaseModel):
     carapace: SkillCarapaceConfig | None = None
 
 
+class KnowledgeArtifact(BaseModel):
+    slug: str
+    title: str
+
+
 class KnowledgeDirListing(BaseModel):
     type: Literal["dir"] = "dir"
     path: str
     entries: list[KnowledgeEntry]
     # Recognized directory conventions get their defining document inlined, rendered
     # below the listing (a skill dir's SKILL.md, frontmatter stripped into `skill`).
-    kind: Literal["skill"] | None = None
+    kind: Literal["skill", "artifact"] | None = None
     doc_name: str | None = None
     doc: str | None = None
     skill: KnowledgeSkill | None = None
+    artifact: KnowledgeArtifact | None = None
     # Per secret vault_path referenced by the skill (credentials + mcp auth):
     # "present" | "absent" | "error" (vault unreachable). Empty unless a skill dir.
     vault_status: dict[str, str] = {}
@@ -137,6 +144,7 @@ class KnowledgeFileInfo(BaseModel):
     # Decoded contents for text files within MAX_INLINE_TEXT_BYTES; None for binary
     # or oversized files, which the client offers as a download instead.
     content: str | None = None
+    artifact: KnowledgeArtifact | None = None
 
 
 def contained_target(child: Path, root: Path) -> Path | None:
@@ -191,7 +199,7 @@ class _ArtifactTitleParser(HTMLParser):
         self.parts: list[str] = []
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        if tag == "title":
+        if tag == "title" and not self.finished:
             self.in_title = True
 
     def handle_endtag(self, tag: str) -> None:
@@ -212,6 +220,20 @@ def artifact_title(index: Path) -> str | None:
             if parser.finished:
                 break
     return " ".join("".join(parser.parts).split()) or None
+
+
+def artifact_info(target: Path, root: Path) -> KnowledgeArtifact | None:
+    parts = target.relative_to(root).parts
+    if len(parts) not in {2, 3} or parts[0] != "artifacts":
+        return None
+    if len(parts) == 3 and parts[2] != "index.html":
+        return None
+    slug = parts[1]
+    try:
+        index = resolve_artifact_index(root, slug)
+    except HTTPException:
+        return None
+    return KnowledgeArtifact(slug=slug, title=artifact_title(index) or slug)
 
 
 def build_entry(child: Path, root: Path) -> KnowledgeEntry:
@@ -286,8 +308,15 @@ def list_dir(root: Path, target: Path) -> KnowledgeDirListing:
     entries = [build_entry(child, root) for child in target.iterdir() if child.name != ".git"]
     entries.sort(key=lambda e: (e.type != "dir", e.name.casefold()))
     rel = target.relative_to(root)
-    listing = KnowledgeDirListing(path="" if rel == Path() else rel.as_posix(), entries=entries)
-    inline_doc(target, entries, listing, root)
+    artifact = artifact_info(target, root)
+    listing = KnowledgeDirListing(
+        path="" if rel == Path() else rel.as_posix(),
+        entries=entries,
+        artifact=artifact,
+        kind="artifact" if artifact else None,
+    )
+    if artifact is None:
+        inline_doc(target, entries, listing, root)
     return listing
 
 
@@ -357,6 +386,10 @@ async def browse_knowledge(
     if target.is_dir():
         listing = list_dir(root, target)
         await attach_commits(handle.git_store, listing)
+        if any(entry.kind == "artifact" for entry in listing.entries):
+            shared = server._artifact_share_store.shared_slugs(user.username)
+            for entry in listing.entries:
+                entry.shared = entry.kind == "artifact" and entry.name in shared
         if listing.skill is not None and listing.skill.carapace is not None:
             try:
                 registry = await server._credential_registry_for_user(user.username)
@@ -389,6 +422,7 @@ async def browse_knowledge(
         # Only the types the client renders as an <img> skip their contents; anything
         # else it cannot display (an SVG, say) is still worth showing as source.
         content=None if mime in INLINE_MIME_TYPES else read_text_content(target, size),
+        artifact=artifact_info(target, root),
     )
 
 

@@ -123,6 +123,7 @@ def _setup_server(tmp_path, monkeypatch, db_factory):
     git_store.push_to_remote = AsyncMock()
     git_store.get_remote_url = AsyncMock(return_value=None)
     git_store.restore_remote = AsyncMock()
+    git_store.last_commits = AsyncMock(return_value={})
     srv._data_dir = tmp_path
     srv._config = config
     srv._user_credential_registries = {}
@@ -4240,3 +4241,38 @@ def test_internal_push_review_uses_live_owner_scoped_sharing(
         assert response.status_code == 200
         assert response.json() == {"verdict": "allow"}
         assert ("this push is a publication." in prompts[-1]) is expected
+
+
+def test_artifact_listing_shares_are_owner_scoped_and_do_not_expose_tokens(
+    client: TestClient, auth_headers: dict[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _make_artifact("report")
+    _make_artifact("private")
+    public_url = client.put("/api/artifacts/report/share", headers=auth_headers).json()["url"]
+    srv._artifact_share_store.enable("admin", "private")
+    lookup = MagicMock(wraps=srv._artifact_share_store.shared_slugs)
+    monkeypatch.setattr(srv._artifact_share_store, "shared_slugs", lookup)
+
+    response = client.get("/api/knowledge/browse/artifacts", headers=auth_headers)
+
+    assert response.status_code == 200
+    assert {entry["name"]: entry["shared"] for entry in response.json()["entries"]} == {
+        "private": False,
+        "report": True,
+    }
+    assert public_url.rsplit("/", 1)[1] not in response.text
+    lookup.assert_called_once_with("thies")
+
+
+@pytest.mark.parametrize(
+    "title,expected", [("<title>Quarterly &amp; report</title>", "Quarterly & report"), ("", "report")]
+)
+def test_artifact_directory_and_index_expose_the_same_title(
+    client: TestClient, auth_headers: dict[str, str], title: str, expected: str
+) -> None:
+    directory = _make_artifact()
+    (directory / "index.html").write_text(title)
+    for path in ("artifacts/report", "artifacts/report/index.html"):
+        response = client.get(f"/api/knowledge/browse/{path}", headers=auth_headers)
+        assert response.status_code == 200
+        assert response.json()["artifact"] == {"slug": "report", "title": expected}

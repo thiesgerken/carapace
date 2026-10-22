@@ -11,6 +11,16 @@ not parent-page classes or storage. Define colors once on `:root`, then override
 those tokens in a `prefers-color-scheme: dark` block. A restrained teal is the
 default accent; use it for emphasis and controls, not every surface.
 
+## Agent-output typography
+
+Match carapace's `.chat-copy-serif`: **Source Serif 4** for body and headings,
+**Geist** for controls, labels, and numbers, and **Geist Mono** for code. Use one
+Google Fonts stylesheet link, requesting only the weights used by the page:
+
+```html
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;600&amp;family=Geist+Mono&amp;family=Source+Serif+4:wght@400;700&amp;display=swap">
+```
+
 ```css
 :root {
   color-scheme: light dark;
@@ -42,19 +52,21 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--fg);
-  font: var(--text-base)/1.6 system-ui, sans-serif;
+  font: var(--text-base)/1.6 "Source Serif 4", ui-serif, Georgia, serif;
 }
 h1 { font-size: var(--text-xl); line-height: 1.15; }
 h2 { font-size: var(--text-lg); line-height: 1.3; }
+button, input, label, summary, small, figcaption, dt, dd, output, .meta, svg text {
+  font-family: "Geist", system-ui, sans-serif;
+}
+code, pre { font-family: "Geist Mono", ui-monospace, monospace; }
 small, figcaption { font-size: var(--text-sm); color: var(--muted); }
 :focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
 ```
 
-Prefer system fonts. Georgia can give a text-heavy report an editorial voice;
-keep controls and numeric labels in a readable system sans. If typography really
-needs Google Fonts, request only the families and weights used, retain system
-fallbacks, and accept that the page must remain useful if fonts fail to load.
-Do not load font CSS from other CDNs.
+Keep system fallbacks so the page remains readable if fonts fail to load. Body
+text uses weight 400, headings 700, and emphasized controls 600 in the examples.
+Do not request unused weights or load font CSS from another origin.
 
 ## Layout at 375px
 

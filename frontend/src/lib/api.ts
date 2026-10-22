@@ -1732,6 +1732,7 @@ export interface KnowledgeEntry {
   /** Human label, such as a session or artifact title. */
   label: string | null;
   session_id: string | null;
+  shared: boolean;
 }
 
 export interface SkillCommandDecl {
@@ -1788,14 +1789,20 @@ export interface KnowledgeSkill {
   carapace: SkillCarapaceConfig | null;
 }
 
+export interface KnowledgeArtifact {
+  slug: string;
+  title: string;
+}
+
 export interface KnowledgeDirListing {
   type: "dir";
   /** Recognized directory convention, e.g. a skill dir. */
-  kind: "skill" | null;
+  kind: "skill" | "artifact" | null;
   /** Defining document inlined by the server (SKILL.md), frontmatter stripped. */
   doc_name: string | null;
   doc: string | null;
   skill: KnowledgeSkill | null;
+  artifact: KnowledgeArtifact | null;
   /** Per vault_path referenced by the skill: "present" | "absent" | "error". */
   vault_status?: Record<string, string>;
   path: string;
@@ -1810,6 +1817,7 @@ export interface KnowledgeFileInfo {
   mime: string;
   /** Inlined by the server for text files under its size cap; null for binaries. */
   content: string | null;
+  artifact: KnowledgeArtifact | null;
 }
 
 export type KnowledgeBrowseResult = KnowledgeDirListing | KnowledgeFileInfo;

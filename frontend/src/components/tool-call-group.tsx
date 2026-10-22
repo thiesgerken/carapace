@@ -21,7 +21,8 @@ export type RenderItem =
   | { type: "group"; start: number; indices: number[]; inProgress: boolean };
 
 function isToolish(m: ChatMessage): boolean {
-  return m.kind === "tool_call" || m.kind === "thinking" || m.kind === "thinking_streaming";
+  // Deliveries must stay visible when the surrounding activity collapses.
+  return (m.kind === "tool_call" && m.tool !== "send_file") || m.kind === "thinking" || m.kind === "thinking_streaming";
 }
 
 /**

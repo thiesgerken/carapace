@@ -493,7 +493,8 @@ def test_artifact_directory_label_uses_its_html_title(tmp_path: Path) -> None:
     directory = root / "artifacts" / "report"
     directory.mkdir(parents=True)
     (directory / "index.html").write_text(
-        "<head><title> Quarterly &amp;\n report </title></head>" + "x" * (MAX_INLINE_TEXT_BYTES + 1)
+        "<head><title> Quarterly &amp;\n report </title></head><svg><title>Chart label</title></svg>"
+        + "x" * (MAX_INLINE_TEXT_BYTES + 1)
     )
     entry = build_entry(directory, root.resolve())
     assert entry.kind == "artifact"

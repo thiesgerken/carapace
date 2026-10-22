@@ -64,17 +64,17 @@ export function ArtifactShareControls({ server, slug }: { server: string; slug: 
   }
 
   return (
-    <section className="space-y-3 rounded-xl border border-border bg-muted/20 p-3">
+    <section className="flex min-w-0 flex-wrap items-center gap-2">
       <SwitchRow
         checked={publicUrl !== null}
         disabled={loading || saving || share === null}
         label={t("label")}
-        description={loading ? t("loading") : t("description")}
+        className="min-h-10 w-auto rounded-md px-1"
         onCheckedChange={(shared) => void toggle(shared)}
       />
       {publicUrl !== null && (
-        <div className="flex items-start gap-2 rounded-lg border border-border bg-background px-3 py-2">
-          <a href={publicUrl} target="_blank" rel="noreferrer" className="min-w-0 flex-1 break-all text-xs text-teal-600 underline-offset-2 hover:underline dark:text-teal-400">
+        <div className="flex min-w-0 max-w-64 items-center gap-2 rounded-lg border border-border bg-background px-3 py-2">
+          <a href={publicUrl} target="_blank" rel="noreferrer" title={publicUrl} className="min-w-0 flex-1 truncate text-xs text-teal-600 underline-offset-2 hover:underline dark:text-teal-400">
             {publicUrl}
           </a>
           <button

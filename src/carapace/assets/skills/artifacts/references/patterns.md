@@ -19,23 +19,27 @@ sending the reader elsewhere.
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Release readiness review</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;600&amp;family=Geist+Mono&amp;family=Source+Serif+4:wght@400;700&amp;display=swap">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg' viewBox='0 0 32 32'%3E%3Cstyle%3E:root{color:%23236b86}@media(prefers-color-scheme:dark){:root{color:%2377cbd0}}%3C/style%3E%3Cpath fill='none' stroke='currentColor' stroke-width='2' d='M8 3h11l5 5v21H8zM18 3v7h6M12 15h8m-8 5h8m-8 5h5'/%3E%3C/svg%3E">
   <style>
     :root { color-scheme: light dark; --bg: #f4f7f8; --surface: #fff; --fg: #18343a; --muted: #52676b; --border: #c4d3d7; --accent: #236b86; }
     @media (prefers-color-scheme: dark) {
       :root { --bg: #101c20; --surface: #18292e; --fg: #edf5f6; --muted: #b1c5c9; --border: #466168; --accent: #77cbd0; }
     }
     * { box-sizing: border-box; }
-    body { margin: 0; background: var(--bg); color: var(--fg); font: 1rem/1.6 system-ui, sans-serif; }
+    body { margin: 0; background: var(--bg); color: var(--fg); font: 1rem/1.6 "Source Serif 4", ui-serif, Georgia, serif; }
     main { width: min(100% - 2rem, 48rem); margin: 2rem auto; overflow-wrap: anywhere; }
     h1 { font-size: clamp(1.75rem, 5vw, 2.5rem); line-height: 1.15; }
     h2 { font-size: 1.25rem; }
     header { border-top: 4px solid var(--accent); }
-    .lede { font: 1.25rem/1.6 Georgia, serif; }
+    .lede { font-size: 1.25rem; line-height: 1.6; }
     .meta { color: var(--muted); font-size: .875rem; }
     section { margin-top: 1.5rem; }
     details { padding: 1rem; border: 1px solid var(--border); background: var(--surface); }
     summary { cursor: pointer; min-height: 44px; padding-block: .5rem; font-weight: 600; }
     :focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+    button, input, label, summary, .meta, figcaption, dt, dd, output, svg text { font-family: "Geist", system-ui, sans-serif; }
+    code, pre { font-family: "Geist Mono", ui-monospace, monospace; }
   </style>
 </head>
 <body>
@@ -82,13 +86,15 @@ the same zero baseline; the exact values remain readable without hover.
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Support workload overview</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;600&amp;family=Geist+Mono&amp;family=Source+Serif+4:wght@400;700&amp;display=swap">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg' viewBox='0 0 32 32'%3E%3Cstyle%3E:root{color:%23236b86}@media(prefers-color-scheme:dark){:root{color:%2377cbd0}}%3C/style%3E%3Cpath fill='currentColor' d='M5 18h5v11H5zM13 10h5v19h-5zM21 3h5v26h-5z'/%3E%3C/svg%3E">
   <style>
     :root { color-scheme: light dark; --bg: #f4f7f8; --surface: #fff; --fg: #18343a; --muted: #52676b; --border: #c4d3d7; --accent: #236b86; }
     @media (prefers-color-scheme: dark) {
       :root { --bg: #101c20; --surface: #18292e; --fg: #edf5f6; --muted: #b1c5c9; --border: #466168; --accent: #77cbd0; }
     }
     * { box-sizing: border-box; }
-    body { margin: 0; background: var(--bg); color: var(--fg); font: 1rem/1.6 system-ui, sans-serif; }
+    body { margin: 0; background: var(--bg); color: var(--fg); font: 1rem/1.6 "Source Serif 4", ui-serif, Georgia, serif; }
     main { width: min(100% - 2rem, 64rem); margin: 2rem auto; overflow-wrap: anywhere; }
     h1 { font-size: clamp(1.75rem, 5vw, 2.5rem); line-height: 1.15; }
     h2 { font-size: 1.25rem; margin-top: 0; }
@@ -101,6 +107,8 @@ the same zero baseline; the exact values remain readable without hover.
     .bar { fill: var(--accent); }
     .baseline { stroke: var(--fg); }
     dd { margin: 0 0 1rem; font-size: 1.75rem; font-variant-numeric: tabular-nums; }
+    button, input, label, summary, .meta, figcaption, dt, dd, output, svg text { font-family: "Geist", system-ui, sans-serif; }
+    code, pre { font-family: "Geist Mono", ui-monospace, monospace; }
   </style>
 </head>
 <body>
@@ -160,13 +168,15 @@ explains its unit and rejects invalid inputs instead of silently replacing them.
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Delivery capacity estimator</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;600&amp;family=Geist+Mono&amp;family=Source+Serif+4:wght@400;700&amp;display=swap">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg' viewBox='0 0 32 32'%3E%3Cstyle%3E:root{color:%23236b86}@media(prefers-color-scheme:dark){:root{color:%2377cbd0}}%3C/style%3E%3Crect x='5' y='3' width='22' height='26' rx='3' fill='none' stroke='currentColor' stroke-width='2'/%3E%3Cpath fill='none' stroke='currentColor' stroke-width='2' d='M9 9h14M10 17h4m-2-2v4m7-2h4M10 24h4m5 0h4'/%3E%3C/svg%3E">
   <style>
     :root { color-scheme: light dark; --bg: #f4f7f8; --surface: #fff; --fg: #18343a; --muted: #52676b; --border: #c4d3d7; --accent: #236b86; --on-accent: #fff; }
     @media (prefers-color-scheme: dark) {
       :root { --bg: #101c20; --surface: #18292e; --fg: #edf5f6; --muted: #b1c5c9; --border: #466168; --accent: #77cbd0; --on-accent: #102322; }
     }
     * { box-sizing: border-box; }
-    body { margin: 0; background: var(--bg); color: var(--fg); font: 1rem/1.6 system-ui, sans-serif; }
+    body { margin: 0; background: var(--bg); color: var(--fg); font: 1rem/1.6 "Source Serif 4", ui-serif, Georgia, serif; }
     main { width: min(100% - 2rem, 40rem); margin: 2rem auto; overflow-wrap: anywhere; }
     h1 { font-size: clamp(1.75rem, 5vw, 2.5rem); line-height: 1.15; }
     .meta { color: var(--muted); font-size: .875rem; }
@@ -177,6 +187,8 @@ explains its unit and rejects invalid inputs instead of silently replacing them.
     button { border-color: var(--accent); background: var(--accent); color: var(--on-accent); cursor: pointer; font-weight: 600; }
     output { display: block; margin-block: 1.5rem; font-size: 1.25rem; font-weight: 600; }
     :focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+    button, input, label, summary, .meta, figcaption, dt, dd, output, svg text { font-family: "Geist", system-ui, sans-serif; }
+    code, pre { font-family: "Geist Mono", ui-monospace, monospace; }
   </style>
 </head>
 <body>
