@@ -16,6 +16,16 @@ let
           pyproject-build-systems.overlays.wheel
           (workspace.mkPyprojectOverlay { sourcePreference = "wheel"; })
           (final: prev: {
+            carapace = prev.carapace.overrideAttrs {
+              src = lib.fileset.toSource {
+                root = ../.;
+                fileset = lib.fileset.unions [
+                  ../pyproject.toml
+                  ../README.md
+                  ../src
+                ];
+              };
+            };
             # http-ece ships only an sdist with a legacy setuptools build backend.
             http-ece = prev.http-ece.overrideAttrs (old: {
               nativeBuildInputs =

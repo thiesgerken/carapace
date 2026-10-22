@@ -2,6 +2,8 @@
 
 The committed Nix flake and lockfile own builds, checks, and runtime images. Python dependencies come from `uv.lock` through uv2nix, preferring wheels on Python 3.14. Frontend dependencies come from `frontend/pnpm-lock.yaml`; the exact pnpm release is in `frontend/package.json`. The sandbox remains a Debian Dockerfile because agents install packages at runtime and need an FHS-compatible loader.
 
+The local Python package source includes only `pyproject.toml`, `README.md`, and `src/`. Python check inputs are scoped separately, so changes under `docs/`, `charts/`, or `frontend/`, and changelog updates, do not invalidate Python builds and checks.
+
 ## Native developer shell
 
 ```sh
@@ -134,4 +136,4 @@ Failed Nix builds retain expanded log tails in CI. Locally, `nix log .#checks.<s
 
 See the native builder's [known constraints](https://docs.determinate.systems/troubleshooting/native-linux-builder/) for shared-store filesystem and builder configuration issues.
 
-On the Apple Silicon verification host, pytest collection in the Native Linux Builder hit `SIGILL` while importing the locked `cryptography` 50.0.2 Rust extension. The same wheel imports successfully in the loaded ARM Docker image, whose server and sentinel push gate pass the runtime smoke. No dependency override is applied for that builder-only failure. Linux x64 CI must still pass the full pytest check.
+The pytest check can abort with `SIGILL` inside the native Linux builder VM while loading cryptography's Rust extension. Run `uv run pytest` on the host instead; x86_64 CI runs the full Nix pytest check.
