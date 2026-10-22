@@ -28,6 +28,8 @@
         "fullScreen": "Full screen",
         "openKnowledge": "Open in knowledge browser",
         "back": "Back",
+        "createdIn": "Created in:",
+        "updatedIn": "Last updated in:",
         "invalidSlug": "Open an artifact from chat or the knowledge browser.",
         "shared": "Shared",
         "loadError": "Failed to load artifact.",

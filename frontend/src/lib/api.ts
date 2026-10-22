@@ -1789,9 +1789,16 @@ export interface KnowledgeSkill {
   carapace: SkillCarapaceConfig | null;
 }
 
+export interface ArtifactSession {
+  session_id: string;
+  title: string | null;
+}
+
 export interface KnowledgeArtifact {
   slug: string;
   title: string;
+  created_in: ArtifactSession | null;
+  updated_in: ArtifactSession | null;
 }
 
 export interface KnowledgeDirListing {
