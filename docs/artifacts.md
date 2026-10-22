@@ -66,15 +66,18 @@ Sharing is controlled by the authenticated user, not by files in the knowledge
 repository.
 
 Sharing state lives in the database, keyed by owner and slug. A row is created on
-the first enable action. Each enable action issues a fresh random token; disabling
-clears it immediately. Enabling again produces a new link, and old tokens stay
-invalid. Share tokens are never stored in the repo or provided to the agent.
+the first enable action. Enabling an already-shared artifact preserves its token
+and sharing timestamp. Disabling clears the token immediately; enabling after
+that issues a new token, and old links stay invalid. Share tokens are never stored
+in the repo or provided to the agent.
 
-Authenticated management endpoints require `knowledge` write access:
+Management endpoints require a browser cookie session. API keys are rejected,
+even with `knowledge:write`, because the agent can hold a scoped API key and must
+not be able to publish artifacts or read share tokens.
 
 - `GET /api/artifacts/<slug>/share` returns the current URL and sharing timestamp,
   or null values while sharing is off.
-- `PUT /api/artifacts/<slug>/share` enables sharing and returns a fresh URL.
+- `PUT /api/artifacts/<slug>/share` enables sharing and returns its URL.
 - `DELETE /api/artifacts/<slug>/share` disables sharing, even if the artifact was
   deleted or renamed.
 

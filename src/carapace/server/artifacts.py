@@ -7,11 +7,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from ..api_keys import Access, Scope
 from ..artifact_shares import ArtifactShare
 from ..auth import UserIdentity
 from .artifact_rendering import artifact_headers
-from .auth import require
+from .auth import require_browser_session
 from .knowledge import resolve_artifact_index, validate_artifact_slug
 from .state import server_module
 
@@ -33,7 +32,7 @@ def _share_state(share: ArtifactShare | None) -> ArtifactShareState:
 @router.get("/artifacts/{slug}/share")
 async def get_artifact_share(
     slug: str,
-    user: Annotated[UserIdentity, Depends(require(Scope.knowledge, Access.write))],
+    user: Annotated[UserIdentity, Depends(require_browser_session)],
 ) -> ArtifactShareState:
     validate_artifact_slug(slug)
     return _share_state(server._artifact_share_store.get(user.username, slug))
@@ -42,7 +41,7 @@ async def get_artifact_share(
 @router.put("/artifacts/{slug}/share")
 async def enable_artifact_share(
     slug: str,
-    user: Annotated[UserIdentity, Depends(require(Scope.knowledge, Access.write))],
+    user: Annotated[UserIdentity, Depends(require_browser_session)],
 ) -> ArtifactShareState:
     handle = server._knowledge_repo_registry.get_for_user(user.username)
     resolve_artifact_index(handle.knowledge_dir.resolve(), slug)
@@ -52,7 +51,7 @@ async def enable_artifact_share(
 @router.delete("/artifacts/{slug}/share")
 async def disable_artifact_share(
     slug: str,
-    user: Annotated[UserIdentity, Depends(require(Scope.knowledge, Access.write))],
+    user: Annotated[UserIdentity, Depends(require_browser_session)],
 ) -> ArtifactShareState:
     # Revocation must still work after the artifact is deleted or renamed.
     validate_artifact_slug(slug)

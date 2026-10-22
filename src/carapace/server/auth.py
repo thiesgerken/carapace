@@ -261,6 +261,12 @@ def require(scope: Scope, access: Access):
     return dependency
 
 
+async def require_browser_session(ctx: Annotated[AuthContext, Depends(current_auth_context)]) -> UserIdentity:
+    if ctx.grants is not None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Browser session required")
+    return ctx.identity
+
+
 async def current_ws_context(websocket: WebSocket) -> AuthContext:
     cookie_name = server._config.auth.cookie.name
     token = websocket.cookies.get(cookie_name)

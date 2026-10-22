@@ -32,8 +32,9 @@ class ArtifactShareStore:
             if row is None:
                 row = ArtifactRow(owner=owner, slug=slug)
                 db.add(row)
-            row.share_token = secrets.token_urlsafe(32)
-            row.shared_at = datetime.now(tz=UTC)
+            if row.share_token is None:
+                row.share_token = secrets.token_urlsafe(32)
+                row.shared_at = datetime.now(tz=UTC)
             return ArtifactShare.model_validate(row, from_attributes=True)
 
     def disable(self, owner: str, slug: str) -> None:

@@ -4107,10 +4107,18 @@ def test_artifact_sharing_revocation_and_token_rotation(client: TestClient, auth
     assert second_url != first_url
     assert client.get(first_url).status_code == 404
     assert client.get(second_url).status_code == 200
-    third_url = client.put(endpoint, headers=auth_headers).json()["url"]
-    assert third_url != second_url
-    assert client.get(second_url).status_code == 404
-    assert client.get(third_url).status_code == 200
+
+
+def test_enabling_an_already_shared_artifact_preserves_its_link(
+    client: TestClient, auth_headers: dict[str, str]
+) -> None:
+    _make_artifact()
+    endpoint = "/api/artifacts/report/share"
+    first = client.put(endpoint, headers=auth_headers)
+    second = client.put(endpoint, headers=auth_headers)
+    assert first.status_code == second.status_code == 200
+    assert second.json() == first.json()
+    assert client.get(first.json()["url"]).status_code == 200
 
 
 def test_shared_artifact_serves_current_content(client: TestClient, auth_headers: dict[str, str]) -> None:
@@ -4173,17 +4181,20 @@ def test_artifact_shares_are_owner_scoped(
     assert client.get(user_url).status_code == 200
 
 
-def test_artifact_sharing_requires_authenticated_knowledge_write(
-    client: TestClient, auth_headers: dict[str, str]
-) -> None:
+def test_artifact_sharing_requires_a_browser_session(client: TestClient, auth_headers: dict[str, str]) -> None:
     _make_artifact()
     endpoint = "/api/artifacts/report/share"
-    read_headers = _api_key_headers("thies", [ApiKeyGrant(scope=Scope.knowledge, access=Access.read)])
     for method in ("GET", "PUT", "DELETE"):
         assert client.request(method, endpoint).status_code == 401
-        assert client.request(method, endpoint, headers=read_headers).status_code == 403
-    write_headers = _api_key_headers("thies", [ApiKeyGrant(scope=Scope.knowledge, access=Access.write)])
-    assert client.put(endpoint, headers=write_headers).status_code == 200
+    url = client.put(endpoint, headers=auth_headers).json()["url"]
+    for access in (Access.read, Access.write):
+        headers = _api_key_headers("thies", [ApiKeyGrant(scope=Scope.knowledge, access=access)])
+        for method in ("GET", "PUT", "DELETE"):
+            assert client.request(method, endpoint, headers=headers).status_code == 403
+    assert client.get(url).status_code == 200
+    assert client.get(endpoint, headers=auth_headers).json()["url"] == url
+    assert client.delete(endpoint, headers=auth_headers).status_code == 200
+    assert client.get(url).status_code == 404
 
 
 def test_revoking_a_deleted_artifact_does_not_republish_on_restore(
