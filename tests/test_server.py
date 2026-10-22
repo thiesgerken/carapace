@@ -54,7 +54,7 @@ from carapace.sandbox.state import SessionSandboxSnapshot
 from carapace.security.context import CredentialAccessEntry
 from carapace.server import app, sandbox_app
 from carapace.server.runtime import KnowledgeGitRuntime
-from carapace.session import SessionEngine, SessionManager
+from carapace.session import SessionEngine, SessionManager, sent_files
 from carapace.session.archive import SessionArchiveResult, SessionArchiveService
 from carapace.usage import LlmRequestState
 
@@ -3653,6 +3653,43 @@ def test_ws_unknown_command_is_agent_message(client, auth_headers, monkeypatch):
 def _make_session(user: str = "thies") -> str:
     state = srv._engine.session_mgr.create_session(user=user)
     return state.session_id
+
+
+@pytest.mark.parametrize(
+    ("name", "download", "expected_mime", "expected_disposition"),
+    [
+        ("page.html", False, "application/octet-stream", "attachment"),
+        ("drawing.svg", False, "application/octet-stream", "attachment"),
+        ("notes.txt", False, "application/octet-stream", "attachment"),
+        ("chart.png", False, "image/png", "inline"),
+        ("chart.png", True, "application/octet-stream", "attachment"),
+    ],
+)
+def test_sent_file_download_only_inlines_raster_images(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    name: str,
+    download: bool,
+    expected_mime: str,
+    expected_disposition: str,
+) -> None:
+    sid = _make_session()
+    data_dir = srv._engine.session_mgr.data_dir
+    payload = b"<script>alert(document.cookie)</script>"
+    file_id, blob = sent_files.reserve(data_dir, sid, name)
+    blob.write_bytes(payload)
+    sent_files.finalize(data_dir, sid, file_id, name, len(payload))
+
+    response = client.get(
+        f"/api/sessions/{sid}/files/{file_id}",
+        headers=auth_headers,
+        params={"download": "1"} if download else {},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == expected_mime
+    assert response.headers["content-disposition"] == f'{expected_disposition}; filename="{name}"'
+    assert response.content == payload
 
 
 def test_upload_sandbox_file_starts_sandbox_when_not_running(client, auth_headers):
