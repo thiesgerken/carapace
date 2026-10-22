@@ -38,8 +38,10 @@ without a filename/size row or sharing controls. The download uses `<slug>.html`
 as its suggested snapshot filename.
 The delivery uses the artifact icon and **Artifact · &lt;title&gt;**, taking the title
 from the persisted HTML snapshot with client-side `DOMParser` (slug fallback).
-Artifact badges start collapsed and offer a separate icon to open the current
-version in a new tab, including its sharing controls, without expanding the snapshot.
+Artifact badges start collapsed and offer a separate icon directly after the title
+to open the current version in a new tab, including its sharing controls, without
+expanding the snapshot. The rest of the row toggles the snapshot, with the approval
+indicator on the right.
 Other sent files retain the normal sent-file label.
 Other sent HTML files retain their inline snapshot without a live-view link.
 
