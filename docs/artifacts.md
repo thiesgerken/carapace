@@ -6,6 +6,38 @@ Artifacts are HTML pages stored in the user's knowledge repository at
 inline (data: URIs, inline SVG/CSS/JS, or the allowed CDNs).
 Changes use the normal sentinel-reviewed Git push workflow.
 
+## Agent workflow
+
+The bundled `artifacts` skill teaches format selection, self-contained page
+construction, and safe delivery. Its [design guidance](../src/carapace/assets/skills/artifacts/references/design.md),
+[chart guidance](../src/carapace/assets/skills/artifacts/references/charts.md), and
+[complete patterns](../src/carapace/assets/skills/artifacts/references/patterns.md)
+cover reports, dashboards, and local interactive tools. Prefer a chat answer,
+Mermaid diagram, or plain file delivery when a page would add no useful behavior.
+
+1. Write `/workspace/artifacts/<slug>/index.html` with a descriptive `<title>`.
+   Embed data, styles, scripts, and images; use only exactly version-pinned
+   cdnjs/jsDelivr npm scripts or Google Fonts when an external dependency is
+   justified. Make no runtime API calls (`connect-src 'none'`).
+2. Check the page on a narrow screen and in light/dark mode, verify its results,
+   inspect the diff, and keep the artifact directory within the size limit below.
+3. Stage the artifact paths, `git commit`, then `git push` from `/workspace`.
+   A successful push updates the knowledge browser and **any existing shared
+   link**. Treat every artifact as possibly public: never embed credentials or
+   secrets, and include private data only as requested by the user.
+4. After the push succeeds, call `send_file` with the absolute `index.html` path
+   to show a snapshot in chat. Put external links in the chat reply instead of
+   artifact navigation. Do not write `location`, `window.open`, meta refresh, or
+   other navigation code; the sentinel treats navigation with embedded data as
+   exfiltration and will deny such pushes, subject to the best-effort review
+   limitation described below.
+5. For a revision, edit the same path, commit, push, and send the file again.
+   Existing chat previews retain their snapshots; the knowledge view and shared
+   link show the pushed revision.
+
+Sharing remains a user action in the knowledge browser. The agent cannot use an
+API key to manage sharing, read its state, or obtain a share token.
+
 ## Browsing and chat snapshots
 
 The knowledge browser marks artifact directories with an artifact icon and uses
