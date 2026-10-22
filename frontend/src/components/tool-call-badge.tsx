@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import {
   Archive,
   ChevronRight,
+  ExternalLink,
   FileText,
   FilePen,
   FolderCode,
@@ -35,7 +36,7 @@ import {
 import type { CompactionAnnotation, SentFile } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { sentFileUrl } from "@/lib/api";
-import { artifactSnapshotTitle, sentArtifactSlug } from "@/lib/artifacts";
+import { artifactSnapshotTitle, artifactViewerHref, sentArtifactSlug } from "@/lib/artifacts";
 
 interface ToolCallBadgeProps {
   tool: string;
@@ -521,10 +522,11 @@ export function ToolCallBadge({
 }: ToolCallBadgeProps) {
   const t = useTranslations("toolCallBadge");
   const tc = useTranslations("compaction");
+  const ta = useTranslations("artifacts");
   const isSendFileTool = tool === "send_file";
-  const [open, setOpen] = useState(isSendFileTool);
-  const [skillInstructionsOpen, setSkillInstructionsOpen] = useState(false);
   const artifactSlug = isSendFileTool ? sentArtifactSlug(args.path) : null;
+  const [open, setOpen] = useState(isSendFileTool && artifactSlug === null);
+  const [skillInstructionsOpen, setSkillInstructionsOpen] = useState(false);
   const sentFileId = files?.[0]?.file_id;
   const artifactSource = artifactSlug !== null && sentFileId && server !== undefined && sessionId !== undefined
     ? sentFileUrl(server, sessionId, sentFileId)
@@ -684,15 +686,17 @@ export function ToolCallBadge({
     : "";
 
   return (
-    <div className="my-1 w-full min-w-0">
+    <div className="relative my-1 w-full min-w-0">
       <button
         type="button"
         onClick={() => setOpen(!open)}
+        aria-expanded={open}
         className={cn(
           "flex w-full min-w-0 gap-1.5 rounded-md px-2 py-1 text-xs text-left",
           shouldClampSummary ? "items-start" : "items-center",
           "text-muted-foreground hover:bg-accent transition-colors",
           open && "bg-accent",
+          artifactSlug !== null && "pr-8",
         )}
       >
         <ChevronRight
@@ -807,6 +811,18 @@ export function ToolCallBadge({
           )}
         </span>
       </button>
+      {artifactSlug !== null && (
+        <a
+          href={artifactViewerHref(artifactSlug)}
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label={ta("openLiveInNewTab")}
+          title={ta("openLiveInNewTab")}
+          className="absolute right-0 top-0 inline-flex rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <ExternalLink className="h-3 w-3" />
+        </a>
+      )}
 
       {open && (
         <div className="tool-row-details ml-5 mt-1.5 rounded-lg border border-border/60 bg-muted/30 p-3 space-y-2 text-xs">

@@ -71,9 +71,6 @@ export function FilePreview({
           title={name}
         />
       )}
-      {mime === "text/html" && artifactSlug !== null && (
-        <ArtifactViewerLink slug={artifactSlug} snapshot />
-      )}
       {isImage && previewUrl && (
         <a href={previewUrl} target="_blank" rel="noreferrer" className="block">
           {/* eslint-disable-next-line @next/next/no-img-element -- blob: object URL, next/image can't optimize it */}
@@ -85,17 +82,23 @@ export function FilePreview({
         </a>
       )}
       <div className="mt-1.5 flex items-center gap-2 first:mt-0">
-        <FileIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
-        <span className="truncate font-medium text-foreground/85" title={path}>
-          {name}
-        </span>
-        {size != null && (
-          <span className="shrink-0 text-muted-foreground">{formatBytes(size)}</span>
+        {artifactSlug !== null ? (
+          <ArtifactViewerLink slug={artifactSlug} snapshot />
+        ) : (
+          <>
+            <FileIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
+            <span className="truncate font-medium text-foreground/85" title={path}>
+              {name}
+            </span>
+            {size != null && (
+              <span className="shrink-0 text-muted-foreground">{formatBytes(size)}</span>
+            )}
+          </>
         )}
         {downloadHref && (
           <a
             href={downloadHref}
-            download={name}
+            download={artifactSlug !== null ? `${artifactSlug}.html` : name}
             className="ml-auto inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium text-teal-600 hover:bg-teal-500/10 dark:text-teal-400"
           >
             <Download className="h-3 w-3" />

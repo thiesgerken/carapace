@@ -5,7 +5,7 @@ import { NextIntlClientProvider } from "next-intl";
 
 import english from "../../messages/en.json";
 import german from "../../messages/de.json";
-import { installDom, renderReact, runInAct } from "../../test/react-test-utils";
+import { click, installDom, renderReact, runInAct } from "../../test/react-test-utils";
 import { ToolCallBadge } from "./tool-call-badge";
 
 const SERVER = "https://carapace.example.test";
@@ -29,6 +29,28 @@ test("artifact delivery labels use the persisted snapshot title in English and G
       );
       await runInAct(() => setTimeout(0));
       assert.equal(view.container.querySelector("button > span.font-medium")?.textContent, expected);
+      const toggle = view.container.querySelector("button");
+      assert.ok(toggle);
+      assert.equal(toggle.getAttribute("aria-expanded"), "false");
+      assert.equal(view.container.querySelector("iframe"), null);
+      const viewerLink = view.container.querySelector('a[target="_blank"]');
+      assert.ok(viewerLink);
+      assert.equal(viewerLink.getAttribute("href"), "/artifacts?slug=report");
+      assert.equal(viewerLink.getAttribute("rel"), "noopener noreferrer");
+      assert.equal(viewerLink.getAttribute("aria-label"), messages.artifacts.openLiveInNewTab);
+      assert.equal(viewerLink.getAttribute("title"), messages.artifacts.openLiveInNewTab);
+      assert.equal(viewerLink.closest("button"), null);
+      viewerLink.addEventListener("click", event => event.preventDefault());
+      await click(viewerLink);
+      assert.equal(toggle.getAttribute("aria-expanded"), "false");
+      await click(toggle);
+      assert.equal(toggle.getAttribute("aria-expanded"), "true");
+      await click(viewerLink);
+      assert.equal(toggle.getAttribute("aria-expanded"), "true");
+      const download = view.container.querySelector("a[download]");
+      assert.equal(download?.getAttribute("download"), "report.html");
+      assert.equal(download?.previousElementSibling?.textContent, messages.artifacts.openLive);
+      assert.equal(view.container.textContent?.includes("index.html"), false);
       await view.unmount();
     }
   } finally {
@@ -53,6 +75,13 @@ test("a missing snapshot title falls back to the artifact slug while ordinary HT
       );
       await runInAct(() => setTimeout(0));
       assert.equal(view.container.querySelector("button > span.font-medium")?.textContent, expected);
+      const toggle = view.container.querySelector("button");
+      assert.ok(toggle);
+      const artifact = path.startsWith("/workspace/artifacts/");
+      assert.equal(toggle.getAttribute("aria-expanded"), String(!artifact));
+      if (artifact) await click(toggle);
+      assert.equal(view.container.querySelector("a[download]")?.getAttribute("download"),
+        path.startsWith("/workspace/artifacts/") ? "release-review.html" : path.split("/").at(-1));
       await view.unmount();
     }
   } finally {
