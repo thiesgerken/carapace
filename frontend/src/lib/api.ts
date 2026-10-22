@@ -1844,6 +1844,24 @@ export function knowledgeArtifactUrl(server: string, slug: string): string {
   return `${server}/api/artifacts/${encodeURIComponent(slug)}`;
 }
 
+export interface ArtifactShareState {
+  /** Public path relative to the backend origin, or null while sharing is off. */
+  url: string | null;
+  shared_at: string | null;
+}
+
+export async function getArtifactShare(server: string, slug: string): Promise<ArtifactShareState> {
+  const response = await fetch(`${knowledgeArtifactUrl(server, slug)}/share`);
+  if (!response.ok) throw new Error(await readErrorMessage(response, "Failed to load artifact sharing"));
+  return await response.json() as ArtifactShareState;
+}
+
+export async function setArtifactShared(server: string, slug: string, shared: boolean): Promise<ArtifactShareState> {
+  const response = await fetch(`${knowledgeArtifactUrl(server, slug)}/share`, { method: shared ? "PUT" : "DELETE" });
+  if (!response.ok) throw new Error(await readErrorMessage(response, "Failed to update artifact sharing"));
+  return await response.json() as ArtifactShareState;
+}
+
 function memoryTaskQuery(filter: MemoryTaskFilter, sort: MemoryTaskSort, cursor: string | null): string {
   const params = new URLSearchParams({ sort });
   for (const status of filter.status ?? []) params.append("status", status);

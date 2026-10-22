@@ -31,6 +31,7 @@ from sqlalchemy import Engine
 
 from .. import get_version
 from ..api_keys import ApiKeyStore
+from ..artifact_shares import ArtifactShareStore
 from ..auth import AuthStore
 from ..bootstrap import ensure_data_dir, ensure_knowledge_dir
 from ..cache import SessionListCache
@@ -60,10 +61,12 @@ from ..prompt_prefix import shared_prompt_prefix
 from ..sandbox.manager import SandboxManager
 from ..sandbox.proxy import ProxyServer
 from ..sandbox.runtime import ContainerRuntime
+from ..security import evaluate_push_with
 from ..session import SessionEngine, SessionManager
 from ..session.archive import SessionArchiveService
 from ..usage import SessionBudgetExceededError
 from .api_keys import router as api_keys_router
+from .artifacts import router as artifacts_router
 from .auth import router as auth_router
 from .auth import verify_ws_token
 from .codex_auth import router as codex_auth_router
@@ -112,6 +115,7 @@ _notification_presence: NotificationPresenceRegistry
 _notification_router: NotificationRouter
 _auth_store: AuthStore
 _api_key_store: ApiKeyStore
+_artifact_share_store: ArtifactShareStore
 _platform_store: PlatformSettingsStore
 _codex_accounts: CodexAccounts
 _memory_service: MemoryService
@@ -348,6 +352,7 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
         _notification_router, \
         _auth_store, \
         _api_key_store, \
+        _artifact_share_store, \
         _platform_store, \
         _codex_accounts, \
         _memory_service
@@ -369,6 +374,7 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
 
     _auth_store = AuthStore(_session_factory, _config.auth, _data_dir)
     _api_key_store = ApiKeyStore(_session_factory, _auth_store)
+    _artifact_share_store = ArtifactShareStore(_session_factory)
     _codex_accounts = CodexAccounts(CodexCredentialStore(_session_factory))
     if _auth_store.ensure_bootstrap_admin() is not None:
         logger.warning("Created bootstrap admin user 'admin' with password from CARAPACE_TOKEN")
@@ -801,8 +807,6 @@ async def evaluate_push(req: PushEvalRequest) -> dict[str, str]:
     if active.security is None or active.sentinel is None:
         return {"verdict": "deny", "reason": "Session not initialized"}
 
-    from ..security import evaluate_push_with
-
     with _engine.llm_request_recording(active):
         try:
             allowed = await evaluate_push_with(
@@ -812,6 +816,7 @@ async def evaluate_push(req: PushEvalRequest) -> dict[str, str]:
                 req.is_default_branch,
                 req.commits,
                 req.diff,
+                shared_artifacts=_artifact_share_store.shared_slugs(active.owner),
                 usage_tracker=active.usage_tracker,
                 assert_llm_budget_available=lambda: _engine._assert_llm_budget_available(active),
                 usage_limits=_engine._remaining_aux_usage_limits(active),
@@ -829,6 +834,7 @@ router.include_router(sessions_router)
 router.include_router(history_router)
 router.include_router(jobs_router)
 router.include_router(knowledge_router)
+router.include_router(artifacts_router)
 router.include_router(memory_router)
 router.include_router(prompts_router)
 router.include_router(home_router)

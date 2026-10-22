@@ -171,9 +171,13 @@ def resolve_target(root: Path, raw_path: str) -> Path:
     return target
 
 
-def resolve_artifact_index(root: Path, slug: str) -> Path:
+def validate_artifact_slug(slug: str) -> None:
     if not slug or slug in {".", ".."} or "/" in slug or "\\" in slug:
         raise HTTPException(status_code=404, detail="Not found")
+
+
+def resolve_artifact_index(root: Path, slug: str) -> Path:
+    validate_artifact_slug(slug)
     directory = resolve_target(root, f"artifacts/{slug}")
     if directory != root / "artifacts" / slug or not directory.is_dir():
         raise HTTPException(status_code=404, detail="Not found")

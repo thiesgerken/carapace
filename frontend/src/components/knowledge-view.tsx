@@ -26,6 +26,7 @@ import { useTranslations } from "next-intl";
 
 import { useAppShell } from "@/components/app-shell-context";
 import { ArtifactPreview } from "@/components/artifact-preview";
+import { ArtifactShareControls } from "@/components/artifact-share-controls";
 import { useAppLocale } from "@/components/locale-provider";
 import { GlobalGitPanel, KNOWLEDGE_GIT_CHANGED_EVENT, useGlobalGit } from "@/components/git-sync";
 import { MarkdownContent } from "@/components/markdown-content";
@@ -404,12 +405,15 @@ function FileContent({
   const artifact = /^artifacts\/([^/]+)\/index\.html$/.exec(file.path);
   if (artifact) {
     return (
-      <ArtifactPreview
-        key={file.path}
-        src={knowledgeArtifactUrl(server, artifact[1])}
-        sourceUrl={knowledgeRawUrl(server, file.path)}
-        title={file.name}
-      />
+      <div className="space-y-3">
+        <ArtifactShareControls key={artifact[1]} server={server} slug={artifact[1]} />
+        <ArtifactPreview
+          key={file.path}
+          src={knowledgeArtifactUrl(server, artifact[1])}
+          sourceUrl={knowledgeRawUrl(server, file.path)}
+          title={file.name}
+        />
+      </div>
     );
   }
   if (INLINE_IMAGE_TYPES.has(file.mime)) {

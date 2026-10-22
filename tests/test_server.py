@@ -24,13 +24,14 @@ import carapace.server as srv
 import carapace.server.jobs as server_jobs
 import carapace.server.platform_settings as platform_settings
 from carapace.api_keys import Access, ApiKeyGrant, ApiKeyStore, Scope
+from carapace.artifact_shares import ArtifactShareStore
 from carapace.auth import AuthStore
 from carapace.bootstrap import ensure_data_dir
 from carapace.codex_auth import CodexAccounts, CodexCredentialStore
 from carapace.config import build_config, resolve_user_knowledge_dir
 from carapace.credentials import CredentialBackendError, CredentialRegistry
 from carapace.credentials.protocol import UnsupportedCredentialValueKindError
-from carapace.database.models import SessionAuditRow
+from carapace.database.models import ArtifactRow, SessionAuditRow
 from carapace.git.store import GitStore
 from carapace.jobs import JobsScheduler, JobsStore
 from carapace.knowledge import KnowledgeRepoRegistry
@@ -52,7 +53,7 @@ from carapace.notifications.vapid import derive_vapid_public_key, ensure_vapid_c
 from carapace.platform_store import PlatformSettingsStore
 from carapace.sandbox.manager import SandboxManager
 from carapace.sandbox.state import SessionSandboxSnapshot
-from carapace.security.context import CredentialAccessEntry
+from carapace.security.context import CredentialAccessEntry, SentinelVerdict, SessionSecurity
 from carapace.server import app, sandbox_app
 from carapace.server.runtime import KnowledgeGitRuntime
 from carapace.session import SessionEngine, SessionManager, sent_files
@@ -154,6 +155,7 @@ def _setup_server(tmp_path, monkeypatch, db_factory):
     srv._auth_store.create_user(username="admin", password="admin-secret", display_name="Admin", roles=["admin"])
     srv._auth_store.create_user(username="thies", password="secret", display_name="Thies")
     srv._api_key_store = ApiKeyStore(db_factory, srv._auth_store)
+    srv._artifact_share_store = ArtifactShareStore(db_factory)
     srv._notification_store = NotificationStore(db_factory)
     srv._notification_presence = NotificationPresenceRegistry(
         ttl=timedelta(seconds=config.notifications.presence_ttl_seconds)
@@ -4037,3 +4039,156 @@ def test_home_open_loop_dismissal_routes(client: TestClient, auth_headers, monke
     assert client.post("/api/home/open-loops/unknown/dismiss", headers=auth_headers).status_code == 404
     assert client.delete("/api/home/open-loops/unknown/dismiss", headers=auth_headers).status_code == 204
     assert calls == [("dismiss", "thies", "known"), ("dismiss", "thies", "unknown"), ("undismiss", "thies", "unknown")]
+
+
+def test_artifact_sharing_revocation_and_token_rotation(client: TestClient, auth_headers: dict[str, str]) -> None:
+    _make_artifact()
+    endpoint = "/api/artifacts/report/share"
+    assert client.get(endpoint, headers=auth_headers).json() == {"url": None, "shared_at": None}
+    with srv._session_factory() as db:
+        assert db.get(ArtifactRow, ("thies", "report")) is None
+
+    first = client.put(endpoint, headers=auth_headers)
+    assert first.status_code == 200
+    first_url = first.json()["url"]
+    assert first.json()["shared_at"] is not None
+    assert client.get(endpoint, headers=auth_headers).json() == first.json()
+    public = client.get(first_url)
+    assert public.status_code == 200
+    assert (
+        public.headers["content-security-policy"]
+        == client.get("/api/artifacts/report", headers=auth_headers).headers["content-security-policy"]
+    )
+    assert public.headers["x-content-type-options"] == "nosniff"
+    assert public.headers["referrer-policy"] == "no-referrer"
+    assert "no-store" in public.headers["cache-control"]
+    assert public.headers["content-type"] == "text/html; charset=utf-8"
+
+    assert client.delete(endpoint, headers=auth_headers).json() == {"url": None, "shared_at": None}
+    assert client.get(first_url).status_code == 404
+    second_url = client.put(endpoint, headers=auth_headers).json()["url"]
+    assert second_url != first_url
+    assert client.get(first_url).status_code == 404
+    assert client.get(second_url).status_code == 200
+    third_url = client.put(endpoint, headers=auth_headers).json()["url"]
+    assert third_url != second_url
+    assert client.get(second_url).status_code == 404
+    assert client.get(third_url).status_code == 200
+
+
+def test_shared_artifact_serves_current_content(client: TestClient, auth_headers: dict[str, str]) -> None:
+    directory = _make_artifact()
+    url = client.put("/api/artifacts/report/share", headers=auth_headers).json()["url"]
+    (directory / "index.html").write_text("<h1>Updated after sharing</h1>")
+    assert client.get(url).text == "<h1>Updated after sharing</h1>"
+    assert client.get(f"{url}/index.html").status_code == 404
+
+
+@pytest.mark.parametrize(
+    "failure", ["unshared", "missing_index", "missing_directory", "escaping_index", "escaping_directory"]
+)
+def test_public_artifact_failures_are_indistinguishable(
+    client: TestClient, auth_headers: dict[str, str], failure: str
+) -> None:
+    directory = _make_artifact()
+    url = client.put("/api/artifacts/report/share", headers=auth_headers).json()["url"]
+    if failure == "unshared":
+        client.delete("/api/artifacts/report/share", headers=auth_headers)
+    elif failure == "missing_index":
+        (directory / "index.html").unlink()
+    elif failure == "missing_directory":
+        directory.rename(directory.parent / "renamed")
+    else:
+        private = directory.parent.parent / "private"
+        private.mkdir()
+        (private / "index.html").write_text("<h1>Private content</h1>")
+        if failure == "escaping_index":
+            (directory / "index.html").unlink()
+            (directory / "index.html").symlink_to(private / "index.html")
+        else:
+            directory.rename(directory.parent / "renamed")
+            directory.symlink_to(private, target_is_directory=True)
+    response = client.get(url)
+    unknown = client.get("/api/public/a/unknown-token")
+    assert response.status_code == unknown.status_code == 404
+    assert response.json() == unknown.json() == {"detail": "Not Found"}
+    assert response.headers["referrer-policy"] == unknown.headers["referrer-policy"] == "no-referrer"
+    assert response.headers["content-security-policy"] == unknown.headers["content-security-policy"]
+    assert "no-store" in response.headers["cache-control"]
+
+
+def test_artifact_shares_are_owner_scoped(
+    client: TestClient, auth_headers: dict[str, str], admin_auth_headers: dict[str, str]
+) -> None:
+    _make_artifact()
+    admin_dir = srv._knowledge_repo_registry.get_for_user("admin").knowledge_dir / "artifacts" / "report"
+    admin_dir.mkdir(parents=True)
+    (admin_dir / "index.html").write_text("<h1>Admin report</h1>")
+    endpoint = "/api/artifacts/report/share"
+    user_url = client.put(endpoint, headers=auth_headers).json()["url"]
+    assert client.get(endpoint, headers=admin_auth_headers).json()["url"] is None
+    admin_url = client.put(endpoint, headers=admin_auth_headers).json()["url"]
+    assert admin_url != user_url
+    assert "Admin report" not in client.get(user_url).text
+    assert client.get(admin_url).text == "<h1>Admin report</h1>"
+    client.delete(endpoint, headers=admin_auth_headers)
+    assert client.get(admin_url).status_code == 404
+    assert client.get(user_url).status_code == 200
+
+
+def test_artifact_sharing_requires_authenticated_knowledge_write(
+    client: TestClient, auth_headers: dict[str, str]
+) -> None:
+    _make_artifact()
+    endpoint = "/api/artifacts/report/share"
+    read_headers = _api_key_headers("thies", [ApiKeyGrant(scope=Scope.knowledge, access=Access.read)])
+    for method in ("GET", "PUT", "DELETE"):
+        assert client.request(method, endpoint).status_code == 401
+        assert client.request(method, endpoint, headers=read_headers).status_code == 403
+    write_headers = _api_key_headers("thies", [ApiKeyGrant(scope=Scope.knowledge, access=Access.write)])
+    assert client.put(endpoint, headers=write_headers).status_code == 200
+
+
+def test_revoking_a_deleted_artifact_does_not_republish_on_restore(
+    client: TestClient, auth_headers: dict[str, str]
+) -> None:
+    directory = _make_artifact()
+    endpoint = "/api/artifacts/report/share"
+    url = client.put(endpoint, headers=auth_headers).json()["url"]
+    (directory / "index.html").unlink()
+    assert client.delete(endpoint, headers=auth_headers).status_code == 200
+    (directory / "index.html").write_text("<h1>Restored</h1>")
+    assert client.get(url).status_code == 404
+
+
+def test_internal_push_review_uses_live_owner_scoped_sharing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sid = _make_session()
+    active = srv._engine.get_or_activate(sid)
+    assert active.sentinel is not None
+    prompts: list[str] = []
+
+    async def capture(_session: SessionSecurity, prompt: str, **_kwargs: object) -> SentinelVerdict:
+        prompts.append(prompt)
+        return SentinelVerdict(decision="allow", explanation="ok", risk_level="low")
+
+    # Keep the real prompt construction and database lookup, without a model request.
+    monkeypatch.setattr(active.sentinel, "_run_evaluation", capture)
+    srv._artifact_share_store.enable("thies", "report")
+    srv._artifact_share_store.enable("admin", "private-report")
+    internal = TestClient(srv.internal_app)
+    for slug, expected in [("report", True), ("private-report", False)]:
+        response = internal.post(
+            "/internal/sentinel/evaluate-push",
+            json={
+                "session_id": sid,
+                "ref": "refs/heads/main",
+                "is_default_branch": True,
+                "commits": "Update artifact",
+                "diff": f"--- a/artifacts/{slug}/index.html\n+++ /dev/null",
+            },
+        )
+        assert response.status_code == 200
+        assert response.json() == {"verdict": "allow"}
+        assert ("this push is a publication." in prompts[-1]) is expected
