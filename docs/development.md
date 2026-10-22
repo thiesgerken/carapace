@@ -68,6 +68,8 @@ nix flake check
 
 The check derivations substitute the activator's deliberately absolute FHS executable paths only in their private source copy, using `--replace-fail`; the deployed sandbox script is unchanged. SHA-256-pinned `cl100k_base` and `o200k_base` BPE files populate a shared tiktoken cache used by checks and the server image, so tokenization needs no first-use network download on a fresh pod.
 
+Checks set `SSL_CERT_FILE` to the pinned CA bundle because HTTP clients initialize TLS even when tests do not make network requests.
+
 ```sh
 nix build .#checks.<system>.pytest
 nix build .#ciBuilds.<system>.server-image
@@ -123,6 +125,8 @@ The only Python source-build override supplies setuptools to `http-ece`, whose r
 ## CI and publishing
 
 [CI](../.github/workflows/ci.yml) calls [Nix verification](../.github/workflows/nix-verify.yml). PR verification has read-only repository access, builds the sandbox, smoke-tests loaded images, and uploads the verified x64 image archives and chart data.
+
+Failed Nix builds retain expanded log tails in CI. Locally, `nix log .#checks.<system>.<name>` shows the stored build log for a failing check.
 
 [PR publication](../.github/workflows/publish-pr.yml) runs the trusted workflow from `main` after successful CI. It checks that the tested SHA still belongs to an open same-repository PR against `main`, then publishes those archives with Skopeo. It does not check out or execute PR code with registry write access. Chart previews use `<base>-pr.<number>` and `<base>-pr.<number>.g<sha>`.
 

@@ -36,7 +36,7 @@ jobs:
       - name: Evaluate and realize every required CI output
         run: |
           mkdir -p dist
-          time result-build-tool/bin/nix-fast-build --no-nom \
+          time result-build-tool/bin/nix-fast-build --no-nom --option log-lines 1000 \
             --flake .#ciBuilds.x86_64-linux --systems x86_64-linux \
             --out-link result-ci --result-file dist/ci-results.json
           echo "$PWD/result-ci-tools/bin" >> "$GITHUB_PATH"

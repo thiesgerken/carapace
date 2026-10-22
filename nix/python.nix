@@ -67,6 +67,8 @@ let
       {
         inherit src;
         TIKTOKEN_CACHE_DIR = tokenizerCache;
+        # HTTPX loads trust roots at construction, even in network-isolated tests.
+        SSL_CERT_FILE = "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
         nativeBuildInputs = [
           dev
           pkgs.gitMinimal
