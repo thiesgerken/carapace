@@ -38,8 +38,8 @@ export function ConnectForm({ onConnect }: ConnectFormProps) {
       <form onSubmit={handleSubmit} className="w-full max-w-sm space-y-4">
         <div className="space-y-1.5 text-center">
           <h1>
-            <Image src="/logo-light.svg" alt="carapace" width={561} height={87} priority className="mx-auto h-auto w-70 max-w-full dark:hidden" />
-            <Image src="/logo-dark.svg" alt="carapace" width={561} height={87} priority className="mx-auto hidden h-auto w-70 max-w-full dark:block" />
+            <Image src="/logo-light.svg" alt="carapace" width={561} height={109} priority className="mx-auto h-auto w-70 max-w-full dark:hidden" />
+            <Image src="/logo-dark.svg" alt="carapace" width={561} height={109} priority className="mx-auto hidden h-auto w-70 max-w-full dark:block" />
           </h1>
           <p className="text-sm text-muted-foreground">
             {t("description")}

@@ -206,8 +206,9 @@ Additional prerequisites: Python 3.12+, `uv`, Node.js 24+, and `pnpm`.
 The organic turtle in `docs/assets/icon.svg` is the canonical mark. The wordmark is
 Fraunces SemiBold (weight 600, optical size 9, softness 0, wonk 1), with -0.043 em
 tracking. Logo and wordmark SVGs contain outlined letters, so the app and README
-need no font download. Light and dark lockups use the same geometry; personalized
-agent names and icons remain independent of the product branding.
+need no font download. In both light and dark lockups, the turtle's feet align with
+the wordmark baseline, leaving the `p` descender below. Personalized agent names
+and icons remain independent of the product branding.
 
 To regenerate the SVG assets, download the upright variable
 [Fraunces font](https://github.com/google/fonts/tree/main/ofl/fraunces)

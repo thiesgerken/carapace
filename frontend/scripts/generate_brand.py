@@ -72,9 +72,9 @@ def main(font_path: Path) -> None:
         raise ValueError("The canonical icon must contain its artwork in a group")
 
     scale = 96 / upm
-    # The artwork occupies y=43..122 in the square icon; align the visible ink,
-    # not the SVG boxes, so the descenders do not push the wordmark off-centre.
-    text_y = 82.5 - (top + bottom) * scale / 2
+    # Align the feet (y=122 in the square icon) with the text baseline.
+    # Including the p descender in the alignment makes the turtle sit too low.
+    text_y = 122
     text_x = 180 - left * scale
     box_top = min(43, text_y + top * scale) - 4
     box_bottom = max(122, text_y + bottom * scale) + 4
