@@ -1,12 +1,13 @@
 "use client";
 
 import { useTranslations } from "next-intl";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Archive,
   ChevronRight,
   FileText,
   FilePen,
+  FolderCode,
   GitBranch,
   Globe,
   KeyRound,
@@ -33,6 +34,8 @@ import {
 } from "@/lib/sandbox-read";
 import type { CompactionAnnotation, SentFile } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { sentFileUrl } from "@/lib/api";
+import { artifactSnapshotTitle, sentArtifactSlug } from "@/lib/artifacts";
 
 interface ToolCallBadgeProps {
   tool: string;
@@ -521,6 +524,30 @@ export function ToolCallBadge({
   const isSendFileTool = tool === "send_file";
   const [open, setOpen] = useState(isSendFileTool);
   const [skillInstructionsOpen, setSkillInstructionsOpen] = useState(false);
+  const artifactSlug = isSendFileTool ? sentArtifactSlug(args.path) : null;
+  const sentFileId = files?.[0]?.file_id;
+  const artifactSource = artifactSlug !== null && sentFileId && server !== undefined && sessionId !== undefined
+    ? sentFileUrl(server, sessionId, sentFileId)
+    : null;
+  const [snapshotTitle, setSnapshotTitle] = useState<{ source: string; title: string } | null>(null);
+
+  useEffect(() => {
+    if (artifactSlug === null || artifactSource === null) return;
+    const controller = new AbortController();
+    async function loadTitle(source: string, slug: string) {
+      try {
+        const response = await fetch(source, { signal: controller.signal });
+        if (!response.ok) throw new Error(`Failed to load artifact snapshot: ${response.status}`);
+        const html = await response.text();
+        const title = artifactSnapshotTitle(html, slug);
+        if (!controller.signal.aborted) setSnapshotTitle({ source, title });
+      } catch (error) {
+        if (!controller.signal.aborted) console.error("Failed to load artifact snapshot title", error);
+      }
+    }
+    void loadTitle(artifactSource, artifactSlug);
+    return () => controller.abort();
+  }, [artifactSlug, artifactSource]);
   void _detail;
   const source = approvalSource;
   const verdict = approvalVerdict;
@@ -595,7 +622,9 @@ export function ToolCallBadge({
     (credentialAccessPath.length === 0 || credentialAccessPath === "<list>");
   const isCompleted =
     !loading && (result != null || exitCode != null || isAuxiliaryTool);
-  const toolLabel = isMcpTool
+  const toolLabel = artifactSlug !== null
+    ? t("labels.artifact", { title: snapshotTitle?.source === artifactSource ? snapshotTitle.title : artifactSlug })
+    : isMcpTool
     ? mcpServer
       ? `${mcpServer} · ${mcpTool}`
       : mcpTool
@@ -618,7 +647,7 @@ export function ToolCallBadge({
     t,
   );
   const argsSummary =
-    isExecTool
+    artifactSlug !== null ? "" : isExecTool
       ? execTitle || execCommand || t("fallbacks.missingCommand")
       : isReadTool
         ? formatReadSummaryFromSplit(
@@ -673,12 +702,12 @@ export function ToolCallBadge({
           )}
         />
         {(() => {
-          const ToolIcon = TOOL_ICONS[tool] ?? (isMcpTool ? Plug : undefined);
+          const ToolIcon = artifactSlug !== null ? FolderCode : TOOL_ICONS[tool] ?? (isMcpTool ? Plug : undefined);
           return ToolIcon ? (
             <ToolIcon className="h-3 w-3 shrink-0 text-foreground/65 dark:text-foreground/70" />
           ) : null;
         })()}
-        <span className="shrink-0 font-medium text-foreground/85 dark:text-foreground/90">
+        <span className={cn("font-medium text-foreground/85 dark:text-foreground/90", artifactSlug !== null ? "min-w-0 flex-1 truncate" : "shrink-0")} title={artifactSlug !== null ? toolLabel : undefined}>
           {toolLabel}
         </span>
         {argsSummary ? (

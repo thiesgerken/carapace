@@ -34,6 +34,9 @@ artifact renderer. Opaque-origin subresource requests do not carry the app's
 Sent files render outside collapsed tool-activity groups, including images and
 downloads. A chat snapshot sent from `/workspace/artifacts/<slug>/index.html`
 offers **Open current version**, without sharing controls on the snapshot.
+The delivery uses the artifact icon and **Artifact · &lt;title&gt;**, taking the title
+from the persisted HTML snapshot with client-side `DOMParser` (slug fallback).
+Other sent files retain the normal sent-file label.
 Other sent HTML files retain their inline snapshot without a live-view link.
 
 Opening an artifact directory or its `index.html` shows the live artifact directly.

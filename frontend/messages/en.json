@@ -992,6 +992,7 @@
             "accessDomain": "access domain",
             "replace": "replace",
             "sentFile": "sent file",
+            "artifact": "Artifact · {title}",
             "sendFile": "send file"
         },
         "summaries": {
