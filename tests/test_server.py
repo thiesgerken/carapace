@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import subprocess
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -124,6 +125,7 @@ def _setup_server(tmp_path, monkeypatch, db_factory):
     git_store.get_remote_url = AsyncMock(return_value=None)
     git_store.restore_remote = AsyncMock()
     git_store.last_commits = AsyncMock(return_value={})
+    git_store.session_history = AsyncMock(return_value=None)
     srv._data_dir = tmp_path
     srv._config = config
     srv._user_credential_registries = {}
@@ -4275,4 +4277,94 @@ def test_artifact_directory_and_index_expose_the_same_title(
     for path in ("artifacts/report", "artifacts/report/index.html"):
         response = client.get(f"/api/knowledge/browse/{path}", headers=auth_headers)
         assert response.status_code == 200
-        assert response.json()["artifact"] == {"slug": "report", "title": expected}
+        assert response.json()["artifact"] == {
+            "slug": "report",
+            "title": expected,
+            "created_in": None,
+            "updated_in": None,
+        }
+
+
+def test_artifact_sessions_follow_git_trailers_without_exposing_foreign_titles(
+    client: TestClient, auth_headers: dict[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    registry = KnowledgeRepoRegistry(srv._data_dir)
+    monkeypatch.setattr(srv, "_knowledge_repo_registry", registry)
+    root = registry.ensure_user_repo("thies").knowledge_dir
+    store = registry.get_for_user("thies").git_store
+
+    def git(*args: str) -> str:
+        return subprocess.run(
+            ["git", "-C", str(root), "-c", "core.hooksPath=/dev/null", *args],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout
+
+    git("init", "-b", "main")
+    git("config", "user.name", "Artifact test")
+    git("config", "user.email", "artifact@example.test")
+    directory = _make_artifact()
+    run = AsyncMock(wraps=store._run)
+    monkeypatch.setattr(store, "_run", run)
+    manager = srv._engine.session_mgr
+    created = manager.create_session(user="thies")
+    created.title = "Create quarterly report"
+    manager.save_state(created)
+    updated = manager.create_session(user="thies")
+    updated.title = "Revise quarterly report"
+    manager.save_state(updated)
+    foreign = manager.create_session(user="admin")
+    foreign.title = "Private foreign session title"
+    manager.save_state(foreign)
+    deleted = manager.create_session(user="thies")
+    manager.delete_session(deleted.session_id)
+
+    def browse(expected_created: dict[str, str | None] | None, expected_updated: dict[str, str | None] | None) -> None:
+        for path in ("artifacts/report", "artifacts/report/index.html"):
+            run.reset_mock()
+            response = client.get(f"/api/knowledge/browse/{path}", headers=auth_headers)
+            assert response.status_code == 200
+            metadata = response.json()["artifact"]
+            assert metadata["created_in"] == expected_created
+            assert metadata["updated_in"] == expected_updated
+            assert foreign.title not in response.text
+            assert sum("log" in call.args for call in run.call_args_list) == 1
+
+    def commit(session_id: str | None) -> None:
+        index = directory / "index.html"
+        index.write_text(index.read_text() + "\n<p>Revision</p>")
+        git("add", "artifacts/report/index.html")
+        message = "Update artifact" + (f"\n\ncarapace-session: {session_id}" if session_id else "")
+        git("commit", "-m", message)
+
+    browse(None, None)
+    commit(None)
+    browse(None, None)
+    commit(created.session_id)
+    creator = {"session_id": created.session_id, "title": created.title}
+    browse(creator, None)
+    commit(created.session_id)
+    browse(creator, None)
+    commit(updated.session_id)
+    browse(creator, {"session_id": updated.session_id, "title": updated.title})
+    commit(foreign.session_id)
+    browse(creator, {"session_id": foreign.session_id, "title": None})
+    commit(deleted.session_id)
+    browse(creator, {"session_id": deleted.session_id, "title": None})
+    commit("missing-session")
+    browse(creator, {"session_id": "missing-session", "title": None})
+    commit(None)
+    browse(creator, {"session_id": "missing-session", "title": None})
+
+    (root / "unrelated.txt").write_text("Not an artifact update")
+    git("add", "unrelated.txt")
+    git("commit", "-m", f"Unrelated change\n\ncarapace-session: {updated.session_id}")
+    browse(creator, {"session_id": "missing-session", "title": None})
+    _make_artifact("second")
+    run.reset_mock()
+    response = client.get("/api/knowledge/browse/artifacts", headers=auth_headers)
+    assert response.status_code == 200
+    assert {entry["name"] for entry in response.json()["entries"]} == {"report", "second"}
+    assert sum("log" in call.args for call in run.call_args_list) == 1
+    assert all("--format=%(trailers:key=carapace-session,valueonly)" not in call.args for call in run.call_args_list)

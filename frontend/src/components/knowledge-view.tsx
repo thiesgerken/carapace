@@ -547,7 +547,7 @@ export function KnowledgeView() {
             src={knowledgeArtifactUrl(server, result.artifact.slug)}
             sourceUrl={knowledgeRawUrl(server, `artifacts/${result.artifact.slug}/index.html`)}
             title={result.artifact.title}
-            artifact={{ server, slug: result.artifact.slug }}
+            artifact={{ server, ...result.artifact }}
           />
         ) : result?.type === "dir" ? (
           <>

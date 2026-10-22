@@ -20,6 +20,7 @@ from ..git.store import GitStore
 from ..models.credentials import CredentialRegistryProtocol
 from ..models.git import FileCommit
 from ..models.skills import SkillCarapaceConfig
+from ..session.manager import SessionManager
 from ..session.sent_files import INLINE_MIME_TYPES, guess_mime
 from ..skills import SkillDocument, parse_skill_document
 from .artifact_rendering import artifact_headers
@@ -114,9 +115,16 @@ class KnowledgeSkill(BaseModel):
     carapace: SkillCarapaceConfig | None = None
 
 
+class ArtifactSession(BaseModel):
+    session_id: str
+    title: str | None = None
+
+
 class KnowledgeArtifact(BaseModel):
     slug: str
     title: str
+    created_in: ArtifactSession | None = None
+    updated_in: ArtifactSession | None = None
 
 
 class KnowledgeDirListing(BaseModel):
@@ -329,6 +337,30 @@ async def attach_commits(git_store: GitStore, listing: KnowledgeDirListing) -> N
         entry.commit = commits.get(entry.name)
 
 
+def artifact_session(session_id: str, session_mgr: SessionManager, owner: str) -> ArtifactSession:
+    reference = ArtifactSession(session_id=session_id)
+    try:
+        owned = session_mgr.is_owned_by(session_id, owner)
+    except FileNotFoundError:
+        return reference
+    if owned:
+        state = session_mgr.load_state(session_id)
+        reference.title = state.title if state is not None else None
+    return reference
+
+
+async def attach_artifact_sessions(
+    artifact: KnowledgeArtifact, git_store: GitStore, session_mgr: SessionManager, owner: str
+) -> None:
+    history = await git_store.session_history(f"artifacts/{artifact.slug}/index.html")
+    if history is None:
+        return
+    created, updated = history
+    artifact.created_in = artifact_session(created, session_mgr, owner)
+    if updated != created:
+        artifact.updated_in = artifact_session(updated, session_mgr, owner)
+
+
 def parse_carapace_config(document: SkillDocument, skill_name: str) -> SkillCarapaceConfig | None:
     """Validate ``metadata.carapace``, or return None if absent or malformed."""
     raw = document.metadata.get("carapace")
@@ -385,7 +417,12 @@ async def browse_knowledge(
     target = resolve_target(root, path)
     if target.is_dir():
         listing = list_dir(root, target)
-        await attach_commits(handle.git_store, listing)
+        if listing.artifact is not None:
+            await attach_artifact_sessions(
+                listing.artifact, handle.git_store, server._engine.session_mgr, user.username
+            )
+        else:
+            await attach_commits(handle.git_store, listing)
         if any(entry.kind == "artifact" for entry in listing.entries):
             shared = server._artifact_share_store.shared_slugs(user.username)
             for entry in listing.entries:
@@ -414,6 +451,9 @@ async def browse_knowledge(
         )
     size = target.stat().st_size
     mime = guess_mime(target.name)
+    artifact = artifact_info(target, root)
+    if artifact is not None:
+        await attach_artifact_sessions(artifact, handle.git_store, server._engine.session_mgr, user.username)
     return KnowledgeFileInfo(
         path=rel,
         name=target.name,
@@ -422,7 +462,7 @@ async def browse_knowledge(
         # Only the types the client renders as an <img> skip their contents; anything
         # else it cannot display (an SVG, say) is still worth showing as source.
         content=None if mime in INLINE_MIME_TYPES else read_text_content(target, size),
-        artifact=artifact_info(target, root),
+        artifact=artifact,
     )
 
 

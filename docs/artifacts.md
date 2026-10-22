@@ -53,6 +53,14 @@ viewer adds knowledge and back navigation instead. The query parameter keeps the
 page compatible with static export. The artifact listing shows a shared badge
 from owner-scoped metadata, without exposing tokens.
 
+The live toolbar links to the session that created the artifact and, when different,
+the session that last updated it. These references come from the oldest and newest
+commits touching `artifacts/<slug>/index.html` with a `carapace-session: <id>` trailer,
+not from a database field. Commits without that trailer do not change the references.
+Titles resolve only for sessions owned by the viewer; missing, deleted, foreign, or
+untitled sessions show their recorded ID without a link. Uncommitted artifacts have
+no session references. History is read once per artifact view, not for listing rows.
+
 ## Rendering policy
 
 `GET /api/artifacts/<slug>` serves only `artifacts/<slug>/index.html`.

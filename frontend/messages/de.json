@@ -28,6 +28,8 @@
         "fullScreen": "Vollbild",
         "openKnowledge": "Im Wissensbrowser öffnen",
         "back": "Zurück",
+        "createdIn": "Erstellt in:",
+        "updatedIn": "Zuletzt geändert in:",
         "invalidSlug": "Öffne ein Artefakt im Chat oder im Wissensbrowser.",
         "shared": "Geteilt",
         "loadError": "Artefakt konnte nicht geladen werden.",

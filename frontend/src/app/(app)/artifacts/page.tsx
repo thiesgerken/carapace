@@ -35,7 +35,7 @@ function ArtifactViewer({ server, slug }: { server: string; slug: string }) {
 
   if (error) return <p role="alert" className="p-4 text-sm text-destructive">{t("loadError")}</p>;
   if (!artifact) return <p className="p-4 text-sm">{t("loadingArtifact")}</p>;
-  return <ArtifactPreview fullScreen src={knowledgeArtifactUrl(server, slug)} sourceUrl={knowledgeRawUrl(server, `artifacts/${slug}/index.html`)} title={artifact.title} artifact={{ server, slug }} />;
+  return <ArtifactPreview fullScreen src={knowledgeArtifactUrl(server, slug)} sourceUrl={knowledgeRawUrl(server, `artifacts/${slug}/index.html`)} title={artifact.title} artifact={{ server, ...artifact }} />;
 }
 
 export default function ArtifactPage() {
