@@ -31,6 +31,18 @@ tree. Both views require self-contained HTML; adjacent files are not served by t
 artifact renderer. Opaque-origin subresource requests do not carry the app's
 `SameSite=Lax` session cookie.
 
+Sent files render outside collapsed tool-activity groups, including images and
+downloads. A chat snapshot sent from `/workspace/artifacts/<slug>/index.html`
+offers **Full screen / share (current version)**, as does the knowledge artifact
+view. Other sent HTML files retain their inline snapshot without a live-view link.
+
+`/artifacts?slug=<slug>` opens a sidebar-free, full-viewport view of the live
+artifact with a compact toolbar for sharing, copying its public link, viewing
+source, opening the knowledge browser, and going back. Sharing controls live here
+rather than beside the knowledge preview, so there is one place to manage a live
+artifact's publication. The iframe uses the same sandbox as inline previews.
+The query parameter keeps the page compatible with the frontend's static export.
+
 ## Rendering policy
 
 `GET /api/artifacts/<slug>` serves only `artifacts/<slug>/index.html`.
@@ -69,7 +81,7 @@ obfuscated code; it does not prevent document navigation.
 
 ## Sharing
 
-The knowledge artifact view has a **Share publicly** switch. Enabling it asks for
+The full-screen artifact viewer has a **Share publicly** switch. Enabling it asks for
 confirmation that anyone with the link can see the page, including future agent
 changes. While sharing is on, the view shows the public link and a copy action.
 Sharing is controlled by the authenticated user, not by files in the knowledge

@@ -64,3 +64,24 @@ test("artifact source failures use the selected locale rather than raw HTTP erro
     restore();
   }
 });
+
+test("only sent artifact entry points link to the live viewer, not other HTML or escaping paths", async () => {
+  const restore = installDom();
+  try {
+    for (const [path, expected] of [
+      ["/workspace/artifacts/report/index.html", "/artifacts?slug=report"],
+      ["/workspace/reports/index.html", undefined],
+      ["/workspace/artifacts/../index.html", undefined],
+    ] as const) {
+      const view = await renderReact(
+        <NextIntlClientProvider locale="en" messages={messages} timeZone="UTC">
+          <FilePreview fileId="f1" name="index.html" path={path} mime="text/html" server={SERVER} sessionId="s1" />
+        </NextIntlClientProvider>,
+      );
+      assert.equal(view.container.querySelector('a[href^="/artifacts?"]')?.getAttribute("href"), expected);
+      await view.unmount();
+    }
+  } finally {
+    restore();
+  }
+});

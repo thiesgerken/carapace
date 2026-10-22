@@ -26,7 +26,7 @@ import { useTranslations } from "next-intl";
 
 import { useAppShell } from "@/components/app-shell-context";
 import { ArtifactPreview } from "@/components/artifact-preview";
-import { ArtifactShareControls } from "@/components/artifact-share-controls";
+import { ArtifactViewerLink } from "@/components/artifact-viewer-link";
 import { useAppLocale } from "@/components/locale-provider";
 import { GlobalGitPanel, KNOWLEDGE_GIT_CHANGED_EVENT, useGlobalGit } from "@/components/git-sync";
 import { MarkdownContent } from "@/components/markdown-content";
@@ -40,6 +40,7 @@ import {
   type KnowledgeSkill,
 } from "@/lib/api";
 import { useBrand } from "@/hooks/use-brand";
+import { artifactSlugFromPath } from "@/lib/artifacts";
 import { entryIcon } from "@/lib/file-icons";
 import { formatAbsoluteTime, formatRelativeTime } from "@/lib/format-time";
 import { knowledgeBrowseHref } from "@/lib/knowledge-links";
@@ -402,14 +403,14 @@ function FileContent({
   largeFileLabel: string;
   tooLargeLabel: string;
 }) {
-  const artifact = /^artifacts\/([^/]+)\/index\.html$/.exec(file.path);
+  const artifact = artifactSlugFromPath(file.path);
   if (artifact) {
     return (
       <div className="space-y-3">
-        <ArtifactShareControls key={artifact[1]} server={server} slug={artifact[1]} />
+        <ArtifactViewerLink slug={artifact} />
         <ArtifactPreview
           key={file.path}
-          src={knowledgeArtifactUrl(server, artifact[1])}
+          src={knowledgeArtifactUrl(server, artifact)}
           sourceUrl={knowledgeRawUrl(server, file.path)}
           title={file.name}
         />

@@ -5,6 +5,8 @@ import { Download, File as FileIcon } from "lucide-react";
 import { fetchSentFile, sentFileUrl } from "@/lib/api";
 import { cn, formatBytes } from "@/lib/utils";
 import { ArtifactPreview } from "@/components/artifact-preview";
+import { ArtifactViewerLink } from "@/components/artifact-viewer-link";
+import { artifactSlugFromPath } from "@/lib/artifacts";
 
 /** Renders a persisted file with its preview and download chip. */
 export function FilePreview({
@@ -26,6 +28,9 @@ export function FilePreview({
   sessionId?: string;
   className?: string;
 }) {
+  const artifactSlug = path?.startsWith("/workspace/")
+    ? artifactSlugFromPath(path.slice("/workspace/".length))
+    : null;
   // Keyed by fileId so a stale preview from a previous file is never shown while the
   // new one loads (the render guard below ignores any url whose key != current fileId).
   const [preview, setPreview] = useState<{ fileId: string; url: string } | null>(null);
@@ -66,6 +71,9 @@ export function FilePreview({
           sourceUrl={sentFileUrl(server, sessionId, fileId)}
           title={name}
         />
+      )}
+      {mime === "text/html" && artifactSlug !== null && (
+        <ArtifactViewerLink slug={artifactSlug} />
       )}
       {isImage && previewUrl && (
         <a href={previewUrl} target="_blank" rel="noreferrer" className="block">

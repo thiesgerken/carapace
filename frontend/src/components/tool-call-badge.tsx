@@ -1078,6 +1078,7 @@ export function ToolCallBadge({
                       key={file.file_id}
                       fileId={file.file_id}
                       name={file.name}
+                      path={typeof args.path === "string" ? args.path : undefined}
                       mime={file.mime}
                       size={file.size}
                       server={server}
