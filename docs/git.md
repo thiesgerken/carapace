@@ -82,6 +82,8 @@ Sandbox /workspace  <->  carapace /git/<owner>  <->  owner's upstream remote
 4. Security gate. Every push triggers a pre-receive hook that sends the full diff to the sentinel agent for evaluation.
 5. Upstream propagation. If the push is accepted and that user has an upstream remote configured, the server pushes only that user's repo upstream.
 
+The pre-receive hook uses the server's Python interpreter and standard library, plus Git. It does not require a shell, `jq`, or `curl`. Startup rewrites the hook with the current interpreter path so image updates cannot leave a stale shebang. Sentinel connections have a 10-second connect timeout and no read timeout, since user approval can take arbitrarily long. An unreachable sentinel or a hook invocation with no refs rejects the push.
+
 ### Git identity
 
 Commits made inside a sandbox use a per-session identity derived from the owning user's `author` template:

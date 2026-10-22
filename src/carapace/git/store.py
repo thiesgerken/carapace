@@ -4,6 +4,7 @@ import asyncio
 import os
 import re
 import socket
+import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -49,78 +50,91 @@ def _parse_last_commits(out: str, prefix: str) -> dict[str, FileCommit]:
     return found
 
 
-# Pre-receive hook script — gates every push through the sentinel.
-# CARAPACE_SESSION_ID, CARAPACE_DEFAULT_BRANCH, and CARAPACE_API_PORT
-# are set by the Git HTTP handler.
-_PRE_RECEIVE_HOOK = """\
-#!/bin/sh
-# Pre-receive hook — sentinel evaluation of incoming pushes
-set -e
+# The Git HTTP handler supplies the session, default branch, and API port.
+_PRE_RECEIVE_HOOK = (
+    f"#!{sys.executable}\n"
+    + """\
+from __future__ import annotations
 
-if ! command -v jq >/dev/null 2>&1; then
-    echo "DENIED: jq is required but not installed" >&2
-    exit 1
-fi
+import json
+import os
+import subprocess
+import sys
+from http.client import HTTPConnection, HTTPException, HTTPResponse
+from urllib.error import URLError
+from urllib.request import HTTPHandler, ProxyHandler, Request, build_opener
 
-if ! command -v curl >/dev/null 2>&1; then
-    echo "DENIED: curl is required but not installed" >&2
-    exit 1
-fi
 
-NULL_SHA="0000000000000000000000000000000000000000"
-EMPTY_TREE=$(git hash-object -t tree /dev/null)
-EVALUATED=0
+class SentinelConnection(HTTPConnection):
+    def connect(self) -> None:
+        super().connect()
+        # Approval may take arbitrarily long; only connecting has a deadline.
+        assert self.sock is not None
+        self.sock.settimeout(None)
 
-while read old_sha new_sha ref; do
-    EVALUATED=$((EVALUATED + 1))
 
-    if [ "$old_sha" = "$NULL_SHA" ]; then
-        # New branch: show all commits and diff against empty tree
-        changes=$(git log --oneline "$new_sha" 2>/dev/null)
-        diff=$(git diff "$EMPTY_TREE" "$new_sha" 2>/dev/null)
-    else
-        changes=$(git log --oneline "$old_sha..$new_sha" 2>/dev/null)
-        diff=$(git diff "$old_sha" "$new_sha" 2>/dev/null)
-    fi
+class SentinelHandler(HTTPHandler):
+    def http_open(self, request: Request) -> HTTPResponse:
+        return self.do_open(SentinelConnection, request)
 
-    branch=$(echo "$ref" | sed 's|refs/heads/||')
-    is_default="false"
-    if [ "$branch" = "$CARAPACE_DEFAULT_BRANCH" ]; then
-        is_default="true"
-    fi
 
-    SENTINEL_URL="http://127.0.0.1:${CARAPACE_API_PORT:-8320}/internal/sentinel/evaluate-push"
-    payload=$(jq -n \\
-        --arg sid "$CARAPACE_SESSION_ID" \\
-        --arg ref "$ref" \\
-        --argjson def "$is_default" \\
-        --arg commits "$changes" \\
-        --arg diff "$diff" \\
-        '{session_id: $sid, ref: $ref, is_default_branch: $def, commits: $commits, diff: $diff}')
-    # No --max-time: the sentinel may escalate to the user for approval,
-    # which can take arbitrarily long. --connect-timeout still catches a
-    # down server quickly.
-    result=$(curl -s --fail --connect-timeout 10 -X POST "$SENTINEL_URL" \\
-        -H "Content-Type: application/json" \\
-        -d "$payload") || {
-        echo "DENIED: failed to reach sentinel API" >&2
-        exit 1
-    }
+def git(*args: str) -> str:
+    return subprocess.check_output(
+        ["git", *args], encoding="utf-8", errors="replace"
+    ).rstrip("\\n")
 
-    verdict=$(echo "$result" | jq -r '.verdict')
 
-    if [ "$verdict" != "allow" ]; then
-        reason=$(echo "$result" | jq -r '.reason')
-        echo "DENIED by sentinel: $reason" >&2
-        exit 1
-    fi
-done
+def main() -> int:
+    null_sha = "0" * 40
+    evaluated = False
+    opener = build_opener(ProxyHandler({}), SentinelHandler())
+    port = os.environ.get("CARAPACE_API_PORT", "8320")
+    url = f"http://127.0.0.1:{port}/internal/sentinel/evaluate-push"
 
-if [ "$EVALUATED" -eq 0 ]; then
-    echo "DENIED: no refs received for evaluation" >&2
-    exit 1
-fi
+    for line in sys.stdin:
+        old_sha, new_sha, ref = line.split()
+        evaluated = True
+        if old_sha == null_sha:
+            changes = git("log", "--oneline", new_sha)
+            empty_tree = git("hash-object", "-t", "tree", os.devnull)
+            diff = git("diff", empty_tree, new_sha)
+        else:
+            changes = git("log", "--oneline", f"{old_sha}..{new_sha}")
+            diff = git("diff", old_sha, new_sha)
+
+        payload = {
+            "session_id": os.environ["CARAPACE_SESSION_ID"],
+            "ref": ref,
+            "is_default_branch": ref.removeprefix("refs/heads/") == os.environ["CARAPACE_DEFAULT_BRANCH"],
+            "commits": changes,
+            "diff": diff,
+        }
+        request = Request(
+            url,
+            data=json.dumps(payload).encode(),
+            headers={"Content-Type": "application/json"},
+        )
+        try:
+            with opener.open(request, timeout=10) as response:
+                result = json.load(response)
+        except (URLError, OSError, HTTPException):
+            print("DENIED: failed to reach sentinel API", file=sys.stderr)
+            return 1
+
+        if result["verdict"] != "allow":
+            print(f"DENIED by sentinel: {result['reason']}", file=sys.stderr)
+            return 1
+
+    if not evaluated:
+        print("DENIED: no refs received for evaluation", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
 """
+)
 
 
 def _log_subjects_as_bullets(subjects_stdout: str) -> str:
