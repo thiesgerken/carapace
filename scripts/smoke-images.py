@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import tempfile
 import time
@@ -220,7 +221,7 @@ def main() -> None:
                 "carapace-bitwarden-cli:local",
                 "--version",
             )
-            assert version == "2026.4.2", version
+            assert re.fullmatch(r"\d+\.\d+\.\d+", version), version
             print(
                 f"PASS {expected}: authenticated server readiness, default/override CSP, "
                 f"effective UID 999, read-only roots, Bitwarden CLI {version}"

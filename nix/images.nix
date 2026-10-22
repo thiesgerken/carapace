@@ -11,17 +11,17 @@ let
     echo 'carapace:x:999:' > "$out/etc/group"
   '';
   image =
-    name: contents: config:
+    name: contents: stateDirs: config:
     pkgs.dockerTools.buildLayeredImage {
       inherit name;
       tag = "local";
       contents = contents ++ [ identity ];
       extraCommands = ''
-        mkdir -p tmp var/lib/carapace var/lib/bitwarden-cli
+        mkdir -p tmp ${pkgs.lib.escapeShellArgs stateDirs}
         chmod 1777 tmp
       '';
-      fakeRootCommands = ''
-        chown 999:999 var/lib/carapace var/lib/bitwarden-cli
+      fakeRootCommands = pkgs.lib.optionalString (stateDirs != [ ]) ''
+        chown 999:999 ${pkgs.lib.escapeShellArgs stateDirs}
       '';
       config = {
         User = "999:999";
@@ -67,7 +67,7 @@ let
   '';
 in
 {
-  server-image = image "carapace" [ server pkgs.gitMinimal pkgs.cacert ] {
+  server-image = image "carapace" [ server pkgs.gitMinimal pkgs.cacert ] [ "var/lib/carapace" ] {
     Cmd = [ "${server}/bin/carapace-server" ];
     Env = tlsEnv ++ [
       "PATH=${
@@ -87,7 +87,7 @@ in
       "3128/tcp" = { };
     };
   };
-  frontend-image = image "carapace-frontend" [ pkgs.nginx frontend ] {
+  frontend-image = image "carapace-frontend" [ pkgs.nginx frontend ] [ ] {
     Cmd = [
       "${pkgs.nginx}/bin/nginx"
       "-e"
@@ -109,6 +109,7 @@ in
         pkgs.curl
         pkgs.cacert
       ]
+      [ "var/lib/bitwarden-cli" ]
       {
         Cmd = [
           "${shell}/bin/sh"
