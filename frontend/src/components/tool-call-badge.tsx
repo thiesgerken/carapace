@@ -685,144 +685,164 @@ export function ToolCallBadge({
     ? fencedCodeBlock("diff", buildUnifiedDiff(strReplaceSource, strReplaceReplacement))
     : "";
 
-  return (
-    <div className="relative my-1 w-full min-w-0">
-      <button
-        type="button"
-        onClick={() => setOpen(!open)}
-        aria-expanded={open}
-        className={cn(
-          "flex w-full min-w-0 gap-1.5 rounded-md px-2 py-1 text-xs text-left",
-          shouldClampSummary ? "items-start" : "items-center",
-          "text-muted-foreground hover:bg-accent transition-colors",
-          open && "bg-accent",
-          artifactSlug !== null && "pr-8",
-        )}
-      >
-        <ChevronRight
-          className={cn(
-            "h-3 w-3 shrink-0 transition-transform",
-            open && "rotate-90",
-          )}
-        />
-        {(() => {
-          const ToolIcon = artifactSlug !== null ? FolderCode : TOOL_ICONS[tool] ?? (isMcpTool ? Plug : undefined);
-          return ToolIcon ? (
-            <ToolIcon className="h-3 w-3 shrink-0 text-foreground/65 dark:text-foreground/70" />
-          ) : null;
-        })()}
-        <span className={cn("font-medium text-foreground/85 dark:text-foreground/90", artifactSlug !== null ? "min-w-0 flex-1 truncate" : "shrink-0")} title={artifactSlug !== null ? toolLabel : undefined}>
-          {toolLabel}
-        </span>
-        {argsSummary ? (
-          <span
-            className={cn(
-              "min-w-0 flex-1 font-mono text-[11px] text-foreground/60 dark:text-foreground/65",
-              shouldClampSummary
-                ? "overflow-hidden [white-space:break-spaces] break-words leading-4 [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2]"
-                : "overflow-hidden text-ellipsis whitespace-pre",
+  const indicators = (
+    <span className={cn("ml-auto inline-flex shrink-0 items-center gap-1.5", shouldClampSummary && "pt-0.5")}>
+      {(() => {
+        // Count credentials: from use_skill declared_creds + child credential_access events
+        const declaredCredCount = isUseSkillTool && Array.isArray(args.declared_creds)
+          ? args.declared_creds.length : 0;
+        const childCredCount = childCalls?.filter(c => c.tool === "credential_access").length ?? 0;
+        const credCount = declaredCredCount || childCredCount;
+        const credTooltip = isUseSkillTool && Array.isArray(args.declared_creds)
+          ? (args.declared_creds as Array<{ vault_path: string; name?: string }>).map(c => c.name || c.vault_path).join("\n")
+          : childCalls?.filter(c => c.tool === "credential_access").map(c => {
+              const name = c.args.name as string | undefined;
+              const vp = c.args.vault_path as string | undefined;
+              return name || vp || t("fallbacks.credential");
+            }).join("\n") ?? "";
+
+        // Count domains: from use_skill declared_domains + child proxy_domain events
+        const declaredDomainCount = isUseSkillTool && Array.isArray(args.declared_domains)
+          ? args.declared_domains.length : 0;
+        const childDomainCount = childCalls?.filter(c => c.tool === "proxy_domain").length ?? 0;
+        const domainCount = declaredDomainCount || childDomainCount;
+        const domainTooltip = isUseSkillTool && Array.isArray(args.declared_domains)
+          ? (args.declared_domains as string[]).join("\n")
+          : childCalls?.filter(c => c.tool === "proxy_domain").map(c => c.args.domain as string ?? "").join("\n") ?? "";
+
+        // Count MCP servers declared by use_skill
+        const declaredMcp = isUseSkillTool && Array.isArray(args.declared_mcp)
+          ? (args.declared_mcp as Array<{ name: string; url?: string; command?: string }>) : [];
+        const mcpTooltip = declaredMcp.map(s => `${s.name} (${s.command ? `stdio: ${s.command}` : s.url})`).join("\n");
+
+        return (
+          <>
+            {declaredMcp.length > 0 && (
+              <span
+                className="inline-flex items-center gap-0.5 rounded bg-blue-500/15 px-1.5 py-0.5 text-[10px] text-blue-600 dark:text-blue-400"
+                title={mcpTooltip}
+              >
+                <Plug className="h-2.5 w-2.5" />{declaredMcp.length}
+              </span>
             )}
-            title={argsSummary}
-          >
-            {argsSummary}
-          </span>
-        ) : null}
-        <span className={cn("ml-auto inline-flex shrink-0 items-center gap-1.5", shouldClampSummary && "pt-0.5")}>
-          {(() => {
-            // Count credentials: from use_skill declared_creds + child credential_access events
-            const declaredCredCount = isUseSkillTool && Array.isArray(args.declared_creds)
-              ? args.declared_creds.length : 0;
-            const childCredCount = childCalls?.filter(c => c.tool === "credential_access").length ?? 0;
-            const credCount = declaredCredCount || childCredCount;
-            const credTooltip = isUseSkillTool && Array.isArray(args.declared_creds)
-              ? (args.declared_creds as Array<{ vault_path: string; name?: string }>).map(c => c.name || c.vault_path).join("\n")
-              : childCalls?.filter(c => c.tool === "credential_access").map(c => {
-                  const name = c.args.name as string | undefined;
-                  const vp = c.args.vault_path as string | undefined;
-                  return name || vp || t("fallbacks.credential");
-                }).join("\n") ?? "";
-
-            // Count domains: from use_skill declared_domains + child proxy_domain events
-            const declaredDomainCount = isUseSkillTool && Array.isArray(args.declared_domains)
-              ? args.declared_domains.length : 0;
-            const childDomainCount = childCalls?.filter(c => c.tool === "proxy_domain").length ?? 0;
-            const domainCount = declaredDomainCount || childDomainCount;
-            const domainTooltip = isUseSkillTool && Array.isArray(args.declared_domains)
-              ? (args.declared_domains as string[]).join("\n")
-              : childCalls?.filter(c => c.tool === "proxy_domain").map(c => c.args.domain as string ?? "").join("\n") ?? "";
-
-            // Count MCP servers declared by use_skill
-            const declaredMcp = isUseSkillTool && Array.isArray(args.declared_mcp)
-              ? (args.declared_mcp as Array<{ name: string; url?: string; command?: string }>) : [];
-            const mcpTooltip = declaredMcp.map(s => `${s.name} (${s.command ? `stdio: ${s.command}` : s.url})`).join("\n");
-
-            return (
-              <>
-                {declaredMcp.length > 0 && (
-                  <span
-                    className="inline-flex items-center gap-0.5 rounded bg-blue-500/15 px-1.5 py-0.5 text-[10px] text-blue-600 dark:text-blue-400"
-                    title={mcpTooltip}
-                  >
-                    <Plug className="h-2.5 w-2.5" />{declaredMcp.length}
-                  </span>
-                )}
-                {credCount > 0 && (
-                  <span
-                    className="inline-flex items-center gap-0.5 rounded bg-blue-500/15 px-1.5 py-0.5 text-[10px] text-blue-600 dark:text-blue-400"
-                    title={credTooltip}
-                  >
-                    <KeyRound className="h-2.5 w-2.5" />{credCount}
-                  </span>
-                )}
-                {domainCount > 0 && (
-                  <span
-                    className="inline-flex items-center gap-0.5 rounded bg-blue-500/15 px-1.5 py-0.5 text-[10px] text-blue-600 dark:text-blue-400"
-                    title={domainTooltip}
-                  >
-                    <Globe className="h-2.5 w-2.5" />{domainCount}
-                  </span>
-                )}
-                {contextCount > 0 && (
-                  <span
-                    className="inline-flex items-center gap-0.5 rounded bg-teal-500/15 px-1.5 py-0.5 text-[10px] text-teal-600 dark:text-teal-400"
-                    title={contextTooltip}
-                  >
-                    <Puzzle className="h-2.5 w-2.5" />{contextCount}
-                  </span>
-                )}
-              </>
-            );
-          })()}
-          {source && <ApprovalBadge source={source} verdict={verdict} tooltip={finalDecisionMessage || sentinelExplanation || undefined} />}
-          {compaction?.method && (
-            <span
-              className="inline-flex items-center rounded bg-amber-500/15 p-0.5 text-amber-700 dark:text-amber-400"
-              title={tc("toolTitle", {
-                method: tc(`methods.${compaction.method}`),
-                orig: compaction.orig_tokens ?? 0,
-                summary: compaction.summary_tokens ?? 0,
-              })}
-            >
-              <Archive className="h-2.5 w-2.5" />
-            </span>
-          )}
-          {loading && (
-            <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
-          )}
-        </span>
-      </button>
-      {artifactSlug !== null && (
-        <a
-          href={artifactViewerHref(artifactSlug)}
-          target="_blank"
-          rel="noopener noreferrer"
-          aria-label={ta("openLiveInNewTab")}
-          title={ta("openLiveInNewTab")}
-          className="absolute right-0 top-0 inline-flex rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            {credCount > 0 && (
+              <span
+                className="inline-flex items-center gap-0.5 rounded bg-blue-500/15 px-1.5 py-0.5 text-[10px] text-blue-600 dark:text-blue-400"
+                title={credTooltip}
+              >
+                <KeyRound className="h-2.5 w-2.5" />{credCount}
+              </span>
+            )}
+            {domainCount > 0 && (
+              <span
+                className="inline-flex items-center gap-0.5 rounded bg-blue-500/15 px-1.5 py-0.5 text-[10px] text-blue-600 dark:text-blue-400"
+                title={domainTooltip}
+              >
+                <Globe className="h-2.5 w-2.5" />{domainCount}
+              </span>
+            )}
+            {contextCount > 0 && (
+              <span
+                className="inline-flex items-center gap-0.5 rounded bg-teal-500/15 px-1.5 py-0.5 text-[10px] text-teal-600 dark:text-teal-400"
+                title={contextTooltip}
+              >
+                <Puzzle className="h-2.5 w-2.5" />{contextCount}
+              </span>
+            )}
+          </>
+        );
+      })()}
+      {source && <ApprovalBadge source={source} verdict={verdict} tooltip={finalDecisionMessage || sentinelExplanation || undefined} />}
+      {compaction?.method && (
+        <span
+          className="inline-flex items-center rounded bg-amber-500/15 p-0.5 text-amber-700 dark:text-amber-400"
+          title={tc("toolTitle", {
+            method: tc(`methods.${compaction.method}`),
+            orig: compaction.orig_tokens ?? 0,
+            summary: compaction.summary_tokens ?? 0,
+          })}
         >
-          <ExternalLink className="h-3 w-3" />
-        </a>
+          <Archive className="h-2.5 w-2.5" />
+        </span>
       )}
+      {loading && (
+        <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
+      )}
+    </span>
+  );
+
+  return (
+    <div className="my-1 w-full min-w-0">
+      <div className={cn(
+        artifactSlug !== null && "flex items-stretch rounded-md text-muted-foreground hover:bg-accent transition-colors",
+        artifactSlug !== null && open && "bg-accent",
+      )}>
+        <button
+          type="button"
+          onClick={() => setOpen(!open)}
+          aria-expanded={open}
+          className={cn(
+            "flex min-w-0 gap-1.5 rounded-md px-2 py-1 text-xs text-left",
+            artifactSlug === null ? "w-full" : "pr-0",
+            shouldClampSummary ? "items-start" : "items-center",
+            "text-muted-foreground hover:bg-accent transition-colors",
+            open && "bg-accent",
+          )}
+        >
+          <ChevronRight
+            className={cn(
+              "h-3 w-3 shrink-0 transition-transform",
+              open && "rotate-90",
+            )}
+          />
+          {(() => {
+            const ToolIcon = artifactSlug !== null ? FolderCode : TOOL_ICONS[tool] ?? (isMcpTool ? Plug : undefined);
+            return ToolIcon ? (
+              <ToolIcon className="h-3 w-3 shrink-0 text-foreground/65 dark:text-foreground/70" />
+            ) : null;
+          })()}
+          <span className={cn("font-medium text-foreground/85 dark:text-foreground/90", artifactSlug !== null ? "min-w-0 truncate" : "shrink-0")} title={artifactSlug !== null ? toolLabel : undefined}>
+            {toolLabel}
+          </span>
+          {argsSummary ? (
+            <span
+              className={cn(
+                "min-w-0 flex-1 font-mono text-[11px] text-foreground/60 dark:text-foreground/65",
+                shouldClampSummary
+                  ? "overflow-hidden [white-space:break-spaces] break-words leading-4 [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2]"
+                  : "overflow-hidden text-ellipsis whitespace-pre",
+              )}
+              title={argsSummary}
+            >
+              {argsSummary}
+            </span>
+          ) : null}
+          {artifactSlug === null && indicators}
+        </button>
+        {artifactSlug !== null && (
+          <>
+            <a
+              href={artifactViewerHref(artifactSlug)}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label={ta("openLiveInNewTab")}
+              title={ta("openLiveInNewTab")}
+              className="inline-flex shrink-0 items-center rounded-md p-1.5 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <ExternalLink className="h-3 w-3" />
+            </a>
+            <button
+              type="button"
+              tabIndex={-1}
+              aria-hidden="true"
+              onClick={() => setOpen(!open)}
+              className="flex flex-1 items-center justify-end rounded-md py-1 pl-1.5 pr-2"
+            >
+              {indicators}
+            </button>
+          </>
+        )}
+      </div>
 
       {open && (
         <div className="tool-row-details ml-5 mt-1.5 rounded-lg border border-border/60 bg-muted/30 p-3 space-y-2 text-xs">

@@ -11,7 +11,7 @@ import { ToolCallBadge } from "./tool-call-badge";
 const SERVER = "https://carapace.example.test";
 
 function delivery(path: string, mime: string) {
-  return <ToolCallBadge tool="send_file" args={{ path }} detail="" result="Sent file" files={[{ file_id: "f1", name: path.split("/").at(-1)!, mime, size: 120 }]} server={SERVER} sessionId="s1" />;
+  return <ToolCallBadge tool="send_file" args={{ path }} detail="" result="Sent file" approvalSource="sentinel" approvalVerdict="allow" files={[{ file_id: "f1", name: path.split("/").at(-1)!, mime, size: 120 }]} server={SERVER} sessionId="s1" />;
 }
 
 test("artifact delivery labels use the persisted snapshot title in English and German, not the live title", async () => {
@@ -40,12 +40,26 @@ test("artifact delivery labels use the persisted snapshot title in English and G
       assert.equal(viewerLink.getAttribute("aria-label"), messages.artifacts.openLiveInNewTab);
       assert.equal(viewerLink.getAttribute("title"), messages.artifacts.openLiveInNewTab);
       assert.equal(viewerLink.closest("button"), null);
+      assert.ok(toggle.nextElementSibling === viewerLink);
+      const remainder = viewerLink.nextElementSibling;
+      assert.ok(remainder instanceof window.HTMLButtonElement);
+      assert.equal(remainder.tabIndex, -1);
+      assert.equal(remainder.getAttribute("aria-hidden"), "true");
+      assert.ok(remainder.querySelector(".lucide-shield-alert"));
+      const focusable = [...toggle.parentElement!.querySelectorAll<HTMLElement>("button, a")]
+        .filter(element => element.tabIndex >= 0);
+      assert.equal(focusable.length, 2);
+      assert.ok(focusable[0] === toggle && focusable[1] === viewerLink);
       viewerLink.addEventListener("click", event => event.preventDefault());
       await click(viewerLink);
       assert.equal(toggle.getAttribute("aria-expanded"), "false");
       await click(toggle);
       assert.equal(toggle.getAttribute("aria-expanded"), "true");
       await click(viewerLink);
+      assert.equal(toggle.getAttribute("aria-expanded"), "true");
+      await click(remainder);
+      assert.equal(toggle.getAttribute("aria-expanded"), "false");
+      await click(remainder);
       assert.equal(toggle.getAttribute("aria-expanded"), "true");
       const download = view.container.querySelector("a[download]");
       assert.equal(download?.getAttribute("download"), "report.html");
