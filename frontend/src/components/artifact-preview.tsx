@@ -24,9 +24,9 @@ export function ArtifactPreview({ src, sourceUrl, title }: { src: string; source
           setSource({ url: sourceUrl, text });
           setError(null);
         }
-      } catch (error) {
+      } catch {
         if (!controller.signal.aborted) {
-          setError(error instanceof Error ? error.message : t("sourceError"));
+          setError(t("sourceError"));
         }
       }
     }

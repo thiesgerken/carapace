@@ -1840,8 +1840,8 @@ export function knowledgeRawUrl(
   return `${server}${knowledgeBrowsePath(path)}${query}`;
 }
 
-export function knowledgeArtifactUrl(server: string, path: string): string {
-  return `${server}/api/artifacts/${path.split("/").slice(1).map(encodeURIComponent).join("/")}`;
+export function knowledgeArtifactUrl(server: string, slug: string): string {
+  return `${server}/api/artifacts/${encodeURIComponent(slug)}`;
 }
 
 function memoryTaskQuery(filter: MemoryTaskFilter, sort: MemoryTaskSort, cursor: string | null): string {

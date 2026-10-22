@@ -173,7 +173,7 @@ function EntryRow({
         href={knowledgeBrowseHref(entryPath)}
         className="min-w-0 flex-1 truncate rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
-        {entry.kind === "artifact" ? entry.label ?? entry.name : entry.name}
+        {entry.name}
       </Link>
       {/* Flexible middle column, the first thing to go as the row narrows: the session
           title where there is one, the commit otherwise. A session's commit subject
@@ -186,6 +186,13 @@ function EntryRow({
         >
           {entry.label ?? untitledLabel}
         </Link>
+      ) : entry.kind === "artifact" && entry.label ? (
+        <span
+          title={entry.label}
+          className="hidden min-w-0 max-w-[40%] shrink basis-[40%] truncate text-xs text-muted-foreground lg:block"
+        >
+          {entry.label}
+        </span>
       ) : entry.commit ? (
         <span className="group/commit hidden min-w-0 max-w-[40%] shrink basis-[40%] items-baseline gap-2 text-xs text-muted-foreground lg:flex">
           <CopyHash commit={entry.commit} copyLabel={copyHashLabel} copiedLabel={copiedLabel} />
@@ -394,11 +401,12 @@ function FileContent({
   largeFileLabel: string;
   tooLargeLabel: string;
 }) {
-  if (/^artifacts\/[^/]+\/.+\.html$/i.test(file.path)) {
+  const artifact = /^artifacts\/([^/]+)\/index\.html$/.exec(file.path);
+  if (artifact) {
     return (
       <ArtifactPreview
         key={file.path}
-        src={knowledgeArtifactUrl(server, file.path)}
+        src={knowledgeArtifactUrl(server, artifact[1])}
         sourceUrl={knowledgeRawUrl(server, file.path)}
         title={file.name}
       />

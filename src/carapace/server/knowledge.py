@@ -171,13 +171,13 @@ def resolve_target(root: Path, raw_path: str) -> Path:
     return target
 
 
-def resolve_artifact_file(root: Path, slug: str, path: str) -> Path:
+def resolve_artifact_index(root: Path, slug: str) -> Path:
+    if not slug or slug in {".", ".."} or "/" in slug or "\\" in slug:
+        raise HTTPException(status_code=404, detail="Not found")
     directory = resolve_target(root, f"artifacts/{slug}")
     if directory != root / "artifacts" / slug or not directory.is_dir():
         raise HTTPException(status_code=404, detail="Not found")
-    if not resolve_target(directory, "index.html").is_file():
-        raise HTTPException(status_code=404, detail="Not found")
-    target = resolve_target(directory, path or "index.html")
+    target = resolve_target(directory, "index.html")
     if not target.is_file():
         raise HTTPException(status_code=404, detail="Not found")
     return target
@@ -204,15 +204,9 @@ class _ArtifactTitleParser(HTMLParser):
             self.parts.append(data)
 
 
-def artifact_title(directory: Path, root: Path) -> str | None:
-    relative = directory.relative_to(root).parts
-    if len(relative) != 2 or relative[0] != "artifacts":
-        return None
-    entry = contained_target(directory / "index.html", directory)
-    if entry is None or not entry.is_file():
-        return None
+def artifact_title(index: Path) -> str | None:
     parser = _ArtifactTitleParser()
-    with entry.open(encoding="utf-8", errors="replace") as document:
+    with index.open(encoding="utf-8", errors="replace") as document:
         while chunk := document.read(4096):
             parser.feed(chunk)
             if parser.finished:
@@ -237,7 +231,7 @@ def build_entry(child: Path, root: Path) -> KnowledgeEntry:
     if len(relative) == 2 and relative[0] == "artifacts":
         index = contained_target(resolved / "index.html", resolved)
         if index is not None and index.is_file():
-            return KnowledgeEntry(name=child.name, type="dir", kind="artifact", label=artifact_title(resolved, root))
+            return KnowledgeEntry(name=child.name, type="dir", kind="artifact", label=artifact_title(index))
     archive = session_archive_entry(resolved, root)
     if archive is not None:
         title, session_id = archive
@@ -398,13 +392,11 @@ async def browse_knowledge(
     )
 
 
-@router.get("/artifacts/{slug}/")
-@router.get("/artifacts/{slug}/{path:path}")
+@router.get("/artifacts/{slug}")
 async def render_artifact(
     user: Annotated[UserIdentity, Depends(require(Scope.knowledge, Access.read))],
     slug: str,
-    path: str = "index.html",
 ) -> FileResponse:
     handle = server._knowledge_repo_registry.get_for_user(user.username)
-    target = resolve_artifact_file(handle.knowledge_dir.resolve(), slug, path)
-    return FileResponse(target, media_type=guess_mime(target.name), headers=artifact_headers())
+    target = resolve_artifact_index(handle.knowledge_dir.resolve(), slug)
+    return FileResponse(target, media_type="text/html", headers=artifact_headers())

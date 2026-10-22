@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import re
 from collections.abc import Callable
 from datetime import timedelta
 from os import stat_result
@@ -14,6 +13,7 @@ from pydantic_ai.models import infer_model
 from pydantic_ai.settings import ModelSettings
 from pydantic_ai.usage import UsageLimits
 
+from ..git.diff import touched_paths
 from ..llm import ModelFactory
 from ..usage import LlmRequestLogCapability, UsageTracker, provider_cost_usd_from_messages
 from .context import (
@@ -731,11 +731,7 @@ class Sentinel:
             prompt_parts.append(f"Ref: {ref}")
             prompt_parts.append(f"Is default branch: {is_default_branch}")
             prompt_parts.append(f"Commits:\n{commits}")
-            if re.search(
-                r'^(?:(?:\+\+\+|---) "?[ab]/|diff --git "?a/|(?:rename|copy) (?:from|to) "?)artifacts/',
-                diff,
-                re.MULTILINE,
-            ):
+            if any(path.startswith("artifacts/") for path in touched_paths(diff)):
                 prompt_parts.append(
                     "Artifact security notice: Artifact scripts run in the user's browser outside the sandbox "
                     "egress proxy. Treat external navigation (location, window.open, meta refresh, or auto-clicked "

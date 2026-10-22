@@ -3664,18 +3664,11 @@ def _make_artifact(slug: str = "report") -> Path:
     return directory
 
 
-@pytest.mark.parametrize(
-    ("path", "mime"),
-    [("", "text/html; charset=utf-8"), ("index.html", "text/html; charset=utf-8"), ("chart.svg", "image/svg+xml")],
-)
-def test_artifact_responses_always_sandbox(
-    client: TestClient, auth_headers: dict[str, str], path: str, mime: str
-) -> None:
+def test_artifact_response_always_sandboxes_the_entry_point(client: TestClient, auth_headers: dict[str, str]) -> None:
     directory = _make_artifact()
-    (directory / "chart.svg").write_text("<svg/>")
-    response = client.get(f"/api/artifacts/report/{path}", headers=auth_headers)
+    response = client.get("/api/artifacts/report", headers=auth_headers)
     assert response.status_code == 200
-    assert response.headers["content-type"] == mime
+    assert response.headers["content-type"] == "text/html; charset=utf-8"
     assert response.headers["x-content-type-options"] == "nosniff"
     directives = response.headers["content-security-policy"].split("; ")
     assert "sandbox allow-scripts" in directives
@@ -3683,38 +3676,56 @@ def test_artifact_responses_always_sandbox(
     assert "connect-src 'none'" in directives
     assert "form-action 'none'" in directives
     assert "frame-ancestors 'self'" in directives
+    assert "img-src data: blob:" in directives
+    assert response.text == (directory / "index.html").read_text()
 
 
 def test_artifact_routes_require_the_owners_authentication(
     client: TestClient, admin_auth_headers: dict[str, str]
 ) -> None:
     _make_artifact()
-    assert client.get("/api/artifacts/report/").status_code == 401
-    assert client.get("/api/artifacts/report/", headers=admin_auth_headers).status_code == 404
+    assert client.get("/api/artifacts/report").status_code == 401
+    assert client.get("/api/artifacts/report", headers=admin_auth_headers).status_code == 404
 
 
 @pytest.mark.parametrize(
-    "path",
-    ["%2e%2e%2fother/index.html", "%2e%2e%2f%2e%2e%2fSOUL.md", "outside.html", ".git/config"],
+    "url",
+    [
+        "/api/artifacts/%2e",
+        "/api/artifacts/%2e%2e",
+        "/api/artifacts/a%5Cb",
+        "/api/artifacts/report%2Fother",
+        "/api/artifacts/report/chart.png",
+        "/api/artifacts/report/page.html",
+        "/api/artifacts/report/.git/config",
+        "/api/artifacts/alias",
+    ],
 )
-def test_artifact_route_confines_paths_to_its_directory(
-    client: TestClient, auth_headers: dict[str, str], path: str
+def test_artifact_route_rejects_invalid_slugs_and_adjacent_files(
+    client: TestClient, auth_headers: dict[str, str], url: str
 ) -> None:
     directory = _make_artifact()
-    _make_artifact("other")
-    root = directory.parent.parent
-    (root / "SOUL.md").write_text("private")
-    (directory / "outside.html").symlink_to(root / "SOUL.md")
-    (directory / ".git").mkdir()
-    (directory / ".git" / "config").write_text("private")
-    assert client.get(f"/api/artifacts/report/{path}", headers=auth_headers).status_code == 404
+    (directory.parent / "index.html").write_text("<h1>Not a slug</h1>")
+    (directory.parent / "alias").symlink_to(directory, target_is_directory=True)
+    (directory / "chart.png").write_bytes(b"PNGDATA")
+    (directory / "page.html").write_text("<h1>Not the entry point</h1>")
+    assert client.get(url, headers=auth_headers).status_code == 404
 
 
 def test_artifact_route_requires_an_entry_point(client: TestClient, auth_headers: dict[str, str]) -> None:
     directory = _make_artifact()
     (directory / "index.html").unlink()
     (directory / "page.html").write_text("not an artifact")
-    assert client.get("/api/artifacts/report/page.html", headers=auth_headers).status_code == 404
+    assert client.get("/api/artifacts/report", headers=auth_headers).status_code == 404
+
+
+def test_artifact_route_rejects_an_escaping_entry_point(client: TestClient, auth_headers: dict[str, str]) -> None:
+    directory = _make_artifact()
+    outside = directory.parent.parent / "private.html"
+    outside.write_text("<h1>Private</h1>")
+    (directory / "index.html").unlink()
+    (directory / "index.html").symlink_to(outside)
+    assert client.get("/api/artifacts/report", headers=auth_headers).status_code == 404
 
 
 def test_sent_artifact_renders_the_snapshot_with_sandbox_headers(

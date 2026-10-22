@@ -9,7 +9,7 @@ def artifact_headers() -> dict[str, str]:
             f"sandbox {ARTIFACT_SANDBOX}; default-src 'none'; "
             "script-src 'unsafe-inline' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net/npm/; "
             "style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; "
-            "img-src data: blob: 'self'; connect-src 'none'; form-action 'none'; frame-ancestors 'self'"
+            "img-src data: blob:; connect-src 'none'; form-action 'none'; frame-ancestors 'self'"
         ),
         "X-Content-Type-Options": "nosniff",
     }
