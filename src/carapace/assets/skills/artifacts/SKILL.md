@@ -34,9 +34,8 @@ Do not turn a simple answer into a page just because HTML is available.
   tokens, or private data beyond what the user asked to include. Do not inspect
   sharing state, request share tokens, or try to enable sharing. Sharing is a
   browser-only user action, and you are not told which artifacts are shared.
-- Keep the entire `artifacts/<slug>/` directory at or below **10 MiB
-  (10,485,760 bytes)**, including any other files left in it. Oversized pushes are
-  rejected before sentinel review.
+- Keep only `index.html` in `artifacts/<slug>/`, at or below **10 MiB
+  (10,485,760 bytes)**. Oversized pushes are rejected before sentinel review.
 - Make no runtime data or network calls. `connect-src 'none'` blocks `fetch`, XHR,
   WebSocket, EventSource, and `sendBeacon`. Embed the data the page needs; no API
   access, telemetry, remote images, or server-backed forms.
@@ -58,10 +57,6 @@ Do not turn a simple answer into a page just because HTML is available.
 - Use `prefers-color-scheme` for light/dark styling. The app does not pass its
   selected theme into the iframe.
 
-The sandbox is not a navigation firewall: a page can still navigate itself.
-The prohibition on navigation is a safety requirement, not a browser guarantee.
-Sentinel review is best effort, including for obfuscated code.
-
 ## Build and deliver
 
 1. Pick the format above. For an artifact, read
@@ -70,11 +65,23 @@ Sentinel review is best effort, including for obfuscated code.
    [charts.md](references/charts.md) if a chart helps explain the data.
 2. Write `/workspace/artifacts/<slug>/index.html`. Replace the sample content and
    title with the user's subject. Keep all data and behavior inside that page.
-3. Check the page at 375px and a desktop width, in light and dark mode. Exercise
-   every control with the keyboard. Verify the calculations and any chart labels,
-   units, and baselines; label example or estimated data honestly.
-4. Inspect the directory size and your Git diff. Stage only the artifact paths,
-   then commit and push from the knowledge checkout, for example:
+3. Re-read the HTML against [design.md](references/design.md): responsive layout
+   rules for 375px, light/dark tokens, semantic controls, labels, and focus styles.
+   Recompute the numbers and verify chart labels, units, and baselines; label
+   example or estimated data honestly. Inspect URLs, navigation, and size (using
+   your slug):
+
+   ```sh
+   grep -nE 'https?://' /workspace/artifacts/release-readiness/index.html
+   grep -nE 'location|window\.open|http-equiv|target=' /workspace/artifacts/release-readiness/index.html
+   du -sb /workspace/artifacts/release-readiness
+   ```
+
+   Confirm every URL uses an allowed origin, with exact versions for CDN
+   libraries; Google Fonts is the font exception. Inspect navigation matches
+   and remove any navigation code. Keep the directory within the size limit.
+4. Inspect your Git diff. Stage only the artifact paths, then commit and push
+   from the knowledge checkout, for example:
 
    ```sh
    git -C /workspace add artifacts/release-readiness/index.html
@@ -89,9 +96,9 @@ Sentinel review is best effort, including for obfuscated code.
    `path="/workspace/artifacts/release-readiness/index.html"` (using your slug).
    This displays the HTML snapshot in chat. Put source links and any necessary
    caveats in the surrounding chat reply, not inside navigable artifact links.
+   Report the checks you actually ran. Ask the user to inspect the rendered page
+   at a narrow width, in light/dark mode, and with keyboard controls.
 6. To update the same artifact, edit the **same path**, commit, push, and
    `send_file` the entry point again. Old chat cards keep their snapshots; the
    knowledge browser and shared link show the latest pushed content. Renaming the
    slug creates a different identity and breaks the old shared URL.
-
-No new tool, provider, credential, or setup step is needed for this skill.

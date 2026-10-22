@@ -170,7 +170,7 @@ explains its unit and rejects invalid inputs instead of silently replacing them.
     main { width: min(100% - 2rem, 40rem); margin: 2rem auto; overflow-wrap: anywhere; }
     h1 { font-size: clamp(1.75rem, 5vw, 2.5rem); line-height: 1.15; }
     .meta { color: var(--muted); font-size: .875rem; }
-    form { display: grid; gap: 1rem; padding: 1.5rem; border: 1px solid var(--border); background: var(--surface); }
+    #estimate-inputs { display: grid; gap: 1rem; padding: 1.5rem; border: 1px solid var(--border); background: var(--surface); }
     label { display: grid; gap: .25rem; }
     input, button { width: 100%; min-height: 44px; padding: .625rem; border: 1px solid var(--border); border-radius: .25rem; font: inherit; }
     input { background: var(--bg); color: var(--fg); }
@@ -186,7 +186,7 @@ explains its unit and rejects invalid inputs instead of silently replacing them.
       <h1>Delivery capacity estimator</h1>
       <p id="assumptions">Multiply people, focused hours per person per week, and weeks. This is an upper bound before unplanned work, not a delivery commitment.</p>
     </header>
-    <form id="estimate-form" aria-describedby="assumptions input-help">
+    <div id="estimate-inputs" role="group" aria-label="Capacity inputs" aria-describedby="assumptions input-help">
       <label for="people">People
         <input id="people" name="people" type="number" min="1" max="100" step="1" value="4" required aria-describedby="input-help">
       </label>
@@ -198,23 +198,25 @@ explains its unit and rejects invalid inputs instead of silently replacing them.
       </label>
       <p id="input-help" class="meta">Whole numbers only: 1–100 people, 1–40 hours, and 1–52 weeks.</p>
       <button type="button" id="calculate">Calculate capacity</button>
-    </form>
+    </div>
     <output id="result" for="people hours weeks" aria-live="polite"></output>
     <p class="meta">No inputs leave this page. Refreshing resets the example values.</p>
   </main>
   <script>
-    const form = document.getElementById("estimate-form");
+    const inputs = document.getElementById("estimate-inputs");
+    const people = document.getElementById("people");
+    const hours = document.getElementById("hours");
+    const weeks = document.getElementById("weeks");
     const result = document.getElementById("result");
     function calculate() {
-      if (!form.checkValidity()) {
+      if (!people.checkValidity() || !hours.checkValidity() || !weeks.checkValidity()) {
         result.textContent = "Enter whole numbers within the ranges shown above.";
         return;
       }
-      const total = form.elements.people.valueAsNumber * form.elements.hours.valueAsNumber * form.elements.weeks.valueAsNumber;
+      const total = people.valueAsNumber * hours.valueAsNumber * weeks.valueAsNumber;
       result.textContent = `${new Intl.NumberFormat().format(total)} person-hours of planned capacity`;
     }
-    form.addEventListener("submit", (event) => { event.preventDefault(); calculate(); });
-    form.addEventListener("input", calculate);
+    inputs.addEventListener("input", calculate);
     document.getElementById("calculate").addEventListener("click", calculate);
     calculate();
   </script>
