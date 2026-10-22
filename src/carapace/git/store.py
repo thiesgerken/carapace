@@ -50,93 +50,6 @@ def _parse_last_commits(out: str, prefix: str) -> dict[str, FileCommit]:
     return found
 
 
-# The Git HTTP handler supplies the session, default branch, and API port.
-_PRE_RECEIVE_HOOK = (
-    f"#!{sys.executable}\n"
-    + """\
-from __future__ import annotations
-
-import json
-import os
-import subprocess
-import sys
-from http.client import HTTPConnection, HTTPException, HTTPResponse
-from urllib.error import URLError
-from urllib.request import HTTPHandler, ProxyHandler, Request, build_opener
-
-
-class SentinelConnection(HTTPConnection):
-    def connect(self) -> None:
-        super().connect()
-        # Approval may take arbitrarily long; only connecting has a deadline.
-        assert self.sock is not None
-        self.sock.settimeout(None)
-
-
-class SentinelHandler(HTTPHandler):
-    def http_open(self, request: Request) -> HTTPResponse:
-        return self.do_open(SentinelConnection, request)
-
-
-def git(*args: str) -> str:
-    return subprocess.check_output(
-        ["git", *args], encoding="utf-8", errors="replace"
-    ).rstrip("\\n")
-
-
-def main() -> int:
-    null_sha = "0" * 40
-    evaluated = False
-    opener = build_opener(ProxyHandler({}), SentinelHandler())
-    port = os.environ.get("CARAPACE_API_PORT", "8320")
-    url = f"http://127.0.0.1:{port}/internal/sentinel/evaluate-push"
-
-    for line in sys.stdin:
-        old_sha, new_sha, ref = line.split()
-        evaluated = True
-        if old_sha == null_sha:
-            changes = git("log", "--oneline", new_sha)
-            empty_tree = git("hash-object", "-t", "tree", os.devnull)
-            diff = git("diff", empty_tree, new_sha)
-        else:
-            changes = git("log", "--oneline", f"{old_sha}..{new_sha}")
-            diff = git("diff", old_sha, new_sha)
-
-        payload = {
-            "session_id": os.environ["CARAPACE_SESSION_ID"],
-            "ref": ref,
-            "is_default_branch": ref.removeprefix("refs/heads/") == os.environ["CARAPACE_DEFAULT_BRANCH"],
-            "commits": changes,
-            "diff": diff,
-        }
-        request = Request(
-            url,
-            data=json.dumps(payload).encode(),
-            headers={"Content-Type": "application/json"},
-        )
-        try:
-            with opener.open(request, timeout=10) as response:
-                result = json.load(response)
-        except (URLError, OSError, HTTPException):
-            print("DENIED: failed to reach sentinel API", file=sys.stderr)
-            return 1
-
-        if result["verdict"] != "allow":
-            print(f"DENIED by sentinel: {result['reason']}", file=sys.stderr)
-            return 1
-
-    if not evaluated:
-        print("DENIED: no refs received for evaluation", file=sys.stderr)
-        return 1
-    return 0
-
-
-if __name__ == "__main__":
-    sys.exit(main())
-"""
-)
-
-
 def _log_subjects_as_bullets(subjects_stdout: str) -> str:
     lines = [s.strip() for s in subjects_stdout.split("\n") if s.strip()]
     return "\n".join(f"• {line}" for line in lines)
@@ -227,7 +140,8 @@ class GitStore:
         hooks_dir = self.repo_dir / ".git" / "hooks"
         hooks_dir.mkdir(parents=True, exist_ok=True)
         hook_path = hooks_dir / "pre-receive"
-        hook_path.write_text(_PRE_RECEIVE_HOOK, encoding="utf-8")
+        source = Path(__file__).with_name("pre_receive.py").read_text(encoding="utf-8")
+        hook_path.write_text(f"#!{sys.executable}\n{source}", encoding="utf-8")
         hook_path.chmod(0o755)
         logger.debug("Installed pre-receive hook")
 

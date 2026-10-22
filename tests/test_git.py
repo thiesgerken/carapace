@@ -10,6 +10,7 @@ import shutil
 import stat
 import subprocess
 from collections.abc import AsyncIterator
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
@@ -125,8 +126,15 @@ class TestGitStoreEnsureRepo:
         assert out == "updateInstead"
 
 
+@dataclass
+class SentinelStub:
+    server: asyncio.Server
+    requests: list[dict[str, object]]
+    responses: list[tuple[int, bytes]]
+
+
 @pytest.fixture
-async def sentinel_api() -> AsyncIterator[tuple[asyncio.Server, list[dict[str, object]], list[tuple[int, bytes]]]]:
+async def sentinel_api() -> AsyncIterator[SentinelStub]:
     requests: list[dict[str, object]] = []
     responses = [(200, b'{"verdict": "allow"}')]
 
@@ -143,7 +151,7 @@ async def sentinel_api() -> AsyncIterator[tuple[asyncio.Server, list[dict[str, o
         await writer.wait_closed()
 
     async with await asyncio.start_server(respond, "127.0.0.1", 0) as server:
-        yield server, requests, responses
+        yield SentinelStub(server, requests, responses)
 
 
 @needs_git
@@ -167,12 +175,11 @@ class TestPreReceiveHook:
         self,
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
-        sentinel_api: tuple[asyncio.Server, list[dict[str, object]], list[tuple[int, bytes]]],
+        sentinel_api: SentinelStub,
     ) -> None:
-        server, _, _ = sentinel_api
         monkeypatch.setenv("CARAPACE_SESSION_ID", "session-test")
         monkeypatch.setenv("CARAPACE_DEFAULT_BRANCH", "main")
-        monkeypatch.setenv("CARAPACE_API_PORT", str(server.sockets[0].getsockname()[1]))
+        monkeypatch.setenv("CARAPACE_API_PORT", str(sentinel_api.server.sockets[0].getsockname()[1]))
         # The runtime image exposes Git, but no shell, jq, or curl on PATH.
         bin_dir = tmp_path / "bin"
         bin_dir.mkdir()
@@ -186,14 +193,13 @@ class TestPreReceiveHook:
         self,
         sender: GitStore,
         hook_env: None,
-        sentinel_api: tuple[asyncio.Server, list[dict[str, object]], list[tuple[int, bytes]]],
+        sentinel_api: SentinelStub,
         branch: str,
     ) -> None:
-        _, requests, _ = sentinel_api
         code, output = await sender._run("push", "origin", f"HEAD:refs/heads/{branch}")
 
         assert code == 0, output
-        [payload] = requests
+        [payload] = sentinel_api.requests
         assert payload["session_id"] == "session-test"
         assert payload["ref"] == f"refs/heads/{branch}"
         assert payload["is_default_branch"] is (branch == "main")
@@ -211,6 +217,7 @@ class TestPreReceiveHook:
             (200, b'{"verdict": "deny", "reason": "protected file"}'),
             (200, b'{"verdict": "unknown", "reason": "invalid verdict"}'),
             (200, b"invalid json"),
+            (302, b'{"verdict": "allow"}'),
             (503, b'{"verdict": "allow"}'),
         ],
     )
@@ -218,12 +225,11 @@ class TestPreReceiveHook:
         self,
         sender: GitStore,
         hook_env: None,
-        sentinel_api: tuple[asyncio.Server, list[dict[str, object]], list[tuple[int, bytes]]],
+        sentinel_api: SentinelStub,
         status: int,
         body: bytes,
     ) -> None:
-        _, _, responses = sentinel_api
-        responses[:] = [(status, body)]
+        sentinel_api.responses[:] = [(status, body)]
         receiver = GitStore(sender.repo_dir.parent / "receiver")
         before = await receiver.head_sha()
 
@@ -237,10 +243,9 @@ class TestPreReceiveHook:
         self,
         sender: GitStore,
         hook_env: None,
-        sentinel_api: tuple[asyncio.Server, list[dict[str, object]], list[tuple[int, bytes]]],
+        sentinel_api: SentinelStub,
     ) -> None:
-        _, requests, responses = sentinel_api
-        responses.append((200, b'{"verdict": "deny", "reason": "protected file"}'))
+        sentinel_api.responses.append((200, b'{"verdict": "deny", "reason": "protected file"}'))
         receiver = GitStore(sender.repo_dir.parent / "receiver")
         before = await receiver.head_sha()
 
@@ -248,7 +253,7 @@ class TestPreReceiveHook:
 
         assert code != 0
         assert "protected file" in output
-        assert [payload["ref"] for payload in requests] == ["refs/heads/feature-a", "refs/heads/feature-b"]
+        assert [payload["ref"] for payload in sentinel_api.requests] == ["refs/heads/feature-a", "refs/heads/feature-b"]
         _, branches = await receiver._run("for-each-ref", "--format=%(refname)", "refs/heads/")
         assert branches == "refs/heads/main"
         assert await receiver.head_sha() == before
@@ -257,11 +262,10 @@ class TestPreReceiveHook:
         self,
         sender: GitStore,
         hook_env: None,
-        sentinel_api: tuple[asyncio.Server, list[dict[str, object]], list[tuple[int, bytes]]],
+        sentinel_api: SentinelStub,
     ) -> None:
-        server, _, _ = sentinel_api
-        server.close()
-        await server.wait_closed()
+        sentinel_api.server.close()
+        await sentinel_api.server.wait_closed()
 
         code, output = await sender._run("push", "origin", "HEAD:main")
 
