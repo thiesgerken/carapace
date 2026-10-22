@@ -1,6 +1,24 @@
 # CHANGELOG
 
 
+## v0.163.2 (2026-10-22)
+
+
+### Other
+
+
+- Merge pull request #403 from thiesgerken/fix/sent-file-inline-html
+  ([`735dfb9`](https://github.com/thiesgerken/carapace/commit/735dfb9e9525a887b5f1802b4560af43e7688b64))
+
+### 🔒 Security
+
+
+- 🔒 fix: restrict sent-file inline responses to raster images
+  ([`735dfb9`](https://github.com/thiesgerken/carapace/commit/735dfb9e9525a887b5f1802b4560af43e7688b64))
+
+- 🔒 fix: restrict sent-file inline responses to raster images
+  ([`b44665b`](https://github.com/thiesgerken/carapace/commit/b44665b54e82b07b96602e6dadcb2649b0c0bee9))
+
 ## v0.163.1 (2026-10-18)
 
 
