@@ -1,3 +1,19 @@
+{{- define "carapace.podSecurityContext" -}}
+runAsNonRoot: true
+runAsUser: 999
+runAsGroup: 999
+fsGroup: 999
+seccompProfile:
+  type: RuntimeDefault
+{{- end }}
+
+{{- define "carapace.containerSecurityContext" -}}
+readOnlyRootFilesystem: true
+allowPrivilegeEscalation: false
+capabilities:
+  drop: [ALL]
+{{- end }}
+
 {{/*
 Common labels
 */}}

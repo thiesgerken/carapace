@@ -1,0 +1,12 @@
+{{- if and .Values.frontend.enabled .Values.frontend.csp.imgSrcExtra }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-frontend-csp
+  labels:
+    {{- include "carapace.labels" . | nindent 4 }}
+    app.kubernetes.io/component: frontend
+data:
+  img-src.conf: |
+    set $csp_img_src {{ printf "img-src 'self' data: blob: %s" (join " " .Values.frontend.csp.imgSrcExtra) | quote }};
+{{- end }}
