@@ -18,22 +18,28 @@ snapshot in chat. The user can share the live page from the knowledge browser.
 | Need | Format |
 | --- | --- |
 | A direct answer, a short explanation, or a few comparable values | Chat prose or a table |
-| Relationships, a sequence, a state machine, or a system diagram | Mermaid in the chat reply |
+| Relationships, a sequence, a state machine, or a system diagram | First decide: part of the artifact, or a standalone Mermaid block in chat? |
 | An existing document, dataset, export, or image to download | Plain `send_file` |
 | A reusable report, a dashboard with several views, or a local calculator/explainer | Artifact |
 
 Do not turn a simple answer into a page just because HTML is available.
+For a diagram, ask whether it belongs to the page and should be shared and updated
+with that page. If so, embed Mermaid using [charts.md](references/charts.md).
+Otherwise, keep it as a standalone Mermaid block in the chat reply.
 
 ## Safety and rendering contract
 
 - Use a stable, descriptive slug such as `release-readiness`; the entry point is
   always `index.html`, with a meaningful `<title>` and a viewport meta tag.
+- Include an inline SVG favicon: `<link rel="icon" href="data:image/svg+xml,…">`.
+  Use a simple glyph fitting the topic, with the page's light/dark theme colors;
+  do not load an external icon. See the complete patterns for encoded examples.
 - Keep the page self-contained: inline SVG, CSS, JavaScript, and data; use data
   URIs for raster images. Adjacent files and relative asset URLs are not served.
 - Treat every artifact as possibly public. Include no secrets, credentials,
   tokens, or private data beyond what the user asked to include. Do not inspect
   sharing state, request share tokens, or try to enable sharing. Sharing is a
-  browser-only user action, and you are not told which artifacts are shared.
+  browser-only user action. Apply these safety rules regardless of sharing state.
 - Keep only `index.html` in `artifacts/<slug>/`, at or below **10 MiB
   (10,485,760 bytes)**. Oversized pushes are rejected before sentinel review.
 - Make no runtime data or network calls. `connect-src 'none'` blocks `fetch`, XHR,
@@ -43,7 +49,7 @@ Do not turn a simple answer into a page just because HTML is available.
   `https://cdnjs.cloudflare.com/` or `https://cdn.jsdelivr.net/npm/`, with an
   **exact pinned version in every library URL**, plus Google Fonts styles from
   `https://fonts.googleapis.com/` and font files from `https://fonts.gstatic.com/`.
-  Prefer inline code and system fonts when a dependency adds little. No `latest`,
+  Prefer inline code; use the typography stylesheet from design.md. No `latest`,
   version ranges, unversioned URLs, CDN stylesheets, or extra origins.
 - The iframe has no popups or top navigation: links that open a new tab or target
   the parent page do not work. Put all external links in the **chat reply**, not
@@ -89,9 +95,9 @@ Do not turn a simple answer into a page just because HTML is available.
    git -C /workspace push
    ```
 
-   A push updates the knowledge browser **and any existing shared link**. Even
-   though you do not know the sharing state, treat a revision as potentially
-   public. If the sentinel denies the push, address the reason; do not bypass it.
+   A push updates the knowledge browser **and any existing shared link**. Treat
+   every revision as potentially public. If the sentinel denies the push, address
+   the reason; do not bypass it.
 5. After the push succeeds, call `send_file` with
    `path="/workspace/artifacts/release-readiness/index.html"` (using your slug).
    This displays the HTML snapshot in chat. Put source links and any necessary

@@ -33,15 +33,16 @@ artifact renderer. Opaque-origin subresource requests do not carry the app's
 
 Sent files render outside collapsed tool-activity groups, including images and
 downloads. A chat snapshot sent from `/workspace/artifacts/<slug>/index.html`
-offers **Full screen / share (current version)**, as does the knowledge artifact
-view. Other sent HTML files retain their inline snapshot without a live-view link.
+offers **Open current version**, without sharing controls on the snapshot.
+Other sent HTML files retain their inline snapshot without a live-view link.
 
-`/artifacts?slug=<slug>` opens a sidebar-free, full-viewport view of the live
-artifact with a compact toolbar for sharing, copying its public link, viewing
-source, opening the knowledge browser, and going back. Sharing controls live here
-rather than beside the knowledge preview, so there is one place to manage a live
-artifact's publication. The iframe uses the same sandbox as inline previews.
-The query parameter keeps the page compatible with the frontend's static export.
+Opening an artifact directory or its `index.html` shows the live artifact directly.
+Both use the same `ArtifactToolbar` as the sidebar-free `/artifacts?slug=<slug>`
+viewer: the HTML title (falling back to the slug), sharing/link/copy, source, and
+open-in-new-tab actions. Inline live views also offer full screen; the full-screen
+viewer adds knowledge and back navigation instead. The query parameter keeps the
+page compatible with static export. The artifact listing shows a shared badge
+from owner-scoped metadata, without exposing tokens.
 
 ## Rendering policy
 

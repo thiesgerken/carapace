@@ -26,7 +26,6 @@ import { useTranslations } from "next-intl";
 
 import { useAppShell } from "@/components/app-shell-context";
 import { ArtifactPreview } from "@/components/artifact-preview";
-import { ArtifactViewerLink } from "@/components/artifact-viewer-link";
 import { useAppLocale } from "@/components/locale-provider";
 import { GlobalGitPanel, KNOWLEDGE_GIT_CHANGED_EVENT, useGlobalGit } from "@/components/git-sync";
 import { MarkdownContent } from "@/components/markdown-content";
@@ -40,7 +39,6 @@ import {
   type KnowledgeSkill,
 } from "@/lib/api";
 import { useBrand } from "@/hooks/use-brand";
-import { artifactSlugFromPath } from "@/lib/artifacts";
 import { entryIcon } from "@/lib/file-icons";
 import { formatAbsoluteTime, formatRelativeTime } from "@/lib/format-time";
 import { knowledgeBrowseHref } from "@/lib/knowledge-links";
@@ -165,6 +163,7 @@ function EntryRow({
   now: number;
 }) {
   const entryPath = path ? `${path}/${entry.name}` : entry.name;
+  const tArtifacts = useTranslations("artifacts");
   // The commit date is what a reader means by "last changed"; mtime only fills in for
   // paths no commit covers, since a checkout rewrites it.
   const changedAt = entry.commit?.committed_at ?? entry.modified;
@@ -177,6 +176,7 @@ function EntryRow({
       >
         {entry.name}
       </Link>
+      {entry.kind === "artifact" && entry.shared && <span className="shrink-0 rounded border border-teal-600/30 px-1.5 py-0.5 text-xs text-teal-600 dark:text-teal-400">{tArtifacts("shared")}</span>}
       {/* Flexible middle column, the first thing to go as the row narrows: the session
           title where there is one, the commit otherwise. A session's commit subject
           only ever restates the archiving, so the title is the better use of it. */}
@@ -403,20 +403,6 @@ function FileContent({
   largeFileLabel: string;
   tooLargeLabel: string;
 }) {
-  const artifact = artifactSlugFromPath(file.path);
-  if (artifact) {
-    return (
-      <div className="space-y-3">
-        <ArtifactViewerLink slug={artifact} />
-        <ArtifactPreview
-          key={file.path}
-          src={knowledgeArtifactUrl(server, artifact)}
-          sourceUrl={knowledgeRawUrl(server, file.path)}
-          title={file.name}
-        />
-      </div>
-    );
-  }
   if (INLINE_IMAGE_TYPES.has(file.mime)) {
     return (
       // eslint-disable-next-line @next/next/no-img-element
@@ -555,6 +541,14 @@ export function KnowledgeView() {
           </div>
         ) : error ? (
           <p className="py-8 text-sm text-destructive">{error}</p>
+        ) : result?.artifact ? (
+          <ArtifactPreview
+            key={`${result.path}:${reloadToken}`}
+            src={knowledgeArtifactUrl(server, result.artifact.slug)}
+            sourceUrl={knowledgeRawUrl(server, `artifacts/${result.artifact.slug}/index.html`)}
+            title={result.artifact.title}
+            artifact={{ server, slug: result.artifact.slug }}
+          />
         ) : result?.type === "dir" ? (
           <>
             {result.entries.length === 0 ? (

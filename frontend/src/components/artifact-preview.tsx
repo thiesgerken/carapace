@@ -1,10 +1,10 @@
 "use client";
 
-import { Code, ExternalLink } from "lucide-react";
 import { useTranslations } from "next-intl";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState } from "react";
 
 import { cn } from "@/lib/utils";
+import { ArtifactToolbar, type LiveArtifact } from "@/components/artifact-toolbar";
 
 const ARTIFACT_SANDBOX = "allow-scripts";
 
@@ -13,13 +13,15 @@ export function ArtifactPreview({
   sourceUrl,
   title,
   fullScreen = false,
-  toolbar,
+  artifact,
+  snapshot = false,
 }: {
   src: string;
   sourceUrl: string;
   title: string;
   fullScreen?: boolean;
-  toolbar?: ReactNode;
+  artifact?: LiveArtifact;
+  snapshot?: boolean;
 }) {
   const t = useTranslations("artifacts");
   const [showSource, setShowSource] = useState(false);
@@ -50,29 +52,7 @@ export function ArtifactPreview({
 
   return (
     <section className={cn("overflow-hidden", fullScreen ? "flex min-h-0 flex-1 flex-col" : "rounded-lg border border-border")}>
-      <div className="flex flex-wrap items-center justify-end gap-2 border-b border-border bg-muted/25 px-3 py-2 text-xs">
-        {toolbar}
-        <button
-          type="button"
-          aria-pressed={showSource}
-          onClick={() => setShowSource((shown) => !shown)}
-          className={cn("inline-flex items-center gap-1.5 rounded px-2 py-1 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", fullScreen && "min-h-10")}
-        >
-          <Code className="h-3.5 w-3.5" />
-          {t(showSource ? "preview" : "source")}
-        </button>
-        {!fullScreen && (
-          <a
-            href={src}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-1.5 rounded px-2 py-1 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <ExternalLink className="h-3.5 w-3.5" />
-            {t("openInNewTab")}
-          </a>
-        )}
-      </div>
+      {!snapshot && <ArtifactToolbar artifact={artifact} title={title} src={src} fullScreen={fullScreen} showSource={showSource} onToggleSource={() => setShowSource((shown) => !shown)} />}
       {showSource ? (
         error ? <p role="alert" className="p-4 text-sm text-destructive">{error}</p> : (
           <pre className={cn("overflow-auto bg-muted/20 p-4 font-mono text-xs leading-relaxed", fullScreen ? "min-h-0 flex-1" : "h-[32rem]")}>

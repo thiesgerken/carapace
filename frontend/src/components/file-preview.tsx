@@ -67,13 +67,14 @@ export function FilePreview({
       {mime === "text/html" && canFetch && (
         <ArtifactPreview
           key={fileId}
+          snapshot={artifactSlug !== null}
           src={sentFileUrl(server, sessionId, fileId, { artifact: true })}
           sourceUrl={sentFileUrl(server, sessionId, fileId)}
           title={name}
         />
       )}
       {mime === "text/html" && artifactSlug !== null && (
-        <ArtifactViewerLink slug={artifactSlug} />
+        <ArtifactViewerLink slug={artifactSlug} snapshot />
       )}
       {isImage && previewUrl && (
         <a href={previewUrl} target="_blank" rel="noreferrer" className="block">

@@ -11,7 +11,7 @@ usually needs no chart. Do not add a visualization merely to fill a dashboard.
 | A short bar chart, a small trend, or a fixed annotated comparison | Inline SVG |
 | Several datasets, local filtering, or tooltips that materially help inspection | Pinned Chart.js |
 | Exact lookup matters more than the overall shape | Semantic HTML table |
-| Relationships, states, or a process rather than measurements | Mermaid in chat |
+| Relationships, states, or a process rather than measurements | Mermaid in the artifact if it belongs to that page; otherwise Mermaid in chat |
 
 Both implementations must use embedded data and local interactions only. No
 runtime fetching, telemetry, remote images, or navigation. Library scripts are
@@ -93,6 +93,48 @@ The wrapper, theme tokens, and data table belong in the same `index.html`. Give
 the wrapper a height such as `18rem` so the canvas does not grow without a bound.
 If the CDN is unavailable, leave the table readable and report that the chart
 could not load; do not silently substitute made-up data.
+
+## Mermaid inside a page
+
+First decide whether the diagram is part of the artifact: should it be shared and
+updated with the page? Embed it only then. A diagram that answers the chat question
+on its own belongs in a standalone Mermaid block in the chat reply.
+
+Use the pinned, single-file classic build, not an ES-module entry point that
+fetches extra chunks. Keep `securityLevel: "strict"`, disable HTML labels, and
+include no links or click callbacks. Diagram definitions stay inline. This works
+with the artifact's existing CSP; it does not need runtime data/network access.
+
+```html
+<figure aria-label="Release workflow">
+  <div id="release-diagram"></div>
+  <figcaption>Changes pass through review before publication.</figcaption>
+</figure>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@12.0.0/dist/mermaid.min.js"></script>
+<script>
+  const diagram = "flowchart LR\nDraft --> Review --> Publish";
+  const target = document.getElementById("release-diagram");
+  const scheme = matchMedia("(prefers-color-scheme: dark)");
+  async function renderDiagram() {
+    mermaid.initialize({
+      startOnLoad: false,
+      securityLevel: "strict",
+      theme: scheme.matches ? "dark" : "default",
+      fontFamily: "Geist, system-ui, sans-serif",
+      flowchart: { htmlLabels: false },
+    });
+    const { svg } = await mermaid.render("release-workflow", diagram);
+    target.innerHTML = svg;
+  }
+  scheme.addEventListener("change", renderDiagram);
+  renderDiagram();
+</script>
+```
+
+Keep the font stylesheet and responsive SVG rules from [design.md](design.md) in
+the same page. The stored diagram string lets a color-scheme change re-render the
+SVG instead of trying to recolor library-generated markup. Label the diagram and
+provide an adjacent explanation; do not make hover the only source of meaning.
 
 ## Reading integrity
 

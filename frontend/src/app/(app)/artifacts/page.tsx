@@ -1,63 +1,49 @@
 "use client";
 
-import { ArrowLeft, FolderOpen } from "lucide-react";
-import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
+import { useEffect, useState } from "react";
 
 import { useAppShell } from "@/components/app-shell-context";
 import { ArtifactPreview } from "@/components/artifact-preview";
-import { ArtifactShareControls } from "@/components/artifact-share-controls";
-import { knowledgeArtifactUrl, knowledgeRawUrl } from "@/lib/api";
+import { browseKnowledge, knowledgeArtifactUrl, knowledgeRawUrl, type KnowledgeArtifact } from "@/lib/api";
 import { artifactSlugFromPath } from "@/lib/artifacts";
-import { knowledgeBrowseHref } from "@/lib/knowledge-links";
+
+function ArtifactViewer({ server, slug }: { server: string; slug: string }) {
+  const t = useTranslations("artifacts");
+  const [artifact, setArtifact] = useState<KnowledgeArtifact | null>(null);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const result = await browseKnowledge(server, `artifacts/${slug}`);
+        if (!result.artifact) throw new Error("Not an artifact");
+        if (!cancelled) setArtifact(result.artifact);
+      } catch {
+        if (!cancelled) setError(true);
+      }
+    }
+    void load();
+    return () => { cancelled = true; };
+  }, [server, slug]);
+
+  useEffect(() => {
+    if (artifact) document.title = artifact.title;
+  }, [artifact]);
+
+  if (error) return <p role="alert" className="p-4 text-sm text-destructive">{t("loadError")}</p>;
+  if (!artifact) return <p className="p-4 text-sm">{t("loadingArtifact")}</p>;
+  return <ArtifactPreview fullScreen src={knowledgeArtifactUrl(server, slug)} sourceUrl={knowledgeRawUrl(server, `artifacts/${slug}/index.html`)} title={artifact.title} artifact={{ server, slug }} />;
+}
 
 export default function ArtifactPage() {
   const { server } = useAppShell();
-  const searchParams = useSearchParams();
-  const router = useRouter();
+  const slug = useSearchParams().get("slug");
   const t = useTranslations("artifacts");
-  const slug = searchParams.get("slug");
-  const path = `artifacts/${slug}/index.html`;
-
-  if (!slug || artifactSlugFromPath(path) !== slug) {
+  if (!slug || artifactSlugFromPath(`artifacts/${slug}/index.html`) !== slug) {
     return <p role="alert" className="p-4 text-sm">{t("invalidSlug")}</p>;
   }
-
-  const knowledgeHref = knowledgeBrowseHref(path);
-  function back() {
-    if (window.history.length > 1) router.back();
-    else router.replace(knowledgeHref);
-  }
-
-  return (
-    <ArtifactPreview
-      key={`${server}:${slug}`}
-      fullScreen
-      src={knowledgeArtifactUrl(server, slug)}
-      sourceUrl={knowledgeRawUrl(server, path)}
-      title={slug}
-      toolbar={
-        <>
-          <button
-            type="button"
-            onClick={back}
-            className="inline-flex min-h-10 items-center gap-1.5 rounded px-2 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            {t("back")}
-          </button>
-          <h1 className="mr-auto min-w-0 max-w-60 truncate text-base font-semibold" title={slug}>{slug}</h1>
-          <ArtifactShareControls server={server} slug={slug} />
-          <Link
-            href={knowledgeHref}
-            className="inline-flex min-h-10 items-center gap-1.5 rounded px-2 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <FolderOpen className="h-4 w-4" />
-            {t("openKnowledge")}
-          </Link>
-        </>
-      }
-    />
-  );
+  return <ArtifactViewer key={`${server}:${slug}`} server={server} slug={slug} />;
 }
