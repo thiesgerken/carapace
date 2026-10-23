@@ -432,3 +432,19 @@ class GitStore:
         if code != 0 or not out:
             return {}
         return _parse_last_commits(out, prefix)
+
+    async def session_history(self, relative_path: str) -> tuple[str, str] | None:
+        """Return the oldest and newest session trailers touching the current path."""
+        code, out = await self._run(
+            "--literal-pathspecs",
+            "log",
+            "--format=%(trailers:key=carapace-session,valueonly)",
+            "--",
+            relative_path,
+        )
+        if code != 0:
+            if "does not have any commits yet" in out:
+                return None
+            raise RuntimeError(f"git session history failed: {out}")
+        sessions = [line.strip() for line in out.splitlines() if line.strip()]
+        return (sessions[-1], sessions[0]) if sessions else None

@@ -1,12 +1,14 @@
 "use client";
 
 import { useTranslations } from "next-intl";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Archive,
   ChevronRight,
+  ExternalLink,
   FileText,
   FilePen,
+  FolderCode,
   GitBranch,
   Globe,
   KeyRound,
@@ -33,6 +35,8 @@ import {
 } from "@/lib/sandbox-read";
 import type { CompactionAnnotation, SentFile } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { sentFileUrl } from "@/lib/api";
+import { artifactSnapshotTitle, artifactViewerHref, sentArtifactSlug } from "@/lib/artifacts";
 
 interface ToolCallBadgeProps {
   tool: string;
@@ -518,9 +522,34 @@ export function ToolCallBadge({
 }: ToolCallBadgeProps) {
   const t = useTranslations("toolCallBadge");
   const tc = useTranslations("compaction");
+  const ta = useTranslations("artifacts");
   const isSendFileTool = tool === "send_file";
-  const [open, setOpen] = useState(isSendFileTool);
+  const artifactSlug = isSendFileTool ? sentArtifactSlug(args.path) : null;
+  const [open, setOpen] = useState(isSendFileTool && artifactSlug === null);
   const [skillInstructionsOpen, setSkillInstructionsOpen] = useState(false);
+  const sentFileId = files?.[0]?.file_id;
+  const artifactSource = artifactSlug !== null && sentFileId && server !== undefined && sessionId !== undefined
+    ? sentFileUrl(server, sessionId, sentFileId)
+    : null;
+  const [snapshotTitle, setSnapshotTitle] = useState<{ source: string; title: string } | null>(null);
+
+  useEffect(() => {
+    if (artifactSlug === null || artifactSource === null) return;
+    const controller = new AbortController();
+    async function loadTitle(source: string, slug: string) {
+      try {
+        const response = await fetch(source, { signal: controller.signal });
+        if (!response.ok) throw new Error(`Failed to load artifact snapshot: ${response.status}`);
+        const html = await response.text();
+        const title = artifactSnapshotTitle(html, slug);
+        if (!controller.signal.aborted) setSnapshotTitle({ source, title });
+      } catch (error) {
+        if (!controller.signal.aborted) console.error("Failed to load artifact snapshot title", error);
+      }
+    }
+    void loadTitle(artifactSource, artifactSlug);
+    return () => controller.abort();
+  }, [artifactSlug, artifactSource]);
   void _detail;
   const source = approvalSource;
   const verdict = approvalVerdict;
@@ -595,7 +624,9 @@ export function ToolCallBadge({
     (credentialAccessPath.length === 0 || credentialAccessPath === "<list>");
   const isCompleted =
     !loading && (result != null || exitCode != null || isAuxiliaryTool);
-  const toolLabel = isMcpTool
+  const toolLabel = artifactSlug !== null
+    ? t("labels.artifact", { title: snapshotTitle?.source === artifactSource ? snapshotTitle.title : artifactSlug })
+    : isMcpTool
     ? mcpServer
       ? `${mcpServer} · ${mcpTool}`
       : mcpTool
@@ -618,7 +649,7 @@ export function ToolCallBadge({
     t,
   );
   const argsSummary =
-    isExecTool
+    artifactSlug !== null ? "" : isExecTool
       ? execTitle || execCommand || t("fallbacks.missingCommand")
       : isReadTool
         ? formatReadSummaryFromSplit(
@@ -654,130 +685,164 @@ export function ToolCallBadge({
     ? fencedCodeBlock("diff", buildUnifiedDiff(strReplaceSource, strReplaceReplacement))
     : "";
 
+  const indicators = (
+    <span className={cn("ml-auto inline-flex shrink-0 items-center gap-1.5", shouldClampSummary && "pt-0.5")}>
+      {(() => {
+        // Count credentials: from use_skill declared_creds + child credential_access events
+        const declaredCredCount = isUseSkillTool && Array.isArray(args.declared_creds)
+          ? args.declared_creds.length : 0;
+        const childCredCount = childCalls?.filter(c => c.tool === "credential_access").length ?? 0;
+        const credCount = declaredCredCount || childCredCount;
+        const credTooltip = isUseSkillTool && Array.isArray(args.declared_creds)
+          ? (args.declared_creds as Array<{ vault_path: string; name?: string }>).map(c => c.name || c.vault_path).join("\n")
+          : childCalls?.filter(c => c.tool === "credential_access").map(c => {
+              const name = c.args.name as string | undefined;
+              const vp = c.args.vault_path as string | undefined;
+              return name || vp || t("fallbacks.credential");
+            }).join("\n") ?? "";
+
+        // Count domains: from use_skill declared_domains + child proxy_domain events
+        const declaredDomainCount = isUseSkillTool && Array.isArray(args.declared_domains)
+          ? args.declared_domains.length : 0;
+        const childDomainCount = childCalls?.filter(c => c.tool === "proxy_domain").length ?? 0;
+        const domainCount = declaredDomainCount || childDomainCount;
+        const domainTooltip = isUseSkillTool && Array.isArray(args.declared_domains)
+          ? (args.declared_domains as string[]).join("\n")
+          : childCalls?.filter(c => c.tool === "proxy_domain").map(c => c.args.domain as string ?? "").join("\n") ?? "";
+
+        // Count MCP servers declared by use_skill
+        const declaredMcp = isUseSkillTool && Array.isArray(args.declared_mcp)
+          ? (args.declared_mcp as Array<{ name: string; url?: string; command?: string }>) : [];
+        const mcpTooltip = declaredMcp.map(s => `${s.name} (${s.command ? `stdio: ${s.command}` : s.url})`).join("\n");
+
+        return (
+          <>
+            {declaredMcp.length > 0 && (
+              <span
+                className="inline-flex items-center gap-0.5 rounded bg-blue-500/15 px-1.5 py-0.5 text-[10px] text-blue-600 dark:text-blue-400"
+                title={mcpTooltip}
+              >
+                <Plug className="h-2.5 w-2.5" />{declaredMcp.length}
+              </span>
+            )}
+            {credCount > 0 && (
+              <span
+                className="inline-flex items-center gap-0.5 rounded bg-blue-500/15 px-1.5 py-0.5 text-[10px] text-blue-600 dark:text-blue-400"
+                title={credTooltip}
+              >
+                <KeyRound className="h-2.5 w-2.5" />{credCount}
+              </span>
+            )}
+            {domainCount > 0 && (
+              <span
+                className="inline-flex items-center gap-0.5 rounded bg-blue-500/15 px-1.5 py-0.5 text-[10px] text-blue-600 dark:text-blue-400"
+                title={domainTooltip}
+              >
+                <Globe className="h-2.5 w-2.5" />{domainCount}
+              </span>
+            )}
+            {contextCount > 0 && (
+              <span
+                className="inline-flex items-center gap-0.5 rounded bg-teal-500/15 px-1.5 py-0.5 text-[10px] text-teal-600 dark:text-teal-400"
+                title={contextTooltip}
+              >
+                <Puzzle className="h-2.5 w-2.5" />{contextCount}
+              </span>
+            )}
+          </>
+        );
+      })()}
+      {source && <ApprovalBadge source={source} verdict={verdict} tooltip={finalDecisionMessage || sentinelExplanation || undefined} />}
+      {compaction?.method && (
+        <span
+          className="inline-flex items-center rounded bg-amber-500/15 p-0.5 text-amber-700 dark:text-amber-400"
+          title={tc("toolTitle", {
+            method: tc(`methods.${compaction.method}`),
+            orig: compaction.orig_tokens ?? 0,
+            summary: compaction.summary_tokens ?? 0,
+          })}
+        >
+          <Archive className="h-2.5 w-2.5" />
+        </span>
+      )}
+      {loading && (
+        <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
+      )}
+    </span>
+  );
+
   return (
     <div className="my-1 w-full min-w-0">
-      <button
-        type="button"
-        onClick={() => setOpen(!open)}
-        className={cn(
-          "flex w-full min-w-0 gap-1.5 rounded-md px-2 py-1 text-xs text-left",
-          shouldClampSummary ? "items-start" : "items-center",
-          "text-muted-foreground hover:bg-accent transition-colors",
-          open && "bg-accent",
-        )}
-      >
-        <ChevronRight
+      <div className={cn(
+        artifactSlug !== null && "flex items-stretch rounded-md text-muted-foreground hover:bg-accent transition-colors",
+        artifactSlug !== null && open && "bg-accent",
+      )}>
+        <button
+          type="button"
+          onClick={() => setOpen(!open)}
+          aria-expanded={open}
           className={cn(
-            "h-3 w-3 shrink-0 transition-transform",
-            open && "rotate-90",
+            "flex min-w-0 gap-1.5 rounded-md px-2 py-1 text-xs text-left",
+            artifactSlug === null ? "w-full" : "pr-0",
+            shouldClampSummary ? "items-start" : "items-center",
+            "text-muted-foreground hover:bg-accent transition-colors",
+            open && "bg-accent",
           )}
-        />
-        {(() => {
-          const ToolIcon = TOOL_ICONS[tool] ?? (isMcpTool ? Plug : undefined);
-          return ToolIcon ? (
-            <ToolIcon className="h-3 w-3 shrink-0 text-foreground/65 dark:text-foreground/70" />
-          ) : null;
-        })()}
-        <span className="shrink-0 font-medium text-foreground/85 dark:text-foreground/90">
-          {toolLabel}
-        </span>
-        {argsSummary ? (
-          <span
+        >
+          <ChevronRight
             className={cn(
-              "min-w-0 flex-1 font-mono text-[11px] text-foreground/60 dark:text-foreground/65",
-              shouldClampSummary
-                ? "overflow-hidden [white-space:break-spaces] break-words leading-4 [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2]"
-                : "overflow-hidden text-ellipsis whitespace-pre",
+              "h-3 w-3 shrink-0 transition-transform",
+              open && "rotate-90",
             )}
-            title={argsSummary}
-          >
-            {argsSummary}
-          </span>
-        ) : null}
-        <span className={cn("ml-auto inline-flex shrink-0 items-center gap-1.5", shouldClampSummary && "pt-0.5")}>
+          />
           {(() => {
-            // Count credentials: from use_skill declared_creds + child credential_access events
-            const declaredCredCount = isUseSkillTool && Array.isArray(args.declared_creds)
-              ? args.declared_creds.length : 0;
-            const childCredCount = childCalls?.filter(c => c.tool === "credential_access").length ?? 0;
-            const credCount = declaredCredCount || childCredCount;
-            const credTooltip = isUseSkillTool && Array.isArray(args.declared_creds)
-              ? (args.declared_creds as Array<{ vault_path: string; name?: string }>).map(c => c.name || c.vault_path).join("\n")
-              : childCalls?.filter(c => c.tool === "credential_access").map(c => {
-                  const name = c.args.name as string | undefined;
-                  const vp = c.args.vault_path as string | undefined;
-                  return name || vp || t("fallbacks.credential");
-                }).join("\n") ?? "";
-
-            // Count domains: from use_skill declared_domains + child proxy_domain events
-            const declaredDomainCount = isUseSkillTool && Array.isArray(args.declared_domains)
-              ? args.declared_domains.length : 0;
-            const childDomainCount = childCalls?.filter(c => c.tool === "proxy_domain").length ?? 0;
-            const domainCount = declaredDomainCount || childDomainCount;
-            const domainTooltip = isUseSkillTool && Array.isArray(args.declared_domains)
-              ? (args.declared_domains as string[]).join("\n")
-              : childCalls?.filter(c => c.tool === "proxy_domain").map(c => c.args.domain as string ?? "").join("\n") ?? "";
-
-            // Count MCP servers declared by use_skill
-            const declaredMcp = isUseSkillTool && Array.isArray(args.declared_mcp)
-              ? (args.declared_mcp as Array<{ name: string; url?: string; command?: string }>) : [];
-            const mcpTooltip = declaredMcp.map(s => `${s.name} (${s.command ? `stdio: ${s.command}` : s.url})`).join("\n");
-
-            return (
-              <>
-                {declaredMcp.length > 0 && (
-                  <span
-                    className="inline-flex items-center gap-0.5 rounded bg-blue-500/15 px-1.5 py-0.5 text-[10px] text-blue-600 dark:text-blue-400"
-                    title={mcpTooltip}
-                  >
-                    <Plug className="h-2.5 w-2.5" />{declaredMcp.length}
-                  </span>
-                )}
-                {credCount > 0 && (
-                  <span
-                    className="inline-flex items-center gap-0.5 rounded bg-blue-500/15 px-1.5 py-0.5 text-[10px] text-blue-600 dark:text-blue-400"
-                    title={credTooltip}
-                  >
-                    <KeyRound className="h-2.5 w-2.5" />{credCount}
-                  </span>
-                )}
-                {domainCount > 0 && (
-                  <span
-                    className="inline-flex items-center gap-0.5 rounded bg-blue-500/15 px-1.5 py-0.5 text-[10px] text-blue-600 dark:text-blue-400"
-                    title={domainTooltip}
-                  >
-                    <Globe className="h-2.5 w-2.5" />{domainCount}
-                  </span>
-                )}
-                {contextCount > 0 && (
-                  <span
-                    className="inline-flex items-center gap-0.5 rounded bg-teal-500/15 px-1.5 py-0.5 text-[10px] text-teal-600 dark:text-teal-400"
-                    title={contextTooltip}
-                  >
-                    <Puzzle className="h-2.5 w-2.5" />{contextCount}
-                  </span>
-                )}
-              </>
-            );
+            const ToolIcon = artifactSlug !== null ? FolderCode : TOOL_ICONS[tool] ?? (isMcpTool ? Plug : undefined);
+            return ToolIcon ? (
+              <ToolIcon className="h-3 w-3 shrink-0 text-foreground/65 dark:text-foreground/70" />
+            ) : null;
           })()}
-          {source && <ApprovalBadge source={source} verdict={verdict} tooltip={finalDecisionMessage || sentinelExplanation || undefined} />}
-          {compaction?.method && (
+          <span className={cn("font-medium text-foreground/85 dark:text-foreground/90", artifactSlug !== null ? "min-w-0 truncate" : "shrink-0")} title={artifactSlug !== null ? toolLabel : undefined}>
+            {toolLabel}
+          </span>
+          {argsSummary ? (
             <span
-              className="inline-flex items-center rounded bg-amber-500/15 p-0.5 text-amber-700 dark:text-amber-400"
-              title={tc("toolTitle", {
-                method: tc(`methods.${compaction.method}`),
-                orig: compaction.orig_tokens ?? 0,
-                summary: compaction.summary_tokens ?? 0,
-              })}
+              className={cn(
+                "min-w-0 flex-1 font-mono text-[11px] text-foreground/60 dark:text-foreground/65",
+                shouldClampSummary
+                  ? "overflow-hidden [white-space:break-spaces] break-words leading-4 [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2]"
+                  : "overflow-hidden text-ellipsis whitespace-pre",
+              )}
+              title={argsSummary}
             >
-              <Archive className="h-2.5 w-2.5" />
+              {argsSummary}
             </span>
-          )}
-          {loading && (
-            <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
-          )}
-        </span>
-      </button>
+          ) : null}
+          {artifactSlug === null && indicators}
+        </button>
+        {artifactSlug !== null && (
+          <>
+            <a
+              href={artifactViewerHref(artifactSlug)}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label={ta("openLiveInNewTab")}
+              title={ta("openLiveInNewTab")}
+              className="inline-flex shrink-0 items-center rounded-md p-1.5 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <ExternalLink className="h-3 w-3" />
+            </a>
+            <button
+              type="button"
+              tabIndex={-1}
+              aria-hidden="true"
+              onClick={() => setOpen(!open)}
+              className="flex flex-1 items-center justify-end rounded-md py-1 pl-1.5 pr-2"
+            >
+              {indicators}
+            </button>
+          </>
+        )}
+      </div>
 
       {open && (
         <div className="tool-row-details ml-5 mt-1.5 rounded-lg border border-border/60 bg-muted/30 p-3 space-y-2 text-xs">
@@ -1078,6 +1143,7 @@ export function ToolCallBadge({
                       key={file.file_id}
                       fileId={file.file_id}
                       name={file.name}
+                      path={typeof args.path === "string" ? args.path : undefined}
                       mime={file.mime}
                       size={file.size}
                       server={server}

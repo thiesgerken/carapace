@@ -1,0 +1,105 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { setTimeout } from "node:timers/promises";
+import { NextIntlClientProvider } from "next-intl";
+
+import english from "../../messages/en.json";
+import german from "../../messages/de.json";
+import { click, installDom, renderReact, runInAct } from "../../test/react-test-utils";
+import { ToolCallBadge } from "./tool-call-badge";
+
+const SERVER = "https://carapace.example.test";
+
+function delivery(path: string, mime: string) {
+  return <ToolCallBadge tool="send_file" args={{ path }} detail="" result="Sent file" approvalSource="sentinel" approvalVerdict="allow" files={[{ file_id: "f1", name: path.split("/").at(-1)!, mime, size: 120 }]} server={SERVER} sessionId="s1" />;
+}
+
+test("artifact delivery labels use the persisted snapshot title in English and German, not the live title", async () => {
+  const restore = installDom();
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (input) => new Response(String(input).includes("/api/sessions/")
+    ? "<head><title> Snapshot &amp;\n review </title></head><svg><title>Not the page title</title></svg>"
+    : "<title>Live revision</title>")) as typeof fetch;
+  try {
+    for (const [locale, messages, expected] of [["en", english, "Artifact · Snapshot & review"], ["de", german, "Artefakt · Snapshot & review"]] as const) {
+      const view = await renderReact(
+        <NextIntlClientProvider locale={locale} messages={messages} timeZone="UTC">
+          {delivery("/workspace/artifacts/report/index.html", "text/html")}
+        </NextIntlClientProvider>,
+      );
+      await runInAct(() => setTimeout(0));
+      assert.equal(view.container.querySelector("button > span.font-medium")?.textContent, expected);
+      const toggle = view.container.querySelector("button");
+      assert.ok(toggle);
+      assert.equal(toggle.getAttribute("aria-expanded"), "false");
+      assert.equal(view.container.querySelector("iframe"), null);
+      const viewerLink = view.container.querySelector('a[target="_blank"]');
+      assert.ok(viewerLink);
+      assert.equal(viewerLink.getAttribute("href"), "/artifacts?slug=report");
+      assert.equal(viewerLink.getAttribute("rel"), "noopener noreferrer");
+      assert.equal(viewerLink.getAttribute("aria-label"), messages.artifacts.openLiveInNewTab);
+      assert.equal(viewerLink.getAttribute("title"), messages.artifacts.openLiveInNewTab);
+      assert.equal(viewerLink.closest("button"), null);
+      assert.ok(toggle.nextElementSibling === viewerLink);
+      const remainder = viewerLink.nextElementSibling;
+      assert.ok(remainder instanceof window.HTMLButtonElement);
+      assert.equal(remainder.tabIndex, -1);
+      assert.equal(remainder.getAttribute("aria-hidden"), "true");
+      assert.ok(remainder.querySelector(".lucide-shield-alert"));
+      const focusable = [...toggle.parentElement!.querySelectorAll<HTMLElement>("button, a")]
+        .filter(element => element.tabIndex >= 0);
+      assert.equal(focusable.length, 2);
+      assert.ok(focusable[0] === toggle && focusable[1] === viewerLink);
+      viewerLink.addEventListener("click", event => event.preventDefault());
+      await click(viewerLink);
+      assert.equal(toggle.getAttribute("aria-expanded"), "false");
+      await click(toggle);
+      assert.equal(toggle.getAttribute("aria-expanded"), "true");
+      await click(viewerLink);
+      assert.equal(toggle.getAttribute("aria-expanded"), "true");
+      await click(remainder);
+      assert.equal(toggle.getAttribute("aria-expanded"), "false");
+      await click(remainder);
+      assert.equal(toggle.getAttribute("aria-expanded"), "true");
+      const download = view.container.querySelector("a[download]");
+      assert.equal(download?.getAttribute("download"), "report.html");
+      assert.equal(download?.previousElementSibling?.textContent, messages.artifacts.openLive);
+      assert.equal(view.container.textContent?.includes("index.html"), false);
+      await view.unmount();
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+    restore();
+  }
+});
+
+test("a missing snapshot title falls back to the artifact slug while ordinary HTML, images, and downloads retain their label", async () => {
+  const restore = installDom();
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () => new Response("<title> \n </title>")) as typeof fetch;
+  try {
+    for (const [path, mime, expected] of [
+      ["/workspace/artifacts/release-review/index.html", "text/html", "Artifact · release-review"],
+      ["/workspace/report.html", "text/html", english.toolCallBadge.labels.sentFile],
+      ["/workspace/chart.png", "image/png", english.toolCallBadge.labels.sentFile],
+      ["/workspace/data.csv", "text/csv", english.toolCallBadge.labels.sentFile],
+    ]) {
+      const view = await renderReact(
+        <NextIntlClientProvider locale="en" messages={english} timeZone="UTC">{delivery(path, mime)}</NextIntlClientProvider>,
+      );
+      await runInAct(() => setTimeout(0));
+      assert.equal(view.container.querySelector("button > span.font-medium")?.textContent, expected);
+      const toggle = view.container.querySelector("button");
+      assert.ok(toggle);
+      const artifact = path.startsWith("/workspace/artifacts/");
+      assert.equal(toggle.getAttribute("aria-expanded"), String(!artifact));
+      if (artifact) await click(toggle);
+      assert.equal(view.container.querySelector("a[download]")?.getAttribute("download"),
+        path.startsWith("/workspace/artifacts/") ? "release-review.html" : path.split("/").at(-1));
+      await view.unmount();
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+    restore();
+  }
+});
