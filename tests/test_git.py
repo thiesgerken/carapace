@@ -211,6 +211,27 @@ class TestPreReceiveHook:
         _, pushed_sha = await receiver._run("rev-parse", f"refs/heads/{branch}")
         assert pushed_sha == await sender.head_sha()
 
+    async def test_oversized_artifact_rejected_before_sentinel(
+        self,
+        sender: GitStore,
+        hook_env: None,
+        sentinel_api: SentinelStub,
+    ) -> None:
+        artifact = sender.repo_dir / "artifacts" / "oversized"
+        artifact.mkdir(parents=True)
+        (artifact / "index.html").write_bytes(b"x" * (5 * 1024 * 1024))
+        (artifact / "data.bin").write_bytes(b"x" * (5 * 1024 * 1024 + 1))
+        await sender.commit(["artifacts/oversized"], "add oversized artifact")
+        receiver = GitStore(sender.repo_dir.parent / "receiver")
+        before = await receiver.head_sha()
+
+        code, output = await sender._run("push", "origin", "HEAD:main")
+
+        assert code != 0, output
+        assert "DENIED: artifact oversized exceeds the 10 MiB directory limit" in output
+        assert sentinel_api.requests == []
+        assert await receiver.head_sha() == before
+
     @pytest.mark.parametrize(
         ("status", "body"),
         [

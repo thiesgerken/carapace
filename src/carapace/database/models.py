@@ -50,6 +50,17 @@ class AuthSessionRow(Base):
     user_agent: Mapped[str] = mapped_column(Text, default="")
 
 
+class ArtifactRow(Base):
+    __tablename__ = "artifacts"
+
+    owner: Mapped[str] = mapped_column(String(256), ForeignKey("users.username", ondelete="CASCADE"), primary_key=True)
+    slug: Mapped[str] = mapped_column(String(256), primary_key=True)
+    share_token: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    shared_at: Mapped[datetime | None] = mapped_column(UtcDateTime, nullable=True)
+
+    __table_args__ = (UniqueConstraint("share_token", name="uq_artifacts_share_token"),)
+
+
 class JobRow(Base):
     __tablename__ = "jobs"
 

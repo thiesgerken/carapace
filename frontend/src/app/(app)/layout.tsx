@@ -43,6 +43,10 @@ function AppChrome({ children }: { children: ReactNode }) {
     return <ConnectForm onConnect={shell.onConnect} />;
   }
 
+  if (pathname === "/artifacts") {
+    return <main className="flex h-dvh min-w-0 flex-col overflow-clip">{children}</main>;
+  }
+
   // The shell and the page frames below it clip rather than hide: an overflow:hidden box is still a
   // scroll container, so a hash jump or scrollIntoView shifts the whole shell (header out of view,
   // blank strip below) as soon as anything overflows it. Only the inner panes may scroll.

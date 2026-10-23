@@ -144,3 +144,67 @@ async def test_evaluate_tool_call_prompt_contains_full_args(tmp_path: Path, monk
     await sentinel.evaluate_tool_call(session, "exec", {"command": command})
 
     assert f"exec(command={command!r})" in prompts[0]
+
+
+@pytest.mark.parametrize(
+    ("diff", "touches_artifacts"),
+    [
+        ("--- /dev/null\n+++ b/artifacts/report/index.html\n+report", True),
+        ("--- a/artifacts/report/index.html\n+++ /dev/null\n-report", True),
+        ("diff --git a/artifacts/report/chart.png b/artifacts/report/chart.png\nBinary files differ", True),
+        ('diff --git "a/artifacts/quarterly report/chart.png" "b/artifacts/quarterly report/chart.png"', True),
+        ("diff --git a/notes/report.html b/artifacts/report/index.html\nrename to artifacts/report/index.html", True),
+        ("x" * 9000 + "\n--- a/artifacts/report/index.html\n+++ /dev/null", True),
+        ("--- a/notes/report.md\n+++ b/notes/report.md\n+artifacts/report/index.html", False),
+        ("--- a/notes/artifacts/index.html\n+++ b/notes/artifacts/index.html", False),
+    ],
+)
+async def test_push_context_warns_only_for_touched_artifacts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, diff: str, touches_artifacts: bool
+) -> None:
+    sentinel, _skills_dir = _make_sentinel(tmp_path)
+    prompts: list[str] = []
+
+    async def capture(_session: SessionSecurity, prompt: str, **_kwargs: object) -> SentinelVerdict:
+        prompts.append(prompt)
+        return SentinelVerdict(decision="allow", explanation="ok", risk_level="low")
+
+    monkeypatch.setattr(sentinel, "_run_evaluation", capture)
+    await sentinel.evaluate_push(
+        SessionSecurity("session-1"), "refs/heads/main", True, "Update report", diff, shared_artifacts=set()
+    )
+    assert ("Artifact security notice:" in prompts[0]) is touches_artifacts
+    if touches_artifacts:
+        assert "outside the sandbox egress proxy" in prompts[0]
+        assert "private data as exfiltration" in prompts[0]
+        assert "does not prevent self-navigation" in prompts[0]
+
+
+@pytest.mark.parametrize(
+    ("diff", "shared", "is_public"),
+    [
+        ("--- /dev/null\n+++ b/artifacts/report/index.html", {"report"}, True),
+        ("--- a/artifacts/report/index.html\n+++ /dev/null", {"report"}, True),
+        ("rename from artifacts/report/index.html\nrename to notes/report.html", {"report"}, True),
+        ("--- a/artifacts/report/index.html\n+++ b/artifacts/report/index.html", set(), False),
+        ("--- a/artifacts/private/index.html\n+++ b/artifacts/private/index.html", {"report"}, False),
+        ("--- a/artifacts/reporting/index.html\n+++ b/artifacts/reporting/index.html", {"report"}, False),
+        ("--- a/notes/report.html\n+++ b/notes/report.html", {"report"}, False),
+    ],
+)
+async def test_push_context_marks_only_touched_shared_artifacts_as_publications(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, diff: str, shared: set[str], is_public: bool
+) -> None:
+    sentinel, _skills_dir = _make_sentinel(tmp_path)
+    prompts: list[str] = []
+
+    async def capture(_session: SessionSecurity, prompt: str, **_kwargs: object) -> SentinelVerdict:
+        prompts.append(prompt)
+        return SentinelVerdict(decision="allow", explanation="ok", risk_level="low")
+
+    monkeypatch.setattr(sentinel, "_run_evaluation", capture)
+    await sentinel.evaluate_push(
+        SessionSecurity("session-1"), "refs/heads/main", True, "Update report", diff, shared_artifacts=shared
+    )
+    assert ("Publicly shared artifacts touched: report." in prompts[0]) is is_public
+    assert ("this push is a publication." in prompts[0]) is is_public

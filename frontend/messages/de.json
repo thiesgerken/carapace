@@ -19,6 +19,33 @@
         "memory": "Gedächtnis",
         "systemPrompts": "Systemprompts"
     },
+    "artifacts": {
+        "source": "Quelltext anzeigen",
+        "preview": "Vorschau anzeigen",
+        "openInNewTab": "In neuem Tab öffnen",
+        "openLive": "Aktuelle Version öffnen",
+        "openLiveInNewTab": "Aktuelle Version in neuem Tab öffnen",
+        "fullScreen": "Vollbild",
+        "openKnowledge": "Im Wissensbrowser öffnen",
+        "back": "Zurück",
+        "createdIn": "Erstellt in:",
+        "updatedIn": "Zuletzt geändert in:",
+        "invalidSlug": "Öffne ein Artefakt im Chat oder im Wissensbrowser.",
+        "shared": "Geteilt",
+        "loadError": "Artefakt konnte nicht geladen werden.",
+        "loadingArtifact": "Artefakt wird geladen…",
+        "loading": "Quelltext wird geladen…",
+        "sourceError": "Artefakt-Quelltext konnte nicht geladen werden.",
+        "sharing": {
+            "label": "Öffentlich teilen",
+            "confirm": "Dieses Artefakt teilen? Jeder mit dem Link kann es sehen, einschließlich zukünftiger Änderungen durch den Agenten.",
+            "loadError": "Freigabestatus konnte nicht geladen werden.",
+            "updateError": "Freigabe konnte nicht aktualisiert werden.",
+            "copy": "Öffentlichen Link kopieren",
+            "copied": "Kopiert",
+            "copyError": "Der öffentliche Link konnte nicht kopiert werden."
+        }
+    },
     "knowledge": {
         "title": "Wissens-Repository",
         "root": "Wissen",
@@ -968,6 +995,7 @@
             "accessDomain": "Domain verwenden",
             "replace": "Ersetze",
             "sentFile": "Datei gesendet",
+            "artifact": "Artefakt · {title}",
             "sendFile": "Datei senden"
         },
         "summaries": {

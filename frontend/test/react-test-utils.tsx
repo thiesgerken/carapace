@@ -11,6 +11,7 @@ type RenderHandle = {
 
 type SavedGlobals = {
   window?: typeof globalThis.window;
+  self?: typeof globalThis.self;
   document?: typeof globalThis.document;
   navigator?: typeof globalThis.navigator;
   localStorage?: typeof globalThis.localStorage;
@@ -41,6 +42,7 @@ export function installDom(url = "https://carapace.example.test/"): () => void {
   const dom = new JSDOM("<!doctype html><html><body></body></html>", { url });
   const saved: SavedGlobals = {
     window: globalThis.window,
+    self: globalThis.self,
     document: globalThis.document,
     navigator: globalThis.navigator,
     localStorage: globalThis.localStorage,
@@ -60,6 +62,7 @@ export function installDom(url = "https://carapace.example.test/"): () => void {
   };
 
   setGlobal("window", dom.window as unknown as typeof globalThis.window);
+  setGlobal("self", dom.window as unknown as typeof globalThis.self);
   setGlobal("document", dom.window.document as typeof globalThis.document);
   setGlobal("navigator", dom.window.navigator as typeof globalThis.navigator);
   setGlobal("localStorage", dom.window.localStorage as typeof globalThis.localStorage);

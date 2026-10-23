@@ -6,10 +6,12 @@
   <a href="charts/carapace/README.md"><img alt="Helm chart" src="https://img.shields.io/badge/helm-chart-0F766E?logo=helm&logoColor=white"></a>
 </p>
 
-<h3 align="center">
-  <img src="docs/assets/icon.svg" alt="carapace logo" width="180"><br>
-  carapace
-</h3>
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo-dark.svg">
+    <img src="docs/assets/logo-light.svg" alt="carapace" width="420">
+  </picture>
+</p>
 <p align="center"><strong>A secure personal AI agent for DevOps engineers.</strong></p>
 
 <p align="center">Zero trust. Git-backed knowledge. Kubernetes Sandboxes.</p>
@@ -198,6 +200,29 @@ uv run carapace
 ```
 
 Additional prerequisites: Python 3.12+, `uv`, Node.js 24+, and `pnpm`.
+
+### Brand assets
+
+The organic turtle in `docs/assets/icon.svg` is the canonical mark. The wordmark is
+Fraunces SemiBold (weight 600, optical size 9, softness 0, wonk 1), with -0.043 em
+tracking. Logo and wordmark SVGs contain outlined letters, so the app and README
+need no font download. In both light and dark lockups, the turtle's feet align with
+the wordmark baseline, leaving the `p` descender below. Personalized agent names
+and icons remain independent of the product branding.
+
+To regenerate the SVG assets, download the upright variable
+[Fraunces font](https://github.com/google/fonts/tree/main/ofl/fraunces)
+(SIL Open Font License), then run:
+
+```bash
+uv run frontend/scripts/generate_brand.py '/path/to/Fraunces[SOFT,WONK,opsz,wght].ttf'
+pnpm --dir frontend generate:favicon
+pnpm --dir frontend generate:pwa-icons
+```
+
+The raster commands require ImageMagick. Generated app icons live in
+`frontend/public/`; keeping them out of Next.js file-convention metadata lets
+per-user agent icons control the browser tab.
 
 ## Contributing
 

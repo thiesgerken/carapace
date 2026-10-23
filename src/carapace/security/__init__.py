@@ -10,6 +10,7 @@ from pydantic_ai import ApprovalRequired
 from pydantic_ai.exceptions import UsageLimitExceeded
 from pydantic_ai.usage import UsageLimits
 
+from ..git.diff import touched_paths
 from ..usage import UsageTracker
 from .context import ActionLogEntry as ActionLogEntry
 from .context import (
@@ -627,6 +628,7 @@ async def evaluate_push_with(
     commits: str,
     diff: str,
     *,
+    shared_artifacts: set[str],
     usage_tracker: UsageTracker | None = None,
     assert_llm_budget_available: Callable[[], None] | None = None,
     usage_limits: UsageLimits | None = None,
@@ -685,6 +687,7 @@ async def evaluate_push_with(
         is_default_branch,
         commits,
         diff,
+        shared_artifacts=shared_artifacts,
         usage_tracker=usage_tracker,
         assert_llm_budget_available=assert_llm_budget_available,
         usage_limits=usage_limits,
@@ -710,10 +713,7 @@ async def evaluate_push_with(
         allowed = False
         detail = f"[sentinel: deny] {verdict.explanation}"
     else:
-        # Extract changed file names from unified diff headers
-        changed_files = sorted(
-            {m.group(1) for m in re.finditer(r"^\+\+\+ b/(.+)$", diff, re.MULTILINE) if m.group(1) != "/dev/null"}
-        )
+        changed_files = sorted(touched_paths(diff))
         user_decision = await session.escalate_to_user(
             f"git push {ref}",
             {
