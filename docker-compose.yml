@@ -1,6 +1,11 @@
 services:
   carapace:
-    build: .
+    image: ghcr.io/thiesgerken/carapace:${CARAPACE_IMAGE_TAG:-latest}
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,mode=1777
     tty: true
     ports:
       - "8321:8321"
@@ -14,7 +19,6 @@ services:
     volumes:
       - ./data:/var/lib/carapace
       - /var/run/docker.sock:/var/run/docker.sock
-      - ./src/carapace:/app/.venv/lib/python3.14/site-packages/carapace
     environment:
       - CARAPACE_DATA_DIR=/var/lib/carapace
       - CARAPACE_HOST_DATA_DIR=${PWD}/data
@@ -26,6 +30,7 @@ services:
       - CARAPACE_CACHE_REDIS_URL=redis://redis:6379/0
       # SQL backend. Migrations run automatically on startup.
       - CARAPACE_DATABASE_URL=postgresql+psycopg://carapace:carapace@postgres:5432/carapace
+      - CARAPACE_SANDBOX_BASE_IMAGE=ghcr.io/thiesgerken/carapace-sandbox:${CARAPACE_IMAGE_TAG:-latest}
       # Enables credentials.backends.<name>.type=file for this local Compose example.
       # Only keep this enabled when users who can change backend config are trustworthy;
       # the server process reads the configured path.
@@ -41,8 +46,12 @@ services:
   # is reachable at 127.0.0.1:8087 from the carapace container.
   # Scaled to 0 by default; enable with: docker compose up -d --scale bw=1
   bw:
-    build: ./bitwarden-cli
-    image: carapace-bitwarden-cli:latest
+    image: ghcr.io/thiesgerken/carapace-bitwarden-cli:${CARAPACE_IMAGE_TAG:-latest}
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,mode=1777
     tty: true
     network_mode: service:carapace
     volumes:
@@ -58,10 +67,15 @@ services:
     scale: 0
 
   frontend:
-    build: ./frontend
-    environment:
-      # Extra img-src origins for the CSP, space-separated (e.g. an API on another origin).
-      CARAPACE_CSP_IMG_SRC_EXTRA: ${CARAPACE_CSP_IMG_SRC_EXTRA:-}
+    image: ghcr.io/thiesgerken/carapace-frontend:${CARAPACE_IMAGE_TAG:-latest}
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,mode=1777
+    # For extra CSP img-src origins, mount a one-line nginx snippet:
+    # volumes:
+    #   - ./csp-img-src.conf:/etc/nginx/csp.d/img-src.conf:ro
 
   proxy:
     image: traefik:v3.7@sha256:0f6150202bc1fed72a7bd2107460eaa510e5b8a905f3fdb5b84f2c8619c33368
@@ -103,7 +117,7 @@ services:
 
   sandbox:
     build: ./sandbox
-    image: carapace-sandbox:latest
+    image: ghcr.io/thiesgerken/carapace-sandbox:${CARAPACE_IMAGE_TAG:-latest}
     profiles: ["build"]
 
 volumes:

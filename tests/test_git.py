@@ -4,9 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import json
 import os
+import shutil
 import stat
 import subprocess
+from collections.abc import AsyncIterator
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
@@ -14,7 +18,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from carapace.git.http import GitHttpHandler
-from carapace.git.store import _PRE_RECEIVE_HOOK, GitStore, _parse_last_commits
+from carapace.git.store import GitStore, _parse_last_commits
 
 # ── Helpers ──────────────────────────────────────────────────────────
 
@@ -95,13 +99,6 @@ class TestGitStoreEnsureRepo:
         mode = hook.stat().st_mode
         assert mode & stat.S_IXUSR
 
-    async def test_hook_content(self, repo_dir: Path):
-        store = GitStore(repo_dir)
-        await store.ensure_repo()
-
-        hook = repo_dir / ".git" / "hooks" / "pre-receive"
-        assert hook.read_text() == _PRE_RECEIVE_HOOK
-
     async def test_idempotent(self, repo_dir: Path):
         store = GitStore(repo_dir)
         await store.ensure_repo()
@@ -127,6 +124,184 @@ class TestGitStoreEnsureRepo:
 
         _, out = await store._run("config", "receive.denyCurrentBranch")
         assert out == "updateInstead"
+
+
+@dataclass
+class SentinelStub:
+    server: asyncio.Server
+    requests: list[dict[str, object]]
+    responses: list[tuple[int, bytes]]
+
+
+@pytest.fixture
+async def sentinel_api() -> AsyncIterator[SentinelStub]:
+    requests: list[dict[str, object]] = []
+    responses = [(200, b'{"verdict": "allow"}')]
+
+    async def respond(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        headers = (await reader.readuntil(b"\r\n\r\n")).decode()
+        length = next(
+            int(line.split(":", 1)[1]) for line in headers.split("\r\n") if line.lower().startswith("content-length:")
+        )
+        requests.append(json.loads(await reader.readexactly(length)))
+        status, body = responses.pop(0)
+        writer.write(f"HTTP/1.1 {status} Response\r\nContent-Length: {len(body)}\r\n\r\n".encode() + body)
+        await writer.drain()
+        writer.close()
+        await writer.wait_closed()
+
+    async with await asyncio.start_server(respond, "127.0.0.1", 0) as server:
+        yield SentinelStub(server, requests, responses)
+
+
+@needs_git
+class TestPreReceiveHook:
+    @pytest.fixture
+    async def sender(self, tmp_path: Path) -> GitStore:
+        receiver = GitStore(tmp_path / "receiver")
+        await receiver.ensure_repo()
+        (receiver.repo_dir / "note.md").write_text("initial\n")
+        await receiver.commit(["note.md"], "initial")
+        sender = GitStore(tmp_path / "sender")
+        await sender._run("clone", str(receiver.repo_dir), str(sender.repo_dir), cwd=tmp_path)
+        await sender._run("config", "user.name", "Test")
+        await sender._run("config", "user.email", "test@example.com")
+        (sender.repo_dir / "note.md").write_text('incoming "quoted" content\n')
+        await sender.commit(["note.md"], "incoming change")
+        return sender
+
+    @pytest.fixture
+    def hook_env(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        sentinel_api: SentinelStub,
+    ) -> None:
+        monkeypatch.setenv("CARAPACE_SESSION_ID", "session-test")
+        monkeypatch.setenv("CARAPACE_DEFAULT_BRANCH", "main")
+        monkeypatch.setenv("CARAPACE_API_PORT", str(sentinel_api.server.sockets[0].getsockname()[1]))
+        # The runtime image exposes Git, but no shell, jq, or curl on PATH.
+        bin_dir = tmp_path / "bin"
+        bin_dir.mkdir()
+        git = shutil.which("git")
+        assert git is not None
+        (bin_dir / "git").symlink_to(git)
+        monkeypatch.setenv("PATH", str(bin_dir))
+
+    @pytest.mark.parametrize("branch", ["main", "feature"])
+    async def test_push_evaluates_diff_without_shell_tools(
+        self,
+        sender: GitStore,
+        hook_env: None,
+        sentinel_api: SentinelStub,
+        branch: str,
+    ) -> None:
+        code, output = await sender._run("push", "origin", f"HEAD:refs/heads/{branch}")
+
+        assert code == 0, output
+        [payload] = sentinel_api.requests
+        assert payload["session_id"] == "session-test"
+        assert payload["ref"] == f"refs/heads/{branch}"
+        assert payload["is_default_branch"] is (branch == "main")
+        assert "incoming change" in str(payload["commits"])
+        assert ("initial" in str(payload["commits"])) is (branch == "feature")
+        assert '+incoming "quoted" content' in str(payload["diff"])
+        assert ("-initial" in str(payload["diff"])) is (branch == "main")
+        receiver = GitStore(sender.repo_dir.parent / "receiver")
+        _, pushed_sha = await receiver._run("rev-parse", f"refs/heads/{branch}")
+        assert pushed_sha == await sender.head_sha()
+
+    async def test_oversized_artifact_rejected_before_sentinel(
+        self,
+        sender: GitStore,
+        hook_env: None,
+        sentinel_api: SentinelStub,
+    ) -> None:
+        artifact = sender.repo_dir / "artifacts" / "oversized"
+        artifact.mkdir(parents=True)
+        (artifact / "index.html").write_bytes(b"x" * (5 * 1024 * 1024))
+        (artifact / "data.bin").write_bytes(b"x" * (5 * 1024 * 1024 + 1))
+        await sender.commit(["artifacts/oversized"], "add oversized artifact")
+        receiver = GitStore(sender.repo_dir.parent / "receiver")
+        before = await receiver.head_sha()
+
+        code, output = await sender._run("push", "origin", "HEAD:main")
+
+        assert code != 0, output
+        assert "DENIED: artifact oversized exceeds the 10 MiB directory limit" in output
+        assert sentinel_api.requests == []
+        assert await receiver.head_sha() == before
+
+    @pytest.mark.parametrize(
+        ("status", "body"),
+        [
+            (200, b'{"verdict": "deny", "reason": "protected file"}'),
+            (200, b'{"verdict": "unknown", "reason": "invalid verdict"}'),
+            (200, b"invalid json"),
+            (302, b'{"verdict": "allow"}'),
+            (503, b'{"verdict": "allow"}'),
+        ],
+    )
+    async def test_push_fails_closed(
+        self,
+        sender: GitStore,
+        hook_env: None,
+        sentinel_api: SentinelStub,
+        status: int,
+        body: bytes,
+    ) -> None:
+        sentinel_api.responses[:] = [(status, body)]
+        receiver = GitStore(sender.repo_dir.parent / "receiver")
+        before = await receiver.head_sha()
+
+        code, output = await sender._run("push", "origin", "HEAD:main")
+
+        assert code != 0
+        assert "pre-receive hook declined" in output
+        assert await receiver.head_sha() == before
+
+    async def test_denied_ref_rejects_entire_push(
+        self,
+        sender: GitStore,
+        hook_env: None,
+        sentinel_api: SentinelStub,
+    ) -> None:
+        sentinel_api.responses.append((200, b'{"verdict": "deny", "reason": "protected file"}'))
+        receiver = GitStore(sender.repo_dir.parent / "receiver")
+        before = await receiver.head_sha()
+
+        code, output = await sender._run("push", "origin", "HEAD:feature-a", "HEAD:feature-b")
+
+        assert code != 0
+        assert "protected file" in output
+        assert [payload["ref"] for payload in sentinel_api.requests] == ["refs/heads/feature-a", "refs/heads/feature-b"]
+        _, branches = await receiver._run("for-each-ref", "--format=%(refname)", "refs/heads/")
+        assert branches == "refs/heads/main"
+        assert await receiver.head_sha() == before
+
+    async def test_unreachable_sentinel_rejects_push(
+        self,
+        sender: GitStore,
+        hook_env: None,
+        sentinel_api: SentinelStub,
+    ) -> None:
+        sentinel_api.server.close()
+        await sentinel_api.server.wait_closed()
+
+        code, output = await sender._run("push", "origin", "HEAD:main")
+
+        assert code != 0
+        assert "DENIED: failed to reach sentinel API" in output
+
+    async def test_empty_input_is_denied(self, sender: GitStore, hook_env: None) -> None:
+        hook = sender.repo_dir.parent / "receiver" / ".git" / "hooks" / "pre-receive"
+        proc = await asyncio.create_subprocess_exec(
+            str(hook), stdin=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE
+        )
+        _, stderr = await proc.communicate()
+
+        assert proc.returncode != 0
+        assert b"DENIED: no refs received for evaluation" in stderr
 
 
 @needs_git

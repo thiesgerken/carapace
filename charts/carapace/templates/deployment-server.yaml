@@ -27,11 +27,13 @@ spec:
       priorityClassName: {{ .Values.priorityClassName }}
       {{- end }}
       securityContext:
-        fsGroup: 999
+        {{- include "carapace.podSecurityContext" . | nindent 8 }}
       containers:
         - name: server
           image: {{ include "carapace.serverImage" . }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- include "carapace.containerSecurityContext" . | nindent 12 }}
           ports:
             - name: api
               containerPort: {{ .Values.server.apiPort }}
@@ -123,6 +125,8 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /var/lib/carapace
+            - name: tmp
+              mountPath: /tmp
           {{- with .Values.resources }}
           resources:
             {{- toYaml . | nindent 12 }}
@@ -140,6 +144,8 @@ spec:
               port: api
             {{- toYaml .Values.server.probes.readiness | nindent 12 }}
       volumes:
+        - name: tmp
+          emptyDir: {}
         - name: data
           persistentVolumeClaim:
             claimName: {{ .Release.Name }}-data

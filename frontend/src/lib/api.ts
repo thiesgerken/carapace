@@ -766,9 +766,9 @@ export function sentFileUrl(
   server: string,
   sessionId: string,
   fileId: string,
-  opts: { download?: boolean } = {},
+  opts: { download?: boolean; artifact?: boolean } = {},
 ): string {
-  const query = opts.download ? "?download=1" : "";
+  const query = opts.download ? "?download=1" : opts.artifact ? "?artifact=1" : "";
   return `${server}/api/sessions/${sessionId}/files/${fileId}${query}`;
 }
 
@@ -1727,11 +1727,12 @@ export interface KnowledgeEntry {
   modified: string | null;
   /** Newest commit touching this entry; null for uncommitted paths. */
   commit: { hash: string; short: string; subject: string; committed_at: string } | null;
-  /** Recognized directory convention: a session archive or a skill dir. */
-  kind: "session" | "skill" | null;
-  /** Human label shown in place of a file's size (a session's title). */
+  /** Recognized directory convention. */
+  kind: "session" | "skill" | "artifact" | null;
+  /** Human label, such as a session or artifact title. */
   label: string | null;
   session_id: string | null;
+  shared: boolean;
 }
 
 export interface SkillCommandDecl {
@@ -1788,14 +1789,27 @@ export interface KnowledgeSkill {
   carapace: SkillCarapaceConfig | null;
 }
 
+export interface ArtifactSession {
+  session_id: string;
+  title: string | null;
+}
+
+export interface KnowledgeArtifact {
+  slug: string;
+  title: string;
+  created_in: ArtifactSession | null;
+  updated_in: ArtifactSession | null;
+}
+
 export interface KnowledgeDirListing {
   type: "dir";
   /** Recognized directory convention, e.g. a skill dir. */
-  kind: "skill" | null;
+  kind: "skill" | "artifact" | null;
   /** Defining document inlined by the server (SKILL.md), frontmatter stripped. */
   doc_name: string | null;
   doc: string | null;
   skill: KnowledgeSkill | null;
+  artifact: KnowledgeArtifact | null;
   /** Per vault_path referenced by the skill: "present" | "absent" | "error". */
   vault_status?: Record<string, string>;
   path: string;
@@ -1810,6 +1824,7 @@ export interface KnowledgeFileInfo {
   mime: string;
   /** Inlined by the server for text files under its size cap; null for binaries. */
   content: string | null;
+  artifact: KnowledgeArtifact | null;
 }
 
 export type KnowledgeBrowseResult = KnowledgeDirListing | KnowledgeFileInfo;
@@ -1838,6 +1853,28 @@ export function knowledgeRawUrl(
 ): string {
   const query = opts.download ? "?raw=1&download=1" : "?raw=1";
   return `${server}${knowledgeBrowsePath(path)}${query}`;
+}
+
+export function knowledgeArtifactUrl(server: string, slug: string): string {
+  return `${server}/api/artifacts/${encodeURIComponent(slug)}`;
+}
+
+export interface ArtifactShareState {
+  /** Public path relative to the backend origin, or null while sharing is off. */
+  url: string | null;
+  shared_at: string | null;
+}
+
+export async function getArtifactShare(server: string, slug: string): Promise<ArtifactShareState> {
+  const response = await fetch(`${knowledgeArtifactUrl(server, slug)}/share`);
+  if (!response.ok) throw new Error(await readErrorMessage(response, "Failed to load artifact sharing"));
+  return await response.json() as ArtifactShareState;
+}
+
+export async function setArtifactShared(server: string, slug: string, shared: boolean): Promise<ArtifactShareState> {
+  const response = await fetch(`${knowledgeArtifactUrl(server, slug)}/share`, { method: shared ? "PUT" : "DELETE" });
+  if (!response.ok) throw new Error(await readErrorMessage(response, "Failed to update artifact sharing"));
+  return await response.json() as ArtifactShareState;
 }
 
 function memoryTaskQuery(filter: MemoryTaskFilter, sort: MemoryTaskSort, cursor: string | null): string {

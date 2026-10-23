@@ -8,7 +8,7 @@ Web UI for carapace, built with Next.js (App Router).
 - **Language:** TypeScript
 - **Styling:** [Tailwind CSS 4](https://tailwindcss.com)
 - **Icons:** [Lucide React](https://lucide.dev) (`lucide-react`)
-- **Fonts:** [Geist](https://vercel.com/font) via `next/font`
+- **Fonts:** Geist, Geist Mono, and Source Serif 4 via `next/font/local`
 - **Markdown:** `react-markdown` with `remark-gfm`, `remark-math`, `rehype-katex`, `rehype-pretty-code`
 - **Theming:** `next-themes` (light/dark mode)
 
@@ -22,6 +22,10 @@ pnpm dev
 Open [http://localhost:3000](http://localhost:3000).
 
 The frontend calls the backend on the same origin. During `pnpm dev`, Next.js proxies `/api/*` to `CARAPACE_BACKEND_URL`, defaulting to `http://127.0.0.1:8321`, so start the carapace backend separately before signing in.
+
+### Bundled fonts
+
+Variable Latin WOFF2 files live in `src/fonts/` so production builds do not contact Google Fonts. Geist and Geist Mono cover weights 100–900; Source Serif 4 covers 200–900. Their SIL Open Font License notices are shipped in `public/fonts/`. The Geist files match Ferret's bundled inputs; Source Serif 4 comes from [Google Fonts](https://fonts.google.com/specimen/Source+Serif+4).
 
 ### Emoji Rendering
 

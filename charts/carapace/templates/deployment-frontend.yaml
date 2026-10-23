@@ -16,11 +16,16 @@ spec:
       app.kubernetes.io/component: frontend
   template:
     metadata:
+      annotations:
+        checksum/csp: {{ include (print $.Template.BasePath "/configmap-frontend-csp.yaml") . | sha256sum }}
       labels:
         app.kubernetes.io/name: carapace
         app.kubernetes.io/instance: {{ .Release.Name }}
         app.kubernetes.io/component: frontend
     spec:
+      automountServiceAccountToken: false
+      securityContext:
+        {{- include "carapace.podSecurityContext" . | nindent 8 }}
       {{- if .Values.priorityClassName }}
       priorityClassName: {{ .Values.priorityClassName }}
       {{- end }}
@@ -28,12 +33,19 @@ spec:
         - name: frontend
           image: {{ include "carapace.frontendImage" . }}
           imagePullPolicy: {{ .Values.frontend.image.pullPolicy }}
+          securityContext:
+            {{- include "carapace.containerSecurityContext" . | nindent 12 }}
           ports:
             - name: http
-              containerPort: 80
-          env:
-            - name: CARAPACE_CSP_IMG_SRC_EXTRA
-              value: {{ join " " .Values.frontend.csp.imgSrcExtra | quote }}
+              containerPort: 8080
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          {{- if .Values.frontend.csp.imgSrcExtra }}
+            - name: csp
+              mountPath: /etc/nginx/csp.d
+              readOnly: true
+          {{- end }}
           {{- with .Values.frontend.resources }}
           resources:
             {{- toYaml . | nindent 12 }}
@@ -44,4 +56,12 @@ spec:
               port: http
             initialDelaySeconds: 5
             periodSeconds: 30
+      volumes:
+        - name: tmp
+          emptyDir: {}
+      {{- if .Values.frontend.csp.imgSrcExtra }}
+        - name: csp
+          configMap:
+            name: {{ .Release.Name }}-frontend-csp
+      {{- end }}
 {{- end }}

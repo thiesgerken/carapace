@@ -106,6 +106,16 @@ flowchart TD
 
 The HTTP/WebSocket entry point. `src/carapace/server/__init__.py` is the public facade that exposes `app`, `sandbox_app`, and `main`, owns process startup/shutdown wiring, and keeps shared runtime state for compatibility with tests and route modules. Routes are split into focused modules: `server/auth.py` for cookie-session auth and admin user-management routes, `server/notifications.py` for notification and presence endpoints, `server/websocket.py` for chat WebSocket and small web-facing metadata routes, and `server/state.py` for accessing the mutable facade state from extracted routes.
 
+`server/artifacts.py` serves authenticated artifact pages and browser-session-only
+sharing controls. The anonymous `GET /api/public/a/{token}` route resolves a
+revocable database token to its owner's single `artifacts/<slug>/index.html`;
+it cannot serve adjacent assets or other knowledge files. Private pages, sent-file
+snapshots, and public pages reuse the CSP sandbox headers from
+`server/artifact_rendering.py`. Public responses also disable caching and
+referrers. Keeping the public route under `/api` uses the existing backend ingress
+rather than frontend static-file serving. See [artifacts.md](artifacts.md) for the
+rendering constraints, navigation risk, and authoring workflow.
+
 ### Session Engine
 
 The central coordinator. Receives inbound messages from all channel subscribers (WebSocket, Matrix), manages session lifecycle, routes approval requests, runs agent turns, and broadcasts results back to subscribers. `session/engine.py` is now the lifecycle and dependency-wiring facade; model selection, slash commands, approvals, transcript helpers, turn execution, and usage/budget logic live in focused `session/` modules. See [sessions-and-channels.md](sessions-and-channels.md).

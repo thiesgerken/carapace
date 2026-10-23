@@ -1,0 +1,17 @@
+{
+  "version": "12.14.0",
+  "platforms": {
+    "aarch64-darwin": {
+      "asset": "pnpm-darwin-arm64.tar.gz",
+      "hash": "sha256-UPSODhdQiVJ5Cj+/WPzxTzuC76X1lMoErZBOKar4VLA="
+    },
+    "aarch64-linux": {
+      "asset": "pnpm-linux-arm64.tar.gz",
+      "hash": "sha256-z8eAueaQVJ5mM+EEX7H7bvhOOQcR4gmebMuukcMkVuo="
+    },
+    "x86_64-linux": {
+      "asset": "pnpm-linux-x64.tar.gz",
+      "hash": "sha256-ORDDhSE2vtW8FRG5E3pF/UNX7Ws5cNnQiJNkHpAFhn4="
+    }
+  }
+}

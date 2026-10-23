@@ -2,9 +2,6 @@
 {{- $name := include "carapace.bitwardenStandaloneName" (dict "root" $ "instance" .) }}
 {{- $servePort := 8088 }}
 {{- $servicePort := .port | default 80 }}
-{{- if eq (int $servicePort) $servePort }}
-{{- fail (printf "bitwarden standalone instance %q cannot use port %d because it is reserved for internal bw serve traffic" .name $servePort) }}
-{{- end }}
 {{- $basicAuth := .basicAuth | default dict }}
 {{- $basicAuthEnabled := true }}
 {{- if hasKey $basicAuth "enabled" }}
@@ -26,7 +23,7 @@ metadata:
 data:
   default.conf: |
     server {
-      listen {{ $servicePort }};
+      listen 8080;
       server_name _;
 
       location = /healthz {
@@ -100,21 +97,23 @@ spec:
       {{- end }}
       automountServiceAccountToken: false
       securityContext:
-        fsGroup: 999
+        {{- include "carapace.podSecurityContext" $ | nindent 8 }}
       containers:
         - name: bitwarden
           image: {{ include "carapace.bitwardenImage" $ }}
           imagePullPolicy: {{ $.Values.bitwarden.image.pullPolicy }}
+          securityContext:
+            {{- include "carapace.containerSecurityContext" $ | nindent 12 }}
           env:
             - name: BW_SERVER_URL
               value: {{ .serverUrl | quote }}
             - name: BW_SERVE_PORT
               value: {{ $servePort | quote }}
           volumeMounts:
-            {{- if $.Values.bitwarden.persistence.enabled }}
+            - name: tmp
+              mountPath: /tmp
             - name: bitwarden-data
               mountPath: /var/lib/bitwarden-cli
-            {{- end }}
             - name: bitwarden-creds
               mountPath: /run/secrets/bitwarden
               readOnly: true
@@ -146,10 +145,14 @@ spec:
         - name: nginx
           image: {{ include "carapace.bitwardenNginxImage" $ }}
           imagePullPolicy: {{ $.Values.bitwarden.nginx.image.pullPolicy }}
+          securityContext:
+            {{- include "carapace.containerSecurityContext" $ | nindent 12 }}
           ports:
             - name: http
-              containerPort: {{ $servicePort }}
+              containerPort: 8080
           volumeMounts:
+            - name: nginx-tmp
+              mountPath: /tmp
             - name: nginx-config
               mountPath: /etc/nginx/conf.d/default.conf
               subPath: default.conf
@@ -174,10 +177,16 @@ spec:
               port: http
             {{- toYaml $.Values.bitwarden.probes.nginx.liveness | nindent 12 }}
       volumes:
-        {{- if $.Values.bitwarden.persistence.enabled }}
+        - name: tmp
+          emptyDir: {}
+        - name: nginx-tmp
+          emptyDir: {}
         - name: bitwarden-data
+        {{- if $.Values.bitwarden.persistence.enabled }}
           persistentVolumeClaim:
             claimName: {{ $.Release.Name }}-bitwarden-{{ .name }}
+        {{- else }}
+          emptyDir: {}
         {{- end }}
         - name: bitwarden-creds
           secret:
@@ -219,6 +228,6 @@ spec:
               app.kubernetes.io/component: server
       ports:
         - protocol: TCP
-          port: {{ $servicePort }}
+          port: 8080
 {{- end }}
 {{- end }}

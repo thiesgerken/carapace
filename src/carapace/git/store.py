@@ -4,6 +4,7 @@ import asyncio
 import os
 import re
 import socket
+import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -47,80 +48,6 @@ def _parse_last_commits(out: str, prefix: str) -> dict[str, FileCommit]:
             # Commits arrive newest first, so the first one seen wins.
             found.setdefault(child, commit)
     return found
-
-
-# Pre-receive hook script — gates every push through the sentinel.
-# CARAPACE_SESSION_ID, CARAPACE_DEFAULT_BRANCH, and CARAPACE_API_PORT
-# are set by the Git HTTP handler.
-_PRE_RECEIVE_HOOK = """\
-#!/bin/sh
-# Pre-receive hook — sentinel evaluation of incoming pushes
-set -e
-
-if ! command -v jq >/dev/null 2>&1; then
-    echo "DENIED: jq is required but not installed" >&2
-    exit 1
-fi
-
-if ! command -v curl >/dev/null 2>&1; then
-    echo "DENIED: curl is required but not installed" >&2
-    exit 1
-fi
-
-NULL_SHA="0000000000000000000000000000000000000000"
-EMPTY_TREE=$(git hash-object -t tree /dev/null)
-EVALUATED=0
-
-while read old_sha new_sha ref; do
-    EVALUATED=$((EVALUATED + 1))
-
-    if [ "$old_sha" = "$NULL_SHA" ]; then
-        # New branch: show all commits and diff against empty tree
-        changes=$(git log --oneline "$new_sha" 2>/dev/null)
-        diff=$(git diff "$EMPTY_TREE" "$new_sha" 2>/dev/null)
-    else
-        changes=$(git log --oneline "$old_sha..$new_sha" 2>/dev/null)
-        diff=$(git diff "$old_sha" "$new_sha" 2>/dev/null)
-    fi
-
-    branch=$(echo "$ref" | sed 's|refs/heads/||')
-    is_default="false"
-    if [ "$branch" = "$CARAPACE_DEFAULT_BRANCH" ]; then
-        is_default="true"
-    fi
-
-    SENTINEL_URL="http://127.0.0.1:${CARAPACE_API_PORT:-8320}/internal/sentinel/evaluate-push"
-    payload=$(jq -n \\
-        --arg sid "$CARAPACE_SESSION_ID" \\
-        --arg ref "$ref" \\
-        --argjson def "$is_default" \\
-        --arg commits "$changes" \\
-        --arg diff "$diff" \\
-        '{session_id: $sid, ref: $ref, is_default_branch: $def, commits: $commits, diff: $diff}')
-    # No --max-time: the sentinel may escalate to the user for approval,
-    # which can take arbitrarily long. --connect-timeout still catches a
-    # down server quickly.
-    result=$(curl -s --fail --connect-timeout 10 -X POST "$SENTINEL_URL" \\
-        -H "Content-Type: application/json" \\
-        -d "$payload") || {
-        echo "DENIED: failed to reach sentinel API" >&2
-        exit 1
-    }
-
-    verdict=$(echo "$result" | jq -r '.verdict')
-
-    if [ "$verdict" != "allow" ]; then
-        reason=$(echo "$result" | jq -r '.reason')
-        echo "DENIED by sentinel: $reason" >&2
-        exit 1
-    fi
-done
-
-if [ "$EVALUATED" -eq 0 ]; then
-    echo "DENIED: no refs received for evaluation" >&2
-    exit 1
-fi
-"""
 
 
 def _log_subjects_as_bullets(subjects_stdout: str) -> str:
@@ -213,7 +140,8 @@ class GitStore:
         hooks_dir = self.repo_dir / ".git" / "hooks"
         hooks_dir.mkdir(parents=True, exist_ok=True)
         hook_path = hooks_dir / "pre-receive"
-        hook_path.write_text(_PRE_RECEIVE_HOOK, encoding="utf-8")
+        source = Path(__file__).with_name("pre_receive.py").read_text(encoding="utf-8")
+        hook_path.write_text(f"#!{sys.executable}\n{source}", encoding="utf-8")
         hook_path.chmod(0o755)
         logger.debug("Installed pre-receive hook")
 
@@ -504,3 +432,19 @@ class GitStore:
         if code != 0 or not out:
             return {}
         return _parse_last_commits(out, prefix)
+
+    async def session_history(self, relative_path: str) -> tuple[str, str] | None:
+        """Return the oldest and newest session trailers touching the current path."""
+        code, out = await self._run(
+            "--literal-pathspecs",
+            "log",
+            "--format=%(trailers:key=carapace-session,valueonly)",
+            "--",
+            relative_path,
+        )
+        if code != 0:
+            if "does not have any commits yet" in out:
+                return None
+            raise RuntimeError(f"git session history failed: {out}")
+        sessions = [line.strip() for line in out.splitlines() if line.strip()]
+        return (sessions[-1], sessions[0]) if sessions else None

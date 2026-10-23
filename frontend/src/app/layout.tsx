@@ -1,17 +1,23 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono, Source_Serif_4 } from "next/font/google";
+import localFont from "next/font/local";
 import { AppProviders } from "@/components/app-providers";
 import { defaultLocale, getLocaleMessages } from "@/lib/i18n";
 import "./globals.css";
 
-const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
+const geistSans = localFont({
+  src: "../fonts/geist-latin-variable.woff2",
+  variable: "--font-geist-sans",
+  weight: "100 900",
 });
-const sourceSerif = Source_Serif_4({
+const geistMono = localFont({
+  src: "../fonts/geist-mono-latin-variable.woff2",
+  variable: "--font-geist-mono",
+  weight: "100 900",
+});
+const sourceSerif = localFont({
+  src: "../fonts/source-serif-4-latin-variable.woff2",
   variable: "--font-source-serif",
-  subsets: ["latin"],
+  weight: "200 900",
   display: "swap",
 });
 const defaultMessages = getLocaleMessages(defaultLocale) as {

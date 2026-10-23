@@ -3,18 +3,16 @@
 set -euo pipefail
 
 if ! command -v magick >/dev/null 2>&1; then
-  echo "magick is required to generate frontend/src/app/favicon.ico" >&2
+  echo "magick is required to generate frontend/public/favicon.ico" >&2
   exit 1
 fi
 
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 frontend_root=$(cd "$script_dir/.." && pwd)
-icon_svg="$frontend_root/src/app/icon.svg"
-favicon_ico="$frontend_root/src/app/favicon.ico"
+icon_svg="$frontend_root/public/icon.svg"
+favicon_ico="$frontend_root/public/favicon.ico"
 
-# Render the SVG at higher density first. Otherwise ImageMagick rasterizes the
-# 36x36 source at its intrinsic size and upscales it, which makes the favicon
-# blurry and can bake in a solid background.
+# Supersampling keeps the small shell seams crisp on the final pixel grid.
 magick -background none -density 144 "$icon_svg" \
   \( -clone 0 -resize 48x48 \) \
   \( -clone 0 -resize 32x32 \) \

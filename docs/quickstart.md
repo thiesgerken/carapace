@@ -6,6 +6,7 @@ This guide walks you through deploying carapace with Docker Compose. For Kuberne
 
 - **Docker** with the Compose plugin
 - An **Anthropic API key** (or Google API key if using Gemini models)
+- Published images support **Linux x64**. Apple Silicon developers use the [native ARM Linux Nix builds](development.md#native-linux-images-on-apple-silicon).
 
 ## 1. Create your `.env`
 
@@ -26,10 +27,10 @@ CARAPACE_TOKEN=pick-a-bootstrap-admin-password
 
 If no enabled admin user exists yet, `CARAPACE_TOKEN` becomes the bootstrap `admin` user's initial password and must be at least 16 characters long. After startup, normal web UI, CLI, REST, WebSocket, and admin access uses username/password login and an HttpOnly session cookie.
 
-## 2. Build and start
+## 2. Pull and start
 
 ```bash
-docker compose build
+docker compose --profile build pull
 docker compose up -d
 ```
 
@@ -37,7 +38,7 @@ This starts:
 
 - **Proxy** at `http://localhost:3001`, serving the frontend and routing `/api` to the backend container internally
 - **Redis** for mandatory session-list caching
-- **Sandbox image** is built automatically
+- **Sandbox image** is pulled with the other images; it remains a Debian Dockerfile for local builds
 
 Log in to the web UI as `admin` with the `CARAPACE_TOKEN` value, then open **Settings** -> **Admin** -> **Users** to create your normal user. carapace is multi-user by default: sessions, jobs, notification subscriptions, Matrix channels, Git remotes, model defaults, and credential backends are owned by the authenticated user. You can also use the admin API after logging in and storing the session cookie:
 
@@ -53,6 +54,16 @@ curl -X POST http://localhost:3001/api/admin/users \
 ```
 
 The web UI uses the same origin for frontend and API requests, so it only prompts for username and password on first connect.
+
+Set `CARAPACE_IMAGE_TAG` to a matching release or PR tag when you need a version other than `latest`. Server, frontend, and Bitwarden images are built with Nix, not Dockerfiles. For local builds use the [development guide](development.md) and `docker-compose.local.yml`; the server source is not bind-mounted.
+
+The frontend listens on 8080 internally. If your API is on another origin, mount a one-line nginx snippet instead of setting an environment variable:
+
+```nginx
+set $csp_img_src "img-src 'self' data: blob: https://api.example.com";
+```
+
+Mount it read-only at `/etc/nginx/csp.d/img-src.conf` in the frontend service (see the commented Compose example). No snippet is needed for the default same-origin deployment. `CARAPACE_CSP_IMG_SRC_EXTRA` is no longer supported.
 
 See [auth.md](auth.md) for the full user-file format, admin API, and session-cookie behavior.
 
@@ -219,7 +230,7 @@ BW_MASTER_PASSWORD=your-master-password
 
 If the logs show password login but you intended API key login, both `BW_CLIENTID` and `BW_CLIENTSECRET` must be non-empty in the environment Compose sees (check `.env` spelling and that variables are not commented out).
 
-Self-hosted **Vaultwarden** must be new enough for your **Bitwarden CLI** version. If `bw login` throws `TypeError: ... toWrappedAccountCryptographicState`, upgrade Vaultwarden (see [vaultwarden#6912](https://github.com/dani-garcia/vaultwarden/issues/6912)) or pin an older `@bitwarden/cli` in `bitwarden-cli/Dockerfile`.
+Self-hosted **Vaultwarden 1.35.5 or newer** is required for API-key login with the bundled Bitwarden CLI 2026.4.2. Older servers can fail with `TypeError: ... toWrappedAccountCryptographicState`; upgrade Vaultwarden (see [vaultwarden#6912](https://github.com/dani-garcia/vaultwarden/issues/6912)).
 
 2. Start the sidecar:
 
@@ -228,6 +239,8 @@ docker compose up -d --scale bw=1
 ```
 
 Startup messages from the entrypoint go to the **`bw` container** — use `docker compose logs -f bw` (not only `carapace`). Without a TTY, stdout is often block-buffered and lines can appear late or only after exit; this stack allocates a TTY for `bw` and logs progress to stderr so `docker compose logs` shows them as they run. The `bitwarden-cli-data` volume keeps Bitwarden CLI login/device state and the cached server URL across container recreation; removing that volume applies `BW_SERVER_URL` from scratch on the next start.
+
+**Existing Compose installs:** the Bitwarden container runs as UID/GID 999. If its named volume was created by the root-running image, stop the stack with `docker compose down`, then remove only `<project>_bitwarden-cli-data` with `docker volume rm <project>_bitwarden-cli-data` once, or change that volume's ownership to `999:999`. This cache contains login/session state, not the vault itself. Recreating it triggers a login and may send one “new login” email. Do not use `docker compose down -v`, which would also delete the database volume.
 
 3. Add the backend in **Settings** -> **Account** -> **Credentials**. The equivalent backing user config is:
 

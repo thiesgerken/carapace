@@ -1,0 +1,86 @@
+name: Publish PR preview
+
+# workflow_run executes this definition from the default branch, not from the PR.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+  packages: write
+
+jobs:
+  publish:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
+        with:
+          determinate: false
+      - name: Prepare trusted pinned tools
+        run: |
+          time nix build .#ci-tools --out-link result-ci-tools --print-build-logs
+          echo "$PWD/result-ci-tools/bin" >> "$GITHUB_PATH"
+          echo "SSL_CERT_FILE=$PWD/result-ci-tools/etc/ssl/certs/ca-bundle.crt" >> "$GITHUB_ENV"
+      - name: Validate tested PR provenance
+        id: source
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TESTED_RUN: ${{ toJSON(github.event.workflow_run) }}
+        run: |
+          set -euo pipefail
+          pr=$(jq -er '.pull_requests | if length == 1 then .[0].number else error("Expected one tested PR") end' <<< "$TESTED_RUN")
+          sha=$(jq -er '.head_sha' <<< "$TESTED_RUN")
+          current=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$pr")
+          # Previews are intentionally limited to PRs against main.
+          jq -e --arg repo "$GITHUB_REPOSITORY" --arg sha "$sha" \
+            '.state == "open" and .head.sha == $sha and .head.repo.full_name == $repo and .base.ref == "main"' <<< "$current" >/dev/null
+          echo "pr=$pr" >> "$GITHUB_OUTPUT"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: verified-x64-images
+          path: dist
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish verified images and chart data
+        env:
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REGISTRY_USER: ${{ github.actor }}
+          REGISTRY_OWNER: ${{ github.repository_owner }}
+          PR_NUMBER: ${{ steps.source.outputs.pr }}
+          HEAD_SHA: ${{ steps.source.outputs.sha }}
+        run: |
+          set -euo pipefail
+          export REGISTRY_AUTH_FILE="$RUNNER_TEMP/skopeo-auth.json"
+          cleanup_auth() { rm -f "$REGISTRY_AUTH_FILE"; }
+          trap cleanup_auth EXIT
+          printf "%s" "$REGISTRY_TOKEN" | skopeo login --authfile "$REGISTRY_AUTH_FILE" --username "$REGISTRY_USER" --password-stdin ghcr.io
+          short_sha=${HEAD_SHA:0:7}
+          bash scripts/publish-images.sh "pr${PR_NUMBER}" "pr${PR_NUMBER}-${short_sha}"
+          base_version=$(helm show chart dist/chart | awk '/^version:/ { print $2; exit }')
+          chart_version="${base_version}-pr.${PR_NUMBER}"
+          chart_version_sha="${chart_version}.g${short_sha}"
+          helm package dist/chart --destination dist --version "$chart_version" --app-version "pr${PR_NUMBER}"
+          helm package dist/chart --destination dist --version "$chart_version_sha" --app-version "pr${PR_NUMBER}-${short_sha}"
+          printf "%s" "$REGISTRY_TOKEN" | helm registry login ghcr.io --username "$REGISTRY_USER" --password-stdin
+          for version in "$chart_version" "$chart_version_sha"; do
+            helm push "dist/carapace-${version}.tgz" "oci://ghcr.io/${REGISTRY_OWNER}/charts"
+          done
+          {
+            echo "## PR preview for ${HEAD_SHA}"
+            echo "Images: ghcr.io/${REGISTRY_OWNER}/{carapace,carapace-frontend,carapace-bitwarden-cli,carapace-sandbox}:pr${PR_NUMBER}"
+            echo "Chart: oci://ghcr.io/${REGISTRY_OWNER}/charts/carapace"
+            echo "- --version ${chart_version} follows the PR"
+            echo "- --version ${chart_version_sha} pins this commit"
+          } >> "$GITHUB_STEP_SUMMARY"

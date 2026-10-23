@@ -1,0 +1,66 @@
+name: Nix verification
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+      - uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
+        with:
+          determinate: false
+          # cache-nix-action cannot restore hard links into /nix/store/.links.
+          extra-conf: |
+            auto-optimise-store = false
+      - uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569 # v7
+        with:
+          primary-key: nix-x64-${{ hashFiles('flake.lock', 'uv.lock', 'frontend/pnpm-lock.yaml') }}-${{ github.sha }}
+          restore-prefixes-first-match: nix-x64-
+          save: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+      - name: Bootstrap locked build runner
+        run: |
+          test "$(uname -m)" = x86_64
+          time nix build --inputs-from . nixpkgs#nix-fast-build --out-link result-build-tool --print-build-logs
+      - name: Evaluate and realize every required CI output
+        run: |
+          mkdir -p dist
+          time result-build-tool/bin/nix-fast-build --no-nom --option log-lines 1000 \
+            --flake .#ciBuilds.x86_64-linux --systems x86_64-linux \
+            --out-link result-ci --result-file dist/ci-results.json
+          echo "$PWD/result-ci-tools/bin" >> "$GITHUB_PATH"
+          echo "SSL_CERT_FILE=$PWD/result-ci-tools/etc/ssl/certs/ca-bundle.crt" >> "$GITHUB_ENV"
+      - name: Build sandbox image
+        run: |
+          docker build --tag carapace-sandbox:local sandbox
+          docker save carapace-sandbox:local | gzip > dist/carapace-sandbox.tar.gz
+      - name: Stage verified archive paths
+        run: |
+          ln -s "$(realpath result-ci-server-image)" dist/carapace.tar.gz
+          ln -s "$(realpath result-ci-frontend-image)" dist/carapace-frontend.tar.gz
+          ln -s "$(realpath result-ci-bitwarden-image)" dist/carapace-bitwarden-cli.tar.gz
+          cp -R charts/carapace dist/chart
+          sha256sum dist/*.tar.gz >> "$GITHUB_STEP_SUMMARY"
+      - name: Exercise hardened runtime images
+        run: |
+          for archive in dist/*.tar.gz; do docker load --input "$archive"; done
+          result-ci-tools/bin/python scripts/smoke-images.py
+          docker image inspect carapace:local carapace-frontend:local carapace-bitwarden-cli:local carapace-sandbox:local \
+            --format '{{.RepoTags}} {{.Architecture}} {{.Size}} bytes' >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: verified-x64-images
+          path: dist/
+          compression-level: 0
+          retention-days: 3

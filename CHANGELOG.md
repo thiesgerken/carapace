@@ -1,6 +1,240 @@
 # CHANGELOG
 
 
+## v0.166.0 (2026-10-23)
+
+
+### Other
+
+
+- Merge pull request #412 from thiesgerken/build/nix-images
+  ([`90185a8`](https://github.com/thiesgerken/carapace/commit/90185a8f3baa14211fafea401bca4960e67a80aa))
+
+- 🔀 merge: integrate the merged Python hook from main
+  ([`1790ae7`](https://github.com/thiesgerken/carapace/commit/1790ae7a6c5e28a748ad5c7853e31539ffdf5dc3))
+
+### ✨ Features
+
+
+- ✨ feat: adopt Nix builds and hardened runtime images
+  ([`90185a8`](https://github.com/thiesgerken/carapace/commit/90185a8f3baa14211fafea401bca4960e67a80aa))
+
+## v0.165.1 (2026-10-23)
+
+
+### Other
+
+
+- Merge pull request #408 from thiesgerken/fix/python-pre-receive-hook
+  ([`dd2c942`](https://github.com/thiesgerken/carapace/commit/dd2c9422742824241965266b6c850578a6b3bdc9))
+
+- 🔀 merge: preserve artifact limits in the Python hook
+  ([`d043893`](https://github.com/thiesgerken/carapace/commit/d043893c87891593e81df3848c9c622758b9e13b))
+
+- ✅ test: reject oversized artifacts before sentinel evaluation
+  ([`c1a5250`](https://github.com/thiesgerken/carapace/commit/c1a52503372095789ce4b30a469be371abb123ed))
+
+- 🔀 merge: integrate origin/main and preserve artifact push limits
+  ([`32b9f76`](https://github.com/thiesgerken/carapace/commit/32b9f7678510e0c92e6267e4469cdb4cf2e2f085))
+
+### ♻️ Refactoring
+
+
+- ♻️ Replace the sentinel pre-receive shell hook with Python
+  ([`dd2c942`](https://github.com/thiesgerken/carapace/commit/dd2c9422742824241965266b6c850578a6b3bdc9))
+
+### 💄 UI/UX
+
+
+- 💄 style: remove redundant dev shell sync hint
+  ([`55a86b0`](https://github.com/thiesgerken/carapace/commit/55a86b0ef778e3c353f19d4e0e03ffee1821e46a))
+
+- 💄 style: brighten the dev shell welcome message
+  ([`1d73fd6`](https://github.com/thiesgerken/carapace/commit/1d73fd6d5ad049fcf48a209b77657ddf6d6b1760))
+
+## v0.165.0 (2026-10-23)
+
+
+### Other
+
+
+- Merge pull request #410 from thiesgerken/feat/artifacts
+  ([`9fe2204`](https://github.com/thiesgerken/carapace/commit/9fe2204090bf32013a35e252a1736476836228ee))
+
+- Merge pull request #416 from thiesgerken/feat/artifacts-session-link
+  ([`f764bf7`](https://github.com/thiesgerken/carapace/commit/f764bf71c93656c0a050755e667e3eb34417db60))
+
+- Merge pull request #415 from thiesgerken/feat/artifacts-badge-link
+  ([`bf67f1c`](https://github.com/thiesgerken/carapace/commit/bf67f1c0f43af30c417075d9d87bf0804125559a))
+
+- Merge pull request #414 from thiesgerken/feat/artifacts-card-row
+  ([`1001ce4`](https://github.com/thiesgerken/carapace/commit/1001ce47fc2fa64ff241d84f3d04cb74f6214969))
+
+- Merge pull request #413 from thiesgerken/feat/artifacts-card
+  ([`7a7dc3d`](https://github.com/thiesgerken/carapace/commit/7a7dc3d85b33092670930262f20358cf425afc52))
+
+- Merge pull request #411 from thiesgerken/feat/artifacts-viewer
+  ([`64a538d`](https://github.com/thiesgerken/carapace/commit/64a538da884d0824109435c44447144f7b803cee))
+
+- Merge pull request #407 from thiesgerken/feat/artifacts-skill
+  ([`ba95ac8`](https://github.com/thiesgerken/carapace/commit/ba95ac8ed0589d1060ea3ec41036dae0263e7fd4))
+
+- 📝 fix: tighten artifact authoring guidance and controls
+  ([`1af5223`](https://github.com/thiesgerken/carapace/commit/1af5223951b98c2017e2309c1e4962baeb5feaaa))
+
+- Merge pull request #405 from thiesgerken/feat/artifacts-share
+  ([`ba18169`](https://github.com/thiesgerken/carapace/commit/ba18169bc668d7a24e594e894b961c8e1001eed3))
+
+- 🔀 merge: integrate rendering updates into artifact sharing
+  ([`0b859fb`](https://github.com/thiesgerken/carapace/commit/0b859fb4b8ab25697bedffd995f00158f69bb205))
+
+- Merge pull request #404 from thiesgerken/feat/artifacts-render
+  ([`65e2b39`](https://github.com/thiesgerken/carapace/commit/65e2b391f52a6323651ef6948d055d4770569001))
+
+- 🔀 merge: integrate main into artifact rendering
+  ([`7f7ccdf`](https://github.com/thiesgerken/carapace/commit/7f7ccdf9e70ab031b97fd917148d03b60336e9e9))
+
+### ✨ Features
+
+
+- ✨ feat: artifacts (sandboxed HTML pages, sharing, bundled skill)
+  ([`9fe2204`](https://github.com/thiesgerken/carapace/commit/9fe2204090bf32013a35e252a1736476836228ee))
+
+- ✨ feat: link artifacts to their originating sessions
+  ([`f764bf7`](https://github.com/thiesgerken/carapace/commit/f764bf71c93656c0a050755e667e3eb34417db60))
+
+- ✨ feat: link artifacts to their originating sessions
+  ([`498231f`](https://github.com/thiesgerken/carapace/commit/498231ffa75571801e5ff4fb3e36db45680060c5))
+
+- ✨ feat: streamline artifact card actions
+  ([`1001ce4`](https://github.com/thiesgerken/carapace/commit/1001ce47fc2fa64ff241d84f3d04cb74f6214969))
+
+- ✨ feat: streamline artifact card actions
+  ([`ef4e340`](https://github.com/thiesgerken/carapace/commit/ef4e34088df80f3df1ee9afaf90593c4abb3368b))
+
+- ✨ feat: identify artifact deliveries by snapshot title
+  ([`7a7dc3d`](https://github.com/thiesgerken/carapace/commit/7a7dc3d85b33092670930262f20358cf425afc52))
+
+- ✨ feat: identify artifact deliveries by snapshot title
+  ([`652e249`](https://github.com/thiesgerken/carapace/commit/652e24912f67567475787b01a4b00bfdccfec9f2))
+
+- ✨ feat: add a live artifact viewer and keep sent files visible
+  ([`64a538d`](https://github.com/thiesgerken/carapace/commit/64a538da884d0824109435c44447144f7b803cee))
+
+- ✨ feat: unify artifact browsing and authoring defaults
+  ([`cc4d3ea`](https://github.com/thiesgerken/carapace/commit/cc4d3eadcded87ba46046fa32e920239135cb3f1))
+
+- ✨ feat: add live artifact viewer and standalone file deliveries
+  ([`d3b01ff`](https://github.com/thiesgerken/carapace/commit/d3b01ffe31169649ad56df930a3fa9dfc50763aa))
+
+- ✨ feat: bundle artifact authoring skill
+  ([`ba95ac8`](https://github.com/thiesgerken/carapace/commit/ba95ac8ed0589d1060ea3ec41036dae0263e7fd4))
+
+- ✨ feat: bundle artifact authoring skill
+  ([`08b74e3`](https://github.com/thiesgerken/carapace/commit/08b74e322e083ce6ba2f2bdd0b69ed55b1f72535))
+
+- ✨ feat: add revocable public artifact sharing
+  ([`ba18169`](https://github.com/thiesgerken/carapace/commit/ba18169bc668d7a24e594e894b961c8e1001eed3))
+
+- ✨ feat: add revocable public artifact sharing
+  ([`8570e2e`](https://github.com/thiesgerken/carapace/commit/8570e2e233f294dfc9a94cf00b855a82a2a055cc))
+
+- ✨ feat: render sandboxed HTML artifacts in chat and knowledge
+  ([`65e2b39`](https://github.com/thiesgerken/carapace/commit/65e2b391f52a6323651ef6948d055d4770569001))
+
+- ✨ feat: render sandboxed HTML artifacts in chat and knowledge
+  ([`2d89e03`](https://github.com/thiesgerken/carapace/commit/2d89e035477724c824bea18320cee4186228219d))
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix: place artifact shortcut beside its title
+  ([`bf67f1c`](https://github.com/thiesgerken/carapace/commit/bf67f1c0f43af30c417075d9d87bf0804125559a))
+
+- 🐛 fix: place artifact shortcut beside its title
+  ([`b49c9f4`](https://github.com/thiesgerken/carapace/commit/b49c9f48238207ca055fcd1866a58bc364bae763))
+
+- 🐛 fix: make artifacts self-contained and address review findings
+  ([`98a8c5c`](https://github.com/thiesgerken/carapace/commit/98a8c5c9d47007b8b4602f0a45322ac0fab28e25))
+
+### 🔒 Security
+
+
+- 🔒 fix: restrict artifact sharing to browser sessions
+  ([`decdbc7`](https://github.com/thiesgerken/carapace/commit/decdbc7f6a83fd02b7fe6b92e59da5ae4c9f3f6e))
+
+## v0.164.0 (2026-10-22)
+
+
+### Other
+
+
+- Merge pull request #409 from thiesgerken/feat/organic-brand
+  ([`9bacd5e`](https://github.com/thiesgerken/carapace/commit/9bacd5e0094733bea57cb0b7310792e96d140539))
+
+- 🎨 fix: align turtle feet with wordmark baseline
+  ([`4eef6cf`](https://github.com/thiesgerken/carapace/commit/4eef6cfb866fc6dc2451749bf19651c64d7e00a9))
+
+### ✨ Features
+
+
+- ✨ Adopt organic turtle and Fraunces branding
+  ([`9bacd5e`](https://github.com/thiesgerken/carapace/commit/9bacd5e0094733bea57cb0b7310792e96d140539))
+
+- ✨ feat: adopt organic turtle and Fraunces branding
+  ([`c12404c`](https://github.com/thiesgerken/carapace/commit/c12404c6816665bc91075338c18731711a127345))
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix: tighten image isolation and verification
+  ([`68f985e`](https://github.com/thiesgerken/carapace/commit/68f985e7af5fa786e11e782e3ea621e47da6cbe7))
+
+- 🐛 fix: provide trust roots to hermetic Python checks
+  ([`2911787`](https://github.com/thiesgerken/carapace/commit/2911787ee7717e5a37e03993d86be6ccc8aee316))
+
+### 🔧 Configuration
+
+
+- 🔧 build: lock pnpm package manager metadata
+  ([`6145109`](https://github.com/thiesgerken/carapace/commit/614510967f756fd624db16451417a92f7136c8c4))
+
+- 🔧 build: add Nix runtime images and offline build inputs
+  ([`80c190d`](https://github.com/thiesgerken/carapace/commit/80c190dd2f5e12a80609504b329ca81412ca2208))
+
+- 🔧 build: bundle licensed variable fonts for offline frontend builds
+  ([`416cfb0`](https://github.com/thiesgerken/carapace/commit/416cfb0515150af6d2be139758ee92226957e786))
+
+- 🔧 fix: restrict Ruff package discovery to src
+  ([`ab68eba`](https://github.com/thiesgerken/carapace/commit/ab68eba45657ab55afd3d9c766d2b1dd04f27120))
+
+### ⚡ Performance
+
+
+- ⚡️ perf: isolate Python package build inputs
+  ([`9aa8a78`](https://github.com/thiesgerken/carapace/commit/9aa8a78c636566d5cd50a052bbd11ecd934d659c))
+
+### 👷 CI/Build
+
+
+- 👷 ci: separate Nix verification from trusted image publishing
+  ([`7d9f3a8`](https://github.com/thiesgerken/carapace/commit/7d9f3a8b1c578fcd25aa0270fc1cb818ac3cb55a))
+
+### 🔒 Security
+
+
+- 🔒 fix: harden application pods for non-root images
+  ([`81f6d46`](https://github.com/thiesgerken/carapace/commit/81f6d46ad683bd7fb4789664d963c17b3bf3d3c8))
+
+### ♻️ Refactoring
+
+
+- ♻️ refactor: extract and simplify the Python pre-receive hook
+  ([`13cd5fd`](https://github.com/thiesgerken/carapace/commit/13cd5fd1b6af24fd5cb55ad65196aaaacf3f3090))
+
+- ♻️ refactor: run the sentinel pre-receive hook with Python
+  ([`3d0e182`](https://github.com/thiesgerken/carapace/commit/3d0e182bd70959515fd04d9259bc83424a6ecbbc))
+
 ## v0.163.2 (2026-10-22)
 
 

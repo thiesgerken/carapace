@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useTranslations } from "next-intl";
 import { useState } from "react";
 import { login, type AuthUserInfo } from "@/lib/api";
@@ -36,7 +37,10 @@ export function ConnectForm({ onConnect }: ConnectFormProps) {
     <div className="flex min-h-screen items-center justify-center p-4">
       <form onSubmit={handleSubmit} className="w-full max-w-sm space-y-4">
         <div className="space-y-1.5 text-center">
-          <h1 className="text-xl font-semibold tracking-tight">carapace</h1>
+          <h1>
+            <Image src="/logo-light.svg" alt="carapace" width={561} height={109} priority className="mx-auto h-auto w-70 max-w-full dark:hidden" />
+            <Image src="/logo-dark.svg" alt="carapace" width={561} height={109} priority className="mx-auto hidden h-auto w-70 max-w-full dark:block" />
+          </h1>
           <p className="text-sm text-muted-foreground">
             {t("description")}
           </p>

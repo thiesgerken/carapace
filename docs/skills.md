@@ -335,6 +335,7 @@ These are seeded into every knowledge repo on first run and can be edited or del
 
 | Skill          | Purpose                                                                        |
 | -------------- | ------------------------------------------------------------------------------ |
+| `artifacts`    | Build self-contained HTML reports, dashboards, and local tools; [workflow](artifacts.md). |
 | `carapace`     | Drive a carapace server over its JSON CLI (sessions, approvals, jobs).         |
 | `create-skill` | Write and refine skills.                                                       |
 | `credentials`  | List, fetch, and use secrets from the vault.                                   |
