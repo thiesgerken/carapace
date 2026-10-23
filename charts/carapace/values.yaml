@@ -169,8 +169,8 @@ bitwarden:
   nginx:
     image:
       registry: docker.io
-      repository: library/nginx
-      tag: 1.31.7@sha256:6c3fee1d7a4686ea271e9cc60d9c741cdfbc44ecf11d343025e1cff4c5522f47
+      repository: nginxinc/nginx-unprivileged
+      tag: 1.31.7-alpine@sha256:b5047b9b76845eac124358373c6852377c52e4b05834a47647e955dd91cb8f1e
       pullPolicy: IfNotPresent
     resources:
       requests:

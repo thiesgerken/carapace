@@ -8,6 +8,7 @@ carapace supports Kubernetes as a sandbox runtime. Instead of Docker containers,
 - **RWO StorageClass** — any standard ReadWriteOnce provisioner. The server pod has its own data PVC; sandbox sessions each get a dedicated PVC.
 - **Container images** pushed to a registry accessible by the cluster (GHCR by default)
 - **Helm 3** installed locally
+- Published application images support **Linux x64**; native ARM Linux builds are a local development target.
 
 ## Quick start
 
@@ -49,6 +50,14 @@ Session-list caching requires Redis. The Helm chart deploys an in-cluster Redis 
 Kubernetes credential backends can be deployed through the Helm chart too. For Bitwarden/Vaultwarden, the chart runs separately addressable vault proxies protected by HTTP Basic Auth and NetworkPolicy.
 
 See the [chart README](../charts/carapace/README.md) for installation details and the full values reference.
+
+## Application runtime hardening
+
+The server, frontend, and Bitwarden pods run as UID/GID/fsGroup **999**, with `runAsNonRoot` and seccomp `RuntimeDefault`. Their containers use a read-only root, disable privilege escalation, drop all capabilities, and mount an `emptyDir` at `/tmp`. The server and Bitwarden data mounts remain writable. The server UID and data-volume fsGroup stay 999. For legacy root-owned Bitwarden files, kubelet's default `fsGroupChangePolicy: Always` recursively applies group 999 and group read/write permissions on mount, so existing PVCs do not need a manual ownership migration.
+
+The server retains its service account token for sandbox lifecycle operations. Frontend and Bitwarden pods disable token automounting. The Bitwarden nginx proxy uses the unprivileged image and listens on 8080; its Service still defaults to 80. The frontend likewise listens on 8080 behind its port-80 Service. Postgres and the root/FHS sandbox image are not changed by this hardening.
+
+Bitwarden API-key login requires Vaultwarden 1.35.5 or newer. If Bitwarden persistence is disabled, its state gets an `emptyDir`, not the read-only root.
 
 ## Architecture
 
@@ -157,7 +166,7 @@ kubectl create secret generic carapace-bw-personal -n carapace \
   --from-literal=BW_EMAIL=you@example.com
 ```
 
-Each user can get a separate Service, Basic Auth boundary, Secret, and PVC. The Bitwarden CLI binds to a fixed localhost-only internal port (`8088`) inside its own Pod; nginx exposes the configured service port and the chart creates a NetworkPolicy that only allows ingress from the carapace server Pod. The service port defaults to `80` and must not be `8088`.
+Each user can get a separate Service, Basic Auth boundary, Secret, and PVC. The Bitwarden CLI binds to the fixed localhost-only internal port `8088` inside its own Pod; nginx listens on `8080`, and the Service exposes the configured port (default `80`). NetworkPolicy allows the nginx pod port only from the carapace server Pod.
 
 Create the proxy auth Secret separately. It must contain an htpasswd file named `htpasswd` unless you override `basicAuth.secretKey`:
 
@@ -350,5 +359,5 @@ Labels and `argocd.argoproj.io/tracking-id` keep sandboxes associated with the a
 - **Image tags**: pinned to `appVersion` by default; override with `image.tag`, `frontend.image.tag`, `sandbox.image.tag`
 - **Resources**: sensible defaults are included; override `resources` / `frontend.resources` as needed
 - **Priority class**: set `priorityClassName` to apply to all pods (server, frontend, sandbox)
-- **Image CSP**: the frontend sends `Content-Security-Policy: img-src 'self' data: blob:`. If the API is served from another origin, add it to `frontend.csp.imgSrcExtra` so knowledge images load (Docker Compose: `CARAPACE_CSP_IMG_SRC_EXTRA`, space-separated)
+- **Image CSP**: the frontend sends `Content-Security-Policy: img-src 'self' data: blob:`. If the API is served from another origin, add it to `frontend.csp.imgSrcExtra`; the chart mounts a ConfigMap snippet and rolls the frontend when it changes. Compose uses a mounted nginx snippet instead (see [quickstart](quickstart.md#2-pull-and-start)).
 - **PVC protection**: set `persistence.data.finalizers` and `bitwarden.persistence.finalizers` to `["kubernetes.io/pvc-protection"]` to guard against accidental deletion

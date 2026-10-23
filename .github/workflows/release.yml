@@ -5,32 +5,36 @@ on:
     branches: [main]
 
 permissions:
-  contents: write
-  id-token: write
-  packages: write
+  contents: read
 
 jobs:
   version:
     runs-on: ubuntu-latest
     concurrency: release
+    permissions:
+      contents: write
     outputs:
       released: ${{ steps.release.outputs.released }}
       version: ${{ steps.release.outputs.version }}
     steps:
+      # Releasing the current main tip lets an earlier run include back-to-back merges.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          ref: main
           fetch-depth: 0
-
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+      - uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
         with:
-          python-version: "3.14"
-
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
-
-      # Not the python-semantic-release action: it builds its image with an
-      # unpinned `gitpython ~= 3.0`, and 3.1.60 dropped Actor.name_email_regex,
-      # which psr 10.6.1 still uses. Running the CLI ourselves is the only place
-      # the constraint fits. Drop the --with once psr releases a fix.
+          determinate: false
+      - name: Realize pinned version tools once
+        run: |
+          time nix build .#release-tools --out-link result-release-tools --print-build-logs
+          echo "$PWD/result-release-tools/bin" >> "$GITHUB_PATH"
+          {
+            echo "SSL_CERT_FILE=$PWD/result-release-tools/etc/ssl/certs/ca-bundle.crt"
+            echo "UV_PYTHON=$PWD/result-release-tools/bin/python3.14"
+            echo "UV_PYTHON_DOWNLOADS=never"
+          } >> "$GITHUB_ENV"
+      # PSR 10.6.1 uses Actor.name_email_regex, which GitPython 3.1.60 removed.
       - name: Semantic Release (version only)
         id: release
         env:
@@ -41,189 +45,114 @@ jobs:
           --with 'gitpython<3.1.60'
           semantic-release -v version --no-vcs-release
 
-  docker-backend:
+  nix:
     needs: version
     if: needs.version.outputs.released == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          ref: v${{ needs.version.outputs.version }}
-      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
-      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
-        id: meta
-        with:
-          images: ghcr.io/${{ github.repository }}
-          tags: |
-            type=semver,pattern={{version}},value=${{ needs.version.outputs.version }}
-            type=raw,value=latest
-      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
-        with:
-          context: .
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+    uses: ./.github/workflows/nix-verify.yml
+    with:
+      ref: v${{ needs.version.outputs.version }}
 
-  docker-frontend:
-    needs: version
+  images:
+    needs: [version, nix]
     if: needs.version.outputs.released == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: v${{ needs.version.outputs.version }}
-      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
-      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
+          persist-credentials: false
+      - uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
-        id: meta
+          determinate: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          images: ghcr.io/${{ github.repository }}-frontend
-          tags: |
-            type=semver,pattern={{version}},value=${{ needs.version.outputs.version }}
-            type=raw,value=latest
-      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
-        with:
-          context: frontend
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-  docker-sandbox:
-    needs: version
-    if: needs.version.outputs.released == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          ref: v${{ needs.version.outputs.version }}
-      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
-      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
-        id: meta
-        with:
-          images: ghcr.io/${{ github.repository }}-sandbox
-          tags: |
-            type=semver,pattern={{version}},value=${{ needs.version.outputs.version }}
-            type=raw,value=latest
-      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
-        with:
-          context: sandbox
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-  docker-bitwarden-cli:
-    needs: version
-    if: needs.version.outputs.released == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          ref: v${{ needs.version.outputs.version }}
-      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
-      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
-        id: meta
-        with:
-          images: ghcr.io/${{ github.repository }}-bitwarden-cli
-          tags: |
-            type=semver,pattern={{version}},value=${{ needs.version.outputs.version }}
-            type=raw,value=latest
-      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
-        with:
-          context: bitwarden-cli
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          name: verified-x64-images
+          path: dist
+      - name: Prepare pinned publishing tools
+        run: |
+          time nix build .#ci-tools --out-link result-ci-tools --print-build-logs
+          echo "$PWD/result-ci-tools/bin" >> "$GITHUB_PATH"
+          echo "SSL_CERT_FILE=$PWD/result-ci-tools/etc/ssl/certs/ca-bundle.crt" >> "$GITHUB_ENV"
+      - name: Publish verified release images
+        env:
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REGISTRY_USER: ${{ github.actor }}
+          REGISTRY_OWNER: ${{ github.repository_owner }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          export REGISTRY_AUTH_FILE="$RUNNER_TEMP/skopeo-auth.json"
+          cleanup_auth() { rm -f "$REGISTRY_AUTH_FILE"; }
+          trap cleanup_auth EXIT
+          printf "%s" "$REGISTRY_TOKEN" | skopeo login --authfile "$REGISTRY_AUTH_FILE" --username "$REGISTRY_USER" --password-stdin ghcr.io
+          bash scripts/publish-images.sh "$VERSION" latest
 
   publish:
-    needs:
-      [
-        version,
-        docker-backend,
-        docker-frontend,
-        docker-sandbox,
-        docker-bitwarden-cli,
-      ]
+    needs: [version, images]
     if: needs.version.outputs.released == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: v${{ needs.version.outputs.version }}
-
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+      - uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
         with:
-          python-version: "3.14"
-
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
-
-      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5
-
+          determinate: false
+      - name: Realize pinned publishing tools once
+        run: |
+          time nix build .#ci-tools --out-link result-ci-tools --print-build-logs
+          time nix build .#release-tools --out-link result-release-tools --print-build-logs
+          {
+            echo "$PWD/result-ci-tools/bin"
+            echo "$PWD/result-release-tools/bin"
+          } >> "$GITHUB_PATH"
+          {
+            echo "SSL_CERT_FILE=$PWD/result-ci-tools/etc/ssl/certs/ca-bundle.crt"
+            echo "UV_PYTHON=$PWD/result-release-tools/bin/python3.14"
+            echo "UV_PYTHON_DOWNLOADS=never"
+          } >> "$GITHUB_ENV"
       - name: Build wheel
         run: uv build
-
       - name: Push Helm chart to GHCR
+        env:
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REGISTRY_USER: ${{ github.actor }}
+          REGISTRY_OWNER: ${{ github.repository_owner }}
+          VERSION: ${{ needs.version.outputs.version }}
         run: |
-          version="${{ needs.version.outputs.version }}"
-          echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io --username ${{ github.actor }} --password-stdin
-          helm package charts/carapace --version "$version" --app-version "$version"
-          helm push "carapace-${version}.tgz" oci://ghcr.io/${{ github.repository_owner }}/charts
-
+          printf "%s" "$REGISTRY_TOKEN" | helm registry login ghcr.io --username "$REGISTRY_USER" --password-stdin
+          helm package charts/carapace --version "$VERSION" --app-version "$VERSION"
+          helm push "carapace-${VERSION}.tgz" "oci://ghcr.io/${REGISTRY_OWNER}/charts"
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.version.outputs.version }}
+          REGISTRY_OWNER: ${{ github.repository_owner }}
         run: |
-          version="${{ needs.version.outputs.version }}"
-          repo="${{ github.repository }}"
-
-          # Extract latest changelog section
-          notes=$(awk '/^## v'"${version}"'/{found=1; next} /^## v[0-9]/{if(found) exit} found' CHANGELOG.md)
-
-          # Append install commands
+          notes=$(awk '/^## v'"${VERSION}"'/{found=1; next} /^## v[0-9]/{if(found) exit} found' CHANGELOG.md)
           notes="${notes}
 
           ## Docker Images
 
           \`\`\`
-          docker pull ghcr.io/${repo}:${version}
-          docker pull ghcr.io/${repo}-frontend:${version}
-          docker pull ghcr.io/${repo}-sandbox:${version}
-          docker pull ghcr.io/${repo}-bitwarden-cli:${version}
+          docker pull ghcr.io/${REGISTRY_OWNER}/carapace:${VERSION}
+          docker pull ghcr.io/${REGISTRY_OWNER}/carapace-frontend:${VERSION}
+          docker pull ghcr.io/${REGISTRY_OWNER}/carapace-sandbox:${VERSION}
+          docker pull ghcr.io/${REGISTRY_OWNER}/carapace-bitwarden-cli:${VERSION}
           \`\`\`
 
           ## Helm Chart
 
           \`\`\`
-          helm install carapace oci://ghcr.io/${repo%/*}/charts/carapace --version ${version}
+          helm install carapace oci://ghcr.io/${REGISTRY_OWNER}/charts/carapace --version ${VERSION}
           \`\`\`"
-
-          gh release create "v${version}" dist/* \
-            --repo "${repo}" \
-            --title "v${version}" \
-            --notes "${notes}"
+          gh release create "v${VERSION}" dist/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "v${VERSION}" \
+            --notes "$notes"

@@ -2,6 +2,7 @@
   "name": "frontend",
   "version": "0.165.1",
   "private": true,
+  "packageManager": "pnpm@12.14.0",
   "scripts": {
     "prepare:emoji": "node ./scripts/prepare-emoji-assets.mjs",
     "generate:favicon": "./scripts/generate_favicon.sh",

@@ -179,7 +179,7 @@ This makes the system easy to reason about: the strictest judgment always wins.
 
 ## Web UI image policy
 
-The frontend's nginx sends `Content-Security-Policy: img-src 'self' data: blob:` (plus the origins in `CARAPACE_CSP_IMG_SRC_EXTRA` / `frontend.csp.imgSrcExtra`), so the browser refuses to fetch images from anywhere else. Injected model output therefore cannot exfiltrate data through image URLs, whether as a Markdown image, a mermaid `<image>` or a CSS `url()` in a diagram style. Only images are restricted: scripts and styles are not covered by this policy.
+The frontend's nginx sends `Content-Security-Policy: img-src 'self' data: blob:` plus any explicitly configured origins, so the browser refuses to fetch images from anywhere else. Helm renders `frontend.csp.imgSrcExtra` into a mounted ConfigMap snippet. Compose users can mount a one-line `set $csp_img_src "img-src 'self' data: blob: https://api.example.com";` at `/etc/nginx/csp.d/img-src.conf`; no runtime environment substitution is used. Injected model output therefore cannot exfiltrate data through image URLs, whether as a Markdown image, a mermaid `<image>` or a CSS `url()` in a diagram style. Only images are restricted: scripts and styles are not covered by this policy.
 
 Knowledge raw downloads and sent-file downloads share an inline MIME allowlist: PNG, JPEG, GIF, WebP, and AVIF. All other types, including HTML and SVG, are served as `application/octet-stream` attachments so agent-authored files cannot execute scripts on the app origin. Explicit `?download=1` requests also use octet-stream attachment responses, including for raster images.
 

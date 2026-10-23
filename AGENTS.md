@@ -6,6 +6,7 @@ carapace is a security-first personal AI agent with LLM-powered security gating.
 
 ## Setup commands
 
+- Enter the pinned toolchain: `nix develop` (or `direnv allow` with nix-direnv). uv still manages `.venv`; the shell sets `UV_PYTHON` and disables interpreter downloads.
 - Install client-only deps: `uv sync` (base package is the CLI client; ~16 light deps)
 - Install server stack: `uv sync --extra server`
 - Install with dev deps: `uv sync --dev` (includes the `server` extra)
@@ -15,6 +16,8 @@ carapace is a security-first personal AI agent with LLM-powered security gating.
 - Run type checks: `uv run pyrefly check`
 - Run tests: `uv run pytest`
 - Run single test: `uv run pytest tests/test_cli.py -k test_help`
+- Build runtime images: `nix build .#packages.<system>.{server,frontend,bitwarden}-image`; use `aarch64-linux` via the native Linux builder on Apple Silicon.
+- Nix checks: `nix flake check` on Linux, or `nix flake check --system aarch64-linux` through the builder. See `docs/development.md`.
 
 ## Code style
 
@@ -99,9 +102,11 @@ data/                  # runtime data directory (config, sessions, notifications
 
 ## CI
 
-- GitHub Actions on pull requests
-- Steps: `uv sync --dev` → `uv run pyrefly check` and `uv run pytest` → prek checks (`j178/prek-action`)
-- Python 3.14 in CI
+- GitHub Actions PR CI calls reusable `nix-verify.yml`: nix-fast-build realizes `ciBuilds.x86_64-linux` (pytest, pyrefly, Ruff, frontend lint/test/build, Helm, packages, and images).
+- The sandbox remains a Dockerfile. Verification builds it, loads all images, runs `scripts/smoke-images.py`, and uploads verified archives without registry write permissions.
+- `prek` stays a separate job because its hooks fetch from the network.
+- Trusted `workflow_run` PR publication checks open-PR/same-repo/same-SHA provenance before publishing archives and charts. Release verification runs on the versioned tag.
+- Python 3.14 comes from pinned nixpkgs; Python dependencies come from `uv.lock` via uv2nix. Nix is the single build/check definition for application images.
 
 ## Key conventions
 

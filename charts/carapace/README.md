@@ -9,6 +9,7 @@ Helm chart for deploying [carapace](https://github.com/thiesgerken/carapace) on 
 - A **ReadWriteOnce** (RWO) StorageClass. The server gets its own data PVC and each sandbox session gets its own PVC.
 - Container images pushed to a registry (GHCR by default)
 - A CNI plugin that enforces **NetworkPolicy** (e.g. Calico, Cilium, k3s built-in)
+- Linux x64 nodes for the published application images
 
 > **⚠️ SECURITY WARNING — NetworkPolicy is critical**
 >
@@ -21,6 +22,16 @@ Helm chart for deploying [carapace](https://github.com/thiesgerken/carapace) on 
 > 1. Your CNI plugin enforces NetworkPolicy. k3s and distributions using Calico or Cilium support this out of the box. Standalone Flannel does **not** — it silently ignores NetworkPolicy.
 > 2. No other NetworkPolicy in the namespace grants sandbox pods wider egress (Kubernetes NetworkPolicy is additive — a permissive policy cannot be overridden by a restrictive one).
 > 3. No namespace-level network rules (e.g. Cilium `CiliumNetworkPolicy`, Calico `GlobalNetworkPolicy`) override the chart's restrictions.
+
+## Runtime images and security
+
+Server, frontend, and Bitwarden CLI use Nix-built runtime-only images. Their pods run as UID/GID/fsGroup **999**, with `runAsNonRoot` and seccomp `RuntimeDefault`; all application containers drop capabilities, disable privilege escalation, and use read-only roots with an `emptyDir` on `/tmp`. The Bitwarden nginx proxy uses the pinned unprivileged nginx image under the same restrictions.
+
+The server keeps its service account token to manage sandboxes. Frontend and Bitwarden pods disable token automounting. The server UID and data-volume fsGroup stay 999. Kubelet's default `fsGroupChangePolicy: Always` makes legacy root-owned Bitwarden files group-accessible under fsGroup 999, so chart upgrades do not require a manual PVC ownership change. Bitwarden gets an ephemeral state volume when persistence is disabled. Postgres is left unchanged; the sandbox still runs as root with its Debian/FHS userland for runtime package installation.
+
+The frontend container listens on 8080 behind the existing port-80 Service. `frontend.csp.imgSrcExtra` renders a ConfigMap containing an nginx override snippet, and its checksum triggers a rollout on changes. There is no CSP environment-variable templating.
+
+Vaultwarden **1.35.5+** is required for API-key login with the bundled Bitwarden CLI. Only x64 images are published; ARM Linux images remain a [local Nix development target](../../docs/development.md).
 
 ## Install
 
@@ -59,7 +70,7 @@ helmCharts:
     valuesFile: values.yaml
 ```
 
-Pull request builds also publish preview images tagged as `pr<PR number>` and a matching OCI chart package. The preview chart uses `appVersion=pr<PR number>`, so the default image tags resolve to the PR images automatically.
+A trusted workflow from `main` publishes preview images tagged as `pr<PR number>` only after read-only PR CI verifies the archives. It requires an open same-repository PR against `main` with the same head SHA. The matching OCI chart uses `appVersion=pr<PR number>`, so default image tags resolve to the verified PR images automatically.
 
 Example for PR 99 when the base chart version is `0.28.0`:
 
@@ -72,6 +83,7 @@ helm install carapace oci://ghcr.io/thiesgerken/charts/carapace \
 ```
 
 The chart version stays tied to the chart's current base version. If `Chart.yaml` moves to `0.29.0`, the preview for PR 99 becomes `0.29.0-pr.99`.
+The immutable chart version adds `.g<short-sha>`, for example `0.29.0-pr.99.gabc1234`, and selects images tagged `pr99-abc1234`.
 
 ## Upgrade
 
@@ -247,7 +259,7 @@ credentials:
 
 Multiple instances are supported — just add more entries with different names and ports. Each instance gets its own companion Pod, Kubernetes Secret, Service, Basic Auth proxy, and (when persistence is enabled) PVC mounted at `/var/lib/bitwarden-cli` so Bitwarden CLI device/session data survives Pod reschedules — reducing repeated logins and “new device” emails from the vault provider. Set `bitwarden.persistence.enabled` to `false` if you prefer ephemeral Bitwarden CLI data.
 
-The Bitwarden CLI binds to a fixed localhost-only internal port (`8088`) inside its Pod, while nginx exposes the configured service port for carapace. The service port defaults to `80` and must not be `8088`.
+The Bitwarden CLI binds to the fixed localhost-only internal port `8088` inside its Pod. nginx listens on `8080`, and the Service maps its configured port (default `80`) to nginx's named HTTP port. NetworkPolicy allows the nginx pod port, not the Service port.
 
 ### Key values
 
