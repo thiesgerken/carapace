@@ -1,6 +1,36 @@
 # CHANGELOG
 
 
+## v0.167.2 (2026-10-23)
+
+
+### 🐛 Bug Fixes
+
+
+- 🐛⚡️Merge pull request #418 from thiesgerken/perf/shrink-images
+  ([`3863409`](https://github.com/thiesgerken/carapace/commit/3863409ba6f04a202e4305317cf70d5c2a68d457))
+
+- 🐛⚡️ perf: shrink Python and Bitwarden runtime images
+  ([`3863409`](https://github.com/thiesgerken/carapace/commit/3863409ba6f04a202e4305317cf70d5c2a68d457))
+
+- 🐛 fix: bind interpreter passthru to the stripped Python build
+  ([`9b4f6b4`](https://github.com/thiesgerken/carapace/commit/9b4f6b417a8bf2894fd9fc1534cc22714e686f48))
+
+### ♻️ Refactoring
+
+
+- ♻️ refactor: simplify runtime image packaging after review
+  ([`1e80505`](https://github.com/thiesgerken/carapace/commit/1e80505f805680eca43bc39d9a7fd6b673f340aa))
+
+### ⚡ Performance
+
+
+- ⚡️ perf: rebind Bitwarden helper scripts to slim Node
+  ([`870b6bd`](https://github.com/thiesgerken/carapace/commit/870b6bd147a184966c74dbfbb2389c0c287035d1))
+
+- ⚡️ perf: shrink Python and Bitwarden runtime images
+  ([`8a0e101`](https://github.com/thiesgerken/carapace/commit/8a0e101f1c88e3197c60e566d529309cd1a035f9))
+
 ## v0.167.1 (2026-10-23)
 
 
