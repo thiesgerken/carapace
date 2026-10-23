@@ -1,6 +1,24 @@
 # CHANGELOG
 
 
+## v0.165.1 (2026-10-23)
+
+
+### Other
+
+
+- Merge pull request #408 from thiesgerken/fix/python-pre-receive-hook
+  ([`dd2c942`](https://github.com/thiesgerken/carapace/commit/dd2c9422742824241965266b6c850578a6b3bdc9))
+
+- 🔀 merge: preserve artifact limits in the Python hook
+  ([`d043893`](https://github.com/thiesgerken/carapace/commit/d043893c87891593e81df3848c9c622758b9e13b))
+
+### ♻️ Refactoring
+
+
+- ♻️ Replace the sentinel pre-receive shell hook with Python
+  ([`dd2c942`](https://github.com/thiesgerken/carapace/commit/dd2c9422742824241965266b6c850578a6b3bdc9))
+
 ## v0.165.0 (2026-10-23)
 
 
@@ -132,6 +150,15 @@
 
 - ✨ feat: adopt organic turtle and Fraunces branding
   ([`c12404c`](https://github.com/thiesgerken/carapace/commit/c12404c6816665bc91075338c18731711a127345))
+
+### ♻️ Refactoring
+
+
+- ♻️ refactor: extract and simplify the Python pre-receive hook
+  ([`13cd5fd`](https://github.com/thiesgerken/carapace/commit/13cd5fd1b6af24fd5cb55ad65196aaaacf3f3090))
+
+- ♻️ refactor: run the sentinel pre-receive hook with Python
+  ([`3d0e182`](https://github.com/thiesgerken/carapace/commit/3d0e182bd70959515fd04d9259bc83424a6ecbbc))
 
 ## v0.163.2 (2026-10-22)
 
