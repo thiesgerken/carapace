@@ -6,10 +6,15 @@
 }:
 let
   inherit (pkgs) lib;
+  python = pkgs.python314.override {
+    stripConfig = true;
+    stripIdlelib = true;
+    stripTests = true;
+  };
   workspace = uv2nix.lib.workspace.loadWorkspace { workspaceRoot = ../.; };
   pythonSet =
     (pkgs.callPackage pyproject-nix.build.packages {
-      python = pkgs.python314;
+      inherit python;
     }).overrideScope
       (
         lib.composeManyExtensions [
@@ -110,7 +115,7 @@ let
       '';
 in
 {
-  inherit server tokenizerCache;
+  inherit python server tokenizerCache;
   checks = {
     pytest = check "pytest" "pytest";
     pyrefly = check "pyrefly" "pyrefly check --python-interpreter-path ${dev}/bin/python";

@@ -94,6 +94,50 @@ def assert_push_gated(container: str) -> None:
     assert run(*execute, "-C", repo, "rev-parse", "HEAD") == before
 
 
+def assert_bitwarden() -> str:
+    docker = [
+        "docker",
+        "run",
+        "--rm",
+        "--read-only",
+        "--cap-drop=ALL",
+        "--security-opt=no-new-privileges",
+        "--tmpfs",
+        "/tmp:rw,nosuid,nodev,mode=1777",
+        "--network=none",
+        "-e",
+        "BW_NOINTERACTION=true",
+    ]
+    image = "carapace-bitwarden-cli:local"
+    cli = [*docker, "--entrypoint", "bw", image]
+    version = run(*cli, "--version")
+    assert re.fullmatch(r"\d+\.\d+\.\d+", version), version
+    status = json.loads(run(*cli, "status"))
+    assert status["status"] == "unauthenticated", status
+    password = run(*cli, "generate", "--uppercase", "--lowercase", "--number", "--length", "32")
+    assert re.fullmatch(r"[A-Za-z0-9]{32}", password)
+    server = "https://vault.example.invalid"
+    configured = run(
+        *docker,
+        "--entrypoint",
+        "sh",
+        image,
+        "-c",
+        'bw config server "$1" >/dev/null && bw config server',
+        "config-smoke",
+        server,
+    )
+    assert configured == server, configured
+    rejected = subprocess.run(
+        [*cli, "serve", "--hostname", "127.0.0.1", "--port", "8087"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert rejected.returncode != 0 and "You are not logged in" in rejected.stderr, rejected.stderr
+    return version
+
+
 def main() -> None:
     architecture = run("docker", "info", "--format", "{{.Architecture}}")
     assert architecture in ("aarch64", "arm64", "x86_64", "amd64"), architecture
@@ -207,24 +251,10 @@ def main() -> None:
                 assert csp == policy, (service, csp)
             for service in ("server", "frontend", "frontend-extra"):
                 assert_hardened(run(*compose, "ps", "-q", service))
-            version = run(
-                "docker",
-                "run",
-                "--rm",
-                "--read-only",
-                "--cap-drop=ALL",
-                "--security-opt=no-new-privileges",
-                "--tmpfs",
-                "/tmp:rw,nosuid,nodev,mode=1777",
-                "--entrypoint",
-                "bw",
-                "carapace-bitwarden-cli:local",
-                "--version",
-            )
-            assert re.fullmatch(r"\d+\.\d+\.\d+", version), version
+            version = assert_bitwarden()
             print(
                 f"PASS {expected}: authenticated server readiness, default/override CSP, "
-                f"effective UID 999, read-only roots, Bitwarden CLI {version}"
+                f"effective UID 999, read-only roots, Bitwarden CLI {version} offline commands and serve rejection"
             )
         except BaseException:
             subprocess.run([*compose, "logs", "--no-color"], check=False)
