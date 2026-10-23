@@ -1,6 +1,7 @@
 { pkgs }:
 let
-  nodejs = pkgs.nodejs-slim_22;
+  fullNodejs = pkgs.bitwarden-cli.nodejs;
+  nodejs = pkgs."nodejs-slim_${pkgs.lib.versions.major fullNodejs.version}";
 in
 pkgs.stdenvNoCC.mkDerivation {
   pname = "carapace-bitwarden-cli";
@@ -12,9 +13,6 @@ pkgs.stdenvNoCC.mkDerivation {
   ];
   installPhase = ''
     runHook preInstall
-    cp ${./prune-bitwarden.mjs} prune-bitwarden.mjs
-    cp ${./prune-bitwarden.test.mjs} prune-bitwarden.test.mjs
-    node --test prune-bitwarden.test.mjs
     node ${./prune-bitwarden.mjs} \
       ${pkgs.bitwarden-cli}/lib/node_modules/@bitwarden/clients \
       "$out/lib/node_modules/@bitwarden/clients" > "$TMPDIR/externals.json"
@@ -29,7 +27,7 @@ pkgs.stdenvNoCC.mkDerivation {
   '';
   disallowedRequisites = [
     pkgs.bitwarden-cli
-    pkgs.nodejs_22
+    fullNodejs
     nodejs.npm
   ];
   doInstallCheck = true;

@@ -117,7 +117,7 @@ let
       '';
 in
 {
-  inherit python server tokenizerCache;
+  inherit server tokenizerCache;
   checks = {
     pytest = check "pytest" "pytest";
     pyrefly = check "pyrefly" "pyrefly check --python-interpreter-path ${dev}/bin/python";

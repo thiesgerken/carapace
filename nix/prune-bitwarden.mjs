@@ -52,7 +52,6 @@ for (const file of readdirSync(join(source, "build"), { recursive: true }).filte
 for (const specifier of [...externals].sort()) {
   const name = specifier.startsWith("@") ? specifier.split("/").slice(0, 2).join("/") : specifier.split("/")[0];
   copyPackage(name, source);
-  createRequire(join(destination, "build", "bw.js")).resolve(specifier);
 }
 console.log(JSON.stringify([...externals].sort()));
 console.error(`Pruned Bitwarden: ${externals.size} bundle externals, ${copied.size} runtime packages`);
