@@ -1,6 +1,24 @@
 # CHANGELOG
 
 
+## v0.166.0 (2026-10-23)
+
+
+### Other
+
+
+- Merge pull request #412 from thiesgerken/build/nix-images
+  ([`90185a8`](https://github.com/thiesgerken/carapace/commit/90185a8f3baa14211fafea401bca4960e67a80aa))
+
+- 🔀 merge: integrate the merged Python hook from main
+  ([`1790ae7`](https://github.com/thiesgerken/carapace/commit/1790ae7a6c5e28a748ad5c7853e31539ffdf5dc3))
+
+### ✨ Features
+
+
+- ✨ feat: adopt Nix builds and hardened runtime images
+  ([`90185a8`](https://github.com/thiesgerken/carapace/commit/90185a8f3baa14211fafea401bca4960e67a80aa))
+
 ## v0.165.1 (2026-10-23)
 
 
@@ -13,11 +31,26 @@
 - 🔀 merge: preserve artifact limits in the Python hook
   ([`d043893`](https://github.com/thiesgerken/carapace/commit/d043893c87891593e81df3848c9c622758b9e13b))
 
+- ✅ test: reject oversized artifacts before sentinel evaluation
+  ([`c1a5250`](https://github.com/thiesgerken/carapace/commit/c1a52503372095789ce4b30a469be371abb123ed))
+
+- 🔀 merge: integrate origin/main and preserve artifact push limits
+  ([`32b9f76`](https://github.com/thiesgerken/carapace/commit/32b9f7678510e0c92e6267e4469cdb4cf2e2f085))
+
 ### ♻️ Refactoring
 
 
 - ♻️ Replace the sentinel pre-receive shell hook with Python
   ([`dd2c942`](https://github.com/thiesgerken/carapace/commit/dd2c9422742824241965266b6c850578a6b3bdc9))
+
+### 💄 UI/UX
+
+
+- 💄 style: remove redundant dev shell sync hint
+  ([`55a86b0`](https://github.com/thiesgerken/carapace/commit/55a86b0ef778e3c353f19d4e0e03ffee1821e46a))
+
+- 💄 style: brighten the dev shell welcome message
+  ([`1d73fd6`](https://github.com/thiesgerken/carapace/commit/1d73fd6d5ad049fcf48a209b77657ddf6d6b1760))
 
 ## v0.165.0 (2026-10-23)
 
@@ -150,6 +183,48 @@
 
 - ✨ feat: adopt organic turtle and Fraunces branding
   ([`c12404c`](https://github.com/thiesgerken/carapace/commit/c12404c6816665bc91075338c18731711a127345))
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix: tighten image isolation and verification
+  ([`68f985e`](https://github.com/thiesgerken/carapace/commit/68f985e7af5fa786e11e782e3ea621e47da6cbe7))
+
+- 🐛 fix: provide trust roots to hermetic Python checks
+  ([`2911787`](https://github.com/thiesgerken/carapace/commit/2911787ee7717e5a37e03993d86be6ccc8aee316))
+
+### 🔧 Configuration
+
+
+- 🔧 build: lock pnpm package manager metadata
+  ([`6145109`](https://github.com/thiesgerken/carapace/commit/614510967f756fd624db16451417a92f7136c8c4))
+
+- 🔧 build: add Nix runtime images and offline build inputs
+  ([`80c190d`](https://github.com/thiesgerken/carapace/commit/80c190dd2f5e12a80609504b329ca81412ca2208))
+
+- 🔧 build: bundle licensed variable fonts for offline frontend builds
+  ([`416cfb0`](https://github.com/thiesgerken/carapace/commit/416cfb0515150af6d2be139758ee92226957e786))
+
+- 🔧 fix: restrict Ruff package discovery to src
+  ([`ab68eba`](https://github.com/thiesgerken/carapace/commit/ab68eba45657ab55afd3d9c766d2b1dd04f27120))
+
+### ⚡ Performance
+
+
+- ⚡️ perf: isolate Python package build inputs
+  ([`9aa8a78`](https://github.com/thiesgerken/carapace/commit/9aa8a78c636566d5cd50a052bbd11ecd934d659c))
+
+### 👷 CI/Build
+
+
+- 👷 ci: separate Nix verification from trusted image publishing
+  ([`7d9f3a8`](https://github.com/thiesgerken/carapace/commit/7d9f3a8b1c578fcd25aa0270fc1cb818ac3cb55a))
+
+### 🔒 Security
+
+
+- 🔒 fix: harden application pods for non-root images
+  ([`81f6d46`](https://github.com/thiesgerken/carapace/commit/81f6d46ad683bd7fb4789664d963c17b3bf3d3c8))
 
 ### ♻️ Refactoring
 
