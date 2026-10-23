@@ -153,7 +153,6 @@
             shellHook = ''
               printf '\033[1;36m🦀 carapace dev shell\033[0m \033[2mPython ${pkgs.python314.version} · node ${tools.nodejs.version} · pnpm ${tools.pnpm.version}\033[0m\n'
               printf '  \033[32m%s\033[0m\n' \
-                'uv sync --dev' \
                 'uv run python -m carapace' \
                 'pnpm --dir frontend dev' \
                 'nix build .#checks.${linux}.<check>'
