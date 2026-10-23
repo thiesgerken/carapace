@@ -126,7 +126,7 @@ The only Python source-build override supplies setuptools to `http-ece`, whose r
 
 ## CI and publishing
 
-[CI](../.github/workflows/ci.yml) calls [Nix verification](../.github/workflows/nix-verify.yml). PR verification has read-only repository access, builds the sandbox, smoke-tests loaded images, and uploads the verified x64 image archives and chart data.
+[CI](../.github/workflows/ci.yml) calls [Nix verification](../.github/workflows/nix-verify.yml). Workflows read the public [`thiesgerken` Cachix cache](https://thiesgerken.cachix.org) and skip outputs already in it; only release runs push to it, so PR builds never write it. The flake offers the cache to local builds through `nixConfig` (accept it when Nix asks; it takes effect for trusted users). It holds only x86_64-linux outputs. PR verification has read-only repository access, builds the sandbox, smoke-tests loaded images, and uploads the verified x64 image archives and chart data.
 
 Failed Nix builds retain expanded log tails in CI. Locally, `nix log .#checks.<system>.<name>` shows the stored build log for a failing check.
 

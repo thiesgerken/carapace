@@ -25,6 +25,9 @@ jobs:
       - uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
         with:
           determinate: false
+      - uses: cachix/cachix-action@38b082610b782e7e93e209c35fd730d399dee866 # v17
+        with:
+          name: thiesgerken
       - name: Realize pinned version tools once
         run: |
           time nix build .#release-tools --out-link result-release-tools --print-build-logs
@@ -51,6 +54,8 @@ jobs:
     uses: ./.github/workflows/nix-verify.yml
     with:
       ref: v${{ needs.version.outputs.version }}
+    secrets:
+      CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
 
   images:
     needs: [version, nix]
@@ -67,6 +72,9 @@ jobs:
       - uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
         with:
           determinate: false
+      - uses: cachix/cachix-action@38b082610b782e7e93e209c35fd730d399dee866 # v17
+        with:
+          name: thiesgerken
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: verified-x64-images
@@ -104,6 +112,9 @@ jobs:
       - uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
         with:
           determinate: false
+      - uses: cachix/cachix-action@38b082610b782e7e93e209c35fd730d399dee866 # v17
+        with:
+          name: thiesgerken
       - name: Realize pinned publishing tools once
         run: |
           time nix build .#ci-tools --out-link result-ci-tools --print-build-logs

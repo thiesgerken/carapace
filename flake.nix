@@ -1,6 +1,14 @@
 {
   description = "Carapace packages, checks, runtime images, and developer tooling";
 
+  # Release CI pushes its x86_64-linux builds here.
+  nixConfig = {
+    extra-substituters = [ "https://thiesgerken.cachix.org" ];
+    extra-trusted-public-keys = [
+      "thiesgerken.cachix.org-1:SpR6r/0v3OYrmAITqLiN+XxzJLKZg+zT4nzs4GlpTGE="
+    ];
+  };
+
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
     pyproject-nix = {

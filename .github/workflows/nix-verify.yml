@@ -6,6 +6,10 @@ on:
       ref:
         required: true
         type: string
+    secrets:
+      # Only trusted callers pass it, so pull request runs read the cache but never write it.
+      CACHIX_AUTH_TOKEN:
+        required: false
 
 permissions:
   contents: read
@@ -21,14 +25,12 @@ jobs:
       - uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
         with:
           determinate: false
-          # cache-nix-action cannot restore hard links into /nix/store/.links.
-          extra-conf: |
-            auto-optimise-store = false
-      - uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569 # v7
+      # The daemon pushes every locally built path, including intermediate ones like the
+      # dependency builds; nix-fast-build's own Cachix upload covers final outputs only.
+      - uses: cachix/cachix-action@38b082610b782e7e93e209c35fd730d399dee866 # v17
         with:
-          primary-key: nix-x64-${{ hashFiles('flake.lock', 'uv.lock', 'frontend/pnpm-lock.yaml') }}-${{ github.sha }}
-          restore-prefixes-first-match: nix-x64-
-          save: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          name: thiesgerken
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
       - name: Bootstrap locked build runner
         run: |
           test "$(uname -m)" = x86_64
@@ -37,8 +39,14 @@ jobs:
         run: |
           mkdir -p dist
           time result-build-tool/bin/nix-fast-build --no-nom --option log-lines 1000 \
-            --flake .#ciBuilds.x86_64-linux --systems x86_64-linux \
+            --flake .#ciBuilds.x86_64-linux --systems x86_64-linux --skip-cached \
             --out-link result-ci --result-file dist/ci-results.json
+      # --skip-cached links only what it built; the tools and images are still needed here.
+      - name: Fetch cached outputs used below
+        run: |
+          for output in tools server-image frontend-image bitwarden-image; do
+            nix build ".#ciBuilds.x86_64-linux.$output" --out-link "result-ci-$output"
+          done
           echo "$PWD/result-ci-tools/bin" >> "$GITHUB_PATH"
           echo "SSL_CERT_FILE=$PWD/result-ci-tools/etc/ssl/certs/ca-bundle.crt" >> "$GITHUB_ENV"
       - name: Build sandbox image
