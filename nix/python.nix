@@ -6,10 +6,17 @@
 }:
 let
   inherit (pkgs) lib;
+  python = pkgs.python314.override {
+    # The interpreter passthru follows self, otherwise uv still selects the unstripped build.
+    self = python;
+    stripConfig = true;
+    stripIdlelib = true;
+    stripTests = true;
+  };
   workspace = uv2nix.lib.workspace.loadWorkspace { workspaceRoot = ../.; };
   pythonSet =
     (pkgs.callPackage pyproject-nix.build.packages {
-      python = pkgs.python314;
+      inherit python;
     }).overrideScope
       (
         lib.composeManyExtensions [

@@ -4,6 +4,8 @@ The committed Nix flake and lockfile own builds, checks, and runtime images. Pyt
 
 The local Python package source includes only `pyproject.toml`, `README.md`, and `src/`. Python check inputs are scoped separately, so changes under `docs/`, `charts/`, or `frontend/`, and changelog updates, do not invalidate Python builds and checks.
 
+The server image and Python checks use a Python 3.14 override with `stripConfig`, `stripIdlelib`, and `stripTests` enabled. This removes the static interpreter archive and development-only standard-library files without changing the wheel ABI. The customized interpreter builds from source on a cold store; trusted release CI caches Linux x64 builds in Cachix. The native developer shell keeps the cached `pkgs.python314` interpreter and uv manages its separate `.venv`.
+
 ## Native developer shell
 
 ```sh
@@ -58,6 +60,8 @@ On Linux x64, omit `packages.aarch64-linux.` from the Nix output paths and omit 
 
 The server, frontend, and Bitwarden images use UID/GID 999, a read-only root, dropped capabilities, and writable `/tmp`. The server data directory and Bitwarden state need persistent writable mounts. The frontend listens on 8080; Compose's proxy and the chart keep their public ports unchanged.
 
+The Bitwarden runtime keeps the upstream bundle and the transitive package closure of its literal `require()` calls, preserving nested `node_modules` resolution and required peers. Its install check loads every discovered external from the installed bundle's directory. The wrapper and auxiliary script shebangs use the slim Node.js interpreter matching `bitwarden-cli.nodejs`, keeping the npm-enabled toolchain out of the runtime closure. The sidecar entrypoint is unchanged.
+
 ## Checks and runtime smoke
 
 On Linux:
@@ -95,7 +99,7 @@ Load the three runtime images, build the native sandbox image, and run:
 python3 scripts/smoke-images.py
 ```
 
-The smoke uses disposable volumes and dynamic ports. It checks authenticated server readiness with Postgres and Redis, rejects a real knowledge-repo push through the sentinel for a missing session, verifies effective UID 999 and read-only roots, checks default and overridden frontend CSP headers, and runs the Bitwarden CLI under the runtime restrictions. It does not need LLM credentials or a vault account; it does not exercise vault login/unlock.
+The smoke uses disposable volumes and dynamic ports. It checks authenticated server readiness with Postgres and Redis, rejects a real knowledge-repo push through the sentinel for a missing session, verifies effective UID 999 and read-only roots, and checks default and overridden frontend CSP headers. Bitwarden runs without a network under the runtime restrictions: status, password generation, server configuration round-trip, and the explicit unauthenticated `bw serve` rejection. No LLM credentials or vault account are needed. Real vault login, unlock, sync, and an authenticated Bitwarden API listener remain outside this smoke.
 
 Focused host checks remain available:
 

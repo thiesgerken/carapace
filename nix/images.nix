@@ -5,6 +5,7 @@
   frontend,
 }:
 let
+  bitwarden = import ./bitwarden.nix { inherit pkgs; };
   identity = pkgs.runCommand "carapace-runtime-identity" { } ''
     mkdir -p "$out/etc"
     echo 'carapace:x:999:999:Carapace:/tmp:/sbin/nologin' > "$out/etc/passwd"
@@ -102,7 +103,7 @@ in
   bitwarden-image =
     image "carapace-bitwarden-cli"
       [
-        pkgs.bitwarden-cli
+        bitwarden
         shell
         pkgs.coreutils
         pkgs.gnused
@@ -118,7 +119,7 @@ in
         Env = tlsEnv ++ [
           "PATH=${
             pkgs.lib.makeBinPath [
-              pkgs.bitwarden-cli
+              bitwarden
               shell
               pkgs.coreutils
               pkgs.gnused
