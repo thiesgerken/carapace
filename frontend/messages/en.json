@@ -19,6 +19,33 @@
         "memory": "Memory",
         "systemPrompts": "System prompts"
     },
+    "artifacts": {
+        "source": "Show source",
+        "preview": "Show preview",
+        "openInNewTab": "Open in new tab",
+        "openLive": "Open current version",
+        "openLiveInNewTab": "Open current version in new tab",
+        "fullScreen": "Full screen",
+        "openKnowledge": "Open in knowledge browser",
+        "back": "Back",
+        "createdIn": "Created in:",
+        "updatedIn": "Last updated in:",
+        "invalidSlug": "Open an artifact from chat or the knowledge browser.",
+        "shared": "Shared",
+        "loadError": "Failed to load artifact.",
+        "loadingArtifact": "Loading artifact…",
+        "loading": "Loading source…",
+        "sourceError": "Failed to load artifact source.",
+        "sharing": {
+            "label": "Share publicly",
+            "confirm": "Share this artifact? Anyone with the link can view it, including future agent changes.",
+            "loadError": "Failed to load sharing state.",
+            "updateError": "Failed to update sharing.",
+            "copy": "Copy public link",
+            "copied": "Copied",
+            "copyError": "Could not copy the public link."
+        }
+    },
     "knowledge": {
         "title": "Knowledge Repository",
         "root": "Knowledge",
@@ -968,6 +995,7 @@
             "accessDomain": "access domain",
             "replace": "replace",
             "sentFile": "sent file",
+            "artifact": "Artifact · {title}",
             "sendFile": "send file"
         },
         "summaries": {

@@ -13,6 +13,7 @@ import {
   Folder,
   FolderClock,
   FolderCog,
+  FolderCode,
   GitBranch,
   Hammer,
   Image,
@@ -137,7 +138,7 @@ const EXTENSION_ICONS: Record<string, LucideIcon> = {
   key: Key,
 };
 
-export type EntryIconKind = "session" | "skill" | null;
+export type EntryIconKind = "session" | "skill" | "artifact" | null;
 
 export interface EntryIconTarget {
   name: string;
@@ -150,6 +151,7 @@ function lookup({ name, type, kind }: EntryIconTarget): LucideIcon {
   if (type === "dir") {
     if (kind === "session") return FolderClock;
     if (kind === "skill") return FolderCog;
+    if (kind === "artifact") return FolderCode;
     return Folder;
   }
   const lower = name.toLowerCase();

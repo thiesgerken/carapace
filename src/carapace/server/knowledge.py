@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
+from html.parser import HTMLParser
 from pathlib import Path
 from typing import Annotated, Literal
 
@@ -19,8 +20,10 @@ from ..git.store import GitStore
 from ..models.credentials import CredentialRegistryProtocol
 from ..models.git import FileCommit
 from ..models.skills import SkillCarapaceConfig
+from ..session.manager import SessionManager
 from ..session.sent_files import INLINE_MIME_TYPES, guess_mime
 from ..skills import SkillDocument, parse_skill_document
+from .artifact_rendering import artifact_headers
 from .auth import require
 from .state import server_module
 
@@ -65,9 +68,10 @@ class KnowledgeEntry(BaseModel):
     commit: FileCommit | None = None
     # Recognized directory conventions get a `kind` plus a human label the client
     # renders where a file would show its size.
-    kind: Literal["session", "skill"] | None = None
+    kind: Literal["session", "skill", "artifact"] | None = None
     label: str | None = None
     session_id: str | None = None
+    shared: bool = False
 
 
 def session_archive_entry(directory: Path, root: Path) -> tuple[str | None, str] | None:
@@ -111,16 +115,29 @@ class KnowledgeSkill(BaseModel):
     carapace: SkillCarapaceConfig | None = None
 
 
+class ArtifactSession(BaseModel):
+    session_id: str
+    title: str | None = None
+
+
+class KnowledgeArtifact(BaseModel):
+    slug: str
+    title: str
+    created_in: ArtifactSession | None = None
+    updated_in: ArtifactSession | None = None
+
+
 class KnowledgeDirListing(BaseModel):
     type: Literal["dir"] = "dir"
     path: str
     entries: list[KnowledgeEntry]
     # Recognized directory conventions get their defining document inlined, rendered
     # below the listing (a skill dir's SKILL.md, frontmatter stripped into `skill`).
-    kind: Literal["skill"] | None = None
+    kind: Literal["skill", "artifact"] | None = None
     doc_name: str | None = None
     doc: str | None = None
     skill: KnowledgeSkill | None = None
+    artifact: KnowledgeArtifact | None = None
     # Per secret vault_path referenced by the skill (credentials + mcp auth):
     # "present" | "absent" | "error" (vault unreachable). Empty unless a skill dir.
     vault_status: dict[str, str] = {}
@@ -135,6 +152,7 @@ class KnowledgeFileInfo(BaseModel):
     # Decoded contents for text files within MAX_INLINE_TEXT_BYTES; None for binary
     # or oversized files, which the client offers as a download instead.
     content: str | None = None
+    artifact: KnowledgeArtifact | None = None
 
 
 def contained_target(child: Path, root: Path) -> Path | None:
@@ -165,6 +183,67 @@ def resolve_target(root: Path, raw_path: str) -> Path:
     return target
 
 
+def validate_artifact_slug(slug: str) -> None:
+    if not slug or slug in {".", ".."} or "/" in slug or "\\" in slug:
+        raise HTTPException(status_code=404, detail="Not found")
+
+
+def resolve_artifact_index(root: Path, slug: str) -> Path:
+    validate_artifact_slug(slug)
+    directory = resolve_target(root, f"artifacts/{slug}")
+    if directory != root / "artifacts" / slug or not directory.is_dir():
+        raise HTTPException(status_code=404, detail="Not found")
+    target = resolve_target(directory, "index.html")
+    if not target.is_file():
+        raise HTTPException(status_code=404, detail="Not found")
+    return target
+
+
+class _ArtifactTitleParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.in_title = False
+        self.finished = False
+        self.parts: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag == "title" and not self.finished:
+            self.in_title = True
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in {"title", "head"}:
+            self.in_title = False
+            self.finished = True
+
+    def handle_data(self, data: str) -> None:
+        if self.in_title:
+            self.parts.append(data)
+
+
+def artifact_title(index: Path) -> str | None:
+    parser = _ArtifactTitleParser()
+    with index.open(encoding="utf-8", errors="replace") as document:
+        while chunk := document.read(4096):
+            parser.feed(chunk)
+            if parser.finished:
+                break
+    return " ".join("".join(parser.parts).split()) or None
+
+
+def artifact_info(target: Path, root: Path) -> KnowledgeArtifact | None:
+    parts = target.relative_to(root).parts
+    if len(parts) not in {2, 3} or parts[0] != "artifacts":
+        return None
+    if len(parts) == 3 and parts[2] != "index.html":
+        return None
+    slug = parts[1]
+    try:
+        index = resolve_artifact_index(root, slug)
+    except HTTPException:
+        return None
+    return KnowledgeArtifact(slug=slug, title=artifact_title(index) or slug)
+
+
 def build_entry(child: Path, root: Path) -> KnowledgeEntry:
     resolved = contained_target(child, root)
     if resolved is None:
@@ -178,6 +257,11 @@ def build_entry(child: Path, root: Path) -> KnowledgeEntry:
             size=stat.st_size,
             modified=datetime.fromtimestamp(stat.st_mtime, tz=UTC),
         )
+    relative = resolved.relative_to(root).parts
+    if len(relative) == 2 and relative[0] == "artifacts":
+        index = contained_target(resolved / "index.html", resolved)
+        if index is not None and index.is_file():
+            return KnowledgeEntry(name=child.name, type="dir", kind="artifact", label=artifact_title(index))
     archive = session_archive_entry(resolved, root)
     if archive is not None:
         title, session_id = archive
@@ -232,8 +316,15 @@ def list_dir(root: Path, target: Path) -> KnowledgeDirListing:
     entries = [build_entry(child, root) for child in target.iterdir() if child.name != ".git"]
     entries.sort(key=lambda e: (e.type != "dir", e.name.casefold()))
     rel = target.relative_to(root)
-    listing = KnowledgeDirListing(path="" if rel == Path() else rel.as_posix(), entries=entries)
-    inline_doc(target, entries, listing, root)
+    artifact = artifact_info(target, root)
+    listing = KnowledgeDirListing(
+        path="" if rel == Path() else rel.as_posix(),
+        entries=entries,
+        artifact=artifact,
+        kind="artifact" if artifact else None,
+    )
+    if artifact is None:
+        inline_doc(target, entries, listing, root)
     return listing
 
 
@@ -244,6 +335,30 @@ async def attach_commits(git_store: GitStore, listing: KnowledgeDirListing) -> N
         return
     for entry in listing.entries:
         entry.commit = commits.get(entry.name)
+
+
+def artifact_session(session_id: str, session_mgr: SessionManager, owner: str) -> ArtifactSession:
+    reference = ArtifactSession(session_id=session_id)
+    try:
+        owned = session_mgr.is_owned_by(session_id, owner)
+    except FileNotFoundError:
+        return reference
+    if owned:
+        state = session_mgr.load_state(session_id)
+        reference.title = state.title if state is not None else None
+    return reference
+
+
+async def attach_artifact_sessions(
+    artifact: KnowledgeArtifact, git_store: GitStore, session_mgr: SessionManager, owner: str
+) -> None:
+    history = await git_store.session_history(f"artifacts/{artifact.slug}/index.html")
+    if history is None:
+        return
+    created, updated = history
+    artifact.created_in = artifact_session(created, session_mgr, owner)
+    if updated != created:
+        artifact.updated_in = artifact_session(updated, session_mgr, owner)
 
 
 def parse_carapace_config(document: SkillDocument, skill_name: str) -> SkillCarapaceConfig | None:
@@ -302,7 +417,16 @@ async def browse_knowledge(
     target = resolve_target(root, path)
     if target.is_dir():
         listing = list_dir(root, target)
-        await attach_commits(handle.git_store, listing)
+        if listing.artifact is not None:
+            await attach_artifact_sessions(
+                listing.artifact, handle.git_store, server._engine.session_mgr, user.username
+            )
+        else:
+            await attach_commits(handle.git_store, listing)
+        if any(entry.kind == "artifact" for entry in listing.entries):
+            shared = server._artifact_share_store.shared_slugs(user.username)
+            for entry in listing.entries:
+                entry.shared = entry.kind == "artifact" and entry.name in shared
         if listing.skill is not None and listing.skill.carapace is not None:
             try:
                 registry = await server._credential_registry_for_user(user.username)
@@ -327,6 +451,9 @@ async def browse_knowledge(
         )
     size = target.stat().st_size
     mime = guess_mime(target.name)
+    artifact = artifact_info(target, root)
+    if artifact is not None:
+        await attach_artifact_sessions(artifact, handle.git_store, server._engine.session_mgr, user.username)
     return KnowledgeFileInfo(
         path=rel,
         name=target.name,
@@ -335,4 +462,15 @@ async def browse_knowledge(
         # Only the types the client renders as an <img> skip their contents; anything
         # else it cannot display (an SVG, say) is still worth showing as source.
         content=None if mime in INLINE_MIME_TYPES else read_text_content(target, size),
+        artifact=artifact,
     )
+
+
+@router.get("/artifacts/{slug}")
+async def render_artifact(
+    user: Annotated[UserIdentity, Depends(require(Scope.knowledge, Access.read))],
+    slug: str,
+) -> FileResponse:
+    handle = server._knowledge_repo_registry.get_for_user(user.username)
+    target = resolve_artifact_index(handle.knowledge_dir.resolve(), slug)
+    return FileResponse(target, media_type="text/html", headers=artifact_headers())

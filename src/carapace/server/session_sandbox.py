@@ -11,6 +11,7 @@ from ..auth import UserIdentity
 from ..sandbox.manager import UploadError, UploadTooLargeError
 from ..sandbox.state import SessionSandboxSnapshot
 from ..session import sent_files
+from .artifact_rendering import artifact_headers
 from .auth import require
 from .state import server_module
 
@@ -136,12 +137,18 @@ async def download_sent_file(
     file_id: str,
     user: Annotated[UserIdentity, Depends(require(Scope.sessions, Access.read))],
     download: Annotated[bool, Query()] = False,
+    artifact: Annotated[bool, Query()] = False,
 ) -> FileResponse:
     _load_owned_session(session_id, user)
     resolved = sent_files.resolve(server._engine.session_mgr.data_dir, session_id, file_id)
     if resolved is None:
         raise HTTPException(status_code=404, detail="File not found")
     blob, info = resolved
+    if artifact and not download:
+        if info.mime != "text/html":
+            raise HTTPException(status_code=404, detail="Artifact not found")
+        # Render the persisted snapshot, not the knowledge repo's possibly newer revision.
+        return FileResponse(blob, media_type=info.mime, headers=artifact_headers())
     inline = not download and info.mime in sent_files.INLINE_MIME_TYPES
     return FileResponse(
         blob,
