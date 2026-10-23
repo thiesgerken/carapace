@@ -1,6 +1,15 @@
 # CHANGELOG
 
 
+## v0.167.0 (2026-10-23)
+
+
+### Other
+
+
+- Merge remote-tracking branch 'refs/remotes/origin/main'
+  ([`afa1ddf`](https://github.com/thiesgerken/carapace/commit/afa1ddfa0ca1d0c2cf89dcb04a9fcb0564c412de))
+
 ## v0.166.0 (2026-10-23)
 
 
@@ -183,6 +192,9 @@
 
 - ✨ feat: adopt organic turtle and Fraunces branding
   ([`c12404c`](https://github.com/thiesgerken/carapace/commit/c12404c6816665bc91075338c18731711a127345))
+
+- ✨ force release
+  ([`fce176d`](https://github.com/thiesgerken/carapace/commit/fce176dc4598824960d309dae31f1ffba32afc3e))
 
 ### 🐛 Bug Fixes
 
