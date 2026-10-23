@@ -151,14 +151,13 @@
             UV_PYTHON = pkgs.python314.interpreter;
             UV_PYTHON_DOWNLOADS = "never";
             shellHook = ''
-              cat <<'EOF'
-              carapace dev shell: Python ${pkgs.python314.version}, node ${tools.nodejs.version}, pnpm ${tools.pnpm.version}
-                uv sync --dev
-                uv run python -m carapace
-                pnpm --dir frontend dev
-                nix build .#checks.${linux}.<check>
-                more: docs/development.md
-              EOF
+              printf '\033[1;36m🦀 carapace dev shell\033[0m \033[2mPython ${pkgs.python314.version} · node ${tools.nodejs.version} · pnpm ${tools.pnpm.version}\033[0m\n'
+              printf '  \033[32m%s\033[0m\n' \
+                'uv sync --dev' \
+                'uv run python -m carapace' \
+                'pnpm --dir frontend dev' \
+                'nix build .#checks.${linux}.<check>'
+              printf '  \033[2m📖 more: docs/development.md\033[0m\n'
             '';
           };
         }
