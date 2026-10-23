@@ -1,6 +1,30 @@
 # CHANGELOG
 
 
+## v0.167.1 (2026-10-23)
+
+
+### 🐛 Bug Fixes
+
+
+- 🐛Merge pull request #417 from thiesgerken/ci/cachix
+  ([`64818e0`](https://github.com/thiesgerken/carapace/commit/64818e0d70e4b76df3bc4db5b5716c4947efb0ae))
+
+### ⚡ Performance
+
+
+- ⚡ perf(ci): pull and push Nix builds through Cachix
+  ([`64818e0`](https://github.com/thiesgerken/carapace/commit/64818e0d70e4b76df3bc4db5b5716c4947efb0ae))
+
+- ⚡ perf(ci): pull and push Nix builds through Cachix
+  ([`76d8245`](https://github.com/thiesgerken/carapace/commit/76d8245af611415a5713e34acc03870140a8480f))
+
+  Replace the GitHub Actions store tarball with the thiesgerken Cachix cache. Every workflow reads it; only release runs push, through the daemon so intermediate builds are cached too. nix-fast-build skips outputs already in the cache. The flake offers the cache to local builds.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_011E7iMxc3j29x4jSHzXVjAB
+
 ## v0.167.0 (2026-10-23)
 
 
