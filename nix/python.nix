@@ -7,6 +7,8 @@
 let
   inherit (pkgs) lib;
   python = pkgs.python314.override {
+    # The interpreter passthru follows self, otherwise uv still selects the unstripped build.
+    self = python;
     stripConfig = true;
     stripIdlelib = true;
     stripTests = true;
