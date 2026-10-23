@@ -60,7 +60,7 @@ On Linux x64, omit `packages.aarch64-linux.` from the Nix output paths and omit 
 
 The server, frontend, and Bitwarden images use UID/GID 999, a read-only root, dropped capabilities, and writable `/tmp`. The server data directory and Bitwarden state need persistent writable mounts. The frontend listens on 8080; Compose's proxy and the chart keep their public ports unchanged.
 
-The Bitwarden runtime keeps the upstream bundle and the transitive package closure of its literal `require()` calls, preserving nested `node_modules` resolution and required peers. Its install check loads every discovered external from the installed bundle's directory. The wrapper uses the matching slim Node.js 22 interpreter instead of the npm-enabled toolchain; the sidecar entrypoint is unchanged.
+The Bitwarden runtime keeps the upstream bundle and the transitive package closure of its literal `require()` calls, preserving nested `node_modules` resolution and required peers. Its install check loads every discovered external from the installed bundle's directory. The wrapper and auxiliary script shebangs use the matching slim Node.js 22 interpreter, keeping the npm-enabled toolchain out of the runtime closure. The sidecar entrypoint is unchanged.
 
 ## Checks and runtime smoke
 

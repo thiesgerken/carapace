@@ -23,6 +23,15 @@ pkgs.stdenvNoCC.mkDerivation {
       --add-flags "$out/lib/node_modules/@bitwarden/clients/build/bw.js"
     runHook postInstall
   '';
+  postFixup = ''
+    # Inherited shebangs otherwise retain the npm-enabled interpreter.
+    patchShebangs --build --update "$out"
+  '';
+  disallowedRequisites = [
+    pkgs.bitwarden-cli
+    pkgs.nodejs_22
+    nodejs.npm
+  ];
   doInstallCheck = true;
   installCheckPhase = ''
     runHook preInstallCheck
