@@ -1,6 +1,30 @@
 # CHANGELOG
 
 
+## v0.167.4 (2026-10-24)
+
+
+### Other
+
+
+- Merge pull request #421 from thiesgerken/fix/sentinel-approval-args
+  ([`5e4b615`](https://github.com/thiesgerken/carapace/commit/5e4b615dea6ea2d7ec322948aba9e73c0ee7006f))
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix(security): show the sentinel which command the user approved
+  ([`5e4b615`](https://github.com/thiesgerken/carapace/commit/5e4b615dea6ea2d7ec322948aba9e73c0ee7006f))
+
+- 🐛 fix(security): show the sentinel which command the user approved
+  ([`4e1b069`](https://github.com/thiesgerken/carapace/commit/4e1b069ed8c8195e4b58ee639a244cbf779fc300))
+
+  The action log line for a user decision only said "[approval]: exec → approved", so the sentinel could not tell which command the user had approved or denied. Store the structured args on ApprovalEntry and render the line as "[user_decision]: user approved exec(command=...)".
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_014ieccikaFbCcPKRcGQwv3u
+
 ## v0.167.3 (2026-10-24)
 
 
