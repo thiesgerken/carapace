@@ -1,6 +1,27 @@
 # CHANGELOG
 
 
+## v0.167.3 (2026-10-24)
+
+
+### 🐛 Bug Fixes
+
+
+- 🐛Merge pull request #420 from thiesgerken/fix/approved-commands-history
+  ([`669e074`](https://github.com/thiesgerken/carapace/commit/669e0749b16a2f4b9f79168db4a869f906b25d7b))
+
+- 🐛 fix(frontend): keep user-approved commands in reloaded history
+  ([`669e074`](https://github.com/thiesgerken/carapace/commit/669e0749b16a2f4b9f79168db4a869f906b25d7b))
+
+- 🐛 fix(frontend): keep user-approved commands in reloaded history
+  ([`2e6331d`](https://github.com/thiesgerken/carapace/commit/2e6331d3e465886a728c0329a3fc42e6f1046af8))
+
+  The server rewrites the escalated tool_call event in place once the user approves it, so the reloaded history has no escalated message left to patch. The projection then dropped the approved call together with its result. Only patch when an escalated message exists; otherwise render the event as the tool call.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_014ieccikaFbCcPKRcGQwv3u
+
 ## v0.167.2 (2026-10-23)
 
 
