@@ -155,8 +155,8 @@ async def run_agent_turn(
 
             deps.security.append(
                 ApprovalEntry(
-                    tool=meta.get("tool", ""),
-                    args_summary=str(meta.get("args", {}))[:200],
+                    tool=meta["tool"],
+                    args=meta["args"],
                     decision=user_decision,
                 ),
             )
