@@ -320,7 +320,18 @@ function argsMatch(
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
-/** A run of consecutive tool/thinking messages, collapsed into one summary. */
+function isEscalatedToolCallFor(
+  message: ChatMessage,
+  request: { tool: string; args: Record<string, unknown> },
+): message is ToolCallMessage {
+  return (
+    message.kind === "tool_call" &&
+    message.tool === request.tool &&
+    message.approvalVerdict === "escalate" &&
+    argsMatch(message.args, request.args)
+  );
+}
+
 function applyDeniedApprovalToMessages(
   messages: ChatMessage[],
   request: {
@@ -333,12 +344,7 @@ function applyDeniedApprovalToMessages(
   const updated = [...messages];
   for (let index = updated.length - 1; index >= 0; index--) {
     const entry = updated[index];
-    if (
-      entry.kind === "tool_call" &&
-      entry.tool === request.tool &&
-      entry.approvalVerdict === "escalate" &&
-      argsMatch(entry.args, request.args)
-    ) {
+    if (isEscalatedToolCallFor(entry, request)) {
       updated[index] = {
         ...entry,
         approvalSource: "user",
@@ -364,12 +370,7 @@ function applyApprovedApprovalToMessages(
   const updated = [...messages];
   for (let index = updated.length - 1; index >= 0; index--) {
     const entry = updated[index];
-    if (
-      entry.kind === "tool_call" &&
-      entry.tool === request.tool &&
-      entry.approvalVerdict === "escalate" &&
-      argsMatch(entry.args, request.args)
-    ) {
+    if (isEscalatedToolCallFor(entry, request)) {
       updated[index] = {
         ...entry,
         approvalSource: "user",
@@ -664,7 +665,7 @@ function groupFoldedMessages(messages: ChatMessage[]): ChatMessage[] {
   return out;
 }
 
-function projectHistoryToMessages(history: HistoryMessage[]): ChatMessage[] {
+export function projectHistoryToMessages(history: HistoryMessage[]): ChatMessage[] {
   const messages: ChatMessage[] = [];
   const pendingToolCallIndices = new Map<string, number[]>();
   // Turn = one submitted (non-slash) user prompt plus the agent work that follows it.
@@ -702,6 +703,8 @@ function projectHistoryToMessages(history: HistoryMessage[]): ChatMessage[] {
         entry.approval_verdict,
       );
 
+      // The server usually overwrites the escalated event in place with the approved one, so
+      // there may be no escalated message to patch; then render this event as the tool call.
       if (
         isUserApprovedReplay(
           tool,
@@ -709,6 +712,7 @@ function projectHistoryToMessages(history: HistoryMessage[]): ChatMessage[] {
           entry.approval_source,
           entry.approval_verdict,
         )
+        && messages.some((message) => isEscalatedToolCallFor(message, { tool, args }))
       ) {
         const patched = applyApprovedApprovalToMessages(
           messages,
