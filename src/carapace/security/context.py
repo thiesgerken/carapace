@@ -69,7 +69,7 @@ class AgentResponseEntry(BaseModel):
 class ApprovalEntry(BaseModel):
     type: Literal["approval"] = "approval"
     tool: str
-    args_summary: str = ""
+    args: dict[str, Any]
     decision: Literal["approved", "denied"] = "approved"
 
 

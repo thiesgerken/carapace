@@ -102,8 +102,7 @@ def _format_entry(entry: ActionLogEntry) -> str:
         case UserMessageEntry(content=content):
             return f"[user]: {content!r}"
         case ToolCallEntry(tool=tool, args=args, decision=decision, explanation=explanation):
-            args_str = ", ".join(f"{k}={_truncate(v)}" for k, v in args.items())
-            line = f"[tool]: {tool}({args_str}) → {decision}"
+            line = f"[tool]: {tool}({_format_args(args)}) → {decision}"
             if explanation:
                 line += f" ({explanation})"
             return line
@@ -111,8 +110,8 @@ def _format_entry(entry: ActionLogEntry) -> str:
             return f"[tool_result]: {tool} → {status}"
         case AgentResponseEntry(token_count=token_count):
             return f"[agent]: ({token_count} tokens)"
-        case ApprovalEntry(tool=tool, decision=decision):
-            return f"[approval]: {tool} → {decision}"
+        case ApprovalEntry(tool=tool, args=args, decision=decision):
+            return f"[user_decision]: user {decision} {tool}({_format_args(args)})"
         case SkillActivatedEntry(skill_name=name, description=desc, declared_domains=domains):
             parts = [f"[skill]: {name} activated"]
             if desc:
@@ -147,6 +146,10 @@ def _format_entry(entry: ActionLogEntry) -> str:
 
 def _format_arg(v: Any) -> str:
     return repr(v) if isinstance(v, str) else str(v)
+
+
+def _format_args(args: dict[str, Any]) -> str:
+    return ", ".join(f"{k}={_truncate(v)}" for k, v in args.items())
 
 
 def _truncate(v: Any, limit: int = 80) -> str:

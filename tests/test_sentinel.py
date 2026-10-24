@@ -7,8 +7,8 @@ from pathlib import Path
 import pytest
 from pydantic_ai.models.test import TestModel
 
-from carapace.security.context import SentinelVerdict, SessionSecurity
-from carapace.security.sentinel import Sentinel
+from carapace.security.context import ApprovalEntry, SentinelVerdict, SessionSecurity
+from carapace.security.sentinel import Sentinel, _format_entry
 
 
 def _make_sentinel(tmp_path: Path, *, timeout: timedelta | None = None) -> tuple[Sentinel, Path]:
@@ -208,3 +208,9 @@ async def test_push_context_marks_only_touched_shared_artifacts_as_publications(
     )
     assert ("Publicly shared artifacts touched: report." in prompts[0]) is is_public
     assert ("this push is a publication." in prompts[0]) is is_public
+
+
+def test_user_decision_entry_names_the_approved_command() -> None:
+    line = _format_entry(ApprovalEntry(tool="exec", args={"command": "git push"}, decision="approved"))
+
+    assert line == "[user_decision]: user approved exec(command='git push')"
