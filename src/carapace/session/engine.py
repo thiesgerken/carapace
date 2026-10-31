@@ -561,7 +561,7 @@ class SessionEngine(
         target = turns[-1]
         user_event = events[target.start_event_index]
         attachments = [Attachment.model_validate(a) for a in user_event.get("attachments", [])]
-        self._rewrite_session_transcript(session_id, events[: target.start_event_index])
+        self._rewrite_session_transcript(active, events[: target.start_event_index])
         await self.submit_message(session_id, target.user_content, origin=origin, attachments=attachments)
 
     async def reset_to_turn(self, session_id: str, event_index: int) -> bool:
@@ -577,7 +577,7 @@ class SessionEngine(
             return False
 
         prefix_events, history, tree = result
-        self._save_rewound_transcript(session_id, prefix_events, history, tree)
+        self._save_rewound_transcript(active, prefix_events, history, tree)
         return True
 
     def fork_session(
@@ -778,21 +778,19 @@ class SessionEngine(
 
     def _save_rewound_transcript(
         self,
-        session_id: str,
+        active: ActiveSession,
         events: list[dict[str, Any]],
         history: list[ModelMessage],
         tree: SessionCompaction,
     ) -> None:
+        session_id = active.state.session_id
         self._session_mgr.save_events(session_id, events)
         self._session_mgr.save_history(session_id, history)
         self._session_mgr.save_compaction(session_id, tree)
         self._session_mgr.clear_llm_request_state(session_id)
-
-        active = self._active.get(session_id)
-        if active is not None:
-            active.llm_request_state = None
-            active.llm_request_thinking.clear()
-            self._trim_fork_origin(active.state, len(events))
+        active.llm_request_state = None
+        active.llm_request_thinking.clear()
+        self._trim_fork_origin(active.state, len(events))
 
     def _trim_fork_origin(self, state: SessionState, event_count: int) -> None:
         """Rewinding a fork into its inherited events makes what follows its own, not the source's."""
@@ -802,11 +800,12 @@ class SessionEngine(
         state.forked_from = fork.model_copy(update={"event_count": event_count})
         self._session_mgr.save_state(state)
 
-    def _rewrite_session_transcript(self, session_id: str, events: list[dict[str, Any]]) -> None:
+    def _rewrite_session_transcript(self, active: ActiveSession, events: list[dict[str, Any]]) -> None:
+        session_id = active.state.session_id
         truncated_events = self._truncate_incomplete_events(events)
         history = self._truncate_incomplete_model_history(self._session_mgr.load_history(session_id))
         truncated_history, tree = self._compacted_history_and_tree_for_events(session_id, truncated_events, history)
-        self._save_rewound_transcript(session_id, truncated_events, truncated_history, tree)
+        self._save_rewound_transcript(active, truncated_events, truncated_history, tree)
 
     async def _generate_title(
         self, active: ActiveSession, events: list[dict[str, Any]], *, track_activity: bool = True
