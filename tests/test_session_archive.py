@@ -10,6 +10,7 @@ import pytest
 from carapace.git.store import GitStore
 from carapace.knowledge import KnowledgeRepoHandle
 from carapace.models.config import SessionCommitConfig
+from carapace.models.session import SessionFork
 from carapace.session.archive import SessionArchiveService
 from carapace.session.manager import SessionManager
 
@@ -81,6 +82,32 @@ async def test_archive_service_commits_snapshot(tmp_path, db_factory) -> None:
         f"💾 session: add {state.session_id}",
         session_id=state.session_id,
     )
+
+
+@pytest.mark.asyncio
+async def test_archive_records_fork_origin_only_for_forks(tmp_path, db_factory) -> None:
+    mgr = SessionManager(db_factory, tmp_path)
+    source = mgr.create_session(user="thies")
+    fork = mgr.create_session(user="thies")
+    fork.forked_from = SessionFork(session_id=source.session_id, event_count=2)
+    mgr.save_state(fork)
+    for state in (source, fork):
+        mgr.append_events(
+            state.session_id,
+            [{"role": "user", "content": "hello"}, {"role": "assistant", "content": "world"}],
+        )
+    git_store = MagicMock(spec=GitStore)
+    git_store.commit = AsyncMock(return_value=True)
+    service = _archive_service(mgr, knowledge_dir=tmp_path, git_store=git_store)
+
+    source_result = await service.commit_session(source.session_id, trigger="manual")
+    fork_result = await service.commit_session(fork.session_id, trigger="manual")
+
+    assert source_result.archive_path is not None and fork_result.archive_path is not None
+    source_payload = json.loads((tmp_path / source_result.archive_path).read_text())
+    fork_payload = json.loads((tmp_path / fork_result.archive_path).read_text())
+    assert "forked_from" not in source_payload["session"]
+    assert fork_payload["session"]["forked_from"] == {"session_id": source.session_id, "event_count": 2}
 
 
 @pytest.mark.asyncio

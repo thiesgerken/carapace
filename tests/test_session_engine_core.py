@@ -21,6 +21,7 @@ from pydantic_ai.messages import (
 
 import carapace.usage as usage_mod
 from carapace.models.credentials import CredentialRegistryProtocol
+from carapace.models.session import SessionFork
 from carapace.models.skills import ContextGrant, SkillCredentialDecl
 from carapace.sandbox.state import SessionSandboxSnapshot
 from carapace.usage import InputShapeRatios, LlmRequestLog, LlmRequestRecord, LlmRequestState, ModelUsage
@@ -266,6 +267,7 @@ def test_fork_session_copies_transcript_and_security_context(tmp_path: Path, db_
     assert forked.knowledge_last_committed_at is None
     assert forked.knowledge_last_archive_path is None
     assert forked.knowledge_last_commit_trigger is None
+    assert forked.forked_from == SessionFork(session_id=sid, event_count=3)
     assert _without_timestamps(engine.session_mgr.load_events(forked.session_id)) == [
         {"role": "user", "content": "first"},
         {"role": "tool_call", "tool": "read", "args": {"path": "README.md"}, "detail": "reading"},
@@ -393,6 +395,32 @@ async def test_reset_to_user_message_cuts_after_prompt(tmp_path: Path, db_factor
     assert isinstance(last, ModelRequest)
     assert isinstance(last.parts[0], UserPromptPart)
     assert last.parts[0].content == "second"
+
+
+def test_fork_of_a_fork_comes_from_its_direct_source(tmp_path: Path, db_factory) -> None:
+    with _patch_sentinel():
+        engine = _make_engine(tmp_path, session_factory=db_factory)
+    sid = _seed_two_turn_session(engine)
+    fork = engine.fork_session(sid, event_index=3, channel_type="web")
+    engine.get_or_activate(fork.session_id)
+
+    fork_of_fork = engine.fork_session(fork.session_id, event_index=1, channel_type="web")
+
+    assert fork_of_fork.forked_from == SessionFork(session_id=fork.session_id, event_count=2)
+
+
+@pytest.mark.anyio
+async def test_resetting_a_fork_into_its_inherited_events_trims_its_origin(tmp_path: Path, db_factory) -> None:
+    with _patch_sentinel():
+        engine = _make_engine(tmp_path, session_factory=db_factory)
+    sid = _seed_two_turn_session(engine)
+    fork_id = engine.fork_session(sid, event_index=3, channel_type="web").session_id
+
+    assert await engine.reset_to_turn(fork_id, 1)
+
+    state = engine.session_mgr.load_state(fork_id)
+    assert state is not None
+    assert state.forked_from == SessionFork(session_id=sid, event_count=2)
 
 
 def test_fork_at_tip_copies_context_distribution(tmp_path: Path, db_factory) -> None:
