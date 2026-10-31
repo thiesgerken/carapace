@@ -1,6 +1,39 @@
 # CHANGELOG
 
 
+## v0.168.0 (2026-10-31)
+
+
+### ✨ Features
+
+
+- ✨Merge pull request #425 from thiesgerken/feat/fork-origin
+  ([`3e42563`](https://github.com/thiesgerken/carapace/commit/3e42563e7fcca30adfa004ca5d27d1735051d80d))
+
+- ✨ feat(session): record a fork's origin and archive it
+  ([`3e42563`](https://github.com/thiesgerken/carapace/commit/3e42563e7fcca30adfa004ca5d27d1735051d80d))
+
+- ✨ feat(session): record a fork's origin and archive it
+  ([`7206ac9`](https://github.com/thiesgerken/carapace/commit/7206ac9c31a50e2ab2d5d618d6d2142df88e079c))
+
+  A forked session copies its source's events with their original timestamps, and its knowledge archive repeated them as if written there. The fork now records the source session id and how many leading events it inherited (trimmed when the fork is rewound into them), and the archive's session block carries it as `forked_from`, so indexers like ferret can skip the inherited turns.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aUz2fFPYsrVJoEw2gBE
+
+### ♻️ Refactoring
+
+
+- ♻️ refactor(session): rewind helpers take the active session
+  ([`e9335af`](https://github.com/thiesgerken/carapace/commit/e9335af51bb62a2d171db1d381c0c679c1caed4e))
+
+  Retry and reset already hold it, so the fork-origin trim and the request-state reset no longer depend on a lookup that could miss.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aUz2fFPYsrVJoEw2gBE
+
 ## v0.167.4 (2026-10-24)
 
 
