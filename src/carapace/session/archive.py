@@ -174,6 +174,9 @@ class SessionArchiveService:
                 "created_at": current_state.created_at.isoformat(),
                 "last_active": current_state.last_active.isoformat(),
             }
+            # Only forks carry the key, so archives of other sessions stay byte-identical.
+            if current_state.forked_from is not None:
+                session_payload["forked_from"] = current_state.forked_from.model_dump(mode="json")
             payload = {
                 "schema_version": _SCHEMA_VERSION,
                 "session": session_payload,

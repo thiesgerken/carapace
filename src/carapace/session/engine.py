@@ -33,7 +33,7 @@ from ..llm import ModelFactory
 from ..models.compaction import SessionCompaction
 from ..models.config import Config
 from ..models.credentials import CredentialRegistryProtocol
-from ..models.session import MemorySnapshot, SessionAttributes, SessionState
+from ..models.session import MemorySnapshot, SessionAttributes, SessionFork, SessionState
 from ..models.skills import SkillInfo
 from ..models.tooling import ToolCallCallback, ToolResult
 from ..notifications.router import NotificationRouter
@@ -633,6 +633,7 @@ class SessionEngine(
                 "knowledge_last_archive_path": None,
                 "knowledge_last_export_hash": None,
                 "knowledge_last_commit_trigger": None,
+                "forked_from": SessionFork(session_id=session_id, event_count=len(forked_events)),
             },
         )
 
@@ -791,6 +792,15 @@ class SessionEngine(
         if active is not None:
             active.llm_request_state = None
             active.llm_request_thinking.clear()
+            self._trim_fork_origin(active.state, len(events))
+
+    def _trim_fork_origin(self, state: SessionState, event_count: int) -> None:
+        """Rewinding a fork into its inherited events makes what follows its own, not the source's."""
+        fork = state.forked_from
+        if fork is None or fork.event_count <= event_count:
+            return
+        state.forked_from = fork.model_copy(update={"event_count": event_count})
+        self._session_mgr.save_state(state)
 
     def _rewrite_session_transcript(self, session_id: str, events: list[dict[str, Any]]) -> None:
         truncated_events = self._truncate_incomplete_events(events)

@@ -65,6 +65,7 @@ carapace can optionally commit session histories into the Git-backed knowledge r
 - The canonical committed artifact is `conversation.json`
 - Session snapshots are written under `<knowledge_dir>/sessions/YYYY/MM/<session_id>/conversation.json` by default
 - The payload is built from the normalized session event log, so it includes user messages, assistant replies, tool calls, tool results, approvals, and event timestamps
+- A forked session's snapshot has `session.forked_from` (`session_id`, `event_count`): its first `event_count` history entries are copies of the source's, with the source's timestamps. Readers that index archives (e.g. search) skip them so each turn appears once, under the session it was written in. Other snapshots don't have the key.
 - Existing sessions continue to live primarily under `$CARAPACE_DATA_DIR/sessions/<session_id>/`
 
 ### Privacy model
@@ -109,7 +110,7 @@ The web UI also exposes turn-level controls on completed assistant turns:
 
 - **Retry latest turn** reruns the latest completed turn from its user prompt boundary
 - **Reset to turn** rewinds the session to an earlier completed turn boundary
-- **Fork** creates a new session from a chosen event boundary
+- **Fork** creates a new session from a chosen event boundary. The copy records its origin in `SessionState.forked_from`: the source session id and how many leading events it inherited. Resetting the copy to before that point lowers the count, since what follows is then the copy's own.
 
 Retry and reset are WebSocket actions; fork is a REST action.
 

@@ -95,6 +95,15 @@ class SessionJobRunContext(BaseModel):
     cron_expression: str | None = None
 
 
+class SessionFork(BaseModel):
+    """Where a forked session came from. Its first ``event_count`` events are the source's, copied
+    with their original timestamps, so consumers of the knowledge archive (search indexes) can tell
+    them apart from the turns written in the fork."""
+
+    session_id: str
+    event_count: int
+
+
 class SessionState(BaseModel):
     session_id: str
     channel_type: str = "cli"
@@ -116,6 +125,7 @@ class SessionState(BaseModel):
     knowledge_last_archive_path: str | None = None
     knowledge_last_export_hash: str | None = None
     knowledge_last_commit_trigger: str | None = None
+    forked_from: SessionFork | None = None
     # None until the session's first agent prompt is built, and again after compaction.
     memory: MemorySnapshot | None = None
 
