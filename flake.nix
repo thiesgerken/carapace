@@ -159,12 +159,9 @@
             UV_PYTHON = pkgs.python314.interpreter;
             UV_PYTHON_DOWNLOADS = "never";
             shellHook = ''
-              printf '\033[1;36m🦀 carapace dev shell\033[0m \033[2mPython ${pkgs.python314.version} · node ${tools.nodejs.version} · pnpm ${tools.pnpm.version}\033[0m\n'
-              printf '  \033[32m%s\033[0m\n' \
-                'uv run python -m carapace' \
-                'pnpm --dir frontend dev' \
-                'nix build .#checks.${linux}.<check>'
-              printf '  \033[2m📖 more: docs/development.md\033[0m\n'
+              printf '🦀 \033[1m\033[38;2;231;76;60mc\033[38;2;220;78;77ma\033[38;2;209;80;95mr\033[38;2;198;82;112ma\033[38;2;188;83;130mp\033[38;2;177;85;147ma\033[38;2;166;87;165mc\033[38;2;155;89;182me\033[0m  \033[2m%s\033[0m\n' 'Python ${pkgs.python314.version} · node ${tools.nodejs.version} · pnpm ${tools.pnpm.version} · 📖 docs/development.md'
+              printf '  \033[32m%s\033[0m \033[2m·\033[0m \033[32m%s\033[0m\n' 'uv run python -m carapace' 'pnpm --dir frontend dev'
+              printf '  \033[32m%s\033[0m\n' 'nix build .#checks.${linux}.<check>'
             '';
           };
         }
