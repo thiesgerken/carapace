@@ -1,6 +1,30 @@
 # CHANGELOG
 
 
+## v0.168.1 (2026-11-01)
+
+
+### Other
+
+
+- Merge pull request #426 from thiesgerken/feat/devshell-banner
+  ([`6f0a0c4`](https://github.com/thiesgerken/carapace/commit/6f0a0c4936556f739ec7683a0d9399f2ad7beb67))
+
+- Dev shell banner with the name in a gradient
+  ([`5038bd6`](https://github.com/thiesgerken/carapace/commit/5038bd6ac0729d461e357118e55b7736776e5cab))
+
+  The name stands out instead of "dev shell", and the commands sit on two lines with the versions and the docs link next to the name.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01EXNrax466QWCek61FCxHx9
+
+### 💄 UI/UX
+
+
+- 💄 style(devshell): banner with the name in a gradient
+  ([`6f0a0c4`](https://github.com/thiesgerken/carapace/commit/6f0a0c4936556f739ec7683a0d9399f2ad7beb67))
+
 ## v0.168.0 (2026-10-31)
 
 
