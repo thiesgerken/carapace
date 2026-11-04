@@ -1,6 +1,81 @@
 # CHANGELOG
 
 
+## v0.168.2 (2026-11-04)
+
+
+### Other
+
+
+- Merge pull request #427 from thiesgerken/feat/mobile-sessions-settings
+  ([`0c7a1b9`](https://github.com/thiesgerken/carapace/commit/0c7a1b977758322cffe46b6d0d0c1c79ae8075e9))
+
+- ✅ test: cover archived-last session paging; fix clipped mobile tab row
+  ([`a9ab63e`](https://github.com/thiesgerken/carapace/commit/a9ab63e9b70fcab2f51c293782ebd7528b6301e8))
+
+  The horizontally scrolling settings tab row clips the active tab's -mb-px overlap, which showed the border under it and left 1px of vertical scroll. Below md the border is an inset shadow and tabs stay inside the box, with an inset focus ring.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aV1vgsw2Q7jz2bBtkKu
+
+### ⚡ Performance
+
+
+- ⚡️ Faster session list with archived chats, mobile-friendly settings
+  ([`0c7a1b9`](https://github.com/thiesgerken/carapace/commit/0c7a1b977758322cffe46b6d0d0c1c79ae8075e9))
+
+- ⚡️ perf: build session list details only for the requested page
+  ([`85a85b8`](https://github.com/thiesgerken/carapace/commit/85a85b8eb6230d4c9a312a5a8fcdb28f445b7651))
+
+  A cache miss on GET /api/sessions loaded state, events, usage and sandbox snapshot for every session of the user before slicing out one page. With archived sessions included that is the full history on every refresh, and every state save invalidates the cache. The page is now selected in SQL and only its sessions get the expensive per-session loads; the cache stores pages. Archived sessions sort after active ones so the sidebar's trailing archived section fills in order while scrolling.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aV1vgsw2Q7jz2bBtkKu
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix: close the mobile drawer on every sidebar navigation
+  ([`9c8ec0d`](https://github.com/thiesgerken/carapace/commit/9c8ec0d317c87009dfb13645f4fdc3d4fe96f01c))
+
+  Tracking URL changes missed navigating to the page already open (e.g. Settings while on settings). The sidebar now reports each navigating action through onNavigate instead.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aV1vgsw2Q7jz2bBtkKu
+
+- 🐛 fix: close the mobile sidebar drawer after navigating
+  ([`c999f6c`](https://github.com/thiesgerken/carapace/commit/c999f6c07d67b09084527a09d7eb34418fb01b31))
+
+  Nothing closed the drawer on settings, home, new session, knowledge or memory, so it stayed over the page that was just opened. It now closes whenever the URL changes, and on selecting a session (re-selecting the open one keeps the URL).
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aV1vgsw2Q7jz2bBtkKu
+
+### 💄 UI/UX
+
+
+- 💄 ui: make settings usable on phones
+  ([`f200def`](https://github.com/thiesgerken/carapace/commit/f200defc50716d25a0fdba8de966e1a14747bc55))
+
+  - Settings header: no duplicate title on mobile, tabs in one horizontally
+    scrolling row that keeps the active tab in view (was three wrapped rows).
+  - Jobs and Users: one scroll container on mobile instead of a list pane
+    plus a squeezed nested editor pane; jobs list capped like users.
+  - Sticky save bars on Account, Models and Jobs.
+  - Tighter Jobs editor padding below sm.
+  - Mobile drawer shows only the avatar, so the brand no longer collides
+    with the header icons.
+  - API keys description rendered its raw message key: next-intl parsed
+    "<token>" as a rich-text tag.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aV1vgsw2Q7jz2bBtkKu
+
 ## v0.168.1 (2026-11-01)
 
 
