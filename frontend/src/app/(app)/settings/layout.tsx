@@ -8,6 +8,7 @@ import { useAppShell } from "@/components/app-shell-context";
 import { useBrand } from "@/hooks/use-brand";
 import type { SettingsTab } from "@/lib/settings-tabs";
 import { handleTabListKeyDown, tabbedPageClassName, tabLinkClassName } from "@/lib/tabs";
+import { cn } from "@/lib/utils";
 
 export default function SettingsLayout({ children }: { children: ReactNode }) {
   const t = useTranslations();
@@ -28,6 +29,11 @@ export default function SettingsLayout({ children }: { children: ReactNode }) {
     document.title = `${viewTitle} • ${brand}`;
   }, [activeTab, brand, t]);
 
+  // On phones the tab row scrolls horizontally; keep the active tab visible after navigation.
+  useEffect(() => {
+    document.getElementById(`settings-tab-${activeTab}`)?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [activeTab]);
+
   function tab(value: SettingsTab, label: string) {
     const selected = activeTab === value;
     return (
@@ -38,7 +44,9 @@ export default function SettingsLayout({ children }: { children: ReactNode }) {
         aria-selected={selected}
         aria-controls={`settings-panel-${value}`}
         tabIndex={selected ? 0 : -1}
-        className={tabLinkClassName(selected)}
+        // The scrolling mobile tab row clips anything outside its box, so the active tab
+        // cannot overlap the border below it and the focus ring has to sit inside.
+        className={cn(tabLinkClassName(selected), "max-md:mb-0 max-md:focus-visible:ring-inset max-md:focus-visible:ring-offset-0")}
       >
         {label}
       </Link>
@@ -47,9 +55,10 @@ export default function SettingsLayout({ children }: { children: ReactNode }) {
 
   return (
     <div className={tabbedPageClassName}>
-      <div className="px-5 pt-4 sm:px-6">
+      <div className="px-5 pt-2 sm:px-6 md:pt-4">
         <div className="flex flex-col">
-          <div className="pb-4">
+          {/* The mobile app header already names the page. */}
+          <div className="hidden pb-4 md:block">
             <h1 className="text-2xl font-semibold tracking-tight">{t("navigation.settings")}</h1>
           </div>
 
@@ -57,9 +66,9 @@ export default function SettingsLayout({ children }: { children: ReactNode }) {
             role="tablist"
             onKeyDown={handleTabListKeyDown}
             aria-label={tJobs("settingsSections")}
-            className="flex flex-wrap items-end gap-x-4 gap-y-2 border-b border-border/80"
+            className="flex items-end gap-x-4 gap-y-2 overflow-x-auto shadow-[inset_0_-1px_0_var(--border)] [scrollbar-width:none] md:flex-wrap md:overflow-visible md:border-b md:border-border/80 md:shadow-none"
           >
-            <div className="flex flex-wrap items-end gap-1">
+            <div className="flex items-end gap-1 md:flex-wrap">
               {tab("preferences", t("navigation.preferences"))}
               {tab("account", t("navigation.account"))}
               {tab("prompts", t("navigation.systemPrompts"))}

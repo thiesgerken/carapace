@@ -1517,7 +1517,7 @@
     },
     "apiKeys": {
         "title": "API Keys",
-        "description": "Create long-lived tokens for scripts and integrations. Use them as 'Authorization: Bearer <token>'.",
+        "description": "Create long-lived tokens for scripts and integrations. Send them as a bearer token in the Authorization header.",
         "create": {
             "nameLabel": "Name",
             "namePlaceholder": "e.g. CI deploy bot",

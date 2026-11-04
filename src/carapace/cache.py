@@ -39,23 +39,27 @@ class SessionListCache:
             await self._redis_client.aclose()
             self._redis_client = None
 
-    async def get_session_infos(
+    async def get_session_page(
         self,
         *,
-        user: str | None = None,
+        user: str,
         include_archived: bool,
         include_message_count: bool,
-        loader: Callable[[], list[dict[str, Any]]],
-    ) -> list[dict[str, Any]]:
-        cache_key = self._cache_key(include_archived, include_message_count, user=user)
+        offset: int,
+        limit: int,
+        loader: Callable[[], dict[str, Any]],
+    ) -> dict[str, Any]:
+        cache_key = (
+            f"carapace:sessions:list:user:{user}:{int(include_archived)}:{int(include_message_count)}:{offset}:{limit}"
+        )
 
         redis_cached = await self._redis_get(cache_key)
         if redis_cached is not None:
             return redis_cached
 
-        session_infos = loader()
-        await self._redis_set(cache_key, session_infos)
-        return session_infos
+        page = loader()
+        await self._redis_set(cache_key, page)
+        return page
 
     async def invalidate(self) -> None:
         if self._redis_client is None:
@@ -73,11 +77,7 @@ class SessionListCache:
         loop = self._loop
         loop.call_soon_threadsafe(lambda: loop.create_task(self.invalidate()))
 
-    def _cache_key(self, include_archived: bool, include_message_count: bool, *, user: str | None = None) -> str:
-        owner = f"user:{user}" if user is not None else "scope:all"
-        return f"carapace:sessions:list:{owner}:{int(include_archived)}:{int(include_message_count)}"
-
-    async def _redis_get(self, cache_key: str) -> list[dict[str, Any]] | None:
+    async def _redis_get(self, cache_key: str) -> dict[str, Any] | None:
         if self._redis_client is None:
             raise RuntimeError("Session list cache has not been started")
         try:
@@ -92,15 +92,15 @@ class SessionListCache:
         except json.JSONDecodeError as exc:
             logger.warning(f"Ignoring malformed Redis session list cache entry {cache_key}: {exc}")
             return None
-        if not isinstance(decoded, list) or not all(isinstance(item, dict) for item in decoded):
+        if not isinstance(decoded, dict):
             logger.warning(f"Ignoring unexpected Redis session list cache payload for {cache_key}")
             return None
         return decoded
 
-    async def _redis_set(self, cache_key: str, session_infos: list[dict[str, Any]]) -> None:
+    async def _redis_set(self, cache_key: str, page: dict[str, Any]) -> None:
         if self._redis_client is None:
             raise RuntimeError("Session list cache has not been started")
         try:
-            await self._redis_client.set(cache_key, json.dumps(session_infos), ex=self._ttl_seconds)
+            await self._redis_client.set(cache_key, json.dumps(page), ex=self._ttl_seconds)
         except (OSError, RedisError) as exc:
             logger.warning(f"Failed to write Redis session list cache: {exc}")

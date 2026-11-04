@@ -199,6 +199,31 @@ class SessionManager:
         with self._session_factory() as db:
             return list(db.scalars(stmt).all())
 
+    def list_session_states_page(
+        self, *, user: str, include_archived: bool, offset: int, limit: int
+    ) -> tuple[list[SessionState], bool]:
+        """One page of the user's sessions, pinned first, then most recently active.
+
+        Archived sessions come after all active ones because the UI lists them in a
+        separate trailing section; interleaving them would make that section fill in
+        out of order while scrolling. Returns the page's states and whether more rows
+        follow. ``offset`` counts rows, so a rare state-less placeholder row still
+        advances the cursor.
+        """
+        stmt = select(SessionRow.state).where(SessionRow.user == user)
+        if not include_archived:
+            stmt = stmt.where(SessionRow.archived.is_(False))
+        stmt = (
+            stmt.order_by(
+                SessionRow.archived, SessionRow.pinned.desc(), SessionRow.last_active.desc(), SessionRow.session_id
+            )
+            .offset(offset)
+            .limit(limit + 1)
+        )
+        with self._session_factory() as db:
+            rows = list(db.scalars(stmt).all())
+        return [state for state in rows[:limit] if state is not None], len(rows) > limit
+
     def find_session(self, channel_type: str, channel_ref: str) -> str | None:
         stmt = (
             select(SessionRow.session_id)

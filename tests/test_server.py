@@ -66,17 +66,19 @@ _TEST_TOKEN = "test-bearer-token-for-server-tests"
 
 class _FakeSessionListCache:
     def __init__(self) -> None:
-        self._entries: dict[tuple[str | None, bool, bool], list[dict[str, object]]] = {}
+        self._entries: dict[tuple[str, bool, bool, int, int], dict[str, object]] = {}
 
-    async def get_session_infos(
+    async def get_session_page(
         self,
         *,
-        user: str | None = None,
+        user: str,
         include_archived: bool,
         include_message_count: bool,
-        loader: Callable[[], list[dict[str, object]]],
-    ) -> list[dict[str, object]]:
-        key = (user, include_archived, include_message_count)
+        offset: int,
+        limit: int,
+        loader: Callable[[], dict[str, object]],
+    ) -> dict[str, object]:
+        key = (user, include_archived, include_message_count, offset, limit)
         cached = self._entries.get(key)
         if cached is not None:
             return cached
@@ -2568,21 +2570,27 @@ def test_list_sessions_uses_cached_summaries_on_subsequent_requests(client, auth
     assert session["message_count"] == 2
 
 
-def test_list_sessions_cache_miss_loads_state_once_per_session(client, auth_headers, monkeypatch):
-    created_ids = [client.post("/api/sessions", headers=auth_headers).json()["session_id"] for _ in range(3)]
-    original_load_state = srv._engine.session_mgr.load_state
+def test_list_sessions_cache_miss_loads_details_only_for_requested_page(client, auth_headers, monkeypatch):
+    for _ in range(3):
+        client.post("/api/sessions", headers=auth_headers)
+    original_load_events = srv._engine.session_mgr.load_events
     load_calls: list[str] = []
 
-    def counting_load_state(session_id: str):
+    def counting_load_events(session_id: str):
         load_calls.append(session_id)
-        return original_load_state(session_id)
+        return original_load_events(session_id)
 
-    monkeypatch.setattr(srv._engine.session_mgr, "load_state", counting_load_state)
+    monkeypatch.setattr(srv._engine.session_mgr, "load_events", counting_load_events)
+    monkeypatch.setattr(
+        srv._engine.session_mgr,
+        "load_state",
+        MagicMock(side_effect=AssertionError("the page query already returns the states")),
+    )
 
-    resp = client.get("/api/sessions?include_archived=true", headers=auth_headers)
+    resp = client.get("/api/sessions?include_archived=true&include_message_count=true&limit=1", headers=auth_headers)
 
     assert resp.status_code == 200
-    assert sorted(load_calls) == sorted(created_ids)
+    assert load_calls == [resp.json()["items"][0]["session_id"]]
 
 
 def test_list_sessions_page_uses_stable_tiebreaker(client, auth_headers):
@@ -2608,6 +2616,29 @@ def test_list_sessions_page_uses_stable_tiebreaker(client, auth_headers):
 
     ordered_ids = [item["session_id"] for item in first_page.json()["items"] + second_page.json()["items"]]
     assert ordered_ids[: len(created_ids)] == sorted(created_ids)
+
+
+def test_list_sessions_pages_archived_after_active(client, auth_headers):
+    active_id, archived_id = (client.post("/api/sessions", headers=auth_headers).json()["session_id"] for _ in range(2))
+    for session_id, archived, last_active in (
+        (active_id, False, datetime(2024, 1, 1, tzinfo=UTC)),
+        (archived_id, True, datetime(2025, 1, 1, tzinfo=UTC)),
+    ):
+        state = srv._engine.session_mgr.load_state(session_id)
+        assert state is not None
+        state.attributes.archived = archived
+        state.attributes.pinned = archived
+        state.last_active = last_active
+        srv._engine.session_mgr.save_state(state)
+
+    first_page = client.get("/api/sessions?limit=1&include_archived=true", headers=auth_headers).json()
+    second_page = client.get(
+        f"/api/sessions?limit=1&include_archived=true&cursor={first_page['next_cursor']}", headers=auth_headers
+    ).json()
+
+    assert [item["session_id"] for item in first_page["items"]] == [active_id]
+    assert [item["session_id"] for item in second_page["items"]] == [archived_id]
+    assert second_page["has_more"] is False
 
 
 def test_list_sessions_page_rejects_invalid_cursor(client, auth_headers):

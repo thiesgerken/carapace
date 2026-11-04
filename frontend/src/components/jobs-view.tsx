@@ -652,7 +652,7 @@ export function JobsView({
                 </button>
               </div>
             </div>
-            <div className="min-h-0 flex-1 overflow-y-auto p-3">
+            <div className="max-h-72 min-h-0 flex-1 overflow-y-auto p-3 lg:max-h-none">
               {loading ? (
                 <div className="flex items-center gap-2 rounded-xl border border-dashed border-border px-4 py-5 text-sm text-muted-foreground">
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -727,9 +727,9 @@ export function JobsView({
           </div>
         </aside>
 
-        <section className="min-h-0 overflow-y-auto px-5 py-5 sm:px-6">
+        <section className="min-h-0 px-3 py-5 sm:px-6 lg:overflow-y-auto">
           <div className="mx-auto flex max-w-4xl flex-col gap-4">
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-3xl border border-border bg-background/88 px-5 py-4 shadow-sm">
+            <div className="sticky top-2 z-20 flex flex-wrap items-center justify-between gap-3 rounded-3xl border border-border bg-background/88 px-3 py-4 shadow-sm backdrop-blur sm:px-5">
               <p className="text-sm text-muted-foreground">
                 {selectedJobId === "new"
                   ? t("editor.newJob")
@@ -758,7 +758,7 @@ export function JobsView({
               </div>
             </div>
 
-            <div className="rounded-3xl border border-border bg-background/88 p-5 shadow-sm">
+            <div className="rounded-3xl border border-border bg-background/88 p-3 shadow-sm sm:p-5">
               <div className="grid gap-4 md:grid-cols-2">
                 <label className="space-y-1.5">
                   <span className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">{t("fields.name")}</span>
@@ -963,7 +963,7 @@ export function JobsView({
               </div>
             </div>
 
-            <div className="rounded-3xl border border-border bg-background/88 p-5 shadow-sm">
+            <div className="rounded-3xl border border-border bg-background/88 p-3 shadow-sm sm:p-5">
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <h2 className="text-lg font-semibold">{t("sections.cronTriggers")}</h2>
@@ -1107,7 +1107,7 @@ export function JobsView({
               )}
             </div>
 
-            <div className="rounded-3xl border border-border bg-background/88 p-5 shadow-sm">
+            <div className="rounded-3xl border border-border bg-background/88 p-3 shadow-sm sm:p-5">
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <h2 className="text-lg font-semibold">{t("sections.runJob")}</h2>
@@ -1134,7 +1134,7 @@ export function JobsView({
               </label>
             </div>
 
-            <div className="rounded-3xl border border-border bg-background/88 p-5 shadow-sm">
+            <div className="rounded-3xl border border-border bg-background/88 p-3 shadow-sm sm:p-5">
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <h2 className="text-lg font-semibold">{t("sections.previousInvocations")}</h2>

@@ -169,36 +169,6 @@ def _load_owned_state(session_id: str, user: UserIdentity) -> SessionState:
     return state
 
 
-def _compute_sorted_session_states(*, include_archived: bool, user: UserIdentity) -> list[SessionState]:
-    states: list[SessionState] = []
-    for session_id in server._engine.session_mgr.list_sessions(user=user.username):
-        state = server._engine.session_mgr.load_state(session_id)
-        if state is None:
-            continue
-        if state.attributes.archived and not include_archived:
-            continue
-        states.append(state)
-
-    states.sort(
-        key=lambda state: (
-            not state.attributes.pinned,
-            -state.last_active.timestamp(),
-            state.session_id,
-        )
-    )
-    return states
-
-
-def _build_session_list_items(
-    *, include_archived: bool, include_message_count: bool, user: UserIdentity
-) -> list[dict[str, Any]]:
-    items: list[dict[str, Any]] = []
-    for state in _compute_sorted_session_states(include_archived=include_archived, user=user):
-        session_info = _session_info_from_state(state, include_message_count=include_message_count)
-        items.append(session_info.model_dump(mode="json"))
-    return items
-
-
 def _parse_session_cursor(cursor: str | None) -> int:
     if cursor is None:
         return 0
@@ -233,29 +203,32 @@ async def _list_session_page(
     *,
     include_message_count: bool,
     include_archived: bool,
-    limit: int | None,
+    limit: int,
     cursor: str | None,
     user: UserIdentity,
 ) -> SessionListPage:
     offset = _parse_session_cursor(cursor)
-    cached_items = await server._session_list_cache.get_session_infos(
+
+    def load_page() -> dict[str, Any]:
+        states, has_more = server._engine.session_mgr.list_session_states_page(
+            user=user.username, include_archived=include_archived, offset=offset, limit=limit
+        )
+        page = SessionListPage(
+            items=[_session_info_from_state(state, include_message_count=include_message_count) for state in states],
+            next_cursor=str(offset + limit) if has_more else None,
+            has_more=has_more,
+        )
+        return page.model_dump(mode="json")
+
+    cached = await server._session_list_cache.get_session_page(
         user=user.username,
         include_archived=include_archived,
         include_message_count=include_message_count,
-        loader=lambda: _build_session_list_items(
-            include_archived=include_archived,
-            include_message_count=include_message_count,
-            user=user,
-        ),
+        offset=offset,
+        limit=limit,
+        loader=load_page,
     )
-    page_items = cached_items[offset:] if limit is None else cached_items[offset : offset + limit]
-    next_offset = offset + len(page_items)
-    has_more = next_offset < len(cached_items)
-    return SessionListPage(
-        items=[SessionInfo.model_validate(item) for item in page_items],
-        next_cursor=str(next_offset) if has_more else None,
-        has_more=has_more,
-    )
+    return SessionListPage.model_validate(cached)
 
 
 @router.post("/sessions", response_model=SessionInfo)
