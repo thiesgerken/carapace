@@ -651,7 +651,7 @@ export function Sidebar({
               >
                 {accountInitial(currentUser)}
               </span>
-              <span className="truncate">{accountName}</span>
+              <span className="hidden truncate md:inline">{accountName}</span>
             </button>
             <GlobalGitIndicator git={globalGit} className="pointer-events-none absolute -right-0.5 -top-0.5" />
 

@@ -1517,7 +1517,7 @@
     },
     "apiKeys": {
         "title": "API-Schlüssel",
-        "description": "Erstelle langlebige Tokens für Skripte und Integrationen. Verwende sie als 'Authorization: Bearer <token>'.",
+        "description": "Erstelle langlebige Tokens für Skripte und Integrationen. Sende sie als Bearer-Token im Authorization-Header.",
         "create": {
             "nameLabel": "Name",
             "namePlaceholder": "z. B. CI-Deploy-Bot",

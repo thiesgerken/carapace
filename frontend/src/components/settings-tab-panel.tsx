@@ -55,7 +55,7 @@ export function SettingsTabPanel({ tab }: { tab: SettingsTab }) {
           id="settings-panel-jobs"
           role="tabpanel"
           aria-labelledby="settings-tab-jobs"
-          className="grid min-h-0 flex-1 gap-0 lg:grid-cols-[22rem_minmax(0,1fr)]"
+          className="grid min-h-0 flex-1 content-start gap-0 overflow-y-auto lg:content-stretch lg:grid-cols-[22rem_minmax(0,1fr)] lg:overflow-clip"
         >
           <JobsView
             server={shell.server}

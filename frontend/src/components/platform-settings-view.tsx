@@ -568,8 +568,8 @@ export function PlatformSettingsView({ server, token }: { server: string; token:
   return (
     <form onSubmit={(event) => void handleSave(event)} className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-6">
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div className="min-w-0 space-y-1">
+        <div className="sticky -top-5 z-20 -my-2 flex flex-col gap-3 bg-background/90 py-2 backdrop-blur sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0 space-y-1 max-sm:has-[>div:empty]:hidden">
             <div className={cn("min-h-5 text-sm", error ? "text-destructive" : "text-muted-foreground")}>
               {error ? error : notice ? <span className="inline-flex items-center gap-2"><Check className="h-4 w-4" />{notice}</span> : configWritable ? null : t("status.readOnly")}
             </div>

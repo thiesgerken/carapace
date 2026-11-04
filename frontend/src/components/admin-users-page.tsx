@@ -277,7 +277,7 @@ export function AdminUsersPage({ embedded = false, server: serverProp, currentUs
           </header>
         ) : null}
 
-        <div className="grid min-h-0 flex-1 lg:grid-cols-[22rem_minmax(0,1fr)]">
+        <div className="grid min-h-0 flex-1 content-start overflow-y-auto lg:content-stretch lg:grid-cols-[22rem_minmax(0,1fr)] lg:overflow-clip">
           <section className="min-h-0 border-b border-border/80 bg-background/55 lg:border-r lg:border-b-0">
             <div className="flex items-center justify-between gap-3 border-b border-border/70 px-4 py-3 sm:px-5">
               <div className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">
@@ -397,7 +397,7 @@ export function AdminUsersPage({ embedded = false, server: serverProp, currentUs
             </div>
           </section>
 
-          <section className="min-h-0 overflow-y-auto px-4 py-5 sm:px-6">
+          <section className="min-h-0 px-4 py-5 sm:px-6 lg:overflow-y-auto">
             {embedded && error ? (
               <div className="mx-auto mb-4 max-w-3xl rounded-2xl border border-border bg-background/88 px-4 py-3 text-sm shadow-sm">
                 <p className="text-destructive">{error}</p>
