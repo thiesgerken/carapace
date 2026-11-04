@@ -170,7 +170,7 @@ Important semantics:
 
 ### Per-user sandbox limit
 
-A suspended sandbox keeps its storage until its session is deleted or reset, so abandoned sessions pile up. Two settings bound that per user:
+A suspended sandbox keeps its storage until its session is deleted, archived or reset, so abandoned sessions pile up. Two settings bound that per user:
 
 - `CARAPACE_SANDBOX_MAX_PER_USER` (default `100`, `0` disables): when a session without a sandbox needs one (cold create or warm-pool claim) and its owner already holds that many, the start fails with "You have 100/100 sandboxes. Delete old sessions to start a new one." The agent sees this as a failed tool call (so do Matrix users); the web API answers `409`. Resuming or recreating a session's existing sandbox never adds one and is never refused. The check runs under the per-session startup lock only, so parallel starts of different sessions can overshoot the limit slightly.
 - `CARAPACE_SANDBOX_WARN_PER_USER` (default `20`, `0` disables): from this count on, the web UI sidebar shows a warning to delete old sessions. At the hard limit it shows an error instead. The numbers come from `GET /api/sandboxes/usage`.

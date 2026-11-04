@@ -254,9 +254,10 @@ class DockerRuntime(ContainerRuntime):
         """Suspend == remove in Docker (no persistent volume to keep)."""
         await self.remove(container_id)
 
-    async def destroy_sandbox(self, session_id: str, name: str, container_id: str) -> None:
-        """Destroy the container and its bind-mounted workspace in Docker."""
-        await self.remove(container_id)
+    async def destroy_sandbox(self, session_id: str, name: str, container_id: str | None) -> None:
+        """Destroy the container, if any, and its bind-mounted workspace in Docker."""
+        if container_id is not None:
+            await self.remove(container_id)
         await asyncio.to_thread(self._clear_workspace, session_id)
 
     async def sandbox_exists(self, name: str) -> str | None:

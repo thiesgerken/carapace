@@ -689,18 +689,19 @@ class SandboxSessionLifecycle:
             await self._runtime.suspend_sandbox(sandbox_name, sc.container_id)
             logger.info(f"Suspended sandbox for session {session_id}")
 
+    async def _destroy_sandbox(self, session_id: str, sc: SessionContainer | None) -> None:
+        """Destroy the session's sandbox and its storage.
+
+        Runs even without a container: a suspended Docker sandbox exists only as its workspace.
+        """
+        sandbox_name = self.sandbox_name_for_id(self.assigned_sandbox_id(session_id, sc))
+        container_id = sc.container_id if sc else await self._runtime.sandbox_exists(sandbox_name)
+        await self._runtime.destroy_sandbox(session_id, sandbox_name, container_id)
+
     async def destroy_session(self, session_id: str) -> None:
         """Permanently remove the sandbox and purge all tracking state."""
-        sc = self._state.sessions.pop(session_id, None)
-        sandbox_name = self.sandbox_name_for_id(self.assigned_sandbox_id(session_id, sc))
-        if sc:
-            await self._runtime.destroy_sandbox(session_id, sandbox_name, sc.container_id)
-            logger.info(f"Destroyed sandbox for session {session_id}")
-        else:
-            existing_id = await self._runtime.sandbox_exists(sandbox_name)
-            if existing_id:
-                await self._runtime.destroy_sandbox(session_id, sandbox_name, existing_id)
-                logger.info(f"Destroyed orphaned sandbox for session {session_id}")
+        await self._destroy_sandbox(session_id, self._state.sessions.pop(session_id, None))
+        logger.info(f"Destroyed sandbox for session {session_id}")
 
         token = self._state.session_tokens.pop(session_id, None)
         if token:
@@ -720,16 +721,8 @@ class SandboxSessionLifecycle:
 
     async def reset_session(self, session_id: str) -> None:
         """Full sandbox reset: destroy and let ``ensure_session`` create a fresh one."""
-        sc = self._state.sessions.pop(session_id, None)
-        sandbox_name = self.sandbox_name_for_id(self.assigned_sandbox_id(session_id, sc))
-        if sc:
-            await self._runtime.destroy_sandbox(session_id, sandbox_name, sc.container_id)
-            logger.info(f"Reset sandbox for session {session_id}")
-        else:
-            existing_id = await self._runtime.sandbox_exists(sandbox_name)
-            if existing_id:
-                await self._runtime.destroy_sandbox(session_id, sandbox_name, existing_id)
-                logger.info(f"Reset orphaned sandbox for session {session_id}")
+        await self._destroy_sandbox(session_id, self._state.sessions.pop(session_id, None))
+        logger.info(f"Reset sandbox for session {session_id}")
 
     async def _cleanup_many(
         self,

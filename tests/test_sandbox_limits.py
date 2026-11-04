@@ -92,3 +92,14 @@ async def test_new_sandbox_allowed_below_limit_or_when_off(tmp_path: Path, db_fa
     sc = await mgr.ensure_session("thies-new")
 
     assert sc.session_id == "thies-new"
+
+
+@pytest.mark.anyio
+@pytest.mark.usefixtures("seeded_sessions")
+async def test_reset_of_suspended_sandbox_destroys_its_storage(tmp_path: Path, db_factory) -> None:
+    mgr = _manager(tmp_path, db_factory, retained=_RETAINED, max_per_user=2)
+
+    # Suspended: no tracked container and none left in the runtime, only kept storage.
+    await mgr.reset_session("thies-1")
+
+    mgr._runtime.destroy_sandbox.assert_awaited_once_with("thies-1", "carapace-sandbox-thies-1", None)

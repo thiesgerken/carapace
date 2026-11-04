@@ -558,7 +558,7 @@ class KubernetesRuntime(ContainerRuntime):
             logger.opt(exception=True).warning(f"Scale-down failed for {name}, deleting pod")
             await self._delete_pod_if_exists(container_id)
 
-    async def destroy_sandbox(self, session_id: str, name: str, container_id: str) -> None:
+    async def destroy_sandbox(self, session_id: str, name: str, container_id: str | None) -> None:
         """Delete the StatefulSet and its per-session PVC."""
         await self._delete_sts_if_exists(_sanitize_pod_name(name))
         await self._delete_session_pvc_if_exists(name)
