@@ -38,8 +38,10 @@ from .skill_activation import SkillActivationRunner
 from .state import (
     SessionSandboxSnapshot,
     clear_sandbox_snapshot,
+    count_owned_sessions,
     load_sandbox_snapshot,
     save_sandbox_snapshot,
+    session_owner,
 )
 
 _SKILL_NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]*$")
@@ -178,6 +180,10 @@ class UploadError(Exception):
     """Writing an uploaded file into the sandbox failed."""
 
 
+class SandboxLimitError(RuntimeError):
+    """Raised when starting a new sandbox would exceed its owner's sandbox limit."""
+
+
 class UploadTooLargeError(UploadError):
     """Uploaded file exceeded the allowed size."""
 
@@ -216,8 +222,10 @@ class SandboxManager:
         sandbox_port: int = 8322,
         warm_pool_size: int = 0,
         skill_activator_timeout_seconds: int = 600,
+        max_sandboxes_per_user: int = 0,
     ) -> None:
         self._runtime = runtime
+        self._max_sandboxes_per_user = max_sandboxes_per_user
         self._data_dir = data_dir
         self._session_factory = session_factory
         self._knowledge_repo_for_session = knowledge_repo_for_session
@@ -429,6 +437,7 @@ class SandboxManager:
         sc = self._sessions.get(session_id)
         needs_startup = sc is None or not await self._runtime.is_running(sc.container_id)
         if needs_startup:
+            await self._enforce_sandbox_limit(session_id)
             self._save_transient_sandbox_snapshot(session_id, "pending")
 
         try:
@@ -450,6 +459,29 @@ class SandboxManager:
             except Exception:
                 logger.exception(f"Failed to refresh sandbox snapshot after startup for session {session_id}")
         return ensured_sc
+
+    async def count_user_sandboxes(self, user: str) -> int:
+        """Count the sandboxes *user* holds, running or suspended."""
+        retained = await self._runtime.retained_sandbox_session_ids()
+        return count_owned_sessions(self._session_factory, user, retained)
+
+    async def _enforce_sandbox_limit(self, session_id: str) -> None:
+        """Refuse to give *session_id* a new sandbox once its owner is at the limit.
+
+        A session that already holds a sandbox is resumed or recreated in place, which
+        never adds one, so it is never refused. The startup lock is per session, so
+        parallel starts of different sessions can overshoot the limit by a few.
+        """
+        if self._max_sandboxes_per_user == 0:
+            return
+        retained = await self._runtime.retained_sandbox_session_ids()
+        if session_id in retained:
+            return
+        count = count_owned_sessions(self._session_factory, session_owner(self._session_factory, session_id), retained)
+        if count >= self._max_sandboxes_per_user:
+            raise SandboxLimitError(
+                f"You have {count}/{self._max_sandboxes_per_user} sandboxes. Delete old sessions to start a new one."
+            )
 
     async def _attach_or_start(self, session_id: str, *, force_skill_setup: bool) -> SessionContainer:
         """Run the lifecycle and restore activated skills on a fresh runtime. Requires the startup lock."""

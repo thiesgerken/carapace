@@ -8,11 +8,12 @@ import { useTranslations } from "next-intl";
 import { EmojiText } from "@/components/emoji-text";
 import { useAppLocale } from "@/components/locale-provider";
 import { NewSessionButton, type NewSessionOptions } from "@/components/new-session-button";
+import { SandboxUsageBanner } from "@/components/sandbox-usage-banner";
 import { GlobalGitIndicator, GlobalGitPanel, useGlobalGit } from "@/components/git-sync";
 import { VersionBadge } from "@/components/version-badge";
 import { agentIcon } from "@/hooks/use-brand";
 import type { AuthUserInfo } from "@/lib/api";
-import type { SessionAttributesPatch, SessionInfo, SessionSandboxSnapshot } from "@/lib/types";
+import type { SandboxUsage, SessionAttributesPatch, SessionInfo, SessionSandboxSnapshot } from "@/lib/types";
 import {
   canArchiveSession,
   cn,
@@ -27,6 +28,7 @@ interface SidebarProps {
   server: string;
   token: string;
   sessions: SessionInfo[];
+  sandboxUsage?: SandboxUsage | null;
   showArchivedSessions?: boolean;
   activeSessionId: string | null;
   frontendVersion?: string | null;
@@ -98,6 +100,7 @@ export function Sidebar({
   server,
   token,
   sessions,
+  sandboxUsage = null,
   showArchivedSessions = true,
   activeSessionId,
   frontendVersion = null,
@@ -726,6 +729,7 @@ export function Sidebar({
       {/* Session list */}
       <div ref={scrollRootRef} className="flex-1 overflow-y-auto px-3 py-2">
         <div className="space-y-4">
+          <SandboxUsageBanner usage={sandboxUsage} />
           {renderSessionGroups(activeSessions)}
           {archivedSessions.length > 0 ? (
             <div className="space-y-4">

@@ -88,3 +88,18 @@ async def test_list_pool_sandboxes_returns_empty_for_docker(tmp_path: Path) -> N
 
     assert sandboxes == {}
     runtime._client.containers.list.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_retained_sandbox_session_ids_includes_suspended_workspaces(tmp_path: Path) -> None:
+    runtime = _make_runtime(tmp_path)
+    running = MagicMock()
+    running.id = "container-1"
+    running.labels = {"carapace.session": "sess-running", "carapace.managed": "true"}
+    runtime._client.containers.list.return_value = [running]
+    (tmp_path / "sessions" / "sess-suspended" / "workspace").mkdir(parents=True)
+    (tmp_path / "sessions" / "sess-without-sandbox").mkdir(parents=True)
+
+    retained = await runtime.retained_sandbox_session_ids()
+
+    assert retained == {"sess-running", "sess-suspended"}

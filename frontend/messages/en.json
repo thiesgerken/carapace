@@ -1487,7 +1487,12 @@
             "unknownDate": "Unknown Date"
         },
         "empty": "No sessions yet",
-        "loadingMore": "Loading more sessions"
+        "loadingMore": "Loading more sessions",
+        "sandboxUsage": {
+            "warning": "{count} sandboxes retained (warning at {warnAt}, max {max}). Delete old sessions to free storage.",
+            "warningUnlimited": "{count} sandboxes retained (warning at {warnAt}). Delete old sessions to free storage.",
+            "limitReached": "{count}/{max} sandboxes. New sessions can't start a sandbox until you delete old ones."
+        }
     },
     "git": {
         "upToDate": "Up to date",

@@ -167,6 +167,14 @@ class ContainerRuntime(Protocol):
         """
         ...
 
+    async def retained_sandbox_session_ids(self) -> set[str]:
+        """Return the sessions that hold a sandbox, running or suspended. Warm-pool members are excluded.
+
+        Unlike ``list_sandboxes``, this includes sandboxes that keep only their storage
+        while suspended, so resuming one does not count as creating a new sandbox.
+        """
+        ...
+
     async def list_pool_sandboxes(self) -> dict[str, PoolSandbox]:
         """Return ``{sandbox_id: PoolSandbox}`` for unattached warm-pool sandboxes."""
         ...

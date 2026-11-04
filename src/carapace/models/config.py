@@ -298,6 +298,11 @@ class SandboxConfig(BaseSettings):
     proxy_port: int = 3128
     # Number of generic warm sandboxes to keep ready ahead of assignment (Kubernetes runtime only).
     warm_pool_size: int = Field(default=0, ge=0)
+    # Sandboxes a user may hold (running or suspended, until their session is deleted or reset).
+    # Starting a new one at the limit fails; resuming an existing one never does. 0 disables.
+    max_per_user: int = Field(default=100, ge=0)
+    # Sandbox count at which the sidebar warns the user to delete old sessions. 0 disables.
+    warn_per_user: int = Field(default=20, ge=0)
     # Kubernetes namespace where sandbox pods are created.
     k8s_namespace: str = "carapace"
     # PVC claim name for the shared data volume mounted into sandbox pods.

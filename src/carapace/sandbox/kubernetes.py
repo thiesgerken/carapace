@@ -600,6 +600,10 @@ class KubernetesRuntime(ContainerRuntime):
                 result.setdefault(session_id, []).append(f"{sts.name}-0")
         return result
 
+    async def retained_sandbox_session_ids(self) -> set[str]:
+        """A scaled-down StatefulSet keeps its PVC, so every listed sandbox is retained."""
+        return set(await self.list_sandboxes())
+
     async def list_pool_sandboxes(self) -> dict[str, PoolSandbox]:
         """List unattached warm-pool StatefulSets, keyed by sandbox id."""
         api = await self._ensure_api()

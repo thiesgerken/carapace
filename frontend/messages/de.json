@@ -1487,7 +1487,12 @@
             "unknownDate": "Unbekanntes Datum"
         },
         "empty": "Noch keine Sitzungen",
-        "loadingMore": "Weitere Sitzungen werden geladen"
+        "loadingMore": "Weitere Sitzungen werden geladen",
+        "sandboxUsage": {
+            "warning": "{count} Sandboxen belegt (Warnung ab {warnAt}, maximal {max}). Lösche alte Sitzungen, um Speicher freizugeben.",
+            "warningUnlimited": "{count} Sandboxen belegt (Warnung ab {warnAt}). Lösche alte Sitzungen, um Speicher freizugeben.",
+            "limitReached": "{count}/{max} Sandboxen. Neue Sitzungen können keine Sandbox starten, bis du alte löschst."
+        }
     },
     "git": {
         "upToDate": "Aktuell",
