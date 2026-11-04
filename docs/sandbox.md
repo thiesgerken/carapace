@@ -168,6 +168,20 @@ Important semantics:
 - **Image changes**: In Docker mode every resume recreates the container, so it always uses the configured `CARAPACE_SANDBOX_BASE_IMAGE`. In Kubernetes mode, stale warm-pool members are replaced and scaled-down session sandboxes switch to the configured image when they resume; running sandboxes are left alone (see [kubernetes.md](kubernetes.md#changing-the-sandbox-image)).
 - **Reset** (`/reload`): Fully destroys the container and workspace (including the PVC in Kubernetes mode) and creates a fresh sandbox with a new git clone on the next command.
 
+### Per-user sandbox limit
+
+A suspended sandbox keeps its storage until its session is deleted, archived or reset, so abandoned sessions pile up. Two settings bound that per user:
+
+- `CARAPACE_SANDBOX_MAX_PER_USER` (default `100`, `0` disables): when a session without a sandbox needs one (cold create or warm-pool claim) and its owner already holds that many, the start fails with "You have 100/100 sandboxes. Delete old sessions to start a new one." The agent sees this as a failed tool call (so do Matrix users); the web API answers `409`. Resuming or recreating a session's existing sandbox never adds one and is never refused. The check runs under the per-session startup lock only, so parallel starts of different sessions can overshoot the limit slightly.
+- `CARAPACE_SANDBOX_WARN_PER_USER` (default `20`, `0` disables): from this count on, the web UI sidebar shows a warning to delete old sessions. At the hard limit it shows an error instead. The numbers come from `GET /api/sandboxes/usage`.
+
+What counts as a sandbox depends on the runtime:
+
+- **Kubernetes**: every session StatefulSet, running or scaled to 0 (each holds a session PVC).
+- **Docker**: every session with a container or a kept workspace directory (`sessions/{sid}/workspace/`). Suspending removes the container, so an idle Docker sandbox exists only as its workspace, and resuming it recreates the container without counting as a new sandbox.
+
+Unclaimed warm-pool members belong to no user and never count.
+
 ## Runtimes
 
 carapace supports two sandbox runtimes, configured via `CARAPACE_SANDBOX_RUNTIME`:

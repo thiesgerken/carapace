@@ -154,7 +154,10 @@ class ContainerRuntime(Protocol):
         ...
 
     async def suspend_sandbox(self, name: str, container_id: str) -> None: ...
-    async def destroy_sandbox(self, session_id: str, name: str, container_id: str) -> None: ...
+    async def destroy_sandbox(self, session_id: str, name: str, container_id: str | None) -> None:
+        """Remove the sandbox and its storage. *container_id* is None when no container is left."""
+        ...
+
     async def sandbox_exists(self, name: str) -> str | None:
         """Return the container/pod ID if the sandbox resource exists, else None."""
         ...
@@ -164,6 +167,14 @@ class ContainerRuntime(Protocol):
 
         A session normally owns one sandbox. All are returned so that callers can
         detect and handle a session with several instead of seeing an arbitrary one.
+        """
+        ...
+
+    async def retained_sandbox_session_ids(self) -> set[str]:
+        """Return the sessions that hold a sandbox, running or suspended. Warm-pool members are excluded.
+
+        Unlike ``list_sandboxes``, this includes sandboxes that keep only their storage
+        while suspended, so resuming one does not count as creating a new sandbox.
         """
         ...
 

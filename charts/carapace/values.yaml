@@ -72,6 +72,10 @@ sandbox:
   sandboxesName:
   # -- Number of generic warm sandboxes to keep ready for faster claims (0 disables)
   warmPoolSize: 1
+  # -- Sandboxes a user may hold (running or scaled down); starting a new one at the limit fails (0 disables)
+  maxPerUser: 100
+  # -- Sandbox count at which the web UI warns the user to delete old sessions (0 disables)
+  warnPerUser: 20
   # -- Minutes of inactivity before a sandbox is automatically cleaned up
   idleTimeoutMinutes: 960
 

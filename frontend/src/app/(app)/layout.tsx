@@ -71,6 +71,7 @@ function AppChrome({ children }: { children: ReactNode }) {
           server={shell.server}
           token={shell.token}
           sessions={shell.sessions}
+          sandboxUsage={shell.sandboxUsage}
           showArchivedSessions={shell.showArchivedSessions}
           activeSessionId={shell.activeSessionId}
           frontendVersion={BUILD_APP_VERSION}

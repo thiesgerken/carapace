@@ -29,6 +29,26 @@ def _load_owned_session(session_id: str, user: UserIdentity):
     return state
 
 
+class SandboxUsage(BaseModel):
+    """How many sandboxes the user holds against the per-user limits (0 = limit off)."""
+
+    count: int
+    warn_at: int
+    max: int
+
+
+@router.get("/sandboxes/usage", response_model=SandboxUsage)
+async def get_sandbox_usage(
+    user: Annotated[UserIdentity, Depends(require(Scope.sessions, Access.read))],
+) -> SandboxUsage:
+    limits = server._engine.config.sandbox
+    return SandboxUsage(
+        count=await server._engine.sandbox_mgr.count_user_sandboxes(user.username),
+        warn_at=limits.warn_per_user,
+        max=limits.max_per_user,
+    )
+
+
 @router.get("/sessions/{session_id}/sandbox", response_model=SessionSandboxSnapshot)
 async def get_session_sandbox(
     session_id: str,

@@ -58,6 +58,13 @@ export interface SessionSandboxSnapshot {
   last_error?: string | null;
 }
 
+/** Sandboxes the current user holds against the per-user limits; a limit of 0 is off. */
+export interface SandboxUsage {
+  count: number;
+  warn_at: number;
+  max: number;
+}
+
 export interface SessionAttributes {
   private: boolean;
   archived: boolean;

@@ -29,6 +29,7 @@ import type {
   NotificationSubscriptionRecord,
   PromptPreview,
   PromptRole,
+  SandboxUsage,
   SessionArchiveCommitResponse,
   SessionAttributesPatch,
   SessionInfo,
@@ -435,6 +436,17 @@ export async function listSessions(
     headers: headers(token),
   });
   if (!res.ok) throw new Error(`Failed to list sessions: ${res.status}`);
+  return res.json();
+}
+
+export async function getSandboxUsage(
+  server: string,
+  token: string,
+): Promise<SandboxUsage> {
+  const res = await fetch(`${server}/api/sandboxes/usage`, {
+    headers: headers(token),
+  });
+  if (!res.ok) throw new Error(`Failed to fetch sandbox usage: ${res.status}`);
   return res.json();
 }
 

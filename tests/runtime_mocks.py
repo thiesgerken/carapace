@@ -14,6 +14,7 @@ def make_runtime_mock() -> MagicMock:
     runtime.destroy_sandbox = AsyncMock()
     runtime.sandbox_exists = AsyncMock(return_value=None)
     runtime.list_sandboxes = AsyncMock(return_value={})
+    runtime.retained_sandbox_session_ids = AsyncMock(return_value=set())
     runtime.list_pool_sandboxes = AsyncMock(return_value={})
     runtime.claim_warm_sandbox = AsyncMock(return_value=False)
     runtime.inspect_sandbox = AsyncMock(

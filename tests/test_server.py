@@ -52,7 +52,7 @@ from carapace.notifications.presence import NotificationPresenceRegistry
 from carapace.notifications.store import NotificationStore
 from carapace.notifications.vapid import derive_vapid_public_key, ensure_vapid_config
 from carapace.platform_store import PlatformSettingsStore
-from carapace.sandbox.manager import SandboxManager
+from carapace.sandbox.manager import SandboxLimitError, SandboxManager
 from carapace.sandbox.state import SessionSandboxSnapshot
 from carapace.security.context import CredentialAccessEntry, SentinelVerdict, SessionSecurity
 from carapace.server import app, sandbox_app
@@ -3149,6 +3149,26 @@ def test_start_session_sandbox_starts_when_idle(client, auth_headers):
     assert resp.status_code == 200
     assert resp.json()["status"] == "running"
     srv._engine.sandbox_mgr.ensure_session.assert_awaited_once_with(sid)
+
+
+def test_start_session_sandbox_reports_sandbox_limit_as_conflict(client, auth_headers):
+    sid = client.post("/api/sessions", headers=auth_headers).json()["session_id"]
+    message = "You have 100/100 sandboxes. Delete old sessions to start a new one."
+    srv._engine.sandbox_mgr.ensure_session = AsyncMock(side_effect=SandboxLimitError(message))
+
+    resp = client.post(f"/api/sessions/{sid}/sandbox/up", headers=auth_headers)
+
+    assert resp.status_code == 409
+    assert resp.json()["detail"] == message
+
+
+def test_sandbox_usage_reports_count_and_limits(client, auth_headers):
+    srv._engine.sandbox_mgr.count_user_sandboxes = AsyncMock(return_value=23)
+
+    resp = client.get("/api/sandboxes/usage", headers=auth_headers)
+
+    assert resp.status_code == 200
+    assert resp.json() == {"count": 23, "warn_at": 20, "max": 100}
 
 
 def test_start_session_sandbox_rejects_running_agent(client, auth_headers):

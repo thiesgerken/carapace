@@ -254,9 +254,10 @@ class DockerRuntime(ContainerRuntime):
         """Suspend == remove in Docker (no persistent volume to keep)."""
         await self.remove(container_id)
 
-    async def destroy_sandbox(self, session_id: str, name: str, container_id: str) -> None:
-        """Destroy the container and its bind-mounted workspace in Docker."""
-        await self.remove(container_id)
+    async def destroy_sandbox(self, session_id: str, name: str, container_id: str | None) -> None:
+        """Destroy the container, if any, and its bind-mounted workspace in Docker."""
+        if container_id is not None:
+            await self.remove(container_id)
         await asyncio.to_thread(self._clear_workspace, session_id)
 
     async def sandbox_exists(self, name: str) -> str | None:
@@ -286,6 +287,25 @@ class DockerRuntime(ContainerRuntime):
             return result
 
         return await asyncio.to_thread(_list)
+
+    async def retained_sandbox_session_ids(self) -> set[str]:
+        """Sessions with a container or a kept workspace.
+
+        Suspending removes the container but keeps the bind-mounted workspace, so an
+        idle sandbox exists only as its workspace directory until the session is
+        deleted or reset.
+        """
+
+        def _sessions_with_workspace() -> set[str]:
+            if self._data_dir is None:
+                return set()
+            sessions_dir = self._data_dir / "sessions"
+            if not sessions_dir.is_dir():
+                return set()
+            return {entry.name for entry in sessions_dir.iterdir() if (entry / "workspace").is_dir()}
+
+        with_container = set(await self.list_sandboxes())
+        return with_container | await asyncio.to_thread(_sessions_with_workspace)
 
     async def list_pool_sandboxes(self) -> dict[str, PoolSandbox]:
         """Docker does not participate in warm-pool inventory."""

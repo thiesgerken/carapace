@@ -22,6 +22,7 @@ from fastapi import (
     Response,
 )
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from genai_prices import UpdatePrices
 from loguru import logger
 from pydantic import BaseModel
@@ -58,7 +59,7 @@ from ..notifications.store import NotificationStore
 from ..notifications.vapid import ensure_vapid_config
 from ..platform_store import PlatformSettingsStore
 from ..prompt_prefix import shared_prompt_prefix
-from ..sandbox.manager import SandboxManager
+from ..sandbox.manager import SandboxLimitError, SandboxManager
 from ..sandbox.proxy import ProxyServer
 from ..sandbox.runtime import ContainerRuntime
 from ..security import evaluate_push_with
@@ -448,6 +449,7 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
         sandbox_port=_config.server.sandbox_port,
         warm_pool_size=_config.sandbox.warm_pool_size,
         skill_activator_timeout_seconds=_config.sandbox.skill_activator_timeout_seconds,
+        max_sandboxes_per_user=_config.sandbox.max_per_user,
         knowledge_repo_for_session=knowledge_repo_for_session,
     )
     logger.info(f"Sandbox enabled (image={base_image}, network={sandbox_network})")
@@ -686,6 +688,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.exception_handler(SandboxLimitError)
+async def _sandbox_limit_reached(_request: Request, exc: SandboxLimitError) -> JSONResponse:
+    return JSONResponse(status_code=409, content={"detail": str(exc)})
+
 
 _NO_STORE_API_PREFIX = "/api"
 

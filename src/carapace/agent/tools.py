@@ -34,7 +34,7 @@ from ..models.skills import (
 )
 from ..models.tooling import SentFileInfo, ToolResult, normalize_tool_call_args
 from ..prompt_prefix import join_prompt_sections, shared_prompt_prefix
-from ..sandbox.manager import READ_TOOL_MAX_LINE_WINDOW, UploadError, UploadTooLargeError
+from ..sandbox.manager import READ_TOOL_MAX_LINE_WINDOW, SandboxLimitError, UploadError, UploadTooLargeError
 from ..sandbox.runtime import SkillActivationError
 from ..sandbox.skill_activation import SKILL_COMMAND_SHIM_DIR
 from ..security.context import (
@@ -1180,6 +1180,9 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
             )
         except SkillActivationError as exc:
             logger.exception(f"Error activating skill {skill_name}: {exc}")
+            sandbox_msg = f"ERROR: {exc}"
+        except SandboxLimitError as exc:
+            # The skill stays activated; its sandbox setup runs once a sandbox can start.
             sandbox_msg = f"ERROR: {exc}"
 
         ctx.deps.activated_skills.append(skill_name)

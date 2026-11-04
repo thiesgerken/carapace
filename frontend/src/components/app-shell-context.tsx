@@ -8,6 +8,7 @@ import {
   deleteSession,
   getCurrentUser,
   getSandboxGit,
+  getSandboxUsage,
   getServerMeta,
   getSession,
   listSessions,
@@ -26,7 +27,7 @@ import {
   saveConnection,
   saveShowArchivedSessionsPreference,
 } from "@/lib/storage";
-import type { SessionInfo } from "@/lib/types";
+import type { SandboxUsage, SessionInfo } from "@/lib/types";
 import { useTranslations } from "next-intl";
 
 const SESSION_PAGE_SIZE = 50;
@@ -92,6 +93,7 @@ export interface AppShell {
   isAdmin: boolean;
   serverVersion: string | null;
   sessions: SessionInfo[];
+  sandboxUsage: SandboxUsage | null;
   activeSessionId: string | null;
   activeSession: SessionInfo | null;
   showArchivedSessions: boolean;
@@ -152,6 +154,7 @@ export function AppShellProvider({ children }: { children: ReactNode }) {
   const [currentUser, setCurrentUser] = useState<AuthUserInfo | null>(null);
   const [serverVersion, setServerVersion] = useState<string | null>(null);
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
+  const [sandboxUsage, setSandboxUsage] = useState<SandboxUsage | null>(null);
   const [showArchivedSessions, setShowArchivedSessionsState] = useState(false);
   const [refreshingSessions, setRefreshingSessions] = useState(false);
   const [loadingMoreSessions, setLoadingMoreSessions] = useState(false);
@@ -245,6 +248,19 @@ export function AppShellProvider({ children }: { children: ReactNode }) {
     };
   }, [connected, loadInitialSessions, server, showArchivedSessions, token]);
 
+  // Sandboxes appear when a session first starts one and vanish on delete, archive or wipe.
+  // None of that reloads the session list, so the usage is fetched on its own after each.
+  const refreshSandboxUsage = useCallback(() => {
+    if (!server || !token) return;
+    void getSandboxUsage(server, token)
+      .then(setSandboxUsage)
+      .catch(() => setSandboxUsage(null));
+  }, [server, token]);
+
+  useEffect(() => {
+    if (connected) refreshSandboxUsage();
+  }, [connected, refreshSandboxUsage]);
+
   // Settings that change the user's own config (agent name, icon) have to land in the
   // shell too, or the sidebar and favicon keep rendering the pre-save values.
   const onRefreshCurrentUser = useCallback(() => {
@@ -286,6 +302,7 @@ export function AppShellProvider({ children }: { children: ReactNode }) {
     failedLoadMoreCursorRef.current = null;
     pendingSandboxUpdatesRef.current.clear();
     setCurrentUser(null);
+    setSandboxUsage(null);
     setRefreshingSessions(false);
     setLoadingMoreSessions(false);
     setSessionListInitialized(false);
@@ -463,13 +480,14 @@ export function AppShellProvider({ children }: { children: ReactNode }) {
       clearChatDraft(id);
       pendingSandboxUpdatesRef.current.delete(id);
       setSessions((prev) => prev.filter((s) => s.session_id !== id));
+      refreshSandboxUsage();
       if (activeSessionId === id) {
         router.push("/");
       }
     } catch {
       // deletion failed silently
     }
-  }, [activeSessionId, router, server, t, token]);
+  }, [activeSessionId, refreshSandboxUsage, router, server, t, token]);
 
   const onUpdateSessionAttributes = useCallback(async (
     id: string,
@@ -478,11 +496,14 @@ export function AppShellProvider({ children }: { children: ReactNode }) {
     const updated = await updateSession(server, token, id, { attributes });
     pendingSandboxUpdatesRef.current.delete(id);
     setSessions((prev) => sortSessions(prev.map((entry) => (entry.session_id === id ? { ...entry, ...updated } : entry))));
+    if (attributes.archived !== undefined) {
+      refreshSandboxUsage();
+    }
     if (updated.attributes.archived && activeSessionId === id) {
       router.push("/");
     }
     return updated;
-  }, [activeSessionId, router, server, token]);
+  }, [activeSessionId, refreshSandboxUsage, router, server, token]);
 
   const onSessionUpdate = useCallback((session: SessionInfo) => {
     setSessions((prev) => {
@@ -508,7 +529,8 @@ export function AppShellProvider({ children }: { children: ReactNode }) {
     setSessions((prev) =>
       prev.map((s) => (s.session_id === sessionId ? { ...s, sandbox } : s)),
     );
-  }, []);
+    refreshSandboxUsage();
+  }, [refreshSandboxUsage]);
 
   const onForkSession = useCallback((session: SessionInfo) => {
     onSessionUpdate(session);
@@ -540,6 +562,7 @@ export function AppShellProvider({ children }: { children: ReactNode }) {
     isAdmin,
     serverVersion,
     sessions,
+    sandboxUsage,
     activeSessionId,
     activeSession,
     showArchivedSessions,
@@ -587,6 +610,7 @@ export function AppShellProvider({ children }: { children: ReactNode }) {
     onUpdateSessionAttributes,
     server,
     serverVersion,
+    sandboxUsage,
     sessions,
     sessionListHasMore,
     showArchivedSessions,

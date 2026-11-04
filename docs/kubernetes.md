@@ -108,6 +108,8 @@ If `CARAPACE_SANDBOX_WARM_POOL_SIZE` is greater than `0`, the server also keeps 
 
 When a session is permanently deleted (or the user runs `/reload`), the entire StatefulSet is deleted. The PVC is automatically cleaned up via the retention policy (`whenDeleted: Delete`).
 
+Nothing else frees a scaled-down sandbox, so abandoned sessions keep their PVC. `CARAPACE_SANDBOX_MAX_PER_USER` (Helm: `sandbox.maxPerUser`, default `100`) caps the StatefulSets one user holds, running or scaled to 0. Unclaimed warm-pool members belong to no user and don't count. At the limit, a session without a sandbox can't get one (neither a warm claim nor a cold create) until the user deletes old sessions; scaling an existing StatefulSet back up is never refused. See [sandbox.md](sandbox.md#per-user-sandbox-limit).
+
 ### Changing the sandbox image
 
 `CARAPACE_SANDBOX_BASE_IMAGE` is read at server startup, so an image change takes effect with the server rollout. Existing sandbox StatefulSets are brought in line as follows:
@@ -132,6 +134,10 @@ env:
     value: ghcr.io/thiesgerken/carapace-sandbox:latest # pin this to a specific version!
   - name: CARAPACE_SANDBOX_WARM_POOL_SIZE
     value: "1" # keep one generic warm sandbox ready for faster claims (Helm: sandbox.warmPoolSize)
+  - name: CARAPACE_SANDBOX_MAX_PER_USER
+    value: "100" # sandboxes (and session PVCs) one user may hold, 0 = unlimited (Helm: sandbox.maxPerUser)
+  - name: CARAPACE_SANDBOX_WARN_PER_USER
+    value: "20" # sidebar warns from this many sandboxes on, 0 = never (Helm: sandbox.warnPerUser)
   - name: CARAPACE_SANDBOX_K8S_NAMESPACE
     value: carapace
   - name: CARAPACE_SANDBOX_K8S_PVC_CLAIM
@@ -227,6 +233,8 @@ When the server runs inside Kubernetes (the `KUBERNETES_SERVICE_HOST` env var is
 | `CARAPACE_SANDBOX_SKILL_ACTIVATOR_TIMEOUT_SECONDS` | `600`                   | Whole-skill activator timeout                              |
 | `CARAPACE_SANDBOX_IDLE_TIMEOUT_MINUTES`          | `60`                      | Idle sandbox cleanup interval                              |
 | `CARAPACE_SANDBOX_WARM_POOL_SIZE`                | `0`                       | Number of generic warm sandboxes to keep ready             |
+| `CARAPACE_SANDBOX_MAX_PER_USER`                  | `100`                     | Sandboxes one user may hold; `0` disables                  |
+| `CARAPACE_SANDBOX_WARN_PER_USER`                 | `20`                      | Sandbox count for the sidebar warning; `0` disables        |
 | `CARAPACE_SANDBOX_PROXY_PORT`                    | `3128`                    | HTTP proxy port for domain filtering                       |
 | `CARAPACE_SANDBOX_K8S_NAMESPACE`                 | `carapace`                | Namespace for sandbox pods                                 |
 | `CARAPACE_SANDBOX_K8S_PVC_CLAIM`                 | `carapace-data`           | Server data PVC claim name                                 |

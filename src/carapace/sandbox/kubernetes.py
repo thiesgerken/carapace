@@ -558,7 +558,7 @@ class KubernetesRuntime(ContainerRuntime):
             logger.opt(exception=True).warning(f"Scale-down failed for {name}, deleting pod")
             await self._delete_pod_if_exists(container_id)
 
-    async def destroy_sandbox(self, session_id: str, name: str, container_id: str) -> None:
+    async def destroy_sandbox(self, session_id: str, name: str, container_id: str | None) -> None:
         """Delete the StatefulSet and its per-session PVC."""
         await self._delete_sts_if_exists(_sanitize_pod_name(name))
         await self._delete_session_pvc_if_exists(name)
@@ -599,6 +599,10 @@ class KubernetesRuntime(ContainerRuntime):
             if session_id:
                 result.setdefault(session_id, []).append(f"{sts.name}-0")
         return result
+
+    async def retained_sandbox_session_ids(self) -> set[str]:
+        """A scaled-down StatefulSet keeps its PVC, so every listed sandbox is retained."""
+        return set(await self.list_sandboxes())
 
     async def list_pool_sandboxes(self) -> dict[str, PoolSandbox]:
         """List unattached warm-pool StatefulSets, keyed by sandbox id."""
