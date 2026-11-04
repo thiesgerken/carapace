@@ -36,6 +36,8 @@ interface SidebarProps {
   onNew: (options?: NewSessionOptions) => void;
   onGoHome: () => void;
   onOpenSettings: () => void;
+  /** Called before every action that navigates, e.g. to close the mobile drawer. */
+  onNavigate: () => void;
   onUpdateAttributes: (sessionId: string, attributes: SessionAttributesPatch) => Promise<SessionInfo>;
   onDelete: (sessionId: string, options?: { skipUnpushedWarning?: boolean }) => void;
   onDisconnect: () => void;
@@ -107,6 +109,7 @@ export function Sidebar({
   onNew,
   onGoHome,
   onOpenSettings,
+  onNavigate,
   onUpdateAttributes,
   onDelete,
   onDisconnect,
@@ -134,6 +137,7 @@ export function Sidebar({
 
   function handleOpenSettings(): void {
     setAccountMenuOpen(false);
+    onNavigate();
     onOpenSettings();
   }
 
@@ -382,6 +386,7 @@ export function Sidebar({
     const messageCountLabel = tSidebar("messageCount", { count: session.message_count });
     const hasSandboxInfo = !!sandbox;
     const selectSession = (): void => {
+      onNavigate();
       onSelect(session.session_id);
     };
     const handleRowKeyDown = (event: React.KeyboardEvent<HTMLDivElement>): void => {
@@ -595,7 +600,10 @@ export function Sidebar({
             <Image src={agentIcon(currentUser?.agentIcon)} alt="" width={18} height={18} aria-hidden="true" className="shrink-0" />
             <button
               type="button"
-              onClick={onGoHome}
+              onClick={() => {
+                onNavigate();
+                onGoHome();
+              }}
               title={t("navigation.home")}
               aria-label={t("navigation.home")}
               className="cursor-pointer rounded-sm text-sm font-semibold tracking-tight focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
@@ -608,6 +616,7 @@ export function Sidebar({
         <div className="flex shrink-0 items-center gap-0.5">
           <Link
             href="/knowledge"
+            onClick={onNavigate}
             title={t("navigation.knowledge")}
             aria-label={t("navigation.knowledge")}
             className="inline-flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
@@ -616,6 +625,7 @@ export function Sidebar({
           </Link>
           <Link
             href="/memory"
+            onClick={onNavigate}
             title={t("navigation.memory")}
             aria-label={t("navigation.memory")}
             className="inline-flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
@@ -720,7 +730,14 @@ export function Sidebar({
 
       {/* New session button */}
       <div className="px-3 pt-3 pb-1">
-        <NewSessionButton onCreate={onNew} disabled={loading} fullWidth />
+        <NewSessionButton
+          onCreate={(options) => {
+            onNavigate();
+            onNew(options);
+          }}
+          disabled={loading}
+          fullWidth
+        />
       </div>
 
       {/* Session list */}

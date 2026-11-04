@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useState, type ReactNode } from "react";
-import { usePathname, useSearchParams } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { Menu, X } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { AppShellProvider, useAppShell } from "@/components/app-shell-context";
@@ -18,18 +18,9 @@ const BUILD_APP_VERSION = process.env.NEXT_PUBLIC_CARAPACE_VERSION?.trim() || nu
 function AppChrome({ children }: { children: ReactNode }) {
   const t = useTranslations();
   const pathname = usePathname();
-  const searchParams = useSearchParams();
   const shell = useAppShell();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   useSwipeDrawer(sidebarOpen, setSidebarOpen);
-
-  // Every sidebar action navigates, so a new URL means the mobile drawer has done its job.
-  const location = `${pathname}?${searchParams.toString()}`;
-  const [drawerLocation, setDrawerLocation] = useState(location);
-  if (drawerLocation !== location) {
-    setDrawerLocation(location);
-    setSidebarOpen(false);
-  }
 
   const isSettings = pathname?.startsWith("/settings") ?? false;
   const { name: brand, icon: brandIcon } = useBrand();
@@ -85,14 +76,11 @@ function AppChrome({ children }: { children: ReactNode }) {
           frontendVersion={BUILD_APP_VERSION}
           backendVersion={shell.serverVersion}
           currentUser={shell.currentUser}
-          onSelect={(id) => {
-            // Re-selecting the open session keeps the URL, so close explicitly.
-            setSidebarOpen(false);
-            shell.onSelectSession(id);
-          }}
+          onSelect={shell.onSelectSession}
           onNew={shell.onNewSession}
           onGoHome={shell.onGoHome}
           onOpenSettings={() => shell.onOpenSettings()}
+          onNavigate={() => setSidebarOpen(false)}
           onUpdateAttributes={shell.onUpdateSessionAttributes}
           onDelete={shell.onDeleteSession}
           onDisconnect={shell.onDisconnect}
