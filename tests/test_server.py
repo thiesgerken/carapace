@@ -2618,6 +2618,29 @@ def test_list_sessions_page_uses_stable_tiebreaker(client, auth_headers):
     assert ordered_ids[: len(created_ids)] == sorted(created_ids)
 
 
+def test_list_sessions_pages_archived_after_active(client, auth_headers):
+    active_id, archived_id = (client.post("/api/sessions", headers=auth_headers).json()["session_id"] for _ in range(2))
+    for session_id, archived, last_active in (
+        (active_id, False, datetime(2024, 1, 1, tzinfo=UTC)),
+        (archived_id, True, datetime(2025, 1, 1, tzinfo=UTC)),
+    ):
+        state = srv._engine.session_mgr.load_state(session_id)
+        assert state is not None
+        state.attributes.archived = archived
+        state.attributes.pinned = archived
+        state.last_active = last_active
+        srv._engine.session_mgr.save_state(state)
+
+    first_page = client.get("/api/sessions?limit=1&include_archived=true", headers=auth_headers).json()
+    second_page = client.get(
+        f"/api/sessions?limit=1&include_archived=true&cursor={first_page['next_cursor']}", headers=auth_headers
+    ).json()
+
+    assert [item["session_id"] for item in first_page["items"]] == [active_id]
+    assert [item["session_id"] for item in second_page["items"]] == [archived_id]
+    assert second_page["has_more"] is False
+
+
 def test_list_sessions_page_rejects_invalid_cursor(client, auth_headers):
     resp = client.get("/api/sessions?cursor=abc", headers=auth_headers)
 

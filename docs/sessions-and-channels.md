@@ -160,6 +160,8 @@ The primary interactive channel. A Next.js web app connects to the carapace serv
 | `/api/sessions/{id}/sandbox/down`     | `POST`   | Stop or scale down the sandbox                                                 |
 | `/api/sessions/{id}/sandbox/wipe`     | `POST`   | Destroy sandbox workspace state and start fresh later                          |
 
+`GET /api/sessions` pages in a fixed order: active sessions before archived ones, pinned first within each, then most recently active.
+
 **Notification API:**
 
 | Endpoint                                            | Method   | Description                                                                      |

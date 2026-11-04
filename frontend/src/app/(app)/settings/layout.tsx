@@ -8,6 +8,7 @@ import { useAppShell } from "@/components/app-shell-context";
 import { useBrand } from "@/hooks/use-brand";
 import type { SettingsTab } from "@/lib/settings-tabs";
 import { handleTabListKeyDown, tabbedPageClassName, tabLinkClassName } from "@/lib/tabs";
+import { cn } from "@/lib/utils";
 
 export default function SettingsLayout({ children }: { children: ReactNode }) {
   const t = useTranslations();
@@ -43,7 +44,9 @@ export default function SettingsLayout({ children }: { children: ReactNode }) {
         aria-selected={selected}
         aria-controls={`settings-panel-${value}`}
         tabIndex={selected ? 0 : -1}
-        className={tabLinkClassName(selected)}
+        // The scrolling mobile tab row clips anything outside its box, so the active tab
+        // cannot overlap the border below it and the focus ring has to sit inside.
+        className={cn(tabLinkClassName(selected), "max-md:mb-0 max-md:focus-visible:ring-inset max-md:focus-visible:ring-offset-0")}
       >
         {label}
       </Link>
@@ -63,7 +66,7 @@ export default function SettingsLayout({ children }: { children: ReactNode }) {
             role="tablist"
             onKeyDown={handleTabListKeyDown}
             aria-label={tJobs("settingsSections")}
-            className="flex items-end gap-x-4 gap-y-2 overflow-x-auto border-b border-border/80 [scrollbar-width:none] md:flex-wrap md:overflow-visible"
+            className="flex items-end gap-x-4 gap-y-2 overflow-x-auto shadow-[inset_0_-1px_0_var(--border)] [scrollbar-width:none] md:flex-wrap md:overflow-visible md:border-b md:border-border/80 md:shadow-none"
           >
             <div className="flex items-end gap-1 md:flex-wrap">
               {tab("preferences", t("navigation.preferences"))}
