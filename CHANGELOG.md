@@ -1,6 +1,43 @@
 # CHANGELOG
 
 
+## v0.169.0 (2026-11-04)
+
+
+### ✨ Features
+
+
+- ✨Merge pull request #429 from thiesgerken/feat/sandbox-limits
+  ([`a74648b`](https://github.com/thiesgerken/carapace/commit/a74648b9147fef466b4d460c6349d1dfab9f4bf0))
+
+- ✨ Per-user sandbox limits with warning banner
+  ([`a74648b`](https://github.com/thiesgerken/carapace/commit/a74648b9147fef466b4d460c6349d1dfab9f4bf0))
+
+- ✨ feat(sandbox): per-user sandbox limits with sidebar warning
+  ([`78ff1c4`](https://github.com/thiesgerken/carapace/commit/78ff1c425671568b107b83941f5a07999f759dd5))
+
+  Abandoned sessions keep their sandbox (scaled-to-0 StatefulSet with its PVC, or a Docker workspace dir) until the session is deleted or reset. CARAPACE_SANDBOX_MAX_PER_USER (default 100) refuses a new sandbox for a session once its owner holds that many; resuming or recreating an existing one is never refused. CARAPACE_SANDBOX_WARN_PER_USER (default 20) drives an amber sidebar warning, the hard limit a red one.
+
+  Counting goes through a new runtime method, retained_sandbox_session_ids: Docker removes idle containers, so its list_sandboxes misses suspended sandboxes and every Docker resume would look like a cold create.
+
+  Refs #428
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aV1S2hpxYMLVNCcJbUf
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix(sandbox): free a suspended Docker sandbox's workspace on reset and archive
+  ([`7bb0ebd`](https://github.com/thiesgerken/carapace/commit/7bb0ebda4e3465badeebbcd25179a19160cf76a4))
+
+  Reset and destroy only called destroy_sandbox when a container was found. A suspended Docker sandbox has none, so /reload and archive left sessions/<sid>/workspace behind and the sandbox kept counting against the per-user limit. Both paths now always destroy, passing None when no container is left; Docker then only clears the workspace, Kubernetes already deletes StatefulSet and PVC if present.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aV1S2hpxYMLVNCcJbUf
+
 ## v0.168.2 (2026-11-04)
 
 
