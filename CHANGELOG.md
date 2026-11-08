@@ -1,6 +1,64 @@
 # CHANGELOG
 
 
+## v0.170.1 (2026-11-08)
+
+
+### Other
+
+
+- Merge pull request #437 from thiesgerken/fix/cancelled-child-events
+  ([`3e73235`](https://github.com/thiesgerken/carapace/commit/3e7323581ec472a9726fb59755e38135b57ed6f6))
+
+- 📝 docs(sessions): failed turns close only their own tool calls
+  ([`23e3591`](https://github.com/thiesgerken/carapace/commit/23e3591d83b749e1097ab39d2176e0ca106218fd))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aUyaxvsB8zAKUBRRhYg
+
+- 🔀 merge main into fix/cancelled-child-events
+  ([`23e7e06`](https://github.com/thiesgerken/carapace/commit/23e7e067cf1f682a2da4cb47b29a3f4d6708fcd4))
+
+  Name the reached metric's own key in the budget hint: every BudgetMetric is an accepted /budget argument, so no separate mapping is needed.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aUyaxvsB8zAKUBRRhYg
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix(session): stop bogus canceled tool results and keep turn errors as errors after reload
+  ([`3e73235`](https://github.com/thiesgerken/carapace/commit/3e7323581ec472a9726fb59755e38135b57ed6f6))
+
+- 🐛 fix(session): close only unfinished tool calls on failed turns and persist turn errors as errors
+  ([`c3dd7fb`](https://github.com/thiesgerken/carapace/commit/c3dd7fb831f2741cdc8869dd3b94ca004e3d1bec))
+
+  A failed turn scanned the whole session for tool_call events without a tool_result and appended synthetic "canceled" results for all of them, including access decisions (proxy_domain, credential_access, git_push) and denied calls, which never get a result. Both the completion and the truncation logic now share one predicate that excludes them.
+
+  A failed turn's terminal message is now persisted as a role "error" event instead of an assistant event, so it renders as an error box after a reload too. The error event is a turn boundary for retry, reset, fork, compaction and session message counts.
+
+  The session budget error names the /budget command that raises each reached limit, built from the budget gauges in one place.
+
+  Closes #433
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aUyaxvsB8zAKUBRRhYg
+
+### ♻️ Refactoring
+
+
+- ♻️ refactor(session): scope canceled tool results to the failed turn and keep turn actions on errors
+  ([`618845f`](https://github.com/thiesgerken/carapace/commit/618845ffef67ad860fdd1927cdfc78501a2f4d09))
+
+  A failed turn now closes only the tool calls it left open itself, counted from its first event. Turn-ending error messages carry retry, reset and fork in the web UI, also after a reload.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aUyaxvsB8zAKUBRRhYg
+
 ## v0.170.0 (2026-11-08)
 
 
