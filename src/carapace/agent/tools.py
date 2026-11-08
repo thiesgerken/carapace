@@ -44,7 +44,7 @@ from ..security.context import (
 )
 from ..skills import SkillDocumentError, SkillRegistry
 from ..usage import LlmRequestLogCapability
-from .autonomy import AutonomyLimitCapability
+from .autonomy import AUTONOMY_LIMIT_METADATA_KEY, AutonomyLimitCapability
 from .deps import Deps, TaskDone, TaskFailed
 
 SEND_FILE_MAX_BYTES = 50 * 1024 * 1024
@@ -300,6 +300,15 @@ def _resolve_exec_command_alias(
             )
 
     return command, resolved_contexts, "\n\n".join(warnings) or None
+
+
+def _user_approved(ctx: RunContext[Deps]) -> bool:
+    """Whether the user approved this exact call after the security gate escalated it.
+
+    A call the user only let past the autonomy limit is approved too, but still has to pass the gate.
+    """
+    metadata = ctx.tool_call_metadata or {}
+    return ctx.tool_call_approved and not metadata.get(AUTONOMY_LIMIT_METADATA_KEY)
 
 
 async def _gate(ctx: RunContext[Deps], tool_name: str, args: dict[str, Any]) -> ToolDenied | None:
@@ -713,7 +722,7 @@ class _VaultOAuth(httpx.Auth):
 
 async def _gate_mcp_call(ctx: RunContext[Deps], gate_name: str, gate_args: dict[str, Any]) -> ToolDenied | None:
     """Sentinel gate for one MCP tool call (or emit the approved-start notice if pre-approved)."""
-    if not ctx.tool_call_approved:
+    if not _user_approved(ctx):
         return await _gate(ctx, gate_name, gate_args)
     _notify_approved_start(ctx, gate_name, gate_args)
     return None
@@ -1149,7 +1158,7 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
             except Exception:
                 entry["name"] = vp
 
-        if not ctx.tool_call_approved:
+        if not _user_approved(ctx):
             gate_args: dict[str, Any] = {
                 "skill_name": skill_name,
                 "declared_creds": declared_creds_payload,
@@ -1277,7 +1286,7 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
                 )
             return _emit_tool_result(ctx, "read", denied_message, exit_code=1)
 
-        if not ctx.tool_call_approved and (
+        if not _user_approved(ctx) and (
             denied := await _gate(ctx, "read", {"path": path, "offset": text_offset, "limit": text_limit})
         ):
             return denied
@@ -1333,7 +1342,7 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
                 )
             return _emit_tool_result(ctx, "send_file", denied_message, exit_code=1)
 
-        if not ctx.tool_call_approved and (denied := await _gate(ctx, "send_file", {"path": path})):
+        if not _user_approved(ctx) and (denied := await _gate(ctx, "send_file", {"path": path})):
             return denied
 
         session_id = ctx.deps.session_state.session_id
@@ -1360,7 +1369,7 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
     @agent.tool
     async def write(ctx: RunContext[Deps], path: str, content: str) -> str | ToolDenied:
         """Write content to a file in the sandbox. Creates parent directories as needed."""
-        if not ctx.tool_call_approved and (denied := await _gate(ctx, "write", {"path": path, "content": content})):
+        if not _user_approved(ctx) and (denied := await _gate(ctx, "write", {"path": path, "content": content})):
             return denied
 
         session_id = ctx.deps.session_state.session_id
@@ -1389,7 +1398,7 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
         Use ``replace_all=True`` to replace all matches.
         Returns a compact status string including match count and original line number(s).
         """
-        if not ctx.tool_call_approved and (
+        if not _user_approved(ctx) and (
             denied := await _gate(
                 ctx,
                 "str_replace",
@@ -1471,7 +1480,7 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
         )
         if contexts:
             args["contexts"] = contexts
-        if not ctx.tool_call_approved:
+        if not _user_approved(ctx):
             if denied := await _gate(ctx, "exec", args):
                 return denied
         else:

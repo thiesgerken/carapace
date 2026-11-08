@@ -28,31 +28,44 @@ class AutonomyLimitReachedError(SessionBudgetExceededError):
     """The agent kept calling tools after its over-limit calls were denied; ends the turn."""
 
 
+@dataclass(frozen=True)
+class _AutonomyStop:
+    # The calls whose over-limit attempts were denied. Any other call after them ends the turn.
+    batch: frozenset[str]
+    # Changing the limit lifts the stop: the user raised or cleared it for a reason.
+    limit: int
+
+
 @dataclass
 class AutonomyStreak:
     """Tool call attempts since the last human interaction."""
 
     count: int = 0
-    # The calls whose over-limit attempts were denied. Any other call after them ends the turn.
-    stopped_batch: frozenset[str] | None = None
+    stop: _AutonomyStop | None = None
 
-    def reset(self) -> None:
+    def start_over(self) -> None:
+        """A user message: a new streak, and the only interaction that lifts a stop."""
         self.count = 0
-        self.stopped_batch = None
+        self.stop = None
 
-    def stop_after(self, batch: frozenset[str]) -> None:
-        self.stopped_batch = batch
+    def note_user_decision(self) -> None:
+        """The user resolved an approval or escalation; resets the count but keeps a stop."""
+        self.count = 0
+
+    def stop_after(self, batch: frozenset[str], limit: int) -> None:
+        self.stop = _AutonomyStop(batch=batch, limit=limit)
 
     def count_attempt(self, tool_call_id: str, limit: int | None) -> bool:
         """Count one attempt and return whether it is over *limit*.
 
-        Raises ``AutonomyLimitReachedError`` for a call outside the stopped batch.
+        Raises ``AutonomyLimitReachedError`` for a call after a stopped batch.
         """
-        if self.stopped_batch is not None and tool_call_id not in self.stopped_batch:
-            if limit is not None and self.count >= limit:
-                raise AutonomyLimitReachedError([autonomy_budget_gauge(self.count, limit)])
-            # The limit was raised or cleared since the stop.
-            self.stopped_batch = None
+        if self.stop is not None and tool_call_id not in self.stop.batch:
+            stop_limit = self.stop.limit
+            if limit == stop_limit:
+                # An escalation answered during the stopped batch may have reset the count; the stop holds anyway.
+                raise AutonomyLimitReachedError([autonomy_budget_gauge(max(self.count, stop_limit), stop_limit)])
+            self.stop = None
         self.count += 1
         return limit is not None and self.count > limit
 
@@ -61,19 +74,21 @@ def resolve_user_approvals(
     streak: AutonomyStreak,
     decisions: dict[str, bool | ToolDenied],
     autonomy_call_ids: set[str],
+    limit: int | None,
 ) -> dict[str, bool | ToolDenied]:
-    """Apply the streak reset rules to one batch of user decisions.
+    """Apply the streak rules to one batch of user decisions.
 
-    Any allow, or a deny of anything but an autonomy-limit approval, is a human interaction and
-    resets the streak. If the user denied every autonomy-limit approval and nothing else, the next
-    tool call ends the turn. Denied autonomy-limit calls tell the model to wrap up.
+    Every user decision resets the count, except a deny of an autonomy-limit approval. If the batch
+    had autonomy-limit approvals and the user allowed none of them, the next tool call ends the
+    turn, whatever else the user decided in the batch. Denied autonomy-limit calls tell the model
+    to wrap up.
     """
     autonomy_decisions = {call_id: d for call_id, d in decisions.items() if call_id in autonomy_call_ids}
-    other_decisions = [d for call_id, d in decisions.items() if call_id not in autonomy_call_ids]
-    if other_decisions or any(d is True for d in autonomy_decisions.values()):
-        streak.reset()
-    elif autonomy_decisions:
-        streak.stop_after(frozenset(autonomy_decisions))
+    autonomy_allowed = any(d is True for d in autonomy_decisions.values())
+    if autonomy_allowed or len(autonomy_decisions) < len(decisions):
+        streak.note_user_decision()
+    if autonomy_decisions and not autonomy_allowed and limit is not None:
+        streak.stop_after(frozenset(autonomy_decisions), limit)
     return {
         call_id: ToolDenied(f"{d.message} {AUTONOMY_WRAP_UP}")
         if isinstance(d, ToolDenied) and call_id in autonomy_call_ids
@@ -114,7 +129,8 @@ class AutonomyLimitCapability(AbstractCapability[AgentDepsT]):
         if tool_def.kind != "function" or ctx.tool_call_approved:
             return await handler(args)
         limit = self.session_state.budget.autonomous_tool_calls
-        if not self.streak.count_attempt(call.tool_call_id, limit):
+        over_limit = self.streak.count_attempt(call.tool_call_id, limit)
+        if limit is None or not over_limit:
             return await handler(args)
         reason = f"Autonomy limit reached ({limit} tool calls without you)"
         if not self.session_state.attributes.unattended:
@@ -126,7 +142,7 @@ class AutonomyLimitCapability(AbstractCapability[AgentDepsT]):
                     AUTONOMY_LIMIT_METADATA_KEY: True,
                 }
             )
-        self.streak.stop_after(_batch_tool_call_ids(ctx.messages))
+        self.streak.stop_after(_batch_tool_call_ids(ctx.messages), limit)
         if self.tool_call_callback is not None:
             self.tool_call_callback(call.tool_name, args, f"[autonomy] {reason}", "autonomy", "deny", reason)
         return ToolDenied(AUTONOMY_WRAP_UP)

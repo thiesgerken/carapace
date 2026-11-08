@@ -146,11 +146,11 @@ What resets the streak:
 - a new user message,
 - any approval or escalation the user resolves, allow or deny, except a deny of an autonomy-limit approval.
 
-Sentinel approvals and safe-listed or skill-declared auto-approvals never reset it.
+Sentinel approvals and safe-listed or skill-declared auto-approvals never reset it. Once the limit stopped the agent (see below), only the next user message lifts the stop; changing the limit lifts it too.
 
 On reaching the limit:
 
-- **Attended sessions** pause. Every call over the limit asks for approval with "Autonomy limit reached (N tool calls without you)", through the normal approval cards (web, CLI, Matrix). Allowing at least one card of a batch resets the streak and runs the allowed calls. A denied card tells the model "Autonomy limit reached. Stop calling tools and report what you have." If every card of the batch was denied, the next tool call ends the turn with a budget stop (`/budget autonomy N`).
+- **Attended sessions** pause. Every call over the limit asks for approval with "Autonomy limit reached (N tool calls without you)", through the normal approval cards (web, CLI, Matrix). Allowing at least one card of a batch resets the streak, and the allowed calls continue to the security gate (safe-list, sentinel, possibly another escalation) exactly as if the limit had not been hit: "continue" is no verdict on the call itself, so it is not recorded as a user approval in the sentinel's shadow log either. A denied card tells the model "Autonomy limit reached. Stop calling tools and report what you have." If the user allowed none of the autonomy cards of a batch, the next tool call ends the turn with a budget stop (`/budget autonomy N`), whatever else the user decided in that batch.
 - **Unattended sessions** (`attributes.unattended`, the default for jobs) have no one to ask: every call of the batch that crosses the limit is denied with the same wrap-up instruction, so a job still ends with a report. The next tool call ends the turn with a budget stop. Jobs with `persistent_session_id` and Matrix sessions are attended and pause instead.
 
 There is no timeout on the pause, and a pending autonomy approval is closed like any other approval when the server restarts. The streak lives in memory on the active session; a restart resets it. The chat input shows it as the "Autonomy" gauge.

@@ -150,16 +150,22 @@ class SessionUsageBudgetMixin:
         return self._max_input_tokens_for_model_id(model_id) or _DEFAULT_CONTEXT_CAP_TOKENS
 
     def _budget_gauges(self, active: ActiveSession) -> list[BudgetGauge]:
+        """Gauges of the session totals, the budgets whose stop message lists the reached ones."""
         budget = active.state.budget
-        gauges = usage_budget_gauges(
+        return usage_budget_gauges(
             active.usage_tracker,
             input_tokens_limit=budget.input_tokens,
             output_tokens_limit=budget.output_tokens,
             total_cost_limit=budget.cost_usd,
             tool_calls_limit=budget.tool_calls,
         )
-        if budget.autonomous_tool_calls is not None:
-            gauges.append(autonomy_budget_gauge(active.autonomy.count, budget.autonomous_tool_calls))
+
+    def _display_budget_gauges(self, active: ActiveSession) -> list[BudgetGauge]:
+        """Every gauge the UI shows: the totals plus the autonomy limit, which stops through its own path."""
+        gauges = self._budget_gauges(active)
+        limit = active.state.budget.autonomous_tool_calls
+        if limit is not None:
+            gauges.append(autonomy_budget_gauge(active.autonomy.count, limit))
         return gauges
 
     def _budget_exceeded_error(self, active: ActiveSession) -> SessionBudgetExceededError | None:
@@ -192,7 +198,7 @@ class SessionUsageBudgetMixin:
 
     def _turn_usage_payload(self, active: ActiveSession) -> TurnUsage | None:
         rec_agent = last_record_for_source(active.llm_request_log, "agent")
-        budget_gauges = self._budget_gauges(active)
+        budget_gauges = self._display_budget_gauges(active)
         if rec_agent is None and not budget_gauges:
             return None
         row = usage_last_request_row(rec_agent) if rec_agent else None
@@ -237,7 +243,7 @@ class SessionUsageBudgetMixin:
         await self._set_llm_request_state(active, state)
 
     def _budget_command_payload(self, active: ActiveSession, *, message: str | None = None) -> dict[str, Any]:
-        gauges = self._budget_gauges(active)
+        gauges = self._display_budget_gauges(active)
         usage_hint = (
             "Set budgets with /budget input N, /budget output N, /budget cost N, "
             "/budget tools N, or /budget autonomy N. Use 0 to clear a limit."

@@ -240,7 +240,7 @@ class SessionApprovalMixin:
                     ]
                     return UserEscalationDecision(allowed=False)
                 if msg.request_id == request_id:
-                    active.autonomy.reset()
+                    active.autonomy.note_user_decision()
                     decision = msg.decision
                     message = normalize_optional_message(msg.message)
                     event_roles = {

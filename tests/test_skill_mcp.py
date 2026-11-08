@@ -124,6 +124,7 @@ class TestBuildSkillMcpToolset:
 def _process_ctx(*, approved: bool = False) -> MagicMock:
     ctx = MagicMock()
     ctx.tool_call_approved = approved
+    ctx.tool_call_metadata = None
     ctx.deps.config.agent.tool_output_max_chars = 16_000
     ctx.deps.tool_result_callback = None
     ctx.deps.tool_call_callback = None
