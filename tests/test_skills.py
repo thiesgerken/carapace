@@ -97,8 +97,12 @@ def test_disabled_skill_discovery_and_enable_transition(tmp_path: Path, runtime_
     registry.invalidate()
 
     assert not registry.is_disabled("private-search")
-    assert [skill.name for skill in registry.scan()] == ["private-search"]
-    assert "Private indexed material" in shared_prompt_prefix(tmp_path, registry.scan())
+    [entry] = registry.scan()
+    assert entry.name == "private-search"
+    if runtime_config:
+        assert entry.description.startswith("BROKEN")
+    else:
+        assert "Private indexed material" in shared_prompt_prefix(tmp_path, registry.scan())
 
 
 def _activation_deps(tmp_path: Path) -> Deps:
@@ -157,6 +161,34 @@ async def test_disabled_activation_has_no_side_effects(tmp_path: Path, approved:
     assert deps.session_state.context_grants == {}
     assert deps.session_state.activated_skills == []
     assert deps.activated_skills == []
+
+
+async def test_broken_frontmatter_is_reported_and_blocks_activation(tmp_path: Path) -> None:
+    skill_dir = tmp_path / "skills" / "ideas"
+    skill_dir.mkdir(parents=True)
+    # An unquoted plain scalar containing ": " is invalid YAML.
+    (skill_dir / "SKILL.md").write_text(
+        "---\nname: ideas\n"
+        "description: Plant Projekte. Verwaltet auch Ideensammlungen: Im gemeinsamen Projekt\n"
+        "metadata:\n  carapace:\n    network:\n      domains: [ideas.example]\n"
+        "---\nFull instructions.\n"
+    )
+    deps = _activation_deps(tmp_path)
+    agent = create_agent(deps)
+    ctx = RunContext(deps=deps, model=deps.agent_model, usage=RunUsage(), tool_call_approved=True)
+
+    result = await agent._function_toolset.tools["use_skill"].function(ctx, "ideas")
+
+    assert result.startswith(
+        "Skill 'ideas' was not activated: skills/ideas/SKILL.md is invalid: "
+        "invalid YAML frontmatter: mapping values are not allowed here (line 3, column 60)."
+    )
+    assert deps.session_state.context_grants == {}
+    assert deps.session_state.activated_skills == []
+    deps.sandbox.activate_skill.assert_not_awaited()
+    [entry] = SkillRegistry(tmp_path / "skills").scan()
+    assert entry.name == "ideas"
+    assert "mapping values are not allowed here" in entry.description
 
 
 @pytest.mark.parametrize("flag", ["", "    disabled: false\n"])

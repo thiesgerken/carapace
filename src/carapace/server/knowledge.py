@@ -11,7 +11,7 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
 from loguru import logger
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel
 
 from ..api_keys import Access, Scope
 from ..auth import UserIdentity
@@ -22,7 +22,7 @@ from ..models.git import FileCommit
 from ..models.skills import SkillCarapaceConfig
 from ..session.manager import SessionManager
 from ..session.sent_files import INLINE_MIME_TYPES, guess_mime
-from ..skills import SkillDocument, parse_skill_document
+from ..skills import SkillDocumentError, parse_skill_document
 from .artifact_rendering import artifact_headers
 from .auth import require
 from .state import server_module
@@ -111,8 +111,10 @@ class KnowledgeSkill(BaseModel):
 
     name: str
     description: str = ""
-    # None when metadata.carapace is absent or fails validation; the prose still renders.
+    # None when metadata.carapace is absent or invalid; the prose still renders.
     carapace: SkillCarapaceConfig | None = None
+    # Why the frontmatter is unusable: a broken skill stays browsable so it can be fixed.
+    error: str | None = None
 
 
 class ArtifactSession(BaseModel):
@@ -290,15 +292,20 @@ def inline_doc(target: Path, entries: list[KnowledgeEntry], listing: KnowledgeDi
         raw = read_text_content(skill_doc, skill_doc.stat().st_size)
         if raw is None:
             return
-        document = parse_skill_document(raw, fallback_name=target.name)
         listing.kind = "skill"
         listing.doc_name = SKILL_DOC
+        try:
+            document = parse_skill_document(raw, fallback_name=target.name)
+        except SkillDocumentError as exc:
+            listing.doc = raw
+            listing.skill = KnowledgeSkill(name=target.name, error=str(exc))
+            return
         listing.doc = document.body
-        listing.skill = KnowledgeSkill(
-            name=document.name,
-            description=document.description,
-            carapace=parse_carapace_config(document, target.name),
-        )
+        listing.skill = KnowledgeSkill(name=document.name, description=document.description)
+        try:
+            listing.skill.carapace = document.carapace_config()
+        except SkillDocumentError as exc:
+            listing.skill.error = str(exc)
         return
 
     readme = find_readme(target, entries, root)
@@ -359,19 +366,6 @@ async def attach_artifact_sessions(
     artifact.created_in = artifact_session(created, session_mgr, owner)
     if updated != created:
         artifact.updated_in = artifact_session(updated, session_mgr, owner)
-
-
-def parse_carapace_config(document: SkillDocument, skill_name: str) -> SkillCarapaceConfig | None:
-    """Validate ``metadata.carapace``, or return None if absent or malformed."""
-    raw = document.metadata.get("carapace")
-    if raw is None:
-        return None
-    try:
-        return SkillCarapaceConfig.model_validate(raw)
-    except ValidationError as exc:
-        # Skills are user-authored; a bad declaration must not break browsing.
-        logger.warning(f"Invalid metadata.carapace in SKILL.md for skill '{skill_name}': {exc}")
-        return None
 
 
 def _skill_secret_refs(cfg: SkillCarapaceConfig) -> list[str]:

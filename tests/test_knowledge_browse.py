@@ -274,7 +274,21 @@ def test_list_dir_skill_with_invalid_carapace_keeps_prose(tmp_path: Path) -> Non
 
     assert listing.skill is not None
     assert listing.skill.carapace is None
+    assert listing.skill.error == "invalid metadata.carapace: commands: Input should be a valid list"
     assert listing.doc == "Body.\n"
+
+
+def test_list_dir_skill_with_invalid_yaml_shows_error_and_raw_doc(tmp_path: Path) -> None:
+    root = _make_repo(tmp_path)
+    text = "---\nname: ideas\ndescription: Ideas: shared\n---\n\nBody.\n"
+    _skill(root, "ideas", text)
+
+    listing = list_dir(root, (root / "skills" / "ideas").resolve())
+
+    assert listing.skill is not None
+    assert listing.skill.name == "ideas"
+    assert listing.skill.error is not None and "mapping values are not allowed here" in listing.skill.error
+    assert listing.doc == text
 
 
 def test_list_dir_skill_without_frontmatter_falls_back_to_dir_name(tmp_path: Path) -> None:

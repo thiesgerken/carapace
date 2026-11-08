@@ -24,7 +24,7 @@ from carapace.sandbox.runtime import (
 )
 from carapace.sandbox.session_lifecycle import SessionContainer
 from carapace.session.manager import SessionManager, SessionMeta
-from carapace.skills import SkillRegistry
+from carapace.skills import SkillDocumentError, SkillRegistry
 from tests.runtime_mocks import make_runtime_mock
 
 
@@ -559,7 +559,7 @@ class TestSkillMetadataParsing:
         registry = SkillRegistry(tmp_path)
         assert registry.get_carapace_config("plain") is None
 
-    def test_invalid_frontmatter_carapace_returns_none(self, tmp_path: Path):
+    def test_invalid_frontmatter_carapace_raises(self, tmp_path: Path):
         skill_dir = tmp_path / "bad-inline"
         self._write_skill_md(
             skill_dir,
@@ -575,7 +575,8 @@ class TestSkillMetadataParsing:
         )
 
         registry = SkillRegistry(tmp_path)
-        assert registry.get_carapace_config("bad-inline") is None
+        with pytest.raises(SkillDocumentError):
+            registry.get_carapace_config("bad-inline")
 
     def test_invalid_tunnel_host_rejects_config(self, tmp_path: Path):
         skill_dir = tmp_path / "bad-tunnel"
@@ -595,7 +596,8 @@ class TestSkillMetadataParsing:
         )
 
         registry = SkillRegistry(tmp_path)
-        assert registry.get_carapace_config("bad-tunnel") is None
+        with pytest.raises(SkillDocumentError):
+            registry.get_carapace_config("bad-tunnel")
 
     def test_invalid_tunnel_ip_literal_rejects_config(self, tmp_path: Path):
         skill_dir = tmp_path / "bad-tunnel-ip"
@@ -615,7 +617,8 @@ class TestSkillMetadataParsing:
         )
 
         registry = SkillRegistry(tmp_path)
-        assert registry.get_carapace_config("bad-tunnel-ip") is None
+        with pytest.raises(SkillDocumentError):
+            registry.get_carapace_config("bad-tunnel-ip")
 
     def test_invalid_tunnel_internal_service_rejects_config(self, tmp_path: Path):
         skill_dir = tmp_path / "bad-tunnel-svc"
@@ -635,7 +638,8 @@ class TestSkillMetadataParsing:
         )
 
         registry = SkillRegistry(tmp_path)
-        assert registry.get_carapace_config("bad-tunnel-svc") is None
+        with pytest.raises(SkillDocumentError):
+            registry.get_carapace_config("bad-tunnel-svc")
 
     def test_invalid_tunnel_trailing_dot_blocked_host_rejects_config(self, tmp_path: Path):
         skill_dir = tmp_path / "bad-tunnel-dot"
@@ -655,7 +659,8 @@ class TestSkillMetadataParsing:
         )
 
         registry = SkillRegistry(tmp_path)
-        assert registry.get_carapace_config("bad-tunnel-dot") is None
+        with pytest.raises(SkillDocumentError):
+            registry.get_carapace_config("bad-tunnel-dot")
 
     def test_empty_network_section(self, tmp_path: Path):
         skill_dir = tmp_path / "minimal"

@@ -195,6 +195,24 @@ def test_resolves_exec_alias_and_auto_adds_context(tmp_path: Path) -> None:
     )
 
 
+def test_exec_alias_resolution_warns_about_broken_active_skill(tmp_path: Path) -> None:
+    _write_skill_with_command(tmp_path / "skills" / "web", name="web", command_name="web", command="uv run web")
+    broken_dir = tmp_path / "skills" / "ideas"
+    broken_dir.mkdir(parents=True)
+    (broken_dir / "SKILL.md").write_text("---\nname: ideas\ndescription: Ideas: shared\n---\n")
+
+    _command, contexts, warning = _resolve_exec_command_alias(
+        "web search", tmp_path, activated_skills=["ideas", "web"], contexts=[]
+    )
+
+    assert contexts == ["web"]
+    assert warning is not None
+    assert warning.startswith(
+        "Warning: command aliases of active skill `ideas` are not resolved because skills/ideas/SKILL.md is invalid"
+    )
+    assert "registered alias `web`" in warning
+
+
 def test_resolves_exec_alias_without_warning_when_context_present(tmp_path: Path) -> None:
     skill_dir = tmp_path / "skills" / "web"
     _write_skill_with_command(skill_dir, name="web", command_name="web", command="uv run web")

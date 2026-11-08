@@ -306,6 +306,17 @@ At startup, carapace loads only `name` and `description` from each enabled skill
 
 The full `SKILL.md` body is loaded only when the agent decides a skill is relevant — via the `use_skill` tool.
 
+### Invalid frontmatter
+
+A `SKILL.md` without frontmatter is valid: its directory name becomes the skill name. Frontmatter that cannot be read (invalid YAML such as an unquoted value containing a colon followed by a space, a missing closing `---`, a non-string `name` or `description`, a non-mapping `metadata`) or an invalid `metadata.carapace` makes the skill broken:
+
+- The catalog still lists it under its directory name, with a description that says it is broken and why, so the agent can fix it. The server logs the error.
+- `use_skill` refuses to activate it and names the file and the error. No approval, credentials, grants, or sandbox setup happen.
+- The Knowledge UI shows the error on the skill card; for invalid YAML it renders the raw file.
+- If an active skill breaks, `exec` keeps working but warns that the skill's command aliases are not resolved, and its sandbox setup after recreation fails.
+
+The opt-out survives an invalid `metadata.carapace`, because `disabled: true` is read from the raw mapping. Invalid YAML cannot carry an opt-out, so such a skill is listed as broken (directory name and error position only, no file content) until it is fixed.
+
 ## Skill activation as a security event
 
 When the agent activates a skill (loads its full `SKILL.md` into context), a `SkillActivatedEntry` is recorded in the action log. The `use_skill` tool call goes through the sentinel (not the safe-list); the activation is logged so the sentinel has context for evaluating subsequent actions.
