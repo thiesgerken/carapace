@@ -8,6 +8,7 @@ from pydantic_ai.messages import ModelRequest, ModelResponse
 from pydantic_ai.usage import RunUsage
 
 from carapace.usage import (
+    SessionBudgetExceededError,
     UsageTracker,
     provider_cost_usd_from_messages,
     usage_budget_exceeded_error,
@@ -192,7 +193,24 @@ def test_usage_budget_exceeded_error_includes_tool_calls() -> None:
     )
 
     assert error is not None
-    assert str(error) == "Session budget reached: tool calls 2 tool calls / 2 tool calls"
+    assert str(error) == (
+        "Session budget reached: tool calls 2 tool calls / 2 tool calls. Raise the limit to continue: /budget tools N"
+    )
+
+
+def test_usage_budget_exceeded_error_names_a_command_for_every_reached_limit() -> None:
+    tracker = UsageTracker(tool_calls=2)
+    tracker.record("test:model", "agent", RunUsage(input_tokens=1_000))
+
+    error = usage_budget_exceeded_error(tracker, input_tokens_limit=1_000, output_tokens_limit=500, tool_calls_limit=2)
+
+    assert error is not None
+    assert str(error).endswith("Raise the limit to continue: /budget input N, /budget tools N")
+
+
+def test_session_budget_exceeded_error_requires_a_reached_gauge() -> None:
+    with pytest.raises(ValueError, match="reached budget gauge"):
+        SessionBudgetExceededError(usage_budget_gauges(UsageTracker(tool_calls=1), tool_calls_limit=2))
 
 
 def test_usage_budget_exceeded_error_treats_unknown_cost_pricing_as_zero() -> None:

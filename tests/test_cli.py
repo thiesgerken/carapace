@@ -13,7 +13,7 @@ from typer.testing import CliRunner
 import carapace.cli as cli_module
 from carapace.cli import (
     _approval_info,
-    _last_assistant_content,
+    _last_turn_terminal_content,
     _read_turn,
     _render_escalation_request,
     _replay_history,
@@ -313,25 +313,36 @@ def test_read_turn_status_ignored_when_not_observing() -> None:
     assert result["status"] == "timeout"
 
 
-def test_last_assistant_content_returns_latest_assistant() -> None:
-    # A failed/cancelled turn persists its terminal message as the last assistant event;
-    # the observer backfill surfaces that instead of an empty success.
+def test_last_turn_terminal_content_returns_latest_assistant() -> None:
     history = [
         {"role": "user", "content": "go"},
         {"role": "assistant", "content": "first"},
         {"role": "tool_call", "tool": "bash"},
-        {"role": "assistant", "content": "The previous turn failed before completion."},
+        {"role": "assistant", "content": "done"},
     ]
     cli = SimpleNamespace(client=SimpleNamespace(get=lambda url, *, params=None: _FakeHttpResponse(history)))
-    assert _last_assistant_content(cli, "s1") == "The previous turn failed before completion."  # type: ignore[arg-type]
+    assert _last_turn_terminal_content(cli, "s1") == "done"  # type: ignore[arg-type]
 
 
-def test_last_assistant_content_tolerates_errors() -> None:
+def test_last_turn_terminal_content_returns_turn_error() -> None:
+    # A failed/cancelled turn persists its terminal message as an error event; the observer
+    # backfill surfaces that instead of the previous turn's answer.
+    history = [
+        {"role": "user", "content": "go"},
+        {"role": "assistant", "content": "first"},
+        {"role": "user", "content": "again"},
+        {"role": "error", "content": "The previous turn failed before completion."},
+    ]
+    cli = SimpleNamespace(client=SimpleNamespace(get=lambda url, *, params=None: _FakeHttpResponse(history)))
+    assert _last_turn_terminal_content(cli, "s1") == "The previous turn failed before completion."  # type: ignore[arg-type]
+
+
+def test_last_turn_terminal_content_tolerates_errors() -> None:
     def _boom(url: str, *, params: object = None) -> None:
         raise cli_module.httpx.ConnectError("down")
 
     cli = SimpleNamespace(client=SimpleNamespace(get=_boom))
-    assert _last_assistant_content(cli, "s1") == ""  # type: ignore[arg-type]
+    assert _last_turn_terminal_content(cli, "s1") == ""  # type: ignore[arg-type]
 
 
 def test_approval_info_escalation() -> None:

@@ -111,6 +111,8 @@ def _replay_history(client: httpx.Client, session_id: str, limit: int) -> None:
             console.print(f"[dim bold cyan]carapace>[/dim bold cyan] [dim]{msg['content']}[/dim]")
         elif msg["role"] == "tool_call":
             console.print(f"  [dim]{msg.get('tool', '?')}({msg.get('args', {})})[/dim]")
+        elif msg["role"] == "error":
+            console.print(f"[red]Error: {msg['content']}[/red]")
         else:
             console.print()
             console.print(Markdown(msg["content"]))
@@ -995,11 +997,12 @@ def _approval_info(msg: dict[str, Any], session_id: str) -> dict[str, Any]:
     }
 
 
-def _last_assistant_content(cli: _AgentCtx, session_id: str) -> str:
-    """Return the most recent assistant message text from history (best-effort, "" on failure).
+def _last_turn_terminal_content(cli: _AgentCtx, session_id: str) -> str:
+    """Return the text of the most recent assistant answer or turn error from history.
 
-    Used to recover the outcome of a turn whose terminal WebSocket frame was missed; for a
-    failed/cancelled turn this surfaces the persisted terminal message instead of nothing.
+    Best-effort, "" on failure. Used to recover the outcome of a turn whose terminal WebSocket
+    frame was missed; for a failed/cancelled turn this surfaces the persisted error instead of
+    nothing.
     """
     try:
         resp = cli.client.get(f"/api/sessions/{session_id}/history", params={"limit": 20})
@@ -1010,7 +1013,7 @@ def _last_assistant_content(cli: _AgentCtx, session_id: str) -> str:
     if not isinstance(messages, list):
         return ""
     for msg in reversed(messages):
-        if isinstance(msg, dict) and msg.get("role") == "assistant":
+        if isinstance(msg, dict) and msg.get("role") in {"assistant", "error"}:
             return str(msg.get("content", ""))
     return ""
 
@@ -1093,7 +1096,7 @@ async def _drive_turn(
         # The terminal frame was missed; recover the actual outcome text from history so a
         # failed/cancelled turn is not reported as an empty success.
         if result.get("status") == "finished":
-            result["content"] = _last_assistant_content(cli, session_id)
+            result["content"] = _last_turn_terminal_content(cli, session_id)
         return result, code
     except ConnectionClosed as exc:
         return {"status": "error", "error": f"connection closed: {exc}"}, EXIT_ERROR

@@ -54,7 +54,7 @@ from ..ws_models import ApprovalRequest, ApprovalResponse, Attachment, FinalStat
 from .attachments import augment_prompt
 from .manager import SessionManager
 from .open_approvals import closing_events_for_open_approvals
-from .transcript import completed_event_turns
+from .transcript import awaits_tool_result, completed_event_turns
 from .types import ActiveSession, SessionSubscriber, TurnExecutionResult
 
 _TURN_CANCELLED_TOOL_MESSAGE = "Tool call was canceled because the turn ended before it completed."
@@ -220,13 +220,7 @@ class SessionTurnMixin(SessionTurnHost):
             if approval_verdict == "allow":
                 budget = active.state.budget
                 if budget.tool_calls is not None and active.usage_tracker.tool_calls >= budget.tool_calls:
-                    raise SessionBudgetExceededError(
-                        (
-                            "Session budget reached: tool calls "
-                            f"{active.usage_tracker.tool_calls:,} tool calls / {budget.tool_calls:,} tool calls"
-                        ),
-                        gauges=self._budget_gauges(active),
-                    )
+                    raise SessionBudgetExceededError(self._budget_gauges(active))
                 active.usage_tracker.record_tool_call()
             tool_id = self._record_tool_call_event(
                 session_id,
@@ -684,7 +678,6 @@ class SessionTurnMixin(SessionTurnHost):
             user_input,
             latest_messages=latest_messages,
             terminal_message=terminal_message,
-            final_status="warning" if (terminal_message and active.state.attributes.unattended) else None,
         )
         if self._notification_router is not None and terminal_message and active.state.attributes.unattended:
             assistant_event_index = len(self._session_mgr.load_events(session_id)) - 1
@@ -706,8 +699,8 @@ class SessionTurnMixin(SessionTurnHost):
     def _close_turn_approvals(self, active: ActiveSession, session_id: str) -> None:
         """Deny the approvals this turn still waits on: nothing can act on a later answer.
 
-        Runs before the turn's terminal assistant event is written, so the closing events stay
-        inside the turn's event span (fork and reset cut at that event).
+        Runs before the turn's terminal event (final answer or error) is written, so the closing
+        events stay inside the turn's event span (fork and reset cut at that event).
         """
         self._close_open_approval_requests(session_id)
         active.pending_approval_requests.clear()
@@ -734,7 +727,6 @@ class SessionTurnMixin(SessionTurnHost):
         *,
         latest_messages: list[ModelMessage] | None = None,
         terminal_message: str | None = None,
-        final_status: FinalStatus | None = None,
     ) -> None:
         """Persist the user message to history even when the agent turn fails.
 
@@ -753,14 +745,13 @@ class SessionTurnMixin(SessionTurnHost):
 
         events = self._complete_cancelled_events(self._session_mgr.load_events(session_id))
         if terminal_message:
-            event: dict[str, Any] = {
-                "role": "assistant",
-                "content": terminal_message,
-                "timestamp": datetime.now(tz=UTC).isoformat(),
-            }
-            if final_status is not None:
-                event["final_status"] = final_status
-            events.append(event)
+            events.append(
+                {
+                    "role": "error",
+                    "content": terminal_message,
+                    "timestamp": datetime.now(tz=UTC).isoformat(),
+                }
+            )
         self._session_mgr.save_events(session_id, events)
 
     def _complete_cancelled_model_history(self, messages: list[ModelMessage]) -> list[ModelMessage]:
@@ -854,7 +845,7 @@ class SessionTurnMixin(SessionTurnHost):
             tool = event.get("tool")
             tool_id = event.get("tool_id")
 
-            if role == "tool_call" and isinstance(tool, str):
+            if awaits_tool_result(event) and isinstance(tool, str):
                 pending_index = len(pending_tool_calls)
                 pending_tool_calls.append(event)
                 if isinstance(tool_id, str) and tool_id:
@@ -911,7 +902,7 @@ class SessionTurnMixin(SessionTurnHost):
             if not isinstance(tool, str):
                 tool = ""
 
-            if role == "tool_call" and tool in tools_with_results:
+            if awaits_tool_result(event) and tool in tools_with_results:
                 pending_by_tool[tool] = pending_by_tool.get(tool, 0) + 1
             elif role == "tool_result" and tool in tools_with_results:
                 outstanding = pending_by_tool.get(tool, 0)
@@ -924,10 +915,10 @@ class SessionTurnMixin(SessionTurnHost):
             if not pending_by_tool:
                 safe_prefix_end = index + 1
 
-        # Tool-name pairing above mistakes calls that never emit a paired result (e.g.
-        # credential_access, proxy_domain, or imported sessions with id-less results) for an
-        # interrupted turn and truncates past them. Never cut before the last fully completed
-        # turn: its terminal assistant proves every event up to it is intact and forkable.
+        # Tool-name pairing above mistakes calls that never emit a paired result (e.g. imported
+        # sessions with id-less results) for an interrupted turn and truncates past them. Never cut
+        # before the last completed turn: its terminal event proves every event up to it is intact
+        # and forkable.
         turns = completed_event_turns(events)
         if turns:
             safe_prefix_end = max(safe_prefix_end, turns[-1].end_event_index + 1)

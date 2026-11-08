@@ -613,6 +613,7 @@ function foldNodeOf(message: ChatMessage): string | undefined {
     message.kind === "user"
     || message.kind === "assistant"
     || message.kind === "tool_call"
+    || message.kind === "error"
   ) {
     return message.compaction?.folded_into;
   }
@@ -624,6 +625,7 @@ function foldAnnotationOf(message: ChatMessage): CompactionAnnotation | undefine
     message.kind === "user"
     || message.kind === "assistant"
     || message.kind === "tool_call"
+    || message.kind === "error"
   ) {
     return message.compaction;
   }
@@ -920,6 +922,17 @@ export function projectHistoryToMessages(history: HistoryMessage[]): ChatMessage
         kind: "command",
         command: entry.command ?? "",
         data: entry.data,
+      });
+      continue;
+    }
+
+    if (entry.role === "error") {
+      messages.push({
+        kind: "error",
+        detail: entry.content,
+        eventIndex: typeof entry.event_index === "number" ? entry.event_index : undefined,
+        compaction: entry.compaction,
+        turnTerminal: true,
       });
       continue;
     }

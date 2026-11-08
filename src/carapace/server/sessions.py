@@ -14,6 +14,7 @@ from ..auth import UserIdentity
 from ..models.git import GitActionResult, GlobalGitStatus, SandboxGitStatus
 from ..models.session import SessionAttributes, SessionJobRunContext, SessionState
 from ..sandbox.state import SessionSandboxSnapshot
+from ..session.transcript import is_turn_terminal_event
 from ..user_defaults import apply_user_model_defaults, effective_user_budget
 from .auth import require
 from .history import _history_from_messages
@@ -155,8 +156,7 @@ class SessionArchiveCommitResponse(BaseModel):
 def _session_message_count(session_id: str) -> int:
     events = server._engine.session_mgr.load_events(session_id)
     if events:
-        # Partial assistant events are intermediate narration within a turn, not standalone turns.
-        return sum(1 for event in events if event.get("role") in {"user", "assistant"} and not event.get("partial"))
+        return sum(1 for event in events if event.get("role") == "user" or is_turn_terminal_event(event))
 
     history = _history_from_messages(session_id)
     return sum(1 for message in history if message.role in {"user", "assistant"})

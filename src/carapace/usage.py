@@ -185,10 +185,30 @@ class BudgetGauge(BaseModel):
     unavailable_reason: str | None = None
 
 
+# The ``/budget`` argument that sets each gauge's limit.
+_BUDGET_COMMAND_METRICS: dict[str, str] = {"input": "input", "output": "output", "cost": "cost", "tool_calls": "tools"}
+
+
 class SessionBudgetExceededError(RuntimeError):
-    def __init__(self, message: str, *, gauges: list[BudgetGauge]) -> None:
-        super().__init__(message)
+    """Raised when at least one of *gauges* has reached its limit."""
+
+    def __init__(self, gauges: list[BudgetGauge]) -> None:
+        reached = [gauge for gauge in gauges if gauge.reached]
+        if not reached:
+            raise ValueError("SessionBudgetExceededError needs at least one reached budget gauge")
+        super().__init__(_budget_exceeded_message(reached))
         self.gauges = gauges
+
+
+def _budget_exceeded_message(reached: list[BudgetGauge]) -> str:
+    usage = "; ".join(
+        f"{gauge.label.lower()}: {gauge.unavailable_reason}"
+        if gauge.unavailable_reason
+        else f"{gauge.label.lower()} {gauge.current_value} / {gauge.limit_value}"
+        for gauge in reached
+    )
+    commands = ", ".join(f"/budget {_BUDGET_COMMAND_METRICS[gauge.key]} N" for gauge in reached)
+    return f"Session budget reached: {usage}. Raise the limit to continue: {commands}"
 
 
 def _format_token_count(value: int) -> str:
@@ -304,19 +324,7 @@ def usage_budget_exceeded_error(
         total_cost_limit=total_cost_limit,
         tool_calls_limit=tool_calls_limit,
     )
-    offenders = [gauge for gauge in gauges if gauge.reached]
-    if not offenders:
-        return None
-    parts: list[str] = []
-    for gauge in offenders:
-        if gauge.unavailable_reason:
-            parts.append(f"{gauge.label.lower()}: {gauge.unavailable_reason}")
-        else:
-            parts.append(f"{gauge.label.lower()} {gauge.current_value} / {gauge.limit_value}")
-    return SessionBudgetExceededError(
-        "Session budget reached: " + "; ".join(parts),
-        gauges=gauges,
-    )
+    return SessionBudgetExceededError(gauges) if any(gauge.reached for gauge in gauges) else None
 
 
 def usage_limits_for_remaining_budget(

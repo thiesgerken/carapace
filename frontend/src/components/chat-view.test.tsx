@@ -73,3 +73,20 @@ test("user-approved tool call survives reload when the server rewrote the escala
   assert.equal(toolCall.approvalVerdict, "allow");
   assert.equal(toolCall.result, "ok");
 });
+
+test("a failed turn's persisted error renders as a turn-terminal error after reload", () => {
+  const messages = projectHistoryToMessages([
+    { role: "user", content: "go on", event_index: 0 },
+    { role: "error", content: "Session budget reached: cost $1.0525 / $1.0000.", event_index: 1 },
+  ]);
+
+  assert.equal(messages.length, 2);
+  const [, error] = messages;
+  assert.deepEqual(error, {
+    kind: "error",
+    detail: "Session budget reached: cost $1.0525 / $1.0000.",
+    eventIndex: 1,
+    compaction: undefined,
+    turnTerminal: true,
+  });
+});
