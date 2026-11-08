@@ -715,13 +715,9 @@ class SessionTurnMixin(SessionTurnHost):
         self._close_open_approval_requests(session_id)
         active.pending_approval_requests.clear()
         # Escalation callbacks block in proxy, git, and credential request tasks, not in the turn
-        # task, so they outlive the turn. Answers that raced in are dropped (their request is now
-        # closed as denied), and each waiter is woken with the cancel signal so it denies instead
-        # of consuming answers meant for a later request.
-        while not active.escalation_queue.empty():
-            active.escalation_queue.get_nowait()
-        for _ in active.pending_escalations:
-            active.escalation_queue.put_nowait(None)
+        # task, so they outlive the turn. Each waiter is released so it denies; an answer that
+        # arrives later finds nobody waiting (its request is now closed as denied).
+        active.escalation_waiters.release_all()
         active.pending_escalations.clear()
 
     def _close_open_approval_requests(self, session_id: str) -> None:

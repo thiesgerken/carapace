@@ -15,7 +15,7 @@ from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, UserProm
 import carapace.usage as usage_mod
 from carapace.session.open_approvals import ORPHANED_APPROVAL_MESSAGE
 from carapace.usage import LlmRequestState, ModelUsage
-from carapace.ws_models import ApprovalRequest
+from carapace.ws_models import ApprovalRequest, EscalationResponse
 from tests.session_helpers import _FakeSubscriber, _make_engine, _patch_sentinel, _without_timestamps
 
 
@@ -413,6 +413,78 @@ def test_cancel_closes_escalation_whose_waiter_saw_the_cancel_first(tmp_path: Pa
         ]
         assert events[2]["decision"] == "deny"
         assert events[2]["decision_source"] == "system"
+
+    with _patch_sentinel():
+        asyncio.run(_run())
+
+
+def test_concurrent_escalations_answered_in_reverse_order_reach_their_own_waiters(tmp_path: Path, db_factory):
+    async def _run() -> None:
+        engine = _make_engine(tmp_path, session_factory=db_factory)
+        sid = engine.session_mgr.create_session(user="thies").session_id
+        active = engine.get_or_activate(sid)
+        escalate = engine._make_escalation_cb(active)
+
+        first = asyncio.create_task(escalate(sid, "a.example", {"kind": "domain_access", "command": "curl a"}))
+        second = asyncio.create_task(escalate(sid, "b.example", {"kind": "domain_access", "command": "curl b"}))
+        await asyncio.sleep(0.01)
+        first_id, second_id = (pending["request_id"] for pending in active.pending_escalations)
+
+        await engine.submit_approval(sid, EscalationResponse(request_id=second_id, decision="deny"))
+        await engine.submit_approval(sid, EscalationResponse(request_id=first_id, decision="allow"))
+
+        assert (await asyncio.wait_for(first, timeout=1)).allowed is True
+        assert (await asyncio.wait_for(second, timeout=1)).allowed is False
+        assert active.pending_escalations == []
+
+    with _patch_sentinel():
+        asyncio.run(_run())
+
+
+def test_cancel_releases_every_waiting_escalation(tmp_path: Path, db_factory):
+    async def _run() -> None:
+        engine = _make_engine(tmp_path, session_factory=db_factory)
+        sid = engine.session_mgr.create_session(user="thies").session_id
+        engine.subscribe(sid, _FakeSubscriber())
+        active = engine.get_active(sid)
+        assert active is not None
+        escalate = engine._make_escalation_cb(active)
+        waiters: list[asyncio.Task[Any]] = []
+
+        async def _turn_with_two_escalations(*_args: Any, **_kwargs: Any) -> tuple[list[Any], str, str]:
+            for domain in ("a.example", "b.example"):
+                waiters.append(asyncio.create_task(escalate(sid, domain, {"kind": "domain_access", "command": "curl"})))
+            await asyncio.sleep(999)
+            return [], "unreachable", ""
+
+        with patch("carapace.session.engine.run_agent_turn", new=_turn_with_two_escalations):
+            await engine.submit_message(sid, "hello")
+            await asyncio.sleep(0.05)
+            await engine.submit_cancel(sid)
+
+        decisions = await asyncio.wait_for(asyncio.gather(*waiters), timeout=1)
+        assert [decision.allowed for decision in decisions] == [False, False]
+        assert active.pending_escalations == []
+
+    with _patch_sentinel():
+        asyncio.run(_run())
+
+
+def test_new_escalation_supersedes_a_stale_one_for_the_same_domain(tmp_path: Path, db_factory):
+    async def _run() -> None:
+        engine = _make_engine(tmp_path, session_factory=db_factory)
+        sid = engine.session_mgr.create_session(user="thies").session_id
+        active = engine.get_or_activate(sid)
+        escalate = engine._make_escalation_cb(active)
+
+        stale = asyncio.create_task(escalate(sid, "a.example", {"kind": "domain_access", "command": "curl"}))
+        await asyncio.sleep(0.01)
+        fresh = asyncio.create_task(escalate(sid, "a.example", {"kind": "domain_access", "command": "curl"}))
+
+        assert (await asyncio.wait_for(stale, timeout=1)).allowed is False
+        [pending] = active.pending_escalations
+        await engine.submit_approval(sid, EscalationResponse(request_id=pending["request_id"], decision="allow"))
+        assert (await asyncio.wait_for(fresh, timeout=1)).allowed is True
 
     with _patch_sentinel():
         asyncio.run(_run())

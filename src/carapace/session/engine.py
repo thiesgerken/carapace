@@ -537,8 +537,6 @@ class SessionEngine(
         # Drain leftover approval responses
         while not active.tool_approval_queue.empty():
             active.tool_approval_queue.get_nowait()
-        while not active.escalation_queue.empty():
-            active.escalation_queue.get_nowait()
 
         await self.clear_pending_notifications(session_id)
 
@@ -669,7 +667,7 @@ class SessionEngine(
         if active.agent_task and not active.agent_task.done():
             active.agent_task.cancel()
             active.tool_approval_queue.put_nowait(None)
-            active.escalation_queue.put_nowait(None)
+            active.escalation_waiters.release_all()
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await active.agent_task
             active.agent_task = None
@@ -684,8 +682,8 @@ class SessionEngine(
         if active:
             if isinstance(response, ApprovalResponse):
                 active.tool_approval_queue.put_nowait(response)
-            else:
-                active.escalation_queue.put_nowait(response)
+            elif not active.escalation_waiters.answer(response):
+                logger.info(f"Dropping answer to escalation {response.request_id}: nobody waits for it anymore")
 
     def _completed_event_turns(self, events: list[dict[str, Any]]) -> list[CompletedEventTurn]:
         return completed_event_turns(events)

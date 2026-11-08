@@ -20,7 +20,8 @@ from ..models.tooling import ToolResult
 from ..security.context import ApprovalSource, ApprovalVerdict, SessionSecurity
 from ..security.sentinel import Sentinel
 from ..usage import LlmRequestLog, LlmRequestState, UsageTracker
-from ..ws_models import ApprovalRequest, ApprovalResponse, EscalationResponse, FinalStatus, TurnUsage
+from ..ws_models import ApprovalRequest, ApprovalResponse, FinalStatus, TurnUsage
+from .escalation_waiters import EscalationWaiters
 
 
 @runtime_checkable
@@ -123,7 +124,7 @@ class ActiveSession:
     agent_task: asyncio.Task[None] | None = None
     subscribers: list[SessionSubscriber] = field(default_factory=list)
     tool_approval_queue: asyncio.Queue[ApprovalResponse | None] = field(default_factory=asyncio.Queue)
-    escalation_queue: asyncio.Queue[EscalationResponse | None] = field(default_factory=asyncio.Queue)
+    escalation_waiters: EscalationWaiters = field(default_factory=EscalationWaiters)
     usage_tracker: UsageTracker = field(default_factory=UsageTracker)
     llm_request_log: LlmRequestLog = field(default_factory=LlmRequestLog)
     llm_request_state: LlmRequestState | None = None
