@@ -3572,6 +3572,7 @@ def test_ws_status_includes_budget_gauges_for_configured_defaults(client, auth_h
         status = _consume_status(ws)
         assert status["usage"]["budget_gauges"][0]["key"] == "input"
         assert status["usage"]["budget_gauges"][0]["current_value"] == "0 tokens"
+        assert status["budget"]["input_tokens"] == 1_000
 
 
 def test_ws_status_includes_live_llm_activity_when_running(client, auth_headers):
@@ -3649,6 +3650,7 @@ def test_ws_budget_command_emits_status_refresh(client, auth_headers):
         status = ws.receive_json()
         assert status["type"] == "status"
         assert status["usage"]["budget_gauges"][0]["key"] == "input"
+        assert status["budget"]["input_tokens"] == 1000
         echo = ws.receive_json()
         assert echo["type"] == "user_message"
         msg = ws.receive_json()
@@ -3683,6 +3685,7 @@ def test_update_session_budget_persists_and_refreshes_connected_clients(client, 
         "tool_calls": None,
     }
     assert status["type"] == "status"
+    assert status["budget"] == resp.json()["budget"]
     assert [gauge["key"] for gauge in status["usage"]["budget_gauges"]] == ["input", "cost"]
 
     cleared = client.patch(f"/api/sessions/{sid}", headers=auth_headers, json={"budget": {"input_tokens": None}})
@@ -3699,10 +3702,34 @@ def test_update_session_budget_rejects_invalid_limit(client, auth_headers):
     create_resp = client.post("/api/sessions", headers=auth_headers)
     sid = create_resp.json()["session_id"]
 
-    resp = client.patch(f"/api/sessions/{sid}", headers=auth_headers, json={"budget": {"tool_calls": "-3"}})
+    resp = client.patch(
+        f"/api/sessions/{sid}",
+        headers=auth_headers,
+        json={"budget": {"input_tokens": "100", "tool_calls": "-3"}, "attributes": {"pinned": True}},
+    )
 
     assert resp.status_code == 400
     assert resp.json()["detail"] == "Budget value must be >= 0"
+    persisted = srv._engine.session_mgr.load_state(sid)
+    assert persisted is not None
+    assert persisted.budget == SessionBudget()
+    assert persisted.attributes.pinned is False
+
+
+def test_update_session_budget_is_not_applied_when_attribute_change_is_rejected(client, auth_headers):
+    create_resp = client.post("/api/sessions", headers=auth_headers)
+    sid = create_resp.json()["session_id"]
+    active = srv._engine.get_or_activate(sid)
+    active.agent_task = MagicMock()
+    active.agent_task.done.return_value = False
+
+    resp = client.patch(
+        f"/api/sessions/{sid}",
+        headers=auth_headers,
+        json={"budget": {"tool_calls": "5"}, "attributes": {"archived": True}},
+    )
+
+    assert resp.status_code == 409
     persisted = srv._engine.session_mgr.load_state(sid)
     assert persisted is not None
     assert persisted.budget == SessionBudget()

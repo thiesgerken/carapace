@@ -118,6 +118,7 @@ export interface AppShell {
   onLoadMore: () => void;
   onSessionUpdate: (session: SessionInfo) => void;
   onTitleUpdate: (sessionId: string, title: string) => void;
+  onBudgetUpdate: (sessionId: string, budget: SessionInfo["budget"]) => void;
   onSandboxUpdate: (sessionId: string, sandbox: SessionInfo["sandbox"]) => void;
 }
 
@@ -524,6 +525,12 @@ export function AppShellProvider({ children }: { children: ReactNode }) {
     );
   }, []);
 
+  const onBudgetUpdate = useCallback((sessionId: string, budget: SessionInfo["budget"]) => {
+    setSessions((prev) =>
+      prev.map((s) => (s.session_id === sessionId ? { ...s, budget } : s)),
+    );
+  }, []);
+
   const onSandboxUpdate = useCallback((sessionId: string, sandbox: SessionInfo["sandbox"]) => {
     pendingSandboxUpdatesRef.current.set(sessionId, sandbox);
     setSessions((prev) =>
@@ -583,6 +590,7 @@ export function AppShellProvider({ children }: { children: ReactNode }) {
     onLoadMore,
     onSessionUpdate,
     onTitleUpdate,
+    onBudgetUpdate,
     onSandboxUpdate,
   }), [
     activeSession,
@@ -602,6 +610,7 @@ export function AppShellProvider({ children }: { children: ReactNode }) {
     onNewSession,
     onOpenJobSettings,
     onOpenSettings,
+    onBudgetUpdate,
     onSandboxUpdate,
     onSelectSession,
     onSessionUpdate,

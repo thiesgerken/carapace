@@ -14,6 +14,7 @@ from ..auth import UserIdentity
 from ..models.git import GitActionResult, GlobalGitStatus, SandboxGitStatus
 from ..models.session import SessionAttributes, SessionBudget, SessionJobRunContext, SessionState
 from ..sandbox.state import SessionSandboxSnapshot
+from ..session.usage_budget import BUDGET_METRIC_FIELDS, parse_budget_limit
 from ..usage import BudgetMetric
 from ..user_defaults import apply_user_model_defaults, effective_user_budget
 from .auth import require
@@ -24,12 +25,7 @@ server = server_module()
 
 router = APIRouter()
 
-_BUDGET_FIELD_METRICS: dict[str, BudgetMetric] = {
-    "input_tokens": "input",
-    "output_tokens": "output",
-    "cost_usd": "cost",
-    "tool_calls": "tool_calls",
-}
+_BUDGET_FIELD_METRICS: dict[str, BudgetMetric] = {field: metric for metric, field in BUDGET_METRIC_FIELDS.items()}
 
 
 class SessionCreateRequest(BaseModel):
@@ -73,8 +69,14 @@ class SessionBudgetPatch(BaseModel):
     cost_usd: str | None = None
     tool_calls: str | None = None
 
-    def limits(self) -> dict[BudgetMetric, str | None]:
-        return {_BUDGET_FIELD_METRICS[field]: getattr(self, field) for field in self.model_fields_set}
+    def parsed_limits(self) -> dict[BudgetMetric, int | Decimal | None]:
+        """Parse every set field with the ``/budget`` parser; raises ``ValueError`` on the first invalid one."""
+        limits: dict[BudgetMetric, int | Decimal | None] = {}
+        for field in self.model_fields_set:
+            metric = _BUDGET_FIELD_METRICS[field]
+            raw: str | None = getattr(self, field)
+            limits[metric] = None if raw is None else parse_budget_limit(metric, raw)
+        return limits
 
 
 class SessionUpdateRequest(BaseModel):
@@ -353,12 +355,14 @@ async def update_session(
 ) -> SessionInfo:
     state = _load_owned_state(session_id, user)
 
+    # Parsed up front but applied last, so an invalid limit or a failed attribute/model change leaves
+    # the whole session untouched.
+    budget_limits: dict[BudgetMetric, int | Decimal | None] | None = None
     if body.budget is not None:
         try:
-            await server._engine.update_session_budget(session_id, body.budget.limits())
+            budget_limits = body.budget.parsed_limits()
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-        state = _load_owned_state(session_id, user)
 
     next_attributes: SessionAttributes | None = None
     previous_attributes: SessionAttributes | None = None
@@ -445,6 +449,10 @@ async def update_session(
         if archive_changed and archive_now:
             server._engine.deactivate(session_id)
             await server._engine.sandbox_mgr.destroy_session(session_id)
+
+    if budget_limits is not None:
+        await server._engine.update_session_budget(session_id, budget_limits)
+        state = _load_owned_state(session_id, user)
 
     sandbox = server._engine.session_mgr.load_sandbox_snapshot(session_id)
     return SessionInfo.from_state(

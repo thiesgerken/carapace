@@ -124,6 +124,34 @@ test("Escape and unchanged values do not save", async () => {
   }
 });
 
+test("follows budget changes from elsewhere, so setting the previous value again still saves", async () => {
+  const restore = installDom();
+  try {
+    const calls: SaveCall[] = [];
+    const onSave = async (field: SessionBudgetField, value: string | null) => {
+      calls.push([field, value]);
+    };
+    const view = await renderSection({ tool_calls: 10 }, onSave);
+
+    // e.g. `/budget tools 5` in another tab, delivered through the `status` broadcast
+    await view.rerender(
+      <NextIntlClientProvider locale="en" messages={messages} timeZone="UTC">
+        <SessionBudgetSection budget={{ tool_calls: 5 }} disabled={false} onSave={onSave} />
+      </NextIntlClientProvider>,
+    );
+    assert.equal(limitButton(view.container, "Tool calls").textContent, "5");
+
+    await click(limitButton(view.container, "Tool calls"));
+    await setInputValue(limitInput(view.container), "10");
+    await pressKey(limitInput(view.container), "Enter");
+
+    assert.deepEqual(calls, [["tool_calls", "10"]]);
+    await view.unmount();
+  } finally {
+    restore();
+  }
+});
+
 test("a rejected value keeps the editor open and shows the server error", async () => {
   const restore = installDom();
   try {

@@ -34,6 +34,7 @@ After `subscribe` succeeds:
    - `agent_running`: whether an agent turn task is still running (e.g. after reconnect).
    - `usage`: last **agent** LLM request stats from the session log (input/output tokens, optional breakdown %, model id, context cap), or `null` if none yet.
    - `llm_activity`: current in-flight LLM activity metadata, if a request is active.
+   - `budget`: the session's budget limits (`input_tokens`, `output_tokens`, `cost_usd`, `tool_calls`; `null` means no limit). The same message is broadcast after every budget change.
 
 2. **Pending tool approvals (zero or more)** — for each entry in `active.pending_approval_requests`:
    - `approval_request`
@@ -66,7 +67,7 @@ Each message is one JSON object with a `type` field.
 
 | `type`                           | When                                                | Main fields                                                                                      |
 | -------------------------------- | --------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `status`                         | On connect and after a session budget change        | `agent_running`, `usage`                                                                         |
+| `status`                         | On connect and after a session budget change        | `agent_running`, `usage`, `llm_activity`, `budget`                                               |
 | `llm_activity`                   | LLM request phase changed                           | `activity` or `null`                                                                             |
 | `token`                          | Streaming assistant text                            | `content`                                                                                        |
 | `thinking`                       | Streaming reasoning text                            | `content`                                                                                        |

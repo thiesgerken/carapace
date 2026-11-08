@@ -9,7 +9,6 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, patch
 
-import pytest
 from pydantic_ai.providers.openai_codex import CredentialsRefreshError
 
 import carapace.usage as usage_mod
@@ -197,7 +196,7 @@ def test_handle_slash_command_budget_accepts_k_and_m_suffixes(tmp_path: Path, db
         asyncio.run(_run())
 
 
-def test_handle_slash_command_budget_broadcasts_status_to_all_subscribers(tmp_path: Path, db_factory):
+def test_handle_slash_command_budget_broadcasts_limits_to_all_subscribers(tmp_path: Path, db_factory):
     with _patch_sentinel():
         engine = _make_engine(tmp_path, session_factory=db_factory)
         sid = engine.session_mgr.create_session(user="thies").session_id
@@ -208,44 +207,55 @@ def test_handle_slash_command_budget_broadcasts_status_to_all_subscribers(tmp_pa
         asyncio.run(engine.handle_slash_command(sid, "/budget tools 5"))
 
         for sub in (first, second):
-            [usage] = sub.status_updates
+            [(usage, budget)] = sub.status_updates
+            assert budget == SessionBudget(tool_calls=5)
             assert usage is not None
             assert [gauge.key for gauge in usage.budget_gauges] == ["tool_calls"]
 
 
-def test_update_session_budget_sets_and_clears_limits(tmp_path: Path, db_factory):
-    with _patch_sentinel():
-        engine = _make_engine(tmp_path, session_factory=db_factory)
-        sid = engine.session_mgr.create_session(user="thies", budget=SessionBudget(input_tokens=500)).session_id
-        sub = _FakeSubscriber()
-        active = engine.subscribe(sid, sub)
-
-        messages = asyncio.run(engine.update_session_budget(sid, {"input": None, "cost": "2.50", "tool_calls": "1k"}))
-
-        assert messages == [
-            "Cleared input token budget.",
-            "Set cost budget to $2.5000.",
-            "Set tool call budget to 1,000 tool calls.",
-        ]
-        assert active.state.budget == SessionBudget(cost_usd=Decimal("2.50"), tool_calls=1_000)
-        assert engine.session_mgr.load_state(sid).budget == active.state.budget
-        [usage] = sub.status_updates
-        assert usage is not None
-        assert [gauge.key for gauge in usage.budget_gauges] == ["cost", "tool_calls"]
-
-
-def test_update_session_budget_rejects_invalid_value_without_partial_write(tmp_path: Path, db_factory):
+def test_handle_slash_command_budget_rejects_invalid_value_without_broadcast(tmp_path: Path, db_factory):
     with _patch_sentinel():
         engine = _make_engine(tmp_path, session_factory=db_factory)
         sid = engine.session_mgr.create_session(user="thies").session_id
         sub = _FakeSubscriber()
         engine.subscribe(sid, sub)
 
-        with pytest.raises(ValueError, match=r"Invalid tool call budget: 1\.5"):
-            asyncio.run(engine.update_session_budget(sid, {"input": "100", "tool_calls": "1.5"}))
+        result = asyncio.run(engine.handle_slash_command(sid, "/budget tools 1.5"))
 
+        assert result is not None
+        assert result["data"]["error"] == "Invalid tool call budget: 1.5"
         assert engine.session_mgr.load_state(sid).budget == SessionBudget()
         assert sub.status_updates == []
+
+
+def test_update_session_budget_sets_and_clears_limits_in_one_write(tmp_path: Path, db_factory):
+    with _patch_sentinel():
+        engine = _make_engine(tmp_path, session_factory=db_factory)
+        sid = engine.session_mgr.create_session(user="thies", budget=SessionBudget(input_tokens=500)).session_id
+        sub = _FakeSubscriber()
+        active = engine.subscribe(sid, sub)
+
+        with patch.object(engine.session_mgr, "save_state", wraps=engine.session_mgr.save_state) as save_state:
+            messages = asyncio.run(
+                engine.update_session_budget(
+                    sid, {"input": None, "output": 0, "cost": Decimal("2.50"), "tool_calls": 1}
+                )
+            )
+
+        save_state.assert_called_once()
+        assert messages == [
+            "Cleared input token budget.",
+            "Cleared output token budget.",
+            "Set cost budget to $2.5000.",
+            "Set tool call budget to 1 tool call.",
+        ]
+        expected = SessionBudget(cost_usd=Decimal("2.50"), tool_calls=1)
+        assert active.state.budget == expected
+        assert engine.session_mgr.load_state(sid).budget == expected
+        [(usage, budget)] = sub.status_updates
+        assert budget == expected
+        assert usage is not None
+        assert [gauge.key for gauge in usage.budget_gauges] == ["cost", "tool_calls"]
 
 
 def test_update_session_budget_works_for_inactive_session(tmp_path: Path, db_factory):
@@ -253,7 +263,7 @@ def test_update_session_budget_works_for_inactive_session(tmp_path: Path, db_fac
         engine = _make_engine(tmp_path, session_factory=db_factory)
         sid = engine.session_mgr.create_session(user="thies").session_id
 
-        asyncio.run(engine.update_session_budget(sid, {"output": "2M"}))
+        asyncio.run(engine.update_session_budget(sid, {"output": 2_000_000}))
 
         assert sid not in engine._active
         assert engine.session_mgr.load_state(sid).budget == SessionBudget(output_tokens=2_000_000)

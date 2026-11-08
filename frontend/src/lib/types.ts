@@ -467,6 +467,7 @@ export interface StatusUpdate {
   agent_running: boolean;
   usage?: TurnUsage;
   llm_activity?: LlmActivity | null;
+  budget: SessionBudgetSettings;
 }
 
 export interface UserMessageNotification {

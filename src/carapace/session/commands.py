@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from decimal import Decimal
 from typing import TYPE_CHECKING, Any, Literal, Protocol
 
 from ..models.config import Config
@@ -12,6 +13,7 @@ from ..usage import BudgetMetric
 from ..ws_models import SLASH_COMMANDS
 from .manager import SessionManager
 from .types import ActiveSession
+from .usage_budget import parse_budget_limit
 
 
 class SessionCommandHost(Protocol):
@@ -41,7 +43,9 @@ class SessionCommandHost(Protocol):
         self, active: ActiveSession, source: Literal["agent", "sentinel"]
     ) -> dict[str, Any] | None: ...
     def _budget_command_payload(self, active: ActiveSession, *, message: str | None = None) -> dict[str, Any]: ...
-    async def update_session_budget(self, session_id: str, limits: Mapping[BudgetMetric, str | None]) -> list[str]: ...
+    async def update_session_budget(
+        self, session_id: str, limits: Mapping[BudgetMetric, int | Decimal | None]
+    ) -> list[str]: ...
 
 
 class SessionCommandMixin:
@@ -74,7 +78,7 @@ class SessionCommandMixin:
         ) -> dict[str, Any] | None: ...
         def _budget_command_payload(self, active: ActiveSession, *, message: str | None = None) -> dict[str, Any]: ...
         async def update_session_budget(
-            self, session_id: str, limits: Mapping[BudgetMetric, str | None]
+            self, session_id: str, limits: Mapping[BudgetMetric, int | Decimal | None]
         ) -> list[str]: ...
 
     async def handle_slash_command(self, session_id: str, command: str) -> dict[str, Any] | None:
@@ -217,12 +221,13 @@ class SessionCommandMixin:
             }
 
         try:
-            [message] = await self.update_session_budget(active.state.session_id, {metric: args[1].strip()})
+            value = parse_budget_limit(metric, args[1].strip())
         except ValueError as exc:
             return {
                 "command": "budget",
                 "data": {**self._budget_command_payload(active), "error": str(exc)},
             }
+        [message] = await self.update_session_budget(active.state.session_id, {metric: value})
         return {
             "command": "budget",
             "data": self._budget_command_payload(active, message=message),

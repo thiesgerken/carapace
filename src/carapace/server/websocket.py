@@ -10,6 +10,7 @@ from pydantic import BaseModel
 
 from ..api_keys import Access, Scope
 from ..auth import UserIdentity
+from ..models.session import SessionBudget
 from ..models.tooling import ToolResult, normalize_tool_call_args
 from ..notifications.models import NotificationClientType
 from ..notifications.vapid import derive_vapid_public_key
@@ -172,10 +173,20 @@ class WebSocketSubscriber:
         await self._safe_send(LlmActivityUpdate(activity=_llm_activity_payload(activity)))
 
     async def on_status(
-        self, *, agent_running: bool, usage: TurnUsage | None, llm_activity: LlmRequestState | None
+        self,
+        *,
+        agent_running: bool,
+        usage: TurnUsage | None,
+        llm_activity: LlmRequestState | None,
+        budget: SessionBudget,
     ) -> None:
         await self._safe_send(
-            StatusUpdate(agent_running=agent_running, usage=usage, llm_activity=_llm_activity_payload(llm_activity))
+            StatusUpdate(
+                agent_running=agent_running,
+                usage=usage,
+                llm_activity=_llm_activity_payload(llm_activity),
+                budget=budget,
+            )
         )
 
     async def on_done(
@@ -340,6 +351,7 @@ async def chat_ws(
                 agent_running=agent_running,
                 usage=usage,
                 llm_activity=_llm_activity_payload(active.llm_request_state if agent_running else None),
+                budget=active.state.budget,
             ),
         )
 

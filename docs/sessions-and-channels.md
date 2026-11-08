@@ -118,12 +118,12 @@ Retry and reset are WebSocket actions; fork is a REST action.
 
 `SessionBudget` caps a session's totals: input tokens, output tokens, estimated cost in USD, and tool calls. A new session starts from the user's default budget (**Settings** -> **Account**) if it sets any limit, otherwise from the platform default (**Settings** -> **Admin** -> **Platform**). Once a limit is reached, the next LLM call ends the turn with a "Session budget reached" error.
 
-Per session, limits change in two places, which share one parser and setter (`SessionEngine.update_session_budget`):
+Per session, limits change in two places, which share one parser (`parse_budget_limit`) and one setter (`SessionEngine.update_session_budget`):
 
 - `/budget input N`, `/budget output N`, `/budget cost N`, `/budget tools N`. `N` accepts `k`/`M` suffixes for counts; `0` clears a limit.
-- The **Budget** section of the session drawer in the web UI: click a limit, enter a value (same syntax), leave it empty for no limit. It sends `PATCH /api/sessions/{id}` with `{"budget": {"input_tokens": "100k"}}`; `null` clears a limit, omitted fields stay unchanged, and an invalid value is rejected with `400` without changing any limit.
+- The **Budget** section of the session drawer in the web UI: click a limit, enter a value (same syntax), leave it empty for no limit. It sends `PATCH /api/sessions/{id}` with `{"budget": {"input_tokens": "100k"}}`; `null` clears a limit, omitted fields stay unchanged, and an invalid value is rejected with `400` before anything in the request is applied.
 
-Both paths broadcast a `status` message to every connected WebSocket client so the budget gauges in the chat input refresh. `GET`/`PATCH /api/sessions/{id}` return the current limits as `budget`.
+Both paths broadcast a `status` message with the new `budget` to every connected WebSocket client, so the budget gauges and the drawer refresh in every tab. `GET`/`PATCH /api/sessions/{id}` return the current limits as `budget`.
 
 ## Jobs and job-linked sessions
 

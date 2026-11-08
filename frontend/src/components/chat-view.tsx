@@ -72,6 +72,7 @@ interface ChatViewProps {
   session: SessionInfo | null;
   initialSandbox?: SessionSandboxSnapshot | null;
   onTitleUpdate?: (title: string) => void;
+  onBudgetUpdate?: (budget: SessionInfo["budget"]) => void;
   onSessionUpdate?: (session: SessionInfo) => void;
   onSandboxUpdate?: (sandbox: SessionSandboxSnapshot) => void;
   onForkSession?: (session: SessionInfo) => void;
@@ -1034,6 +1035,7 @@ export function ChatView({
   session,
   initialSandbox,
   onTitleUpdate,
+  onBudgetUpdate,
   onSessionUpdate,
   onSandboxUpdate,
   onForkSession,
@@ -1629,6 +1631,7 @@ export function ChatView({
         case "status":
           if (msg.agent_running) setWaiting(true);
           if (msg.usage) setUsage(msg.usage);
+          onBudgetUpdate?.(msg.budget);
           setLlmActivity(msg.llm_activity ?? null);
           if (typeof msg.llm_activity?.first_thinking_at === "string") {
             lastThinkingStartedAtRef.current = msg.llm_activity.first_thinking_at;
@@ -1689,7 +1692,7 @@ export function ChatView({
           break;
       }
     },
-    [applySandboxSnapshot, finalizeThinkingMessages, finishWaiting, onTitleUpdate, refreshSandbox, server, token, sessionId, t],
+    [applySandboxSnapshot, finalizeThinkingMessages, finishWaiting, onBudgetUpdate, onTitleUpdate, refreshSandbox, server, token, sessionId, t],
   );
 
   const onWsDisconnect = useCallback(() => {
