@@ -173,8 +173,11 @@ class UsageTracker(BaseModel):
         return costs
 
 
+BudgetMetric = Literal["input", "output", "cost", "tool_calls"]
+
+
 class BudgetGauge(BaseModel):
-    key: Literal["input", "output", "cost", "tool_calls"]
+    key: BudgetMetric
     label: str
     current_value: str
     current_amount: float | None = None
@@ -183,10 +186,6 @@ class BudgetGauge(BaseModel):
     fill_pct: float
     reached: bool
     unavailable_reason: str | None = None
-
-
-# The ``/budget`` argument that sets each gauge's limit.
-_BUDGET_COMMAND_METRICS: dict[str, str] = {"input": "input", "output": "output", "cost": "cost", "tool_calls": "tools"}
 
 
 class SessionBudgetExceededError(RuntimeError):
@@ -207,7 +206,8 @@ def _budget_exceeded_message(reached: list[BudgetGauge]) -> str:
         else f"{gauge.label.lower()} {gauge.current_value} / {gauge.limit_value}"
         for gauge in reached
     )
-    commands = ", ".join(f"/budget {_BUDGET_COMMAND_METRICS[gauge.key]} N" for gauge in reached)
+    # Every metric key is itself an accepted ``/budget`` argument.
+    commands = ", ".join(f"/budget {gauge.key} N" for gauge in reached)
     return f"Session budget reached: {usage}. Raise the limit to continue: {commands}"
 
 

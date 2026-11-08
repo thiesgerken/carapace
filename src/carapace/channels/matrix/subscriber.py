@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 from loguru import logger
 
+from ...models.session import SessionBudget
 from ...models.tooling import ToolResult
 from ...usage import LlmRequestState
 from ...ws_models import ApprovalRequest, TurnUsage
@@ -119,6 +120,16 @@ class MatrixSubscriber:
         pass  # Thinking content not displayed in Matrix
 
     async def on_llm_activity(self, activity: LlmRequestState | None) -> None:
+        pass
+
+    async def on_status(
+        self,
+        *,
+        agent_running: bool,
+        usage: TurnUsage | None,
+        llm_activity: LlmRequestState | None,
+        budget: SessionBudget,
+    ) -> None:
         pass
 
     async def on_done(

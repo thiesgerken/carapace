@@ -194,7 +194,8 @@ def test_usage_budget_exceeded_error_includes_tool_calls() -> None:
 
     assert error is not None
     assert str(error) == (
-        "Session budget reached: tool calls 2 tool calls / 2 tool calls. Raise the limit to continue: /budget tools N"
+        "Session budget reached: tool calls 2 tool calls / 2 tool calls. "
+        "Raise the limit to continue: /budget tool_calls N"
     )
 
 
@@ -205,7 +206,7 @@ def test_usage_budget_exceeded_error_names_a_command_for_every_reached_limit() -
     error = usage_budget_exceeded_error(tracker, input_tokens_limit=1_000, output_tokens_limit=500, tool_calls_limit=2)
 
     assert error is not None
-    assert str(error).endswith("Raise the limit to continue: /budget input N, /budget tools N")
+    assert str(error).endswith("Raise the limit to continue: /budget input N, /budget tool_calls N")
 
 
 def test_session_budget_exceeded_error_requires_a_reached_gauge() -> None:

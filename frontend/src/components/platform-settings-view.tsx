@@ -13,8 +13,8 @@ import {
   type PlatformModelEntryPatchInput,
   type PlatformSettingsPatchInput,
   type PlatformSettingsResponseInfo,
-  type SessionBudgetSettings,
 } from "@/lib/api";
+import type { SessionBudgetSettings } from "@/lib/types";
 import { ModelPicker, withSelectedModelOption } from "@/components/model-picker";
 import { cn } from "@/lib/utils";
 

@@ -10,6 +10,7 @@ from pydantic import BaseModel
 
 from ..api_keys import Access, Scope
 from ..auth import UserIdentity
+from ..models.session import SessionBudget
 from ..models.tooling import ToolResult, normalize_tool_call_args
 from ..notifications.models import NotificationClientType
 from ..notifications.vapid import derive_vapid_public_key
@@ -170,6 +171,23 @@ class WebSocketSubscriber:
 
     async def on_llm_activity(self, activity: LlmRequestState | None) -> None:
         await self._safe_send(LlmActivityUpdate(activity=_llm_activity_payload(activity)))
+
+    async def on_status(
+        self,
+        *,
+        agent_running: bool,
+        usage: TurnUsage | None,
+        llm_activity: LlmRequestState | None,
+        budget: SessionBudget,
+    ) -> None:
+        await self._safe_send(
+            StatusUpdate(
+                agent_running=agent_running,
+                usage=usage,
+                llm_activity=_llm_activity_payload(llm_activity),
+                budget=budget,
+            )
+        )
 
     async def on_done(
         self,
@@ -333,6 +351,7 @@ async def chat_ws(
                 agent_running=agent_running,
                 usage=usage,
                 llm_activity=_llm_activity_payload(active.llm_request_state if agent_running else None),
+                budget=active.state.budget,
             ),
         )
 
@@ -454,15 +473,6 @@ async def chat_ws(
                             {"role": "command", "command": result.command, "data": result.data},
                         ],
                     )
-                    if result.command == "budget":
-                        await _send(
-                            websocket,
-                            StatusUpdate(
-                                agent_running=active.agent_task is not None and not active.agent_task.done(),
-                                usage=server._engine._turn_usage_payload(active),
-                                llm_activity=_llm_activity_payload(active.llm_request_state),
-                            ),
-                        )
                     continue
 
             await server._engine.submit_message(session_id, user_input, origin=sub, attachments=attachments)

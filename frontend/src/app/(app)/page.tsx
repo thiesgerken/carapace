@@ -31,6 +31,11 @@ export default function ChatPage() {
     shell.onTitleUpdate(activeSessionId, title);
   }, [activeSessionId, shell]);
 
+  const onActiveBudgetUpdate = useCallback((budget: SessionInfo["budget"]) => {
+    if (!activeSessionId) return;
+    shell.onBudgetUpdate(activeSessionId, budget);
+  }, [activeSessionId, shell]);
+
   const onActiveSandboxUpdate = useCallback((sandbox: SessionInfo["sandbox"]) => {
     if (!activeSessionId) return;
     shell.onSandboxUpdate(activeSessionId, sandbox);
@@ -61,6 +66,7 @@ export default function ChatPage() {
         session={activeSession}
         initialSandbox={activeSession?.sandbox ?? null}
         onTitleUpdate={onActiveTitleUpdate}
+        onBudgetUpdate={onActiveBudgetUpdate}
         onSessionUpdate={shell.onSessionUpdate}
         onSandboxUpdate={onActiveSandboxUpdate}
         onForkSession={shell.onForkSession}

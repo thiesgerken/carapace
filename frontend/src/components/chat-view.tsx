@@ -10,6 +10,7 @@ import { ChatMemorySection } from "@/components/chat-memory-section";
 import { useMemorySessionDetail } from "@/components/memory-extraction-detail";
 import { SandboxGitControls } from "@/components/git-sync";
 import { ModelPicker, withSelectedModelOption } from "@/components/model-picker";
+import { SessionBudgetSection, type SessionBudgetField } from "@/components/session-budget-section";
 import { SessionOptionTiles } from "@/components/session-option-tiles";
 import { useAppLocale } from "@/components/locale-provider";
 import { useAppShell } from "@/components/app-shell-context";
@@ -71,6 +72,7 @@ interface ChatViewProps {
   session: SessionInfo | null;
   initialSandbox?: SessionSandboxSnapshot | null;
   onTitleUpdate?: (title: string) => void;
+  onBudgetUpdate?: (budget: SessionInfo["budget"]) => void;
   onSessionUpdate?: (session: SessionInfo) => void;
   onSandboxUpdate?: (sandbox: SessionSandboxSnapshot) => void;
   onForkSession?: (session: SessionInfo) => void;
@@ -1051,6 +1053,7 @@ export function ChatView({
   session,
   initialSandbox,
   onTitleUpdate,
+  onBudgetUpdate,
   onSessionUpdate,
   onSandboxUpdate,
   onForkSession,
@@ -1646,6 +1649,7 @@ export function ChatView({
         case "status":
           if (msg.agent_running) setWaiting(true);
           if (msg.usage) setUsage(msg.usage);
+          onBudgetUpdate?.(msg.budget);
           setLlmActivity(msg.llm_activity ?? null);
           if (typeof msg.llm_activity?.first_thinking_at === "string") {
             lastThinkingStartedAtRef.current = msg.llm_activity.first_thinking_at;
@@ -1706,7 +1710,7 @@ export function ChatView({
           break;
       }
     },
-    [applySandboxSnapshot, finalizeThinkingMessages, finishWaiting, onTitleUpdate, refreshSandbox, server, token, sessionId, t],
+    [applySandboxSnapshot, finalizeThinkingMessages, finishWaiting, onBudgetUpdate, onTitleUpdate, refreshSandbox, server, token, sessionId, t],
   );
 
   const onWsDisconnect = useCallback(() => {
@@ -2139,6 +2143,11 @@ export function ChatView({
     } finally {
       setUpdatingSessionModel(null);
     }
+  }
+
+  async function handleUpdateSessionBudget(field: SessionBudgetField, value: string | null) {
+    const updated = await updateSession(server, token, sessionId, { budget: { [field]: value } });
+    onSessionUpdate?.(updated);
   }
 
   function handleApproval(
@@ -2611,6 +2620,14 @@ export function ChatView({
           <div className="mt-3 text-xs text-destructive">{modelUpdateError}</div>
         ) : null}
       </section>
+
+      {session ? (
+        <SessionBudgetSection
+          budget={session.budget}
+          disabled={deletingSession || sessionArchived}
+          onSave={handleUpdateSessionBudget}
+        />
+      ) : null}
 
       {latestJobRun ? (
         <section className="rounded-2xl border border-border/70 bg-background/90 p-3 shadow-sm">

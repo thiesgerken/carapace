@@ -1210,6 +1210,19 @@
             "savingPrivate": "Wird gespeichert…",
             "updatingMode": "Modus wird aktualisiert…"
         },
+        "budget": {
+            "title": "Budget",
+            "fields": {
+                "input_tokens": "Input-Tokens",
+                "output_tokens": "Output-Tokens",
+                "cost_usd": "Kosten (USD)",
+                "tool_calls": "Tool-Aufrufe"
+            },
+            "noLimit": "Kein Limit",
+            "editLimit": "Limit für {label} bearbeiten",
+            "hint": "Klicke auf ein Limit, um es zu ändern. Leer lassen für kein Limit. Werte wie 100k oder 2M sind erlaubt.",
+            "saveFailed": "Das Limit konnte nicht gespeichert werden."
+        },
         "source": {
             "unknown": "Unbekannt",
             "job": "Job",

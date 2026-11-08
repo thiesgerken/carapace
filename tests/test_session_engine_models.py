@@ -55,7 +55,7 @@ def _reached_tool_call_budget_error() -> SessionBudgetExceededError:
 
 
 _TOOL_CALL_BUDGET_MESSAGE = (
-    "Session budget reached: tool calls 2 tool calls / 2 tool calls. Raise the limit to continue: /budget tools N"
+    "Session budget reached: tool calls 2 tool calls / 2 tool calls. Raise the limit to continue: /budget tool_calls N"
 )
 
 

@@ -1210,6 +1210,19 @@
             "savingPrivate": "Saving…",
             "updatingMode": "Updating mode…"
         },
+        "budget": {
+            "title": "Budget",
+            "fields": {
+                "input_tokens": "Input tokens",
+                "output_tokens": "Output tokens",
+                "cost_usd": "Cost (USD)",
+                "tool_calls": "Tool calls"
+            },
+            "noLimit": "No limit",
+            "editLimit": "Edit {label} limit",
+            "hint": "Click a limit to change it. Leave it empty for no limit. Accepts values like 100k or 2M.",
+            "saveFailed": "Could not save the limit."
+        },
         "source": {
             "unknown": "Unknown",
             "job": "Job",

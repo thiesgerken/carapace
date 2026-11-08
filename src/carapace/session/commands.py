@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, Literal, Protocol
 
 from ..models.config import Config
 from ..models.skills import SkillInfo, context_grants_session_summary
 from ..sandbox.manager import SandboxManager
+from ..usage import BudgetMetric
 from ..ws_models import SLASH_COMMANDS
 from .manager import SessionManager
 from .types import ActiveSession
+from .usage_budget import parse_budget_limit
 
 
 class SessionCommandHost(Protocol):
@@ -40,15 +43,9 @@ class SessionCommandHost(Protocol):
         self, active: ActiveSession, source: Literal["agent", "sentinel"]
     ) -> dict[str, Any] | None: ...
     def _budget_command_payload(self, active: ActiveSession, *, message: str | None = None) -> dict[str, Any]: ...
-    def _parse_budget_limit_value(
-        self, metric: Literal["input", "output", "cost", "tool_calls"], raw: str
-    ) -> int | Decimal: ...
-    def _set_budget_metric(
-        self,
-        active: ActiveSession,
-        metric: Literal["input", "output", "cost", "tool_calls"],
-        value: int | Decimal,
-    ) -> str: ...
+    async def update_session_budget(
+        self, session_id: str, limits: Mapping[BudgetMetric, int | Decimal | None]
+    ) -> list[str]: ...
 
 
 class SessionCommandMixin:
@@ -80,15 +77,9 @@ class SessionCommandMixin:
             self, active: ActiveSession, source: Literal["agent", "sentinel"]
         ) -> dict[str, Any] | None: ...
         def _budget_command_payload(self, active: ActiveSession, *, message: str | None = None) -> dict[str, Any]: ...
-        def _parse_budget_limit_value(
-            self, metric: Literal["input", "output", "cost", "tool_calls"], raw: str
-        ) -> int | Decimal: ...
-        def _set_budget_metric(
-            self,
-            active: ActiveSession,
-            metric: Literal["input", "output", "cost", "tool_calls"],
-            value: int | Decimal,
-        ) -> str: ...
+        async def update_session_budget(
+            self, session_id: str, limits: Mapping[BudgetMetric, int | Decimal | None]
+        ) -> list[str]: ...
 
     async def handle_slash_command(self, session_id: str, command: str) -> dict[str, Any] | None:
         """Process a slash command, return structured data or ``None``."""
@@ -172,7 +163,7 @@ class SessionCommandMixin:
             }
 
         if cmd == "/budget":
-            return self._handle_budget_command(active, parts)
+            return await self._handle_budget_command(active, parts)
 
         if cmd == "/compact":
             return await self._handle_compact_command(active, parts[1].strip() if len(parts) > 1 else "")
@@ -205,12 +196,12 @@ class SessionCommandMixin:
         report = await self.run_compaction(active, mode=mode, keep_turns=keep, verbatim_tool_turns=verbatim)
         return {"command": "compact", "data": report.model_dump(mode="json")}
 
-    def _handle_budget_command(self, active: ActiveSession, parts: list[str]) -> dict[str, Any]:
+    async def _handle_budget_command(self, active: ActiveSession, parts: list[str]) -> dict[str, Any]:
         if len(parts) == 1:
             return {"command": "budget", "data": self._budget_command_payload(active)}
 
         args = parts[1].strip().split(maxsplit=1)
-        metric_aliases: dict[str, Literal["input", "output", "cost", "tool_calls"]] = {
+        metric_aliases: dict[str, BudgetMetric] = {
             "input": "input",
             "output": "output",
             "cost": "cost",
@@ -230,13 +221,13 @@ class SessionCommandMixin:
             }
 
         try:
-            value = self._parse_budget_limit_value(metric, args[1].strip())
+            value = parse_budget_limit(metric, args[1].strip())
         except ValueError as exc:
             return {
                 "command": "budget",
                 "data": {**self._budget_command_payload(active), "error": str(exc)},
             }
-        message = self._set_budget_metric(active, metric, value)
+        [message] = await self.update_session_budget(active.state.session_id, {metric: value})
         return {
             "command": "budget",
             "data": self._budget_command_payload(active, message=message),

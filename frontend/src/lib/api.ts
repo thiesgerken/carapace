@@ -32,6 +32,8 @@ import type {
   SandboxUsage,
   SessionArchiveCommitResponse,
   SessionAttributesPatch,
+  SessionBudgetPatch,
+  SessionBudgetSettings,
   SessionInfo,
   SessionListPage,
   SessionSandboxSnapshot,
@@ -489,6 +491,7 @@ export async function updateSession(
     attributes?: SessionAttributesPatch;
     agent_model_name?: string | null;
     sentinel_model_name?: string | null;
+    budget?: SessionBudgetPatch;
   },
 ): Promise<SessionInfo> {
   const res = await fetch(`${server}/api/sessions/${sessionId}`, {
@@ -496,7 +499,7 @@ export async function updateSession(
     headers: headers(token),
     body: JSON.stringify(body),
   });
-  if (!res.ok) throw new Error(`Failed to update session: ${res.status}`);
+  if (!res.ok) throw new Error(await readErrorMessage(res, "Failed to update session"));
   return res.json();
 }
 
@@ -1034,13 +1037,6 @@ export interface PlatformModelEntryInfo extends AvailableModelInfo {
   vision?: boolean | null;
   enabled: boolean;
   api_key: PlatformModelSecretInfo;
-}
-
-export interface SessionBudgetSettings {
-  input_tokens?: number | null;
-  output_tokens?: number | null;
-  cost_usd?: string | null;
-  tool_calls?: number | null;
 }
 
 export interface UserDefaultModelsSettings {
