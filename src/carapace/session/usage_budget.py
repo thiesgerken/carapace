@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import contextlib
+from collections.abc import Mapping
 from decimal import Decimal, InvalidOperation
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any
 
 from ..models.config import Config
+from ..models.session import SessionBudget
 from ..usage import (
     BudgetGauge,
+    BudgetMetric,
     LlmRequestRecord,
     LlmRequestState,
     LlmSource,
@@ -30,8 +33,76 @@ if TYPE_CHECKING:
 
 _DEFAULT_CONTEXT_CAP_TOKENS = 200_000
 
+BUDGET_METRIC_FIELDS: dict[BudgetMetric, str] = {
+    "input": "input_tokens",
+    "output": "output_tokens",
+    "cost": "cost_usd",
+    "tool_calls": "tool_calls",
+}
+
+_BUDGET_METRIC_NAMES: dict[BudgetMetric, str] = {
+    "input": "input token budget",
+    "output": "output token budget",
+    "cost": "cost budget",
+    "tool_calls": "tool call budget",
+}
+
+
+def parse_budget_limit(metric: BudgetMetric, raw: str) -> int | Decimal:
+    """Parse a limit as typed in ``/budget`` (``100k``, ``2M``, ``1,000``, ``2.50``); 0 means no limit."""
+    cleaned = raw.replace(",", "").replace("_", "")
+    if metric in ("input", "output", "tool_calls"):
+        lowered = cleaned.lower()
+        multiplier = 1
+        if lowered.endswith("k"):
+            multiplier = 1_000
+            lowered = lowered[:-1]
+        elif lowered.endswith("m"):
+            multiplier = 1_000_000
+            lowered = lowered[:-1]
+
+        budget_type = "tool call budget" if metric == "tool_calls" else "token budget"
+        if not lowered:
+            raise ValueError(f"Invalid {budget_type}: {raw}")
+
+        try:
+            scaled = Decimal(lowered) * multiplier
+        except InvalidOperation as exc:
+            raise ValueError(f"Invalid {budget_type}: {raw}") from exc
+
+        if scaled != scaled.to_integral_value():
+            raise ValueError(f"Invalid {budget_type}: {raw}")
+
+        value = int(scaled)
+        if value < 0:
+            raise ValueError("Budget value must be >= 0")
+        return value
+    try:
+        value = Decimal(cleaned)
+    except InvalidOperation as exc:
+        raise ValueError(f"Invalid cost budget: {raw}") from exc
+    if value < 0:
+        raise ValueError("Budget value must be >= 0")
+    return value
+
+
+def _budget_limit_message(metric: BudgetMetric, budget: SessionBudget) -> str:
+    name = _BUDGET_METRIC_NAMES[metric]
+    value = getattr(budget, BUDGET_METRIC_FIELDS[metric])
+    if value is None:
+        return f"Cleared {name}."
+    match metric:
+        case "cost":
+            amount = f"${value:.4f}"
+        case "tool_calls":
+            amount = f"{value:,} tool {'call' if value == 1 else 'calls'}"
+        case _:
+            amount = f"{value:,} tokens"
+    return f"Set {name} to {amount}."
+
 
 class SessionUsageBudgetMixin:
+    _active: dict[str, ActiveSession]
     _config: Config
     _session_mgr: SessionManager
 
@@ -173,87 +244,28 @@ class SessionUsageBudgetMixin:
             payload["message"] = "No session budgets configured."
         return payload
 
-    def _parse_budget_limit_value(
-        self, metric: Literal["input", "output", "cost", "tool_calls"], raw: str
-    ) -> int | Decimal:
-        cleaned = raw.replace(",", "").replace("_", "")
-        if metric in ("input", "output", "tool_calls"):
-            lowered = cleaned.lower()
-            multiplier = 1
-            if lowered.endswith("k"):
-                multiplier = 1_000
-                lowered = lowered[:-1]
-            elif lowered.endswith("m"):
-                multiplier = 1_000_000
-                lowered = lowered[:-1]
-
-            budget_type = "tool call budget" if metric == "tool_calls" else "token budget"
-            if not lowered:
-                raise ValueError(f"Invalid {budget_type}: {raw}")
-
-            try:
-                scaled = Decimal(lowered) * multiplier
-            except InvalidOperation as exc:
-                raise ValueError(f"Invalid {budget_type}: {raw}") from exc
-
-            if scaled != scaled.to_integral_value():
-                raise ValueError(f"Invalid {budget_type}: {raw}")
-
-            value = int(scaled)
-            if value < 0:
-                raise ValueError("Budget value must be >= 0")
-            return value
-        try:
-            value = Decimal(cleaned)
-        except InvalidOperation as exc:
-            raise ValueError(f"Invalid cost budget: {raw}") from exc
-        if value < 0:
-            raise ValueError("Budget value must be >= 0")
-        return value
-
-    def _set_budget_metric(
-        self,
-        active: ActiveSession,
-        metric: Literal["input", "output", "cost", "tool_calls"],
-        value: int | Decimal,
-    ) -> str:
-        budget = active.state.budget.model_copy(deep=True)
-        if metric == "input":
-            budget.input_tokens = int(value)
-            if budget.input_tokens == 0:
-                budget.input_tokens = None
-            active.state.budget = budget
-            self._session_mgr.save_state(active.state)
-            if budget.input_tokens is None:
-                return "Cleared input token budget."
-            return f"Set input token budget to {budget.input_tokens:,} tokens."
-        if metric == "output":
-            budget.output_tokens = int(value)
-            if budget.output_tokens == 0:
-                budget.output_tokens = None
-            active.state.budget = budget
-            self._session_mgr.save_state(active.state)
-            if budget.output_tokens is None:
-                return "Cleared output token budget."
-            return f"Set output token budget to {budget.output_tokens:,} tokens."
-        if metric == "tool_calls":
-            budget.tool_calls = int(value)
-            if budget.tool_calls == 0:
-                budget.tool_calls = None
-            active.state.budget = budget
-            self._session_mgr.save_state(active.state)
-            if budget.tool_calls is None:
-                return "Cleared tool call budget."
-            suffix = "call" if budget.tool_calls == 1 else "calls"
-            return f"Set tool call budget to {budget.tool_calls:,} tool {suffix}."
-        budget.cost_usd = Decimal(value)
-        if budget.cost_usd == Decimal(0):
-            budget.cost_usd = None
-        active.state.budget = budget
-        self._session_mgr.save_state(active.state)
-        if budget.cost_usd is None:
-            return "Cleared cost budget."
-        return f"Set cost budget to ${budget.cost_usd:.4f}."
+    async def update_session_budget(
+        self, session_id: str, limits: Mapping[BudgetMetric, int | Decimal | None]
+    ) -> list[str]:
+        """Apply limits parsed by ``parse_budget_limit`` (``None`` or 0 clears one) and return a message per limit."""
+        active = self._active.get(session_id)
+        state = active.state if active is not None else self._session_mgr.load_state(session_id)
+        if state is None:
+            raise KeyError(session_id)
+        updates = {BUDGET_METRIC_FIELDS[metric]: value for metric, value in limits.items()}
+        # Revalidating normalizes 0 to "no limit", which is what ``/budget input 0`` means.
+        state.budget = SessionBudget.model_validate(state.budget.model_dump() | updates)
+        self._session_mgr.save_state(state)
+        if active is not None:
+            await self._broadcast(
+                active,
+                "on_status",
+                agent_running=active.agent_task is not None and not active.agent_task.done(),
+                usage=self._turn_usage_payload(active),
+                llm_activity=active.llm_request_state,
+                budget=state.budget,
+            )
+        return [_budget_limit_message(metric, state.budget) for metric in limits]
 
     @contextlib.contextmanager
     def llm_request_recording(self, active: ActiveSession, *, track_activity: bool = True):

@@ -15,7 +15,7 @@ from typing import Any, Protocol, runtime_checkable
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.models import Model
 
-from ..models.session import SessionState
+from ..models.session import SessionBudget, SessionState
 from ..models.tooling import ToolResult
 from ..security.context import ApprovalSource, ApprovalVerdict, SessionSecurity
 from ..security.sentinel import Sentinel
@@ -43,6 +43,14 @@ class SessionSubscriber(Protocol):
     async def on_token(self, content: str) -> None: ...
     async def on_thinking_token(self, content: str) -> None: ...
     async def on_llm_activity(self, activity: LlmRequestState | None) -> None: ...
+    async def on_status(
+        self,
+        *,
+        agent_running: bool,
+        usage: TurnUsage | None,
+        llm_activity: LlmRequestState | None,
+        budget: SessionBudget,
+    ) -> None: ...
     async def on_done(
         self,
         content: str,

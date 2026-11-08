@@ -16,7 +16,7 @@ from carapace.git.store import GitStore
 from carapace.knowledge import KnowledgeRepoHandle
 from carapace.models.config import Config
 from carapace.models.credentials import CredentialRegistryProtocol
-from carapace.models.session import SessionState
+from carapace.models.session import SessionBudget, SessionState
 from carapace.models.tooling import ToolResult
 from carapace.sandbox.manager import SandboxManager
 from carapace.security.context import ApprovalSource, ApprovalVerdict
@@ -56,6 +56,7 @@ class _FakeSubscriber(SessionSubscriber):
         self.done_messages: list[tuple[str, TurnUsage]] = []
         self.title_updates: list[tuple[str, TurnUsage | None]] = []
         self.llm_activity_updates: list[LlmRequestState | None] = []
+        self.status_updates: list[tuple[TurnUsage | None, SessionBudget]] = []
 
     async def on_user_message(self, content: str, *, from_self: bool, attachments: list | None = None) -> None:
         self.user_messages.append((content, from_self))
@@ -119,6 +120,16 @@ class _FakeSubscriber(SessionSubscriber):
 
     async def on_llm_activity(self, activity: LlmRequestState | None) -> None:
         self.llm_activity_updates.append(activity)
+
+    async def on_status(
+        self,
+        *,
+        agent_running: bool,
+        usage: TurnUsage | None,
+        llm_activity: LlmRequestState | None,
+        budget: SessionBudget,
+    ) -> None:
+        self.status_updates.append((usage, budget))
 
     async def on_domain_info(
         self,

@@ -15,11 +15,11 @@ import {
   type MatrixSettingsInfo,
   type MemoryBudgetSettings,
   type MemorySettingsInfo,
-  type SessionBudgetSettings,
   type UserDefaultModelsSettings,
   type UserSettingsPatchInput,
   type UserSettingsResponseInfo,
 } from "@/lib/api";
+import type { SessionBudgetSettings } from "@/lib/types";
 import { useAppShell } from "@/components/app-shell-context";
 import { ChatGptSubscriptionPanel } from "@/components/chatgpt-subscription-panel";
 import { ModelPicker, withSelectedModelOption } from "@/components/model-picker";

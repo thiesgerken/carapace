@@ -5,6 +5,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel
 
+from .models.session import SessionBudget
 from .models.tooling import SentFileInfo
 from .security.context import ApprovalSource, ApprovalVerdict
 from .usage import BudgetGauge, LlmRequestPhase, LlmSource
@@ -291,12 +292,17 @@ class LlmActivityUpdate(BaseModel):
 
 
 class StatusUpdate(BaseModel):
-    """Server → Client: session status on connect (includes last agent-turn usage for the context bar)."""
+    """Server → Client: session status on connect and after a budget change.
+
+    ``usage`` carries the last agent-turn usage for the context bar and the budget gauges, ``budget`` the
+    limits themselves, so every client's session drawer follows ``/budget`` and edits from other clients.
+    """
 
     type: Literal["status"] = "status"
     agent_running: bool
     usage: TurnUsage | None = None
     llm_activity: LlmActivity | None = None
+    budget: SessionBudget
 
 
 class UserMessageNotification(BaseModel):

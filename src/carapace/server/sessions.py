@@ -6,14 +6,16 @@ from typing import Annotated, Any, Self
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from loguru import logger
-from pydantic import BaseModel, ValidationError, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, ValidationError, field_validator, model_validator
 from pydantic_ai.messages import ModelMessage
 
 from ..api_keys import Access, Scope
 from ..auth import UserIdentity
 from ..models.git import GitActionResult, GlobalGitStatus, SandboxGitStatus
-from ..models.session import SessionAttributes, SessionJobRunContext, SessionState
+from ..models.session import SessionAttributes, SessionBudget, SessionJobRunContext, SessionState
 from ..sandbox.state import SessionSandboxSnapshot
+from ..session.usage_budget import BUDGET_METRIC_FIELDS, parse_budget_limit
+from ..usage import BudgetMetric
 from ..user_defaults import apply_user_model_defaults, effective_user_budget
 from .auth import require
 from .history import _history_from_messages
@@ -22,6 +24,8 @@ from .state import server_module
 server = server_module()
 
 router = APIRouter()
+
+_BUDGET_FIELD_METRICS: dict[str, BudgetMetric] = {field: metric for metric, field in BUDGET_METRIC_FIELDS.items()}
 
 
 class SessionCreateRequest(BaseModel):
@@ -55,8 +59,29 @@ class SessionAttributesPatch(BaseModel):
         return self
 
 
+class SessionBudgetPatch(BaseModel):
+    """Limits as ``/budget`` accepts them (``"100k"``, ``"2.50"``); ``null`` clears one, omitted keeps it."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    input_tokens: str | None = None
+    output_tokens: str | None = None
+    cost_usd: str | None = None
+    tool_calls: str | None = None
+
+    def parsed_limits(self) -> dict[BudgetMetric, int | Decimal | None]:
+        """Parse every set field with the ``/budget`` parser; raises ``ValueError`` on the first invalid one."""
+        limits: dict[BudgetMetric, int | Decimal | None] = {}
+        for field in self.model_fields_set:
+            metric = _BUDGET_FIELD_METRICS[field]
+            raw: str | None = getattr(self, field)
+            limits[metric] = None if raw is None else parse_budget_limit(metric, raw)
+        return limits
+
+
 class SessionUpdateRequest(BaseModel):
     attributes: SessionAttributesPatch | None = None
+    budget: SessionBudgetPatch | None = None
     agent_model_name: str | None = None
     sentinel_model_name: str | None = None
 
@@ -98,6 +123,7 @@ class SessionInfo(BaseModel):
     agent_model_name: str | None = None
     sentinel_model_name: str | None = None
     attributes: SessionAttributes
+    budget: SessionBudget
     latest_job_run: SessionJobRunContext | None = None
     knowledge_last_committed_at: str | None = None
     knowledge_last_archive_path: str | None = None
@@ -125,6 +151,7 @@ class SessionInfo(BaseModel):
             agent_model_name=state.agent_model_name,
             sentinel_model_name=state.sentinel_model_name,
             attributes=state.attributes,
+            budget=state.budget,
             latest_job_run=state.latest_job_run.model_copy(deep=True) if state.latest_job_run is not None else None,
             knowledge_last_committed_at=(
                 state.knowledge_last_committed_at.isoformat() if state.knowledge_last_committed_at else None
@@ -328,6 +355,15 @@ async def update_session(
 ) -> SessionInfo:
     state = _load_owned_state(session_id, user)
 
+    # Parsed up front but applied last, so an invalid limit or a failed attribute/model change leaves
+    # the whole session untouched.
+    budget_limits: dict[BudgetMetric, int | Decimal | None] | None = None
+    if body.budget is not None:
+        try:
+            budget_limits = body.budget.parsed_limits()
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     next_attributes: SessionAttributes | None = None
     previous_attributes: SessionAttributes | None = None
     previous_history: list[ModelMessage] | None = None
@@ -413,6 +449,10 @@ async def update_session(
         if archive_changed and archive_now:
             server._engine.deactivate(session_id)
             await server._engine.sandbox_mgr.destroy_session(session_id)
+
+    if budget_limits is not None:
+        await server._engine.update_session_budget(session_id, budget_limits)
+        state = _load_owned_state(session_id, user)
 
     sandbox = server._engine.session_mgr.load_sandbox_snapshot(session_id)
     return SessionInfo.from_state(

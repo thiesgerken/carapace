@@ -1,7 +1,6 @@
 import { JSDOM } from "jsdom";
 import type { ReactNode } from "react";
 import { act } from "react";
-import { createRoot } from "react-dom/client";
 
 type RenderHandle = {
   container: HTMLDivElement;
@@ -110,6 +109,9 @@ export function installDom(url = "https://carapace.example.test/"): () => void {
 }
 
 export async function renderReact(node: ReactNode): Promise<RenderHandle> {
+  // react-dom probes the DOM for `input` event support when it first loads. Loaded before installDom(),
+  // it falls back to an IE-only polyfill and text inputs never fire onChange.
+  const { createRoot } = await import("react-dom/client");
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);
@@ -151,7 +153,9 @@ export async function setInputValue(
   value: string,
 ): Promise<void> {
   await act(async () => {
-    element.value = value;
+    // React tracks writes through the element's own `value` setter, so a plain assignment looks like no
+    // change to a controlled input. The prototype setter bypasses that tracking.
+    Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set?.call(element, value);
     element.dispatchEvent(new window.Event("input", { bubbles: true }));
     element.dispatchEvent(new window.Event("change", { bubbles: true }));
   });

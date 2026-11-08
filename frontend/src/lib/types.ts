@@ -85,6 +85,16 @@ export interface SessionAttributesPatch {
   yolo_mode?: boolean;
 }
 
+export interface SessionBudgetSettings {
+  input_tokens?: number | null;
+  output_tokens?: number | null;
+  cost_usd?: string | null;
+  tool_calls?: number | null;
+}
+
+/** Limits as `/budget` accepts them ("100k", "2.50"); `null` clears one, an omitted key keeps it. */
+export type SessionBudgetPatch = Partial<Record<keyof SessionBudgetSettings, string | null>>;
+
 export interface SessionInfo {
   session_id: string;
   channel_type: string;
@@ -95,6 +105,7 @@ export interface SessionInfo {
   agent_model_name?: string | null;
   sentinel_model_name?: string | null;
   attributes: SessionAttributes;
+  budget: SessionBudgetSettings;
   latest_job_run?: SessionLatestJobRun | null;
   knowledge_last_committed_at?: string | null;
   knowledge_last_archive_path?: string | null;
@@ -456,6 +467,7 @@ export interface StatusUpdate {
   agent_running: boolean;
   usage?: TurnUsage;
   llm_activity?: LlmActivity | null;
+  budget: SessionBudgetSettings;
 }
 
 export interface UserMessageNotification {
