@@ -470,6 +470,33 @@ def test_cancel_releases_every_waiting_escalation(tmp_path: Path, db_factory):
         asyncio.run(_run())
 
 
+def test_answer_that_races_turn_closure_does_not_allow(tmp_path: Path, db_factory):
+    """The answer resolves the waiter's future, but the turn closes the request (as denied)
+    before the waiter resumes: the closure wins, and no user decision follows it."""
+
+    async def _run() -> None:
+        engine = _make_engine(tmp_path, session_factory=db_factory)
+        sid = engine.session_mgr.create_session(user="thies").session_id
+        active = engine.get_or_activate(sid)
+        escalate = engine._make_escalation_cb(active)
+
+        waiter = asyncio.create_task(escalate(sid, "a.example", {"kind": "domain_access", "command": "curl"}))
+        await asyncio.sleep(0.01)
+        [pending] = active.pending_escalations
+        await engine.submit_approval(sid, EscalationResponse(request_id=pending["request_id"], decision="allow"))
+        engine._close_turn_approvals(active, sid)
+
+        assert (await asyncio.wait_for(waiter, timeout=1)).allowed is False
+        events = _without_timestamps(engine.session_mgr.load_events(sid))
+        assert [(event["role"], event.get("decision_source")) for event in events] == [
+            ("domain_access_approval", None),
+            ("domain_access_approval", "system"),
+        ]
+
+    with _patch_sentinel():
+        asyncio.run(_run())
+
+
 def test_new_escalation_supersedes_a_stale_one_for_the_same_domain(tmp_path: Path, db_factory):
     async def _run() -> None:
         engine = _make_engine(tmp_path, session_factory=db_factory)

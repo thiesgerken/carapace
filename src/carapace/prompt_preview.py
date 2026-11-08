@@ -256,6 +256,8 @@ def _sentinel_for(inputs: PreviewInputs, state: SessionState) -> Sentinel:
         user=inputs.user,
         knowledge_dir=inputs.repo.knowledge_dir,
         skills_dir=inputs.repo.knowledge_dir / "skills",
+        # Previews record the request locally instead of sending it, so they take no LLM slot.
+        llm_slots=None,
         model_factory=lambda model_name, *, user: _recording_model(),
     )
 

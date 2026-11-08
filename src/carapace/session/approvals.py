@@ -169,6 +169,10 @@ class SessionApprovalMixin:
             with active.escalation_waiters.waiting(request_id) as answer:
                 await self._announce_escalation(active, session_id, request_id, notif_id, subject, kind, cmd, context)
                 response = await answer
+            # An answer can resolve the future just before the turn closes the request (as denied)
+            # and this waiter resumes only afterwards: the closure wins.
+            if not any(p["request_id"] == request_id for p in active.pending_escalations):
+                response = None
 
             if response is not None:
                 self._session_mgr.append_events(

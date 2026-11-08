@@ -255,6 +255,7 @@ class SessionEngine(
             user=owner,
             knowledge_dir=knowledge_dir,
             skills_dir=knowledge_dir / "skills",
+            llm_slots=self._llm_semaphore,
             unattended=state.attributes.unattended,
             ask_mode=state.attributes.ask_mode,
             timeout=timedelta(seconds=self._config.agent.sentinel_timeout_seconds),

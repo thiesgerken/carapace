@@ -21,6 +21,7 @@ def _make_sentinel(tmp_path: Path, *, timeout: timedelta | None = None) -> tuple
         user="thies",
         knowledge_dir=knowledge_dir,
         skills_dir=skills_dir,
+        llm_slots=None,
         timeout=timeout,
         model_factory=lambda _name, *, user: TestModel(),
     )
