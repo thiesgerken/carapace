@@ -430,6 +430,8 @@ class SessionTurnMixin(SessionTurnHost):
         fresh = self._session_mgr.resume_session(session_id)
         if fresh:
             active.state = fresh
+        # A user message is a human interaction: the agent starts a new autonomous streak.
+        active.autonomy.reset()
         self._ensure_memory_snapshot(active)
 
         deps = self._build_deps(

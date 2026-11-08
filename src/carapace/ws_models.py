@@ -32,7 +32,7 @@ SLASH_COMMANDS: list[dict[str, str]] = [
     {
         "command": "/budget",
         "description": "Show current budgets. Set with /budget input N, /budget output N, "
-        + "/budget cost N, or /budget tools N",
+        + "/budget cost N, /budget tools N, or /budget autonomy N (tool calls without you)",
     },
     {"command": "/usage", "description": "Show token usage for this session"},
     {

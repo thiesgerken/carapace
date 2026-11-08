@@ -10,6 +10,7 @@ from pydantic_ai import RunContext
 from pydantic_ai.models import Model
 from pydantic_ai.usage import RunUsage
 
+from carapace.agent.autonomy import AutonomyStreak
 from carapace.agent.deps import Deps
 from carapace.agent.tools import create_agent
 from carapace.credentials import CredentialRegistry
@@ -123,6 +124,7 @@ def _activation_deps(tmp_path: Path) -> Deps:
         agent_model=MagicMock(spec=Model),
         agent_model_id=Config().agent.model,
         usage_tracker=UsageTracker(),
+        autonomy=AutonomyStreak(),
         credential_registry=credentials,
     )
 

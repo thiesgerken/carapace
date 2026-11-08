@@ -9,6 +9,7 @@ from pydantic_ai.messages import PartStartEvent, TextPart, ToolCallPart
 from pydantic_ai.models import Model
 from pydantic_ai.usage import RunUsage
 
+from carapace.agent.autonomy import AutonomyStreak
 from carapace.agent.deps import Deps, TaskDone, TaskFailed
 from carapace.agent.loop import run_agent_turn
 from carapace.credentials import CredentialRegistry
@@ -50,6 +51,7 @@ def _make_deps(tmp_path: Path, *, unattended: bool) -> Deps:
         agent_model=MagicMock(spec=Model),
         agent_model_id="anthropic:claude-sonnet-4-6",
         usage_tracker=UsageTracker(),
+        autonomy=AutonomyStreak(),
         credential_registry=CredentialRegistry(),
     )
 

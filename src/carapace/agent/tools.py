@@ -44,6 +44,7 @@ from ..security.context import (
 )
 from ..skills import SkillDocumentError, SkillRegistry
 from ..usage import LlmRequestLogCapability
+from .autonomy import AutonomyLimitCapability
 from .deps import Deps, TaskDone, TaskFailed
 
 SEND_FILE_MAX_BYTES = 50 * 1024 * 1024
@@ -1076,7 +1077,14 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
         # A callable is a dynamic instruction: the prompt cache breakpoint goes before it, so the
         # date and session ID don't split the cached prefix.
         instructions=[system_prompt, lambda: build_session_info(deps)],
-        capabilities=[LlmRequestLogCapability(source="agent")],
+        capabilities=[
+            LlmRequestLogCapability(source="agent"),
+            AutonomyLimitCapability(
+                streak=deps.autonomy,
+                session_state=deps.session_state,
+                tool_call_callback=deps.tool_call_callback,
+            ),
+        ],
         model_settings=with_prompt_cache(
             model_settings_for_config(deps.config, deps.agent_model_id, default_thinking=True), conversation=True
         ),

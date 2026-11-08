@@ -209,6 +209,7 @@ class SessionCommandMixin:
             "tool": "tool_calls",
             "tool_calls": "tool_calls",
             "tool-calls": "tool_calls",
+            "autonomy": "autonomy",
         }
         metric = metric_aliases.get(args[0].lower()) if len(args) == 2 else None
         if len(args) != 2 or metric is None:
@@ -216,7 +217,8 @@ class SessionCommandMixin:
                 "command": "budget",
                 "data": {
                     **self._budget_command_payload(active),
-                    "error": "Usage: /budget, /budget input N, /budget output N, /budget cost N, or /budget tools N",
+                    "error": "Usage: /budget, /budget input N, /budget output N, /budget cost N, /budget tools N, "
+                    "or /budget autonomy N",
                 },
             }
 

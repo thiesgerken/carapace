@@ -3666,6 +3666,7 @@ def test_update_session_budget_persists_and_refreshes_connected_clients(client, 
         "output_tokens": None,
         "cost_usd": None,
         "tool_calls": None,
+        "autonomous_tool_calls": 100,
     }
 
     with client.websocket_connect(f"/api/chat/{sid}", headers=auth_headers) as ws:
@@ -3683,10 +3684,11 @@ def test_update_session_budget_persists_and_refreshes_connected_clients(client, 
         "output_tokens": None,
         "cost_usd": "2.50",
         "tool_calls": None,
+        "autonomous_tool_calls": 100,
     }
     assert status["type"] == "status"
     assert status["budget"] == resp.json()["budget"]
-    assert [gauge["key"] for gauge in status["usage"]["budget_gauges"]] == ["input", "cost"]
+    assert [gauge["key"] for gauge in status["usage"]["budget_gauges"]] == ["input", "cost", "autonomy"]
 
     cleared = client.patch(f"/api/sessions/{sid}", headers=auth_headers, json={"budget": {"input_tokens": None}})
 
@@ -3695,7 +3697,7 @@ def test_update_session_budget_persists_and_refreshes_connected_clients(client, 
     assert cleared.json()["budget"]["cost_usd"] == "2.50"
     persisted = srv._engine.session_mgr.load_state(sid)
     assert persisted is not None
-    assert persisted.budget == SessionBudget(cost_usd=Decimal("2.50"))
+    assert persisted.budget == SessionBudget(cost_usd=Decimal("2.50"), autonomous_tool_calls=100)
 
 
 def test_update_session_budget_rejects_invalid_limit(client, auth_headers):
@@ -3712,7 +3714,7 @@ def test_update_session_budget_rejects_invalid_limit(client, auth_headers):
     assert resp.json()["detail"] == "Budget value must be >= 0"
     persisted = srv._engine.session_mgr.load_state(sid)
     assert persisted is not None
-    assert persisted.budget == SessionBudget()
+    assert persisted.budget == SessionBudget(autonomous_tool_calls=100)
     assert persisted.attributes.pinned is False
 
 
@@ -3732,7 +3734,7 @@ def test_update_session_budget_is_not_applied_when_attribute_change_is_rejected(
     assert resp.status_code == 409
     persisted = srv._engine.session_mgr.load_state(sid)
     assert persisted is not None
-    assert persisted.budget == SessionBudget()
+    assert persisted.budget == SessionBudget(autonomous_tool_calls=100)
 
 
 def test_ws_skills_command(client, auth_headers):

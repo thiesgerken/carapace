@@ -173,7 +173,7 @@ class UsageTracker(BaseModel):
         return costs
 
 
-BudgetMetric = Literal["input", "output", "cost", "tool_calls"]
+BudgetMetric = Literal["input", "output", "cost", "tool_calls", "autonomy"]
 
 
 class BudgetGauge(BaseModel):
@@ -307,6 +307,20 @@ def usage_budget_gauges(
         )
 
     return gauges
+
+
+def autonomy_budget_gauge(streak: int, limit: int) -> BudgetGauge:
+    """Gauge for the autonomy limit. Display only: unlike the other budgets it never blocks an LLM call."""
+    return BudgetGauge(
+        key="autonomy",
+        label="Autonomy",
+        current_value=_format_tool_calls(streak),
+        current_amount=float(streak),
+        limit_value=_format_tool_calls(limit),
+        remaining_value=_format_tool_calls(max(0, limit - streak)),
+        fill_pct=round(min(100.0, 100.0 * streak / limit), 1),
+        reached=streak >= limit,
+    )
 
 
 def usage_budget_exceeded_error(

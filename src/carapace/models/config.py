@@ -183,7 +183,7 @@ class AgentConfig(ConfigModel):
     # Default for the memory block in the agent's system prompt (users can override it). 0 turns it off.
     memory_prompt_budget_tokens: int = Field(default=4000, ge=0)
     compaction: CompactionConfig = Field(default_factory=CompactionConfig)
-    default_session_budget: SessionBudget = Field(default_factory=SessionBudget)
+    default_session_budget: SessionBudget = Field(default_factory=lambda: SessionBudget(autonomous_tool_calls=100))
 
     available_models: list[AvailableModelEntry] = Field(default_factory=_default_agent_available_models)
 
