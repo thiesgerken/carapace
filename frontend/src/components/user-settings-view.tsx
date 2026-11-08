@@ -320,6 +320,7 @@ function draftFromSettings(response: UserSettingsResponseInfo): UserSettingsDraf
       output_tokens: budgetValue(budget.output_tokens),
       cost_usd: budgetCostValue(budget.cost_usd),
       tool_calls: budgetValue(budget.tool_calls),
+      autonomous_tool_calls: budgetValue(budget.autonomous_tool_calls),
     },
     timezone: response.settings.timezone,
     memory: memoryDraftFromSettings(response.settings.memory),
@@ -378,6 +379,7 @@ function comparableBudget(budget: Record<keyof Required<SessionBudgetSettings>, 
     output_tokens: comparableBudgetInteger(budget.output_tokens),
     cost_usd: comparableBudgetCost(budget.cost_usd),
     tool_calls: comparableBudgetInteger(budget.tool_calls),
+    autonomous_tool_calls: comparableBudgetInteger(budget.autonomous_tool_calls),
   };
 }
 
@@ -466,6 +468,7 @@ function budgetFromDraft(draft: UserSettingsDraft, t: Translate): SessionBudgetS
     output_tokens: parseOptionalBudgetInteger(draft.budget.output_tokens, t("fields.outputTokens"), t),
     cost_usd: parseOptionalBudgetCost(draft.budget.cost_usd, t("fields.costUsd"), t),
     tool_calls: parseOptionalBudgetInteger(draft.budget.tool_calls, t("fields.toolCalls"), t),
+    autonomous_tool_calls: parseOptionalBudgetInteger(draft.budget.autonomous_tool_calls, t("fields.autonomousToolCalls"), t),
   };
 }
 
@@ -779,6 +782,7 @@ export function UserSettingsView({ server, token }: { server: string; token: str
             <BudgetInput label={t("fields.outputTokens")} placeholder={t("defaults.serverDefault")} value={draft.budget.output_tokens} onChange={(value) => updateDraft({ budget: { ...draft.budget, output_tokens: value } })} />
             <BudgetInput label={t("fields.costUsd")} placeholder={t("defaults.serverDefault")} value={draft.budget.cost_usd} onBlur={() => updateDraft({ budget: { ...draft.budget, cost_usd: budgetCostValue(draft.budget.cost_usd) } })} onChange={(value) => updateDraft({ budget: { ...draft.budget, cost_usd: value } })} />
             <BudgetInput label={t("fields.toolCalls")} placeholder={t("defaults.serverDefault")} value={draft.budget.tool_calls} onChange={(value) => updateDraft({ budget: { ...draft.budget, tool_calls: value } })} />
+            <BudgetInput label={t("fields.autonomousToolCalls")} placeholder={t("defaults.serverDefault")} value={draft.budget.autonomous_tool_calls} onChange={(value) => updateDraft({ budget: { ...draft.budget, autonomous_tool_calls: value } })} />
           </div>
         </Section>
 

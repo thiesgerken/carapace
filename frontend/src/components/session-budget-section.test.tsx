@@ -43,7 +43,10 @@ async function pressKey(element: HTMLElement, key: string): Promise<void> {
 test("shows every limit, unset ones as no limit, before any usage exists", async () => {
   const restore = installDom();
   try {
-    const view = await renderSection({ input_tokens: 100_000, cost_usd: "2.50" }, async () => {});
+    const view = await renderSection(
+      { input_tokens: 100_000, cost_usd: "2.50", autonomous_tool_calls: 100 },
+      async () => {},
+    );
     const rows = [...view.container.querySelectorAll("dt")].map(
       (dt) => `${dt.textContent}: ${dt.nextElementSibling?.textContent}`,
     );
@@ -52,6 +55,7 @@ test("shows every limit, unset ones as no limit, before any usage exists", async
       "Output tokens: No limit",
       "Cost (USD): $2.50",
       "Tool calls: No limit",
+      "Autonomy limit: 100",
     ]);
     await view.unmount();
   } finally {

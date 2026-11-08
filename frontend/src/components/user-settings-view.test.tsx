@@ -75,6 +75,7 @@ test("buildUserSettingsPatch omits unchanged credentials when file backends are 
       output_tokens: "",
       cost_usd: "",
       tool_calls: "4",
+      autonomous_tool_calls: "",
     },
     timezone: settings.settings.timezone,
     memory: {
@@ -120,7 +121,7 @@ test("buildUserSettingsPatch keeps default models the view does not edit", () =>
     agentName: "",
     agentIcon: "",
     defaultModels: settings.settings.default_models,
-    budget: { input_tokens: "", output_tokens: "", cost_usd: "", tool_calls: "3" },
+    budget: { input_tokens: "", output_tokens: "", cost_usd: "", tool_calls: "3", autonomous_tool_calls: "" },
     timezone: settings.settings.timezone,
     memory: {
       autoMode: false,
@@ -146,7 +147,7 @@ test("buildUserSettingsPatch sends memory settings, keeping a zero limit and cle
     agentName: "",
     agentIcon: "",
     defaultModels: { ...settings.settings.default_models, memory_high: " anthropic:default " },
-    budget: { input_tokens: "", output_tokens: "", cost_usd: "", tool_calls: "3" },
+    budget: { input_tokens: "", output_tokens: "", cost_usd: "", tool_calls: "3", autonomous_tool_calls: "" },
     timezone: " America/New_York ",
     memory: {
       autoMode: true,

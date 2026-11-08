@@ -28,6 +28,7 @@ function draftWithModel(model: PlatformDraft["models"][number]): PlatformDraft {
       output_tokens: "",
       cost_usd: "",
       tool_calls: "",
+      autonomous_tool_calls: "",
     },
     compaction: {
       keepTurns: "6",

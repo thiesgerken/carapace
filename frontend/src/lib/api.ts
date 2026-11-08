@@ -1238,6 +1238,7 @@ function decodeBudget(raw: unknown): SessionBudgetSettings {
     output_tokens: readNumber(raw, "output_tokens") ?? null,
     cost_usd: cost ?? null,
     tool_calls: readNumber(raw, "tool_calls") ?? null,
+    autonomous_tool_calls: readNumber(raw, "autonomous_tool_calls") ?? null,
   };
 }
 
