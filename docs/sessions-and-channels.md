@@ -63,7 +63,7 @@ Sessions persist across server restarts. In-memory state (action log, sentinel c
 A turn that ends early (cancelled, blocked by a session budget, unusable model, or an unexpected error) is closed in both files:
 
 - `history.yaml` gets a synthetic failed return for every tool call still in flight, then the terminal message as the turn's final model response, so the model sees on the next turn that the previous one did not complete.
-- `events.yaml` gets a synthetic `tool_result` (`exit_code` 130) for every tool call still waiting for a result, then a `role: "error"` event with the terminal message. The error event ends the turn like a final assistant answer does: retry, reset, fork, and compaction treat it as the turn boundary, and the web UI renders it as an error both live and after a reload.
+- `events.yaml` gets a synthetic `tool_result` (`exit_code` 130) for every tool call of this turn still waiting for a result (calls an earlier turn left open are not touched), then a `role: "error"` event with the terminal message. The error event ends the turn like a final assistant answer does: retry, reset, fork, and compaction treat it as the turn boundary, and the web UI renders it as an error both live and after a reload.
 - Access decisions (`proxy_domain`, `credential_access`, and `git_push` events, nested under the tool call that triggered them) and denied tool calls never get a `tool_result`, so a failed turn never adds synthetic results for them.
 
 A budget stop names the `/budget` command that raises each reached limit, e.g. `/budget cost N`.
