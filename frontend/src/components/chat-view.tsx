@@ -10,6 +10,7 @@ import { ChatMemorySection } from "@/components/chat-memory-section";
 import { useMemorySessionDetail } from "@/components/memory-extraction-detail";
 import { SandboxGitControls } from "@/components/git-sync";
 import { ModelPicker, withSelectedModelOption } from "@/components/model-picker";
+import { SessionBudgetSection, type SessionBudgetField } from "@/components/session-budget-section";
 import { SessionOptionTiles } from "@/components/session-option-tiles";
 import { useAppLocale } from "@/components/locale-provider";
 import { useAppShell } from "@/components/app-shell-context";
@@ -2123,6 +2124,11 @@ export function ChatView({
     }
   }
 
+  async function handleUpdateSessionBudget(field: SessionBudgetField, value: string | null) {
+    const updated = await updateSession(server, token, sessionId, { budget: { [field]: value } });
+    onSessionUpdate?.(updated);
+  }
+
   function handleApproval(
     toolCallId: string,
     approved: boolean,
@@ -2593,6 +2599,14 @@ export function ChatView({
           <div className="mt-3 text-xs text-destructive">{modelUpdateError}</div>
         ) : null}
       </section>
+
+      {session ? (
+        <SessionBudgetSection
+          budget={session.budget}
+          disabled={deletingSession || sessionArchived}
+          onSave={handleUpdateSessionBudget}
+        />
+      ) : null}
 
       {latestJobRun ? (
         <section className="rounded-2xl border border-border/70 bg-background/90 p-3 shadow-sm">
