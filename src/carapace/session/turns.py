@@ -121,7 +121,6 @@ class SessionTurnHost(Protocol):
     _config: Config
     _session_mgr: SessionManager
     _sandbox_mgr: SandboxManager
-    _llm_semaphore: asyncio.Semaphore
     _notification_router: NotificationRouter | None
 
     async def _broadcast(
@@ -544,22 +543,21 @@ class SessionTurnMixin(SessionTurnHost):
         on_messages_snapshot: Callable[[list[Any]], None],
         on_assistant_text: Callable[[str], Awaitable[None]],
     ) -> TurnExecutionResult:
-        async with self._llm_semaphore:
-            with self.llm_request_recording(active):
-                self._assert_llm_budget_available(active)
-                messages, output, thinking, final_status = await _engine_module().run_agent_turn(
-                    user_input,
-                    deps,
-                    message_history,
-                    send_approval_request=send_approval_request,
-                    collect_approvals=collect_approvals,
-                    on_token=partial(self._handle_token_chunk, active),
-                    on_thinking_token=partial(self._handle_thinking_token_chunk, active),
-                    on_assistant_text=on_assistant_text,
-                    on_messages_snapshot=lambda snapshot: on_messages_snapshot(snapshot),
-                    before_llm_call=lambda: self._assert_llm_budget_available(active),
-                    get_usage_limits=lambda: self._remaining_usage_limits(active),
-                )
+        with self.llm_request_recording(active):
+            self._assert_llm_budget_available(active)
+            messages, output, thinking, final_status = await _engine_module().run_agent_turn(
+                user_input,
+                deps,
+                message_history,
+                send_approval_request=send_approval_request,
+                collect_approvals=collect_approvals,
+                on_token=partial(self._handle_token_chunk, active),
+                on_thinking_token=partial(self._handle_thinking_token_chunk, active),
+                on_assistant_text=on_assistant_text,
+                on_messages_snapshot=lambda snapshot: on_messages_snapshot(snapshot),
+                before_llm_call=lambda: self._assert_llm_budget_available(active),
+                get_usage_limits=lambda: self._remaining_usage_limits(active),
+            )
         return TurnExecutionResult(
             messages=messages,
             output=output,

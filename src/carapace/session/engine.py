@@ -29,7 +29,7 @@ from ..agent.loop import run_agent_turn as _run_agent_turn
 from ..credentials import SessionCredentialRegistry
 from ..git.store import GitStore
 from ..knowledge import KnowledgeRepoHandle, KnowledgeRepoResolver
-from ..llm import ModelFactory
+from ..llm import ModelFactory, SlotLimitedModel
 from ..models.compaction import SessionCompaction
 from ..models.config import Config
 from ..models.credentials import CredentialRegistryProtocol
@@ -499,7 +499,7 @@ class SessionEngine(
             sentinel=active.sentinel,
             git_store=self._git_store_for_session(session_id),
             skill_catalog=self._skill_catalog_for_session(session_id),
-            agent_model=agent_model,
+            agent_model=SlotLimitedModel(agent_model, self._llm_semaphore),
             agent_model_id=agent_model_id,
             tool_call_callback=tool_call_callback,
             tool_result_callback=tool_result_callback,

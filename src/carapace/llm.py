@@ -2,16 +2,21 @@
 
 from __future__ import annotations
 
+import asyncio
 import inspect
-from collections.abc import Callable
-from typing import Literal, Protocol, cast
+from collections.abc import AsyncGenerator, Callable
+from contextlib import asynccontextmanager
+from typing import Any, Literal, Protocol, cast
 
 from httpx2 import AsyncClient, HTTPStatusError, Timeout
+from pydantic_ai import RunContext
 from pydantic_ai.exceptions import UserError
-from pydantic_ai.models import Model, infer_model
+from pydantic_ai.messages import ModelMessage, ModelResponse
+from pydantic_ai.models import Model, ModelRequestParameters, StreamedResponse, infer_model
 from pydantic_ai.models.openai import OpenAIChatModel, OpenAIResponsesModel
 from pydantic_ai.models.openai_codex import OpenAICodexModel
 from pydantic_ai.models.openrouter import OpenRouterModel
+from pydantic_ai.models.wrapper import WrapperModel
 from pydantic_ai.profiles.anthropic import ANTHROPIC_THINKING_BUDGET_MAP
 from pydantic_ai.providers import Provider, infer_provider, infer_provider_class
 from pydantic_ai.providers.openai import OpenAIProvider
@@ -83,6 +88,41 @@ def infer_model_with_retry_transport(model_name: str) -> Model:
             return cls(api_key=_PLACEHOLDER_API_KEY, **kwargs)  # type: ignore[arg-type]
 
     return infer_model(model_name, provider_factory=_provider_factory)
+
+
+class SlotLimitedModel(WrapperModel):
+    """Holds one of the server's LLM slots (``agent.max_parallel_llm``) for each model request.
+
+    Only the request itself takes a slot: tool runs, sentinel reviews and waits for the user
+    between requests hold none, so a turn parked on an approval never blocks other sessions.
+    """
+
+    def __init__(self, wrapped: Model, slots: asyncio.Semaphore) -> None:
+        super().__init__(wrapped)
+        self._slots = slots
+
+    async def request(
+        self,
+        messages: list[ModelMessage],
+        model_settings: ModelSettings | None,
+        model_request_parameters: ModelRequestParameters,
+    ) -> ModelResponse:
+        async with self._slots:
+            return await super().request(messages, model_settings, model_request_parameters)
+
+    @asynccontextmanager
+    async def request_stream(
+        self,
+        messages: list[ModelMessage],
+        model_settings: ModelSettings | None,
+        model_request_parameters: ModelRequestParameters,
+        run_context: RunContext[Any] | None = None,
+    ) -> AsyncGenerator[StreamedResponse]:
+        async with (
+            self._slots,
+            super().request_stream(messages, model_settings, model_request_parameters, run_context) as response,
+        ):
+            yield response
 
 
 class DisabledModelError(ValueError):
