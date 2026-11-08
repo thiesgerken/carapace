@@ -1,6 +1,52 @@
 # CHANGELOG
 
 
+## v0.170.0 (2026-11-08)
+
+
+### ✨ Features
+
+
+- ✨Merge pull request #435 from thiesgerken/feat/budget-drawer
+  ([`ed7b44e`](https://github.com/thiesgerken/carapace/commit/ed7b44e793ac52efe3b38bfb62259c52a73d44c4))
+
+- ✨ feat: edit session budgets in the session drawer
+  ([`ed7b44e`](https://github.com/thiesgerken/carapace/commit/ed7b44e793ac52efe3b38bfb62259c52a73d44c4))
+
+- ✨ feat(frontend): edit session budgets in the session drawer
+  ([`7b4c714`](https://github.com/thiesgerken/carapace/commit/7b4c7140ee7e43ad2f0860ea82615a1f93704c69))
+
+  A Budget section in the session drawer lists all four limits, including unset ones, so they can be set before the session has used anything. Click a limit, type a value (same syntax as /budget), Enter saves, Escape cancels, empty means no limit. The value goes to the server unparsed, so validation stays in one place; its error detail is shown inline.
+
+  The React test utils now load react-dom after the DOM is installed (it probes for input event support on load) and set input values through the prototype setter, so controlled text inputs fire onChange in tests.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aUyaxvsB8zAKUBRRhYg
+
+- ✨ feat(sessions): set budget limits via PATCH /api/sessions/{id}
+  ([`c1239aa`](https://github.com/thiesgerken/carapace/commit/c1239aa514fdd5b1b07dcb21beadc34e269fed3b))
+
+  SessionEngine.update_session_budget is the single entry point for budget writes: it parses raw /budget values (None clears a limit), applies them only if all parse, persists, and broadcasts a status update to every subscriber. /budget now goes through it too, so its gauge refresh reaches all connected clients instead of only the sender. SessionInfo exposes the current limits as `budget`.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aUyaxvsB8zAKUBRRhYg
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix(sessions): keep the budget drawer in sync and make budget PATCHes atomic
+  ([`c1b4cbb`](https://github.com/thiesgerken/carapace/commit/c1b4cbbb183c5605397025bc63912c351aac7b57))
+
+  The drawer only learned new limits from its own PATCH response, so /budget or an edit in another tab left it stale, and re-entering the previous value was dropped as "unchanged". StatusUpdate now carries `budget`, on connect and on every budget change, and the frontend merges it into the session.
+
+  Parsing moved to the pure `parse_budget_limit`; `update_session_budget` takes parsed values. PATCH /api/sessions/{id} parses the budget first and applies it last, so a rejected attribute or model change no longer leaves a half-applied budget. The four copy-paste setter branches became one validated SessionBudget write with a single save.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aUyaxvsB8zAKUBRRhYg
+
 ## v0.169.2 (2026-11-08)
 
 
