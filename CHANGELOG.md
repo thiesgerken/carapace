@@ -1,6 +1,32 @@
 # CHANGELOG
 
 
+## v0.169.1 (2026-11-08)
+
+
+### Other
+
+
+- Merge pull request #431 from thiesgerken/fix/skill-frontmatter-errors
+  ([`d16582a`](https://github.com/thiesgerken/carapace/commit/d16582a6776ac6cdee38880d53c6a3d5f32cf2d1))
+
+### 🐛 Bug Fixes
+
+
+- 🐛 Fail loudly on broken SKILL.md frontmatter
+  ([`d16582a`](https://github.com/thiesgerken/carapace/commit/d16582a6776ac6cdee38880d53c6a3d5f32cf2d1))
+
+- 🐛 fix: fail loudly on broken SKILL.md frontmatter
+  ([`8a301a3`](https://github.com/thiesgerken/carapace/commit/8a301a3f4980d7e65112488f05f8a919a116e90a))
+
+  Invalid YAML or an invalid metadata.carapace used to degrade silently into empty metadata, so use_skill "activated" a skill without credentials, domains or command aliases and reported success.
+
+  parse_skill_document and get_carapace_config now raise SkillDocumentError. use_skill refuses activation and names the file and error, the catalog lists broken skills with the error, the Knowledge UI shows it on the skill card, exec warns about broken active skills, and sandbox setup reports it as an activation error.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aUyzSJZmx31jLgJh81X
+
 ## v0.169.0 (2026-11-04)
 
 
