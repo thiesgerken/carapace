@@ -73,7 +73,8 @@
             "vaultError": "Vault unreachable",
             "oauthHint": "No OAuth token stored. Generate one with",
             "oauthHintStore": "then save the JSON in the vault entry above.",
-            "hints": "Hints"
+            "hints": "Hints",
+            "invalid": "Invalid frontmatter, the skill cannot be activated: {error}"
         }
     },
     "memory": {

@@ -1799,6 +1799,8 @@ export interface KnowledgeSkill {
   description: string;
   /** Null when the skill declares no carapace metadata, or it failed validation. */
   carapace: SkillCarapaceConfig | null;
+  /** Why the SKILL.md frontmatter is unusable; such a skill cannot be activated. */
+  error: string | null;
 }
 
 export interface ArtifactSession {

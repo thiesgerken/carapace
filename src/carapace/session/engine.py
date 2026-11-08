@@ -34,14 +34,14 @@ from ..models.compaction import SessionCompaction
 from ..models.config import Config
 from ..models.credentials import CredentialRegistryProtocol
 from ..models.session import MemorySnapshot, SessionAttributes, SessionFork, SessionState
-from ..models.skills import SkillInfo
+from ..models.skills import SkillCarapaceConfig, SkillInfo
 from ..models.tooling import ToolCallCallback, ToolResult
 from ..notifications.router import NotificationRouter
 from ..sandbox.manager import SandboxManager
-from ..sandbox.runtime import SkillActivationInputs, SkillFileCredential
+from ..sandbox.runtime import SkillActivationError, SkillActivationInputs, SkillFileCredential
 from ..security.context import SessionSecurity
 from ..security.sentinel import Sentinel
-from ..skills import SkillRegistry
+from ..skills import SkillDocumentError, SkillRegistry
 from ..usage import (
     LlmRequestLog,
     LlmRequestState,
@@ -319,8 +319,7 @@ class SessionEngine(
 
     async def _skill_activation_inputs(self, session_id: str, skill_name: str) -> SkillActivationInputs:
         """Return approved env/file inputs for automatic skill activation providers."""
-        registry = self._skill_registry_for_session(session_id)
-        carapace_cfg = registry.get_carapace_config(skill_name)
+        carapace_cfg = self._skill_carapace_config(session_id, skill_name)
         if not carapace_cfg or not carapace_cfg.credentials:
             return SkillActivationInputs()
 
@@ -349,10 +348,16 @@ class SessionEngine(
                 file_credentials.append(SkillFileCredential(path=decl.file, value=value))
         return SkillActivationInputs(environment=env, file_credentials=file_credentials)
 
+    def _skill_carapace_config(self, session_id: str, skill_name: str) -> SkillCarapaceConfig | None:
+        """Re-read a skill's declarations for sandbox setup, which reports failures as activation errors."""
+        try:
+            return self._skill_registry_for_session(session_id).get_carapace_config(skill_name)
+        except SkillDocumentError as exc:
+            raise SkillActivationError(f"skills/{skill_name}/SKILL.md is invalid: {exc}") from exc
+
     def _skill_command_aliases(self, session_id: str, skill_name: str) -> list[tuple[str, str]]:
         """Return validated command aliases declared by a skill."""
-        registry = self._skill_registry_for_session(session_id)
-        carapace_cfg = registry.get_carapace_config(skill_name)
+        carapace_cfg = self._skill_carapace_config(session_id, skill_name)
         if not carapace_cfg:
             return []
         return [(command.name, command.command) for command in carapace_cfg.commands]

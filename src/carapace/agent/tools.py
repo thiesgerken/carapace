@@ -27,7 +27,6 @@ from ..llm import model_settings_for_config, model_supports_vision, with_prompt_
 from ..models.credentials import CredentialMetadata
 from ..models.skills import (
     ContextGrant,
-    SkillCarapaceConfig,
     SkillCredentialDecl,
     SkillMcpDecl,
     SkillMcpOAuthAuth,
@@ -43,7 +42,7 @@ from ..security.context import (
     SkillActivatedEntry,
     ToolResultEntry,
 )
-from ..skills import SkillRegistry
+from ..skills import SkillDocumentError, SkillRegistry
 from ..usage import LlmRequestLogCapability
 from .deps import Deps, TaskDone, TaskFailed
 
@@ -192,16 +191,28 @@ def _exec_skill_access_warning(
     )
 
 
-def _active_skill_command_aliases(knowledge_dir: Path, activated_skills: list[str]) -> dict[str, str]:
+def _active_skill_command_aliases(
+    knowledge_dir: Path, activated_skills: list[str]
+) -> tuple[dict[str, str], dict[str, SkillDocumentError]]:
+    """Map each command alias to the active skill declaring it, plus the active skills whose SKILL.md broke.
+
+    A SKILL.md can break after activation. Its aliases are then unknown, but that must not
+    block other commands: fixing and pushing the file needs ``exec`` itself.
+    """
     registry = SkillRegistry(knowledge_dir / "skills")
     alias_to_skill: dict[str, str] = {}
+    broken: dict[str, SkillDocumentError] = {}
     for skill_name in activated_skills:
-        cfg: SkillCarapaceConfig | None = registry.get_carapace_config(skill_name)
+        try:
+            cfg = registry.get_carapace_config(skill_name)
+        except SkillDocumentError as exc:
+            broken[skill_name] = exc
+            continue
         if not cfg:
             continue
         for declared_command in cfg.commands:
             alias_to_skill.setdefault(declared_command.name, skill_name)
-    return alias_to_skill
+    return alias_to_skill, broken
 
 
 def _skill_command_alias_conflict(skill_name: str, knowledge_dir: Path, activated_skills: list[str]) -> str | None:
@@ -210,7 +221,7 @@ def _skill_command_alias_conflict(skill_name: str, knowledge_dir: Path, activate
     if not cfg or not cfg.commands:
         return None
 
-    alias_to_skill = _active_skill_command_aliases(
+    alias_to_skill, _broken = _active_skill_command_aliases(
         knowledge_dir,
         [active_skill for active_skill in activated_skills if active_skill != skill_name],
     )
@@ -268,23 +279,26 @@ def _resolve_exec_command_alias(
     if token is None:
         return command, contexts, None
 
-    alias_to_skill = _active_skill_command_aliases(knowledge_dir, activated_skills)
+    alias_to_skill, broken = _active_skill_command_aliases(knowledge_dir, activated_skills)
+    warnings = [
+        f"Warning: command aliases of active skill `{skill_name}` are not resolved because "
+        f"skills/{skill_name}/SKILL.md is invalid: {exc}. Fix and push it."
+        for skill_name, exc in broken.items()
+    ]
     alias = token.removeprefix(f"{SKILL_COMMAND_SHIM_DIR}/")
     owning_skill = alias_to_skill.get(alias)
-    if owning_skill is None:
-        return command, contexts, None
+    resolved_contexts = contexts
+    if owning_skill is not None:
+        resolved_contexts = list(dict.fromkeys(contexts))
+        if owning_skill not in resolved_contexts:
+            resolved_contexts.append(owning_skill)
+            warnings.append(
+                "Warning: adding skill context automatically because this command starts with "
+                f"the registered alias `{alias}` from skill `{owning_skill}`. "
+                + f"Include `contexts=['{owning_skill}']` next time."
+            )
 
-    resolved_contexts = list(dict.fromkeys(contexts))
-    warning: str | None = None
-    if owning_skill not in resolved_contexts:
-        resolved_contexts.append(owning_skill)
-        warning = (
-            "Warning: adding skill context automatically because this command starts with "
-            f"the registered alias `{alias}` from skill `{owning_skill}`. "
-            + f"Include `contexts=['{owning_skill}']` next time."
-        )
-
-    return command, resolved_contexts, warning
+    return command, resolved_contexts, "\n\n".join(warnings) or None
 
 
 async def _gate(ctx: RunContext[Deps], tool_name: str, args: dict[str, Any]) -> ToolDenied | None:
@@ -1088,10 +1102,15 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
         Call before using a skill.
         """
         registry = SkillRegistry(ctx.deps.knowledge_dir / "skills")
-        if registry.is_disabled(skill_name):
-            return f"Skill '{skill_name}' is disabled. Enable it in metadata.carapace.disabled before activation."
-
-        carapace_cfg = registry.get_carapace_config(skill_name)
+        try:
+            if registry.is_disabled(skill_name):
+                return f"Skill '{skill_name}' is disabled. Enable it in metadata.carapace.disabled before activation."
+            carapace_cfg = registry.get_carapace_config(skill_name)
+        except SkillDocumentError as exc:
+            return (
+                f"Skill '{skill_name}' was not activated: skills/{skill_name}/SKILL.md is invalid: {exc}. "
+                "Fix the frontmatter, commit and push it, then call use_skill again."
+            )
         declared_domains = carapace_cfg.network.domains if carapace_cfg else []
         declared_tunnels = carapace_cfg.network.tunnels if carapace_cfg else []
         declared_creds = carapace_cfg.credentials if carapace_cfg else []

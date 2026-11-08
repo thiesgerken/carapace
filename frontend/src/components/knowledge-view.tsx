@@ -271,6 +271,12 @@ function SkillCard({ skill, vaultStatus }: { skill: KnowledgeSkill; vaultStatus?
       {skill.description ? (
         <p className="mt-1.5 text-sm text-muted-foreground">{skill.description}</p>
       ) : null}
+      {skill.error ? (
+        <p className="mt-1.5 flex items-start gap-1.5 text-sm text-destructive">
+          <CircleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <span className="min-w-0 break-words">{t("invalid", { error: skill.error })}</span>
+        </p>
+      ) : null}
 
       {commands.length || domains.length || tunnels.length || credentials.length || mcpServers.length || hints.length ? (
         <div className="mt-4 flex flex-col gap-3 border-t border-border/70 pt-3 text-sm">
