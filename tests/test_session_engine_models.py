@@ -32,13 +32,30 @@ from carapace.models.session import SessionBudget
 from carapace.security.context import SentinelVerdict, SessionSecurity, ToolCallEntry
 from carapace.security.sentinel import Sentinel
 from carapace.session.turns import _non_slash_user_message_count
-from carapace.usage import LlmRequestRecord, LlmRequestState, ModelUsage, SessionBudgetExceededError
+from carapace.usage import (
+    LlmRequestRecord,
+    LlmRequestState,
+    ModelUsage,
+    SessionBudgetExceededError,
+    UsageTracker,
+    usage_budget_gauges,
+)
 from tests.session_helpers import (
     _FakeSubscriber,
     _make_engine,
     _patch_sentinel,
     _sandbox_reset_session_mock,
     _sentinel_set_model_mock,
+    _without_timestamps,
+)
+
+
+def _reached_tool_call_budget_error() -> SessionBudgetExceededError:
+    return SessionBudgetExceededError(usage_budget_gauges(UsageTracker(tool_calls=2), tool_calls_limit=2))
+
+
+_TOOL_CALL_BUDGET_MESSAGE = (
+    "Session budget reached: tool calls 2 tool calls / 2 tool calls. Raise the limit to continue: /budget tool_calls N"
 )
 
 
@@ -54,7 +71,7 @@ def test_submit_message_budget_exceeded_persists_history(tmp_path: Path, db_fact
             snapshot = [ModelRequest(parts=[UserPromptPart(content="hello")])]
             if on_messages_snapshot is not None:
                 on_messages_snapshot(snapshot)
-            raise SessionBudgetExceededError("Session budget reached: input 1.0k tokens / 1.0k tokens", gauges=[])
+            raise _reached_tool_call_budget_error()
 
         with patch("carapace.session.engine.run_agent_turn", new=_fail_run_agent_turn):
             await engine.submit_message(sid, "hello")
@@ -66,18 +83,57 @@ def test_submit_message_budget_exceeded_persists_history(tmp_path: Path, db_fact
         assert any(isinstance(part, UserPromptPart) and part.content == "hello" for part in history[0].parts)
         assert isinstance(history[-1], ModelResponse)
         assert any(
-            isinstance(part, TextPart) and part.content == "Session budget reached: input 1.0k tokens / 1.0k tokens"
-            for part in history[-1].parts
+            isinstance(part, TextPart) and part.content == _TOOL_CALL_BUDGET_MESSAGE for part in history[-1].parts
         )
 
         events = engine.session_mgr.load_events(sid)
         assert "timestamp" in events[-1]
-        assert events[-1]["role"] == "assistant"
-        assert events[-1]["content"] == "Session budget reached: input 1.0k tokens / 1.0k tokens"
+        assert events[-1]["role"] == "error"
+        assert events[-1]["content"] == _TOOL_CALL_BUDGET_MESSAGE
         assert any("Session budget reached" in err for err in sub.errors)
         assert any(
             detail.startswith("Session budget reached") and turn_terminal for detail, turn_terminal in sub.error_events
         )
+
+    with _patch_sentinel():
+        asyncio.run(_run())
+
+
+def test_budget_blocked_turn_leaves_earlier_tool_calls_alone(tmp_path: Path, db_factory):
+    """Access decisions (child or not) and denied calls never get a tool_result, and a call an
+    earlier turn left open (crash) is not this turn's to cancel. A failed turn must not "cancel"
+    any of them retroactively."""
+
+    async def _run() -> None:
+        engine = _make_engine(tmp_path, session_factory=db_factory)
+        sid = engine.session_mgr.create_session(user="thies").session_id
+        earlier_turn: list[dict[str, Any]] = [
+            {"role": "user", "content": "push it"},
+            {"role": "tool_call", "tool": "exec", "args": {"command": "git push"}, "detail": "run", "tool_id": "e1"},
+            {"role": "tool_call", "tool": "proxy_domain", "args": {"domain": "x.test"}, "tool_id": "p1"},
+            {"role": "tool_call", "tool": "proxy_domain", "args": {"domain": "y.test"}, "tool_id": "p2"},
+            {"role": "tool_call", "tool": "credential_access", "args": {}, "tool_id": "c1", "parent_tool_id": "e1"},
+            {"role": "tool_call", "tool": "git_push", "args": {"ref": "main"}, "tool_id": "g1", "parent_tool_id": "e1"},
+            {"role": "tool_result", "tool": "exec", "result": "ok", "exit_code": 0, "tool_id": "e1"},
+            {"role": "tool_call", "tool": "exec", "args": {}, "approval_verdict": "deny", "tool_id": "d1"},
+            {"role": "tool_call", "tool": "exec", "args": {}, "approval_verdict": "allow", "tool_id": "x1"},
+            {"role": "assistant", "content": "pushed"},
+        ]
+        engine.session_mgr.save_events(sid, earlier_turn)
+
+        async def _blocked_run_agent_turn(*_args: Any, **_kwargs: Any):
+            raise _reached_tool_call_budget_error()
+
+        with patch("carapace.session.engine.run_agent_turn", new=_blocked_run_agent_turn):
+            await engine.submit_message(sid, "go on")
+            await asyncio.sleep(0.1)
+
+        events = _without_timestamps(engine.session_mgr.load_events(sid))
+        assert events[: len(earlier_turn)] == earlier_turn
+        assert events[len(earlier_turn) :] == [
+            {"role": "user", "content": "go on"},
+            {"role": "error", "content": _TOOL_CALL_BUDGET_MESSAGE},
+        ]
 
     with _patch_sentinel():
         asyncio.run(_run())
@@ -821,6 +877,47 @@ def test_truncate_incomplete_events_keeps_completed_turn_after_resultless_call(t
         assert engine._completed_event_turns(truncated)[-1].end_event_index == 6
 
 
+def test_truncate_incomplete_events_ignores_access_decisions_in_open_turn(tmp_path: Path, db_factory) -> None:
+    """Older sessions carry synthetic results for access decisions, so tool-name pairing alone
+    counts every later access decision as pending and cuts the open turn before it."""
+    with _patch_sentinel():
+        engine = _make_engine(tmp_path, session_factory=db_factory)
+        events: list[dict[str, Any]] = [
+            {"role": "user", "content": "first"},
+            {"role": "tool_call", "tool": "proxy_domain", "args": {"domain": "x.test"}, "tool_id": "p1"},
+            {"role": "tool_result", "tool": "proxy_domain", "result": "canceled", "exit_code": 130, "tool_id": "p1"},
+            {"role": "error", "content": "The previous turn failed before completion."},
+            {"role": "user", "content": "second"},
+            {"role": "tool_call", "tool": "exec", "args": {"command": "curl"}, "detail": "run", "tool_id": "e2"},
+            {
+                "role": "tool_call",
+                "tool": "proxy_domain",
+                "args": {"domain": "y.test"},
+                "tool_id": "p2",
+                "parent_tool_id": "e2",
+            },
+            {"role": "tool_result", "tool": "exec", "result": "ok", "exit_code": 0, "tool_id": "e2"},
+            {"role": "assistant", "content": "checking", "partial": True},
+        ]
+
+        assert engine._truncate_incomplete_events(events) == events
+
+
+def test_completed_event_turns_end_at_turn_error(tmp_path: Path, db_factory) -> None:
+    with _patch_sentinel():
+        engine = _make_engine(tmp_path, session_factory=db_factory)
+        events: list[dict[str, Any]] = [
+            {"role": "user", "content": "do it"},
+            {"role": "error", "content": "Session budget reached"},
+            {"role": "user", "content": "again"},
+            {"role": "assistant", "content": "done"},
+        ]
+
+        turns = engine._completed_event_turns(events)
+
+        assert [(turn.start_event_index, turn.end_event_index) for turn in turns] == [(0, 1), (2, 3)]
+
+
 def test_completed_event_turns_ignores_partial_assistant_events(tmp_path: Path, db_factory) -> None:
     """Intermediate narration (partial assistant events) sits inside a turn — the turn must end at
     its final assistant answer, so reset/fork/compaction stay anchored to real turn boundaries."""
@@ -859,6 +956,7 @@ def test_save_user_message_on_failure_appends_cancelled_parallel_tool_returns(tm
     engine._save_user_message_on_failure(
         sid,
         "hello",
+        turn_event_start=0,
         latest_messages=latest_messages,
         terminal_message="The previous turn was interrupted before completion.",
     )
@@ -917,6 +1015,7 @@ def test_save_user_message_on_failure_appends_cancelled_parallel_tool_results(tm
     engine._save_user_message_on_failure(
         sid,
         "hello",
+        turn_event_start=0,
         latest_messages=[ModelRequest(parts=[UserPromptPart(content="hello")])],
         terminal_message="The previous turn was interrupted before completion.",
     )
@@ -929,7 +1028,7 @@ def test_save_user_message_on_failure_appends_cancelled_parallel_tool_results(tm
         "tool_call",
         "tool_result",
         "tool_result",
-        "assistant",
+        "error",
     ]
     assert [event.get("tool_id") for event in events[3:5]] == ["tool-1", "tool-2"]
     assert all(event.get("exit_code") == 130 for event in events[3:5])

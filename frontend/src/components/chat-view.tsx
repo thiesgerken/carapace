@@ -568,6 +568,11 @@ function latestCompletedTurnStartMessageIndex(messages: ChatMessage[]): number {
   return messages.length;
 }
 
+/** Messages that carry retry/reset/fork: user prompts, assistant answers, and turn-ending errors. */
+export function isTurnActionMessage(message: ChatMessage): boolean {
+  return message.kind === "user" || message.kind === "assistant" || isTurnTerminalMessage(message);
+}
+
 function eventIndexForMessage(message: ChatMessage): number | undefined {
   if (message.kind === "assistant" || message.kind === "error" || message.kind === "user") {
     return typeof message.eventIndex === "number" ? message.eventIndex : undefined;
@@ -615,6 +620,7 @@ function foldNodeOf(message: ChatMessage): string | undefined {
     message.kind === "user"
     || message.kind === "assistant"
     || message.kind === "tool_call"
+    || message.kind === "error"
   ) {
     return message.compaction?.folded_into;
   }
@@ -626,6 +632,7 @@ function foldAnnotationOf(message: ChatMessage): CompactionAnnotation | undefine
     message.kind === "user"
     || message.kind === "assistant"
     || message.kind === "tool_call"
+    || message.kind === "error"
   ) {
     return message.compaction;
   }
@@ -922,6 +929,17 @@ export function projectHistoryToMessages(history: HistoryMessage[]): ChatMessage
         kind: "command",
         command: entry.command ?? "",
         data: entry.data,
+      });
+      continue;
+    }
+
+    if (entry.role === "error") {
+      messages.push({
+        kind: "error",
+        detail: entry.content,
+        eventIndex: typeof entry.event_index === "number" ? entry.event_index : undefined,
+        compaction: entry.compaction,
+        turnTerminal: true,
       });
       continue;
     }
@@ -2853,7 +2871,7 @@ export function ChatView({
                   const msg = messages[i];
                   // Event-granular: fork/reset cut exactly at this message (mid-turn included).
                   // Retry still re-runs the latest turn.
-                  const actionable = msg.kind === "user" || msg.kind === "assistant";
+                  const actionable = isTurnActionMessage(msg);
                   const enclosingTerminal = enclosingTurnTerminalMessageIndex(messages, i);
                   // A persisted/completed message can be a cut target; its event index is resolved
                   // (refetched if a freshly-finished turn hasn't been reprojected) when acted on.

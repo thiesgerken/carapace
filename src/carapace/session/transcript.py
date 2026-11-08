@@ -19,12 +19,44 @@ from pydantic_ai.messages import (
 from ..ws_models import Attachment
 from .attachments import augment_prompt
 
+# Proxy, git push and credential decisions are recorded as ``tool_call`` events so they render as
+# tool calls (nested under the agent tool that triggered them, when there is one), but nothing ever
+# answers them with a ``tool_result``.
+_ACCESS_DECISION_TOOLS = frozenset({"proxy_domain", "git_push", "credential_access"})
+
 
 @dataclass(frozen=True, slots=True)
 class CompletedEventTurn:
     start_event_index: int
     end_event_index: int
     user_content: str
+
+
+def awaits_tool_result(event: dict[str, Any]) -> bool:
+    """Whether *event* is a tool call that stays open until a ``tool_result`` answers it.
+
+    Access decisions are never answered, and denied calls never run, so a turn ending early
+    leaves neither of them unfinished.
+    """
+    return (
+        event.get("role") == "tool_call"
+        and event.get("tool") not in _ACCESS_DECISION_TOOLS
+        and event.get("approval_verdict") != "deny"
+    )
+
+
+def is_turn_terminal_event(event: dict[str, Any]) -> bool:
+    """A turn ends at its final assistant answer or at the error that ended it early.
+
+    Partial assistant events are intermediate narration inside a turn, never its end.
+    """
+    match event.get("role"):
+        case "error":
+            return True
+        case "assistant":
+            return not event.get("partial")
+        case _:
+            return False
 
 
 def completed_event_turns(events: list[dict[str, Any]]) -> list[CompletedEventTurn]:
@@ -37,12 +69,7 @@ def completed_event_turns(events: list[dict[str, Any]]) -> list[CompletedEventTu
         if role == "user" and isinstance(content := event.get("content"), str) and not content.startswith("/"):
             start_event_index = index
             user_content = content
-        elif (
-            role == "assistant"
-            and not event.get("partial")
-            and start_event_index is not None
-            and user_content is not None
-        ):
+        elif is_turn_terminal_event(event) and start_event_index is not None and user_content is not None:
             turns.append(
                 CompletedEventTurn(
                     start_event_index=start_event_index,
@@ -136,7 +163,9 @@ def rebuild_model_history_from_events(events: list[dict[str, Any]]) -> list[Mode
                 if isinstance(attachments, list) and attachments:
                     content = augment_prompt(content, [Attachment.model_validate(a) for a in attachments])
                 messages.append(ModelRequest(parts=[UserPromptPart(content=content)]))
-        elif role == "assistant":
+        elif role in {"assistant", "error"}:
+            # A failed turn's error is part of the model history too (as the turn's final response),
+            # so the model knows on the next turn that the previous one did not complete.
             content = event.get("content")
             if isinstance(content, str) and content:
                 messages.append(ModelResponse(parts=[TextPart(content=content)]))

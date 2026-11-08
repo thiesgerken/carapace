@@ -32,6 +32,7 @@ router = APIRouter()
 _HistoryRole = Literal[
     "user",
     "assistant",
+    "error",
     "thinking",
     "tool_call",
     "tool_result",

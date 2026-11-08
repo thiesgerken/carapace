@@ -595,7 +595,7 @@ def test_submit_message_tool_call_budget_exhausted_broadcasts_error(tmp_path: Pa
         active = engine.get_active(sid)
         assert active is not None
         assert active.usage_tracker.tool_calls == 1
-        assert any("Session budget reached: tool calls 1 tool calls / 1 tool calls" in err for err in sub.errors)
+        assert any("Session budget reached: tool calls 1 tool call / 1 tool call" in err for err in sub.errors)
 
     with _patch_sentinel():
         asyncio.run(_run())

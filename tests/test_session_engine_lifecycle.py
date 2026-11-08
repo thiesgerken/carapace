@@ -213,7 +213,7 @@ def test_submit_cancel_persists_interruption_marker(tmp_path: Path, db_factory):
         assert all("timestamp" in event for event in events[-2:])
         assert _without_timestamps(events[-2:]) == [
             {"role": "user", "content": "hello"},
-            {"role": "assistant", "content": "The previous turn was interrupted before completion."},
+            {"role": "error", "content": "The previous turn was interrupted before completion."},
         ]
         assert sub.cancelled == 1
 
@@ -306,7 +306,7 @@ def test_submit_cancel_closes_pending_tool_approval(tmp_path: Path, db_factory):
             await engine.submit_cancel(sid)
 
         events = _without_timestamps(engine.session_mgr.load_events(sid))
-        assert [event["role"] for event in events] == ["user", "approval_request", "approval_response", "assistant"]
+        assert [event["role"] for event in events] == ["user", "approval_request", "approval_response", "error"]
         assert events[2] == {
             "role": "approval_response",
             "tool_call_id": "call-1",
@@ -354,7 +354,7 @@ def test_failed_turn_closes_pending_escalation_and_releases_its_waiter(tmp_path:
             "user",
             "domain_access_approval",
             "domain_access_approval",
-            "assistant",
+            "error",
         ]
         assert events[2] == {
             "role": "domain_access_approval",
@@ -409,7 +409,7 @@ def test_cancel_closes_escalation_whose_waiter_saw_the_cancel_first(tmp_path: Pa
             "user",
             "domain_access_approval",
             "domain_access_approval",
-            "assistant",
+            "error",
         ]
         assert events[2]["decision"] == "deny"
         assert events[2]["decision_source"] == "system"
@@ -607,6 +607,42 @@ def test_reset_to_turn_rewinds_later_turns(tmp_path: Path, db_factory):
         assert len(history) == 2
         assert isinstance(history[0], ModelRequest)
         assert isinstance(history[1], ModelResponse)
+
+    with _patch_sentinel():
+        asyncio.run(_run())
+
+
+def test_reset_to_turn_accepts_a_failed_turns_error_as_boundary(tmp_path: Path, db_factory):
+    async def _run() -> None:
+        engine = _make_engine(tmp_path, session_factory=db_factory)
+        sid = engine.session_mgr.create_session(user="thies").session_id
+
+        engine.session_mgr.save_events(
+            sid,
+            [
+                {"role": "user", "content": "first"},
+                {"role": "error", "content": "Session budget reached"},
+                {"role": "user", "content": "second"},
+                {"role": "assistant", "content": "second answer"},
+            ],
+        )
+        engine.session_mgr.save_history(
+            sid,
+            [
+                ModelRequest(parts=[UserPromptPart(content="first")]),
+                ModelResponse(parts=[TextPart(content="Session budget reached")]),
+                ModelRequest(parts=[UserPromptPart(content="second")]),
+                ModelResponse(parts=[TextPart(content="second answer")]),
+            ],
+        )
+
+        assert await engine.reset_to_turn(sid, 1) is True
+
+        assert _without_timestamps(engine.session_mgr.load_events(sid)) == [
+            {"role": "user", "content": "first"},
+            {"role": "error", "content": "Session budget reached"},
+        ]
+        assert len(engine.session_mgr.load_history(sid)) == 2
 
     with _patch_sentinel():
         asyncio.run(_run())

@@ -58,6 +58,16 @@ Sessions persist across server restarts. In-memory state (action log, sentinel c
 - The REST history endpoint reads `events.yaml` as the user-facing transcript source.
 - Retry, reset, fork, and knowledge export align both files by completed turns, but they do not collapse them into a single source of truth.
 
+### Failed turns
+
+A turn that ends early (cancelled, blocked by a session budget, unusable model, or an unexpected error) is closed in both files:
+
+- `history.yaml` gets a synthetic failed return for every tool call still in flight, then the terminal message as the turn's final model response, so the model sees on the next turn that the previous one did not complete.
+- `events.yaml` gets a synthetic `tool_result` (`exit_code` 130) for every tool call of this turn still waiting for a result (calls an earlier turn left open are not touched), then a `role: "error"` event with the terminal message. The error event ends the turn like a final assistant answer does: retry, reset, fork, and compaction treat it as the turn boundary, and the web UI renders it as an error both live and after a reload.
+- Access decisions (`proxy_domain`, `credential_access`, and `git_push` events, nested under the tool call that triggered them) and denied tool calls never get a `tool_result`, so a failed turn never adds synthetic results for them.
+
+A budget stop names the `/budget` command that raises each reached limit, e.g. `/budget cost N`.
+
 ## Knowledge commits
 
 carapace can optionally commit session histories into the Git-backed knowledge repository. This is a secondary persistence path for long-term recall, not the primary runtime store.
@@ -299,6 +309,6 @@ A separate approval flow handles domain requests from sandbox containers:
 
 ### Unanswered requests
 
-An approval request (tool, domain access, git push, or credential) can only be answered while the turn that raised it is still running. When a turn ends with a request still open (cancelled, failed, or completed while an escalation was pending), carapace closes it before the turn's final assistant message: it appends the regular response event with `decision` `denied` (tool) or `deny` (escalation), `decision_source: "system"`, and the message "Turn ended before a decision was made." Any escalation callback still blocked on the request is released with a denial.
+An approval request (tool, domain access, git push, or credential) can only be answered while the turn that raised it is still running. When a turn ends with a request still open (cancelled, failed, or completed while an escalation was pending), carapace closes it before the turn's terminal event (final assistant answer or error): it appends the regular response event with `decision` `denied` (tool) or `deny` (escalation), `decision_source: "system"`, and the message "Turn ended before a decision was made." Any escalation callback still blocked on the request is released with a denial.
 
 A server restart kills turns without that cleanup, so the server closes such leftover requests in the same way at startup, before any session is activated. Clients therefore never see an actionable request that nothing waits for anymore.

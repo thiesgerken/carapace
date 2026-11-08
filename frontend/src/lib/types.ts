@@ -667,6 +667,7 @@ export type ChatMessage =
       kind: "error";
       detail: string;
       eventIndex?: number;
+      compaction?: CompactionAnnotation;
       turnTerminal?: boolean;
     };
 

@@ -75,6 +75,7 @@ from .transcript import (
     completed_model_turn_end_indexes,
     history_for_completed_turn_count,
     is_terminal_history_message,
+    is_turn_terminal_event,
     normalize_unattended_output_history,
     rebuild_model_history_from_events,
     task_output_text,
@@ -748,8 +749,9 @@ class SessionEngine(
     ) -> tuple[list[dict[str, Any]], list[ModelMessage], SessionCompaction] | None:
         """Event-granular slice for reset/fork: keep the transcript through *cut_index* inclusive.
 
-        Cuts land on a user prompt or an assistant answer (final or intermediate ``partial``). A
-        final-assistant cut is a turn boundary and reuses the fold-aware turn slice. A mid-turn cut
+        Cuts land on a user prompt, an assistant answer (final or intermediate ``partial``), or the
+        error that ended a turn. A turn-terminal cut is a turn boundary and reuses the fold-aware
+        turn slice. A mid-turn cut
         (partial assistant, or a user prompt to rewind to) keeps the compacted older turns verbatim
         and rebuilds only the *cut turn* from its events — safe because the newest turn is never
         folded or tool-compacted (compaction runs between turns).
@@ -760,7 +762,7 @@ class SessionEngine(
         cut_event = events[cut_index]
         role = cut_event.get("role")
         content = cut_event.get("content")
-        if role not in {"user", "assistant"}:
+        if role not in {"user", "assistant", "error"}:
             return None
         if role == "user" and isinstance(content, str) and content.startswith("/"):
             return None  # slash commands are not branch points
@@ -768,7 +770,7 @@ class SessionEngine(
         prefix = events[: cut_index + 1]
         history = self._truncate_incomplete_model_history(self._session_mgr.load_history(session_id))
 
-        if role == "assistant" and not cut_event.get("partial"):
+        if is_turn_terminal_event(cut_event):
             sliced, tree = self._compacted_history_and_tree_for_events(session_id, prefix, history)
             return prefix, sliced, tree
 
