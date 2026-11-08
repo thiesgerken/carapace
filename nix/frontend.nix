@@ -1,6 +1,5 @@
 {
   pkgs,
-  pnpm,
   nodejs,
 }:
 let
@@ -16,28 +15,22 @@ let
       tar -xzf "$downloadedFile" -C "$out" --strip-components=4 --wildcards '*/v/17.0.2/svg/*'
     '';
   };
-  pnpmDeps = pkgs.fetchPnpmDeps {
-    pname = "carapace-frontend";
-    inherit (manifest) version;
-    inherit src pnpm;
-    fetcherVersion = 4;
-    hash = pkgs.lib.trim (builtins.readFile ./pnpm-deps-hash);
-  };
+  # importNpmLock fetches each package from the integrity hashes in package-lock.json,
+  # so dependency updates need no separate fixed-output hash.
+  npmDeps = pkgs.importNpmLock { npmRoot = ../frontend; };
   common = {
     pname = "carapace-frontend";
     inherit (manifest) version;
-    inherit src pnpmDeps;
+    inherit src npmDeps;
     nativeBuildInputs = [
       nodejs
-      pnpm
-      pkgs.pnpmConfigHook
+      pkgs.importNpmLock.npmConfigHook
     ];
     NEXT_TELEMETRY_DISABLED = "1";
     CI = "true";
     env.HOME = "/tmp/carapace-frontend-home";
     preConfigure = "mkdir -p $HOME";
     preBuild = ''
-      pnpm rebuild
       mkdir -p node_modules/.cache/twemoji-40c2213/twemoji-40c2213/v/17.0.2
       cp -R ${twemoji} node_modules/.cache/twemoji-40c2213/twemoji-40c2213/v/17.0.2/svg
     '';
@@ -61,7 +54,7 @@ let
     // {
       buildPhase = ''
         runHook preBuild
-        pnpm run build
+        npm run build
         runHook postBuild
       '';
       installPhase = ''
@@ -72,10 +65,10 @@ let
   );
 in
 {
-  inherit frontend pnpmDeps twemoji;
+  inherit frontend npmDeps twemoji;
   checks = {
-    frontend-lint = check "lint" "pnpm run lint";
-    frontend-test = check "test" "pnpm run test";
+    frontend-lint = check "lint" "npm run lint";
+    frontend-test = check "test" "npm run test";
     frontend-build = frontend;
   };
 }

@@ -189,8 +189,8 @@ Use the included Helm chart in [charts/carapace](charts/carapace) and see [chart
 nix develop
 uv sync --dev
 uv run pytest
-pnpm --dir frontend install
-pnpm --dir frontend lint
+npm --prefix frontend ci
+npm --prefix frontend run lint
 ```
 
 For local development without Docker Compose:
@@ -198,11 +198,11 @@ For local development without Docker Compose:
 ```bash
 docker build -t carapace-sandbox:local sandbox
 CARAPACE_SANDBOX_BASE_IMAGE=carapace-sandbox:local uv run carapace-server
-pnpm --dir frontend dev
+npm --prefix frontend run dev
 uv run carapace
 ```
 
-The dev shell supplies Python 3.14, uv, Node.js 24, pinned pnpm, Helm, and Skopeo. See [docs/development.md](docs/development.md) for host services, sandboxed checks, image builds, and dependency refreshes.
+The dev shell supplies Python 3.14, uv, Node.js 24 (with npm), Helm, and Skopeo. See [docs/development.md](docs/development.md) for host services, sandboxed checks, image builds, and dependency refreshes.
 
 ### Brand assets
 
@@ -219,8 +219,8 @@ To regenerate the SVG assets, download the upright variable
 
 ```bash
 uv run frontend/scripts/generate_brand.py '/path/to/Fraunces[SOFT,WONK,opsz,wght].ttf'
-pnpm --dir frontend generate:favicon
-pnpm --dir frontend generate:pwa-icons
+npm --prefix frontend run generate:favicon
+npm --prefix frontend run generate:pwa-icons
 ```
 
 The raster commands require ImageMagick. Generated app icons live in

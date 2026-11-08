@@ -15,13 +15,13 @@ Web UI for carapace, built with Next.js (App Router).
 ## Getting Started
 
 ```bash
-pnpm install
-pnpm dev
+npm ci
+npm run dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000).
 
-The frontend calls the backend on the same origin. During `pnpm dev`, Next.js proxies `/api/*` to `CARAPACE_BACKEND_URL`, defaulting to `http://127.0.0.1:8321`, so start the carapace backend separately before signing in.
+The frontend calls the backend on the same origin. During `npm run dev`, Next.js proxies `/api/*` to `CARAPACE_BACKEND_URL`, defaulting to `http://127.0.0.1:8321`, so start the carapace backend separately before signing in.
 
 ### Bundled fonts
 
@@ -33,7 +33,7 @@ The frontend bundles Twemoji SVG assets locally at build time and replaces emoji
 
 The bundled assets are sourced from the maintained [jdecked/twemoji](https://github.com/jdecked/twemoji) repository, currently pinned in this frontend to `v17.0.2` via a GitHub tarball dependency.
 
-The asset preparation step runs automatically before `pnpm dev` and `pnpm build`. It generates the ignored `src/lib/emoji.generated.ts` manifest and the ignored `public/emoji/` asset directory locally, so they do not need to live in git. No runtime CDN requests are used for emoji assets. Run `pnpm prepare:emoji` manually if you ever need to regenerate the bundled assets after changing the pinned Twemoji source.
+The asset preparation step runs automatically before `npm run dev` and `npm run build`. It generates the ignored `src/lib/emoji.generated.ts` manifest and the ignored `public/emoji/` asset directory locally, so they do not need to live in git. No runtime CDN requests are used for emoji assets. Run `npm run prepare:emoji` manually if you ever need to regenerate the bundled assets after changing the pinned Twemoji source.
 
 See [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md) for the bundled emoji asset notices.
 
@@ -43,4 +43,4 @@ See [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md) for the bundled emoji ass
 - Use Tailwind CSS utility classes for styling; avoid custom CSS
 - Use `clsx` / `tailwind-merge` for conditional class composition
 - Components live in `src/components/`, hooks in `src/hooks/`
-- Lint with `pnpm lint`
+- Lint with `npm run lint`
