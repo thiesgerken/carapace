@@ -3646,14 +3646,66 @@ def test_ws_budget_command_emits_status_refresh(client, auth_headers):
     with client.websocket_connect(f"/api/chat/{sid}", headers=auth_headers) as ws:
         _consume_status(ws)
         ws.send_json({"type": "message", "content": "/budget input 1000"})
+        status = ws.receive_json()
+        assert status["type"] == "status"
+        assert status["usage"]["budget_gauges"][0]["key"] == "input"
         echo = ws.receive_json()
         assert echo["type"] == "user_message"
         msg = ws.receive_json()
         assert msg["type"] == "command_result"
         assert msg["command"] == "budget"
+
+
+def test_update_session_budget_persists_and_refreshes_connected_clients(client, auth_headers):
+    create_resp = client.post("/api/sessions", headers=auth_headers)
+    sid = create_resp.json()["session_id"]
+    assert create_resp.json()["budget"] == {
+        "input_tokens": None,
+        "output_tokens": None,
+        "cost_usd": None,
+        "tool_calls": None,
+    }
+
+    with client.websocket_connect(f"/api/chat/{sid}", headers=auth_headers) as ws:
+        _consume_status(ws)
+        resp = client.patch(
+            f"/api/sessions/{sid}",
+            headers=auth_headers,
+            json={"budget": {"input_tokens": "100k", "cost_usd": "2.50"}},
+        )
         status = ws.receive_json()
-        assert status["type"] == "status"
-        assert status["usage"]["budget_gauges"][0]["key"] == "input"
+
+    assert resp.status_code == 200
+    assert resp.json()["budget"] == {
+        "input_tokens": 100_000,
+        "output_tokens": None,
+        "cost_usd": "2.50",
+        "tool_calls": None,
+    }
+    assert status["type"] == "status"
+    assert [gauge["key"] for gauge in status["usage"]["budget_gauges"]] == ["input", "cost"]
+
+    cleared = client.patch(f"/api/sessions/{sid}", headers=auth_headers, json={"budget": {"input_tokens": None}})
+
+    assert cleared.status_code == 200
+    assert cleared.json()["budget"]["input_tokens"] is None
+    assert cleared.json()["budget"]["cost_usd"] == "2.50"
+    persisted = srv._engine.session_mgr.load_state(sid)
+    assert persisted is not None
+    assert persisted.budget == SessionBudget(cost_usd=Decimal("2.50"))
+
+
+def test_update_session_budget_rejects_invalid_limit(client, auth_headers):
+    create_resp = client.post("/api/sessions", headers=auth_headers)
+    sid = create_resp.json()["session_id"]
+
+    resp = client.patch(f"/api/sessions/{sid}", headers=auth_headers, json={"budget": {"tool_calls": "-3"}})
+
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "Budget value must be >= 0"
+    persisted = srv._engine.session_mgr.load_state(sid)
+    assert persisted is not None
+    assert persisted.budget == SessionBudget()
 
 
 def test_ws_skills_command(client, auth_headers):

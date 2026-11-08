@@ -6,14 +6,15 @@ from typing import Annotated, Any, Self
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from loguru import logger
-from pydantic import BaseModel, ValidationError, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, ValidationError, field_validator, model_validator
 from pydantic_ai.messages import ModelMessage
 
 from ..api_keys import Access, Scope
 from ..auth import UserIdentity
 from ..models.git import GitActionResult, GlobalGitStatus, SandboxGitStatus
-from ..models.session import SessionAttributes, SessionJobRunContext, SessionState
+from ..models.session import SessionAttributes, SessionBudget, SessionJobRunContext, SessionState
 from ..sandbox.state import SessionSandboxSnapshot
+from ..usage import BudgetMetric
 from ..user_defaults import apply_user_model_defaults, effective_user_budget
 from .auth import require
 from .history import _history_from_messages
@@ -22,6 +23,13 @@ from .state import server_module
 server = server_module()
 
 router = APIRouter()
+
+_BUDGET_FIELD_METRICS: dict[str, BudgetMetric] = {
+    "input_tokens": "input",
+    "output_tokens": "output",
+    "cost_usd": "cost",
+    "tool_calls": "tool_calls",
+}
 
 
 class SessionCreateRequest(BaseModel):
@@ -55,8 +63,23 @@ class SessionAttributesPatch(BaseModel):
         return self
 
 
+class SessionBudgetPatch(BaseModel):
+    """Limits as ``/budget`` accepts them (``"100k"``, ``"2.50"``); ``null`` clears one, omitted keeps it."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    input_tokens: str | None = None
+    output_tokens: str | None = None
+    cost_usd: str | None = None
+    tool_calls: str | None = None
+
+    def limits(self) -> dict[BudgetMetric, str | None]:
+        return {_BUDGET_FIELD_METRICS[field]: getattr(self, field) for field in self.model_fields_set}
+
+
 class SessionUpdateRequest(BaseModel):
     attributes: SessionAttributesPatch | None = None
+    budget: SessionBudgetPatch | None = None
     agent_model_name: str | None = None
     sentinel_model_name: str | None = None
 
@@ -98,6 +121,7 @@ class SessionInfo(BaseModel):
     agent_model_name: str | None = None
     sentinel_model_name: str | None = None
     attributes: SessionAttributes
+    budget: SessionBudget
     latest_job_run: SessionJobRunContext | None = None
     knowledge_last_committed_at: str | None = None
     knowledge_last_archive_path: str | None = None
@@ -125,6 +149,7 @@ class SessionInfo(BaseModel):
             agent_model_name=state.agent_model_name,
             sentinel_model_name=state.sentinel_model_name,
             attributes=state.attributes,
+            budget=state.budget,
             latest_job_run=state.latest_job_run.model_copy(deep=True) if state.latest_job_run is not None else None,
             knowledge_last_committed_at=(
                 state.knowledge_last_committed_at.isoformat() if state.knowledge_last_committed_at else None
@@ -327,6 +352,13 @@ async def update_session(
     user: Annotated[UserIdentity, Depends(require(Scope.sessions, Access.write))],
 ) -> SessionInfo:
     state = _load_owned_state(session_id, user)
+
+    if body.budget is not None:
+        try:
+            await server._engine.update_session_budget(session_id, body.budget.limits())
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        state = _load_owned_state(session_id, user)
 
     next_attributes: SessionAttributes | None = None
     previous_attributes: SessionAttributes | None = None

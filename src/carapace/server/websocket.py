@@ -171,6 +171,13 @@ class WebSocketSubscriber:
     async def on_llm_activity(self, activity: LlmRequestState | None) -> None:
         await self._safe_send(LlmActivityUpdate(activity=_llm_activity_payload(activity)))
 
+    async def on_status(
+        self, *, agent_running: bool, usage: TurnUsage | None, llm_activity: LlmRequestState | None
+    ) -> None:
+        await self._safe_send(
+            StatusUpdate(agent_running=agent_running, usage=usage, llm_activity=_llm_activity_payload(llm_activity))
+        )
+
     async def on_done(
         self,
         content: str,
@@ -454,15 +461,6 @@ async def chat_ws(
                             {"role": "command", "command": result.command, "data": result.data},
                         ],
                     )
-                    if result.command == "budget":
-                        await _send(
-                            websocket,
-                            StatusUpdate(
-                                agent_running=active.agent_task is not None and not active.agent_task.done(),
-                                usage=server._engine._turn_usage_payload(active),
-                                llm_activity=_llm_activity_payload(active.llm_request_state),
-                            ),
-                        )
                     continue
 
             await server._engine.submit_message(session_id, user_input, origin=sub, attachments=attachments)

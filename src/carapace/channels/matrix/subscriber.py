@@ -121,6 +121,11 @@ class MatrixSubscriber:
     async def on_llm_activity(self, activity: LlmRequestState | None) -> None:
         pass
 
+    async def on_status(
+        self, *, agent_running: bool, usage: TurnUsage | None, llm_activity: LlmRequestState | None
+    ) -> None:
+        pass
+
     async def on_done(
         self,
         content: str,

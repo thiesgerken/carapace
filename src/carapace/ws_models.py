@@ -291,7 +291,10 @@ class LlmActivityUpdate(BaseModel):
 
 
 class StatusUpdate(BaseModel):
-    """Server → Client: session status on connect (includes last agent-turn usage for the context bar)."""
+    """Server → Client: session status on connect and after a budget change.
+
+    ``usage`` carries the last agent-turn usage for the context bar and the budget gauges.
+    """
 
     type: Literal["status"] = "status"
     agent_running: bool

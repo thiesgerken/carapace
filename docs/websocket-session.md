@@ -66,7 +66,7 @@ Each message is one JSON object with a `type` field.
 
 | `type`                           | When                                                | Main fields                                                                                      |
 | -------------------------------- | --------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `status`                         | On connect                                          | `agent_running`, `usage`                                                                         |
+| `status`                         | On connect and after a session budget change        | `agent_running`, `usage`                                                                         |
 | `llm_activity`                   | LLM request phase changed                           | `activity` or `null`                                                                             |
 | `token`                          | Streaming assistant text                            | `content`                                                                                        |
 | `thinking`                       | Streaming reasoning text                            | `content`                                                                                        |

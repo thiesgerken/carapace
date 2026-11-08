@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import contextlib
+from collections.abc import Mapping
 from decimal import Decimal, InvalidOperation
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any
 
 from ..models.config import Config
+from ..models.session import SessionState
 from ..usage import (
     BudgetGauge,
+    BudgetMetric,
     LlmRequestRecord,
     LlmRequestState,
     LlmSource,
@@ -32,6 +35,7 @@ _DEFAULT_CONTEXT_CAP_TOKENS = 200_000
 
 
 class SessionUsageBudgetMixin:
+    _active: dict[str, ActiveSession]
     _config: Config
     _session_mgr: SessionManager
 
@@ -173,9 +177,31 @@ class SessionUsageBudgetMixin:
             payload["message"] = "No session budgets configured."
         return payload
 
-    def _parse_budget_limit_value(
-        self, metric: Literal["input", "output", "cost", "tool_calls"], raw: str
-    ) -> int | Decimal:
+    async def update_session_budget(self, session_id: str, limits: Mapping[BudgetMetric, str | None]) -> list[str]:
+        """Set budget limits from raw ``/budget`` values (``None`` clears one) and return a message per limit.
+
+        Every value is parsed before any is applied, so one invalid limit leaves the whole budget untouched.
+        """
+        active = self._active.get(session_id)
+        state = active.state if active is not None else self._session_mgr.load_state(session_id)
+        if state is None:
+            raise KeyError(session_id)
+        # 0 is the setter's "no limit", exactly like ``/budget input 0``.
+        values = {
+            metric: 0 if raw is None else self._parse_budget_limit_value(metric, raw) for metric, raw in limits.items()
+        }
+        messages = [self._set_budget_metric(state, metric, value) for metric, value in values.items()]
+        if active is not None:
+            await self._broadcast(
+                active,
+                "on_status",
+                agent_running=active.agent_task is not None and not active.agent_task.done(),
+                usage=self._turn_usage_payload(active),
+                llm_activity=active.llm_request_state,
+            )
+        return messages
+
+    def _parse_budget_limit_value(self, metric: BudgetMetric, raw: str) -> int | Decimal:
         cleaned = raw.replace(",", "").replace("_", "")
         if metric in ("input", "output", "tool_calls"):
             lowered = cleaned.lower()
@@ -211,19 +237,14 @@ class SessionUsageBudgetMixin:
             raise ValueError("Budget value must be >= 0")
         return value
 
-    def _set_budget_metric(
-        self,
-        active: ActiveSession,
-        metric: Literal["input", "output", "cost", "tool_calls"],
-        value: int | Decimal,
-    ) -> str:
-        budget = active.state.budget.model_copy(deep=True)
+    def _set_budget_metric(self, state: SessionState, metric: BudgetMetric, value: int | Decimal) -> str:
+        budget = state.budget.model_copy(deep=True)
         if metric == "input":
             budget.input_tokens = int(value)
             if budget.input_tokens == 0:
                 budget.input_tokens = None
-            active.state.budget = budget
-            self._session_mgr.save_state(active.state)
+            state.budget = budget
+            self._session_mgr.save_state(state)
             if budget.input_tokens is None:
                 return "Cleared input token budget."
             return f"Set input token budget to {budget.input_tokens:,} tokens."
@@ -231,8 +252,8 @@ class SessionUsageBudgetMixin:
             budget.output_tokens = int(value)
             if budget.output_tokens == 0:
                 budget.output_tokens = None
-            active.state.budget = budget
-            self._session_mgr.save_state(active.state)
+            state.budget = budget
+            self._session_mgr.save_state(state)
             if budget.output_tokens is None:
                 return "Cleared output token budget."
             return f"Set output token budget to {budget.output_tokens:,} tokens."
@@ -240,8 +261,8 @@ class SessionUsageBudgetMixin:
             budget.tool_calls = int(value)
             if budget.tool_calls == 0:
                 budget.tool_calls = None
-            active.state.budget = budget
-            self._session_mgr.save_state(active.state)
+            state.budget = budget
+            self._session_mgr.save_state(state)
             if budget.tool_calls is None:
                 return "Cleared tool call budget."
             suffix = "call" if budget.tool_calls == 1 else "calls"
@@ -249,8 +270,8 @@ class SessionUsageBudgetMixin:
         budget.cost_usd = Decimal(value)
         if budget.cost_usd == Decimal(0):
             budget.cost_usd = None
-        active.state.budget = budget
-        self._session_mgr.save_state(active.state)
+        state.budget = budget
+        self._session_mgr.save_state(state)
         if budget.cost_usd is None:
             return "Cleared cost budget."
         return f"Set cost budget to ${budget.cost_usd:.4f}."

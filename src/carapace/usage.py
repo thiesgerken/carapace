@@ -173,8 +173,11 @@ class UsageTracker(BaseModel):
         return costs
 
 
+BudgetMetric = Literal["input", "output", "cost", "tool_calls"]
+
+
 class BudgetGauge(BaseModel):
-    key: Literal["input", "output", "cost", "tool_calls"]
+    key: BudgetMetric
     label: str
     current_value: str
     current_amount: float | None = None
