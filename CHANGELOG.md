@@ -1,6 +1,42 @@
 # CHANGELOG
 
 
+## v0.169.2 (2026-11-08)
+
+
+### Other
+
+
+- Merge pull request #255 from thiesgerken/renovate/websockets-17.x
+  ([`ae4857f`](https://github.com/thiesgerken/carapace/commit/ae4857fc125e5e9c98b93eaa5ddce1b0d5d085a7))
+
+- Merge pull request #399 from thiesgerken/renovate/all-routine-dependencies
+  ([`be6a1e5`](https://github.com/thiesgerken/carapace/commit/be6a1e50391068baab2f4ce6a53592ca582f59af))
+
+- Merge pull request #400 from thiesgerken/renovate/j178-prek-action-3.x
+  ([`7c637f3`](https://github.com/thiesgerken/carapace/commit/7c637f39e5813f05e08a037962966293bb3a7a35))
+
+### ⬆️ Dependencies
+
+
+- ⬆️ chore: upgrade websockets to 17.4
+  ([`ae4857f`](https://github.com/thiesgerken/carapace/commit/ae4857fc125e5e9c98b93eaa5ddce1b0d5d085a7))
+
+- ⬆️ chore: upgrade websockets to 17.4
+  ([`b64ae1f`](https://github.com/thiesgerken/carapace/commit/b64ae1fb1dfe75a06ef05f52314f8778e7f99305))
+
+- ⬆️ chore: upgrade all routine dependency updates
+  ([`be6a1e5`](https://github.com/thiesgerken/carapace/commit/be6a1e50391068baab2f4ce6a53592ca582f59af))
+
+- ⬆️ chore: upgrade all routine dependency updates
+  ([`d4c4817`](https://github.com/thiesgerken/carapace/commit/d4c48178a066958f77bf57a3f6da9cd70156a2a2))
+
+- ⬆️ chore: upgrade j178/prek-action action to v3.1.0
+  ([`7c637f3`](https://github.com/thiesgerken/carapace/commit/7c637f39e5813f05e08a037962966293bb3a7a35))
+
+- ⬆️ chore: upgrade j178/prek-action action to v3.1.0
+  ([`b83d690`](https://github.com/thiesgerken/carapace/commit/b83d690cf3d9f6fde669e82851fe3c6c35e6a6a2))
+
 ## v0.169.1 (2026-11-08)
 
 
