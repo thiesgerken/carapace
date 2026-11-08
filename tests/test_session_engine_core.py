@@ -922,6 +922,7 @@ def test_finalize_failed_turn_dispatches_unattended_failure_notification(tmp_pat
             active,
             sid,
             "run",
+            turn_event_start=0,
             terminal_message="The previous turn failed before completion.",
         )
 

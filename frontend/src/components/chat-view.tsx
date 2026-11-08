@@ -566,6 +566,11 @@ function latestCompletedTurnStartMessageIndex(messages: ChatMessage[]): number {
   return messages.length;
 }
 
+/** Messages that carry retry/reset/fork: user prompts, assistant answers, and turn-ending errors. */
+export function isTurnActionMessage(message: ChatMessage): boolean {
+  return message.kind === "user" || message.kind === "assistant" || isTurnTerminalMessage(message);
+}
+
 function eventIndexForMessage(message: ChatMessage): number | undefined {
   if (message.kind === "assistant" || message.kind === "error" || message.kind === "user") {
     return typeof message.eventIndex === "number" ? message.eventIndex : undefined;
@@ -2849,7 +2854,7 @@ export function ChatView({
                   const msg = messages[i];
                   // Event-granular: fork/reset cut exactly at this message (mid-turn included).
                   // Retry still re-runs the latest turn.
-                  const actionable = msg.kind === "user" || msg.kind === "assistant";
+                  const actionable = isTurnActionMessage(msg);
                   const enclosingTerminal = enclosingTurnTerminalMessageIndex(messages, i);
                   // A persisted/completed message can be a cut target; its event index is resolved
                   // (refetched if a freshly-finished turn hasn't been reprojected) when acted on.

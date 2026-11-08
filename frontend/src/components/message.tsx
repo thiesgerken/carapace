@@ -797,9 +797,11 @@ export function Message({
           <pre className="whitespace-pre-wrap font-mono text-xs">{message.detail}</pre>
           <MessageActions
             copyText={message.detail}
+            canFork={canFork}
             canRetry={canRetry}
             canReset={canReset}
             disabled={actionDisabled}
+            onFork={onFork}
             onRetry={onRetry}
             onReset={onReset}
           />

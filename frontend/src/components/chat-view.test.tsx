@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   countSubmittedUserMessages,
+  isTurnActionMessage,
   isUnattendedInputLocked,
   nextUnattendedInputLockBaseline,
   projectHistoryToMessages,
@@ -89,4 +90,9 @@ test("a failed turn's persisted error renders as a turn-terminal error after rel
     compaction: undefined,
     turnTerminal: true,
   });
+});
+
+test("turn-ending errors carry turn actions, other errors do not", () => {
+  assert.equal(isTurnActionMessage({ kind: "error", detail: "budget", eventIndex: 1, turnTerminal: true }), true);
+  assert.equal(isTurnActionMessage({ kind: "error", detail: "Agent is busy" }), false);
 });

@@ -99,9 +99,10 @@ def test_submit_message_budget_exceeded_persists_history(tmp_path: Path, db_fact
         asyncio.run(_run())
 
 
-def test_budget_blocked_turn_leaves_earlier_access_decisions_and_denied_calls_open(tmp_path: Path, db_factory):
-    """Access decisions (child or not) and denied calls never get a tool_result. A failed turn
-    must not "cancel" them retroactively: only unfinished real tool calls get synthetic results."""
+def test_budget_blocked_turn_leaves_earlier_tool_calls_alone(tmp_path: Path, db_factory):
+    """Access decisions (child or not) and denied calls never get a tool_result, and a call an
+    earlier turn left open (crash) is not this turn's to cancel. A failed turn must not "cancel"
+    any of them retroactively."""
 
     async def _run() -> None:
         engine = _make_engine(tmp_path, session_factory=db_factory)
@@ -115,6 +116,7 @@ def test_budget_blocked_turn_leaves_earlier_access_decisions_and_denied_calls_op
             {"role": "tool_call", "tool": "git_push", "args": {"ref": "main"}, "tool_id": "g1", "parent_tool_id": "e1"},
             {"role": "tool_result", "tool": "exec", "result": "ok", "exit_code": 0, "tool_id": "e1"},
             {"role": "tool_call", "tool": "exec", "args": {}, "approval_verdict": "deny", "tool_id": "d1"},
+            {"role": "tool_call", "tool": "exec", "args": {}, "approval_verdict": "allow", "tool_id": "x1"},
             {"role": "assistant", "content": "pushed"},
         ]
         engine.session_mgr.save_events(sid, earlier_turn)
@@ -954,6 +956,7 @@ def test_save_user_message_on_failure_appends_cancelled_parallel_tool_returns(tm
     engine._save_user_message_on_failure(
         sid,
         "hello",
+        turn_event_start=0,
         latest_messages=latest_messages,
         terminal_message="The previous turn was interrupted before completion.",
     )
@@ -1012,6 +1015,7 @@ def test_save_user_message_on_failure_appends_cancelled_parallel_tool_results(tm
     engine._save_user_message_on_failure(
         sid,
         "hello",
+        turn_event_start=0,
         latest_messages=[ModelRequest(parts=[UserPromptPart(content="hello")])],
         terminal_message="The previous turn was interrupted before completion.",
     )
