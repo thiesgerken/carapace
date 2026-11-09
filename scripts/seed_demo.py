@@ -18,9 +18,20 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
-from pydantic_ai.usage import RunUsage
+from pydantic_ai.messages import (
+    InstructionPart,
+    ModelRequest,
+    ModelResponse,
+    TextPart,
+    ThinkingPart,
+    ToolCallPart,
+    ToolReturnPart,
+    UserPromptPart,
+)
+from pydantic_ai.tools import ToolDefinition
+from pydantic_ai.usage import RequestUsage, RunUsage
 from sqlalchemy.engine import make_url
 
 from carapace.auth import AuthStore
@@ -29,7 +40,7 @@ from carapace.database.engine import create_engine_and_factory, resolve_database
 from carapace.models.session import SessionAttributes, SessionBudget, SessionState
 from carapace.sandbox.snapshot import SessionSandboxSnapshot
 from carapace.session.manager import SessionManager, SessionMeta
-from carapace.usage import UsageTracker, usage_budget_exceeded_error
+from carapace.usage import LlmContext, UsageTracker, usage_budget_exceeded_error
 
 DEMO_USER = "demo"
 DEMO_PASSWORD = "carapace-demo"
@@ -150,6 +161,7 @@ class DemoSession:
     budget: SessionBudget = field(default_factory=SessionBudget)
     usage: UsageTracker = field(default_factory=UsageTracker)
     sandbox: SessionSandboxSnapshot = field(default_factory=SessionSandboxSnapshot)
+    llm_contexts: list[LlmContext] = field(default_factory=list)
 
 
 def _usage(input_tokens: int, output_tokens: int) -> UsageTracker:
@@ -382,6 +394,149 @@ def _autonomy_limit(start: datetime) -> Transcript:
     return t
 
 
+_EXEC_TOOL = ToolDefinition(
+    name="exec",
+    description="Run a shell command in the session sandbox.",
+    parameters_json_schema={
+        "type": "object",
+        "properties": {"command": {"type": "string"}, "title": {"type": "string"}, "contexts": {"type": "array"}},
+        "required": ["command"],
+    },
+)
+_USE_SKILL_TOOL = ToolDefinition(
+    name="use_skill",
+    description="Activate a skill so its commands and credentials become available.",
+    parameters_json_schema={
+        "type": "object",
+        "properties": {"skill_name": {"type": "string"}},
+        "required": ["skill_name"],
+    },
+)
+_SEARCH = "web_search 'best fluffy pancake recipe'"
+_FETCH = "web_fetch 'https://recipes.example.org/fluffy-pancakes'"
+
+
+def _context(
+    role: Literal["agent", "sentinel", "titler", "compaction"],
+    at: datetime,
+    instructions: str,
+    messages: list[ModelRequest | ModelResponse],
+    response: ModelResponse,
+    *,
+    tools: list[ToolDefinition] | None = None,
+) -> LlmContext:
+    return LlmContext(
+        request_id=f"demo-{role}",
+        role=role,
+        compaction_target="agent" if role == "compaction" else None,
+        model_name=DEMO_MODEL,
+        status="completed",
+        started_at=at,
+        completed_at=at + timedelta(seconds=4),
+        instructions=[InstructionPart(instructions)],
+        messages=messages,
+        tool_definitions=tools or [],
+        response=response,
+    )
+
+
+def _pancake_contexts(end: datetime) -> list[LlmContext]:
+    """One latest request per agent role, matching the pancake transcript."""
+    search_result = '[{"title": "Fluffy Pancakes", "url": "https://recipes.example.org/fluffy-pancakes"}]'
+    return [
+        _context(
+            "agent",
+            end - timedelta(seconds=10),
+            "You are carapace, a personal agent. Every tool call is reviewed by the sentinel.",
+            [
+                ModelRequest(parts=[UserPromptPart("I really need a pancake recipe")]),
+                ModelResponse(parts=[ToolCallPart("use_skill", {"skill_name": "web"}, tool_call_id="call-1")]),
+                ModelRequest(parts=[ToolReturnPart("use_skill", "Skill 'web' activated.", tool_call_id="call-1")]),
+                ModelResponse(
+                    parts=[ToolCallPart("exec", {"command": _SEARCH, "contexts": ["web"]}, tool_call_id="call-2")]
+                ),
+                ModelRequest(parts=[ToolReturnPart("exec", search_result, tool_call_id="call-2")]),
+                ModelResponse(
+                    parts=[
+                        ThinkingPart("The first result is a recipe page; fetch it."),
+                        ToolCallPart("exec", {"command": _FETCH, "contexts": ["web"]}, tool_call_id="call-3"),
+                    ]
+                ),
+                ModelRequest(
+                    parts=[
+                        ToolReturnPart(
+                            "exec",
+                            "# Fluffy Pancakes\n\nMix the dry ingredients, whisk in milk, eggs and melted butter...",
+                            tool_call_id="call-3",
+                        )
+                    ]
+                ),
+            ],
+            ModelResponse(
+                parts=[
+                    TextPart("Here is a highly rated recipe for **classic fluffy pancakes** (about 8 pancakes): ...")
+                ],
+                usage=RequestUsage(input_tokens=8_412, output_tokens=380),
+                model_name=DEMO_MODEL,
+                provider_name="anthropic",
+            ),
+            tools=[_EXEC_TOOL, _USE_SKILL_TOOL],
+        ),
+        _context(
+            "sentinel",
+            end - timedelta(seconds=40),
+            "You are the sentinel. Judge each agent action against SECURITY.md: allow, escalate or deny.",
+            [
+                ModelRequest(
+                    parts=[
+                        UserPromptPart(
+                            "New action log entries:\n- user: I really need a pancake recipe\n"
+                            f"- tool_call exec: {_FETCH} (contexts: web)\n\nJudge the last tool call."
+                        )
+                    ]
+                )
+            ],
+            ModelResponse(
+                parts=[
+                    ToolCallPart(
+                        "judge",
+                        {
+                            "decision": "allow",
+                            "explanation": "Fetching a recipe page from the search results is read-only.",
+                            "risk_level": "low",
+                        },
+                        tool_call_id="judge-1",
+                    )
+                ],
+                usage=RequestUsage(input_tokens=3_150, output_tokens=60),
+                model_name=DEMO_MODEL,
+            ),
+        ),
+        _context(
+            "titler",
+            end - timedelta(minutes=2),
+            "Write a short, specific session title with one leading emoji.",
+            [ModelRequest(parts=[UserPromptPart("user: I really need a pancake recipe")])],
+            ModelResponse(
+                parts=[TextPart("🥞 Classic Fluffy Pancake Recipe")],
+                usage=RequestUsage(input_tokens=640, output_tokens=12),
+                model_name=DEMO_MODEL,
+            ),
+        ),
+        _context(
+            "compaction",
+            end - timedelta(seconds=5),
+            "Compress a single tool output to save context. Reply with ONLY the summary.",
+            [ModelRequest(parts=[UserPromptPart(f"<tool_output>\n{search_result}\n</tool_output>")])],
+            ModelResponse(
+                parts=[TextPart("One result: Fluffy Pancakes, https://recipes.example.org/fluffy-pancakes")],
+                usage=RequestUsage(input_tokens=1_020, output_tokens=24),
+                model_name=DEMO_MODEL,
+            ),
+        ),
+    ]
+
+
 def demo_sessions(now: datetime) -> list[DemoSession]:
     budget_usage = _usage(180_000, 24_000)
     budget_stop_budget = SessionBudget(cost_usd=Decimal("0.75"))
@@ -396,9 +551,10 @@ def demo_sessions(now: datetime) -> list[DemoSession]:
         DemoSession(
             "demo-pancake-recipe",
             "🥞 Classic Fluffy Pancake Recipe",
-            _pancake_recipe(now - timedelta(hours=23)),
+            pancake := _pancake_recipe(now - timedelta(hours=23)),
             usage=_usage(21_000, 1_900),
             sandbox=_sandbox("running", 59_000_000, now),
+            llm_contexts=_pancake_contexts(pancake.at),
         ),
         DemoSession(
             "demo-recipe-skill",
@@ -488,6 +644,8 @@ def seed(data_dir: Path, now: datetime) -> None:
         session_mgr.save_events(session_id, events)
         session_mgr.save_usage(session_id, demo.usage)
         session_mgr.save_sandbox_snapshot(session_id, demo.sandbox)
+        for context in demo.llm_contexts:
+            session_mgr.save_llm_context(session_id, context)
         print(f"{session_id}  {demo.title}")
 
 

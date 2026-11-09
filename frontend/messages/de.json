@@ -1184,7 +1184,8 @@
             "unarchive": "Sitzung aus dem Archiv holen",
             "includeInRepo": "Ins Repository aufnehmen",
             "keepPrivate": "Privat halten",
-            "delete": "Sitzung löschen"
+            "delete": "Sitzung löschen",
+            "debugView": "Debug-Ansicht"
         },
         "badges": {
             "archived": "Archiviert",
@@ -1619,13 +1620,7 @@
             "summarize": "zusammengefasst",
             "truncate": "gekürzt",
             "drop": "entfernt"
-        },
-        "agentView": "Agent-Ansicht",
-        "agentViewOff": "Normale Ansicht",
-        "agentViewHint": "Verlauf genau so anzeigen, wie ihn der Agent sieht",
-        "agentSummary": "Komprimierte Zusammenfassung",
-        "agentEmpty": "Noch kein Verlauf.",
-        "agentError": "Agent-Ansicht konnte nicht geladen werden. Verbindung oder Berechtigungen prüfen."
+        }
     },
     "promptPreview": {
         "role": "Rolle",
@@ -1648,6 +1643,54 @@
         "views": {
             "rendered": "Gerendert",
             "raw": "Roh"
+        }
+    },
+    "debugView": {
+        "title": "Debug-Ansicht",
+        "hint": "Die letzte Anfrage jeder Agentenrolle, genau so, wie sie an das Modell ging. Aktualisiert sich live.",
+        "back": "Zurück zum Chat",
+        "role": "Agentenrolle",
+        "roles": {
+            "agent": "Agent",
+            "sentinel": "Sentinel",
+            "titler": "Titler",
+            "compaction": "Komprimierung"
+        },
+        "empty": "Diese Rolle hat in dieser Sitzung noch keine Anfrage gesendet.",
+        "loadError": "LLM-Kontext konnte nicht geladen werden: {error}",
+        "model": "Modell",
+        "status": "Status",
+        "inputTokens": "Eingabe-Tokens",
+        "started": "Gestartet",
+        "compacted": "Komprimiert",
+        "statuses": {
+            "running": "Läuft",
+            "completed": "Abgeschlossen",
+            "failed": "Fehlgeschlagen",
+            "interrupted": "Unterbrochen"
+        },
+        "compactionTargets": {
+            "agent": "Modellverlauf des Agenten",
+            "sentinel": "Schattenkonversation des Sentinels"
+        },
+        "instructions": "Anweisungen",
+        "static": "Statisch",
+        "dynamic": "Dynamisch",
+        "tools": "Tool-Definitionen ({count})",
+        "messages": "Nachrichten ({count})",
+        "request": "Anfrage",
+        "response": "Antwort",
+        "waiting": "Warte auf die Antwort…",
+        "showRaw": "Roh-JSON",
+        "showCards": "Karten",
+        "parts": {
+            "systemPrompt": "System",
+            "userPrompt": "Nutzer",
+            "text": "Text",
+            "thinking": "Denken",
+            "toolCall": "Tool-Aufruf",
+            "toolReturn": "Tool-Ergebnis",
+            "retryPrompt": "Wiederholungs-Prompt"
         }
     }
 }

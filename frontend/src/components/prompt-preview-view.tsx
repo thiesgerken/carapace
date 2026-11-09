@@ -11,7 +11,8 @@ import { cn } from "@/lib/utils";
 
 type View = "rendered" | "raw";
 
-const pillClassName = (selected: boolean): string => cn(
+/** A pill of a role radiogroup; shared with the debug view. */
+export const pillClassName = (selected: boolean): string => cn(
   "rounded-full border px-3 py-1.5 text-sm transition-colors",
   selected
     ? "border-[#236b86]/60 bg-[#236b86]/10 text-foreground dark:border-sky-400/50 dark:bg-sky-400/10"

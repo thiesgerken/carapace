@@ -245,7 +245,7 @@ The primary interactive channel. A Next.js web app connects to the carapace serv
 
 Message `type` values, JSON fields, authentication, and what the server sends on a **fresh connect** (including replay of pending approvals and escalations) are documented in **[websocket-session.md](websocket-session.md)**.
 
-Authentication uses the `carapace_session` cookie issued by `POST /api/auth/login`. The optional WebSocket query parameter is only `client_id`, used to keep interactive presence stable across reconnects.
+Authentication uses the `carapace_session` cookie issued by `POST /api/auth/login`. The optional WebSocket query parameters are `client_id`, used to keep interactive presence stable across reconnects, and `observe=true` for a connection that only watches the session and registers no presence (the debug view).
 
 For presence tracking, the frontend also posts REST heartbeats and may attach a stable `client_id` query parameter to the WebSocket so reconnects map back to the same interactive client.
 

@@ -85,9 +85,8 @@ subtle marker plus an on-demand peek at what the model actually sees, never by h
 - **Folded turns** stay inline and expanded, wrapped in a left **margin rail** with a header chip
   (`N turns condensed for the model`). The chip expands to the model-facing summary text; the
   original turns render normally inside the rail.
-- **Agent view** (the eye icon in the session inspector) opens a read-only overlay rendering the
-  model history exactly as the agent sees it: fold summaries in place of folded turns and short-form
-  compacted tool returns. Useful for debugging what the model actually receives.
+- The [debug view](debug-view.md) shows the agent's latest request exactly as it went to the model,
+  fold summaries and compacted tool returns included, and the latest compaction request itself.
 
 The `/history` API enriches each compaction annotation with the model-facing text (`summary` for a
 fold node, `model_text` for a compacted tool return) so the main view needs no second request.
