@@ -90,6 +90,8 @@ export interface SessionBudgetSettings {
   output_tokens?: number | null;
   cost_usd?: string | null;
   tool_calls?: number | null;
+  /** Tool call attempts since the last human interaction. */
+  autonomous_tool_calls?: number | null;
 }
 
 /** Limits as `/budget` accepts them ("100k", "2.50"); `null` clears one, an omitted key keeps it. */
@@ -220,6 +222,7 @@ export interface HistoryMessage {
     | "user"
     | "skill"
     | "bypass"
+    | "autonomy"
     | "unknown";
   approval_verdict?: "allow" | "deny" | "escalate";
   approval_explanation?: string;
@@ -338,6 +341,7 @@ export interface ToolCallInfo {
     | "user"
     | "skill"
     | "bypass"
+    | "autonomy"
     | "unknown";
   approval_verdict?: "allow" | "deny" | "escalate";
   approval_explanation?: string;
@@ -399,7 +403,7 @@ export interface TurnUsageBreakdownPct {
 }
 
 export interface BudgetGauge {
-  key: "input" | "output" | "cost" | "tool_calls";
+  key: "input" | "output" | "cost" | "tool_calls" | "autonomy";
   label: string;
   current_value: string;
   current_amount?: number | null;
@@ -609,6 +613,7 @@ export type ChatMessage =
         | "user"
         | "skill"
         | "bypass"
+        | "autonomy"
         | "unknown";
       approvalVerdict?: "allow" | "deny" | "escalate";
       approvalExplanation?: string;
@@ -633,6 +638,7 @@ export type ChatMessage =
           | "user"
           | "skill"
           | "bypass"
+          | "autonomy"
           | "unknown";
         approvalVerdict?: "allow" | "deny" | "escalate";
         approvalExplanation?: string;

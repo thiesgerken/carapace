@@ -433,6 +433,7 @@
             "outputTokens": "Output-Tokens",
             "costUsd": "Kosten (in $)",
             "toolCalls": "Tool-Aufrufe",
+            "autonomousToolCalls": "Autonomie-Limit (Tool-Aufrufe ohne dich)",
             "enabled": "Aktiviert",
             "homeserver": "Homeserver",
             "userId": "Benutzer-ID",
@@ -582,6 +583,7 @@
             "outputTokens": "Output-Tokens",
             "costUsd": "Kosten (in $)",
             "toolCalls": "Tool-Aufrufe",
+            "autonomousToolCalls": "Autonomie-Limit (Tool-Aufrufe ohne dich)",
             "provider": "Provider",
             "name": "Name",
             "id": "ID",
@@ -967,7 +969,8 @@
             "review": "Prüfung",
             "skill": "Skill",
             "bypass": "Bypass",
-            "denied": "abgelehnt"
+            "denied": "abgelehnt",
+            "autonomy": "Autonomie-Limit"
         },
         "fallbacks": {
             "missingPath": "(Pfad fehlt)",
@@ -1216,7 +1219,8 @@
                 "input_tokens": "Input-Tokens",
                 "output_tokens": "Output-Tokens",
                 "cost_usd": "Kosten (USD)",
-                "tool_calls": "Tool-Aufrufe"
+                "tool_calls": "Tool-Aufrufe",
+                "autonomous_tool_calls": "Autonomie-Limit"
             },
             "noLimit": "Kein Limit",
             "editLimit": "Limit für {label} bearbeiten",

@@ -506,6 +506,7 @@ class SessionEngine(
             tool_result_callback=tool_result_callback,
             append_session_events=_append_session_events,
             usage_tracker=active.usage_tracker,
+            autonomy=active.autonomy,
             assert_llm_budget_available=lambda: self._assert_llm_budget_available(active),
             llm_usage_limits=lambda: self._remaining_aux_usage_limits(active),
             sandbox=self._sandbox_mgr,

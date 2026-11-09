@@ -159,7 +159,9 @@ class SessionTurnHost(Protocol):
 
     def _assert_llm_budget_available(self, active: ActiveSession) -> None: ...
 
-    def _remaining_usage_limits(self, active: ActiveSession) -> UsageLimits | None: ...
+    def _remaining_usage_limits(self, active: ActiveSession) -> UsageLimits: ...
+
+    def _agent_request_limit_message(self, active: ActiveSession, error: UsageLimitExceeded) -> str | None: ...
 
     def _budget_gauges(self, active: ActiveSession) -> list[BudgetGauge]: ...
 
@@ -386,15 +388,16 @@ class SessionTurnMixin(SessionTurnHost):
                 + f"llm_requests={len(active.llm_request_log.records)} "
                 + f"sentinel_evals={sentinel_evals} prompt={_truncate_for_log(user_input)}"
             )
+            request_limit_message = self._agent_request_limit_message(active, exc)
             await self._finalize_failed_turn(
                 active,
                 session_id,
                 agent_input,
                 turn_event_start=turn_event_start,
                 latest_messages=latest_messages,
-                terminal_message="The previous turn failed before completion.",
+                terminal_message=request_limit_message or "The previous turn failed before completion.",
             )
-            await self._broadcast(active, "on_error", str(exc), turn_terminal=True)
+            await self._broadcast(active, "on_error", request_limit_message or str(exc), turn_terminal=True)
         except Exception:
             logger.exception(f"Agent error session={session_id} prompt={_truncate_for_log(user_input)}")
             await self._finalize_failed_turn(
@@ -429,6 +432,8 @@ class SessionTurnMixin(SessionTurnHost):
         fresh = self._session_mgr.resume_session(session_id)
         if fresh:
             active.state = fresh
+        # A user message is a human interaction: the agent starts a new autonomous streak.
+        active.autonomy.start_over()
         self._ensure_memory_snapshot(active)
 
         deps = self._build_deps(

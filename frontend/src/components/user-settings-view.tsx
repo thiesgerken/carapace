@@ -309,8 +309,20 @@ function memoryDraftFromSettings(memory: MemorySettingsInfo): MemoryDraft {
   };
 }
 
-function draftFromSettings(response: UserSettingsResponseInfo): UserSettingsDraft {
+/**
+ * The default budget the form starts from. A user budget with any limit replaces the platform one
+ * wholesale, so a new one starts from the platform's autonomy limit: setting, say, only a cost
+ * limit must not silently turn loop protection off.
+ */
+function defaultBudgetBaseline(response: UserSettingsResponseInfo): SessionBudgetSettings {
   const budget = response.settings.default_budget;
+  const hasOwnLimit = Object.values(budget).some((limit) => limit !== null && limit !== undefined);
+  if (hasOwnLimit) return budget;
+  return { ...budget, autonomous_tool_calls: response.server_defaults.budget.autonomous_tool_calls ?? null };
+}
+
+export function draftFromSettings(response: UserSettingsResponseInfo): UserSettingsDraft {
+  const budget = defaultBudgetBaseline(response);
   return {
     agentName: response.settings.agent_name,
     agentIcon: response.settings.agent_icon,
@@ -320,6 +332,7 @@ function draftFromSettings(response: UserSettingsResponseInfo): UserSettingsDraf
       output_tokens: budgetValue(budget.output_tokens),
       cost_usd: budgetCostValue(budget.cost_usd),
       tool_calls: budgetValue(budget.tool_calls),
+      autonomous_tool_calls: budgetValue(budget.autonomous_tool_calls),
     },
     timezone: response.settings.timezone,
     memory: memoryDraftFromSettings(response.settings.memory),
@@ -378,6 +391,7 @@ function comparableBudget(budget: Record<keyof Required<SessionBudgetSettings>, 
     output_tokens: comparableBudgetInteger(budget.output_tokens),
     cost_usd: comparableBudgetCost(budget.cost_usd),
     tool_calls: comparableBudgetInteger(budget.tool_calls),
+    autonomous_tool_calls: comparableBudgetInteger(budget.autonomous_tool_calls),
   };
 }
 
@@ -436,7 +450,7 @@ function comparableSettings(settings: UserSettingsResponseInfo): unknown {
     agent_name: settings.settings.agent_name.trim(),
     agent_icon: settings.settings.agent_icon.trim(),
     default_models: comparableDefaultModels(settings.settings.default_models),
-    default_budget: comparableBudget(settings.settings.default_budget),
+    default_budget: comparableBudget(defaultBudgetBaseline(settings)),
     timezone: settings.settings.timezone,
     memory: comparableMemory(memoryDraftFromSettings(settings.settings.memory)),
     matrix: {
@@ -456,6 +470,10 @@ function userSettingsChanged(draft: UserSettingsDraft | null, settings: UserSett
   return JSON.stringify(comparableDraft(draft)) !== JSON.stringify(comparableSettings(settings));
 }
 
+function budgetChanged(draft: UserSettingsDraft, settings: UserSettingsResponseInfo): boolean {
+  return JSON.stringify(comparableBudget(draft.budget)) !== JSON.stringify(comparableBudget(defaultBudgetBaseline(settings)));
+}
+
 function credentialsChanged(draft: UserSettingsDraft, settings: UserSettingsResponseInfo): boolean {
   return JSON.stringify(comparableCredentialsFromDraft(draft.credentials)) !== JSON.stringify(comparableCredentialsFromSettings(settings.settings.credentials));
 }
@@ -466,6 +484,7 @@ function budgetFromDraft(draft: UserSettingsDraft, t: Translate): SessionBudgetS
     output_tokens: parseOptionalBudgetInteger(draft.budget.output_tokens, t("fields.outputTokens"), t),
     cost_usd: parseOptionalBudgetCost(draft.budget.cost_usd, t("fields.costUsd"), t),
     tool_calls: parseOptionalBudgetInteger(draft.budget.tool_calls, t("fields.toolCalls"), t),
+    autonomous_tool_calls: parseOptionalBudgetInteger(draft.budget.autonomous_tool_calls, t("fields.autonomousToolCalls"), t),
   };
 }
 
@@ -513,7 +532,6 @@ export function buildUserSettingsPatch(
       memory_low: draft.defaultModels.memory_low?.trim() || null,
       memory_high: draft.defaultModels.memory_high?.trim() || null,
     },
-    default_budget: budgetFromDraft(draft, t),
     timezone: draft.timezone.trim(),
     memory: memoryFromDraft(draft.memory, t),
     matrix: {
@@ -532,6 +550,10 @@ export function buildUserSettingsPatch(
       ...(draft.gitToken ? { token: draft.gitToken } : {}),
     },
   };
+  // Saving the untouched form must not turn the prefilled baseline into a stored user budget.
+  if (budgetChanged(draft, settings)) {
+    body.default_budget = budgetFromDraft(draft, t);
+  }
   if (includeCredentials) {
     body.credentials = credentialsPayload;
   }
@@ -779,6 +801,7 @@ export function UserSettingsView({ server, token }: { server: string; token: str
             <BudgetInput label={t("fields.outputTokens")} placeholder={t("defaults.serverDefault")} value={draft.budget.output_tokens} onChange={(value) => updateDraft({ budget: { ...draft.budget, output_tokens: value } })} />
             <BudgetInput label={t("fields.costUsd")} placeholder={t("defaults.serverDefault")} value={draft.budget.cost_usd} onBlur={() => updateDraft({ budget: { ...draft.budget, cost_usd: budgetCostValue(draft.budget.cost_usd) } })} onChange={(value) => updateDraft({ budget: { ...draft.budget, cost_usd: value } })} />
             <BudgetInput label={t("fields.toolCalls")} placeholder={t("defaults.serverDefault")} value={draft.budget.tool_calls} onChange={(value) => updateDraft({ budget: { ...draft.budget, tool_calls: value } })} />
+            <BudgetInput label={t("fields.autonomousToolCalls")} placeholder={t("defaults.serverDefault")} value={draft.budget.autonomous_tool_calls} onChange={(value) => updateDraft({ budget: { ...draft.budget, autonomous_tool_calls: value } })} />
           </div>
         </Section>
 

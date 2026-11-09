@@ -163,7 +163,7 @@ class SessionApprovalMixin:
             for old in list(active.pending_escalations):
                 if old.get("kind") == kind and old.get(match_key) == match_val:
                     logger.info(f"Superseding stale {kind} escalation {old['request_id']} for {match_val}")
-                    active.escalation_waiters.answer(EscalationResponse(request_id=old["request_id"], decision="deny"))
+                    active.escalation_waiters.release(old["request_id"])
 
             # Wait from before the request is announced on, so an immediate answer is not missed.
             with active.escalation_waiters.waiting(request_id) as answer:
@@ -175,6 +175,7 @@ class SessionApprovalMixin:
                 response = None
 
             if response is not None:
+                active.autonomy.note_user_decision()
                 self._session_mgr.append_events(
                     session_id, [_escalation_response_event(request_id, subject, kind, cmd, context, response)]
                 )

@@ -18,6 +18,7 @@ from ..sandbox.manager import SandboxManager
 from ..security.context import SessionSecurity
 from ..security.sentinel import Sentinel
 from ..usage import UsageTracker
+from .autonomy import AutonomyStreak
 
 
 class TaskDone(BaseModel):
@@ -59,6 +60,7 @@ class Deps(BaseModel):
     tool_result_callback: Callable[[ToolResult], None] | None = None
     append_session_events: Callable[[list[dict[str, Any]]], None] | None = None
     usage_tracker: UsageTracker
+    autonomy: AutonomyStreak
     assert_llm_budget_available: Callable[[], None] | None = None
     llm_usage_limits: Callable[[], UsageLimits | None] | None = None
     credential_registry: CredentialRegistryProtocol

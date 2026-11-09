@@ -37,6 +37,7 @@ from ..security.context import (
 )
 from ..usage import provider_cost_usd_from_messages
 from ..ws_models import ApprovalRequest, FinalStatus
+from .autonomy import AUTONOMY_LIMIT_METADATA_KEY, resolve_user_approvals
 from .deps import Deps, TaskDone, TaskFailed
 from .tools import create_agent
 
@@ -146,9 +147,22 @@ async def run_agent_turn(
             )
 
         pending_ids = {call.tool_call_id for call in requests.approvals}
-        approvals = await collect_approvals(pending_ids)
+        autonomy_call_ids = {
+            call_id for call_id in pending_ids if requests.metadata.get(call_id, {}).get(AUTONOMY_LIMIT_METADATA_KEY)
+        }
+        approvals = resolve_user_approvals(
+            deps.autonomy,
+            await collect_approvals(pending_ids),
+            autonomy_call_ids,
+            deps.session_state.budget.autonomous_tool_calls,
+        )
         for tool_call_id, decision in approvals.items():
             deferred_results.approvals[tool_call_id] = decision
+            if tool_call_id in autonomy_call_ids:
+                # "Continue" is no verdict on the call itself: it runs through the security gate when
+                # released, and the sentinel's shadow log gets no user approval for it.
+                deferred_results.metadata[tool_call_id] = {AUTONOMY_LIMIT_METADATA_KEY: True}
+                continue
 
             meta = requests.metadata.get(tool_call_id, {})
             user_decision = "approved" if decision is True else "denied"

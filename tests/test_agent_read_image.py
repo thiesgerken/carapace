@@ -9,6 +9,7 @@ from pydantic_ai.messages import BinaryContent, ToolReturn
 from pydantic_ai.models import Model
 from pydantic_ai.usage import RunUsage
 
+from carapace.agent.autonomy import AutonomyStreak
 from carapace.agent.deps import Deps
 from carapace.agent.tools import (
     _READ_TOOL_DESCRIPTION_TEXT,
@@ -61,6 +62,7 @@ def _deps(tmp_path: Path, *, model_id: str, vision: bool, results: list[ToolResu
         agent_model=MagicMock(spec=Model),
         agent_model_id=model_id,
         usage_tracker=UsageTracker(),
+        autonomy=AutonomyStreak(),
         credential_registry=CredentialRegistry(),
         tool_result_callback=results.append,
     )

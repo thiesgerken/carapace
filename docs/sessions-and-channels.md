@@ -126,14 +126,38 @@ Retry and reset are WebSocket actions; fork is a REST action.
 
 ### Session budgets
 
-`SessionBudget` caps a session's totals: input tokens, output tokens, estimated cost in USD, and tool calls. A new session starts from the user's default budget (**Settings** -> **Account**) if it sets any limit, otherwise from the platform default (**Settings** -> **Admin** -> **Platform**). Once a limit is reached, the next LLM call ends the turn with a "Session budget reached" error.
+`SessionBudget` caps a session's totals: input tokens, output tokens, estimated cost in USD, and tool calls. It also holds the autonomy limit (see below). A new session starts from the user's default budget (**Settings** -> **Account**) if it sets any limit, otherwise from the platform default (**Settings** -> **Admin** -> **Platform**). Once one of the totals is reached, the next LLM call ends the turn with a "Session budget reached" error.
 
 Per session, limits change in two places, which share one parser (`parse_budget_limit`) and one setter (`SessionEngine.update_session_budget`):
 
-- `/budget input N`, `/budget output N`, `/budget cost N`, `/budget tools N`. `N` accepts `k`/`M` suffixes for counts; `0` clears a limit.
+- `/budget input N`, `/budget output N`, `/budget cost N`, `/budget tools N`, `/budget autonomy N`. `N` accepts `k`/`M` suffixes for counts; `0` clears a limit.
 - The **Budget** section of the session drawer in the web UI: click a limit, enter a value (same syntax), leave it empty for no limit. It sends `PATCH /api/sessions/{id}` with `{"budget": {"input_tokens": "100k"}}`; `null` clears a limit, omitted fields stay unchanged, and an invalid value is rejected with `400` before anything in the request is applied.
 
 Both paths broadcast a `status` message with the new `budget` to every connected WebSocket client, so the budget gauges and the drawer refresh in every tab. `GET`/`PATCH /api/sessions/{id}` return the current limits as `budget`.
+
+### Autonomy limit
+
+The **autonomous streak** is the tool calls the agent attempted since the last human interaction. The **autonomy limit** (`SessionBudget.autonomous_tool_calls`, `/budget autonomy N`) caps it. It is loop protection, not security: it applies in YOLO mode too, where nobody watches the agent.
+
+What counts: every tool call attempt, including calls the sentinel denies and skill-blocked calls, since a model looping on denied calls is exactly the case to catch. Output tools (`task_done`, `task_failed`), access decisions nested under a tool call (`proxy_domain`, `credential_access`, `git_push`), and the re-run of a call the user approved don't count. The total `tool_calls` budget is separate and counts allowed calls only.
+
+What resets the streak:
+
+- a new user message,
+- any approval or escalation the user resolves, allow or deny, except a deny of an autonomy-limit approval.
+
+Sentinel approvals and safe-listed or skill-declared auto-approvals never reset it. Once the limit stopped the agent (see below), only the next user message lifts the stop; changing the limit lifts it too.
+
+On reaching the limit:
+
+- **Attended sessions** pause. Every call over the limit asks for approval with "Autonomy limit reached (N tool calls without you)", through the normal approval cards (web, CLI, Matrix). Allowing at least one card of a batch resets the streak, and the allowed calls continue to the security gate (safe-list, sentinel, possibly another escalation) exactly as if the limit had not been hit: "continue" is no verdict on the call itself, so it is not recorded as a user approval in the sentinel's shadow log either. A denied card tells the model "Autonomy limit reached. Stop calling tools and report what you have." If the user allowed none of the autonomy cards of a batch, the next tool call ends the turn with a budget stop (`/budget autonomy N`), whatever else the user decided in that batch.
+- **Unattended sessions** (`attributes.unattended`, the default for jobs) have no one to ask: every call of the batch that crosses the limit is denied with the same wrap-up instruction, so a job still ends with a report. The next tool call ends the turn with a budget stop. Jobs with `persistent_session_id` and Matrix sessions are attended and pause instead.
+
+There is no timeout on the pause, and a pending autonomy approval is closed like any other approval when the server restarts. The streak lives in memory on the active session; a restart resets it. The chat input shows it as the "Autonomy" gauge.
+
+The platform default is 100 (`default_session_budget.autonomous_tool_calls`), overridable per user and per session like the other limits. A user default budget with any limit replaces the platform one as a whole, so **Settings** -> **Account** starts a new user default from the platform's autonomy limit, and migration 0009 added 100 to every stored user default that had a limit.
+
+As a stopgap for model loops the per-tool-call streak doesn't see (e.g. calls that fail argument validation and never reach a tool), one agent run may make at most three times the autonomy limit in model requests. Hitting it ends the turn with an error like any other budget stop. Without an autonomy limit there is no request limit either: the user turned loop protection off.
 
 ## Jobs and job-linked sessions
 
@@ -254,7 +278,7 @@ Slash commands are the user's control interface for managing sessions. Interacti
 | `/session`                                      | Show session metadata, context grants, and domain allowlist    |
 | `/skills`                                       | List available skills                                          |
 | `/retitle`                                      | Regenerate session title, or set it explicitly                 |
-| `/budget`                                       | Show or update session budgets, including tool-call caps       |
+| `/budget`                                       | Show or update session budgets, tool-call caps, autonomy limit |
 | `/usage`                                        | Show token usage breakdown with cost estimates                 |
 | `/pull`                                         | Pull from external Git remote (if configured)                  |
 | `/push`                                         | Push to external Git remote (if configured)                    |

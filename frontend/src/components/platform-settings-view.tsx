@@ -226,6 +226,7 @@ function budgetDraftFromSettings(budget: SessionBudgetSettings): PlatformDraft["
     output_tokens: budget.output_tokens?.toString() ?? "",
     cost_usd: budgetCostValue(budget.cost_usd),
     tool_calls: budget.tool_calls?.toString() ?? "",
+    autonomous_tool_calls: budget.autonomous_tool_calls?.toString() ?? "",
   };
 }
 
@@ -302,6 +303,7 @@ function budgetFromDraft(draft: PlatformDraft, t: Translate): SessionBudgetSetti
     output_tokens: numericLimit(draft.budget.output_tokens, t("fields.outputTokens"), t),
     cost_usd: cost ? budgetCostValue(cost) || null : null,
     tool_calls: numericLimit(draft.budget.tool_calls, t("fields.toolCalls"), t),
+    autonomous_tool_calls: numericLimit(draft.budget.autonomous_tool_calls, t("fields.autonomousToolCalls"), t),
   };
 }
 
@@ -613,6 +615,7 @@ export function PlatformSettingsView({ server, token }: { server: string; token:
             <TextInput label={t("fields.outputTokens")} value={draft.budget.output_tokens} disabled={fieldsDisabled} placeholder={t("placeholders.unlimited")} onChange={(value) => updateDraft({ budget: { ...draft.budget, output_tokens: value } })} />
             <TextInput label={t("fields.costUsd")} value={draft.budget.cost_usd} disabled={fieldsDisabled} placeholder={t("placeholders.unlimited")} onBlur={() => updateDraft({ budget: { ...draft.budget, cost_usd: budgetCostValue(draft.budget.cost_usd) } })} onChange={(value) => updateDraft({ budget: { ...draft.budget, cost_usd: value } })} />
             <TextInput label={t("fields.toolCalls")} value={draft.budget.tool_calls} disabled={fieldsDisabled} placeholder={t("placeholders.unlimited")} onChange={(value) => updateDraft({ budget: { ...draft.budget, tool_calls: value } })} />
+            <TextInput label={t("fields.autonomousToolCalls")} value={draft.budget.autonomous_tool_calls} disabled={fieldsDisabled} placeholder={t("placeholders.unlimited")} onChange={(value) => updateDraft({ budget: { ...draft.budget, autonomous_tool_calls: value } })} />
           </div>
         </Section>
 

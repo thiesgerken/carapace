@@ -458,7 +458,8 @@ agent:
   model: "anthropic:claude-sonnet-4-6"
   sentinel_model: "anthropic:claude-haiku-4-5"
   title_model: "anthropic:claude-haiku-4-5"
-  default_session_budget: {}
+  default_session_budget:
+    autonomous_tool_calls: 100
   available_models:
     - "anthropic:claude-sonnet-4-6"
     - "anthropic:claude-haiku-4-5"

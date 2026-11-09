@@ -38,7 +38,11 @@ class EscalationWaiters:
         future.set_result(response)
         return True
 
+    def release(self, request_id: str) -> None:
+        future = self._futures.get(request_id)
+        if future is not None and not future.done():
+            future.set_result(None)
+
     def release_all(self) -> None:
-        for future in self._futures.values():
-            if not future.done():
-                future.set_result(None)
+        for request_id in self._futures:
+            self.release(request_id)

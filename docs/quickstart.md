@@ -98,6 +98,7 @@ agent:
   #   input_tokens: 100000
   #   output_tokens: 50000
   #   cost_usd: 5.00
+  #   autonomous_tool_calls: 100  # the platform default when the whole block is omitted
 
 sessions:
   commit:

@@ -9,7 +9,13 @@ import type { SessionBudgetSettings } from "@/lib/types";
 
 export type SessionBudgetField = keyof SessionBudgetSettings;
 
-const BUDGET_FIELDS: SessionBudgetField[] = ["input_tokens", "output_tokens", "cost_usd", "tool_calls"];
+const BUDGET_FIELDS: SessionBudgetField[] = [
+  "input_tokens",
+  "output_tokens",
+  "cost_usd",
+  "tool_calls",
+  "autonomous_tool_calls",
+];
 
 function rawLimit(budget: SessionBudgetSettings, field: SessionBudgetField): string {
   const value = budget[field];
