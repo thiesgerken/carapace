@@ -84,7 +84,8 @@ test("the preview shows sections, the cache boundary and the memory budget, and 
     assert.deepEqual(segments.map((segment) => segment.style.flexGrow), ["40", "1200", "300", "900", "20"]);
     assert.equal(segments[1].getAttribute("aria-label"), "Shared prefix · 1,200 tokens · 49.6%");
     const tick = view.container.querySelector<HTMLElement>('[title="End of cacheable prefix"]');
-    assert.equal(Number.parseFloat(tick?.style.left ?? ""), (2440 / 2460) * 100);
+    // jsdom serializes CSS numbers with at most three decimals.
+    assert.ok(Math.abs(Number.parseFloat(tick?.style.left ?? "") - (2440 / 2460) * 100) < 0.001);
     const scrolled: Element[] = [];
     window.Element.prototype.scrollIntoView = function scrollIntoView(this: Element) {
       scrolled.push(this);
