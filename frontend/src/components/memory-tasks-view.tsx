@@ -164,7 +164,7 @@ export function MemoryTasksView({ server, token, initialStatus = null }: {
                 ? ` · ${t("estimate", {
                   cost: page.estimate.unpriced_count === page.estimate.task_count
                     ? formatTokenEstimate(page.estimate.input_tokens, page.estimate.output_tokens_cap, locale)
-                    : formatPricedCost(page.estimate),
+                    : formatPricedCost(page.estimate)!, // estimate totals are always priced sums
                 })}`
                 : null}
             </>

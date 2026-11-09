@@ -456,9 +456,9 @@ class MemoryStore:
 
         ponytail: a task's billed totals count in the window of its latest billed finish, so a
         failure yesterday plus a retry today lands entirely in today. Likewise all attempts count
-        under the task's latest model, so a retry on a subscription model after a billed attempt
-        on an API model (or the reverse) misclassifies the earlier attempts. Per-attempt rows if
-        exact windows or splits ever matter.
+        under the task's current model (its latest estimate or run), so re-estimating or retrying
+        a billed task on a subscription model after an API model (or the reverse) reclassifies
+        the earlier attempts. Per-attempt rows if exact windows or splits ever matter.
         """
         with self._session_factory() as db:
             billed = db.execute(

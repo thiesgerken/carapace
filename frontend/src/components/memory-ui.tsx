@@ -132,20 +132,14 @@ export interface PricedCost {
   equivalent_cost_usd: string | number | null;
 }
 
-/** Formats a priced cost; only a cost that may be unpriced can come back null. */
-export interface FormatPricedCost {
-  (priced: { cost_usd: string | number; equivalent_cost_usd: string | number }): string;
-  (priced: PricedCost): string | null;
-}
-
 /** formatCost in the UI's wording, "$0.00 (≈ $0.0042 equivalent)"; null without known pricing. */
-export function useFormatCost(): FormatPricedCost {
+export function useFormatCost(): (priced: PricedCost) => string | null {
   const t = useTranslations("memory");
   const locale = useLocale();
-  return (({ cost_usd, equivalent_cost_usd }: PricedCost) => {
+  return ({ cost_usd, equivalent_cost_usd }) => {
     if (cost_usd === null || equivalent_cost_usd === null) return null;
     return formatCost(cost_usd, equivalent_cost_usd, locale, (cost, equivalent) => t("costWithEquivalent", { cost, equivalent }));
-  }) as FormatPricedCost;
+  };
 }
 
 export function MemoryProvenanceList({ provenance }: { provenance: MemoryProvenance }) {

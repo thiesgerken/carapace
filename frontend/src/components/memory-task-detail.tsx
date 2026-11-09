@@ -5,7 +5,7 @@ import Link from "next/link";
 import { ArrowUpRight, Loader2 } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
 import { useMemorySessionDetail } from "@/components/memory-extraction-detail";
-import { DetailList, useFormatCost, type FormatPricedCost } from "@/components/memory-ui";
+import { DetailList, useFormatCost, type PricedCost } from "@/components/memory-ui";
 import { getMemoryPeriod } from "@/lib/api";
 import { formatAbsoluteTime } from "@/lib/format-time";
 import { formatTokens, missingSourceCount, monthLabel, taskRunModel, weekLabel } from "@/lib/memory";
@@ -68,7 +68,7 @@ function taskNumbers(
   model: string | null,
   locale: string,
   t: ReturnType<typeof useTranslations>,
-  formatPricedCost: FormatPricedCost,
+  formatPricedCost: (priced: PricedCost) => string | null,
 ): string {
   const attempts = t("attempts", { count: task.attempts });
   const { provenance, estimate } = task;
