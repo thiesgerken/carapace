@@ -230,9 +230,12 @@ class MatrixChannel:
 
         return "", None
 
+    @staticmethod
+    def _read_tokens_file(token_file: Path) -> MatrixTokensFile:
+        return MatrixTokensFile.model_validate(yaml.safe_load(token_file.read_text(encoding="utf-8")) or {})
+
     def _load_persisted_token(self, token_file: Path) -> MatrixTokenFile | None:
-        raw = yaml.safe_load(token_file.read_text(encoding="utf-8")) or {}
-        tokens_file = MatrixTokensFile.model_validate(raw)
+        tokens_file = self._read_tokens_file(token_file)
         for stored in tokens_file.tokens:
             if stored.user_id != self._config.user_id:
                 continue
@@ -267,13 +270,12 @@ class MatrixChannel:
             user_id=self._config.user_id,
             user=self._require_owner_user(),
         )
-        if token_file.suffix in {".yaml", ".yml"}:
-            token_file.write_text(
-                yaml.safe_dump(MatrixTokensFile(tokens=[persisted]).model_dump(mode="json", exclude_none=True)),
-                encoding="utf-8",
-            )
-        else:
-            token_file.write_text(persisted.model_dump_json(exclude_none=True), encoding="utf-8")
+        # The file holds every user's channel token, so only this channel's entry is replaced.
+        tokens_file = self._read_tokens_file(token_file) if token_file.exists() else MatrixTokensFile()
+        token_file.write_text(
+            yaml.safe_dump(tokens_file.with_token(persisted).model_dump(mode="json", exclude_none=True)),
+            encoding="utf-8",
+        )
         logger.info(f"Matrix: password login successful, token persisted to {token_file}")
 
     async def _authenticate(self, token_file: Path) -> None:
@@ -290,9 +292,12 @@ class MatrixChannel:
         await self._password_login(token_file)
 
     async def _reauthenticate(self) -> None:
-        """Replace a token the homeserver rejected (M_UNKNOWN_TOKEN) via password login. Raises on failure."""
+        """Replace a token the homeserver rejected (M_UNKNOWN_TOKEN) via password login. Raises on failure.
+
+        The stale entry stays in the token file until the login replaces it. If the login fails,
+        the next start just hits M_UNKNOWN_TOKEN again and lands here.
+        """
         logger.warning("Matrix: token rejected (M_UNKNOWN_TOKEN), re-authenticating with password")
-        self._token_file.unlink(missing_ok=True)
         await self._password_login(self._token_file)
 
     # ------------------------------------------------------------------

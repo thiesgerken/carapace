@@ -342,25 +342,14 @@ def _clear_persisted_matrix_token(username: str, config: UserConfig) -> MatrixTo
         logger.warning(f"Matrix: could not update persisted token file before password login: {exc}")
         return None
 
-    normalized_username = normalize_username(username)
-    matrix_user_id = config.channels.matrix.user_id or None
-    remaining = []
-    removed = False
-    for stored in tokens_file.tokens:
-        owner_matches = normalize_username(stored.user) == normalized_username
-        user_id_matches = stored.user_id is None or stored.user_id == matrix_user_id
-        if owner_matches and user_id_matches:
-            removed = True
-            continue
-        remaining.append(stored)
-
-    if not removed:
+    remaining = tokens_file.without_tokens_of(username, config.channels.matrix.user_id or None)
+    if len(remaining.tokens) == len(tokens_file.tokens):
         return None
 
     backup = MatrixTokenFileBackup(path=token_path, content=raw_content)
-    if remaining:
+    if remaining.tokens:
         token_path.write_text(
-            yaml.safe_dump(MatrixTokensFile(tokens=remaining).model_dump(mode="json", exclude_none=True)),
+            yaml.safe_dump(remaining.model_dump(mode="json", exclude_none=True)),
             encoding="utf-8",
         )
     else:
