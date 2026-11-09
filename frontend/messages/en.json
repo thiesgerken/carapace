@@ -80,6 +80,7 @@
     "memory": {
         "title": "Memory",
         "sections": "Memory sections",
+        "costWithEquivalent": "{cost} (≈ {equivalent} equivalent)",
         "tabs": {
             "timeline": "Timeline",
             "sessions": "Sessions",
@@ -92,6 +93,8 @@
             "autoModeOff": "Auto mode off",
             "autoModeHint": "Change auto mode and budgets in your settings",
             "today": "Today",
+            "equivalent": "{label} (equivalent)",
+            "equivalentHint": "List price, includes subscription usage that is not billed per token.",
             "tokens": "tokens",
             "noLimit": "no limit",
             "queue": "Queue",
@@ -201,6 +204,7 @@
             "cost": "Estimated cost",
             "unpriced": "{count, plural, one {# task without pricing} other {# tasks without pricing}}",
             "remaining": "Remaining budget",
+            "remainingEquivalent": "≈ {cost} equivalent",
             "noLimit": "no limit",
             "overBudget": "This exceeds the remaining budget. Tasks beyond it wait in the queue until the budget window resets.",
             "model": "Model",
@@ -396,6 +400,10 @@
             "configured": "configured",
             "notSet": "not set"
         },
+        "matrixStatus": {
+            "running": "Running",
+            "failed": "Failed to start"
+        },
         "notices": {
             "saved": "Saved."
         },
@@ -458,6 +466,8 @@
             "memoryAutoMode": "Auto mode",
             "memoryCostPerDay": "Cost per day (USD)",
             "memoryCostPerMonth": "Cost per month (USD)",
+            "memoryEquivalentCostPerDay": "Equivalent cost per day (USD)",
+            "memoryEquivalentCostPerMonth": "Equivalent cost per month (USD)",
             "memoryTokensPerDay": "Input tokens per day",
             "memoryTokensPerMonth": "Input tokens per month",
             "timezone": "Time zone",
@@ -675,7 +685,9 @@
             "failedTasks": "{count, plural, one {# failed memory task} other {# failed memory tasks}}",
             "outdatedRecords": "{count, plural, one {# outdated memory record} other {# outdated memory records}}",
             "budgetDay": "Memory budget today: {used} of {limit}",
-            "budgetMonth": "Memory budget this month: {used} of {limit}"
+            "budgetMonth": "Memory budget this month: {used} of {limit}",
+            "budgetDayEquivalent": "Memory budget today: {used} of {limit} equivalent cost",
+            "budgetMonthEquivalent": "Memory budget this month: {used} of {limit} equivalent cost"
         }
     },
     "connect": {

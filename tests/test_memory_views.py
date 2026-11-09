@@ -51,7 +51,7 @@ class FakeHandler:
         self.model_role = role
 
     async def estimate(self, user: str, target: str, model: str) -> TaskEstimate:
-        return TaskEstimate(model=model, input_tokens=100, output_tokens_cap=10, cost_usd=Decimal("0.01"))
+        return TaskEstimate(model=model, input_tokens=100, output_tokens_cap=10, equivalent_cost_usd=Decimal("0.01"))
 
     async def run(self, task: MemoryTask, model: str | None) -> TaskOutcome:
         raise AssertionError("not run in these tests")
@@ -124,7 +124,7 @@ def _provenance(task_id: int, *, model: str = LOW_MODEL, prompt: str = CURRENT_P
         input_hash=f"hash-{task_id}",
         input_tokens=1200,
         output_tokens=300,
-        cost_usd=Decimal("0.004"),
+        equivalent_cost_usd=Decimal("0.004"),
         duration_ms=10,
         task_id=task_id,
         created_at=NOW,
@@ -145,8 +145,9 @@ def _extract(
     week: str = "2026-W37",
     prompt: str = CURRENT_PROMPT,
     open_loops: tuple[str, ...] = (),
+    model: str = LOW_MODEL,
 ) -> None:
-    estimate = TaskEstimate(model=LOW_MODEL, input_tokens=1, output_tokens_cap=1, cost_usd=None)
+    estimate = TaskEstimate(model=model, input_tokens=1, output_tokens_cap=1, equivalent_cost_usd=None)
     task = _run(
         store,
         store.spawn(
@@ -179,7 +180,7 @@ def _extract(
     )
     result = ExtractionResult(session_id=session_id, week_key=week, month_key="2026-09", extraction=extraction)
     assert store.record_outcome(
-        task.id, TaskOutcome(provenance=_provenance(task.id, prompt=prompt), result=result), NOW
+        task.id, TaskOutcome(provenance=_provenance(task.id, model=model, prompt=prompt), result=result), NOW
     )
 
 
@@ -193,7 +194,7 @@ def _digest(
     highlights: tuple[str, ...] = (),
 ) -> DigestRecord:
     kind = TaskKind.week_digest if level is DigestLevel.week else TaskKind.month_digest
-    estimate = TaskEstimate(model="test:high", input_tokens=1, output_tokens_cap=1, cost_usd=None)
+    estimate = TaskEstimate(model="test:high", input_tokens=1, output_tokens_cap=1, equivalent_cost_usd=None)
     task = _run(store, store.spawn("alice", kind, key, spawned_by=SpawnedBy.auto, now=NOW, estimate=estimate))
     coverage = week_coverage(coverage_source) if level is DigestLevel.week else month_coverage(coverage_source)
     result = DigestResult(
@@ -234,7 +235,7 @@ def listed(setup):
         spawned_by=SpawnedBy.auto,
         now=NOW,
         session_week_key="2026-W38",
-        estimate=TaskEstimate(model=LOW_MODEL, input_tokens=1, output_tokens_cap=1, cost_usd=None),
+        estimate=TaskEstimate(model=LOW_MODEL, input_tokens=1, output_tokens_cap=1, equivalent_cost_usd=None),
     )
     _session(sessions, "private", private=True)
     _session(sessions, "legacy", events=False)
@@ -378,7 +379,7 @@ async def test_outdated_records_get_manual_pending_tasks(listed):
     # Digests record "test:high", not the effective memory_high model, so both are outdated.
     week = _digest(store, DigestLevel.week, "2026-W37", store.current_extractions("alice", "2026-W37"))
     _digest(store, DigestLevel.month, "2026-09", [week])
-    estimate = TaskEstimate(model="test:high", input_tokens=1, output_tokens_cap=1, cost_usd=None)
+    estimate = TaskEstimate(model="test:high", input_tokens=1, output_tokens_cap=1, equivalent_cost_usd=None)
     store.spawn("alice", TaskKind.month_digest, "2026-09", spawned_by=SpawnedBy.auto, now=NOW, estimate=estimate)
 
     expected = TaskKindCounts(session_extract=1, week_digest=1, month_digest=0)  # the month has an open task
@@ -525,10 +526,23 @@ def test_home_budget_notice_shows_the_window_closest_to_its_limit(setup, day, mo
     service, sessions, store = setup
     for title in ("one", "two"):  # 0.004 each
         _extract(store, _session(sessions, title))
-    budget = MemoryBudget(cost_usd_per_day=day, cost_usd_per_month=month)
+    budget = MemoryBudget(equivalent_cost_usd_per_day=day, equivalent_cost_usd_per_month=month)
     service._user_config_for = lambda _: UserConfig(memory=UserMemoryConfig(budget=budget))
 
     notice = service.budget_notice("alice")
 
     assert (None if notice is None else (notice.window, notice.limit_usd)) == expected
     assert notice is None or notice.used_usd == Decimal("0.008")
+
+
+def test_home_budget_notice_names_the_metric_closest_to_its_limit(setup):
+    service, sessions, store = setup
+    _extract(store, _session(sessions, "api"))  # 0.004 actual and equivalent
+    _extract(store, _session(sessions, "subscription"), model="openai-codex:gpt-5.5")  # 0.004 equivalent only
+    budget = MemoryBudget(cost_usd_per_day=Decimal("0.0045"), equivalent_cost_usd_per_day=Decimal("0.0095"))
+    service._user_config_for = lambda _: UserConfig(memory=UserMemoryConfig(budget=budget))
+
+    notice = service.budget_notice("alice")  # actual 0.004 of 0.0045 (89%), equivalent 0.008 of 0.0095 (84%)
+
+    assert notice is not None
+    assert (notice.metric, notice.used_usd, notice.limit_usd) == ("cost", Decimal("0.004"), Decimal("0.0045"))

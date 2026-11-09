@@ -24,7 +24,7 @@ function record(id: number, is_current: boolean, statement: string): MemoryExtra
       input_hash: "abc",
       input_tokens: 1200,
       output_tokens: 300,
-      cost_usd: "0.004",
+      cost_usd: "0.004", equivalent_cost_usd: "0.004",
       duration_ms: 2100,
       task_id: id,
       created_at: "2026-09-08T07:12:00Z",

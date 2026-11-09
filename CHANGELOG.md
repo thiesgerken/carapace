@@ -1,6 +1,148 @@
 # CHANGELOG
 
 
+## v0.174.2 (2026-11-09)
+
+
+### 🐛 Bug Fixes
+
+
+- 🐛Merge pull request #449 from thiesgerken/fix/matrix-unknown-token-recovery
+  ([`4349895`](https://github.com/thiesgerken/carapace/commit/4349895b42f705167056c3e74d4d9844ad674779))
+
+- 🐛 fix(matrix): re-authenticate when the sync loop hits M_UNKNOWN_TOKEN
+  ([`4349895`](https://github.com/thiesgerken/carapace/commit/4349895b42f705167056c3e74d4d9844ad674779))
+
+- 🐛 fix(matrix): keep other users' tokens when persisting a Matrix login
+  ([`a8a445e`](https://github.com/thiesgerken/carapace/commit/a8a445e8e2adb7e28185061ff2638a2752d54980))
+
+  matrix_token.yaml holds every user's channel token, but a password login rewrote it with only its own entry and re-auth unlinked the whole file. Persisting is now an upsert, re-auth no longer deletes the file, and the "which entries belong to this channel" rule lives on the token models, shared with the settings path that clears a user's token. The unused JSON token-file branch is gone.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01NTjJ6UVHgE8gBPSz7y7nRg
+
+- 🐛 fix(matrix): re-authenticate when the sync loop hits M_UNKNOWN_TOKEN
+  ([`394872c`](https://github.com/thiesgerken/carapace/commit/394872c9d2dde08b038b1444d4840cbb4dd8e323))
+
+  The sync loop used to stop for good on an invalidated token while the channel kept reporting "running". It now shares start()'s recovery (_reauthenticate: drop the token file, password login) and keeps syncing. Without a configured password it still stops; a failed login is retried with the existing 5s sync-error sleep.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01NTjJ6UVHgE8gBPSz7y7nRg
+
+## v0.174.1 (2026-11-09)
+
+
+### 🐛 Bug Fixes
+
+
+- 🐛Merge pull request #447 from thiesgerken/fix/channel-startup-resilience
+  ([`c45e3e2`](https://github.com/thiesgerken/carapace/commit/c45e3e254522337ee2ffec0751e8624fc2de3ad5))
+
+- 🐛 fix: keep the server up when a Matrix channel or knowledge pull fails at startup
+  ([`c45e3e2`](https://github.com/thiesgerken/carapace/commit/c45e3e254522337ee2ffec0751e8624fc2de3ad5))
+
+- 🐛 fix: re-arm the Matrix retry on settings rollback and harden the startup guard
+  ([`f3e9276`](https://github.com/thiesgerken/carapace/commit/f3e9276ac7e8a9c7b254cf7ca80eeb15c451de26))
+
+  - Settings rollback goes through MatrixChannelManager.reload_user_with_retry
+    (renamed from start_user_with_retry, now also used at startup), so a
+    failed save during an outage no longer leaves the channel dead.
+  - The factory call and the cleanup stop() can no longer escape the
+    never-raise contract.
+  - Retry failures log one warning line; only the first attempt logs a trace.
+  - A failed knowledge pull at startup skips seeding, so a fresh repo does
+    not fork from the remote history.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01NTjJ6UVHgE8gBPSz7y7nRg
+
+- 🐛 fix: keep the server up when a Matrix channel or knowledge pull fails at startup
+  ([`716191e`](https://github.com/thiesgerken/carapace/commit/716191ebb58a43c98293364453b27b7c315678a4))
+
+  A failed Matrix login/initial sync or a failed knowledge Git pull no longer crashes the lifespan. Matrix startup failures are recorded, shown in the account settings, and retried in the background with capped backoff (5s doubling to 5 min). Saving Matrix settings stays strict.
+
+  Closes #422
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01NTjJ6UVHgE8gBPSz7y7nRg
+
+## v0.174.0 (2026-11-09)
+
+
+### ✨ Features
+
+
+- ✨Merge pull request #448 from thiesgerken/feat/memory-equivalent-cost
+  ([`7f41356`](https://github.com/thiesgerken/carapace/commit/7f41356169dcd9ea3365fbfcca3d34257cb6e41e))
+
+- ✨ feat(memory): split the memory budget into actual and equivalent cost
+  ([`7f41356`](https://github.com/thiesgerken/carapace/commit/7f41356169dcd9ea3365fbfcca3d34257cb6e41e))
+
+- ✨ feat(frontend): show memory costs as actual plus equivalent cost
+  ([`d3ee602`](https://github.com/thiesgerken/carapace/commit/d3ee60284d8d203abfa6c4dbb6bc7e8b2d4ce8cb))
+
+  Task, extraction, digest, queue and run-dialog costs show the actual cost, with "≈ $X equivalent" where a subscription model makes the list price differ. The status strip shows one gauge per cost limit, the run dialog checks and shows both remaining budgets, the home notice names the equivalent limit, and the memory settings get the two equivalent limits.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aUyaxvsB8zAKUBRRhYg
+
+- ✨ feat(memory): split the memory budget into actual and equivalent cost
+  ([`dbfc729`](https://github.com/thiesgerken/carapace/commit/dbfc729f29fa475917040c578af38cb12dfd333a))
+
+  Memory tasks on a subscription model (openai-codex) bill nothing per token, but their list price used to count against the one memory cost limit as if it were money spent. Like session budgets (#434), the memory budget now has actual and equivalent cost limits per day and month.
+
+  - Records and estimates store the list price as equivalent_cost_usd; the
+    actual cost is a computed field derived from the model, so it follows the
+    subscription classification. Stored JSON excludes computed fields.
+  - store.spend() groups the billed list price by task model and splits it.
+  - The gate, auto mode, status gauges and the home notice check all four
+    cost limits; the notice names the metric.
+  - Migration 0011 moves stored memory cost limits (explicit null included)
+    to the equivalent limits and renames the stored record cost key; the
+    downgrade folds back to the stricter limit.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aUyaxvsB8zAKUBRRhYg
+
+### ♻️ Refactoring
+
+
+- ♻️ refactor(memory): plain useFormatCost signature, precise spend reclassification note
+  ([`bcd36e8`](https://github.com/thiesgerken/carapace/commit/bcd36e877b038aac25e5e9c91fef5fdb49fd6c34))
+
+  Drops the overloaded call signature and cast from useFormatCost; the one site with a guaranteed price asserts it. The spend ceiling note and the docs now say attempts count under the task's current model (latest estimate or run), which a re-estimate already changes.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aUyaxvsB8zAKUBRRhYg
+
+### 🔧 Configuration
+
+
+- 🔧 chore(seed): keep today's demo memory spend near its limits
+  ([`1fbec8f`](https://github.com/thiesgerken/carapace/commit/1fbec8f0a4ee7bc67d7fe00e0b7638bd661f8efe))
+
+  So the home page shows the memory budget notice and the run dialog its over-budget warning.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aUyaxvsB8zAKUBRRhYg
+
+- 🔧 chore(seed): add memory demo data for the memory screenshots
+  ([`84592d1`](https://github.com/thiesgerken/carapace/commit/84592d1350aaf0c03c415c9bc6cf566bd960cb59))
+
+  One extraction on Sonnet, one on the Codex subscription (both billed in today's window), a pending extraction for the run dialog, and a memory budget with actual limits next to the default equivalent ones.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aUyaxvsB8zAKUBRRhYg
+
 ## v0.173.1 (2026-11-09)
 
 

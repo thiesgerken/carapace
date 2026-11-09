@@ -94,9 +94,13 @@ class CostSplit:
         return CostSplit(actual=self.actual + other.actual, equivalent=self.equivalent + other.equivalent)
 
 
+def cost_split(model_key: str, equivalent: Decimal) -> CostSplit:
+    """Split a list price: a subscription model bills nothing per token, any other model its list price."""
+    return CostSplit(actual=Decimal(0) if is_subscription_model(model_key) else equivalent, equivalent=equivalent)
+
+
 def usage_cost(model_key: str, usage: ModelUsage) -> CostSplit:
-    price = price_for_usage(model_key, usage) or Decimal(0)
-    return CostSplit(actual=Decimal(0) if is_subscription_model(model_key) else price, equivalent=price)
+    return cost_split(model_key, price_for_usage(model_key, usage) or Decimal(0))
 
 
 def _merge_run_usage_into_bucket(bucket: ModelUsage, usage: RunUsage) -> None:

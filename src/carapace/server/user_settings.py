@@ -23,6 +23,7 @@ from ..models.session import SessionBudget
 from ..models.user import UserConfig, UserDefaultModelsConfig, UserGitConfig, UserMemoryConfig, validate_timezone
 from ..user_defaults import effective_memory_model
 from .auth import require
+from .runtime import MatrixChannelState, MatrixChannelStatus
 from .state import server_module
 
 server = server_module()
@@ -131,6 +132,8 @@ class PublicMatrixSettings(SettingsModel):
     token_set: bool = False
     allowed_rooms: list[str] = []
     allowed_users: list[str] = []
+    status: MatrixChannelStatus
+    error: str | None = None
 
 
 class PublicGitSettings(SettingsModel):
@@ -288,7 +291,7 @@ def _public_credentials(config: CredentialsConfig) -> PublicCredentialsSettings:
     return PublicCredentialsSettings(backends=backends)
 
 
-def _public_matrix(config: MatrixChannelConfig) -> PublicMatrixSettings:
+def _public_matrix(config: MatrixChannelConfig, state: MatrixChannelState) -> PublicMatrixSettings:
     return PublicMatrixSettings(
         enabled=config.enabled,
         homeserver=config.homeserver,
@@ -298,6 +301,8 @@ def _public_matrix(config: MatrixChannelConfig) -> PublicMatrixSettings:
         token_set=config.token is not None,
         allowed_rooms=list(config.allowed_rooms),
         allowed_users=list(config.allowed_users),
+        status=state.status,
+        error=state.error,
     )
 
 
@@ -337,25 +342,14 @@ def _clear_persisted_matrix_token(username: str, config: UserConfig) -> MatrixTo
         logger.warning(f"Matrix: could not update persisted token file before password login: {exc}")
         return None
 
-    normalized_username = normalize_username(username)
-    matrix_user_id = config.channels.matrix.user_id or None
-    remaining = []
-    removed = False
-    for stored in tokens_file.tokens:
-        owner_matches = normalize_username(stored.user) == normalized_username
-        user_id_matches = stored.user_id is None or stored.user_id == matrix_user_id
-        if owner_matches and user_id_matches:
-            removed = True
-            continue
-        remaining.append(stored)
-
-    if not removed:
+    remaining = tokens_file.without_tokens_of(username, config.channels.matrix.user_id or None)
+    if len(remaining.tokens) == len(tokens_file.tokens):
         return None
 
     backup = MatrixTokenFileBackup(path=token_path, content=raw_content)
-    if remaining:
+    if remaining.tokens:
         token_path.write_text(
-            yaml.safe_dump(MatrixTokensFile(tokens=remaining).model_dump(mode="json", exclude_none=True)),
+            yaml.safe_dump(remaining.model_dump(mode="json", exclude_none=True)),
             encoding="utf-8",
         )
     else:
@@ -458,10 +452,10 @@ async def _rollback_settings_runtime(
     git_changed: bool,
 ) -> None:
     if matrix_changed:
-        try:
-            await _reload_matrix_settings(username, config)
-        except HTTPException as exc:
-            logger.warning(f"Matrix settings runtime rollback failed for user {username!r}: {exc.detail}")
+        # The new config already failed with a 500. The restored one gets startup semantics: if
+        # it fails to start too (e.g. homeserver outage), keep retrying in the background
+        # instead of leaving the channel dead until the next restart.
+        await server._matrix_channel_manager.reload_user_with_retry(username, config)
     if git_changed:
         try:
             await _reload_git_settings(username, config.git)
@@ -497,7 +491,7 @@ def _settings_response(username: str) -> UserSettingsResponse:
             default_budget=config.budgets,
             timezone=config.timezone,
             memory=config.memory,
-            matrix=_public_matrix(config.channels.matrix),
+            matrix=_public_matrix(config.channels.matrix, server._matrix_channel_manager.state_for_user(username)),
             credentials=_public_credentials(config.credentials),
             git=_public_git(config.git),
         ),

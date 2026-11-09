@@ -28,7 +28,7 @@ def provenance(task_id: int) -> Provenance:
         input_hash="f" * 64,
         input_tokens=1200,
         output_tokens=300,
-        cost_usd=Decimal("0.0042"),
+        equivalent_cost_usd=Decimal("0.0042"),
         duration_ms=2100,
         task_id=task_id,
         created_at=datetime(2026, 9, 8, 7, 12, tzinfo=UTC),

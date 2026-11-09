@@ -39,7 +39,7 @@ const FULL: HomeData = {
     pending_approvals: [{ session_id: "s3", session_title: "Deploy" }, { session_id: "s4", session_title: null }],
     failed_memory_tasks: 2,
     outdated_memory_records: 0,
-    memory_budget: { used_usd: "0.92", limit_usd: "1.00", window: "day" },
+    memory_budget: { metric: "cost", used_usd: "0.92", limit_usd: "1.00", window: "day" },
   },
 };
 

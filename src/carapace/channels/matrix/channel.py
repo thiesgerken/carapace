@@ -39,6 +39,10 @@ from .formatting import (
 from .subscriber import MatrixSubscriber
 
 
+class MatrixPasswordMissingError(RuntimeError):
+    """Re-authentication needs a password, and none is configured."""
+
+
 # Pyrefly widens matrix-nio's decorated async methods to
 # `AsyncGenerator | Coroutine`, so we pin the subset we use here.
 class MatrixClientProtocol(Protocol):
@@ -110,6 +114,7 @@ class MatrixChannel:
         self._presence_registry = presence_registry
         self._owner_user = normalize_username(owner_user)
         self._owner_config = owner_config.model_copy(deep=True) if owner_config is not None else UserConfig()
+        self._token_file = session_mgr.sessions_dir.parent / "matrix_token.yaml"
         if not self._owner_user:
             raise ValueError("Matrix channel owner user must not be empty")
 
@@ -142,10 +147,7 @@ class MatrixChannel:
 
     async def start(self) -> None:
         """Authenticate and start the sync loop."""
-        data_dir = self._session_mgr.sessions_dir.parent
-        token_file = data_dir / "matrix_token.yaml"
-
-        await self._authenticate(token_file)
+        await self._authenticate(self._token_file)
         logger.info(f"Matrix channel logged in as {self._config.user_id} on {self._config.homeserver}")
 
         # Initial sync: warm up room → session mapping.
@@ -154,9 +156,7 @@ class MatrixChannel:
         resp = await self._client.sync(timeout=5000, full_state=True)
         if isinstance(resp, nio.SyncError):
             if resp.status_code == "M_UNKNOWN_TOKEN":
-                logger.warning("Matrix: stored token rejected (M_UNKNOWN_TOKEN), re-authenticating with password")
-                token_file.unlink(missing_ok=True)
-                await self._password_login(token_file)
+                await self._reauthenticate()
                 resp = await self._client.sync(timeout=5000, full_state=True)
             if isinstance(resp, nio.SyncError):
                 raise RuntimeError(f"Matrix initial sync failed: {resp.status_code}: {resp.message}")
@@ -230,9 +230,12 @@ class MatrixChannel:
 
         return "", None
 
+    @staticmethod
+    def _read_tokens_file(token_file: Path) -> MatrixTokensFile:
+        return MatrixTokensFile.model_validate(yaml.safe_load(token_file.read_text(encoding="utf-8")) or {})
+
     def _load_persisted_token(self, token_file: Path) -> MatrixTokenFile | None:
-        raw = yaml.safe_load(token_file.read_text(encoding="utf-8")) or {}
-        tokens_file = MatrixTokensFile.model_validate(raw)
+        tokens_file = self._read_tokens_file(token_file)
         for stored in tokens_file.tokens:
             if stored.user_id != self._config.user_id:
                 continue
@@ -253,7 +256,9 @@ class MatrixChannel:
         """Log in with the configured password secret and persist the new token. Raises on failure."""
         password = self._config.password or ""
         if not password:
-            raise RuntimeError("Matrix channel: no valid token available and no password secret configured")
+            raise MatrixPasswordMissingError(
+                "Matrix channel: no valid token available and no password secret configured"
+            )
 
         resp = await self._client.login(password, device_name=self._config.device_name)
         if isinstance(resp, nio.LoginError):
@@ -265,13 +270,12 @@ class MatrixChannel:
             user_id=self._config.user_id,
             user=self._require_owner_user(),
         )
-        if token_file.suffix in {".yaml", ".yml"}:
-            token_file.write_text(
-                yaml.safe_dump(MatrixTokensFile(tokens=[persisted]).model_dump(mode="json", exclude_none=True)),
-                encoding="utf-8",
-            )
-        else:
-            token_file.write_text(persisted.model_dump_json(exclude_none=True), encoding="utf-8")
+        # The file holds every user's channel token, so only this channel's entry is replaced.
+        tokens_file = self._read_tokens_file(token_file) if token_file.exists() else MatrixTokensFile()
+        token_file.write_text(
+            yaml.safe_dump(tokens_file.with_token(persisted).model_dump(mode="json", exclude_none=True)),
+            encoding="utf-8",
+        )
         logger.info(f"Matrix: password login successful, token persisted to {token_file}")
 
     async def _authenticate(self, token_file: Path) -> None:
@@ -286,6 +290,15 @@ class MatrixChannel:
             return
 
         await self._password_login(token_file)
+
+    async def _reauthenticate(self) -> None:
+        """Replace a token the homeserver rejected (M_UNKNOWN_TOKEN) via password login. Raises on failure.
+
+        The stale entry stays in the token file until the login replaces it. If the login fails,
+        the next start just hits M_UNKNOWN_TOKEN again and lands here.
+        """
+        logger.warning("Matrix: token rejected (M_UNKNOWN_TOKEN), re-authenticating with password")
+        await self._password_login(self._token_file)
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -305,11 +318,20 @@ class MatrixChannel:
 
             if isinstance(resp, nio.SyncError):
                 if resp.status_code == "M_UNKNOWN_TOKEN":
-                    logger.error(
-                        "Matrix: session token invalidated (M_UNKNOWN_TOKEN) — "
-                        "sync loop stopped; restart the service to re-authenticate"
-                    )
-                    break
+                    try:
+                        await self._reauthenticate()
+                    except MatrixPasswordMissingError:
+                        # Unrecoverable without a config change, and saving the Matrix
+                        # settings reloads the channel anyway.
+                        logger.error(
+                            "Matrix: session token invalidated (M_UNKNOWN_TOKEN) and no password configured — "
+                            "sync loop stopped; set a password in the Matrix settings to re-authenticate"
+                        )
+                        break
+                    except Exception as exc:
+                        logger.warning(f"Matrix: re-authentication failed (retrying in 5s): {exc}")
+                        await asyncio.sleep(5)
+                    continue
                 logger.error(f"Matrix: sync error {resp.status_code!r}: {resp.message!r} — retrying in 5s")
                 await asyncio.sleep(5)
                 continue

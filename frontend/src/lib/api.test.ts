@@ -394,7 +394,7 @@ test("user settings helpers decode write-only status and patch payloads", async 
           default_models: { agent: "anthropic:default" },
           default_budget: { tool_calls: 3, cost_usd: "1.50" },
           timezone: "Europe/Berlin",
-          memory: { auto_mode: true, budget: { cost_usd_per_day: "1.00", cost_usd_per_month: null, input_tokens_per_day: 50000, input_tokens_per_month: null }, prompt_budget_tokens: 2000 },
+          memory: { auto_mode: true, budget: { cost_usd_per_day: "1.00", cost_usd_per_month: null, equivalent_cost_usd_per_day: null, equivalent_cost_usd_per_month: "10.00", input_tokens_per_day: 50000, input_tokens_per_month: null }, prompt_budget_tokens: 2000 },
           matrix: {
             enabled: true,
             homeserver: "https://matrix.example.test",
@@ -404,6 +404,8 @@ test("user settings helpers decode write-only status and patch payloads", async 
             token_set: true,
             allowed_rooms: [],
             allowed_users: ["@thies:example.test"],
+            status: "failed",
+            error: "Matrix initial sync failed: None: unknown error",
           },
           credentials: {
             backends: {
@@ -439,10 +441,19 @@ test("user settings helpers decode write-only status and patch payloads", async 
   );
 
   assert.equal(settings.settings.matrix.password_set, true);
+  assert.equal(settings.settings.matrix.status, "failed");
+  assert.equal(settings.settings.matrix.error, "Matrix initial sync failed: None: unknown error");
   assert.equal(settings.settings.timezone, "Europe/Berlin");
   assert.deepEqual(settings.settings.memory, {
     auto_mode: true,
-    budget: { cost_usd_per_day: "1.00", cost_usd_per_month: null, input_tokens_per_day: 50000, input_tokens_per_month: null },
+    budget: {
+      cost_usd_per_day: "1.00",
+      cost_usd_per_month: null,
+      equivalent_cost_usd_per_day: null,
+      equivalent_cost_usd_per_month: "10.00",
+      input_tokens_per_day: 50000,
+      input_tokens_per_month: null,
+    },
     prompt_budget_tokens: 2000,
   });
   assert.equal(settings.server_defaults.memory_prompt_budget_tokens, 4000);

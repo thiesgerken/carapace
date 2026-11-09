@@ -1,9 +1,25 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { NextIntlClientProvider, useTranslations } from "next-intl";
+import { renderToStaticMarkup } from "react-dom/server";
 
-import type { UserSettingsResponseInfo } from "@/lib/api";
+import messages from "../../messages/en.json";
+import type { MatrixChannelStatus, UserSettingsResponseInfo } from "@/lib/api";
 import type { SessionBudgetSettings } from "@/lib/types";
-import { buildUserSettingsPatch, draftFromSettings } from "./user-settings-view";
+import { MatrixChannelStatusNotice, buildUserSettingsPatch, draftFromSettings } from "./user-settings-view";
+
+function TranslatedMatrixStatus({ status, error }: { status: MatrixChannelStatus; error: string | null }) {
+  const t = useTranslations("accountSettings");
+  return <MatrixChannelStatusNotice status={status} error={error} t={t} />;
+}
+
+function matrixStatusMarkup(status: MatrixChannelStatus, error: string | null = null): string {
+  return renderToStaticMarkup(
+    <NextIntlClientProvider locale="en" messages={messages} timeZone="UTC">
+      <TranslatedMatrixStatus status={status} error={error} />
+    </NextIntlClientProvider>,
+  );
+}
 
 function userSettingsResponse(
   defaultBudget: SessionBudgetSettings,
@@ -35,7 +51,14 @@ function userSettingsResponse(
       timezone: "Europe/Berlin",
       memory: {
         auto_mode: false,
-        budget: { cost_usd_per_day: "1.00", cost_usd_per_month: "10.00", input_tokens_per_day: null, input_tokens_per_month: null },
+        budget: {
+          cost_usd_per_day: null,
+          cost_usd_per_month: null,
+          equivalent_cost_usd_per_day: "1.00",
+          equivalent_cost_usd_per_month: "10.00",
+          input_tokens_per_day: null,
+          input_tokens_per_month: null,
+        },
         prompt_budget_tokens: null,
       },
       matrix: {
@@ -47,6 +70,8 @@ function userSettingsResponse(
         token_set: false,
         allowed_rooms: [],
         allowed_users: [],
+        status: "disabled",
+        error: null,
       },
       credentials: {
         backends: {
@@ -85,7 +110,14 @@ test("buildUserSettingsPatch omits unchanged credentials when file backends are 
     timezone: settings.settings.timezone,
     memory: {
       autoMode: false,
-      budget: { cost_usd_per_day: "1.00", cost_usd_per_month: "10.00", input_tokens_per_day: "", input_tokens_per_month: "" },
+      budget: {
+        cost_usd_per_day: "",
+        cost_usd_per_month: "",
+        equivalent_cost_usd_per_day: "1.00",
+        equivalent_cost_usd_per_month: "10.00",
+        input_tokens_per_day: "",
+        input_tokens_per_month: "",
+      },
       promptBudget: "",
     },
     matrix: settings.settings.matrix,
@@ -130,7 +162,14 @@ test("buildUserSettingsPatch keeps default models the view does not edit", () =>
     timezone: settings.settings.timezone,
     memory: {
       autoMode: false,
-      budget: { cost_usd_per_day: "1.00", cost_usd_per_month: "10.00", input_tokens_per_day: "", input_tokens_per_month: "" },
+      budget: {
+        cost_usd_per_day: "",
+        cost_usd_per_month: "",
+        equivalent_cost_usd_per_day: "1.00",
+        equivalent_cost_usd_per_month: "10.00",
+        input_tokens_per_day: "",
+        input_tokens_per_month: "",
+      },
       promptBudget: "",
     },
     matrix: settings.settings.matrix,
@@ -156,7 +195,14 @@ test("buildUserSettingsPatch sends memory settings, keeping a zero limit and cle
     timezone: " America/New_York ",
     memory: {
       autoMode: true,
-      budget: { cost_usd_per_day: "0", cost_usd_per_month: "", input_tokens_per_day: "50,000", input_tokens_per_month: "" },
+      budget: {
+        cost_usd_per_day: "0",
+        cost_usd_per_month: "",
+        equivalent_cost_usd_per_day: "",
+        equivalent_cost_usd_per_month: "2.5",
+        input_tokens_per_day: "50,000",
+        input_tokens_per_month: "",
+      },
       promptBudget: "0",
     },
     matrix: settings.settings.matrix,
@@ -172,7 +218,14 @@ test("buildUserSettingsPatch sends memory settings, keeping a zero limit and cle
   assert.equal(patch.default_models?.memory_high, "anthropic:default");
   assert.deepEqual(patch.memory, {
     auto_mode: true,
-    budget: { cost_usd_per_day: "0", cost_usd_per_month: null, input_tokens_per_day: 50000, input_tokens_per_month: null },
+    budget: {
+      cost_usd_per_day: "0",
+      cost_usd_per_month: null,
+      equivalent_cost_usd_per_day: null,
+      equivalent_cost_usd_per_month: "2.5",
+      input_tokens_per_day: 50000,
+      input_tokens_per_month: null,
+    },
     prompt_budget_tokens: 0,
   });
 });
@@ -204,4 +257,22 @@ test("an existing user default budget is not prefilled", () => {
   const draft = draftFromSettings(userSettingsResponse({ tool_calls: 3 }, { autonomous_tool_calls: 100 }));
 
   assert.equal(draft.budget.autonomous_tool_calls, "");
+});
+
+test("the Matrix status shows a failed start with its error", () => {
+  const markup = matrixStatusMarkup("failed", "Matrix initial sync failed: None: unknown error");
+
+  assert.match(markup, /Failed to start/);
+  assert.match(markup, /Matrix initial sync failed: None: unknown error/);
+});
+
+test("the Matrix status shows a running channel without an error", () => {
+  const markup = matrixStatusMarkup("running");
+
+  assert.match(markup, /Running/);
+  assert.doesNotMatch(markup, /Failed to start/);
+});
+
+test("the Matrix status stays hidden for a disabled channel", () => {
+  assert.equal(matrixStatusMarkup("disabled"), "");
 });

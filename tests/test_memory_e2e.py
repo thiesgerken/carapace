@@ -254,7 +254,7 @@ async def test_memory_pipeline_end_to_end(pipeline: Pipeline) -> None:
 
     # --- Sweep: pending extractions, periods in the user's timezone, nothing for ineligible sessions.
     alice = p.user_configs["alice"]
-    alice.memory.budget = MemoryBudget(cost_usd_per_day=None, cost_usd_per_month=None)
+    alice.memory.budget = MemoryBudget(equivalent_cost_usd_per_day=None, equivalent_cost_usd_per_month=None)
     await p.settle(1)
     extracts = _by_target(p.tasks("alice", TaskKind.session_extract))
     assert set(extracts) == {sunday, wednesday, monday}

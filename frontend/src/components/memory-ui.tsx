@@ -4,7 +4,7 @@ import { Fragment, type ReactNode } from "react";
 import { Ban, CheckCircle2, ChevronRight, Clock, Hourglass, Loader2, XCircle, type LucideIcon } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
 import { formatAbsoluteTime } from "@/lib/format-time";
-import { formatTokens, formatUsd } from "@/lib/memory";
+import { formatCost, formatTokens } from "@/lib/memory";
 import type { MemoryProvenance, MemoryTaskStatus } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -126,9 +126,26 @@ export function DetailList({ rows }: { rows: [string, string][] }) {
   );
 }
 
+/** Anything that carries actual and equivalent cost; null on both when the model has no known pricing. */
+export interface PricedCost {
+  cost_usd: string | number | null;
+  equivalent_cost_usd: string | number | null;
+}
+
+/** formatCost in the UI's wording, "$0.00 (≈ $0.0042 equivalent)"; null without known pricing. */
+export function useFormatCost(): (priced: PricedCost) => string | null {
+  const t = useTranslations("memory");
+  const locale = useLocale();
+  return ({ cost_usd, equivalent_cost_usd }) => {
+    if (cost_usd === null || equivalent_cost_usd === null) return null;
+    return formatCost(cost_usd, equivalent_cost_usd, locale, (cost, equivalent) => t("costWithEquivalent", { cost, equivalent }));
+  };
+}
+
 export function MemoryProvenanceList({ provenance }: { provenance: MemoryProvenance }) {
   const t = useTranslations("memory.provenance");
   const locale = useLocale();
+  const formatPricedCost = useFormatCost();
   return (
     <DetailList
       rows={[
@@ -138,7 +155,7 @@ export function MemoryProvenanceList({ provenance }: { provenance: MemoryProvena
         [t("carapace"), provenance.carapace_version],
         [t("inputHash"), provenance.input_hash.slice(0, 12)],
         [t("usage"), `${formatTokens(provenance.input_tokens, locale)} in · ${formatTokens(provenance.output_tokens, locale)} out`],
-        [t("cost"), provenance.cost_usd === null ? t("unpriced") : formatUsd(provenance.cost_usd, locale)],
+        [t("cost"), formatPricedCost(provenance) ?? t("unpriced")],
         [t("duration"), `${(provenance.duration_ms / 1000).toFixed(1)} s`],
         [t("created"), formatAbsoluteTime(provenance.created_at, locale)],
         [t("task"), `#${provenance.task_id}`],

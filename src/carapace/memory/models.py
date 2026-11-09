@@ -5,7 +5,9 @@ from decimal import Decimal
 from enum import StrEnum
 from typing import Annotated, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, computed_field, model_validator
+
+from ..usage import cost_split
 
 # --- Enums ---
 
@@ -212,6 +214,10 @@ class PeriodDigest(PeriodDigestOutput):
 # --- Provenance, estimates, outcomes ---
 
 
+def _actual_cost(model: str, equivalent_cost_usd: Decimal | None) -> Decimal | None:
+    return None if equivalent_cost_usd is None else cost_split(model, equivalent_cost_usd).actual
+
+
 class Provenance(BaseModel):
     carapace_version: str
     model: str
@@ -220,19 +226,31 @@ class Provenance(BaseModel):
     input_hash: str
     input_tokens: int
     output_tokens: int
-    # None when the model has no known pricing (local models).
-    cost_usd: Decimal | None
+    # List price; None when the model has no known pricing (local models).
+    equivalent_cost_usd: Decimal | None
     duration_ms: int
     task_id: int
     created_at: datetime
+
+    @computed_field
+    @property
+    def cost_usd(self) -> Decimal | None:
+        """Actual cost, derived rather than stored so it follows the subscription classification."""
+        return _actual_cost(self.model, self.equivalent_cost_usd)
 
 
 class TaskEstimate(BaseModel):
     model: str
     input_tokens: int
     output_tokens_cap: int
-    # None when the model has no known pricing (local models).
-    cost_usd: Decimal | None
+    # List price; None when the model has no known pricing (local models).
+    equivalent_cost_usd: Decimal | None
+
+    @computed_field
+    @property
+    def cost_usd(self) -> Decimal | None:
+        """Actual cost, derived rather than stored so it follows the subscription classification."""
+        return _actual_cost(self.model, self.equivalent_cost_usd)
 
 
 class CoverageEntry(BaseModel):
@@ -335,8 +353,10 @@ class MemoryApiModel(BaseModel):
 class BudgetWindowStatus(MemoryApiModel):
     window_start: datetime
     spent_cost_usd: Decimal
+    spent_equivalent_cost_usd: Decimal
     spent_input_tokens: int
     limit_cost_usd: Decimal | None
+    limit_equivalent_cost_usd: Decimal | None
     limit_input_tokens: int | None
 
 
@@ -391,10 +411,15 @@ class ThisWeek(MemoryApiModel):
     sessions: list[ThisWeekSession]
 
 
+type CostMetric = Literal["cost", "equivalent_cost"]
+type BudgetWindowName = Literal["day", "month"]
+
+
 class MemoryBudgetNotice(MemoryApiModel):
+    metric: CostMetric
     used_usd: Decimal
     limit_usd: Decimal
-    window: Literal["day", "month"]
+    window: BudgetWindowName
 
 
 class TaskFilter(MemoryApiModel):
@@ -479,8 +504,9 @@ class EstimateTotal(MemoryApiModel):
     task_count: int
     input_tokens: int
     output_tokens_cap: int
-    # Sum over priced tasks only; unpriced_count says how many had no known pricing.
+    # Sums over priced tasks only; unpriced_count says how many had no known pricing.
     cost_usd: Decimal
+    equivalent_cost_usd: Decimal
     unpriced_count: int
 
 
@@ -536,6 +562,7 @@ class ExtractionSummary(MemoryApiModel):
     model: str
     prompt_version: str
     cost_usd: Decimal | None
+    equivalent_cost_usd: Decimal | None
     created_at: datetime
     # Empty when current.
     outdated: list[OutdatedReason]
@@ -571,6 +598,7 @@ class DigestSummary(MemoryApiModel):
     prompt_version: str
     carapace_version: str
     cost_usd: Decimal | None
+    equivalent_cost_usd: Decimal | None
     created_at: datetime
     # Empty when current.
     outdated: list[OutdatedReason]

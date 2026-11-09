@@ -44,7 +44,7 @@ class FakeHandler:
         if target == "broken":
             raise ValueError("cannot prepare the input")
         cost = Decimal("0.02") if model == OVERRIDE else Decimal("0.01")
-        return TaskEstimate(model=model, input_tokens=100, output_tokens_cap=10, cost_usd=cost)
+        return TaskEstimate(model=model, input_tokens=100, output_tokens_cap=10, equivalent_cost_usd=cost)
 
     async def run(self, task: MemoryTask, model: str | None) -> TaskOutcome:
         raise AssertionError("not run in these tests")

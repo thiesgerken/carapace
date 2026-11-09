@@ -1048,6 +1048,10 @@ export interface UserDefaultModelsSettings {
   memory_high?: string | null;
 }
 
+const MATRIX_CHANNEL_STATUSES = ["running", "failed", "disabled"] as const;
+
+export type MatrixChannelStatus = (typeof MATRIX_CHANNEL_STATUSES)[number];
+
 export interface MatrixSettingsInfo {
   enabled: boolean;
   homeserver: string;
@@ -1057,6 +1061,8 @@ export interface MatrixSettingsInfo {
   token_set: boolean;
   allowed_rooms: string[];
   allowed_users: string[];
+  status: MatrixChannelStatus;
+  error: string | null;
 }
 
 export interface BasicAuthSettingsInfo {
@@ -1090,10 +1096,12 @@ export interface GitSettingsInfo {
   token_set: boolean;
 }
 
-/** Null disables that limit. Costs are decimal strings. */
+/** Null disables that limit. Costs are decimal strings: actual cost and equivalent cost (list price). */
 export interface MemoryBudgetSettings {
   cost_usd_per_day: string | null;
   cost_usd_per_month: string | null;
+  equivalent_cost_usd_per_day: string | null;
+  equivalent_cost_usd_per_month: string | null;
   input_tokens_per_day: number | null;
   input_tokens_per_month: number | null;
 }
@@ -1264,7 +1272,15 @@ function decodeMatrixSettings(raw: unknown): MatrixSettingsInfo {
     token_set: readBoolean(record, "token_set"),
     allowed_rooms: readStringArray(record, "allowed_rooms") ?? [],
     allowed_users: readStringArray(record, "allowed_users") ?? [],
+    status: readMatrixChannelStatus(record),
+    error: readString(record, "error") ?? null,
   };
+}
+
+function readMatrixChannelStatus(record: Record<string, unknown>): MatrixChannelStatus {
+  const status = MATRIX_CHANNEL_STATUSES.find((candidate) => candidate === record.status);
+  if (status === undefined) throw new Error(`Invalid Matrix channel status: ${String(record.status)}`);
+  return status;
 }
 
 function decodeCredentialsSettings(raw: unknown): CredentialsSettingsInfo {
@@ -1319,6 +1335,8 @@ function decodeMemorySettings(raw: unknown): MemorySettingsInfo {
     budget: {
       cost_usd_per_day: cost("cost_usd_per_day"),
       cost_usd_per_month: cost("cost_usd_per_month"),
+      equivalent_cost_usd_per_day: cost("equivalent_cost_usd_per_day"),
+      equivalent_cost_usd_per_month: cost("equivalent_cost_usd_per_month"),
       input_tokens_per_day: tokens("input_tokens_per_day"),
       input_tokens_per_month: tokens("input_tokens_per_month"),
     },

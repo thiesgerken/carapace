@@ -45,7 +45,8 @@ class PydanticJson[ModelT: BaseModel](_JsonBacked):
         super().__init__()
 
     def process_bind_param(self, value: ModelT | None, dialect: Any) -> Any:
-        return None if value is None else value.model_dump(mode="json")
+        # Computed fields derive from the stored ones; storing them would only let them go stale.
+        return None if value is None else value.model_dump(mode="json", exclude_computed_fields=True)
 
     def process_result_value(self, value: Any, dialect: Any) -> ModelT | None:
         return None if value is None else self.model.model_validate(value)

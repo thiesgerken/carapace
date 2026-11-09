@@ -26,7 +26,7 @@ function digest(id: number, model: string, summary: string): MemoryDigestRecord 
       input_hash: "abc",
       input_tokens: 9000,
       output_tokens: 800,
-      cost_usd: "0.08",
+      cost_usd: "0.08", equivalent_cost_usd: "0.08",
       duration_ms: 12000,
       task_id: id,
       created_at: "2026-09-08T07:12:00Z",
@@ -59,7 +59,7 @@ const DETAIL: MemoryPeriodDetail = {
     end: "2026-09-06",
     covered: 1,
     total: 1,
-    digest: { id: 2, model: "opus", prompt_version: "a1b2c3", carapace_version: "0.158.7", cost_usd: "0.08", created_at: "2026-09-08T07:12:00Z", outdated: [] },
+    digest: { id: 2, model: "opus", prompt_version: "a1b2c3", carapace_version: "0.158.7", cost_usd: "0.08", equivalent_cost_usd: "0.08", created_at: "2026-09-08T07:12:00Z", outdated: [] },
     stale: false,
     task: null,
   },
@@ -150,7 +150,7 @@ test("an open task names the model it would run with now, not the stale estimate
     model: "sonnet",
     provenance: null,
     result_id: null,
-    estimate: { model: "sonnet", input_tokens: 900, output_tokens_cap: 6000, cost_usd: null },
+    estimate: { model: "sonnet", input_tokens: 900, output_tokens_cap: 6000, cost_usd: null, equivalent_cost_usd: null },
   };
   const text = await renderTask(task);
   assert.match(text, /opus · Estimate 900 in · ≤6K out/);

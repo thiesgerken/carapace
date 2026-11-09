@@ -350,6 +350,11 @@ function PeriodLink({ periodKey }: { periodKey: string }) {
   );
 }
 
+const BUDGET_NOTICE_LABELS = {
+  cost: { day: "budgetDay", month: "budgetMonth" },
+  equivalent_cost: { day: "budgetDayEquivalent", month: "budgetMonthEquivalent" },
+} as const;
+
 function NoticeChips({ notices }: { notices: HomeNotices }) {
   const t = useTranslations("home.notices");
   const locale = useLocale();
@@ -379,7 +384,7 @@ function NoticeChips({ notices }: { notices: HomeNotices }) {
       key: "budget",
       href: "/settings/account#memory",
       icon: budget.window === "day" ? Clock : Wallet,
-      label: t(budget.window === "day" ? "budgetDay" : "budgetMonth", { used: formatUsd(budget.used_usd, locale), limit: formatUsd(budget.limit_usd, locale) }),
+      label: t(BUDGET_NOTICE_LABELS[budget.metric][budget.window], { used: formatUsd(budget.used_usd, locale), limit: formatUsd(budget.limit_usd, locale) }),
       urgent: false,
     });
   }

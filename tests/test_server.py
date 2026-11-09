@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import subprocess
 from collections.abc import Callable
@@ -56,7 +57,7 @@ from carapace.sandbox.manager import SandboxLimitError, SandboxManager
 from carapace.sandbox.state import SessionSandboxSnapshot
 from carapace.security.context import CredentialAccessEntry, SentinelVerdict, SessionSecurity
 from carapace.server import app, sandbox_app
-from carapace.server.runtime import KnowledgeGitRuntime
+from carapace.server.runtime import KnowledgeGitRuntime, MatrixChannelHandle, MatrixChannelManager
 from carapace.session import SessionEngine, SessionManager, sent_files
 from carapace.session.archive import SessionArchiveResult, SessionArchiveService
 from carapace.usage import CostSplit, LlmRequestState
@@ -88,6 +89,10 @@ class _FakeSessionListCache:
 
     def invalidate_sync(self) -> None:
         self._entries.clear()
+
+
+def _unexpected_matrix_channel(_username: str, _config: UserConfig) -> MatrixChannelHandle:
+    raise AssertionError("tests must stub Matrix channel starts")
 
 
 @pytest.fixture(autouse=True)
@@ -136,6 +141,7 @@ def _setup_server(tmp_path, monkeypatch, db_factory):
         repo_registry=srv._knowledge_repo_registry,
         sandbox_mgr=sandbox_mgr,
     )
+    srv._matrix_channel_manager = MatrixChannelManager(_unexpected_matrix_channel)
 
     def knowledge_repo_for_session(session_id: str):
         return srv._knowledge_repo_registry.get_for_user(session_mgr.load_meta(session_id).user)
@@ -285,6 +291,29 @@ async def test_bootstrap_user_knowledge_repo_pulls_remote_before_seeding(tmp_pat
     assert git_store.remote_branch == "prod"
     assert git_store.author_template == "Thies <thies@example.test>"
     git_store.remove_remote.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_bootstrap_user_knowledge_repo_skips_seeding_when_pull_fails(tmp_path, monkeypatch) -> None:
+    git_store = MagicMock(spec=GitStore)
+    git_store.remote_configured = True
+    git_store.ensure_repo = AsyncMock()
+    git_store.add_remote = AsyncMock()
+    git_store.pull_from_remote = AsyncMock(side_effect=RuntimeError("git fetch failed: could not resolve host"))
+    git_store.commit = AsyncMock()
+    git_store.push_to_remote = AsyncMock()
+    ensure_knowledge_dir = MagicMock()
+    monkeypatch.setattr(srv, "ensure_knowledge_dir", ensure_knowledge_dir)
+
+    registry = KnowledgeRepoRegistry(tmp_path, git_store_factory=lambda _path: git_store)
+    config = srv.KnowledgeGitConfig(owner="thies", remote="https://gitea.example.test/thies/knowledge.git")
+
+    await srv._bootstrap_user_knowledge_repo(registry, "thies", config)
+
+    # A seed commit on a repo that never adopted the remote branch would fork its history.
+    ensure_knowledge_dir.assert_not_called()
+    git_store.commit.assert_not_awaited()
+    git_store.push_to_remote.assert_not_awaited()
 
 
 @pytest.fixture()
@@ -673,6 +702,42 @@ async def test_lifespan_starts_without_provider_credentials(tmp_path, monkeypatc
     # Entering the lifespan is the assertion: the engine resolves models on first use instead.
     async with srv._lifespan(app):
         pass
+
+    sandbox_mgr.cleanup_all.assert_awaited_once()
+
+
+@pytest.mark.anyio
+async def test_lifespan_survives_a_failing_matrix_channel_start(tmp_path, monkeypatch):
+    # Regression for #422: an unreachable homeserver crash-looped the whole server at startup.
+    sandbox_mgr = _patch_lifespan_dependencies(tmp_path, monkeypatch)
+
+    class _UnreachableHomeserverChannel:
+        async def start(self) -> None:
+            raise RuntimeError("Matrix initial sync failed: None: unknown error")
+
+        async def stop(self) -> None:
+            return None
+
+    def auth_store_with_matrix_user(*args, **kwargs) -> AuthStore:
+        store = AuthStore(*args, **kwargs)
+        store.create_user(
+            username="thies",
+            password="secret",
+            config=UserConfig.model_validate({"channels": {"matrix": {"enabled": True}}}),
+        )
+        return store
+
+    monkeypatch.setattr(srv, "AuthStore", auth_store_with_matrix_user)
+    monkeypatch.setattr(
+        srv,
+        "MatrixChannelManager",
+        lambda _factory: MatrixChannelManager(lambda _username, _config: _UnreachableHomeserverChannel()),
+    )
+
+    async with srv._lifespan(app):
+        state = srv._matrix_channel_manager.state_for_user("thies")
+        assert state.status == "failed"
+        assert state.error == "Matrix initial sync failed: None: unknown error"
 
     sandbox_mgr.cleanup_all.assert_awaited_once()
 
@@ -1244,6 +1309,27 @@ def test_user_settings_redacts_write_only_fields(client, auth_headers):
     assert basic_auth == {"username": "thies", "password_set": True}
 
 
+def test_user_settings_expose_matrix_channel_start_error(client, auth_headers, monkeypatch):
+    class _FailingChannel:
+        async def start(self) -> None:
+            raise RuntimeError("Matrix initial sync failed: None: unknown error")
+
+        async def stop(self) -> None:
+            return None
+
+    manager = MatrixChannelManager(lambda _username, _config: _FailingChannel())
+    with pytest.raises(RuntimeError):
+        asyncio.run(
+            manager.reload_user("thies", UserConfig.model_validate({"channels": {"matrix": {"enabled": True}}}))
+        )
+    monkeypatch.setattr(srv, "_matrix_channel_manager", manager)
+
+    matrix = client.get("/api/user/settings", headers=auth_headers).json()["settings"]["matrix"]
+
+    assert matrix["status"] == "failed"
+    assert matrix["error"] == "Matrix initial sync failed: None: unknown error"
+
+
 def test_user_settings_apply_defaults_to_new_sessions(client, auth_headers):
     patch_resp = client.patch(
         "/api/user/settings",
@@ -1388,9 +1474,8 @@ def test_user_settings_default_changes_reload_enabled_matrix(client, auth_header
         "thies",
         {"config": UserConfig.model_validate({"channels": {"matrix": {"enabled": True}}})},
     )
-    manager = MagicMock()
-    manager.reload_user = AsyncMock()
-    monkeypatch.setattr(srv, "_matrix_channel_manager", manager, raising=False)
+    reload_user_mock = AsyncMock()
+    monkeypatch.setattr(srv._matrix_channel_manager, "reload_user", reload_user_mock)
 
     resp = client.patch(
         "/api/user/settings",
@@ -1399,15 +1484,16 @@ def test_user_settings_default_changes_reload_enabled_matrix(client, auth_header
     )
 
     assert resp.status_code == 200
-    manager.reload_user.assert_awaited_once()
+    reload_user_mock.assert_awaited_once()
 
 
 def test_user_settings_attempts_git_reload_when_matrix_reload_fails(client, auth_headers, monkeypatch):
-    manager = MagicMock()
-    manager.reload_user = AsyncMock(side_effect=[HTTPException(status_code=500, detail="matrix failed"), None])
+    reload_user_mock = AsyncMock(side_effect=HTTPException(status_code=500, detail="matrix failed"))
+    monkeypatch.setattr(srv._matrix_channel_manager, "reload_user", reload_user_mock)
+    restore_mock = AsyncMock()
+    monkeypatch.setattr(srv._matrix_channel_manager, "reload_user_with_retry", restore_mock)
     runtime = MagicMock()
     runtime.apply_user_config = AsyncMock()
-    monkeypatch.setattr(srv, "_matrix_channel_manager", manager, raising=False)
     monkeypatch.setattr(srv, "_knowledge_git_runtime", runtime, raising=False)
 
     resp = client.patch(
@@ -1421,7 +1507,8 @@ def test_user_settings_attempts_git_reload_when_matrix_reload_fails(client, auth
 
     assert resp.status_code == 500
     assert "matrix failed" in resp.json()["detail"]
-    assert manager.reload_user.await_count == 2
+    reload_user_mock.assert_awaited_once()
+    restore_mock.assert_awaited_once()
     assert runtime.apply_user_config.await_count == 2
 
 
@@ -1444,9 +1531,10 @@ def test_user_settings_does_not_persist_git_when_reload_fails(client, auth_heade
 
 
 def test_user_settings_does_not_persist_matrix_when_reload_fails(client, auth_headers, monkeypatch):
-    manager = MagicMock()
-    manager.reload_user = AsyncMock(side_effect=[HTTPException(status_code=500, detail="matrix failed"), None])
-    monkeypatch.setattr(srv, "_matrix_channel_manager", manager, raising=False)
+    reload_user_mock = AsyncMock(side_effect=HTTPException(status_code=500, detail="matrix failed"))
+    monkeypatch.setattr(srv._matrix_channel_manager, "reload_user", reload_user_mock)
+    restore_mock = AsyncMock()
+    monkeypatch.setattr(srv._matrix_channel_manager, "reload_user_with_retry", restore_mock)
 
     resp = client.patch(
         "/api/user/settings",
@@ -1459,6 +1547,9 @@ def test_user_settings_does_not_persist_matrix_when_reload_fails(client, auth_he
     user = srv._auth_store.get_user("thies")
     assert user is not None
     assert user.config.channels.matrix.enabled is False
+    restored_username, restored_config = restore_mock.await_args.args
+    assert restored_username == "thies"
+    assert restored_config.channels.matrix.enabled is False
 
 
 def test_user_settings_matrix_password_clears_persisted_token_before_reload(client, auth_headers, monkeypatch):
@@ -1499,9 +1590,8 @@ def test_user_settings_matrix_password_clears_persisted_token_before_reload(clie
     async def reload_user(_username: str, _config: UserConfig) -> None:
         assert not token_file.exists()
 
-    manager = MagicMock()
-    manager.reload_user = AsyncMock(side_effect=reload_user)
-    monkeypatch.setattr(srv, "_matrix_channel_manager", manager, raising=False)
+    reload_user_mock = AsyncMock(side_effect=reload_user)
+    monkeypatch.setattr(srv._matrix_channel_manager, "reload_user", reload_user_mock)
 
     resp = client.patch(
         "/api/user/settings",
@@ -1511,7 +1601,56 @@ def test_user_settings_matrix_password_clears_persisted_token_before_reload(clie
 
     assert resp.status_code == 200
     assert not token_file.exists()
-    manager.reload_user.assert_awaited_once()
+    reload_user_mock.assert_awaited_once()
+
+
+def test_user_settings_matrix_password_keeps_other_users_persisted_tokens(client, auth_headers, monkeypatch):
+    token_file = srv._engine.session_mgr.sessions_dir.parent / "matrix_token.yaml"
+    ada_token = MatrixTokenFile(access_token="ada-token", device_id="ADA", user_id="@ada-bot:example.test", user="ada")
+    token_file.write_text(
+        yaml.safe_dump(
+            MatrixTokensFile(
+                tokens=[
+                    MatrixTokenFile(
+                        access_token="old-token",
+                        device_id="OLD",
+                        user_id="@carapace:example.test",
+                        user="thies",
+                    ),
+                    ada_token,
+                ]
+            ).model_dump(mode="json")
+        ),
+        encoding="utf-8",
+    )
+    srv._auth_store.update_user(
+        "thies",
+        {
+            "config": UserConfig.model_validate(
+                {
+                    "channels": {
+                        "matrix": {
+                            "enabled": True,
+                            "homeserver": "https://matrix.example.test",
+                            "user_id": "@carapace:example.test",
+                            "password": "old-password",
+                        }
+                    }
+                }
+            )
+        },
+    )
+    monkeypatch.setattr(srv._matrix_channel_manager, "reload_user", AsyncMock())
+
+    resp = client.patch(
+        "/api/user/settings",
+        headers=auth_headers,
+        json={"matrix": {"password": "new-password", "clear_token": True}},
+    )
+
+    assert resp.status_code == 200
+    stored = MatrixTokensFile.model_validate(yaml.safe_load(token_file.read_text(encoding="utf-8")))
+    assert stored.tokens == [ada_token]
 
 
 def test_user_settings_matrix_password_restores_persisted_token_on_reload_failure(
@@ -1550,9 +1689,10 @@ def test_user_settings_matrix_password_restores_persisted_token_on_reload_failur
             )
         },
     )
-    manager = MagicMock()
-    manager.reload_user = AsyncMock(side_effect=[HTTPException(status_code=500, detail="matrix failed"), None])
-    monkeypatch.setattr(srv, "_matrix_channel_manager", manager, raising=False)
+    reload_user_mock = AsyncMock(side_effect=HTTPException(status_code=500, detail="matrix failed"))
+    monkeypatch.setattr(srv._matrix_channel_manager, "reload_user", reload_user_mock)
+    restore_mock = AsyncMock()
+    monkeypatch.setattr(srv._matrix_channel_manager, "reload_user_with_retry", restore_mock)
 
     resp = client.patch(
         "/api/user/settings",
@@ -1562,7 +1702,7 @@ def test_user_settings_matrix_password_restores_persisted_token_on_reload_failur
 
     assert resp.status_code == 500
     assert token_file.read_text(encoding="utf-8") == token_content
-    manager.reload_user.assert_awaited()
+    reload_user_mock.assert_awaited()
 
 
 def test_user_settings_rejects_file_credentials_when_disabled(client, auth_headers, monkeypatch):

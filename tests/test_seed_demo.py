@@ -5,15 +5,18 @@ from __future__ import annotations
 import importlib.util
 import sys
 from datetime import UTC, datetime
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
 
 from carapace.database.engine import create_engine_and_factory
+from carapace.memory.store import MemoryStore
 from carapace.models.config import DatabaseConfig
 from carapace.server.history import HistoryMessage
 from carapace.session.manager import SessionManager
 from carapace.session.transcript import completed_event_turns, rebuild_model_history_from_events
+from carapace.usage import CostSplit
 
 _SEED_SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "seed_demo.py"
 
@@ -44,3 +47,7 @@ def test_seeded_demo_sessions_load_like_real_sessions(tmp_path: Path, monkeypatc
         # Every demo session ends a turn, except the two waiting on an open approval request.
         if events[-1]["role"] != "approval_request":
             assert completed_event_turns(events)
+
+    # The memory demo bills one extraction on a paid model and one on the subscription.
+    spend = MemoryStore(session_factory).spend(seed_demo.DEMO_USER, now)
+    assert spend.cost == CostSplit(actual=Decimal("0.0214"), equivalent=Decimal("0.0600"))

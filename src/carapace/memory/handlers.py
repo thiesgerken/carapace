@@ -121,7 +121,9 @@ def _estimate(config: Config, call: _LlmCall, model: str) -> TaskEstimate:
         model=model,
         input_tokens=input_tokens,
         output_tokens_cap=output_cap,
-        cost_usd=estimate_cost(model, input_tokens, output_cap, cached_tokens=system_tokens(call.system, model)),
+        equivalent_cost_usd=estimate_cost(
+            model, input_tokens, output_cap, cached_tokens=system_tokens(call.system, model)
+        ),
     )
 
 
@@ -146,7 +148,7 @@ async def _run_llm[OutputT: BaseModel](
             input_hash=call.input_hash,
             input_tokens=usage.input_tokens,
             output_tokens=usage.output_tokens,
-            cost_usd=usage.cost_usd,
+            equivalent_cost_usd=usage.equivalent_cost_usd,
             duration_ms=usage.duration_ms,
             task_id=task.id,
             created_at=datetime.now(tz=UTC),

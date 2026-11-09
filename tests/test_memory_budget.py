@@ -7,10 +7,19 @@ from zoneinfo import ZoneInfo
 from carapace.memory.budget import Spend, affordable_count, budget_windows, fits, sum_estimates
 from carapace.memory.models import TaskEstimate
 from carapace.models.user import MemoryBudget
+from carapace.usage import CostSplit
+
+SUBSCRIPTION_MODEL = "openai-codex:gpt-5.5"
 
 
-def _estimate(cost: str | None, tokens: int = 1000) -> TaskEstimate:
-    return TaskEstimate(model="m", input_tokens=tokens, output_tokens_cap=100, cost_usd=Decimal(cost) if cost else None)
+def _usd(value: str) -> CostSplit:
+    return CostSplit(actual=Decimal(value), equivalent=Decimal(value))
+
+
+def _estimate(cost: str | None, tokens: int = 1000, model: str = "m") -> TaskEstimate:
+    return TaskEstimate(
+        model=model, input_tokens=tokens, output_tokens_cap=100, equivalent_cost_usd=Decimal(cost) if cost else None
+    )
 
 
 def test_budget_windows_use_local_day_and_calendar_month():
@@ -25,30 +34,50 @@ def test_budget_windows_use_local_day_and_calendar_month():
 
 
 def test_fits_checks_every_configured_limit():
-    budget = MemoryBudget(cost_usd_per_day=Decimal("1.00"), cost_usd_per_month=Decimal("2.00"))
-    assert fits(budget, Spend(Decimal("0.50")), Spend(Decimal("1.50")), _estimate("0.50"))
-    assert not fits(budget, Spend(Decimal("0.50")), Spend(Decimal("1.50")), _estimate("0.51"))
-    assert not fits(budget, Spend(Decimal("0.90")), Spend(Decimal("0.90")), _estimate("0.20"))
+    budget = MemoryBudget(equivalent_cost_usd_per_day=Decimal("1.00"), equivalent_cost_usd_per_month=Decimal("2.00"))
+    assert fits(budget, Spend(_usd("0.50")), Spend(_usd("1.50")), _estimate("0.50"))
+    assert not fits(budget, Spend(_usd("0.50")), Spend(_usd("1.50")), _estimate("0.51"))
+    assert not fits(budget, Spend(_usd("0.90")), Spend(_usd("0.90")), _estimate("0.20"))
 
-    tokens = MemoryBudget(cost_usd_per_day=None, cost_usd_per_month=None, input_tokens_per_month=5000)
+    tokens = MemoryBudget(
+        equivalent_cost_usd_per_day=None, equivalent_cost_usd_per_month=None, input_tokens_per_month=5000
+    )
     assert fits(tokens, Spend(), Spend(input_tokens=4000), _estimate("9.99", tokens=1000))
     assert not fits(tokens, Spend(), Spend(input_tokens=4001), _estimate("0.01", tokens=1000))
 
 
+def test_subscription_estimates_cost_nothing_actual():
+    estimate = _estimate("0.40", model=SUBSCRIPTION_MODEL)
+    assert (estimate.cost_usd, estimate.equivalent_cost_usd) == (Decimal(0), Decimal("0.40"))
+
+    actual_only = MemoryBudget(cost_usd_per_day=Decimal("0.10"), equivalent_cost_usd_per_day=None)
+    assert fits(actual_only, Spend(), Spend(), estimate)
+    assert not fits(actual_only, Spend(), Spend(), _estimate("0.40"))
+
+    equivalent_only = MemoryBudget(equivalent_cost_usd_per_day=Decimal("0.30"))
+    assert not fits(equivalent_only, Spend(), Spend(), estimate)
+
+
 def test_unpriced_and_free_tasks():
-    budget = MemoryBudget(cost_usd_per_day=Decimal(0), input_tokens_per_day=1000)
+    budget = MemoryBudget(equivalent_cost_usd_per_day=Decimal(0), input_tokens_per_day=1000)
     # Unpriced work adds no cost, so only token limits bound it.
     assert fits(budget, Spend(), Spend(), _estimate(None, tokens=1000))
     assert not fits(budget, Spend(), Spend(), _estimate(None, tokens=1001))
 
 
 def test_affordable_count_stops_at_first_unaffordable_task():
-    budget = MemoryBudget(cost_usd_per_day=Decimal("1.00"))
+    budget = MemoryBudget(equivalent_cost_usd_per_day=Decimal("1.00"))
     estimates = [_estimate("0.40"), _estimate("0.40"), _estimate("0.40"), _estimate("0.01")]
     assert affordable_count(budget, Spend(), Spend(), estimates) == 2
-    assert affordable_count(budget, Spend(Decimal("0.70")), Spend(), estimates) == 0
+    assert affordable_count(budget, Spend(_usd("0.70")), Spend(), estimates) == 0
     assert (
-        affordable_count(MemoryBudget(cost_usd_per_day=None, cost_usd_per_month=None), Spend(), Spend(), estimates) == 4
+        affordable_count(
+            MemoryBudget(equivalent_cost_usd_per_day=None, equivalent_cost_usd_per_month=None),
+            Spend(),
+            Spend(),
+            estimates,
+        )
+        == 4
     )
 
 
@@ -59,3 +88,6 @@ def test_sum_estimates():
     assert total.output_tokens_cap == 200
     assert total.cost_usd == Decimal("0.10")
     assert total.unpriced_count == 1
+
+    mixed = sum_estimates([_estimate("0.10"), _estimate("0.40", model=SUBSCRIPTION_MODEL)])
+    assert (mixed.cost_usd, mixed.equivalent_cost_usd) == (Decimal("0.10"), Decimal("0.50"))

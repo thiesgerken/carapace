@@ -100,7 +100,7 @@ Every extraction, every digest and every finished task records:
 | `prompt_version` | 12-character sha256 prefix over the task's instructions, context line, tail and output JSON schema. The shared prefix is left out, so editing `SOUL.md` or `USER.md` does not mark records outdated |
 | `input_format_version` | version of the input or digest renderer |
 | `input_hash` | hash of the exact text sent to the model |
-| `input_tokens`, `output_tokens`, `cost_usd` | usage and provider cost (`cost_usd` is empty for models without known pricing) |
+| `input_tokens`, `output_tokens`, `equivalent_cost_usd` | usage and its list price (empty for models without known pricing) |
 | `duration_ms` | wall clock of the LLM call |
 | `task_id` | the task that produced it |
 | `created_at` | timestamp |
@@ -209,8 +209,10 @@ timezone: Europe/Berlin
 memory:
   auto_mode: false
   budget:
-    cost_usd_per_day: 1.00
-    cost_usd_per_month: 10.00
+    cost_usd_per_day: null          # actual cost: billed per token, subscription usage is free
+    cost_usd_per_month: null
+    equivalent_cost_usd_per_day: 1.00   # list price of everything, subscription usage included
+    equivalent_cost_usd_per_month: 10.00
     input_tokens_per_day: null      # for local models without pricing
     input_tokens_per_month: null
 default_models:
@@ -219,8 +221,9 @@ default_models:
 ```
 
 - `null` disables a limit. `0` is a real limit that allows no spend.
-- **Spend** is the sum over your tasks in the current day and month window, in your timezone, including failed but billed attempts. Running tasks count with their estimate.
-- **Gate**: before a task runs, every configured limit must hold: `spend + estimate <= limit`. The gate applies to manual runs too. Tasks that do not fit stay `queued` with `blocked_reason = "budget"`, and the UI marks them. Raising the budget, or the next window, unblocks them.
+- **Actual and equivalent cost** work as for sessions (see [Actual and equivalent cost](sessions-and-channels.md#actual-and-equivalent-cost)): a task on a subscription model (`openai-codex`) costs $0 actual and its list price as equivalent cost, any other model its list price as both. Records and estimates store the list price (`equivalent_cost_usd`); the actual cost is derived from the model when read. The UI shows the actual cost, with "≈ $X equivalent" next to it where the two differ.
+- **Spend** is the sum over your tasks in the current day and month window, in your timezone, including failed but billed attempts. Running tasks count with their estimate. A task's attempts all count under its current model (its latest estimate or run), so re-estimating or retrying a task on another model reclassifies the earlier attempts.
+- **Gate**: before a task runs, every configured limit must hold: `spend + estimate <= limit`, for actual and equivalent cost separately. The gate applies to manual runs too. Tasks that do not fit stay `queued` with `blocked_reason = "budget"`, and the UI marks them. Raising the budget, or the next window, unblocks them.
 - **Auto mode** (off by default): the worker queues `pending` tasks itself, as far as the remaining budget covers after the tasks already queued, in this order: session extractions, then week digests, then month digests, each newest period first.
 - **Estimates** are exact on the input side (the input is deterministic) and capped on the output side (a per-kind output token ceiling, also enforced on the call; reasoning models spend part of it on reasoning). Digests get much higher ceilings than extractions, so their estimates are correspondingly larger. Cost uses the per-model pricing carapace already uses for session budgets. The system prompt goes through the prompt cache and is priced at the cache write rate, the most it can cost. Models without known pricing show tokens only, which is what the token limits are for.
 - An input larger than the model's context fails the task with `input too large`.
@@ -343,7 +346,7 @@ The page without an open session (`/`) is where you pick things up:
   - pending approvals, linking to the most recently active waiting session;
   - failed memory tasks, linking to the Tasks tab filtered to failed;
   - outdated memory records;
-  - a memory budget close to its limit, linking to the memory settings.
+  - a memory budget close to its limit (the actual or equivalent cost limit that is closest), linking to the memory settings.
 - **Open loops:** from the extractions of sessions active in the last 7 days, newest first, each with **Continue** into its session. The to-do circle on the left (**Done**) dismisses a loop; an inline **Undo** brings it back for a few seconds.
 - **This week:** the abstracts of the current week's sessions, or the themes and highlights of last week's digest while the week has no sessions yet. Links into that week's period view.
 
@@ -351,7 +354,7 @@ All memory text on the page is rendered as plain text, and every link is built f
 
 ### Settings
 
-- **Settings → Account → Memory** (`/settings/account#memory`): auto mode, the four budget limits, timezone, the `memory_low` and `memory_high` models, and the memory prompt budget (tokens of memory in a new session's agent prompt; empty uses the platform default, 0 turns it off).
+- **Settings → Account → Memory** (`/settings/account#memory`): auto mode, the six budget limits, timezone, the `memory_low` and `memory_high` models, and the memory prompt budget (tokens of memory in a new session's agent prompt; empty uses the platform default, 0 turns it off).
 - **Settings → System prompts** (`/settings/prompts`): the complete simulated system prompt of every role (agent, sentinel, titler, compaction, session extraction, week and month digests) with its model, each section with its token count, the total, where the cacheable prefix ends and, for the agent, how much of the memory budget is used. A bar above the sections shows each section's share of the tokens; clicking a segment opens that section. Sections show rendered Markdown by default, or the exact raw text; the tool definitions are highlighted JSON and the memory block is raw text either way, since it is distilled from untrusted session content.
 - **Settings → Admin → Models**: platform defaults for `memory_low` and `memory_high`.
 - **Settings → Jobs**: "Include in memory" (`memory_enabled`) and "Give the job memory context" (`memory_context`) per job.
@@ -383,7 +386,7 @@ Memory settings use the existing user-settings and platform-settings endpoints.
 
 - the open loops of the current extractions of sessions active in the last 7 days, newest session first
 - the abstracts of the current week's sessions, or, while the week has none yet, last week's digest themes and highlights
-- notices: sessions waiting for an approval, failed tasks, outdated records, and a cost window that has used 80% of its limit
+- notices: sessions waiting for an approval, failed tasks, outdated records, and the cost limit (actual or equivalent, day or month) that has used the largest share, once that share reaches 80%
 
 Private and foreign sessions are filtered on the session row at read time, so an extraction the sweep has not purged yet never shows up. Last week's digest is left out while it covers a session that is no longer visible.
 

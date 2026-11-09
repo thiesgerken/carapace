@@ -27,7 +27,7 @@ function task(id: number, target_label: string): MemoryTaskView {
     spawned_by: "auto",
     model_override: null,
     attempts: 0,
-    estimate: { model: "haiku", input_tokens: 1200, output_tokens_cap: 800, cost_usd: "0.003" },
+    estimate: { model: "haiku", input_tokens: 1200, output_tokens_cap: 800, cost_usd: "0.003", equivalent_cost_usd: "0.003" },
     provenance: null,
     result_id: null,
     error: null,
@@ -41,8 +41,8 @@ function task(id: number, target_label: string): MemoryTaskView {
 const STATUS: MemoryStatus = {
   auto_mode: false,
   timezone: "Europe/Berlin",
-  day: { window_start: "2026-09-03T22:00:00Z", spent_cost_usd: "0.42", spent_input_tokens: 0, limit_cost_usd: "1.00", limit_input_tokens: null },
-  month: { window_start: "2026-08-31T22:00:00Z", spent_cost_usd: "3.10", spent_input_tokens: 0, limit_cost_usd: "10.00", limit_input_tokens: null },
+  day: { window_start: "2026-09-03T22:00:00Z", spent_cost_usd: "0.42", spent_equivalent_cost_usd: "0.42", spent_input_tokens: 0, limit_cost_usd: "1.00", limit_equivalent_cost_usd: null, limit_input_tokens: null },
+  month: { window_start: "2026-08-31T22:00:00Z", spent_cost_usd: "3.10", spent_equivalent_cost_usd: "3.10", spent_input_tokens: 0, limit_cost_usd: "10.00", limit_equivalent_cost_usd: null, limit_input_tokens: null },
   queue: { pending: 120, queued: 0, running: 0, done: 0, failed: 0, cancelled: 0 },
   blocked: 0,
   models: { memory_low: "haiku", memory_high: "opus" },
@@ -54,10 +54,10 @@ const TASKS: MemoryTaskListResponse = {
   items: [task(1, "Weekend trip"), task(2, "Talos upgrade")],
   next_cursor: "page-2",
   total: 120,
-  estimate: { task_count: 120, input_tokens: 144000, output_tokens_cap: 96000, cost_usd: "0.36", unpriced_count: 0 },
+  estimate: { task_count: 120, input_tokens: 144000, output_tokens_cap: 96000, cost_usd: "0.36", equivalent_cost_usd: "0.36", unpriced_count: 0 },
 };
 
-const ESTIMATE = { task_count: 120, input_tokens: 144000, output_tokens_cap: 96000, cost_usd: "0.36", unpriced_count: 0, unestimated: 0, missing_dependencies: 0 };
+const ESTIMATE = { task_count: 120, input_tokens: 144000, output_tokens_cap: 96000, cost_usd: "0.36", equivalent_cost_usd: "0.36", unpriced_count: 0, unestimated: 0, missing_dependencies: 0 };
 
 test("select all matching runs the whole filter, not just the visible page", async () => {
   const restore = installDom();
@@ -133,7 +133,7 @@ test("headers sort server-side and the model column shows what the task will run
   const restore = installDom();
   const originalFetch = globalThis.fetch;
   const sorts: (string | null)[] = [];
-  const stale = { ...task(1, "Weekend trip"), estimate: { model: "stale-default", input_tokens: 1, output_tokens_cap: 1, cost_usd: "0.01" } };
+  const stale = { ...task(1, "Weekend trip"), estimate: { model: "stale-default", input_tokens: 1, output_tokens_cap: 1, cost_usd: "0.01", equivalent_cost_usd: "0.01" } };
   globalThis.fetch = (async (input: RequestInfo | URL) => {
     const url = new URL(String(input));
     if (url.pathname === "/api/memory/tasks") sorts.push(url.searchParams.get("sort"));

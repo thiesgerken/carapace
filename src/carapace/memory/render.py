@@ -81,7 +81,11 @@ def digest_path(record: DigestRecord) -> str:
 def render_session(record: ExtractionRecord) -> str:
     front_matter = {
         "kind": "session",
-        **record.model_dump(mode="json", include={"session_id", "week_key", "month_key", "created_at", "provenance"}),
+        **record.model_dump(
+            mode="json",
+            include={"session_id", "week_key", "month_key", "created_at", "provenance"},
+            exclude_computed_fields=True,
+        ),
     }
     extraction = record.extraction
     facts = {
@@ -115,7 +119,9 @@ def render_digest(record: DigestRecord, ref_paths: Mapping[str, str]) -> str:
     front_matter = {
         "kind": record.level.value,
         **record.model_dump(
-            mode="json", include={"period_key", "created_at", "coverage", "coverage_hash", "provenance"}
+            mode="json",
+            include={"period_key", "created_at", "coverage", "coverage_hash", "provenance"},
+            exclude_computed_fields=True,
         ),
     }
     digest = record.digest
