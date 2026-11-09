@@ -4116,6 +4116,7 @@ def test_admin_platform_settings_roundtrips_compaction(client, admin_auth_header
                 "keep_turns": 4,
                 "verbatim_tool_turns": 1,
                 "tool_output_floor_tokens": 800,
+                "sentinel_threshold_pct": 70,
             },
             "available_models": [
                 {"provider": "anthropic", "name": "claude-sonnet-4-6"},
@@ -4131,9 +4132,11 @@ def test_admin_platform_settings_roundtrips_compaction(client, admin_auth_header
         "keep_turns": 4,
         "verbatim_tool_turns": 1,
         "tool_output_floor_tokens": 800,
+        "sentinel_threshold_pct": 70,
     }
     # Applied to runtime config and persisted to the DB scalar row.
     assert srv._config.agent.compaction.keep_turns == 4
+    assert srv._config.agent.compaction.sentinel_threshold_pct == 70
     assert srv._config.agent.compaction.verbatim_tool_turns == 1
     assert srv._config.agent.compaction_model == "anthropic:claude-haiku-4-5"
     assert srv._platform_store.load_section("agent")["compaction_model"] == "anthropic:claude-haiku-4-5"

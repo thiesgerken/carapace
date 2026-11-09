@@ -35,6 +35,7 @@ from pydantic_ai.messages import (
 )
 
 from ..models.compaction import FOLD_MARKER, CompactionMethod
+from ..security.context import SENTINEL_VERDICT_TOOL
 from ..usage import count_message_tokens, count_text_tokens
 from .transcript import completed_model_turn_end_indexes
 
@@ -142,6 +143,24 @@ def find_tool_return_candidates(
             )
     candidates.sort(key=lambda c: c.tokens, reverse=True)
     return candidates
+
+
+def tool_return_compaction_region(messages: list[ModelMessage], *, verbatim_turns: int) -> set[int]:
+    """Message indexes whose tool returns may be compacted.
+
+    Only the kept region (never inside a fold block) and never the verbatim hot zone: the newest
+    *verbatim_turns* completed turns, so the latest work keeps exact fidelity. 0 disables the hot zone.
+    """
+    _lead, rest = split_lead_folds(messages)
+    offset = len(messages) - len(rest)
+    turn_ends = completed_model_turn_end_indexes(rest)
+    if verbatim_turns <= 0:
+        cut = len(rest)
+    elif len(turn_ends) <= verbatim_turns:
+        return set()
+    else:
+        cut = turn_ends[len(turn_ends) - verbatim_turns - 1] + 1
+    return set(range(offset, offset + cut))
 
 
 def apply_tool_return_compaction(
@@ -305,6 +324,53 @@ def fold_render_text(messages: list[ModelMessage]) -> str:
     return "\n".join(lines)
 
 
+def split_merged_requests(messages: list[ModelMessage]) -> list[ModelMessage]:
+    """Undo pydantic-ai's merge of consecutive requests: tool returns, then one request per prompt.
+
+    Every run merges consecutive ``ModelRequest``s of its history and persists the result, so a
+    verdict's tool return absorbs the next evaluation's prompt, and a fold message absorbs the prompt
+    after it. Turn boundaries and fold detection need them apart again; a fold cut inside a merged
+    request would also keep a tool return whose call was folded away.
+    """
+    out: list[ModelMessage] = []
+    for msg in messages:
+        if not isinstance(msg, ModelRequest) or len(msg.parts) == 1:
+            out.append(msg)
+            continue
+        others = [p for p in msg.parts if not isinstance(p, UserPromptPart)]
+        prompts = [p for p in msg.parts if isinstance(p, UserPromptPart)]
+        groups = ([others] if others else []) + [[p] for p in prompts]
+        out += [replace(msg, parts=group) for group in groups]
+    return out
+
+
+def sentinel_fold_render_text(messages: list[ModelMessage]) -> str:
+    """Flatten folded sentinel evaluations for the summarizer.
+
+    Unlike ``fold_render_text`` it keeps tool-call arguments: the verdict lives in them.
+    """
+    lines: list[str] = []
+    for msg in messages:
+        if is_fold_message(msg):
+            lines.append(f"Earlier summary: {fold_summary_text(msg)}")
+            continue
+        for part in msg.parts:
+            match part:
+                case UserPromptPart(content=str() as content):
+                    lines.append(f"Evaluation request: {content}")
+                case ToolReturnPart(tool_name=tool_name) if tool_name != SENTINEL_VERDICT_TOOL:
+                    lines.append(f"Tool[{tool_name}] result: {_tool_content_text(part.content)}")
+                case TextPart(content=content):
+                    lines.append(f"Sentinel: {content}")
+                case ToolCallPart(tool_name=tool_name) if tool_name == SENTINEL_VERDICT_TOOL:
+                    lines.append(f"Sentinel verdict: {part.args_as_json_str()}")
+                case ToolCallPart(tool_name=tool_name):
+                    lines.append(f"Sentinel called {tool_name}({part.args_as_json_str()})")
+                case _:
+                    pass
+    return "\n".join(lines)
+
+
 # ---------------------------------------------------------------------------------- consolidate
 
 
@@ -316,14 +382,13 @@ def plan_consolidate(messages: list[ModelMessage]) -> tuple[list[ModelMessage], 
     return lead_folds, rest
 
 
+def fold_summary_text(fold: ModelMessage) -> str:
+    content = fold.parts[0].content if isinstance(fold.parts[0], UserPromptPart) else ""
+    return content.removeprefix(FOLD_MARKER).strip() if isinstance(content, str) else ""
+
+
 def consolidate_render_text(lead_folds: list[ModelMessage]) -> str:
-    parts: list[str] = []
-    for msg in lead_folds:
-        if isinstance(msg, ModelRequest) and msg.parts and isinstance(msg.parts[0], UserPromptPart):
-            content = msg.parts[0].content
-            if isinstance(content, str):
-                parts.append(content.removeprefix(FOLD_MARKER).strip())
-    return "\n\n".join(parts)
+    return "\n\n".join(fold_summary_text(msg) for msg in lead_folds if is_fold_message(msg))
 
 
 def apply_consolidate(rest: list[ModelMessage], summary: str) -> list[ModelMessage]:
