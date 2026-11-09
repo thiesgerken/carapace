@@ -1,6 +1,79 @@
 # CHANGELOG
 
 
+## v0.171.0 (2026-11-09)
+
+
+### Other
+
+
+- Merge pull request #438 from thiesgerken/feat/autonomy-limit
+  ([`da0c580`](https://github.com/thiesgerken/carapace/commit/da0c580ddb68c4362c9df6b7b24dcd81b4074e05))
+
+### ✨ Features
+
+
+- ✨ feat: autonomy limit on tool calls without human interaction
+  ([`da0c580`](https://github.com/thiesgerken/carapace/commit/da0c580ddb68c4362c9df6b7b24dcd81b4074e05))
+
+- ✨ feat(frontend): start new user default budgets from the platform autonomy limit
+  ([`0f10c9e`](https://github.com/thiesgerken/carapace/commit/0f10c9ed2ae892300adc7196c530e87e616c706a))
+
+  A user default budget with any limit replaces the platform one as a whole, so the account form prefills the autonomy field of a new user default with the platform value. The untouched form no longer sends a default budget, so saving other settings doesn't store a copy of the platform budget.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aUyaxvsB8zAKUBRRhYg
+
+- ✨ feat(sessions): backfill user budgets and cap agent requests at 3x the autonomy limit
+  ([`bec6a9b`](https://github.com/thiesgerken/carapace/commit/bec6a9b68152f7d26bd22e831c0b1b7c0c0b9515))
+
+  Migration 0009 also adds the default autonomy limit to every stored user default budget with a limit, since such a budget replaces the platform one as a whole.
+
+  Agent runs now always get explicit usage limits: pydantic-ai's implicit request_limit of 50 becomes a stopgap of three times the autonomy limit, or no limit when the autonomy limit is off. Hitting it ends the turn through the failed-turn path with a readable error.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aUyaxvsB8zAKUBRRhYg
+
+- ✨ feat(frontend): autonomy limit in the drawer, settings and tool call badges
+  ([`b9cc669`](https://github.com/thiesgerken/carapace/commit/b9cc66981bda8761a42ffb28c8ce70baa8c3caaf))
+
+  The session drawer, account and platform default budgets get an autonomy limit field, the gauge key `autonomy` is typed, and tool calls denied by the limit in unattended sessions show an "autonomy limit" badge instead of a generic denial.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aUyaxvsB8zAKUBRRhYg
+
+- ✨ feat(sessions): autonomy limit on tool calls since the last human interaction
+  ([`490ba06`](https://github.com/thiesgerken/carapace/commit/490ba065403c85b2dff08634a5e6170e5d3760a2))
+
+  New SessionBudget field `autonomous_tool_calls` (`/budget autonomy N`, platform default 100) caps the autonomous streak: every tool call attempt, denied ones included, since the last user message or user-resolved approval/escalation. An agent capability counts attempts before the tool runs, so it covers every tool and YOLO mode.
+
+  Attended sessions get one approval card per over-limit call. Allow resets the streak; deny tells the model to wrap up, and if the whole batch was denied the next tool call ends the turn with a budget stop. Unattended sessions soft-deny the crossing batch with the same wrap-up instruction and hard-stop on the next call.
+
+  Migration 0009 adds the default 100 to the stored platform budget, so existing installs get it; the downgrade strips the field everywhere.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aUyaxvsB8zAKUBRRhYg
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix(sessions): autonomy release keeps the security gate, stop holds until the next user message
+  ([`30de312`](https://github.com/thiesgerken/carapace/commit/30de31292917344b78c23c4e6c17c34881cc11aa))
+
+  An allowed autonomy card only means "continue": the released call now carries a deferred metadata marker, so the tools run it through the security gate instead of treating it as a user-approved action, and the sentinel's shadow log gets no user approval for it.
+
+  If the user allows none of a batch's autonomy cards, the stop now holds regardless of other decisions in the batch and of escalations answered meanwhile; only a user message (or a changed limit) lifts it.
+
+  The autonomy gauge is display only: total-budget stop messages are built from the total gauges again and no longer suggest /budget autonomy N.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aUyaxvsB8zAKUBRRhYg
+
 ## v0.170.1 (2026-11-08)
 
 
