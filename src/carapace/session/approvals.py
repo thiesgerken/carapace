@@ -43,6 +43,29 @@ def _escalation_notification_body(subject: str, kind: str) -> str:
             return f"Approval needed to access {subject}."
 
 
+def _escalation_response_event(
+    request_id: str,
+    subject: str,
+    kind: str,
+    cmd: str,
+    context: dict[str, Any],
+    response: EscalationResponse,
+) -> dict[str, Any]:
+    common = {
+        "request_id": request_id,
+        "decision": response.decision,
+        "decision_source": "user",
+        "message": normalize_optional_message(response.message),
+    }
+    match kind:
+        case "credential_access":
+            return {"role": "credential_approval", "vault_paths": [context.get("vault_path", subject)], **common}
+        case "git_push":
+            return {"role": "git_push_approval", "domain": subject, "command": cmd, **common}
+        case _:
+            return {"role": "domain_access_approval", "domain": subject, "command": cmd, **common}
+
+
 class SessionApprovalMixin:
     _notification_router: NotificationRouter | None
     _session_mgr: SessionManager
@@ -134,148 +157,134 @@ class SessionApprovalMixin:
 
             # Auto-deny stale pending escalations of the same kind+key.
             # This happens when an exec timeout killed git push but the old
-            # escalation callback is still blocked on the queue.
+            # escalation callback is still waiting for its answer.
             match_key = {"git_push": "ref", "credential_access": "vault_path"}.get(kind, "domain")
             match_val = context.get(match_key, subject)
             for old in list(active.pending_escalations):
                 if old.get("kind") == kind and old.get(match_key) == match_val:
                     logger.info(f"Superseding stale {kind} escalation {old['request_id']} for {match_val}")
-                    active.escalation_queue.put_nowait(
-                        EscalationResponse(request_id=old["request_id"], decision="deny")
-                    )
+                    active.escalation_waiters.release(old["request_id"])
 
-            if kind == "git_push":
-                ref = context.get("ref", subject)
-                explanation = context.get("explanation", "")
-                changed_files: list[str] = context.get("changed_files", [])
+            # Wait from before the request is announced on, so an immediate answer is not missed.
+            with active.escalation_waiters.waiting(request_id) as answer:
+                await self._announce_escalation(active, session_id, request_id, notif_id, subject, kind, cmd, context)
+                response = await answer
+            # An answer can resolve the future just before the turn closes the request (as denied)
+            # and this waiter resumes only afterwards: the closure wins.
+            if not any(p["request_id"] == request_id for p in active.pending_escalations):
+                response = None
+
+            if response is not None:
+                active.autonomy.note_user_decision()
                 self._session_mgr.append_events(
-                    session_id,
-                    [
-                        {
-                            "role": "git_push_approval",
-                            "request_id": request_id,
-                            "ref": ref,
-                            "explanation": explanation,
-                            "changed_files": changed_files,
-                        }
-                    ],
+                    session_id, [_escalation_response_event(request_id, subject, kind, cmd, context, response)]
                 )
-                active.pending_escalations.append(
+            active.pending_escalations = [p for p in active.pending_escalations if p["request_id"] != request_id]
+            await self._clear_pending_notification(active, session_id, notif_id)
+            if response is None:
+                return UserEscalationDecision(allowed=False)
+            return UserEscalationDecision(
+                allowed=response.decision != "deny", message=normalize_optional_message(response.message)
+            )
+
+        return _escalate
+
+    async def _announce_escalation(
+        self,
+        active: ActiveSession,
+        session_id: str,
+        request_id: str,
+        notif_id: str,
+        subject: str,
+        kind: str,
+        cmd: str,
+        context: dict[str, Any],
+    ) -> None:
+        """Record the escalation request, show it to subscribers, and notify the owner."""
+        if kind == "git_push":
+            ref = context.get("ref", subject)
+            explanation = context.get("explanation", "")
+            changed_files: list[str] = context.get("changed_files", [])
+            self._session_mgr.append_events(
+                session_id,
+                [
                     {
+                        "role": "git_push_approval",
                         "request_id": request_id,
-                        "kind": "git_push",
                         "ref": ref,
                         "explanation": explanation,
                         "changed_files": changed_files,
                     }
-                )
-                await self._broadcast(
-                    active, "on_git_push_approval_request", request_id, ref, explanation, changed_files
-                )
-            elif kind == "credential_access":
-                vault_path = context.get("vault_path", subject)
-                cred_name = context.get("name", vault_path)
-                cred_desc = context.get("description", "")
-                explanation = context.get("explanation", "")
-                self._session_mgr.append_events(
-                    session_id,
-                    [
-                        {
-                            "role": "credential_approval",
-                            "request_id": request_id,
-                            "vault_paths": [vault_path],
-                            "names": [cred_name],
-                            "descriptions": [cred_desc],
-                            "explanation": explanation,
-                        }
-                    ],
-                )
-                active.pending_escalations.append(
+                ],
+            )
+            active.pending_escalations.append(
+                {
+                    "request_id": request_id,
+                    "kind": "git_push",
+                    "ref": ref,
+                    "explanation": explanation,
+                    "changed_files": changed_files,
+                }
+            )
+            await self._broadcast(active, "on_git_push_approval_request", request_id, ref, explanation, changed_files)
+        elif kind == "credential_access":
+            vault_path = context.get("vault_path", subject)
+            cred_name = context.get("name", vault_path)
+            cred_desc = context.get("description", "")
+            explanation = context.get("explanation", "")
+            self._session_mgr.append_events(
+                session_id,
+                [
                     {
+                        "role": "credential_approval",
                         "request_id": request_id,
-                        "kind": "credential_access",
-                        "vault_path": vault_path,
                         "vault_paths": [vault_path],
                         "names": [cred_name],
                         "descriptions": [cred_desc],
                         "explanation": explanation,
                     }
-                )
-                await self._broadcast(
-                    active,
-                    "on_credential_approval_request",
-                    request_id,
-                    [vault_path],
-                    [cred_name],
-                    [cred_desc],
-                    None,
-                    explanation,
-                )
-            else:
-                self._session_mgr.append_events(
-                    session_id,
-                    [{"role": "domain_access_approval", "request_id": request_id, "domain": subject, "command": cmd}],
-                )
-                active.pending_escalations.append(
-                    {"request_id": request_id, "kind": "domain_access", "domain": subject, "command": cmd}
-                )
-                await self._broadcast(active, "on_domain_access_approval_request", request_id, subject, cmd)
+                ],
+            )
+            active.pending_escalations.append(
+                {
+                    "request_id": request_id,
+                    "kind": "credential_access",
+                    "vault_path": vault_path,
+                    "vault_paths": [vault_path],
+                    "names": [cred_name],
+                    "descriptions": [cred_desc],
+                    "explanation": explanation,
+                }
+            )
+            await self._broadcast(
+                active,
+                "on_credential_approval_request",
+                request_id,
+                [vault_path],
+                [cred_name],
+                [cred_desc],
+                None,
+                explanation,
+            )
+        else:
+            self._session_mgr.append_events(
+                session_id,
+                [{"role": "domain_access_approval", "request_id": request_id, "domain": subject, "command": cmd}],
+            )
+            active.pending_escalations.append(
+                {"request_id": request_id, "kind": "domain_access", "domain": subject, "command": cmd}
+            )
+            await self._broadcast(active, "on_domain_access_approval_request", request_id, subject, cmd)
 
-            if self._notification_router is not None:
-                delivered = await self._notification_router.dispatch_escalation(
-                    session_id=session_id,
-                    request_id=request_id,
-                    title="Action Required",
-                    body=_escalation_notification_body(subject, kind),
-                )
-                if delivered.delivered_subscription_ids:
-                    active.pending_notifications[notif_id] = delivered.delivered_subscription_ids
-            # Block until a subscriber responds
-            while True:
-                msg = await active.escalation_queue.get()
-                if msg is None:
-                    await self._clear_pending_notification(active, session_id, notif_id)
-                    active.pending_escalations = [
-                        p for p in active.pending_escalations if p["request_id"] != request_id
-                    ]
-                    return UserEscalationDecision(allowed=False)
-                if msg.request_id == request_id:
-                    active.autonomy.note_user_decision()
-                    decision = msg.decision
-                    message = normalize_optional_message(msg.message)
-                    event_roles = {
-                        "git_push": "git_push_approval",
-                        "credential_access": "credential_approval",
-                    }
-                    event_role = event_roles.get(kind, "domain_access_approval")
-                    if kind == "credential_access":
-                        vp = context.get("vault_path", subject)
-                        response_event: dict[str, Any] = {
-                            "role": event_role,
-                            "request_id": request_id,
-                            "vault_paths": [vp],
-                            "decision": decision,
-                            "decision_source": "user",
-                            "message": message,
-                        }
-                    else:
-                        response_event = {
-                            "role": event_role,
-                            "request_id": request_id,
-                            "domain": subject,
-                            "command": cmd,
-                            "decision": decision,
-                            "decision_source": "user",
-                            "message": message,
-                        }
-                    self._session_mgr.append_events(session_id, [response_event])
-                    active.pending_escalations = [
-                        p for p in active.pending_escalations if p["request_id"] != request_id
-                    ]
-                    await self._clear_pending_notification(active, session_id, notif_id)
-                    return UserEscalationDecision(allowed=decision != "deny", message=message)
-
-        return _escalate
+        if self._notification_router is not None:
+            delivered = await self._notification_router.dispatch_escalation(
+                session_id=session_id,
+                request_id=request_id,
+                title="Action Required",
+                body=_escalation_notification_body(subject, kind),
+            )
+            if delivered.delivered_subscription_ids:
+                active.pending_notifications[notif_id] = delivered.delivered_subscription_ids
 
     def _make_domain_info_cb(
         self,

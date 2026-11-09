@@ -29,7 +29,7 @@ from ..agent.loop import run_agent_turn as _run_agent_turn
 from ..credentials import SessionCredentialRegistry
 from ..git.store import GitStore
 from ..knowledge import KnowledgeRepoHandle, KnowledgeRepoResolver
-from ..llm import ModelFactory
+from ..llm import ModelFactory, SlotLimitedModel
 from ..models.compaction import SessionCompaction
 from ..models.config import Config
 from ..models.credentials import CredentialRegistryProtocol
@@ -255,6 +255,7 @@ class SessionEngine(
             user=owner,
             knowledge_dir=knowledge_dir,
             skills_dir=knowledge_dir / "skills",
+            llm_slots=self._llm_semaphore,
             unattended=state.attributes.unattended,
             ask_mode=state.attributes.ask_mode,
             timeout=timedelta(seconds=self._config.agent.sentinel_timeout_seconds),
@@ -499,7 +500,7 @@ class SessionEngine(
             sentinel=active.sentinel,
             git_store=self._git_store_for_session(session_id),
             skill_catalog=self._skill_catalog_for_session(session_id),
-            agent_model=agent_model,
+            agent_model=SlotLimitedModel(agent_model, self._llm_semaphore),
             agent_model_id=agent_model_id,
             tool_call_callback=tool_call_callback,
             tool_result_callback=tool_result_callback,
@@ -538,8 +539,6 @@ class SessionEngine(
         # Drain leftover approval responses
         while not active.tool_approval_queue.empty():
             active.tool_approval_queue.get_nowait()
-        while not active.escalation_queue.empty():
-            active.escalation_queue.get_nowait()
 
         await self.clear_pending_notifications(session_id)
 
@@ -670,7 +669,7 @@ class SessionEngine(
         if active.agent_task and not active.agent_task.done():
             active.agent_task.cancel()
             active.tool_approval_queue.put_nowait(None)
-            active.escalation_queue.put_nowait(None)
+            active.escalation_waiters.release_all()
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await active.agent_task
             active.agent_task = None
@@ -685,8 +684,8 @@ class SessionEngine(
         if active:
             if isinstance(response, ApprovalResponse):
                 active.tool_approval_queue.put_nowait(response)
-            else:
-                active.escalation_queue.put_nowait(response)
+            elif not active.escalation_waiters.answer(response):
+                logger.info(f"Dropping answer to escalation {response.request_id}: nobody waits for it anymore")
 
     def _completed_event_turns(self, events: list[dict[str, Any]]) -> list[CompletedEventTurn]:
         return completed_event_turns(events)

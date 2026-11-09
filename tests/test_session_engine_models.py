@@ -21,12 +21,14 @@ from pydantic_ai.messages import (
     ToolReturnPart,
     UserPromptPart,
 )
+from pydantic_ai.models import Model
 from pydantic_ai.models.test import TestModel
 from pydantic_ai.usage import RunUsage
 
 import carapace.security as security_mod
 import carapace.usage as usage_mod
-from carapace.llm import DisabledModelError
+from carapace.agent.deps import Deps
+from carapace.llm import DisabledModelError, SlotLimitedModel
 from carapace.models.config import AgentConfig, AvailableModelEntry
 from carapace.models.session import SessionBudget
 from carapace.security.context import SentinelVerdict, SessionSecurity, ToolCallEntry
@@ -562,10 +564,15 @@ def test_model_overrides_persist_across_restart(tmp_path: Path, db_factory) -> N
     assert active.agent_model_name == "openai:gpt-4o"
     assert active.sentinel_model_name == "openai:gpt-4o"
     assert active.title_model_name == "openai:gpt-4o"
-    assert isinstance(deps.agent_model, TestModel)
+    assert isinstance(_unwrapped_agent_model(deps), TestModel)
     assert deps.agent_model_id == "openai:gpt-4o"
-    assert active.agent_model is deps.agent_model
+    assert active.agent_model is _unwrapped_agent_model(deps)
     _sentinel_set_model_mock(active).assert_called_once_with("openai:gpt-4o")
+
+
+def _unwrapped_agent_model(deps: Deps) -> Model:
+    assert isinstance(deps.agent_model, SlotLimitedModel)
+    return deps.agent_model.wrapped
 
 
 def test_default_agent_model_is_built_once_per_session(tmp_path: Path, db_factory) -> None:
@@ -578,7 +585,7 @@ def test_default_agent_model_is_built_once_per_session(tmp_path: Path, db_factor
         first = engine._build_deps(active)
         second = engine._build_deps(active)
 
-    assert first.agent_model is second.agent_model
+    assert _unwrapped_agent_model(first) is _unwrapped_agent_model(second)
 
 
 def test_agent_model_is_built_for_the_session_owner(tmp_path: Path, db_factory) -> None:
@@ -596,8 +603,8 @@ def test_agent_model_is_built_for_the_session_owner(tmp_path: Path, db_factory) 
         engine._model_factory = factory
         thies = engine.get_or_activate(engine.session_mgr.create_session(user="thies").session_id)
         ada = engine.get_or_activate(engine.session_mgr.create_session(user="ada").session_id)
-        thies_model = engine._build_deps(thies).agent_model
-        ada_model = engine._build_deps(ada).agent_model
+        thies_model = _unwrapped_agent_model(engine._build_deps(thies))
+        ada_model = _unwrapped_agent_model(engine._build_deps(ada))
 
     assert built_for[id(thies_model)] == "thies"
     assert built_for[id(ada_model)] == "ada"
@@ -609,7 +616,7 @@ def test_reset_user_models_only_drops_that_users_models(tmp_path: Path, db_facto
         thies = engine.get_or_activate(engine.session_mgr.create_session(user="thies").session_id)
         ada = engine.get_or_activate(engine.session_mgr.create_session(user="ada").session_id)
         engine._build_deps(thies)
-        ada_model = engine._build_deps(ada).agent_model
+        ada_model = _unwrapped_agent_model(engine._build_deps(ada))
 
         engine.reset_user_models("thies")
 
@@ -746,7 +753,7 @@ def test_invalid_model_overrides_fall_back_on_restart(tmp_path: Path, db_factory
     assert active.agent_model_name is None
     assert active.sentinel_model_name is None
     assert active.title_model_name is None
-    assert isinstance(deps.agent_model, TestModel)
+    assert isinstance(_unwrapped_agent_model(deps), TestModel)
     assert deps.agent_model_id == restarted._config.agent.model
 
     persisted = restarted.session_mgr.load_state(state.session_id)

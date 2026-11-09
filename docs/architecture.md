@@ -466,6 +466,8 @@ agent:
   max_parallel_llm: 2
 ```
 
+`max_parallel_llm` sizes the pool of LLM slots that sessions share: agent model requests, sentinel reviews, title generation, and compaction summaries each take a slot for the duration of one request. Tool runs and waits for approvals and escalations hold no slot, so the number of concurrently running turns is not limited by it. The memory worker runs its tasks in a separate pool of the same size, so the server can have up to twice that many LLM requests in flight.
+
 Admins can update the model catalog, platform defaults, provider keys, and default session budget from the web UI. Users can override the default agent, sentinel, and title models plus their own default session budget from **Settings** -> **Account**. Those defaults apply to newly created web, Matrix, and non-persistent job sessions; existing sessions keep their current model overrides and budget.
 
 OpenRouter is exposed as its own model provider. It uses Pydantic AI's `OpenRouterProvider`, including `OPENROUTER_API_KEY`, `OPENROUTER_APP_URL`, and `OPENROUTER_APP_TITLE` environment variable fallback. Example row:

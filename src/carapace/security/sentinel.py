@@ -14,7 +14,7 @@ from pydantic_ai.settings import ModelSettings
 from pydantic_ai.usage import UsageLimits
 
 from ..git.diff import touched_paths
-from ..llm import ModelFactory
+from ..llm import ModelFactory, SlotLimitedModel
 from ..usage import LlmRequestLogCapability, UsageTracker, provider_cost_usd_from_messages
 from .context import (
     ActionLogEntry,
@@ -178,6 +178,7 @@ class Sentinel:
         user: str,
         knowledge_dir: Path,
         skills_dir: Path,
+        llm_slots: asyncio.Semaphore | None,
         unattended: bool = False,
         ask_mode: bool = False,
         timeout: timedelta = timedelta(seconds=600),
@@ -188,6 +189,8 @@ class Sentinel:
         self._model = model
         # The session owner, whom the sentinel's model requests are made for.
         self._user = user
+        # The server's shared LLM slots (``agent.max_parallel_llm``); None leaves requests unlimited.
+        self._llm_slots = llm_slots
         self._knowledge_dir = knowledge_dir
         self._skills_dir = skills_dir
         self._unattended = unattended
@@ -508,6 +511,8 @@ class Sentinel:
             if self._model_factory is not None
             else infer_model(self._model)
         )
+        if self._llm_slots is not None:
+            resolved = SlotLimitedModel(resolved, self._llm_slots)
         model_settings = (
             self._model_settings_resolver(self._model) if self._model_settings_resolver is not None else None
         )
