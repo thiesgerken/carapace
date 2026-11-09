@@ -35,6 +35,7 @@ function draftWithModel(model: PlatformDraft["models"][number]): PlatformDraft {
       keepTurns: "6",
       verbatimTurns: "2",
       toolFloor: "500",
+      sentinelThreshold: "50",
     },
     models: [model],
   };

@@ -579,6 +579,7 @@
             "defaultRequired": "{field}-Standardmodell ist erforderlich.",
             "defaultUnknown": "{field}-Standardmodell {id} ist nicht im Katalog.",
             "minInt": "{field} muss eine ganze Zahl ≥ {min} sein.",
+            "rangeInt": "{field} muss eine ganze Zahl von {min} bis {max} sein.",
             "defaultDisabled": "{field}-Standardmodell {id} ist deaktiviert."
         },
         "sections": {
@@ -658,7 +659,9 @@
             "modelDefault": "Standard (Titelmodell)",
             "keepTurns": "Letzte Runden behalten",
             "verbatimTurns": "Tool-Runden wörtlich behalten",
-            "toolFloor": "Tool-Ausgabe-Schwelle (Tokens)"
+            "toolFloor": "Tool-Ausgabe-Schwelle (Tokens)",
+            "sentinelThreshold": "Sentinel-Schwelle (% des Kontexts)",
+            "sentinelThresholdHint": "Vor einer Bewertung wird die Konversation des Sentinels automatisch kompaktiert, sobald sie diesen Anteil des Kontextfensters des Sentinel-Modells füllt (1 bis 90)."
         }
     },
     "home": {

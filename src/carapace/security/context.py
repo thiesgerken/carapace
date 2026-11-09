@@ -137,6 +137,9 @@ _action_log_entry_adapter: TypeAdapter[ActionLogEntry] = TypeAdapter(ActionLogEn
 
 # --- Sentinel Verdict ---
 
+# The output tool a sentinel evaluation ends with; its return closes the evaluation in the shadow conversation.
+SENTINEL_VERDICT_TOOL = "judge"
+
 
 class SentinelVerdict(BaseModel):
     decision: Literal["allow", "escalate", "deny"]
@@ -473,6 +476,14 @@ class SessionSecurity:
         if messages is not None:
             self.sentinel_messages = messages
             self._last_synced_idx = synced_entries
+        self._save_sentinel_state()
+
+    def replace_sentinel_messages(self, messages: list[ModelMessage]) -> None:
+        """Swap in a compacted shadow conversation."""
+        self.sentinel_messages = messages
+        self._save_sentinel_state()
+
+    def _save_sentinel_state(self) -> None:
         if self._session_factory is None:
             return
         with self._session_factory.begin() as db:

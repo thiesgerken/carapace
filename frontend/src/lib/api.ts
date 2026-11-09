@@ -1178,6 +1178,7 @@ export interface PlatformCompactionSettings {
   keep_turns: number;
   verbatim_tool_turns: number;
   tool_output_floor_tokens: number;
+  sentinel_threshold_pct: number;
 }
 
 export interface PlatformDefaultModelsSettings {
@@ -1475,6 +1476,7 @@ function decodeCompaction(raw: unknown): PlatformCompactionSettings {
     keep_turns: readNumber(r, "keep_turns") ?? 8,
     verbatim_tool_turns: readNumber(r, "verbatim_tool_turns") ?? 4,
     tool_output_floor_tokens: readNumber(r, "tool_output_floor_tokens") ?? 500,
+    sentinel_threshold_pct: readNumber(r, "sentinel_threshold_pct") ?? 50,
   };
 }
 

@@ -167,7 +167,7 @@ def _default_agent_available_models() -> list[AvailableModelEntry]:
 
 
 class CompactionConfig(ConfigModel):
-    """Session compaction tuning (manual `/compact` in v1)."""
+    """Compaction tuning: the agent's manual `/compact` and the sentinel's automatic compaction."""
 
     # Default number of recent completed turns kept verbatim when folding.
     keep_turns: int = Field(default=8, ge=1)
@@ -176,6 +176,10 @@ class CompactionConfig(ConfigModel):
     verbatim_tool_turns: int = Field(default=4, ge=0)
     # Tool returns below this token count are left alone (marker overhead would exceed the saving).
     tool_output_floor_tokens: int = Field(default=500, ge=1)
+    # The sentinel's shadow conversation is compacted before an evaluation once it fills this
+    # percentage of the sentinel model's context window. Capped below 100: the estimate leaves out
+    # the system prompt and the new evaluation request.
+    sentinel_threshold_pct: int = Field(default=50, ge=1, le=90)
 
 
 class AgentConfig(ConfigModel):

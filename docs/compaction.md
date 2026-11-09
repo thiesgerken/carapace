@@ -7,7 +7,8 @@ carapace treats compaction the same way it treats the rest of its state: nothing
 model sees a compacted cut, but the originals stay in the events transcript and the Git-backed
 session archive, and every compaction is visible in the web UI.
 
-> v1 is **manual only** — you trigger it with `/compact`. There is no automatic trigger yet.
+> The agent's model history is compacted **manually only**, with `/compact`. The sentinel's shadow
+> conversation is compacted **automatically** (see [Sentinel](#sentinel)).
 
 ## What gets compacted
 
@@ -63,6 +64,7 @@ the DB-backed platform settings (the `agent` scalar row), not a config file:
 | Keep recent turns | Compaction | 8 | Completed turns kept verbatim; also the default `K` for `/compact` |
 | Verbatim tool turns | Compaction | 4 | Newest turns whose tool outputs are never summarized (`0` disables) |
 | Tool-output floor (tokens) | Compaction | 500 | Tool outputs smaller than this are left alone |
+| Sentinel threshold (% of context) | Compaction | 50 | Share of the sentinel model's context window at which its shadow conversation is compacted (1 to 90) |
 
 The compaction model is a separate, configurable default model (a cheap/haiku-class model is a good
 default); leaving it on "Default" reuses the title model. Its usage is tracked under the
@@ -101,6 +103,28 @@ fold node, `model_text` for a compacted tool return) so the main view needs no s
 
 ## Sentinel
 
-The sentinel (security agent) keeps its own shadow conversation, which is **not** affected by
-`/compact`. It is persisted and never reset (see [security.md](security.md#sentinel-state)), so for now
-nothing bounds it; automatic sentinel compaction follows.
+The sentinel keeps its own shadow conversation (see [security.md](security.md#sentinel-state)). It is
+never reset and **not** affected by `/compact`; instead it is compacted automatically.
+
+- **When:** before each sentinel evaluation, once the conversation fills the sentinel threshold of
+  the sentinel model's context window (`max_input_tokens` from the model catalog, 200k if unset).
+  The estimate counts the conversation only, not the system prompt or the new evaluation request,
+  which is why the threshold is capped at 90%.
+- **What:** the same ladder and settings as `/compact`, with one evaluation (request, skill
+  inspections, verdict) as one turn: thinking-drop, fold all but the newest *Keep recent turns*
+  evaluations, then summarize large tool outputs (in practice `read_skill_file` returns) outside the
+  newest *Verbatim tool turns* evaluations. Unlike agent folds, the sentinel keeps a single summary:
+  each fold summarizes the earlier summary together with the newly folded evaluations, so the
+  conversation stays bounded by one summary plus *Keep recent turns* evaluations.
+- **How:** summaries lead with the sentinel's own system prompt (including `SECURITY.md` and the
+  session's ask/unattended mode), followed by compaction instructions that require keeping user
+  decisions, denials and escalations, granted contexts, suspicious agent behaviour and what inspected
+  skill code does. Fold summaries are rendered with the verdicts' arguments, so the decisions reach
+  the summarizer verbatim.
+- **Result:** the compacted conversation replaces the persisted one. The sentinel forgets which skill
+  files it was "already provided", so it reads them again in full when needed.
+- **Failure:** a failing compaction fails the evaluation through the regular sentinel error path. The
+  sentinel never evaluates uncompacted. The sentinel timeout covers compaction and evaluation together.
+- **Visibility:** no transcript marker. The [debug view](debug-view.md) shows the request in the
+  `compaction` slot with `compaction_target: sentinel`, and the compacted conversation in the
+  `sentinel` slot. Usage counts under the `compaction` category.
