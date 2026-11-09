@@ -5,7 +5,8 @@
 //
 //   node scripts/screenshot.mjs [--base URL] [--out DIR] [--phone] NAME=PATH...
 //
-// Writes DIR/NAME-light.png and DIR/NAME-dark.png per page (NAME-phone-light.png with --phone).
+// Writes DIR/NAME-light.png and DIR/NAME-dark.png per page (NAME-phone-light.png and
+// NAME-phone-dark.png with --phone). DIR defaults to a fresh temp directory, never the repo.
 // See "Screenshots" in docs/development.md.
 
 import { spawn } from "node:child_process";
@@ -20,14 +21,15 @@ const CHROME = process.env.CHROME ?? "/Applications/Google Chrome.app/Contents/M
 const SCHEMES = { light: 1, dark: 0 };
 const DESKTOP = { width: 1280, height: 800, mobile: false };
 const PHONE = { width: 390, height: 844, mobile: true };
+// The demo user from scripts/seed_demo.py: screenshots only ever show demo data.
+const DEMO_USER = "demo";
+const DEMO_PASSWORD = "carapace-demo";
 
 const { values: options, positionals } = parseArgs({
   allowPositionals: true,
   options: {
     base: { type: "string", default: "http://localhost:3000" },
-    out: { type: "string", default: "screenshots" },
-    user: { type: "string", default: "demo" },
-    password: { type: "string", default: "carapace-demo" },
+    out: { type: "string" },
     // Time for data fetches and fonts to settle after the load event.
     settle: { type: "string", default: "3000" },
     phone: { type: "boolean", default: false },
@@ -129,18 +131,18 @@ async function evaluate(page, expression) {
 
 async function logIn(page) {
   await navigate(page, options.base);
-  const credentials = JSON.stringify({ username: options.user, password: options.password });
+  const credentials = JSON.stringify({ username: DEMO_USER, password: DEMO_PASSWORD });
   const status = await evaluate(
     page,
     `fetch("/api/auth/login", {method: "POST", headers: {"Content-Type": "application/json"},
       body: ${JSON.stringify(credentials)}}).then((r) => r.status)`,
   );
-  if (status !== 200) throw new Error(`Login as ${options.user} failed with HTTP ${status}`);
+  if (status !== 200) throw new Error(`Login as ${DEMO_USER} failed with HTTP ${status}`);
   // The frontend treats a stored username as "connected"; the cookie carries the session. The UI
   // language follows the browser's languages unless overridden, and those come from the OS.
   await evaluate(
     page,
-    `localStorage.setItem("carapace_username", ${JSON.stringify(options.user)});
+    `localStorage.setItem("carapace_username", ${JSON.stringify(DEMO_USER)});
      localStorage.setItem("carapace_locale_override", "en")`,
   );
 }
@@ -165,7 +167,7 @@ async function capture(scheme) {
         `document.head.insertAdjacentHTML("beforeend", "<style>nextjs-portal{display:none!important}</style>")`,
       );
       const { data } = await page.send("Page.captureScreenshot", { format: "png" });
-      const file = join(options.out, `${name}${options.phone ? "-phone" : ""}-${scheme}.png`);
+      const file = join(outDir, `${name}${options.phone ? "-phone" : ""}-${scheme}.png`);
       writeFileSync(file, Buffer.from(data, "base64"));
       console.log(file);
     }
@@ -174,7 +176,8 @@ async function capture(scheme) {
   }
 }
 
-mkdirSync(options.out, { recursive: true });
+const outDir = options.out ?? mkdtempSync(join(tmpdir(), "carapace-shots-"));
+mkdirSync(outDir, { recursive: true });
 for (const scheme of Object.keys(SCHEMES)) {
   await capture(scheme);
 }

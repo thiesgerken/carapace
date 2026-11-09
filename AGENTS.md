@@ -119,5 +119,5 @@ data/                  # runtime data directory (config, sessions, notifications
 - Skills follow the open [AgentSkills](https://agentskills.io/) format
 - All runtime state lives under `$CARAPACE_DATA_DIR` (defaults to `./data`)
 - Secrets come from a password manager, never stored in the repo
-- UI PRs get screenshots of the changed pages (before/after, light/dark, phone width if the layout changes), taken with demo data only (see "Screenshots" in `docs/development.md`) and attached with `gh pr create/edit --attach` (gh >= 2.99 uploads images natively and rewrites `![alt](./file.png)` references)
+- UI PRs get screenshots of the changed pages (before/after, light/dark, phone if the layout changes), demo data only, attached with `gh pr edit --attach`; see "Screenshots" in `docs/development.md`
 - Prefix caching: LLM system prompts put the stable shared prefix first (`prompt_prefix.shared_prompt_prefix()`), then role instructions, and anything volatile (current time, session ID, per-call data) last. Never put volatile text or a per-role split before the long shared text (see `docs/persistent-context.md`)

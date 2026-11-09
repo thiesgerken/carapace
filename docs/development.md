@@ -44,17 +44,19 @@ UI PRs show the pages they change: before and after, light and dark, plus phone 
 
 `scripts/seed_demo.py` fills a throwaway data dir with a demo user and ready-made sessions, written directly as events. Nothing calls an LLM, the session IDs and contents are fixed, and the timestamps are relative to the seeding time, so the same steps give the same pictures. To show live state, configure a model and start a real turn on top.
 
-| Session | Shows |
-| --- | --- |
-| Getting To Know The Sandbox | thinking, a titled `exec` with a domain access, sandbox panel |
-| Classic Fluffy Pancake Recipe | skill activation, sentinel-reviewed tool calls with domain and credential access |
-| Creating A Recipe Skill | file read and write, a git push, code blocks |
-| HTTP POST Blocked In Ask Mode | ask mode, a call denied by the sentinel |
-| Cleaning Up NAS Backups | a pending approval card |
-| Triage Open Issues | a budget stop with the error box |
-| Checking Outdated Dependencies | an autonomy-limit approval card |
+| Session ID | Title | Shows |
+| --- | --- | --- |
+| `demo-sandbox-tour` | Getting To Know The Sandbox | thinking, a titled `exec` with a domain access, sandbox panel |
+| `demo-pancake-recipe` | Classic Fluffy Pancake Recipe | skill activation, sentinel-reviewed tool calls with domain and credential access |
+| `demo-recipe-skill` | Creating A Recipe Skill | file read and write, a git push, code blocks |
+| `demo-blocked-post` | HTTP POST Blocked In Ask Mode | ask mode, a call denied by the sentinel |
+| `demo-pending-approval` | Cleaning Up NAS Backups | a pending approval card |
+| `demo-budget-stop` | Triage Open Issues | a budget stop with the error box |
+| `demo-autonomy-limit` | Checking Outdated Dependencies | an autonomy-limit approval card |
 
-1. Start a disposable Redis and the server on a fresh data dir. Startup bootstraps an `admin` user from `CARAPACE_TOKEN`. Stop a running development server first, or move this one to other ports with `CARAPACE_SERVER_PORT`/`CARAPACE_SERVER_SANDBOX_PORT` and `CARAPACE_BACKEND_URL` for the frontend.
+A session opens at `/?session=<ID>`.
+
+1. Start a disposable Redis and the server on a fresh data dir inside the temp directory (the seed refuses any other). Startup bootstraps an `admin` user from `CARAPACE_TOKEN`. Stop a running development server first, or move this one to other ports with `CARAPACE_SERVER_PORT`/`CARAPACE_SERVER_SANDBOX_PORT` and `CARAPACE_BACKEND_URL` for the frontend.
 
    ```sh
    docker run --rm -d --name carapace-demo-redis -p 127.0.0.1:6390:6379 redis:8-alpine
@@ -66,7 +68,7 @@ UI PRs show the pages they change: before and after, light and dark, plus phone 
    uv run carapace-server
    ```
 
-2. In another shell with the same `CARAPACE_DATA_DIR`, seed it once the server is up. Order matters: server startup closes approval requests left open by a previous process, and two demo sessions show open ones. The script refuses a data dir that already has sessions or a database outside it, and prints the session IDs.
+2. In another shell with the same `CARAPACE_DATA_DIR`, seed it once the server is up. Order matters: server startup closes approval requests left open by a previous process, and two demo sessions show open ones. The script refuses a data dir outside the temp directory, a database outside the data dir, and a data dir that already has sessions.
 
    ```sh
    uv run python scripts/seed_demo.py "$CARAPACE_DATA_DIR"
@@ -74,11 +76,11 @@ UI PRs show the pages they change: before and after, light and dark, plus phone 
 
 3. Start the frontend with `npm --prefix frontend run dev` and log in as `demo` with password `carapace-demo` if you want to look around.
 
-4. Capture with headless Chrome. `scripts/screenshot.mjs` logs in as the demo user over the DevTools protocol (Node built-ins only), since the session cookie is HTTP-only. Per page it writes `NAME-light.png` and `NAME-dark.png` at 1280×800 with device scale factor 2, or 390×844 with `--phone`. Light and dark come from `--blink-settings=preferredColorScheme=1` and `=0`. The UI is English and the time zone UTC. Each page gets the load event plus `--settle` milliseconds (default 3000) to render. Set `CHROME` to the Chrome binary outside macOS.
+4. Capture with headless Chrome. `scripts/screenshot.mjs` logs in as the demo user over the DevTools protocol (Node built-ins only), since the session cookie is HTTP-only. Per page it writes `NAME-light.png` and `NAME-dark.png` at 1280×800 with device scale factor 2, or `NAME-phone-light.png` and `NAME-phone-dark.png` at 390×844 with `--phone`. It prints the files; without `--out` they land in a fresh temp directory, so they can't end up in a commit. Light and dark come from `--blink-settings=preferredColorScheme=1` and `=0`. The UI is English and the time zone UTC. Each page gets the load event plus `--settle` milliseconds (default 3000) to render. Set `CHROME` to the Chrome binary outside macOS.
 
    ```sh
-   node scripts/screenshot.mjs --out shots 'budget=/?session=2026-11-09-07-39-c0de0006'
-   node scripts/screenshot.mjs --out shots --phone 'budget=/?session=2026-11-09-07-39-c0de0006'
+   node scripts/screenshot.mjs --out /tmp/shots 'budget=/?session=demo-budget-stop'
+   node scripts/screenshot.mjs --out /tmp/shots --phone 'budget=/?session=demo-budget-stop'
    ```
 
    For "before" pictures, run the base branch's frontend (e.g. from a worktree on `origin/main`) against the same server and capture into another directory.
@@ -86,10 +88,20 @@ UI PRs show the pages they change: before and after, light and dark, plus phone 
 5. Attach the pictures to the PR instead of committing them. gh 2.99 or newer uploads images natively and rewrites `![alt](./file.png)` references in the body:
 
    ```sh
-   gh pr edit 123 --body-file body.md --attach ./shots/budget-light.png --attach ./shots/budget-dark.png
+   cd /tmp/shots
+   gh pr edit 123 -R thiesgerken/carapace --body-file body.md --attach ./budget-light.png --attach ./budget-dark.png
    ```
 
-The README screenshots in `docs/assets/screenshots/` are not regenerated automatically. To retake them, follow the same steps, capture the first four sessions, and commit the files there.
+The README screenshots in `docs/assets/screenshots/` are not regenerated automatically, and most of them can't come from `screenshot.mjs`: the chat opens scrolled to the bottom, and some shots need scrolling or expanded tool details, which the script doesn't do. To retake them, run steps 1 to 3, log in as `demo` in a 1280×800 browser window, and take them by hand:
+
+| README file | Session | Position |
+| --- | --- | --- |
+| `sandbox_info.png` | `demo-sandbox-tour` | top of the chat |
+| `pancake_web.png` | `demo-pancake-recipe` | `web_fetch` call expanded |
+| `pancake_skill.png` | `demo-recipe-skill` | first turn, `git push` expanded |
+| `pancake_git.png` | `demo-recipe-skill` | git log in the last answer |
+| `pancake_tree.png` | `demo-recipe-skill` | workspace tree in the last answer |
+| `post_readonly.png` | `demo-blocked-post` | denied call expanded |
 
 Clean up with `docker stop carapace-demo-redis` and by deleting the data dir.
 

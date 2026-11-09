@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+import tempfile
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -141,7 +142,7 @@ class Transcript:
 
 @dataclass(frozen=True)
 class DemoSession:
-    suffix: str
+    session_id: str
     title: str
     transcript: Transcript
     attributes: SessionAttributes = field(default_factory=SessionAttributes)
@@ -365,47 +366,47 @@ def demo_sessions(now: datetime) -> list[DemoSession]:
     budget_usage = _usage(180_000, 24_000)
     return [
         DemoSession(
-            "c0de0001",
+            "demo-sandbox-tour",
             "🧭 Getting To Know The Sandbox",
             _sandbox_tour(now - timedelta(hours=26)),
             usage=_usage(9_800, 1_100),
             sandbox=_sandbox("stopped", 252_000, now),
         ),
         DemoSession(
-            "c0de0002",
+            "demo-pancake-recipe",
             "🥞 Classic Fluffy Pancake Recipe",
             _pancake_recipe(now - timedelta(hours=23)),
             usage=_usage(21_000, 1_900),
             sandbox=_sandbox("running", 59_000_000, now),
         ),
         DemoSession(
-            "c0de0003",
+            "demo-recipe-skill",
             "🛠️ Creating A Recipe Skill",
             _recipe_skill(now - timedelta(hours=5)),
             usage=_usage(42_000, 3_200),
             sandbox=_sandbox("running", 61_000_000, now),
         ),
         DemoSession(
-            "c0de0004",
+            "demo-blocked-post",
             "📮 HTTP POST Blocked In Ask Mode",
             _blocked_post(now - timedelta(hours=3)),
             attributes=SessionAttributes(ask_mode=True),
             usage=_usage(2_500, 300),
         ),
         DemoSession(
-            "c0de0005",
+            "demo-pending-approval",
             "🗄️ Cleaning Up NAS Backups",
             _pending_approval(now - timedelta(minutes=50)),
         ),
         DemoSession(
-            "c0de0006",
+            "demo-budget-stop",
             "💸 Triage Open Issues",
             _budget_stop(now - timedelta(minutes=30), budget_usage, Decimal("0.75")),
             budget=SessionBudget(cost_usd=Decimal("0.75")),
             usage=budget_usage,
         ),
         DemoSession(
-            "c0de0007",
+            "demo-autonomy-limit",
             "📦 Checking Outdated Dependencies",
             _autonomy_limit(now - timedelta(minutes=10)),
             budget=SessionBudget(autonomous_tool_calls=3),
@@ -415,13 +416,18 @@ def demo_sessions(now: datetime) -> list[DemoSession]:
 
 
 def _require_throwaway_database(data_dir: Path, url: str) -> None:
-    """Refuse anything but a SQLite file inside DATA_DIR, so a real deployment can't get demo data."""
+    """Refuse anything but a SQLite file inside DATA_DIR, e.g. a CARAPACE_DATABASE_URL to a real Postgres."""
     database = make_url(url).database
     if not url.startswith("sqlite") or not database or not Path(database).resolve().is_relative_to(data_dir):
         sys.exit(f"Refusing to seed {url}: the demo database must be a SQLite file inside {data_dir}.")
 
 
 def seed(data_dir: Path, now: datetime) -> None:
+    # A real data dir (e.g. ./data) also keeps its SQLite file inside, so only a temp dir is
+    # throwaway enough. This runs before anything opens the database.
+    temp_root = Path(tempfile.gettempdir()).resolve()
+    if not data_dir.is_relative_to(temp_root):
+        sys.exit(f"Refusing to seed {data_dir}: the demo data dir must be inside {temp_root} (use mktemp -d).")
     if not data_dir.is_dir():
         sys.exit(f"{data_dir} does not exist. Start the demo server on it first.")
     config = build_config(data_dir)
@@ -438,7 +444,7 @@ def seed(data_dir: Path, now: datetime) -> None:
     for demo in demo_sessions(now):
         events = demo.transcript.events
         created_at = datetime.fromisoformat(events[0]["timestamp"])
-        session_id = f"{created_at:%Y-%m-%d-%H-%M}-{demo.suffix}"
+        session_id = demo.session_id
         session_mgr.save_state(
             SessionState(
                 session_id=session_id,
