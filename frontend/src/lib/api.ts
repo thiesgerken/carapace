@@ -1713,6 +1713,7 @@ export function wsUrl(
   _session: string,
   clientId?: string,
   ticket?: string,
+  observe = false,
 ): string {
   void _session;
   const base = server.replace("http://", "ws://").replace("https://", "wss://");
@@ -1722,6 +1723,9 @@ export function wsUrl(
   }
   if (ticket) {
     params.set("ticket", ticket);
+  }
+  if (observe) {
+    params.set("observe", "true");
   }
   const query = params.toString();
   return `${base}/api/chat/${sessionId}${query ? `?${query}` : ""}`;

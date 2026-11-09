@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { ArrowLeft, Braces, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useFormatter, useTranslations } from "next-intl";
+import { pillClassName } from "@/components/prompt-preview-view";
 import { useWebSocket, useWebSocketTicket } from "@/hooks/use-websocket";
 import { fetchLlmContext, wsUrl } from "@/lib/api";
 import {
@@ -18,13 +19,6 @@ import {
 import { cn } from "@/lib/utils";
 
 export const debugViewHref = (sessionId: string): string => `/?session=${encodeURIComponent(sessionId)}&view=debug`;
-
-const pillClassName = (selected: boolean): string => cn(
-  "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm transition-colors",
-  selected
-    ? "border-[#236b86]/60 bg-[#236b86]/10 text-foreground dark:border-sky-400/50 dark:bg-sky-400/10"
-    : "border-border text-muted-foreground hover:bg-muted hover:text-foreground",
-);
 
 const STATUS_CLASS: Record<LlmContextStatus, string> = {
   running: "border-sky-500/40 bg-sky-500/10 text-sky-800 dark:text-sky-300",
@@ -69,10 +63,12 @@ export function DebugView({ server, token, sessionId }: { server: string; token:
     setNotifications((current) => ({ ...current, [msg.role]: { requestId: msg.request_id, status: msg.status } }));
   }, []);
   const ticket = useWebSocketTicket(server, token);
-  useWebSocket(ticket ? wsUrl(server, sessionId, token, undefined, ticket) : null, onMessage);
+  const { status } = useWebSocket(ticket ? wsUrl(server, sessionId, token, undefined, ticket, true) : null, onMessage);
 
   const latest = notifications[role];
-  const outcome = useLlmContext(server, token, sessionId, role, latest ? `${latest.requestId}:${latest.status}` : "");
+  // Notifications sent while the socket was down are lost, so every (re)connect refetches too.
+  const revision = `${status === "connected"}:${latest ? `${latest.requestId}:${latest.status}` : ""}`;
+  const outcome = useLlmContext(server, token, sessionId, role, revision);
   // The role's context from an older notification keeps showing while the next one loads.
   const current = outcome?.key.startsWith(`${role}:`) ? outcome : null;
   const shown = current && "context" in current ? current.context : undefined;
@@ -91,7 +87,7 @@ export function DebugView({ server, token, sessionId }: { server: string; token:
 
         <div role="radiogroup" aria-label={t("role")} className="flex flex-wrap gap-1.5">
           {DEBUG_ROLES.map((value) => (
-            <button key={value} type="button" role="radio" aria-checked={value === role} onClick={() => setRole(value)} className={pillClassName(value === role)}>
+            <button key={value} type="button" role="radio" aria-checked={value === role} onClick={() => setRole(value)} className={cn(pillClassName(value === role), "inline-flex items-center gap-1.5")}>
               {t(`roles.${value}`)}
               {notifications[value]?.status === "running" ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
             </button>

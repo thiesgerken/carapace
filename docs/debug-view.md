@@ -19,8 +19,10 @@ latest request:
 
 Every message has a raw JSON toggle that shows it as stored, field for field.
 
-The view opens its own session WebSocket and refetches the open tab whenever its role sends a
-notification, so it follows a running turn request by request. A spinner on a tab marks a role
+The view opens its own session WebSocket with `observe=true`: it shows no approvals, so it must not
+count as presence that suppresses approval notifications. It refetches the open tab whenever its
+role sends a notification and after every (re)connect, so it follows a running turn request by
+request. A spinner on a tab marks a role
 whose request is running.
 
 ## What is captured

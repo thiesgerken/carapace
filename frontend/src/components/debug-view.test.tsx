@@ -89,6 +89,7 @@ test("the debug view shows each role's latest context and refetches on WebSocket
     });
     const socket = FakeWebSocket.instances.at(-1);
     assert.ok(socket);
+    assert.match(socket.url, /observe=true/);
     await runInAct(() => socket.onmessage?.({ data: JSON.stringify({ type: "llm_context", role: "agent", request_id: "r1", status: "completed" }) }));
     await settle();
 

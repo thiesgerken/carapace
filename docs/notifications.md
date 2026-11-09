@@ -196,7 +196,7 @@ The session WebSocket does not carry a dedicated notification protocol.
 It participates in notification state in two ways:
 
 - the client may supply `client_id=<stable-id>` on `/api/chat/{session_id}`
-- websocket connect and disconnect update the same shared presence registry used by the notification router
+- websocket connect and disconnect update the same shared presence registry used by the notification router, unless the client connects with `observe=true` (the debug view)
 
 The web client also posts REST presence heartbeats alongside the WebSocket connection. See [websocket-session.md](websocket-session.md) for transport details.
 

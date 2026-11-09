@@ -8,6 +8,7 @@ For the broader notification backend, including presence, suppression, and push 
 
 - **URL:** `ws://<host>/api/chat/{session_id}` or `wss://…` for HTTPS deployments.
 - Optional query parameter: `client_id=<stable-client-id>` to let reconnects map to the same interactive presence source.
+- Optional query parameter: `observe=true` for a connection that only watches the session (the [debug view](debug-view.md)). It registers no presence, so it never suppresses notifications.
 - **Auth:** the same `carapace_session` HttpOnly cookie issued by `POST /api/auth/login` for the web UI and CLI.
 
 If the cookie is missing, expired, revoked, or belongs to a different user than the session owner, the server closes the socket with policy violation (`1008`) before accepting.
@@ -22,7 +23,7 @@ For notification suppression and clearing, the web client also updates the share
 
 - `POST /api/notifications/presence` with `session_id`, `source_id`, `client_type`, and `focus_state`
 - periodic keepalive heartbeats while the session stays open
-- websocket connect and disconnect also mark presence active/inactive using the same `client_id` when provided
+- websocket connect and disconnect also mark presence active/inactive using the same `client_id` when provided, except for `observe=true` connections
 
 There is currently no separate WebSocket `presence_update` message type. Presence is tracked out-of-band through the notification REST API plus websocket lifecycle hooks.
 
