@@ -98,9 +98,12 @@ feeds the usage stats. `role` is optional and takes the same roles as the contex
 
 A record keeps the numbers of a request, not its context, so the timeline grows by one small row
 per request instead of one full context. Its `outcome` is `completed`, or `interrupted` for an agent
-request cut short when the turn stopped. Failed requests leave no record. Token counts are
-provider-reported: input, output, cache read, cache write, audio, and reasoning when the provider
-reports it. Cache and audio counts are `null` on records written before they were kept.
+request cut short when the turn stopped. Token counts are provider-reported: input, output, cache
+read, cache write, audio, and reasoning when the provider reports it. Cache and audio counts are
+`null` on records written before they were kept.
+
+Failed requests leave no record, so the timeline has no row for them. Their error shows only in the
+role's LLM context, as long as it is the latest one.
 
 ## Input tokens
 
