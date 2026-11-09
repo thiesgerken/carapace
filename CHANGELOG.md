@@ -1,6 +1,36 @@
 # CHANGELOG
 
 
+## v0.174.2 (2026-11-09)
+
+
+### 🐛 Bug Fixes
+
+
+- 🐛Merge pull request #449 from thiesgerken/fix/matrix-unknown-token-recovery
+  ([`4349895`](https://github.com/thiesgerken/carapace/commit/4349895b42f705167056c3e74d4d9844ad674779))
+
+- 🐛 fix(matrix): re-authenticate when the sync loop hits M_UNKNOWN_TOKEN
+  ([`4349895`](https://github.com/thiesgerken/carapace/commit/4349895b42f705167056c3e74d4d9844ad674779))
+
+- 🐛 fix(matrix): keep other users' tokens when persisting a Matrix login
+  ([`a8a445e`](https://github.com/thiesgerken/carapace/commit/a8a445e8e2adb7e28185061ff2638a2752d54980))
+
+  matrix_token.yaml holds every user's channel token, but a password login rewrote it with only its own entry and re-auth unlinked the whole file. Persisting is now an upsert, re-auth no longer deletes the file, and the "which entries belong to this channel" rule lives on the token models, shared with the settings path that clears a user's token. The unused JSON token-file branch is gone.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01NTjJ6UVHgE8gBPSz7y7nRg
+
+- 🐛 fix(matrix): re-authenticate when the sync loop hits M_UNKNOWN_TOKEN
+  ([`394872c`](https://github.com/thiesgerken/carapace/commit/394872c9d2dde08b038b1444d4840cbb4dd8e323))
+
+  The sync loop used to stop for good on an invalidated token while the channel kept reporting "running". It now shares start()'s recovery (_reauthenticate: drop the token file, password login) and keeps syncing. Without a configured password it still stops; a failed login is retried with the existing 5s sync-error sleep.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01NTjJ6UVHgE8gBPSz7y7nRg
+
 ## v0.174.1 (2026-11-09)
 
 
