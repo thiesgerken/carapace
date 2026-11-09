@@ -404,6 +404,8 @@ test("user settings helpers decode write-only status and patch payloads", async 
             token_set: true,
             allowed_rooms: [],
             allowed_users: ["@thies:example.test"],
+            status: "failed",
+            error: "Matrix initial sync failed: None: unknown error",
           },
           credentials: {
             backends: {
@@ -439,6 +441,8 @@ test("user settings helpers decode write-only status and patch payloads", async 
   );
 
   assert.equal(settings.settings.matrix.password_set, true);
+  assert.equal(settings.settings.matrix.status, "failed");
+  assert.equal(settings.settings.matrix.error, "Matrix initial sync failed: None: unknown error");
   assert.equal(settings.settings.timezone, "Europe/Berlin");
   assert.deepEqual(settings.settings.memory, {
     auto_mode: true,

@@ -275,6 +275,8 @@ channels:
       - "@me:example.com"
 ```
 
+At server startup, a channel that fails to start (unreachable homeserver, failed login or initial sync) does not stop the server. carapace logs the error, keeps that channel stopped, and retries in the background with exponential backoff (5 seconds, doubling up to 5 minutes) until it starts. **Settings** -> **Account** -> **Matrix** shows the channel's state (running, or failed with the last error), so a broken channel can be fixed or disabled there. Saving the Matrix settings stays strict: if the channel does not start with the new settings, the save fails and the previous settings stay in place. If the previous settings do not start either (for example during a homeserver outage), they get the same background retry.
+
 > **Note**: The Matrix channel currently uses plain-text messaging (no E2EE). See [plans/channels.md](plans/channels.md) for E2EE plans.
 
 ---
