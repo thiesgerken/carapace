@@ -34,6 +34,13 @@
         "charts/carapace/values.yaml"
       ],
       "pinDigests": false
+    },
+    {
+      "description": "npm comes with the Node.js from nixpkgs, so its major moves together with nodejs_XX in nix/tools.nix, not on its own",
+      "matchManagers": ["npm"],
+      "matchDepTypes": ["engines"],
+      "matchPackageNames": ["npm"],
+      "enabled": false
     }
   ],
   "prHourlyLimit": 0,

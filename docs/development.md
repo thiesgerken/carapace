@@ -188,6 +188,8 @@ Renovate updates `flake.lock`, uv, frontend dependencies, and image digests. Fro
 
 npm blocks dependency install scripts unless `allowScripts` in `frontend/package.json` lists the package. When an update introduces a new install script, `npm install` names it; review it, then record the decision with `npm install-scripts approve --no-allow-scripts-pin <pkg>` or `npm install-scripts deny <pkg>`.
 
+`engines.npm` keeps Renovate on npm 11, the major that ships with `nodejs_24` in the dev shell and the Nix build. Renovate otherwise installs the latest npm, and npm 12 refuses to resolve this lockfile (`EALLOWREMOTE`). Raise the range together with the Node.js major in `nix/tools.nix`; a Renovate rule keeps it from moving on its own.
+
 The `overrides` entry in `frontend/package.json` lets the ESLint plugins bundled by `eslint-config-next` use the project's ESLint 10 although their peer ranges still end at 9. Without it, npm treats the conflict as unresolved and `npm ci` tries to reach the registry, which fails in the Nix sandbox. Drop it once those plugins declare ESLint 10 support.
 
 Frontend fonts are licensed variable WOFF2 inputs committed in `frontend/src/fonts/`, with notices in `frontend/public/fonts/`. Twemoji's pinned archive is fetched by Nix; `postFetch` retains only `v/17.0.2/svg` in the store. The build prepopulates the existing emoji script cache, so the script needs no network access. If its pinned Twemoji revision/version changes, update `nix/frontend.nix` and refresh `nix/twemoji-hash` with the fixed-output mismatch reported by Nix.
