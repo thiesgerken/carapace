@@ -1674,7 +1674,8 @@
             "sentinel": "Sentinel shadow conversation"
         },
         "instructions": "Instructions",
-        "dynamic": "dynamic",
+        "static": "Static",
+        "dynamic": "Dynamic",
         "tools": "Tool definitions ({count})",
         "messages": "Messages ({count})",
         "request": "Request",

@@ -1674,7 +1674,8 @@
             "sentinel": "Schattenkonversation des Sentinels"
         },
         "instructions": "Anweisungen",
-        "dynamic": "dynamisch",
+        "static": "Statisch",
+        "dynamic": "Dynamisch",
         "tools": "Tool-Definitionen ({count})",
         "messages": "Nachrichten ({count})",
         "request": "Anfrage",

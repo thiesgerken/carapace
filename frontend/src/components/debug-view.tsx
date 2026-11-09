@@ -135,7 +135,7 @@ export function LlmContextView({ context }: { context: LlmContext }) {
 
       <Collapsible title={t("instructions")} open>
         {context.instructions.map((part, index) => (
-          <Card key={index} label={part.name ?? t("instructions")} badge={part.dynamic ? t("dynamic") : undefined}>
+          <Card key={index} label={part.name ?? t(part.dynamic ? "dynamic" : "static")}>
             <Text>{part.content}</Text>
           </Card>
         ))}
