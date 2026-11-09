@@ -3500,6 +3500,16 @@ def test_ws_blank_client_id_falls_back_to_generated_source_id(client, auth_heade
     assert srv._notification_presence.is_session_actively_handled(sid) is False
 
 
+def test_ws_observer_registers_no_presence(client, auth_headers):
+    """The debug view observes a session; open approvals must still notify the user."""
+    sid = client.post("/api/sessions", headers=auth_headers, json={"channel_type": "web"}).json()["session_id"]
+
+    with client.websocket_connect(f"/api/chat/{sid}?observe=true", headers=auth_headers) as ws:
+        _consume_status(ws)
+        assert srv._notification_presence.list_presence(session_id=sid) == []
+        assert srv._notification_presence.is_session_actively_handled(sid) is False
+
+
 def test_list_commands_excludes_removed_commands(client, auth_headers):
     resp = client.get("/api/commands", headers=auth_headers)
 

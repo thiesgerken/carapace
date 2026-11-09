@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { getWebSocketTicket } from "@/lib/api";
 import type { ClientMessage, ServerMessage } from "@/lib/types";
 
 type Status = "disconnected" | "connecting" | "connected";
@@ -127,4 +128,25 @@ export function useWebSocket(
   }, []);
 
   return { status, send };
+}
+
+/** A fresh ticket for opening a session WebSocket; null while it loads or when the request fails. */
+export function useWebSocketTicket(server: string, token: string): string | null {
+  const key = `${server}\n${token}`;
+  const [issued, setIssued] = useState<{ key: string; ticket: string | null } | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    getWebSocketTicket(server, token)
+      .then((ticket) => {
+        if (!cancelled) setIssued({ key, ticket });
+      })
+      .catch(() => {
+        if (!cancelled) setIssued({ key, ticket: null });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [server, token, key]);
+  // A ticket for another server or token reads as still loading.
+  return issued?.key === key ? issued.ticket : null;
 }

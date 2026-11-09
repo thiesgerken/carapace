@@ -4,7 +4,7 @@ import { useTranslations } from "next-intl";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Archive, ArchiveRestore, Bot, Brain, Check, Copy, ExternalLink, Eye, Globe, Link2, Link2Off, Loader2, Lock, MessageSquare, Pin, Play, RotateCcw, Save, Settings2, Square, Star, Terminal, Trash2 } from "lucide-react";
+import { Archive, ArchiveRestore, Bot, Brain, Bug, Check, Copy, ExternalLink, Globe, Link2, Link2Off, Loader2, Lock, MessageSquare, Pin, Play, RotateCcw, Save, Settings2, Square, Star, Terminal, Trash2 } from "lucide-react";
 import { EmojiText } from "@/components/emoji-text";
 import { ChatMemorySection } from "@/components/chat-memory-section";
 import { useMemorySessionDetail } from "@/components/memory-extraction-detail";
@@ -15,7 +15,7 @@ import { SessionOptionTiles } from "@/components/session-option-tiles";
 import { useAppLocale } from "@/components/locale-provider";
 import { useAppShell } from "@/components/app-shell-context";
 import { useSessionPresence } from "@/hooks/use-session-presence";
-import { useWebSocket } from "@/hooks/use-websocket";
+import { useWebSocket, useWebSocketTicket } from "@/hooks/use-websocket";
 import {
   type AvailableModelInfo,
   commitSessionKnowledge,
@@ -24,7 +24,6 @@ import {
   fetchSandbox,
   fetchModels,
   forkSession,
-  getWebSocketTicket,
   type SlashCommand,
   startSandbox,
   stopSandbox,
@@ -63,7 +62,7 @@ import {
 import { Message } from "./message";
 import { ToolCallGroup, groupRenderItems } from "./tool-call-group";
 import { ChatInput } from "./chat-input";
-import { AgentHistoryView } from "./agent-history-view";
+import { debugViewHref } from "./debug-view";
 
 interface ChatViewProps {
   server: string;
@@ -1066,7 +1065,6 @@ export function ChatView({
   onInitialMessageSent,
 }: ChatViewProps) {
   const t = useTranslations("chatView");
-  const tc = useTranslations("compaction");
   const tRoot = useTranslations();
   const { locale } = useAppLocale();
   const { currentUser } = useAppShell();
@@ -1077,7 +1075,6 @@ export function ChatView({
   const [usage, setUsage] = useState<TurnUsage | null>(null);
   const [llmActivity, setLlmActivity] = useState<LlmActivity | null>(null);
   const [loadingHistory, setLoadingHistory] = useState(true);
-  const [agentViewOpen, setAgentViewOpen] = useState(false);
   const [commands, setCommands] = useState<SlashCommand[]>([]);
   const [availableModelEntries, setAvailableModelEntries] = useState<
     AvailableModelInfo[]
@@ -1725,21 +1722,7 @@ export function ChatView({
     setWaiting(false);
   }, [clearToolLoading]);
   const presenceClientId = useRef(getPresenceClientId()).current;
-  const [webSocketTicket, setWebSocketTicket] = useState<string | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    setWebSocketTicket(null);
-    getWebSocketTicket(server, token)
-      .then((ticket) => {
-        if (!cancelled) setWebSocketTicket(ticket);
-      })
-      .catch(() => {
-        if (!cancelled) setWebSocketTicket(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [server, token]);
+  const webSocketTicket = useWebSocketTicket(server, token);
   const url = webSocketTicket ? wsUrl(server, sessionId, token, presenceClientId, webSocketTicket) : null;
   const { status, send } = useWebSocket(url, onMessage, onWsDisconnect);
   useSessionPresence(server, token, sessionId, status, presenceClientId);
@@ -2379,14 +2362,14 @@ export function ChatView({
             {t("inspector.actions")}
           </div>
           <div className="flex flex-wrap items-center justify-end gap-1">
-          <button
-            onClick={() => setAgentViewOpen(true)}
-            disabled={!session}
-            title={tc("agentViewHint")}
-            className="rounded-md p-1.5 text-foreground/70 transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
+          <Link
+            href={debugViewHref(sessionId)}
+            title={t("actions.debugView")}
+            aria-label={t("actions.debugView")}
+            className="rounded-md p-1.5 text-foreground/70 transition-colors hover:bg-accent"
           >
-            <Eye className="h-3.5 w-3.5" />
-          </button>
+            <Bug className="h-3.5 w-3.5" />
+          </Link>
           <button
             onClick={() => void handleTogglePinned()}
             disabled={!session || !!updatingSessionAttribute || deletingSession || !onUpdateSessionAttributes}
@@ -2965,15 +2948,6 @@ export function ChatView({
           <div className="h-full overflow-y-auto p-3">{inspectorContent}</div>
         </aside>
       </div>
-
-      {agentViewOpen ? (
-        <AgentHistoryView
-          server={server}
-          token={token}
-          sessionId={sessionId}
-          onClose={() => setAgentViewOpen(false)}
-        />
-      ) : null}
 
       {mobileInspectorOpen ? (
         <div className="fixed inset-0 z-40 lg:hidden">

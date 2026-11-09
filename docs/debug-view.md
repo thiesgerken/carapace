@@ -4,6 +4,27 @@ The debug view shows, per session and live, the latest **LLM context** of every 
 what went to the model in its last request, and what came back. Terms follow
 [GLOSSARY.md](../GLOSSARY.md).
 
+## Using it
+
+The bug icon in the session inspector opens `/?session=<ID>&view=debug`. One tab per role shows its
+latest request:
+
+- On top: status, total input tokens, model, start time, and for compaction what was compacted.
+  Failed and interrupted requests show their error here.
+- **Instructions** and the collapsed **tool definitions** with their JSON schemas.
+- **Messages**, one card per message and per part: system, user, text, thinking, tool call (arguments
+  as JSON), tool return, retry prompt. Any other part (provider-specific ones included) renders as
+  its JSON.
+- The **response**, or a spinner while the request is running.
+
+Every message has a raw JSON toggle that shows it as stored, field for field.
+
+The view opens its own session WebSocket with `observe=true`: it shows no approvals, so it must not
+count as presence that suppresses approval notifications. It refetches the open tab whenever its
+role sends a notification and after every (re)connect, so it follows a running turn request by
+request. A spinner on a tab marks a role
+whose request is running.
+
 ## What is captured
 
 `LlmRequestLogCapability` (`src/carapace/usage.py`) is attached to every role's pydantic-ai agent. At

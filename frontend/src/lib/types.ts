@@ -272,26 +272,6 @@ export interface CompactionAnnotation {
   model_text?: string;
 }
 
-export interface AgentHistoryRow {
-  role:
-    | "user"
-    | "assistant"
-    | "thinking"
-    | "tool_call"
-    | "tool_result"
-    | "compaction_summary";
-  content: string;
-  tool?: string;
-  args?: Record<string, unknown>;
-  tool_id?: string;
-  compaction?: CompactionAnnotation;
-}
-
-export interface AgentHistoryResponse {
-  rows: AgentHistoryRow[];
-  node_count: number;
-}
-
 export interface CompactionReport {
   mode: "all" | "fold" | "tools";
   before_tokens: number;
@@ -332,6 +312,13 @@ export interface LlmActivity {
 export interface LlmActivityUpdate {
   type: "llm_activity";
   activity?: LlmActivity | null;
+}
+
+export interface LlmContextUpdate {
+  type: "llm_context";
+  role: DebugRole;
+  request_id: string;
+  status: LlmContextStatus;
 }
 
 export interface ToolCallInfo {
@@ -501,6 +488,7 @@ export type ServerMessage =
   | Cancelled
   | SessionTitleUpdate
   | LlmActivityUpdate
+  | LlmContextUpdate
   | StatusUpdate
   | UserMessageNotification;
 
@@ -1081,6 +1069,59 @@ export interface MemoryFactView {
 
 export interface MemoryFactListResponse {
   items: MemoryFactView[];
+}
+
+/** The agent roles with a per-session LLM context (memory is not bound to a session). */
+export const DEBUG_ROLES = ["agent", "sentinel", "titler", "compaction"] as const;
+export type DebugRole = (typeof DEBUG_ROLES)[number];
+export type LlmContextStatus = "running" | "completed" | "failed" | "interrupted";
+
+/**
+ * pydantic-ai's own serialization of messages and parts. Only the fields the cards read are typed;
+ * the raw toggle shows everything else, provider-specific fields included.
+ */
+export interface LlmPart {
+  part_kind: string;
+  content?: unknown;
+  tool_name?: string;
+  args?: unknown;
+  tool_call_id?: string;
+  [key: string]: unknown;
+}
+
+export interface LlmMessage {
+  kind: "request" | "response";
+  parts: LlmPart[];
+  usage?: { input_tokens: number; output_tokens: number };
+  [key: string]: unknown;
+}
+
+export interface LlmInstructionPart {
+  content: string;
+  dynamic: boolean;
+  name: string | null;
+}
+
+export interface LlmToolDefinition {
+  name: string;
+  description?: string | null;
+  parameters_json_schema: Record<string, unknown>;
+  [key: string]: unknown;
+}
+
+export interface LlmContext {
+  request_id: string;
+  role: DebugRole;
+  compaction_target: "agent" | "sentinel" | null;
+  model_name: string | null;
+  status: LlmContextStatus;
+  started_at: string;
+  completed_at: string | null;
+  instructions: LlmInstructionPart[];
+  messages: LlmMessage[];
+  tool_definitions: LlmToolDefinition[];
+  response: LlmMessage | null;
+  error: string | null;
 }
 
 export const PROMPT_ROLES = ["agent", "sentinel", "titler", "compaction", "session_extract", "week_digest", "month_digest"] as const;
