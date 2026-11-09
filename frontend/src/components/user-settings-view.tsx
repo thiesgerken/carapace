@@ -309,8 +309,20 @@ function memoryDraftFromSettings(memory: MemorySettingsInfo): MemoryDraft {
   };
 }
 
-function draftFromSettings(response: UserSettingsResponseInfo): UserSettingsDraft {
+/**
+ * The default budget the form starts from. A user budget with any limit replaces the platform one
+ * wholesale, so a new one starts from the platform's autonomy limit: setting, say, only a cost
+ * limit must not silently turn loop protection off.
+ */
+function defaultBudgetBaseline(response: UserSettingsResponseInfo): SessionBudgetSettings {
   const budget = response.settings.default_budget;
+  const hasOwnLimit = Object.values(budget).some((limit) => limit !== null && limit !== undefined);
+  if (hasOwnLimit) return budget;
+  return { ...budget, autonomous_tool_calls: response.server_defaults.budget.autonomous_tool_calls ?? null };
+}
+
+export function draftFromSettings(response: UserSettingsResponseInfo): UserSettingsDraft {
+  const budget = defaultBudgetBaseline(response);
   return {
     agentName: response.settings.agent_name,
     agentIcon: response.settings.agent_icon,
@@ -438,7 +450,7 @@ function comparableSettings(settings: UserSettingsResponseInfo): unknown {
     agent_name: settings.settings.agent_name.trim(),
     agent_icon: settings.settings.agent_icon.trim(),
     default_models: comparableDefaultModels(settings.settings.default_models),
-    default_budget: comparableBudget(settings.settings.default_budget),
+    default_budget: comparableBudget(defaultBudgetBaseline(settings)),
     timezone: settings.settings.timezone,
     memory: comparableMemory(memoryDraftFromSettings(settings.settings.memory)),
     matrix: {
@@ -456,6 +468,10 @@ function comparableSettings(settings: UserSettingsResponseInfo): unknown {
 function userSettingsChanged(draft: UserSettingsDraft | null, settings: UserSettingsResponseInfo | null): boolean {
   if (!draft || !settings) return false;
   return JSON.stringify(comparableDraft(draft)) !== JSON.stringify(comparableSettings(settings));
+}
+
+function budgetChanged(draft: UserSettingsDraft, settings: UserSettingsResponseInfo): boolean {
+  return JSON.stringify(comparableBudget(draft.budget)) !== JSON.stringify(comparableBudget(defaultBudgetBaseline(settings)));
 }
 
 function credentialsChanged(draft: UserSettingsDraft, settings: UserSettingsResponseInfo): boolean {
@@ -516,7 +532,6 @@ export function buildUserSettingsPatch(
       memory_low: draft.defaultModels.memory_low?.trim() || null,
       memory_high: draft.defaultModels.memory_high?.trim() || null,
     },
-    default_budget: budgetFromDraft(draft, t),
     timezone: draft.timezone.trim(),
     memory: memoryFromDraft(draft.memory, t),
     matrix: {
@@ -535,6 +550,10 @@ export function buildUserSettingsPatch(
       ...(draft.gitToken ? { token: draft.gitToken } : {}),
     },
   };
+  // Saving the untouched form must not turn the prefilled baseline into a stored user budget.
+  if (budgetChanged(draft, settings)) {
+    body.default_budget = budgetFromDraft(draft, t);
+  }
   if (includeCredentials) {
     body.credentials = credentialsPayload;
   }
