@@ -45,8 +45,8 @@ class NotificationPayload:
     title: str
     body: str
     session_id: str
-    # First event the client should show: the start of the turn, so the reader begins at the
-    # oldest unseen agent message instead of the bottom of a long answer.
+    # Deep-link target for the click: the turn's first event (its user or trigger message), so the
+    # reader starts above the agent's answer instead of below a long one.
     event_index: int | None = None
     tag: str | None = None
     badge: str = "/badge-icon.png"
