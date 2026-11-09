@@ -1,6 +1,45 @@
 # CHANGELOG
 
 
+## v0.174.1 (2026-11-09)
+
+
+### 🐛 Bug Fixes
+
+
+- 🐛Merge pull request #447 from thiesgerken/fix/channel-startup-resilience
+  ([`c45e3e2`](https://github.com/thiesgerken/carapace/commit/c45e3e254522337ee2ffec0751e8624fc2de3ad5))
+
+- 🐛 fix: keep the server up when a Matrix channel or knowledge pull fails at startup
+  ([`c45e3e2`](https://github.com/thiesgerken/carapace/commit/c45e3e254522337ee2ffec0751e8624fc2de3ad5))
+
+- 🐛 fix: re-arm the Matrix retry on settings rollback and harden the startup guard
+  ([`f3e9276`](https://github.com/thiesgerken/carapace/commit/f3e9276ac7e8a9c7b254cf7ca80eeb15c451de26))
+
+  - Settings rollback goes through MatrixChannelManager.reload_user_with_retry
+    (renamed from start_user_with_retry, now also used at startup), so a
+    failed save during an outage no longer leaves the channel dead.
+  - The factory call and the cleanup stop() can no longer escape the
+    never-raise contract.
+  - Retry failures log one warning line; only the first attempt logs a trace.
+  - A failed knowledge pull at startup skips seeding, so a fresh repo does
+    not fork from the remote history.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01NTjJ6UVHgE8gBPSz7y7nRg
+
+- 🐛 fix: keep the server up when a Matrix channel or knowledge pull fails at startup
+  ([`716191e`](https://github.com/thiesgerken/carapace/commit/716191ebb58a43c98293364453b27b7c315678a4))
+
+  A failed Matrix login/initial sync or a failed knowledge Git pull no longer crashes the lifespan. Matrix startup failures are recorded, shown in the account settings, and retried in the background with capped backoff (5s doubling to 5 min). Saving Matrix settings stays strict.
+
+  Closes #422
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01NTjJ6UVHgE8gBPSz7y7nRg
+
 ## v0.174.0 (2026-11-09)
 
 
