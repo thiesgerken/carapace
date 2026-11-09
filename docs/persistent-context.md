@@ -75,7 +75,7 @@ The preview builds each role's real agent with the function its real calls use (
 
 ### Prefix caching
 
-Prefix caching is a hard requirement. An agent session re-sends the shared prefix, its instructions and the whole conversation on every model request, often dozens per turn. A hit bills that at 0.1x the input price, a miss re-bills all of it as a cache write at 1.25x and adds latency. So a change that breaks the prefix is a regression, even when the output stays the same.
+Prefix caching is a hard requirement. An agent session re-sends the shared prefix, its instructions and the whole conversation on every model request, often dozens per turn. On Anthropic a hit bills that at 0.1x the input price, a miss re-bills all of it as a cache write at 1.25x and adds latency. So a change that breaks the prefix is a regression, even when the output stays the same.
 
 The order is built so that a prefix cache can hit: stable first, volatile last. Nothing per session or per call (the current date, the session ID, a role split) may come before the long shared text, and the tool definitions and instructions of a session should not change between requests.
 
@@ -90,6 +90,10 @@ Each role's own prefix is what gets reused between its calls. Two roles share a 
 
 #### Known breaks
 
+Each of these changes the agent's tools or instructions mid-session, so the next request misses on everything behind the change, the whole conversation included.
+
+- **Mode changes**: the unattended and read-only (ask) blocks follow the session attributes. Toggling a mode re-writes the system prompt from the memory block on. Acceptable because it is rare and user-driven.
+- **Date rollover**: the date sits in the dynamic instruction, behind the instructions breakpoint but still ahead of the messages. The first request after midnight re-writes the conversation. Acceptable because it happens at most once a day.
 - **Skill MCP tools**: an active skill's MCP servers become regular tool definitions (see [skills.md](skills.md#fields)). Anthropic sends tool definitions ahead of the system prompt, so the first request after a `use_skill` that adds MCP tools misses on the system prompt and the entire conversation, mid-turn, and writes it all anew. Afterwards the tool set is stable again (skills never deactivate) until the next such activation. We don't like this: the cost grows with the session length, so a skill activated late in a long session is the expensive case. A skill that wraps its server as a `commands` alias via `mcp2cli` keeps the tool definitions unchanged, at the price of typed tools. A fix that keeps typed tools without changing the definitions is still open.
 
-Usage and cost count cache writes and reads at their own rates (an Anthropic write costs 1.25x the input price, a read 0.1x). Memory estimates price the system prompt as a cache write, so they stay an upper bound.
+Usage and cost count cache writes and reads at their own rates. Memory estimates price the system prompt as a cache write, so they stay an upper bound.
