@@ -648,7 +648,9 @@
             "modelDefault": "Standard (Titelmodell)",
             "keepTurns": "Letzte Runden behalten",
             "verbatimTurns": "Tool-Runden wörtlich behalten",
-            "toolFloor": "Tool-Ausgabe-Schwelle (Tokens)"
+            "toolFloor": "Tool-Ausgabe-Schwelle (Tokens)",
+            "sentinelThreshold": "Sentinel-Schwelle (% des Kontexts)",
+            "sentinelThresholdHint": "Vor einer Bewertung wird die Konversation des Sentinels automatisch kompaktiert, sobald sie diesen Anteil des Kontextfensters des Sentinel-Modells füllt (1 bis 100)."
         }
     },
     "home": {

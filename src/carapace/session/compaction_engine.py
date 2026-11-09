@@ -11,10 +11,12 @@ import asyncio
 import uuid
 from contextlib import AbstractContextManager
 from datetime import UTC, datetime
+from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
 from loguru import logger
+from pydantic_ai.messages import ModelMessage
 from pydantic_ai.settings import ModelSettings
 from pydantic_ai.usage import UsageLimits
 
@@ -31,9 +33,15 @@ from .compaction import (
     find_tool_return_candidates,
     fold_render_text,
     plan_fold,
-    split_lead_folds,
+    sentinel_fold_render_text,
+    tool_return_compaction_region,
 )
-from .compaction_summarizer import summarize_fold, summarize_tool_output
+from .compaction_summarizer import (
+    summarize_fold,
+    summarize_sentinel_fold,
+    summarize_sentinel_tool_output,
+    summarize_tool_output,
+)
 from .manager import SessionManager
 from .transcript import completed_event_turns, completed_model_turn_end_indexes, rebuild_model_history_from_events
 from .types import ActiveSession
@@ -45,6 +53,7 @@ CompactionMode = Literal["all", "fold", "tools"]
 
 
 class SessionCompactionMixin:
+    _active: dict[str, ActiveSession]
     _config: Config
     _session_mgr: SessionManager
     _model_factory: Any
@@ -59,6 +68,8 @@ class SessionCompactionMixin:
         def _resolve_model_settings(self, name: str) -> ModelSettings | None: ...
         def _remaining_aux_usage_limits(self, active: ActiveSession) -> UsageLimits | None: ...
         def agent_model_id_for_gauge(self, active: ActiveSession) -> str: ...
+        def sentinel_model_id(self, active: ActiveSession) -> str: ...
+        def sentinel_context_cap(self, active: ActiveSession) -> int: ...
         def llm_request_recording(
             self, active: ActiveSession, *, track_activity: bool = True
         ) -> AbstractContextManager[Any, bool | None]: ...
@@ -201,21 +212,10 @@ class SessionCompactionMixin:
         report: CompactionReport,
         verbatim_tool_turns: int | None = None,
     ) -> list[Any]:
-        # Only compact tool returns in the kept region, never inside a fold block, and never inside
-        # the verbatim hot zone (the newest `verbatim_tool_turns` completed turns). The hot-zone size
-        # comes from the config unless the caller overrides it (e.g. `/compact tools N`).
+        # The hot-zone size comes from the config unless the caller overrides it (e.g. `/compact tools N`).
         cfg = self._config.agent.compaction
         verbatim = cfg.verbatim_tool_turns if verbatim_tool_turns is None else max(0, verbatim_tool_turns)
-        _lead, rest = split_lead_folds(history)
-        rest_offset = len(history) - len(rest)
-        turn_ends = completed_model_turn_end_indexes(rest)
-        if verbatim <= 0:
-            cut = len(rest)
-        elif len(turn_ends) <= verbatim:
-            return history  # the entire kept region is within the verbatim hot zone
-        else:
-            cut = turn_ends[len(turn_ends) - verbatim - 1] + 1
-        eligible_indexes = set(range(rest_offset, rest_offset + cut))
+        eligible_indexes = tool_return_compaction_region(history, verbatim_turns=verbatim)
         candidates = find_tool_return_candidates(
             history, floor_tokens=cfg.tool_output_floor_tokens, model_name=model_name, within_indexes=eligible_indexes
         )
@@ -245,28 +245,97 @@ class SessionCompactionMixin:
         return apply_tool_return_compaction(history, applied)
 
     async def _summarize(self, active: ActiveSession, call: Any) -> str:
-        """Run one summarization under the shared LLM semaphore + request log + budget guard."""
+        """Agent compaction summary; a failed one returns '' and the caller skips that step."""
+        session_id = active.state.session_id
         try:
-            async with self._llm_semaphore:
-                with self.llm_request_recording(active, track_activity=False):
-                    self._assert_llm_budget_available(active)
-                    model = self._compaction_model(active)
-                    session_id = active.state.session_id
-                    return await call(
-                        prompt_prefix=shared_prompt_prefix(
-                            self._knowledge_dir_for_session(session_id), self._skill_catalog_for_session(session_id)
-                        ),
-                        model=model,
-                        usage_tracker=active.usage_tracker,
-                        before_llm_call=lambda: self._assert_llm_budget_available(active),
-                        model_factory=self._model_factory,
-                        user=active.owner,
-                        model_settings=with_prompt_cache(self._resolve_model_settings(model), conversation=False),
-                        usage_limits=self._remaining_aux_usage_limits(active),
-                    )
+            prompt_prefix = shared_prompt_prefix(
+                self._knowledge_dir_for_session(session_id), self._skill_catalog_for_session(session_id)
+            )
+            return await self._run_summary_call(active, call, prompt_prefix=prompt_prefix)
         except Exception as exc:
             logger.warning(f"Compaction summary failed: {exc}")
             return ""
+
+    async def _run_summary_call(self, active: ActiveSession, call: Any, *, prompt_prefix: str) -> str:
+        """Run one summarization under the shared LLM semaphore + request log + budget guard."""
+        async with self._llm_semaphore:
+            with self.llm_request_recording(active, track_activity=False):
+                self._assert_llm_budget_available(active)
+                model = self._compaction_model(active)
+                return await call(
+                    prompt_prefix=prompt_prefix,
+                    model=model,
+                    usage_tracker=active.usage_tracker,
+                    before_llm_call=lambda: self._assert_llm_budget_available(active),
+                    model_factory=self._model_factory,
+                    user=active.owner,
+                    model_settings=with_prompt_cache(self._resolve_model_settings(model), conversation=False),
+                    usage_limits=self._remaining_aux_usage_limits(active),
+                )
+
+    async def compact_sentinel_conversation(
+        self, session_id: str, messages: list[ModelMessage], system_prompt: str
+    ) -> list[ModelMessage] | None:
+        """The compacted shadow conversation, or None while it stays below the threshold.
+
+        Same ladder and settings as the agent's `/compact`, with one sentinel evaluation as one turn.
+        Summaries lead with the sentinel's *system_prompt* (incl. SECURITY.md) so they keep what
+        matters for later verdicts. Every failure raises: the sentinel never evaluates uncompacted.
+        """
+        active = self._active[session_id]
+        cfg = self._config.agent.compaction
+        model_name = self.sentinel_model_id(active)
+        before = count_message_tokens(messages, model_name=model_name)
+        cap = self.sentinel_context_cap(active)
+        if before * 100 < cap * cfg.sentinel_threshold_pct:
+            return None
+
+        compacted, thinking_dropped = apply_thinking_drop(messages)
+        plan = plan_fold(compacted, keep_turns=cfg.keep_turns, model_name=model_name)
+        if plan is not None:
+            summary = await self._run_summary_call(
+                active,
+                partial(summarize_sentinel_fold, sentinel_fold_render_text(plan.foldable)),
+                prompt_prefix=system_prompt,
+            )
+            compacted = apply_fold(plan, summary)
+
+        candidates = find_tool_return_candidates(
+            compacted,
+            floor_tokens=cfg.tool_output_floor_tokens,
+            model_name=model_name,
+            within_indexes=tool_return_compaction_region(compacted, verbatim_turns=cfg.verbatim_tool_turns),
+        )
+        summaries = await asyncio.gather(
+            *[
+                self._run_summary_call(
+                    active,
+                    partial(summarize_sentinel_tool_output, c.tool_name, _text(c.content)),
+                    prompt_prefix=system_prompt,
+                )
+                for c in candidates
+            ]
+        )
+        compacted = apply_tool_return_compaction(
+            compacted,
+            {
+                c.tool_call_id: AppliedToolReturn(
+                    new_content=summary,
+                    method="summarize",
+                    orig_tokens=c.tokens,
+                    summary_tokens=count_text_tokens(summary, model_name=model_name),
+                )
+                for c, summary in zip(candidates, summaries, strict=True)
+                if c.tool_call_id is not None
+            },
+        )
+
+        after = count_message_tokens(compacted, model_name=model_name)
+        logger.info(
+            f"Sentinel compaction session={session_id} tokens={before}->{after} cap={cap} "
+            + f"folded={plan is not None} tool_returns={len(candidates)} thinking_dropped={thinking_dropped}"
+        )
+        return compacted
 
 
 def _text(content: Any) -> str:

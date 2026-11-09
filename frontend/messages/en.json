@@ -648,7 +648,9 @@
             "modelDefault": "Default (title model)",
             "keepTurns": "Keep recent turns",
             "verbatimTurns": "Verbatim tool turns",
-            "toolFloor": "Tool-output floor (tokens)"
+            "toolFloor": "Tool-output floor (tokens)",
+            "sentinelThreshold": "Sentinel threshold (% of context)",
+            "sentinelThresholdHint": "Before an evaluation, the sentinel's conversation is compacted automatically once it fills this share of the sentinel model's context window (1 to 100)."
         }
     },
     "home": {

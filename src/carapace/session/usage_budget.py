@@ -127,11 +127,7 @@ class SessionUsageBudgetMixin:
         row = usage_last_request_row(rec)
         if row is None:
             return None
-        mid = (
-            active.agent_model_name or self._config.agent.model
-            if source == "agent"
-            else active.sentinel_model_name or self._config.agent.sentinel_model
-        )
+        mid = self.agent_model_id_for_gauge(active) if source == "agent" else self.sentinel_model_id(active)
         cap = self._max_input_tokens_for_model_id(mid)
         if cap is None:
             cap = _DEFAULT_CONTEXT_CAP_TOKENS
@@ -153,6 +149,12 @@ class SessionUsageBudgetMixin:
     def agent_context_cap_for_gauge(self, active: ActiveSession) -> int:
         model_id = self.agent_model_id_for_gauge(active)
         return self._max_input_tokens_for_model_id(model_id) or _DEFAULT_CONTEXT_CAP_TOKENS
+
+    def sentinel_model_id(self, active: ActiveSession) -> str:
+        return active.sentinel_model_name or self._config.agent.sentinel_model
+
+    def sentinel_context_cap(self, active: ActiveSession) -> int:
+        return self._max_input_tokens_for_model_id(self.sentinel_model_id(active)) or _DEFAULT_CONTEXT_CAP_TOKENS
 
     def _budget_gauges(self, active: ActiveSession) -> list[BudgetGauge]:
         """Gauges of the session totals, the budgets whose stop message lists the reached ones."""

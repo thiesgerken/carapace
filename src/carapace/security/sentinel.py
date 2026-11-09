@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from datetime import timedelta
 from os import stat_result
 from pathlib import Path
 from typing import Any
 
 from loguru import logger
-from pydantic_ai import Agent, RunContext, ToolOutput
+from pydantic_ai import Agent, ModelMessage, RunContext, ToolOutput
 from pydantic_ai.models import infer_model
 from pydantic_ai.settings import ModelSettings
 from pydantic_ai.usage import UsageLimits
@@ -17,6 +17,7 @@ from ..git.diff import touched_paths
 from ..llm import ModelFactory, SlotLimitedModel
 from ..usage import LlmRequestLogCapability, UsageTracker, provider_cost_usd_from_messages
 from .context import (
+    SENTINEL_VERDICT_TOOL,
     ActionLogEntry,
     AgentResponseEntry,
     ApprovalEntry,
@@ -94,6 +95,9 @@ def load_security_md(knowledge_dir: Path) -> str:
 
 
 type _SentinelOutput = SentinelVerdict | UnattendedSentinelVerdict
+
+# (shadow conversation, sentinel system prompt) -> the compacted conversation, or None if it fits.
+type SentinelCompactor = Callable[[list[ModelMessage], str], Awaitable[list[ModelMessage] | None]]
 
 
 def _format_entry(entry: ActionLogEntry) -> str:
@@ -203,6 +207,7 @@ class Sentinel:
         timeout: timedelta = timedelta(seconds=600),
         model_factory: ModelFactory | None = None,
         model_settings_resolver: Callable[[str], ModelSettings | None] | None = None,
+        compactor: SentinelCompactor | None = None,
     ) -> None:
         self._model = model
         # The session owner, whom the sentinel's model requests are made for.
@@ -216,6 +221,8 @@ class Sentinel:
         self._timeout = timeout
         self._model_factory = model_factory
         self._model_settings_resolver = model_settings_resolver
+        # None only where the sentinel never evaluates a growing conversation (prompt previews, tests).
+        self._compactor = compactor
         self._agent = self._create_agent()
         self._skill_file_cache: dict[tuple[str, str], tuple[int, int, str]] = {}
         self._eval_skill_reads: int = 0
@@ -268,6 +275,9 @@ class Sentinel:
             self._agent = self._create_agent()
 
     def _load_system_prompt(self, _ctx: RunContext[Path]) -> str:
+        return self._system_prompt()
+
+    def _system_prompt(self) -> str:
         return _build_system_prompt(
             load_security_md(self._knowledge_dir),
             unattended=self._unattended,
@@ -428,6 +438,10 @@ class Sentinel:
             if assert_llm_budget_available is not None:
                 assert_llm_budget_available()
             async with asyncio.timeout(self._timeout.total_seconds()):
+                if await self._compact_shadow_conversation(session):
+                    # The compacted conversation is persisted; a failing evaluation must not bring
+                    # back cache entries for skill files it no longer contains.
+                    skill_file_cache = {}
                 result = await self._agent.run(
                     prompt,
                     deps=self._skills_dir,
@@ -476,6 +490,17 @@ class Sentinel:
             + self._format_eval_stats(stats)
         )
         return output
+
+    async def _compact_shadow_conversation(self, session: SessionSecurity) -> bool:
+        if self._compactor is None:
+            return False
+        compacted = await self._compactor(session.sentinel_messages, self._system_prompt())
+        if compacted is None:
+            return False
+        session.replace_sentinel_messages(compacted)
+        # Folded or shortened skill files are no longer "already provided" in the conversation.
+        self._skill_file_cache.clear()
+        return True
 
     def _register_agent_tools(self, agent: Agent[Path, Any]) -> None:
         @agent.tool
@@ -545,7 +570,7 @@ class Sentinel:
         agent: Agent[Path, _SentinelOutput] = Agent(
             resolved,
             deps_type=Path,
-            output_type=ToolOutput(output_model, name="judge"),
+            output_type=ToolOutput(output_model, name=SENTINEL_VERDICT_TOOL),
             instructions=self._load_system_prompt,
             capabilities=[LlmRequestLogCapability(source="sentinel")],
             model_settings=model_settings,

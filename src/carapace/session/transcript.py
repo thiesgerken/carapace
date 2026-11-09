@@ -16,6 +16,7 @@ from pydantic_ai.messages import (
     UserPromptPart,
 )
 
+from ..security.context import SENTINEL_VERDICT_TOOL
 from ..ws_models import Attachment
 from .attachments import augment_prompt
 
@@ -121,8 +122,11 @@ def is_terminal_history_message(message: ModelMessage) -> bool:
         return True
     if not isinstance(message, ModelRequest):
         return False
+    # Output tool returns end a turn: the unattended agent's task_done/task_failed and, in the
+    # sentinel's shadow conversation, the verdict that ends an evaluation.
     return any(
-        isinstance(part, ToolReturnPart) and part.tool_name in {"task_done", "task_failed"} for part in message.parts
+        isinstance(part, ToolReturnPart) and part.tool_name in {"task_done", "task_failed", SENTINEL_VERDICT_TOOL}
+        for part in message.parts
     )
 
 

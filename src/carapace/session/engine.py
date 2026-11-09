@@ -276,6 +276,9 @@ class SessionEngine(
             timeout=timedelta(seconds=self._config.agent.sentinel_timeout_seconds),
             model_factory=self._model_factory,
             model_settings_resolver=self._resolve_model_settings,
+            compactor=lambda messages, system_prompt: self.compact_sentinel_conversation(
+                session_id, messages, system_prompt
+            ),
         )
         usage_tracker = self._session_mgr.load_usage(session_id)
         llm_log = self._session_mgr.load_llm_request_log(session_id)

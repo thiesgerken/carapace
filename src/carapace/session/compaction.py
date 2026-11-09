@@ -35,6 +35,7 @@ from pydantic_ai.messages import (
 )
 
 from ..models.compaction import FOLD_MARKER, CompactionMethod
+from ..security.context import SENTINEL_VERDICT_TOOL
 from ..usage import count_message_tokens, count_text_tokens
 from .transcript import completed_model_turn_end_indexes
 
@@ -142,6 +143,24 @@ def find_tool_return_candidates(
             )
     candidates.sort(key=lambda c: c.tokens, reverse=True)
     return candidates
+
+
+def tool_return_compaction_region(messages: list[ModelMessage], *, verbatim_turns: int) -> set[int]:
+    """Message indexes whose tool returns may be compacted.
+
+    Only the kept region (never inside a fold block) and never the verbatim hot zone: the newest
+    *verbatim_turns* completed turns, so the latest work keeps exact fidelity. 0 disables the hot zone.
+    """
+    _lead, rest = split_lead_folds(messages)
+    offset = len(messages) - len(rest)
+    turn_ends = completed_model_turn_end_indexes(rest)
+    if verbatim_turns <= 0:
+        cut = len(rest)
+    elif len(turn_ends) <= verbatim_turns:
+        return set()
+    else:
+        cut = turn_ends[len(turn_ends) - verbatim_turns - 1] + 1
+    return set(range(offset, offset + cut))
 
 
 def apply_tool_return_compaction(
@@ -302,6 +321,30 @@ def fold_render_text(messages: list[ModelMessage]) -> str:
                     lines.append(f"Assistant: {part.content}")
                 elif isinstance(part, ToolCallPart | NativeToolCallPart):
                     lines.append(f"Assistant called {getattr(part, 'tool_name', '?')}")
+    return "\n".join(lines)
+
+
+def sentinel_fold_render_text(messages: list[ModelMessage]) -> str:
+    """Flatten folded sentinel evaluations for the summarizer.
+
+    Unlike ``fold_render_text`` it keeps tool-call arguments: the verdict lives in them.
+    """
+    lines: list[str] = []
+    for msg in messages:
+        for part in msg.parts:
+            match part:
+                case UserPromptPart(content=str() as content):
+                    lines.append(f"Evaluation request: {content}")
+                case ToolReturnPart(tool_name=tool_name) if tool_name != SENTINEL_VERDICT_TOOL:
+                    lines.append(f"Tool[{tool_name}] result: {_tool_content_text(part.content)}")
+                case TextPart(content=content):
+                    lines.append(f"Sentinel: {content}")
+                case ToolCallPart(tool_name=tool_name) if tool_name == SENTINEL_VERDICT_TOOL:
+                    lines.append(f"Sentinel verdict: {part.args_as_json_str()}")
+                case ToolCallPart(tool_name=tool_name):
+                    lines.append(f"Sentinel called {tool_name}({part.args_as_json_str()})")
+                case _:
+                    pass
     return "\n".join(lines)
 
 
