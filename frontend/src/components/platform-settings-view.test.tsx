@@ -27,6 +27,7 @@ function draftWithModel(model: PlatformDraft["models"][number]): PlatformDraft {
       input_tokens: "",
       output_tokens: "",
       cost_usd: "",
+      equivalent_cost_usd: "",
       tool_calls: "",
       autonomous_tool_calls: "",
     },

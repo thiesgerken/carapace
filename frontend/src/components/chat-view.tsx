@@ -2333,6 +2333,9 @@ export function ChatView({
   const latestJobData = formatSessionJobData(latestJobRun?.data);
   const fallbackSourceJobId = latestJobRun ? null : sourceJobId;
   const totalCostUsd = session?.total_cost_usd ?? 0;
+  const totalEquivalentCostUsd = session?.total_equivalent_cost_usd ?? 0;
+  // The equivalent total follows its gauge: shown with a limit or when the session used a subscription.
+  const showEquivalentCost = usage?.budget_gauges?.some((gauge) => gauge.key === "equivalent_cost") ?? false;
   const jobLinkClass = "-mx-1 inline-flex items-center gap-1 rounded px-1 font-mono text-xs leading-5 text-foreground transition-colors hover:bg-muted";
   useEffect(() => {
     previousSessionIdRef.current = sessionId;
@@ -2488,6 +2491,15 @@ export function ChatView({
             <>
               <dt className="text-muted-foreground">{t("session.totalCost")}</dt>
               <dd className="text-foreground">{formatUsd(totalCostUsd, locale)}</dd>
+            </>
+          ) : null}
+
+          {showEquivalentCost && totalEquivalentCostUsd > 0 ? (
+            <>
+              <dt className="text-muted-foreground" title={t("budget.equivalentCostHint")}>
+                {t("session.totalEquivalentCost")}
+              </dt>
+              <dd className="text-foreground">≈ {formatUsd(totalEquivalentCostUsd, locale)}</dd>
             </>
           ) : null}
 

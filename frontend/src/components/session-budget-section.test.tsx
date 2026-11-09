@@ -54,6 +54,7 @@ test("shows every limit, unset ones as no limit, before any usage exists", async
       "Input tokens: 100,000",
       "Output tokens: No limit",
       "Cost (USD): $2.50",
+      "Equivalent cost (USD): No limit",
       "Tool calls: No limit",
       "Autonomy limit: 100",
     ]);

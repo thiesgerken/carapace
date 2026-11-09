@@ -78,6 +78,7 @@ test("buildUserSettingsPatch omits unchanged credentials when file backends are 
       input_tokens: "",
       output_tokens: "",
       cost_usd: "",
+      equivalent_cost_usd: "",
       tool_calls: "4",
       autonomous_tool_calls: "",
     },
@@ -125,7 +126,7 @@ test("buildUserSettingsPatch keeps default models the view does not edit", () =>
     agentName: "",
     agentIcon: "",
     defaultModels: settings.settings.default_models,
-    budget: { input_tokens: "", output_tokens: "", cost_usd: "", tool_calls: "3", autonomous_tool_calls: "" },
+    budget: { input_tokens: "", output_tokens: "", cost_usd: "", equivalent_cost_usd: "", tool_calls: "3", autonomous_tool_calls: "" },
     timezone: settings.settings.timezone,
     memory: {
       autoMode: false,
@@ -151,7 +152,7 @@ test("buildUserSettingsPatch sends memory settings, keeping a zero limit and cle
     agentName: "",
     agentIcon: "",
     defaultModels: { ...settings.settings.default_models, memory_high: " anthropic:default " },
-    budget: { input_tokens: "", output_tokens: "", cost_usd: "", tool_calls: "3", autonomous_tool_calls: "" },
+    budget: { input_tokens: "", output_tokens: "", cost_usd: "", equivalent_cost_usd: "", tool_calls: "3", autonomous_tool_calls: "" },
     timezone: " America/New_York ",
     memory: {
       autoMode: true,
@@ -193,6 +194,7 @@ test("a new user default budget starts from the platform's autonomy limit", () =
     input_tokens: null,
     output_tokens: null,
     cost_usd: "2.50",
+    equivalent_cost_usd: null,
     tool_calls: null,
     autonomous_tool_calls: 100,
   });
