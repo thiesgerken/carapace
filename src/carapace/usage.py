@@ -526,6 +526,8 @@ class LlmRequestRecord(BaseModel):
     input_audio_tokens: int | None = None
     output_audio_tokens: int | None = None
     cache_audio_read_tokens: int | None = None
+    # None on interrupted requests and on records written before costs were kept.
+    cost: RequestCost | None = None
     started_at: datetime | None = None
     first_thinking_at: datetime | None = None
     last_thinking_at: datetime | None = None
@@ -918,6 +920,7 @@ class LlmRequestLogCapability(AbstractCapability[AgentDepsT]):
                 model_name=self.model_id,
                 started_at=completed_at,
             )
+        cost = request_cost(self.model_id, response)
         record = LlmRequestRecord(
             ts=completed_at,
             request_id=state.request_id,
@@ -930,6 +933,7 @@ class LlmRequestLogCapability(AbstractCapability[AgentDepsT]):
             input_audio_tokens=usage.input_audio_tokens,
             output_audio_tokens=usage.output_audio_tokens,
             cache_audio_read_tokens=usage.cache_audio_read_tokens,
+            cost=cost,
             started_at=state.started_at,
             first_thinking_at=state.first_thinking_at,
             last_thinking_at=state.last_thinking_at,
@@ -948,7 +952,7 @@ class LlmRequestLogCapability(AbstractCapability[AgentDepsT]):
                     "status": "completed",
                     "response": response,
                     "completed_at": completed_at,
-                    "cost": request_cost(self.model_id, response),
+                    "cost": cost,
                 }
             )
             _current_llm_context.set(context)

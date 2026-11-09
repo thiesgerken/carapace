@@ -246,6 +246,8 @@ async def test_completed_context_is_priced_with_the_carapace_model_id(
     assert context.cost == RequestCost(
         cost_usd=expected if billed else Decimal(0), equivalent_cost_usd=expected, provider_cost_usd=Decimal("0.01")
     )
+    [record] = engine.session_mgr.load_llm_request_log(active.state.session_id).records
+    assert record.model_name == model_id and record.cost == context.cost
 
 
 @pytest.mark.asyncio
