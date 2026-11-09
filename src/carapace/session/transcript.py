@@ -45,6 +45,12 @@ def awaits_tool_result(event: dict[str, Any]) -> bool:
     )
 
 
+def is_turn_prompt_event(event: dict[str, Any]) -> bool:
+    """A turn starts at a user message; slash commands start none."""
+    content = event.get("content")
+    return event.get("role") == "user" and isinstance(content, str) and not content.startswith("/")
+
+
 def is_turn_terminal_event(event: dict[str, Any]) -> bool:
     """A turn ends at its final assistant answer or at the error that ended it early.
 
@@ -65,10 +71,9 @@ def completed_event_turns(events: list[dict[str, Any]]) -> list[CompletedEventTu
     user_content: str | None = None
 
     for index, event in enumerate(events):
-        role = event.get("role")
-        if role == "user" and isinstance(content := event.get("content"), str) and not content.startswith("/"):
+        if is_turn_prompt_event(event):
             start_event_index = index
-            user_content = content
+            user_content = event["content"]
         elif is_turn_terminal_event(event) and start_event_index is not None and user_content is not None:
             turns.append(
                 CompletedEventTurn(

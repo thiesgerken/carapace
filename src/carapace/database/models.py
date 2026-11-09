@@ -190,6 +190,31 @@ class SessionAuditRow(Base):
     data: Mapped[dict[str, Any]] = mapped_column(JsonType)
 
 
+class SessionSentinelRow(Base):
+    __tablename__ = "session_sentinel"
+
+    session_id: Mapped[str] = mapped_column(
+        String(256), ForeignKey("sessions.session_id", ondelete="CASCADE"), primary_key=True
+    )
+    # The sentinel's shadow conversation (pydantic-ai history), read/written as a whole.
+    messages: Mapped[list[Any]] = mapped_column(ModelMessagesJson, default=list)
+    # How many action log entries (by seq) the shadow conversation has already been told about.
+    synced_entries: Mapped[int] = mapped_column(Integer, default=0)
+    eval_count: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class SessionActionLogRow(Base):
+    __tablename__ = "session_action_log"
+
+    id: Mapped[int] = mapped_column(AutoBigInt, primary_key=True, autoincrement=True)
+    session_id: Mapped[str] = mapped_column(String(256), ForeignKey("sessions.session_id", ondelete="CASCADE"))
+    seq: Mapped[int] = mapped_column(Integer)
+    # One ActionLogEntry dump, discriminated by its ``type``.
+    data: Mapped[dict[str, Any]] = mapped_column(JsonType)
+
+    __table_args__ = (UniqueConstraint("session_id", "seq", name="uq_session_action_log_seq"),)
+
+
 class SandboxTokenRow(Base):
     __tablename__ = "sandbox_tokens"
 

@@ -49,7 +49,7 @@ Sessions are stored on disk at `$CARAPACE_DATA_DIR/sessions/<session_id>/`:
 | `usage.yaml`   | Token usage breakdown by model                                                                            |
 | `audit.yaml`   | Security audit trail (sentinel verdicts, decisions)                                                       |
 
-Sessions persist across server restarts. In-memory state (action log, sentinel conversation) is rebuilt when a session is reactivated.
+Sessions persist across server restarts. The sentinel state (action log and shadow conversation) is persisted too and loaded when a session is reactivated, so the sentinel continues where it stopped (see [security.md](security.md#sentinel-state)).
 
 `history.yaml` and `events.yaml` serve different purposes:
 

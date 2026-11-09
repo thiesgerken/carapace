@@ -102,5 +102,6 @@ fold node, `model_text` for a compacted tool return) so the main view needs no s
 
 ## Sentinel
 
-The sentinel (security agent) keeps its own shadow conversation, which is bounded by its existing
-reset threshold and is **not** affected by `/compact` in v1.
+The sentinel (security agent) keeps its own shadow conversation, which is **not** affected by
+`/compact`. It is persisted and never reset (see [security.md](security.md#sentinel-state)), so for now
+nothing bounds it; automatic sentinel compaction follows.
