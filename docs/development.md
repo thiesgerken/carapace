@@ -57,6 +57,8 @@ UI PRs show the pages they change: before and after, light and dark, plus phone 
 
 A session opens at `/?session=<ID>`.
 
+The demo user also has memory data for the Memory pages and the home page: `memory_low` runs on the subscription model, today's budget window holds a session extraction on Sonnet (`demo-pancake-recipe`) and one on Codex (`demo-subscription`), and `demo-recipe-skill` has a pending extraction task for the run dialog. The memory budget sets actual cost limits next to the default equivalent ones.
+
 1. Start a disposable Redis and the server on a fresh data dir inside the temp directory (the seed refuses any other). Startup bootstraps an `admin` user from `CARAPACE_TOKEN`. Stop a running development server first, or move this one to other ports with `CARAPACE_SERVER_PORT`/`CARAPACE_SERVER_SANDBOX_PORT` and `CARAPACE_BACKEND_URL` for the frontend.
 
    ```sh
