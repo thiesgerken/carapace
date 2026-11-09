@@ -104,8 +104,9 @@ read and cache write tokens, audio tokens when there are any, and the provider-s
 Its cost is priced when the response arrives and stored with the context as `cost`
 (`request_cost()` in `src/carapace/usage.py`), the same way the usage tracker prices at record time:
 `cost_usd` is the actual cost, `equivalent_cost_usd` the list price (see
-[sessions-and-channels.md](sessions-and-channels.md#actual-and-equivalent-cost)); both are null for a model without pricing.
-`provider_cost_usd` is the cost the provider reported itself, if it did. Pricing keys on the carapace
-model id (`provider:model`) that `model_name` holds, not on the provider's API model name.
+[sessions-and-channels.md](sessions-and-channels.md#actual-and-equivalent-cost)). Both are null
+when the model has no known pricing and the provider reported no cost. `provider_cost_usd` is the
+cost the provider reported itself, if it did. Pricing keys on the carapace model id
+(`provider:model`) that `model_name` holds, not on the provider's API model name.
 
 Running, failed and interrupted requests have no response, so they show no usage and no cost.

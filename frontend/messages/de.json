@@ -1623,7 +1623,6 @@
         }
     },
     "compaction": {
-        "badge": "Compaction",
         "railHeader": "{count, plural, one {# Runde} other {# Runden}} für das Modell verdichtet",
         "modelSees": "Modell sieht",
         "modelSummaryLabel": "Zusammenfassung im Modell-Kontext",

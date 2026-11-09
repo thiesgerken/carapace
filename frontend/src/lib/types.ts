@@ -1118,7 +1118,7 @@ export interface LlmRequestUsage {
   details?: Record<string, number>;
 }
 
-/** Both costs null when the model has no known pricing (see PricedCost). */
+/** Both costs null when the model has no known pricing and the provider reported no cost (see PricedCost). */
 export interface LlmRequestCost {
   cost_usd: string | null;
   equivalent_cost_usd: string | null;

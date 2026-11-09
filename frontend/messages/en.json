@@ -1623,7 +1623,6 @@
         }
     },
     "compaction": {
-        "badge": "compacted",
         "railHeader": "{count, plural, one {# turn} other {# turns}} condensed for the model",
         "modelSees": "Model sees",
         "modelSummaryLabel": "Summary in the model's context",
