@@ -97,7 +97,7 @@ The shadow conversation and the action log together are the sentinel state. Both
 
 The first evaluation of a session receives the full action log; every later one only the new entries.
 
-- **Rewind** (reset to an earlier turn, retry) keeps the sentinel state as is and appends a `RewindEntry` to the action log: the user message of the turn the session was rewound to and how many later turns were removed. The sentinel learns about it with its next evaluation, including that side effects of the removed turns remain in the sandbox.
+- **Rewind** (to an earlier turn, including retry) keeps the sentinel state as is and appends a `RewindEntry` to the action log: the user message of the turn the session was rewound to and how many later turns were removed. The sentinel learns about it with its next evaluation, including that side effects of the removed turns remain in the sandbox.
 - **Fork** copies the sentinel state of the source session into the new session, without any note.
 - **Delete** removes the sentinel state with the session.
 

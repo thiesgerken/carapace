@@ -286,7 +286,7 @@ def test_fork_after_fold_carries_trimmed_tree(tmp_path: Path, db_factory) -> Non
         lead, rest = split_lead_folds(history)
         assert len(lead) == 1 and is_fold_message(lead[0])
         assert len(completed_model_turn_end_indexes(rest)) == 2
-        # The fork carries the fold's tree node so fold UI / agent-view render.
+        # The fork carries the fold's tree node so the fold UI renders.
         assert len(engine.session_mgr.load_compaction(forked.session_id).nodes) == 1
 
     asyncio.run(_run())

@@ -27,8 +27,8 @@ A new session that starts as a copy of another session up to a chosen turn.
 _Avoid_: Clone, branch
 
 **Compaction**:
-Shrinking a model history or shadow conversation so it fits the model, while the originals stay
-inspectable.
+Shrinking a model history or shadow conversation so it fits the model. For a model history the
+transcript keeps the originals; a shadow conversation is overwritten, and the action log remains.
 _Avoid_: Summarization, truncation
 
 ## Agent roles

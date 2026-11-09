@@ -1,10 +1,10 @@
 """Compaction summary tree persisted alongside a session's history.
 
 The model history (``SessionHistoryRow``) holds the compacted *cut*: folded turns are
-replaced by a single marked synthetic assistant message, and large tool returns are
+replaced by a single marked synthetic user message, and large tool returns are
 replaced by shorter summaries stamped on ``ToolReturnPart.metadata``. This module stores
-the human/debug-facing tree of summary nodes so the UI can render collapsible blocks,
-the agent-view toggle, and (later) consolidate adjacent summaries.
+the human/debug-facing tree of summary nodes so the UI can render the folded turns' margin
+rail, and (later) consolidate adjacent summaries.
 
 Originals are never stored here — they remain in the events transcript and git archive.
 """

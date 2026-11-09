@@ -3,9 +3,12 @@
 Long sessions eventually approach the agent model's context window. Compaction shrinks the
 model history that is sent to the LLM while keeping the full human-readable transcript intact.
 
-carapace treats compaction the same way it treats the rest of its state: nothing is hidden. The
-model sees a compacted cut, but the originals stay in the events transcript and the Git-backed
-session archive, and every compaction is visible in the web UI.
+For the agent, carapace treats compaction the same way it treats the rest of its state: nothing is
+hidden. The model sees a compacted cut, but the originals stay in the events transcript and the
+Git-backed session archive, and every compaction is visible in the web UI. The sentinel's shadow
+conversation is different: its compaction overwrites the persisted conversation, and only the
+action log, the audit log and the latest compaction request in the [debug view](debug-view.md)
+remain (see [Sentinel](#sentinel)).
 
 > The agent's model history is compacted **manually only**, with `/compact`. The sentinel's shadow
 > conversation is compacted **automatically** (see [Sentinel](#sentinel)).

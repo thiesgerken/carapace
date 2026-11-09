@@ -67,8 +67,10 @@ session. A fork starts with empty slots; a rewind leaves them as they are.
 Two failures reach the request only as a cancellation, so they first land as `interrupted` and are
 then marked `failed` through `fail_llm_context(role, error)`:
 
-- **Sentinel timeout**: the timeout cancels the evaluation; the sentinel's timeout handler marks its
-  context failed with the timeout explanation.
+- **Sentinel timeout**: one timeout covers the sentinel's compaction and its evaluation. It cancels
+  whichever request is running, and the sentinel's timeout handler marks that context failed with
+  the timeout explanation: the sentinel's own, or the `compaction` slot (`compaction_target:
+  sentinel`) when it hit during compaction.
 - **Agent errors mid-stream**: the agent streams, and pydantic-ai raises provider errors in the
   stream consumer while it cancels the request; the turn's error path marks the agent's context
   failed with that error.
