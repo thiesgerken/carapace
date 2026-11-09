@@ -38,6 +38,61 @@ npm --prefix frontend run dev
 
 Next.js serves port 3000 and proxies `/api` to `http://127.0.0.1:8321`; set `CARAPACE_BACKEND_URL` for a different host server. Compose images are immutable and no longer bind-mount `src/carapace`. Use `uv run` for live server code.
 
+## Screenshots
+
+UI PRs show the pages they change: before and after, light and dark, plus phone width when the layout changes. carapace is public, so screenshots only ever show demo data. Never point the capture at a real data dir.
+
+`scripts/seed_demo.py` fills a throwaway data dir with a demo user and ready-made sessions, written directly as events. Nothing calls an LLM, the session IDs and contents are fixed, and the timestamps are relative to the seeding time, so the same steps give the same pictures. To show live state, configure a model and start a real turn on top.
+
+| Session | Shows |
+| --- | --- |
+| Getting To Know The Sandbox | thinking, a titled `exec` with a domain access, sandbox panel |
+| Classic Fluffy Pancake Recipe | skill activation, sentinel-reviewed tool calls with domain and credential access |
+| Creating A Recipe Skill | file read and write, a git push, code blocks |
+| HTTP POST Blocked In Ask Mode | ask mode, a call denied by the sentinel |
+| Cleaning Up NAS Backups | a pending approval card |
+| Triage Open Issues | a budget stop with the error box |
+| Checking Outdated Dependencies | an autonomy-limit approval card |
+
+1. Start a disposable Redis and the server on a fresh data dir. Startup bootstraps an `admin` user from `CARAPACE_TOKEN`. Stop a running development server first, or move this one to other ports with `CARAPACE_SERVER_PORT`/`CARAPACE_SERVER_SANDBOX_PORT` and `CARAPACE_BACKEND_URL` for the frontend.
+
+   ```sh
+   docker run --rm -d --name carapace-demo-redis -p 127.0.0.1:6390:6379 redis:8-alpine
+   export CARAPACE_DATA_DIR="$(mktemp -d)"
+   unset CARAPACE_DATABASE_URL  # the demo database must be the default SQLite file in the data dir
+   CARAPACE_CACHE_REDIS_URL=redis://127.0.0.1:6390/0 \
+   CARAPACE_SANDBOX_BASE_IMAGE=carapace-sandbox:local \
+   CARAPACE_TOKEN=demo-admin-password-0123456789 \
+   uv run carapace-server
+   ```
+
+2. In another shell with the same `CARAPACE_DATA_DIR`, seed it once the server is up. Order matters: server startup closes approval requests left open by a previous process, and two demo sessions show open ones. The script refuses a data dir that already has sessions or a database outside it, and prints the session IDs.
+
+   ```sh
+   uv run python scripts/seed_demo.py "$CARAPACE_DATA_DIR"
+   ```
+
+3. Start the frontend with `npm --prefix frontend run dev` and log in as `demo` with password `carapace-demo` if you want to look around.
+
+4. Capture with headless Chrome. `scripts/screenshot.mjs` logs in as the demo user over the DevTools protocol (Node built-ins only), since the session cookie is HTTP-only. Per page it writes `NAME-light.png` and `NAME-dark.png` at 1280×800 with device scale factor 2, or 390×844 with `--phone`. Light and dark come from `--blink-settings=preferredColorScheme=1` and `=0`. The UI is English and the time zone UTC. Each page gets the load event plus `--settle` milliseconds (default 3000) to render. Set `CHROME` to the Chrome binary outside macOS.
+
+   ```sh
+   node scripts/screenshot.mjs --out shots 'budget=/?session=2026-11-09-07-39-c0de0006'
+   node scripts/screenshot.mjs --out shots --phone 'budget=/?session=2026-11-09-07-39-c0de0006'
+   ```
+
+   For "before" pictures, run the base branch's frontend (e.g. from a worktree on `origin/main`) against the same server and capture into another directory.
+
+5. Attach the pictures to the PR instead of committing them. gh 2.99 or newer uploads images natively and rewrites `![alt](./file.png)` references in the body:
+
+   ```sh
+   gh pr edit 123 --body-file body.md --attach ./shots/budget-light.png --attach ./shots/budget-dark.png
+   ```
+
+The README screenshots in `docs/assets/screenshots/` are not regenerated automatically. To retake them, follow the same steps, capture the first four sessions, and commit the files there.
+
+Clean up with `docker stop carapace-demo-redis` and by deleting the data dir.
+
 ## Native Linux images on Apple Silicon
 
 Install [Determinate Nix](https://docs.determinate.systems/) and authorize its Native Linux Builder with a free FlakeHub account:
