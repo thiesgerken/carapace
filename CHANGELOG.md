@@ -1,6 +1,79 @@
 # CHANGELOG
 
 
+## v0.173.0 (2026-11-09)
+
+
+### ✨ Features
+
+
+- ✨ Merge pull request #445 from thiesgerken/feat/equivalent-cost
+  ([`77fe4bd`](https://github.com/thiesgerken/carapace/commit/77fe4bd2d42b95c28116745bd7699fe455cf0bd7))
+
+- ✨ feat: split session cost into actual and equivalent cost
+  ([`77fe4bd`](https://github.com/thiesgerken/carapace/commit/77fe4bd2d42b95c28116745bd7699fe455cf0bd7))
+
+- ✨ feat(frontend): show and limit actual and equivalent cost separately
+  ([`ff7e1ec`](https://github.com/thiesgerken/carapace/commit/ff7e1ec71030e3b8deab317b8b668fc8e0d49bcb))
+
+  The usage dialog marks subscription models and notes the equivalent cost where it differs, the equivalent cost gauge can show without a limit, and the drawer, account and platform budgets get an equivalent cost limit next to the cost limit. The drawer also shows the equivalent total whenever its gauge shows.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aUyaxvsB8zAKUBRRhYg
+
+- ✨ feat(usage): split session cost into actual and equivalent cost
+  ([`f239c53`](https://github.com/thiesgerken/carapace/commit/f239c5399304612652eca26d735e8c1669c6db69))
+
+  Subscription models (provider in SUBSCRIPTION_PROVIDERS, today only openai-codex) are not billed per token. Actual cost now counts pay-per-token models only; equivalent cost is the list price of everything, subscription usage included. Both are limitable (`cost_usd` / `/budget cost`, `equivalent_cost_usd` / `/budget equivalent_cost`) and block the next LLM call through the existing gauge mechanism.
+
+  The equivalent cost gauge shows with a limit or once the session used a subscription model. /usage shows one cost per model with subscription models marked, and actual cost per category and in total with the equivalent noted where it differs. SessionInfo returns both totals.
+
+  Migration 0010 turns every stored cost limit into an equivalent cost limit, so blocking stays as before. Also lets PATCH /api/sessions/{id} set the autonomy limit, which the drawer sends but the endpoint rejected, and removes the unused Matrix slash-command handler.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aUyaxvsB8zAKUBRRhYg
+
+### 💄 UI/UX
+
+
+- 💄 style(usage): show a subscription model's cost without spend color
+  ([`235cca8`](https://github.com/thiesgerken/carapace/commit/235cca81fa4f057de45f05bc4399de84baa101ae))
+
+  Its cost is the equivalent API price, not money spent, so the /usage table renders it muted like the other equivalent figures.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aUyaxvsB8zAKUBRRhYg
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix(seed): build the budget stop from the session budget, add a subscription demo session
+  ([`ba78a9f`](https://github.com/thiesgerken/carapace/commit/ba78a9fb50ce625b4406696e428b8832c4fb679f))
+
+  The merge of #444 left seed_demo.py calling usage_budget_exceeded_error with the removed keyword limit. demo-subscription runs the agent on Codex and the sentinel on a paid API model, with both cost limits, for the equivalent-cost screenshots.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aUyaxvsB8zAKUBRRhYg
+
+- 🐛 fix(usage): fold to the stricter cost limit on downgrade, hint the equivalent limit in settings
+  ([`9a10149`](https://github.com/thiesgerken/carapace/commit/9a1014981677e787d5ca8de777059823f0fb504c))
+
+  The 0010 downgrade keeps min(cost, equivalent cost) as the single cost limit, so a real-money cap set after the split doesn't loosen; the upgrade leaves budgets without a cost limit untouched. The equivalent cost inputs in the account and platform settings explain what they cap.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aUyaxvsB8zAKUBRRhYg
+
+### Other
+
+
+- Merge remote-tracking branch 'origin/main' into feat/equivalent-cost
+  ([`1eedda0`](https://github.com/thiesgerken/carapace/commit/1eedda02413b02725836807018b38928edcc7e38))
+
 ## v0.172.4 (2026-11-09)
 
 
