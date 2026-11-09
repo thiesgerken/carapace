@@ -24,8 +24,6 @@ type SavedGlobals = {
   getComputedStyle?: typeof globalThis.getComputedStyle;
   requestAnimationFrame?: typeof globalThis.requestAnimationFrame;
   cancelAnimationFrame?: typeof globalThis.cancelAnimationFrame;
-  atob?: typeof globalThis.atob;
-  btoa?: typeof globalThis.btoa;
   IS_REACT_ACT_ENVIRONMENT?: boolean;
 };
 
@@ -55,8 +53,6 @@ export function installDom(url = "https://carapace.example.test/"): () => void {
     getComputedStyle: globalThis.getComputedStyle,
     requestAnimationFrame: globalThis.requestAnimationFrame,
     cancelAnimationFrame: globalThis.cancelAnimationFrame,
-    atob: globalThis.atob,
-    btoa: globalThis.btoa,
     IS_REACT_ACT_ENVIRONMENT: (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT,
   };
 
@@ -87,8 +83,6 @@ export function installDom(url = "https://carapace.example.test/"): () => void {
     "cancelAnimationFrame",
     ((handle: number) => clearTimeout(handle)) as typeof globalThis.cancelAnimationFrame,
   );
-  setGlobal("atob", dom.window.atob.bind(dom.window) as typeof globalThis.atob);
-  setGlobal("btoa", dom.window.btoa.bind(dom.window) as typeof globalThis.btoa);
   Object.defineProperty(globalThis, "IS_REACT_ACT_ENVIRONMENT", {
     configurable: true,
     writable: true,

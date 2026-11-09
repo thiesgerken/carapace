@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncIterator
 from datetime import timedelta
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
@@ -13,12 +14,13 @@ import pytest
 from pydantic_ai import Agent
 from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart, ToolCallPart, UserPromptPart
 from pydantic_ai.models.function import AgentInfo, DeltaToolCalls, FunctionModel
+from pydantic_ai.usage import RequestUsage
 
 from carapace.security.context import SessionSecurity
 from carapace.security.sentinel import Sentinel
 from carapace.session.engine import SessionEngine
 from carapace.session.types import ActiveSession
-from carapace.usage import LlmRequestLogCapability
+from carapace.usage import LlmRequestLogCapability, ModelUsage, RequestCost, price_for_usage
 from tests.session_helpers import _FakeSubscriber, _make_engine, _patch_sentinel
 
 
@@ -40,8 +42,10 @@ async def _overload_mid_stream(_messages: list[ModelMessage], _info: AgentInfo) 
     raise RuntimeError("overloaded")
 
 
-def _agent(model: FunctionModel) -> Agent[None, str]:
-    agent = Agent(model, instructions="Be terse.", capabilities=[LlmRequestLogCapability(source="agent")])
+def _agent(model: FunctionModel, model_id: str = "test:model") -> Agent[None, str]:
+    agent = Agent(
+        model, instructions="Be terse.", capabilities=[LlmRequestLogCapability(source="agent", model_id=model_id)]
+    )
 
     @agent.tool_plain
     def lookup(key: str) -> str:
@@ -190,6 +194,56 @@ async def test_each_role_keeps_only_its_latest_context(tmp_path: Path, db_factor
 
 def test_compaction_context_names_what_it_compacted() -> None:
     with pytest.raises(ValueError):
-        LlmRequestLogCapability(source="compaction")
+        LlmRequestLogCapability(source="compaction", model_id="test:model")
     with pytest.raises(ValueError):
-        LlmRequestLogCapability(source="agent", compaction_target="agent")
+        LlmRequestLogCapability(source="agent", model_id="test:model", compaction_target="agent")
+
+
+def _priced_reply(_messages: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
+    return ModelResponse(
+        parts=[TextPart("pong")],
+        usage=RequestUsage(input_tokens=10_000, output_tokens=500, cache_read_tokens=2_000),
+        provider_details={"cost": 0.01},
+    )
+
+
+@pytest.mark.parametrize(
+    ("model_id", "billed"),
+    [("anthropic:claude-sonnet-4-6", True), ("openai-codex:gpt-5.5", False)],
+)
+@pytest.mark.asyncio
+async def test_completed_context_is_priced_with_the_carapace_model_id(
+    tmp_path: Path, db_factory, model_id: str, billed: bool
+) -> None:
+    engine, active, _subscriber = _session(tmp_path, db_factory)
+
+    with engine.llm_request_recording(active):
+        await _agent(FunctionModel(_priced_reply, model_name="claude-sonnet-4-6-20260101"), model_id).run("ping")
+
+    context = engine.session_mgr.load_llm_context(active.state.session_id, "agent")
+    assert context is not None
+    assert context.model_name == model_id
+    expected = price_for_usage(
+        model_id, ModelUsage(input_tokens=10_000, output_tokens=500, cache_read_tokens=2_000, cost_usd=Decimal("0.01"))
+    )
+    assert expected is not None and expected > Decimal("0.01")
+    assert context.cost == RequestCost(
+        cost_usd=expected if billed else Decimal(0), equivalent_cost_usd=expected, provider_cost_usd=Decimal("0.01")
+    )
+
+
+@pytest.mark.asyncio
+async def test_unpriced_or_failed_requests_carry_no_cost(tmp_path: Path, db_factory) -> None:
+    engine, active, _subscriber = _session(tmp_path, db_factory)
+
+    with engine.llm_request_recording(active):
+        await _agent(FunctionModel(_reply)).run("ping")
+    unpriced = engine.session_mgr.load_llm_context(active.state.session_id, "agent")
+    with engine.llm_request_recording(active), pytest.raises(RuntimeError):
+        await _agent(FunctionModel(_fail), "anthropic:claude-sonnet-4-6").run("ping")
+    failed = engine.session_mgr.load_llm_context(active.state.session_id, "agent")
+
+    assert unpriced is not None and unpriced.cost == RequestCost(
+        cost_usd=None, equivalent_cost_usd=None, provider_cost_usd=None
+    )
+    assert failed is not None and failed.cost is None

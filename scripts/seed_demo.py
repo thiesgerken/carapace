@@ -58,7 +58,7 @@ from carapace.models.session import SessionAttributes, SessionBudget, SessionSta
 from carapace.models.user import MemoryBudget, UserConfig, UserDefaultModelsConfig, UserMemoryConfig
 from carapace.sandbox.snapshot import SessionSandboxSnapshot
 from carapace.session.manager import SessionManager, SessionMeta
-from carapace.usage import LlmContext, UsageTracker, usage_budget_exceeded_error
+from carapace.usage import LlmContext, UsageTracker, request_cost, usage_budget_exceeded_error
 
 DEMO_USER = "demo"
 DEMO_PASSWORD = "carapace-demo"
@@ -466,6 +466,7 @@ def _context(
         messages=messages,
         tool_definitions=tools or [],
         response=response,
+        cost=request_cost(DEMO_MODEL, response),
     )
 
 
@@ -503,9 +504,16 @@ def _pancake_contexts(end: datetime) -> list[LlmContext]:
             ],
             ModelResponse(
                 parts=[
-                    TextPart("Here is a highly rated recipe for **classic fluffy pancakes** (about 8 pancakes): ...")
+                    TextPart(
+                        "Here is a highly rated recipe for **classic fluffy pancakes** (about 8):\n\n"
+                        "1. Whisk 200 g flour, 2 tbsp sugar, 2 tsp baking powder and a pinch of salt.\n"
+                        "2. Stir in 300 ml milk, 2 eggs and 30 g melted butter until *just* combined.\n"
+                        "3. Cook ladlefuls in a hot buttered pan, flip once bubbles form."
+                    )
                 ],
-                usage=RequestUsage(input_tokens=8_412, output_tokens=380),
+                usage=RequestUsage(
+                    input_tokens=8_412, output_tokens=380, cache_read_tokens=6_900, details={"reasoning_tokens": 42}
+                ),
                 model_name=DEMO_MODEL,
                 provider_name="anthropic",
             ),

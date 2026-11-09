@@ -172,7 +172,7 @@ async def _sentinel(inputs: PreviewInputs) -> PromptPreview:
 async def _titler(inputs: PreviewInputs) -> PromptPreview:
     state = _fresh_session(inputs)
     model = state.title_model_name or inputs.config.agent.title_model
-    request = await _record(title_agent(None, model_settings=None))
+    request = await _record(title_agent(None, model_id=model, model_settings=None))
     sections = [
         *_tool_sections(request, model),
         _section("role_instructions", "Titler instructions", TITLE_INSTRUCTIONS, model),
@@ -188,7 +188,12 @@ async def _compaction(inputs: PreviewInputs) -> PromptPreview:
     prefix = _prompt_prefix(inputs)
     request = await _record(
         summary_agent(
-            FOLD_INSTRUCTIONS, prompt_prefix=prefix, model=None, model_settings=None, compaction_target="agent"
+            FOLD_INSTRUCTIONS,
+            prompt_prefix=prefix,
+            model=None,
+            model_id=model,
+            model_settings=None,
+            compaction_target="agent",
         )
     )
     sections = [
@@ -205,7 +210,9 @@ async def _memory_task(role: PromptRole, inputs: PreviewInputs) -> PromptPreview
     template, output_type, model_role, user_prompt = _memory_call(role, inputs)
     model = effective_memory_model(inputs.config, inputs.user_config, model_role)
     prefix = _prompt_prefix(inputs)
-    request = await _record(structured_agent(system_prompt(template, prefix), output_type, None, model_settings=None))
+    request = await _record(
+        structured_agent(system_prompt(template, prefix), output_type, None, model_id=model, model_settings=None)
+    )
     sections = [
         *_tool_sections(request, model),
         _section("shared_prefix", "Shared prefix", prefix, model),
