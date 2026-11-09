@@ -186,7 +186,11 @@ async def _compaction(inputs: PreviewInputs) -> PromptPreview:
     config = inputs.config.agent
     model = state.compaction_model_name or config.compaction_model or config.title_model
     prefix = _prompt_prefix(inputs)
-    request = await _record(summary_agent(FOLD_INSTRUCTIONS, prompt_prefix=prefix, model=None, model_settings=None))
+    request = await _record(
+        summary_agent(
+            FOLD_INSTRUCTIONS, prompt_prefix=prefix, model=None, model_settings=None, compaction_target="agent"
+        )
+    )
     sections = [
         *_tool_sections(request, model),
         _section("shared_prefix", "Shared prefix", prefix, model),
