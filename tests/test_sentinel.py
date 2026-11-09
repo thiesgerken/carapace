@@ -90,10 +90,14 @@ def test_eval_tool_logging_includes_context(tmp_path: Path, monkeypatch) -> None
 
 @pytest.mark.asyncio
 async def test_evaluate_tool_call_timeout_returns_deny_verdict(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    sentinel, _skills_dir = _make_sentinel(tmp_path, timeout=timedelta(seconds=0.01))
+    sentinel, skills_dir = _make_sentinel(tmp_path, timeout=timedelta(seconds=0.01))
     session = SessionSecurity("session-1")
+    (skills_dir / "moneydb").mkdir()
+    (skills_dir / "moneydb" / "SKILL.md").write_text("# MoneyDB\n")
 
     async def _hang(*_args, **_kwargs):
+        # A skill read inside the evaluation that then times out.
+        sentinel._read_skill_file_cached(skills_dir, "moneydb", "SKILL.md")
         await asyncio.sleep(1)
 
     monkeypatch.setattr(sentinel._agent, "run", _hang)
@@ -108,6 +112,7 @@ async def test_evaluate_tool_call_timeout_returns_deny_verdict(tmp_path: Path, m
     )
     assert session.sentinel_eval_count == 1
     assert session.sentinel_messages == []
+    assert sentinel._read_skill_file_cached(skills_dir, "moneydb", "SKILL.md") == "# MoneyDB\n"
 
 
 @pytest.mark.asyncio

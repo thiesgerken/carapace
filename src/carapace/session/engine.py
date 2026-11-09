@@ -75,6 +75,7 @@ from .transcript import (
     completed_model_turn_end_indexes,
     history_for_completed_turn_count,
     is_terminal_history_message,
+    is_turn_prompt_event,
     is_turn_terminal_event,
     normalize_unattended_output_history,
     rebuild_model_history_from_events,
@@ -100,13 +101,7 @@ def note_llm_request_thinking() -> LlmRequestState | None:
 
 def _user_prompts(events: list[dict[str, Any]]) -> list[str]:
     """The turn-starting user messages in *events* (slash commands start no turn)."""
-    return [
-        content
-        for event in events
-        if event.get("role") == "user"
-        and isinstance(content := event.get("content"), str)
-        and not content.startswith("/")
-    ]
+    return [event["content"] for event in events if is_turn_prompt_event(event)]
 
 
 def _rewind_entry(kept_events: list[dict[str, Any]], removed_events: list[dict[str, Any]]) -> RewindEntry:
@@ -758,12 +753,7 @@ class SessionEngine(
 
     def _first_user_event_index(self, events: list[dict[str, Any]], *, start: int) -> int | None:
         """Index of the first non-slash user event at or after *start* (a turn's prompt)."""
-        for index in range(start, len(events)):
-            event = events[index]
-            content = event.get("content")
-            if event.get("role") == "user" and isinstance(content, str) and not content.startswith("/"):
-                return index
-        return None
+        return next((index for index in range(start, len(events)) if is_turn_prompt_event(events[index])), None)
 
     def _sliced_transcript_for_event_cut(
         self, session_id: str, events: list[dict[str, Any]], cut_index: int
@@ -821,8 +811,8 @@ class SessionEngine(
         active.llm_request_thinking.clear()
         self._trim_fork_origin(active.state, len(events))
         # The sentinel keeps its state across a rewind; it just learns about it with its next evaluation.
-        if active.security is not None:
-            active.security.append(_rewind_entry(events, removed_events))
+        assert active.security is not None
+        active.security.append(_rewind_entry(events, removed_events))
 
     def _trim_fork_origin(self, state: SessionState, event_count: int) -> None:
         """Rewinding a fork into its inherited events makes what follows its own, not the source's."""

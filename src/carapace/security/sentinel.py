@@ -419,6 +419,10 @@ class Sentinel:
             + f"history_messages={len(session.sentinel_messages)} new_entries={len(session.unsynced_entries())}"
         )
         self._begin_eval_logging(session.session_id, eval_no)
+        # Skill files read by an evaluation that does not complete never reach the shadow conversation,
+        # so the cache must not claim they were "already provided".
+        skill_file_cache = dict(self._skill_file_cache)
+        completed = False
 
         try:
             if assert_llm_budget_available is not None:
@@ -430,6 +434,7 @@ class Sentinel:
                     message_history=session.sentinel_messages or None,
                     usage_limits=usage_limits,
                 )
+            completed = True
         except TimeoutError:
             stats = self._end_eval_logging()
             session.record_sentinel_evaluation(None, synced_entries=synced_entries)
@@ -446,6 +451,9 @@ class Sentinel:
                 + f"error={type(exc).__name__}: {exc} {self._format_eval_stats(stats)}"
             )
             raise
+        finally:
+            if not completed:
+                self._skill_file_cache = skill_file_cache
 
         stats = self._end_eval_logging()
         session.record_sentinel_evaluation(result.all_messages(), synced_entries=synced_entries)
