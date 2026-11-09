@@ -2,6 +2,9 @@
   "name": "frontend",
   "version": "0.173.0",
   "private": true,
+  "engines": {
+    "npm": "^11.19.0"
+  },
   "scripts": {
     "prepare:emoji": "node ./scripts/prepare-emoji-assets.mjs",
     "generate:favicon": "./scripts/generate_favicon.sh",
