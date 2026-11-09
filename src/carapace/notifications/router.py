@@ -45,6 +45,9 @@ class NotificationPayload:
     title: str
     body: str
     session_id: str
+    # First event the client should show: the start of the turn, so the reader begins at the
+    # oldest unseen agent message instead of the bottom of a long answer.
+    event_index: int | None = None
     tag: str | None = None
     badge: str = "/badge-icon.png"
     icon: str = "/pwa-192x192.png"
@@ -112,6 +115,7 @@ class NotificationRouter:
         *,
         session_id: str,
         assistant_event_index: int,
+        turn_event_start: int,
         kind: TurnOutcomeKind,
         title: str,
         body: str,
@@ -126,6 +130,7 @@ class NotificationRouter:
                 title=title,
                 body=body,
                 session_id=session_id,
+                event_index=turn_event_start,
                 actions=[{"action": "open", "title": "Open session"}],
             ),
             suppress_when_active=True,

@@ -20,16 +20,19 @@ function parsePushPayload(event) {
   }
 }
 
-function targetUrl(sessionId) {
+function targetUrl(sessionId, eventIndex) {
   const url = new URL("/", self.location.origin);
   if (sessionId) {
     url.searchParams.set("session", sessionId);
+    if (typeof eventIndex === "number") {
+      url.searchParams.set("event", String(eventIndex));
+    }
   }
   return url.toString();
 }
 
-async function focusOrOpenSession(sessionId) {
-  const destination = targetUrl(sessionId);
+async function focusOrOpenSession(sessionId, eventIndex) {
+  const destination = targetUrl(sessionId, eventIndex);
   const windowClients = await self.clients.matchAll({
     type: "window",
     includeUncontrolled: true,
@@ -118,6 +121,7 @@ self.addEventListener("push", (event) => {
         requireInteraction,
         data: {
           sessionId: payload.session_id || null,
+          eventIndex: payload.event_index ?? null,
           notifId: payload.notif_id || null,
         },
       });
@@ -132,6 +136,9 @@ self.addEventListener("notificationclick", (event) => {
   });
   event.notification.close();
   event.waitUntil(
-    focusOrOpenSession(event.notification.data?.sessionId || null),
+    focusOrOpenSession(
+      event.notification.data?.sessionId || null,
+      event.notification.data?.eventIndex ?? null,
+    ),
   );
 });

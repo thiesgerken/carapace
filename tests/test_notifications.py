@@ -206,6 +206,7 @@ async def test_notification_router_dispatch_turn_outcome_filters_by_preference_a
     delivery = await router.dispatch_turn_outcome(
         session_id="session-1",
         assistant_event_index=3,
+        turn_event_start=1,
         kind="attended_turn_completed",
         title="Session Update",
         body="Assistant turn completed",
@@ -218,6 +219,7 @@ async def test_notification_router_dispatch_turn_outcome_filters_by_preference_a
     payload = sender.send_batch.await_args.args[1]
     assert isinstance(payload, NotificationPayload)
     assert payload.notif_id == "done:session-1:3:attended_turn_completed"
+    assert payload.event_index == 1
 
     sender.send_batch.reset_mock()
     presence.update_presence(
@@ -231,6 +233,7 @@ async def test_notification_router_dispatch_turn_outcome_filters_by_preference_a
     suppressed = await router.dispatch_turn_outcome(
         session_id="session-1",
         assistant_event_index=4,
+        turn_event_start=1,
         kind="attended_turn_completed",
         title="Session Update",
         body="Assistant turn completed",
@@ -275,6 +278,7 @@ async def test_notification_router_filters_by_session_owner(db_factory) -> None:
     delivery = await router.dispatch_turn_outcome(
         session_id="alice-session",
         assistant_event_index=3,
+        turn_event_start=1,
         kind="attended_turn_completed",
         title="Session Update",
         body="Assistant turn completed",

@@ -862,11 +862,12 @@ def test_finalize_successful_turn_dispatches_attended_notification(tmp_path: Pat
         active = engine.get_or_activate(sid)
         engine.session_mgr.append_events(sid, [{"role": "user", "content": "hello"}])
 
-        await engine._finalize_successful_turn(active, sid, [], "done", "thinking")
+        await engine._finalize_successful_turn(active, sid, [], "done", "thinking", turn_event_start=0)
 
         engine._notification_router.dispatch_turn_outcome.assert_awaited_once_with(
             session_id=sid,
             assistant_event_index=1,
+            turn_event_start=0,
             kind="attended_turn_completed",
             title="Session Update",
             body="done",
@@ -929,6 +930,7 @@ def test_finalize_failed_turn_dispatches_unattended_failure_notification(tmp_pat
         engine._notification_router.dispatch_turn_outcome.assert_awaited_once_with(
             session_id=sid,
             assistant_event_index=1,
+            turn_event_start=0,
             kind="unattended_turn_failed",
             title="Job Failed",
             body="The previous turn failed before completion.",
