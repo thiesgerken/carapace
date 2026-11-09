@@ -39,13 +39,22 @@ def _save_agent_settings(agent: dict) -> None:
 
 
 def upgrade() -> None:
-    """Give existing installs the platform default autonomy limit; a stored budget would otherwise mask it."""
+    """Give existing installs the default autonomy limit wherever a stored budget would otherwise mask it."""
     agent = _stored_agent_settings()
-    if agent is None or "default_session_budget" not in agent:
-        return
-    budget = agent["default_session_budget"]
-    if _FIELD not in budget:
-        _save_agent_settings(agent | {"default_session_budget": budget | {_FIELD: _DEFAULT_LIMIT}})
+    if agent is not None and "default_session_budget" in agent:
+        budget = agent["default_session_budget"]
+        if _FIELD not in budget:
+            _save_agent_settings(agent | {"default_session_budget": budget | {_FIELD: _DEFAULT_LIMIT}})
+    # A user default budget with any limit replaces the platform default wholesale; an empty one falls back to it.
+    bind = op.get_bind()
+    for username, config in bind.execute(sa.select(_users.c.username, _users.c.config)).all():
+        budgets = config.get("budgets", {})
+        if _FIELD not in budgets and any(value is not None for value in budgets.values()):
+            bind.execute(
+                _users.update()
+                .where(_users.c.username == username)
+                .values(config=config | {"budgets": budgets | {_FIELD: _DEFAULT_LIMIT}})
+            )
 
 
 def downgrade() -> None:

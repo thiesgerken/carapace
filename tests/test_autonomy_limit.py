@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 from pydantic_ai import ToolDenied
+from pydantic_ai.exceptions import UsageLimitExceeded
 from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, TextPart, ToolCallPart, ToolReturnPart
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
 
@@ -475,5 +476,33 @@ def test_a_total_budget_stop_does_not_mention_the_autonomy_limit(tmp_path: Path,
             "Session budget reached: tool calls 1 tool call / 1 tool call. "
             "Raise the limit to continue: /budget tool_calls N"
         )
+
+    asyncio.run(_run())
+
+
+def test_the_agent_request_stopgap_ends_the_turn_with_a_readable_error(tmp_path: Path, db_factory) -> None:
+    async def _loop_without_tools(_user_input: str, deps: Any, *_args: Any, **_kwargs: Any) -> Any:
+        raise UsageLimitExceeded("The next request would exceed the request_limit of 300")
+
+    async def _run() -> None:
+        with _patch_sentinel():
+            engine = _make_engine(tmp_path, session_factory=db_factory)
+        sid = engine.session_mgr.create_session(
+            user="thies", budget=SessionBudget(autonomous_tool_calls=100)
+        ).session_id
+        sub = _FakeSubscriber()
+        active = engine.subscribe(sid, sub)
+
+        with patch("carapace.session.engine.run_agent_turn", new=_loop_without_tools):
+            await engine.submit_message(sid, "go")
+            await _finish_turn(active)
+
+        message = (
+            "The agent made 300 model requests without finishing the turn (three times the autonomy limit of 100). "
+            "Raise the limit to continue: /budget autonomy N"
+        )
+        assert sub.errors == [message]
+        last_event = engine.session_mgr.load_events(sid)[-1]
+        assert (last_event["role"], last_event["content"]) == ("error", message)
 
     asyncio.run(_run())

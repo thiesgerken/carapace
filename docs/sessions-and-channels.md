@@ -155,7 +155,9 @@ On reaching the limit:
 
 There is no timeout on the pause, and a pending autonomy approval is closed like any other approval when the server restarts. The streak lives in memory on the active session; a restart resets it. The chat input shows it as the "Autonomy" gauge.
 
-The platform default is 100 (`default_session_budget.autonomous_tool_calls`), overridable per user and per session like the other limits.
+The platform default is 100 (`default_session_budget.autonomous_tool_calls`), overridable per user and per session like the other limits. A user default budget with any limit replaces the platform one as a whole, so **Settings** -> **Account** starts a new user default from the platform's autonomy limit, and migration 0009 added 100 to every stored user default that had a limit.
+
+As a stopgap for model loops the per-tool-call streak doesn't see (e.g. calls that fail argument validation and never reach a tool), one agent run may make at most three times the autonomy limit in model requests. Hitting it ends the turn with an error like any other budget stop. Without an autonomy limit there is no request limit either: the user turned loop protection off.
 
 ## Jobs and job-linked sessions
 

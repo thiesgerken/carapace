@@ -341,17 +341,23 @@ def usage_budget_exceeded_error(
     return SessionBudgetExceededError(gauges) if any(gauge.reached for gauge in gauges) else None
 
 
+def agent_request_limit(autonomy_limit: int | None) -> int | None:
+    """Model requests one agent run may make; ``None`` (no autonomy limit) turns loop protection off."""
+    # Stopgap for model loops the per-tool-call autonomy streak doesn't catch, e.g. calls that fail
+    # argument validation and never reach a tool. It replaces pydantic-ai's implicit limit of 50.
+    return None if autonomy_limit is None else 3 * autonomy_limit
+
+
 def usage_limits_for_remaining_budget(
     tracker: UsageTracker,
     *,
-    output_tokens_limit: int | None = None,
-    request_limit: int | None = None,
-) -> UsageLimits | None:
-    """Translate the remaining session output budget into PydanticAI usage limits."""
+    output_tokens_limit: int | None,
+    request_limit: int | None,
+) -> UsageLimits:
+    """Translate the remaining session output budget into PydanticAI usage limits.
 
-    if output_tokens_limit is None and request_limit is None:
-        return None
-
+    Always explicit: without limits pydantic-ai would apply its own default request limit.
+    """
     remaining_output = None if output_tokens_limit is None else max(0, output_tokens_limit - tracker.total_output)
     return UsageLimits(output_tokens_limit=remaining_output, request_limit=request_limit)
 
