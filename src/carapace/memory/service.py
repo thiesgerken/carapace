@@ -20,7 +20,9 @@ from .handlers import TaskHandler
 from .input import first_user_message_at
 from .models import (
     RUNNABLE_TASK_STATUSES,
+    BudgetWindowName,
     BudgetWindowStatus,
+    CostMetric,
     DigestLevel,
     DigestRecord,
     DigestSummary,
@@ -246,17 +248,20 @@ class MemoryService:
         return sum(len(targets) for targets in self._outdated_targets(user).values())
 
     def budget_notice(self, user: str) -> MemoryBudgetNotice | None:
-        """The cost window closest to its limit, once it has used 80% of it."""
+        """The cost limit closest to being reached, actual or equivalent, once 80% of it is used."""
         user_config = self._user_config_for(user)
         budget = user_config.memory.budget
         windows = budget_windows(self._clock(), ZoneInfo(user_config.timezone))
-        limits = (
-            ("day", windows.day_start, budget.cost_usd_per_day),
-            ("month", windows.month_start, budget.cost_usd_per_month),
+        day, month = self._store.spend(user, windows.day_start), self._store.spend(user, windows.month_start)
+        limits: tuple[tuple[CostMetric, BudgetWindowName, Decimal, Decimal | None], ...] = (
+            ("cost", "day", day.cost.actual, budget.cost_usd_per_day),
+            ("equivalent_cost", "day", day.cost.equivalent, budget.equivalent_cost_usd_per_day),
+            ("cost", "month", month.cost.actual, budget.cost_usd_per_month),
+            ("equivalent_cost", "month", month.cost.equivalent, budget.equivalent_cost_usd_per_month),
         )
         notices = [
-            MemoryBudgetNotice(used_usd=self._store.spend(user, start).cost_usd, limit_usd=limit, window=window)
-            for window, start, limit in limits
+            MemoryBudgetNotice(metric=metric, used_usd=used, limit_usd=limit, window=window)
+            for metric, window, used, limit in limits
             if limit  # None is unlimited, and a limit of 0 has no share to approach
         ]
         near = [n for n in notices if n.used_usd >= n.limit_usd * _BUDGET_NOTICE_SHARE]
@@ -275,16 +280,20 @@ class MemoryService:
             timezone=user_config.timezone,
             day=BudgetWindowStatus(
                 window_start=windows.day_start,
-                spent_cost_usd=day.cost_usd,
+                spent_cost_usd=day.cost.actual,
+                spent_equivalent_cost_usd=day.cost.equivalent,
                 spent_input_tokens=day.input_tokens,
                 limit_cost_usd=budget.cost_usd_per_day,
+                limit_equivalent_cost_usd=budget.equivalent_cost_usd_per_day,
                 limit_input_tokens=budget.input_tokens_per_day,
             ),
             month=BudgetWindowStatus(
                 window_start=windows.month_start,
-                spent_cost_usd=month.cost_usd,
+                spent_cost_usd=month.cost.actual,
+                spent_equivalent_cost_usd=month.cost.equivalent,
                 spent_input_tokens=month.input_tokens,
                 limit_cost_usd=budget.cost_usd_per_month,
+                limit_equivalent_cost_usd=budget.equivalent_cost_usd_per_month,
                 limit_input_tokens=budget.input_tokens_per_month,
             ),
             queue=counts,
@@ -679,6 +688,7 @@ def _extraction_summary(record: ExtractionRecord, versions: CurrentVersions) -> 
         model=record.provenance.model,
         prompt_version=record.provenance.prompt_version,
         cost_usd=record.provenance.cost_usd,
+        equivalent_cost_usd=record.provenance.equivalent_cost_usd,
         created_at=record.created_at,
         outdated=outdated_reasons(record.provenance, versions),
     )
@@ -726,6 +736,7 @@ def _digest_summary(record: DigestRecord, versions: CurrentVersions) -> DigestSu
         prompt_version=record.provenance.prompt_version,
         carapace_version=record.provenance.carapace_version,
         cost_usd=record.provenance.cost_usd,
+        equivalent_cost_usd=record.provenance.equivalent_cost_usd,
         created_at=record.created_at,
         outdated=outdated_reasons(record.provenance, versions),
     )

@@ -52,7 +52,7 @@ class FakeHandler:
         if self.fail_estimate is not None:
             raise self.fail_estimate
         self.estimated.append((user, target, model))
-        return TaskEstimate(model=model, input_tokens=100, output_tokens_cap=10, cost_usd=Decimal("0.001"))
+        return TaskEstimate(model=model, input_tokens=100, output_tokens_cap=10, equivalent_cost_usd=Decimal("0.001"))
 
     async def run(self, task: MemoryTask, model: str | None) -> TaskOutcome:
         raise AssertionError("the spawner never runs tasks")
@@ -134,7 +134,7 @@ class Env:
             spawned_by=SpawnedBy.manual,
             now=at,
             session_week_key=week,
-            estimate=TaskEstimate(model="m", input_tokens=1, output_tokens_cap=1, cost_usd=None),
+            estimate=TaskEstimate(model="m", input_tokens=1, output_tokens_cap=1, equivalent_cost_usd=None),
         )
         assert task is not None
         self.store.run("alice", TaskSelection(ids=[task.id]), None, at)
@@ -147,7 +147,7 @@ class Env:
             input_hash=input_hash,
             input_tokens=1,
             output_tokens=1,
-            cost_usd=None,
+            equivalent_cost_usd=None,
             duration_ms=1,
             task_id=task.id,
             created_at=at,
@@ -328,7 +328,7 @@ async def test_week_digest_respawns_only_when_coverage_changes(env: Env):
         "2026-W37",
         spawned_by=SpawnedBy.auto,
         now=LONG_AGO,
-        estimate=TaskEstimate(model="m", input_tokens=1, output_tokens_cap=1, cost_usd=None),
+        estimate=TaskEstimate(model="m", input_tokens=1, output_tokens_cap=1, equivalent_cost_usd=None),
     )
     assert digest_task is not None
     env.store.run("alice", TaskSelection(ids=[digest_task.id]), None, LONG_AGO)
@@ -349,7 +349,7 @@ async def test_week_digest_respawns_only_when_coverage_changes(env: Env):
         input_hash="i",
         input_tokens=1,
         output_tokens=1,
-        cost_usd=None,
+        equivalent_cost_usd=None,
         duration_ms=1,
         task_id=digest_task.id,
         created_at=LONG_AGO,
@@ -424,7 +424,7 @@ def _finish_week_digest(env: Env, week: str, *, fail: bool = False) -> None:
         week,
         spawned_by=SpawnedBy.auto,
         now=NOW,
-        estimate=TaskEstimate(model="m", input_tokens=1, output_tokens_cap=1, cost_usd=None),
+        estimate=TaskEstimate(model="m", input_tokens=1, output_tokens_cap=1, equivalent_cost_usd=None),
     )
     assert task is not None
     env.store.run("alice", TaskSelection(ids=[task.id]), None, NOW)
@@ -448,7 +448,7 @@ def _finish_week_digest(env: Env, week: str, *, fail: bool = False) -> None:
         input_hash="i",
         input_tokens=1,
         output_tokens=1,
-        cost_usd=None,
+        equivalent_cost_usd=None,
         duration_ms=1,
         task_id=task.id,
         created_at=NOW,

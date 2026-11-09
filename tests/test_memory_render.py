@@ -19,7 +19,7 @@ provenance:
   input_hash: ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
   input_tokens: 1200
   output_tokens: 300
-  cost_usd: '0.0042'
+  equivalent_cost_usd: '0.0042'
   duration_ms: 2100
   task_id: 7
   created_at: '2026-09-08T07:12:00Z'
@@ -75,7 +75,7 @@ provenance:
   input_hash: ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
   input_tokens: 1200
   output_tokens: 300
-  cost_usd: '0.0042'
+  equivalent_cost_usd: '0.0042'
   duration_ms: 2100
   task_id: 9
   created_at: '2026-09-08T07:12:00Z'

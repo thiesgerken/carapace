@@ -40,8 +40,13 @@ from carapace.memory.models import (
 )
 from carapace.memory.store import MemoryStore
 from carapace.models.user import UserConfig
+from carapace.usage import CostSplit
 
 NOW = datetime(2026, 9, 10, 12, tzinfo=UTC)
+
+
+def _usd(value: str) -> CostSplit:
+    return CostSplit(actual=Decimal(value), equivalent=Decimal(value))
 
 
 @pytest.fixture
@@ -80,7 +85,7 @@ def _get(store: MemoryStore, user: str, task_id: int) -> MemoryTask | None:
 
 
 def _estimate(cost: str = "0.01", model: str = "test:low") -> TaskEstimate:
-    return TaskEstimate(model=model, input_tokens=1000, output_tokens_cap=100, cost_usd=Decimal(cost))
+    return TaskEstimate(model=model, input_tokens=1000, output_tokens_cap=100, equivalent_cost_usd=Decimal(cost))
 
 
 def _spawn_extract(store: MemoryStore, session_id: str, week: str = "2026-W37", user: str = "alice"):
@@ -106,7 +111,7 @@ def _provenance(task_id: int, cost: str | None = "0.02", model: str = "test:low"
         input_hash=f"hash-{task_id}",
         input_tokens=1200,
         output_tokens=300,
-        cost_usd=Decimal(cost) if cost else None,
+        equivalent_cost_usd=Decimal(cost) if cost else None,
         duration_ms=10,
         task_id=task_id,
         created_at=NOW,
@@ -460,7 +465,7 @@ def test_mirror_outcome_has_no_record(store: MemoryStore):
 def test_spend_reserves_running_tasks_and_counts_billed_failures(store: MemoryStore):
     running = _spawn_extract(store, "s1")  # estimate 0.01, 1000 input tokens
     _run_to_running(store, running.id)
-    assert store.spend("alice", NOW) == Spend(Decimal("0.01"), 1000)
+    assert store.spend("alice", NOW) == Spend(_usd("0.01"), 1000)
 
     failed = _spawn_extract(store, "s2")
     _run_to_running(store, failed.id)
@@ -469,14 +474,14 @@ def test_spend_reserves_running_tasks_and_counts_billed_failures(store: MemorySt
     _run_to_running(store, unbilled.id)
     assert store.record_failure(unbilled.id, "input too large", NOW)
     # Running reservation 0.01 + billed failure 0.03; the unbilled failure costs nothing.
-    assert store.spend("alice", NOW) == Spend(Decimal("0.04"), 2200)
+    assert store.spend("alice", NOW) == Spend(_usd("0.04"), 2200)
 
 
 def test_retry_keeps_what_earlier_attempts_billed(store: MemoryStore):
     task = _spawn_extract(store, "s1")
     _run_to_running(store, task.id)
     assert store.record_failure(task.id, "output validation failed", NOW, _provenance(task.id, cost="0.03"))
-    billed_once = Spend(Decimal("0.03"), 1200)
+    billed_once = Spend(_usd("0.03"), 1200)
     assert store.spend("alice", NOW) == billed_once
 
     assert store.run("alice", TaskSelection(ids=[task.id]), None, NOW) == 1
@@ -484,7 +489,7 @@ def test_retry_keeps_what_earlier_attempts_billed(store: MemoryStore):
     assert store.claim(task.id, NOW)
     result = ExtractionResult(session_id="s1", week_key="2026-W37", month_key="2026-09", extraction=_extraction())
     assert store.record_outcome(task.id, TaskOutcome(provenance=_provenance(task.id, cost="0.02"), result=result), NOW)
-    assert store.spend("alice", NOW) == Spend(Decimal("0.05"), 2400)
+    assert store.spend("alice", NOW) == Spend(_usd("0.05"), 2400)
 
 
 def test_current_extractions_follow_session_order(store: MemoryStore, db_factory):
@@ -502,10 +507,20 @@ def test_current_extractions_follow_session_order(store: MemoryStore, db_factory
 def test_spend_counts_finished_tasks_in_window(store: MemoryStore):
     _finish_extraction(store, "s1")  # costs 0.02, finished at NOW
     _finish_extraction(store, "s2")
-    assert store.spend("alice", NOW).cost_usd == Decimal("0.04")
+    assert store.spend("alice", NOW).cost.actual == Decimal("0.04")
     assert store.spend("alice", NOW).input_tokens == 2400
-    assert store.spend("alice", NOW + timedelta(seconds=1)).cost_usd == 0
-    assert store.spend("bob", NOW).cost_usd == 0
+    assert store.spend("alice", NOW + timedelta(seconds=1)).cost.actual == 0
+    assert store.spend("bob", NOW).cost.actual == 0
+
+
+def test_spend_splits_subscription_usage_by_model(store: MemoryStore):
+    _finish_extraction(store, "s1")  # test:low, 0.02
+    task = _spawn_extract(store, "s2")
+    _run_to_running(store, task.id)
+    provenance = _provenance(task.id, cost="0.05", model="openai-codex:gpt-5.5")
+    result = ExtractionResult(session_id="s2", week_key="2026-W37", month_key="2026-09", extraction=_extraction())
+    assert store.record_outcome(task.id, TaskOutcome(provenance=provenance, result=result), NOW)
+    assert store.spend("alice", NOW).cost == CostSplit(actual=Decimal("0.02"), equivalent=Decimal("0.07"))
 
 
 def test_status_counts(store: MemoryStore):

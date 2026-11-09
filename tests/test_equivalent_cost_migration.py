@@ -84,7 +84,7 @@ def test_migration_turns_every_cost_limit_into_an_equivalent_cost_limit_and_back
         _insert_session(conn, "limited", SessionBudget(cost_usd=Decimal("1.00")), now)
         _insert_session(conn, "unlimited", SessionBudget(), now)
 
-        command.upgrade(cfg, "head")
+        command.upgrade(cfg, "0010")
         upgraded = _budgets(conn)
         # Set after the split: a real-money cap well below the list-price one.
         both = _EMPTY | {"cost_usd": "1.00", "equivalent_cost_usd": "20.00"}

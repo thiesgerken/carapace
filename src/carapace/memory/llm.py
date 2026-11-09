@@ -30,8 +30,8 @@ from ..usage import (
 class CallUsage:
     input_tokens: int
     output_tokens: int
-    # None when the model has no known pricing and the provider reported no cost.
-    cost_usd: Decimal | None
+    # List price; None when the model has no known pricing and the provider reported no cost.
+    equivalent_cost_usd: Decimal | None
     duration_ms: int
 
 
@@ -134,6 +134,6 @@ def _call_usage(model: str, usage: RunUsage, messages: list[ModelMessage], start
     return CallUsage(
         input_tokens=usage.input_tokens or 0,
         output_tokens=usage.output_tokens or 0,
-        cost_usd=price_for_usage(model, tracker.models[model]),
+        equivalent_cost_usd=price_for_usage(model, tracker.models[model]),
         duration_ms=round((time.monotonic() - started) * 1000),
     )

@@ -2,33 +2,38 @@
 
 Every LLM task has an estimate; tasks without an LLM call (mirror) never reach these functions.
 Unpriced work (local models without pricing data) adds nothing to cost and is bounded only
-by the token limits, which exist for exactly that case.
+by the token limits, which exist for exactly that case. Cost is tracked as actual and equivalent
+cost (see ``usage.CostSplit``), each against its own limits.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 from ..models.user import MemoryBudget
-from ..usage import ModelUsage, price_for_usage
+from ..usage import CostSplit, ModelUsage, price_for_usage
 from .models import EstimateTotal, TaskEstimate
 from .periods import local_midnight_utc
 
 
 @dataclass(frozen=True)
 class Spend:
-    cost_usd: Decimal = Decimal(0)
+    cost: CostSplit = field(default_factory=CostSplit)
     input_tokens: int = 0
 
     def plus(self, estimate: TaskEstimate) -> Spend:
-        return Spend(self.cost_usd + (estimate.cost_usd or 0), self.input_tokens + estimate.input_tokens)
+        return Spend(self.cost + _estimate_cost(estimate), self.input_tokens + estimate.input_tokens)
 
     def plus_spend(self, other: Spend) -> Spend:
-        return Spend(self.cost_usd + other.cost_usd, self.input_tokens + other.input_tokens)
+        return Spend(self.cost + other.cost, self.input_tokens + other.input_tokens)
+
+
+def _estimate_cost(estimate: TaskEstimate) -> CostSplit:
+    return CostSplit(actual=estimate.cost_usd or Decimal(0), equivalent=estimate.equivalent_cost_usd or Decimal(0))
 
 
 @dataclass(frozen=True)
@@ -48,7 +53,7 @@ def budget_windows(now: datetime, tz: ZoneInfo) -> BudgetWindows:
 
 
 def estimate_cost(model: str, input_tokens: int, output_tokens: int, *, cached_tokens: int = 0) -> Decimal | None:
-    """Price of a call at the model's list price. None when the model has no pricing data.
+    """Price of a call at the model's list price (its equivalent cost). None when the model has no pricing data.
 
     *cached_tokens* of the input go through the prompt cache and are priced as cache writes: a
     write costs more than a read or uncached input, so the estimate stays an upper bound. Models
@@ -62,8 +67,10 @@ def fits(budget: MemoryBudget, day: Spend, month: Spend, estimate: TaskEstimate)
     """Whether running a task keeps every configured limit."""
     day, month = day.plus(estimate), month.plus(estimate)
     checks = (
-        (budget.cost_usd_per_day, day.cost_usd),
-        (budget.cost_usd_per_month, month.cost_usd),
+        (budget.cost_usd_per_day, day.cost.actual),
+        (budget.cost_usd_per_month, month.cost.actual),
+        (budget.equivalent_cost_usd_per_day, day.cost.equivalent),
+        (budget.equivalent_cost_usd_per_month, month.cost.equivalent),
         (budget.input_tokens_per_day, day.input_tokens),
         (budget.input_tokens_per_month, month.input_tokens),
     )
@@ -85,19 +92,18 @@ def affordable_count(budget: MemoryBudget, day: Spend, month: Spend, estimates: 
 
 def sum_estimates(estimates: Iterable[TaskEstimate]) -> EstimateTotal:
     task_count = input_tokens = output_tokens_cap = unpriced_count = 0
-    cost_usd = Decimal(0)
+    cost = CostSplit()
     for estimate in estimates:
         task_count += 1
         input_tokens += estimate.input_tokens
         output_tokens_cap += estimate.output_tokens_cap
-        if estimate.cost_usd is None:
-            unpriced_count += 1
-        else:
-            cost_usd += estimate.cost_usd
+        unpriced_count += estimate.equivalent_cost_usd is None
+        cost += _estimate_cost(estimate)
     return EstimateTotal(
         task_count=task_count,
         input_tokens=input_tokens,
         output_tokens_cap=output_tokens_cap,
-        cost_usd=cost_usd,
+        cost_usd=cost.actual,
+        equivalent_cost_usd=cost.equivalent,
         unpriced_count=unpriced_count,
     )
