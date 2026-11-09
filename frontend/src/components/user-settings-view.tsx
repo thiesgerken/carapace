@@ -302,6 +302,8 @@ function memoryDraftFromSettings(memory: MemorySettingsInfo): MemoryDraft {
     budget: {
       cost_usd_per_day: budgetValue(memory.budget.cost_usd_per_day),
       cost_usd_per_month: budgetValue(memory.budget.cost_usd_per_month),
+      equivalent_cost_usd_per_day: budgetValue(memory.budget.equivalent_cost_usd_per_day),
+      equivalent_cost_usd_per_month: budgetValue(memory.budget.equivalent_cost_usd_per_month),
       input_tokens_per_day: budgetValue(memory.budget.input_tokens_per_day),
       input_tokens_per_month: budgetValue(memory.budget.input_tokens_per_month),
     },
@@ -418,6 +420,8 @@ function comparableMemory(memory: MemoryDraft): unknown {
     auto_mode: memory.autoMode,
     cost_usd_per_day: cost(memory.budget.cost_usd_per_day),
     cost_usd_per_month: cost(memory.budget.cost_usd_per_month),
+    equivalent_cost_usd_per_day: cost(memory.budget.equivalent_cost_usd_per_day),
+    equivalent_cost_usd_per_month: cost(memory.budget.equivalent_cost_usd_per_month),
     input_tokens_per_day: normalized(memory.budget.input_tokens_per_day),
     input_tokens_per_month: normalized(memory.budget.input_tokens_per_month),
     prompt_budget_tokens: normalized(memory.promptBudget),
@@ -497,6 +501,16 @@ function memoryFromDraft(memory: MemoryDraft, t: Translate): MemorySettingsInfo 
     budget: {
       cost_usd_per_day: parseOptionalBudgetDecimal(memory.budget.cost_usd_per_day, t("fields.memoryCostPerDay"), t),
       cost_usd_per_month: parseOptionalBudgetDecimal(memory.budget.cost_usd_per_month, t("fields.memoryCostPerMonth"), t),
+      equivalent_cost_usd_per_day: parseOptionalBudgetDecimal(
+        memory.budget.equivalent_cost_usd_per_day,
+        t("fields.memoryEquivalentCostPerDay"),
+        t,
+      ),
+      equivalent_cost_usd_per_month: parseOptionalBudgetDecimal(
+        memory.budget.equivalent_cost_usd_per_month,
+        t("fields.memoryEquivalentCostPerMonth"),
+        t,
+      ),
       input_tokens_per_day: parseOptionalBudgetInteger(memory.budget.input_tokens_per_day, t("fields.memoryTokensPerDay"), t),
       input_tokens_per_month: parseOptionalBudgetInteger(memory.budget.input_tokens_per_month, t("fields.memoryTokensPerMonth"), t),
     },
@@ -832,16 +846,19 @@ export function UserSettingsView({ server, token }: { server: string; token: str
               </Field>
             </div>
             <FieldGroup title={t("groups.memoryBudget")}>
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="grid gap-4 sm:grid-cols-2">
                 {([
                   ["cost_usd_per_day", "fields.memoryCostPerDay"],
                   ["cost_usd_per_month", "fields.memoryCostPerMonth"],
+                  ["equivalent_cost_usd_per_day", "fields.memoryEquivalentCostPerDay"],
+                  ["equivalent_cost_usd_per_month", "fields.memoryEquivalentCostPerMonth"],
                   ["input_tokens_per_day", "fields.memoryTokensPerDay"],
                   ["input_tokens_per_month", "fields.memoryTokensPerMonth"],
                 ] as const).map(([key, label]) => (
                   <BudgetInput
                     key={key}
                     label={t(label)}
+                    title={key.startsWith("equivalent_") ? t("fields.equivalentCostUsdHint") : undefined}
                     placeholder={t("defaults.noLimit")}
                     value={draft.memory.budget[key]}
                     onChange={(value) => updateDraft({ memory: { ...draft.memory, budget: { ...draft.memory.budget, [key]: value } } })}

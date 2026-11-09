@@ -67,11 +67,15 @@ class UserDefaultModelsConfig(UserConfigModel):
 class MemoryBudget(UserConfigModel):
     """Spend limits for memory LLM tasks. ``None`` disables that limit.
 
-    Token limits exist for local models without pricing, where cost limits cannot apply.
+    Cost limits come in pairs like session budgets: actual cost (billed per token, subscription
+    usage free) and equivalent cost (list price of everything). Token limits exist for local models
+    without pricing, where cost limits cannot apply.
     """
 
-    cost_usd_per_day: Decimal | None = Field(default=Decimal("1.00"), ge=Decimal(0))
-    cost_usd_per_month: Decimal | None = Field(default=Decimal("10.00"), ge=Decimal(0))
+    cost_usd_per_day: Decimal | None = Field(default=None, ge=Decimal(0))
+    cost_usd_per_month: Decimal | None = Field(default=None, ge=Decimal(0))
+    equivalent_cost_usd_per_day: Decimal | None = Field(default=Decimal("1.00"), ge=Decimal(0))
+    equivalent_cost_usd_per_month: Decimal | None = Field(default=Decimal("10.00"), ge=Decimal(0))
     input_tokens_per_day: int | None = Field(default=None, ge=0)
     input_tokens_per_month: int | None = Field(default=None, ge=0)
 

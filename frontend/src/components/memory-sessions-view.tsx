@@ -9,10 +9,9 @@ import { MemoryExtractionDetail, useMemorySessionDetail } from "@/components/mem
 import { MemoryRunDialog } from "@/components/memory-run-dialog";
 import { useMemoryStatus } from "@/components/memory-status";
 import { differsFrom, FilterBar, FilterSelect, PeriodPicker } from "@/components/memory-filter-bar";
-import { buttonClassName, ExpandButton, PickMatchingRow, SelectionBar, taskStatusTag, togglesRow } from "@/components/memory-ui";
+import { buttonClassName, ExpandButton, PickMatchingRow, SelectionBar, taskStatusTag, togglesRow, useFormatCost } from "@/components/memory-ui";
 import { listMemorySessions, spawnMemoryTasks } from "@/lib/api";
 import {
-  formatUsd,
   MEMORY_EXTRACTION_STATES,
   MEMORY_OUTDATED_REASONS,
   MEMORY_TASK_STATUSES,
@@ -35,6 +34,7 @@ export function MemorySessionsView({ server, token }: { server: string; token: s
   const tStatuses = useTranslations("memory.taskStatuses");
   const tReasons = useTranslations("memory.outdatedReasons");
   const locale = useLocale();
+  const formatPricedCost = useFormatCost();
   const router = useRouter();
   const pathname = usePathname();
   // The expanded row lives in the URL, so /memory/sessions?session=… deep links open it.
@@ -316,7 +316,7 @@ export function MemorySessionsView({ server, token }: { server: string; token: s
                       <td className="px-3 py-2 font-mono text-xs">{row.extraction?.model ?? "—"}</td>
                       <td className="px-3 py-2">{statusCell(row)}</td>
                       <td className="px-3 py-2 text-right tabular-nums">
-                        {row.extraction?.cost_usd != null ? formatUsd(row.extraction.cost_usd, locale) : "—"}
+                        {(row.extraction && formatPricedCost(row.extraction)) ?? "—"}
                       </td>
                       <td className="px-3 py-1.5">
                         <ExpandButton

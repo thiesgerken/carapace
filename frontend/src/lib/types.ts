@@ -757,8 +757,10 @@ export interface MemoryProvenance {
   input_hash: string;
   input_tokens: number;
   output_tokens: number;
-  /** null when the model has no known pricing. */
+  /** Actual cost, derived from the model: 0 on a subscription. null when the model has no known pricing. */
   cost_usd: string | null;
+  /** List price. null when the model has no known pricing. */
+  equivalent_cost_usd: string | null;
   duration_ms: number;
   task_id: number;
   created_at: string;
@@ -768,7 +770,10 @@ export interface MemoryTaskEstimate {
   model: string;
   input_tokens: number;
   output_tokens_cap: number;
+  /** Actual cost, derived from the model: 0 on a subscription. null when the model has no known pricing. */
   cost_usd: string | null;
+  /** List price. null when the model has no known pricing. */
+  equivalent_cost_usd: string | null;
 }
 
 export interface MemoryCoverageEntry {
@@ -844,8 +849,10 @@ export interface MemoryDigestRecord {
 export interface MemoryBudgetWindowStatus {
   window_start: string;
   spent_cost_usd: string;
+  spent_equivalent_cost_usd: string;
   spent_input_tokens: number;
   limit_cost_usd: string | null;
+  limit_equivalent_cost_usd: string | null;
   limit_input_tokens: number | null;
 }
 
@@ -926,8 +933,9 @@ export interface MemoryEstimateTotal {
   task_count: number;
   input_tokens: number;
   output_tokens_cap: number;
-  /** Sum over priced tasks; unpriced_count tasks had no known pricing. */
+  /** Sums over priced tasks; unpriced_count tasks had no known pricing. */
   cost_usd: string;
+  equivalent_cost_usd: string;
   unpriced_count: number;
 }
 
@@ -965,6 +973,7 @@ export interface MemoryExtractionSummary {
   model: string;
   prompt_version: string;
   cost_usd: string | null;
+  equivalent_cost_usd: string | null;
   created_at: string;
   /** Empty when current. */
   outdated: MemoryOutdatedReason[];
@@ -1011,6 +1020,7 @@ export interface MemoryDigestSummary {
   prompt_version: string;
   carapace_version: string;
   cost_usd: string | null;
+  equivalent_cost_usd: string | null;
   created_at: string;
   /** Empty when current. */
   outdated: MemoryOutdatedReason[];
@@ -1134,7 +1144,7 @@ export interface HomeNotices {
   failed_memory_tasks: number;
   outdated_memory_records: number;
   /** Only set when a memory budget is close to its limit. Amounts are decimal strings. */
-  memory_budget: { used_usd: string; limit_usd: string; window: "day" | "month" } | null;
+  memory_budget: { metric: "cost" | "equivalent_cost"; used_usd: string; limit_usd: string; window: "day" | "month" } | null;
 }
 
 export interface HomeData {

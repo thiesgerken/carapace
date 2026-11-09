@@ -61,10 +61,11 @@ export function hasActiveTasks(status: MemoryStatus): boolean {
   return status.queue.queued - status.blocked + status.queue.running > 0;
 }
 
-/** True when the estimate exceeds the tightest remaining cost or input-token headroom. */
+/** True when the estimate exceeds the tightest remaining actual cost, equivalent cost or input-token headroom. */
 export function exceedsBudget(estimate: MemoryEstimateTotal, status: MemoryStatus): boolean {
   const remaining = remainingBudget(status);
   return (remaining.usd !== null && Number(estimate.cost_usd) > remaining.usd)
+    || (remaining.equivalentUsd !== null && Number(estimate.equivalent_cost_usd) > remaining.equivalentUsd)
     || (remaining.tokens !== null && estimate.input_tokens > remaining.tokens);
 }
 
@@ -79,6 +80,20 @@ export function formatUsd(value: string | number, locale: string): string {
     ? { maximumSignificantDigits: 2 }
     : { minimumFractionDigits: 2, maximumFractionDigits: amount !== 0 && magnitude < 1 ? 3 : 2 };
   return new Intl.NumberFormat(locale, { style: "currency", currency: "USD", ...digits }).format(amount);
+}
+
+/**
+ * Actual cost, plus the equivalent cost where a subscription model makes the two differ.
+ * *withEquivalent* phrases both, e.g. "$0.00 (≈ $0.0042 equivalent)".
+ */
+export function formatCost(
+  actual: string | number,
+  equivalent: string | number,
+  locale: string,
+  withEquivalent: (cost: string, equivalent: string) => string,
+): string {
+  const cost = formatUsd(actual, locale);
+  return Number(actual) === Number(equivalent) ? cost : withEquivalent(cost, formatUsd(equivalent, locale));
 }
 
 export function formatTokens(value: number, locale: string): string {
@@ -98,23 +113,42 @@ export function summarizeSkips(skipped: MemorySpawnSkip[]): string {
 }
 
 export type BudgetGauge =
-  | { unit: "usd"; spent: number; limit: number | null }
+  | { unit: "usd"; metric: "cost" | "equivalent_cost"; spent: number; limit: number }
+  | { unit: "usd"; metric: "cost"; spent: number; equivalentSpent: number; limit: null }
   | { unit: "tokens"; spent: number; limit: number };
 
-/** A cost limit wins over a token limit; without either the gauge shows spend only. */
-export function budgetGauge(window: MemoryBudgetWindowStatus): BudgetGauge {
-  if (window.limit_cost_usd === null && window.limit_input_tokens !== null) {
-    return { unit: "tokens", spent: window.spent_input_tokens, limit: window.limit_input_tokens };
+/**
+ * One gauge per cost limit, actual first. Cost limits win over a token limit; without any limit
+ * a single gauge shows the spend, actual with its equivalent.
+ */
+export function budgetGauges(window: MemoryBudgetWindowStatus): BudgetGauge[] {
+  const costGauges: BudgetGauge[] = [];
+  if (window.limit_cost_usd !== null) {
+    costGauges.push({ unit: "usd", metric: "cost", spent: Number(window.spent_cost_usd), limit: Number(window.limit_cost_usd) });
   }
-  return {
+  if (window.limit_equivalent_cost_usd !== null) {
+    costGauges.push({
+      unit: "usd",
+      metric: "equivalent_cost",
+      spent: Number(window.spent_equivalent_cost_usd),
+      limit: Number(window.limit_equivalent_cost_usd),
+    });
+  }
+  if (costGauges.length > 0) return costGauges;
+  if (window.limit_input_tokens !== null) {
+    return [{ unit: "tokens", spent: window.spent_input_tokens, limit: window.limit_input_tokens }];
+  }
+  return [{
     unit: "usd",
+    metric: "cost",
     spent: Number(window.spent_cost_usd),
-    limit: window.limit_cost_usd === null ? null : Number(window.limit_cost_usd),
-  };
+    equivalentSpent: Number(window.spent_equivalent_cost_usd),
+    limit: null,
+  }];
 }
 
 /** Tightest headroom across the day and month windows; null when neither window limits it. */
-export function remainingBudget(status: MemoryStatus): { usd: number | null; tokens: number | null } {
+export function remainingBudget(status: MemoryStatus): { usd: number | null; equivalentUsd: number | null; tokens: number | null } {
   const windows = [status.day, status.month];
   const headroom = (limits: (number | null)[]): number | null => {
     const set = limits.filter((limit): limit is number => limit !== null);
@@ -122,6 +156,9 @@ export function remainingBudget(status: MemoryStatus): { usd: number | null; tok
   };
   return {
     usd: headroom(windows.map((w) => (w.limit_cost_usd === null ? null : Number(w.limit_cost_usd) - Number(w.spent_cost_usd)))),
+    equivalentUsd: headroom(windows.map((w) => (
+      w.limit_equivalent_cost_usd === null ? null : Number(w.limit_equivalent_cost_usd) - Number(w.spent_equivalent_cost_usd)
+    ))),
     tokens: headroom(windows.map((w) => (w.limit_input_tokens === null ? null : w.limit_input_tokens - w.spent_input_tokens))),
   };
 }

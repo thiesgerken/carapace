@@ -14,8 +14,8 @@ function status(outdated: MemoryTaskKindCounts): MemoryStatus {
   return {
     auto_mode: true,
     timezone: "Europe/Berlin",
-    day: { window_start: "2026-09-03T22:00:00Z", spent_cost_usd: "0", spent_input_tokens: 0, limit_cost_usd: "1.00", limit_input_tokens: null },
-    month: { window_start: "2026-08-31T22:00:00Z", spent_cost_usd: "0", spent_input_tokens: 0, limit_cost_usd: "10.00", limit_input_tokens: null },
+    day: { window_start: "2026-09-03T22:00:00Z", spent_cost_usd: "0", spent_equivalent_cost_usd: "0", spent_input_tokens: 0, limit_cost_usd: "1.00", limit_equivalent_cost_usd: null, limit_input_tokens: null },
+    month: { window_start: "2026-08-31T22:00:00Z", spent_cost_usd: "0", spent_equivalent_cost_usd: "0", spent_input_tokens: 0, limit_cost_usd: "10.00", limit_equivalent_cost_usd: null, limit_input_tokens: null },
     queue: { pending: 0, queued: 0, running: 0, done: 0, failed: 0, cancelled: 0 },
     blocked: 0,
     models: { memory_low: "haiku", memory_high: "opus" },

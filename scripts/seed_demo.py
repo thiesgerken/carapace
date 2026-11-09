@@ -19,14 +19,32 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from pydantic_ai.usage import RunUsage
 from sqlalchemy.engine import make_url
 
 from carapace.auth import AuthStore
 from carapace.config import build_config
-from carapace.database.engine import create_engine_and_factory, resolve_database_url, run_migrations
+from carapace.database.engine import SessionFactory, create_engine_and_factory, resolve_database_url, run_migrations
+from carapace.memory.input import INPUT_FORMAT_VERSION
+from carapace.memory.models import (
+    ExtractionResult,
+    Fact,
+    Provenance,
+    SessionExtraction,
+    SessionExtractionOutput,
+    SpawnedBy,
+    TaskEstimate,
+    TaskKind,
+    TaskOutcome,
+    TaskSelection,
+)
+from carapace.memory.periods import month_key_for_week, week_key
+from carapace.memory.prompts import SESSION_EXTRACT
+from carapace.memory.store import MemoryStore
 from carapace.models.session import SessionAttributes, SessionBudget, SessionState
+from carapace.models.user import MemoryBudget, UserConfig, UserDefaultModelsConfig, UserMemoryConfig
 from carapace.sandbox.snapshot import SessionSandboxSnapshot
 from carapace.session.manager import SessionManager, SessionMeta
 from carapace.usage import UsageTracker, usage_budget_exceeded_error
@@ -35,6 +53,17 @@ DEMO_USER = "demo"
 DEMO_PASSWORD = "carapace-demo"
 DEMO_MODEL = "anthropic:claude-sonnet-4-6"
 DEMO_SUBSCRIPTION_MODEL = "openai-codex:gpt-5.5"
+# Memory runs on the subscription; an older extraction ran on the paid API model. Today's spend
+# sits close to the day limits, so the home page shows the budget notice.
+DEMO_MEMORY_BUDGET = MemoryBudget(
+    cost_usd_per_day=Decimal("0.024"),
+    cost_usd_per_month=Decimal("1.00"),
+    equivalent_cost_usd_per_day=Decimal("0.07"),
+)
+DEMO_USER_CONFIG = UserConfig(
+    default_models=UserDefaultModelsConfig(memory_low=DEMO_SUBSCRIPTION_MODEL),
+    memory=UserMemoryConfig(budget=DEMO_MEMORY_BUDGET),
+)
 
 
 @dataclass
@@ -443,6 +472,110 @@ def demo_sessions(now: datetime) -> list[DemoSession]:
     ]
 
 
+@dataclass(frozen=True)
+class DemoExtraction:
+    session_id: str
+    model: str
+    cost_usd: Decimal
+    abstract: str
+    fact: Fact
+
+
+DEMO_EXTRACTIONS = (
+    DemoExtraction(
+        "demo-pancake-recipe",
+        DEMO_MODEL,
+        Decimal("0.0214"),
+        "The user wanted a fluffy pancake recipe; the agent found one and summarized it.",
+        Fact(
+            category="user",
+            statement="Likes fluffy American-style pancakes.",
+            source_seqs=[0],
+            source_kind="user_said",
+            confidence="medium",
+            durability="durable",
+        ),
+    ),
+    DemoExtraction(
+        "demo-subscription",
+        DEMO_SUBSCRIPTION_MODEL,
+        Decimal("0.0386"),
+        "The user had the date parsing in the api project refactored into one helper; all tests pass.",
+        Fact(
+            category="surroundings",
+            statement="The api project parses dates through parse_date() in src/dates.py.",
+            source_seqs=[2],
+            source_kind="observed",
+            confidence="high",
+            durability="durable",
+        ),
+    ),
+)
+# Left pending, so the run dialog has something to estimate.
+DEMO_PENDING_EXTRACTION = "demo-recipe-skill"
+
+
+def _seed_memory(session_factory: SessionFactory, sessions: list[DemoSession], now: datetime) -> None:
+    """Finished extractions with their spend in today's budget window, plus one pending task."""
+    store = MemoryStore(session_factory)
+    timezone = ZoneInfo(DEMO_USER_CONFIG.timezone)
+    weeks = {
+        demo.session_id: week_key(datetime.fromisoformat(demo.transcript.events[0]["timestamp"]), timezone)
+        for demo in sessions
+    }
+    prompt_version = SESSION_EXTRACT.version(SessionExtractionOutput)
+    for demo in DEMO_EXTRACTIONS:
+        task = store.spawn(
+            DEMO_USER,
+            TaskKind.session_extract,
+            demo.session_id,
+            spawned_by=SpawnedBy.manual,
+            now=now,
+            session_week_key=weeks[demo.session_id],
+            estimate=TaskEstimate(
+                model=demo.model, input_tokens=6_000, output_tokens_cap=2_000, equivalent_cost_usd=demo.cost_usd
+            ),
+        )
+        assert task is not None
+        store.run(DEMO_USER, TaskSelection(ids=[task.id]), None, now)
+        store.claim(task.id, now)
+        provenance = Provenance(
+            carapace_version="demo",
+            model=demo.model,
+            prompt_version=prompt_version,
+            input_format_version=INPUT_FORMAT_VERSION,
+            input_hash=f"demo-{demo.session_id}",
+            input_tokens=5_800,
+            output_tokens=640,
+            equivalent_cost_usd=demo.cost_usd,
+            duration_ms=7_400,
+            task_id=task.id,
+            created_at=now,
+        )
+        extraction = SessionExtraction(
+            abstract=demo.abstract, outcomes=[], open_loops=[], on_my_mind=[], facts=[demo.fact], friction=[], tags=[]
+        )
+        week = weeks[demo.session_id]
+        result = ExtractionResult(
+            session_id=demo.session_id, week_key=week, month_key=month_key_for_week(week), extraction=extraction
+        )
+        store.record_outcome(task.id, TaskOutcome(provenance=provenance, result=result), now)
+    store.spawn(
+        DEMO_USER,
+        TaskKind.session_extract,
+        DEMO_PENDING_EXTRACTION,
+        spawned_by=SpawnedBy.manual,
+        now=now,
+        session_week_key=weeks[DEMO_PENDING_EXTRACTION],
+        estimate=TaskEstimate(
+            model=DEMO_SUBSCRIPTION_MODEL,
+            input_tokens=9_000,
+            output_tokens_cap=2_000,
+            equivalent_cost_usd=Decimal("0.05"),
+        ),
+    )
+
+
 def _require_throwaway_database(data_dir: Path, url: str) -> None:
     """Refuse anything but a SQLite file inside DATA_DIR, e.g. a CARAPACE_DATABASE_URL to a real Postgres."""
     database = make_url(url).database
@@ -467,9 +600,10 @@ def seed(data_dir: Path, now: datetime) -> None:
         sys.exit(f"Refusing to seed {data_dir}: it already has sessions. Use a fresh data dir.")
 
     AuthStore(session_factory, config.auth, data_dir).create_user(
-        username=DEMO_USER, password=DEMO_PASSWORD, display_name="Demo User"
+        username=DEMO_USER, password=DEMO_PASSWORD, display_name="Demo User", config=DEMO_USER_CONFIG
     )
-    for demo in demo_sessions(now):
+    sessions = demo_sessions(now)
+    for demo in sessions:
         events = demo.transcript.events
         created_at = datetime.fromisoformat(events[0]["timestamp"])
         session_id = demo.session_id
@@ -489,6 +623,7 @@ def seed(data_dir: Path, now: datetime) -> None:
         session_mgr.save_usage(session_id, demo.usage)
         session_mgr.save_sandbox_snapshot(session_id, demo.sandbox)
         print(f"{session_id}  {demo.title}")
+    _seed_memory(session_factory, sessions, now)
 
 
 def main() -> None:

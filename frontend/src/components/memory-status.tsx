@@ -4,9 +4,9 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import Link from "next/link";
 import { Loader2, RefreshCw } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
-import { buttonClassName } from "@/components/memory-ui";
+import { buttonClassName, useFormatCost } from "@/components/memory-ui";
 import { getMemoryStatus, spawnOutdatedMemoryTasks } from "@/lib/api";
-import { budgetGauge, formatTokens, formatUsd, hasActiveTasks, summarizeSkips } from "@/lib/memory";
+import { budgetGauges, formatTokens, formatUsd, hasActiveTasks, summarizeSkips, type BudgetGauge } from "@/lib/memory";
 import type { MemoryBudgetWindowStatus, MemoryStatus } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -63,18 +63,29 @@ export function MemoryStatusProvider({ server, children }: { server: string; chi
   return <MemoryStatusContext.Provider value={value}>{children}</MemoryStatusContext.Provider>;
 }
 
-function BudgetMeter({ label, window }: { label: string; window: MemoryBudgetWindowStatus }) {
+function BudgetMeters({ label, window }: { label: string; window: MemoryBudgetWindowStatus }) {
+  return budgetGauges(window).map((gauge) => (
+    <BudgetMeter key={gauge.unit === "usd" ? gauge.metric : gauge.unit} label={label} gauge={gauge} />
+  ));
+}
+
+function BudgetMeter({ label, gauge }: { label: string; gauge: BudgetGauge }) {
   const locale = useLocale();
   const t = useTranslations("memory.status");
-  const gauge = budgetGauge(window);
+  const formatPricedCost = useFormatCost();
   const format = (value: number) => (gauge.unit === "usd" ? formatUsd(value, locale) : formatTokens(value, locale));
   const ratio = gauge.limit ? Math.min(gauge.spent / gauge.limit, 1) : null;
+  const equivalent = gauge.unit === "usd" && gauge.metric === "equivalent_cost";
 
   return (
     <div className="flex min-w-0 items-center gap-2">
-      <span className="text-muted-foreground">{label}</span>
+      <span className="text-muted-foreground" title={equivalent ? t("equivalentHint") : undefined}>
+        {equivalent ? t("equivalent", { label }) : label}
+      </span>
       <span className="font-medium tabular-nums text-foreground">
-        {format(gauge.spent)}
+        {gauge.limit === null && gauge.unit === "usd"
+          ? formatPricedCost({ cost_usd: gauge.spent, equivalent_cost_usd: gauge.equivalentSpent })
+          : format(gauge.spent)}
         {gauge.limit === null ? null : ` / ${format(gauge.limit)}`}
         {gauge.unit === "tokens" ? ` ${t("tokens")}` : null}
       </span>
@@ -194,8 +205,8 @@ export function MemoryStatusStrip({ server }: { server: string }) {
         >
           {t(status.auto_mode ? "autoModeOn" : "autoModeOff")}
         </Link>
-        <BudgetMeter label={t("today")} window={status.day} />
-        <BudgetMeter label={monthLabel} window={status.month} />
+        <BudgetMeters label={t("today")} window={status.day} />
+        <BudgetMeters label={monthLabel} window={status.month} />
         <span className="ml-auto">
           <RefreshOutdated server={server} status={status} />
         </span>

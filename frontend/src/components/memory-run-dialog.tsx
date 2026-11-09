@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Loader2, Play } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
 import { useMemoryStatus } from "@/components/memory-status";
+import { useFormatCost } from "@/components/memory-ui";
 import { ModelPicker } from "@/components/model-picker";
 import { estimateMemoryTasks, fetchModels, runMemoryTasks, type AvailableModelInfo } from "@/lib/api";
 import { exceedsBudget, formatTokenEstimate, formatTokens, formatUsd, remainingBudget, roleDefaultModels } from "@/lib/memory";
@@ -25,6 +26,7 @@ type EstimateOutcome = { model: string | null; includeDependencies: boolean } & 
 export function MemoryRunDialog({ server, token, selection, kinds, onClose, onQueued }: MemoryRunDialogProps) {
   const t = useTranslations("memory.run");
   const locale = useLocale();
+  const formatPricedCost = useFormatCost();
   const { status } = useMemoryStatus();
   const dialogRef = useRef<HTMLDialogElement | null>(null);
   const [models, setModels] = useState<AvailableModelInfo[]>([]);
@@ -76,6 +78,14 @@ export function MemoryRunDialog({ server, token, selection, kinds, onClose, onQu
   const runCount = estimate ? estimate.task_count + estimate.unestimated : null;
   const error = (current && "error" in current ? current.error : null) ?? runError;
   const remaining = status ? remainingBudget(status) : null;
+  const remainingParts = remaining
+    ? [
+      remaining.usd !== null ? formatUsd(remaining.usd, locale) : null,
+      remaining.equivalentUsd !== null ? t("remainingEquivalent", { cost: formatUsd(remaining.equivalentUsd, locale) }) : null,
+      remaining.tokens !== null ? `${formatTokens(remaining.tokens, locale)} ${t("tokens")}` : null,
+    ].filter((part) => part !== null)
+    : [];
+  const remainingText = remainingParts.length > 0 ? remainingParts.join(" · ") : t("noLimit");
   const overBudget = estimate !== null && status !== null && exceedsBudget(estimate, status);
   const defaultModels = status ? roleDefaultModels(kinds, status.models) : null;
 
@@ -106,18 +116,13 @@ export function MemoryRunDialog({ server, token, selection, kinds, onClose, onQu
             <dd className="tabular-nums">
               {estimate.task_count > 0 && estimate.unpriced_count === estimate.task_count
                 ? formatTokenEstimate(estimate.input_tokens, estimate.output_tokens_cap, locale)
-                : `~${formatUsd(estimate.cost_usd, locale)}`}
+                : `~${formatPricedCost(estimate)}`}
               {estimate.unpriced_count > 0 && estimate.unpriced_count < estimate.task_count ? (
                 <span className="ml-2 text-muted-foreground">{t("unpriced", { count: estimate.unpriced_count })}</span>
               ) : null}
             </dd>
             <dt className="text-muted-foreground">{t("remaining")}</dt>
-            <dd className="tabular-nums">
-              {remaining?.usd != null ? formatUsd(remaining.usd, locale) : null}
-              {remaining?.usd != null && remaining.tokens != null ? " · " : null}
-              {remaining?.tokens != null ? `${formatTokens(remaining.tokens, locale)} ${t("tokens")}` : null}
-              {remaining?.usd == null && remaining?.tokens == null ? t("noLimit") : null}
-            </dd>
+            <dd className="tabular-nums">{remainingText}</dd>
           </dl>
         ) : null}
 

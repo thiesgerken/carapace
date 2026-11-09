@@ -46,7 +46,7 @@ def _provenance(task: MemoryTask, model: str, cost: str) -> Provenance:
         input_hash="h",
         input_tokens=100,
         output_tokens=10,
-        cost_usd=Decimal(cost),
+        equivalent_cost_usd=Decimal(cost),
         duration_ms=1,
         task_id=task.id,
         created_at=NOW,
@@ -64,7 +64,7 @@ class ExtractHandler:
         self.block: asyncio.Event | None = None
 
     async def estimate(self, user: str, target: str, model: str) -> TaskEstimate:
-        return TaskEstimate(model=model, input_tokens=100, output_tokens_cap=10, cost_usd=self.cost)
+        return TaskEstimate(model=model, input_tokens=100, output_tokens_cap=10, equivalent_cost_usd=self.cost)
 
     async def run(self, task: MemoryTask, model: str | None) -> TaskOutcome:
         self.runs.append((task.target, model))
@@ -93,7 +93,7 @@ class WeekDigestHandler:
 
     async def estimate(self, user: str, target: str, model: str) -> TaskEstimate:
         self.estimates += 1
-        return TaskEstimate(model=model, input_tokens=100, output_tokens_cap=10, cost_usd=self.cost)
+        return TaskEstimate(model=model, input_tokens=100, output_tokens_cap=10, equivalent_cost_usd=self.cost)
 
     async def run(self, task: MemoryTask, model: str | None) -> TaskOutcome:
         assert model is not None
@@ -141,7 +141,9 @@ class Env:
                 )
         self.store = MemoryStore(db_factory)
         self.now = NOW
-        self.user_config = UserConfig(memory=UserMemoryConfig(budget=MemoryBudget(cost_usd_per_day=Decimal("1.00"))))
+        self.user_config = UserConfig(
+            memory=UserMemoryConfig(budget=MemoryBudget(equivalent_cost_usd_per_day=Decimal("1.00")))
+        )
         self.extract = ExtractHandler()
         self.week_digest = WeekDigestHandler()
         self.mirror = MirrorHandler()
@@ -181,7 +183,10 @@ class Env:
             now=self.now,
             session_week_key="2026-W37",
             estimate=TaskEstimate(
-                model=Config().agent.title_model, input_tokens=100, output_tokens_cap=10, cost_usd=Decimal(cost)
+                model=Config().agent.title_model,
+                input_tokens=100,
+                output_tokens_cap=10,
+                equivalent_cost_usd=Decimal(cost),
             ),
         )
         assert task is not None
@@ -200,7 +205,10 @@ class Env:
             spawned_by=SpawnedBy.manual,
             now=self.now,
             estimate=TaskEstimate(
-                model=Config().agent.title_model, input_tokens=100, output_tokens_cap=10, cost_usd=Decimal("0.10")
+                model=Config().agent.title_model,
+                input_tokens=100,
+                output_tokens_cap=10,
+                equivalent_cost_usd=Decimal("0.10"),
             ),
         )
         assert task is not None
@@ -238,7 +246,7 @@ async def test_raising_the_budget_unblocks(env: Env):
     await env.tick()
     assert env.task(task.id).blocked_reason is BlockedReason.budget
 
-    env.user_config.memory.budget.cost_usd_per_day = Decimal("5.00")
+    env.user_config.memory.budget.equivalent_cost_usd_per_day = Decimal("5.00")
     await env.tick()
     assert env.task(task.id).status is TaskStatus.done
 
@@ -276,13 +284,13 @@ async def test_failures_are_recorded_with_billing_when_billed(env: Env):
     await env.tick()
     failed = env.task(unbilled.id)
     assert (failed.status, failed.error) == (TaskStatus.failed, "RuntimeError: boom")
-    assert env.store.spend("alice", NOW).cost_usd == 0
+    assert env.store.spend("alice", NOW).cost.actual == 0
 
     billed = env.queued("s2", cost="0.10")
     env.extract.fail = TaskRunError("output validation failed", _provenance(billed, "m", "0.07"))
     await env.tick()
     assert env.task(billed.id).error == "output validation failed"
-    assert env.store.spend("alice", NOW).cost_usd == Decimal("0.07")
+    assert env.store.spend("alice", NOW).cost.actual == Decimal("0.07")
 
 
 async def test_cancel_aborts_a_running_call(env: Env):
@@ -373,7 +381,7 @@ async def test_budget_blocked_tasks_never_load_transcripts(env: Env):
 async def test_a_digest_waits_for_its_queued_and_running_extractions(env: Env):
     running, queued = env.queued("s1", cost="0.10"), env.queued("s2", cost="0.10")
     digest = env.queued_week_digest()
-    env.user_config.memory.budget.cost_usd_per_day = Decimal("5.00")
+    env.user_config.memory.budget.equivalent_cost_usd_per_day = Decimal("5.00")
     env.extract.block = asyncio.Event()
     await env.worker.tick()
 
@@ -399,7 +407,9 @@ async def test_a_released_digest_drops_its_block_even_without_a_free_slot(db_fac
         spawned_by=SpawnedBy.auto,
         now=env.now,
         session_week_key="2026-W38",
-        estimate=TaskEstimate(model=Config().agent.title_model, input_tokens=100, output_tokens_cap=10, cost_usd=None),
+        estimate=TaskEstimate(
+            model=Config().agent.title_model, input_tokens=100, output_tokens_cap=10, equivalent_cost_usd=None
+        ),
     )
     assert other_week is not None
     env.store.run("alice", TaskSelection(ids=[other_week.id]), None, env.now)

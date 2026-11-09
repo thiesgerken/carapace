@@ -22,6 +22,7 @@ from ..database.models import (
     SessionRow,
 )
 from ..models.session import SessionState
+from ..usage import cost_split
 from .budget import Spend
 from .models import (
     OPEN_TASK_STATUSES,
@@ -451,23 +452,34 @@ class MemoryStore:
         every running task at its estimate, a reservation that keeps parallel claims from
         overshooting a limit.
 
+        The billed cost is list price; grouping it by model splits it into actual and equivalent cost.
+
         ponytail: a task's billed totals count in the window of its latest billed finish, so a
-        failure yesterday plus a retry today lands entirely in today. Per-attempt rows if exact
-        windows ever matter.
+        failure yesterday plus a retry today lands entirely in today. Likewise all attempts count
+        under the task's current model (its latest estimate or run), so re-estimating or retrying
+        a billed task on a subscription model after an API model (or the reverse) reclassifies
+        the earlier attempts. Per-attempt rows if exact windows or splits ever matter.
         """
         with self._session_factory() as db:
-            tokens, micro_usd = db.execute(
+            billed = db.execute(
                 select(
-                    func.coalesce(func.sum(MemoryTaskRow.billed_input_tokens), 0),
-                    func.coalesce(func.sum(MemoryTaskRow.billed_cost_micro_usd), 0),
-                ).where(MemoryTaskRow.user == user, MemoryTaskRow.billed_at >= since)
-            ).one()
+                    MemoryTaskRow.model,
+                    func.sum(MemoryTaskRow.billed_input_tokens),
+                    func.sum(MemoryTaskRow.billed_cost_micro_usd),
+                )
+                .where(MemoryTaskRow.user == user, MemoryTaskRow.billed_at >= since)
+                .group_by(MemoryTaskRow.model)
+            ).all()
             reservations = db.scalars(
                 select(MemoryTaskRow.estimate).where(
                     MemoryTaskRow.user == user, MemoryTaskRow.status == TaskStatus.running
                 )
             ).all()
-        total = Spend(Decimal(micro_usd) / _MICRO, tokens)
+        total = Spend()
+        for model, tokens, micro_usd in billed:
+            if model is None:
+                raise ValueError(f"memory task of {user} was billed without a model")
+            total = total.plus_spend(Spend(cost_split(model, Decimal(micro_usd) / _MICRO), tokens))
         for estimate in reservations:
             if estimate is not None:
                 total = total.plus(estimate)
@@ -794,8 +806,8 @@ _UNBILLED = {"attempts": 0, "billed_input_tokens": 0, "billed_output_tokens": 0,
 def _add_billing(row: MemoryTaskRow, provenance: Provenance, now: datetime) -> None:
     row.billed_input_tokens += provenance.input_tokens
     row.billed_output_tokens += provenance.output_tokens
-    if provenance.cost_usd is not None:
-        row.billed_cost_micro_usd += int((provenance.cost_usd * _MICRO).to_integral_value(ROUND_HALF_UP))
+    if provenance.equivalent_cost_usd is not None:
+        row.billed_cost_micro_usd += int((provenance.equivalent_cost_usd * _MICRO).to_integral_value(ROUND_HALF_UP))
     row.billed_at = now
 
 

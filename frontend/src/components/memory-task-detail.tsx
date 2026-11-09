@@ -5,10 +5,10 @@ import Link from "next/link";
 import { ArrowUpRight, Loader2 } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
 import { useMemorySessionDetail } from "@/components/memory-extraction-detail";
-import { DetailList } from "@/components/memory-ui";
+import { DetailList, useFormatCost, type PricedCost } from "@/components/memory-ui";
 import { getMemoryPeriod } from "@/lib/api";
 import { formatAbsoluteTime } from "@/lib/format-time";
-import { formatTokens, formatUsd, missingSourceCount, monthLabel, taskRunModel, weekLabel } from "@/lib/memory";
+import { formatTokens, missingSourceCount, monthLabel, taskRunModel, weekLabel } from "@/lib/memory";
 import type { MemoryDigestLevel, MemoryModelRole, MemoryPeriodDetail, MemoryTaskView } from "@/lib/types";
 
 /**
@@ -24,6 +24,7 @@ export function MemoryTaskDetail({ server, task, models }: {
   const t = useTranslations("memory.tasks.detail");
   const tProvenance = useTranslations("memory.provenance");
   const locale = useLocale();
+  const formatPricedCost = useFormatCost();
   const time = (iso: string | null) => (iso ? formatAbsoluteTime(iso, locale) : "—");
   const provenance = task.provenance;
 
@@ -34,7 +35,7 @@ export function MemoryTaskDetail({ server, task, models }: {
       ) : null}
       {task.kind === "session_extract" ? <SessionTaskSubject server={server} task={task} /> : null}
       {task.kind === "week_digest" || task.kind === "month_digest" ? <DigestTaskSubject server={server} task={task} /> : null}
-      <p className="text-xs tabular-nums text-muted-foreground">{taskNumbers(task, taskRunModel(task, models), locale, t)}</p>
+      <p className="text-xs tabular-nums text-muted-foreground">{taskNumbers(task, taskRunModel(task, models), locale, t, formatPricedCost)}</p>
       <details className="text-xs">
         <summary className="cursor-pointer text-muted-foreground hover:text-foreground">{t("details")}</summary>
         <div className="pt-2">
@@ -62,13 +63,19 @@ export function MemoryTaskDetail({ server, task, models }: {
   );
 }
 
-function taskNumbers(task: MemoryTaskView, model: string | null, locale: string, t: ReturnType<typeof useTranslations>): string {
+function taskNumbers(
+  task: MemoryTaskView,
+  model: string | null,
+  locale: string,
+  t: ReturnType<typeof useTranslations>,
+  formatPricedCost: (priced: PricedCost) => string | null,
+): string {
   const attempts = t("attempts", { count: task.attempts });
   const { provenance, estimate } = task;
   if (provenance) {
     return [
       model,
-      provenance.cost_usd === null ? null : formatUsd(provenance.cost_usd, locale),
+      formatPricedCost(provenance),
       `${formatTokens(provenance.input_tokens, locale)} in · ${formatTokens(provenance.output_tokens, locale)} out`,
       `${(provenance.duration_ms / 1000).toFixed(1)} s`,
       attempts,
@@ -77,7 +84,7 @@ function taskNumbers(task: MemoryTaskView, model: string | null, locale: string,
   if (estimate) {
     return [
       model,
-      estimate.cost_usd === null ? null : `~${formatUsd(estimate.cost_usd, locale)}`,
+      estimate.equivalent_cost_usd === null ? null : `~${formatPricedCost(estimate)}`,
       `${t("estimate")} ${formatTokens(estimate.input_tokens, locale)} in · ≤${formatTokens(estimate.output_tokens_cap, locale)} out`,
       attempts,
     ].filter(Boolean).join(" · ");

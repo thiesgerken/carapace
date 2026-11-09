@@ -166,7 +166,7 @@ async def run_calls(prepared: list[Prepared], model: str, system: str, resolve: 
             continue
         print(call.output.model_dump_json(indent=2))
         usage = call.usage
-        cost = f"${usage.cost_usd:.4f}" if usage.cost_usd is not None else "n/a"
+        cost = f"${usage.equivalent_cost_usd:.4f} list price" if usage.equivalent_cost_usd is not None else "n/a"
         print(f"usage: {usage.input_tokens:,} in, {usage.output_tokens:,} out, {cost}, {usage.duration_ms:,} ms")
     return failures
 

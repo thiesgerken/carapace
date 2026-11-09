@@ -1090,10 +1090,12 @@ export interface GitSettingsInfo {
   token_set: boolean;
 }
 
-/** Null disables that limit. Costs are decimal strings. */
+/** Null disables that limit. Costs are decimal strings: actual cost and equivalent cost (list price). */
 export interface MemoryBudgetSettings {
   cost_usd_per_day: string | null;
   cost_usd_per_month: string | null;
+  equivalent_cost_usd_per_day: string | null;
+  equivalent_cost_usd_per_month: string | null;
   input_tokens_per_day: number | null;
   input_tokens_per_month: number | null;
 }
@@ -1319,6 +1321,8 @@ function decodeMemorySettings(raw: unknown): MemorySettingsInfo {
     budget: {
       cost_usd_per_day: cost("cost_usd_per_day"),
       cost_usd_per_month: cost("cost_usd_per_month"),
+      equivalent_cost_usd_per_day: cost("equivalent_cost_usd_per_day"),
+      equivalent_cost_usd_per_month: cost("equivalent_cost_usd_per_month"),
       input_tokens_per_day: tokens("input_tokens_per_day"),
       input_tokens_per_month: tokens("input_tokens_per_month"),
     },

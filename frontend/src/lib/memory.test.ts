@@ -2,8 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  budgetGauge,
+  budgetGauges,
   exceedsBudget,
+  formatCost,
   factMatchesText,
   groupFacts,
   isExpiredFact,
@@ -35,8 +36,10 @@ function window(overrides: Partial<MemoryBudgetWindowStatus> = {}): MemoryBudget
   return {
     window_start: "2026-09-01T00:00:00Z",
     spent_cost_usd: "0.42",
+    spent_equivalent_cost_usd: "0.42",
     spent_input_tokens: 1000,
     limit_cost_usd: null,
+    limit_equivalent_cost_usd: null,
     limit_input_tokens: null,
     ...overrides,
   };
@@ -66,17 +69,29 @@ test("formatUsd keeps sub-cent costs visible and budgets at two decimals", () =>
   assert.equal(formatUsd("0", "en"), "$0.00");
 });
 
-test("budgetGauge prefers the cost limit and falls back to tokens", () => {
-  assert.deepEqual(budgetGauge(window({ limit_cost_usd: "1.00", limit_input_tokens: 5000 })), { unit: "usd", spent: 0.42, limit: 1 });
-  assert.deepEqual(budgetGauge(window({ limit_input_tokens: 5000 })), { unit: "tokens", spent: 1000, limit: 5000 });
-  assert.deepEqual(budgetGauge(window()), { unit: "usd", spent: 0.42, limit: null });
+test("budgetGauges shows one gauge per cost limit and falls back to tokens", () => {
+  const both = window({ spent_equivalent_cost_usd: "1.80", limit_cost_usd: "1.00", limit_equivalent_cost_usd: "2.00", limit_input_tokens: 5000 });
+  assert.deepEqual(budgetGauges(both), [
+    { unit: "usd", metric: "cost", spent: 0.42, limit: 1 },
+    { unit: "usd", metric: "equivalent_cost", spent: 1.8, limit: 2 },
+  ]);
+  assert.deepEqual(budgetGauges(window({ limit_input_tokens: 5000 })), [{ unit: "tokens", spent: 1000, limit: 5000 }]);
+  assert.deepEqual(budgetGauges(window({ spent_equivalent_cost_usd: "1.80" })), [
+    { unit: "usd", metric: "cost", spent: 0.42, equivalentSpent: 1.8, limit: null },
+  ]);
 });
 
 test("remainingBudget takes the tightest window and clamps overspend to zero", () => {
-  const day = window({ spent_cost_usd: "0.25", limit_cost_usd: "1.00" });
+  const day = window({ spent_cost_usd: "0.25", limit_cost_usd: "1.00", spent_equivalent_cost_usd: "1.50", limit_equivalent_cost_usd: "2.00" });
   const month = window({ spent_cost_usd: "3.10", limit_cost_usd: "10.00", limit_input_tokens: 500 });
-  assert.deepEqual(remainingBudget(status(day, month)), { usd: 0.75, tokens: 0 });
-  assert.deepEqual(remainingBudget(status(window(), window())), { usd: null, tokens: null });
+  assert.deepEqual(remainingBudget(status(day, month)), { usd: 0.75, equivalentUsd: 0.5, tokens: 0 });
+  assert.deepEqual(remainingBudget(status(window(), window())), { usd: null, equivalentUsd: null, tokens: null });
+});
+
+test("formatCost adds the equivalent cost only where it differs", () => {
+  const withEquivalent = (cost: string, equivalent: string) => `${cost} (≈ ${equivalent})`;
+  assert.equal(formatCost("0.004", "0.004", "en", withEquivalent), "$0.004");
+  assert.equal(formatCost("0", "0.0042", "en", withEquivalent), "$0.00 (≈ $0.0042)");
 });
 
 test("selections send ids or the filter, never both", () => {
@@ -105,7 +120,7 @@ function memoryTask(overrides: Partial<MemoryTask> = {}): MemoryTask {
     spawned_by: "auto",
     model_override: null,
     attempts: 0,
-    estimate: { model: "stale", input_tokens: 1, output_tokens_cap: 1, cost_usd: "0.01" },
+    estimate: { model: "stale", input_tokens: 1, output_tokens_cap: 1, cost_usd: "0.01", equivalent_cost_usd: "0.01" },
     provenance: null,
     result_id: null,
     error: null,
@@ -124,7 +139,7 @@ test("taskRunModel ignores the spawn-time estimate model", () => {
   assert.equal(taskRunModel(memoryTask({ model_override: "picked" }), models), "picked");
   const provenance = {
     carapace_version: "0", model: "ran", prompt_version: "p", input_format_version: 1, input_hash: "h",
-    input_tokens: 1, output_tokens: 1, cost_usd: null, duration_ms: 1, task_id: 1, created_at: "2026-09-04T10:00:00Z",
+    input_tokens: 1, output_tokens: 1, cost_usd: null, equivalent_cost_usd: null, duration_ms: 1, task_id: 1, created_at: "2026-09-04T10:00:00Z",
   };
   assert.equal(taskRunModel(memoryTask({ model_override: "picked", provenance }), models), "ran");
   assert.equal(taskRunModel(memoryTask({ kind: "mirror", estimate: null }), models), null);
@@ -149,9 +164,18 @@ test("budget-blocked queued tasks don't keep the poll alive", () => {
 
 test("exceedsBudget checks token-only budgets too", () => {
   const tokenOnly = status(window({ limit_input_tokens: 5000 }), window());
-  const estimate = { task_count: 1, input_tokens: 4500, output_tokens_cap: 0, cost_usd: "0", unpriced_count: 1 };
+  const estimate = { task_count: 1, input_tokens: 4500, output_tokens_cap: 0, cost_usd: "0", equivalent_cost_usd: "0", unpriced_count: 1 };
   assert.equal(exceedsBudget(estimate, tokenOnly), true);
   assert.equal(exceedsBudget({ ...estimate, input_tokens: 4000 }, tokenOnly), false);
+});
+
+test("exceedsBudget checks actual and equivalent cost separately", () => {
+  const limits = status(window({ limit_cost_usd: "1.00", limit_equivalent_cost_usd: "2.00" }), window());
+  // A subscription run: nothing actual, but its list price counts against the equivalent limit.
+  const subscription = { task_count: 1, input_tokens: 0, output_tokens_cap: 0, cost_usd: "0", equivalent_cost_usd: "1.50", unpriced_count: 0 };
+  assert.equal(exceedsBudget(subscription, limits), false);
+  assert.equal(exceedsBudget({ ...subscription, equivalent_cost_usd: "1.60" }, limits), true);
+  assert.equal(exceedsBudget({ ...subscription, cost_usd: "0.60", equivalent_cost_usd: "0.60" }, limits), true);
 });
 
 test("outdated reasons only narrow the outdated state", () => {
@@ -202,7 +226,7 @@ function periodNode(overrides: Partial<MemoryPeriodNode> = {}): MemoryPeriodNode
 }
 
 test("periodBadge distinguishes not run, current and stale with reasons", () => {
-  const digest = { id: 1, model: "opus", prompt_version: "a1", carapace_version: "0.158.7", cost_usd: "0.08", created_at: "2026-09-08T07:12:00Z", outdated: [] };
+  const digest = { id: 1, model: "opus", prompt_version: "a1", carapace_version: "0.158.7", cost_usd: "0.08", equivalent_cost_usd: "0.08", created_at: "2026-09-08T07:12:00Z", outdated: [] };
   assert.deepEqual(periodBadge(periodNode()), { kind: "notRun" });
   assert.deepEqual(periodBadge(periodNode({ digest })), { kind: "current" });
   assert.deepEqual(
