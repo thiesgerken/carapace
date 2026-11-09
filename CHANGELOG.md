@@ -1,6 +1,24 @@
 # CHANGELOG
 
 
+## v0.172.2 (2026-11-09)
+
+
+### Other
+
+
+- Merge pull request #424 from thiesgerken/renovate/node-26.x
+  ([`6b96682`](https://github.com/thiesgerken/carapace/commit/6b96682f6733b8f4d88f897ed9c816d47c676faf))
+
+### ⬆️ Dependencies
+
+
+- ⬆️ chore: upgrade @types/node to 26.6.6
+  ([`6b96682`](https://github.com/thiesgerken/carapace/commit/6b96682f6733b8f4d88f897ed9c816d47c676faf))
+
+- ⬆️ chore: upgrade @types/node to 26.6.6
+  ([`6e18089`](https://github.com/thiesgerken/carapace/commit/6e180893eae8db1d6eb75939c2f7db329cdec793))
+
 ## v0.172.1 (2026-11-09)
 
 
