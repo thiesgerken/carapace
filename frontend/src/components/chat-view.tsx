@@ -396,6 +396,7 @@ function isUserApprovedReplay(
     | "user"
     | "skill"
     | "bypass"
+    | "autonomy"
     | "unknown"
     | undefined,
   approvalVerdict: "allow" | "deny" | "escalate" | undefined,
@@ -419,6 +420,7 @@ function isToolCallLoading(
     | "user"
     | "skill"
     | "bypass"
+    | "autonomy"
     | "unknown",
   approvalVerdict?: "allow" | "deny" | "escalate",
 ): boolean {

@@ -38,7 +38,7 @@ class SessionCommandHost(Protocol):
     ) -> Any: ...
     async def run_uncompaction(self, active: ActiveSession) -> dict[str, Any]: ...
     def _skill_catalog_for_session(self, session_id: str) -> list[SkillInfo]: ...
-    def _budget_gauges(self, active: ActiveSession) -> list[Any]: ...
+    def _display_budget_gauges(self, active: ActiveSession) -> list[Any]: ...
     def _usage_last_llm_payload_row(
         self, active: ActiveSession, source: Literal["agent", "sentinel"]
     ) -> dict[str, Any] | None: ...
@@ -72,7 +72,7 @@ class SessionCommandMixin:
         ) -> Any: ...
         async def run_uncompaction(self, active: ActiveSession) -> dict[str, Any]: ...
         def _skill_catalog_for_session(self, session_id: str) -> list[SkillInfo]: ...
-        def _budget_gauges(self, active: ActiveSession) -> list[Any]: ...
+        def _display_budget_gauges(self, active: ActiveSession) -> list[Any]: ...
         def _usage_last_llm_payload_row(
             self, active: ActiveSession, source: Literal["agent", "sentinel"]
         ) -> dict[str, Any] | None: ...
@@ -156,7 +156,7 @@ class SessionCommandMixin:
                     "total_tool_calls": tracker.tool_calls,
                     "costs": {k: str(v) for k, v in costs.items()},
                     "category_costs": {k: str(v) for k, v in cat_costs.items()},
-                    "budget_gauges": [g.model_dump(mode="json") for g in self._budget_gauges(active)],
+                    "budget_gauges": [g.model_dump(mode="json") for g in self._display_budget_gauges(active)],
                     "last_llm_agent": self._usage_last_llm_payload_row(active, "agent"),
                     "last_llm_sentinel": self._usage_last_llm_payload_row(active, "sentinel"),
                 },
@@ -209,6 +209,7 @@ class SessionCommandMixin:
             "tool": "tool_calls",
             "tool_calls": "tool_calls",
             "tool-calls": "tool_calls",
+            "autonomy": "autonomy",
         }
         metric = metric_aliases.get(args[0].lower()) if len(args) == 2 else None
         if len(args) != 2 or metric is None:
@@ -216,7 +217,8 @@ class SessionCommandMixin:
                 "command": "budget",
                 "data": {
                     **self._budget_command_payload(active),
-                    "error": "Usage: /budget, /budget input N, /budget output N, /budget cost N, or /budget tools N",
+                    "error": "Usage: /budget, /budget input N, /budget output N, /budget cost N, /budget tools N, "
+                    "or /budget autonomy N",
                 },
             }
 

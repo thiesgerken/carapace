@@ -10,6 +10,7 @@ from pydantic_ai.usage import RunUsage
 from carapace.usage import (
     SessionBudgetExceededError,
     UsageTracker,
+    agent_request_limit,
     provider_cost_usd_from_messages,
     usage_budget_exceeded_error,
     usage_budget_gauges,
@@ -245,18 +246,17 @@ def test_usage_limits_for_remaining_budget_uses_remaining_output_tokens() -> Non
         RunUsage(input_tokens=100, output_tokens=250, requests=1),
     )
 
-    limits = usage_limits_for_remaining_budget(tracker, output_tokens_limit=500)
+    limits = usage_limits_for_remaining_budget(tracker, output_tokens_limit=500, request_limit=None)
 
-    assert limits is not None
     assert limits.output_tokens_limit == 250
+    assert limits.request_limit is None
 
 
 def test_usage_limits_for_remaining_budget_can_include_request_limit() -> None:
     tracker = UsageTracker()
 
-    limits = usage_limits_for_remaining_budget(tracker, request_limit=5)
+    limits = usage_limits_for_remaining_budget(tracker, output_tokens_limit=None, request_limit=5)
 
-    assert limits is not None
     assert limits.request_limit == 5
     assert limits.output_tokens_limit is None
 
@@ -276,9 +276,13 @@ def test_usage_limits_for_remaining_budget_combines_output_and_request_limits() 
     assert limits.request_limit == 5
 
 
-def test_usage_limits_for_remaining_budget_returns_none_without_output_limit() -> None:
-    tracker = UsageTracker()
+def test_usage_limits_for_remaining_budget_is_explicit_without_any_limit() -> None:
+    limits = usage_limits_for_remaining_budget(UsageTracker(), output_tokens_limit=None, request_limit=None)
 
-    limits = usage_limits_for_remaining_budget(tracker)
+    # pydantic-ai would otherwise fall back to its own default request limit.
+    assert (limits.output_tokens_limit, limits.request_limit) == (None, None)
 
-    assert limits is None
+
+def test_agent_request_limit_is_three_times_the_autonomy_limit() -> None:
+    assert agent_request_limit(100) == 300
+    assert agent_request_limit(None) is None

@@ -15,6 +15,7 @@ from typing import Any, Protocol, runtime_checkable
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.models import Model
 
+from ..agent.autonomy import AutonomyStreak
 from ..models.session import SessionBudget, SessionState
 from ..models.tooling import ToolResult
 from ..security.context import ApprovalSource, ApprovalVerdict, SessionSecurity
@@ -125,6 +126,7 @@ class ActiveSession:
     tool_approval_queue: asyncio.Queue[ApprovalResponse | None] = field(default_factory=asyncio.Queue)
     escalation_queue: asyncio.Queue[EscalationResponse | None] = field(default_factory=asyncio.Queue)
     usage_tracker: UsageTracker = field(default_factory=UsageTracker)
+    autonomy: AutonomyStreak = field(default_factory=AutonomyStreak)
     llm_request_log: LlmRequestLog = field(default_factory=LlmRequestLog)
     llm_request_state: LlmRequestState | None = None
     llm_request_thinking: dict[str, str] = field(default_factory=dict)

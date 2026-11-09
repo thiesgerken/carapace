@@ -2,9 +2,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type { UserSettingsResponseInfo } from "@/lib/api";
-import { buildUserSettingsPatch } from "./user-settings-view";
+import type { SessionBudgetSettings } from "@/lib/types";
+import { buildUserSettingsPatch, draftFromSettings } from "./user-settings-view";
 
-function userSettingsResponse(defaultBudget: { tool_calls: number }): UserSettingsResponseInfo {
+function userSettingsResponse(
+  defaultBudget: SessionBudgetSettings,
+  serverBudget: SessionBudgetSettings = {},
+): UserSettingsResponseInfo {
   return {
     capabilities: {
       file_credential_backend: false,
@@ -17,7 +21,7 @@ function userSettingsResponse(defaultBudget: { tool_calls: number }): UserSettin
         memory_low: "anthropic:title",
         memory_high: "anthropic:default",
       },
-      budget: {},
+      budget: serverBudget,
       memory_prompt_budget_tokens: 4000,
     },
     available_models: [
@@ -75,6 +79,7 @@ test("buildUserSettingsPatch omits unchanged credentials when file backends are 
       output_tokens: "",
       cost_usd: "",
       tool_calls: "4",
+      autonomous_tool_calls: "",
     },
     timezone: settings.settings.timezone,
     memory: {
@@ -120,7 +125,7 @@ test("buildUserSettingsPatch keeps default models the view does not edit", () =>
     agentName: "",
     agentIcon: "",
     defaultModels: settings.settings.default_models,
-    budget: { input_tokens: "", output_tokens: "", cost_usd: "", tool_calls: "3" },
+    budget: { input_tokens: "", output_tokens: "", cost_usd: "", tool_calls: "3", autonomous_tool_calls: "" },
     timezone: settings.settings.timezone,
     memory: {
       autoMode: false,
@@ -146,7 +151,7 @@ test("buildUserSettingsPatch sends memory settings, keeping a zero limit and cle
     agentName: "",
     agentIcon: "",
     defaultModels: { ...settings.settings.default_models, memory_high: " anthropic:default " },
-    budget: { input_tokens: "", output_tokens: "", cost_usd: "", tool_calls: "3" },
+    budget: { input_tokens: "", output_tokens: "", cost_usd: "", tool_calls: "3", autonomous_tool_calls: "" },
     timezone: " America/New_York ",
     memory: {
       autoMode: true,
@@ -169,4 +174,32 @@ test("buildUserSettingsPatch sends memory settings, keeping a zero limit and cle
     budget: { cost_usd_per_day: "0", cost_usd_per_month: null, input_tokens_per_day: 50000, input_tokens_per_month: null },
     prompt_budget_tokens: 0,
   });
+});
+
+test("a new user default budget starts from the platform's autonomy limit", () => {
+  const settings = userSettingsResponse({}, { autonomous_tool_calls: 100 });
+  const draft = draftFromSettings(settings);
+
+  assert.equal(draft.budget.autonomous_tool_calls, "100");
+  // The untouched form keeps falling back to the platform budget instead of storing a copy of it.
+  assert.equal(buildUserSettingsPatch(draft, settings, (key) => key).default_budget, undefined);
+
+  const patch = buildUserSettingsPatch(
+    { ...draft, budget: { ...draft.budget, cost_usd: "2.50" } },
+    settings,
+    (key) => key,
+  );
+  assert.deepEqual(patch.default_budget, {
+    input_tokens: null,
+    output_tokens: null,
+    cost_usd: "2.50",
+    tool_calls: null,
+    autonomous_tool_calls: 100,
+  });
+});
+
+test("an existing user default budget is not prefilled", () => {
+  const draft = draftFromSettings(userSettingsResponse({ tool_calls: 3 }, { autonomous_tool_calls: 100 }));
+
+  assert.equal(draft.budget.autonomous_tool_calls, "");
 });

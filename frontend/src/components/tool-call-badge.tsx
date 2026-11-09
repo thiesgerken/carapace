@@ -11,6 +11,7 @@ import {
   FolderCode,
   GitBranch,
   Globe,
+  Hourglass,
   KeyRound,
   Loader2,
   Plug,
@@ -57,7 +58,7 @@ interface ToolCallBadgeProps {
   sessionId?: string;
 }
 
-type ApprovalSource = "safe-list" | "sentinel" | "user" | "skill" | "bypass" | "unknown";
+type ApprovalSource = "safe-list" | "sentinel" | "user" | "skill" | "bypass" | "autonomy" | "unknown";
 type ApprovalVerdict = "allow" | "deny" | "escalate";
 
 const TOOL_ICONS: Record<string, LucideIcon> = {
@@ -477,6 +478,18 @@ function ApprovalBadge({
       <span className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium bg-teal-500/10 text-teal-600 dark:text-teal-400">
         <Puzzle className="h-2.5 w-2.5" />
         {t("skill")}
+      </span>
+    );
+  }
+
+  if (source === "autonomy") {
+    return (
+      <span
+        className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium bg-red-500/10 text-red-600 dark:text-red-400"
+        title={tooltip || undefined}
+      >
+        <Hourglass className="h-2.5 w-2.5" />
+        {t("autonomy")}
       </span>
     );
   }

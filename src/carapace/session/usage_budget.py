@@ -7,6 +7,9 @@ from collections.abc import Mapping
 from decimal import Decimal, InvalidOperation
 from typing import TYPE_CHECKING, Any
 
+from pydantic_ai.exceptions import UsageLimitExceeded
+from pydantic_ai.usage import UsageLimits
+
 from ..models.config import Config
 from ..models.session import SessionBudget
 from ..usage import (
@@ -16,6 +19,8 @@ from ..usage import (
     LlmRequestState,
     LlmSource,
     SessionBudgetExceededError,
+    agent_request_limit,
+    autonomy_budget_gauge,
     gauge_breakdown_pct_dict,
     last_record_for_source,
     llm_request_sink_scope,
@@ -28,9 +33,6 @@ from ..ws_models import TurnUsage, TurnUsageBreakdownPct
 from .manager import SessionManager
 from .types import ActiveSession
 
-if TYPE_CHECKING:
-    from pydantic_ai.usage import UsageLimits
-
 _DEFAULT_CONTEXT_CAP_TOKENS = 200_000
 
 BUDGET_METRIC_FIELDS: dict[BudgetMetric, str] = {
@@ -38,6 +40,7 @@ BUDGET_METRIC_FIELDS: dict[BudgetMetric, str] = {
     "output": "output_tokens",
     "cost": "cost_usd",
     "tool_calls": "tool_calls",
+    "autonomy": "autonomous_tool_calls",
 }
 
 _BUDGET_METRIC_NAMES: dict[BudgetMetric, str] = {
@@ -45,13 +48,14 @@ _BUDGET_METRIC_NAMES: dict[BudgetMetric, str] = {
     "output": "output token budget",
     "cost": "cost budget",
     "tool_calls": "tool call budget",
+    "autonomy": "autonomy limit",
 }
 
 
 def parse_budget_limit(metric: BudgetMetric, raw: str) -> int | Decimal:
     """Parse a limit as typed in ``/budget`` (``100k``, ``2M``, ``1,000``, ``2.50``); 0 means no limit."""
     cleaned = raw.replace(",", "").replace("_", "")
-    if metric in ("input", "output", "tool_calls"):
+    if metric != "cost":
         lowered = cleaned.lower()
         multiplier = 1
         if lowered.endswith("k"):
@@ -61,7 +65,7 @@ def parse_budget_limit(metric: BudgetMetric, raw: str) -> int | Decimal:
             multiplier = 1_000_000
             lowered = lowered[:-1]
 
-        budget_type = "tool call budget" if metric == "tool_calls" else "token budget"
+        budget_type = "token budget" if metric in ("input", "output") else _BUDGET_METRIC_NAMES[metric]
         if not lowered:
             raise ValueError(f"Invalid {budget_type}: {raw}")
 
@@ -96,6 +100,8 @@ def _budget_limit_message(metric: BudgetMetric, budget: SessionBudget) -> str:
             amount = f"${value:.4f}"
         case "tool_calls":
             amount = f"{value:,} tool {'call' if value == 1 else 'calls'}"
+        case "autonomy":
+            amount = f"{value:,} tool {'call' if value == 1 else 'calls'} without you"
         case _:
             amount = f"{value:,} tokens"
     return f"Set {name} to {amount}."
@@ -145,6 +151,7 @@ class SessionUsageBudgetMixin:
         return self._max_input_tokens_for_model_id(model_id) or _DEFAULT_CONTEXT_CAP_TOKENS
 
     def _budget_gauges(self, active: ActiveSession) -> list[BudgetGauge]:
+        """Gauges of the session totals, the budgets whose stop message lists the reached ones."""
         budget = active.state.budget
         return usage_budget_gauges(
             active.usage_tracker,
@@ -153,6 +160,14 @@ class SessionUsageBudgetMixin:
             total_cost_limit=budget.cost_usd,
             tool_calls_limit=budget.tool_calls,
         )
+
+    def _display_budget_gauges(self, active: ActiveSession) -> list[BudgetGauge]:
+        """Every gauge the UI shows: the totals plus the autonomy limit, which stops through its own path."""
+        gauges = self._budget_gauges(active)
+        limit = active.state.budget.autonomous_tool_calls
+        if limit is not None:
+            gauges.append(autonomy_budget_gauge(active.autonomy.count, limit))
+        return gauges
 
     def _budget_exceeded_error(self, active: ActiveSession) -> SessionBudgetExceededError | None:
         budget = active.state.budget
@@ -169,13 +184,26 @@ class SessionUsageBudgetMixin:
         if error is not None:
             raise error
 
-    def _remaining_usage_limits(self, active: ActiveSession) -> UsageLimits | None:
+    def _remaining_usage_limits(self, active: ActiveSession) -> UsageLimits:
+        budget = active.state.budget
         return usage_limits_for_remaining_budget(
             active.usage_tracker,
-            output_tokens_limit=active.state.budget.output_tokens,
+            output_tokens_limit=budget.output_tokens,
+            request_limit=agent_request_limit(budget.autonomous_tool_calls),
         )
 
-    def _remaining_aux_usage_limits(self, active: ActiveSession) -> UsageLimits | None:
+    def _agent_request_limit_message(self, active: ActiveSession, error: UsageLimitExceeded) -> str | None:
+        """A readable stop message when *error* is the agent request stopgap, else ``None``."""
+        limit = active.state.budget.autonomous_tool_calls
+        # pydantic-ai reports which limit was hit only in the message text.
+        if limit is None or "request_limit" not in str(error):
+            return None
+        return (
+            f"The agent made {agent_request_limit(limit):,} model requests without finishing the turn "
+            f"(three times the autonomy limit of {limit:,}). Raise the limit to continue: /budget autonomy N"
+        )
+
+    def _remaining_aux_usage_limits(self, active: ActiveSession) -> UsageLimits:
         return usage_limits_for_remaining_budget(
             active.usage_tracker,
             output_tokens_limit=active.state.budget.output_tokens,
@@ -184,7 +212,7 @@ class SessionUsageBudgetMixin:
 
     def _turn_usage_payload(self, active: ActiveSession) -> TurnUsage | None:
         rec_agent = last_record_for_source(active.llm_request_log, "agent")
-        budget_gauges = self._budget_gauges(active)
+        budget_gauges = self._display_budget_gauges(active)
         if rec_agent is None and not budget_gauges:
             return None
         row = usage_last_request_row(rec_agent) if rec_agent else None
@@ -229,10 +257,10 @@ class SessionUsageBudgetMixin:
         await self._set_llm_request_state(active, state)
 
     def _budget_command_payload(self, active: ActiveSession, *, message: str | None = None) -> dict[str, Any]:
-        gauges = self._budget_gauges(active)
+        gauges = self._display_budget_gauges(active)
         usage_hint = (
             "Set budgets with /budget input N, /budget output N, /budget cost N, "
-            "or /budget tools N. Use 0 to clear a limit."
+            "/budget tools N, or /budget autonomy N. Use 0 to clear a limit."
         )
         payload: dict[str, Any] = {
             "gauges": [g.model_dump(mode="json") for g in gauges],

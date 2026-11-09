@@ -24,6 +24,7 @@ from pydantic_ai.messages import ModelMessage, ModelResponse
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.tools import ToolDefinition
 
+from .agent.autonomy import AutonomyStreak
 from .agent.deps import Deps
 from .agent.tools import agent_instructions, build_session_info, create_agent
 from .credentials import CredentialRegistry
@@ -130,6 +131,7 @@ async def _agent(inputs: PreviewInputs) -> PromptPreview:
         agent_model=_recording_model(),
         agent_model_id=model,
         usage_tracker=UsageTracker(),
+        autonomy=AutonomyStreak(),
         credential_registry=CredentialRegistry(),
     )
     request = await _record(create_agent(deps), deps=deps)

@@ -16,6 +16,8 @@ class SessionBudget(BaseModel):
     output_tokens: int | None = None
     cost_usd: Decimal | None = None
     tool_calls: int | None = None
+    # Tool call attempts since the last human interaction (the autonomous streak).
+    autonomous_tool_calls: int | None = None
 
     @model_validator(mode="after")
     def _normalize_limits(self) -> SessionBudget:
@@ -39,12 +41,24 @@ class SessionBudget(BaseModel):
                 raise ValueError("budget.tool_calls must be >= 0")
             if self.tool_calls == 0:
                 self.tool_calls = None
+        if self.autonomous_tool_calls is not None:
+            if self.autonomous_tool_calls < 0:
+                raise ValueError("budget.autonomous_tool_calls must be >= 0")
+            if self.autonomous_tool_calls == 0:
+                self.autonomous_tool_calls = None
         return self
 
     @property
     def has_any_limit(self) -> bool:
         return any(
-            limit is not None for limit in (self.input_tokens, self.output_tokens, self.cost_usd, self.tool_calls)
+            limit is not None
+            for limit in (
+                self.input_tokens,
+                self.output_tokens,
+                self.cost_usd,
+                self.tool_calls,
+                self.autonomous_tool_calls,
+            )
         )
 
 

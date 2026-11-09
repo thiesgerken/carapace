@@ -138,7 +138,7 @@ class UnattendedSentinelVerdict(BaseModel):
     risk_level: Literal["low", "medium", "high"] = "medium"
 
 
-ApprovalSource = Literal["safe-list", "sentinel", "user", "skill", "bypass", "unknown"]
+ApprovalSource = Literal["safe-list", "sentinel", "user", "skill", "bypass", "autonomy", "unknown"]
 ApprovalVerdict = Literal["allow", "deny", "escalate"]
 
 

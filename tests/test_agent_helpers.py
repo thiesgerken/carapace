@@ -18,6 +18,7 @@ from pydantic_ai.providers.anthropic import AnthropicProvider
 from pydantic_ai.providers.openai import OpenAIProvider
 
 from carapace.agent import build_session_info, build_system_prompt, create_agent
+from carapace.agent.autonomy import AutonomyStreak
 from carapace.agent.deps import Deps
 from carapace.credentials import CredentialRegistry
 from carapace.git.store import GitStore
@@ -46,6 +47,7 @@ def test_build_system_prompt_minimal(tmp_path: Path):
         agent_model=MagicMock(spec=Model),
         agent_model_id="anthropic:claude-sonnet-4-6",
         usage_tracker=UsageTracker(),
+        autonomy=AutonomyStreak(),
         credential_registry=CredentialRegistry(),
     )
     prompt = build_system_prompt(deps)
@@ -75,6 +77,7 @@ def test_build_system_prompt_with_agents_md(tmp_path: Path):
         agent_model=MagicMock(spec=Model),
         agent_model_id="anthropic:claude-sonnet-4-6",
         usage_tracker=UsageTracker(),
+        autonomy=AutonomyStreak(),
         credential_registry=CredentialRegistry(),
     )
     prompt = build_system_prompt(deps)
@@ -97,6 +100,7 @@ def test_build_system_prompt_unattended_mentions_task_outputs(tmp_path: Path):
         agent_model=MagicMock(spec=Model),
         agent_model_id="anthropic:claude-sonnet-4-6",
         usage_tracker=UsageTracker(),
+        autonomy=AutonomyStreak(),
         credential_registry=CredentialRegistry(),
     )
 
@@ -122,6 +126,7 @@ def test_build_system_prompt_puts_the_memory_block_between_fixed_instructions_an
         agent_model=MagicMock(spec=Model),
         agent_model_id="anthropic:claude-sonnet-4-6",
         usage_tracker=UsageTracker(),
+        autonomy=AutonomyStreak(),
         credential_registry=CredentialRegistry(),
     )
 
@@ -144,6 +149,7 @@ def test_build_system_prompt_ask_mode_mentions_read_only_limits(tmp_path: Path):
         agent_model=MagicMock(spec=Model),
         agent_model_id="anthropic:claude-sonnet-4-6",
         usage_tracker=UsageTracker(),
+        autonomy=AutonomyStreak(),
         credential_registry=CredentialRegistry(),
     )
 
@@ -172,6 +178,7 @@ def test_build_system_prompt_leads_with_the_shared_prefix_and_ends_volatile(tmp_
         agent_model=MagicMock(spec=Model),
         agent_model_id="anthropic:claude-sonnet-4-6",
         usage_tracker=UsageTracker(),
+        autonomy=AutonomyStreak(),
         credential_registry=CredentialRegistry(),
     )
 
@@ -216,6 +223,7 @@ def _capture_agent_request(
         agent_model=make_model(httpx2.AsyncClient(transport=httpx2.MockTransport(capture))),
         agent_model_id=model_id,
         usage_tracker=UsageTracker(),
+        autonomy=AutonomyStreak(),
         credential_registry=CredentialRegistry(),
     )
     with pytest.raises(ModelHTTPError):
