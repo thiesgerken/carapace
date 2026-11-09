@@ -582,7 +582,7 @@ class Sentinel:
             deps_type=Path,
             output_type=ToolOutput(output_model, name=SENTINEL_VERDICT_TOOL),
             instructions=self._load_system_prompt,
-            capabilities=[LlmRequestLogCapability(source="sentinel")],
+            capabilities=[LlmRequestLogCapability(source="sentinel", model_id=self._model)],
             model_settings=model_settings,
             retries={"tools": 1, "output": 2},
         )

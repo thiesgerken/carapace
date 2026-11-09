@@ -4,7 +4,7 @@ import { useTranslations } from "next-intl";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Archive, ArchiveRestore, Bot, Brain, Bug, Check, Copy, ExternalLink, Globe, Link2, Link2Off, Loader2, Lock, MessageSquare, Pin, Play, RotateCcw, Save, Settings2, Square, Star, Terminal, Trash2 } from "lucide-react";
+import { Archive, ArchiveRestore, Bot, Brain, Check, Copy, ExternalLink, Globe, Link2, Link2Off, Loader2, Lock, MessageSquare, Pin, Play, RotateCcw, Save, Settings2, Square, Star, Terminal, Trash2 } from "lucide-react";
 import { EmojiText } from "@/components/emoji-text";
 import { ChatMemorySection } from "@/components/chat-memory-section";
 import { useMemorySessionDetail } from "@/components/memory-extraction-detail";
@@ -62,7 +62,7 @@ import {
 import { Message } from "./message";
 import { ToolCallGroup, groupRenderItems } from "./tool-call-group";
 import { ChatInput } from "./chat-input";
-import { debugViewHref } from "./debug-view";
+import { SessionHeader } from "./session-header";
 
 interface ChatViewProps {
   server: string;
@@ -2362,14 +2362,6 @@ export function ChatView({
             {t("inspector.actions")}
           </div>
           <div className="flex flex-wrap items-center justify-end gap-1">
-          <Link
-            href={debugViewHref(sessionId)}
-            title={t("actions.debugView")}
-            aria-label={t("actions.debugView")}
-            className="rounded-md p-1.5 text-foreground/70 transition-colors hover:bg-accent"
-          >
-            <Bug className="h-3.5 w-3.5" />
-          </Link>
           <button
             onClick={() => void handleTogglePinned()}
             disabled={!session || !!updatingSessionAttribute || deletingSession || !onUpdateSessionAttributes}
@@ -2810,38 +2802,30 @@ export function ChatView({
 
       <div className="min-h-0 flex flex-1 flex-col lg:grid lg:grid-cols-[minmax(0,1fr)_22rem]">
         <div className="min-h-0 flex flex-1 flex-col">
-          <div className="border-b border-border px-3 py-2.5 sm:px-4 sm:py-3">
-            <div className="flex items-center justify-between gap-3 sm:items-start">
-              <div className="min-w-0">
-                <div className="flex min-w-0 items-center gap-2">
-                  <div className="truncate text-sm font-semibold text-foreground">
-                    {session?.title?.trim() ? <EmojiText text={sessionDisplayTitle} /> : sessionDisplayTitle}
-                  </div>
-                  {hasMemory ? (
-                    <button
-                      type="button"
-                      onClick={showMemorySection}
-                      className="inline-flex shrink-0 items-center gap-1 rounded-full bg-accent px-2 py-0.5 text-[11px] font-medium text-accent-foreground transition-colors hover:bg-accent/70"
-                    >
-                      <Brain className="h-3 w-3" />
-                      {t("memoryChip")}
-                    </button>
-                  ) : null}
-                </div>
-                <div className="mt-1 hidden truncate font-mono text-xs text-muted-foreground sm:block">
-                  {sessionId}
-                </div>
-              </div>
+          <SessionHeader
+            sessionId={sessionId}
+            title={session?.title}
+            view="chat"
+            titleAccessory={hasMemory ? (
               <button
                 type="button"
-                onClick={() => setMobileInspectorOpen(true)}
-                className="inline-flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-sm font-medium hover:bg-muted lg:hidden"
+                onClick={showMemorySection}
+                className="inline-flex shrink-0 items-center gap-1 rounded-full bg-accent px-2 py-0.5 text-[11px] font-medium text-accent-foreground transition-colors hover:bg-accent/70"
               >
-                <Settings2 className="h-4 w-4" />
-                {t("mobile.details")}
+                <Brain className="h-3 w-3" />
+                {t("memoryChip")}
               </button>
-            </div>
-          </div>
+            ) : null}
+          >
+            <button
+              type="button"
+              onClick={() => setMobileInspectorOpen(true)}
+              className="inline-flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-sm font-medium hover:bg-muted lg:hidden"
+            >
+              <Settings2 className="h-4 w-4" />
+              {t("mobile.details")}
+            </button>
+          </SessionHeader>
 
           <div
             ref={scrollRef}
