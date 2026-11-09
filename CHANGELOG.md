@@ -1,6 +1,57 @@
 # CHANGELOG
 
 
+## v0.172.1 (2026-11-09)
+
+
+### 🐛 Bug Fixes
+
+
+- 🐛 Merge pull request #439 from thiesgerken/fix/approval-waits
+  ([`a5816b7`](https://github.com/thiesgerken/carapace/commit/a5816b7b635be333f1173fb667d516961b1a3bfe))
+
+- 🐛 fix(session): deliver every escalation answer and hold LLM slots only per request
+  ([`a5816b7`](https://github.com/thiesgerken/carapace/commit/a5816b7b635be333f1173fb667d516961b1a3bfe))
+
+- 🐛 fix(session): let turn closure win over a racing escalation answer, slot-limit sentinel requests
+  ([`dca18ab`](https://github.com/thiesgerken/carapace/commit/dca18ab96f29b1c31b02b857622d1ecc0e5c6508))
+
+  An answer that resolved its future just before the turn closed the request no longer turns into an allow once the waiter resumes. Sentinel model requests now take one of the shared LLM slots too, since tool runs no longer hold one around them.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aUyaxvsB8zAKUBRRhYg
+
+- 🐛 fix(session): hold an LLM slot only around agent model requests
+  ([`dd75758`](https://github.com/thiesgerken/carapace/commit/dd757580b5e8f663afe3f62908fb69842a786d39))
+
+  max_parallel_llm limits concurrent LLM requests, not turns. The agent model is wrapped in SlotLimitedModel, which takes a slot for each request or stream, so tool runs, sentinel reviews, and waits for approvals or escalations no longer block other sessions' LLM work.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aUyaxvsB8zAKUBRRhYg
+
+- 🐛 fix(session): route every escalation answer to its own waiter
+  ([`4144dc0`](https://github.com/thiesgerken/carapace/commit/4144dc0564de7ae2b4a0dccef5f598e778788097))
+
+  Escalation callbacks waited on one shared queue, and a waiter that dequeued another request's answer dropped it, so with several open escalations answers got lost. Each request now waits on its own future (EscalationWaiters): submit_approval resolves the addressed one, cancel and turn finalization release all of them, and superseding a stale request denies exactly that one.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aUyaxvsB8zAKUBRRhYg
+
+### Other
+
+
+- 🔀 merge main into fix/approval-waits
+  ([`da80ea3`](https://github.com/thiesgerken/carapace/commit/da80ea3bdcf8bf069ae6e6a5eae9fa123bf71eac))
+
+  Resolves the _escalate conflict with #438: note_user_decision() runs only when a user answer is accepted (after the still-pending check). A superseded escalation is released like a closed one, so it neither counts as a human interaction nor records a user decision.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aUyaxvsB8zAKUBRRhYg
+
 ## v0.172.0 (2026-11-09)
 
 
