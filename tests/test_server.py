@@ -1604,6 +1604,55 @@ def test_user_settings_matrix_password_clears_persisted_token_before_reload(clie
     reload_user_mock.assert_awaited_once()
 
 
+def test_user_settings_matrix_password_keeps_other_users_persisted_tokens(client, auth_headers, monkeypatch):
+    token_file = srv._engine.session_mgr.sessions_dir.parent / "matrix_token.yaml"
+    ada_token = MatrixTokenFile(access_token="ada-token", device_id="ADA", user_id="@ada-bot:example.test", user="ada")
+    token_file.write_text(
+        yaml.safe_dump(
+            MatrixTokensFile(
+                tokens=[
+                    MatrixTokenFile(
+                        access_token="old-token",
+                        device_id="OLD",
+                        user_id="@carapace:example.test",
+                        user="thies",
+                    ),
+                    ada_token,
+                ]
+            ).model_dump(mode="json")
+        ),
+        encoding="utf-8",
+    )
+    srv._auth_store.update_user(
+        "thies",
+        {
+            "config": UserConfig.model_validate(
+                {
+                    "channels": {
+                        "matrix": {
+                            "enabled": True,
+                            "homeserver": "https://matrix.example.test",
+                            "user_id": "@carapace:example.test",
+                            "password": "old-password",
+                        }
+                    }
+                }
+            )
+        },
+    )
+    monkeypatch.setattr(srv._matrix_channel_manager, "reload_user", AsyncMock())
+
+    resp = client.patch(
+        "/api/user/settings",
+        headers=auth_headers,
+        json={"matrix": {"password": "new-password", "clear_token": True}},
+    )
+
+    assert resp.status_code == 200
+    stored = MatrixTokensFile.model_validate(yaml.safe_load(token_file.read_text(encoding="utf-8")))
+    assert stored.tokens == [ada_token]
+
+
 def test_user_settings_matrix_password_restores_persisted_token_on_reload_failure(
     client,
     auth_headers,

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import timedelta
 from pathlib import Path
 from typing import Any
@@ -848,6 +849,84 @@ async def test_password_login_persists_user_id(tmp_path: Path, db_factory, monke
     assert stored.device_id == "DEV_NEW"
     assert stored.user_id == "@carapace:example.com"
     assert stored.user == "thies"
+
+
+def _write_tokens(token_file: Path, *tokens: MatrixTokenFile) -> None:
+    token_file.write_text(yaml.safe_dump(MatrixTokensFile(tokens=list(tokens)).model_dump(mode="json")))
+
+
+def _read_tokens(token_file: Path) -> list[MatrixTokenFile]:
+    return MatrixTokensFile.model_validate(yaml.safe_load(token_file.read_text(encoding="utf-8"))).tokens
+
+
+@pytest.mark.anyio
+async def test_password_login_replaces_only_own_persisted_token(tmp_path: Path, db_factory):
+    ch = _make_channel(tmp_path, db_factory, password="secret")
+    own_stale = MatrixTokenFile(access_token="tok_old", device_id="OLD", user_id="@carapace:example.com", user="thies")
+    own_legacy = MatrixTokenFile(access_token="tok_legacy", user="thies")
+    own_other_account = MatrixTokenFile(access_token="tok_alt", user_id="@alt-bot:example.com", user="thies")
+    ada = MatrixTokenFile(access_token="tok_ada", device_id="ADA", user_id="@carapace:example.com", user="ada")
+    _write_tokens(ch._token_file, own_stale, ada, own_legacy, own_other_account)
+    ch._client.login = AsyncMock(return_value=_login_response("tok_new"))
+
+    await ch._password_login(ch._token_file)
+
+    assert [token.access_token for token in _read_tokens(ch._token_file)] == ["tok_ada", "tok_alt", "tok_new"]
+
+
+def _login_response(access_token: str) -> MagicMock:
+    resp = MagicMock()
+    resp.access_token = access_token
+    resp.device_id = "DEV_NEW"
+    return resp
+
+
+@pytest.mark.anyio
+async def test_sync_loop_reauthenticates_on_unknown_token(tmp_path: Path, db_factory):
+    ch = _make_channel(tmp_path, db_factory, password="secret")
+    ada = MatrixTokenFile(access_token="tok_ada", device_id="ADA", user_id="@ada-bot:example.com", user="ada")
+    stale = MatrixTokenFile(access_token="tok_stale", device_id="OLD", user_id="@carapace:example.com", user="thies")
+    _write_tokens(ch._token_file, stale, ada)
+    ch._client.sync = AsyncMock(
+        side_effect=[nio.SyncError("Unknown token", "M_UNKNOWN_TOKEN"), asyncio.CancelledError()]
+    )
+    ch._client.login = AsyncMock(return_value=_login_response("tok_new"))
+
+    await ch._sync_loop()
+
+    ch._client.login.assert_awaited_once()
+    assert ch._client.sync.await_count == 2
+    assert [token.access_token for token in _read_tokens(ch._token_file)] == ["tok_ada", "tok_new"]
+
+
+@pytest.mark.anyio
+async def test_sync_loop_retries_failed_reauthentication(tmp_path: Path, db_factory, monkeypatch: pytest.MonkeyPatch):
+    ch = _make_channel(tmp_path, db_factory, password="secret")
+    unknown_token = nio.SyncError("Unknown token", "M_UNKNOWN_TOKEN")
+    ch._client.sync = AsyncMock(side_effect=[unknown_token, unknown_token, asyncio.CancelledError()])
+    ch._client.login = AsyncMock(side_effect=[nio.LoginError("homeserver hiccup"), _login_response("tok_new")])
+    sleep = AsyncMock()
+    monkeypatch.setattr(asyncio, "sleep", sleep)
+
+    await ch._sync_loop()
+
+    assert ch._client.login.await_count == 2
+    assert ch._client.sync.await_count == 3
+    sleep.assert_awaited_once_with(5)
+
+
+@pytest.mark.anyio
+async def test_sync_loop_stops_on_unknown_token_without_password(tmp_path: Path, db_factory):
+    ch = _make_channel(tmp_path, db_factory)
+    ch._client.sync = AsyncMock(
+        side_effect=[nio.SyncError("Unknown token", "M_UNKNOWN_TOKEN"), asyncio.CancelledError()]
+    )
+    ch._client.login = AsyncMock()
+
+    await ch._sync_loop()
+
+    ch._client.login.assert_not_awaited()
+    ch._client.sync.assert_awaited_once()
 
 
 @pytest.mark.anyio
