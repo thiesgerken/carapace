@@ -101,7 +101,7 @@ The first evaluation of a session receives the full action log; every later one 
 - **Fork** copies the sentinel state of the source session into the new session, without any note.
 - **Delete** removes the sentinel state with the session.
 
-The conversation is never reset. Until automatic sentinel compaction lands, it grows without bound.
+The conversation is never reset. Once it fills a configurable share of the sentinel model's context window, it is compacted automatically before the next evaluation, keeping user decisions, denials, granted contexts and suspicious behaviour (see [compaction.md](compaction.md#sentinel)).
 
 ### Restricted tool access
 

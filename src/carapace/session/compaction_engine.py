@@ -34,6 +34,7 @@ from .compaction import (
     fold_render_text,
     plan_fold,
     sentinel_fold_render_text,
+    split_prompts_from_tool_returns,
     tool_return_compaction_region,
 )
 from .compaction_summarizer import (
@@ -290,7 +291,7 @@ class SessionCompactionMixin:
         if before * 100 < cap * cfg.sentinel_threshold_pct:
             return None
 
-        compacted, thinking_dropped = apply_thinking_drop(messages)
+        compacted, thinking_dropped = apply_thinking_drop(split_prompts_from_tool_returns(messages))
         plan = plan_fold(compacted, keep_turns=cfg.keep_turns, model_name=model_name)
         if plan is not None:
             summary = await self._run_summary_call(

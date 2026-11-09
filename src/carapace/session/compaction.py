@@ -324,6 +324,24 @@ def fold_render_text(messages: list[ModelMessage]) -> str:
     return "\n".join(lines)
 
 
+def split_prompts_from_tool_returns(messages: list[ModelMessage]) -> list[ModelMessage]:
+    """Give user prompts that pydantic-ai merged into a tool-return request their own request again.
+
+    A run whose history ends in a tool-return request (the sentinel's verdict) may append its prompt
+    to that request. Turn boundaries can then not fall between the two, and a fold cut there would
+    keep a tool return whose call was folded away, which providers reject.
+    """
+    out: list[ModelMessage] = []
+    for msg in messages:
+        if not isinstance(msg, ModelRequest):
+            out.append(msg)
+            continue
+        prompts = [p for p in msg.parts if isinstance(p, UserPromptPart)]
+        others = [p for p in msg.parts if not isinstance(p, UserPromptPart)]
+        out += [replace(msg, parts=others), replace(msg, parts=prompts)] if prompts and others else [msg]
+    return out
+
+
 def sentinel_fold_render_text(messages: list[ModelMessage]) -> str:
     """Flatten folded sentinel evaluations for the summarizer.
 

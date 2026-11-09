@@ -149,6 +149,7 @@ async def _run_summary(
     system: str,
     text: str,
     *,
+    compaction_target: CompactionTarget,
     prompt_prefix: str,
     model: str,
     user: str,
@@ -160,7 +161,11 @@ async def _run_summary(
 ) -> str:
     resolved = model_factory(model, user=user) if model_factory is not None else infer_model(model)
     agent = summary_agent(
-        system, prompt_prefix=prompt_prefix, model=resolved, model_settings=model_settings, compaction_target="agent"
+        system,
+        prompt_prefix=prompt_prefix,
+        model=resolved,
+        model_settings=model_settings,
+        compaction_target=compaction_target,
     )
     if before_llm_call is not None:
         before_llm_call()
@@ -179,7 +184,7 @@ async def summarize_fold(text: str, **kwargs: Any) -> str:
     """Summarize a folded run of turns. Returns '' on failure (caller should abort the fold)."""
     prompt = f"<conversation>\n{text}\n</conversation>\n\n{_FOLD_TAIL}"
     try:
-        return await _run_summary(FOLD_INSTRUCTIONS, prompt, **kwargs)
+        return await _run_summary(FOLD_INSTRUCTIONS, prompt, compaction_target="agent", **kwargs)
     except Exception:
         logger.opt(exception=True).warning("Fold summarization failed")
         return ""
@@ -188,7 +193,7 @@ async def summarize_fold(text: str, **kwargs: Any) -> str:
 async def summarize_tool_output(tool_name: str, text: str, **kwargs: Any) -> str:
     prompt = f"Tool: {tool_name}\n<tool_output>\n{text}\n</tool_output>\n\n{_TOOL_TAIL}"
     try:
-        return await _run_summary(_TOOL_SYSTEM, prompt, **kwargs)
+        return await _run_summary(_TOOL_SYSTEM, prompt, compaction_target="agent", **kwargs)
     except Exception:
         logger.opt(exception=True).warning("Tool-output summarization failed")
         return ""
@@ -197,13 +202,13 @@ async def summarize_tool_output(tool_name: str, text: str, **kwargs: Any) -> str
 async def summarize_sentinel_fold(text: str, **kwargs: Any) -> str:
     """Summarize folded sentinel evaluations. Raises on failure: the sentinel never evaluates uncompacted."""
     prompt = f"<evaluations>\n{text}\n</evaluations>\n\n{_SENTINEL_FOLD_TAIL}"
-    return _non_empty(await _run_summary(SENTINEL_FOLD_INSTRUCTIONS, prompt, **kwargs))
+    return _non_empty(await _run_summary(SENTINEL_FOLD_INSTRUCTIONS, prompt, compaction_target="sentinel", **kwargs))
 
 
 async def summarize_sentinel_tool_output(tool_name: str, text: str, **kwargs: Any) -> str:
     """Summarize a tool output in the sentinel's shadow conversation. Raises on failure."""
     prompt = f"Tool: {tool_name}\n<tool_output>\n{text}\n</tool_output>\n\n{_TOOL_TAIL}"
-    return _non_empty(await _run_summary(_SENTINEL_TOOL_SYSTEM, prompt, **kwargs))
+    return _non_empty(await _run_summary(_SENTINEL_TOOL_SYSTEM, prompt, compaction_target="sentinel", **kwargs))
 
 
 def _non_empty(summary: str) -> str:
