@@ -1,6 +1,6 @@
 # Development
 
-The committed Nix flake and lockfile own builds, checks, and runtime images. Python dependencies come from `uv.lock` through uv2nix, preferring wheels on Python 3.14. Frontend dependencies come from `frontend/pnpm-lock.yaml`; the exact pnpm release is in `frontend/package.json`. The sandbox remains a Debian Dockerfile because agents install packages at runtime and need an FHS-compatible loader.
+The committed Nix flake and lockfile own builds, checks, and runtime images. Python dependencies come from `uv.lock` through uv2nix, preferring wheels on Python 3.14. Frontend dependencies come from `frontend/package-lock.json` through `importNpmLock`, which fetches each package by the integrity hash in the lockfile; npm ships with the pinned Node.js. The sandbox remains a Debian Dockerfile because agents install packages at runtime and need an FHS-compatible loader.
 
 The local Python package source includes only `pyproject.toml`, `README.md`, and `src/`. Python check inputs are scoped separately, so changes under `docs/`, `charts/`, or `frontend/`, and changelog updates, do not invalidate Python builds and checks.
 
@@ -13,7 +13,7 @@ nix develop
 uv sync --dev
 ```
 
-The shell provides Python 3.14, uv, Node.js 24, pinned pnpm, Git, Helm, Skopeo, and jq. uv manages `.venv`; `UV_PYTHON` selects the Nix interpreter and `UV_PYTHON_DOWNLOADS=never` prevents another interpreter download. With direnv and nix-direnv, run `direnv allow` once in each checkout or worktree to load `.envrc` automatically.
+The shell provides Python 3.14, uv, Node.js 24 (with npm), Git, Helm, Skopeo, and jq. uv manages `.venv`; `UV_PYTHON` selects the Nix interpreter and `UV_PYTHON_DOWNLOADS=never` prevents another interpreter download. With direnv and nix-direnv, run `direnv allow` once in each checkout or worktree to load `.envrc` automatically.
 
 For host iteration, start a disposable Redis, build the sandbox, then run the server:
 
@@ -32,8 +32,8 @@ Stop the disposable Redis with `docker stop carapace-dev-redis`. The SQLite URL 
 In another shell:
 
 ```sh
-pnpm --dir frontend install --frozen-lockfile
-pnpm --dir frontend dev
+npm --prefix frontend ci
+npm --prefix frontend run dev
 ```
 
 Next.js serves port 3000 and proxies `/api` to `http://127.0.0.1:8321`; set `CARAPACE_BACKEND_URL` for a different host server. Compose images are immutable and no longer bind-mount `src/carapace`. Use `uv run` for live server code.
@@ -107,8 +107,8 @@ Focused host checks remain available:
 uv run pyrefly check
 uv run pytest
 uvx ruff check src/
-pnpm --dir frontend lint
-pnpm --dir frontend test
+npm --prefix frontend run lint
+npm --prefix frontend test
 helm lint charts/carapace
 ```
 
@@ -116,13 +116,11 @@ helm lint charts/carapace
 
 ## Dependency refresh
 
-Renovate updates `flake.lock`, uv, frontend dependencies, and image digests. After a pnpm version or frontend lockfile change, run:
+Renovate updates `flake.lock`, uv, frontend dependencies, and image digests. Frontend updates need no Nix follow-up: the Nix build reads `frontend/package-lock.json` directly, so there is no separate dependency hash to refresh.
 
-```sh
-python3 scripts/update-nix-deps.py
-```
+npm blocks dependency install scripts unless `allowScripts` in `frontend/package.json` lists the package. When an update introduces a new install script, `npm install` names it; review it, then record the decision with `npm install-scripts approve --no-allow-scripts-pin <pkg>` or `npm install-scripts deny <pkg>`.
 
-The command refreshes official pnpm binary hashes when needed and verifies the `fetchPnpmDeps` content hash. It selects ARM Linux on Apple Silicon; `--system x86_64-linux` selects x64. Commit the pin/hash updates with the dependency change. Frontend dependency PRs are not auto-merged because this refresh is manual.
+The `overrides` entry in `frontend/package.json` lets the ESLint plugins bundled by `eslint-config-next` use the project's ESLint 10 although their peer ranges still end at 9. Without it, npm treats the conflict as unresolved and `npm ci` tries to reach the registry, which fails in the Nix sandbox. Drop it once those plugins declare ESLint 10 support.
 
 Frontend fonts are licensed variable WOFF2 inputs committed in `frontend/src/fonts/`, with notices in `frontend/public/fonts/`. Twemoji's pinned archive is fetched by Nix; `postFetch` retains only `v/17.0.2/svg` in the store. The build prepopulates the existing emoji script cache, so the script needs no network access. If its pinned Twemoji revision/version changes, update `nix/frontend.nix` and refresh `nix/twemoji-hash` with the fixed-output mismatch reported by Nix.
 

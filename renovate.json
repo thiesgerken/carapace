@@ -34,12 +34,6 @@
         "charts/carapace/values.yaml"
       ],
       "pinDigests": false
-    },
-    {
-      "description": "pnpm and frontend lock updates require the documented Nix dependency-cache refresh before merge",
-      "matchManagers": ["npm"],
-      "matchFileNames": ["frontend/package.json"],
-      "automerge": false
     }
   ],
   "prHourlyLimit": 0,
