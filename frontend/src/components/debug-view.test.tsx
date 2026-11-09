@@ -4,7 +4,7 @@ import { NextIntlClientProvider } from "next-intl";
 
 import messages from "../../messages/en.json";
 import { click, installDom, renderReact, runInAct } from "../../test/react-test-utils";
-import type { DebugRole, LlmContext } from "@/lib/types";
+import type { DebugRole, LlmContext, LlmRequestRecord } from "@/lib/types";
 
 import { DebugView } from "./debug-view";
 
@@ -45,6 +45,25 @@ function context(overrides: Partial<LlmContext>): LlmContext {
   };
 }
 
+function record(overrides: Partial<LlmRequestRecord>): LlmRequestRecord {
+  return {
+    ts: "2026-11-09T11:59:00Z",
+    request_id: "r0",
+    source: "agent",
+    model_name: "anthropic:sonnet",
+    outcome: "completed",
+    input_tokens: 8000,
+    output_tokens: 300,
+    cache_read_tokens: null,
+    cache_write_tokens: null,
+    reasoning_tokens: null,
+    cost: null,
+    started_at: "2026-11-09T11:58:57Z",
+    completed_at: "2026-11-09T11:59:00Z",
+    ...overrides,
+  };
+}
+
 test("the debug view shows each role's latest context and refetches on WebSocket notifications", async () => {
   const restore = installDom();
   const originalFetch = globalThis.fetch;
@@ -56,9 +75,11 @@ test("the debug view shows each role's latest context and refetches on WebSocket
     titler: null,
     compaction: null,
   };
+  const requests: LlmRequestRecord[] = [record({})];
   globalThis.fetch = (async (input: RequestInfo | URL) => {
     const url = new URL(String(input));
     if (url.pathname === "/api/auth/ws-ticket") return Response.json({ ticket: "ticket-1" });
+    if (url.pathname === "/api/sessions/s1/llm-requests") return Response.json(requests.filter((r) => r.source === url.searchParams.get("role")));
     const role = url.pathname.match(/^\/api\/sessions\/s1\/llm-contexts\/(\w+)$/)?.[1] as DebugRole | undefined;
     assert.ok(role, `unexpected request ${url.pathname}`);
     return Response.json(contexts[role]);
@@ -87,7 +108,11 @@ test("the debug view shows each role's latest context and refetches on WebSocket
     assert.equal(view.container.querySelector("strong")?.textContent, "backups");
     assert.match(text(), /\*\*not\*\* markdown/);
     assert.match(text(), /Waiting for the response/);
-    assert.doesNotMatch(text(), /Output tokens|Cost/);
+    assert.doesNotMatch(text(), /Output tokens|Cost\$/);
+    assert.match(text(), /Requests \(1\)/);
+    const rows = () => Array.from(view.container.querySelectorAll("tbody tr"), (row) => Array.from(row.querySelectorAll("td"), (cell) => cell.textContent));
+    // A record from before cache counts and costs were kept shows them as unknown.
+    assert.deepEqual(rows(), [["11/9, 11:59:00 AM", "Completed", "8,000", "–", "–", "300", "–", "–", "–", "–", "3 s", "anthropic:sonnet"]]);
     assert.equal(view.container.querySelector('a[aria-current="page"]')?.getAttribute("href"), "/?session=s1&view=debug");
 
     contexts.agent = context({
@@ -100,6 +125,20 @@ test("the debug view shows each role's latest context and refetches on WebSocket
       },
       cost: { cost_usd: "0", equivalent_cost_usd: "0.0425", provider_cost_usd: "0.01" },
     });
+    requests.push(
+      record({
+        ts: "2026-11-09T12:00:02Z",
+        request_id: "r1",
+        input_tokens: 12345,
+        output_tokens: 20,
+        cache_read_tokens: 4000,
+        cache_write_tokens: 0,
+        reasoning_tokens: 7,
+        cost: { cost_usd: "0", equivalent_cost_usd: "0.0425", provider_cost_usd: "0.01" },
+        started_at: "2026-11-09T12:00:00Z",
+        completed_at: "2026-11-09T12:00:02.450Z",
+      }),
+    );
     const socket = FakeWebSocket.instances.at(-1);
     assert.ok(socket);
     assert.match(socket.url, /observe=true/);
@@ -107,6 +146,10 @@ test("the debug view shows each role's latest context and refetches on WebSocket
     await settle();
 
     assert.match(text(), /Completed/);
+    assert.deepEqual(rows()[0], ["11/9, 12:00:02 PM", "Completed", "12,345", "4,000", "0", "20", "7", "32%", "$0.00", "$0.043", "2.5 s", "anthropic:sonnet"]);
+    assert.equal(rows().length, 2);
+    assert.equal(view.container.querySelector("tbody a")?.getAttribute("href"), "#llm-context");
+    assert.ok(view.container.querySelector("#llm-context"));
     assert.match(text(), /Input tokens12,345/);
     assert.match(text(), /Cache read4,000/);
     assert.match(text(), /reasoning_tokens7/);

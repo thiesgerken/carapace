@@ -7,9 +7,14 @@ what went to the model in its last request, and what came back. Terms follow
 ## Using it
 
 The **Chat | Debug** switch in the session header opens `/?session=<ID>&view=debug`. One tab per role
-shows its latest request:
+shows its request timeline and its latest request:
 
-- On top: status, model, start time, and for compaction what was compacted. Completed requests add
+- **Requests**: one row per recorded request of the role, newest first, so requests compare side by
+  side: time, status, input, cache read, cache write, output and reasoning tokens, cache hits (cache
+  read ÷ input), actual and equivalent cost, duration and model. `–` marks a value the record does
+  not have. The row of the request shown below is highlighted, and its time links to it. Only the
+  latest request keeps its context, so older rows have numbers only.
+- Below it, the latest request. On top: status, model, start time, and for compaction what was compacted. Completed requests add
   their usage and cost (see below). Failed and interrupted requests show their error here.
 - **Instructions** and the collapsed **tool definitions** with their JSON schemas.
 - **Messages**, formatted part by part: system, user, text, thinking, tool call (arguments as JSON),
@@ -24,8 +29,8 @@ Every message switches between this formatted view and its raw JSON, which shows
 field for field.
 
 The view opens its own session WebSocket with `observe=true`: it shows no approvals, so it must not
-count as presence that suppresses approval notifications. It refetches the open tab whenever its
-role sends a notification and after every (re)connect, so it follows a running turn request by
+count as presence that suppresses approval notifications. It refetches the open tab's timeline and context whenever
+its role sends a notification and after every (re)connect, so it follows a running turn request by
 request. A spinner on a tab marks a role
 whose request is running.
 
@@ -103,8 +108,9 @@ feeds the usage stats. `role` is optional and takes the same roles as the contex
 A record keeps the numbers of a request, not its context, so the timeline grows by one small row
 per request instead of one full context. Its `outcome` is `completed`, or `interrupted` for an agent
 request cut short when the turn stopped. Token counts are provider-reported: input, output, cache
-read, cache write, audio, and reasoning when the provider reports it. Cache and audio counts are
-`null` on records written before they were kept.
+read, cache write, audio, and reasoning when the provider reports it. A completed record carries the
+same `cost` as its context (see [Usage and cost](#usage-and-cost)). Cache and audio counts and the
+cost are `null` on records written before they were kept, and the cost on interrupted records.
 
 Failed requests leave no record, so the timeline has no row for them. Their error shows only in the
 role's LLM context, as long as it is the latest one.

@@ -8,7 +8,7 @@ import { MarkdownContent } from "@/components/markdown-content";
 import { pillClassName } from "@/components/prompt-preview-view";
 import { SessionHeader } from "@/components/session-header";
 import { useWebSocket, useWebSocketTicket } from "@/hooks/use-websocket";
-import { fetchLlmContext, wsUrl } from "@/lib/api";
+import { fetchLlmContext, fetchLlmRequests, wsUrl } from "@/lib/api";
 import { formatUsd } from "@/lib/memory";
 import { fencedCodeBlock } from "@/lib/sandbox-read";
 import {
@@ -20,6 +20,7 @@ import {
   type LlmRequestCost,
   type LlmRequestUsage,
   type LlmPart,
+  type LlmRequestRecord,
   type ServerMessage,
 } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -32,18 +33,19 @@ const STATUS_CLASS: Record<LlmContextStatus, string> = {
 };
 
 type Notification = { requestId: string; status: LlmContextStatus };
-type Outcome = { key: string; context: LlmContext | null } | { key: string; error: string };
+type Outcome<T> = { key: string; value: T } | { key: string; error: string };
+type RoleFetch<T> = (server: string, token: string, sessionId: string, role: DebugRole) => Promise<T>;
 
-/** The role's latest context, refetched whenever *revision* (the role's latest notification) changes. */
-function useLlmContext(server: string, token: string, sessionId: string, role: DebugRole, revision: string) {
+/** What *fetchRole* returns for *role*, refetched whenever *revision* (the role's latest notification) changes. */
+function useRoleFetch<T>(fetchRole: RoleFetch<T>, server: string, token: string, sessionId: string, role: DebugRole, revision: string) {
   const key = `${role}:${revision}`;
-  const [outcome, setOutcome] = useState<Outcome | null>(null);
+  const [outcome, setOutcome] = useState<Outcome<T> | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    fetchLlmContext(server, token, sessionId, role)
-      .then((context) => {
-        if (!cancelled) setOutcome({ key, context });
+    fetchRole(server, token, sessionId, role)
+      .then((value) => {
+        if (!cancelled) setOutcome({ key, value });
       })
       .catch((loadError: unknown) => {
         if (!cancelled) setOutcome({ key, error: loadError instanceof Error ? loadError.message : String(loadError) });
@@ -51,9 +53,10 @@ function useLlmContext(server: string, token: string, sessionId: string, role: D
     return () => {
       cancelled = true;
     };
-  }, [server, token, sessionId, role, key]);
+  }, [fetchRole, server, token, sessionId, role, key]);
 
-  return outcome;
+  // A result for another role keeps showing while this one loads, so it is dropped here.
+  return outcome?.key.startsWith(`${role}:`) ? outcome : null;
 }
 
 /** The latest LLM context of every agent role in a session, updated live over the session WebSocket. */
@@ -72,10 +75,10 @@ export function DebugView({ server, token, sessionId, title }: { server: string;
   const latest = notifications[role];
   // Notifications sent while the socket was down are lost, so every (re)connect refetches too.
   const revision = `${status === "connected"}:${latest ? `${latest.requestId}:${latest.status}` : ""}`;
-  const outcome = useLlmContext(server, token, sessionId, role, revision);
-  // The role's context from an older notification keeps showing while the next one loads.
-  const current = outcome?.key.startsWith(`${role}:`) ? outcome : null;
-  const shown = current && "context" in current ? current.context : undefined;
+  // The role's context and timeline from an older notification keep showing while the next ones load.
+  const current = useRoleFetch(fetchLlmContext, server, token, sessionId, role, revision);
+  const shown = current && "value" in current ? current.value : undefined;
+  const timeline = useRoleFetch(fetchLlmRequests, server, token, sessionId, role, revision);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -93,6 +96,12 @@ export function DebugView({ server, token, sessionId, title }: { server: string;
           ))}
         </div>
 
+        {timeline && "error" in timeline ? (
+          <p className="text-sm text-destructive">{t("timeline.loadError", { error: timeline.error })}</p>
+        ) : timeline?.value.length ? (
+          <RequestTimeline records={timeline.value} contextRequestId={shown?.request_id} />
+        ) : null}
+
         {current && "error" in current ? (
           <p className="text-sm text-destructive">{t("loadError", { error: current.error })}</p>
         ) : shown === undefined ? (
@@ -100,7 +109,9 @@ export function DebugView({ server, token, sessionId, title }: { server: string;
         ) : shown === null ? (
           <p className="text-sm text-muted-foreground">{t("empty")}</p>
         ) : (
-          <LlmContextView context={shown} />
+          <div id={CONTEXT_ANCHOR} className="scroll-mt-4">
+            <LlmContextView context={shown} />
+          </div>
         )}
       </div>
       </div>
@@ -160,6 +171,81 @@ export function LlmContextView({ context }: { context: LlmContext }) {
         </p>
       ) : null}
     </div>
+  );
+}
+
+const CONTEXT_ANCHOR = "llm-context";
+
+type TimelineColumn = { key: string; numeric?: boolean; cell: (record: LlmRequestRecord) => ReactNode };
+
+/** One row per recorded request of the role, newest first, so requests compare side by side without their contexts. */
+function RequestTimeline({ records, contextRequestId }: { records: LlmRequestRecord[]; contextRequestId: string | undefined }) {
+  const t = useTranslations("debugView.timeline");
+  const format = useFormatter();
+  const locale = useLocale();
+  // Null counts and costs are unknown: the record predates them, or the model has no pricing.
+  const count = (value: number | null) => (value === null ? "–" : format.number(value));
+  const usd = (value: string | null | undefined) => (value == null ? "–" : formatUsd(value, locale));
+  const columns: TimelineColumn[] = [
+    { key: "time", cell: (r) => <Time record={r} linked={r.request_id !== null && r.request_id === contextRequestId} /> },
+    { key: "status", cell: (r) => <StatusBadge status={r.outcome} /> },
+    { key: "input", numeric: true, cell: (r) => count(r.input_tokens) },
+    { key: "cacheRead", numeric: true, cell: (r) => count(r.cache_read_tokens) },
+    { key: "cacheWrite", numeric: true, cell: (r) => count(r.cache_write_tokens) },
+    { key: "output", numeric: true, cell: (r) => count(r.output_tokens) },
+    { key: "reasoning", numeric: true, cell: (r) => count(r.reasoning_tokens) },
+    {
+      key: "cacheHitRate",
+      numeric: true,
+      cell: (r) => (r.cache_read_tokens === null || r.input_tokens === 0 ? "–" : format.number(r.cache_read_tokens / r.input_tokens, { style: "percent", maximumFractionDigits: 0 })),
+    },
+    { key: "cost", numeric: true, cell: (r) => usd(r.cost?.cost_usd) },
+    { key: "equivalentCost", numeric: true, cell: (r) => usd(r.cost?.equivalent_cost_usd) },
+    {
+      key: "duration",
+      numeric: true,
+      cell: (r) => (r.started_at && r.completed_at ? t("seconds", { seconds: format.number((Date.parse(r.completed_at) - Date.parse(r.started_at)) / 1000, { maximumFractionDigits: 1 }) }) : "–"),
+    },
+    { key: "model", cell: (r) => <span className="font-mono">{r.model_name ?? "–"}</span> },
+  ];
+
+  return (
+    <Collapsible title={t("title", { count: records.length })} open>
+      <div className="overflow-x-auto">
+        <table className="w-full whitespace-nowrap text-xs">
+          <thead>
+            <tr className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+              {columns.map((column) => (
+                <th key={column.key} scope="col" className={cn("px-2 py-1.5 font-medium", column.numeric ? "text-right" : "text-left")}>{t(`columns.${column.key}`)}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="tabular-nums">
+            {[...records].reverse().map((record, index) => (
+              <tr key={record.request_id ?? index} className={cn("border-t border-border/60", record.request_id !== null && record.request_id === contextRequestId && "bg-sky-500/10")}>
+                {columns.map((column) => (
+                  <td key={column.key} className={cn("px-2 py-1.5", column.numeric && "text-right")}>{column.cell(record)}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Collapsible>
+  );
+}
+
+/** Day and time are enough to tell requests apart; the full timestamp is in the tooltip. The shown context's row links to it. */
+function Time({ record, linked }: { record: LlmRequestRecord; linked: boolean }) {
+  const t = useTranslations("debugView.timeline");
+  const format = useFormatter();
+  const date = new Date(record.ts);
+  const short = format.dateTime(date, { month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit", second: "2-digit" });
+  const full = format.dateTime(date, { dateStyle: "medium", timeStyle: "medium" });
+  return linked ? (
+    <a href={`#${CONTEXT_ANCHOR}`} title={`${full} · ${t("showContext")}`} className="underline underline-offset-2">{short}</a>
+  ) : (
+    <span title={full}>{short}</span>
   );
 }
 

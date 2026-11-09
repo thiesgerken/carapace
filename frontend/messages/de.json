@@ -1718,6 +1718,26 @@
             "toolCall": "Tool-Aufruf",
             "toolReturn": "Tool-Ergebnis",
             "retryPrompt": "Wiederholungs-Prompt"
+        },
+        "timeline": {
+            "title": "Anfragen ({count})",
+            "loadError": "Die Anfragen konnten nicht geladen werden: {error}",
+            "showContext": "Kontext dieser Anfrage unten anzeigen",
+            "seconds": "{seconds} s",
+            "columns": {
+                "time": "Zeit",
+                "status": "Status",
+                "input": "Eingabe",
+                "cacheRead": "Cache gelesen",
+                "cacheWrite": "Cache geschrieben",
+                "output": "Ausgabe",
+                "reasoning": "Reasoning",
+                "cacheHitRate": "Cache-Treffer",
+                "cost": "Kosten",
+                "equivalentCost": "Äquivalent",
+                "duration": "Dauer",
+                "model": "Modell"
+            }
         }
     }
 }
