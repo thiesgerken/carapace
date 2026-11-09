@@ -80,6 +80,7 @@
     "memory": {
         "title": "Gedächtnis",
         "sections": "Gedächtnis-Bereiche",
+        "costWithEquivalent": "{cost} (≈ {equivalent} Äquivalent)",
         "tabs": {
             "timeline": "Zeitleiste",
             "sessions": "Sitzungen",
@@ -92,6 +93,8 @@
             "autoModeOff": "Auto-Modus aus",
             "autoModeHint": "Auto-Modus und Budgets in den Einstellungen ändern",
             "today": "Heute",
+            "equivalent": "{label} (äquivalent)",
+            "equivalentHint": "Listenpreis, inklusive Abo-Nutzung, die nicht pro Token abgerechnet wird.",
             "tokens": "Tokens",
             "noLimit": "kein Limit",
             "queue": "Warteschlange",
@@ -201,6 +204,7 @@
             "cost": "Geschätzte Kosten",
             "unpriced": "{count, plural, one {# Aufgabe ohne Preis} other {# Aufgaben ohne Preis}}",
             "remaining": "Restbudget",
+            "remainingEquivalent": "≈ {cost} Äquivalent",
             "noLimit": "kein Limit",
             "overBudget": "Das übersteigt das Restbudget. Aufgaben darüber hinaus warten in der Warteschlange, bis das Budgetfenster zurückgesetzt wird.",
             "model": "Modell",
@@ -458,6 +462,8 @@
             "memoryAutoMode": "Auto-Modus",
             "memoryCostPerDay": "Kosten pro Tag (USD)",
             "memoryCostPerMonth": "Kosten pro Monat (USD)",
+            "memoryEquivalentCostPerDay": "Äquivalente Kosten pro Tag (USD)",
+            "memoryEquivalentCostPerMonth": "Äquivalente Kosten pro Monat (USD)",
             "memoryTokensPerDay": "Eingabe-Tokens pro Tag",
             "memoryTokensPerMonth": "Eingabe-Tokens pro Monat",
             "timezone": "Zeitzone",
@@ -675,7 +681,9 @@
             "failedTasks": "{count, plural, one {# fehlgeschlagene Gedächtnis-Aufgabe} other {# fehlgeschlagene Gedächtnis-Aufgaben}}",
             "outdatedRecords": "{count, plural, one {# veralteter Gedächtnis-Eintrag} other {# veraltete Gedächtnis-Einträge}}",
             "budgetDay": "Gedächtnis-Budget heute: {used} von {limit}",
-            "budgetMonth": "Gedächtnis-Budget diesen Monat: {used} von {limit}"
+            "budgetMonth": "Gedächtnis-Budget diesen Monat: {used} von {limit}",
+            "budgetDayEquivalent": "Gedächtnis-Budget heute: {used} von {limit} äquivalenten Kosten",
+            "budgetMonthEquivalent": "Gedächtnis-Budget diesen Monat: {used} von {limit} äquivalenten Kosten"
         }
     },
     "connect": {

@@ -6,10 +6,10 @@ import { Ban, Loader2, Play, RefreshCw } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
 import { MemoryRunDialog } from "@/components/memory-run-dialog";
 import { useMemoryStatus } from "@/components/memory-status";
-import { buttonClassName, MemoryProvenanceList, TaskStatusBadge, taskStatusTag } from "@/components/memory-ui";
+import { buttonClassName, MemoryProvenanceList, TaskStatusBadge, taskStatusTag, useFormatCost } from "@/components/memory-ui";
 import { cancelMemoryTasks, getMemoryPeriod, spawnMemoryTasks } from "@/lib/api";
 import { formatAbsoluteTime } from "@/lib/format-time";
-import { formatUsd, monthLabel, periodBadge, periodLevel, summarizeSkips, type PeriodBadge, weekLabel } from "@/lib/memory";
+import { monthLabel, periodBadge, periodLevel, summarizeSkips, type PeriodBadge, weekLabel } from "@/lib/memory";
 import type {
   MemoryDigestFact,
   MemoryDigestRecord,
@@ -70,6 +70,7 @@ function Refs({ refs, detail }: { refs: string[]; detail: MemoryPeriodDetail }) 
 export function MemoryPeriodDetailView({ server, token, periodKey }: { server: string; token: string; periodKey: string }) {
   const t = useTranslations("memory.timeline");
   const locale = useLocale();
+  const formatPricedCost = useFormatCost();
   const { status, refreshStatus } = useMemoryStatus();
   const [detail, setDetail] = useState<MemoryPeriodDetail | null | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
@@ -134,6 +135,7 @@ export function MemoryPeriodDetailView({ server, token, periodKey }: { server: s
   if (detail === null) return <p className="p-5 text-sm text-muted-foreground">{t("unknownPeriod")}</p>;
 
   const { node, current } = detail;
+  const currentCost = current ? formatPricedCost(current.provenance) : null;
   const task = node.task;
   const badge = periodBadge(node);
   const dateRange = node.level === "week"
@@ -185,7 +187,7 @@ export function MemoryPeriodDetailView({ server, token, periodKey }: { server: s
         {current ? (
           <div className="font-mono text-xs text-muted-foreground">
             {current.provenance.model} · {t("prompt", { version: current.provenance.prompt_version })} · carapace {current.provenance.carapace_version}
-            {current.provenance.cost_usd !== null ? ` · ${formatUsd(current.provenance.cost_usd, locale)}` : null}
+            {currentCost !== null ? ` · ${currentCost}` : null}
             {` · ${formatAbsoluteTime(current.provenance.created_at, locale)}`}
           </div>
         ) : null}

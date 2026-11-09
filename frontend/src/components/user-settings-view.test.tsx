@@ -35,7 +35,14 @@ function userSettingsResponse(
       timezone: "Europe/Berlin",
       memory: {
         auto_mode: false,
-        budget: { cost_usd_per_day: "1.00", cost_usd_per_month: "10.00", input_tokens_per_day: null, input_tokens_per_month: null },
+        budget: {
+          cost_usd_per_day: null,
+          cost_usd_per_month: null,
+          equivalent_cost_usd_per_day: "1.00",
+          equivalent_cost_usd_per_month: "10.00",
+          input_tokens_per_day: null,
+          input_tokens_per_month: null,
+        },
         prompt_budget_tokens: null,
       },
       matrix: {
@@ -85,7 +92,14 @@ test("buildUserSettingsPatch omits unchanged credentials when file backends are 
     timezone: settings.settings.timezone,
     memory: {
       autoMode: false,
-      budget: { cost_usd_per_day: "1.00", cost_usd_per_month: "10.00", input_tokens_per_day: "", input_tokens_per_month: "" },
+      budget: {
+        cost_usd_per_day: "",
+        cost_usd_per_month: "",
+        equivalent_cost_usd_per_day: "1.00",
+        equivalent_cost_usd_per_month: "10.00",
+        input_tokens_per_day: "",
+        input_tokens_per_month: "",
+      },
       promptBudget: "",
     },
     matrix: settings.settings.matrix,
@@ -130,7 +144,14 @@ test("buildUserSettingsPatch keeps default models the view does not edit", () =>
     timezone: settings.settings.timezone,
     memory: {
       autoMode: false,
-      budget: { cost_usd_per_day: "1.00", cost_usd_per_month: "10.00", input_tokens_per_day: "", input_tokens_per_month: "" },
+      budget: {
+        cost_usd_per_day: "",
+        cost_usd_per_month: "",
+        equivalent_cost_usd_per_day: "1.00",
+        equivalent_cost_usd_per_month: "10.00",
+        input_tokens_per_day: "",
+        input_tokens_per_month: "",
+      },
       promptBudget: "",
     },
     matrix: settings.settings.matrix,
@@ -156,7 +177,14 @@ test("buildUserSettingsPatch sends memory settings, keeping a zero limit and cle
     timezone: " America/New_York ",
     memory: {
       autoMode: true,
-      budget: { cost_usd_per_day: "0", cost_usd_per_month: "", input_tokens_per_day: "50,000", input_tokens_per_month: "" },
+      budget: {
+        cost_usd_per_day: "0",
+        cost_usd_per_month: "",
+        equivalent_cost_usd_per_day: "",
+        equivalent_cost_usd_per_month: "2.5",
+        input_tokens_per_day: "50,000",
+        input_tokens_per_month: "",
+      },
       promptBudget: "0",
     },
     matrix: settings.settings.matrix,
@@ -172,7 +200,14 @@ test("buildUserSettingsPatch sends memory settings, keeping a zero limit and cle
   assert.equal(patch.default_models?.memory_high, "anthropic:default");
   assert.deepEqual(patch.memory, {
     auto_mode: true,
-    budget: { cost_usd_per_day: "0", cost_usd_per_month: null, input_tokens_per_day: 50000, input_tokens_per_month: null },
+    budget: {
+      cost_usd_per_day: "0",
+      cost_usd_per_month: null,
+      equivalent_cost_usd_per_day: null,
+      equivalent_cost_usd_per_month: "2.5",
+      input_tokens_per_day: 50000,
+      input_tokens_per_month: null,
+    },
     prompt_budget_tokens: 0,
   });
 });
