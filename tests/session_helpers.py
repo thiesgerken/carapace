@@ -24,7 +24,7 @@ from carapace.security.sentinel import Sentinel
 from carapace.session import SessionEngine, SessionManager
 from carapace.session.types import ActiveSession, SessionSubscriber
 from carapace.skills import SkillRegistry
-from carapace.usage import LlmRequestState
+from carapace.usage import LlmContextStatus, LlmRequestState, LlmSource
 from carapace.ws_models import ApprovalRequest, FinalStatus, TurnUsage
 
 
@@ -56,6 +56,7 @@ class _FakeSubscriber(SessionSubscriber):
         self.done_messages: list[tuple[str, TurnUsage]] = []
         self.title_updates: list[tuple[str, TurnUsage | None]] = []
         self.llm_activity_updates: list[LlmRequestState | None] = []
+        self.llm_context_updates: list[tuple[LlmSource, str, LlmContextStatus]] = []
         self.status_updates: list[tuple[TurnUsage | None, SessionBudget]] = []
 
     async def on_user_message(self, content: str, *, from_self: bool, attachments: list | None = None) -> None:
@@ -120,6 +121,9 @@ class _FakeSubscriber(SessionSubscriber):
 
     async def on_llm_activity(self, activity: LlmRequestState | None) -> None:
         self.llm_activity_updates.append(activity)
+
+    async def on_llm_context(self, role: LlmSource, request_id: str, status: LlmContextStatus) -> None:
+        self.llm_context_updates.append((role, request_id, status))
 
     async def on_status(
         self,

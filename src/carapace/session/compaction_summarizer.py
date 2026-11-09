@@ -18,7 +18,7 @@ from pydantic_ai.usage import UsageLimits
 
 from ..llm import ModelFactory
 from ..prompt_prefix import join_prompt_sections
-from ..usage import LlmRequestLogCapability, UsageTracker, provider_cost_usd_from_messages
+from ..usage import CompactionTarget, LlmRequestLogCapability, UsageTracker, provider_cost_usd_from_messages
 
 FOLD_INSTRUCTIONS = """\
 # Compaction
@@ -84,7 +84,12 @@ no preamble or commentary."""
 
 
 def summary_agent(
-    system: str, *, prompt_prefix: str, model: Model | None, model_settings: ModelSettings | None
+    system: str,
+    *,
+    prompt_prefix: str,
+    model: Model | None,
+    model_settings: ModelSettings | None,
+    compaction_target: CompactionTarget,
 ) -> Agent[None, str]:
     """*model* None leaves it to the run, as the prompt preview does."""
     return Agent(
@@ -92,7 +97,7 @@ def summary_agent(
         output_type=str,
         instructions=join_prompt_sections(prompt_prefix, system),
         model_settings=model_settings,
-        capabilities=[LlmRequestLogCapability(source="compaction")],
+        capabilities=[LlmRequestLogCapability(source="compaction", compaction_target=compaction_target)],
         retries={"tools": 1, "output": 2},
     )
 
@@ -111,7 +116,9 @@ async def _run_summary(
     usage_limits: UsageLimits | None,
 ) -> str:
     resolved = model_factory(model, user=user) if model_factory is not None else infer_model(model)
-    agent = summary_agent(system, prompt_prefix=prompt_prefix, model=resolved, model_settings=model_settings)
+    agent = summary_agent(
+        system, prompt_prefix=prompt_prefix, model=resolved, model_settings=model_settings, compaction_target="agent"
+    )
     if before_llm_call is not None:
         before_llm_call()
     result = await agent.run(text, usage_limits=usage_limits)

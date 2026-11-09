@@ -15,7 +15,7 @@ from ..models.tooling import ToolResult, normalize_tool_call_args
 from ..notifications.models import NotificationClientType
 from ..notifications.vapid import derive_vapid_public_key
 from ..security.context import ApprovalSource, ApprovalVerdict
-from ..usage import LlmRequestState
+from ..usage import LlmContextStatus, LlmRequestState, LlmSource
 from ..ws_models import (
     SLASH_COMMANDS,
     ApprovalRequest,
@@ -32,6 +32,7 @@ from ..ws_models import (
     GitPushApprovalRequest,
     LlmActivity,
     LlmActivityUpdate,
+    LlmContextUpdate,
     ResetToTurnRequest,
     RetryLatestTurnRequest,
     ServerEnvelope,
@@ -171,6 +172,9 @@ class WebSocketSubscriber:
 
     async def on_llm_activity(self, activity: LlmRequestState | None) -> None:
         await self._safe_send(LlmActivityUpdate(activity=_llm_activity_payload(activity)))
+
+    async def on_llm_context(self, role: LlmSource, request_id: str, status: LlmContextStatus) -> None:
+        await self._safe_send(LlmContextUpdate(role=role, request_id=request_id, status=status))
 
     async def on_status(
         self,

@@ -21,6 +21,7 @@ from ..database.models import (
     SessionCompactionRow,
     SessionEventRow,
     SessionHistoryRow,
+    SessionLlmContextRow,
     SessionLlmRequestRow,
     SessionRow,
     SessionUsageRow,
@@ -28,7 +29,7 @@ from ..database.models import (
 from ..models.compaction import SessionCompaction
 from ..models.session import SessionAttributes, SessionBudget, SessionState
 from ..sandbox.state import SessionSandboxSnapshot
-from ..usage import LlmRequestLog, LlmRequestState, UsageTracker
+from ..usage import LlmContext, LlmRequestLog, LlmRequestState, LlmSource, UsageTracker
 from ..usernames import normalize_username
 from .open_approvals import ESCALATION_RESPONSE_FIELDS, TOOL_APPROVAL_REQUEST_ROLE, TOOL_APPROVAL_RESPONSE_ROLE
 
@@ -332,6 +333,17 @@ class SessionManager:
                 db.add(SessionLlmRequestRow(session_id=session_id, log=log))
             else:
                 row.log = log
+
+    # --- Latest LLM context per agent role (debug view) ---
+
+    def load_llm_context(self, session_id: str, role: LlmSource) -> LlmContext | None:
+        with self._session_factory() as db:
+            row = db.get(SessionLlmContextRow, (session_id, role))
+            return row.context if row is not None else None
+
+    def save_llm_context(self, session_id: str, context: LlmContext) -> None:
+        with self._session_factory.begin() as db:
+            db.merge(SessionLlmContextRow(session_id=session_id, role=context.role, context=context))
 
     # --- Compaction summary tree ---
 

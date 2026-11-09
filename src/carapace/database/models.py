@@ -13,7 +13,7 @@ from ..models.session import SessionState
 from ..models.user import UserConfig
 from ..notifications.models import NotificationSubscription
 from ..sandbox.snapshot import SessionSandboxSnapshot
-from ..usage import LlmRequestLog, UsageTracker
+from ..usage import LlmContext, LlmRequestLog, UsageTracker
 from .base import Base, JsonType, ModelMessagesJson, PydanticJson, UtcDateTime
 
 # SQLite only autoincrements an "INTEGER PRIMARY KEY" rowid alias; a BIGINT primary key
@@ -154,6 +154,18 @@ class SessionLlmRequestRow(Base):
         String(256), ForeignKey("sessions.session_id", ondelete="CASCADE"), primary_key=True
     )
     log: Mapped[LlmRequestLog] = mapped_column(PydanticJson(LlmRequestLog))
+
+
+class SessionLlmContextRow(Base):
+    """Latest LLM context per session and agent role, overwritten on every request."""
+
+    __tablename__ = "session_llm_contexts"
+
+    session_id: Mapped[str] = mapped_column(
+        String(256), ForeignKey("sessions.session_id", ondelete="CASCADE"), primary_key=True
+    )
+    role: Mapped[str] = mapped_column(String(32), primary_key=True)
+    context: Mapped[LlmContext] = mapped_column(PydanticJson(LlmContext))
 
 
 class SessionCompactionRow(Base):

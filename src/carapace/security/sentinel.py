@@ -15,7 +15,7 @@ from pydantic_ai.usage import UsageLimits
 
 from ..git.diff import touched_paths
 from ..llm import ModelFactory, SlotLimitedModel
-from ..usage import LlmRequestLogCapability, UsageTracker, provider_cost_usd_from_messages
+from ..usage import LlmRequestLogCapability, UsageTracker, fail_llm_context, provider_cost_usd_from_messages
 from .context import (
     ActionLogEntry,
     AgentResponseEntry,
@@ -416,6 +416,7 @@ class Sentinel:
             stats = self._end_eval_logging()
             session.sentinel_eval_count += 1
             explanation = self._timeout_explanation()
+            await fail_llm_context("sentinel", explanation)
             logger.warning(
                 f"Sentinel eval timed out session={session.session_id} seq={eval_no} kind={kind} subject={subject} "
                 + f"timeout_seconds={self._timeout.total_seconds():g} {self._format_eval_stats(stats)}"
