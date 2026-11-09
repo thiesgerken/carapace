@@ -53,6 +53,7 @@ UI PRs show the pages they change: before and after, light and dark, plus phone 
 | `demo-pending-approval` | Cleaning Up NAS Backups | a pending approval card |
 | `demo-budget-stop` | Triage Open Issues | a budget stop with the error box |
 | `demo-autonomy-limit` | Checking Outdated Dependencies | an autonomy-limit approval card |
+| `demo-subscription` | Refactoring Date Parsing | a Codex (subscription) agent with a paid sentinel, actual and equivalent cost limits |
 
 A session opens at `/?session=<ID>`.
 

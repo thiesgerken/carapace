@@ -1230,13 +1230,12 @@ function readBoolean(
 
 function decodeBudget(raw: unknown): SessionBudgetSettings {
   if (!isRecord(raw)) return {};
-  const cost =
-    readString(raw, "cost_usd") ??
-    (typeof raw.cost_usd === "number" ? String(raw.cost_usd) : undefined);
+  const usd = (key: string) => readString(raw, key) ?? (typeof raw[key] === "number" ? String(raw[key]) : undefined);
   return {
     input_tokens: readNumber(raw, "input_tokens") ?? null,
     output_tokens: readNumber(raw, "output_tokens") ?? null,
-    cost_usd: cost ?? null,
+    cost_usd: usd("cost_usd") ?? null,
+    equivalent_cost_usd: usd("equivalent_cost_usd") ?? null,
     tool_calls: readNumber(raw, "tool_calls") ?? null,
     autonomous_tool_calls: readNumber(raw, "autonomous_tool_calls") ?? null,
   };

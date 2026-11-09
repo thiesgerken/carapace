@@ -331,6 +331,7 @@ export function draftFromSettings(response: UserSettingsResponseInfo): UserSetti
       input_tokens: budgetValue(budget.input_tokens),
       output_tokens: budgetValue(budget.output_tokens),
       cost_usd: budgetCostValue(budget.cost_usd),
+      equivalent_cost_usd: budgetCostValue(budget.equivalent_cost_usd),
       tool_calls: budgetValue(budget.tool_calls),
       autonomous_tool_calls: budgetValue(budget.autonomous_tool_calls),
     },
@@ -390,6 +391,7 @@ function comparableBudget(budget: Record<keyof Required<SessionBudgetSettings>, 
     input_tokens: comparableBudgetInteger(budget.input_tokens),
     output_tokens: comparableBudgetInteger(budget.output_tokens),
     cost_usd: comparableBudgetCost(budget.cost_usd),
+    equivalent_cost_usd: comparableBudgetCost(budget.equivalent_cost_usd),
     tool_calls: comparableBudgetInteger(budget.tool_calls),
     autonomous_tool_calls: comparableBudgetInteger(budget.autonomous_tool_calls),
   };
@@ -483,6 +485,7 @@ function budgetFromDraft(draft: UserSettingsDraft, t: Translate): SessionBudgetS
     input_tokens: parseOptionalBudgetInteger(draft.budget.input_tokens, t("fields.inputTokens"), t),
     output_tokens: parseOptionalBudgetInteger(draft.budget.output_tokens, t("fields.outputTokens"), t),
     cost_usd: parseOptionalBudgetCost(draft.budget.cost_usd, t("fields.costUsd"), t),
+    equivalent_cost_usd: parseOptionalBudgetCost(draft.budget.equivalent_cost_usd, t("fields.equivalentCostUsd"), t),
     tool_calls: parseOptionalBudgetInteger(draft.budget.tool_calls, t("fields.toolCalls"), t),
     autonomous_tool_calls: parseOptionalBudgetInteger(draft.budget.autonomous_tool_calls, t("fields.autonomousToolCalls"), t),
   };
@@ -800,6 +803,7 @@ export function UserSettingsView({ server, token }: { server: string; token: str
             <BudgetInput label={t("fields.inputTokens")} placeholder={t("defaults.serverDefault")} value={draft.budget.input_tokens} onChange={(value) => updateDraft({ budget: { ...draft.budget, input_tokens: value } })} />
             <BudgetInput label={t("fields.outputTokens")} placeholder={t("defaults.serverDefault")} value={draft.budget.output_tokens} onChange={(value) => updateDraft({ budget: { ...draft.budget, output_tokens: value } })} />
             <BudgetInput label={t("fields.costUsd")} placeholder={t("defaults.serverDefault")} value={draft.budget.cost_usd} onBlur={() => updateDraft({ budget: { ...draft.budget, cost_usd: budgetCostValue(draft.budget.cost_usd) } })} onChange={(value) => updateDraft({ budget: { ...draft.budget, cost_usd: value } })} />
+            <BudgetInput label={t("fields.equivalentCostUsd")} title={t("fields.equivalentCostUsdHint")} placeholder={t("defaults.serverDefault")} value={draft.budget.equivalent_cost_usd} onBlur={() => updateDraft({ budget: { ...draft.budget, equivalent_cost_usd: budgetCostValue(draft.budget.equivalent_cost_usd) } })} onChange={(value) => updateDraft({ budget: { ...draft.budget, equivalent_cost_usd: value } })} />
             <BudgetInput label={t("fields.toolCalls")} placeholder={t("defaults.serverDefault")} value={draft.budget.tool_calls} onChange={(value) => updateDraft({ budget: { ...draft.budget, tool_calls: value } })} />
             <BudgetInput label={t("fields.autonomousToolCalls")} placeholder={t("defaults.serverDefault")} value={draft.budget.autonomous_tool_calls} onChange={(value) => updateDraft({ budget: { ...draft.budget, autonomous_tool_calls: value } })} />
           </div>
@@ -1194,10 +1198,10 @@ function FreeInputMultiSelect({
   );
 }
 
-function BudgetInput({ label, placeholder, value, onBlur, onChange }: { label: string; placeholder: string; value: string; onBlur?: () => void; onChange: (value: string) => void }) {
+function BudgetInput({ label, placeholder, value, onBlur, onChange, title }: { label: string; placeholder: string; value: string; onBlur?: () => void; onChange: (value: string) => void; title?: string }) {
   return (
     <Field label={label}>
-      <input inputMode="decimal" value={value} onBlur={onBlur} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} className={inputClassName} />
+      <input inputMode="decimal" value={value} title={title} onBlur={onBlur} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} className={inputClassName} />
     </Field>
   );
 }

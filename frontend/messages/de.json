@@ -432,6 +432,8 @@
             "inputTokens": "Input-Tokens",
             "outputTokens": "Output-Tokens",
             "costUsd": "Kosten (in $)",
+            "equivalentCostUsd": "Äquivalente Kosten (in $)",
+            "equivalentCostUsdHint": "Listenpreis, inklusive Abo-Nutzung, die nicht pro Token abgerechnet wird.",
             "toolCalls": "Tool-Aufrufe",
             "autonomousToolCalls": "Autonomie-Limit (Tool-Aufrufe ohne dich)",
             "enabled": "Aktiviert",
@@ -582,6 +584,8 @@
             "inputTokens": "Input-Tokens",
             "outputTokens": "Output-Tokens",
             "costUsd": "Kosten (in $)",
+            "equivalentCostUsd": "Äquivalente Kosten (in $)",
+            "equivalentCostUsdHint": "Listenpreis, inklusive Abo-Nutzung, die nicht pro Token abgerechnet wird.",
             "toolCalls": "Tool-Aufrufe",
             "autonomousToolCalls": "Autonomie-Limit (Tool-Aufrufe ohne dich)",
             "provider": "Provider",
@@ -899,7 +903,8 @@
             "current": "Aktuell: {value}",
             "max": "Maximal: {value}",
             "remaining": "Verbleibend: {value}",
-            "exhausted": "Budget ausgeschöpft."
+            "exhausted": "Budget ausgeschöpft.",
+            "equivalentCostHint": "Listenpreis, inklusive Abo-Nutzung, die nicht pro Token abgerechnet wird."
         }
     },
     "approval": {
@@ -1091,6 +1096,8 @@
             "toolCalls": "Tool-Aufrufe: {count}",
             "byModel": "Nach Modell",
             "byCategory": "Nach Kategorie",
+            "subscription": " · Abo",
+            "equivalent": "(≈ {cost} Äquivalent)",
             "context": "Kontext",
             "table": {
                 "source": "Quelle",
@@ -1122,7 +1129,8 @@
                 "remaining": "Verbleibend",
                 "used": "Verwendet",
                 "blocked": "blockiert"
-            }
+            },
+            "equivalentCostHint": "Listenpreis, inklusive Abo-Nutzung, die nicht pro Token abgerechnet wird."
         },
         "compact": {
             "title": "Compaction",
@@ -1203,6 +1211,7 @@
             "lastActive": "Zuletzt aktiv",
             "messages": "Nachrichten",
             "totalCost": "Kosten",
+            "totalEquivalentCost": "Äquivalente Kosten",
             "job": "Job",
             "reference": "Referenz",
             "modes": "Modi",
@@ -1219,13 +1228,15 @@
                 "input_tokens": "Input-Tokens",
                 "output_tokens": "Output-Tokens",
                 "cost_usd": "Kosten (USD)",
+                "equivalent_cost_usd": "Äquivalente Kosten (USD)",
                 "tool_calls": "Tool-Aufrufe",
                 "autonomous_tool_calls": "Autonomie-Limit"
             },
             "noLimit": "Kein Limit",
             "editLimit": "Limit für {label} bearbeiten",
             "hint": "Klicke auf ein Limit, um es zu ändern. Leer lassen für kein Limit. Werte wie 100k oder 2M sind erlaubt.",
-            "saveFailed": "Das Limit konnte nicht gespeichert werden."
+            "saveFailed": "Das Limit konnte nicht gespeichert werden.",
+            "equivalentCostHint": "Listenpreis, inklusive Abo-Nutzung, die nicht pro Token abgerechnet wird."
         },
         "source": {
             "unknown": "Unbekannt",

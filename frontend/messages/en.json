@@ -432,6 +432,8 @@
             "inputTokens": "Input tokens",
             "outputTokens": "Output tokens",
             "costUsd": "Cost USD",
+            "equivalentCostUsd": "Equivalent cost USD",
+            "equivalentCostUsdHint": "List price, includes subscription usage that is not billed per token.",
             "toolCalls": "Tool calls",
             "autonomousToolCalls": "Autonomy limit (tool calls without you)",
             "enabled": "Enabled",
@@ -582,6 +584,8 @@
             "inputTokens": "Input tokens",
             "outputTokens": "Output tokens",
             "costUsd": "Cost USD",
+            "equivalentCostUsd": "Equivalent cost USD",
+            "equivalentCostUsdHint": "List price, includes subscription usage that is not billed per token.",
             "toolCalls": "Tool calls",
             "autonomousToolCalls": "Autonomy limit (tool calls without you)",
             "provider": "Provider",
@@ -899,7 +903,8 @@
             "current": "Current: {value}",
             "max": "Max: {value}",
             "remaining": "Remaining: {value}",
-            "exhausted": "Budget exhausted."
+            "exhausted": "Budget exhausted.",
+            "equivalentCostHint": "List price, includes subscription usage that is not billed per token."
         }
     },
     "approval": {
@@ -1091,6 +1096,8 @@
             "toolCalls": "Tool Calls: {count}",
             "byModel": "By Model",
             "byCategory": "By Category",
+            "subscription": " · subscription",
+            "equivalent": "(≈ {cost} equivalent)",
             "context": "Context",
             "table": {
                 "source": "Source",
@@ -1122,7 +1129,8 @@
                 "remaining": "Remaining",
                 "used": "Used",
                 "blocked": "blocked"
-            }
+            },
+            "equivalentCostHint": "List price, includes subscription usage that is not billed per token."
         },
         "compact": {
             "title": "Compaction",
@@ -1203,6 +1211,7 @@
             "lastActive": "Last active",
             "messages": "Messages",
             "totalCost": "Cost",
+            "totalEquivalentCost": "Equivalent cost",
             "job": "Job",
             "reference": "Reference",
             "modes": "Modes",
@@ -1219,13 +1228,15 @@
                 "input_tokens": "Input tokens",
                 "output_tokens": "Output tokens",
                 "cost_usd": "Cost (USD)",
+                "equivalent_cost_usd": "Equivalent cost (USD)",
                 "tool_calls": "Tool calls",
                 "autonomous_tool_calls": "Autonomy limit"
             },
             "noLimit": "No limit",
             "editLimit": "Edit {label} limit",
             "hint": "Click a limit to change it. Leave it empty for no limit. Accepts values like 100k or 2M.",
-            "saveFailed": "Could not save the limit."
+            "saveFailed": "Could not save the limit.",
+            "equivalentCostHint": "List price, includes subscription usage that is not billed per token."
         },
         "source": {
             "unknown": "Unknown",

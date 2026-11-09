@@ -45,7 +45,7 @@ function budgetGaugeCurrentAmount(gauge: BudgetGauge): number | null {
   }
 
   const value = gauge.current_value.trim();
-  if (gauge.key === "cost") {
+  if (gauge.key === "cost" || gauge.key === "equivalent_cost") {
     const match = value.match(/^\$(\d+(?:\.\d+)?)$/);
     return match ? Number(match[1]) : null;
   }
@@ -1025,13 +1025,20 @@ function BudgetGaugeRow({
       ? "rounded-l-full bg-emerald-500/75"
       : gauge.key === "output"
         ? "rounded-l-full bg-sky-500/75"
-        : "rounded-l-full bg-amber-500/80";
+        : gauge.key === "equivalent_cost"
+          ? "rounded-l-full bg-amber-500/45"
+          : "rounded-l-full bg-amber-500/80";
 
   const tooltipLines = [
-    t("budget.budgetLabel", { label: gauge.label }),
+    gauge.limit_value ? t("budget.budgetLabel", { label: gauge.label }) : gauge.label,
     t("budget.current", { value: gauge.current_value }),
-    t("budget.max", { value: gauge.limit_value }),
   ];
+  if (gauge.limit_value) {
+    tooltipLines.push(t("budget.max", { value: gauge.limit_value }));
+  }
+  if (gauge.key === "equivalent_cost") {
+    tooltipLines.push(t("budget.equivalentCostHint"));
+  }
   if (gauge.remaining_value) {
     tooltipLines.push(t("budget.remaining", { value: gauge.remaining_value }));
   }

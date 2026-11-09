@@ -49,7 +49,9 @@ The server needs outbound HTTPS access to `auth.openai.com` and `chatgpt.com`.
 
 ## Usage and cost
 
-Codex requests count against the user's ChatGPT subscription limits, not an API bill. carapace still shows the equivalent OpenAI API price in usage and cost figures (Codex models are priced like the same model on the `openai` provider), and session cost budgets apply to that equivalent price.
+Codex requests count against the user's ChatGPT subscription limits, not an API bill, so they add nothing to a session's **cost** (the actual cost). They do count toward its **equivalent cost**: the list price of the same model on the `openai` provider, i.e. what the session would have cost on the API. `/usage` shows Codex models with that price, marked "· subscription", and adds "(≈ $X equivalent)" to the cost of a session or category that used them.
+
+The two are limited separately: `/budget cost N` caps real money (pay-per-token models only), `/budget equivalent_cost N` caps the list price of everything, Codex included. Cost limits set before the split became equivalent cost limits, so they block exactly as before. See [Actual and equivalent cost](sessions-and-channels.md#actual-and-equivalent-cost).
 
 ## API
 

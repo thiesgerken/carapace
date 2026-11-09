@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, Literal, Protocol
 
-from ..models.config import Config
+from ..models.config import Config, is_subscription_model
 from ..models.skills import SkillInfo, context_grants_session_summary
 from ..sandbox.manager import SandboxManager
 from ..usage import BudgetMetric
@@ -144,8 +144,7 @@ class SessionCommandMixin:
 
         if cmd == "/usage":
             tracker = active.usage_tracker
-            costs = tracker.estimated_cost()
-            cat_costs = tracker.estimated_category_cost()
+            total_cost = tracker.total_cost()
             return {
                 "command": "usage",
                 "data": {
@@ -154,8 +153,16 @@ class SessionCommandMixin:
                     "total_input": tracker.total_input,
                     "total_output": tracker.total_output,
                     "total_tool_calls": tracker.tool_calls,
-                    "costs": {k: str(v) for k, v in costs.items()},
-                    "category_costs": {k: str(v) for k, v in cat_costs.items()},
+                    # One number per model: subscription models show their list price, marked as such.
+                    "model_costs": {
+                        model_key: {"cost": str(cost.equivalent), "subscription": is_subscription_model(model_key)}
+                        for model_key, cost in tracker.cost_by_model().items()
+                    },
+                    "category_costs": {
+                        category: {"actual": str(cost.actual), "equivalent": str(cost.equivalent)}
+                        for category, cost in tracker.cost_by_category().items()
+                    },
+                    "total_cost": {"actual": str(total_cost.actual), "equivalent": str(total_cost.equivalent)},
                     "budget_gauges": [g.model_dump(mode="json") for g in self._display_budget_gauges(active)],
                     "last_llm_agent": self._usage_last_llm_payload_row(active, "agent"),
                     "last_llm_sentinel": self._usage_last_llm_payload_row(active, "sentinel"),
@@ -205,6 +212,8 @@ class SessionCommandMixin:
             "input": "input",
             "output": "output",
             "cost": "cost",
+            "equivalent_cost": "equivalent_cost",
+            "equivalent-cost": "equivalent_cost",
             "tools": "tool_calls",
             "tool": "tool_calls",
             "tool_calls": "tool_calls",
@@ -217,8 +226,8 @@ class SessionCommandMixin:
                 "command": "budget",
                 "data": {
                     **self._budget_command_payload(active),
-                    "error": "Usage: /budget, /budget input N, /budget output N, /budget cost N, /budget tools N, "
-                    "or /budget autonomy N",
+                    "error": "Usage: /budget, /budget input N, /budget output N, /budget cost N, "
+                    "/budget equivalent_cost N, /budget tools N, or /budget autonomy N",
                 },
             }
 

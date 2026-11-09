@@ -97,7 +97,8 @@ agent:
   # default_session_budget:
   #   input_tokens: 100000
   #   output_tokens: 50000
-  #   cost_usd: 5.00
+  #   cost_usd: 5.00             # billed per token
+  #   equivalent_cost_usd: 20.00 # list price, subscription usage included
   #   autonomous_tool_calls: 100  # the platform default when the whole block is omitted
 
 sessions:

@@ -88,7 +88,10 @@ export interface SessionAttributesPatch {
 export interface SessionBudgetSettings {
   input_tokens?: number | null;
   output_tokens?: number | null;
+  /** Billed per token; subscription usage costs nothing here. */
   cost_usd?: string | null;
+  /** List price of everything, subscription usage included. */
+  equivalent_cost_usd?: string | null;
   tool_calls?: number | null;
   /** Tool call attempts since the last human interaction. */
   autonomous_tool_calls?: number | null;
@@ -115,7 +118,9 @@ export interface SessionInfo {
   activated_rules: string[];
   disabled_rules: string[];
   message_count: number;
+  /** Billed per token; subscription usage is only in the equivalent cost. */
   total_cost_usd?: number | null;
+  total_equivalent_cost_usd?: number | null;
   sandbox?: SessionSandboxSnapshot | null;
 }
 
@@ -403,11 +408,12 @@ export interface TurnUsageBreakdownPct {
 }
 
 export interface BudgetGauge {
-  key: "input" | "output" | "cost" | "tool_calls" | "autonomy";
+  key: "input" | "output" | "cost" | "equivalent_cost" | "tool_calls" | "autonomy";
   label: string;
   current_value: string;
   current_amount?: number | null;
-  limit_value: string;
+  /** `null` for a gauge shown without a limit: the equivalent cost of subscription usage. */
+  limit_value: string | null;
   remaining_value?: string | null;
   fill_pct: number;
   reached: boolean;

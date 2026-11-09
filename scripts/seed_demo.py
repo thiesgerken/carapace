@@ -34,6 +34,7 @@ from carapace.usage import UsageTracker, usage_budget_exceeded_error
 DEMO_USER = "demo"
 DEMO_PASSWORD = "carapace-demo"
 DEMO_MODEL = "anthropic:claude-sonnet-4-6"
+DEMO_SUBSCRIPTION_MODEL = "openai-codex:gpt-5.5"
 
 
 @dataclass
@@ -336,15 +337,34 @@ def _pending_approval(start: datetime) -> Transcript:
     return t
 
 
-def _budget_stop(start: datetime, usage: UsageTracker, cost_limit: Decimal) -> Transcript:
+def _budget_stop(start: datetime, usage: UsageTracker, budget: SessionBudget) -> Transcript:
     t = Transcript(start)
     t.user("Summarize the open issues in the carapace repo.")
     t.run("gh issue list --limit 5", "#41  Dark mode for settings\n#40  Faster session list\n#38  Export to PDF")
     t.assistant("There are three open issues: dark mode for settings, a faster session list, and PDF export.")
     t.user("Now draft a reply for each of them.")
-    error = usage_budget_exceeded_error(usage, total_cost_limit=cost_limit)
+    error = usage_budget_exceeded_error(usage, budget)
     assert error is not None, "the demo usage must exceed the demo cost limit"
     t.error(str(error))
+    return t
+
+
+def _subscription_usage() -> UsageTracker:
+    """The agent runs on a ChatGPT subscription (no actual cost), the sentinel on a paid API model."""
+    tracker = UsageTracker()
+    tracker.record(DEMO_SUBSCRIPTION_MODEL, "agent", RunUsage(input_tokens=240_000, output_tokens=18_000, requests=12))
+    tracker.record(DEMO_MODEL, "sentinel", RunUsage(input_tokens=36_000, output_tokens=2_400, requests=6))
+    return tracker
+
+
+def _subscription(start: datetime) -> Transcript:
+    t = Transcript(start)
+    t.user("Refactor the date parsing in /workspace/api into one helper and run the tests.")
+    t.run("grep -rn 'strptime' /workspace/api/src", "src/orders.py:14\nsrc/invoices.py:22\nsrc/reports.py:9")
+    t.run("cd /workspace/api && uv run pytest -q", "48 passed in 3.1s", title="run api tests")
+    t.assistant(
+        "Done. The three `strptime` calls now go through `parse_date()` in `src/dates.py`, and all 48 tests pass."
+    )
     return t
 
 
@@ -364,6 +384,7 @@ def _autonomy_limit(start: datetime) -> Transcript:
 
 def demo_sessions(now: datetime) -> list[DemoSession]:
     budget_usage = _usage(180_000, 24_000)
+    budget_stop_budget = SessionBudget(cost_usd=Decimal("0.75"))
     return [
         DemoSession(
             "demo-sandbox-tour",
@@ -401,8 +422,8 @@ def demo_sessions(now: datetime) -> list[DemoSession]:
         DemoSession(
             "demo-budget-stop",
             "💸 Triage Open Issues",
-            _budget_stop(now - timedelta(minutes=30), budget_usage, Decimal("0.75")),
-            budget=SessionBudget(cost_usd=Decimal("0.75")),
+            _budget_stop(now - timedelta(minutes=30), budget_usage, budget_stop_budget),
+            budget=budget_stop_budget,
             usage=budget_usage,
         ),
         DemoSession(
@@ -411,6 +432,13 @@ def demo_sessions(now: datetime) -> list[DemoSession]:
             _autonomy_limit(now - timedelta(minutes=10)),
             budget=SessionBudget(autonomous_tool_calls=3),
             usage=_usage(7_200, 600),
+        ),
+        DemoSession(
+            "demo-subscription",
+            "🔁 Refactoring Date Parsing",
+            _subscription(now - timedelta(minutes=5)),
+            budget=SessionBudget(cost_usd=Decimal("0.50"), equivalent_cost_usd=Decimal("2.00")),
+            usage=_subscription_usage(),
         ),
     ]
 

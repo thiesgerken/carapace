@@ -126,14 +126,27 @@ Retry and reset are WebSocket actions; fork is a REST action.
 
 ### Session budgets
 
-`SessionBudget` caps a session's totals: input tokens, output tokens, estimated cost in USD, and tool calls. It also holds the autonomy limit (see below). A new session starts from the user's default budget (**Settings** -> **Account**) if it sets any limit, otherwise from the platform default (**Settings** -> **Admin** -> **Platform**). Once one of the totals is reached, the next LLM call ends the turn with a "Session budget reached" error.
+`SessionBudget` caps a session's totals: input tokens, output tokens, actual and equivalent cost in USD (see below), and tool calls. It also holds the autonomy limit (see below). A new session starts from the user's default budget (**Settings** -> **Account**) if it sets any limit, otherwise from the platform default (**Settings** -> **Admin** -> **Platform**). Once one of the totals is reached, the next LLM call ends the turn with a "Session budget reached" error.
 
 Per session, limits change in two places, which share one parser (`parse_budget_limit`) and one setter (`SessionEngine.update_session_budget`):
 
-- `/budget input N`, `/budget output N`, `/budget cost N`, `/budget tools N`, `/budget autonomy N`. `N` accepts `k`/`M` suffixes for counts; `0` clears a limit.
+- `/budget input N`, `/budget output N`, `/budget cost N`, `/budget equivalent_cost N`, `/budget tools N`, `/budget autonomy N`. `N` accepts `k`/`M` suffixes for counts; `0` clears a limit.
 - The **Budget** section of the session drawer in the web UI: click a limit, enter a value (same syntax), leave it empty for no limit. It sends `PATCH /api/sessions/{id}` with `{"budget": {"input_tokens": "100k"}}`; `null` clears a limit, omitted fields stay unchanged, and an invalid value is rejected with `400` before anything in the request is applied.
 
 Both paths broadcast a `status` message with the new `budget` to every connected WebSocket client, so the budget gauges and the drawer refresh in every tab. `GET`/`PATCH /api/sessions/{id}` return the current limits as `budget`.
+
+### Actual and equivalent cost
+
+Cost is tracked twice, because subscription models are not billed per token:
+
+- **Cost** (actual, `cost_usd`, `/budget cost N`): what the session costs in real money. Pay-per-token models count with the provider-reported cost or, without one, their list price. Subscription models add nothing.
+- **Equivalent cost** (`equivalent_cost_usd`, `/budget equivalent_cost N`): the list price of everything, subscription usage included, i.e. what the session would have cost on the API. It is always at least the actual cost, and the same as it for sessions without subscription usage.
+
+A model counts as a subscription model by its provider (`SUBSCRIPTION_PROVIDERS` in `models/config.py`, today only `openai-codex`, see [chatgpt-subscription.md](chatgpt-subscription.md)). In a mixed session, e.g. the agent on a ChatGPT subscription and the sentinel on a pay-per-token API, only the API part is actual cost.
+
+Both are limited independently, and reaching either one blocks the next LLM call with a message naming the limit and its `/budget` key. The cost gauge shows with a limit, as the other gauges do; the equivalent cost gauge shows with a limit or as soon as the session used a subscription model, then without a limit. `/usage` shows one cost per model, marking subscription models ("$0.42 · subscription"), and the actual cost per category and in total, with "(≈ $X equivalent)" added where subscription usage makes it differ (for the total: whenever the equivalent cost gauge shows). The session drawer shows the equivalent total under the same rule.
+
+Migration 0010 renamed every stored cost limit (platform default, user defaults, sessions) to an equivalent cost limit, since the old limit already priced subscription usage at list price. The actual cost limit starts unset.
 
 ### Autonomy limit
 
@@ -278,7 +291,7 @@ Slash commands are the user's control interface for managing sessions. Interacti
 | `/session`                                      | Show session metadata, context grants, and domain allowlist    |
 | `/skills`                                       | List available skills                                          |
 | `/retitle`                                      | Regenerate session title, or set it explicitly                 |
-| `/budget`                                       | Show or update session budgets, tool-call caps, autonomy limit |
+| `/budget`                                       | Show or update session budgets: tokens, actual and equivalent cost, tool calls, autonomy |
 | `/usage`                                        | Show token usage breakdown with cost estimates                 |
 | `/pull`                                         | Pull from external Git remote (if configured)                  |
 | `/push`                                         | Push to external Git remote (if configured)                    |

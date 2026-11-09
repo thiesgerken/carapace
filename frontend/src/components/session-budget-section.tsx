@@ -13,6 +13,7 @@ const BUDGET_FIELDS: SessionBudgetField[] = [
   "input_tokens",
   "output_tokens",
   "cost_usd",
+  "equivalent_cost_usd",
   "tool_calls",
   "autonomous_tool_calls",
 ];
@@ -25,7 +26,8 @@ function rawLimit(budget: SessionBudgetSettings, field: SessionBudgetField): str
 function formatLimit(budget: SessionBudgetSettings, field: SessionBudgetField, locale: string): string | null {
   const value = budget[field];
   if (value == null) return null;
-  return field === "cost_usd" ? formatUsd(value, locale) : new Intl.NumberFormat(locale).format(Number(value));
+  const isUsd = field === "cost_usd" || field === "equivalent_cost_usd";
+  return isUsd ? formatUsd(value, locale) : new Intl.NumberFormat(locale).format(Number(value));
 }
 
 interface SessionBudgetSectionProps {
@@ -94,7 +96,12 @@ export function SessionBudgetSection({ budget, disabled, onSave }: SessionBudget
           const limit = formatLimit(budget, field, locale);
           return (
             <div key={field} className="contents">
-              <dt className="text-muted-foreground">{label}</dt>
+              <dt
+                className="text-muted-foreground"
+                title={field === "equivalent_cost_usd" ? t("equivalentCostHint") : undefined}
+              >
+                {label}
+              </dt>
               <dd className="flex items-center justify-end gap-1.5">
                 {editing?.field === field ? (
                   <>

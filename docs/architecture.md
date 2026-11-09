@@ -227,7 +227,6 @@ This map describes the Python modules under `src/carapace/`. It is meant as a na
 | `channels/matrix/__init__.py`   | Matrix channel package facade.                                                 |
 | `channels/matrix/approval.py`   | Matrix approval tracking and decision constants.                               |
 | `channels/matrix/channel.py`    | Matrix client lifecycle, sync loop, and message dispatch into `SessionEngine`. |
-| `channels/matrix/commands.py`   | Matrix slash-command parsing and command response formatting.                  |
 | `channels/matrix/formatting.py` | Matrix-safe text and event formatting helpers.                                 |
 | `channels/matrix/subscriber.py` | `SessionSubscriber` implementation that sends engine events to Matrix rooms.   |
 

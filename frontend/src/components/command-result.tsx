@@ -1,7 +1,7 @@
 "use client";
 
 import { useTranslations } from "next-intl";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -11,6 +11,7 @@ import {
   type SlashCommand,
 } from "@/lib/api";
 import { isRecord, readString } from "@/lib/decoding";
+import type { BudgetGauge } from "@/lib/types";
 
 interface HelpData {
   commands: SlashCommand[];
@@ -470,17 +471,6 @@ interface UsageBucket {
   requests: number;
 }
 
-interface BudgetGaugeData {
-  key: "input" | "output" | "cost" | "tool_calls";
-  label: string;
-  current_value: string;
-  limit_value: string;
-  remaining_value?: string | null;
-  fill_pct: number;
-  reached: boolean;
-  unavailable_reason?: string | null;
-}
-
 /** % of tiktoken mass over the prompt only (sum 100); unrelated to API billing tokens. */
 interface LastLlmBreakdownPct {
   system: number | null;
@@ -509,15 +499,23 @@ interface UsagePayload {
   total_input: number;
   total_output: number;
   total_tool_calls?: number;
-  costs?: Record<string, string>;
-  category_costs?: Record<string, string>;
-  budget_gauges?: BudgetGaugeData[];
+  /** One number per model; subscription models show their list price, marked as such. */
+  model_costs?: Record<string, { cost: string; subscription: boolean }>;
+  category_costs?: Record<string, CostSplit>;
+  total_cost?: CostSplit;
+  budget_gauges?: BudgetGauge[];
   last_llm_agent?: LastLlmRequestRow | null;
   last_llm_sentinel?: LastLlmRequestRow | null;
 }
 
+/** USD amounts as decimal strings: billed per token, and at list price with subscription usage included. */
+interface CostSplit {
+  actual: string;
+  equivalent: string;
+}
+
 interface BudgetPayload {
-  gauges: BudgetGaugeData[];
+  gauges: BudgetGauge[];
   message?: string;
   error?: string;
   usage_hint?: string;
@@ -574,11 +572,11 @@ function UsageView({
   const hasCache = allBuckets.some(
     (b) => b.cache_read_tokens || b.cache_write_tokens,
   );
-  const costs = data.costs ?? {};
+  const modelCosts = data.model_costs ?? {};
   const categoryCosts = data.category_costs ?? {};
-  const hasCosts = Object.entries(costs).some(
-    ([k, v]) => k !== "total" && v !== "0",
-  );
+  const hasCosts = Object.values(modelCosts).some((cost) => parseFloat(cost.cost) > 0);
+  // The equivalent total follows its gauge: shown with a limit or when the session used a subscription.
+  const showEquivalentTotal = budgetGauges.some((gauge) => gauge.key === "equivalent_cost");
   const isEmpty =
     Object.keys(data.models).length === 0 &&
     Object.keys(data.categories).length === 0 &&
@@ -592,13 +590,40 @@ function UsageView({
     );
   }
 
+  function modelCostCell(name: string) {
+    const cost = modelCosts[name];
+    if (!cost) return fmtCost("0");
+    return (
+      <>
+        {/* A subscription model's cost is the equivalent price, not money spent: no spend color. */}
+        <span className={cost.subscription ? "text-muted-foreground" : costColor(parseFloat(cost.cost))}>
+          {fmtCost(cost.cost)}
+        </span>
+        {cost.subscription ? <span className="text-muted-foreground">{t("usage.subscription")}</span> : null}
+      </>
+    );
+  }
+
+  function categoryCostCell(name: string) {
+    const cost = categoryCosts[name] ?? { actual: "0", equivalent: "0" };
+    return (
+      <>
+        <span className={costColor(parseFloat(cost.actual))}>{fmtCost(cost.actual)}</span>
+        {parseFloat(cost.equivalent) !== parseFloat(cost.actual) ? (
+          <span className="text-muted-foreground">
+            {" "}
+            {t("usage.equivalent", { cost: fmtCost(cost.equivalent) })}
+          </span>
+        ) : null}
+      </>
+    );
+  }
+
   function renderTable(
     title: string,
     rows: Record<string, UsageBucket>,
-    showCost: boolean = false,
-    rowCosts: Record<string, string> | undefined = undefined,
+    costCell: (name: string) => ReactNode,
   ) {
-    const costLookup = rowCosts ?? costs;
     return (
       <div className="my-2 text-sm">
         <p className="mb-1 text-xs font-medium text-muted-foreground">
@@ -620,7 +645,7 @@ function UsageView({
                 </th>
               )}
               <th className="pb-1 pr-3 font-medium text-right">{t("usage.table.requests")}</th>
-              {showCost && hasCosts && (
+              {hasCosts && (
                 <th className="pb-1 font-medium text-right">{t("usage.table.cost")}</th>
               )}
             </tr>
@@ -646,12 +671,8 @@ function UsageView({
                   </td>
                 )}
                 <td className="py-1 pr-3 text-xs text-right">{u.requests}</td>
-                {showCost && hasCosts && (
-                  <td
-                    className={`py-1 text-xs text-right ${costColor(parseFloat(costLookup[name] ?? "0"))}`}
-                  >
-                    {fmtCost(costLookup[name] ?? "0")}
-                  </td>
+                {hasCosts && (
+                  <td className="py-1 text-xs text-right">{costCell(name)}</td>
                 )}
               </tr>
             ))}
@@ -663,14 +684,23 @@ function UsageView({
   }
 
   const total = data.total_input + data.total_output;
-  const totalCost = costs.total ?? "0";
-  const costStr =
-    totalCost !== "0" ? (
-      <span className={costColor(parseFloat(totalCost))}>
-        {" "}
-        | {fmtCost(totalCost)}
-      </span>
-    ) : null;
+  const totalCost = data.total_cost ?? { actual: "0", equivalent: "0" };
+  const costStr = (
+    <>
+      {parseFloat(totalCost.actual) ? (
+        <span className={costColor(parseFloat(totalCost.actual))}>
+          {" "}
+          | {fmtCost(totalCost.actual)}
+        </span>
+      ) : null}
+      {showEquivalentTotal ? (
+        <span className="text-muted-foreground">
+          {" "}
+          {t("usage.equivalent", { cost: fmtCost(totalCost.equivalent) })}
+        </span>
+      ) : null}
+    </>
+  );
 
   const lastRequestRows = (
     [data.last_llm_agent, data.last_llm_sentinel] as const
@@ -713,9 +743,9 @@ function UsageView({
         <div className="ml-3 mt-0.5 border-l border-border/80 pl-3">
       {budgetGauges.length > 0 ? <BudgetTable gauges={budgetGauges} /> : null}
       {Object.keys(data.models).length > 0 &&
-        renderTable(t("usage.byModel"), data.models, true)}
+        renderTable(t("usage.byModel"), data.models, modelCostCell)}
       {Object.keys(data.categories).length > 0 &&
-        renderTable(t("usage.byCategory"), data.categories, true, categoryCosts)}
+        renderTable(t("usage.byCategory"), data.categories, categoryCostCell)}
       {lastRequestRows.length > 0 ? (
         <div className="mt-2 text-sm">
           <p className="mb-1 text-xs font-medium text-muted-foreground">
@@ -818,7 +848,7 @@ function BudgetView({ data }: { data: BudgetPayload }) {
   );
 }
 
-function BudgetTable({ gauges }: { gauges: BudgetGaugeData[] }) {
+function BudgetTable({ gauges }: { gauges: BudgetGauge[] }) {
   const t = useTranslations("commandResult");
   return (
     <div className="my-2 text-sm">
@@ -838,12 +868,17 @@ function BudgetTable({ gauges }: { gauges: BudgetGaugeData[] }) {
         <tbody>
           {gauges.map((gauge) => (
             <tr key={gauge.key} className="border-b border-border/50">
-              <td className="py-1 pr-3 text-xs font-medium">{gauge.label}</td>
+              <td
+                className="py-1 pr-3 text-xs font-medium"
+                title={gauge.key === "equivalent_cost" ? t("budget.equivalentCostHint") : undefined}
+              >
+                {gauge.label}
+              </td>
               <td className="py-1 pr-3 text-xs text-right tabular-nums">
                 {gauge.current_value}
               </td>
               <td className="py-1 pr-3 text-xs text-right tabular-nums">
-                {gauge.limit_value}
+                {gauge.limit_value ?? "—"}
               </td>
               <td className="py-1 pr-3 text-xs text-right tabular-nums">
                 {gauge.remaining_value ?? "—"}

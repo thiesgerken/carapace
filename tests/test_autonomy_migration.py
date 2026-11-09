@@ -15,6 +15,8 @@ from carapace.models.user import UserConfig
 _raw_users = table("users", column("username", String), column("config", JSON))
 _raw_sessions = table("sessions", column("session_id", String), column("state", JSON))
 _FIELD = "autonomous_tool_calls"
+# Budget keys a row written by the current models has, but a row from before 0009 doesn't.
+_NEWER_BUDGET_KEYS = {_FIELD, "equivalent_cost_usd"}
 _PRE_AUTONOMY_BUDGET = {"input_tokens": None, "output_tokens": None, "cost_usd": "2.50", "tool_calls": None}
 _PRE_AUTONOMY_EMPTY_BUDGET = {"input_tokens": None, "output_tokens": None, "cost_usd": None, "tool_calls": None}
 
@@ -33,9 +35,9 @@ def _insert_pre_autonomy_user(conn: Connection, username: str, budget: SessionBu
             }
         ],
     )
-    # The current model writes the new field; rows from before 0009 don't have it.
+    # The current model writes the new fields; rows from before 0009 don't have them.
     config = conn.scalar(select(_raw_users.c.config).where(_raw_users.c.username == username))
-    budgets = {key: value for key, value in config["budgets"].items() if key != _FIELD}
+    budgets = {key: value for key, value in config["budgets"].items() if key not in _NEWER_BUDGET_KEYS}
     conn.execute(
         update(_raw_users).where(_raw_users.c.username == username).values(config=config | {"budgets": budgets})
     )
@@ -60,7 +62,7 @@ def test_migration_gives_installs_the_default_autonomy_limit_and_strips_it_on_do
         )
         _insert_pre_autonomy_user(conn, "own_budget", SessionBudget(cost_usd=Decimal("2.50")), now)
         _insert_pre_autonomy_user(conn, "platform_budget", SessionBudget(), now)
-        command.upgrade(cfg, "head")
+        command.upgrade(cfg, "0009")
         agent = conn.scalar(select(PlatformSettingRow.data).where(PlatformSettingRow.key == "agent"))
         upgraded_budgets = _user_budgets(conn)
 
@@ -79,6 +81,10 @@ def test_migration_gives_installs_the_default_autonomy_limit_and_strips_it_on_do
                 }
             ],
         )
+        # Like the users above: a session from 0009 has no keys of later revisions.
+        stored = conn.scalar(select(_raw_sessions.c.state))
+        budget = {key: value for key, value in stored["budget"].items() if key != "equivalent_cost_usd"}
+        conn.execute(update(_raw_sessions).values(state=stored | {"budget": budget}))
         command.downgrade(cfg, "0008")
         downgraded_agent = conn.scalar(select(PlatformSettingRow.data).where(PlatformSettingRow.key == "agent"))
         downgraded_budgets = _user_budgets(conn)
