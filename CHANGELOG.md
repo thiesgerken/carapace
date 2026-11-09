@@ -1,6 +1,37 @@
 # CHANGELOG
 
 
+## v0.171.1 (2026-11-09)
+
+
+### Other
+
+
+- Merge pull request #440 from thiesgerken/build/frontend-npm
+  ([`ce857ec`](https://github.com/thiesgerken/carapace/commit/ce857ec68610afd8b0c44faa62658b8bb6321717))
+
+- 🔥 chore(nix): drop dead HOME setup and unused npmDeps export
+  ([`3b58b1d`](https://github.com/thiesgerken/carapace/commit/3b58b1db8ee0243a0152f9e82d2b484b9ba6ed37))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aUz5aruKwJbmfN76MTy
+
+### ♻️ Refactoring
+
+
+- ♻️ refactor(frontend): build with npm and importNpmLock instead of pnpm
+  ([`ce857ec`](https://github.com/thiesgerken/carapace/commit/ce857ec68610afd8b0c44faa62658b8bb6321717))
+
+- ♻️ refactor(frontend): build with npm and importNpmLock instead of pnpm
+  ([`42d0c9d`](https://github.com/thiesgerken/carapace/commit/42d0c9d1b671018db6f9f7dde15db0acc52a593d))
+
+  Renovate cannot refresh the fetchPnpmDeps hash, so every frontend dependency PR failed the Nix build until someone ran a manual script. importNpmLock reads the integrity hashes straight from package-lock.json, which removes that hash, the pinned pnpm binaries, and the refresh script.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aUz5aruKwJbmfN76MTy
+
 ## v0.171.0 (2026-11-09)
 
 
