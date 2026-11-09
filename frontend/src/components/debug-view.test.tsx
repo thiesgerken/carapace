@@ -160,6 +160,13 @@ test("the debug view shows each role's latest context and refetches on WebSocket
     assert.match(text(), /"command": "ls \/backups"/);
     await eventually('code[data-language="json"]');
 
+    // A stopped turn saves the interrupted record only after the context's notification; the activity ending refetches.
+    requests.push(record({ ts: "2026-11-09T12:00:09Z", request_id: "r2", outcome: "interrupted", input_tokens: 0, output_tokens: 0, completed_at: null }));
+    await runInAct(() => socket.onmessage?.({ data: JSON.stringify({ type: "llm_activity", activity: null }) }));
+    await settle();
+    assert.equal(rows().length, 3);
+    assert.equal(rows()[0][1], "Interrupted");
+
     const rawToggles = Array.from(view.container.querySelectorAll("button[aria-pressed]"));
     await click(rawToggles.at(-1)!);
     assert.match(text(), /"provider_details"/);

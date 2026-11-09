@@ -106,11 +106,14 @@ feeds the usage stats. `role` is optional and takes the same roles as the contex
 `history` read scope.
 
 A record keeps the numbers of a request, not its context, so the timeline grows by one small row
-per request instead of one full context. Its `outcome` is `completed`, or `interrupted` for an agent
-request cut short when the turn stopped. Token counts are provider-reported: input, output, cache
-read, cache write, audio, and reasoning when the provider reports it. A completed record carries the
-same `cost` as its context (see [Usage and cost](#usage-and-cost)). Cache and audio counts and the
-cost are `null` on records written before they were kept, and the cost on interrupted records.
+per request instead of one full context. Its `outcome` is `completed`, or `interrupted` for a request
+cut short when the turn stopped. Token counts are provider-reported: input, output, cache read,
+cache write, and reasoning when the provider reports it. A completed record carries the same `cost`
+as its context (see [Usage and cost](#usage-and-cost)). Cache counts and the cost are `null` on
+records written before they were kept, and the cost on interrupted records.
+
+A stopped turn saves its interrupted record after the context's notification went out, so the view
+also refetches the timeline when the session's LLM activity ends.
 
 Failed requests leave no record, so the timeline has no row for them. Their error shows only in the
 role's LLM context, as long as it is the latest one.

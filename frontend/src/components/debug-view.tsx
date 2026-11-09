@@ -64,8 +64,10 @@ export function DebugView({ server, token, sessionId, title }: { server: string;
   const t = useTranslations("debugView");
   const [role, setRole] = useState<DebugRole>("agent");
   const [notifications, setNotifications] = useState<Partial<Record<DebugRole, Notification>>>({});
+  const [activityEnds, setActivityEnds] = useState(0);
 
   const onMessage = useCallback((msg: ServerMessage) => {
+    if (msg.type === "llm_activity" && !msg.activity) setActivityEnds((count) => count + 1);
     if (msg.type !== "llm_context") return;
     setNotifications((current) => ({ ...current, [msg.role]: { requestId: msg.request_id, status: msg.status } }));
   }, []);
@@ -78,7 +80,8 @@ export function DebugView({ server, token, sessionId, title }: { server: string;
   // The role's context and timeline from an older notification keep showing while the next ones load.
   const current = useRoleFetch(fetchLlmContext, server, token, sessionId, role, revision);
   const shown = current && "value" in current ? current.value : undefined;
-  const timeline = useRoleFetch(fetchLlmRequests, server, token, sessionId, role, revision);
+  // A stopped turn saves its interrupted record after the context's notification went out; the activity ends after that.
+  const timeline = useRoleFetch(fetchLlmRequests, server, token, sessionId, role, `${revision}:${activityEnds}`);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
