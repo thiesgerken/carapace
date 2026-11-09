@@ -59,7 +59,7 @@ export default function ChatPage() {
   }, [activeSession, brand]);
 
   if (activeSessionId && view === "debug") {
-    return <DebugView key={activeSessionId} server={shell.server} token={shell.token} sessionId={activeSessionId} />;
+    return <DebugView key={activeSessionId} server={shell.server} token={shell.token} sessionId={activeSessionId} title={activeSession?.title} />;
   }
 
   if (activeSessionId) {

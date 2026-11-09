@@ -6,18 +6,22 @@ what went to the model in its last request, and what came back. Terms follow
 
 ## Using it
 
-The bug icon in the session inspector opens `/?session=<ID>&view=debug`. One tab per role shows its
-latest request:
+The **Chat | Debug** switch in the session header opens `/?session=<ID>&view=debug`. One tab per role
+shows its latest request:
 
-- On top: status, total input tokens, model, start time, and for compaction what was compacted.
-  Failed and interrupted requests show their error here.
+- On top: status, model, start time, and for compaction what was compacted. Completed requests add
+  their usage and cost (see below). Failed and interrupted requests show their error here.
 - **Instructions** and the collapsed **tool definitions** with their JSON schemas.
-- **Messages**, one card per message and per part: system, user, text, thinking, tool call (arguments
-  as JSON), tool return, retry prompt. Any other part (provider-specific ones included) renders as
-  its JSON.
+- **Messages**, formatted part by part: system, user, text, thinking, tool call (arguments as JSON),
+  tool return, retry prompt. Any other part (provider-specific ones included) renders as its JSON.
 - The **response**, or a spinner while the request is running.
 
-Every message has a raw JSON toggle that shows it as stored, field for field.
+Instructions, system and user prompts, text and thinking render as Markdown. Tool returns and retry
+prompts stay verbatim, since they are mostly command output that Markdown would mangle. JSON is
+syntax highlighted.
+
+Every message switches between this formatted view and its raw JSON, which shows it as stored,
+field for field.
 
 The view opens its own session WebSocket with `observe=true`: it shows no approvals, so it must not
 count as presence that suppresses approval notifications. It refetches the open tab whenever its
@@ -91,7 +95,17 @@ The session WebSocket sends a notification on every status change, without the c
 
 Clients refetch the role's context over REST when they get one.
 
-## Input tokens
+## Usage and cost
 
-The total input tokens of a request are the provider-reported `response.usage.input_tokens`. Running,
-failed and interrupted requests have no response, so they show no total.
+A completed request shows its `response.usage` as the provider reported it: input, output, cache
+read and cache write tokens, audio tokens when there are any, and the provider-specific `details`
+(e.g. reasoning tokens).
+
+Its cost is priced when the response arrives and stored with the context as `cost`
+(`request_cost()` in `src/carapace/usage.py`), the same way the usage tracker prices at record time:
+`cost_usd` is the actual cost, `equivalent_cost_usd` the list price (see
+[sessions-and-channels.md](sessions-and-channels.md#actual-and-equivalent-cost)); both are null for a model without pricing.
+`provider_cost_usd` is the cost the provider reported itself, if it did. Pricing keys on the carapace
+model id (`provider:model`) that `model_name` holds, not on the provider's API model name.
+
+Running, failed and interrupted requests have no response, so they show no usage and no cost.

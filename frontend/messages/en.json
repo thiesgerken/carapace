@@ -1199,8 +1199,7 @@
             "unarchive": "Unarchive session",
             "includeInRepo": "Include in repo",
             "keepPrivate": "Keep private",
-            "delete": "Delete session",
-            "debugView": "Debug view"
+            "delete": "Delete session"
         },
         "badges": {
             "archived": "Archived",
@@ -1660,10 +1659,25 @@
             "raw": "Raw"
         }
     },
+    "sessionView": {
+        "label": "Session view",
+        "chat": "Chat",
+        "debug": "Debug"
+    },
     "debugView": {
-        "title": "Debug view",
+        "usage": {
+            "input": "Input tokens",
+            "output": "Output tokens",
+            "cacheRead": "Cache read",
+            "cacheWrite": "Cache write",
+            "input_audio_tokens": "Input audio",
+            "output_audio_tokens": "Output audio",
+            "cache_audio_read_tokens": "Cache audio read",
+            "cost": "Cost",
+            "unpriced": "No pricing",
+            "providerCost": "Provider-reported"
+        },
         "hint": "The latest request of each agent role, exactly as sent to the model. Updates live.",
-        "back": "Back to chat",
         "role": "Agent role",
         "roles": {
             "agent": "Agent",
@@ -1675,7 +1689,6 @@
         "loadError": "Could not load the LLM context: {error}",
         "model": "Model",
         "status": "Status",
-        "inputTokens": "Input tokens",
         "started": "Started",
         "compacted": "Compacted",
         "statuses": {
@@ -1697,7 +1710,7 @@
         "response": "Response",
         "waiting": "Waiting for the response…",
         "showRaw": "Raw JSON",
-        "showCards": "Cards",
+        "showFormatted": "Formatted",
         "parts": {
             "systemPrompt": "System",
             "userPrompt": "User",

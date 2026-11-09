@@ -1149,7 +1149,7 @@
         },
         "compact": {
             "title": "Compaction",
-            "nothing": "Nichts zu komprimieren.",
+            "nothing": "Nichts für eine Compaction.",
             "saved": "{saved} Tokens gespart ({before}→{after}).",
             "folded": "{count} Runden gefaltet",
             "tools": "{count} Tool-Ausgaben zusammengefasst",
@@ -1180,7 +1180,7 @@
             "unexpected": "Unerwarteter Fehler",
             "resetTarget": "Ziel zum Zurücksetzen konnte nicht aufgelöst werden.",
             "forkTarget": "Ziel zum Forken konnte nicht aufgelöst werden.",
-            "compactRefresh": "Compaction erfolgreich, aber das Aktualisieren des Verlaufs ist fehlgeschlagen. Neu laden, um die komprimierte Ansicht zu sehen."
+            "compactRefresh": "Compaction erfolgreich, aber das Aktualisieren des Verlaufs ist fehlgeschlagen. Neu laden, um die Ansicht nach der Compaction zu sehen."
         },
         "confirm": {
             "wipeSandbox": "Sandbox und ihren Speicher für diese Sitzung löschen? Der Chatverlauf bleibt erhalten.",
@@ -1199,8 +1199,7 @@
             "unarchive": "Sitzung aus dem Archiv holen",
             "includeInRepo": "Ins Repository aufnehmen",
             "keepPrivate": "Privat halten",
-            "delete": "Sitzung löschen",
-            "debugView": "Debug-Ansicht"
+            "delete": "Sitzung löschen"
         },
         "badges": {
             "archived": "Archiviert",
@@ -1624,7 +1623,7 @@
         }
     },
     "compaction": {
-        "badge": "komprimiert",
+        "badge": "Compaction",
         "railHeader": "{count, plural, one {# Runde} other {# Runden}} für das Modell verdichtet",
         "modelSees": "Modell sieht",
         "modelSummaryLabel": "Zusammenfassung im Modell-Kontext",
@@ -1660,24 +1659,38 @@
             "raw": "Roh"
         }
     },
+    "sessionView": {
+        "label": "Sitzungsansicht",
+        "chat": "Chat",
+        "debug": "Debug"
+    },
     "debugView": {
-        "title": "Debug-Ansicht",
+        "usage": {
+            "input": "Eingabe-Tokens",
+            "output": "Ausgabe-Tokens",
+            "cacheRead": "Cache gelesen",
+            "cacheWrite": "Cache geschrieben",
+            "input_audio_tokens": "Audio-Eingabe",
+            "output_audio_tokens": "Audio-Ausgabe",
+            "cache_audio_read_tokens": "Audio aus dem Cache",
+            "cost": "Kosten",
+            "unpriced": "Keine Preisdaten",
+            "providerCost": "Laut Anbieter"
+        },
         "hint": "Die letzte Anfrage jeder Agentenrolle, genau so, wie sie an das Modell ging. Aktualisiert sich live.",
-        "back": "Zurück zum Chat",
         "role": "Agentenrolle",
         "roles": {
             "agent": "Agent",
             "sentinel": "Sentinel",
             "titler": "Titler",
-            "compaction": "Komprimierung"
+            "compaction": "Compaction"
         },
         "empty": "Diese Rolle hat in dieser Sitzung noch keine Anfrage gesendet.",
         "loadError": "LLM-Kontext konnte nicht geladen werden: {error}",
         "model": "Modell",
         "status": "Status",
-        "inputTokens": "Eingabe-Tokens",
         "started": "Gestartet",
-        "compacted": "Komprimiert",
+        "compacted": "Compaction von",
         "statuses": {
             "running": "Läuft",
             "completed": "Abgeschlossen",
@@ -1697,7 +1710,7 @@
         "response": "Antwort",
         "waiting": "Warte auf die Antwort…",
         "showRaw": "Roh-JSON",
-        "showCards": "Karten",
+        "showFormatted": "Formatiert",
         "parts": {
             "systemPrompt": "System",
             "userPrompt": "Nutzer",

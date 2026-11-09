@@ -1087,7 +1087,7 @@ export type DebugRole = (typeof DEBUG_ROLES)[number];
 export type LlmContextStatus = "running" | "completed" | "failed" | "interrupted";
 
 /**
- * pydantic-ai's own serialization of messages and parts. Only the fields the cards read are typed;
+ * pydantic-ai's own serialization of messages and parts. Only the fields the formatted view reads are typed;
  * the raw toggle shows everything else, provider-specific fields included.
  */
 export interface LlmPart {
@@ -1102,8 +1102,27 @@ export interface LlmPart {
 export interface LlmMessage {
   kind: "request" | "response";
   parts: LlmPart[];
-  usage?: { input_tokens: number; output_tokens: number };
+  usage?: LlmRequestUsage;
   [key: string]: unknown;
+}
+
+/** pydantic-ai's RequestUsage; `details` holds provider-specific counts such as reasoning tokens. */
+export interface LlmRequestUsage {
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_tokens?: number;
+  cache_write_tokens?: number;
+  input_audio_tokens?: number;
+  output_audio_tokens?: number;
+  cache_audio_read_tokens?: number;
+  details?: Record<string, number>;
+}
+
+/** Both costs null when the model has no known pricing (see PricedCost). */
+export interface LlmRequestCost {
+  cost_usd: string | null;
+  equivalent_cost_usd: string | null;
+  provider_cost_usd: string | null;
 }
 
 export interface LlmInstructionPart {
@@ -1123,7 +1142,7 @@ export interface LlmContext {
   request_id: string;
   role: DebugRole;
   compaction_target: "agent" | "sentinel" | null;
-  model_name: string | null;
+  model_name: string;
   status: LlmContextStatus;
   started_at: string;
   completed_at: string | null;
@@ -1132,6 +1151,7 @@ export interface LlmContext {
   tool_definitions: LlmToolDefinition[];
   response: LlmMessage | null;
   error: string | null;
+  cost: LlmRequestCost | null;
 }
 
 export const PROMPT_ROLES = ["agent", "sentinel", "titler", "compaction", "session_extract", "week_digest", "month_digest"] as const;

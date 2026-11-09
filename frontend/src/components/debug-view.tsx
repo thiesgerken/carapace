@@ -1,24 +1,28 @@
 "use client";
 
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { ArrowLeft, Braces, Loader2 } from "lucide-react";
-import Link from "next/link";
-import { useFormatter, useTranslations } from "next-intl";
+import { Braces, Loader2 } from "lucide-react";
+import { useFormatter, useLocale, useTranslations } from "next-intl";
+import { useFormatCost } from "@/components/memory-ui";
+import { MarkdownContent } from "@/components/markdown-content";
 import { pillClassName } from "@/components/prompt-preview-view";
+import { SessionHeader } from "@/components/session-header";
 import { useWebSocket, useWebSocketTicket } from "@/hooks/use-websocket";
 import { fetchLlmContext, wsUrl } from "@/lib/api";
+import { formatUsd } from "@/lib/memory";
+import { fencedCodeBlock } from "@/lib/sandbox-read";
 import {
   DEBUG_ROLES,
   type DebugRole,
   type LlmContext,
   type LlmContextStatus,
   type LlmMessage,
+  type LlmRequestCost,
+  type LlmRequestUsage,
   type LlmPart,
   type ServerMessage,
 } from "@/lib/types";
 import { cn } from "@/lib/utils";
-
-export const debugViewHref = (sessionId: string): string => `/?session=${encodeURIComponent(sessionId)}&view=debug`;
 
 const STATUS_CLASS: Record<LlmContextStatus, string> = {
   running: "border-sky-500/40 bg-sky-500/10 text-sky-800 dark:text-sky-300",
@@ -53,7 +57,7 @@ function useLlmContext(server: string, token: string, sessionId: string, role: D
 }
 
 /** The latest LLM context of every agent role in a session, updated live over the session WebSocket. */
-export function DebugView({ server, token, sessionId }: { server: string; token: string; sessionId: string }) {
+export function DebugView({ server, token, sessionId, title }: { server: string; token: string; sessionId: string; title: string | null | undefined }) {
   const t = useTranslations("debugView");
   const [role, setRole] = useState<DebugRole>("agent");
   const [notifications, setNotifications] = useState<Partial<Record<DebugRole, Notification>>>({});
@@ -74,16 +78,11 @@ export function DebugView({ server, token, sessionId }: { server: string; token:
   const shown = current && "context" in current ? current.context : undefined;
 
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6">
+    <div className="flex min-h-0 flex-1 flex-col">
+      <SessionHeader sessionId={sessionId} title={title} view="debug" />
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6">
       <div className="mx-auto flex w-full max-w-5xl flex-col gap-4">
-        <div className="flex flex-col gap-1">
-          <Link href={`/?session=${encodeURIComponent(sessionId)}`} className="inline-flex w-fit items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
-            <ArrowLeft className="h-4 w-4" />
-            {t("back")}
-          </Link>
-          <h1 className="text-lg font-semibold">{t("title")}</h1>
-          <p className="text-sm text-muted-foreground">{t("hint")}</p>
-        </div>
+        <p className="text-sm text-muted-foreground">{t("hint")}</p>
 
         <div role="radiogroup" aria-label={t("role")} className="flex flex-wrap gap-1.5">
           {DEBUG_ROLES.map((value) => (
@@ -104,6 +103,7 @@ export function DebugView({ server, token, sessionId }: { server: string; token:
           <LlmContextView context={shown} />
         )}
       </div>
+      </div>
     </div>
   );
 }
@@ -111,18 +111,17 @@ export function DebugView({ server, token, sessionId }: { server: string; token:
 export function LlmContextView({ context }: { context: LlmContext }) {
   const t = useTranslations("debugView");
   const format = useFormatter();
-  const inputTokens = context.response?.usage?.input_tokens;
 
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-start gap-x-8 gap-y-3 rounded-2xl border border-border bg-background/88 p-4 shadow-sm">
         <Stat label={t("status")} value={<StatusBadge status={context.status} />} />
-        <Stat label={t("inputTokens")} value={<span className="tabular-nums">{inputTokens === undefined ? "–" : format.number(inputTokens)}</span>} />
-        <Stat label={t("model")} value={<span className="font-mono">{context.model_name ?? "–"}</span>} />
+        <Stat label={t("model")} value={<span className="font-mono">{context.model_name}</span>} />
         <Stat label={t("started")} value={format.dateTime(new Date(context.started_at), { dateStyle: "medium", timeStyle: "medium" })} />
         {context.compaction_target ? (
           <Stat label={t("compacted")} value={t(`compactionTargets.${context.compaction_target}`)} />
         ) : null}
+        {context.response?.usage ? <UsageStats usage={context.response.usage} cost={context.cost} /> : null}
       </div>
 
       {context.error ? (
@@ -132,7 +131,7 @@ export function LlmContextView({ context }: { context: LlmContext }) {
       <Collapsible title={t("instructions")} open>
         {context.instructions.map((part, index) => (
           <Card key={index} label={part.name ?? t(part.dynamic ? "dynamic" : "static")}>
-            <Text>{part.content}</Text>
+            <MarkdownContent content={part.content} />
           </Card>
         ))}
       </Collapsible>
@@ -164,6 +163,34 @@ export function LlmContextView({ context }: { context: LlmContext }) {
   );
 }
 
+const AUDIO_TOKENS = ["input_audio_tokens", "output_audio_tokens", "cache_audio_read_tokens"] as const;
+
+/** The response's usage as the provider reported it, and what it cost. */
+function UsageStats({ usage, cost }: { usage: LlmRequestUsage; cost: LlmRequestCost | null }) {
+  const t = useTranslations("debugView.usage");
+  const format = useFormatter();
+  const locale = useLocale();
+  const formatCost = useFormatCost();
+  const tokens = (value: number | undefined) => <span className="tabular-nums">{format.number(value ?? 0)}</span>;
+
+  return (
+    <div className="flex basis-full flex-wrap gap-x-8 gap-y-3 border-t border-border/60 pt-3">
+      <Stat label={t("input")} value={tokens(usage.input_tokens)} />
+      <Stat label={t("output")} value={tokens(usage.output_tokens)} />
+      <Stat label={t("cacheRead")} value={tokens(usage.cache_read_tokens)} />
+      <Stat label={t("cacheWrite")} value={tokens(usage.cache_write_tokens)} />
+      {AUDIO_TOKENS.filter((key) => usage[key]).map((key) => (
+        <Stat key={key} label={t(key)} value={tokens(usage[key])} />
+      ))}
+      {Object.entries(usage.details ?? {}).map(([key, value]) => (
+        <Stat key={key} label={key} value={tokens(value)} />
+      ))}
+      {cost ? <Stat label={t("cost")} value={formatCost(cost) ?? t("unpriced")} /> : null}
+      {cost?.provider_cost_usd ? <Stat label={t("providerCost")} value={formatUsd(cost.provider_cost_usd, locale)} /> : null}
+    </div>
+  );
+}
+
 function MessageCard({ message, label, highlight = false }: { message: LlmMessage; label: string; highlight?: boolean }) {
   const t = useTranslations("debugView");
   const [raw, setRaw] = useState(false);
@@ -174,7 +201,7 @@ function MessageCard({ message, label, highlight = false }: { message: LlmMessag
         <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">{label}</span>
         <button type="button" aria-pressed={raw} onClick={() => setRaw(!raw)} className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground">
           <Braces className="h-3.5 w-3.5" />
-          {raw ? t("showCards") : t("showRaw")}
+          {raw ? t("showFormatted") : t("showRaw")}
         </button>
       </div>
       {raw ? (
@@ -192,13 +219,13 @@ function PartCard({ part }: { part: LlmPart }) {
   const t = useTranslations("debugView.parts");
   switch (part.part_kind) {
     case "system-prompt":
-      return <Card label={t("systemPrompt")}><Content value={part.content} /></Card>;
+      return <Card label={t("systemPrompt")}><Content value={part.content} markdown /></Card>;
     case "user-prompt":
-      return <Card label={t("userPrompt")}><Content value={part.content} /></Card>;
+      return <Card label={t("userPrompt")}><Content value={part.content} markdown /></Card>;
     case "text":
-      return <Card label={t("text")}><Content value={part.content} /></Card>;
+      return <Card label={t("text")}><Content value={part.content} markdown /></Card>;
     case "thinking":
-      return <Card label={t("thinking")} muted><Content value={part.content} /></Card>;
+      return <Card label={t("thinking")} muted><Content value={part.content} markdown /></Card>;
     case "tool-call":
       return <Card label={`${t("toolCall")} · ${part.tool_name}`} badge={part.tool_call_id}><Json value={parseArgs(part.args)} /></Card>;
     case "tool-return":
@@ -221,21 +248,29 @@ function parseArgs(args: unknown): unknown {
   }
 }
 
-function Content({ value }: { value: unknown }) {
-  return typeof value === "string" ? <Text>{value}</Text> : <Json value={value} />;
+/** Prose to and from the model renders as Markdown; tool output stays verbatim, Markdown would mangle it. */
+function Content({ value, markdown = false }: { value: unknown; markdown?: boolean }) {
+  if (typeof value !== "string") return <Json value={value} />;
+  return markdown ? <MarkdownContent content={value} /> : <Verbatim>{value}</Verbatim>;
 }
 
 function Text({ children }: { children: string }) {
   return <pre className="whitespace-pre-wrap break-words font-sans text-sm">{children}</pre>;
 }
 
+function Verbatim({ children }: { children: string }) {
+  return <pre className="whitespace-pre-wrap break-words rounded-lg bg-muted/50 p-2 font-mono text-xs">{children}</pre>;
+}
+
+/** A string is tool call args the model sent as invalid JSON: shown as sent, not highlighted as JSON. */
 function Json({ value }: { value: unknown }) {
-  return <pre className="overflow-x-auto rounded-lg bg-muted/50 p-2 font-mono text-xs">{typeof value === "string" ? value : JSON.stringify(value, null, 2)}</pre>;
+  if (typeof value === "string") return <Verbatim>{value}</Verbatim>;
+  return <MarkdownContent content={fencedCodeBlock("json", JSON.stringify(value, null, 2))} />;
 }
 
 function Card({ label, badge, muted = false, children }: { label: string; badge?: string; muted?: boolean; children: ReactNode }) {
   return (
-    <div className={cn("min-w-0 rounded-lg border border-border/70 p-2.5", muted && "bg-muted/30 text-muted-foreground")}>
+    <div className={cn("min-w-0 rounded-lg border border-border/70 p-2.5 text-sm", muted && "bg-muted/30 text-muted-foreground")}>
       <div className="mb-1.5 flex min-w-0 items-center justify-between gap-2 text-xs font-medium">
         <span className="truncate">{label}</span>
         {badge ? <span className="truncate font-mono text-[11px] text-muted-foreground">{badge}</span> : null}
