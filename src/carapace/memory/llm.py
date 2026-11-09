@@ -17,7 +17,13 @@ from pydantic_ai.usage import RunUsage, UsageLimits
 
 from ..llm import ModelFactory, model_settings_for_config, resolve_available_model_entry, with_prompt_cache
 from ..models.config import Config
-from ..usage import LlmRequestLogCapability, UsageTracker, count_text_tokens, provider_cost_usd_from_messages
+from ..usage import (
+    LlmRequestLogCapability,
+    UsageTracker,
+    count_text_tokens,
+    price_for_usage,
+    provider_cost_usd_from_messages,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -128,6 +134,6 @@ def _call_usage(model: str, usage: RunUsage, messages: list[ModelMessage], start
     return CallUsage(
         input_tokens=usage.input_tokens or 0,
         output_tokens=usage.output_tokens or 0,
-        cost_usd=tracker.estimated_cost().get(model),
+        cost_usd=price_for_usage(model, tracker.models[model]),
         duration_ms=round((time.monotonic() - started) * 1000),
     )

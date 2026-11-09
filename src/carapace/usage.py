@@ -38,6 +38,9 @@ from pydantic_ai.models import ModelRequestContext
 from pydantic_ai.tools import AgentDepsT, RunContext
 from pydantic_ai.usage import RunUsage, UsageLimits
 
+from .models.config import is_subscription_model
+from .models.session import SessionBudget
+
 
 class ModelUsage(BaseModel):
     input_tokens: int = 0
@@ -74,6 +77,24 @@ def price_for_usage(model_key: str, u: ModelUsage) -> Decimal | None:
         logger.debug(f"No pricing data for model {model_key}")
         return provider_cost
     return max(provider_cost, token_cost) if provider_cost is not None else token_cost
+
+
+@dataclass(frozen=True)
+class CostSplit:
+    """USD cost of some usage, split by what is actually billed."""
+
+    # Billed per token: provider-reported cost or list price. Subscription usage adds nothing.
+    actual: Decimal = Decimal(0)
+    # List price of everything, subscription usage included: what it would have cost on the API.
+    equivalent: Decimal = Decimal(0)
+
+    def __add__(self, other: CostSplit) -> CostSplit:
+        return CostSplit(actual=self.actual + other.actual, equivalent=self.equivalent + other.equivalent)
+
+
+def usage_cost(model_key: str, usage: ModelUsage) -> CostSplit:
+    price = price_for_usage(model_key, usage) or Decimal(0)
+    return CostSplit(actual=Decimal(0) if is_subscription_model(model_key) else price, equivalent=price)
 
 
 def _merge_run_usage_into_bucket(bucket: ModelUsage, usage: RunUsage) -> None:
@@ -148,32 +169,25 @@ class UsageTracker(BaseModel):
     def total_output(self) -> int:
         return sum(m.output_tokens for m in self.models.values())
 
-    def estimated_cost(self) -> dict[str, Decimal]:
-        """Return estimated USD cost per model and total. Keys: model names + 'total'."""
-        costs: dict[str, Decimal] = {}
-        total = Decimal(0)
-        for model_key, u in self.models.items():
-            p = price_for_usage(model_key, u)
-            if p is not None:
-                costs[model_key] = p
-                total += p
-        costs["total"] = total
-        return costs
+    @property
+    def has_subscription_usage(self) -> bool:
+        return any(is_subscription_model(model_key) for model_key in self.models)
 
-    def estimated_category_cost(self) -> dict[str, Decimal]:
-        """Return estimated USD cost per usage category (tokens attributed per model)."""
-        costs: dict[str, Decimal] = {}
-        for category, by_model in self.category_by_model.items():
-            cat_total = Decimal(0)
-            for model_key, u in by_model.items():
-                p = price_for_usage(model_key, u)
-                if p is not None:
-                    cat_total += p
-            costs[category] = cat_total
-        return costs
+    def cost_by_model(self) -> dict[str, CostSplit]:
+        return {model_key: usage_cost(model_key, u) for model_key, u in self.models.items()}
+
+    def cost_by_category(self) -> dict[str, CostSplit]:
+        """Cost per usage category, priced per model since a category can span several."""
+        return {
+            category: sum((usage_cost(model_key, u) for model_key, u in by_model.items()), CostSplit())
+            for category, by_model in self.category_by_model.items()
+        }
+
+    def total_cost(self) -> CostSplit:
+        return sum(self.cost_by_model().values(), CostSplit())
 
 
-BudgetMetric = Literal["input", "output", "cost", "tool_calls", "autonomy"]
+BudgetMetric = Literal["input", "output", "cost", "equivalent_cost", "tool_calls", "autonomy"]
 
 
 class BudgetGauge(BaseModel):
@@ -181,7 +195,8 @@ class BudgetGauge(BaseModel):
     label: str
     current_value: str
     current_amount: float | None = None
-    limit_value: str
+    # None for a gauge shown without a limit (the equivalent cost of subscription usage).
+    limit_value: str | None
     remaining_value: str | None = None
     fill_pct: float
     reached: bool
@@ -228,15 +243,14 @@ def _format_tool_calls(value: int) -> str:
     return f"{value:,} tool {suffix}"
 
 
-def usage_budget_gauges(
-    tracker: UsageTracker,
-    *,
-    input_tokens_limit: int | None = None,
-    output_tokens_limit: int | None = None,
-    total_cost_limit: Decimal | None = None,
-    tool_calls_limit: int | None = None,
-) -> list[BudgetGauge]:
+def usage_budget_gauges(tracker: UsageTracker, budget: SessionBudget) -> list[BudgetGauge]:
+    """Gauges of the session totals: one per set limit, plus the equivalent cost of subscription usage."""
     gauges: list[BudgetGauge] = []
+    input_tokens_limit = budget.input_tokens
+    output_tokens_limit = budget.output_tokens
+    cost_limit = budget.cost_usd
+    equivalent_cost_limit = budget.equivalent_cost_usd
+    tool_calls_limit = budget.tool_calls
 
     if input_tokens_limit is not None:
         current = tracker.total_input
@@ -272,22 +286,14 @@ def usage_budget_gauges(
             )
         )
 
-    if total_cost_limit is not None:
-        total_cost = tracker.estimated_cost().get("total", Decimal(0))
-        remaining = max(Decimal(0), total_cost_limit - total_cost)
-        fill_pct = min(100.0, float(Decimal(100) * total_cost / total_cost_limit)) if total_cost_limit > 0 else 0.0
-        gauges.append(
-            BudgetGauge(
-                key="cost",
-                label="Cost",
-                current_value=_format_usd(total_cost),
-                current_amount=float(total_cost),
-                limit_value=_format_usd(total_cost_limit),
-                remaining_value=_format_usd(remaining),
-                fill_pct=round(fill_pct, 1),
-                reached=total_cost >= total_cost_limit,
-            )
-        )
+    show_equivalent_cost = equivalent_cost_limit is not None or tracker.has_subscription_usage
+    if cost_limit is not None or show_equivalent_cost:
+        cost = tracker.total_cost()
+        if cost_limit is not None:
+            gauges.append(_cost_gauge("cost", "Cost", cost.actual, cost_limit))
+        # Subscription usage has no actual cost, so its equivalent cost shows even without a limit.
+        if show_equivalent_cost:
+            gauges.append(_cost_gauge("equivalent_cost", "Equivalent cost", cost.equivalent, equivalent_cost_limit))
 
     if tool_calls_limit is not None:
         current = tracker.tool_calls
@@ -309,6 +315,19 @@ def usage_budget_gauges(
     return gauges
 
 
+def _cost_gauge(key: BudgetMetric, label: str, current: Decimal, limit: Decimal | None) -> BudgetGauge:
+    return BudgetGauge(
+        key=key,
+        label=label,
+        current_value=_format_usd(current),
+        current_amount=float(current),
+        limit_value=None if limit is None else _format_usd(limit),
+        remaining_value=None if limit is None else _format_usd(max(Decimal(0), limit - current)),
+        fill_pct=0.0 if limit is None else round(min(100.0, float(Decimal(100) * current / limit)), 1),
+        reached=limit is not None and current >= limit,
+    )
+
+
 def autonomy_budget_gauge(streak: int, limit: int) -> BudgetGauge:
     """Gauge for the autonomy limit. Display only: unlike the other budgets it never blocks an LLM call."""
     return BudgetGauge(
@@ -323,21 +342,8 @@ def autonomy_budget_gauge(streak: int, limit: int) -> BudgetGauge:
     )
 
 
-def usage_budget_exceeded_error(
-    tracker: UsageTracker,
-    *,
-    input_tokens_limit: int | None = None,
-    output_tokens_limit: int | None = None,
-    total_cost_limit: Decimal | None = None,
-    tool_calls_limit: int | None = None,
-) -> SessionBudgetExceededError | None:
-    gauges = usage_budget_gauges(
-        tracker,
-        input_tokens_limit=input_tokens_limit,
-        output_tokens_limit=output_tokens_limit,
-        total_cost_limit=total_cost_limit,
-        tool_calls_limit=tool_calls_limit,
-    )
+def usage_budget_exceeded_error(tracker: UsageTracker, budget: SessionBudget) -> SessionBudgetExceededError | None:
+    gauges = usage_budget_gauges(tracker, budget)
     return SessionBudgetExceededError(gauges) if any(gauge.reached for gauge in gauges) else None
 
 

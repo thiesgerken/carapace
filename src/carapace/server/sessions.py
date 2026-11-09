@@ -16,7 +16,7 @@ from ..models.session import SessionAttributes, SessionBudget, SessionJobRunCont
 from ..sandbox.state import SessionSandboxSnapshot
 from ..session.transcript import is_turn_terminal_event
 from ..session.usage_budget import BUDGET_METRIC_FIELDS, parse_budget_limit
-from ..usage import BudgetMetric
+from ..usage import BudgetMetric, CostSplit
 from ..user_defaults import apply_user_model_defaults, effective_user_budget
 from .auth import require
 from .history import _history_from_messages
@@ -68,7 +68,9 @@ class SessionBudgetPatch(BaseModel):
     input_tokens: str | None = None
     output_tokens: str | None = None
     cost_usd: str | None = None
+    equivalent_cost_usd: str | None = None
     tool_calls: str | None = None
+    autonomous_tool_calls: str | None = None
 
     def parsed_limits(self) -> dict[BudgetMetric, int | Decimal | None]:
         """Parse every set field with the ``/budget`` parser; raises ``ValueError`` on the first invalid one."""
@@ -130,7 +132,9 @@ class SessionInfo(BaseModel):
     knowledge_last_archive_path: str | None = None
     knowledge_last_commit_trigger: str | None = None
     message_count: int = 0
+    # Billed per token; subscription usage is only in the equivalent cost (list price).
     total_cost_usd: float | None = None
+    total_equivalent_cost_usd: float | None = None
     sandbox: SessionSandboxSnapshot | None = None
 
     @classmethod
@@ -139,7 +143,7 @@ class SessionInfo(BaseModel):
         state: SessionState,
         *,
         message_count: int = 0,
-        total_cost_usd: Decimal | None = None,
+        total_cost: CostSplit | None = None,
         sandbox: SessionSandboxSnapshot | None = None,
     ) -> SessionInfo:
         return cls(
@@ -160,7 +164,8 @@ class SessionInfo(BaseModel):
             knowledge_last_archive_path=state.knowledge_last_archive_path,
             knowledge_last_commit_trigger=state.knowledge_last_commit_trigger,
             message_count=message_count,
-            total_cost_usd=float(total_cost_usd) if total_cost_usd is not None else None,
+            total_cost_usd=float(total_cost.actual) if total_cost is not None else None,
+            total_equivalent_cost_usd=float(total_cost.equivalent) if total_cost is not None else None,
             sandbox=sandbox,
         )
 
@@ -211,19 +216,16 @@ def _parse_session_cursor(cursor: str | None) -> int:
 def _session_info_from_state(state: SessionState, *, include_message_count: bool) -> SessionInfo:
     message_count = _session_message_count(state.session_id) if include_message_count else 0
     sandbox = server._engine.session_mgr.load_sandbox_snapshot(state.session_id)
-    usage = server._engine.session_mgr.load_usage(state.session_id)
-    total_cost_usd = usage.estimated_cost().get("total")
     return SessionInfo.from_state(
         state,
         message_count=message_count,
-        total_cost_usd=total_cost_usd,
+        total_cost=_session_total_cost(state.session_id),
         sandbox=sandbox,
     )
 
 
-def _session_total_cost_usd(session_id: str) -> Decimal | None:
-    usage = server._engine.session_mgr.load_usage(session_id)
-    return usage.estimated_cost().get("total")
+def _session_total_cost(session_id: str) -> CostSplit:
+    return server._engine.session_mgr.load_usage(session_id).total_cost()
 
 
 async def _list_session_page(
@@ -305,7 +307,7 @@ async def get_session(
     return SessionInfo.from_state(
         state,
         message_count=_session_message_count(session_id),
-        total_cost_usd=_session_total_cost_usd(session_id),
+        total_cost=_session_total_cost(session_id),
         sandbox=sandbox,
     )
 
@@ -458,7 +460,7 @@ async def update_session(
     return SessionInfo.from_state(
         state,
         message_count=_session_message_count(session_id),
-        total_cost_usd=_session_total_cost_usd(session_id),
+        total_cost=_session_total_cost(session_id),
         sandbox=sandbox,
     )
 
@@ -491,7 +493,7 @@ async def fork_session(
     return SessionInfo.from_state(
         forked,
         message_count=_session_message_count(forked.session_id),
-        total_cost_usd=_session_total_cost_usd(forked.session_id),
+        total_cost=_session_total_cost(forked.session_id),
     )
 
 
@@ -521,7 +523,7 @@ async def commit_session_knowledge(
         session=SessionInfo.from_state(
             fresh,
             message_count=_session_message_count(session_id),
-            total_cost_usd=_session_total_cost_usd(session_id),
+            total_cost=_session_total_cost(session_id),
             sandbox=sandbox,
         ),
         committed=result.committed,

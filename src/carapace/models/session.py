@@ -10,56 +10,35 @@ from .skills import ContextGrant
 
 
 class SessionBudget(BaseModel):
+    """Session limits; ``None`` means no limit, and 0 is normalized to ``None``."""
+
     model_config = ConfigDict(extra="forbid")
 
     input_tokens: int | None = None
     output_tokens: int | None = None
+    # Billed per token; subscription usage costs nothing here.
     cost_usd: Decimal | None = None
+    # List price of everything, subscription usage included.
+    equivalent_cost_usd: Decimal | None = None
     tool_calls: int | None = None
     # Tool call attempts since the last human interaction (the autonomous streak).
     autonomous_tool_calls: int | None = None
 
     @model_validator(mode="after")
     def _normalize_limits(self) -> SessionBudget:
-        if self.input_tokens is not None:
-            if self.input_tokens < 0:
-                raise ValueError("budget.input_tokens must be >= 0")
-            if self.input_tokens == 0:
-                self.input_tokens = None
-        if self.output_tokens is not None:
-            if self.output_tokens < 0:
-                raise ValueError("budget.output_tokens must be >= 0")
-            if self.output_tokens == 0:
-                self.output_tokens = None
-        if self.cost_usd is not None:
-            if self.cost_usd < 0:
-                raise ValueError("budget.cost_usd must be >= 0")
-            if self.cost_usd == Decimal(0):
-                self.cost_usd = None
-        if self.tool_calls is not None:
-            if self.tool_calls < 0:
-                raise ValueError("budget.tool_calls must be >= 0")
-            if self.tool_calls == 0:
-                self.tool_calls = None
-        if self.autonomous_tool_calls is not None:
-            if self.autonomous_tool_calls < 0:
-                raise ValueError("budget.autonomous_tool_calls must be >= 0")
-            if self.autonomous_tool_calls == 0:
-                self.autonomous_tool_calls = None
+        for field in type(self).model_fields:
+            limit = getattr(self, field)
+            if limit is None:
+                continue
+            if limit < 0:
+                raise ValueError(f"budget.{field} must be >= 0")
+            if limit == 0:
+                setattr(self, field, None)
         return self
 
     @property
     def has_any_limit(self) -> bool:
-        return any(
-            limit is not None
-            for limit in (
-                self.input_tokens,
-                self.output_tokens,
-                self.cost_usd,
-                self.tool_calls,
-                self.autonomous_tool_calls,
-            )
-        )
+        return any(getattr(self, field) is not None for field in type(self).model_fields)
 
 
 class SessionAttributes(BaseModel):

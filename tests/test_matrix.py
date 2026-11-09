@@ -566,8 +566,9 @@ def test_format_command_result_usage_context_table_preceded_by_blank_line():
         data={
             "models": {"m": {"input_tokens": 1, "output_tokens": 0, "requests": 1}},
             "categories": {},
-            "costs": {"total": "0", "m": "0"},
+            "model_costs": {"m": {"cost": "0", "subscription": False}},
             "category_costs": {},
+            "total_cost": {"actual": "0", "equivalent": "0"},
             "total_input": 1,
             "total_output": 0,
             "total_tool_calls": 2,
@@ -587,6 +588,46 @@ def test_format_command_result_usage_context_table_preceded_by_blank_line():
     assert "**Tool Calls:** 2" in text
     assert "**Context**\n\n| Source |" in text
     assert "<table" in _md_to_html(text)
+
+
+def test_format_command_result_usage_separates_actual_and_equivalent_cost():
+    bucket = {"input_tokens": 10, "output_tokens": 5, "requests": 1}
+    result = CommandResult(
+        command="usage",
+        data={
+            "models": {"openai-codex:gpt-5.4": bucket, "anthropic:claude-haiku-4-5": bucket},
+            "categories": {"agent": bucket, "sentinel": bucket},
+            "model_costs": {
+                "openai-codex:gpt-5.4": {"cost": "0.42", "subscription": True},
+                "anthropic:claude-haiku-4-5": {"cost": "0.01", "subscription": False},
+            },
+            "category_costs": {
+                "agent": {"actual": "0", "equivalent": "0.42"},
+                "sentinel": {"actual": "0.01", "equivalent": "0.01"},
+            },
+            "total_cost": {"actual": "0.01", "equivalent": "0.43"},
+            "total_input": 20,
+            "total_output": 10,
+            "budget_gauges": [
+                {
+                    "key": "equivalent_cost",
+                    "label": "Equivalent cost",
+                    "current_value": "$0.4300",
+                    "limit_value": None,
+                    "fill_pct": 0.0,
+                    "reached": False,
+                },
+            ],
+        },
+    )
+
+    text = _format_command_result_text(result)
+
+    assert "| $0.0100 (≈ $0.4300 equivalent)" in text
+    assert "| openai-codex:gpt-5.4 | 10 | 5 | 1 | $0.4200 · subscription |" in text
+    assert "| agent | 10 | 5 | 1 | - (≈ $0.4200 equivalent) |" in text
+    assert "| sentinel | 10 | 5 | 1 | $0.0100 |" in text
+    assert "| Equivalent cost | $0.4300 | — |" in text
 
 
 # ---------------------------------------------------------------------------

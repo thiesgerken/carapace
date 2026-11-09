@@ -15,6 +15,14 @@ OPENAI_COMPATIBLE_PROVIDERS = {"openai", "openai-chat", "openai-responses"}
 PROVIDERS_WITH_MODEL_API_KEYS = OPENAI_COMPATIBLE_PROVIDERS | {"openrouter"}
 # Authenticates with each user's own ChatGPT subscription instead of a platform API key.
 CODEX_PROVIDER = "openai-codex"
+# Billed as a flat-rate subscription, not per token: their usage has an equivalent list price but no actual cost.
+SUBSCRIPTION_PROVIDERS = frozenset({CODEX_PROVIDER})
+
+
+def is_subscription_model(model_key: str) -> bool:
+    """Whether usage of *model_key* (``provider:name``) is covered by a subscription instead of billed per token."""
+    provider, _, _ = model_key.partition(":")
+    return provider in SUBSCRIPTION_PROVIDERS
 
 
 class ConfigModel(BaseModel):

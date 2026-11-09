@@ -10,12 +10,13 @@ from typing import Any
 from unittest.mock import AsyncMock, patch
 
 from pydantic_ai.providers.openai_codex import CredentialsRefreshError
+from pydantic_ai.usage import RunUsage
 
 import carapace.usage as usage_mod
 from carapace.codex_auth import CODEX_RECONNECT_MESSAGE, CodexNotConnectedError
 from carapace.knowledge import KnowledgeRepoRegistry
 from carapace.models.session import SessionBudget
-from carapace.usage import LlmRequestRecord, LlmRequestState, ModelUsage
+from carapace.usage import LlmRequestRecord, LlmRequestState, ModelUsage, UsageTracker
 from tests.session_helpers import (
     _FakeSubscriber,
     _make_engine,
@@ -525,6 +526,60 @@ def test_submit_message_budget_exhausted_broadcasts_error(tmp_path: Path, db_fac
 
         mocked_turn.assert_not_awaited()
         assert any("Session budget reached" in err for err in sub.errors)
+
+    with _patch_sentinel():
+        asyncio.run(_run())
+
+
+def _record_mixed_usage(tracker: UsageTracker) -> None:
+    """Agent on a ChatGPT subscription, sentinel on a pay-per-token API."""
+    tracker.record("openai-codex:gpt-5.4", "agent", RunUsage(input_tokens=100_000, output_tokens=10_000, requests=3))
+    tracker.record("anthropic:claude-haiku-4-5", "sentinel", RunUsage(input_tokens=20_000, output_tokens=1_000))
+
+
+def test_mixed_session_blocks_on_the_equivalent_cost_limit_only(tmp_path: Path, db_factory):
+    async def _run() -> None:
+        engine = _make_engine(tmp_path, session_factory=db_factory)
+        budget = SessionBudget(cost_usd=Decimal("5.00"), equivalent_cost_usd=Decimal("0.10"))
+        sid = engine.session_mgr.create_session(user="thies", budget=budget).session_id
+        sub = _FakeSubscriber()
+        active = engine.subscribe(sid, sub)
+        _record_mixed_usage(active.usage_tracker)
+
+        with patch("carapace.session.engine.run_agent_turn", new=AsyncMock()) as mocked_turn:
+            await engine.submit_message(sid, "hello")
+            await asyncio.sleep(0.1)
+
+        mocked_turn.assert_not_awaited()
+        [error] = sub.errors
+        assert error.startswith("Session budget reached: equivalent cost $")
+        assert error.endswith("Raise the limit to continue: /budget equivalent_cost N")
+
+    with _patch_sentinel():
+        asyncio.run(_run())
+
+
+def test_usage_and_budget_commands_split_actual_and_equivalent_cost(tmp_path: Path, db_factory):
+    async def _run() -> None:
+        engine = _make_engine(tmp_path, session_factory=db_factory)
+        sid = engine.session_mgr.create_session(user="thies").session_id
+        active = engine.get_or_activate(sid)
+        _record_mixed_usage(active.usage_tracker)
+        total = active.usage_tracker.total_cost()
+
+        set_result = await engine.handle_slash_command(sid, "/budget equivalent_cost 20")
+        usage = await engine.handle_slash_command(sid, "/usage")
+
+        assert set_result is not None
+        assert set_result["data"]["message"] == "Set equivalent cost budget to $20.0000."
+        assert active.state.budget.equivalent_cost_usd == Decimal(20)
+        assert usage is not None
+        data = usage["data"]
+        assert data["total_cost"] == {"actual": str(total.actual), "equivalent": str(total.equivalent)}
+        assert data["model_costs"]["openai-codex:gpt-5.4"]["subscription"] is True
+        assert data["model_costs"]["anthropic:claude-haiku-4-5"]["subscription"] is False
+        assert data["category_costs"]["agent"]["actual"] == "0"
+        assert [gauge["key"] for gauge in data["budget_gauges"]] == ["equivalent_cost"]
 
     with _patch_sentinel():
         asyncio.run(_run())

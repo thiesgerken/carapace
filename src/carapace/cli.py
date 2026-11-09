@@ -4,6 +4,7 @@ import asyncio
 import contextlib
 import json
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -21,7 +22,8 @@ from rich.panel import Panel
 from rich.table import Table
 from websockets.exceptions import ConnectionClosed, InvalidHandshake
 
-from .payloads import dict_of_dicts, dict_or_empty, list_of_dicts, string_dict
+from .payloads import dict_of_dicts, dict_or_empty, list_of_dicts
+from .usage_display import SUBSCRIPTION_NOTE, category_equivalent_note, equivalent_note, show_equivalent_total
 
 load_dotenv()
 
@@ -260,8 +262,9 @@ def _render_command_result(data: dict[str, Any]) -> None:
 def _render_usage(payload: dict[str, Any]) -> None:
     models = dict_of_dicts(payload.get("models"))
     categories = dict_of_dicts(payload.get("categories"))
-    costs = string_dict(payload.get("costs"))
-    category_costs = string_dict(payload.get("category_costs"))
+    model_costs = dict_of_dicts(payload.get("model_costs"))
+    category_costs = dict_of_dicts(payload.get("category_costs"))
+    total_cost = dict_or_empty(payload.get("total_cost"))
     budget_gauges = list_of_dicts(payload.get("budget_gauges"))
     total_tool_calls = int(payload.get("total_tool_calls", 0) or 0)
 
@@ -271,7 +274,7 @@ def _render_usage(payload: dict[str, Any]) -> None:
 
     all_buckets = {**models, **categories}
     has_cache = any(b.get("cache_read_tokens") or b.get("cache_write_tokens") for b in all_buckets.values())
-    has_costs = any(v != "0" for k, v in costs.items() if k != "total")
+    has_costs = any(float(cost.get("cost", 0)) for cost in model_costs.values())
 
     def _cost_style(val: float) -> str:
         if val >= 0.25:
@@ -290,8 +293,7 @@ def _render_usage(payload: dict[str, Any]) -> None:
         title: str,
         rows: dict[str, dict[str, int]],
         *,
-        show_cost: bool = False,
-        row_costs: dict[str, str] | None = None,
+        cost_cell: Callable[[str], str] | None = None,
     ) -> Table:
         table = Table(title=title)
         table.add_column("Source", style="bold")
@@ -301,23 +303,24 @@ def _render_usage(payload: dict[str, Any]) -> None:
             table.add_column("Cache Read", justify="right")
             table.add_column("Cache Write", justify="right")
         table.add_column("Requests", justify="right")
-        if show_cost and has_costs:
+        if cost_cell is not None and has_costs:
             table.add_column("Cost", justify="right")
-        lookup = row_costs if row_costs is not None else costs
         for name, usage in rows.items():
             row = [name, f"{usage.get('input_tokens', 0):,}", f"{usage.get('output_tokens', 0):,}"]
             if has_cache:
                 row += [f"{usage.get('cache_read_tokens', 0):,}", f"{usage.get('cache_write_tokens', 0):,}"]
             row.append(str(usage.get("requests", 0)))
-            if show_cost and has_costs:
-                row.append(_styled_cost(lookup.get(name, "0")))
+            if cost_cell is not None and has_costs:
+                row.append(cost_cell(name))
             table.add_row(*row)
         return table
 
     total_in = payload.get("total_input", 0)
     total_out = payload.get("total_output", 0)
-    total_cost = costs.get("total", "0")
-    cost_str = f" | {_styled_cost(total_cost)}" if total_cost != "0" else ""
+    actual_total = str(total_cost.get("actual", "0"))
+    cost_str = f" | {_styled_cost(actual_total)}" if float(actual_total) else ""
+    if show_equivalent_total(budget_gauges):
+        cost_str += equivalent_note(str(total_cost.get("equivalent", "0")))
     tokens_str = f"{total_in + total_out:,} tokens ({total_in:,} in + {total_out:,} out)"
     console.print(f"[bold]Total:[/bold] {tokens_str}{cost_str}")
     console.print(f"[bold]Tool calls:[/bold] {total_tool_calls:,}")
@@ -325,17 +328,19 @@ def _render_usage(payload: dict[str, Any]) -> None:
     if budget_gauges:
         console.print(_make_budget_table(budget_gauges))
 
+    def _model_cost(name: str) -> str:
+        cost = model_costs.get(name, {})
+        cell = _styled_cost(str(cost.get("cost", "0")))
+        return cell + SUBSCRIPTION_NOTE if cost.get("subscription") else cell
+
+    def _category_cost(name: str) -> str:
+        cost = category_costs.get(name, {})
+        return _styled_cost(str(cost.get("actual", "0"))) + category_equivalent_note(cost)
+
     if models:
-        console.print(_make_table("Usage by Model", models, show_cost=True))
+        console.print(_make_table("Usage by Model", models, cost_cell=_model_cost))
     if categories:
-        console.print(
-            _make_table(
-                "Usage by Category",
-                categories,
-                show_cost=True,
-                row_costs=category_costs,
-            ),
-        )
+        console.print(_make_table("Usage by Category", categories, cost_cell=_category_cost))
 
     def _fmt_pct_cell(val: object) -> str:
         if val is None:
@@ -402,7 +407,7 @@ def _make_budget_table(gauges: list[dict[str, Any]]) -> Table:
         table.add_row(
             str(gauge.get("label", "?")),
             str(gauge.get("current_value", "-")),
-            str(gauge.get("limit_value", "-")),
+            str(gauge.get("limit_value") or "—"),
             str(gauge.get("remaining_value") or "—"),
             f"[{style}]{used}[/{style}]" if style != "none" else used,
         )

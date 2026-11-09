@@ -39,6 +39,7 @@ BUDGET_METRIC_FIELDS: dict[BudgetMetric, str] = {
     "input": "input_tokens",
     "output": "output_tokens",
     "cost": "cost_usd",
+    "equivalent_cost": "equivalent_cost_usd",
     "tool_calls": "tool_calls",
     "autonomy": "autonomous_tool_calls",
 }
@@ -47,15 +48,18 @@ _BUDGET_METRIC_NAMES: dict[BudgetMetric, str] = {
     "input": "input token budget",
     "output": "output token budget",
     "cost": "cost budget",
+    "equivalent_cost": "equivalent cost budget",
     "tool_calls": "tool call budget",
     "autonomy": "autonomy limit",
 }
+
+_USD_METRICS: frozenset[BudgetMetric] = frozenset({"cost", "equivalent_cost"})
 
 
 def parse_budget_limit(metric: BudgetMetric, raw: str) -> int | Decimal:
     """Parse a limit as typed in ``/budget`` (``100k``, ``2M``, ``1,000``, ``2.50``); 0 means no limit."""
     cleaned = raw.replace(",", "").replace("_", "")
-    if metric != "cost":
+    if metric not in _USD_METRICS:
         lowered = cleaned.lower()
         multiplier = 1
         if lowered.endswith("k"):
@@ -84,7 +88,7 @@ def parse_budget_limit(metric: BudgetMetric, raw: str) -> int | Decimal:
     try:
         value = Decimal(cleaned)
     except InvalidOperation as exc:
-        raise ValueError(f"Invalid cost budget: {raw}") from exc
+        raise ValueError(f"Invalid {_BUDGET_METRIC_NAMES[metric]}: {raw}") from exc
     if value < 0:
         raise ValueError("Budget value must be >= 0")
     return value
@@ -96,7 +100,7 @@ def _budget_limit_message(metric: BudgetMetric, budget: SessionBudget) -> str:
     if value is None:
         return f"Cleared {name}."
     match metric:
-        case "cost":
+        case "cost" | "equivalent_cost":
             amount = f"${value:.4f}"
         case "tool_calls":
             amount = f"{value:,} tool {'call' if value == 1 else 'calls'}"
@@ -152,14 +156,7 @@ class SessionUsageBudgetMixin:
 
     def _budget_gauges(self, active: ActiveSession) -> list[BudgetGauge]:
         """Gauges of the session totals, the budgets whose stop message lists the reached ones."""
-        budget = active.state.budget
-        return usage_budget_gauges(
-            active.usage_tracker,
-            input_tokens_limit=budget.input_tokens,
-            output_tokens_limit=budget.output_tokens,
-            total_cost_limit=budget.cost_usd,
-            tool_calls_limit=budget.tool_calls,
-        )
+        return usage_budget_gauges(active.usage_tracker, active.state.budget)
 
     def _display_budget_gauges(self, active: ActiveSession) -> list[BudgetGauge]:
         """Every gauge the UI shows: the totals plus the autonomy limit, which stops through its own path."""
@@ -170,14 +167,7 @@ class SessionUsageBudgetMixin:
         return gauges
 
     def _budget_exceeded_error(self, active: ActiveSession) -> SessionBudgetExceededError | None:
-        budget = active.state.budget
-        return usage_budget_exceeded_error(
-            active.usage_tracker,
-            input_tokens_limit=budget.input_tokens,
-            output_tokens_limit=budget.output_tokens,
-            total_cost_limit=budget.cost_usd,
-            tool_calls_limit=budget.tool_calls,
-        )
+        return usage_budget_exceeded_error(active.usage_tracker, active.state.budget)
 
     def _assert_llm_budget_available(self, active: ActiveSession) -> None:
         error = self._budget_exceeded_error(active)
@@ -259,8 +249,9 @@ class SessionUsageBudgetMixin:
     def _budget_command_payload(self, active: ActiveSession, *, message: str | None = None) -> dict[str, Any]:
         gauges = self._display_budget_gauges(active)
         usage_hint = (
-            "Set budgets with /budget input N, /budget output N, /budget cost N, "
-            "/budget tools N, or /budget autonomy N. Use 0 to clear a limit."
+            "Set budgets with /budget input N, /budget output N, /budget cost N (billed per token), "
+            "/budget equivalent_cost N (list price, subscription usage included), /budget tools N, "
+            "or /budget autonomy N. Use 0 to clear a limit."
         )
         payload: dict[str, Any] = {
             "gauges": [g.model_dump(mode="json") for g in gauges],

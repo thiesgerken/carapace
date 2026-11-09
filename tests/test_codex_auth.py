@@ -342,6 +342,8 @@ def test_codex_usage_is_priced_like_the_openai_api() -> None:
     api = UsageTracker()
     api.record("openai:gpt-5.4", "agent", usage)
 
-    codex_cost = codex.estimated_cost()["openai-codex:gpt-5.4"]
-    assert codex_cost > Decimal(0)
-    assert codex_cost == api.estimated_cost()["openai:gpt-5.4"]
+    codex_cost = codex.total_cost()
+    assert codex_cost.equivalent > Decimal(0)
+    assert codex_cost.equivalent == api.total_cost().actual
+    # The subscription covers it: nothing is billed per token.
+    assert codex_cost.actual == Decimal(0)

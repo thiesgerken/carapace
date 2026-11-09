@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 
 import markdown as md
 
-from ...payloads import dict_of_dicts, dict_or_empty, list_of_dicts, string_dict
+from ...payloads import dict_of_dicts, dict_or_empty, list_of_dicts
+from ...usage_display import SUBSCRIPTION_NOTE, category_equivalent_note, equivalent_note, show_equivalent_total
 from ...ws_models import ApprovalRequest, CommandResult
 
 
@@ -85,13 +87,13 @@ def format_command_result_text(result: CommandResult) -> str:
         case "usage":
             models = dict_of_dicts(data.get("models"))
             categories = dict_of_dicts(data.get("categories"))
-            costs = string_dict(data.get("costs"))
-            category_costs = string_dict(data.get("category_costs"))
+            model_costs = dict_of_dicts(data.get("model_costs"))
+            category_costs = dict_of_dicts(data.get("category_costs"))
+            total_cost = dict_or_empty(data.get("total_cost"))
             budget_gauges = list_of_dicts(data.get("budget_gauges"))
             total_input = data.get("total_input", 0)
             total_output = data.get("total_output", 0)
             total_tool_calls = int(data.get("total_tool_calls", 0) or 0)
-            total_cost = float(costs.get("total", 0))
 
             if not models and not categories and not budget_gauges and total_tool_calls == 0:
                 return "No token usage recorded yet."
@@ -101,14 +103,26 @@ def format_command_result_text(result: CommandResult) -> str:
                 for b in [*models.values(), *categories.values()]
             )
 
-            has_costs = any(v != "0" for k, v in costs.items() if k != "total")
+            has_costs = any(float(cost.get("cost", 0)) for cost in model_costs.values())
+
+            def _usd(raw: object) -> str:
+                amount = float(str(raw))
+                return f"${amount:.4f}" if amount else "-"
+
+            def _model_cost(name: str) -> str:
+                cost = model_costs.get(name, {})
+                cell = _usd(cost.get("cost", "0"))
+                return cell + SUBSCRIPTION_NOTE if cost.get("subscription") else cell
+
+            def _category_cost(name: str) -> str:
+                cost = category_costs.get(name, {})
+                return _usd(cost.get("actual", "0")) + category_equivalent_note(cost)
 
             def _table(
                 title: str,
                 rows: dict[str, dict],
                 *,
-                show_cost: bool = False,
-                row_costs: dict[str, str] | None = None,
+                cost_cell: Callable[[str], str],
             ) -> str:
                 hdr = "| | Input | Output |"
                 sep = "|---|---:|---:|"
@@ -117,26 +131,27 @@ def format_command_result_text(result: CommandResult) -> str:
                     sep += "---:|---:|"
                 hdr += " Req |"
                 sep += "---:|"
-                if show_cost and has_costs:
+                if has_costs:
                     hdr += " Cost |"
                     sep += "---:|"
 
                 lines = [f"**{title}**\n", hdr, sep]
-                lookup = row_costs if row_costs is not None else costs
                 for name, b in rows.items():
                     row = f"| {name} | {b.get('input_tokens', 0):,} | {b.get('output_tokens', 0):,} |"
                     if has_cache:
                         row += f" {b.get('cache_read_tokens', 0):,} | {b.get('cache_write_tokens', 0):,} |"
                     row += f" {b.get('requests', 0)} |"
-                    if show_cost and has_costs:
-                        c = lookup.get(name, "0")
-                        row += f" ${float(c):.4f} |" if c != "0" else " - |"
+                    if has_costs:
+                        row += f" {cost_cell(name)} |"
                     lines.append(row)
                 return "\n".join(lines)
 
             parts: list[str] = []
             total_tokens = total_input + total_output
-            cost_str = f" | ${total_cost:.4f}" if total_cost else ""
+            actual_total = float(str(total_cost.get("actual", "0")))
+            cost_str = f" | ${actual_total:.4f}" if actual_total else ""
+            if show_equivalent_total(budget_gauges):
+                cost_str += equivalent_note(str(total_cost.get("equivalent", "0")))
             parts.append(
                 f"**Total:** {total_tokens:,} tokens ({total_input:,} in + {total_output:,} out){cost_str}",
             )
@@ -155,7 +170,7 @@ def format_command_result_text(result: CommandResult) -> str:
                             [
                                 str(gauge.get("label", "?")),
                                 str(gauge.get("current_value", "-")),
-                                str(gauge.get("limit_value", "-")),
+                                str(gauge.get("limit_value") or "—"),
                                 str(gauge.get("remaining_value") or "—"),
                                 used,
                             ]
@@ -164,16 +179,9 @@ def format_command_result_text(result: CommandResult) -> str:
                     )
                 parts.append("\n".join(lines))
             if models:
-                parts.append(_table("By Model", models, show_cost=True))
+                parts.append(_table("By Model", models, cost_cell=_model_cost))
             if categories:
-                parts.append(
-                    _table(
-                        "By Category",
-                        categories,
-                        show_cost=True,
-                        row_costs=category_costs,
-                    ),
-                )
+                parts.append(_table("By Category", categories, cost_cell=_category_cost))
 
             def _fmt_pct_cell(v: object) -> str:
                 if v is None:
@@ -256,7 +264,7 @@ def format_command_result_text(result: CommandResult) -> str:
                         [
                             str(gauge.get("label", "?")),
                             str(gauge.get("current_value", "-")),
-                            str(gauge.get("limit_value", "-")),
+                            str(gauge.get("limit_value") or "—"),
                             str(gauge.get("remaining_value") or "—"),
                             used,
                         ]

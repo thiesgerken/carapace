@@ -53,7 +53,7 @@ from tests.session_helpers import (
 
 
 def _reached_tool_call_budget_error() -> SessionBudgetExceededError:
-    return SessionBudgetExceededError(usage_budget_gauges(UsageTracker(tool_calls=2), tool_calls_limit=2))
+    return SessionBudgetExceededError(usage_budget_gauges(UsageTracker(tool_calls=2), SessionBudget(tool_calls=2)))
 
 
 _TOOL_CALL_BUDGET_MESSAGE = (

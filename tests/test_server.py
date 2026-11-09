@@ -59,7 +59,7 @@ from carapace.server import app, sandbox_app
 from carapace.server.runtime import KnowledgeGitRuntime
 from carapace.session import SessionEngine, SessionManager, sent_files
 from carapace.session.archive import SessionArchiveResult, SessionArchiveService
-from carapace.usage import LlmRequestState
+from carapace.usage import CostSplit, LlmRequestState
 
 _TEST_TOKEN = "test-bearer-token-for-server-tests"
 
@@ -2040,8 +2040,8 @@ def test_get_session_includes_total_cost_usd(client, auth_headers, monkeypatch):
     sid = create_resp.json()["session_id"]
 
     class _FakeUsage:
-        def estimated_cost(self) -> dict[str, Decimal]:
-            return {"total": Decimal("0.0123")}
+        def total_cost(self) -> CostSplit:
+            return CostSplit(actual=Decimal("0.0123"), equivalent=Decimal("0.05"))
 
     monkeypatch.setattr(srv._engine.session_mgr, "load_usage", lambda session_id: _FakeUsage())
 
@@ -2049,6 +2049,7 @@ def test_get_session_includes_total_cost_usd(client, auth_headers, monkeypatch):
 
     assert resp.status_code == 200
     assert resp.json()["total_cost_usd"] == pytest.approx(0.0123)
+    assert resp.json()["total_equivalent_cost_usd"] == pytest.approx(0.05)
 
 
 def test_jobs_crud_roundtrip(client, auth_headers):
@@ -3665,6 +3666,7 @@ def test_update_session_budget_persists_and_refreshes_connected_clients(client, 
         "input_tokens": None,
         "output_tokens": None,
         "cost_usd": None,
+        "equivalent_cost_usd": None,
         "tool_calls": None,
         "autonomous_tool_calls": 100,
     }
@@ -3683,6 +3685,7 @@ def test_update_session_budget_persists_and_refreshes_connected_clients(client, 
         "input_tokens": 100_000,
         "output_tokens": None,
         "cost_usd": "2.50",
+        "equivalent_cost_usd": None,
         "tool_calls": None,
         "autonomous_tool_calls": 100,
     }
@@ -3698,6 +3701,17 @@ def test_update_session_budget_persists_and_refreshes_connected_clients(client, 
     persisted = srv._engine.session_mgr.load_state(sid)
     assert persisted is not None
     assert persisted.budget == SessionBudget(cost_usd=Decimal("2.50"), autonomous_tool_calls=100)
+
+
+def test_update_session_budget_sets_every_limit(client, auth_headers):
+    sid = client.post("/api/sessions", headers=auth_headers).json()["session_id"]
+    limits = {field: "7" for field in SessionBudget.model_fields}
+
+    resp = client.patch(f"/api/sessions/{sid}", headers=auth_headers, json={"budget": limits})
+
+    assert resp.status_code == 200
+    assert set(resp.json()["budget"]) == set(limits)
+    assert all(str(value) == "7" for value in resp.json()["budget"].values())
 
 
 def test_update_session_budget_rejects_invalid_limit(client, auth_headers):

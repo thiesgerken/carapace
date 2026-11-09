@@ -34,7 +34,7 @@ After `subscribe` succeeds:
    - `agent_running`: whether an agent turn task is still running (e.g. after reconnect).
    - `usage`: last **agent** LLM request stats from the session log (input/output tokens, optional breakdown %, model id, context cap), or `null` if none yet.
    - `llm_activity`: current in-flight LLM activity metadata, if a request is active.
-   - `budget`: the session's budget limits (`input_tokens`, `output_tokens`, `cost_usd`, `tool_calls`; `null` means no limit). The same message is broadcast after every budget change.
+   - `budget`: the session's budget limits (`input_tokens`, `output_tokens`, `cost_usd`, `equivalent_cost_usd`, `tool_calls`, `autonomous_tool_calls`; `null` means no limit). The same message is broadcast after every budget change.
 
 2. **Pending tool approvals (zero or more)** — for each entry in `active.pending_approval_requests`:
    - `approval_request`
