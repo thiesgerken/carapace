@@ -1761,8 +1761,9 @@ export function ChatView({
     });
   }
 
-  // Deep link from memory fact sources (?event=<seq>). Not every event renders (approvals,
-  // collapsed tool groups), so land on the nearest rendered anchor at or before the seq.
+  // Deep link (?event=<seq>) from memory fact sources and push notifications. Not every event
+  // renders (approvals, collapsed tool groups), so land on the nearest rendered anchor at or
+  // before the seq. Align it to the top: a notification points at a turn start, read downward.
   useEffect(() => {
     if (targetEvent === null || loadingHistory || targetEvent === scrolledToEventRef.current) return;
     const target = Number(targetEvent);
@@ -1772,7 +1773,7 @@ export function ChatView({
     if (!anchor) return;
     scrolledToEventRef.current = targetEvent;
     isAtBottomRef.current = false;
-    anchor.scrollIntoView({ block: "center" });
+    anchor.scrollIntoView({ block: "start" });
     anchor.animate?.([{ backgroundColor: "color-mix(in oklch, var(--accent) 80%, transparent)" }, { backgroundColor: "transparent" }], { duration: 2000 });
   }, [targetEvent, loadingHistory, messages]);
 

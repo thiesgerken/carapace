@@ -334,6 +334,7 @@ class SessionTurnMixin(SessionTurnHost):
                     turn_result.thinking,
                     final_status=turn_result.final_status,
                     turn_record_start=turn_record_start,
+                    turn_event_start=turn_event_start,
                 )
 
         except asyncio.CancelledError:
@@ -609,6 +610,8 @@ class SessionTurnMixin(SessionTurnHost):
         thinking: str,
         final_status: FinalStatus | None = None,
         turn_record_start: int = 0,
+        *,
+        turn_event_start: int,
     ) -> None:
         self._close_turn_approvals(active, session_id)
         self._session_mgr.save_history(session_id, messages)
@@ -641,6 +644,7 @@ class SessionTurnMixin(SessionTurnHost):
             delivered = await self._notification_router.dispatch_turn_outcome(
                 session_id=session_id,
                 assistant_event_index=assistant_event_index,
+                turn_event_start=turn_event_start,
                 kind=notification_kind,
                 title="Job Completed" if active.state.attributes.unattended else "Session Update",
                 body=_truncate_for_log(output, 160),
@@ -699,6 +703,7 @@ class SessionTurnMixin(SessionTurnHost):
             delivered = await self._notification_router.dispatch_turn_outcome(
                 session_id=session_id,
                 assistant_event_index=terminal_event_index,
+                turn_event_start=turn_event_start,
                 kind="unattended_turn_failed",
                 title="Job Failed",
                 body=_truncate_for_log(terminal_message, 160),

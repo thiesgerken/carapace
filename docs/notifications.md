@@ -113,12 +113,15 @@ Payload shape includes:
 - `title`
 - `body`
 - `session_id`
+- `event_index` (turn outcomes only: the turn's first event)
 - `tag` (defaults to `notif_id`)
 - `badge`
 - `icon`
 - `actions`
 
 Current payload actions use a single `open` action with title `Open session`.
+
+Clicking a turn-outcome notification opens `/?session=<id>&event=<event_index>`, so the chat lands at the top of the turn (its user or trigger message) and the reader scrolls down through every agent message of that turn instead of starting below the last one.
 
 ## Configuration
 

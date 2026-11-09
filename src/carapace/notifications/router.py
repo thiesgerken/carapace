@@ -45,6 +45,9 @@ class NotificationPayload:
     title: str
     body: str
     session_id: str
+    # Deep-link target for the click: the turn's first event (its user or trigger message), so the
+    # reader starts above the agent's answer instead of below a long one.
+    event_index: int | None = None
     tag: str | None = None
     badge: str = "/badge-icon.png"
     icon: str = "/pwa-192x192.png"
@@ -112,6 +115,7 @@ class NotificationRouter:
         *,
         session_id: str,
         assistant_event_index: int,
+        turn_event_start: int,
         kind: TurnOutcomeKind,
         title: str,
         body: str,
@@ -126,6 +130,7 @@ class NotificationRouter:
                 title=title,
                 body=body,
                 session_id=session_id,
+                event_index=turn_event_start,
                 actions=[{"action": "open", "title": "Open session"}],
             ),
             suppress_when_active=True,
