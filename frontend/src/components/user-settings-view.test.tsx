@@ -1,9 +1,25 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { NextIntlClientProvider, useTranslations } from "next-intl";
+import { renderToStaticMarkup } from "react-dom/server";
 
-import type { UserSettingsResponseInfo } from "@/lib/api";
+import messages from "../../messages/en.json";
+import type { MatrixChannelStatus, UserSettingsResponseInfo } from "@/lib/api";
 import type { SessionBudgetSettings } from "@/lib/types";
-import { buildUserSettingsPatch, draftFromSettings } from "./user-settings-view";
+import { MatrixChannelStatusNotice, buildUserSettingsPatch, draftFromSettings } from "./user-settings-view";
+
+function TranslatedMatrixStatus({ status, error }: { status: MatrixChannelStatus; error: string | null }) {
+  const t = useTranslations("accountSettings");
+  return <MatrixChannelStatusNotice status={status} error={error} t={t} />;
+}
+
+function matrixStatusMarkup(status: MatrixChannelStatus, error: string | null = null): string {
+  return renderToStaticMarkup(
+    <NextIntlClientProvider locale="en" messages={messages} timeZone="UTC">
+      <TranslatedMatrixStatus status={status} error={error} />
+    </NextIntlClientProvider>,
+  );
+}
 
 function userSettingsResponse(
   defaultBudget: SessionBudgetSettings,
@@ -47,6 +63,8 @@ function userSettingsResponse(
         token_set: false,
         allowed_rooms: [],
         allowed_users: [],
+        status: "disabled",
+        error: null,
       },
       credentials: {
         backends: {
@@ -204,4 +222,22 @@ test("an existing user default budget is not prefilled", () => {
   const draft = draftFromSettings(userSettingsResponse({ tool_calls: 3 }, { autonomous_tool_calls: 100 }));
 
   assert.equal(draft.budget.autonomous_tool_calls, "");
+});
+
+test("the Matrix status shows a failed start with its error", () => {
+  const markup = matrixStatusMarkup("failed", "Matrix initial sync failed: None: unknown error");
+
+  assert.match(markup, /Failed to start/);
+  assert.match(markup, /Matrix initial sync failed: None: unknown error/);
+});
+
+test("the Matrix status shows a running channel without an error", () => {
+  const markup = matrixStatusMarkup("running");
+
+  assert.match(markup, /Running/);
+  assert.doesNotMatch(markup, /Failed to start/);
+});
+
+test("the Matrix status stays hidden for a disabled channel", () => {
+  assert.equal(matrixStatusMarkup("disabled"), "");
 });

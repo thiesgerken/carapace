@@ -1,15 +1,19 @@
 from __future__ import annotations
 
+import asyncio
+import itertools
+from collections.abc import Iterator
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, call
 
 import pytest
 
+import carapace.server.runtime as server_runtime
 from carapace.git.store import GitStore
 from carapace.knowledge import KnowledgeRepoRegistry
 from carapace.models.user import UserConfig
 from carapace.sandbox.manager import SandboxManager
-from carapace.server.runtime import KnowledgeGitConfig, KnowledgeGitRuntime, MatrixChannelManager
+from carapace.server.runtime import KnowledgeGitConfig, KnowledgeGitRuntime, MatrixChannelManager, MatrixChannelState
 
 
 class _FakeMatrixChannel:
@@ -73,6 +77,130 @@ async def test_matrix_channel_manager_stops_old_channel_before_replacement() -> 
     assert first.stopped is True
     assert rollback.started is True
     assert created == []
+
+
+_MATRIX_ENABLED = UserConfig.model_validate({"channels": {"matrix": {"enabled": True}}})
+_MATRIX_DISABLED = UserConfig()
+
+
+class _ChannelSequence:
+    """Channel factory handing out prepared fake channels in order."""
+
+    def __init__(self, *channels: _FakeMatrixChannel) -> None:
+        self.remaining = list(channels)
+        self.created: list[_FakeMatrixChannel] = []
+
+    def __call__(self, _username: str, _config: UserConfig) -> _FakeMatrixChannel:
+        channel = self.remaining.pop(0)
+        self.created.append(channel)
+        return channel
+
+
+@pytest.fixture
+def instant_retries(monkeypatch: pytest.MonkeyPatch) -> None:
+    def delays() -> Iterator[float]:
+        return itertools.repeat(0.0)
+
+    monkeypatch.setattr(server_runtime, "_start_retry_delays", delays)
+
+
+async def _wait_until(condition, *, timeout: float = 1.0) -> None:
+    async with asyncio.timeout(timeout):
+        while not condition():
+            await asyncio.sleep(0)
+
+
+def test_start_retry_delays_double_up_to_five_minutes() -> None:
+    assert list(itertools.islice(server_runtime._start_retry_delays(), 9)) == [
+        5.0,
+        10.0,
+        20.0,
+        40.0,
+        80.0,
+        160.0,
+        300.0,
+        300.0,
+        300.0,
+    ]
+
+
+@pytest.mark.anyio
+async def test_matrix_channel_manager_retries_failed_startup_until_it_succeeds(instant_retries: None) -> None:
+    first = _FakeMatrixChannel(start_error=RuntimeError("Matrix initial sync failed: None: unknown error"))
+    second = _FakeMatrixChannel(start_error=RuntimeError("homeserver still down"))
+    third = _FakeMatrixChannel()
+    factory = _ChannelSequence(first, second, third)
+    manager = MatrixChannelManager(factory)
+
+    await manager.start_user_with_retry("thies", _MATRIX_ENABLED)
+
+    assert manager.state_for_user("thies") == MatrixChannelState(
+        status="failed", error="Matrix initial sync failed: None: unknown error"
+    )
+    assert first.stopped is True
+
+    await _wait_until(lambda: third.started)
+
+    assert manager.state_for_user("thies") == MatrixChannelState(status="running")
+    assert manager.channel_count == 1
+    assert second.stopped is True
+    assert manager._start_retries == {}
+
+
+@pytest.mark.anyio
+async def test_matrix_channel_manager_failed_startup_keeps_other_users_running() -> None:
+    def factory(username: str, _config: UserConfig) -> _FakeMatrixChannel:
+        if username == "broken":
+            return _FakeMatrixChannel(start_error=RuntimeError("login failed"))
+        return _FakeMatrixChannel()
+
+    manager = MatrixChannelManager(factory)
+
+    await manager.start_user_with_retry("broken", _MATRIX_ENABLED)
+    await manager.start_user_with_retry("thies", _MATRIX_ENABLED)
+
+    assert manager.state_for_user("broken").status == "failed"
+    assert manager.state_for_user("thies").status == "running"
+    assert manager.state_for_user("nobody").status == "disabled"
+    await manager.stop_all()
+
+
+@pytest.mark.anyio
+async def test_matrix_channel_manager_reload_cancels_startup_retry() -> None:
+    failing = _FakeMatrixChannel(start_error=RuntimeError("login failed"))
+    factory = _ChannelSequence(failing)
+    manager = MatrixChannelManager(factory)
+    await manager.start_user_with_retry("thies", _MATRIX_ENABLED)
+    retry = manager._start_retries["thies"]
+
+    await manager.reload_user("thies", _MATRIX_DISABLED)
+
+    assert retry.cancelled()
+    assert manager._start_retries == {}
+    assert manager.state_for_user("thies") == MatrixChannelState(status="disabled")
+
+
+@pytest.mark.anyio
+async def test_matrix_channel_manager_stop_all_cancels_startup_retry() -> None:
+    manager = MatrixChannelManager(_ChannelSequence(_FakeMatrixChannel(start_error=RuntimeError("login failed"))))
+    await manager.start_user_with_retry("thies", _MATRIX_ENABLED)
+    retry = manager._start_retries["thies"]
+
+    await manager.stop_all()
+
+    assert retry.cancelled()
+    assert manager.state_for_user("thies") == MatrixChannelState(status="disabled")
+
+
+@pytest.mark.anyio
+async def test_matrix_channel_manager_reload_still_raises_and_records_error() -> None:
+    manager = MatrixChannelManager(_ChannelSequence(_FakeMatrixChannel(start_error=RuntimeError("bad password"))))
+
+    with pytest.raises(RuntimeError, match="bad password"):
+        await manager.reload_user("thies", _MATRIX_ENABLED)
+
+    assert manager._start_retries == {}
+    assert manager.state_for_user("thies") == MatrixChannelState(status="failed", error="bad password")
 
 
 @pytest.mark.anyio

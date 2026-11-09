@@ -1048,6 +1048,10 @@ export interface UserDefaultModelsSettings {
   memory_high?: string | null;
 }
 
+const MATRIX_CHANNEL_STATUSES = ["running", "failed", "disabled"] as const;
+
+export type MatrixChannelStatus = (typeof MATRIX_CHANNEL_STATUSES)[number];
+
 export interface MatrixSettingsInfo {
   enabled: boolean;
   homeserver: string;
@@ -1057,6 +1061,8 @@ export interface MatrixSettingsInfo {
   token_set: boolean;
   allowed_rooms: string[];
   allowed_users: string[];
+  status: MatrixChannelStatus;
+  error: string | null;
 }
 
 export interface BasicAuthSettingsInfo {
@@ -1264,7 +1270,15 @@ function decodeMatrixSettings(raw: unknown): MatrixSettingsInfo {
     token_set: readBoolean(record, "token_set"),
     allowed_rooms: readStringArray(record, "allowed_rooms") ?? [],
     allowed_users: readStringArray(record, "allowed_users") ?? [],
+    status: readMatrixChannelStatus(record),
+    error: readString(record, "error") ?? null,
   };
+}
+
+function readMatrixChannelStatus(record: Record<string, unknown>): MatrixChannelStatus {
+  const status = MATRIX_CHANNEL_STATUSES.find((candidate) => candidate === record.status);
+  if (status === undefined) throw new Error(`Invalid Matrix channel status: ${String(record.status)}`);
+  return status;
 }
 
 function decodeCredentialsSettings(raw: unknown): CredentialsSettingsInfo {

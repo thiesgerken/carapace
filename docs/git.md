@@ -57,7 +57,7 @@ For every enabled user, startup runs the same sequence against that user's repo:
 
 Users without a remote still get a local Git-backed repo. They skip the remote add, pull, and upstream push steps.
 
-If a pull would require a non-fast-forward merge, startup fails loudly instead of guessing how to reconcile local and remote state.
+If the pull fails (unreachable remote, bad credentials, or a pull that would need a non-fast-forward merge), carapace logs the error and keeps serving that user's local repo as it is. It never guesses how to reconcile local and remote state, and one user's broken remote does not keep the server from starting. Once the remote is fixed, sync with `/pull`.
 
 ## Adding or changing a remote on an existing instance
 

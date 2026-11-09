@@ -396,6 +396,10 @@
             "configured": "konfiguriert",
             "notSet": "nicht gesetzt"
         },
+        "matrixStatus": {
+            "running": "Läuft",
+            "failed": "Start fehlgeschlagen"
+        },
         "notices": {
             "saved": "Gespeichert."
         },

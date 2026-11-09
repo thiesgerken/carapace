@@ -956,6 +956,7 @@ export function UserSettingsView({ server, token }: { server: string; token: str
 
         <Section title={t("sections.matrix")}>
           <div className="space-y-4">
+            <MatrixChannelStatusNotice status={settings.settings.matrix.status} error={settings.settings.matrix.error} t={t} />
             <SwitchRow checked={draft.matrix.enabled} label={t("fields.enabled")} onCheckedChange={(enabled) => updateMatrix({ enabled })} />
             {draft.matrix.enabled ? (
               <div className="grid gap-4 md:grid-cols-2">
@@ -980,6 +981,29 @@ export function UserSettingsView({ server, token }: { server: string; token: str
         </Section>
       </div>
     </form>
+  );
+}
+
+export function MatrixChannelStatusNotice({
+  status,
+  error,
+  t,
+}: Pick<MatrixSettingsInfo, "status" | "error"> & { t: Translate }) {
+  // The enabled switch already tells a disabled channel apart, so only the runtime outcome is shown.
+  if (status === "disabled") return null;
+  const failed = status === "failed";
+  return (
+    <div className="space-y-1.5">
+      <span
+        className={cn(
+          "inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium",
+          failed ? "bg-destructive/10 text-destructive" : "bg-emerald-100 text-emerald-700",
+        )}
+      >
+        {failed ? t("matrixStatus.failed") : t("matrixStatus.running")}
+      </span>
+      {failed && error ? <p className="break-words text-sm text-destructive">{error}</p> : null}
+    </div>
   );
 }
 

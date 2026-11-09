@@ -23,6 +23,7 @@ from ..models.session import SessionBudget
 from ..models.user import UserConfig, UserDefaultModelsConfig, UserGitConfig, UserMemoryConfig, validate_timezone
 from ..user_defaults import effective_memory_model
 from .auth import require
+from .runtime import MatrixChannelState, MatrixChannelStatus
 from .state import server_module
 
 server = server_module()
@@ -131,6 +132,8 @@ class PublicMatrixSettings(SettingsModel):
     token_set: bool = False
     allowed_rooms: list[str] = []
     allowed_users: list[str] = []
+    status: MatrixChannelStatus
+    error: str | None = None
 
 
 class PublicGitSettings(SettingsModel):
@@ -288,7 +291,7 @@ def _public_credentials(config: CredentialsConfig) -> PublicCredentialsSettings:
     return PublicCredentialsSettings(backends=backends)
 
 
-def _public_matrix(config: MatrixChannelConfig) -> PublicMatrixSettings:
+def _public_matrix(config: MatrixChannelConfig, state: MatrixChannelState) -> PublicMatrixSettings:
     return PublicMatrixSettings(
         enabled=config.enabled,
         homeserver=config.homeserver,
@@ -298,6 +301,8 @@ def _public_matrix(config: MatrixChannelConfig) -> PublicMatrixSettings:
         token_set=config.token is not None,
         allowed_rooms=list(config.allowed_rooms),
         allowed_users=list(config.allowed_users),
+        status=state.status,
+        error=state.error,
     )
 
 
@@ -497,7 +502,7 @@ def _settings_response(username: str) -> UserSettingsResponse:
             default_budget=config.budgets,
             timezone=config.timezone,
             memory=config.memory,
-            matrix=_public_matrix(config.channels.matrix),
+            matrix=_public_matrix(config.channels.matrix, server._matrix_channel_manager.state_for_user(username)),
             credentials=_public_credentials(config.credentials),
             git=_public_git(config.git),
         ),
