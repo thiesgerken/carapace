@@ -1,6 +1,36 @@
 # CHANGELOG
 
 
+## v0.172.3 (2026-11-09)
+
+
+### 🔧 Configuration
+
+
+- 🔧Merge pull request #444 from thiesgerken/chore/screenshot-setup
+  ([`0bf7607`](https://github.com/thiesgerken/carapace/commit/0bf7607edb2ac10e514a3ec2dd29c1e53e3476fa))
+
+- 🔧 chore: demo data and headless-Chrome screenshots for UI PRs
+  ([`0bf7607`](https://github.com/thiesgerken/carapace/commit/0bf7607edb2ac10e514a3ec2dd29c1e53e3476fa))
+
+- 🔧 chore: fixed demo session IDs, temp-dir guard and schema test for the screenshot seed
+  ([`15904fd`](https://github.com/thiesgerken/carapace/commit/15904fd11f0a89cf3c7c3ca2cf1c339a5b2d3ab0))
+
+  Demo sessions get constant IDs (demo-*), the seed refuses a data dir outside the temp directory before opening any database, and a test runs the seed and loads every session like the UI and transcript replay do. screenshot.mjs logs in as the fixed demo user only and writes into a fresh temp dir by default. The docs map the README screenshots to sessions and say they are taken by hand.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aUyaxvsB8zAKUBRRhYg
+
+- 🔧 chore: seed demo sessions and capture UI screenshots without an LLM
+  ([`c976294`](https://github.com/thiesgerken/carapace/commit/c9762944f46b7a6f77d6c212c0f08a75ff485316))
+
+  scripts/seed_demo.py fills a throwaway data dir with a demo user and seven ready-made sessions written directly as events (README scenes, pending approval, budget stop, autonomy limit). scripts/screenshot.mjs logs in over the DevTools protocol and captures light and dark pages with headless Chrome. docs/development.md describes the flow, and AGENTS.md asks UI PRs for screenshots with demo data only.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aUyaxvsB8zAKUBRRhYg
+
 ## v0.172.2 (2026-11-09)
 
 
