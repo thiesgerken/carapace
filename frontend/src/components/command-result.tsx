@@ -595,7 +595,10 @@ function UsageView({
     if (!cost) return fmtCost("0");
     return (
       <>
-        <span className={costColor(parseFloat(cost.cost))}>{fmtCost(cost.cost)}</span>
+        {/* A subscription model's cost is the equivalent price, not money spent: no spend color. */}
+        <span className={cost.subscription ? "text-muted-foreground" : costColor(parseFloat(cost.cost))}>
+          {fmtCost(cost.cost)}
+        </span>
         {cost.subscription ? <span className="text-muted-foreground">{t("usage.subscription")}</span> : null}
       </>
     );
