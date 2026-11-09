@@ -620,7 +620,7 @@ export function PlatformSettingsView({ server, token }: { server: string; token:
             <TextInput label={t("fields.inputTokens")} value={draft.budget.input_tokens} disabled={fieldsDisabled} placeholder={t("placeholders.unlimited")} onChange={(value) => updateDraft({ budget: { ...draft.budget, input_tokens: value } })} />
             <TextInput label={t("fields.outputTokens")} value={draft.budget.output_tokens} disabled={fieldsDisabled} placeholder={t("placeholders.unlimited")} onChange={(value) => updateDraft({ budget: { ...draft.budget, output_tokens: value } })} />
             <TextInput label={t("fields.costUsd")} value={draft.budget.cost_usd} disabled={fieldsDisabled} placeholder={t("placeholders.unlimited")} onBlur={() => updateDraft({ budget: { ...draft.budget, cost_usd: budgetCostValue(draft.budget.cost_usd) } })} onChange={(value) => updateDraft({ budget: { ...draft.budget, cost_usd: value } })} />
-            <TextInput label={t("fields.equivalentCostUsd")} value={draft.budget.equivalent_cost_usd} disabled={fieldsDisabled} placeholder={t("placeholders.unlimited")} onBlur={() => updateDraft({ budget: { ...draft.budget, equivalent_cost_usd: budgetCostValue(draft.budget.equivalent_cost_usd) } })} onChange={(value) => updateDraft({ budget: { ...draft.budget, equivalent_cost_usd: value } })} />
+            <TextInput label={t("fields.equivalentCostUsd")} title={t("fields.equivalentCostUsdHint")} value={draft.budget.equivalent_cost_usd} disabled={fieldsDisabled} placeholder={t("placeholders.unlimited")} onBlur={() => updateDraft({ budget: { ...draft.budget, equivalent_cost_usd: budgetCostValue(draft.budget.equivalent_cost_usd) } })} onChange={(value) => updateDraft({ budget: { ...draft.budget, equivalent_cost_usd: value } })} />
             <TextInput label={t("fields.toolCalls")} value={draft.budget.tool_calls} disabled={fieldsDisabled} placeholder={t("placeholders.unlimited")} onChange={(value) => updateDraft({ budget: { ...draft.budget, tool_calls: value } })} />
             <TextInput label={t("fields.autonomousToolCalls")} value={draft.budget.autonomous_tool_calls} disabled={fieldsDisabled} placeholder={t("placeholders.unlimited")} onChange={(value) => updateDraft({ budget: { ...draft.budget, autonomous_tool_calls: value } })} />
           </div>
@@ -688,10 +688,10 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-function TextInput({ label, value, onChange, placeholder, onBlur, disabled = false }: { label: string; value: string; onChange: (value: string) => void; placeholder?: string; onBlur?: () => void; disabled?: boolean }) {
+function TextInput({ label, value, onChange, placeholder, onBlur, disabled = false, title }: { label: string; value: string; onChange: (value: string) => void; placeholder?: string; onBlur?: () => void; disabled?: boolean; title?: string }) {
   return (
     <Field label={label}>
-      <input type="text" value={value} disabled={disabled} placeholder={placeholder} onBlur={onBlur} onChange={(event) => onChange(event.target.value)} className={inputClassName} />
+      <input type="text" value={value} disabled={disabled} placeholder={placeholder} title={title} onBlur={onBlur} onChange={(event) => onChange(event.target.value)} className={inputClassName} />
     </Field>
   );
 }

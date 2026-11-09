@@ -9,6 +9,7 @@ Create Date: 2026-11-09 18:00:00.000000
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
+from decimal import Decimal
 
 import sqlalchemy as sa
 from alembic import op
@@ -28,14 +29,16 @@ _sessions = sa.table("sessions", sa.column("session_id", sa.String), sa.column("
 
 def _to_equivalent(budget: dict) -> dict:
     """The old cost limit priced subscription usage at list price too: it is the new equivalent cost limit."""
-    return budget | {"cost_usd": None, "equivalent_cost_usd": budget.get("cost_usd")}
+    if budget.get("cost_usd") is None:
+        return budget
+    return budget | {"cost_usd": None, "equivalent_cost_usd": budget["cost_usd"]}
 
 
 def _to_single_cost(budget: dict) -> dict:
-    """Back to one list-price cost limit; it takes the equivalent limit, or the actual one if only that is set."""
+    """Back to one list-price cost limit: the stricter of the two, since the old limit priced everything."""
     single = {key: value for key, value in budget.items() if key != "equivalent_cost_usd"}
-    equivalent = budget.get("equivalent_cost_usd")
-    return single | {"cost_usd": equivalent if equivalent is not None else budget.get("cost_usd")}
+    limits = [Decimal(str(budget[key])) for key in ("cost_usd", "equivalent_cost_usd") if budget.get(key) is not None]
+    return single | {"cost_usd": str(min(limits)) if limits else None}
 
 
 def _change_budgets(change: Callable[[dict], dict]) -> None:

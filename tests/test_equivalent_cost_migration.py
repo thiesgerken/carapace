@@ -86,6 +86,14 @@ def test_migration_turns_every_cost_limit_into_an_equivalent_cost_limit_and_back
 
         command.upgrade(cfg, "head")
         upgraded = _budgets(conn)
+        # Set after the split: a real-money cap well below the list-price one.
+        both = _EMPTY | {"cost_usd": "1.00", "equivalent_cost_usd": "20.00"}
+        state = conn.scalar(select(_raw_sessions.c.state).where(_raw_sessions.c.session_id == "unlimited"))
+        conn.execute(
+            update(_raw_sessions)
+            .where(_raw_sessions.c.session_id == "unlimited")
+            .values(state=state | {"budget": both})
+        )
         command.downgrade(cfg, "0009")
         downgraded = _budgets(conn)
     engine.dispose()
@@ -95,11 +103,12 @@ def test_migration_turns_every_cost_limit_into_an_equivalent_cost_limit_and_back
         "platform": _EMPTY | {"cost_usd": None, "equivalent_cost_usd": "5.00"},
         "u": _EMPTY | {"cost_usd": None, "equivalent_cost_usd": "2.50"},
         "limited": _EMPTY | {"cost_usd": None, "equivalent_cost_usd": "1.00"},
-        "unlimited": _EMPTY | {"cost_usd": None, "equivalent_cost_usd": None},
+        "unlimited": _EMPTY | {"cost_usd": None},
     }
     assert downgraded == {
         "platform": _EMPTY | {"cost_usd": "5.00"},
         "u": _EMPTY | {"cost_usd": "2.50"},
         "limited": _EMPTY | {"cost_usd": "1.00"},
-        "unlimited": _EMPTY | {"cost_usd": None},
+        # The old single limit priced everything, so the stricter of the two caps survives.
+        "unlimited": _EMPTY | {"cost_usd": "1.00"},
     }
