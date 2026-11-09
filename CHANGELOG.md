@@ -1,6 +1,30 @@
 # CHANGELOG
 
 
+## v0.173.1 (2026-11-09)
+
+
+### Other
+
+
+- Merge pull request #446 from thiesgerken/build/pin-npm-11
+  ([`566266e`](https://github.com/thiesgerken/carapace/commit/566266e8a78007d4da793c19743e376f5c9616e0))
+
+### 🔧 Configuration
+
+
+- 🔧 build(frontend): keep Renovate on npm 11
+  ([`566266e`](https://github.com/thiesgerken/carapace/commit/566266e8a78007d4da793c19743e376f5c9616e0))
+
+- 🔧 build(frontend): keep Renovate on npm 11
+  ([`7f6ea12`](https://github.com/thiesgerken/carapace/commit/7f6ea12e73d4ceade3a54a80131aaec6342cd904))
+
+  Renovate installs the latest npm when the project names no version, and npm 12 refuses to resolve the frontend lockfile (EALLOWREMOTE), which broke lock file maintenance. npm 11 is what nodejs_24 ships in the Nix build and dev shell, so engines.npm states that and a Renovate rule keeps the range from moving independently of the Node.js major.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aUz5aruKwJbmfN76MTy
+
 ## v0.173.0 (2026-11-09)
 
 
