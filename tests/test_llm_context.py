@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import AsyncIterator
 from datetime import timedelta
 from pathlib import Path
+from typing import Any
+from unittest.mock import patch
 
 import pytest
 from pydantic_ai import Agent
-from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart, UserPromptPart
-from pydantic_ai.models.function import AgentInfo, FunctionModel
+from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart, ToolCallPart, UserPromptPart
+from pydantic_ai.models.function import AgentInfo, DeltaToolCalls, FunctionModel
 
 from carapace.security.context import SessionSecurity
 from carapace.security.sentinel import Sentinel
@@ -32,6 +35,11 @@ async def _hang(_messages: list[ModelMessage], _info: AgentInfo) -> ModelRespons
     raise AssertionError("unreachable")
 
 
+async def _overload_mid_stream(_messages: list[ModelMessage], _info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
+    yield "Checking the"
+    raise RuntimeError("overloaded")
+
+
 def _agent(model: FunctionModel) -> Agent[None, str]:
     agent = Agent(model, instructions="Be terse.", capabilities=[LlmRequestLogCapability(source="agent")])
 
@@ -40,6 +48,19 @@ def _agent(model: FunctionModel) -> Agent[None, str]:
         return key
 
     return agent
+
+
+def _sentinel(tmp_path: Path, model: FunctionModel) -> Sentinel:
+    (tmp_path / "skills").mkdir(exist_ok=True)
+    return Sentinel(
+        model="test:model",
+        user="thies",
+        knowledge_dir=tmp_path,
+        skills_dir=tmp_path / "skills",
+        llm_slots=None,
+        timeout=timedelta(seconds=0.05),
+        model_factory=lambda _name, *, user: model,
+    )
 
 
 def _session(tmp_path: Path, db_factory) -> tuple[SessionEngine, ActiveSession, _FakeSubscriber]:
@@ -89,16 +110,7 @@ async def test_failed_request_keeps_its_context_with_the_error(tmp_path: Path, d
 @pytest.mark.asyncio
 async def test_sentinel_timeout_marks_its_context_failed(tmp_path: Path, db_factory) -> None:
     engine, active, _subscriber = _session(tmp_path, db_factory)
-    (tmp_path / "skills").mkdir(exist_ok=True)
-    sentinel = Sentinel(
-        model="test:model",
-        user="thies",
-        knowledge_dir=tmp_path,
-        skills_dir=tmp_path / "skills",
-        llm_slots=None,
-        timeout=timedelta(seconds=0.05),
-        model_factory=lambda _name, *, user: FunctionModel(_hang),
-    )
+    sentinel = _sentinel(tmp_path, FunctionModel(_hang))
 
     with engine.llm_request_recording(active):
         verdict = await sentinel.evaluate_tool_call(SessionSecurity("s"), "exec", {"command": "echo hi"})
@@ -108,6 +120,57 @@ async def test_sentinel_timeout_marks_its_context_failed(tmp_path: Path, db_fact
     assert context.status == "failed"
     assert context.error == verdict.explanation
     assert context.messages
+
+
+@pytest.mark.asyncio
+async def test_agent_error_mid_stream_marks_its_context_failed(tmp_path: Path, db_factory) -> None:
+    """Streamed, the request only sees a cancellation; the turn's error path supplies the error."""
+    engine, active, _subscriber = _session(tmp_path, db_factory)
+
+    async def _streaming_turn(user_input: str, *_args: Any, **_kwargs: Any) -> None:
+        async def _drain(_ctx: Any, events: AsyncIterator[Any]) -> None:
+            async for _event in events:
+                pass
+
+        await _agent(FunctionModel(stream_function=_overload_mid_stream)).run(user_input, event_stream_handler=_drain)
+
+    with patch("carapace.session.engine.run_agent_turn", new=_streaming_turn), pytest.raises(RuntimeError):
+        await engine._execute_agent_turn(
+            active,
+            "ping",
+            None,  # pyrefly: ignore[bad-argument-type]
+            [],
+            send_approval_request=lambda _request: asyncio.sleep(0),
+            collect_approvals=lambda _ids: asyncio.sleep(0, {}),
+            on_messages_snapshot=lambda _messages: None,
+            on_assistant_text=lambda _text: asyncio.sleep(0),
+        )
+
+    context = engine.session_mgr.load_llm_context(active.state.session_id, "agent")
+    assert context is not None
+    assert (context.status, context.error) == ("failed", "RuntimeError: overloaded")
+
+
+@pytest.mark.asyncio
+async def test_sentinel_timeout_between_requests_leaves_the_completed_context_alone(tmp_path: Path, db_factory) -> None:
+    engine, active, _subscriber = _session(tmp_path, db_factory)
+
+    def _call_slow_tool(_messages: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
+        return ModelResponse(parts=[ToolCallPart("slow_tool", {})])
+
+    sentinel = _sentinel(tmp_path, FunctionModel(_call_slow_tool))
+
+    @sentinel._agent.tool_plain
+    async def slow_tool() -> str:
+        await asyncio.sleep(10)
+        return "unreachable"
+
+    with engine.llm_request_recording(active):
+        await sentinel.evaluate_tool_call(SessionSecurity("s"), "exec", {"command": "echo hi"})
+
+    context = engine.session_mgr.load_llm_context(active.state.session_id, "sentinel")
+    assert context is not None
+    assert (context.status, context.error) == ("completed", None)
 
 
 @pytest.mark.asyncio

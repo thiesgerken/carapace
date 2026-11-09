@@ -338,7 +338,9 @@ class SessionUsageBudgetMixin:
 
             async def on_context_failed(self, role: LlmSource, error: str) -> None:
                 context = engine._session_mgr.load_llm_context(session_id, role)
-                if context is None:
+                # A completed context was not cut by this failure: it finished before it, e.g. a sentinel
+                # timeout during a skill file read, or belongs to an earlier evaluation.
+                if context is None or context.status not in ("running", "interrupted"):
                     return
                 completed_at = context.completed_at or datetime.now(tz=UTC)
                 failed = context.model_copy(update={"status": "failed", "error": error, "completed_at": completed_at})

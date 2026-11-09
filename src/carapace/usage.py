@@ -436,7 +436,12 @@ def llm_request_sink_scope(sink: LlmRequestObserver | None) -> Any:
 
 
 async def fail_llm_context(role: LlmSource, error: str) -> None:
-    """Mark *role*'s latest LLM context failed, for a failure decided outside the request (a timeout)."""
+    """Mark *role*'s latest LLM context failed if the failure cut it short.
+
+    For failures the request itself only sees as a cancellation: a timeout around the run, or a
+    streamed request, whose provider errors surface in the stream consumer while pydantic-ai cancels
+    the request task.
+    """
     sink = _llm_request_sink.get()
     if sink is not None:
         await sink.on_context_failed(role, error)
