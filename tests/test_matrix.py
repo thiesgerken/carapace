@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import timedelta
 from pathlib import Path
 from typing import Any
@@ -848,6 +849,60 @@ async def test_password_login_persists_user_id(tmp_path: Path, db_factory, monke
     assert stored.device_id == "DEV_NEW"
     assert stored.user_id == "@carapace:example.com"
     assert stored.user == "thies"
+
+
+def _login_response(access_token: str) -> MagicMock:
+    resp = MagicMock()
+    resp.access_token = access_token
+    resp.device_id = "DEV_NEW"
+    return resp
+
+
+@pytest.mark.anyio
+async def test_sync_loop_reauthenticates_on_unknown_token(tmp_path: Path, db_factory):
+    ch = _make_channel(tmp_path, db_factory, password="secret")
+    ch._token_file.write_text("stale", encoding="utf-8")
+    ch._client.sync = AsyncMock(
+        side_effect=[nio.SyncError("Unknown token", "M_UNKNOWN_TOKEN"), asyncio.CancelledError()]
+    )
+    ch._client.login = AsyncMock(return_value=_login_response("tok_new"))
+
+    await ch._sync_loop()
+
+    ch._client.login.assert_awaited_once()
+    assert ch._client.sync.await_count == 2
+    stored = MatrixTokensFile.model_validate(yaml.safe_load(ch._token_file.read_text(encoding="utf-8"))).tokens[0]
+    assert stored.access_token == "tok_new"
+
+
+@pytest.mark.anyio
+async def test_sync_loop_retries_failed_reauthentication(tmp_path: Path, db_factory, monkeypatch: pytest.MonkeyPatch):
+    ch = _make_channel(tmp_path, db_factory, password="secret")
+    unknown_token = nio.SyncError("Unknown token", "M_UNKNOWN_TOKEN")
+    ch._client.sync = AsyncMock(side_effect=[unknown_token, unknown_token, asyncio.CancelledError()])
+    ch._client.login = AsyncMock(side_effect=[nio.LoginError("homeserver hiccup"), _login_response("tok_new")])
+    sleep = AsyncMock()
+    monkeypatch.setattr(asyncio, "sleep", sleep)
+
+    await ch._sync_loop()
+
+    assert ch._client.login.await_count == 2
+    assert ch._client.sync.await_count == 3
+    sleep.assert_awaited_once_with(5)
+
+
+@pytest.mark.anyio
+async def test_sync_loop_stops_on_unknown_token_without_password(tmp_path: Path, db_factory):
+    ch = _make_channel(tmp_path, db_factory)
+    ch._client.sync = AsyncMock(
+        side_effect=[nio.SyncError("Unknown token", "M_UNKNOWN_TOKEN"), asyncio.CancelledError()]
+    )
+    ch._client.login = AsyncMock()
+
+    await ch._sync_loop()
+
+    ch._client.login.assert_not_awaited()
+    ch._client.sync.assert_awaited_once()
 
 
 @pytest.mark.anyio
