@@ -1,6 +1,42 @@
 # CHANGELOG
 
 
+## v0.172.4 (2026-11-09)
+
+
+### Other
+
+
+- Merge pull request #419 from thiesgerken/renovate/pnpm-12.x
+  ([`634cd6f`](https://github.com/thiesgerken/carapace/commit/634cd6f7a30c56ba1acf3ddef69ebe4a4ba0b114))
+
+- Merge pull request #430 from thiesgerken/renovate/jsdom-31.x
+  ([`23176c5`](https://github.com/thiesgerken/carapace/commit/23176c58a898cb4b31c7dd8bb44507877e4605eb))
+
+- ✅ test(frontend): compare the cache tick position with a tolerance
+  ([`bbb566d`](https://github.com/thiesgerken/carapace/commit/bbb566d357033f9c6d89d27cdf022b5f5a7192aa))
+
+  jsdom 31 serializes CSS numbers with at most three decimals, so the exact float comparison against the computed percentage fails.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aUz5aruKwJbmfN76MTy
+
+### ⬆️ Dependencies
+
+
+- ⬆️ chore: upgrade pnpm to 12.18.0
+  ([`634cd6f`](https://github.com/thiesgerken/carapace/commit/634cd6f7a30c56ba1acf3ddef69ebe4a4ba0b114))
+
+- ⬆️ chore: upgrade pnpm to 12.18.0
+  ([`7c73c28`](https://github.com/thiesgerken/carapace/commit/7c73c28435ad2841f7147df09c289b68dc2df932))
+
+- ⬆️ chore: upgrade jsdom to 31.0.0
+  ([`23176c5`](https://github.com/thiesgerken/carapace/commit/23176c58a898cb4b31c7dd8bb44507877e4605eb))
+
+- ⬆️ chore: upgrade jsdom to 31.0.0
+  ([`49e7acc`](https://github.com/thiesgerken/carapace/commit/49e7acc3eae2f31f259ce438b8b96d41040497a6))
+
 ## v0.172.3 (2026-11-09)
 
 
