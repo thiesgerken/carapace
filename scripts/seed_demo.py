@@ -53,10 +53,16 @@ DEMO_USER = "demo"
 DEMO_PASSWORD = "carapace-demo"
 DEMO_MODEL = "anthropic:claude-sonnet-4-6"
 DEMO_SUBSCRIPTION_MODEL = "openai-codex:gpt-5.5"
-# Memory runs on the subscription; an older extraction ran on the paid API model.
+# Memory runs on the subscription; an older extraction ran on the paid API model. Today's spend
+# sits close to the day limits, so the home page shows the budget notice.
+DEMO_MEMORY_BUDGET = MemoryBudget(
+    cost_usd_per_day=Decimal("0.024"),
+    cost_usd_per_month=Decimal("1.00"),
+    equivalent_cost_usd_per_day=Decimal("0.07"),
+)
 DEMO_USER_CONFIG = UserConfig(
     default_models=UserDefaultModelsConfig(memory_low=DEMO_SUBSCRIPTION_MODEL),
-    memory=UserMemoryConfig(budget=MemoryBudget(cost_usd_per_day=Decimal("0.10"), cost_usd_per_month=Decimal("1.00"))),
+    memory=UserMemoryConfig(budget=DEMO_MEMORY_BUDGET),
 )
 
 
