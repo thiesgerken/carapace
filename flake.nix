@@ -96,7 +96,7 @@
         // nixpkgs.lib.optionalAttrs (builtins.elem system linuxSystems) (
           {
             inherit (p.backend) server;
-            inherit (p.frontend) frontend npmDeps twemoji;
+            inherit (p.frontend) frontend twemoji;
             default = p.backend.server;
           }
           // p.images

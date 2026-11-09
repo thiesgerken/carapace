@@ -28,8 +28,6 @@ let
     ];
     NEXT_TELEMETRY_DISABLED = "1";
     CI = "true";
-    env.HOME = "/tmp/carapace-frontend-home";
-    preConfigure = "mkdir -p $HOME";
     preBuild = ''
       mkdir -p node_modules/.cache/twemoji-40c2213/twemoji-40c2213/v/17.0.2
       cp -R ${twemoji} node_modules/.cache/twemoji-40c2213/twemoji-40c2213/v/17.0.2/svg
@@ -65,7 +63,7 @@ let
   );
 in
 {
-  inherit frontend npmDeps twemoji;
+  inherit frontend twemoji;
   checks = {
     frontend-lint = check "lint" "npm run lint";
     frontend-test = check "test" "npm run test";
