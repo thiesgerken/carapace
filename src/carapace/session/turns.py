@@ -48,6 +48,7 @@ from ..usage import (
     LlmRequestState,
     SessionBudgetExceededError,
     aggregate_turn_generation,
+    fail_llm_context,
     interrupted_request_record,
 )
 from ..ws_models import ApprovalRequest, ApprovalResponse, Attachment, FinalStatus, TurnUsage
@@ -551,19 +552,24 @@ class SessionTurnMixin(SessionTurnHost):
     ) -> TurnExecutionResult:
         with self.llm_request_recording(active):
             self._assert_llm_budget_available(active)
-            messages, output, thinking, final_status = await _engine_module().run_agent_turn(
-                user_input,
-                deps,
-                message_history,
-                send_approval_request=send_approval_request,
-                collect_approvals=collect_approvals,
-                on_token=partial(self._handle_token_chunk, active),
-                on_thinking_token=partial(self._handle_thinking_token_chunk, active),
-                on_assistant_text=on_assistant_text,
-                on_messages_snapshot=lambda snapshot: on_messages_snapshot(snapshot),
-                before_llm_call=lambda: self._assert_llm_budget_available(active),
-                get_usage_limits=lambda: self._remaining_usage_limits(active),
-            )
+            try:
+                messages, output, thinking, final_status = await _engine_module().run_agent_turn(
+                    user_input,
+                    deps,
+                    message_history,
+                    send_approval_request=send_approval_request,
+                    collect_approvals=collect_approvals,
+                    on_token=partial(self._handle_token_chunk, active),
+                    on_thinking_token=partial(self._handle_thinking_token_chunk, active),
+                    on_assistant_text=on_assistant_text,
+                    on_messages_snapshot=lambda snapshot: on_messages_snapshot(snapshot),
+                    before_llm_call=lambda: self._assert_llm_budget_available(active),
+                    get_usage_limits=lambda: self._remaining_usage_limits(active),
+                )
+            except Exception as exc:
+                # The agent streams, so a provider error mid-stream reaches its request only as a cancellation.
+                await fail_llm_context("agent", f"{type(exc).__name__}: {exc}")
+                raise
         return TurnExecutionResult(
             messages=messages,
             output=output,

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 from collections.abc import Mapping
+from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from typing import TYPE_CHECKING, Any
 
@@ -15,6 +16,7 @@ from ..models.session import SessionBudget
 from ..usage import (
     BudgetGauge,
     BudgetMetric,
+    LlmContext,
     LlmRequestRecord,
     LlmRequestState,
     LlmSource,
@@ -240,6 +242,11 @@ class SessionUsageBudgetMixin:
         self._session_mgr.clear_llm_request_state(active.state.session_id)
         await self._broadcast(active, "on_llm_activity", None)
 
+    async def _save_llm_context(self, active: ActiveSession, context: LlmContext) -> None:
+        # ponytail: the whole context is rewritten on every status change; split messages out if writes get slow.
+        self._session_mgr.save_llm_context(active.state.session_id, context)
+        await self._broadcast(active, "on_llm_context", context.role, context.request_id, context.status)
+
     async def _maybe_promote_llm_request_state(self, active: ActiveSession, state: LlmRequestState | None) -> None:
         if state is None:
             return
@@ -327,6 +334,19 @@ class SessionUsageBudgetMixin:
                 engine._session_mgr.save_llm_request_log(session_id, active.llm_request_log)
                 if track_activity:
                     await engine._clear_llm_request_state(active)
+
+            async def on_context(self, context: LlmContext) -> None:
+                await engine._save_llm_context(active, context)
+
+            async def on_context_failed(self, role: LlmSource, error: str) -> None:
+                context = engine._session_mgr.load_llm_context(session_id, role)
+                # A completed context was not cut by this failure: it finished before it, e.g. a sentinel
+                # timeout during a skill file read, or belongs to an earlier evaluation.
+                if context is None or context.status not in ("running", "interrupted"):
+                    return
+                completed_at = context.completed_at or datetime.now(tz=UTC)
+                failed = context.model_copy(update={"status": "failed", "error": error, "completed_at": completed_at})
+                await engine._save_llm_context(active, failed)
 
         with llm_request_sink_scope(Sink()):
             yield
