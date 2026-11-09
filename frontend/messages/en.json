@@ -1184,7 +1184,8 @@
             "unarchive": "Unarchive session",
             "includeInRepo": "Include in repo",
             "keepPrivate": "Keep private",
-            "delete": "Delete session"
+            "delete": "Delete session",
+            "debugView": "Debug view"
         },
         "badges": {
             "archived": "Archived",
@@ -1619,13 +1620,7 @@
             "summarize": "summarized",
             "truncate": "truncated",
             "drop": "dropped"
-        },
-        "agentView": "Agent view",
-        "agentViewOff": "Normal view",
-        "agentViewHint": "Show the history exactly as the agent sees it",
-        "agentSummary": "Compacted summary",
-        "agentEmpty": "No history yet.",
-        "agentError": "Could not load agent view. Check your connection or permissions."
+        }
     },
     "promptPreview": {
         "role": "Role",
@@ -1648,6 +1643,53 @@
         "views": {
             "rendered": "Rendered",
             "raw": "Raw"
+        }
+    },
+    "debugView": {
+        "title": "Debug view",
+        "hint": "The latest request of each agent role, exactly as sent to the model. Updates live.",
+        "back": "Back to chat",
+        "role": "Agent role",
+        "roles": {
+            "agent": "Agent",
+            "sentinel": "Sentinel",
+            "titler": "Titler",
+            "compaction": "Compaction"
+        },
+        "empty": "This role has not sent a request in this session yet.",
+        "loadError": "Could not load the LLM context: {error}",
+        "model": "Model",
+        "status": "Status",
+        "inputTokens": "Input tokens",
+        "started": "Started",
+        "compacted": "Compacted",
+        "statuses": {
+            "running": "Running",
+            "completed": "Completed",
+            "failed": "Failed",
+            "interrupted": "Interrupted"
+        },
+        "compactionTargets": {
+            "agent": "Agent model history",
+            "sentinel": "Sentinel shadow conversation"
+        },
+        "instructions": "Instructions",
+        "dynamic": "dynamic",
+        "tools": "Tool definitions ({count})",
+        "messages": "Messages ({count})",
+        "request": "Request",
+        "response": "Response",
+        "waiting": "Waiting for the response…",
+        "showRaw": "Raw JSON",
+        "showCards": "Cards",
+        "parts": {
+            "systemPrompt": "System",
+            "userPrompt": "User",
+            "text": "Text",
+            "thinking": "Thinking",
+            "toolCall": "Tool call",
+            "toolReturn": "Tool return",
+            "retryPrompt": "Retry prompt"
         }
     }
 }
