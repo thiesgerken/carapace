@@ -74,17 +74,25 @@ class MatrixChannelManager:
             return MatrixChannelState(status="failed", error=error)
         return MatrixChannelState(status="disabled")
 
-    async def start_user_with_retry(self, username: str, user_config: UserConfig) -> None:
-        """Start a user's channel at server startup without raising.
+    async def reload_user_with_retry(self, username: str, user_config: UserConfig) -> None:
+        """Apply a known-good config without raising, retrying a failed start in the background.
 
-        An unreachable homeserver must not keep the server (and with it the settings UI that
-        could fix the channel) from starting. A failed start is recorded for the settings UI
-        and retried in the background with capped exponential backoff until it succeeds or
-        ``reload_user()`` / ``stop_all()`` takes over.
+        Used at server startup and to restore the previous config after a failed settings save.
+        An unreachable homeserver must neither keep the server (and with it the settings UI that
+        could fix the channel) from starting nor leave the channel dead until the next restart.
+        A failed start is recorded for the settings UI and retried with capped exponential
+        backoff until it succeeds or the next reload or ``stop_all()`` takes over.
         """
         normalized_username = normalize_username(username)
         async with self._lock:
-            if not await self._try_start(normalized_username, user_config):
+            await self._cancel_start_retry(normalized_username)
+            self._start_errors.pop(normalized_username, None)
+            self._configs.pop(normalized_username, None)
+            if (current := self._channels.pop(normalized_username, None)) is not None:
+                await self._stop_quietly(normalized_username, current)
+            if not user_config.channels.matrix.enabled:
+                return
+            if not await self._try_start(normalized_username, user_config, first_attempt=True):
                 self._start_retries[normalized_username] = asyncio.create_task(
                     self._retry_start(normalized_username, user_config)
                 )
@@ -134,21 +142,25 @@ class MatrixChannelManager:
             self._configs.clear()
             self._start_errors.clear()
         for username, channel in channels:
-            try:
-                await channel.stop()
-            except Exception as exc:
-                logger.warning(f"Matrix channel stop for {username!r} failed: {exc}")
+            await self._stop_quietly(username, channel)
 
-    async def _try_start(self, username: str, user_config: UserConfig) -> bool:
+    async def _try_start(self, username: str, user_config: UserConfig, *, first_attempt: bool) -> bool:
         """Start a channel under the lock; on failure record the error and return False."""
-        channel = self._channel_factory(username, user_config)
+        channel: MatrixChannelHandle | None = None
         try:
+            channel = self._channel_factory(username, user_config)
             await channel.start()
         except Exception as exc:
-            self._start_errors[username] = _describe_start_error(exc)
-            logger.exception(f"Matrix channel start for {username!r} failed")
-            # Release the half-started client before the next attempt builds a fresh one.
-            await channel.stop()
+            error = _describe_start_error(exc)
+            self._start_errors[username] = error
+            if first_attempt:
+                logger.exception(f"Matrix channel start for {username!r} failed")
+            else:
+                # One line per retry: an outage can last for hours of attempts.
+                logger.warning(f"Matrix channel start for {username!r} failed again: {error}")
+            if channel is not None:
+                # Release the half-started client before the next attempt builds a fresh one.
+                await self._stop_quietly(username, channel)
             return False
         self._start_errors.pop(username, None)
         self._channels[username] = channel
@@ -160,10 +172,18 @@ class MatrixChannelManager:
             logger.info(f"Retrying Matrix channel start for {username!r} in {delay:.0f}s")
             await asyncio.sleep(delay)
             async with self._lock:
-                if await self._try_start(username, user_config):
+                if await self._try_start(username, user_config, first_attempt=False):
                     del self._start_retries[username]
                     logger.info(f"Matrix channel for {username!r} started after retry")
                     return
+
+    @staticmethod
+    async def _stop_quietly(username: str, channel: MatrixChannelHandle) -> None:
+        # Stopping is cleanup on paths that must not raise (startup, retry, shutdown).
+        try:
+            await channel.stop()
+        except Exception as exc:
+            logger.warning(f"Matrix channel stop for {username!r} failed: {exc}")
 
     async def _cancel_start_retry(self, username: str) -> None:
         # Callers hold the lock, so the task is either sleeping or waiting for the lock and

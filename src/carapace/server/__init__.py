@@ -155,11 +155,13 @@ async def _bootstrap_user_knowledge_repo(
             summary = await git_store.pull_from_remote()
             logger.info(f"Pulled from remote for user {username}: {summary}")
         except RuntimeError as exc:
-            # An unreachable or diverged remote must not keep the server from starting. The
-            # local repo stays usable, and /pull syncs it once the remote is fixed.
+            # An unreachable or diverged remote must not keep the server from starting. Seeding
+            # is skipped too: on a fresh repo the pull would have adopted the remote branch, and
+            # a local seed commit instead would fork the history so later pulls never fast-forward.
             logger.error(
                 f"Pulling knowledge Git remote for user {username} failed, continuing with the local repo: {exc}"
             )
+            return
     else:
         await git_store.remove_remote()
 
@@ -639,7 +641,7 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
     _matrix_channel_manager = MatrixChannelManager(matrix_channel_factory)
     for username, stored_user in sorted(_auth_store.load_users().users.items()):
         if stored_user.enabled and stored_user.config.channels.matrix.enabled:
-            await _matrix_channel_manager.start_user_with_retry(username, stored_user.config)
+            await _matrix_channel_manager.reload_user_with_retry(username, stored_user.config)
 
     logger.info(
         f"carapace server ready — model={_config.agent.model}, "

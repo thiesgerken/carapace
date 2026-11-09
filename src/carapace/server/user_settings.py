@@ -463,10 +463,10 @@ async def _rollback_settings_runtime(
     git_changed: bool,
 ) -> None:
     if matrix_changed:
-        try:
-            await _reload_matrix_settings(username, config)
-        except HTTPException as exc:
-            logger.warning(f"Matrix settings runtime rollback failed for user {username!r}: {exc.detail}")
+        # The new config already failed with a 500. The restored one gets startup semantics: if
+        # it fails to start too (e.g. homeserver outage), keep retrying in the background
+        # instead of leaving the channel dead until the next restart.
+        await server._matrix_channel_manager.reload_user_with_retry(username, config)
     if git_changed:
         try:
             await _reload_git_settings(username, config.git)
