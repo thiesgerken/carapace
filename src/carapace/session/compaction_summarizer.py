@@ -131,6 +131,7 @@ def summary_agent(
     *,
     prompt_prefix: str,
     model: Model | None,
+    model_id: str,
     model_settings: ModelSettings | None,
     compaction_target: CompactionTarget,
 ) -> Agent[None, str]:
@@ -140,7 +141,9 @@ def summary_agent(
         output_type=str,
         instructions=join_prompt_sections(prompt_prefix, system),
         model_settings=model_settings,
-        capabilities=[LlmRequestLogCapability(source="compaction", compaction_target=compaction_target)],
+        capabilities=[
+            LlmRequestLogCapability(source="compaction", model_id=model_id, compaction_target=compaction_target)
+        ],
         retries={"tools": 1, "output": 2},
     )
 
@@ -164,6 +167,7 @@ async def _run_summary(
         system,
         prompt_prefix=prompt_prefix,
         model=resolved,
+        model_id=model,
         model_settings=model_settings,
         compaction_target=compaction_target,
     )

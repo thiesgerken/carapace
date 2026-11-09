@@ -22,14 +22,14 @@ Reply with ONLY the title, nothing else.
 """
 
 
-def title_agent(model: Model | None, *, model_settings: ModelSettings | None) -> Agent[None, str]:
+def title_agent(model: Model | None, *, model_id: str, model_settings: ModelSettings | None) -> Agent[None, str]:
     """*model* None leaves it to the run, as the prompt preview does."""
     return Agent(
         model,
         output_type=str,
         instructions=TITLE_INSTRUCTIONS,
         model_settings=model_settings,
-        capabilities=[LlmRequestLogCapability(source="titler")],
+        capabilities=[LlmRequestLogCapability(source="titler", model_id=model_id)],
         retries={"tools": 1, "output": 2},
     )
 
@@ -74,7 +74,7 @@ async def generate_title(
     prompt = "\n".join(lines)[:2000]
 
     resolved = model_factory(model, user=user) if model_factory is not None else infer_model(model)
-    agent = title_agent(resolved, model_settings=model_settings)
+    agent = title_agent(resolved, model_id=model, model_settings=model_settings)
     try:
         if before_llm_call is not None:
             before_llm_call()

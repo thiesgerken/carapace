@@ -82,7 +82,12 @@ def capped_model_settings(config: Config, model: str, output_tokens_cap: int) ->
 
 
 def structured_agent[OutputT: BaseModel](
-    system: str, output_type: type[OutputT], model: Model | None, *, model_settings: ModelSettings | None
+    system: str,
+    output_type: type[OutputT],
+    model: Model | None,
+    *,
+    model_id: str,
+    model_settings: ModelSettings | None,
 ) -> Agent[None, OutputT]:
     """*model* None leaves it to the run, as the prompt preview does."""
     return Agent(
@@ -90,7 +95,7 @@ def structured_agent[OutputT: BaseModel](
         output_type=output_type,
         instructions=system,
         model_settings=model_settings,
-        capabilities=[LlmRequestLogCapability(source="memory")],
+        capabilities=[LlmRequestLogCapability(source="memory", model_id=model_id)],
         retries={"output": 0},
     )
 
@@ -111,7 +116,9 @@ async def run_structured[OutputT: BaseModel](
     *model_settings*) is an honest upper bound. An invalid output fails the task; a manual retry
     goes through the budget gate again.
     """
-    agent = structured_agent(system, output_type, model_factory(model, user=user), model_settings=model_settings)
+    agent = structured_agent(
+        system, output_type, model_factory(model, user=user), model_id=model, model_settings=model_settings
+    )
     usage = RunUsage()
     started = time.monotonic()
     # The run accumulates into *usage* and *messages* in place, so both survive a failed run:

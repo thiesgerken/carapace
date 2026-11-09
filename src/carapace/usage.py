@@ -38,7 +38,7 @@ from pydantic_ai.messages import (
 )
 from pydantic_ai.models import ModelRequestContext
 from pydantic_ai.tools import AgentDepsT, RunContext, ToolDefinition
-from pydantic_ai.usage import RunUsage, UsageLimits
+from pydantic_ai.usage import RequestUsage, RunUsage, UsageLimits
 
 from .models.config import is_subscription_model
 from .models.session import SessionBudget
@@ -103,7 +103,7 @@ def usage_cost(model_key: str, usage: ModelUsage) -> CostSplit:
     return cost_split(model_key, price_for_usage(model_key, usage) or Decimal(0))
 
 
-def _merge_run_usage_into_bucket(bucket: ModelUsage, usage: RunUsage) -> None:
+def _merge_run_usage_into_bucket(bucket: ModelUsage, usage: RunUsage | RequestUsage) -> None:
     bucket.input_tokens += usage.input_tokens or 0
     bucket.output_tokens += usage.output_tokens or 0
     bucket.cache_read_tokens += usage.cache_read_tokens or 0
@@ -144,6 +144,30 @@ def provider_cost_usd_from_messages(messages: list[ModelMessage]) -> Decimal | N
         total += cost
         found = True
     return total if found else None
+
+
+class RequestCost(BaseModel):
+    """What a single model request cost, in the terms of CostSplit."""
+
+    # Both None when the model has no known pricing and the provider reported no cost.
+    cost_usd: Decimal | None
+    equivalent_cost_usd: Decimal | None
+    # What the provider itself reported, if it did (OpenRouter, for example).
+    provider_cost_usd: Decimal | None
+
+
+def request_cost(model_id: str, response: ModelResponse) -> RequestCost:
+    """Price one response; *model_id* is the carapace model id (provider:model), not the API model name."""
+    provider_cost = provider_cost_usd_from_messages([response])
+    usage = ModelUsage()
+    _merge_run_usage_into_bucket(usage, response.usage)
+    _merge_cost_into_bucket(usage, provider_cost)
+    equivalent = price_for_usage(model_id, usage)
+    return RequestCost(
+        cost_usd=None if equivalent is None else cost_split(model_id, equivalent).actual,
+        equivalent_cost_usd=equivalent,
+        provider_cost_usd=provider_cost,
+    )
 
 
 class UsageTracker(BaseModel):
@@ -409,7 +433,8 @@ class LlmContext(BaseModel):
     role: LlmSource
     # Only for the compaction role: whose model history or shadow conversation was compacted.
     compaction_target: CompactionTarget | None = None
-    model_name: str | None
+    # The carapace model id (provider:model) the request was priced with, not the API model name.
+    model_name: str
     status: LlmContextStatus
     started_at: datetime
     completed_at: datetime | None = None
@@ -418,6 +443,8 @@ class LlmContext(BaseModel):
     tool_definitions: list[ToolDefinition]
     response: ModelResponse | None = None
     error: str | None = None
+    # Priced when the response arrives, like the usage tracker prices at record time.
+    cost: RequestCost | None = None
 
 
 class LlmRequestObserver(Protocol):
@@ -783,6 +810,7 @@ def _request_llm_context(
     request_context: ModelRequestContext,
     *,
     state: LlmRequestState,
+    model_id: str,
     compaction_target: CompactionTarget | None,
 ) -> LlmContext:
     params = request_context.model_request_parameters
@@ -790,7 +818,7 @@ def _request_llm_context(
         request_id=state.request_id,
         role=state.source,
         compaction_target=compaction_target,
-        model_name=state.model_name,
+        model_name=model_id,
         status="running",
         started_at=state.started_at,
         instructions=list(params.instruction_parts or []),
@@ -804,6 +832,9 @@ class LlmRequestLogCapability(AbstractCapability[AgentDepsT]):
     """Report every model request to the session sink: activity, usage record and LLM context."""
 
     source: LlmSource
+    # The carapace model id (provider:model): pricing and subscription checks key on it, and the
+    # provider's API model name is often a short or dated alias of it.
+    model_id: str
     compaction_target: CompactionTarget | None = None
 
     def __post_init__(self) -> None:
@@ -841,17 +872,16 @@ class LlmRequestLogCapability(AbstractCapability[AgentDepsT]):
         request_context: ModelRequestContext,
     ) -> ModelRequestContext:
         sink = _llm_request_sink.get()
-        api_model_name = request_context.model.model_name
-        carapace_id = getattr(ctx.deps, "agent_model_id", None)
-        stored_model_name = carapace_id if isinstance(carapace_id, str) and carapace_id else api_model_name
         state = LlmRequestState(
             request_id=secrets.token_hex(8),
             source=self.source,
-            model_name=stored_model_name,
+            model_name=self.model_id,
             started_at=datetime.now(tz=UTC),
         )
         _current_llm_request_state.set(state)
-        context = _request_llm_context(request_context, state=state, compaction_target=self.compaction_target)
+        context = _request_llm_context(
+            request_context, state=state, model_id=self.model_id, compaction_target=self.compaction_target
+        )
         _current_llm_context.set(context)
         if sink is not None:
             await sink.on_request_started(state.model_copy(deep=True))
@@ -874,21 +904,19 @@ class LlmRequestLogCapability(AbstractCapability[AgentDepsT]):
             request_context.messages,
             model_name=api_model_name,
         )
-        carapace_id = getattr(ctx.deps, "agent_model_id", None)
-        stored_model_name = carapace_id if isinstance(carapace_id, str) and carapace_id else api_model_name
         completed_at = datetime.now(tz=UTC)
         if state is None:
             state = LlmRequestState(
                 request_id=secrets.token_hex(8),
                 source=self.source,
-                model_name=stored_model_name,
+                model_name=self.model_id,
                 started_at=completed_at,
             )
         record = LlmRequestRecord(
             ts=completed_at,
             request_id=state.request_id,
             source=self.source,
-            model_name=state.model_name or stored_model_name,
+            model_name=self.model_id,
             input_tokens=usage.input_tokens or 0,
             output_tokens=usage.output_tokens or 0,
             started_at=state.started_at,
@@ -905,7 +933,12 @@ class LlmRequestLogCapability(AbstractCapability[AgentDepsT]):
             await sink.on_request_completed(record)
         if (context := _current_llm_context.get()) is not None:
             context = context.model_copy(
-                update={"status": "completed", "response": response, "completed_at": completed_at}
+                update={
+                    "status": "completed",
+                    "response": response,
+                    "completed_at": completed_at,
+                    "cost": request_cost(self.model_id, response),
+                }
             )
             _current_llm_context.set(context)
             if sink is not None:

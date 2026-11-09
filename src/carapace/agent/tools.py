@@ -1087,7 +1087,7 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
         # date and session ID don't split the cached prefix.
         instructions=[system_prompt, lambda: build_session_info(deps)],
         capabilities=[
-            LlmRequestLogCapability(source="agent"),
+            LlmRequestLogCapability(source="agent", model_id=deps.agent_model_id),
             AutonomyLimitCapability(
                 streak=deps.autonomy,
                 session_state=deps.session_state,
