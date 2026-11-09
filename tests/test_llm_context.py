@@ -13,6 +13,7 @@ import pytest
 from pydantic_ai import Agent
 from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart, ToolCallPart, UserPromptPart
 from pydantic_ai.models.function import AgentInfo, DeltaToolCalls, FunctionModel
+from pydantic_ai.usage import RequestUsage
 
 from carapace.security.context import SessionSecurity
 from carapace.security.sentinel import Sentinel
@@ -92,6 +93,22 @@ async def test_completed_request_persists_what_was_sent_and_the_response(tmp_pat
         ("agent", context.request_id, "running"),
         ("agent", context.request_id, "completed"),
     ]
+
+
+@pytest.mark.asyncio
+async def test_request_record_keeps_cache_and_audio_tokens(tmp_path: Path, db_factory) -> None:
+    engine, active, _ = _session(tmp_path, db_factory)
+    usage = RequestUsage(input_tokens=1000, output_tokens=20, cache_read_tokens=800, cache_write_tokens=150)
+
+    def reply(_messages: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
+        return ModelResponse(parts=[TextPart("pong")], usage=usage)
+
+    with engine.llm_request_recording(active):
+        await _agent(FunctionModel(reply)).run("ping")
+
+    [record] = engine.session_mgr.load_llm_request_log(active.state.session_id).records
+    assert (record.input_tokens, record.cache_read_tokens, record.cache_write_tokens) == (1000, 800, 150)
+    assert (record.input_audio_tokens, record.output_audio_tokens, record.cache_audio_read_tokens) == (0, 0, 0)
 
 
 @pytest.mark.asyncio

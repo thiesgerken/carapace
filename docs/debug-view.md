@@ -91,6 +91,17 @@ The session WebSocket sends a notification on every status change, without the c
 
 Clients refetch the role's context over REST when they get one.
 
+`GET /api/sessions/{session_id}/llm-requests?role=<role>` returns the session's request timeline:
+one `LlmRequestRecord` per request, oldest first, from the `session_llm_requests` log that also
+feeds the usage stats. `role` is optional and takes the same roles as the contexts. It needs the
+`history` read scope.
+
+A record keeps the numbers of a request, not its context, so the timeline grows by one small row
+per request instead of one full context. Its `outcome` is `completed`, or `interrupted` for an agent
+request cut short when the turn stopped. Failed requests leave no record. Token counts are
+provider-reported: input, output, cache read, cache write, audio, and reasoning when the provider
+reports it. Cache and audio counts are `null` on records written before they were kept.
+
 ## Input tokens
 
 The total input tokens of a request are the provider-reported `response.usage.input_tokens`. Running,

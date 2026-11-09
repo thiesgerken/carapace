@@ -4184,6 +4184,32 @@ def test_llm_context_endpoint_returns_the_stored_context_verbatim(auth_headers):
     assert client.get("/api/sessions/nope/llm-contexts/agent", headers=auth_headers).status_code == 404
 
 
+def test_llm_requests_endpoint_lists_records_filtered_by_role(auth_headers):
+    from datetime import UTC, datetime
+
+    from carapace.usage import LlmRequestLog, LlmRequestRecord
+
+    sid = _create_session(auth_headers)
+    now = datetime.now(tz=UTC)
+    legacy = LlmRequestRecord(ts=now, source="agent", input_tokens=100)
+    agent = LlmRequestRecord(ts=now, source="agent", input_tokens=200, cache_read_tokens=150, cache_write_tokens=0)
+    sentinel = LlmRequestRecord(ts=now, source="sentinel", input_tokens=50)
+    srv._engine.session_mgr.save_llm_request_log(sid, LlmRequestLog(records=[legacy, sentinel, agent]))
+    client = TestClient(app)
+
+    resp = client.get(f"/api/sessions/{sid}/llm-requests", params={"role": "agent"}, headers=auth_headers)
+    assert resp.status_code == 200
+    assert resp.json() == [legacy.model_dump(mode="json"), agent.model_dump(mode="json")]
+    assert resp.json()[0]["cache_read_tokens"] is None
+
+    assert len(client.get(f"/api/sessions/{sid}/llm-requests", headers=auth_headers).json()) == 3
+    assert (
+        client.get(f"/api/sessions/{sid}/llm-requests", params={"role": "memory"}, headers=auth_headers).status_code
+        == 422
+    )
+    assert client.get("/api/sessions/nope/llm-requests", headers=auth_headers).status_code == 404
+
+
 def test_history_annotations_carry_model_facing_text(auth_headers):
     """The main (uncompacted) /history view exposes the model summary + shortened tool text inline."""
     from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, ToolCallPart, ToolReturnPart

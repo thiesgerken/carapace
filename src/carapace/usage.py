@@ -493,6 +493,12 @@ class LlmRequestRecord(BaseModel):
     outcome: LlmRequestOutcome = "completed"
     input_tokens: int = 0
     output_tokens: int = 0
+    # None on records written before these counts were kept: unknown, not zero.
+    cache_read_tokens: int | None = None
+    cache_write_tokens: int | None = None
+    input_audio_tokens: int | None = None
+    output_audio_tokens: int | None = None
+    cache_audio_read_tokens: int | None = None
     started_at: datetime | None = None
     first_thinking_at: datetime | None = None
     last_thinking_at: datetime | None = None
@@ -891,6 +897,11 @@ class LlmRequestLogCapability(AbstractCapability[AgentDepsT]):
             model_name=state.model_name or stored_model_name,
             input_tokens=usage.input_tokens or 0,
             output_tokens=usage.output_tokens or 0,
+            cache_read_tokens=usage.cache_read_tokens,
+            cache_write_tokens=usage.cache_write_tokens,
+            input_audio_tokens=usage.input_audio_tokens,
+            output_audio_tokens=usage.output_audio_tokens,
+            cache_audio_read_tokens=usage.cache_audio_read_tokens,
             started_at=state.started_at,
             first_thinking_at=state.first_thinking_at,
             last_thinking_at=state.last_thinking_at,
