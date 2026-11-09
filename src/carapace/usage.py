@@ -520,6 +520,11 @@ class LlmRequestRecord(BaseModel):
     outcome: LlmRequestOutcome = "completed"
     input_tokens: int = 0
     output_tokens: int = 0
+    # None on records written before these counts were kept: unknown, not zero.
+    cache_read_tokens: int | None = None
+    cache_write_tokens: int | None = None
+    # None on interrupted requests and on records written before costs were kept.
+    cost: RequestCost | None = None
     started_at: datetime | None = None
     first_thinking_at: datetime | None = None
     last_thinking_at: datetime | None = None
@@ -912,6 +917,7 @@ class LlmRequestLogCapability(AbstractCapability[AgentDepsT]):
                 model_name=self.model_id,
                 started_at=completed_at,
             )
+        cost = request_cost(self.model_id, response)
         record = LlmRequestRecord(
             ts=completed_at,
             request_id=state.request_id,
@@ -919,6 +925,9 @@ class LlmRequestLogCapability(AbstractCapability[AgentDepsT]):
             model_name=self.model_id,
             input_tokens=usage.input_tokens or 0,
             output_tokens=usage.output_tokens or 0,
+            cache_read_tokens=usage.cache_read_tokens,
+            cache_write_tokens=usage.cache_write_tokens,
+            cost=cost,
             started_at=state.started_at,
             first_thinking_at=state.first_thinking_at,
             last_thinking_at=state.last_thinking_at,
@@ -937,7 +946,7 @@ class LlmRequestLogCapability(AbstractCapability[AgentDepsT]):
                     "status": "completed",
                     "response": response,
                     "completed_at": completed_at,
-                    "cost": request_cost(self.model_id, response),
+                    "cost": cost,
                 }
             )
             _current_llm_context.set(context)

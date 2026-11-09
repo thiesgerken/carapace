@@ -99,6 +99,21 @@ async def test_completed_request_persists_what_was_sent_and_the_response(tmp_pat
 
 
 @pytest.mark.asyncio
+async def test_request_record_keeps_cache_tokens(tmp_path: Path, db_factory) -> None:
+    engine, active, _ = _session(tmp_path, db_factory)
+    usage = RequestUsage(input_tokens=1000, output_tokens=20, cache_read_tokens=800, cache_write_tokens=150)
+
+    def reply(_messages: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
+        return ModelResponse(parts=[TextPart("pong")], usage=usage)
+
+    with engine.llm_request_recording(active):
+        await _agent(FunctionModel(reply)).run("ping")
+
+    [record] = engine.session_mgr.load_llm_request_log(active.state.session_id).records
+    assert (record.input_tokens, record.cache_read_tokens, record.cache_write_tokens) == (1000, 800, 150)
+
+
+@pytest.mark.asyncio
 async def test_failed_request_keeps_its_context_with_the_error(tmp_path: Path, db_factory) -> None:
     engine, active, _subscriber = _session(tmp_path, db_factory)
 
@@ -230,6 +245,8 @@ async def test_completed_context_is_priced_with_the_carapace_model_id(
     assert context.cost == RequestCost(
         cost_usd=expected if billed else Decimal(0), equivalent_cost_usd=expected, provider_cost_usd=Decimal("0.01")
     )
+    [record] = engine.session_mgr.load_llm_request_log(active.state.session_id).records
+    assert record.model_name == model_id and record.cost == context.cost
 
 
 @pytest.mark.asyncio

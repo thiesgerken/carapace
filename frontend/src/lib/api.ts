@@ -6,6 +6,7 @@ import type {
   JobRunResult,
   JobsFile,
   LlmContext,
+  LlmRequestRecord,
   MemoryDigestLevel,
   MemoryFactFilter,
   MemoryFactListResponse,
@@ -821,6 +822,17 @@ export async function fetchLlmContext(
   const res = await fetch(`${server}/api/sessions/${sessionId}/llm-contexts/${role}`, { headers: headers(token) });
   if (!res.ok) throw new Error(await readErrorMessage(res, "Failed to load the LLM context"));
   return (await res.json()) as LlmContext | null;
+}
+
+export async function fetchLlmRequests(
+  server: string,
+  token: string,
+  sessionId: string,
+  role: DebugRole,
+): Promise<LlmRequestRecord[]> {
+  const res = await fetch(`${server}/api/sessions/${sessionId}/llm-requests?role=${role}`, { headers: headers(token) });
+  if (!res.ok) throw new Error(await readErrorMessage(res, "Failed to load the LLM requests"));
+  return (await res.json()) as LlmRequestRecord[];
 }
 
 export async function postInteractivePresence(

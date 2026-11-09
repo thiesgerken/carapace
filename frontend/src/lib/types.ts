@@ -1125,6 +1125,23 @@ export interface LlmRequestCost {
   provider_cost_usd: string | null;
 }
 
+/** One recorded request of a role, for the debug view's timeline. Counts that are null are unknown: the record predates them. */
+export interface LlmRequestRecord {
+  ts: string;
+  request_id: string | null;
+  source: DebugRole | "memory";
+  model_name: string | null;
+  outcome: "completed" | "interrupted";
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_tokens: number | null;
+  cache_write_tokens: number | null;
+  reasoning_tokens: number | null;
+  cost: LlmRequestCost | null;
+  started_at: string | null;
+  completed_at: string | null;
+}
+
 export interface LlmInstructionPart {
   content: string;
   dynamic: boolean;

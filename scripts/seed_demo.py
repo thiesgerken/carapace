@@ -58,7 +58,14 @@ from carapace.models.session import SessionAttributes, SessionBudget, SessionSta
 from carapace.models.user import MemoryBudget, UserConfig, UserDefaultModelsConfig, UserMemoryConfig
 from carapace.sandbox.snapshot import SessionSandboxSnapshot
 from carapace.session.manager import SessionManager, SessionMeta
-from carapace.usage import LlmContext, UsageTracker, request_cost, usage_budget_exceeded_error
+from carapace.usage import (
+    LlmContext,
+    LlmRequestLog,
+    LlmRequestRecord,
+    UsageTracker,
+    request_cost,
+    usage_budget_exceeded_error,
+)
 
 DEMO_USER = "demo"
 DEMO_PASSWORD = "carapace-demo"
@@ -191,6 +198,7 @@ class DemoSession:
     usage: UsageTracker = field(default_factory=UsageTracker)
     sandbox: SessionSandboxSnapshot = field(default_factory=SessionSandboxSnapshot)
     llm_contexts: list[LlmContext] = field(default_factory=list)
+    llm_requests: list[LlmRequestRecord] = field(default_factory=list)
 
 
 def _usage(input_tokens: int, output_tokens: int) -> UsageTracker:
@@ -574,6 +582,64 @@ def _pancake_contexts(end: datetime) -> list[LlmContext]:
     ]
 
 
+def _request(
+    role: Literal["agent", "sentinel", "titler", "compaction"],
+    request_id: str,
+    started_at: datetime,
+    completed_at: datetime,
+    usage: RequestUsage,
+) -> LlmRequestRecord:
+    return LlmRequestRecord(
+        ts=completed_at,
+        request_id=request_id,
+        source=role,
+        model_name=DEMO_MODEL,
+        input_tokens=usage.input_tokens,
+        output_tokens=usage.output_tokens,
+        cache_read_tokens=usage.cache_read_tokens,
+        cache_write_tokens=usage.cache_write_tokens,
+        cost=request_cost(DEMO_MODEL, ModelResponse(parts=[], usage=usage)),
+        started_at=started_at,
+        completed_at=completed_at,
+        reasoning_tokens=usage.details.get("reasoning_tokens"),
+        usage_details=dict(usage.details),
+    )
+
+
+def _pancake_requests(end: datetime, contexts: list[LlmContext]) -> list[LlmRequestRecord]:
+    """The request timeline: earlier requests whose cache grows turn by turn, then the latest per role."""
+    earlier = [
+        ("agent", 70, RequestUsage(input_tokens=5_120, output_tokens=46, cache_write_tokens=4_900)),
+        (
+            "agent",
+            52,
+            RequestUsage(input_tokens=5_890, output_tokens=58, cache_read_tokens=4_900, cache_write_tokens=760),
+        ),
+        ("sentinel", 46, RequestUsage(input_tokens=2_380, output_tokens=55, cache_write_tokens=2_100)),
+        (
+            "agent",
+            41,
+            RequestUsage(input_tokens=6_970, output_tokens=71, cache_read_tokens=5_660, cache_write_tokens=1_080),
+        ),
+    ]
+    records = [
+        _request(
+            role,
+            f"demo-{role}-{seconds}",
+            end - timedelta(seconds=seconds + 3),
+            end - timedelta(seconds=seconds),
+            usage,
+        )
+        for role, seconds, usage in earlier
+    ]
+    for context in contexts:
+        assert context.response is not None and context.completed_at is not None
+        records.append(
+            _request(context.role, context.request_id, context.started_at, context.completed_at, context.response.usage)
+        )
+    return sorted(records, key=lambda record: record.ts)
+
+
 def demo_sessions(now: datetime) -> list[DemoSession]:
     budget_usage = _usage(180_000, 24_000)
     budget_stop_budget = SessionBudget(cost_usd=Decimal("0.75"))
@@ -591,7 +657,8 @@ def demo_sessions(now: datetime) -> list[DemoSession]:
             pancake := _pancake_recipe(now - timedelta(hours=23)),
             usage=_usage(21_000, 1_900),
             sandbox=_sandbox("running", 59_000_000, now),
-            llm_contexts=_pancake_contexts(pancake.at),
+            llm_contexts=(pancake_contexts := _pancake_contexts(pancake.at)),
+            llm_requests=_pancake_requests(pancake.at, pancake_contexts),
         ),
         DemoSession(
             "demo-recipe-skill",
@@ -788,6 +855,7 @@ def seed(data_dir: Path, now: datetime) -> None:
         session_mgr.save_sandbox_snapshot(session_id, demo.sandbox)
         for context in demo.llm_contexts:
             session_mgr.save_llm_context(session_id, context)
+        session_mgr.save_llm_request_log(session_id, LlmRequestLog(records=demo.llm_requests))
         print(f"{session_id}  {demo.title}")
     _seed_memory(session_factory, sessions, now)
 

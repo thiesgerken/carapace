@@ -20,7 +20,7 @@ from ..models.tooling import SentFileInfo, normalize_tool_call_args
 from ..security.context import ApprovalSource, ApprovalVerdict
 from ..session.compaction import tool_return_is_compacted
 from ..session.open_approvals import ApprovalDecisionSource
-from ..usage import LlmContext
+from ..usage import LlmContext, LlmRequestRecord
 from ..ws_models import Attachment, FinalStatus
 from .auth import require
 from .state import server_module
@@ -111,10 +111,7 @@ async def get_session_history(
     user: Annotated[UserIdentity, Depends(require(Scope.history, Access.read))],
     limit: Annotated[int, Query()] = -1,
 ) -> list[HistoryMessage]:
-    if server._engine.session_mgr.load_state(session_id) is None or not server._engine.session_mgr.is_owned_by(
-        session_id, user.username
-    ):
-        raise HTTPException(status_code=404, detail="Session not found")
+    _require_owned_session(session_id, user)
 
     events = server._engine.session_mgr.load_events(session_id)
     result = (
@@ -187,11 +184,27 @@ async def get_llm_context(
     user: Annotated[UserIdentity, Depends(require(Scope.history, Access.read))],
 ) -> LlmContext | None:
     """The latest LLM context of *role* in the session, for the debug view; null before its first request."""
+    _require_owned_session(session_id, user)
+    return server._engine.session_mgr.load_llm_context(session_id, role)
+
+
+@router.get("/sessions/{session_id}/llm-requests", response_model=list[LlmRequestRecord])
+async def list_llm_requests(
+    session_id: str,
+    user: Annotated[UserIdentity, Depends(require(Scope.history, Access.read))],
+    role: DebugRole | None = None,
+) -> list[LlmRequestRecord]:
+    """The session's recorded LLM requests in order, optionally of one *role*, for the debug view's timeline."""
+    _require_owned_session(session_id, user)
+    records = server._engine.session_mgr.load_llm_request_log(session_id).records
+    return [r for r in records if role is None or r.source == role]
+
+
+def _require_owned_session(session_id: str, user: UserIdentity) -> None:
     if server._engine.session_mgr.load_state(session_id) is None or not server._engine.session_mgr.is_owned_by(
         session_id, user.username
     ):
         raise HTTPException(status_code=404, detail="Session not found")
-    return server._engine.session_mgr.load_llm_context(session_id, role)
 
 
 def _history_from_messages(session_id: str) -> list[HistoryMessage]:

@@ -47,7 +47,7 @@ UI PRs show the pages they change: before and after, light and dark, plus phone 
 | Session ID | Title | Shows |
 | --- | --- | --- |
 | `demo-sandbox-tour` | Getting To Know The Sandbox | thinking, a titled `exec` with a domain access, sandbox panel |
-| `demo-pancake-recipe` | Classic Fluffy Pancake Recipe | skill activation, sentinel-reviewed tool calls with domain and credential access |
+| `demo-pancake-recipe` | Classic Fluffy Pancake Recipe | skill activation, sentinel-reviewed tool calls with domain and credential access, the debug view (`&view=debug`) with a request timeline per role |
 | `demo-recipe-skill` | Creating A Recipe Skill | file read and write, a git push, code blocks |
 | `demo-blocked-post` | HTTP POST Blocked In Ask Mode | ask mode, a call denied by the sentinel |
 | `demo-pending-approval` | Cleaning Up NAS Backups | a pending approval card |
