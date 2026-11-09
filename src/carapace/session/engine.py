@@ -39,7 +39,7 @@ from ..models.tooling import ToolCallCallback, ToolResult
 from ..notifications.router import NotificationRouter
 from ..sandbox.manager import SandboxManager
 from ..sandbox.runtime import SkillActivationError, SkillActivationInputs, SkillFileCredential
-from ..security.context import SessionSecurity
+from ..security.context import RewindEntry, SessionSecurity, copy_sentinel_state
 from ..security.sentinel import Sentinel
 from ..skills import SkillDocumentError, SkillRegistry
 from ..usage import (
@@ -96,6 +96,25 @@ def note_llm_request_text() -> LlmRequestState | None:
 
 def note_llm_request_thinking() -> LlmRequestState | None:
     return _note_llm_request_thinking()
+
+
+def _user_prompts(events: list[dict[str, Any]]) -> list[str]:
+    """The turn-starting user messages in *events* (slash commands start no turn)."""
+    return [
+        content
+        for event in events
+        if event.get("role") == "user"
+        and isinstance(content := event.get("content"), str)
+        and not content.startswith("/")
+    ]
+
+
+def _rewind_entry(kept_events: list[dict[str, Any]], removed_events: list[dict[str, Any]]) -> RewindEntry:
+    kept_prompts = _user_prompts(kept_events)
+    return RewindEntry(
+        user_message=kept_prompts[-1] if kept_prompts else None,
+        removed_turns=len(_user_prompts(removed_events)),
+    )
 
 
 class SessionEngine(
@@ -249,6 +268,7 @@ class SessionEngine(
             ask_mode=state.attributes.ask_mode,
             yolo_mode=state.attributes.yolo_mode,
         )
+        security.load_sentinel_state()
         knowledge_dir = self._knowledge_dir_for_session(session_id)
         sentinel = Sentinel(
             model=self._config.agent.sentinel_model,
@@ -648,6 +668,7 @@ class SessionEngine(
         self._session_mgr.save_events(forked_session_id, forked_events)
         self._session_mgr.save_history(forked_session_id, forked_history)
         self._session_mgr.save_compaction(forked_session_id, forked_tree)
+        copy_sentinel_state(self._session_mgr.session_factory, session_id, forked_session_id)
         self._session_mgr.clear_llm_request_state(forked_session_id)
         self._session_mgr.clear_sandbox_snapshot(forked_session_id)
 
@@ -791,6 +812,7 @@ class SessionEngine(
         tree: SessionCompaction,
     ) -> None:
         session_id = active.state.session_id
+        removed_events = self._session_mgr.load_events(session_id)[len(events) :]
         self._session_mgr.save_events(session_id, events)
         self._session_mgr.save_history(session_id, history)
         self._session_mgr.save_compaction(session_id, tree)
@@ -798,6 +820,9 @@ class SessionEngine(
         active.llm_request_state = None
         active.llm_request_thinking.clear()
         self._trim_fork_origin(active.state, len(events))
+        # The sentinel keeps its state across a rewind; it just learns about it with its next evaluation.
+        if active.security is not None:
+            active.security.append(_rewind_entry(events, removed_events))
 
     def _trim_fork_origin(self, state: SessionState, event_count: int) -> None:
         """Rewinding a fork into its inherited events makes what follows its own, not the source's."""

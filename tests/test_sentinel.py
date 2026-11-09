@@ -57,36 +57,16 @@ def test_read_skill_file_cached_reloads_changed_file(tmp_path: Path) -> None:
     assert sentinel._read_skill_file_cached(skills_dir, "moneydb", "SKILL.md") == "version-2\n"
 
 
-def test_reset_clears_skill_file_cache(tmp_path: Path) -> None:
+def test_set_policy_preserves_skill_cache(tmp_path: Path) -> None:
     sentinel, skills_dir = _make_sentinel(tmp_path)
     skill_dir = skills_dir / "moneydb"
     skill_dir.mkdir()
     (skill_dir / "SKILL.md").write_text("# MoneyDB\n")
 
-    sentinel._read_skill_file_cached(skills_dir, "moneydb", "SKILL.md")
-    cached = sentinel._read_skill_file_cached(skills_dir, "moneydb", "SKILL.md")
-    assert "already provided earlier in this sentinel conversation" in cached
-
-    session = SessionSecurity("session-1")
-    session.sentinel_eval_count = 1
-    sentinel._reset(session)
-
-    assert sentinel._read_skill_file_cached(skills_dir, "moneydb", "SKILL.md") == "# MoneyDB\n"
-
-
-def test_set_policy_preserves_shadow_history_and_skill_cache(tmp_path: Path) -> None:
-    sentinel, skills_dir = _make_sentinel(tmp_path)
-    skill_dir = skills_dir / "moneydb"
-    skill_dir.mkdir()
-    (skill_dir / "SKILL.md").write_text("# MoneyDB\n")
-
-    history_marker = object()
-    sentinel._message_history = [history_marker]
     sentinel._read_skill_file_cached(skills_dir, "moneydb", "SKILL.md")
 
     sentinel.set_policy(ask_mode=True)
 
-    assert sentinel._message_history == [history_marker]
     cached = sentinel._read_skill_file_cached(skills_dir, "moneydb", "SKILL.md")
     assert "already provided earlier in this sentinel conversation" in cached
 
@@ -127,6 +107,7 @@ async def test_evaluate_tool_call_timeout_returns_deny_verdict(tmp_path: Path, m
         "The tool call was blocked so the agent can decide whether to retry."
     )
     assert session.sentinel_eval_count == 1
+    assert session.sentinel_messages == []
 
 
 @pytest.mark.asyncio
