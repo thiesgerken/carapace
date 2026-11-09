@@ -99,7 +99,7 @@ async def test_completed_request_persists_what_was_sent_and_the_response(tmp_pat
 
 
 @pytest.mark.asyncio
-async def test_request_record_keeps_cache_and_audio_tokens(tmp_path: Path, db_factory) -> None:
+async def test_request_record_keeps_cache_tokens(tmp_path: Path, db_factory) -> None:
     engine, active, _ = _session(tmp_path, db_factory)
     usage = RequestUsage(input_tokens=1000, output_tokens=20, cache_read_tokens=800, cache_write_tokens=150)
 
@@ -111,7 +111,6 @@ async def test_request_record_keeps_cache_and_audio_tokens(tmp_path: Path, db_fa
 
     [record] = engine.session_mgr.load_llm_request_log(active.state.session_id).records
     assert (record.input_tokens, record.cache_read_tokens, record.cache_write_tokens) == (1000, 800, 150)
-    assert (record.input_audio_tokens, record.output_audio_tokens, record.cache_audio_read_tokens) == (0, 0, 0)
 
 
 @pytest.mark.asyncio

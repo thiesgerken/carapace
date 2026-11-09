@@ -60,7 +60,7 @@ from carapace.server import app, sandbox_app
 from carapace.server.runtime import KnowledgeGitRuntime, MatrixChannelHandle, MatrixChannelManager
 from carapace.session import SessionEngine, SessionManager, sent_files
 from carapace.session.archive import SessionArchiveResult, SessionArchiveService
-from carapace.usage import CostSplit, LlmRequestState
+from carapace.usage import CostSplit, LlmRequestLog, LlmRequestRecord, LlmRequestState
 
 _TEST_TOKEN = "test-bearer-token-for-server-tests"
 
@@ -4185,10 +4185,6 @@ def test_llm_context_endpoint_returns_the_stored_context_verbatim(auth_headers):
 
 
 def test_llm_requests_endpoint_lists_records_filtered_by_role(auth_headers):
-    from datetime import UTC, datetime
-
-    from carapace.usage import LlmRequestLog, LlmRequestRecord
-
     sid = _create_session(auth_headers)
     now = datetime.now(tz=UTC)
     legacy = LlmRequestRecord(ts=now, source="agent", input_tokens=100)

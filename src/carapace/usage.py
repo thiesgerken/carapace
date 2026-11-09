@@ -523,9 +523,6 @@ class LlmRequestRecord(BaseModel):
     # None on records written before these counts were kept: unknown, not zero.
     cache_read_tokens: int | None = None
     cache_write_tokens: int | None = None
-    input_audio_tokens: int | None = None
-    output_audio_tokens: int | None = None
-    cache_audio_read_tokens: int | None = None
     # None on interrupted requests and on records written before costs were kept.
     cost: RequestCost | None = None
     started_at: datetime | None = None
@@ -930,9 +927,6 @@ class LlmRequestLogCapability(AbstractCapability[AgentDepsT]):
             output_tokens=usage.output_tokens or 0,
             cache_read_tokens=usage.cache_read_tokens,
             cache_write_tokens=usage.cache_write_tokens,
-            input_audio_tokens=usage.input_audio_tokens,
-            output_audio_tokens=usage.output_audio_tokens,
-            cache_audio_read_tokens=usage.cache_audio_read_tokens,
             cost=cost,
             started_at=state.started_at,
             first_thinking_at=state.first_thinking_at,
