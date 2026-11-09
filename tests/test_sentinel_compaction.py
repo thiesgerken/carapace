@@ -22,7 +22,7 @@ from carapace.models.compaction import FOLD_MARKER
 from carapace.models.config import CompactionConfig
 from carapace.security.context import SessionSecurity
 from carapace.security.sentinel import Sentinel
-from carapace.session.compaction import is_fold_message, split_prompts_from_tool_returns, tool_return_is_compacted
+from carapace.session.compaction import is_fold_message, split_merged_requests, tool_return_is_compacted
 from carapace.session.transcript import completed_model_turn_end_indexes
 from tests.session_helpers import _make_engine
 
@@ -91,12 +91,12 @@ def _two_merged_evaluations() -> list[ModelMessage]:
     return [*first[:-1], merged, *second[1:]]
 
 
-def test_split_prompts_make_each_evaluation_one_turn() -> None:
+def test_split_requests_make_each_evaluation_one_turn() -> None:
     merged = _two_merged_evaluations()
 
     # Merged, the first boundary falls on the verdict call and its return joins the next evaluation.
     assert completed_model_turn_end_indexes(merged) == [1, 6]
-    assert completed_model_turn_end_indexes(split_prompts_from_tool_returns(merged)) == [2, 7]
+    assert completed_model_turn_end_indexes(split_merged_requests(merged)) == [2, 7]
 
 
 def _instructions(request: list[ModelMessage]) -> str:
@@ -156,7 +156,7 @@ async def test_fold_summary_runs_with_the_sentinel_prompt_and_keeps_decisions(tm
 @pytest.mark.anyio
 async def test_conversation_below_threshold_is_left_alone(tmp_path: Path, db_factory) -> None:
     models = _Models()
-    _, sid, active = _engine(tmp_path, db_factory, models, threshold_pct=100)
+    _, sid, active = _engine(tmp_path, db_factory, models, threshold_pct=90)
 
     await active.sentinel.evaluate_tool_call(active.security, "exec", {"command": "ls"})
 
@@ -202,3 +202,26 @@ async def test_compaction_forgets_which_skill_files_were_provided(tmp_path: Path
     await sentinel.evaluate_tool_call(security, "exec", {"command": "ls"})
 
     assert sentinel._read_skill_file_cached(skills_dir, "mail", "run.py") == "import smtplib\n"
+
+
+@pytest.mark.anyio
+async def test_repeated_compaction_keeps_one_summary(tmp_path: Path, db_factory) -> None:
+    """pydantic-ai merges the fold into the next prompt; the next compaction must still find it."""
+    models = _Models()
+    _, sid, active = _engine(tmp_path, db_factory, models)
+
+    await active.sentinel.evaluate_tool_call(active.security, "exec", {"command": f"echo {_FILLER * 2}"})
+    await active.sentinel.evaluate_tool_call(active.security, "exec", {"command": "pwd"})
+
+    folds = [r for r in models.summary_requests if "<evaluations>" in str(r[0].parts[0].content)]
+    assert len(folds) == 2
+    second_fold_input = str(folds[1][0].parts[0].content)
+    assert "Earlier summary: Summary of earlier conversation" in second_fold_input
+    assert f"Evaluation request: {FOLD_MARKER}" not in second_fold_input
+    fold_parts = [
+        part
+        for message in _restarted(sid, db_factory).sentinel_messages
+        for part in message.parts
+        if isinstance(part, UserPromptPart) and str(part.content).startswith(FOLD_MARKER)
+    ]
+    assert len(fold_parts) == 1

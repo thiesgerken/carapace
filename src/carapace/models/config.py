@@ -177,8 +177,9 @@ class CompactionConfig(ConfigModel):
     # Tool returns below this token count are left alone (marker overhead would exceed the saving).
     tool_output_floor_tokens: int = Field(default=500, ge=1)
     # The sentinel's shadow conversation is compacted before an evaluation once it fills this
-    # percentage of the sentinel model's context window.
-    sentinel_threshold_pct: int = Field(default=50, ge=1, le=100)
+    # percentage of the sentinel model's context window. Capped below 100: the estimate leaves out
+    # the system prompt and the new evaluation request.
+    sentinel_threshold_pct: int = Field(default=50, ge=1, le=90)
 
 
 class AgentConfig(ConfigModel):

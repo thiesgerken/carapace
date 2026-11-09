@@ -32,9 +32,10 @@ from .compaction import (
     apply_tool_return_compaction,
     find_tool_return_candidates,
     fold_render_text,
+    make_fold_message,
     plan_fold,
     sentinel_fold_render_text,
-    split_prompts_from_tool_returns,
+    split_merged_requests,
     tool_return_compaction_region,
 )
 from .compaction_summarizer import (
@@ -291,15 +292,17 @@ class SessionCompactionMixin:
         if before * 100 < cap * cfg.sentinel_threshold_pct:
             return None
 
-        compacted, thinking_dropped = apply_thinking_drop(split_prompts_from_tool_returns(messages))
+        compacted, thinking_dropped = apply_thinking_drop(split_merged_requests(messages))
         plan = plan_fold(compacted, keep_turns=cfg.keep_turns, model_name=model_name)
         if plan is not None:
+            # Unlike agent folds, the earlier summary is folded again together with the newly folded
+            # evaluations: one summary plus keep_turns evaluations is what bounds the conversation.
             summary = await self._run_summary_call(
                 active,
-                partial(summarize_sentinel_fold, sentinel_fold_render_text(plan.foldable)),
+                partial(summarize_sentinel_fold, sentinel_fold_render_text([*plan.lead_folds, *plan.foldable])),
                 prompt_prefix=system_prompt,
             )
-            compacted = apply_fold(plan, summary)
+            compacted = [make_fold_message(summary), *plan.kept]
 
         candidates = find_tool_return_candidates(
             compacted,

@@ -401,18 +401,19 @@ export function buildPlatformSettingsPatch(draft: PlatformDraft, t: Translate): 
       keep_turns: boundedInt(draft.compaction.keepTurns, t("compaction.keepTurns"), 1, t),
       verbatim_tool_turns: boundedInt(draft.compaction.verbatimTurns, t("compaction.verbatimTurns"), 0, t),
       tool_output_floor_tokens: boundedInt(draft.compaction.toolFloor, t("compaction.toolFloor"), 1, t),
-      sentinel_threshold_pct: boundedInt(draft.compaction.sentinelThreshold, t("compaction.sentinelThreshold"), 1, t),
+      sentinel_threshold_pct: boundedInt(draft.compaction.sentinelThreshold, t("compaction.sentinelThreshold"), 1, t, 90),
     },
     available_models: availableModels,
   };
 }
 
-function boundedInt(value: string, field: string, min: number, t: Translate): number {
+function boundedInt(value: string, field: string, min: number, t: Translate, max?: number): number {
   const normalized = value.trim();
-  if (!/^\d+$/.test(normalized) || Number(normalized) < min) {
-    throw new Error(t("errors.minInt", { field, min }));
+  const number = Number(normalized);
+  if (!/^\d+$/.test(normalized) || number < min || (max !== undefined && number > max)) {
+    throw new Error(max === undefined ? t("errors.minInt", { field, min }) : t("errors.rangeInt", { field, min, max }));
   }
-  return Number(normalized);
+  return number;
 }
 
 function comparableDraft(draft: PlatformDraft | null): unknown {
