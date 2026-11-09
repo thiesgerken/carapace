@@ -1,6 +1,37 @@
 # CHANGELOG
 
 
+## v0.172.0 (2026-11-09)
+
+
+### ✨ Features
+
+
+- ✨Merge pull request #442 from thiesgerken/feat/notification-jump-to-turn-start
+  ([`7ddc4ff`](https://github.com/thiesgerken/carapace/commit/7ddc4ff73ff063375bd3b263b1e85ce462b0a000))
+
+- ✨ feat(notifications): open notifications at the start of the turn
+  ([`7ddc4ff`](https://github.com/thiesgerken/carapace/commit/7ddc4ff73ff063375bd3b263b1e85ce462b0a000))
+
+- ✨ feat(notifications): open turn-outcome notifications at the start of the turn
+  ([`9e74345`](https://github.com/thiesgerken/carapace/commit/9e743452dbb3fc008576a34cbfc668c22b94a9a4))
+
+  Clicking a push notification used to land below the last message, so long answers like the daily digest were read bottom-up. The payload now carries the turn's first event index and the service worker deep-links to it via the existing ?event= anchor, aligned to the top of the viewport.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aV32EHJZ4VMTKQYUGG5
+
+### Other
+
+
+- 📝 docs(notifications): describe event_index as the turn's first event
+  ([`fc96725`](https://github.com/thiesgerken/carapace/commit/fc96725c2f6675ed91ecdaaf4572f584ea5373e7))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aV32EHJZ4VMTKQYUGG5
+
 ## v0.171.1 (2026-11-09)
 
 
