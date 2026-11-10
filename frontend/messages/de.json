@@ -1522,6 +1522,18 @@
             "deleteUnpushed": "Diese Sitzung hat {count, plural, one {# Commit} other {# Commits}}, die noch nicht ins Wissens-Repository gepusht wurden. Beim Löschen gehen sie verloren. Trotzdem löschen?",
             "archiveSession": "Diese Sitzung archivieren? Sie verschwindet aus der Standardliste, setzt ihre Sandbox zurück und bleibt im Wissens-Repository erhalten."
         },
+        "search": {
+            "placeholder": "Sitzungen durchsuchen",
+            "mode": "Suchen in",
+            "title": "Titel",
+            "titleHint": "Sitzungstitel durchsuchen",
+            "fulltext": "Volltext",
+            "fulltextHint": "Titel und Chatnachrichten durchsuchen",
+            "clear": "Suche leeren",
+            "searching": "Suche läuft",
+            "failed": "Suche fehlgeschlagen",
+            "noResults": "Keine passenden Sitzungen"
+        },
         "sections": {
             "today": "Heute",
             "yesterday": "Gestern",

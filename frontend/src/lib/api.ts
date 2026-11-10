@@ -39,6 +39,7 @@ import type {
   SessionInfo,
   SessionListPage,
   SessionSandboxSnapshot,
+  SessionSearchHit,
 } from "./types";
 import { isRecord, readNumber, readString, readStringArray } from "./decoding";
 
@@ -440,6 +441,24 @@ export async function listSessions(
     headers: headers(token),
   });
   if (!res.ok) throw new Error(`Failed to list sessions: ${res.status}`);
+  return res.json();
+}
+
+/** The user's sessions, active and archived, whose title (or, with `fulltext`, a chat message) contains `query`. */
+export async function searchSessions(
+  server: string,
+  token: string,
+  query: string,
+  options: { fulltext: boolean },
+): Promise<SessionSearchHit[]> {
+  const params = new URLSearchParams({ q: query });
+  if (options.fulltext) {
+    params.set("fulltext", "true");
+  }
+  const res = await fetch(`${server}/api/sessions/search?${params.toString()}`, {
+    headers: headers(token),
+  });
+  if (!res.ok) throw new Error(await readErrorMessage(res, "Failed to search sessions"));
   return res.json();
 }
 

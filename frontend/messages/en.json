@@ -1522,6 +1522,18 @@
             "deleteUnpushed": "This session has {count, plural, one {# commit} other {# commits}} not yet pushed to your knowledge repo. Deleting it will discard them. Delete anyway?",
             "archiveSession": "Archive this session? It will leave the default list, reset its sandbox, and stay in the knowledge repo."
         },
+        "search": {
+            "placeholder": "Search sessions",
+            "mode": "Search in",
+            "title": "Title",
+            "titleHint": "Search session titles",
+            "fulltext": "Full text",
+            "fulltextHint": "Search titles and chat messages",
+            "clear": "Clear search",
+            "searching": "Searching",
+            "failed": "Search failed",
+            "noResults": "No matching sessions"
+        },
         "sections": {
             "today": "Today",
             "yesterday": "Yesterday",
