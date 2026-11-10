@@ -306,7 +306,8 @@ async def list_sessions(
 
 
 @router.get("/sessions/search", response_model=list[SessionSearchHit])
-async def search_sessions(
+# Plain def: the scan and the per-hit loads are blocking, so FastAPI runs them in its threadpool.
+def search_sessions(
     user: Annotated[UserIdentity, Depends(require(Scope.sessions, Access.read))],
     q: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1), Query()],
     fulltext: bool = False,

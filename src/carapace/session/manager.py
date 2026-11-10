@@ -14,7 +14,7 @@ import yaml
 from loguru import logger
 from pydantic import BaseModel, field_validator
 from pydantic_ai import ModelMessage
-from sqlalchemy import ColumnElement, and_, case, delete, func, or_, select
+from sqlalchemy import ColumnElement, and_, case, delete, exists, func, or_, select
 
 from ..database.engine import SessionFactory
 from ..database.models import (
@@ -275,12 +275,12 @@ class SessionManager:
         carries a snippet around the first matching message.
         """
         # ponytail: naive LIKE scan over every message event of the user's sessions, no FTS index.
-        # Fine for a personal agent's history; once it gets slow, add a Postgres tsvector (GIN) index
-        # and an SQLite fts5 table over message text and query those instead.
-        message_hits = select(SessionEventRow.session_id).where(_message_contains(query))
+        # Fine up to roughly 10k sessions / a few 100k events per user; beyond that, add a Postgres
+        # tsvector (GIN) index and an SQLite fts5 table over message text and query those instead.
         matches = SessionRow.title.icontains(query, autoescape=True)
         if fulltext:
-            matches = or_(matches, SessionRow.session_id.in_(message_hits))
+            message_hit = exists().where(SessionEventRow.session_id == SessionRow.session_id, _message_contains(query))
+            matches = or_(matches, message_hit)
         stmt = (
             select(SessionRow.state)
             .where(SessionRow.user == user, matches)
