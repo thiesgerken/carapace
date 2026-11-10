@@ -6,7 +6,7 @@ from typing import Annotated, Any, Self
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from loguru import logger
-from pydantic import BaseModel, ConfigDict, ValidationError, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, StringConstraints, ValidationError, field_validator, model_validator
 from pydantic_ai.messages import ModelMessage
 
 from ..api_keys import Access, Scope
@@ -27,6 +27,7 @@ server = server_module()
 router = APIRouter()
 
 _BUDGET_FIELD_METRICS: dict[str, BudgetMetric] = {field: metric for metric, field in BUDGET_METRIC_FIELDS.items()}
+_SEARCH_LIMIT = 50
 
 
 class SessionCreateRequest(BaseModel):
@@ -176,6 +177,12 @@ class SessionListPage(BaseModel):
     has_more: bool
 
 
+class SessionSearchHit(BaseModel):
+    session: SessionInfo
+    # The first matching chat message around the match; only fulltext searches set it.
+    snippet: str | None = None
+
+
 class SessionArchiveCommitResponse(BaseModel):
     session: SessionInfo
     committed: bool
@@ -296,6 +303,24 @@ async def list_sessions(
         cursor=cursor,
         user=user,
     )
+
+
+@router.get("/sessions/search", response_model=list[SessionSearchHit])
+async def search_sessions(
+    user: Annotated[UserIdentity, Depends(require(Scope.sessions, Access.read))],
+    q: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1), Query()],
+    fulltext: bool = False,
+) -> list[SessionSearchHit]:
+    matches = server._engine.session_mgr.search_sessions(
+        user=user.username, query=q, fulltext=fulltext, limit=_SEARCH_LIMIT
+    )
+    return [
+        SessionSearchHit(
+            session=_session_info_from_state(match.state, include_message_count=True),
+            snippet=match.snippet,
+        )
+        for match in matches
+    ]
 
 
 @router.get("/sessions/{session_id}", response_model=SessionInfo)

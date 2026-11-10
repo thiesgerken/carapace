@@ -2628,6 +2628,40 @@ def test_list_sessions_can_include_archived(client, auth_headers):
     assert archived_session["attributes"]["archived"] is True
 
 
+def test_search_sessions_finds_own_archived_message_hit_with_snippet(client, auth_headers):
+    sid = client.post("/api/sessions", headers=auth_headers).json()["session_id"]
+    srv._engine.session_mgr.append_events(
+        sid,
+        [
+            {"role": "user", "content": "first"},
+            {"role": "assistant", "content": "Use buttermilk for fluffier pancakes."},
+        ],
+    )
+    client.patch(f"/api/sessions/{sid}", headers=auth_headers, json={"attributes": {"archived": True}})
+    srv._auth_store.create_user(username="ada", password="secret")
+    ada_sid = client.post("/api/sessions", headers=_headers_for_user("ada")).json()["session_id"]
+    srv._engine.session_mgr.append_events(ada_sid, [{"role": "user", "content": "buttermilk?"}])
+
+    title_resp = client.get("/api/sessions/search?q=buttermilk", headers=auth_headers)
+    fulltext_resp = client.get("/api/sessions/search?q=%20Buttermilk%20&fulltext=true", headers=auth_headers)
+
+    assert title_resp.status_code == 200
+    assert title_resp.json() == []
+    assert fulltext_resp.status_code == 200
+    [hit] = fulltext_resp.json()
+    assert hit["session"]["session_id"] == sid
+    assert hit["session"]["attributes"]["archived"] is True
+    assert hit["session"]["message_count"] == 2
+    assert hit["snippet"] == "Use buttermilk for fluffier pancakes."
+
+
+@pytest.mark.parametrize("query", ["", "%20%20"])
+def test_search_sessions_rejects_blank_query(client, auth_headers, query):
+    resp = client.get(f"/api/sessions/search?q={query}", headers=auth_headers)
+
+    assert resp.status_code == 422
+
+
 def test_list_sessions_page_can_paginate(client, auth_headers):
     created_ids = [client.post("/api/sessions", headers=auth_headers).json()["session_id"] for _ in range(3)]
 
