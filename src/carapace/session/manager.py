@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import re
 import secrets
 import shutil
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from threading import RLock
@@ -12,7 +14,7 @@ import yaml
 from loguru import logger
 from pydantic import BaseModel, field_validator
 from pydantic_ai import ModelMessage
-from sqlalchemy import and_, case, delete, func, or_, select
+from sqlalchemy import ColumnElement, and_, case, delete, exists, func, or_, select
 
 from ..database.engine import SessionFactory
 from ..database.models import (
@@ -75,6 +77,45 @@ def _parse_timestamp(value: Any) -> datetime | None:
         except ValueError:
             return None
     return None
+
+
+_SNIPPET_BEFORE = 40
+_SNIPPET_AFTER = 80
+
+
+@dataclass(frozen=True, slots=True)
+class SessionSearchMatch:
+    state: SessionState
+    snippet: str | None = None
+
+
+def _event_content() -> ColumnElement[str]:
+    return SessionEventRow.data["content"].as_string()
+
+
+def _message_contains(query: str) -> ColumnElement[bool]:
+    """A user or assistant message event whose text contains *query*; slash commands are no messages."""
+    role = SessionEventRow.data["role"].as_string()
+    content = _event_content()
+    return and_(
+        or_(role == "assistant", and_(role == "user", ~content.startswith("/"))),
+        content.icontains(query, autoescape=True),
+    )
+
+
+def _snippet_around(text: str, query: str) -> str | None:
+    """A one-line excerpt of *text* around the first case-insensitive occurrence of *query*.
+
+    ``None`` when Python's case folding finds no occurrence where the database's did (SQLite and
+    Postgres lower-case non-ASCII text differently); the hit then shows without a snippet.
+    """
+    match = re.search(re.escape(query), text, re.IGNORECASE)
+    if match is None:
+        return None
+    start = max(0, match.start() - _SNIPPET_BEFORE)
+    end = min(len(text), match.end() + _SNIPPET_AFTER)
+    excerpt = " ".join(text[start:end].split())
+    return f"{'…' if start > 0 else ''}{excerpt}{'…' if end < len(text) else ''}"
 
 
 def _state_columns(state: SessionState) -> dict[str, Any]:
@@ -225,6 +266,49 @@ class SessionManager:
         with self._session_factory() as db:
             rows = list(db.scalars(stmt).all())
         return [state for state in rows[:limit] if state is not None], len(rows) > limit
+
+    def search_sessions(self, *, user: str, query: str, fulltext: bool, limit: int) -> list[SessionSearchMatch]:
+        """The user's sessions (active and archived) whose title, or with *fulltext* a chat message, contains *query*.
+
+        Case-insensitive substring match, most recently active first. Fulltext matches only what the
+        user and the agent said, never tool calls, tool output or slash commands. A fulltext match
+        carries a snippet around the first matching message.
+        """
+        # ponytail: naive LIKE scan over every message event of the user's sessions, no FTS index.
+        # Fine up to roughly 10k sessions / a few 100k events per user; beyond that, add a Postgres
+        # tsvector (GIN) index and an SQLite fts5 table over message text and query those instead.
+        matches = SessionRow.title.icontains(query, autoescape=True)
+        if fulltext:
+            message_hit = exists().where(SessionEventRow.session_id == SessionRow.session_id, _message_contains(query))
+            matches = or_(matches, message_hit)
+        stmt = (
+            select(SessionRow.state)
+            .where(SessionRow.user == user, matches)
+            .order_by(SessionRow.last_active.desc(), SessionRow.session_id)
+            .limit(limit)
+        )
+        with self._session_factory() as db:
+            states = [state for state in db.scalars(stmt).all() if state is not None]
+            snippets = self._first_message_snippets(db, [s.session_id for s in states], query) if fulltext else {}
+        return [SessionSearchMatch(state=state, snippet=snippets.get(state.session_id)) for state in states]
+
+    def _first_message_snippets(self, db: Any, session_ids: list[str], query: str) -> dict[str, str]:
+        first_seq = (
+            select(SessionEventRow.session_id, func.min(SessionEventRow.seq).label("seq"))
+            .where(SessionEventRow.session_id.in_(session_ids), _message_contains(query))
+            .group_by(SessionEventRow.session_id)
+            .subquery()
+        )
+        stmt = select(SessionEventRow.session_id, _event_content()).join(
+            first_seq,
+            and_(SessionEventRow.session_id == first_seq.c.session_id, SessionEventRow.seq == first_seq.c.seq),
+        )
+        snippets: dict[str, str] = {}
+        for session_id, content in db.execute(stmt).all():
+            snippet = _snippet_around(content, query)
+            if snippet is not None:
+                snippets[session_id] = snippet
+        return snippets
 
     def find_session(self, channel_type: str, channel_ref: str) -> str | None:
         stmt = (

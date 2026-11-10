@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { Archive, ArchiveRestore, Bot, BookOpen, Brain, Loader2, Lock, LogOut, Mail, MessageSquare, Pin, Save, Settings2, Star, Trash2 } from "lucide-react";
+import { Archive, ArchiveRestore, Bot, BookOpen, Brain, Loader2, Lock, LogOut, Mail, MessageSquare, Pin, Save, Search, Settings2, Star, Trash2, X } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { EmojiText } from "@/components/emoji-text";
 import { useAppLocale } from "@/components/locale-provider";
@@ -12,8 +12,9 @@ import { SandboxUsageBanner } from "@/components/sandbox-usage-banner";
 import { GlobalGitIndicator, GlobalGitPanel, useGlobalGit } from "@/components/git-sync";
 import { VersionBadge } from "@/components/version-badge";
 import { agentIcon } from "@/hooks/use-brand";
+import { useSessionSearch, type SessionSearchMode } from "@/hooks/use-session-search";
 import type { AuthUserInfo } from "@/lib/api";
-import type { SandboxUsage, SessionAttributesPatch, SessionInfo, SessionSandboxSnapshot } from "@/lib/types";
+import type { SandboxUsage, SessionAttributesPatch, SessionInfo, SessionSandboxSnapshot, SessionSearchHit } from "@/lib/types";
 import {
   canArchiveSession,
   cn,
@@ -22,6 +23,7 @@ import {
   sandboxStatusKey,
   shouldConfirmArchiveSession,
   sessionHasKnowledgeChanges,
+  splitOnMatches,
 } from "@/lib/utils";
 
 interface SidebarProps {
@@ -41,7 +43,7 @@ interface SidebarProps {
   /** Called before every action that navigates, e.g. to close the mobile drawer. */
   onNavigate: () => void;
   onUpdateAttributes: (sessionId: string, attributes: SessionAttributesPatch) => Promise<SessionInfo>;
-  onDelete: (sessionId: string, options?: { skipUnpushedWarning?: boolean }) => void;
+  onDelete: (sessionId: string, options?: { skipUnpushedWarning?: boolean }) => Promise<void>;
   onDisconnect: () => void;
   githubUrl: string;
   loading?: boolean;
@@ -74,10 +76,24 @@ function shouldConfirmDestructiveAction(event: { shiftKey: boolean }, confirmati
   return event.shiftKey || window.confirm(confirmation);
 }
 
-function runSidebarAttributeUpdate(promise: Promise<SessionInfo>): void {
+function runSidebarAttributeUpdate(promise: Promise<unknown>): void {
   void promise.catch(() => {
     // Sidebar actions currently fail silently like delete; avoid unhandled rejections.
   });
+}
+
+const SEARCH_MODES: readonly SessionSearchMode[] = ["title", "fulltext"];
+
+function HighlightedText({ text, query }: { text: string; query: string }) {
+  return splitOnMatches(text, query).map((part, index) => (
+    part.match ? (
+      <mark key={index} className="rounded-sm bg-amber-200 px-0.5 text-foreground dark:bg-amber-500/40">
+        {part.text}
+      </mark>
+    ) : (
+      <span key={index}>{part.text}</span>
+    )
+  ));
 }
 
 function accountInitial(user: AuthUserInfo | null | undefined): string {
@@ -131,12 +147,27 @@ export function Sidebar({
   const globalGit = useGlobalGit(server, token);
   const [referenceTime, setReferenceTime] = useState<number>(() => Date.now());
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchMode, setSearchMode] = useState<SessionSearchMode>("title");
+  const [searchRevision, setSearchRevision] = useState(0);
+  const search = useSessionSearch(server, token, searchQuery, searchMode, searchRevision);
+  const searchHits = search.hits;
+  const searching = searchHits !== null;
   const activeSessions = sessions.filter((session) => !session.attributes.archived);
   const archivedSessions = showArchivedSessions
     ? sessions.filter((session) => session.attributes.archived)
     : [];
   const accountName = currentUser?.display_name?.trim() || currentUser?.username || t("account.unknown");
   const accountUsername = currentUser?.username ?? t("account.unknown");
+
+  /** Row actions change hits the parent's session list may not hold (archived ones), so the search re-runs. */
+  function refreshSearch(): void {
+    setSearchRevision((revision) => revision + 1);
+  }
+
+  function updateAttributes(sessionId: string, attributes: SessionAttributesPatch): void {
+    runSidebarAttributeUpdate(onUpdateAttributes(sessionId, attributes).then(refreshSearch));
+  }
 
   function handleOpenSettings(): void {
     setAccountMenuOpen(false);
@@ -317,7 +348,7 @@ export function Sidebar({
   }
 
   useEffect(() => {
-    if (!hasMore || !onLoadMore) return;
+    if (searching || !hasMore || !onLoadMore) return;
     const root = scrollRootRef.current;
     const target = loadMoreRef.current;
     if (!root || !target) return;
@@ -336,12 +367,12 @@ export function Sidebar({
     return () => {
       observer.disconnect();
     };
-  }, [hasMore, onLoadMore, sessions.length]);
+  }, [hasMore, onLoadMore, searching, sessions.length]);
 
   function renderSessionSection(sectionSessions: SessionInfo[]) {
     return (
       <div className="space-y-0.5">
-        {sectionSessions.map(renderSessionRow)}
+        {sectionSessions.map((session) => renderSessionRow(session))}
       </div>
     );
   }
@@ -372,7 +403,22 @@ export function Sidebar({
     ];
   }
 
-  function renderSessionRow(session: SessionInfo) {
+  function renderSearchResults(hits: SessionSearchHit[]) {
+    if (search.failed || hits.length === 0) {
+      const message = search.failed
+        ? tSidebar("search.failed")
+        : search.loading ? tSidebar("search.searching") : tSidebar("search.noResults");
+      return <p className="px-3 py-4 text-center text-xs text-muted-foreground">{message}</p>;
+    }
+    return (
+      <div className="space-y-0.5">
+        {hits.map((hit) => renderSessionRow(hit.session, { snippet: hit.snippet ?? null }))}
+      </div>
+    );
+  }
+
+  /** `searchHit` marks a row in the flat search results: it carries an archived badge and the match snippet. */
+  function renderSessionRow(session: SessionInfo, searchHit?: { snippet: string | null }) {
     const sandbox = sandboxSummary(session);
     const sandboxLabel = sandbox ? sandboxSummaryLabel(sandbox) : null;
     const sessionCanArchive = canArchiveSession(session);
@@ -424,6 +470,11 @@ export function Sidebar({
                 <span className="font-mono break-all">{session.session_id}</span>
               )}
           </div>
+          {searchHit && session.attributes.archived ? (
+            <span className="mt-0.5 shrink-0 rounded border border-violet-300 px-1 text-[10px] font-medium uppercase leading-4 tracking-wide text-violet-700 dark:border-violet-800 dark:text-violet-300">
+              {tSidebar("sections.archived")}
+            </span>
+          ) : null}
           {showUnattendedIcon ? (
             <span
               className="mt-0.5 inline-flex shrink-0 items-center text-emerald-700"
@@ -434,6 +485,11 @@ export function Sidebar({
             </span>
           ) : null}
         </div>
+        {searchHit?.snippet ? (
+          <div className="line-clamp-2 break-words px-3 pb-1 text-xs text-muted-foreground">
+            <HighlightedText text={searchHit.snippet} query={search.hitsQuery} />
+          </div>
+        ) : null}
         <div className="flex items-start gap-2 px-3 pb-2">
           <div className="min-w-0 flex-1 text-left">
             {hasSandboxInfo ? (
@@ -506,7 +562,7 @@ export function Sidebar({
           <button
             onClick={(event) => {
               event.stopPropagation();
-              runSidebarAttributeUpdate(onUpdateAttributes(session.session_id, { pinned: !session.attributes.pinned }));
+              updateAttributes(session.session_id, { pinned: !session.attributes.pinned });
             }}
             title={session.attributes.pinned ? tSidebar("actions.unpin") : tSidebar("actions.pin")}
             className={cn(
@@ -522,7 +578,7 @@ export function Sidebar({
           <button
             onClick={(event) => {
               event.stopPropagation();
-              runSidebarAttributeUpdate(onUpdateAttributes(session.session_id, { favorite: !session.attributes.favorite }));
+              updateAttributes(session.session_id, { favorite: !session.attributes.favorite });
             }}
             title={session.attributes.favorite ? tSidebar("actions.unfavorite") : tSidebar("actions.favorite")}
             className={cn(
@@ -550,7 +606,7 @@ export function Sidebar({
                 ) {
                   return;
                 }
-                runSidebarAttributeUpdate(onUpdateAttributes(session.session_id, { archived: nextArchived }));
+                updateAttributes(session.session_id, { archived: nextArchived });
               }}
               title={session.attributes.archived ? tSidebar("actions.unarchive") : [tSidebar("actions.archive"), tSidebar("actions.shiftSkip")].join("\n")}
               className={cn(
@@ -575,7 +631,7 @@ export function Sidebar({
               if (!shouldConfirmSessionDeletion(session, event)) {
                 return;
               }
-              onDelete(session.session_id, { skipUnpushedWarning: event.shiftKey });
+              void onDelete(session.session_id, { skipUnpushedWarning: event.shiftKey }).then(refreshSearch);
             }}
             title={session.message_count === 0
               ? tSidebar("actions.deleteEmpty")
@@ -743,36 +799,101 @@ export function Sidebar({
         />
       </div>
 
+      {/* Session search */}
+      <div className="px-3 pt-1 pb-1">
+        <div className="flex items-center gap-1.5 rounded-lg border border-border bg-background pl-2.5 pr-1 focus-within:ring-2 focus-within:ring-ring">
+          {search.loading ? (
+            <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-muted-foreground" aria-hidden="true" />
+          ) : (
+            <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+          )}
+          <input
+            type="text"
+            enterKeyHint="search"
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Escape" && searchQuery) {
+                event.preventDefault();
+                setSearchQuery("");
+              }
+            }}
+            placeholder={tSidebar("search.placeholder")}
+            aria-label={tSidebar("search.placeholder")}
+            className="min-w-0 flex-1 bg-transparent py-1.5 text-base outline-none placeholder:text-muted-foreground sm:text-sm"
+          />
+          {searchQuery ? (
+            <button
+              type="button"
+              onClick={() => setSearchQuery("")}
+              title={tSidebar("search.clear")}
+              aria-label={tSidebar("search.clear")}
+              className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          ) : null}
+          <div
+            role="radiogroup"
+            aria-label={tSidebar("search.mode")}
+            className="flex shrink-0 rounded-md bg-muted p-0.5 text-[11px] font-medium"
+          >
+            {SEARCH_MODES.map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                role="radio"
+                aria-checked={searchMode === mode}
+                title={tSidebar(`search.${mode}Hint`)}
+                onClick={() => setSearchMode(mode)}
+                className={cn(
+                  "rounded px-1.5 py-0.5 transition-colors",
+                  searchMode === mode
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {tSidebar(`search.${mode}`)}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
       {/* Session list */}
       <div ref={scrollRootRef} className="flex-1 overflow-y-auto px-3 py-2">
         <div className="space-y-4">
           <SandboxUsageBanner usage={sandboxUsage} />
-          {renderSessionGroups(activeSessions)}
-          {archivedSessions.length > 0 ? (
-            <div className="space-y-4">
-              <div className="px-3 pb-1 text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
-                {tSidebar("sections.archived")}
-              </div>
-              {renderSessionGroups(archivedSessions)}
-            </div>
-          ) : null}
-          {sessions.length === 0 && !loading && (
-            <p className="px-3 py-4 text-center text-xs text-muted-foreground">
-              {tSidebar("empty")}
-            </p>
-          )}
-          {hasMore || loadingMore ? (
-            <div ref={loadMoreRef} className="px-3 py-2">
-              {loadingMore ? (
-                <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  {tSidebar("loadingMore")}
+          {searching ? renderSearchResults(searchHits) : (
+            <>
+              {renderSessionGroups(activeSessions)}
+              {archivedSessions.length > 0 ? (
+                <div className="space-y-4">
+                  <div className="px-3 pb-1 text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
+                    {tSidebar("sections.archived")}
+                  </div>
+                  {renderSessionGroups(archivedSessions)}
                 </div>
-              ) : (
-                <div className="h-4" aria-hidden="true" />
+              ) : null}
+              {sessions.length === 0 && !loading && (
+                <p className="px-3 py-4 text-center text-xs text-muted-foreground">
+                  {tSidebar("empty")}
+                </p>
               )}
-            </div>
-          ) : null}
+              {hasMore || loadingMore ? (
+                <div ref={loadMoreRef} className="px-3 py-2">
+                  {loadingMore ? (
+                    <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      {tSidebar("loadingMore")}
+                    </div>
+                  ) : (
+                    <div className="h-4" aria-hidden="true" />
+                  )}
+                </div>
+              ) : null}
+            </>
+          )}
         </div>
       </div>
     </div>

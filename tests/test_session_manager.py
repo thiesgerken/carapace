@@ -229,3 +229,105 @@ def test_missing_user_escalation_callback_denies() -> None:
     security = SessionSecurity("session-1")
     result = asyncio.run(security.escalate_to_user("example.com", {"kind": "domain_access"}))
     assert result == UserEscalationDecision(allowed=False)
+
+
+def _titled_session(mgr: SessionManager, title: str, *, user: str = "thies", events: list[dict] | None = None) -> str:
+    state = mgr.create_session(user=user)
+    state.title = title
+    mgr.save_state(state)
+    if events:
+        mgr.append_events(state.session_id, events)
+    return state.session_id
+
+
+def _search(mgr: SessionManager, query: str, *, fulltext: bool = False, user: str = "thies") -> dict[str, str | None]:
+    return {
+        match.state.session_id: match.snippet
+        for match in mgr.search_sessions(user=user, query=query, fulltext=fulltext, limit=50)
+    }
+
+
+def test_search_sessions_matches_title_case_insensitively(tmp_path: Path, db_factory):
+    mgr = SessionManager(db_factory, tmp_path)
+    pancakes = _titled_session(mgr, "Classic Fluffy Pancakes")
+    _titled_session(mgr, "Refactoring Date Parsing")
+
+    assert _search(mgr, "fluffy") == {pancakes: None}
+
+
+def test_search_sessions_title_mode_ignores_message_text(tmp_path: Path, db_factory):
+    mgr = SessionManager(db_factory, tmp_path)
+    _titled_session(mgr, "Breakfast", events=[{"role": "user", "content": "How do I make pancakes?"}])
+
+    assert _search(mgr, "pancakes") == {}
+
+
+def test_search_sessions_fulltext_matches_messages_with_snippet(tmp_path: Path, db_factory):
+    mgr = SessionManager(db_factory, tmp_path)
+    long_intro = "Sure, here is a recipe that works every time and needs no special equipment at all. "
+    sid = _titled_session(
+        mgr,
+        "Breakfast",
+        events=[
+            {"role": "user", "content": "What should I cook?"},
+            {
+                "role": "assistant",
+                "content": long_intro + "Whisk the flour\nand Buttermilk until smooth, then rest it.",
+            },
+        ],
+    )
+
+    snippet = _search(mgr, "buttermilk", fulltext=True)[sid]
+
+    assert snippet is not None
+    assert snippet.startswith("…")
+    assert "Whisk the flour and Buttermilk until smooth" in snippet
+
+
+def test_search_sessions_fulltext_still_matches_titles(tmp_path: Path, db_factory):
+    mgr = SessionManager(db_factory, tmp_path)
+    sid = _titled_session(mgr, "Classic Fluffy Pancakes")
+
+    assert _search(mgr, "fluffy", fulltext=True) == {sid: None}
+
+
+def test_search_sessions_fulltext_skips_tool_calls_results_and_slash_commands(tmp_path: Path, db_factory):
+    mgr = SessionManager(db_factory, tmp_path)
+    _titled_session(
+        mgr,
+        "Sandbox tour",
+        events=[
+            {"role": "user", "content": "/budget zebra"},
+            {"role": "tool_call", "tool": "exec", "tool_id": "t1", "args": {"command": "echo zebra"}},
+            {"role": "tool_result", "tool": "exec", "tool_id": "t1", "result": "zebra"},
+            {"role": "command", "command": "budget", "content": "zebra"},
+            {"role": "thinking", "content": "zebra"},
+        ],
+    )
+
+    assert _search(mgr, "zebra", fulltext=True) == {}
+
+
+def test_search_sessions_includes_archived_and_excludes_other_users(tmp_path: Path, db_factory):
+    mgr = SessionManager(db_factory, tmp_path)
+    archived = _titled_session(mgr, "Old pancake notes")
+    state = mgr.load_state(archived)
+    assert state is not None
+    state.attributes = state.attributes.model_copy(update={"archived": True})
+    mgr.save_state(state)
+    _titled_session(mgr, "Ada's pancake notes", user="ada")
+
+    assert _search(mgr, "pancake") == {archived: None}
+
+
+def test_search_sessions_orders_by_last_active_and_escapes_wildcards(tmp_path: Path, db_factory):
+    mgr = SessionManager(db_factory, tmp_path)
+    older = _titled_session(mgr, "Discount 100% off")
+    newer = _titled_session(mgr, "Another 100% deal")
+    _titled_session(mgr, "Discount 1000 off")
+    state = mgr.load_state(older)
+    assert state is not None
+    state.last_active = datetime(2020, 1, 1, tzinfo=UTC)
+    mgr.save_state(state)
+
+    assert list(_search(mgr, "100%")) == [newer, older]

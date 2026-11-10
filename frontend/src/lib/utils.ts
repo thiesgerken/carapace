@@ -81,3 +81,15 @@ export function sandboxStatusIndicatorClass(status: SandboxStatus): string {
       return "bg-slate-300";
   }
 }
+
+/** Splits `text` into alternating plain and matching parts around every case-insensitive occurrence of `query`. */
+export function splitOnMatches(text: string, query: string): { text: string; match: boolean }[] {
+  const needle = query.trim();
+  if (!needle) return [{ text, match: false }];
+  const pattern = new RegExp(`(${needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`, "gi");
+  // With a capturing group, split puts the matches at the odd indexes.
+  return text
+    .split(pattern)
+    .map((part, index) => ({ text: part, match: index % 2 === 1 }))
+    .filter((part) => part.text !== "");
+}

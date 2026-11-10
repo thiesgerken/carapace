@@ -207,6 +207,7 @@ The primary interactive channel. A Next.js web app connects to the carapace serv
 | ------------------------------------- | -------- | ------------------------------------------------------------------------------ |
 | `/api/sessions`                       | `POST`   | Create a new session                                                           |
 | `/api/sessions`                       | `GET`    | List sessions (`include_archived`, `include_message_count`, `limit`, `cursor`) |
+| `/api/sessions/search`                | `GET`    | Search titles, or with `fulltext=true` also chat messages (`q`, `fulltext`)    |
 | `/api/sessions/{id}`                  | `GET`    | Get session details                                                            |
 | `/api/sessions/{id}`                  | `PATCH`  | Update session attributes, model overrides, and budget limits                  |
 | `/api/sessions/{id}/fork`             | `POST`   | Fork a session from a chosen event boundary                                    |
@@ -219,6 +220,8 @@ The primary interactive channel. A Next.js web app connects to the carapace serv
 | `/api/sessions/{id}/sandbox/wipe`     | `POST`   | Destroy sandbox workspace state and start fresh later                          |
 
 `GET /api/sessions` pages in a fixed order: active sessions before archived ones, pinned first within each, then most recently active.
+
+`GET /api/sessions/search` returns at most 50 of the user's sessions, active and archived alike, most recently active first. It matches `q` as a case-insensitive substring of the title; `fulltext=true` also matches the text of user and assistant messages (no tool calls, tool output or slash commands) and returns a snippet around the first matching message. It scans the event rows without a full-text index. A blank `q` is a 422.
 
 **Notification API:**
 

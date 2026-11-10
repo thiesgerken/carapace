@@ -138,6 +138,12 @@ export interface SessionListPage {
   has_more: boolean;
 }
 
+export interface SessionSearchHit {
+  session: SessionInfo;
+  /** Excerpt of the first matching chat message; only fulltext searches set it. */
+  snippet?: string | null;
+}
+
 export interface SessionArchiveCommitResponse {
   session: SessionInfo;
   committed: boolean;
