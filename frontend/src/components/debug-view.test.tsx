@@ -37,7 +37,7 @@ function context(overrides: Partial<LlmContext>): LlmContext {
     completed_at: null,
     instructions: [{ content: "You are carapace.", dynamic: false, name: null }],
     messages: [{ kind: "request", parts: [{ part_kind: "user-prompt", content: "Check the **backups**" }, { part_kind: "tool-return", tool_name: "exec", content: "**not** markdown", tool_call_id: "call-0" }] }],
-    tool_definitions: [{ name: "exec", description: "Run a command", parameters_json_schema: { type: "object" } }],
+    tool_definitions: [{ name: "exec", description: "Run a **shell** command", parameters_json_schema: { type: "object" } }],
     response: null,
     error: null,
     cost: null,
@@ -105,7 +105,8 @@ test("the debug view shows each role's latest context and refetches on WebSocket
 
     assert.match(text(), /Running/);
     assert.match(text(), /Check the backups/);
-    assert.equal(view.container.querySelector("strong")?.textContent, "backups");
+    const bold = Array.from(view.container.querySelectorAll("strong"), (element) => element.textContent);
+    assert.deepEqual(bold, ["shell", "backups"], "tool descriptions and prompts render as Markdown");
     assert.match(text(), /\*\*not\*\* markdown/);
     assert.match(text(), /Waiting for the response/);
     assert.doesNotMatch(text(), /Output tokens|Cost\$/);

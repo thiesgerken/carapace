@@ -153,7 +153,7 @@ export function LlmContextView({ context }: { context: LlmContext }) {
       <Collapsible title={t("tools", { count: context.tool_definitions.length })}>
         {context.tool_definitions.map((tool) => (
           <Card key={tool.name} label={tool.name}>
-            {tool.description ? <Text>{tool.description}</Text> : null}
+            {tool.description ? <MarkdownContent content={tool.description} /> : null}
             <Json value={tool.parameters_json_schema} />
           </Card>
         ))}
@@ -341,10 +341,6 @@ function parseArgs(args: unknown): unknown {
 function Content({ value, markdown = false }: { value: unknown; markdown?: boolean }) {
   if (typeof value !== "string") return <Json value={value} />;
   return markdown ? <MarkdownContent content={value} /> : <Verbatim>{value}</Verbatim>;
-}
-
-function Text({ children }: { children: string }) {
-  return <pre className="whitespace-pre-wrap break-words font-sans text-sm">{children}</pre>;
 }
 
 function Verbatim({ children }: { children: string }) {

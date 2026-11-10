@@ -21,7 +21,8 @@ shows its request timeline and its latest request:
   tool return, retry prompt. Any other part (provider-specific ones included) renders as its JSON.
 - The **response**, or a spinner while the request is running.
 
-Instructions, system and user prompts, text and thinking render as Markdown. Tool returns and retry
+Instructions, tool descriptions, system and user prompts, text and thinking render as Markdown.
+Parameter descriptions stay inside the highlighted JSON schema, since they are part of it. Tool returns and retry
 prompts stay verbatim, since they are mostly command output that Markdown would mangle. JSON is
 syntax highlighted.
 
