@@ -74,6 +74,7 @@ class PlatformCompaction(PlatformSettingsModel):
     keep_turns: int = Field(default=8, ge=1)
     verbatim_tool_turns: int = Field(default=4, ge=0)
     tool_output_floor_tokens: int = Field(default=500, ge=1)
+    sentinel_threshold_pct: int = Field(default=50, ge=1, le=90)
 
 
 class PlatformSettingsPayload(PlatformSettingsModel):
@@ -263,11 +264,7 @@ def _agent_config_from_patch(body: PlatformSettingsPatch, existing_agent: AgentC
         compaction_model=body.default_models.compaction,
         memory_low_model=body.default_models.memory_low,
         memory_high_model=body.default_models.memory_high,
-        compaction=CompactionConfig(
-            keep_turns=body.compaction.keep_turns,
-            verbatim_tool_turns=body.compaction.verbatim_tool_turns,
-            tool_output_floor_tokens=body.compaction.tool_output_floor_tokens,
-        ),
+        compaction=CompactionConfig.model_validate(body.compaction.model_dump(mode="json")),
         default_session_budget=body.default_budget,
         available_models=entries,
         max_parallel_llm=existing_agent.max_parallel_llm,

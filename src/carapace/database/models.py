@@ -13,7 +13,7 @@ from ..models.session import SessionState
 from ..models.user import UserConfig
 from ..notifications.models import NotificationSubscription
 from ..sandbox.snapshot import SessionSandboxSnapshot
-from ..usage import LlmRequestLog, UsageTracker
+from ..usage import LlmContext, LlmRequestLog, UsageTracker
 from .base import Base, JsonType, ModelMessagesJson, PydanticJson, UtcDateTime
 
 # SQLite only autoincrements an "INTEGER PRIMARY KEY" rowid alias; a BIGINT primary key
@@ -156,6 +156,18 @@ class SessionLlmRequestRow(Base):
     log: Mapped[LlmRequestLog] = mapped_column(PydanticJson(LlmRequestLog))
 
 
+class SessionLlmContextRow(Base):
+    """Latest LLM context per session and agent role, overwritten on every request."""
+
+    __tablename__ = "session_llm_contexts"
+
+    session_id: Mapped[str] = mapped_column(
+        String(256), ForeignKey("sessions.session_id", ondelete="CASCADE"), primary_key=True
+    )
+    role: Mapped[str] = mapped_column(String(32), primary_key=True)
+    context: Mapped[LlmContext] = mapped_column(PydanticJson(LlmContext))
+
+
 class SessionCompactionRow(Base):
     __tablename__ = "session_compaction"
 
@@ -176,6 +188,31 @@ class SessionAuditRow(Base):
     timestamp: Mapped[datetime | None] = mapped_column(UtcDateTime, nullable=True)
     # Security audit entry payload (AuditEntry dump; stored loosely for append-only logging).
     data: Mapped[dict[str, Any]] = mapped_column(JsonType)
+
+
+class SessionSentinelRow(Base):
+    __tablename__ = "session_sentinel"
+
+    session_id: Mapped[str] = mapped_column(
+        String(256), ForeignKey("sessions.session_id", ondelete="CASCADE"), primary_key=True
+    )
+    # The sentinel's shadow conversation (pydantic-ai history), read/written as a whole.
+    messages: Mapped[list[Any]] = mapped_column(ModelMessagesJson, default=list)
+    # How many action log entries (by seq) the shadow conversation has already been told about.
+    synced_entries: Mapped[int] = mapped_column(Integer, default=0)
+    eval_count: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class SessionActionLogRow(Base):
+    __tablename__ = "session_action_log"
+
+    id: Mapped[int] = mapped_column(AutoBigInt, primary_key=True, autoincrement=True)
+    session_id: Mapped[str] = mapped_column(String(256), ForeignKey("sessions.session_id", ondelete="CASCADE"))
+    seq: Mapped[int] = mapped_column(Integer)
+    # One ActionLogEntry dump, discriminated by its ``type``.
+    data: Mapped[dict[str, Any]] = mapped_column(JsonType)
+
+    __table_args__ = (UniqueConstraint("session_id", "seq", name="uq_session_action_log_seq"),)
 
 
 class SandboxTokenRow(Base):

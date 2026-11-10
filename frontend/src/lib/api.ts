@@ -1,10 +1,12 @@
 import type {
-  AgentHistoryResponse,
+  DebugRole,
   HistoryMessage,
   HomeData,
   JobDefinition,
   JobRunResult,
   JobsFile,
+  LlmContext,
+  LlmRequestRecord,
   MemoryDigestLevel,
   MemoryFactFilter,
   MemoryFactListResponse,
@@ -810,17 +812,27 @@ export async function fetchHistory(
   return res.json();
 }
 
-export async function fetchAgentHistory(
+/** The latest LLM context of *role* in the session; null before the role's first request. */
+export async function fetchLlmContext(
   server: string,
   token: string,
   sessionId: string,
-): Promise<AgentHistoryResponse> {
-  const res = await fetch(
-    `${server}/api/sessions/${sessionId}/agent-history`,
-    { headers: headers(token) },
-  );
-  if (!res.ok) throw new Error(`Failed to fetch agent history: ${res.status}`);
-  return res.json();
+  role: DebugRole,
+): Promise<LlmContext | null> {
+  const res = await fetch(`${server}/api/sessions/${sessionId}/llm-contexts/${role}`, { headers: headers(token) });
+  if (!res.ok) throw new Error(await readErrorMessage(res, "Failed to load the LLM context"));
+  return (await res.json()) as LlmContext | null;
+}
+
+export async function fetchLlmRequests(
+  server: string,
+  token: string,
+  sessionId: string,
+  role: DebugRole,
+): Promise<LlmRequestRecord[]> {
+  const res = await fetch(`${server}/api/sessions/${sessionId}/llm-requests?role=${role}`, { headers: headers(token) });
+  if (!res.ok) throw new Error(await readErrorMessage(res, "Failed to load the LLM requests"));
+  return (await res.json()) as LlmRequestRecord[];
 }
 
 export async function postInteractivePresence(
@@ -1178,6 +1190,7 @@ export interface PlatformCompactionSettings {
   keep_turns: number;
   verbatim_tool_turns: number;
   tool_output_floor_tokens: number;
+  sentinel_threshold_pct: number;
 }
 
 export interface PlatformDefaultModelsSettings {
@@ -1475,6 +1488,7 @@ function decodeCompaction(raw: unknown): PlatformCompactionSettings {
     keep_turns: readNumber(r, "keep_turns") ?? 8,
     verbatim_tool_turns: readNumber(r, "verbatim_tool_turns") ?? 4,
     tool_output_floor_tokens: readNumber(r, "tool_output_floor_tokens") ?? 500,
+    sentinel_threshold_pct: readNumber(r, "sentinel_threshold_pct") ?? 50,
   };
 }
 
@@ -1731,6 +1745,7 @@ export function wsUrl(
   _session: string,
   clientId?: string,
   ticket?: string,
+  observe = false,
 ): string {
   void _session;
   const base = server.replace("http://", "ws://").replace("https://", "wss://");
@@ -1740,6 +1755,9 @@ export function wsUrl(
   }
   if (ticket) {
     params.set("ticket", ticket);
+  }
+  if (observe) {
+    params.set("observe", "true");
   }
   const query = params.toString();
   return `${base}/api/chat/${sessionId}${query ? `?${query}` : ""}`;

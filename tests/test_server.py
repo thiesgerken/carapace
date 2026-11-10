@@ -60,7 +60,7 @@ from carapace.server import app, sandbox_app
 from carapace.server.runtime import KnowledgeGitRuntime, MatrixChannelHandle, MatrixChannelManager
 from carapace.session import SessionEngine, SessionManager, sent_files
 from carapace.session.archive import SessionArchiveResult, SessionArchiveService
-from carapace.usage import CostSplit, LlmRequestState
+from carapace.usage import CostSplit, LlmRequestLog, LlmRequestRecord, LlmRequestState
 
 _TEST_TOKEN = "test-bearer-token-for-server-tests"
 
@@ -3640,6 +3640,16 @@ def test_ws_blank_client_id_falls_back_to_generated_source_id(client, auth_heade
     assert srv._notification_presence.is_session_actively_handled(sid) is False
 
 
+def test_ws_observer_registers_no_presence(client, auth_headers):
+    """The debug view observes a session; open approvals must still notify the user."""
+    sid = client.post("/api/sessions", headers=auth_headers, json={"channel_type": "web"}).json()["session_id"]
+
+    with client.websocket_connect(f"/api/chat/{sid}?observe=true", headers=auth_headers) as ws:
+        _consume_status(ws)
+        assert srv._notification_presence.list_presence(session_id=sid) == []
+        assert srv._notification_presence.is_session_actively_handled(sid) is False
+
+
 def test_list_commands_excludes_removed_commands(client, auth_headers):
     resp = client.get("/api/commands", headers=auth_headers)
 
@@ -4142,50 +4152,58 @@ def test_upload_sandbox_file_rejected_for_other_user(client, admin_auth_headers,
     assert resp.status_code == 404
 
 
-def test_agent_history_reflects_compacted_cut(auth_headers):
-    from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, ToolCallPart, ToolReturnPart, UserPromptPart
+def test_llm_context_endpoint_returns_the_stored_context_verbatim(auth_headers):
+    from datetime import UTC, datetime
 
-    from carapace.models.compaction import CompactionNode, SessionCompaction
-    from carapace.session.compaction import AppliedToolReturn, apply_fold, apply_tool_return_compaction, plan_fold
+    from pydantic_ai.messages import InstructionPart, ModelRequest, ModelResponse, TextPart, UserPromptPart
+
+    from carapace.usage import LlmContext
 
     sid = _create_session(auth_headers)
-    mgr = srv._engine.session_mgr
-
-    history: list = []
-    for i in range(8):
-        cid = f"call-{i}"
-        history.append(ModelRequest(parts=[UserPromptPart(content=f"q{i}")]))
-        history.append(ModelResponse(parts=[ToolCallPart(tool_name="exec", args={}, tool_call_id=cid)]))
-        history.append(ModelRequest(parts=[ToolReturnPart(tool_name="exec", content="out\n" * 50, tool_call_id=cid)]))
-        history.append(ModelResponse(parts=[TextPart(content=f"a{i}")]))
-
-    plan = plan_fold(history, keep_turns=3)
-    history = apply_fold(plan, "OLD SUMMARY TEXT")
-    # compact a tool return in the kept region
-    from carapace.session.compaction import find_tool_return_candidates, split_lead_folds
-
-    _lead, rest = split_lead_folds(history)
-    cands = find_tool_return_candidates(
-        history, floor_tokens=10, within_indexes=set(range(len(history) - len(rest), len(history)))
+    context = LlmContext(
+        request_id="req-1",
+        role="compaction",
+        compaction_target="agent",
+        model_name="test:model",
+        status="completed",
+        started_at=datetime.now(tz=UTC),
+        instructions=[InstructionPart("Summarize.")],
+        messages=[ModelRequest(parts=[UserPromptPart("long history")])],
+        tool_definitions=[],
+        response=ModelResponse(parts=[TextPart("short")], provider_details={"cost": 0.1}),
     )
-    applied = {
-        cands[0].tool_call_id: AppliedToolReturn(
-            new_content="3 lines", method="summarize", orig_tokens=200, summary_tokens=3
-        )
-    }
-    history = apply_tool_return_compaction(history, applied)
-    mgr.save_history(sid, history)
-    mgr.save_compaction(
-        sid, SessionCompaction(nodes=[CompactionNode(id="n1", kind="fold", summary="OLD SUMMARY TEXT")])
-    )
+    srv._engine.session_mgr.save_llm_context(sid, context)
+    client = TestClient(app)
 
-    body = TestClient(app).get(f"/api/sessions/{sid}/agent-history", headers=auth_headers).json()
-    assert body["node_count"] == 1
-    roles = [r["role"] for r in body["rows"]]
-    assert roles[0] == "compaction_summary"
-    assert "OLD SUMMARY TEXT" in body["rows"][0]["content"]
-    summarized = [r for r in body["rows"] if r["role"] == "tool_result" and r.get("compaction")]
-    assert summarized and summarized[0]["compaction"]["method"] == "summarize"
+    resp = client.get(f"/api/sessions/{sid}/llm-contexts/compaction", headers=auth_headers)
+    assert resp.status_code == 200
+    assert resp.json() == context.model_dump(mode="json")
+
+    assert client.get(f"/api/sessions/{sid}/llm-contexts/titler", headers=auth_headers).json() is None
+    assert client.get(f"/api/sessions/{sid}/llm-contexts/memory", headers=auth_headers).status_code == 422
+    assert client.get("/api/sessions/nope/llm-contexts/agent", headers=auth_headers).status_code == 404
+
+
+def test_llm_requests_endpoint_lists_records_filtered_by_role(auth_headers):
+    sid = _create_session(auth_headers)
+    now = datetime.now(tz=UTC)
+    legacy = LlmRequestRecord(ts=now, source="agent", input_tokens=100)
+    agent = LlmRequestRecord(ts=now, source="agent", input_tokens=200, cache_read_tokens=150, cache_write_tokens=0)
+    sentinel = LlmRequestRecord(ts=now, source="sentinel", input_tokens=50)
+    srv._engine.session_mgr.save_llm_request_log(sid, LlmRequestLog(records=[legacy, sentinel, agent]))
+    client = TestClient(app)
+
+    resp = client.get(f"/api/sessions/{sid}/llm-requests", params={"role": "agent"}, headers=auth_headers)
+    assert resp.status_code == 200
+    assert resp.json() == [legacy.model_dump(mode="json"), agent.model_dump(mode="json")]
+    assert resp.json()[0]["cache_read_tokens"] is None
+
+    assert len(client.get(f"/api/sessions/{sid}/llm-requests", headers=auth_headers).json()) == 3
+    assert (
+        client.get(f"/api/sessions/{sid}/llm-requests", params={"role": "memory"}, headers=auth_headers).status_code
+        == 422
+    )
+    assert client.get("/api/sessions/nope/llm-requests", headers=auth_headers).status_code == 404
 
 
 def test_history_annotations_carry_model_facing_text(auth_headers):
@@ -4260,6 +4278,7 @@ def test_admin_platform_settings_roundtrips_compaction(client, admin_auth_header
                 "keep_turns": 4,
                 "verbatim_tool_turns": 1,
                 "tool_output_floor_tokens": 800,
+                "sentinel_threshold_pct": 70,
             },
             "available_models": [
                 {"provider": "anthropic", "name": "claude-sonnet-4-6"},
@@ -4275,9 +4294,11 @@ def test_admin_platform_settings_roundtrips_compaction(client, admin_auth_header
         "keep_turns": 4,
         "verbatim_tool_turns": 1,
         "tool_output_floor_tokens": 800,
+        "sentinel_threshold_pct": 70,
     }
     # Applied to runtime config and persisted to the DB scalar row.
     assert srv._config.agent.compaction.keep_turns == 4
+    assert srv._config.agent.compaction.sentinel_threshold_pct == 70
     assert srv._config.agent.compaction.verbatim_tool_turns == 1
     assert srv._config.agent.compaction_model == "anthropic:claude-haiku-4-5"
     assert srv._platform_store.load_section("agent")["compaction_model"] == "anthropic:claude-haiku-4-5"

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import secrets
 from contextlib import contextmanager
@@ -14,10 +15,11 @@ from genai_prices import Usage as PriceUsage
 from genai_prices import calc_price
 from loguru import logger
 from pydantic import BaseModel, Field
-from pydantic_ai.capabilities.abstract import AbstractCapability
+from pydantic_ai.capabilities.abstract import AbstractCapability, WrapModelRequestHandler
 from pydantic_ai.messages import (
     CompactionPart,
     FilePart,
+    InstructionPart,
     ModelMessage,
     ModelRequest,
     ModelRequestPart,
@@ -35,8 +37,8 @@ from pydantic_ai.messages import (
     UserPromptPart,
 )
 from pydantic_ai.models import ModelRequestContext
-from pydantic_ai.tools import AgentDepsT, RunContext
-from pydantic_ai.usage import RunUsage, UsageLimits
+from pydantic_ai.tools import AgentDepsT, RunContext, ToolDefinition
+from pydantic_ai.usage import RequestUsage, RunUsage, UsageLimits
 
 from .models.config import is_subscription_model
 from .models.session import SessionBudget
@@ -101,7 +103,7 @@ def usage_cost(model_key: str, usage: ModelUsage) -> CostSplit:
     return cost_split(model_key, price_for_usage(model_key, usage) or Decimal(0))
 
 
-def _merge_run_usage_into_bucket(bucket: ModelUsage, usage: RunUsage) -> None:
+def _merge_run_usage_into_bucket(bucket: ModelUsage, usage: RunUsage | RequestUsage) -> None:
     bucket.input_tokens += usage.input_tokens or 0
     bucket.output_tokens += usage.output_tokens or 0
     bucket.cache_read_tokens += usage.cache_read_tokens or 0
@@ -142,6 +144,30 @@ def provider_cost_usd_from_messages(messages: list[ModelMessage]) -> Decimal | N
         total += cost
         found = True
     return total if found else None
+
+
+class RequestCost(BaseModel):
+    """What a single model request cost, in the terms of CostSplit."""
+
+    # Both None when the model has no known pricing and the provider reported no cost.
+    cost_usd: Decimal | None
+    equivalent_cost_usd: Decimal | None
+    # What the provider itself reported, if it did (OpenRouter, for example).
+    provider_cost_usd: Decimal | None
+
+
+def request_cost(model_id: str, response: ModelResponse) -> RequestCost:
+    """Price one response; *model_id* is the carapace model id (provider:model), not the API model name."""
+    provider_cost = provider_cost_usd_from_messages([response])
+    usage = ModelUsage()
+    _merge_run_usage_into_bucket(usage, response.usage)
+    _merge_cost_into_bucket(usage, provider_cost)
+    equivalent = price_for_usage(model_id, usage)
+    return RequestCost(
+        cost_usd=None if equivalent is None else cost_split(model_id, equivalent).actual,
+        equivalent_cost_usd=equivalent,
+        provider_cost_usd=provider_cost,
+    )
 
 
 class UsageTracker(BaseModel):
@@ -375,6 +401,8 @@ def usage_limits_for_remaining_budget(
 LlmSource = Literal["agent", "sentinel", "titler", "compaction", "memory"]
 LlmRequestPhase = Literal["processing_prompt", "thinking", "generating"]
 LlmRequestOutcome = Literal["completed", "interrupted"]
+LlmContextStatus = Literal["running", "completed", "failed", "interrupted"]
+CompactionTarget = Literal["agent", "sentinel"]
 
 _llm_request_sink: ContextVar[LlmRequestObserver | None] = ContextVar(
     "llm_request_sink",
@@ -384,6 +412,7 @@ _current_llm_request_state: ContextVar[LlmRequestState | None] = ContextVar(
     "current_llm_request_state",
     default=None,
 )
+_current_llm_context: ContextVar[LlmContext | None] = ContextVar("current_llm_context", default=None)
 
 
 class LlmRequestState(BaseModel):
@@ -397,10 +426,35 @@ class LlmRequestState(BaseModel):
     first_text_at: datetime | None = None
 
 
+class LlmContext(BaseModel):
+    """One request to a model as it was sent, plus its outcome (see GLOSSARY.md: LLM Context)."""
+
+    request_id: str
+    role: LlmSource
+    # Only for the compaction role: whose model history or shadow conversation was compacted.
+    compaction_target: CompactionTarget | None = None
+    # The carapace model id (provider:model) the request was priced with, not the API model name.
+    model_name: str
+    status: LlmContextStatus
+    started_at: datetime
+    completed_at: datetime | None = None
+    instructions: list[InstructionPart]
+    messages: list[ModelMessage]
+    tool_definitions: list[ToolDefinition]
+    response: ModelResponse | None = None
+    error: str | None = None
+    # Priced when the response arrives, like the usage tracker prices at record time.
+    cost: RequestCost | None = None
+
+
 class LlmRequestObserver(Protocol):
     async def on_request_started(self, state: LlmRequestState) -> None: ...
 
     async def on_request_completed(self, record: LlmRequestRecord) -> None: ...
+
+    async def on_context(self, context: LlmContext) -> None: ...
+
+    async def on_context_failed(self, role: LlmSource, error: str) -> None: ...
 
 
 @contextmanager
@@ -410,6 +464,18 @@ def llm_request_sink_scope(sink: LlmRequestObserver | None) -> Any:
         yield
     finally:
         _llm_request_sink.reset(token)
+
+
+async def fail_llm_context(role: LlmSource, error: str) -> None:
+    """Mark *role*'s latest LLM context failed if the failure cut it short.
+
+    For failures the request itself only sees as a cancellation: a timeout around the run, or a
+    streamed request, whose provider errors surface in the stream consumer while pydantic-ai cancels
+    the request task.
+    """
+    sink = _llm_request_sink.get()
+    if sink is not None:
+        await sink.on_context_failed(role, error)
 
 
 def note_llm_request_thinking(ts: datetime | None = None) -> LlmRequestState | None:
@@ -454,6 +520,11 @@ class LlmRequestRecord(BaseModel):
     outcome: LlmRequestOutcome = "completed"
     input_tokens: int = 0
     output_tokens: int = 0
+    # None on records written before these counts were kept: unknown, not zero.
+    cache_read_tokens: int | None = None
+    cache_write_tokens: int | None = None
+    # None on interrupted requests and on records written before costs were kept.
+    cost: RequestCost | None = None
     started_at: datetime | None = None
     first_thinking_at: datetime | None = None
     last_thinking_at: datetime | None = None
@@ -740,11 +811,65 @@ def input_shape_ratios_from_messages(
     )
 
 
+def _request_llm_context(
+    request_context: ModelRequestContext,
+    *,
+    state: LlmRequestState,
+    model_id: str,
+    compaction_target: CompactionTarget | None,
+) -> LlmContext:
+    params = request_context.model_request_parameters
+    return LlmContext(
+        request_id=state.request_id,
+        role=state.source,
+        compaction_target=compaction_target,
+        model_name=model_id,
+        status="running",
+        started_at=state.started_at,
+        instructions=list(params.instruction_parts or []),
+        messages=list(request_context.messages),
+        tool_definitions=[*params.function_tools, *params.output_tools],
+    )
+
+
 @dataclass
 class LlmRequestLogCapability(AbstractCapability[AgentDepsT]):
-    """Append one persisted record per HTTP model response (via ContextVar sink)."""
+    """Report every model request to the session sink: activity, usage record and LLM context."""
 
     source: LlmSource
+    # The carapace model id (provider:model): pricing and subscription checks key on it, and the
+    # provider's API model name is often a short or dated alias of it.
+    model_id: str
+    compaction_target: CompactionTarget | None = None
+
+    def __post_init__(self) -> None:
+        if (self.source == "compaction") != (self.compaction_target is not None):
+            raise ValueError("compaction_target is required for the compaction role and only for it")
+
+    async def wrap_model_request(
+        self,
+        ctx: RunContext[AgentDepsT],
+        *,
+        request_context: ModelRequestContext,
+        handler: WrapModelRequestHandler,
+    ) -> ModelResponse:
+        try:
+            return await handler(request_context)
+        except asyncio.CancelledError:
+            await self._finish_context("interrupted", error=None)
+            raise
+        except Exception as exc:
+            await self._finish_context("failed", error=f"{type(exc).__name__}: {exc}")
+            raise
+
+    async def _finish_context(self, status: LlmContextStatus, *, error: str | None) -> None:
+        context = _current_llm_context.get()
+        if context is None or context.status != "running":
+            return
+        context = context.model_copy(update={"status": status, "error": error, "completed_at": datetime.now(tz=UTC)})
+        _current_llm_context.set(context)
+        if (sink := _llm_request_sink.get()) is not None:
+            await sink.on_context(context)
 
     async def before_model_request(
         self,
@@ -752,18 +877,20 @@ class LlmRequestLogCapability(AbstractCapability[AgentDepsT]):
         request_context: ModelRequestContext,
     ) -> ModelRequestContext:
         sink = _llm_request_sink.get()
-        api_model_name = request_context.model.model_name
-        carapace_id = getattr(ctx.deps, "agent_model_id", None)
-        stored_model_name = carapace_id if isinstance(carapace_id, str) and carapace_id else api_model_name
         state = LlmRequestState(
             request_id=secrets.token_hex(8),
             source=self.source,
-            model_name=stored_model_name,
+            model_name=self.model_id,
             started_at=datetime.now(tz=UTC),
         )
         _current_llm_request_state.set(state)
+        context = _request_llm_context(
+            request_context, state=state, model_id=self.model_id, compaction_target=self.compaction_target
+        )
+        _current_llm_context.set(context)
         if sink is not None:
             await sink.on_request_started(state.model_copy(deep=True))
+            await sink.on_context(context)
         return request_context
 
     async def after_model_request(
@@ -782,23 +909,25 @@ class LlmRequestLogCapability(AbstractCapability[AgentDepsT]):
             request_context.messages,
             model_name=api_model_name,
         )
-        carapace_id = getattr(ctx.deps, "agent_model_id", None)
-        stored_model_name = carapace_id if isinstance(carapace_id, str) and carapace_id else api_model_name
         completed_at = datetime.now(tz=UTC)
         if state is None:
             state = LlmRequestState(
                 request_id=secrets.token_hex(8),
                 source=self.source,
-                model_name=stored_model_name,
+                model_name=self.model_id,
                 started_at=completed_at,
             )
+        cost = request_cost(self.model_id, response)
         record = LlmRequestRecord(
             ts=completed_at,
             request_id=state.request_id,
             source=self.source,
-            model_name=state.model_name or stored_model_name,
+            model_name=self.model_id,
             input_tokens=usage.input_tokens or 0,
             output_tokens=usage.output_tokens or 0,
+            cache_read_tokens=usage.cache_read_tokens,
+            cache_write_tokens=usage.cache_write_tokens,
+            cost=cost,
             started_at=state.started_at,
             first_thinking_at=state.first_thinking_at,
             last_thinking_at=state.last_thinking_at,
@@ -811,4 +940,16 @@ class LlmRequestLogCapability(AbstractCapability[AgentDepsT]):
         _current_llm_request_state.set(None)
         if sink is not None:
             await sink.on_request_completed(record)
+        if (context := _current_llm_context.get()) is not None:
+            context = context.model_copy(
+                update={
+                    "status": "completed",
+                    "response": response,
+                    "completed_at": completed_at,
+                    "cost": cost,
+                }
+            )
+            _current_llm_context.set(context)
+            if sink is not None:
+                await sink.on_context(context)
         return response

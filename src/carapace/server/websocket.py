@@ -15,7 +15,7 @@ from ..models.tooling import ToolResult, normalize_tool_call_args
 from ..notifications.models import NotificationClientType
 from ..notifications.vapid import derive_vapid_public_key
 from ..security.context import ApprovalSource, ApprovalVerdict
-from ..usage import LlmRequestState
+from ..usage import LlmContextStatus, LlmRequestState, LlmSource
 from ..ws_models import (
     SLASH_COMMANDS,
     ApprovalRequest,
@@ -32,6 +32,7 @@ from ..ws_models import (
     GitPushApprovalRequest,
     LlmActivity,
     LlmActivityUpdate,
+    LlmContextUpdate,
     ResetToTurnRequest,
     RetryLatestTurnRequest,
     ServerEnvelope,
@@ -171,6 +172,9 @@ class WebSocketSubscriber:
 
     async def on_llm_activity(self, activity: LlmRequestState | None) -> None:
         await self._safe_send(LlmActivityUpdate(activity=_llm_activity_payload(activity)))
+
+    async def on_llm_context(self, role: LlmSource, request_id: str, status: LlmContextStatus) -> None:
+        await self._safe_send(LlmContextUpdate(role=role, request_id=request_id, status=status))
 
     async def on_status(
         self,
@@ -319,6 +323,7 @@ async def chat_ws(
     session_id: str,
     user: Annotated[UserIdentity, Depends(verify_ws_token)],
     client_id: Annotated[str | None, Query()] = None,
+    observe: Annotated[bool, Query()] = False,
 ) -> None:
     current_state = server._engine.session_mgr.load_state(session_id)
     if current_state is None or not server._engine.session_mgr.is_owned_by(session_id, user.username):
@@ -329,15 +334,17 @@ async def chat_ws(
     await websocket.accept()
     logger.info(f"WebSocket connected for session {session_id}")
 
-    normalized_client_id = client_id.strip() if client_id else ""
-    ws_source_id = normalized_client_id or f"ws:{uuid.uuid4().hex}"
-    ws_client_type: NotificationClientType = "cli" if current_state.channel_type == "cli" else "web"
-    await _set_notification_presence(
-        session_id=session_id,
-        source_id=ws_source_id,
-        client_type=ws_client_type,
-        focus_state="visible",
-    )
+    # An observer (the debug view) shows no approvals, so it must not count as someone handling the
+    # session: that would suppress the notifications the user needs to answer them.
+    ws_source_id = None if observe else (client_id.strip() if client_id else "") or f"ws:{uuid.uuid4().hex}"
+    if ws_source_id is not None:
+        ws_client_type: NotificationClientType = "cli" if current_state.channel_type == "cli" else "web"
+        await _set_notification_presence(
+            session_id=session_id,
+            source_id=ws_source_id,
+            client_type=ws_client_type,
+            focus_state="visible",
+        )
 
     sub = WebSocketSubscriber(websocket)
     active = server._engine.subscribe(session_id, sub)
@@ -484,6 +491,7 @@ async def chat_ws(
         with contextlib.suppress(Exception):
             await websocket.close(code=1011)
     finally:
-        server._notification_presence.remove_presence(session_id=session_id, source_id=ws_source_id)
+        if ws_source_id is not None:
+            server._notification_presence.remove_presence(session_id=session_id, source_id=ws_source_id)
         server._engine.unsubscribe(session_id, sub)
         logger.debug(f"WebSocket cleanup for session {session_id}")

@@ -39,7 +39,7 @@ from ..models.tooling import ToolCallCallback, ToolResult
 from ..notifications.router import NotificationRouter
 from ..sandbox.manager import SandboxManager
 from ..sandbox.runtime import SkillActivationError, SkillActivationInputs, SkillFileCredential
-from ..security.context import SessionSecurity
+from ..security.context import RewindEntry, SessionSecurity, copy_sentinel_state
 from ..security.sentinel import Sentinel
 from ..skills import SkillDocumentError, SkillRegistry
 from ..usage import (
@@ -75,6 +75,7 @@ from .transcript import (
     completed_model_turn_end_indexes,
     history_for_completed_turn_count,
     is_terminal_history_message,
+    is_turn_prompt_event,
     is_turn_terminal_event,
     normalize_unattended_output_history,
     rebuild_model_history_from_events,
@@ -96,6 +97,19 @@ def note_llm_request_text() -> LlmRequestState | None:
 
 def note_llm_request_thinking() -> LlmRequestState | None:
     return _note_llm_request_thinking()
+
+
+def _user_prompts(events: list[dict[str, Any]]) -> list[str]:
+    """The turn-starting user messages in *events* (slash commands start no turn)."""
+    return [event["content"] for event in events if is_turn_prompt_event(event)]
+
+
+def _rewind_entry(kept_events: list[dict[str, Any]], removed_events: list[dict[str, Any]]) -> RewindEntry:
+    kept_prompts = _user_prompts(kept_events)
+    return RewindEntry(
+        user_message=kept_prompts[-1] if kept_prompts else None,
+        removed_turns=len(_user_prompts(removed_events)),
+    )
 
 
 class SessionEngine(
@@ -249,6 +263,7 @@ class SessionEngine(
             ask_mode=state.attributes.ask_mode,
             yolo_mode=state.attributes.yolo_mode,
         )
+        security.load_sentinel_state()
         knowledge_dir = self._knowledge_dir_for_session(session_id)
         sentinel = Sentinel(
             model=self._config.agent.sentinel_model,
@@ -261,6 +276,9 @@ class SessionEngine(
             timeout=timedelta(seconds=self._config.agent.sentinel_timeout_seconds),
             model_factory=self._model_factory,
             model_settings_resolver=self._resolve_model_settings,
+            compactor=lambda messages, system_prompt: self.compact_sentinel_conversation(
+                session_id, messages, system_prompt
+            ),
         )
         usage_tracker = self._session_mgr.load_usage(session_id)
         llm_log = self._session_mgr.load_llm_request_log(session_id)
@@ -648,6 +666,7 @@ class SessionEngine(
         self._session_mgr.save_events(forked_session_id, forked_events)
         self._session_mgr.save_history(forked_session_id, forked_history)
         self._session_mgr.save_compaction(forked_session_id, forked_tree)
+        copy_sentinel_state(self._session_mgr.session_factory, session_id, forked_session_id)
         self._session_mgr.clear_llm_request_state(forked_session_id)
         self._session_mgr.clear_sandbox_snapshot(forked_session_id)
 
@@ -737,12 +756,7 @@ class SessionEngine(
 
     def _first_user_event_index(self, events: list[dict[str, Any]], *, start: int) -> int | None:
         """Index of the first non-slash user event at or after *start* (a turn's prompt)."""
-        for index in range(start, len(events)):
-            event = events[index]
-            content = event.get("content")
-            if event.get("role") == "user" and isinstance(content, str) and not content.startswith("/"):
-                return index
-        return None
+        return next((index for index in range(start, len(events)) if is_turn_prompt_event(events[index])), None)
 
     def _sliced_transcript_for_event_cut(
         self, session_id: str, events: list[dict[str, Any]], cut_index: int
@@ -791,6 +805,7 @@ class SessionEngine(
         tree: SessionCompaction,
     ) -> None:
         session_id = active.state.session_id
+        removed_events = self._session_mgr.load_events(session_id)[len(events) :]
         self._session_mgr.save_events(session_id, events)
         self._session_mgr.save_history(session_id, history)
         self._session_mgr.save_compaction(session_id, tree)
@@ -798,6 +813,9 @@ class SessionEngine(
         active.llm_request_state = None
         active.llm_request_thinking.clear()
         self._trim_fork_origin(active.state, len(events))
+        # The sentinel keeps its state across a rewind; it just learns about it with its next evaluation.
+        assert active.security is not None
+        active.security.append(_rewind_entry(events, removed_events))
 
     def _trim_fork_origin(self, state: SessionState, event_count: int) -> None:
         """Rewinding a fork into its inherited events makes what follows its own, not the source's."""

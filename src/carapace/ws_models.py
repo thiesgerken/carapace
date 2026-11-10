@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from .models.session import SessionBudget
 from .models.tooling import SentFileInfo
 from .security.context import ApprovalSource, ApprovalVerdict
-from .usage import BudgetGauge, LlmRequestPhase, LlmSource
+from .usage import BudgetGauge, LlmContextStatus, LlmRequestPhase, LlmSource
 
 FinalStatus = Literal["success", "warning"]
 
@@ -292,6 +292,15 @@ class LlmActivityUpdate(BaseModel):
     activity: LlmActivity | None = None
 
 
+class LlmContextUpdate(BaseModel):
+    """Server → Client: an agent role's latest LLM context changed. Clients fetch it via REST."""
+
+    type: Literal["llm_context"] = "llm_context"
+    role: LlmSource
+    request_id: str
+    status: LlmContextStatus
+
+
 class StatusUpdate(BaseModel):
     """Server → Client: session status on connect and after a budget change.
 
@@ -329,6 +338,7 @@ ServerEnvelope = (
     | Cancelled
     | SessionTitleUpdate
     | LlmActivityUpdate
+    | LlmContextUpdate
     | StatusUpdate
     | UserMessageNotification
 )

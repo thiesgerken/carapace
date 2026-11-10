@@ -7,10 +7,12 @@ from datetime import UTC, datetime
 from typing import Annotated, Any, Literal
 
 from loguru import logger
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, TypeAdapter
+from pydantic_ai import ModelMessage
+from sqlalchemy import select
 
 from ..database.engine import SessionFactory
-from ..database.models import SessionAuditRow
+from ..database.models import SessionActionLogRow, SessionAuditRow, SessionSentinelRow
 
 
 class SecurityDeniedError(Exception):
@@ -108,6 +110,13 @@ class ContextGrantEntry(BaseModel):
     mcp_servers: list[str] = []
 
 
+class RewindEntry(BaseModel):
+    type: Literal["rewind"] = "rewind"
+    # The user message of the turn the session was rewound to; None if no turn is left.
+    user_message: str | None
+    removed_turns: int
+
+
 ActionLogEntry = Annotated[
     UserMessageEntry
     | ToolCallEntry
@@ -118,12 +127,18 @@ ActionLogEntry = Annotated[
     | UserVouchedEntry
     | GitPushEntry
     | CredentialAccessEntry
-    | ContextGrantEntry,
+    | ContextGrantEntry
+    | RewindEntry,
     Field(discriminator="type"),
 ]
 
+_action_log_entry_adapter: TypeAdapter[ActionLogEntry] = TypeAdapter(ActionLogEntry)
+
 
 # --- Sentinel Verdict ---
+
+# The output tool a sentinel evaluation ends with; its return closes the evaluation in the shadow conversation.
+SENTINEL_VERDICT_TOOL = "judge"
 
 
 class SentinelVerdict(BaseModel):
@@ -226,18 +241,9 @@ class SessionSecurity:
         self.unattended = unattended
         self.ask_mode = ask_mode
         self.yolo_mode = yolo_mode
-        self.action_log: list[
-            UserMessageEntry
-            | ToolCallEntry
-            | ToolResultEntry
-            | AgentResponseEntry
-            | ApprovalEntry
-            | SkillActivatedEntry
-            | UserVouchedEntry
-            | GitPushEntry
-            | CredentialAccessEntry
-            | ContextGrantEntry
-        ] = []
+        self.action_log: list[ActionLogEntry] = []
+        # The sentinel's shadow conversation; with the action log, this is the persisted sentinel state.
+        self.sentinel_messages: list[ModelMessage] = []
         self.sentinel_eval_count: int = 0
         self.max_sentinel_calls_per_tool_call = max_sentinel_calls_per_tool_call
         self.sentinel_domain_batch_window_ms = sentinel_domain_batch_window_ms
@@ -431,27 +437,63 @@ class SessionSecurity:
         for request in pending_requests.values():
             self._cancel_domain_future(request.future, str(exc))
 
-    def append(self, entry: ActionLogEntry) -> None:
-        self.action_log.append(entry)
+    def load_sentinel_state(self) -> None:
+        """Restore the persisted sentinel state, so a restart is invisible to the sentinel."""
+        if self._session_factory is None:
+            return
+        with self._session_factory() as db:
+            rows = db.scalars(
+                select(SessionActionLogRow.data)
+                .where(SessionActionLogRow.session_id == self.session_id)
+                .order_by(SessionActionLogRow.seq)
+            ).all()
+            sentinel = db.get(SessionSentinelRow, self.session_id)
+            self.action_log = [_action_log_entry_adapter.validate_python(data) for data in rows]
+            if sentinel is not None:
+                self.sentinel_messages = list(sentinel.messages)
+                self._last_synced_idx = sentinel.synced_entries
+                self.sentinel_eval_count = sentinel.eval_count
 
-    def new_entries_since_sync(
-        self,
-    ) -> list[
-        UserMessageEntry
-        | ToolCallEntry
-        | ToolResultEntry
-        | AgentResponseEntry
-        | ApprovalEntry
-        | SkillActivatedEntry
-        | UserVouchedEntry
-        | GitPushEntry
-        | CredentialAccessEntry
-        | ContextGrantEntry
-    ]:
-        """Return action log entries added since the last sentinel sync."""
-        entries = self.action_log[self._last_synced_idx :]
-        self._last_synced_idx = len(self.action_log)
-        return entries
+    def append(self, entry: ActionLogEntry) -> None:
+        seq = len(self.action_log)
+        self.action_log.append(entry)
+        if self._session_factory is None:
+            return
+        with self._session_factory.begin() as db:
+            db.add(SessionActionLogRow(session_id=self.session_id, seq=seq, data=entry.model_dump(mode="json")))
+
+    def unsynced_entries(self) -> list[ActionLogEntry]:
+        """Action log entries the shadow conversation has not been told about yet."""
+        return self.action_log[self._last_synced_idx :]
+
+    def record_sentinel_evaluation(self, messages: list[ModelMessage] | None, *, synced_entries: int) -> None:
+        """Count an evaluation; a completed one (*messages* set) also advances the shadow conversation.
+
+        Entries only count as synced once an evaluation completed with them in its prompt: a timed-out
+        evaluation leaves the conversation unchanged, so its entries must reach the next prompt.
+        """
+        self.sentinel_eval_count += 1
+        if messages is not None:
+            self.sentinel_messages = messages
+            self._last_synced_idx = synced_entries
+        self._save_sentinel_state()
+
+    def replace_sentinel_messages(self, messages: list[ModelMessage]) -> None:
+        """Swap in a compacted shadow conversation."""
+        self.sentinel_messages = messages
+        self._save_sentinel_state()
+
+    def _save_sentinel_state(self) -> None:
+        if self._session_factory is None:
+            return
+        with self._session_factory.begin() as db:
+            row = db.get(SessionSentinelRow, self.session_id)
+            if row is None:
+                row = SessionSentinelRow(session_id=self.session_id)
+                db.add(row)
+            row.messages = self.sentinel_messages
+            row.synced_entries = self._last_synced_idx
+            row.eval_count = self.sentinel_eval_count
 
     def tool_calls_since_last_user_message(self) -> int:
         count = 0
@@ -652,6 +694,24 @@ class SessionSecurity:
             return UserEscalationDecision(allowed=False)
         return await self._user_escalation_callback(self.session_id, subject, context)
 
-    def reset_sentinel(self) -> None:
-        self.sentinel_eval_count = 0
-        self._last_synced_idx = 0
+
+def copy_sentinel_state(session_factory: SessionFactory, source_id: str, target_id: str) -> None:
+    """Give *target_id* (a fresh fork) the persisted sentinel state of *source_id*."""
+    with session_factory.begin() as db:
+        entries = db.scalars(
+            select(SessionActionLogRow)
+            .where(SessionActionLogRow.session_id == source_id)
+            .order_by(SessionActionLogRow.seq)
+        ).all()
+        for entry in entries:
+            db.add(SessionActionLogRow(session_id=target_id, seq=entry.seq, data=entry.data))
+        sentinel = db.get(SessionSentinelRow, source_id)
+        if sentinel is not None:
+            db.add(
+                SessionSentinelRow(
+                    session_id=target_id,
+                    messages=list(sentinel.messages),
+                    synced_entries=sentinel.synced_entries,
+                    eval_count=sentinel.eval_count,
+                )
+            )

@@ -49,7 +49,7 @@ Sessions are stored on disk at `$CARAPACE_DATA_DIR/sessions/<session_id>/`:
 | `usage.yaml`   | Token usage breakdown by model                                                                            |
 | `audit.yaml`   | Security audit trail (sentinel verdicts, decisions)                                                       |
 
-Sessions persist across server restarts. In-memory state (action log, sentinel conversation) is rebuilt when a session is reactivated.
+Sessions persist across server restarts. The sentinel state (action log and shadow conversation) is persisted too and loaded when a session is reactivated, so the sentinel continues where it stopped (see [security.md](security.md#sentinel-state)).
 
 `history.yaml` and `events.yaml` serve different purposes:
 
@@ -163,7 +163,7 @@ Sentinel approvals and safe-listed or skill-declared auto-approvals never reset 
 
 On reaching the limit:
 
-- **Attended sessions** pause. Every call over the limit asks for approval with "Autonomy limit reached (N tool calls without you)", through the normal approval cards (web, CLI, Matrix). Allowing at least one card of a batch resets the streak, and the allowed calls continue to the security gate (safe-list, sentinel, possibly another escalation) exactly as if the limit had not been hit: "continue" is no verdict on the call itself, so it is not recorded as a user approval in the sentinel's shadow log either. A denied card tells the model "Autonomy limit reached. Stop calling tools and report what you have." If the user allowed none of the autonomy cards of a batch, the next tool call ends the turn with a budget stop (`/budget autonomy N`), whatever else the user decided in that batch.
+- **Attended sessions** pause. Every call over the limit asks for approval with "Autonomy limit reached (N tool calls without you)", through the normal approval cards (web, CLI, Matrix). Allowing at least one card of a batch resets the streak, and the allowed calls continue to the security gate (safe-list, sentinel, possibly another escalation) exactly as if the limit had not been hit: "continue" is no verdict on the call itself, so it is not recorded as a user decision in the sentinel's action log either. A denied card tells the model "Autonomy limit reached. Stop calling tools and report what you have." If the user allowed none of the autonomy cards of a batch, the next tool call ends the turn with a budget stop (`/budget autonomy N`), whatever else the user decided in that batch.
 - **Unattended sessions** (`attributes.unattended`, the default for jobs) have no one to ask: every call of the batch that crosses the limit is denied with the same wrap-up instruction, so a job still ends with a report. The next tool call ends the turn with a budget stop. Jobs with `persistent_session_id` and Matrix sessions are attended and pause instead.
 
 There is no timeout on the pause, and a pending autonomy approval is closed like any other approval when the server restarts. The streak lives in memory on the active session; a restart resets it. The chat input shows it as the "Autonomy" gauge.
@@ -245,7 +245,7 @@ The primary interactive channel. A Next.js web app connects to the carapace serv
 
 Message `type` values, JSON fields, authentication, and what the server sends on a **fresh connect** (including replay of pending approvals and escalations) are documented in **[websocket-session.md](websocket-session.md)**.
 
-Authentication uses the `carapace_session` cookie issued by `POST /api/auth/login`. The optional WebSocket query parameter is only `client_id`, used to keep interactive presence stable across reconnects.
+Authentication uses the `carapace_session` cookie issued by `POST /api/auth/login`. The optional WebSocket query parameters are `client_id`, used to keep interactive presence stable across reconnects, and `observe=true` for a connection that only watches the session and registers no presence (the debug view).
 
 For presence tracking, the frontend also posts REST heartbeats and may attach a stable `client_id` query parameter to the WebSocket so reconnects map back to the same interactive client.
 

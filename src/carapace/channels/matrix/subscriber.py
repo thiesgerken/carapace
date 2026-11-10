@@ -10,7 +10,7 @@ from loguru import logger
 
 from ...models.session import SessionBudget
 from ...models.tooling import ToolResult
-from ...usage import LlmRequestState
+from ...usage import LlmContextStatus, LlmRequestState, LlmSource
 from ...ws_models import ApprovalRequest, TurnUsage
 from .approval import (
     TYPING_INTERVAL,
@@ -120,6 +120,9 @@ class MatrixSubscriber:
         pass  # Thinking content not displayed in Matrix
 
     async def on_llm_activity(self, activity: LlmRequestState | None) -> None:
+        pass
+
+    async def on_llm_context(self, role: LlmSource, request_id: str, status: LlmContextStatus) -> None:
         pass
 
     async def on_status(

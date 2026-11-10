@@ -2,9 +2,11 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
+import { useSearchParams } from "next/navigation";
 import { useAppShell } from "@/components/app-shell-context";
 import { useBrand } from "@/hooks/use-brand";
 import { ChatView } from "@/components/chat-view";
+import { DebugView } from "@/components/debug-view";
 import { HomeView } from "@/components/home-view";
 import type { NewSessionOptions } from "@/components/new-session-button";
 import type { SessionInfo } from "@/lib/types";
@@ -16,6 +18,7 @@ export default function ChatPage() {
   const shell = useAppShell();
   const { name: brand } = useBrand();
   const { activeSessionId, activeSession } = shell;
+  const view = useSearchParams().get("view");
   // A session started from the home composer, waiting for its chat view to send the first message.
   const [pendingStart, setPendingStart] = useState<{ sessionId: string; content: string } | null>(null);
 
@@ -54,6 +57,10 @@ export default function ChatPage() {
       : sessionTitle;
     document.title = useDefaultTitle ? brand : `${truncatedTitle} • ${brand}`;
   }, [activeSession, brand]);
+
+  if (activeSessionId && view === "debug") {
+    return <DebugView key={activeSessionId} server={shell.server} token={shell.token} sessionId={activeSessionId} title={activeSession?.title} />;
+  }
 
   if (activeSessionId) {
     return (

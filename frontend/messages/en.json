@@ -579,6 +579,7 @@
             "defaultRequired": "{field} default model is required.",
             "defaultUnknown": "{field} default model {id} is not in the catalog.",
             "minInt": "{field} must be a whole number of at least {min}.",
+            "rangeInt": "{field} must be a whole number from {min} to {max}.",
             "defaultDisabled": "{field} default model {id} is disabled."
         },
         "sections": {
@@ -658,7 +659,9 @@
             "modelDefault": "Default (title model)",
             "keepTurns": "Keep recent turns",
             "verbatimTurns": "Verbatim tool turns",
-            "toolFloor": "Tool-output floor (tokens)"
+            "toolFloor": "Tool-output floor (tokens)",
+            "sentinelThreshold": "Sentinel threshold (% of context)",
+            "sentinelThresholdHint": "Before an evaluation, the sentinel's conversation is compacted automatically once it fills this share of the sentinel model's context window (1 to 90)."
         }
     },
     "home": {
@@ -1620,7 +1623,6 @@
         }
     },
     "compaction": {
-        "badge": "compacted",
         "railHeader": "{count, plural, one {# turn} other {# turns}} condensed for the model",
         "modelSees": "Model sees",
         "modelSummaryLabel": "Summary in the model's context",
@@ -1631,13 +1633,7 @@
             "summarize": "summarized",
             "truncate": "truncated",
             "drop": "dropped"
-        },
-        "agentView": "Agent view",
-        "agentViewOff": "Normal view",
-        "agentViewHint": "Show the history exactly as the agent sees it",
-        "agentSummary": "Compacted summary",
-        "agentEmpty": "No history yet.",
-        "agentError": "Could not load agent view. Check your connection or permissions."
+        }
     },
     "promptPreview": {
         "role": "Role",
@@ -1660,6 +1656,88 @@
         "views": {
             "rendered": "Rendered",
             "raw": "Raw"
+        }
+    },
+    "sessionView": {
+        "label": "Session view",
+        "chat": "Chat",
+        "debug": "Debug"
+    },
+    "debugView": {
+        "usage": {
+            "input": "Input tokens",
+            "output": "Output tokens",
+            "cacheRead": "Cache read",
+            "cacheWrite": "Cache write",
+            "input_audio_tokens": "Input audio",
+            "output_audio_tokens": "Output audio",
+            "cache_audio_read_tokens": "Cache audio read",
+            "cost": "Cost",
+            "unpriced": "No pricing",
+            "providerCost": "Provider-reported"
+        },
+        "hint": "The latest request of each agent role, exactly as sent to the model. Updates live.",
+        "role": "Agent role",
+        "roles": {
+            "agent": "Agent",
+            "sentinel": "Sentinel",
+            "titler": "Titler",
+            "compaction": "Compaction"
+        },
+        "empty": "This role has not sent a request in this session yet.",
+        "loadError": "Could not load the LLM context: {error}",
+        "model": "Model",
+        "status": "Status",
+        "started": "Started",
+        "compacted": "Compacted",
+        "statuses": {
+            "running": "Running",
+            "completed": "Completed",
+            "failed": "Failed",
+            "interrupted": "Interrupted"
+        },
+        "compactionTargets": {
+            "agent": "Agent model history",
+            "sentinel": "Sentinel shadow conversation"
+        },
+        "instructions": "Instructions",
+        "static": "Static",
+        "dynamic": "Dynamic",
+        "tools": "Tool definitions ({count})",
+        "messages": "Messages ({count})",
+        "request": "Request",
+        "response": "Response",
+        "waiting": "Waiting for the response…",
+        "showRaw": "Raw JSON",
+        "showFormatted": "Formatted",
+        "parts": {
+            "systemPrompt": "System",
+            "userPrompt": "User",
+            "text": "Text",
+            "thinking": "Thinking",
+            "toolCall": "Tool call",
+            "toolReturn": "Tool return",
+            "retryPrompt": "Retry prompt"
+        },
+        "timeline": {
+            "title": "Requests ({count})",
+            "loadError": "Could not load the requests: {error}",
+            "showContext": "Show this request's context below",
+            "seconds": "{seconds} s",
+            "columns": {
+                "time": "Time",
+                "status": "Status",
+                "input": "Input",
+                "cacheRead": "Cache read",
+                "cacheWrite": "Cache write",
+                "output": "Output",
+                "reasoning": "Reasoning",
+                "cacheHitRate": "Cache hits",
+                "cost": "Cost",
+                "equivalentCost": "Equivalent",
+                "duration": "Duration",
+                "model": "Model"
+            }
         }
     }
 }

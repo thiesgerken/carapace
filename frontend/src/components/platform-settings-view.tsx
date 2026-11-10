@@ -46,6 +46,7 @@ interface PlatformDraft {
     keepTurns: string;
     verbatimTurns: string;
     toolFloor: string;
+    sentinelThreshold: string;
   };
   models: ModelDraft[];
 }
@@ -260,6 +261,7 @@ function draftFromSettings(response: PlatformSettingsResponseInfo): PlatformDraf
       keepTurns: String(compaction.keep_turns),
       verbatimTurns: String(compaction.verbatim_tool_turns),
       toolFloor: String(compaction.tool_output_floor_tokens),
+      sentinelThreshold: String(compaction.sentinel_threshold_pct),
     },
     models: sortModelDrafts(response.settings.available_models.map(modelDraftFromSettings)),
   };
@@ -399,17 +401,19 @@ export function buildPlatformSettingsPatch(draft: PlatformDraft, t: Translate): 
       keep_turns: boundedInt(draft.compaction.keepTurns, t("compaction.keepTurns"), 1, t),
       verbatim_tool_turns: boundedInt(draft.compaction.verbatimTurns, t("compaction.verbatimTurns"), 0, t),
       tool_output_floor_tokens: boundedInt(draft.compaction.toolFloor, t("compaction.toolFloor"), 1, t),
+      sentinel_threshold_pct: boundedInt(draft.compaction.sentinelThreshold, t("compaction.sentinelThreshold"), 1, t, 90),
     },
     available_models: availableModels,
   };
 }
 
-function boundedInt(value: string, field: string, min: number, t: Translate): number {
+function boundedInt(value: string, field: string, min: number, t: Translate, max?: number): number {
   const normalized = value.trim();
-  if (!/^\d+$/.test(normalized) || Number(normalized) < min) {
-    throw new Error(t("errors.minInt", { field, min }));
+  const number = Number(normalized);
+  if (!/^\d+$/.test(normalized) || number < min || (max !== undefined && number > max)) {
+    throw new Error(max === undefined ? t("errors.minInt", { field, min }) : t("errors.rangeInt", { field, min, max }));
   }
-  return Number(normalized);
+  return number;
 }
 
 function comparableDraft(draft: PlatformDraft | null): unknown {
@@ -631,6 +635,7 @@ export function PlatformSettingsView({ server, token }: { server: string; token:
             <TextInput label={t("compaction.keepTurns")} value={draft.compaction.keepTurns} disabled={fieldsDisabled} onChange={(value) => updateDraft({ compaction: { ...draft.compaction, keepTurns: value } })} />
             <TextInput label={t("compaction.verbatimTurns")} value={draft.compaction.verbatimTurns} disabled={fieldsDisabled} onChange={(value) => updateDraft({ compaction: { ...draft.compaction, verbatimTurns: value } })} />
             <TextInput label={t("compaction.toolFloor")} value={draft.compaction.toolFloor} disabled={fieldsDisabled} onChange={(value) => updateDraft({ compaction: { ...draft.compaction, toolFloor: value } })} />
+            <TextInput label={t("compaction.sentinelThreshold")} title={t("compaction.sentinelThresholdHint")} value={draft.compaction.sentinelThreshold} disabled={fieldsDisabled} onChange={(value) => updateDraft({ compaction: { ...draft.compaction, sentinelThreshold: value } })} />
           </div>
         </Section>
 

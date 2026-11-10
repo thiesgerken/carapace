@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 from collections.abc import Mapping
+from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from typing import TYPE_CHECKING, Any
 
@@ -15,6 +16,7 @@ from ..models.session import SessionBudget
 from ..usage import (
     BudgetGauge,
     BudgetMetric,
+    LlmContext,
     LlmRequestRecord,
     LlmRequestState,
     LlmSource,
@@ -127,11 +129,7 @@ class SessionUsageBudgetMixin:
         row = usage_last_request_row(rec)
         if row is None:
             return None
-        mid = (
-            active.agent_model_name or self._config.agent.model
-            if source == "agent"
-            else active.sentinel_model_name or self._config.agent.sentinel_model
-        )
+        mid = self.agent_model_id_for_gauge(active) if source == "agent" else self.sentinel_model_id(active)
         cap = self._max_input_tokens_for_model_id(mid)
         if cap is None:
             cap = _DEFAULT_CONTEXT_CAP_TOKENS
@@ -153,6 +151,12 @@ class SessionUsageBudgetMixin:
     def agent_context_cap_for_gauge(self, active: ActiveSession) -> int:
         model_id = self.agent_model_id_for_gauge(active)
         return self._max_input_tokens_for_model_id(model_id) or _DEFAULT_CONTEXT_CAP_TOKENS
+
+    def sentinel_model_id(self, active: ActiveSession) -> str:
+        return active.sentinel_model_name or self._config.agent.sentinel_model
+
+    def sentinel_context_cap(self, active: ActiveSession) -> int:
+        return self._max_input_tokens_for_model_id(self.sentinel_model_id(active)) or _DEFAULT_CONTEXT_CAP_TOKENS
 
     def _budget_gauges(self, active: ActiveSession) -> list[BudgetGauge]:
         """Gauges of the session totals, the budgets whose stop message lists the reached ones."""
@@ -237,6 +241,11 @@ class SessionUsageBudgetMixin:
         active.llm_request_state = None
         self._session_mgr.clear_llm_request_state(active.state.session_id)
         await self._broadcast(active, "on_llm_activity", None)
+
+    async def _save_llm_context(self, active: ActiveSession, context: LlmContext) -> None:
+        # ponytail: the whole context is rewritten on every status change; split messages out if writes get slow.
+        self._session_mgr.save_llm_context(active.state.session_id, context)
+        await self._broadcast(active, "on_llm_context", context.role, context.request_id, context.status)
 
     async def _maybe_promote_llm_request_state(self, active: ActiveSession, state: LlmRequestState | None) -> None:
         if state is None:
@@ -325,6 +334,19 @@ class SessionUsageBudgetMixin:
                 engine._session_mgr.save_llm_request_log(session_id, active.llm_request_log)
                 if track_activity:
                     await engine._clear_llm_request_state(active)
+
+            async def on_context(self, context: LlmContext) -> None:
+                await engine._save_llm_context(active, context)
+
+            async def on_context_failed(self, role: LlmSource, error: str) -> None:
+                context = engine._session_mgr.load_llm_context(session_id, role)
+                # A completed context was not cut by this failure: it finished before it, e.g. a sentinel
+                # timeout during a skill file read, or belongs to an earlier evaluation.
+                if context is None or context.status not in ("running", "interrupted"):
+                    return
+                completed_at = context.completed_at or datetime.now(tz=UTC)
+                failed = context.model_copy(update={"status": "failed", "error": error, "completed_at": completed_at})
+                await engine._save_llm_context(active, failed)
 
         with llm_request_sink_scope(Sink()):
             yield

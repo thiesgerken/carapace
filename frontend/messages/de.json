@@ -579,6 +579,7 @@
             "defaultRequired": "{field}-Standardmodell ist erforderlich.",
             "defaultUnknown": "{field}-Standardmodell {id} ist nicht im Katalog.",
             "minInt": "{field} muss eine ganze Zahl ≥ {min} sein.",
+            "rangeInt": "{field} muss eine ganze Zahl von {min} bis {max} sein.",
             "defaultDisabled": "{field}-Standardmodell {id} ist deaktiviert."
         },
         "sections": {
@@ -658,7 +659,9 @@
             "modelDefault": "Standard (Titelmodell)",
             "keepTurns": "Letzte Runden behalten",
             "verbatimTurns": "Tool-Runden wörtlich behalten",
-            "toolFloor": "Tool-Ausgabe-Schwelle (Tokens)"
+            "toolFloor": "Tool-Ausgabe-Schwelle (Tokens)",
+            "sentinelThreshold": "Sentinel-Schwelle (% des Kontexts)",
+            "sentinelThresholdHint": "Vor einer Bewertung wird die Konversation des Sentinels automatisch kompaktiert, sobald sie diesen Anteil des Kontextfensters des Sentinel-Modells füllt (1 bis 90)."
         }
     },
     "home": {
@@ -1146,7 +1149,7 @@
         },
         "compact": {
             "title": "Compaction",
-            "nothing": "Nichts zu komprimieren.",
+            "nothing": "Nichts für eine Compaction.",
             "saved": "{saved} Tokens gespart ({before}→{after}).",
             "folded": "{count} Runden gefaltet",
             "tools": "{count} Tool-Ausgaben zusammengefasst",
@@ -1177,7 +1180,7 @@
             "unexpected": "Unerwarteter Fehler",
             "resetTarget": "Ziel zum Zurücksetzen konnte nicht aufgelöst werden.",
             "forkTarget": "Ziel zum Forken konnte nicht aufgelöst werden.",
-            "compactRefresh": "Compaction erfolgreich, aber das Aktualisieren des Verlaufs ist fehlgeschlagen. Neu laden, um die komprimierte Ansicht zu sehen."
+            "compactRefresh": "Compaction erfolgreich, aber das Aktualisieren des Verlaufs ist fehlgeschlagen. Neu laden, um die Ansicht nach der Compaction zu sehen."
         },
         "confirm": {
             "wipeSandbox": "Sandbox und ihren Speicher für diese Sitzung löschen? Der Chatverlauf bleibt erhalten.",
@@ -1620,7 +1623,6 @@
         }
     },
     "compaction": {
-        "badge": "komprimiert",
         "railHeader": "{count, plural, one {# Runde} other {# Runden}} für das Modell verdichtet",
         "modelSees": "Modell sieht",
         "modelSummaryLabel": "Zusammenfassung im Modell-Kontext",
@@ -1631,13 +1633,7 @@
             "summarize": "zusammengefasst",
             "truncate": "gekürzt",
             "drop": "entfernt"
-        },
-        "agentView": "Agent-Ansicht",
-        "agentViewOff": "Normale Ansicht",
-        "agentViewHint": "Verlauf genau so anzeigen, wie ihn der Agent sieht",
-        "agentSummary": "Komprimierte Zusammenfassung",
-        "agentEmpty": "Noch kein Verlauf.",
-        "agentError": "Agent-Ansicht konnte nicht geladen werden. Verbindung oder Berechtigungen prüfen."
+        }
     },
     "promptPreview": {
         "role": "Rolle",
@@ -1660,6 +1656,88 @@
         "views": {
             "rendered": "Gerendert",
             "raw": "Roh"
+        }
+    },
+    "sessionView": {
+        "label": "Sitzungsansicht",
+        "chat": "Chat",
+        "debug": "Debug"
+    },
+    "debugView": {
+        "usage": {
+            "input": "Eingabe-Tokens",
+            "output": "Ausgabe-Tokens",
+            "cacheRead": "Cache gelesen",
+            "cacheWrite": "Cache geschrieben",
+            "input_audio_tokens": "Audio-Eingabe",
+            "output_audio_tokens": "Audio-Ausgabe",
+            "cache_audio_read_tokens": "Audio aus dem Cache",
+            "cost": "Kosten",
+            "unpriced": "Keine Preisdaten",
+            "providerCost": "Laut Anbieter"
+        },
+        "hint": "Die letzte Anfrage jeder Agentenrolle, genau so, wie sie an das Modell ging. Aktualisiert sich live.",
+        "role": "Agentenrolle",
+        "roles": {
+            "agent": "Agent",
+            "sentinel": "Sentinel",
+            "titler": "Titler",
+            "compaction": "Compaction"
+        },
+        "empty": "Diese Rolle hat in dieser Sitzung noch keine Anfrage gesendet.",
+        "loadError": "LLM-Kontext konnte nicht geladen werden: {error}",
+        "model": "Modell",
+        "status": "Status",
+        "started": "Gestartet",
+        "compacted": "Compaction von",
+        "statuses": {
+            "running": "Läuft",
+            "completed": "Abgeschlossen",
+            "failed": "Fehlgeschlagen",
+            "interrupted": "Unterbrochen"
+        },
+        "compactionTargets": {
+            "agent": "Modellverlauf des Agenten",
+            "sentinel": "Schattenkonversation des Sentinels"
+        },
+        "instructions": "Anweisungen",
+        "static": "Statisch",
+        "dynamic": "Dynamisch",
+        "tools": "Tool-Definitionen ({count})",
+        "messages": "Nachrichten ({count})",
+        "request": "Anfrage",
+        "response": "Antwort",
+        "waiting": "Warte auf die Antwort…",
+        "showRaw": "Roh-JSON",
+        "showFormatted": "Formatiert",
+        "parts": {
+            "systemPrompt": "System",
+            "userPrompt": "Nutzer",
+            "text": "Text",
+            "thinking": "Denken",
+            "toolCall": "Tool-Aufruf",
+            "toolReturn": "Tool-Ergebnis",
+            "retryPrompt": "Wiederholungs-Prompt"
+        },
+        "timeline": {
+            "title": "Anfragen ({count})",
+            "loadError": "Die Anfragen konnten nicht geladen werden: {error}",
+            "showContext": "Kontext dieser Anfrage unten anzeigen",
+            "seconds": "{seconds} s",
+            "columns": {
+                "time": "Zeit",
+                "status": "Status",
+                "input": "Eingabe",
+                "cacheRead": "Cache gelesen",
+                "cacheWrite": "Cache geschrieben",
+                "output": "Ausgabe",
+                "reasoning": "Reasoning",
+                "cacheHitRate": "Cache-Treffer",
+                "cost": "Kosten",
+                "equivalentCost": "Äquivalent",
+                "duration": "Dauer",
+                "model": "Modell"
+            }
         }
     }
 }

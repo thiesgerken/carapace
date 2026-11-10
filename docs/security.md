@@ -91,7 +91,17 @@ Instead of stateless per-call evaluations, the sentinel maintains a **persistent
 
 This enables nuanced judgments like "the user just confirmed this is what they want" or "the agent has been running autonomously for a while after reading external data."
 
-The sentinel's conversation is periodically reset (configurable via `reset_threshold`) to prevent unbounded context growth. On reset, the full action log is summarized into the first message of the new conversation.
+### Sentinel state
+
+The shadow conversation and the action log together are the sentinel state. Both are persisted per session (`session_sentinel` and the append-only `session_action_log` table), together with how many action log entries the shadow conversation has already been told about. A server restart is therefore invisible to the sentinel: its next evaluation continues the same conversation and only receives the entries it has not seen yet. Entries only count as seen once an evaluation completed; after a timed-out or failed evaluation they reach the next prompt again.
+
+The first evaluation of a session receives the full action log; every later one only the new entries.
+
+- **Rewind** (to an earlier turn, including retry) keeps the sentinel state as is and appends a `RewindEntry` to the action log: the user message of the turn the session was rewound to and how many later turns were removed. The sentinel learns about it with its next evaluation, including that side effects of the removed turns remain in the sandbox.
+- **Fork** copies the sentinel state of the source session into the new session, without any note.
+- **Delete** removes the sentinel state with the session.
+
+The conversation is never reset. Once it fills a configurable share of the sentinel model's context window, it is compacted automatically before the next evaluation, keeping user decisions, denials, granted contexts and suspicious behaviour (see [compaction.md](compaction.md#sentinel)).
 
 ### Restricted tool access
 
@@ -116,6 +126,9 @@ The action log is a per-session, append-only chronological record of all signifi
 | `SkillActivatedEntry`   | A skill was activated (metadata only)                       |
 | `GitPushEntry`          | Git push evaluated by sentinel (ref, decision, explanation) |
 | `CredentialAccessEntry` | Credential access attempt (vault paths, decision)           |
+| `ContextGrantEntry`     | A skill context was granted (domains, credentials, MCP)     |
+| `UserVouchedEntry`      | User confirmed the agent is trustworthy                     |
+| `RewindEntry`           | Session was rewound (target user message, removed turns)    |
 
 The action log serves as the sentinel's primary source of truth. Raw tool results are never included -- only their metadata (size, success/failure) -- to prevent prompt injection via tool output.
 

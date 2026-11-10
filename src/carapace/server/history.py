@@ -16,11 +16,11 @@ from pydantic_ai.messages import (
 
 from ..api_keys import Access, Scope
 from ..auth import UserIdentity
-from ..models.compaction import FOLD_MARKER
 from ..models.tooling import SentFileInfo, normalize_tool_call_args
 from ..security.context import ApprovalSource, ApprovalVerdict
-from ..session.compaction import is_fold_message, tool_return_compaction_info, tool_return_is_compacted
+from ..session.compaction import tool_return_is_compacted
 from ..session.open_approvals import ApprovalDecisionSource
+from ..usage import LlmContext, LlmRequestRecord
 from ..ws_models import Attachment, FinalStatus
 from .auth import require
 from .state import server_module
@@ -28,6 +28,9 @@ from .state import server_module
 server = server_module()
 
 router = APIRouter()
+
+# ``memory`` is not bound to a session, so it never has a session LLM context.
+DebugRole = Literal["agent", "sentinel", "titler", "compaction"]
 
 _HistoryRole = Literal[
     "user",
@@ -108,10 +111,7 @@ async def get_session_history(
     user: Annotated[UserIdentity, Depends(require(Scope.history, Access.read))],
     limit: Annotated[int, Query()] = -1,
 ) -> list[HistoryMessage]:
-    if server._engine.session_mgr.load_state(session_id) is None or not server._engine.session_mgr.is_owned_by(
-        session_id, user.username
-    ):
-        raise HTTPException(status_code=404, detail="Session not found")
+    _require_owned_session(session_id, user)
 
     events = server._engine.session_mgr.load_events(session_id)
     result = (
@@ -145,8 +145,7 @@ def _enrich_compaction_annotations(session_id: str, messages: list[HistoryMessag
     """Fold/tool annotations carry only ids + token counts; attach the model-facing summary text.
 
     Lets the main (uncompacted) view show, inline and on demand, exactly what the model sees for a
-    folded run (the node summary) or a compacted tool output (the shortened return) — without a
-    second round-trip to the agent-history endpoint.
+    folded run (the node summary) or a compacted tool output (the shortened return).
     """
     if not any(m.compaction for m in messages):
         return
@@ -178,67 +177,34 @@ def _enrich_compaction_annotations(session_id: str, messages: list[HistoryMessag
         m.compaction = ann
 
 
-class AgentHistoryRow(BaseModel):
-    """One row of the model history as the agent actually sees it (the compacted cut)."""
-
-    role: Literal["user", "assistant", "thinking", "tool_call", "tool_result", "compaction_summary"]
-    content: str = ""
-    tool: str | None = None
-    args: dict[str, Any] | None = None
-    tool_id: str | None = None
-    compaction: dict[str, Any] | None = None
-
-
-class AgentHistoryResponse(BaseModel):
-    rows: list[AgentHistoryRow]
-    node_count: int = 0
+@router.get("/sessions/{session_id}/llm-contexts/{role}", response_model=LlmContext | None)
+async def get_llm_context(
+    session_id: str,
+    role: DebugRole,
+    user: Annotated[UserIdentity, Depends(require(Scope.history, Access.read))],
+) -> LlmContext | None:
+    """The latest LLM context of *role* in the session, for the debug view; null before its first request."""
+    _require_owned_session(session_id, user)
+    return server._engine.session_mgr.load_llm_context(session_id, role)
 
 
-@router.get("/sessions/{session_id}/agent-history", response_model=AgentHistoryResponse)
-async def get_agent_history(
+@router.get("/sessions/{session_id}/llm-requests", response_model=list[LlmRequestRecord])
+async def list_llm_requests(
     session_id: str,
     user: Annotated[UserIdentity, Depends(require(Scope.history, Access.read))],
-) -> AgentHistoryResponse:
-    """The model history verbatim — fold summaries + compacted tool returns — for the agent-view toggle."""
+    role: DebugRole | None = None,
+) -> list[LlmRequestRecord]:
+    """The session's recorded LLM requests in order, optionally of one *role*, for the debug view's timeline."""
+    _require_owned_session(session_id, user)
+    records = server._engine.session_mgr.load_llm_request_log(session_id).records
+    return [r for r in records if role is None or r.source == role]
+
+
+def _require_owned_session(session_id: str, user: UserIdentity) -> None:
     if server._engine.session_mgr.load_state(session_id) is None or not server._engine.session_mgr.is_owned_by(
         session_id, user.username
     ):
         raise HTTPException(status_code=404, detail="Session not found")
-
-    messages = server._engine.session_mgr.load_history(session_id)
-    tree = server._engine.session_mgr.load_compaction(session_id)
-    rows: list[AgentHistoryRow] = []
-    for msg in messages:
-        if is_fold_message(msg):
-            text = msg.parts[0].content
-            summary = text.split("\n", 1)[1].strip() if "\n" in text else text.removeprefix(FOLD_MARKER).strip()
-            rows.append(AgentHistoryRow(role="compaction_summary", content=summary))
-            continue
-        if isinstance(msg, ModelRequest):
-            for part in msg.parts:
-                if isinstance(part, UserPromptPart) and isinstance(part.content, str):
-                    rows.append(AgentHistoryRow(role="user", content=part.content))
-                elif isinstance(part, ToolReturnPart):
-                    info = tool_return_compaction_info(part)
-                    rows.append(
-                        AgentHistoryRow(
-                            role="tool_result",
-                            content=part.content if isinstance(part.content, str) else str(part.content),
-                            tool=part.tool_name,
-                            tool_id=part.tool_call_id,
-                            compaction=info,
-                        )
-                    )
-        elif isinstance(msg, ModelResponse):
-            for part in msg.parts:
-                if isinstance(part, ToolCallPart):
-                    args = normalize_tool_call_args(part.tool_name, part.args) if isinstance(part.args, dict) else {}
-                    rows.append(AgentHistoryRow(role="tool_call", content="", tool=part.tool_name, args=args))
-                elif isinstance(part, TextPart):
-                    rows.append(AgentHistoryRow(role="assistant", content=part.content))
-                elif isinstance(part, ThinkingPart) and part.content:
-                    rows.append(AgentHistoryRow(role="thinking", content=part.content))
-    return AgentHistoryResponse(rows=rows, node_count=len(tree.nodes))
 
 
 def _history_from_messages(session_id: str) -> list[HistoryMessage]:

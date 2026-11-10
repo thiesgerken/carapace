@@ -525,6 +525,7 @@ test("platform settings helpers parse model secrets and send patches", async () 
         keep_turns: 6,
         verbatim_tool_turns: 2,
         tool_output_floor_tokens: 500,
+        sentinel_threshold_pct: 50,
       },
       available_models: [
         {

@@ -4,7 +4,7 @@ import { useTranslations } from "next-intl";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Archive, ArchiveRestore, Bot, Brain, Check, Copy, ExternalLink, Eye, Globe, Link2, Link2Off, Loader2, Lock, MessageSquare, Pin, Play, RotateCcw, Save, Settings2, Square, Star, Terminal, Trash2 } from "lucide-react";
+import { Archive, ArchiveRestore, Bot, Brain, Check, Copy, ExternalLink, Globe, Link2, Link2Off, Loader2, Lock, MessageSquare, Pin, Play, RotateCcw, Save, Settings2, Square, Star, Terminal, Trash2 } from "lucide-react";
 import { EmojiText } from "@/components/emoji-text";
 import { ChatMemorySection } from "@/components/chat-memory-section";
 import { useMemorySessionDetail } from "@/components/memory-extraction-detail";
@@ -15,7 +15,7 @@ import { SessionOptionTiles } from "@/components/session-option-tiles";
 import { useAppLocale } from "@/components/locale-provider";
 import { useAppShell } from "@/components/app-shell-context";
 import { useSessionPresence } from "@/hooks/use-session-presence";
-import { useWebSocket } from "@/hooks/use-websocket";
+import { useWebSocket, useWebSocketTicket } from "@/hooks/use-websocket";
 import {
   type AvailableModelInfo,
   commitSessionKnowledge,
@@ -24,7 +24,6 @@ import {
   fetchSandbox,
   fetchModels,
   forkSession,
-  getWebSocketTicket,
   type SlashCommand,
   startSandbox,
   stopSandbox,
@@ -63,7 +62,7 @@ import {
 import { Message } from "./message";
 import { ToolCallGroup, groupRenderItems } from "./tool-call-group";
 import { ChatInput } from "./chat-input";
-import { AgentHistoryView } from "./agent-history-view";
+import { SessionHeader } from "./session-header";
 
 interface ChatViewProps {
   server: string;
@@ -1066,7 +1065,6 @@ export function ChatView({
   onInitialMessageSent,
 }: ChatViewProps) {
   const t = useTranslations("chatView");
-  const tc = useTranslations("compaction");
   const tRoot = useTranslations();
   const { locale } = useAppLocale();
   const { currentUser } = useAppShell();
@@ -1077,7 +1075,6 @@ export function ChatView({
   const [usage, setUsage] = useState<TurnUsage | null>(null);
   const [llmActivity, setLlmActivity] = useState<LlmActivity | null>(null);
   const [loadingHistory, setLoadingHistory] = useState(true);
-  const [agentViewOpen, setAgentViewOpen] = useState(false);
   const [commands, setCommands] = useState<SlashCommand[]>([]);
   const [availableModelEntries, setAvailableModelEntries] = useState<
     AvailableModelInfo[]
@@ -1725,21 +1722,7 @@ export function ChatView({
     setWaiting(false);
   }, [clearToolLoading]);
   const presenceClientId = useRef(getPresenceClientId()).current;
-  const [webSocketTicket, setWebSocketTicket] = useState<string | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    setWebSocketTicket(null);
-    getWebSocketTicket(server, token)
-      .then((ticket) => {
-        if (!cancelled) setWebSocketTicket(ticket);
-      })
-      .catch(() => {
-        if (!cancelled) setWebSocketTicket(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [server, token]);
+  const webSocketTicket = useWebSocketTicket(server, token);
   const url = webSocketTicket ? wsUrl(server, sessionId, token, presenceClientId, webSocketTicket) : null;
   const { status, send } = useWebSocket(url, onMessage, onWsDisconnect);
   useSessionPresence(server, token, sessionId, status, presenceClientId);
@@ -2380,14 +2363,6 @@ export function ChatView({
           </div>
           <div className="flex flex-wrap items-center justify-end gap-1">
           <button
-            onClick={() => setAgentViewOpen(true)}
-            disabled={!session}
-            title={tc("agentViewHint")}
-            className="rounded-md p-1.5 text-foreground/70 transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <Eye className="h-3.5 w-3.5" />
-          </button>
-          <button
             onClick={() => void handleTogglePinned()}
             disabled={!session || !!updatingSessionAttribute || deletingSession || !onUpdateSessionAttributes}
             title={sessionPinned ? t("actions.unpin") : t("actions.pin")}
@@ -2827,38 +2802,30 @@ export function ChatView({
 
       <div className="min-h-0 flex flex-1 flex-col lg:grid lg:grid-cols-[minmax(0,1fr)_22rem]">
         <div className="min-h-0 flex flex-1 flex-col">
-          <div className="border-b border-border px-3 py-2.5 sm:px-4 sm:py-3">
-            <div className="flex items-center justify-between gap-3 sm:items-start">
-              <div className="min-w-0">
-                <div className="flex min-w-0 items-center gap-2">
-                  <div className="truncate text-sm font-semibold text-foreground">
-                    {session?.title?.trim() ? <EmojiText text={sessionDisplayTitle} /> : sessionDisplayTitle}
-                  </div>
-                  {hasMemory ? (
-                    <button
-                      type="button"
-                      onClick={showMemorySection}
-                      className="inline-flex shrink-0 items-center gap-1 rounded-full bg-accent px-2 py-0.5 text-[11px] font-medium text-accent-foreground transition-colors hover:bg-accent/70"
-                    >
-                      <Brain className="h-3 w-3" />
-                      {t("memoryChip")}
-                    </button>
-                  ) : null}
-                </div>
-                <div className="mt-1 hidden truncate font-mono text-xs text-muted-foreground sm:block">
-                  {sessionId}
-                </div>
-              </div>
+          <SessionHeader
+            sessionId={sessionId}
+            title={session?.title}
+            view="chat"
+            titleAccessory={hasMemory ? (
               <button
                 type="button"
-                onClick={() => setMobileInspectorOpen(true)}
-                className="inline-flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-sm font-medium hover:bg-muted lg:hidden"
+                onClick={showMemorySection}
+                className="inline-flex shrink-0 items-center gap-1 rounded-full bg-accent px-2 py-0.5 text-[11px] font-medium text-accent-foreground transition-colors hover:bg-accent/70"
               >
-                <Settings2 className="h-4 w-4" />
-                {t("mobile.details")}
+                <Brain className="h-3 w-3" />
+                {t("memoryChip")}
               </button>
-            </div>
-          </div>
+            ) : null}
+          >
+            <button
+              type="button"
+              onClick={() => setMobileInspectorOpen(true)}
+              className="inline-flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-sm font-medium hover:bg-muted lg:hidden"
+            >
+              <Settings2 className="h-4 w-4" />
+              {t("mobile.details")}
+            </button>
+          </SessionHeader>
 
           <div
             ref={scrollRef}
@@ -2965,15 +2932,6 @@ export function ChatView({
           <div className="h-full overflow-y-auto p-3">{inspectorContent}</div>
         </aside>
       </div>
-
-      {agentViewOpen ? (
-        <AgentHistoryView
-          server={server}
-          token={token}
-          sessionId={sessionId}
-          onClose={() => setAgentViewOpen(false)}
-        />
-      ) : null}
 
       {mobileInspectorOpen ? (
         <div className="fixed inset-0 z-40 lg:hidden">
