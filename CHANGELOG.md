@@ -1,6 +1,37 @@
 # CHANGELOG
 
 
+## v0.175.1 (2026-11-10)
+
+
+### 🐛 Bug Fixes
+
+
+- 🐛Merge pull request #465 from thiesgerken/fix/agent-fold-merge
+  ([`e6b8820`](https://github.com/thiesgerken/carapace/commit/e6b8820d05bcf16b5b5dda3fc3c30f6db7f642f9))
+
+- 🐛 fix(compaction): keep agent folds and turn boundaries intact across pydantic-ai's request merging
+  ([`e6b8820`](https://github.com/thiesgerken/carapace/commit/e6b8820d05bcf16b5b5dda3fc3c30f6db7f642f9))
+
+- 🐛 fix(compaction): split merged requests when loading the agent's history
+  ([`d7392a5`](https://github.com/thiesgerken/carapace/commit/d7392a54d616936bec13c91cfb1069538ae6570f))
+
+  pydantic-ai persists the history with consecutive requests merged, so a fold absorbed the next prompt and a task_done return absorbed the next task. The next /compact then re-summarized the earlier summary, a fold cut could keep an orphaned task_done return, and rewind/fork after a real turn lost the fold.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aUyQ74QtCbcvUBHD4aD
+
+### Other
+
+
+- ✅ test(compaction): an attended fork of merged unattended turns keeps every task
+  ([`f7f29d6`](https://github.com/thiesgerken/carapace/commit/f7f29d60b5c34a5b99d6ad0659ff2cf954b25089))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aUyQ74QtCbcvUBHD4aD
+
 ## v0.175.0 (2026-11-10)
 
 
