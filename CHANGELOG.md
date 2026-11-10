@@ -1,6 +1,232 @@
 # CHANGELOG
 
 
+## v0.175.0 (2026-11-10)
+
+
+### Other
+
+
+- Merge pull request #461 from thiesgerken/docs/prefix-cache-mcp-caveat
+  ([`687e8e8`](https://github.com/thiesgerken/carapace/commit/687e8e868419fb14ae7696ac05ca4fd547e79a69))
+
+  📝 docs: make prefix caching a hard requirement, document MCP tool cache break
+
+- 📝 docs: list mode and date cache breaks, scope cache rates to Anthropic
+  ([`c2cd50d`](https://github.com/thiesgerken/carapace/commit/c2cd50d14efd83535430eec93c82392c85e8fd86))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aV2FdAQbv8vs5MReBvG
+
+- 📝 docs: make prefix caching a hard requirement, document MCP tool cache break
+  ([`c72a1c5`](https://github.com/thiesgerken/carapace/commit/c72a1c5deeb5a98b19ad976b6ba448955e17dbaf))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aV2FdAQbv8vs5MReBvG
+
+- Merge pull request #462 from thiesgerken/feat/debug-view-tool-descriptions
+  ([`911ac36`](https://github.com/thiesgerken/carapace/commit/911ac36740e8042f8160312e2e0bcf5d99d63522))
+
+- Merge pull request #459 from thiesgerken/feat/llm-request-timeline
+  ([`1b17aff`](https://github.com/thiesgerken/carapace/commit/1b17affb610c419b0d64fce02467fda258527b4b))
+
+- Merge remote-tracking branch 'origin/feat/sentinel-state-debug-view' into feat/llm-request-timeline
+  ([`4c1884a`](https://github.com/thiesgerken/carapace/commit/4c1884a8fc6a5454777af3e65dc237a548c34ed7))
+
+  # Conflicts: #	docs/debug-view.md
+
+- Merge pull request #460 from thiesgerken/feat/debug-view-highlighting
+  ([`bea2531`](https://github.com/thiesgerken/carapace/commit/bea25314847aeb3c5f858abec837c28f9eba1ff9))
+
+- 🔥 chore: drop the unused compaction badge string, fix the unpriced-cost wording
+  ([`70c1b72`](https://github.com/thiesgerken/carapace/commit/70c1b72dd80923cdd4cf5689a0c2b8bbf35e3fbc))
+
+  Part of #453
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aV1XhmbZEjzXpV86eBn
+
+- 📝 docs(debug): state that failed requests are missing from the timeline
+  ([`688be30`](https://github.com/thiesgerken/carapace/commit/688be301113b2eec5d8210e62acb880b8728d267))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aUyQ74QtCbcvUBHD4aD
+
+- 📝 docs: scope compaction inspectability, fix sentinel timeout and glossary wording
+  ([`adcf162`](https://github.com/thiesgerken/carapace/commit/adcf162c4dfc479e06671f66ee7c7520b30f6af2))
+
+  Compaction keeps originals inspectable only for model histories; a compacted shadow conversation leaves the action log, audit log and the latest compaction request. The sentinel timeout marks whichever request it cut short. Glossary terms (rewind, action log, user decision) and the removed agent view leftovers.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aUyQ74QtCbcvUBHD4aD
+
+- Merge remote-tracking branch 'origin/feat/sentinel-state-debug-view' into HEAD
+  ([`17feda5`](https://github.com/thiesgerken/carapace/commit/17feda56804c1fd5eb8c199d5482817ce2318721))
+
+- Merge pull request #458 from thiesgerken/feat/sentinel-compaction
+  ([`e52ac1f`](https://github.com/thiesgerken/carapace/commit/e52ac1fc9093b5050fe97d6c61e8acc303156c9a))
+
+- Merge remote-tracking branch 'origin/feat/sentinel-state-debug-view' into feat/sentinel-compaction
+  ([`2edceb3`](https://github.com/thiesgerken/carapace/commit/2edceb39c3d3a2736efa17a3f91272bd578808a9))
+
+- Merge remote-tracking branch 'origin/feat/sentinel-state-debug-view' into feat/sentinel-compaction
+  ([`721b9fd`](https://github.com/thiesgerken/carapace/commit/721b9fd48f9c8bd331a7574388079f34336cea4c))
+
+- 🔀 merge main into feat/sentinel-state-debug-view
+  ([`0ac8e3b`](https://github.com/thiesgerken/carapace/commit/0ac8e3bcc4ae8cab4d3ef2e5e8ea932255a1828c))
+
+  - scripts/seed_demo.py: keeps both the debug-view LLM contexts and the
+    memory demo data (only the typing imports conflicted).
+  - Migrations re-chained after main's 0011_memory_equivalent_cost:
+    sentinel_state 0011 -> 0012, session_llm_contexts 0012 -> 0013.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aV1XhmbZEjzXpV86eBn
+
+### ✨ Features
+
+
+- ✨Merge pull request #454 from thiesgerken/feat/sentinel-state-debug-view
+  ([`a84f3f3`](https://github.com/thiesgerken/carapace/commit/a84f3f3f418722a3ee355d9f528d34096984ca13))
+
+- ✨ feat: persisted sentinel state and live debug view
+  ([`a84f3f3`](https://github.com/thiesgerken/carapace/commit/a84f3f3f418722a3ee355d9f528d34096984ca13))
+
+- ✨ feat(debug): per-request timeline in the debug view
+  ([`1b17aff`](https://github.com/thiesgerken/carapace/commit/1b17affb610c419b0d64fce02467fda258527b4b))
+
+- ✨ feat(frontend): request timeline per role in the debug view
+  ([`483897c`](https://github.com/thiesgerken/carapace/commit/483897c21f967857896574ddcff08b681b57aa48))
+
+  One row per request with tokens, cache hits, cost and duration, newest first, refetched on every notification of the role. The demo seed gets a pancake timeline for screenshots.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aUyQ74QtCbcvUBHD4aD
+
+- ✨ feat(usage): price every LLM request record
+  ([`083523d`](https://github.com/thiesgerken/carapace/commit/083523d00de0273f3ce66de1e30e75c0412838f6))
+
+  The record carries the same cost as the request's context, so the timeline can compare what each request cost.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aUyQ74QtCbcvUBHD4aD
+
+- ✨ feat(usage): price every LLM context with the carapace model id
+  ([`b827d5c`](https://github.com/thiesgerken/carapace/commit/b827d5c01db24a1eeaf2a3939e9c605b52b19063))
+
+  LlmRequestLogCapability now takes the carapace model id (provider:model) for every role instead of guessing it from the agent's deps, so sentinel, titler, compaction and memory records and contexts carry the id too. Completed contexts store a RequestCost (actual, equivalent and provider-reported cost) from request_cost(), which a request record can reuse.
+
+  Part of #453
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aV1XhmbZEjzXpV86eBn
+
+- ✨ feat(debug): list a session's LLM request records per role
+  ([`73a435e`](https://github.com/thiesgerken/carapace/commit/73a435eec3f3dc9f7396c0037df826159d05b1b3))
+
+  Request records now keep cache read/write and audio token counts, so the debug view's timeline can compare requests without storing their contexts.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aUyQ74QtCbcvUBHD4aD
+
+- ✨ feat(security): compact the sentinel's shadow conversation automatically
+  ([`e52ac1f`](https://github.com/thiesgerken/carapace/commit/e52ac1fc9093b5050fe97d6c61e8acc303156c9a))
+
+- ✨ feat(security): label sentinel compaction in the debug view, split merged prompts
+  ([`c1857d0`](https://github.com/thiesgerken/carapace/commit/c1857d08af65ccf4cff197703e21efaa335d20fc))
+
+  Sentinel compaction runs in the debug view's compaction slot with compaction_target "sentinel", and a timeout fails whichever request it cut short. Prompts that pydantic-ai merged into the verdict's tool-return request get their own request again, so each evaluation is one turn. Platform settings now apply the sentinel threshold; docs and tests.
+
+  Closes #452
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aUyQ74QtCbcvUBHD4aD
+
+- ✨ feat(security): compact the sentinel's shadow conversation automatically
+  ([`8b757b4`](https://github.com/thiesgerken/carapace/commit/8b757b432811ad9445516058d5b71f0885e9e01b))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aUyQ74QtCbcvUBHD4aD
+
+### 💄 UI/UX
+
+
+- 💄 Debug view: render tool descriptions as Markdown
+  ([`911ac36`](https://github.com/thiesgerken/carapace/commit/911ac36740e8042f8160312e2e0bcf5d99d63522))
+
+- 💄 feat(frontend): render tool descriptions in the debug view as Markdown
+  ([`b6c4b85`](https://github.com/thiesgerken/carapace/commit/b6c4b85ca412480e9032fc9adf378ce1d8346148))
+
+  Parameter descriptions stay in the highlighted JSON schema, since they are part of it.
+
+  Part of #453
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aV1XhmbZEjzXpV86eBn
+
+- 💄 Debug view: Markdown, highlighting, usage and cost, Chat | Debug switch
+  ([`bea2531`](https://github.com/thiesgerken/carapace/commit/bea25314847aeb3c5f858abec837c28f9eba1ff9))
+
+- 💄 feat(frontend): highlighted, Markdown-rendered debug view with usage, cost and a Chat | Debug switch
+  ([`2fc5bfb`](https://github.com/thiesgerken/carapace/commit/2fc5bfbf3acc36edd5d8da9f296e96ce120bda13))
+
+  - Prose to and from the model renders as Markdown, tool output stays
+    verbatim, JSON (raw toggle, tool args, schemas) is syntax highlighted.
+  - Completed requests show their full token usage and cost.
+  - A Chat | Debug switch in the session header replaces the inspector's
+    bug icon.
+  - German wording: Compaction is a glossary term, not "Komprimierung".
+
+  Part of #453
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aV1XhmbZEjzXpV86eBn
+
+### ♻️ Refactoring
+
+
+- ♻️ refactor(usage): drop unread audio counts from request records
+  ([`d5355e9`](https://github.com/thiesgerken/carapace/commit/d5355e95dab21c4a1ae3ce10c4d62903ca86eaf9))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aUyQ74QtCbcvUBHD4aD
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix(frontend): show interrupted requests in the timeline right away
+  ([`dabf127`](https://github.com/thiesgerken/carapace/commit/dabf127fdb9c7573ccba5c962170959147ff41e4))
+
+  A stopped turn saves its interrupted record after the context's notification went out, so the timeline also refetches when the LLM activity ends.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aUyQ74QtCbcvUBHD4aD
+
+- 🐛 fix(security): keep a single sentinel summary across repeated compactions
+  ([`5de77d1`](https://github.com/thiesgerken/carapace/commit/5de77d190a6ba7cbd5851bab953ec5e96d6ca150))
+
+  pydantic-ai merges every pair of consecutive requests and persists that, so the fold message absorbed the next prompt and the next compaction summarized the old summary as an evaluation request. Split merged requests apart before compacting, and fold the earlier summary together with the newly folded evaluations into one summary, which bounds the conversation. Cap the threshold at 90% (the estimate omits the system prompt), checked in the UI too.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aUyQ74QtCbcvUBHD4aD
+
 ## v0.174.2 (2026-11-09)
 
 
@@ -110,6 +336,46 @@
 
   Claude-Session: https://claude.ai/code/session_01Gv2aUyaxvsB8zAKUBRRhYg
 
+- ✨ feat(frontend): live per-session debug view of every agent role's LLM context
+  ([`e15523e`](https://github.com/thiesgerken/carapace/commit/e15523e22ff9b7a36682019a1fff3d75183a69d4))
+
+- ✨ feat: capture and persist the latest LLM context per agent role
+  ([`7617ca1`](https://github.com/thiesgerken/carapace/commit/7617ca1d19b7a25ec5bbf19e09c0310d79b92ade))
+
+- ✨ feat(security): persist sentinel state across restarts
+  ([`a9ace0a`](https://github.com/thiesgerken/carapace/commit/a9ace0a90c9cac873e4e9a58743dfda325edcd7a))
+
+- ✨ feat(security): persist sentinel state across restarts
+  ([`0d46bfb`](https://github.com/thiesgerken/carapace/commit/0d46bfb863a950ba53d513e7cd2aab699d2d09b1))
+
+  Persist the sentinel's shadow conversation and the full action log per session, so a restart is invisible to the sentinel. Drop the periodic reset. A rewind appends a RewindEntry the sentinel sees with its next evaluation; a fork copies the sentinel state.
+
+  Closes #451
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aUyQ74QtCbcvUBHD4aD
+
+- ✨ feat(frontend): live per-session debug view of every agent role's LLM context
+  ([`0328a56`](https://github.com/thiesgerken/carapace/commit/0328a56cfe7de78d6a18f8a1f8cd20904cc43eba))
+
+  Part of #453
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aV1XhmbZEjzXpV86eBn
+
+- ✨ feat: capture and persist the latest LLM context per agent role
+  ([`b9f0b48`](https://github.com/thiesgerken/carapace/commit/b9f0b4810e106b4934a32611088d68846b343595))
+
+  Every model request of a session now records its LLM context (instructions, messages, tool definitions, response or error) per agent role, overwritten per request, and notifies the session WebSocket. A new REST endpoint serves it behind the history read scope. The reconstructed agent-history endpoint is gone.
+
+  Part of #453
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aV1XhmbZEjzXpV86eBn
+
 ### ♻️ Refactoring
 
 
@@ -142,6 +408,93 @@
   Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 
   Claude-Session: https://claude.ai/code/session_01Gv2aUyaxvsB8zAKUBRRhYg
+
+### Other
+
+
+- Merge pull request #457 from thiesgerken/feat/debug-view-frontend
+  ([`e15523e`](https://github.com/thiesgerken/carapace/commit/e15523e22ff9b7a36682019a1fff3d75183a69d4))
+
+- 📝 docs: debug view UI, drop the agent view
+  ([`acd4378`](https://github.com/thiesgerken/carapace/commit/acd4378d97ffb49798d8b91dc8244d43defa4571))
+
+  Part of #453
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aV1XhmbZEjzXpV86eBn
+
+- Merge remote-tracking branch 'origin/feat/sentinel-state-debug-view' into feat/debug-view-frontend
+  ([`46dddd1`](https://github.com/thiesgerken/carapace/commit/46dddd11bceeb6b703d395e6abb8a5dfbe844d87))
+
+- Merge pull request #456 from thiesgerken/feat/debug-view-backend
+  ([`7617ca1`](https://github.com/thiesgerken/carapace/commit/7617ca1d19b7a25ec5bbf19e09c0310d79b92ade))
+
+- Merge remote-tracking branch 'origin/feat/sentinel-state-debug-view' into feat/debug-view-backend
+  ([`3833ea6`](https://github.com/thiesgerken/carapace/commit/3833ea699af8f6f7060c957af06f845f639c13b0))
+
+- Merge pull request #455 from thiesgerken/feat/sentinel-state
+  ([`a9ace0a`](https://github.com/thiesgerken/carapace/commit/a9ace0a90c9cac873e4e9a58743dfda325edcd7a))
+
+- 📝 docs: add domain glossary
+  ([`0cc276d`](https://github.com/thiesgerken/carapace/commit/0cc276d2e811ff441f4f4ef481e20855c4cf2d63))
+
+  Terms settled while designing persisted sentinel state and the per-session debug view: session lifecycle (rewind, fork, compaction), agent roles, the sentinel's action log / shadow conversation, and LLM context.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_014ieccikaFbCcPKRcGQwv3u
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix: debug view observes without registering presence
+  ([`7557afe`](https://github.com/thiesgerken/carapace/commit/7557afe4e47d3eb320d4ab0c7aa156818d243d07))
+
+  The debug view's WebSocket counted as an open chat, which suppressed approval notifications while it showed no approval card. It now connects with observe=true, which skips presence. It also refetches after every (re)connect, and shares the role pill style with the prompt preview.
+
+  Part of #453
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aV1XhmbZEjzXpV86eBn
+
+- 🐛 fix: fail only contexts the failure cut, incl. agent errors mid-stream
+  ([`23eaedf`](https://github.com/thiesgerken/carapace/commit/23eaedf5ef774243aa53ef047c9444314d2f50d4))
+
+  - Streamed agent requests only see a cancellation when the provider fails
+    mid-stream; the turn's error path now marks the agent context failed.
+  - fail_llm_context leaves completed contexts alone (sentinel timeout
+    between two requests, or before the evaluation's first request).
+  - Migration renumbered to 0012, chained after the sentinel state's 0011.
+  - docs/debug-view.md documents the backend contract.
+
+  Part of #453
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aV1XhmbZEjzXpV86eBn
+
+- 🐛 fix(security): roll back skill file cache on incomplete evaluations
+  ([`ba6717c`](https://github.com/thiesgerken/carapace/commit/ba6717cd0573bddabf4c5f9594dd9801f19d0f65))
+
+  A skill file read by a timed-out, failed or cancelled evaluation never reached the shadow conversation, yet the cache answered later reads with "already provided". Also share one turn-prompt predicate and fail loudly on a rewind without security state.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aUyQ74QtCbcvUBHD4aD
+
+### 💄 UI/UX
+
+
+- 💄 style(frontend): label instruction parts static or dynamic
+  ([`a6a5aa6`](https://github.com/thiesgerken/carapace/commit/a6a5aa6a7442aa916234dd406f65ce6e307274ae))
+
+  Part of #453
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aV1XhmbZEjzXpV86eBn
 
 ## v0.173.1 (2026-11-09)
 
