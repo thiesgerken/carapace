@@ -11,6 +11,8 @@ export type SessionSearchMode = "title" | "fulltext";
 export interface SessionSearchResult {
   /** `null` while the query is blank, so the caller shows its normal list instead. */
   hits: SessionSearchHit[] | null;
+  /** The query that produced `hits`, which lags the typed one while the next request is pending. */
+  hitsQuery: string;
   loading: boolean;
   failed: boolean;
 }
@@ -30,7 +32,12 @@ export function useSessionSearch(
   const requestKey = JSON.stringify([trimmed, mode, refreshKey]);
   // Hits stay keyed by the request that produced them, so the previous hits stay visible while the
   // next query loads instead of the list flashing empty on every keystroke.
-  const [settled, setSettled] = useState<{ requestKey: string; hits: SessionSearchHit[]; failed: boolean } | null>(null);
+  const [settled, setSettled] = useState<{
+    requestKey: string;
+    query: string;
+    hits: SessionSearchHit[];
+    failed: boolean;
+  } | null>(null);
 
   useEffect(() => {
     if (!trimmed || !server || !token) return;
@@ -38,10 +45,10 @@ export function useSessionSearch(
     const timer = setTimeout(() => {
       searchSessions(server, token, trimmed, { fulltext: mode === "fulltext" })
         .then((hits) => {
-          if (!cancelled) setSettled({ requestKey, hits, failed: false });
+          if (!cancelled) setSettled({ requestKey, query: trimmed, hits, failed: false });
         })
         .catch(() => {
-          if (!cancelled) setSettled({ requestKey, hits: [], failed: true });
+          if (!cancelled) setSettled({ requestKey, query: trimmed, hits: [], failed: true });
         });
     }, SEARCH_DEBOUNCE_MS);
     return () => {
@@ -50,10 +57,11 @@ export function useSessionSearch(
     };
   }, [mode, requestKey, server, token, trimmed]);
 
-  if (!trimmed) return { hits: null, loading: false, failed: false };
+  if (!trimmed) return { hits: null, hitsQuery: "", loading: false, failed: false };
   const current = settled?.requestKey === requestKey;
   return {
     hits: settled?.hits ?? [],
+    hitsQuery: settled?.query ?? "",
     loading: !current,
     failed: current && settled?.failed === true,
   };

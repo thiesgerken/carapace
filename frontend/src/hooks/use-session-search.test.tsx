@@ -49,18 +49,25 @@ test("useSessionSearch stays idle on a blank query and debounces one request per
   try {
     const view = await renderReact(<HookHarness query="  " mode="title" refreshKey={0} onResult={onResult} />);
     await runInAct(() => sleep(300));
-    assert.deepEqual(results.at(-1), { hits: null, loading: false, failed: false });
+    assert.deepEqual(results.at(-1), { hits: null, hitsQuery: "", loading: false, failed: false });
     assert.deepEqual(urls, []);
 
     await view.rerender(<HookHarness query="butter" mode="fulltext" refreshKey={0} onResult={onResult} />);
     await view.rerender(<HookHarness query="buttermilk " mode="fulltext" refreshKey={0} onResult={onResult} />);
     assert.equal(results.at(-1)?.loading, true);
+    assert.equal(results.at(-1)?.hitsQuery, "");
     await runInAct(() => sleep(300));
 
     assert.deepEqual(urls, ["https://carapace.example.test/api/sessions/search?q=buttermilk&fulltext=true"]);
-    assert.deepEqual(results.at(-1), { hits: [hit("s1", "…with buttermilk…")], loading: false, failed: false });
+    assert.deepEqual(results.at(-1), {
+      hits: [hit("s1", "…with buttermilk…")],
+      hitsQuery: "buttermilk",
+      loading: false,
+      failed: false,
+    });
 
-    await view.rerender(<HookHarness query="buttermilk " mode="fulltext" refreshKey={1} onResult={onResult} />);
+    await view.rerender(<HookHarness query="buttermilks" mode="fulltext" refreshKey={1} onResult={onResult} />);
+    assert.equal(results.at(-1)?.hitsQuery, "buttermilk");
     await runInAct(() => sleep(300));
     assert.equal(urls.length, 2);
 
@@ -85,7 +92,7 @@ test("useSessionSearch reports a failed request", async () => {
     );
     await runInAct(() => sleep(300));
 
-    assert.deepEqual(results.at(-1), { hits: [], loading: false, failed: true });
+    assert.deepEqual(results.at(-1), { hits: [], hitsQuery: "pancakes", loading: false, failed: true });
     await view.unmount();
   } finally {
     restoreDom();

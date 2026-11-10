@@ -151,7 +151,8 @@ export function Sidebar({
   const [searchMode, setSearchMode] = useState<SessionSearchMode>("title");
   const [searchRevision, setSearchRevision] = useState(0);
   const search = useSessionSearch(server, token, searchQuery, searchMode, searchRevision);
-  const searching = search.hits !== null;
+  const searchHits = search.hits;
+  const searching = searchHits !== null;
   const activeSessions = sessions.filter((session) => !session.attributes.archived);
   const archivedSessions = showArchivedSessions
     ? sessions.filter((session) => session.attributes.archived)
@@ -486,7 +487,7 @@ export function Sidebar({
         </div>
         {searchHit?.snippet ? (
           <div className="line-clamp-2 break-words px-3 pb-1 text-xs text-muted-foreground">
-            <HighlightedText text={searchHit.snippet} query={searchQuery} />
+            <HighlightedText text={searchHit.snippet} query={search.hitsQuery} />
           </div>
         ) : null}
         <div className="flex items-start gap-2 px-3 pb-2">
@@ -863,7 +864,7 @@ export function Sidebar({
       <div ref={scrollRootRef} className="flex-1 overflow-y-auto px-3 py-2">
         <div className="space-y-4">
           <SandboxUsageBanner usage={sandboxUsage} />
-          {search.hits !== null ? renderSearchResults(search.hits) : (
+          {searching ? renderSearchResults(searchHits) : (
             <>
               {renderSessionGroups(activeSessions)}
               {archivedSessions.length > 0 ? (
