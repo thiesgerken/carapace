@@ -625,6 +625,22 @@ def test_reset_and_fork_after_a_real_turn_keep_the_fold(tmp_path: Path, db_facto
     asyncio.run(_run())
 
 
+def _merged_task_done_history(turns: int) -> list[ModelMessage]:
+    """Unattended turns ending in task_done, each return merged by pydantic-ai with the next task's prompt."""
+    history: list[ModelMessage] = []
+    for i in range(turns):
+        prompt = UserPromptPart(f"task {i}")
+        if history:
+            history[-1] = ModelRequest(parts=[*history[-1].parts, prompt])
+        else:
+            history.append(ModelRequest(parts=[prompt]))
+        history += [
+            ModelResponse(parts=[ToolCallPart("task_done", {"result": f"done {i}"}, tool_call_id=f"done-{i}")]),
+            ModelRequest(parts=[ToolReturnPart("task_done", "Final result processed.", tool_call_id=f"done-{i}")]),
+        ]
+    return history
+
+
 def test_compact_cuts_merged_task_done_turns_at_the_output_tool_return(tmp_path: Path, db_factory) -> None:
     """An unattended turn ends in a task_done return, which the next run merges with the next prompt."""
 
@@ -635,20 +651,7 @@ def test_compact_cuts_merged_task_done_turns_at_the_output_tool_return(tmp_path:
         engine._model_factory = models.factory
         sid = engine.session_mgr.create_session(user="thies").session_id
         active = engine.get_or_activate(sid)
-        history: list[ModelMessage] = []
-        for i in range(3):
-            call = ToolCallPart("task_done", {"summary": f"done {i}"}, tool_call_id=f"done-{i}")
-            prompt = UserPromptPart(f"task {i}")
-            if history:
-                # pydantic-ai appended this prompt to the request holding the previous turn's task_done return.
-                history[-1] = ModelRequest(parts=[*history[-1].parts, prompt])
-            else:
-                history.append(ModelRequest(parts=[prompt]))
-            history += [
-                ModelResponse(parts=[call]),
-                ModelRequest(parts=[ToolReturnPart("task_done", "Final result processed.", tool_call_id=f"done-{i}")]),
-            ]
-        engine.session_mgr.save_history(sid, history)
+        engine.session_mgr.save_history(sid, _merged_task_done_history(3))
 
         report = await engine.run_compaction(active, mode="fold", keep_turns=1)
 
@@ -661,3 +664,27 @@ def test_compact_cuts_merged_task_done_turns_at_the_output_tool_return(tmp_path:
         assert "done 1" not in str(rest) and "task 2" in str(rest)
 
     asyncio.run(_run())
+
+
+def test_attended_fork_of_merged_unattended_turns_keeps_every_task(tmp_path: Path, db_factory) -> None:
+    with _patch_sentinel():
+        engine = _make_engine(tmp_path, session_factory=db_factory)
+    sid = engine.session_mgr.create_session(user="thies", unattended=True).session_id
+    engine.get_or_activate(sid)
+    engine.session_mgr.save_history(sid, _merged_task_done_history(2))
+    events = [
+        {"role": role, "content": f"{text} {i}"}
+        for i in range(2)
+        for role, text in (("user", "task"), ("assistant", "done"))
+    ]
+    engine.session_mgr.save_events(sid, events)
+
+    forked = engine.fork_session(sid, event_index=len(events) - 1, channel_type="cli", unattended=False)
+
+    history = engine.session_mgr.load_history(forked.session_id)
+    assert [type(p).__name__ + ":" + str(p.content) for m in history for p in m.parts] == [
+        "UserPromptPart:task 0",
+        "TextPart:done 0",
+        "UserPromptPart:task 1",
+        "TextPart:done 1",
+    ]
