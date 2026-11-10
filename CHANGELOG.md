@@ -1,6 +1,60 @@
 # CHANGELOG
 
 
+## v0.176.0 (2026-11-10)
+
+
+### ✨ Features
+
+
+- ✨Merge pull request #466 from thiesgerken/feat/session-search
+  ([`56c3ee6`](https://github.com/thiesgerken/carapace/commit/56c3ee6d0e9a6fd1a6c461460a20f658829e50dd))
+
+- ✨ feat: search sessions by title or full text, incl. archived
+  ([`56c3ee6`](https://github.com/thiesgerken/carapace/commit/56c3ee6d0e9a6fd1a6c461460a20f658829e50dd))
+
+- ✨ feat(sidebar): search sessions from the sidebar
+  ([`8a318f5`](https://github.com/thiesgerken/carapace/commit/8a318f50bfec208f1e94ce23034f9bae583235b2))
+
+  A search field below "New session" swaps the grouped list for a flat list of hits from /api/sessions/search: active and archived together (archived ones badged), independent of the "show archived" preference. An inline toggle picks title or fulltext search; fulltext hits show the matching snippet with the query highlighted. Escape or the clear button restores the normal list.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aV2CyAjkTShKo98nTWw
+
+- ✨ feat(sessions): search a user's sessions by title or message text
+  ([`aadd441`](https://github.com/thiesgerken/carapace/commit/aadd44117585c72a17ecd15431da16e5908c3b71))
+
+  GET /api/sessions/search?q=...&fulltext=false matches the title as a case-insensitive substring, across active and archived sessions. With fulltext=true it also matches user and assistant message events (no tool calls, tool output or slash commands) and returns a snippet around the first matching message. Naive LIKE scan over the event rows, marked as such.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aV2CyAjkTShKo98nTWw
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix(sidebar): highlight search snippets with the query that found them
+  ([`f846577`](https://github.com/thiesgerken/carapace/commit/f8465774f65b47b4cf7ba6a5c3c3d2360bec30e7))
+
+  While the next query is pending, the previous hits stay visible; marking them with the live input made the highlights flicker or vanish.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aV2CyAjkTShKo98nTWw
+
+### ⚡ Performance
+
+
+- ⚡️ perf(sessions): scope the fulltext scan to the user and run search off the event loop
+  ([`de82675`](https://github.com/thiesgerken/carapace/commit/de82675101a1800a233175664b57206cfaf60a64))
+
+  A correlated EXISTS limits the message scan to the user's sessions instead of every user's events, and the search handler is a plain def, so FastAPI runs its blocking scan and per-hit loads in the threadpool.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aV2CyAjkTShKo98nTWw
+
 ## v0.175.1 (2026-11-10)
 
 
