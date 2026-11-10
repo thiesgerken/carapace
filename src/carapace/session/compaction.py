@@ -327,10 +327,11 @@ def fold_render_text(messages: list[ModelMessage]) -> str:
 def split_merged_requests(messages: list[ModelMessage]) -> list[ModelMessage]:
     """Undo pydantic-ai's merge of consecutive requests: tool returns, then one request per prompt.
 
-    Every run merges consecutive ``ModelRequest``s of its history and persists the result, so a
-    verdict's tool return absorbs the next evaluation's prompt, and a fold message absorbs the prompt
-    after it. Turn boundaries and fold detection need them apart again; a fold cut inside a merged
-    request would also keep a tool return whose call was folded away.
+    Every run merges consecutive ``ModelRequest``s of its history and persists the result, so an
+    output tool's return (the sentinel's verdict, the unattended agent's ``task_done``) absorbs the
+    next prompt, and a fold message absorbs the prompt after it. Turn boundaries and fold detection
+    need them apart again; a fold cut inside a merged request would also keep a tool return whose
+    call was folded away.
     """
     out: list[ModelMessage] = []
     for msg in messages:

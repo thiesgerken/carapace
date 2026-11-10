@@ -31,6 +31,7 @@ from ..models.session import SessionAttributes, SessionBudget, SessionState
 from ..sandbox.state import SessionSandboxSnapshot
 from ..usage import LlmContext, LlmRequestLog, LlmRequestState, LlmSource, UsageTracker
 from ..usernames import normalize_username
+from .compaction import split_merged_requests
 from .open_approvals import ESCALATION_RESPONSE_FIELDS, TOOL_APPROVAL_REQUEST_ROLE, TOOL_APPROVAL_RESPONSE_ROLE
 
 
@@ -291,9 +292,14 @@ class SessionManager:
             self._on_change()
 
     def load_history(self, session_id: str) -> list[ModelMessage]:
+        """The agent's model history, with the requests pydantic-ai merged on a run split apart again.
+
+        Fold detection and turn boundaries (compaction, rewind, fork) need a fold, an output-tool return
+        and the next prompt as separate requests. The next run merges them again before sending.
+        """
         with self._session_factory() as db:
             row = db.get(SessionHistoryRow, session_id)
-            return list(row.messages) if row is not None else []
+            return split_merged_requests(list(row.messages)) if row is not None else []
 
     def save_history(self, session_id: str, messages: list[ModelMessage]) -> None:
         with self._session_factory.begin() as db:

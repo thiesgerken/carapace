@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import AsyncIterator
 from pathlib import Path
 
 from loguru import logger
@@ -18,8 +19,14 @@ from pydantic_ai.messages import (
 )
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
+from carapace.models.compaction import FOLD_MARKER
 from carapace.models.session import SessionState
-from carapace.session.compaction import is_fold_message, split_lead_folds, tool_return_is_compacted
+from carapace.session.compaction import (
+    fold_summary_text,
+    is_fold_message,
+    split_lead_folds,
+    tool_return_is_compacted,
+)
 from carapace.session.compaction_summarizer import summarize_tool_output
 from carapace.session.transcript import completed_model_turn_end_indexes
 from tests.session_helpers import _make_engine, _patch_sentinel
@@ -546,5 +553,111 @@ def test_memory_block_is_frozen_per_session_until_compaction(tmp_path: Path, db_
         engine._ensure_memory_snapshot(active)
 
         assert active.state.memory is not None and active.state.memory.text == "memory #2"
+
+    asyncio.run(_run())
+
+
+class _AgentAndSummarizer:
+    """The agent streams its answer; the compaction model is run without streaming and summarizes."""
+
+    def __init__(self) -> None:
+        self.summary_inputs: list[str] = []
+
+    def factory(self, _name: str, *, user: str) -> FunctionModel:
+        return FunctionModel(self._summarize, stream_function=self._answer)
+
+    def _summarize(self, messages: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
+        self.summary_inputs.append(str(messages[-1].parts[-1].content))
+        return ModelResponse(parts=[TextPart(f"summary {len(self.summary_inputs)}")])
+
+    async def _answer(self, _messages: list[ModelMessage], _info: AgentInfo) -> AsyncIterator[str]:
+        yield "answer 10"
+
+
+async def _fold_then_real_turn(tmp_path: Path, db_factory, models: _AgentAndSummarizer):
+    """A folded session that then runs a real turn, so pydantic-ai merges the fold with the next prompt."""
+    with _patch_sentinel():
+        engine = _make_engine(tmp_path, session_factory=db_factory)
+    engine._model_factory = models.factory
+    sid = engine.session_mgr.create_session(user="thies").session_id
+    active = engine.get_or_activate(sid)
+    _seed(engine, sid, 10)
+    await engine.run_compaction(active, mode="fold", keep_turns=3)
+    await engine.submit_message(sid, "question 10")
+    async with asyncio.timeout(5):
+        while active.agent_task is not None:
+            await asyncio.sleep(0.01)
+    return engine, sid, active
+
+
+def test_repeated_compact_after_a_real_turn_keeps_the_fold_chain(tmp_path: Path, db_factory) -> None:
+    async def _run() -> None:
+        models = _AgentAndSummarizer()
+        engine, sid, active = await _fold_then_real_turn(tmp_path, db_factory, models)
+
+        await engine.run_compaction(active, mode="fold", keep_turns=3)
+
+        assert len(models.summary_inputs) == 2
+        assert FOLD_MARKER not in models.summary_inputs[1]
+        lead, rest = split_lead_folds(engine.session_mgr.load_history(sid))
+        assert [fold_summary_text(fold).split("\n\n")[-1] for fold in lead] == ["summary 1", "summary 2"]
+        assert len(completed_model_turn_end_indexes(rest)) == 3
+
+    asyncio.run(_run())
+
+
+def test_reset_and_fork_after_a_real_turn_keep_the_fold(tmp_path: Path, db_factory) -> None:
+    async def _run() -> None:
+        engine, sid, _active = await _fold_then_real_turn(tmp_path, db_factory, _AgentAndSummarizer())
+        events = list(engine.session_mgr.load_events(sid))
+        last_answer = max(
+            i for i, e in enumerate(events) if e.get("role") == "assistant" and e.get("content") == "answer 9"
+        )
+
+        forked = engine.fork_session(sid, event_index=last_answer, channel_type="cli")
+        assert await engine.reset_to_turn(sid, last_answer) is True
+
+        for session_id in (forked.session_id, sid):
+            lead, rest = split_lead_folds(engine.session_mgr.load_history(session_id))
+            assert [fold_summary_text(fold).split("\n\n")[-1] for fold in lead] == ["summary 1"]
+            assert len(completed_model_turn_end_indexes(rest)) == 3
+
+    asyncio.run(_run())
+
+
+def test_compact_cuts_merged_task_done_turns_at_the_output_tool_return(tmp_path: Path, db_factory) -> None:
+    """An unattended turn ends in a task_done return, which the next run merges with the next prompt."""
+
+    async def _run() -> None:
+        models = _AgentAndSummarizer()
+        with _patch_sentinel():
+            engine = _make_engine(tmp_path, session_factory=db_factory)
+        engine._model_factory = models.factory
+        sid = engine.session_mgr.create_session(user="thies").session_id
+        active = engine.get_or_activate(sid)
+        history: list[ModelMessage] = []
+        for i in range(3):
+            call = ToolCallPart("task_done", {"summary": f"done {i}"}, tool_call_id=f"done-{i}")
+            prompt = UserPromptPart(f"task {i}")
+            if history:
+                # pydantic-ai appended this prompt to the request holding the previous turn's task_done return.
+                history[-1] = ModelRequest(parts=[*history[-1].parts, prompt])
+            else:
+                history.append(ModelRequest(parts=[prompt]))
+            history += [
+                ModelResponse(parts=[call]),
+                ModelRequest(parts=[ToolReturnPart("task_done", "Final result processed.", tool_call_id=f"done-{i}")]),
+            ]
+        engine.session_mgr.save_history(sid, history)
+
+        report = await engine.run_compaction(active, mode="fold", keep_turns=1)
+
+        assert report.turns_folded == 2
+        lead, rest = split_lead_folds(engine.session_mgr.load_history(sid))
+        assert len(lead) == 1
+        call_ids = {p.tool_call_id for m in rest for p in m.parts if isinstance(p, ToolCallPart)}
+        return_ids = {p.tool_call_id for m in rest for p in m.parts if isinstance(p, ToolReturnPart)}
+        assert call_ids == return_ids == {"done-2"}
+        assert "done 1" not in str(rest) and "task 2" in str(rest)
 
     asyncio.run(_run())
