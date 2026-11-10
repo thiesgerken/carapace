@@ -433,10 +433,18 @@ def _autonomy_limit(start: datetime) -> Transcript:
 
 _EXEC_TOOL = ToolDefinition(
     name="exec",
-    description="Run a shell command in the session sandbox.",
+    description=(
+        "Run a shell command in the session **sandbox**.\n\n"
+        "- Every call is reviewed by the sentinel first.\n"
+        "- Pass `contexts` to use the network access of activated skills."
+    ),
     parameters_json_schema={
         "type": "object",
-        "properties": {"command": {"type": "string"}, "title": {"type": "string"}, "contexts": {"type": "array"}},
+        "properties": {
+            "command": {"type": "string", "description": "The command, run with `bash -c`."},
+            "title": {"type": "string"},
+            "contexts": {"type": "array"},
+        },
         "required": ["command"],
     },
 )
