@@ -32,6 +32,12 @@ Folds are **append-only**: each `/compact` adds a new summary block rather than 
 existing ones, so summaries do not drift through repeated compaction. Adjacent blocks can later be
 merged by a consolidation pass when they themselves grow large (a "tree" of summaries).
 
+Every run of pydantic-ai merges consecutive requests and persists the merged history: a fold block
+absorbs the next turn's prompt, and an unattended turn's `task_done`/`task_failed` return absorbs the
+next task. Compaction, rewind and fork recognize folds and turn boundaries only on separate requests,
+so the agent's history is split back apart whenever it is loaded (and the sentinel's shadow
+conversation before it is compacted).
+
 The model is always told that content was compacted: folded blocks become a clearly marked summary
 message, and compacted tool outputs are prefixed with a note that the full output can be obtained by
 re-running the tool.
