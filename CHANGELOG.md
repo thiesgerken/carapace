@@ -1,6 +1,30 @@
 # CHANGELOG
 
 
+## v0.176.1 (2026-11-11)
+
+
+### Other
+
+
+- Merge pull request #468 from thiesgerken/fix/search-archived-badge
+  ([`e27656c`](https://github.com/thiesgerken/carapace/commit/e27656c558cb0aa65292cdacbe50ffaf462e1032))
+
+### 💄 UI/UX
+
+
+- 💄 style(sidebar): drop the archived badge on search hits
+  ([`e27656c`](https://github.com/thiesgerken/carapace/commit/e27656c558cb0aa65292cdacbe50ffaf462e1032))
+
+- 💄 style(sidebar): drop the archived badge on search hits
+  ([`367f207`](https://github.com/thiesgerken/carapace/commit/367f207706e18d23b48bc0e23ddbe55e0141c9fc))
+
+  The row's active archive icon already marks archived sessions, as in the normal list.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aV2CyAjkTShKo98nTWw
+
 ## v0.176.0 (2026-11-10)
 
 
