@@ -412,13 +412,13 @@ export function Sidebar({
     }
     return (
       <div className="space-y-0.5">
-        {hits.map((hit) => renderSessionRow(hit.session, { snippet: hit.snippet ?? null }))}
+        {hits.map((hit) => renderSessionRow(hit.session, hit.snippet))}
       </div>
     );
   }
 
-  /** `searchHit` marks a row in the flat search results: it carries an archived badge and the match snippet. */
-  function renderSessionRow(session: SessionInfo, searchHit?: { snippet: string | null }) {
+  /** `snippet` is the match excerpt of a fulltext search hit, shown under the title. */
+  function renderSessionRow(session: SessionInfo, snippet?: string | null) {
     const sandbox = sandboxSummary(session);
     const sandboxLabel = sandbox ? sandboxSummaryLabel(sandbox) : null;
     const sessionCanArchive = canArchiveSession(session);
@@ -470,11 +470,6 @@ export function Sidebar({
                 <span className="font-mono break-all">{session.session_id}</span>
               )}
           </div>
-          {searchHit && session.attributes.archived ? (
-            <span className="mt-0.5 shrink-0 rounded border border-violet-300 px-1 text-[10px] font-medium uppercase leading-4 tracking-wide text-violet-700 dark:border-violet-800 dark:text-violet-300">
-              {tSidebar("sections.archived")}
-            </span>
-          ) : null}
           {showUnattendedIcon ? (
             <span
               className="mt-0.5 inline-flex shrink-0 items-center text-emerald-700"
@@ -485,9 +480,9 @@ export function Sidebar({
             </span>
           ) : null}
         </div>
-        {searchHit?.snippet ? (
+        {snippet ? (
           <div className="line-clamp-2 break-words px-3 pb-1 text-xs text-muted-foreground">
-            <HighlightedText text={searchHit.snippet} query={search.hitsQuery} />
+            <HighlightedText text={snippet} query={search.hitsQuery} />
           </div>
         ) : null}
         <div className="flex items-start gap-2 px-3 pb-2">
