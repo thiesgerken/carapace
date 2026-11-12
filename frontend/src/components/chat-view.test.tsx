@@ -97,15 +97,17 @@ test("turn-ending errors carry turn actions, other errors do not", () => {
   assert.equal(isTurnActionMessage({ kind: "error", detail: "Agent is busy" }), false);
 });
 
-test("a provider compaction event renders as a marker with the provider's summary", () => {
+test("a provider compaction event renders as a marker with the provider's summary or its failure", () => {
   const messages = projectHistoryToMessages([
     { role: "user", content: "go", event_index: 0 },
     { role: "compaction", content: "", provider: "anthropic", summary: "the user asked to go", event_index: 1 },
     { role: "compaction", content: "", provider: "openai", event_index: 2 },
+    { role: "compaction", content: "", provider: "openai-codex", failed: "did not compact; compacting locally instead", event_index: 3 },
   ]);
 
   assert.deepEqual(messages.slice(1), [
-    { kind: "provider_compaction", provider: "anthropic", summary: "the user asked to go" },
-    { kind: "provider_compaction", provider: "openai", summary: undefined },
+    { kind: "provider_compaction", provider: "anthropic", summary: "the user asked to go", failed: undefined },
+    { kind: "provider_compaction", provider: "openai", summary: undefined, failed: undefined },
+    { kind: "provider_compaction", provider: "openai-codex", summary: undefined, failed: "did not compact; compacting locally instead" },
   ]);
 });

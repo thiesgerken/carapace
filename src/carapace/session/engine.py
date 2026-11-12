@@ -161,6 +161,7 @@ class SessionEngine(
         self._notification_router = notification_router
         self._active: dict[str, ActiveSession] = {}
         self._llm_semaphore = asyncio.Semaphore(config.agent.max_parallel_llm)
+        self._provider_compaction_rejected = set()
 
         # Let SandboxManager retrieve activated skills so automatic setup can rerun on recreation
         sandbox_mgr.set_activated_skills_callback(self._get_activated_skills)
@@ -282,6 +283,9 @@ class SessionEngine(
                 session_id, messages, system_prompt
             ),
             provider_compaction=self.sentinel_provider_compaction,
+            on_provider_compaction_rejected=lambda model_id, reason: self.reject_provider_compaction(
+                self._active[session_id], model_id, reason
+            ),
         )
         usage_tracker = self._session_mgr.load_usage(session_id)
         llm_log = self._session_mgr.load_llm_request_log(session_id)
@@ -537,6 +541,7 @@ class SessionEngine(
             llm_usage_limits=lambda: self._remaining_aux_usage_limits(active),
             compact_history=compact_history,
             provider_compaction=self.agent_provider_compaction(active),
+            reject_provider_compaction=lambda reason: self.reject_provider_compaction(active, agent_model_id, reason),
             sandbox=self._sandbox_mgr,
             activated_skills=[],
             credential_registry=self._session_credential_registry(session_id),

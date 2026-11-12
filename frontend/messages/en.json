@@ -1671,7 +1671,9 @@
         "toolTitle": "Tool output summarized to save context ({orig}→{summary} tokens)",
         "providerMarker": "Context compacted by {provider}",
         "providerTitle": "The model's provider replaced everything above with a summary in the model's context. Originals shown here",
-        "providerOpaque": "The provider keeps this summary encrypted, so it cannot be shown."
+        "providerOpaque": "The provider keeps this summary encrypted, so it cannot be shown.",
+        "providerFailed": "Compaction by {provider} failed, compacted locally",
+        "providerFailedTitle": "The provider did not compact the context, so carapace compacted it with its own ladder. Details below"
     },
     "promptPreview": {
         "role": "Role",

@@ -266,6 +266,8 @@ export interface HistoryMessage {
   provider?: string;
   /** On a `compaction` event: the provider's readable summary (Anthropic); absent when it is encrypted. */
   summary?: string;
+  /** On a `compaction` event: why the provider's compaction failed (carapace compacted locally instead). */
+  failed?: string;
 }
 
 /**
@@ -597,6 +599,7 @@ export type ChatMessage =
       kind: "provider_compaction";
       provider?: string;
       summary?: string;
+      failed?: string;
     }
   | { kind: "streaming"; content: string }
   | {

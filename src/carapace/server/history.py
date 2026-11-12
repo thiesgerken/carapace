@@ -97,6 +97,8 @@ class HistoryMessage(BaseModel):
     # A provider-side compaction event: who compacted, and its readable summary if the provider has one.
     provider: str | None = None
     summary: str | None = None
+    # Set instead of a summary when the provider failed to compact: why, and that carapace compacted locally.
+    failed: str | None = None
 
     @model_validator(mode="after")
     def _contexts_from_args_when_missing(self) -> Self:

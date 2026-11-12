@@ -463,6 +463,7 @@ function ProviderCompactionMarker({
 }) {
   const t = useTranslations("compaction");
   const [open, setOpen] = useState(false);
+  const provider = message.provider ?? "?";
   return (
     <div className="my-1 w-full min-w-0">
       <button
@@ -470,18 +471,23 @@ function ProviderCompactionMarker({
         onClick={() => setOpen(!open)}
         className={cn(
           "flex w-full min-w-0 items-center gap-1.5 rounded-md px-1.5 py-0.5 text-[11px] text-left",
-          "text-muted-foreground/80 hover:bg-accent transition-colors",
+          message.failed ? "text-destructive hover:bg-destructive/10" : "text-muted-foreground/80 hover:bg-accent",
+          "transition-colors",
         )}
-        title={t("providerTitle")}
+        title={message.failed ? t("providerFailedTitle") : t("providerTitle")}
         aria-expanded={open}
       >
-        <Archive className="h-3 w-3 shrink-0 text-amber-600/70" />
-        <span className="font-medium">{t("providerMarker", { provider: message.provider ?? "?" })}</span>
+        <Archive className={cn("h-3 w-3 shrink-0", message.failed ? "text-destructive" : "text-amber-600/70")} />
+        <span className="font-medium">
+          {message.failed ? t("providerFailed", { provider }) : t("providerMarker", { provider })}
+        </span>
         <ChevronRight className={cn("ml-auto h-3 w-3 shrink-0 transition-transform", open && "rotate-90")} />
       </button>
       {open ? (
         <div className="mb-1.5 ml-5 mt-1 rounded-md border border-amber-500/30 bg-amber-500/5 p-2 text-[11px] text-muted-foreground">
-          {message.summary ? (
+          {message.failed ? (
+            <p className="whitespace-pre-wrap break-words text-destructive">{message.failed}</p>
+          ) : message.summary ? (
             <>
               <p className="mb-1 text-[10px] font-medium uppercase tracking-wide opacity-70">{t("modelSummaryLabel")}</p>
               <div className="whitespace-pre-wrap break-words">{message.summary}</div>
