@@ -5,7 +5,7 @@ import { NextIntlClientProvider } from "next-intl";
 
 import messages from "../../messages/en.json";
 import { click, installDom, renderReact, setInputValue } from "../../test/react-test-utils";
-import type { SessionBudgetSettings } from "@/lib/types";
+import type { BudgetGauge, SessionBudgetSettings } from "@/lib/types";
 
 import { SessionBudgetSection, type SessionBudgetField } from "./session-budget-section";
 
@@ -14,10 +14,11 @@ type SaveCall = [SessionBudgetField, string | null];
 async function renderSection(
   budget: SessionBudgetSettings,
   onSave: (field: SessionBudgetField, value: string | null) => Promise<void>,
+  gauges: BudgetGauge[] = [],
 ) {
   return renderReact(
     <NextIntlClientProvider locale="en" messages={messages} timeZone="UTC">
-      <SessionBudgetSection budget={budget} disabled={false} onSave={onSave} />
+      <SessionBudgetSection budget={budget} gauges={gauges} disabled={false} onSave={onSave} />
     </NextIntlClientProvider>,
   );
 }
@@ -58,6 +59,28 @@ test("shows every limit, unset ones as no limit, before any usage exists", async
       "Tool calls: No limit",
       "Autonomy limit: 100",
     ]);
+    await view.unmount();
+  } finally {
+    restore();
+  }
+});
+
+test("shows the live usage next to its limit", async () => {
+  const restore = installDom();
+  try {
+    const view = await renderSection({ input_tokens: 100_000 }, async () => {}, [
+      {
+        key: "input",
+        label: "Input",
+        current_value: "12.3k tokens",
+        current_amount: 12_300,
+        limit_value: "100k tokens",
+        fill_pct: 12.3,
+        reached: false,
+      },
+    ]);
+    const input = view.container.querySelector("dt")?.nextElementSibling;
+    assert.equal(input?.textContent, "12.3k tokens /100,000");
     await view.unmount();
   } finally {
     restore();
@@ -141,7 +164,7 @@ test("follows budget changes from elsewhere, so setting the previous value again
     // e.g. `/budget tools 5` in another tab, delivered through the `status` broadcast
     await view.rerender(
       <NextIntlClientProvider locale="en" messages={messages} timeZone="UTC">
-        <SessionBudgetSection budget={{ tool_calls: 5 }} disabled={false} onSave={onSave} />
+        <SessionBudgetSection budget={{ tool_calls: 5 }} gauges={[]} disabled={false} onSave={onSave} />
       </NextIntlClientProvider>,
     );
     assert.equal(limitButton(view.container, "Tool calls").textContent, "5");

@@ -593,6 +593,36 @@ class UsageLastRequestRow(TypedDict):
     breakdown_pct: _BreakdownPct
 
 
+class UsageContextRow(UsageLastRequestRow):
+    """A last-request row with the context window it was measured against."""
+
+    context_cap_tokens: int
+    context_used_pct: float
+
+
+class ModelCost(BaseModel):
+    """A model's cost as one number: subscription models show their list price, marked as such."""
+
+    cost: Decimal
+    subscription: bool
+
+
+class SessionUsageDetails(BaseModel):
+    """The session's usage breakdown, as ``/usage`` and ``GET /api/sessions/{id}/usage`` show it."""
+
+    models: dict[str, ModelUsage]
+    categories: dict[str, ModelUsage]
+    total_input: int
+    total_output: int
+    total_tool_calls: int
+    model_costs: dict[str, ModelCost]
+    category_costs: dict[str, CostSplit]
+    total_cost: CostSplit
+    budget_gauges: list[BudgetGauge]
+    last_llm_agent: UsageContextRow | None
+    last_llm_sentinel: UsageContextRow | None
+
+
 def _duration_ms(start: datetime | None, end: datetime | None) -> int | None:
     if start is None or end is None:
         return None

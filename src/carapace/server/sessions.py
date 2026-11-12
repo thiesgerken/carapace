@@ -16,7 +16,7 @@ from ..models.session import SessionAttributes, SessionBudget, SessionJobRunCont
 from ..sandbox.state import SessionSandboxSnapshot
 from ..session.transcript import is_turn_terminal_event
 from ..session.usage_budget import BUDGET_METRIC_FIELDS, parse_budget_limit
-from ..usage import BudgetMetric, CostSplit
+from ..usage import BudgetMetric, CostSplit, SessionUsageDetails
 from ..user_defaults import apply_user_model_defaults, effective_user_budget
 from .auth import require
 from .history import _history_from_messages
@@ -599,6 +599,16 @@ async def get_pending_approvals(
     ]
     escalations = [{"id": pe.get("request_id", ""), **pe} for pe in active.pending_escalations]
     return PendingApprovalsResponse(approvals=approvals, escalations=escalations)
+
+
+@router.get("/sessions/{session_id}/usage", response_model=SessionUsageDetails)
+async def get_session_usage(
+    session_id: str,
+    user: Annotated[UserIdentity, Depends(require(Scope.sessions, Access.read))],
+) -> SessionUsageDetails:
+    """The ``/usage`` breakdown, also while a turn runs: unlike slash commands it never waits for one."""
+    _load_owned_state(session_id, user)
+    return server._engine.usage_details(server._engine.get_or_activate(session_id))
 
 
 # ----------------------------------------------------------------------

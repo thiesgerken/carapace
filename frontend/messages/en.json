@@ -910,7 +910,7 @@
             "limit": "Context limit: {tokens} tokens.",
             "assumedLimit": "Assuming a {tokens} context limit.",
             "lastRequestTokens": "{tokens} API tokens (last agent request)",
-            "clickForUsage": "Click to send /usage to the agent for more details.",
+            "clickForUsage": "Click for the usage details.",
             "tokensLabel": "{tokens} tokens"
         },
         "budget": {
@@ -1328,6 +1328,9 @@
         "memory": {
             "title": "Memory",
             "openInMemory": "Open in Memory"
+        },
+        "usage": {
+            "title": "Usage"
         }
     },
     "message": {
@@ -1358,6 +1361,7 @@
         "actions": {
             "fork": "Fork session from here",
             "retry": "Retry turn",
+            "continue": "Continue turn",
             "reset": "Reset conversation to after this turn"
         },
         "finalStatus": {

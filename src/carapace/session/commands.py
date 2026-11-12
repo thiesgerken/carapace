@@ -6,10 +6,10 @@ from collections.abc import Mapping
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, Literal, Protocol
 
-from ..models.config import Config, is_subscription_model
+from ..models.config import Config
 from ..models.skills import SkillInfo, context_grants_session_summary
 from ..sandbox.manager import SandboxManager
-from ..usage import BudgetMetric
+from ..usage import BudgetMetric, SessionUsageDetails
 from ..ws_models import SLASH_COMMANDS
 from .manager import SessionManager
 from .types import ActiveSession
@@ -38,10 +38,7 @@ class SessionCommandHost(Protocol):
     ) -> Any: ...
     async def run_uncompaction(self, active: ActiveSession) -> dict[str, Any]: ...
     def _skill_catalog_for_session(self, session_id: str) -> list[SkillInfo]: ...
-    def _display_budget_gauges(self, active: ActiveSession) -> list[Any]: ...
-    def _usage_last_llm_payload_row(
-        self, active: ActiveSession, source: Literal["agent", "sentinel"]
-    ) -> dict[str, Any] | None: ...
+    def usage_details(self, active: ActiveSession) -> SessionUsageDetails: ...
     def _budget_command_payload(self, active: ActiveSession, *, message: str | None = None) -> dict[str, Any]: ...
     async def update_session_budget(
         self, session_id: str, limits: Mapping[BudgetMetric, int | Decimal | None]
@@ -72,10 +69,7 @@ class SessionCommandMixin:
         ) -> Any: ...
         async def run_uncompaction(self, active: ActiveSession) -> dict[str, Any]: ...
         def _skill_catalog_for_session(self, session_id: str) -> list[SkillInfo]: ...
-        def _display_budget_gauges(self, active: ActiveSession) -> list[Any]: ...
-        def _usage_last_llm_payload_row(
-            self, active: ActiveSession, source: Literal["agent", "sentinel"]
-        ) -> dict[str, Any] | None: ...
+        def usage_details(self, active: ActiveSession) -> SessionUsageDetails: ...
         def _budget_command_payload(self, active: ActiveSession, *, message: str | None = None) -> dict[str, Any]: ...
         async def update_session_budget(
             self, session_id: str, limits: Mapping[BudgetMetric, int | Decimal | None]
@@ -143,31 +137,7 @@ class SessionCommandMixin:
             )
 
         if cmd == "/usage":
-            tracker = active.usage_tracker
-            total_cost = tracker.total_cost()
-            return {
-                "command": "usage",
-                "data": {
-                    "models": {k: v.model_dump() for k, v in tracker.models.items()},
-                    "categories": {k: v.model_dump() for k, v in tracker.categories.items()},
-                    "total_input": tracker.total_input,
-                    "total_output": tracker.total_output,
-                    "total_tool_calls": tracker.tool_calls,
-                    # One number per model: subscription models show their list price, marked as such.
-                    "model_costs": {
-                        model_key: {"cost": str(cost.equivalent), "subscription": is_subscription_model(model_key)}
-                        for model_key, cost in tracker.cost_by_model().items()
-                    },
-                    "category_costs": {
-                        category: {"actual": str(cost.actual), "equivalent": str(cost.equivalent)}
-                        for category, cost in tracker.cost_by_category().items()
-                    },
-                    "total_cost": {"actual": str(total_cost.actual), "equivalent": str(total_cost.equivalent)},
-                    "budget_gauges": [g.model_dump(mode="json") for g in self._display_budget_gauges(active)],
-                    "last_llm_agent": self._usage_last_llm_payload_row(active, "agent"),
-                    "last_llm_sentinel": self._usage_last_llm_payload_row(active, "sentinel"),
-                },
-            }
+            return {"command": "usage", "data": self.usage_details(active).model_dump(mode="json")}
 
         if cmd == "/budget":
             return await self._handle_budget_command(active, parts)

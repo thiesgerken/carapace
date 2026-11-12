@@ -493,7 +493,7 @@ interface LastLlmRequestRow {
   context_used_pct?: number;
 }
 
-interface UsagePayload {
+export interface UsagePayload {
   models: Record<string, UsageBucket>;
   categories: Record<string, UsageBucket>;
   total_input: number;
@@ -521,7 +521,7 @@ interface BudgetPayload {
   usage_hint?: string;
 }
 
-function isUsageData(d: unknown): d is UsagePayload {
+export function isUsageData(d: unknown): d is UsagePayload {
   return !!d && typeof d === "object" && "models" in d && "categories" in d;
 }
 
@@ -554,6 +554,15 @@ function lastRequestRowsShowOtherPct(rows: LastLlmRequestRow[]): boolean {
   return rows.some((r) => (r.breakdown_pct?.other ?? 0) > 0);
 }
 
+function usageIsEmpty(data: UsagePayload): boolean {
+  return (
+    Object.keys(data.models).length === 0 &&
+    Object.keys(data.categories).length === 0 &&
+    (data.budget_gauges ?? []).length === 0 &&
+    (data.total_tool_calls ?? 0) === 0
+  );
+}
+
 function UsageView({
   data,
   defaultExpanded,
@@ -563,8 +572,84 @@ function UsageView({
 }) {
   const t = useTranslations("commandResult");
   const [open, setOpen] = useState(defaultExpanded);
-  const budgetGauges = Array.isArray(data.budget_gauges) ? data.budget_gauges : [];
-  const totalToolCalls = data.total_tool_calls ?? 0;
+  if (usageIsEmpty(data)) {
+    return (
+      <p className="my-1 text-sm text-muted-foreground">
+        {t("usage.none")}
+      </p>
+    );
+  }
+
+  return (
+    <div className="my-1 w-full min-w-0">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className={cn(
+          "flex w-full min-w-0 items-center gap-1.5 rounded-md px-2 py-1 text-xs text-left",
+          "text-muted-foreground hover:bg-accent transition-colors",
+          open && "bg-accent",
+        )}
+      >
+        <ChevronRight
+          className={cn(
+            "h-3 w-3 shrink-0 transition-transform",
+            open && "rotate-90",
+          )}
+        />
+        <span className="min-w-0 flex-1 truncate">
+          <UsageSummary data={data} />
+        </span>
+      </button>
+
+      {open && (
+        <div className="ml-3 mt-0.5 border-l border-border/80 pl-3">
+          <UsageDetails data={data} showBudget />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** One line: total tokens, cost, and tool calls. */
+export function UsageSummary({ data }: { data: UsagePayload }) {
+  const t = useTranslations("commandResult");
+  const budgetGauges = data.budget_gauges ?? [];
+  // The equivalent total follows its gauge: shown with a limit or when the session used a subscription.
+  const showEquivalentTotal = budgetGauges.some((gauge) => gauge.key === "equivalent_cost");
+  const totalCost = data.total_cost ?? { actual: "0", equivalent: "0" };
+  return (
+    <>
+      {t("usage.total", {
+        total: fmt(data.total_input + data.total_output),
+        input: fmt(data.total_input),
+        output: fmt(data.total_output),
+      })}
+      {parseFloat(totalCost.actual) ? (
+        <span className={costColor(parseFloat(totalCost.actual))}>
+          {" "}
+          | {fmtCost(totalCost.actual)}
+        </span>
+      ) : null}
+      {showEquivalentTotal ? (
+        <span className="text-muted-foreground">
+          {" "}
+          {t("usage.equivalent", { cost: fmtCost(totalCost.equivalent) })}
+        </span>
+      ) : null}
+      {" · "}
+      {t("usage.toolCalls", { count: fmt(data.total_tool_calls ?? 0) })}
+    </>
+  );
+}
+
+/** The breakdown tables by model, category, and last request's context; the budget table on request. */
+export function UsageDetails({ data, showBudget }: { data: UsagePayload; showBudget: boolean }) {
+  const t = useTranslations("commandResult");
+  if (usageIsEmpty(data)) {
+    return <p className="my-1 text-sm text-muted-foreground">{t("usage.none")}</p>;
+  }
+  const budgetGauges = data.budget_gauges ?? [];
   const allBuckets = [
     ...Object.values(data.models),
     ...Object.values(data.categories),
@@ -575,20 +660,6 @@ function UsageView({
   const modelCosts = data.model_costs ?? {};
   const categoryCosts = data.category_costs ?? {};
   const hasCosts = Object.values(modelCosts).some((cost) => parseFloat(cost.cost) > 0);
-  // The equivalent total follows its gauge: shown with a limit or when the session used a subscription.
-  const showEquivalentTotal = budgetGauges.some((gauge) => gauge.key === "equivalent_cost");
-  const isEmpty =
-    Object.keys(data.models).length === 0 &&
-    Object.keys(data.categories).length === 0 &&
-    budgetGauges.length === 0 &&
-    totalToolCalls === 0;
-  if (isEmpty) {
-    return (
-      <p className="my-1 text-sm text-muted-foreground">
-        {t("usage.none")}
-      </p>
-    );
-  }
 
   function modelCostCell(name: string) {
     const cost = modelCosts[name];
@@ -683,25 +754,6 @@ function UsageView({
     );
   }
 
-  const total = data.total_input + data.total_output;
-  const totalCost = data.total_cost ?? { actual: "0", equivalent: "0" };
-  const costStr = (
-    <>
-      {parseFloat(totalCost.actual) ? (
-        <span className={costColor(parseFloat(totalCost.actual))}>
-          {" "}
-          | {fmtCost(totalCost.actual)}
-        </span>
-      ) : null}
-      {showEquivalentTotal ? (
-        <span className="text-muted-foreground">
-          {" "}
-          {t("usage.equivalent", { cost: fmtCost(totalCost.equivalent) })}
-        </span>
-      ) : null}
-    </>
-  );
-
   const lastRequestRows = (
     [data.last_llm_agent, data.last_llm_sentinel] as const
   ).filter(
@@ -711,37 +763,8 @@ function UsageView({
   const showOtherPctCol = lastRequestRowsShowOtherPct(lastRequestRows);
 
   return (
-    <div className="my-1 w-full min-w-0">
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        className={cn(
-          "flex w-full min-w-0 items-center gap-1.5 rounded-md px-2 py-1 text-xs text-left",
-          "text-muted-foreground hover:bg-accent transition-colors",
-          open && "bg-accent",
-        )}
-      >
-        <ChevronRight
-          className={cn(
-            "h-3 w-3 shrink-0 transition-transform",
-            open && "rotate-90",
-          )}
-        />
-        <span className="min-w-0 flex-1 truncate">
-          {t("usage.total", {
-            total: fmt(total),
-            input: fmt(data.total_input),
-            output: fmt(data.total_output),
-          })}
-          {costStr}
-          {" · "}
-          {t("usage.toolCalls", { count: fmt(totalToolCalls) })}
-        </span>
-      </button>
-
-      {open && (
-        <div className="ml-3 mt-0.5 border-l border-border/80 pl-3">
-      {budgetGauges.length > 0 ? <BudgetTable gauges={budgetGauges} /> : null}
+    <>
+      {showBudget && budgetGauges.length > 0 ? <BudgetTable gauges={budgetGauges} /> : null}
       {Object.keys(data.models).length > 0 &&
         renderTable(t("usage.byModel"), data.models, modelCostCell)}
       {Object.keys(data.categories).length > 0 &&
@@ -816,9 +839,7 @@ function UsageView({
           </div>
         </div>
       ) : null}
-        </div>
-      )}
-    </div>
+    </>
   );
 }
 

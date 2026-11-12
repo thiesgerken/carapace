@@ -112,6 +112,8 @@ interface ChatInputProps {
   commands?: SlashCommand[];
   availableModelEntries?: AvailableModelInfo[];
   usage?: TurnUsage | null;
+  /** Opens the usage breakdown; the gauges are clickable only with it. */
+  onShowUsage?: () => void;
   sandboxRunning?: boolean;
   uploadFile?: (
     file: File,
@@ -140,6 +142,7 @@ export function ChatInput({
   commands = [],
   availableModelEntries = [],
   usage,
+  onShowUsage,
   sandboxRunning = false,
   uploadFile,
   accessory,
@@ -741,9 +744,7 @@ export function ChatInput({
           <UsageGaugeStack
             usage={usage}
             availableModelEntries={availableModelEntries}
-            onClickUsage={
-              connected && !waiting ? () => onSend("/usage") : undefined
-            }
+            onClickUsage={onShowUsage}
           />
         )}
       </div>

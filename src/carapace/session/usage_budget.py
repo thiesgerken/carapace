@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any
 from pydantic_ai.exceptions import UsageLimitExceeded
 from pydantic_ai.usage import UsageLimits
 
-from ..models.config import Config
+from ..models.config import Config, is_subscription_model
 from ..models.session import SessionBudget
 from ..usage import (
     BudgetGauge,
@@ -20,7 +20,10 @@ from ..usage import (
     LlmRequestRecord,
     LlmRequestState,
     LlmSource,
+    ModelCost,
     SessionBudgetExceededError,
+    SessionUsageDetails,
+    UsageContextRow,
     agent_request_limit,
     autonomy_budget_gauge,
     gauge_breakdown_pct_dict,
@@ -123,7 +126,7 @@ class SessionUsageBudgetMixin:
         async def _broadcast(self, active: ActiveSession, method: str, *args: Any, **kwargs: Any) -> None: ...
         def _max_input_tokens_for_model_id(self, model_id: str) -> int | None: ...
 
-    def _usage_last_llm_payload_row(self, active: ActiveSession, source: LlmSource) -> dict[str, Any] | None:
+    def _usage_last_llm_payload_row(self, active: ActiveSession, source: LlmSource) -> UsageContextRow | None:
         """``usage_last_request_row`` plus ``context_cap_tokens`` and ``context_used_pct`` for the UI."""
         rec = last_record_for_source(active.llm_request_log, source)
         row = usage_last_request_row(rec)
@@ -135,10 +138,7 @@ class SessionUsageBudgetMixin:
             cap = _DEFAULT_CONTEXT_CAP_TOKENS
         cs = row["context_size"]
         pct = min(100.0, (100.0 * cs / cap)) if cap > 0 else 0.0
-        out: dict[str, Any] = dict(row)
-        out["context_cap_tokens"] = cap
-        out["context_used_pct"] = round(pct, 1)
-        return out
+        return UsageContextRow(**row, context_cap_tokens=cap, context_used_pct=round(pct, 1))
 
     def agent_model_id_for_gauge(self, active: ActiveSession) -> str:
         """Canonical carapace model id (``provider:name``) for UI gauge / config lookup.
@@ -255,6 +255,29 @@ class SessionUsageBudgetMixin:
             return
         await self._set_llm_request_state(active, state)
 
+    def usage_details(self, active: ActiveSession) -> SessionUsageDetails:
+        """The session's usage breakdown as ``/usage`` and the usage API show it.
+
+        Reads only in-memory state and takes no session lock, so it answers while a turn runs.
+        """
+        tracker = active.usage_tracker
+        return SessionUsageDetails(
+            models=tracker.models,
+            categories=tracker.categories,
+            total_input=tracker.total_input,
+            total_output=tracker.total_output,
+            total_tool_calls=tracker.tool_calls,
+            model_costs={
+                model_key: ModelCost(cost=cost.equivalent, subscription=is_subscription_model(model_key))
+                for model_key, cost in tracker.cost_by_model().items()
+            },
+            category_costs=tracker.cost_by_category(),
+            total_cost=tracker.total_cost(),
+            budget_gauges=self._display_budget_gauges(active),
+            last_llm_agent=self._usage_last_llm_payload_row(active, "agent"),
+            last_llm_sentinel=self._usage_last_llm_payload_row(active, "sentinel"),
+        )
+
     def _budget_command_payload(self, active: ActiveSession, *, message: str | None = None) -> dict[str, Any]:
         gauges = self._display_budget_gauges(active)
         usage_hint = (
@@ -272,6 +295,16 @@ class SessionUsageBudgetMixin:
             payload["message"] = "No session budgets configured."
         return payload
 
+    async def _broadcast_status(self, active: ActiveSession, *, agent_running: bool) -> None:
+        await self._broadcast(
+            active,
+            "on_status",
+            agent_running=agent_running,
+            usage=self._turn_usage_payload(active),
+            llm_activity=active.llm_request_state,
+            budget=active.state.budget,
+        )
+
     async def update_session_budget(
         self, session_id: str, limits: Mapping[BudgetMetric, int | Decimal | None]
     ) -> list[str]:
@@ -285,13 +318,8 @@ class SessionUsageBudgetMixin:
         state.budget = SessionBudget.model_validate(state.budget.model_dump() | updates)
         self._session_mgr.save_state(state)
         if active is not None:
-            await self._broadcast(
-                active,
-                "on_status",
-                agent_running=active.agent_task is not None and not active.agent_task.done(),
-                usage=self._turn_usage_payload(active),
-                llm_activity=active.llm_request_state,
-                budget=state.budget,
+            await self._broadcast_status(
+                active, agent_running=active.agent_task is not None and not active.agent_task.done()
             )
         return [_budget_limit_message(metric, state.budget) for metric in limits]
 

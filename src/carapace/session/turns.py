@@ -176,6 +176,8 @@ class SessionTurnHost(Protocol):
 
     async def _clear_llm_request_state(self, active: ActiveSession) -> None: ...
 
+    async def _broadcast_status(self, active: ActiveSession, *, agent_running: bool) -> None: ...
+
     async def _generate_title(
         self, active: ActiveSession, events: list[dict[str, Any]], *, track_activity: bool = True
     ) -> str: ...
@@ -719,6 +721,9 @@ class SessionTurnMixin(SessionTurnHost):
                     "unattended_turn_failed",
                 )
                 active.pending_notifications[notif_id] = delivered.delivered_subscription_ids
+        # Unlike ``done``, the error that follows carries no usage: refresh the gauges, which show
+        # the reached budget right when the user goes to raise it.
+        await self._broadcast_status(active, agent_running=False)
 
     def _close_turn_approvals(self, active: ActiveSession, session_id: str) -> None:
         """Deny the approvals this turn still waits on: nothing can act on a later answer.

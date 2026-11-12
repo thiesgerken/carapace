@@ -96,6 +96,10 @@ def test_submit_message_budget_exceeded_persists_history(tmp_path: Path, db_fact
         assert any(
             detail.startswith("Session budget reached") and turn_terminal for detail, turn_terminal in sub.error_events
         )
+        # The error carries no usage, so a status refreshes the gauges with the turn's final numbers.
+        usage, _budget = sub.status_updates[-1]
+        assert usage is not None
+        assert [gauge.key for gauge in usage.budget_gauges] == ["input"]
 
     with _patch_sentinel():
         asyncio.run(_run())

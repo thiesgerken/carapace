@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, Archive, Brain, Check, ChevronRight, Copy, GitBranch, Info, Loader2, Paperclip, RotateCcw, Undo2 } from "lucide-react";
+import { AlertTriangle, Archive, Brain, Check, ChevronRight, Copy, GitBranch, Info, Loader2, Paperclip, Play, RotateCcw, Undo2 } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { useCallback, useEffect, useState } from "react";
 
@@ -326,10 +326,13 @@ function MessageActions({
   canFork,
   canRetry,
   canReset,
+  continueInsteadOfRetry,
+  canContinue,
   disabled,
   onFork,
   onRetry,
   onReset,
+  onContinue,
   timestamp,
   turnIndex,
   messageIndexInTurn,
@@ -347,10 +350,14 @@ function MessageActions({
   canFork?: boolean;
   canRetry?: boolean;
   canReset?: boolean;
+  /** On a turn's error row, which resumes on the kept history rather than rerunning the turn. */
+  continueInsteadOfRetry?: boolean;
+  canContinue?: boolean;
   disabled?: boolean;
   onFork?: () => void;
   onRetry?: () => void;
   onReset?: () => void;
+  onContinue?: () => void;
   timestamp?: string;
   turnIndex?: number;
   messageIndexInTurn?: number;
@@ -367,7 +374,7 @@ function MessageActions({
   const t = useTranslations("message");
   const hasCopy = typeof copyText === "string" && copyText.length > 0;
   const hasMeta = Boolean(timestamp) || turnIndex != null;
-  if (!hasCopy && !canFork && !canRetry && !canReset && !hasMeta) return null;
+  if (!hasCopy && !canFork && !canRetry && !canContinue && !canReset && !hasMeta) return null;
 
   // Controls first, then the meta pushed to the far end of the row (spacer between spans the width).
   return (
@@ -379,12 +386,21 @@ function MessageActions({
         disabled={disabled}
         onClick={canFork ? onFork : undefined}
       />
-      <MessageActionButton
-        label={t("actions.retry")}
-        icon={<RotateCcw className="size-3.5" />}
-        disabled={disabled}
-        onClick={canRetry ? onRetry : undefined}
-      />
+      {continueInsteadOfRetry ? (
+        <MessageActionButton
+          label={t("actions.continue")}
+          icon={<Play className="size-3.5" />}
+          disabled={disabled}
+          onClick={canContinue ? onContinue : undefined}
+        />
+      ) : (
+        <MessageActionButton
+          label={t("actions.retry")}
+          icon={<RotateCcw className="size-3.5" />}
+          disabled={disabled}
+          onClick={canRetry ? onRetry : undefined}
+        />
+      )}
       <MessageActionButton
         label={t("actions.reset")}
         icon={<Undo2 className="size-3.5" />}
@@ -532,6 +548,7 @@ interface MessageProps {
   activeLlmActivity?: LlmActivity | null;
   canFork?: boolean;
   canRetry?: boolean;
+  canContinue?: boolean;
   canReset?: boolean;
   actionDisabled?: boolean;
   onApproval?: (toolCallId: string, approved: boolean, message?: string) => void;
@@ -547,6 +564,7 @@ interface MessageProps {
   ) => void;
   onFork?: () => void;
   onRetry?: () => void;
+  onContinue?: () => void;
   onReset?: () => void;
 }
 
@@ -557,6 +575,7 @@ export function Message({
   activeLlmActivity,
   canFork,
   canRetry,
+  canContinue,
   canReset,
   actionDisabled,
   onApproval,
@@ -564,6 +583,7 @@ export function Message({
   onCredentialApproval,
   onFork,
   onRetry,
+  onContinue,
   onReset,
 }: MessageProps) {
   switch (message.kind) {
@@ -800,10 +820,13 @@ export function Message({
             canFork={canFork}
             canRetry={canRetry}
             canReset={canReset}
+            continueInsteadOfRetry
+            canContinue={canContinue}
             disabled={actionDisabled}
             onFork={onFork}
             onRetry={onRetry}
             onReset={onReset}
+            onContinue={onContinue}
           />
         </div>
       );

@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Archive, ArchiveRestore, Bot, Brain, Check, Copy, ExternalLink, Globe, Link2, Link2Off, Loader2, Lock, MessageSquare, Pin, Play, RotateCcw, Save, Settings2, Square, Star, Terminal, Trash2 } from "lucide-react";
 import { EmojiText } from "@/components/emoji-text";
 import { ChatMemorySection } from "@/components/chat-memory-section";
+import { ChatUsageSection, useSessionUsage } from "@/components/chat-usage-section";
 import { useMemorySessionDetail } from "@/components/memory-extraction-detail";
 import { SandboxGitControls } from "@/components/git-sync";
 import { ModelPicker, withSelectedModelOption } from "@/components/model-picker";
@@ -84,6 +85,9 @@ interface ChatViewProps {
 }
 
 const SANDBOX_STARTUP_TOOL_NAMES = new Set(["use_skill", "read", "write", "str_replace", "exec", "send_file"]);
+// Sent as a plain user message: the history already holds the failed turn's tool calls, so the
+// agent picks up from there. English on purpose, every model follows it whatever the UI language.
+const CONTINUE_PROMPT = "Continue.";
 
 function sandboxStorageLabel(
   snapshot: SessionSandboxSnapshot | null,
@@ -1108,6 +1112,16 @@ export function ChatView({
   const memoryState = useMemorySessionDetail(server, sessionId);
   const hasMemory = memoryState.detail?.current != null;
   const [memoryOpen, setMemoryOpen] = useState(false);
+  const [usageOpen, setUsageOpen] = useState(false);
+  // The open usage breakdown refetches on every live usage update, and mid-turn whenever an LLM
+  // request starts or ends (turn usage only arrives with the turn's end).
+  const llmRequestId = llmActivity?.request_id ?? null;
+  const usageRefreshKey = useMemo(() => ({ usage, llmRequestId }), [usage, llmRequestId]);
+  const usageState = useSessionUsage(server, token, sessionId, usageOpen, usageRefreshKey);
+  // The open usage card refetches mid-turn while turn usage only arrives at turn ends: show its
+  // newer gauges, so the Budget and Usage cards never disagree. Only while open, since a closed
+  // card's last fetch goes stale.
+  const budgetGauges = (usageOpen ? usageState.data?.budget_gauges : undefined) ?? usage?.budget_gauges ?? [];
   const lastThinkingStartedAtRef = useRef<string | null>(null);
   const queueRef = useRef<string | null>(null);
   const queuedAttachmentsRef = useRef<Attachment[]>([]);
@@ -1734,14 +1748,24 @@ export function ChatView({
   const latestTerminalIndex = terminalIndices.length > 0 ? terminalIndices[terminalIndices.length - 1] : -1;
   const turnActionsDisabled = waiting || loadingHistory || status !== "connected" || turnActionBusyIndex !== null;
 
-  function showMemorySection(): void {
-    setMemoryOpen(true);
+  function showInspectorSection(selector: string, block: ScrollLogicalPosition): void {
     if (!window.matchMedia("(min-width: 64rem)").matches) setMobileInspectorOpen(true);
     // The section renders in the desktop column and in the mobile sheet; scroll to the visible one once open.
     requestAnimationFrame(() => {
-      const sections = Array.from(document.querySelectorAll<HTMLElement>("[data-memory-section]"));
-      sections.find((section) => section.offsetParent !== null)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      const sections = Array.from(document.querySelectorAll<HTMLElement>(selector));
+      sections.find((section) => section.offsetParent !== null)?.scrollIntoView({ block, behavior: "smooth" });
     });
+  }
+
+  function showMemorySection(): void {
+    setMemoryOpen(true);
+    showInspectorSection("[data-memory-section]", "nearest");
+  }
+
+  function showUsageSection(): void {
+    setUsageOpen(true);
+    // To the top: the breakdown loads after the scroll and grows downward.
+    showInspectorSection("[data-usage-section]", "start");
   }
 
   // Deep link (?event=<seq>) from memory fact sources and push notifications. Not every event
@@ -1836,6 +1860,11 @@ export function ChatView({
     setMessages((prev) => prev.slice(0, startIndex));
     setWaiting(true);
     send({ type: "retry_latest_turn" });
+  }
+
+  function handleContinue() {
+    if (waiting || status !== "connected") return;
+    handleSend(CONTINUE_PROMPT);
   }
 
   async function resolveTurnTargetEventIndex(messageIndex: number): Promise<number | undefined> {
@@ -2611,9 +2640,12 @@ export function ChatView({
         ) : null}
       </section>
 
+      <ChatUsageSection state={usageState} open={usageOpen} onOpenChange={setUsageOpen} />
+
       {session ? (
         <SessionBudgetSection
           budget={session.budget}
+          gauges={budgetGauges}
           disabled={deletingSession || sessionArchived}
           onSave={handleUpdateSessionBudget}
         />
@@ -2862,7 +2894,11 @@ export function ChatView({
                   const canFork = actionable && inHistory;
                   // Resetting the very last bubble removes nothing — offer it only with a tail to drop.
                   const canReset = canFork && i < messages.length - 1;
-                  const canRetry = actionable && enclosingTerminal === latestTerminalIndex;
+                  const inLatestTurn = actionable && enclosingTerminal === latestTerminalIndex;
+                  // A failed turn keeps its tool calls in the history, so its error row continues from
+                  // there; rerunning it from scratch stays available as Retry on its user bubble.
+                  const canContinue = inLatestTurn && msg.kind === "error";
+                  const canRetry = inLatestTurn && !canContinue;
                   return (
                     <div key={i} data-event-index={anchorEventIndex(msg)} className="rounded-lg">
                       <Message
@@ -2872,6 +2908,7 @@ export function ChatView({
                         activeLlmActivity={llmActivity}
                         canFork={canFork}
                         canRetry={canRetry}
+                        canContinue={canContinue}
                         canReset={canReset}
                         actionDisabled={turnActionsDisabled}
                         onApproval={handleApproval}
@@ -2879,6 +2916,7 @@ export function ChatView({
                         onCredentialApproval={handleCredentialEscalation}
                         onFork={canFork ? () => void handleFork(i) : undefined}
                         onRetry={canRetry ? handleRetry : undefined}
+                        onContinue={canContinue ? handleContinue : undefined}
                         onReset={canReset ? () => void handleReset(i) : undefined}
                       />
                     </div>
@@ -2923,6 +2961,7 @@ export function ChatView({
             commands={commands}
             availableModelEntries={availableModelEntries}
             usage={usage}
+            onShowUsage={showUsageSection}
             sandboxRunning={sandbox?.status === "running"}
             uploadFile={uploadFile}
           />
