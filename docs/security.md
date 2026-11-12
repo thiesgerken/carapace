@@ -10,7 +10,7 @@ Every tool call and skill invocation passes through the security module before e
 2. **Sentinel evaluation.** All other operations are sent to the sentinel agent -- an LLM that receives the action log, the tool name and arguments, and makes a contextual decision.
 3. **Verdict.** The sentinel returns one of four decisions:
    - **allow** -- proceed without interruption.
-   - **revise** -- no threat, but the agent should change its approach first (split a bundled call, narrow its scope, drop an unrequested extra, or ask the user in chat). The operation does not run; the agent receives "Sentinel requests changes (no threat detected): <explanation>" and continues. Only offered for tool calls and git pushes, the two places where the explanation reaches the agent. For proxy domain and credential requests an output validator makes the sentinel choose another verdict.
+   - **revise** -- no threat, but the agent should change its approach first (split a bundled call, narrow its scope, drop an unrequested extra, ask the user in chat, or explain how the step follows from the user's request before retrying it). The operation does not run; the agent receives "Sentinel requests changes (no threat detected): <explanation>" and continues. Only offered for tool calls and git pushes, the two places where the explanation reaches the agent. For proxy domain and credential requests an output validator makes the sentinel choose another verdict.
    - **escalate** -- pause the operation and ask the user for approval.
    - **deny** -- block the operation outright.
 4. **Audit.** Every decision (safe-list or sentinel) is recorded in a per-session audit log.
