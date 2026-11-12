@@ -181,6 +181,20 @@ class TestMcpProcessToolCall:
         assert "Full output saved to" in result
         ctx.deps.sandbox.file_write.assert_awaited_once()
 
+    async def test_failed_spill_raises(self):
+        decl = SkillMcpDecl(name="m", url="https://x.example/mcp")
+        hook = _mcp_process_tool_call("s", decl)
+        ctx = _process_ctx()
+        ctx.deps.config.agent.tool_output_max_chars = 1000
+        ctx.deps.session_state.session_id = "sid"
+        ctx.deps.sandbox.file_write = AsyncMock(return_value=MagicMock(exit_code=1, output="disk full"))
+        call_tool = AsyncMock(return_value="x" * 5000)
+        with (
+            patch("carapace.agent.tools.security.evaluate_with", AsyncMock(return_value=None)),
+            pytest.raises(RuntimeError, match="disk full"),
+        ):
+            await hook(ctx, call_tool, "search", {})
+
 
 # ── Duplicate MCP name conflict (issue #2) ──────────────────────────
 

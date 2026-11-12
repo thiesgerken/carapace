@@ -44,8 +44,12 @@ so the agent's history is split back apart whenever it is loaded (and the sentin
 conversation before it is compacted).
 
 The model is always told that content was compacted: folded blocks become a clearly marked summary
-message, and compacted tool outputs are prefixed with a note that the full output can be obtained by
-re-running the tool.
+message, and compacted tool outputs are prefixed with a marker naming the way back,
+`read_tool_output("<tool call id>")`. That tool returns the original output from the session's events
+transcript, which compaction never rewrites, so the agent doesn't have to re-run a tool that may have
+side effects. The original is what the model saw before compaction, already capped at
+`tool_output_max_chars`. The tool is safe-listed (it only returns what this session's agent has
+seen) and its definition is static, so it doesn't affect the prefix cache.
 
 Summaries run as the agent itself: their system prompt leads with the agent's shared prefix
 (`AGENTS.md`, `SOUL.md`, `USER.md`, skill catalog), followed by the compaction instructions. See

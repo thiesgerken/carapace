@@ -104,7 +104,7 @@ def test_apply_tool_return_compaction_stamps_and_skips_recompaction():
     part = next(p for m in out if isinstance(m, ModelRequest) for p in m.parts if isinstance(p, ToolReturnPart))
     assert tool_return_is_compacted(part)
     assert "listed 5 pods" in part.content
-    assert "re-run the tool" in part.content
+    assert f'read_tool_output("{cands[0].tool_call_id}")' in part.content
     # second pass finds nothing (already compacted)
     assert find_tool_return_candidates(out, floor_tokens=100) == []
 
