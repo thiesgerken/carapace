@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
+from collections.abc import Awaitable, Callable
 from contextlib import AbstractContextManager
 from datetime import UTC, datetime
 from functools import partial
@@ -52,6 +53,10 @@ if TYPE_CHECKING:
     from ..models.config import Config
 
 CompactionMode = Literal["all", "fold", "tools"]
+
+
+class CompactionError(RuntimeError):
+    """An agent compaction summary failed; the history stays as it was."""
 
 
 class SessionCompactionMixin:
@@ -183,16 +188,11 @@ class SessionCompactionMixin:
         plan = plan_fold(history, keep_turns=keep, model_name=model_name)
         if plan is None or plan.is_empty:
             return history
-        summary = await self._summarize(active, lambda **kw: summarize_fold(fold_render_text(plan.foldable), **kw))
-        if not summary:
-            logger.warning("Fold aborted: empty summary")
-            return history
+        summary = await self._summarize(active, partial(summarize_fold, fold_render_text(plan.foldable)))
         folded_turns = len(completed_model_turn_end_indexes(plan.foldable))
         node = CompactionNode(
             id=uuid.uuid4().hex[:12],
-            kind="fold",
             summary=summary,
-            method="summarize",
             orig_tokens=plan.orig_tokens,
             summary_tokens=count_text_tokens(summary, model_name=model_name),
             source_turn_start=plan.source_turn_start,
@@ -224,39 +224,36 @@ class SessionCompactionMixin:
         if not candidates:
             return history
 
-        # Concurrency is bounded by the shared LLM semaphore acquired inside _summarize.
-        async def _one(cand: Any) -> tuple[str, AppliedToolReturn] | None:
-            summary = await self._summarize(
-                active, lambda **kw: summarize_tool_output(cand.tool_name, _text(cand.content), **kw)
-            )
-            if not summary or cand.tool_call_id is None:
-                return None
-            return cand.tool_call_id, AppliedToolReturn(
+        summaries = await _gather_cache_warm(
+            [
+                partial(self._summarize, active, partial(summarize_tool_output, c.tool_name, _text(c.content)))
+                for c in candidates
+            ]
+        )
+        applied = {
+            c.tool_call_id: AppliedToolReturn(
                 new_content=summary,
-                method="summarize",
-                orig_tokens=cand.tokens,
+                orig_tokens=c.tokens,
                 summary_tokens=count_text_tokens(summary, model_name=model_name),
             )
-
-        results = await asyncio.gather(*[_one(c) for c in candidates])
-        applied = {tid: rep for r in results if r is not None for tid, rep in [r]}
-        if not applied:
-            return history
+            for c, summary in zip(candidates, summaries, strict=True)
+        }
         report.tool_returns_compacted = len(applied)
         _annotate_tool_result_events(events, applied)
         return apply_tool_return_compaction(history, applied)
 
     async def _summarize(self, active: ActiveSession, call: Any) -> str:
-        """Agent compaction summary; a failed one returns '' and the caller skips that step."""
+        """Agent compaction summary, led by the agent's shared prompt prefix. Raises ``CompactionError``."""
         session_id = active.state.session_id
+        prompt_prefix = shared_prompt_prefix(
+            self._knowledge_dir_for_session(session_id), self._skill_catalog_for_session(session_id)
+        )
         try:
-            prompt_prefix = shared_prompt_prefix(
-                self._knowledge_dir_for_session(session_id), self._skill_catalog_for_session(session_id)
-            )
             return await self._run_summary_call(active, call, prompt_prefix=prompt_prefix)
+        # Wrapped, not swallowed: provider, budget and size errors alike abort `/compact` with a visible
+        # message instead of tearing down the caller's connection.
         except Exception as exc:
-            logger.warning(f"Compaction summary failed: {exc}")
-            return ""
+            raise CompactionError(f"Compaction failed: {exc}") from exc
 
     async def _run_summary_call(self, active: ActiveSession, call: Any, *, prompt_prefix: str) -> str:
         """Run one summarization under the shared LLM semaphore + request log + budget guard."""
@@ -267,6 +264,7 @@ class SessionCompactionMixin:
                 return await call(
                     prompt_prefix=prompt_prefix,
                     model=model,
+                    config=self._config,
                     usage_tracker=active.usage_tracker,
                     before_llm_call=lambda: self._assert_llm_budget_available(active),
                     model_factory=self._model_factory,
@@ -310,9 +308,10 @@ class SessionCompactionMixin:
             model_name=model_name,
             within_indexes=tool_return_compaction_region(compacted, verbatim_turns=cfg.verbatim_tool_turns),
         )
-        summaries = await asyncio.gather(
-            *[
-                self._run_summary_call(
+        summaries = await _gather_cache_warm(
+            [
+                partial(
+                    self._run_summary_call,
                     active,
                     partial(summarize_sentinel_tool_output, c.tool_name, _text(c.content)),
                     prompt_prefix=system_prompt,
@@ -325,12 +324,10 @@ class SessionCompactionMixin:
             {
                 c.tool_call_id: AppliedToolReturn(
                     new_content=summary,
-                    method="summarize",
                     orig_tokens=c.tokens,
                     summary_tokens=count_text_tokens(summary, model_name=model_name),
                 )
                 for c, summary in zip(candidates, summaries, strict=True)
-                if c.tool_call_id is not None
             },
         )
 
@@ -340,6 +337,19 @@ class SessionCompactionMixin:
             + f"folded={plan is not None} tool_returns={len(candidates)} thinking_dropped={thinking_dropped}"
         )
         return compacted
+
+
+async def _gather_cache_warm(calls: list[Callable[[], Awaitable[str]]]) -> list[str]:
+    """Run the first summary alone, then the rest concurrently.
+
+    All summaries share one system prompt, so the first call writes the compaction model's prefix
+    cache and the others read it instead of each paying their own cache write. Concurrency stays
+    bounded by the shared LLM semaphore inside each call.
+    """
+    if not calls:
+        return []
+    first = await calls[0]()
+    return [first, *await asyncio.gather(*(call() for call in calls[1:]))]
 
 
 def _text(content: Any) -> str:
@@ -378,10 +388,9 @@ def fold_survival_for_events(events: list[dict[str, Any]]) -> tuple[list[str], i
 
 
 def trim_compaction_tree(tree: SessionCompaction, surviving_fold_ids: list[str]) -> SessionCompaction:
-    """Drop fold nodes (and consolidate nodes orphaned by them) no longer present after a rewind."""
+    """Drop fold nodes no longer present after a rewind."""
     keep = set(surviving_fold_ids)
-    nodes = [n for n in tree.nodes if n.id in keep or (n.kind == "consolidate" and set(n.children) <= keep)]
-    return SessionCompaction(nodes=nodes)
+    return SessionCompaction(nodes=[n for n in tree.nodes if n.id in keep])
 
 
 def _annotate_folded_events(events: list[dict[str, Any]], count: int, node_id: str) -> None:
@@ -391,7 +400,7 @@ def _annotate_folded_events(events: list[dict[str, Any]], count: int, node_id: s
     annotated = 0
     for turn in completed_event_turns(events):
         span = events[turn.start_event_index : turn.end_event_index + 1]
-        # Skip only turns already folded — a tool-output annotation (method) must not block folding.
+        # Skip only turns already folded — a tool-output annotation must not block folding.
         if any(isinstance(e.get("compaction"), dict) and "folded_into" in e["compaction"] for e in span):
             continue
         for e in span:
@@ -418,7 +427,6 @@ def _annotate_tool_result_events(events: list[dict[str, Any]], applied: dict[str
         if rep is None:
             continue
         e["compaction"] = {
-            "method": rep.method,
             "orig_tokens": rep.orig_tokens,
             "summary_tokens": rep.summary_tokens,
         }

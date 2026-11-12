@@ -6,11 +6,14 @@ from collections.abc import Mapping
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, Literal, Protocol
 
+from loguru import logger
+
 from ..models.config import Config
 from ..models.skills import SkillInfo, context_grants_session_summary
 from ..sandbox.manager import SandboxManager
 from ..usage import BudgetMetric, SessionUsageDetails
 from ..ws_models import SLASH_COMMANDS
+from .compaction_engine import CompactionError
 from .manager import SessionManager
 from .types import ActiveSession
 from .usage_budget import parse_budget_limit
@@ -170,7 +173,11 @@ class SessionCommandMixin:
                 verbatim = int(tokens[0])
             else:
                 keep = int(tokens[0])
-        report = await self.run_compaction(active, mode=mode, keep_turns=keep, verbatim_tool_turns=verbatim)
+        try:
+            report = await self.run_compaction(active, mode=mode, keep_turns=keep, verbatim_tool_turns=verbatim)
+        except CompactionError as exc:
+            logger.opt(exception=exc).error(f"/compact failed in session {active.state.session_id}")
+            return {"command": "compact", "data": {"error": str(exc)}}
         return {"command": "compact", "data": report.model_dump(mode="json")}
 
     async def _handle_budget_command(self, active: ActiveSession, parts: list[str]) -> dict[str, Any]:
