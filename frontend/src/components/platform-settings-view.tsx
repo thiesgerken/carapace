@@ -27,6 +27,7 @@ interface ModelDraft {
   name: string;
   id: string;
   maxInputTokens: string;
+  compactionThresholdTokens: string;
   thinking: ThinkingDraft;
   thinkingBudgetTokens: string;
   baseUrl: string;
@@ -46,7 +47,6 @@ interface PlatformDraft {
     keepTurns: string;
     verbatimTurns: string;
     toolFloor: string;
-    sentinelThreshold: string;
   };
   models: ModelDraft[];
 }
@@ -240,6 +240,7 @@ function modelDraftFromSettings(model: PlatformModelEntryInfo): ModelDraft {
     name: model.name,
     id: model.id === `${model.provider}:${model.name}` ? "" : model.id,
     maxInputTokens: model.max_input_tokens?.toString() ?? "",
+    compactionThresholdTokens: model.compaction_threshold_tokens?.toString() ?? "",
     thinking: model.thinking === true ? "true" : model.thinking === false ? "false" : model.thinking ?? "",
     thinkingBudgetTokens: model.thinking_budget_tokens?.toString() ?? "",
     baseUrl: model.base_url ?? "",
@@ -261,10 +262,15 @@ function draftFromSettings(response: PlatformSettingsResponseInfo): PlatformDraf
       keepTurns: String(compaction.keep_turns),
       verbatimTurns: String(compaction.verbatim_tool_turns),
       toolFloor: String(compaction.tool_output_floor_tokens),
-      sentinelThreshold: String(compaction.sentinel_threshold_pct),
     },
     models: sortModelDrafts(response.settings.available_models.map(modelDraftFromSettings)),
   };
+}
+
+// Mirrors default_compaction_threshold in src/carapace/models/config.py.
+function defaultCompactionThreshold(maxInputTokens: string): number {
+  const window = Number(maxInputTokens.trim()) || 200_000;
+  return Math.min(Math.floor(window * 0.6), 250_000);
 }
 
 function numericLimit(value: string, field: string, t: Translate): number | null {
@@ -347,6 +353,7 @@ function modelsFromDraft(models: ModelDraft[], t: Translate): PlatformModelEntry
       name,
       id,
       max_input_tokens: numericLimit(model.maxInputTokens, t("fields.maxInputTokens"), t),
+      compaction_threshold_tokens: numericLimit(model.compactionThresholdTokens, t("fields.compactionThresholdTokens"), t),
       thinking: thinkingFromDraft(model.thinking),
       vision: model.vision,
       enabled: model.enabled,
@@ -401,17 +408,16 @@ export function buildPlatformSettingsPatch(draft: PlatformDraft, t: Translate): 
       keep_turns: boundedInt(draft.compaction.keepTurns, t("compaction.keepTurns"), 1, t),
       verbatim_tool_turns: boundedInt(draft.compaction.verbatimTurns, t("compaction.verbatimTurns"), 0, t),
       tool_output_floor_tokens: boundedInt(draft.compaction.toolFloor, t("compaction.toolFloor"), 1, t),
-      sentinel_threshold_pct: boundedInt(draft.compaction.sentinelThreshold, t("compaction.sentinelThreshold"), 1, t, 90),
     },
     available_models: availableModels,
   };
 }
 
-function boundedInt(value: string, field: string, min: number, t: Translate, max?: number): number {
+function boundedInt(value: string, field: string, min: number, t: Translate): number {
   const normalized = value.trim();
   const number = Number(normalized);
-  if (!/^\d+$/.test(normalized) || number < min || (max !== undefined && number > max)) {
-    throw new Error(max === undefined ? t("errors.minInt", { field, min }) : t("errors.rangeInt", { field, min, max }));
+  if (!/^\d+$/.test(normalized) || number < min) {
+    throw new Error(t("errors.minInt", { field, min }));
   }
   return number;
 }
@@ -427,6 +433,7 @@ function comparableDraft(draft: PlatformDraft | null): unknown {
       name: model.name,
       id: model.id,
       maxInputTokens: model.maxInputTokens,
+      compactionThresholdTokens: model.compactionThresholdTokens,
       thinking: model.thinking,
       thinkingBudgetTokens: model.thinkingBudgetTokens,
       baseUrl: model.baseUrl,
@@ -458,6 +465,7 @@ function newModelDraft(): ModelDraft {
     name: "",
     id: "",
     maxInputTokens: "",
+    compactionThresholdTokens: "",
     thinking: "",
     thinkingBudgetTokens: "",
     baseUrl: "",
@@ -635,7 +643,6 @@ export function PlatformSettingsView({ server, token }: { server: string; token:
             <TextInput label={t("compaction.keepTurns")} value={draft.compaction.keepTurns} disabled={fieldsDisabled} onChange={(value) => updateDraft({ compaction: { ...draft.compaction, keepTurns: value } })} />
             <TextInput label={t("compaction.verbatimTurns")} value={draft.compaction.verbatimTurns} disabled={fieldsDisabled} onChange={(value) => updateDraft({ compaction: { ...draft.compaction, verbatimTurns: value } })} />
             <TextInput label={t("compaction.toolFloor")} value={draft.compaction.toolFloor} disabled={fieldsDisabled} onChange={(value) => updateDraft({ compaction: { ...draft.compaction, toolFloor: value } })} />
-            <TextInput label={t("compaction.sentinelThreshold")} title={t("compaction.sentinelThresholdHint")} value={draft.compaction.sentinelThreshold} disabled={fieldsDisabled} onChange={(value) => updateDraft({ compaction: { ...draft.compaction, sentinelThreshold: value } })} />
           </div>
         </Section>
 
@@ -854,6 +861,7 @@ export function ModelRow({ model, disabled, defaultOpen = false, onChange, onRem
         <TextInput label={t("fields.name")} value={model.name} disabled={disabled} onChange={(name) => onChange({ name })} />
         <TextInput label={t("fields.id")} value={model.id} disabled={disabled} placeholder={t("placeholders.generatedId")} onChange={(id) => onChange({ id })} />
         <TextInput label={t("fields.maxInputTokens")} value={model.maxInputTokens} disabled={disabled} onChange={(maxInputTokens) => onChange({ maxInputTokens })} />
+        <TextInput label={t("fields.compactionThresholdTokens")} title={t("fields.compactionThresholdTokensHint")} value={model.compactionThresholdTokens} disabled={disabled} placeholder={t("placeholders.compactionThresholdDefault", { tokens: defaultCompactionThreshold(model.maxInputTokens).toLocaleString() })} onChange={(compactionThresholdTokens) => onChange({ compactionThresholdTokens })} />
         <Field label={t("fields.thinking")}>
           <select value={model.thinking} disabled={disabled} onChange={(event) => onChange({ thinking: event.target.value as ThinkingDraft })} className={inputClassName}>
             {thinkingOptions.map((value) => <option key={value || "default"} value={value}>{value ? t(`thinking.${value}`) : t("thinking.default")}</option>)}

@@ -76,7 +76,7 @@ class SessionCompactionMixin:
         def _remaining_aux_usage_limits(self, active: ActiveSession) -> UsageLimits | None: ...
         def agent_model_id_for_gauge(self, active: ActiveSession) -> str: ...
         def sentinel_model_id(self, active: ActiveSession) -> str: ...
-        def sentinel_context_cap(self, active: ActiveSession) -> int: ...
+        def compaction_threshold_for_model_id(self, model_id: str) -> int: ...
         def llm_request_recording(
             self, active: ActiveSession, *, track_activity: bool = True
         ) -> AbstractContextManager[Any, bool | None]: ...
@@ -286,8 +286,8 @@ class SessionCompactionMixin:
         cfg = self._config.agent.compaction
         model_name = self.sentinel_model_id(active)
         before = count_message_tokens(messages, model_name=model_name)
-        cap = self.sentinel_context_cap(active)
-        if before * 100 < cap * cfg.sentinel_threshold_pct:
+        threshold = self.compaction_threshold_for_model_id(model_name)
+        if before < threshold:
             return None
 
         compacted, thinking_dropped = apply_thinking_drop(split_merged_requests(messages))
@@ -333,7 +333,7 @@ class SessionCompactionMixin:
 
         after = count_message_tokens(compacted, model_name=model_name)
         logger.info(
-            f"Sentinel compaction session={session_id} tokens={before}->{after} cap={cap} "
+            f"Sentinel compaction session={session_id} tokens={before}->{after} threshold={threshold} "
             + f"folded={plan is not None} tool_returns={len(candidates)} thinking_dropped={thinking_dropped}"
         )
         return compacted

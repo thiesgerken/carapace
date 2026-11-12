@@ -579,7 +579,6 @@
             "defaultRequired": "{field} default model is required.",
             "defaultUnknown": "{field} default model {id} is not in the catalog.",
             "minInt": "{field} must be a whole number of at least {min}.",
-            "rangeInt": "{field} must be a whole number from {min} to {max}.",
             "defaultDisabled": "{field} default model {id} is disabled."
         },
         "sections": {
@@ -603,6 +602,8 @@
             "name": "Name",
             "id": "ID",
             "maxInputTokens": "Max input tokens",
+            "compactionThresholdTokens": "Compaction threshold (tokens)",
+            "compactionThresholdTokensHint": "Context size at which this model's conversation is compacted automatically. Leave empty for 60 % of max input tokens, at most 250k.",
             "thinking": "Thinking",
             "thinkingBudgetTokens": "Thinking budget tokens",
             "baseUrl": "Base URL",
@@ -622,6 +623,7 @@
             "selectModel": "Select model",
             "unlimited": "Unlimited",
             "generatedId": "provider:name",
+            "compactionThresholdDefault": "Default: {tokens}",
             "keepSecret": "Keep configured secret",
             "memoryLowDefault": "Sentinel model",
             "memoryHighDefault": "Agent model"
@@ -659,9 +661,7 @@
             "modelDefault": "Default (title model)",
             "keepTurns": "Keep recent turns",
             "verbatimTurns": "Verbatim tool turns",
-            "toolFloor": "Tool-output floor (tokens)",
-            "sentinelThreshold": "Sentinel threshold (% of context)",
-            "sentinelThresholdHint": "Before an evaluation, the sentinel's conversation is compacted automatically once it fills this share of the sentinel model's context window (1 to 90)."
+            "toolFloor": "Tool-output floor (tokens)"
         }
     },
     "home": {
