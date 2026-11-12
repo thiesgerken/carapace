@@ -262,6 +262,10 @@ export interface HistoryMessage {
   tool_id?: string;
   parent_tool_id?: string;
   compaction?: CompactionAnnotation;
+  /** On a `compaction` event: the provider that compacted the context server-side. */
+  provider?: string;
+  /** On a `compaction` event: the provider's readable summary (Anthropic); absent when it is encrypted. */
+  summary?: string;
 }
 
 /**
@@ -588,6 +592,11 @@ export type ChatMessage =
       origTokens?: number;
       summaryTokens?: number;
       children: ChatMessage[];
+    }
+  | {
+      kind: "provider_compaction";
+      provider?: string;
+      summary?: string;
     }
   | { kind: "streaming"; content: string }
   | {

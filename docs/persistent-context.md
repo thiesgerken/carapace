@@ -99,4 +99,6 @@ Each of these changes the agent's tools or instructions mid-session, so the next
 
 - **Compaction**: a fold or a summarized tool output rewrites the conversation from that point on, so the next request writes it anew. `/compact` takes this miss on the next turn, which also refreshes the memory block. Automatic compaction takes it inside the run, right before the request that would otherwise cross the threshold, and leaves the memory block alone so the next turn does not miss a second time. Acceptable because it only happens once the conversation is large, and the shorter history is cheaper on every later request.
 
+- **Provider-side compaction**: on a model that compacts server-side (see [compaction.md](compaction.md#provider-side-compaction)), the provider replaces the conversation behind its compaction point by design, so the request after it writes the shorter conversation anew. Acceptable for the same reason as carapace's own compaction.
+
 Usage and cost count cache writes and reads at their own rates. Memory estimates price the system prompt as a cache write, so they stay an upper bound.

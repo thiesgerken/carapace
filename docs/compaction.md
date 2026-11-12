@@ -10,9 +10,11 @@ conversation is different: its compaction overwrites the persisted conversation,
 action log, the audit log and the latest compaction request in the [debug view](debug-view.md)
 remain (see [Sentinel](#sentinel)).
 
-> The agent's model history is compacted **automatically** inside a run once it reaches the agent
-> model's compaction threshold (see [Automatic compaction](#automatic-compaction)), and on demand with
-> `/compact`. The sentinel's shadow conversation is compacted automatically too (see [Sentinel](#sentinel)).
+> The agent's model history is compacted **automatically** once it reaches the agent model's
+> compaction threshold: by the model's provider where it offers that (see
+> [Provider-side compaction](#provider-side-compaction)), otherwise by carapace inside the run (see
+> [Automatic compaction](#automatic-compaction)). `/compact` compacts on demand. The sentinel's shadow
+> conversation is compacted automatically too (see [Sentinel](#sentinel)).
 
 ## What gets compacted
 
@@ -65,6 +67,37 @@ stays exactly as it was. Nothing is skipped silently.
 Token counts in reports and in the automatic ladder are local estimates without `thinking` parts:
 providers strip old thinking themselves, so counting it would overstate both the history and what
 dropping it saves. The report still says how many thinking parts were dropped.
+
+## Provider-side compaction
+
+Where the model's provider compacts server-side, that is the default, for the agent and the sentinel
+independently (each by its own model): no extra model, no extra round trip.
+
+| Model provider | Compaction |
+| --- | --- |
+| `anthropic` | Server-side (`context_management`) at the model's compaction threshold, raised to Anthropic's minimum of 50,000 tokens. The provider summarizes with carapace's own instructions: the fold instructions for the agent, the sentinel fold instructions for the sentinel. |
+| `openai-responses` (OpenAI itself, no custom `base_url`) | Server-side (`context_management`) at the model's compaction threshold. OpenAI takes no instructions. |
+| `openai-codex` | Local. The Codex backend answers `/responses/compact` with 404 (verified on 2026-11-12, after the Codex CLI moved to its own compaction protocol) and was never verified for `context_management`. Don't retry without new evidence. |
+| everything else (`openai`, `openai-chat`, `openrouter`, custom `base_url`s, …) | Local, see [Automatic compaction](#automatic-compaction). |
+
+For a model that compacts server-side, carapace's own automatic compaction inside the run is off. The
+provider returns a `CompactionPart` (Anthropic: a readable summary; OpenAI: encrypted) as part of a
+response. It stays in the model history, and every later request sends only what comes after it. The
+history keeps every original message before it too, which is what makes the cases below lossless. The
+price: on such a model the stored history grows without bound, although only the part after the latest
+compaction is sent. All local estimates (reports, the automatic ladder, the debug view, request
+shapes) count only that sent part.
+
+- **Provider switch:** a provider reads back only its own compaction parts. Before a turn, when the
+  history holds a part the agent model would not read back (another provider, or a model that
+  compacts locally), carapace strips it and runs the automatic ladder once, regardless of the trigger:
+  the last measurement came from the compacted context. The sentinel does the same before an
+  evaluation. Neither needs the events transcript.
+- **`/compact` on such a model** runs carapace's local ladder; after a fold, the provider's compaction
+  parts are dropped, since the fold now covers what they covered. The provider compacts again later
+  on its own when needed.
+- **Usage:** what the provider reports for its compaction (Anthropic does) counts under the
+  `compaction` category, the rest of the request under `agent`.
 
 ## Automatic compaction
 
@@ -157,8 +190,12 @@ subtle marker plus an on-demand peek at what the model actually sees, never by h
   summary for every folded turn; the original turns render normally inside the rail. A turn that an
   automatic fold cut in two is inside the rail up to the cut. Automatic compaction during a turn shows
   up after the next reload of the transcript.
+- **Provider compaction** shows as a marker at the point where the provider compacted ("Context
+  compacted by anthropic"). It expands to the provider's summary, or says that the provider keeps it
+  encrypted. The messages above it stay shown as they were.
 - The [debug view](debug-view.md) shows the agent's latest request exactly as it went to the model,
-  fold summaries and compacted tool returns included, and the latest compaction request itself.
+  fold summaries, compacted tool returns and a provider's compaction part included (nothing before
+  that part), and the latest compaction request itself.
 
 The `/history` API enriches each compaction annotation with the model-facing text (`summary` for a
 fold node, `model_text` for a compacted tool return) so the main view needs no second request.
@@ -168,16 +205,19 @@ fold node, `model_text` for a compacted tool return) so the main view needs no s
 - Model history (`session_history`) holds the compacted cut: a marked synthetic message per fold,
   and shortened `ToolReturnPart`s stamped with compaction metadata (the re-compaction guard).
 - The compaction tree (`session_compaction`) stores the fold summary nodes for the UI.
-- The events transcript retains the originals and carries per-event compaction annotations; the
-  Git archive keeps the untouched history. Compaction is therefore inspectable and reversible.
+- The events transcript retains the originals and carries per-event compaction annotations, plus a
+  `compaction` event (provider, readable summary if any) where a provider compacted. The Git archive
+  keeps the untouched history. Compaction is therefore inspectable and reversible.
 
 ## Sentinel
 
 The sentinel keeps its own shadow conversation (see [security.md](security.md#sentinel-state)). It is
 never reset and **not** affected by `/compact`; instead it is compacted automatically.
 
-- **When:** before each sentinel evaluation, once the provider-reported input tokens of the previous
-  evaluation exceed the compaction threshold of the sentinel model (see Configuration).
+- **When:** on a sentinel model that compacts server-side, the provider does it (see
+  [Provider-side compaction](#provider-side-compaction)) and carapace steps in only after a provider
+  switch. Otherwise before each sentinel evaluation, once the provider-reported input tokens of the
+  previous evaluation exceed the compaction threshold of the sentinel model (see Configuration).
 - **What:** the same ladder and settings as `/compact`, with one evaluation (request, skill
   inspections, verdict) as one turn: thinking-drop, fold all but the newest *Keep recent turns*
   evaluations, then summarize large tool outputs (in practice `read_skill_file` returns) outside the

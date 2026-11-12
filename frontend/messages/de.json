@@ -1645,7 +1645,10 @@
         "modelSummaryLabel": "Zusammenfassung im Modell-Kontext",
         "tokenDelta": "{from}→{to} Tok",
         "foldTitle": "Diese Runden sind im Modell-Kontext zu einer Zusammenfassung verdichtet — Originale hier angezeigt",
-        "toolTitle": "Tool-Ausgabe zusammengefasst, um Kontext zu sparen ({orig}→{summary} Tokens)"
+        "toolTitle": "Tool-Ausgabe zusammengefasst, um Kontext zu sparen ({orig}→{summary} Tokens)",
+        "providerMarker": "Kontext von {provider} verdichtet",
+        "providerTitle": "Der Anbieter des Modells hat alles darüber im Modell-Kontext durch eine Zusammenfassung ersetzt. Originale hier angezeigt",
+        "providerOpaque": "Der Anbieter hält diese Zusammenfassung verschlüsselt, sie lässt sich nicht anzeigen."
     },
     "promptPreview": {
         "role": "Rolle",

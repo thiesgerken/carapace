@@ -1645,7 +1645,10 @@
         "modelSummaryLabel": "Summary in the model's context",
         "tokenDelta": "{from}→{to} tok",
         "foldTitle": "These turns are condensed to a summary in the model's context — originals shown here",
-        "toolTitle": "Tool output summarized to save context ({orig}→{summary} tokens)"
+        "toolTitle": "Tool output summarized to save context ({orig}→{summary} tokens)",
+        "providerMarker": "Context compacted by {provider}",
+        "providerTitle": "The model's provider replaced everything above with a summary in the model's context. Originals shown here",
+        "providerOpaque": "The provider keeps this summary encrypted, so it cannot be shown."
     },
     "promptPreview": {
         "role": "Role",

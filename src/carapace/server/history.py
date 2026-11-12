@@ -47,6 +47,7 @@ _HistoryRole = Literal[
     "git_push",
     "git_push_approval",
     "credential_approval",
+    "compaction",
 ]
 
 
@@ -91,8 +92,11 @@ class HistoryMessage(BaseModel):
     attachments: list[Attachment] | None = None
     files: list[SentFileInfo] | None = None
     # Compaction annotation: {folded_into: node_id} on folded events, or
-    # {method, orig_tokens, summary_tokens} on a compacted tool_result.
+    # {orig_tokens, summary_tokens} on a compacted tool_result.
     compaction: dict[str, Any] | None = None
+    # A provider-side compaction event: who compacted, and its readable summary if the provider has one.
+    provider: str | None = None
+    summary: str | None = None
 
     @model_validator(mode="after")
     def _contexts_from_args_when_missing(self) -> Self:

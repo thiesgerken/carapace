@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 from pydantic_ai.messages import (
+    CompactionPart,
     ModelMessage,
     ModelRequest,
     ModelResponse,
@@ -234,3 +235,32 @@ async def test_repeated_compaction_keeps_one_summary(tmp_path: Path, db_factory)
         if isinstance(part, UserPromptPart) and str(part.content).startswith(FOLD_MARKER)
     ]
     assert len(fold_parts) == 1
+
+
+@pytest.mark.anyio
+async def test_a_sentinel_model_switch_strips_foreign_compaction_below_the_threshold(
+    tmp_path: Path, db_factory
+) -> None:
+    models = _Models()
+    _, sid, active = _engine(tmp_path, db_factory, models, threshold_tokens=None)
+    conversation = list(active.security.sentinel_messages)
+    conversation[1] = ModelResponse(
+        parts=[CompactionPart(content="earlier verdicts", provider_name="anthropic"), *conversation[1].parts],
+        usage=RequestUsage(input_tokens=500),
+    )
+    active.security.replace_sentinel_messages(conversation)
+
+    await active.sentinel.evaluate_tool_call(active.security, "exec", {"command": "ls"})
+
+    for messages in (models.sentinel_requests[0], _restarted(sid, db_factory).sentinel_messages):
+        assert not any(isinstance(p, CompactionPart) for m in messages for p in m.parts)
+
+
+@pytest.mark.anyio
+async def test_a_sentinel_model_that_compacts_server_side_leaves_the_conversation_alone(
+    tmp_path: Path, db_factory
+) -> None:
+    engine, sid, active = _engine(tmp_path, db_factory, _Models())
+    active.sentinel_model_name = "anthropic:claude-haiku-4-5"
+
+    assert await engine.compact_sentinel_conversation(sid, active.security.sentinel_messages, "SYS") is None
