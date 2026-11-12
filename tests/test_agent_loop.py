@@ -53,6 +53,7 @@ def _make_deps(tmp_path: Path, *, unattended: bool) -> Deps:
         usage_tracker=UsageTracker(),
         autonomy=AutonomyStreak(),
         credential_registry=CredentialRegistry(),
+        load_session_events=list,
     )
 
 

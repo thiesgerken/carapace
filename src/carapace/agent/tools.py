@@ -389,6 +389,14 @@ def truncate_exec_output_with_saved_path(text: str, max_chars: int, spill_path: 
     return text[:preview_chars] + suffix
 
 
+def find_tool_output(events: list[dict[str, Any]], tool_call_id: str) -> str | None:
+    """Original output of a tool call as the model first saw it (compaction never rewrites events)."""
+    matches = [
+        e["result"] for e in events if e.get("role") == "tool_result" and e.get("model_tool_call_id") == tool_call_id
+    ]
+    return matches[-1] if matches else None
+
+
 async def _prepare_exec_tool_result(ctx: RunContext[Deps], result: str) -> str:
     """Save oversized exec output to a temp file before generic tool-result truncation runs."""
     max_chars = ctx.deps.config.agent.tool_output_max_chars
@@ -397,18 +405,12 @@ async def _prepare_exec_tool_result(ctx: RunContext[Deps], result: str) -> str:
 
     session_id = ctx.deps.session_state.session_id
     spill_path = (_EXEC_OUTPUT_SPILL_ROOT / session_id / f"{secrets.token_hex(8)}.txt").as_posix()
-    try:
-        write_result = await ctx.deps.sandbox.file_write(session_id, spill_path, result)
-    except Exception as exc:
-        logger.warning(f"Failed to save exec output spill file for session {session_id}: {exc}")
-        return result
-
+    write_result = await ctx.deps.sandbox.file_write(session_id, spill_path, result)
     if write_result.exit_code != 0:
-        logger.warning(
+        # A truncated preview without the spill file would lose the rest of the output.
+        raise RuntimeError(
             f"Failed to save exec output spill file for session {session_id} at {spill_path}: {write_result.output}"
         )
-        return result
-
     return truncate_exec_output_with_saved_path(result, max_chars, spill_path)
 
 
@@ -1314,6 +1316,22 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
             result = f"Error: {exc}"
             exit_code = -1
         return _emit_tool_result(ctx, "read", result, exit_code)
+
+    @agent.tool
+    async def read_tool_output(ctx: RunContext[Deps], tool_call_id: str) -> str | ToolDenied:
+        """Return the full original output of an earlier tool call in this session.
+
+        Use it when a tool output was summarized to save context and you need the details.
+        Prefer it over re-running the tool, which may have side effects or give a different result.
+        """
+        if not _user_approved(ctx) and (denied := await _gate(ctx, "read_tool_output", {"tool_call_id": tool_call_id})):
+            return denied
+        output = find_tool_output(ctx.deps.load_session_events(), tool_call_id)
+        if output is None:
+            return _emit_tool_result(
+                ctx, "read_tool_output", f"Error: no tool call {tool_call_id!r} in this session.", exit_code=1
+            )
+        return _emit_tool_result(ctx, "read_tool_output", output)
 
     @agent.tool
     async def send_file(ctx: RunContext[Deps], path: str) -> str | ToolDenied:

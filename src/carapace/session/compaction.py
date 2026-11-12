@@ -46,7 +46,9 @@ _META_KEY = "carapace_compaction"
 
 _FOLD_HEADER = f"{FOLD_MARKER} Summary of earlier conversation, compacted to save context:\n\n"
 
-_TOOL_MARKER = "[tool output summarized to save context; re-run the tool for the full result]\n"
+
+def _tool_marker(tool_call_id: str) -> str:
+    return f'[tool output summarized to save context; full output: read_tool_output("{tool_call_id}")]\n'
 
 
 # --------------------------------------------------------------------------- thinking-drop
@@ -195,7 +197,7 @@ def apply_tool_return_compaction(
                 new_parts.append(
                     ToolReturnPart(
                         tool_name=part.tool_name,
-                        content=_TOOL_MARKER + rep.new_content,
+                        content=_tool_marker(part.tool_call_id) + rep.new_content,
                         tool_call_id=part.tool_call_id,
                         metadata=meta,
                         timestamp=part.timestamp,

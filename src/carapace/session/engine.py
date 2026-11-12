@@ -510,6 +510,9 @@ class SessionEngine(
         def _append_session_events(events: list[dict[str, Any]]) -> None:
             self._session_mgr.append_events(session_id, events)
 
+        def _load_session_events() -> list[dict[str, Any]]:
+            return self._session_mgr.load_events(session_id)
+
         knowledge_dir = self._knowledge_dir_for_session(session_id)
 
         return Deps(
@@ -526,6 +529,7 @@ class SessionEngine(
             tool_call_callback=tool_call_callback,
             tool_result_callback=tool_result_callback,
             append_session_events=_append_session_events,
+            load_session_events=_load_session_events,
             usage_tracker=active.usage_tracker,
             autonomy=active.autonomy,
             assert_llm_budget_available=lambda: self._assert_llm_budget_available(active),

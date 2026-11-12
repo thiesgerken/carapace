@@ -126,6 +126,7 @@ def _activation_deps(tmp_path: Path) -> Deps:
         usage_tracker=UsageTracker(),
         autonomy=AutonomyStreak(),
         credential_registry=credentials,
+        load_session_events=list,
     )
 
 
