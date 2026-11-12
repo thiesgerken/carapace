@@ -131,11 +131,9 @@ class SessionCompactionMixin:
         plan = self._plan_ladder(active, history, model_name)
         folded = apply_fold(plan.fold, "") if plan.fold is not None else plan.history
         candidate_tokens = sum(c.tokens for c in plan.tool_candidates)
-        measured = newest_measured_response(history)
-        compacted_through = active.state.compacted_through
-        stale = measured is None or (compacted_through is not None and measured.timestamp <= compacted_through)
+        measured = _fresh_measurement(active, history)
         return CompactionPreview(
-            context_tokens=None if stale else measured.usage.input_tokens,
+            context_tokens=measured.usage.input_tokens if measured is not None else None,
             threshold_tokens=self.compaction_threshold_for_model_id(model_name),
             context_window_tokens=self.agent_context_cap_for_gauge(active),
             thinking_dropped=plan.thinking_dropped,
@@ -200,11 +198,9 @@ class SessionCompactionMixin:
         session_id = active.state.session_id
         model_name = self.agent_model_id_for_gauge(active)
         threshold = self.compaction_threshold_for_model_id(model_name)
-        measured = newest_measured_response(messages)
+        measured = _fresh_measurement(active, messages)
         if measured is None or measured.usage.input_tokens <= threshold:
             return None
-        if active.state.compacted_through is not None and measured.timestamp <= active.state.compacted_through:
-            return None  # measured before the last compaction (e.g. `/compact` between turns)
 
         # The provider counts what the local estimate cannot see: system prompt, tool definitions, its own
         # tokenizer. Carry that overhead into every target check, so a small window or a heavy prompt
@@ -490,6 +486,16 @@ def _text(content: Any) -> str:
     if isinstance(content, (list, tuple)):
         return "\n".join(_text(i) for i in content)
     return "" if content is None else str(content)
+
+
+def _fresh_measurement(active: ActiveSession, messages: list[ModelMessage]) -> ModelResponse | None:
+    """The newest response with provider-reported input tokens, unless it predates the last compaction
+    (e.g. a `/compact` between turns): then it no longer describes the history."""
+    measured = newest_measured_response(messages)
+    compacted_through = active.state.compacted_through
+    if measured is None or (compacted_through is not None and measured.timestamp <= compacted_through):
+        return None
+    return measured
 
 
 def _tokens(messages: list[ModelMessage], model_name: str) -> int:
