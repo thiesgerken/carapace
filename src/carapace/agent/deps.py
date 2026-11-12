@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
+from pydantic_ai.messages import ModelMessage
 from pydantic_ai.models import Model
 from pydantic_ai.usage import UsageLimits
 
@@ -64,4 +65,6 @@ class Deps(BaseModel):
     autonomy: AutonomyStreak
     assert_llm_budget_available: Callable[[], None] | None = None
     llm_usage_limits: Callable[[], UsageLimits | None] | None = None
+    # Compacts the run's history before a model request, or returns None to keep it.
+    compact_history: Callable[[list[ModelMessage]], Awaitable[list[ModelMessage] | None]] | None = None
     credential_registry: CredentialRegistryProtocol

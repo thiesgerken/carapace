@@ -16,6 +16,7 @@ from pydantic_ai.messages import (
 )
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.models.test import TestModel
+from pydantic_ai.usage import RequestUsage
 
 from carapace.config import build_config
 from carapace.models.compaction import FOLD_MARKER
@@ -41,7 +42,11 @@ def _evaluation(index: int, *, decision: str, skill_file: str | None = None) -> 
             ModelRequest(parts=[ToolReturnPart("read_skill_file", skill_file, tool_call_id=f"read-{index}")]),
         ]
     messages += [
-        ModelResponse(parts=[ToolCallPart("judge", {"decision": decision, "explanation": f"reason {index}"}, call_id)]),
+        ModelResponse(
+            parts=[ToolCallPart("judge", {"decision": decision, "explanation": f"reason {index}"}, call_id)],
+            # The trigger: what the provider reported for this evaluation's request.
+            usage=RequestUsage(input_tokens=10_000),
+        ),
         ModelRequest(parts=[ToolReturnPart("judge", "Final result processed.", tool_call_id=call_id)]),
     ]
     return messages
@@ -220,7 +225,7 @@ async def test_repeated_compaction_keeps_one_summary(tmp_path: Path, db_factory)
     folds = [r for r in models.summary_requests if "<evaluations>" in str(r[0].parts[0].content)]
     assert len(folds) == 2
     second_fold_input = str(folds[1][0].parts[0].content)
-    assert "Earlier summary: Summary of earlier conversation" in second_fold_input
+    assert "Earlier summary: the user denied mailing the tax office\n" in second_fold_input
     assert f"Evaluation request: {FOLD_MARKER}" not in second_fold_input
     fold_parts = [
         part

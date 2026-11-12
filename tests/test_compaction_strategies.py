@@ -11,6 +11,7 @@ from pydantic_ai.messages import (
     ToolReturnPart,
     UserPromptPart,
 )
+from pydantic_ai.usage import RequestUsage
 
 from carapace.models.compaction import FOLD_MARKER
 from carapace.session.compaction import (
@@ -20,13 +21,18 @@ from carapace.session.compaction import (
     apply_tool_return_compaction,
     find_tool_return_candidates,
     fold_render_text,
+    fold_summary_text,
     is_fold_message,
+    last_request_input_tokens,
     plan_fold,
+    plan_step_fold,
+    slice_compacted_history,
     split_lead_folds,
     tool_return_is_compacted,
     truncate_tool_output,
 )
 from carapace.session.transcript import completed_model_turn_end_indexes
+from carapace.usage import count_message_tokens
 
 
 def _turn(user: str, *, assistant: str = "ok", tool: tuple[str, str] | None = None) -> list:
@@ -153,7 +159,7 @@ def test_plan_fold_none_when_few_turns():
 def test_plan_and_apply_fold_keeps_window_and_pairs_intact():
     msgs = _history(10, tool_output="z\n" * 50)
     plan = plan_fold(msgs, keep_turns=3)
-    assert plan is not None and not plan.is_empty
+    assert plan is not None and plan.foldable
     new = apply_fold(plan, "SUMMARY-OF-OLD")
     # leads with a single fold message
     assert is_fold_message(new[0])
@@ -169,17 +175,65 @@ def test_plan_and_apply_fold_keeps_window_and_pairs_intact():
     assert {p.tool_call_id for p in calls} == {p.tool_call_id for p in rets}
 
 
-def test_second_fold_appends_block_and_does_not_refold():
-    msgs = _history(12)
-    first = apply_fold(plan_fold(msgs, keep_turns=3), "SUM1")
-    # grow with more turns, fold again
-    grown = first + _history(6)
-    plan2 = plan_fold(grown, keep_turns=3)
-    assert plan2 is not None
-    # the existing fold block is preserved as lead, not re-folded
-    assert len(plan2.lead_folds) == 1
-    second = apply_fold(plan2, "SUM2")
-    lead, _rest = split_lead_folds(second)
-    assert len(lead) == 2  # appended, not merged
-    assert "SUM1" in lead[0].parts[0].content
-    assert "SUM2" in lead[1].parts[0].content
+def test_second_fold_rolls_the_earlier_summary_up():
+    first = apply_fold(plan_fold(_history(12), keep_turns=3), "SUM1")
+    plan = plan_fold(first + _history(6), keep_turns=3)
+    assert plan is not None and len(plan.lead_folds) == 1
+
+    assert fold_render_text([*plan.lead_folds, *plan.foldable]).startswith("Earlier summary: SUM1")
+    second = apply_fold(plan, "SUM2")
+    lead, rest = split_lead_folds(second)
+    assert [fold_summary_text(f).split("\n\n")[-1] for f in lead] == ["SUM2"]
+    assert len(completed_model_turn_end_indexes(rest)) == 3
+
+
+def _long_turn(steps: int) -> list:
+    """One running turn: a prompt, then *steps* tool steps, ending in the pending tool returns."""
+    msgs: list = [ModelRequest(parts=[UserPromptPart(content="do the long job")])]
+    for i in range(steps):
+        msgs.append(ModelResponse(parts=[ToolCallPart(tool_name="exec", args={"n": i}, tool_call_id=f"s{i}")]))
+        msgs.append(ModelRequest(parts=[ToolReturnPart(tool_name="exec", content="x " * 100, tool_call_id=f"s{i}")]))
+    return msgs
+
+
+def test_step_fold_cuts_inside_a_running_turn_and_keeps_pairs():
+    msgs = _long_turn(10)
+    step = count_message_tokens(msgs[1:3])
+
+    plan = plan_step_fold(msgs, keep_tokens=3 * step)
+
+    assert plan is not None
+    assert isinstance(plan.kept[0], ModelResponse)
+    assert sum(isinstance(m, ModelResponse) for m in plan.kept) == 3
+    calls = {p.tool_call_id for m in plan.kept for p in m.parts if isinstance(p, ToolCallPart)}
+    returns = {p.tool_call_id for m in plan.kept for p in m.parts if isinstance(p, ToolReturnPart)}
+    assert calls == returns == {"s7", "s8", "s9"}
+    assert "User: do the long job" in fold_render_text(plan.foldable)
+
+
+def test_step_fold_keeps_the_newest_step_however_large():
+    plan = plan_step_fold(_long_turn(3), keep_tokens=1)
+
+    assert plan is not None and [p.tool_call_id for p in plan.kept[0].parts] == ["s2"]
+    assert plan_step_fold(_long_turn(1)[1:], keep_tokens=1) is None  # nothing older than the newest step
+
+
+def test_slice_keeps_the_verbatim_tail_of_a_turn_the_fold_cut_in_two():
+    plan = plan_step_fold(_long_turn(4), keep_tokens=1)
+    assert plan is not None
+    folded = [*apply_fold(plan, "SUM"), ModelResponse(parts=[TextPart(content="job done")]), *_history(2)]
+
+    assert slice_compacted_history(folded, tail_turns=0, keep_split_turn=True) == folded[:-4]
+    assert slice_compacted_history(folded, tail_turns=0, keep_split_turn=False) == folded[:1]
+    assert slice_compacted_history(folded, tail_turns=1, keep_split_turn=True) == folded[:-2]
+
+
+def test_last_request_input_tokens_reads_the_newest_response():
+    msgs = [
+        ModelResponse(parts=[TextPart(content="a")], usage=RequestUsage(input_tokens=10)),
+        ModelRequest(parts=[UserPromptPart(content="q")]),
+        ModelResponse(parts=[TextPart(content="b")], usage=RequestUsage(input_tokens=99)),
+        ModelRequest(parts=[UserPromptPart(content="q2")]),
+    ]
+    assert last_request_input_tokens(msgs) == 99
+    assert last_request_input_tokens(msgs[1:2]) == 0

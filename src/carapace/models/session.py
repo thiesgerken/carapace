@@ -121,6 +121,10 @@ class SessionState(BaseModel):
     forked_from: SessionFork | None = None
     # None until the session's first agent prompt is built, and again after compaction.
     memory: MemorySnapshot | None = None
+    # Provider timestamp of the newest measured agent response when the history was last compacted:
+    # input-token measurements up to it describe the history before that compaction. The provider's own
+    # clock on both sides, so clock skew cannot make a fresh measurement look stale.
+    compacted_through: datetime | None = None
 
     @classmethod
     def now(

@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator
+from datetime import timedelta
 from pathlib import Path
+from unittest.mock import AsyncMock
 
+import pytest
 from loguru import logger
 from pydantic_ai.messages import (
     ModelMessage,
@@ -18,19 +21,23 @@ from pydantic_ai.messages import (
     UserPromptPart,
 )
 from pydantic_ai.models.function import AgentInfo, FunctionModel
+from pydantic_ai.usage import RequestUsage
 
 from carapace.config import build_config
-from carapace.models.compaction import FOLD_MARKER
 from carapace.models.session import SessionState
 from carapace.session.compaction import (
     fold_summary_text,
     is_fold_message,
+    make_fold_message,
     split_lead_folds,
     tool_return_is_compacted,
 )
+from carapace.session.compaction_engine import CompactionError
 from carapace.session.compaction_summarizer import summarize_tool_output
 from carapace.session.transcript import completed_model_turn_end_indexes
+from carapace.usage import count_message_tokens
 from tests.session_helpers import _make_engine, _patch_sentinel
+from tests.test_autonomy_limit import _read_calls, _streaming_model
 
 
 def _turn(i: int, *, tool_output: str | None = None) -> list:
@@ -688,7 +695,7 @@ async def _fold_then_real_turn(tmp_path: Path, db_factory, models: _AgentAndSumm
     return engine, sid, active
 
 
-def test_repeated_compact_after_a_real_turn_keeps_the_fold_chain(tmp_path: Path, db_factory) -> None:
+def test_repeated_compact_after_a_real_turn_rolls_the_fold_up(tmp_path: Path, db_factory) -> None:
     async def _run() -> None:
         models = _AgentAndSummarizer()
         engine, sid, active = await _fold_then_real_turn(tmp_path, db_factory, models)
@@ -696,9 +703,9 @@ def test_repeated_compact_after_a_real_turn_keeps_the_fold_chain(tmp_path: Path,
         await engine.run_compaction(active, mode="fold", keep_turns=3)
 
         assert len(models.summary_inputs) == 2
-        assert FOLD_MARKER not in models.summary_inputs[1]
+        assert "Earlier summary: summary 1\n" in models.summary_inputs[1]
         lead, rest = split_lead_folds(engine.session_mgr.load_history(sid))
-        assert [fold_summary_text(fold).split("\n\n")[-1] for fold in lead] == ["summary 1", "summary 2"]
+        assert [fold_summary_text(fold).split("\n\n")[-1] for fold in lead] == ["summary 2"]
         assert len(completed_model_turn_end_indexes(rest)) == 3
 
     asyncio.run(_run())
@@ -750,6 +757,14 @@ def test_compact_cuts_merged_task_done_turns_at_the_output_tool_return(tmp_path:
         sid = engine.session_mgr.create_session(user="thies").session_id
         active = engine.get_or_activate(sid)
         engine.session_mgr.save_history(sid, _merged_task_done_history(3))
+        engine.session_mgr.save_events(
+            sid,
+            [
+                e
+                for i in range(3)
+                for e in ({"role": "user", "content": f"task {i}"}, {"role": "assistant", "content": f"done {i}"})
+            ],
+        )
 
         report = await engine.run_compaction(active, mode="fold", keep_turns=1)
 
@@ -786,3 +801,280 @@ def test_attended_fork_of_merged_unattended_turns_keeps_every_task(tmp_path: Pat
         "UserPromptPart:task 1",
         "TextPart:done 1",
     ]
+
+
+def test_reset_into_an_earlier_fold_falls_back_to_its_summary(tmp_path: Path, db_factory) -> None:
+    """Rolling folds: the history holds only the newest summary, so a rewind behind it restores the older one."""
+
+    async def _run() -> None:
+        models = _AgentAndSummarizer()
+        with _patch_sentinel():
+            engine = _make_engine(tmp_path, session_factory=db_factory)
+        engine._model_factory = models.factory
+        sid = engine.session_mgr.create_session(user="thies").session_id
+        active = engine.get_or_activate(sid)
+        _seed(engine, sid, 10)
+        await engine.run_compaction(active, mode="fold", keep_turns=6)  # turns 0-3 → summary 1
+        await engine.run_compaction(active, mode="fold", keep_turns=3)  # summary 1 + turns 4-6 → summary 2
+        events = list(engine.session_mgr.load_events(sid))
+        answer_2 = next(i for i, e in enumerate(events) if e.get("content") == "answer 2")
+
+        assert await engine.reset_to_turn(sid, answer_2) is True
+
+        lead, rest = split_lead_folds(engine.session_mgr.load_history(sid))
+        assert [fold_summary_text(f) for f in lead] == ["summary 1"] and rest == []
+        assert [n.summary for n in engine.session_mgr.load_compaction(sid).nodes] == ["summary 1"]
+
+    asyncio.run(_run())
+
+
+def _threshold_engine(tmp_path: Path, db_factory, *, threshold: int):
+    config = build_config(tmp_path)
+    config.agent.available_models = [
+        entry.model_copy(update={"compaction_threshold_tokens": threshold})
+        if entry.model_id == config.agent.model
+        else entry
+        for entry in config.agent.available_models
+    ]
+    with _patch_sentinel():
+        engine = _make_engine(tmp_path, session_factory=db_factory, config=config)
+    sid = engine.session_mgr.create_session(user="thies").session_id
+    return engine, sid, engine.get_or_activate(sid)
+
+
+def _running_turn(engine, sid: str, steps: int, *, reported: int) -> list[ModelMessage]:
+    """Two completed turns, then a running turn of *steps* tool steps whose last request reported *reported*."""
+    _seed(engine, sid, 2)
+    messages = [*engine.session_mgr.load_history(sid), ModelRequest(parts=[UserPromptPart(content="do the job")])]
+    events: list[dict] = [{"role": "user", "content": "do the job"}]
+    for i in range(steps):
+        cid = f"step-{i}"
+        messages += [
+            ModelResponse(
+                parts=[ToolCallPart(tool_name="exec", args={"n": i}, tool_call_id=cid)],
+                usage=RequestUsage(input_tokens=reported),
+            ),
+            ModelRequest(parts=[ToolReturnPart(tool_name="exec", content="x " * 300, tool_call_id=cid)]),
+        ]
+        events += [
+            {"role": "tool_call", "tool": "exec", "tool_id": cid},
+            {"role": "tool_result", "tool": "exec", "tool_id": cid, "result": "x " * 300},
+        ]
+    engine.session_mgr.append_events(sid, events)
+    return messages
+
+
+def test_compaction_during_a_run_folds_steps_of_the_running_turn(tmp_path: Path, db_factory) -> None:
+    async def _run() -> None:
+        engine, sid, active = _threshold_engine(tmp_path, db_factory, threshold=2000)
+        messages = _running_turn(engine, sid, 12, reported=2500)
+        engine._ensure_memory_snapshot(active)
+        memory = active.state.memory
+
+        compacted = await engine.compact_during_run(active, messages)
+
+        assert compacted is not None and is_fold_message(compacted[0])
+        assert active.state.memory == memory  # the run already missed the cache; no second miss next turn
+        assert isinstance(compacted[1], ModelResponse)  # the cut lies inside the running turn
+        kept_calls = {p.tool_call_id for m in compacted for p in m.parts if isinstance(p, ToolCallPart)}
+        kept_returns = {p.tool_call_id for m in compacted for p in m.parts if isinstance(p, ToolReturnPart)}
+        assert kept_calls == kept_returns and "step-11" in kept_calls and "step-0" not in kept_calls
+        [node] = engine.session_mgr.load_compaction(sid).nodes
+        folded = {
+            e.get("tool_id") or e.get("content") for e in engine.session_mgr.load_events(sid) if e.get("compaction")
+        }
+        assert {"question 0", "answer 1", "do the job", "step-0"} <= folded
+        assert not folded & kept_calls
+
+        # The turn ends and is saved; rewinding to its end keeps the fold and the verbatim tail.
+        final = ModelResponse(parts=[TextPart(content="job done")])
+        engine.session_mgr.save_history(sid, [*compacted, final])
+        engine.session_mgr.append_events(sid, [{"role": "assistant", "content": "job done"}])
+        events = engine.session_mgr.load_events(sid)
+        assert await engine.reset_to_turn(sid, len(events) - 1) is True
+        assert engine.session_mgr.load_history(sid) == [*compacted, final]
+        # Rewinding to a turn the fold swallowed whole drops the split turn's tail.
+        answer_1 = next(i for i, e in enumerate(events) if e.get("content") == "answer 1")
+        assert await engine.reset_to_turn(sid, answer_1) is True
+        assert engine.session_mgr.load_history(sid) == compacted[:1]
+        assert [n.id for n in engine.session_mgr.load_compaction(sid).nodes] == [node.id]
+
+    asyncio.run(_run())
+
+
+def test_compaction_during_a_run_waits_for_the_threshold(tmp_path: Path, db_factory) -> None:
+    async def _run() -> None:
+        engine, sid, active = _threshold_engine(tmp_path, db_factory, threshold=2000)
+
+        assert await engine.compact_during_run(active, _running_turn(engine, sid, 12, reported=1999)) is None
+        assert engine.session_mgr.load_compaction(sid).nodes == []
+
+    asyncio.run(_run())
+
+
+def test_compaction_during_a_run_ignores_a_measurement_from_before_an_earlier_compaction(
+    tmp_path: Path, db_factory
+) -> None:
+    async def _run() -> None:
+        engine, sid, active = _threshold_engine(tmp_path, db_factory, threshold=2000)
+        messages = _running_turn(engine, sid, 12, reported=2500)
+        measured = next(m for m in reversed(messages) if isinstance(m, ModelResponse))
+        active.state.compacted_through = measured.timestamp
+
+        assert await engine.compact_during_run(active, messages) is None
+
+        # A response measured after that compaction triggers again.
+        active.state.compacted_through = measured.timestamp - timedelta(seconds=1)
+        assert await engine.compact_during_run(active, messages) is not None
+        assert active.state.compacted_through == measured.timestamp
+
+    asyncio.run(_run())
+
+
+def test_compaction_during_a_run_counts_what_the_provider_sees_beyond_the_messages(tmp_path: Path, db_factory) -> None:
+    """A history small by the local estimate still compacts when the provider measured it above the threshold."""
+
+    async def _run() -> None:
+        engine, sid, active = _threshold_engine(tmp_path, db_factory, threshold=100_000)
+        messages = _running_turn(engine, sid, 12, reported=150_000)
+
+        compacted = await engine.compact_during_run(active, messages)
+
+        assert compacted is not None and is_fold_message(compacted[0])
+
+    asyncio.run(_run())
+
+
+def test_a_failed_turns_terminal_message_does_not_hide_the_measurement(tmp_path: Path, db_factory) -> None:
+    async def _run() -> None:
+        engine, sid, active = _threshold_engine(tmp_path, db_factory, threshold=2000)
+        messages = _running_turn(engine, sid, 12, reported=2500)
+        messages += [
+            ModelResponse(parts=[TextPart("Compaction failed: provider down")]),
+            ModelRequest(parts=[UserPromptPart(content="continue")]),
+        ]
+
+        assert await engine.compact_during_run(active, messages) is not None
+
+    asyncio.run(_run())
+
+
+def test_compaction_during_a_run_stops_once_dropping_thinking_reaches_the_target(tmp_path: Path, db_factory) -> None:
+    history = [*_turn(0), *_turn(1), *_turn(2), ModelRequest(parts=[UserPromptPart(content="go")])]
+    history[1] = ModelResponse(parts=[ThinkingPart(content="ponder " * 3000), TextPart(content="answer 0")])
+    size = count_message_tokens(history)
+    messages = [
+        *history,
+        ModelResponse(parts=[ToolCallPart("exec", {}, "c")], usage=RequestUsage(input_tokens=size)),
+        ModelRequest(parts=[ToolReturnPart("exec", "ok", tool_call_id="c")]),
+    ]
+
+    async def _run() -> None:
+        engine, sid, active = _threshold_engine(tmp_path, db_factory, threshold=size - 1)
+
+        compacted = await engine.compact_during_run(active, messages)
+
+        assert compacted is not None and not any(is_fold_message(m) for m in compacted)
+        assert not any(isinstance(p, ThinkingPart) for m in compacted for p in m.parts)
+        assert engine.session_mgr.load_compaction(sid).nodes == []
+
+    asyncio.run(_run())
+
+
+def test_compaction_during_a_run_fails_when_nothing_is_left_to_compact(tmp_path: Path, db_factory) -> None:
+    async def _run() -> None:
+        engine, _sid, active = _threshold_engine(tmp_path, db_factory, threshold=100)
+        huge_step = [
+            ModelResponse(
+                parts=[ToolCallPart(tool_name="exec", args={}, tool_call_id="c")], usage=RequestUsage(input_tokens=500)
+            ),
+            ModelRequest(parts=[ToolReturnPart(tool_name="exec", content="x " * 300, tool_call_id="c")]),
+        ]
+
+        with pytest.raises(CompactionError, match="nothing is left to compact"):
+            await engine.compact_during_run(active, huge_step)
+
+    asyncio.run(_run())
+
+
+def test_a_turn_continues_from_and_saves_the_history_compacted_during_it(tmp_path: Path, db_factory) -> None:
+    requests: list[list[ModelMessage]] = []
+
+    def respond(messages: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
+        requests.append(messages)
+        return _read_calls(f"c{len(requests)}") if len(requests) < 4 else ModelResponse(parts=[TextPart("done")])
+
+    async def fold_after_three_steps(_active, messages: list[ModelMessage]) -> list[ModelMessage] | None:
+        if len(requests) != 3:
+            return None
+        newest_step = max(i for i, m in enumerate(messages) if isinstance(m, ModelResponse))
+        return [make_fold_message("SUMMARY"), *messages[newest_step:]]
+
+    async def _run() -> None:
+        with _patch_sentinel():
+            engine = _make_engine(tmp_path, session_factory=db_factory)
+        engine._model_factory = lambda _name, *, user: _streaming_model(respond)
+        engine.sandbox_mgr.file_read = AsyncMock(return_value="content")
+        engine.compact_during_run = fold_after_three_steps  # type: ignore[method-assign]
+        sid = engine.session_mgr.create_session(user="thies").session_id
+        active = engine.get_or_activate(sid)
+
+        await engine.submit_message(sid, "go")
+        async with asyncio.timeout(5):
+            while active.agent_task is not None:
+                await asyncio.sleep(0.01)
+
+        assert is_fold_message(requests[3][0])
+        history = engine.session_mgr.load_history(sid)
+        assert fold_summary_text(history[0]) == "SUMMARY"
+        assert sum(is_fold_message(m) for m in history) == 1
+        assert isinstance(history[-1], ModelResponse) and history[-1].parts == [TextPart("done")]
+
+    asyncio.run(_run())
+
+
+def test_a_cut_inside_a_turn_a_step_fold_split_keeps_the_summary_and_the_unfolded_part(
+    tmp_path: Path, db_factory
+) -> None:
+    async def _run() -> None:
+        engine, sid, active = _threshold_engine(tmp_path, db_factory, threshold=2000)
+        messages = _running_turn(engine, sid, 11, reported=2500)
+        # The narration that comes with the newest step, which stays verbatim.
+        engine.session_mgr.append_events(sid, [{"role": "assistant", "content": "almost there", "partial": True}])
+        messages += [
+            ModelResponse(
+                parts=[TextPart("almost there"), ToolCallPart("exec", {"n": 11}, "step-11")],
+                usage=RequestUsage(input_tokens=2500),
+            ),
+            ModelRequest(parts=[ToolReturnPart("exec", "x " * 300, tool_call_id="step-11")]),
+        ]
+        engine.session_mgr.append_events(
+            sid,
+            [
+                {"role": "tool_call", "tool": "exec", "tool_id": "step-11"},
+                {"role": "tool_result", "tool": "exec", "tool_id": "step-11", "result": "x " * 300},
+            ],
+        )
+        compacted = await engine.compact_during_run(active, messages)
+        assert compacted is not None
+        [node] = engine.session_mgr.load_compaction(sid).nodes
+        engine.session_mgr.save_history(sid, [*compacted, ModelResponse(parts=[TextPart("job done")])])
+        engine.session_mgr.append_events(sid, [{"role": "assistant", "content": "job done"}])
+        events = engine.session_mgr.load_events(sid)
+        narration = next(i for i, e in enumerate(events) if e.get("content") == "almost there")
+        prompt = next(i for i, e in enumerate(events) if e.get("content") == "do the job")
+        assert not events[narration].get("compaction") and events[prompt]["compaction"]["folded_into"] == node.id
+
+        forked = engine.fork_session(sid, event_index=narration, channel_type="cli")
+        fold, *unfolded = engine.session_mgr.load_history(forked.session_id)
+        assert fold_summary_text(fold) == node.summary
+        assert [[p.content for p in m.parts] for m in unfolded] == [["almost there"]]
+        assert [n.id for n in engine.session_mgr.load_compaction(forked.session_id).nodes] == [node.id]
+
+        # A cut at the folded prompt leaves nothing of the turn verbatim.
+        assert await engine.reset_to_turn(sid, prompt) is True
+        [fold] = engine.session_mgr.load_history(sid)
+        assert fold_summary_text(fold) == node.summary
+        assert all(e["compaction"]["folded_into"] == node.id for e in engine.session_mgr.load_events(sid)[2:])
+
+    asyncio.run(_run())

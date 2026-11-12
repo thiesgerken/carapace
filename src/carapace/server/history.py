@@ -152,6 +152,8 @@ def _enrich_compaction_annotations(session_id: str, messages: list[HistoryMessag
 
     tree = server._engine.session_mgr.load_compaction(session_id)
     nodes = {n.id: n for n in tree.nodes}
+    # Folds roll: the model sees only the newest summary, for every folded event alike.
+    newest = tree.nodes[-1] if tree.nodes else None
     model_tool_text: dict[str, str] = {}
     for msg in server._engine.session_mgr.load_history(session_id):
         if not isinstance(msg, ModelRequest):
@@ -167,10 +169,13 @@ def _enrich_compaction_annotations(session_id: str, messages: list[HistoryMessag
             continue
         ann = dict(m.compaction)
         node_id = ann.get("folded_into")
-        if isinstance(node_id, str) and (node := nodes.get(node_id)) is not None:
-            ann.setdefault("summary", node.summary)
-            ann.setdefault("orig_tokens", node.orig_tokens)
-            ann.setdefault("summary_tokens", node.summary_tokens)
+        if isinstance(node_id, str) and node_id in nodes and newest is not None:
+            ann |= {
+                "folded_into": newest.id,
+                "summary": newest.summary,
+                "orig_tokens": newest.orig_tokens,
+                "summary_tokens": newest.summary_tokens,
+            }
         tool_key = m.model_tool_call_id or m.tool_id
         if m.role == "tool_result" and isinstance(tool_key, str) and (text := model_tool_text.get(tool_key)):
             ann.setdefault("model_text", text)

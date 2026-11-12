@@ -46,6 +46,7 @@ from ..skills import SkillDocumentError, SkillRegistry
 from ..usage import LlmRequestLogCapability
 from .autonomy import AUTONOMY_LIMIT_METADATA_KEY, AutonomyLimitCapability
 from .deps import Deps, TaskDone, TaskFailed
+from .history_compaction import HistoryCompactionCapability
 
 SEND_FILE_MAX_BYTES = 50 * 1024 * 1024
 
@@ -1089,6 +1090,7 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
         # date and session ID don't split the cached prefix.
         instructions=[system_prompt, lambda: build_session_info(deps)],
         capabilities=[
+            *([HistoryCompactionCapability(deps.compact_history)] if deps.compact_history else []),
             LlmRequestLogCapability(source="agent", model_id=deps.agent_model_id),
             AutonomyLimitCapability(
                 streak=deps.autonomy,

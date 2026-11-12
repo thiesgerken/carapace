@@ -7,19 +7,21 @@ compaction model. This keeps every strategy deterministically unit-testable.
 
 Regions:
 - Recent turns (kept verbatim): only tool-return compaction shrinks large outputs in place.
-- Old turns (beyond the keep-window K): message-fold collapses whole turns into a summary.
+- Older history: message-fold collapses it into a summary. ``/compact`` cuts at a turn boundary;
+  automatic compaction inside a run cuts at a step boundary (a model response plus its tool
+  returns), so a single long turn can be folded too.
 
 Representations in the model history:
-- A folded block is a synthetic ``ModelRequest`` with a single ``UserPromptPart`` whose text
-  starts with ``FOLD_MARKER`` — provider-safe (starts a turn with a user message) and trivially
-  detectable so we never re-fold it.
+- Folds roll: the history holds at most one fold, a synthetic ``ModelRequest`` with a single
+  ``UserPromptPart`` whose text starts with ``FOLD_MARKER`` (provider-safe: it starts a turn with a
+  user message). A new fold summarizes the previous fold together with the newly folded region.
 - A compacted tool return keeps its ``ToolReturnPart`` (same ``tool_call_id`` → pairing intact);
   only ``content`` shrinks and ``metadata`` is stamped so it is never compacted twice.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, replace
 from typing import Any
 
 from pydantic_ai.messages import (
@@ -41,6 +43,8 @@ from .transcript import completed_model_turn_end_indexes
 
 # Namespaced key stashed in ``ToolReturnPart.metadata`` to mark + describe a compacted output.
 _META_KEY = "carapace_compaction"
+
+_FOLD_HEADER = f"{FOLD_MARKER} Summary of earlier conversation, compacted to save context:\n\n"
 
 
 def _tool_marker(tool_call_id: str) -> str:
@@ -225,18 +229,15 @@ def truncate_tool_output(content: Any, *, head_lines: int = 12, tail_lines: int 
 # -------------------------------------------------------------------------------- message-fold
 
 
-@dataclass(slots=True)
+@dataclass(frozen=True, slots=True)
 class FoldPlan:
+    """Fold ``lead_folds`` (the earlier summary, if any) and ``foldable`` into one summary; keep ``kept``."""
+
     lead_folds: list[ModelMessage]
     foldable: list[ModelMessage]
     kept: list[ModelMessage]
-    source_turn_start: int
-    source_turn_end: int
-    orig_tokens: int = field(default=0)
-
-    @property
-    def is_empty(self) -> bool:
-        return not self.foldable
+    # Tokens of the newly folded region only; the earlier summary's originals are counted in its node.
+    orig_tokens: int
 
 
 def is_fold_message(msg: ModelMessage) -> bool:
@@ -257,29 +258,25 @@ def split_lead_folds(messages: list[ModelMessage]) -> tuple[list[ModelMessage], 
 
 
 def slice_compacted_history(
-    messages: list[ModelMessage], *, keep_lead_folds: int, tail_turns: int
+    messages: list[ModelMessage], *, tail_turns: int, keep_split_turn: bool
 ) -> list[ModelMessage]:
-    """Slice a (possibly folded) history to its leading folds plus *tail_turns* verbatim turns.
+    """Slice a folded history to its fold plus *tail_turns* verbatim turns.
 
-    Fold-aware counterpart to ``history_for_completed_turn_count``: the leading fold blocks
-    summarize the oldest turns and are atomic, so they are kept as a prefix (``keep_lead_folds``
-    of them) and only the verbatim tail is sliced by completed-turn count. Used by reset/fork so
-    the kept model history stays in sync with the truncated event transcript after compaction.
+    Fold-aware counterpart to ``history_for_completed_turn_count``, used by reset/fork when the
+    history's fold survives the cut. The fold is atomic and stays. The verbatim steps right after it
+    that finish a turn the fold cut in two (they come before the first user prompt) stay when that
+    turn does: always below kept verbatim turns, otherwise as *keep_split_turn* says.
     """
     lead, rest = split_lead_folds(messages)
-    kept_lead = lead[: max(0, keep_lead_folds)]
-    if tail_turns <= 0:
-        return kept_lead
     ends = completed_model_turn_end_indexes(rest)
-    if not ends:
-        return kept_lead
-    capped = min(tail_turns, len(ends))
-    return kept_lead + rest[: ends[capped - 1] + 1]
+    if tail_turns <= 0 or not ends:
+        first_prompt = next((i for i, m in enumerate(rest) if _has_user_prompt(m)), len(rest))
+        return lead + rest[:first_prompt] if keep_split_turn else lead
+    return lead + rest[: ends[min(tail_turns, len(ends)) - 1] + 1]
 
 
 def make_fold_message(summary: str) -> ModelRequest:
-    body = f"{FOLD_MARKER} Summary of earlier conversation, compacted to save context:\n\n{summary}"
-    return ModelRequest(parts=[UserPromptPart(content=body)])
+    return ModelRequest(parts=[UserPromptPart(content=_FOLD_HEADER + summary)])
 
 
 def plan_fold(messages: list[ModelMessage], *, keep_turns: int, model_name: str | None = None) -> FoldPlan | None:
@@ -287,34 +284,53 @@ def plan_fold(messages: list[ModelMessage], *, keep_turns: int, model_name: str 
 
     Returns ``None`` when there is nothing to fold (too few completed turns).
     """
-    if keep_turns < 1:
-        keep_turns = 1
     lead_folds, rest = split_lead_folds(messages)
     turn_ends = completed_model_turn_end_indexes(rest)
+    keep_turns = max(1, keep_turns)
     if len(turn_ends) <= keep_turns:
         return None
-    cut = turn_ends[len(turn_ends) - keep_turns - 1] + 1  # first index of the kept region
-    foldable = rest[:cut]
-    kept = rest[cut:]
-    if not foldable:
+    return _fold_plan(lead_folds, rest, turn_ends[-keep_turns - 1] + 1, model_name=model_name)
+
+
+def plan_step_fold(messages: list[ModelMessage], *, keep_tokens: int, model_name: str | None = None) -> FoldPlan | None:
+    """Plan folding everything but the newest steps that together fit *keep_tokens*.
+
+    A step starts at a model response and runs through its tool returns, so a cut before a response
+    never separates a tool call from its return. The newest step always stays, however large: the
+    model is mid-way through it. Returns ``None`` when there is no older step to fold.
+    """
+    lead_folds, rest = split_lead_folds(messages)
+    step_starts = [i for i, m in enumerate(rest) if isinstance(m, ModelResponse)]
+    if not step_starts:
         return None
+    sizes = [count_message_tokens([m], model_name=model_name) for m in rest]
+    cut = step_starts[-1]
+    for start in reversed(step_starts[:-1]):
+        if sum(sizes[start:]) > keep_tokens:
+            break
+        cut = start
+    return _fold_plan(lead_folds, rest, cut, model_name=model_name) if cut > 0 else None
+
+
+def _fold_plan(
+    lead_folds: list[ModelMessage], rest: list[ModelMessage], cut: int, *, model_name: str | None
+) -> FoldPlan:
+    foldable = rest[:cut]
     return FoldPlan(
         lead_folds=lead_folds,
         foldable=foldable,
-        kept=kept,
-        source_turn_start=0,
-        source_turn_end=len(turn_ends) - keep_turns - 1,
+        kept=rest[cut:],
         orig_tokens=count_message_tokens(foldable, model_name=model_name),
     )
 
 
 def apply_fold(plan: FoldPlan, summary: str) -> list[ModelMessage]:
-    """Build the new history: existing folds + a new fold summary + the kept verbatim region."""
-    return [*plan.lead_folds, make_fold_message(summary), *plan.kept]
+    """Build the new history: the rolled-up summary, then the kept verbatim region."""
+    return [make_fold_message(summary), *plan.kept]
 
 
 def fold_render_text(messages: list[ModelMessage]) -> str:
-    """Flatten a foldable region to plain text for the summarizer prompt.
+    """Flatten an earlier fold plus a foldable region to plain text for the summarizer prompt.
 
     Tool calls keep their arguments (the paths, commands and URLs the summary must name). Arguments
     and tool returns are cut head/tail, so a few huge outputs cannot push the region past the
@@ -322,6 +338,9 @@ def fold_render_text(messages: list[ModelMessage]) -> str:
     """
     lines: list[str] = []
     for msg in messages:
+        if is_fold_message(msg):
+            lines.append(f"Earlier summary: {fold_summary_text(msg)}")
+            continue
         for part in msg.parts:
             match part:
                 case UserPromptPart(content=str() as content):
@@ -385,12 +404,46 @@ def sentinel_fold_render_text(messages: list[ModelMessage]) -> str:
     return "\n".join(lines)
 
 
+def strip_thinking(messages: list[ModelMessage]) -> list[ModelMessage]:
+    """*messages* without any ``ThinkingPart`` (for token estimates, not for the model)."""
+    return [
+        replace(m, parts=[p for p in m.parts if not isinstance(p, ThinkingPart)]) if isinstance(m, ModelResponse) else m
+        for m in messages
+    ]
+
+
+def user_prompt_count(messages: list[ModelMessage]) -> int:
+    """How many turns start in *messages* (fold messages are no turns)."""
+    return sum(_has_user_prompt(m) and not is_fold_message(m) for m in messages)
+
+
+def newest_measured_response(messages: list[ModelMessage]) -> ModelResponse | None:
+    """The newest model response with provider-reported input tokens.
+
+    Responses carapace writes itself (the terminal message of a failed turn) carry no measurement, so
+    a **Continue** after a failure still sees the size of the request that failed.
+    """
+    return next((m for m in reversed(messages) if isinstance(m, ModelResponse) and m.usage.input_tokens), None)
+
+
+def last_request_input_tokens(messages: list[ModelMessage]) -> int:
+    """Provider-reported input tokens of the newest measured request (0 if none reported)."""
+    response = newest_measured_response(messages)
+    return response.usage.input_tokens if response is not None else 0
+
+
 def fold_summary_text(fold: ModelMessage) -> str:
     content = fold.parts[0].content if isinstance(fold.parts[0], UserPromptPart) else ""
-    return content.removeprefix(FOLD_MARKER).strip() if isinstance(content, str) else ""
+    return content.removeprefix(_FOLD_HEADER).strip() if isinstance(content, str) else ""
 
 
 # ---------------------------------------------------------------------------------------- utils
+
+
+def _has_user_prompt(msg: ModelMessage) -> bool:
+    return isinstance(msg, ModelRequest) and any(
+        isinstance(p, UserPromptPart) and isinstance(p.content, str) for p in msg.parts
+    )
 
 
 def _tool_content_text(content: Any) -> str:
