@@ -1,10 +1,11 @@
 "use client";
 
-import { ChevronRight, Loader2 } from "lucide-react";
+import { ChevronRight, Ellipsis, Loader2, Shrink } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { useEffect, useState } from "react";
 
 import { UsageDetails, UsageSummary, isUsageData, type UsagePayload } from "@/components/command-result";
+import { CompactionDialog } from "@/components/compaction-dialog";
 import { fetchSessionUsage } from "@/lib/api";
 
 export type SessionUsageState = { data: UsagePayload | undefined; error: string | null };
@@ -48,20 +49,40 @@ export function useSessionUsage(
   return "error" in outcome ? { data: undefined, error: outcome.error } : { data: outcome.data, error: null };
 }
 
+/** The session to compact and how: the chat sends `/compact [focus]` and `/uncompact` like typed commands. */
+export interface CompactionControls {
+  server: string;
+  token: string;
+  sessionId: string;
+  disabled: boolean;
+  onCompact: (focus: string) => void;
+  onUncompact: () => void;
+}
+
 /**
- * The usage breakdown in the chat inspector, collapsed by default. Rendered twice (desktop column
- * and mobile sheet), so the open state and the fetched data live in the caller. The budget gauges
- * are left to the budget section next to it.
+ * The usage breakdown in the chat inspector, collapsed by default, with the compaction controls in
+ * its header. Rendered twice (desktop column and mobile sheet), so the open state and the fetched
+ * data live in the caller. The budget gauges are left to the budget section next to it.
  */
-export function ChatUsageSection({ state, open, onOpenChange }: {
+export function ChatUsageSection({ state, open, onOpenChange, compaction }: {
   state: SessionUsageState;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  compaction: CompactionControls;
 }) {
   const t = useTranslations("chatView.usage");
+  const tCompaction = useTranslations("chatView.compaction");
   const { data, error } = state;
+  const [dialogOpen, setDialogOpen] = useState(false);
+  // Buttons inside <summary> would toggle the section as well.
+  const inSummary = (action: () => void) => (event: React.MouseEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+    action();
+  };
 
   return (
+    <>
     <details
       data-usage-section
       open={open}
@@ -83,10 +104,31 @@ export function ChatUsageSection({ state, open, onOpenChange }: {
             )
           ) : null}
         </div>
-        <ChevronRight
-          aria-hidden="true"
-          className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform group-open/card:rotate-90"
-        />
+        <div className="flex shrink-0 items-center gap-1">
+          <button
+            type="button"
+            disabled={compaction.disabled}
+            onClick={inSummary(() => compaction.onCompact(""))}
+            className="inline-flex h-7 items-center gap-1 rounded-md border border-border/70 px-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Shrink className="h-3.5 w-3.5" />
+            {tCompaction("compact")}
+          </button>
+          <button
+            type="button"
+            disabled={compaction.disabled}
+            onClick={inSummary(() => setDialogOpen(true))}
+            title={tCompaction("more")}
+            aria-label={tCompaction("more")}
+            className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-border/70 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Ellipsis className="h-3.5 w-3.5" />
+          </button>
+          <ChevronRight
+            aria-hidden="true"
+            className="ml-1 h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform group-open/card:rotate-90"
+          />
+        </div>
       </summary>
 
       {data ? (
@@ -95,5 +137,16 @@ export function ChatUsageSection({ state, open, onOpenChange }: {
         </div>
       ) : null}
     </details>
+    {dialogOpen ? (
+      <CompactionDialog
+        server={compaction.server}
+        token={compaction.token}
+        sessionId={compaction.sessionId}
+        onClose={() => setDialogOpen(false)}
+        onCompact={compaction.onCompact}
+        onUncompact={compaction.onUncompact}
+      />
+    ) : null}
+    </>
   );
 }

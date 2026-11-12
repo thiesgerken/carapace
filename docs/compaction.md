@@ -58,18 +58,21 @@ stays exactly as it was. Nothing is skipped silently.
 ## The `/compact` command
 
 ```
-/compact            Run the full ladder: drop stale thinking → fold turns older than K → summarize big tool outputs
-/compact 4          Same, but keep the last 4 completed turns verbatim
-/compact fold       Only fold old turns (default K)
-/compact fold 8     Only fold, keeping the last 8 turns
-/compact tools      Only summarize large tool outputs in the kept region
-/compact tools 1    Same, but keep only the newest 1 turn's tool outputs verbatim
+/compact                          Run the full ladder: drop stale thinking → fold all but the last K turns → summarize big tool outputs
+/compact keep the migration details   Same, and every summary request is told to keep what the focus names
 ```
 
-`K` is a count of completed turns to keep verbatim. When omitted, `/compact` (and `/compact fold`)
-use the configured default `keep_turns` (see Configuration below); passing a number overrides it for
-that run only. For `/compact tools [N]`, `N` overrides `verbatim_tool_turns` (the hot-zone size) for
-that run instead. The reply shows tokens before/after and a breakdown of what was compacted.
+`K` is *Keep recent turns* and the tool-output hot zone is *Verbatim tool turns* (see Configuration
+below); the command takes no numbers. The optional focus is free text appended to each summary
+request (after the material, so it does not split the cached prompt prefix). The reply shows tokens
+before/after and a breakdown of what was compacted.
+
+The same lives in the chat's **Usage** card: **Compact** runs `/compact`, and the "…" button opens a
+dialog with a dry run from the planners (no LLM call): current context against the agent model's
+compaction threshold and context window, the thinking parts, turns and tool outputs that would go,
+and the estimated size afterwards without the summaries, whose size is unknown until they are
+written. It takes a focus and runs `/compact [focus]`; its collapsed *Debug* section runs
+`/uncompact`. The dry run is `GET /api/sessions/{id}/compaction/preview`.
 
 ## Configuration
 

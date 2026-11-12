@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from decimal import Decimal
-from typing import TYPE_CHECKING, Any, Literal, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 from loguru import logger
 
@@ -31,14 +31,7 @@ class SessionCommandHost(Protocol):
     async def _handle_model_selector_command(
         self, active: ActiveSession, arg: str, *, slash_line: str
     ) -> dict[str, Any]: ...
-    async def run_compaction(
-        self,
-        active: ActiveSession,
-        *,
-        mode: Literal["all", "fold", "tools"],
-        keep_turns: int | None,
-        verbatim_tool_turns: int | None = None,
-    ) -> Any: ...
+    async def run_compaction(self, active: ActiveSession, *, focus: str | None = None) -> Any: ...
     async def run_uncompaction(self, active: ActiveSession) -> dict[str, Any]: ...
     def _skill_catalog_for_session(self, session_id: str) -> list[SkillInfo]: ...
     def usage_details(self, active: ActiveSession) -> SessionUsageDetails: ...
@@ -62,14 +55,7 @@ class SessionCommandMixin:
         async def _handle_model_selector_command(
             self, active: ActiveSession, arg: str, *, slash_line: str
         ) -> dict[str, Any]: ...
-        async def run_compaction(
-            self,
-            active: ActiveSession,
-            *,
-            mode: Literal["all", "fold", "tools"],
-            keep_turns: int | None,
-            verbatim_tool_turns: int | None = None,
-        ) -> Any: ...
+        async def run_compaction(self, active: ActiveSession, *, focus: str | None = None) -> Any: ...
         async def run_uncompaction(self, active: ActiveSession) -> dict[str, Any]: ...
         def _skill_catalog_for_session(self, session_id: str) -> list[SkillInfo]: ...
         def usage_details(self, active: ActiveSession) -> SessionUsageDetails: ...
@@ -156,25 +142,9 @@ class SessionCommandMixin:
 
         return None
 
-    async def _handle_compact_command(self, active: ActiveSession, arg: str) -> dict[str, Any]:
-        mode: Literal["all", "fold", "tools"] = "all"
-        keep: int | None = None
-        verbatim: int | None = None
-        usage = "Usage: /compact [K], /compact fold [K], or /compact tools [N]"
-        tokens = arg.split()
-        if tokens and tokens[0].lower() in ("fold", "tools"):
-            mode = tokens[0].lower()  # type: ignore[assignment]
-            tokens = tokens[1:]
-        if tokens:
-            if not tokens[0].isdigit():
-                return {"command": "compact", "data": {"error": usage}}
-            # For `tools` the count is the verbatim hot-zone size; otherwise it is keep-turns.
-            if mode == "tools":
-                verbatim = int(tokens[0])
-            else:
-                keep = int(tokens[0])
+    async def _handle_compact_command(self, active: ActiveSession, focus: str) -> dict[str, Any]:
         try:
-            report = await self.run_compaction(active, mode=mode, keep_turns=keep, verbatim_tool_turns=verbatim)
+            report = await self.run_compaction(active, focus=focus or None)
         except CompactionError as exc:
             logger.opt(exception=exc).error(f"/compact failed in session {active.state.session_id}")
             return {"command": "compact", "data": {"error": str(exc)}}

@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from functools import partial
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any
 
 from loguru import logger
 from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, ToolReturnPart
@@ -24,13 +24,21 @@ from pydantic_ai.settings import ModelSettings
 from pydantic_ai.usage import UsageLimits
 
 from ..llm import with_prompt_cache
-from ..models.compaction import CompactionNode, CompactionReport, SessionCompaction
+from ..models.compaction import (
+    CompactionNode,
+    CompactionPreview,
+    CompactionPreviewToolOutput,
+    CompactionReport,
+    SessionCompaction,
+)
 from ..models.skills import SkillInfo
 from ..prompt_prefix import shared_prompt_prefix
 from ..usage import count_message_tokens, count_text_tokens
 from .compaction import (
     AppliedToolReturn,
     FoldPlan,
+    LadderPlan,
+    ToolReturnCandidate,
     apply_fold,
     apply_thinking_drop,
     apply_tool_return_compaction,
@@ -38,6 +46,7 @@ from .compaction import (
     fold_render_text,
     last_request_input_tokens,
     plan_fold,
+    plan_ladder,
     plan_step_fold,
     sentinel_fold_render_text,
     split_merged_requests,
@@ -63,8 +72,6 @@ from .types import ActiveSession
 
 if TYPE_CHECKING:
     from ..models.config import Config
-
-CompactionMode = Literal["all", "fold", "tools"]
 
 
 class CompactionError(RuntimeError):
@@ -97,6 +104,7 @@ class SessionCompactionMixin:
         def agent_model_id_for_gauge(self, active: ActiveSession) -> str: ...
         def sentinel_model_id(self, active: ActiveSession) -> str: ...
         def compaction_threshold_for_model_id(self, model_id: str) -> int: ...
+        def agent_context_cap_for_gauge(self, active: ActiveSession) -> int: ...
         def llm_request_recording(
             self, active: ActiveSession, *, track_activity: bool = True
         ) -> AbstractContextManager[Any, bool | None]: ...
@@ -104,37 +112,55 @@ class SessionCompactionMixin:
     def _compaction_model(self, active: ActiveSession) -> str:
         return active.compaction_model_name or self._config.agent.compaction_model or self._config.agent.title_model
 
-    async def run_compaction(
-        self,
-        active: ActiveSession,
-        *,
-        mode: CompactionMode = "all",
-        keep_turns: int | None = None,
-        verbatim_tool_turns: int | None = None,
-    ) -> CompactionReport:
-        session_id = active.state.session_id
+    def _plan_ladder(self, active: ActiveSession, history: list[ModelMessage], model_name: str) -> LadderPlan:
         cfg = self._config.agent.compaction
-        keep = keep_turns if keep_turns is not None else cfg.keep_turns
+        return plan_ladder(
+            history,
+            keep_turns=cfg.keep_turns,
+            verbatim_turns=cfg.verbatim_tool_turns,
+            floor_tokens=cfg.tool_output_floor_tokens,
+            model_name=model_name,
+        )
+
+    def preview_compaction(self, active: ActiveSession) -> CompactionPreview:
+        """What `/compact` would do right now, from the pure planners (no LLM call)."""
         model_name = self.agent_model_id_for_gauge(active)
+        history = self._session_mgr.load_history(active.state.session_id)
+        plan = self._plan_ladder(active, history, model_name)
+        folded = apply_fold(plan.fold, "") if plan.fold is not None else plan.history
+        candidate_tokens = sum(c.tokens for c in plan.tool_candidates)
+        return CompactionPreview(
+            context_tokens=_tokens(history, model_name),
+            threshold_tokens=self.compaction_threshold_for_model_id(model_name),
+            context_window_tokens=self.agent_context_cap_for_gauge(active),
+            thinking_dropped=plan.thinking_dropped,
+            turns_folded=user_prompt_count(plan.fold.foldable) if plan.fold is not None else 0,
+            fold_tokens=plan.fold.orig_tokens if plan.fold is not None else 0,
+            tool_outputs=[
+                CompactionPreviewToolOutput(tool_name=c.tool_name, tokens=c.tokens) for c in plan.tool_candidates
+            ],
+            estimated_tokens_without_summaries=max(0, _tokens(folded, model_name) - candidate_tokens),
+        )
 
-        verbatim = cfg.verbatim_tool_turns if verbatim_tool_turns is None else max(0, verbatim_tool_turns)
+    async def run_compaction(self, active: ActiveSession, *, focus: str | None = None) -> CompactionReport:
+        """`/compact`: thinking-drop, fold, then tool outputs, with *focus* added to every summary request.
 
+        Unlike the automatic ladder it folds before it summarizes tool outputs: it runs every rung
+        anyway, and this way it never pays for summaries the fold would discard.
+        """
+        session_id = active.state.session_id
+        model_name = self.agent_model_id_for_gauge(active)
         history = self._session_mgr.load_history(session_id)
         before = _tokens(history, model_name)
-        report = CompactionReport(mode=mode, before_tokens=before, after_tokens=before)
+        report = CompactionReport(mode="manual", before_tokens=before, after_tokens=before)
+        plan = self._plan_ladder(active, history, model_name)
+        history, report.thinking_dropped = plan.history, plan.thinking_dropped
         fold: _Fold | None = None
-        applied: dict[str, AppliedToolReturn] = {}
-
-        if mode == "all":
-            history, report.thinking_dropped = apply_thinking_drop(history)
-        # Unlike the automatic ladder, `/compact` folds before it summarizes tool outputs: it runs
-        # every rung anyway, and this way it never pays for summaries the fold would discard.
-        if mode in ("all", "fold") and (plan := plan_fold(history, keep_turns=keep, model_name=model_name)):
-            fold = await self._summarize_fold(active, plan)
-            history = apply_fold(plan, fold.summary)
-        if mode in ("all", "tools"):
-            applied = await self._summarize_tool_returns(active, history, verbatim=verbatim, model_name=model_name)
-            history = apply_tool_return_compaction(history, applied)
+        if plan.fold is not None:
+            fold = await self._summarize_fold(active, plan.fold, focus=focus)
+            history = apply_fold(plan.fold, fold.summary)
+        applied = await self._summarize_candidates(active, plan.tool_candidates, model_name=model_name, focus=focus)
+        history = apply_tool_return_compaction(history, applied)
 
         report.after_tokens = _tokens(history, model_name)
         self._record_ladder(report, fold, applied)
@@ -142,7 +168,7 @@ class SessionCompactionMixin:
             self._persist_compaction(active, fold=fold, applied=applied, model_name=model_name)
             self._session_mgr.save_history(session_id, history)
             await self._broadcast(active, "on_compaction", report)
-        logger.info(f"Compaction session={session_id} mode={mode} {report.message}")
+        logger.info(f"Compaction session={session_id} mode=manual focus={bool(focus)} {report.message}")
         return report
 
     async def compact_during_run(
@@ -278,9 +304,9 @@ class SessionCompactionMixin:
         logger.info(f"Uncompaction session={session_id} {message}")
         return {"restored": True, "before_tokens": before, "after_tokens": after, "message": message}
 
-    async def _summarize_fold(self, active: ActiveSession, plan: FoldPlan) -> _Fold:
+    async def _summarize_fold(self, active: ActiveSession, plan: FoldPlan, *, focus: str | None = None) -> _Fold:
         text = fold_render_text([*plan.lead_folds, *plan.foldable])
-        return _Fold(plan=plan, summary=await self._summarize(active, partial(summarize_fold, text)))
+        return _Fold(plan=plan, summary=await self._summarize(active, partial(summarize_fold, text, focus=focus)))
 
     async def _summarize_tool_returns(
         self, active: ActiveSession, history: list[ModelMessage], *, verbatim: int, model_name: str
@@ -292,9 +318,21 @@ class SessionCompactionMixin:
             model_name=model_name,
             within_indexes=tool_return_compaction_region(history, verbatim_turns=verbatim),
         )
+        return await self._summarize_candidates(active, candidates, model_name=model_name)
+
+    async def _summarize_candidates(
+        self,
+        active: ActiveSession,
+        candidates: list[ToolReturnCandidate],
+        *,
+        model_name: str,
+        focus: str | None = None,
+    ) -> dict[str, AppliedToolReturn]:
         summaries = await _gather_cache_warm(
             [
-                partial(self._summarize, active, partial(summarize_tool_output, c.tool_name, _text(c.content)))
+                partial(
+                    self._summarize, active, partial(summarize_tool_output, c.tool_name, _text(c.content), focus=focus)
+                )
                 for c in candidates
             ]
         )

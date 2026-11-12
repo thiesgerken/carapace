@@ -1332,6 +1332,28 @@
         },
         "usage": {
             "title": "Verbrauch"
+        },
+        "compaction": {
+            "title": "Konversation kompaktieren",
+            "compact": "Kompaktieren",
+            "more": "Details zur Kompaktierung",
+            "loading": "Wird geplant…",
+            "context": "Kontext",
+            "threshold": "Kompaktiert automatisch bei",
+            "window": "Kontextfenster",
+            "nothing": "Noch nichts zu kompaktieren.",
+            "plan": "Kompaktieren würde",
+            "thinking": "{count, plural, one {# Thinking-Teil} other {# Thinking-Teile}} entfernen",
+            "fold": "{count, plural, one {# Runde} other {# Runden}} ({tokens} Tokens) in die Zusammenfassung falten",
+            "toolOutput": "eine Ausgabe von {tool} ({tokens} Tokens) zusammenfassen",
+            "estimate": "Danach etwa {tokens} Tokens, plus die Zusammenfassungen.",
+            "focus": "Fokus (optional)",
+            "focusPlaceholder": "Was die Zusammenfassungen behalten müssen, z. B. die Details zur Migration",
+            "debug": "Debug",
+            "uncompact": "Kompaktierung aufheben",
+            "uncompactHint": "Den vollständigen Verlauf wiederherstellen und alle Kompaktierung verwerfen (/uncompact).",
+            "cancel": "Abbrechen",
+            "run": "Kompaktieren"
         }
     },
     "message": {

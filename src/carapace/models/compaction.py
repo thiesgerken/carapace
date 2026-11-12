@@ -40,7 +40,7 @@ class CompactionReport(BaseModel):
     Token counts are local estimates without thinking parts.
     """
 
-    mode: Literal["all", "fold", "tools", "auto"]
+    mode: Literal["manual", "auto"]
     before_tokens: int = 0
     after_tokens: int = 0
     thinking_dropped: int = 0
@@ -57,6 +57,28 @@ class CompactionReport(BaseModel):
     @property
     def saved_tokens(self) -> int:
         return max(0, self.before_tokens - self.after_tokens)
+
+
+class CompactionPreviewToolOutput(BaseModel):
+    tool_name: str
+    tokens: int
+
+
+class CompactionPreview(BaseModel):
+    """Dry run of `/compact` from the pure planners: what it would compact, before any summary call.
+
+    Token counts are local estimates without thinking parts, like ``CompactionReport``. The summaries'
+    sizes are unknown until they are written, so the estimate leaves them out.
+    """
+
+    context_tokens: int
+    threshold_tokens: int
+    context_window_tokens: int
+    thinking_dropped: int
+    turns_folded: int
+    fold_tokens: int
+    tool_outputs: list[CompactionPreviewToolOutput]
+    estimated_tokens_without_summaries: int
 
 
 class SessionCompaction(BaseModel):
