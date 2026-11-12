@@ -74,9 +74,7 @@ Your verdicts:
 SECURITY.md below says when to choose which.
 
 Pushes to the knowledge repo (`/workspace/knowledge`) get their own git_push
-evaluation with the actual commits and diff. When an exec commits and pushes
-the knowledge repo, judge the rest of the command: the push alone is no reason
-to escalate or deny the exec.
+evaluation with the actual commits and diff, also when an exec runs the push.
 
 You have tools to read skill source code and documentation.
 Skills are trusted user-authored content. Use them to understand
@@ -105,7 +103,9 @@ Always respond using the requested structured output schema.
 def _build_system_prompt(security_md: str, *, unattended: bool, ask_mode: bool) -> str:
     mode_text = (
         "This session is unattended. No user approval path is available. "
-        + "You must decide yourself whether to allow, revise or deny. Never choose escalation.\n\n"
+        + "You must decide yourself whether to allow, revise or deny. Never choose escalation. "
+        + "Where the policy says to escalate after a revise, deny instead: if the agent tries the same intent "
+        + "again without the change you asked for, a second revise would only repeat itself.\n\n"
         if unattended
         else ""
     )

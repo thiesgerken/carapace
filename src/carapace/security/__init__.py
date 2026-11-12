@@ -731,6 +731,8 @@ async def evaluate_push_with(
 
     decision = _verdict_to_decision(verdict)
     user_message: str | None = None
+    source: ApprovalSource = "sentinel"
+    approval_verdict: ApprovalVerdict = verdict.decision
 
     if verdict.decision == "allow":
         allowed = True
@@ -761,12 +763,11 @@ async def evaluate_push_with(
         decision = "allowed" if allowed else "denied"
         rejection = "" if allowed else format_denial_message("user", user_message)
         detail = rejection or "[user: allow]"
+        source = "user"
+        approval_verdict = "allow" if allowed else "deny"
 
     entry = GitPushEntry(ref=ref, decision=decision, explanation=verdict.explanation)
     session.append(entry)
-
-    source: ApprovalSource = "sentinel" if verdict.decision != "escalate" else "user"
-    approval_verdict: ApprovalVerdict = verdict.decision if source == "sentinel" else "allow" if allowed else "deny"
     await session.notify_push_decision(
         ref,
         decision,

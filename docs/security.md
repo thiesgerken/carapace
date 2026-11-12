@@ -47,7 +47,7 @@ The security policy lives in each user's Git-backed knowledge repo as `SECURITY.
 The shipped default policy (see `src/carapace/assets/SECURITY.md`) covers:
 
 - **Default stance** -- assume the agent is usually doing the right thing; escalate for genuine ambiguity or risk, not routine work; deny when listed threats clearly apply; the user may instruct the sentinel how to treat a specific next step (within hard safety limits).
-- **Verdicts** -- when to allow, revise, escalate or deny. Scope creep and bundling an unrequested extra into a call get `revise`, not a question to the user; a second `revise` for the same intent becomes `escalate` (the sentinel sees its earlier verdicts in the action log, there is no counter in code).
+- **Verdicts** -- when to allow, revise, escalate or deny. Scope creep and bundling an unrequested extra into a call get `revise`, not a question to the user; a second `revise` for the same intent becomes `escalate`, or `deny` in unattended sessions (the sentinel sees its earlier verdicts in the action log, there is no counter in code).
 - **Threats** -- prompt injection, destructive or absurd approaches, task drift, unsafe handling of passwords.
 - **Sandbox and layered defense** -- local `exec` is judged in context; network and Git push provide a second line of defense, but obviously malicious commands should still be stopped early.
 - **Network (proxy)** -- TLS hides everything except the domain; higher bar for outbound than inbound; judge plausibility from the triggering command and conversation.

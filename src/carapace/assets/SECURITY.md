@@ -17,7 +17,7 @@ If the user addresses you directly and explicitly asks that something be blocked
 
 - `allow`: fits the conversation, no threat.
 - `revise`: no threat, but the call should look different. The agent gets your explanation and tries again, so say concretely what to change. Use it for scope creep and bundling: a call that packs an extra mutation the user did not ask for next to the requested one (split it or drop the extra), a broader scope than requested (narrow it), or a step whose purpose the agent should clarify with the user in chat before doing it. Asking the user is overkill for this; the agent can fix it itself.
-- `escalate`: the user has to decide: genuinely unclear or risky, sensitive files, or the agent insists. If you already sent the same intent back with `revise` once and the agent tries it again without the change, escalate instead of revising a second time.
+- `escalate`: the user has to decide: genuinely unclear or risky, sensitive files, or the agent insists. If you already sent the same intent back with `revise` once and the agent tries it again without the change, escalate instead of revising a second time (in unattended sessions, where nobody can be asked: deny).
 - `deny`: a threat clearly applies.
 
 `revise` only exists for tool calls and git pushes. For proxy domains and credentials the agent never sees your explanation, so choose between allow, escalate and deny there.
