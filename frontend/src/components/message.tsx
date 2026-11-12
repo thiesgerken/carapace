@@ -484,7 +484,12 @@ function ProviderCompactionMarker({
         <ChevronRight className={cn("ml-auto h-3 w-3 shrink-0 transition-transform", open && "rotate-90")} />
       </button>
       {open ? (
-        <div className="mb-1.5 ml-5 mt-1 rounded-md border border-amber-500/30 bg-amber-500/5 p-2 text-[11px] text-muted-foreground">
+        <div
+          className={cn(
+            "mb-1.5 ml-5 mt-1 rounded-md border p-2 text-[11px] text-muted-foreground",
+            message.failed ? "border-destructive/30 bg-destructive/5" : "border-amber-500/30 bg-amber-500/5",
+          )}
+        >
           {message.failed ? (
             <p className="whitespace-pre-wrap break-words text-destructive">{message.failed}</p>
           ) : message.summary ? (
