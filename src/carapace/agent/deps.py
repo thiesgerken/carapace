@@ -59,6 +59,7 @@ class Deps(BaseModel):
     tool_call_callback: ToolCallCallback | None = None
     tool_result_callback: Callable[[ToolResult], None] | None = None
     append_session_events: Callable[[list[dict[str, Any]]], None] | None = None
+    load_session_events: Callable[[], list[dict[str, Any]]]
     usage_tracker: UsageTracker
     autonomy: AutonomyStreak
     assert_llm_budget_available: Callable[[], None] | None = None

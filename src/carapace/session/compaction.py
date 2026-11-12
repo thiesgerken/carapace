@@ -191,7 +191,7 @@ def apply_tool_return_compaction(
                 new_parts.append(
                     ToolReturnPart(
                         tool_name=part.tool_name,
-                        content=_tool_marker(rep.method) + rep.new_content,
+                        content=_tool_marker(rep.method, part.tool_call_id) + rep.new_content,
                         tool_call_id=part.tool_call_id,
                         metadata=meta,
                         timestamp=part.timestamp,
@@ -399,9 +399,9 @@ def apply_consolidate(rest: list[ModelMessage], summary: str) -> list[ModelMessa
 # ---------------------------------------------------------------------------------------- utils
 
 
-def _tool_marker(method: CompactionMethod) -> str:
+def _tool_marker(method: CompactionMethod, tool_call_id: str) -> str:
     verb = {"truncate": "truncated", "summarize": "summarized", "drop": "dropped"}[method]
-    return f"[tool output {verb} to save context; re-run the tool for the full result]\n"
+    return f'[tool output {verb} to save context; full output: read_tool_output("{tool_call_id}")]\n'
 
 
 def _tool_content_text(content: Any) -> str:

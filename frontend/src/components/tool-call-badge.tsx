@@ -11,6 +11,7 @@ import {
   FolderCode,
   GitBranch,
   Globe,
+  History,
   Hourglass,
   KeyRound,
   Loader2,
@@ -71,6 +72,7 @@ const TOOL_ICONS: Record<string, LucideIcon> = {
   proxy_domain: Globe,
   git_push: GitBranch,
   send_file: Send,
+  read_tool_output: History,
 };
 
 const SHORT_KEYS: Record<string, string> = {

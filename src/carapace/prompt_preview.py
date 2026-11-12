@@ -133,6 +133,7 @@ async def _agent(inputs: PreviewInputs) -> PromptPreview:
         usage_tracker=UsageTracker(),
         autonomy=AutonomyStreak(),
         credential_registry=CredentialRegistry(),
+        load_session_events=list,
     )
     request = await _record(create_agent(deps), deps=deps)
     sections = [

@@ -64,6 +64,7 @@ def _deps(tmp_path: Path, *, model_id: str, vision: bool, results: list[ToolResu
         usage_tracker=UsageTracker(),
         autonomy=AutonomyStreak(),
         credential_registry=CredentialRegistry(),
+        load_session_events=list,
         tool_result_callback=results.append,
     )
 

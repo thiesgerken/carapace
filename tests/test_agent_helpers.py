@@ -49,6 +49,7 @@ def test_build_system_prompt_minimal(tmp_path: Path):
         usage_tracker=UsageTracker(),
         autonomy=AutonomyStreak(),
         credential_registry=CredentialRegistry(),
+        load_session_events=list,
     )
     prompt = build_system_prompt(deps)
     today = date.today()
@@ -79,6 +80,7 @@ def test_build_system_prompt_with_agents_md(tmp_path: Path):
         usage_tracker=UsageTracker(),
         autonomy=AutonomyStreak(),
         credential_registry=CredentialRegistry(),
+        load_session_events=list,
     )
     prompt = build_system_prompt(deps)
     assert "Agent Instructions" in prompt
@@ -102,6 +104,7 @@ def test_build_system_prompt_unattended_mentions_task_outputs(tmp_path: Path):
         usage_tracker=UsageTracker(),
         autonomy=AutonomyStreak(),
         credential_registry=CredentialRegistry(),
+        load_session_events=list,
     )
 
     prompt = build_system_prompt(deps)
@@ -128,6 +131,7 @@ def test_build_system_prompt_puts_the_memory_block_between_fixed_instructions_an
         usage_tracker=UsageTracker(),
         autonomy=AutonomyStreak(),
         credential_registry=CredentialRegistry(),
+        load_session_events=list,
     )
 
     prompt = build_system_prompt(deps)
@@ -151,6 +155,7 @@ def test_build_system_prompt_ask_mode_mentions_read_only_limits(tmp_path: Path):
         usage_tracker=UsageTracker(),
         autonomy=AutonomyStreak(),
         credential_registry=CredentialRegistry(),
+        load_session_events=list,
     )
 
     prompt = build_system_prompt(deps)
@@ -180,6 +185,7 @@ def test_build_system_prompt_leads_with_the_shared_prefix_and_ends_volatile(tmp_
         usage_tracker=UsageTracker(),
         autonomy=AutonomyStreak(),
         credential_registry=CredentialRegistry(),
+        load_session_events=list,
     )
 
     prompt = build_system_prompt(deps)
@@ -225,6 +231,7 @@ def _capture_agent_request(
         usage_tracker=UsageTracker(),
         autonomy=AutonomyStreak(),
         credential_registry=CredentialRegistry(),
+        load_session_events=list,
     )
     with pytest.raises(ModelHTTPError):
         create_agent(deps).run_sync("hi", deps=deps)
