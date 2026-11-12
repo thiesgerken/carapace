@@ -25,6 +25,7 @@ from pydantic_ai.messages import (
 )
 
 from ..agent.deps import Deps
+from ..agent.history_compaction import HistoryCompactor
 from ..agent.loop import run_agent_turn as _run_agent_turn
 from ..credentials import SessionCredentialRegistry
 from ..git.store import GitStore
@@ -60,7 +61,7 @@ from ..ws_models import (
 )
 from .approvals import SessionApprovalMixin
 from .commands import SessionCommandMixin
-from .compaction import slice_compacted_history, split_lead_folds
+from .compaction import make_fold_message, slice_compacted_history, split_lead_folds
 from .compaction_engine import (
     SessionCompactionMixin,
     fold_survival_for_events,
@@ -117,8 +118,8 @@ class SessionEngine(
     SessionModelMixin,
     SessionUsageBudgetMixin,
     SessionApprovalMixin,
-    SessionTurnMixin,
     SessionCompactionMixin,
+    SessionTurnMixin,
 ):
     """Central session lifecycle manager.
 
@@ -492,6 +493,7 @@ class SessionEngine(
         *,
         tool_call_callback: ToolCallCallback | None = None,
         tool_result_callback: Callable[[ToolResult], None] | None = None,
+        compact_history: HistoryCompactor | None = None,
     ) -> Deps:
         assert active.security is not None and active.sentinel is not None
         self.assert_models_enabled(active)
@@ -527,6 +529,7 @@ class SessionEngine(
             autonomy=active.autonomy,
             assert_llm_budget_available=lambda: self._assert_llm_budget_available(active),
             llm_usage_limits=lambda: self._remaining_aux_usage_limits(active),
+            compact_history=compact_history,
             sandbox=self._sandbox_mgr,
             activated_skills=[],
             credential_registry=self._session_credential_registry(session_id),
@@ -732,10 +735,18 @@ class SessionEngine(
         Folds collapse old turns, so the model-history turn count diverges from the event-turn
         count. Slice via the surviving ``folded_into`` annotations instead, and trim the tree so no
         fold node survives without its turns (and a fork never inherits fold messages without a tree).
+        A fold whose turns survive only in part stays whole: it may summarize a little beyond the cut.
         """
-        fold_ids, folded_turns = fold_survival_for_events(truncated_events)
+        survival = fold_survival_for_events(truncated_events)
+        fold_ids = survival.fold_ids
+        full_tree = self._session_mgr.load_compaction(session_id)
+        tree = trim_compaction_tree(full_tree, fold_ids)
+        if fold_ids and full_tree.nodes and fold_ids[-1] != full_tree.nodes[-1].id:
+            # Cut inside the folded region: the history only holds the newest (rolled-up) summary, so
+            # fall back to the newest one that existed at the cut. Every kept turn is folded into it.
+            return [make_fold_message(tree.nodes[-1].summary)], tree
         turn_count = len(self._completed_event_turns(truncated_events))
-        tail_turns = turn_count - folded_turns
+        tail_turns = turn_count - survival.folded_turns
 
         # Guard against a desynced source: if the model history holds fewer completed turns than the
         # event transcript, the slice silently truncates and the copy/reset loses real turns. That is
@@ -750,9 +761,9 @@ class SessionEngine(
                 f"the available turns — history is out of sync with the event transcript."
             )
 
-        sliced = slice_compacted_history(history, keep_lead_folds=len(fold_ids), tail_turns=tail_turns)
-        tree = trim_compaction_tree(self._session_mgr.load_compaction(session_id), fold_ids)
-        return sliced, tree
+        if not fold_ids:
+            return self._history_for_completed_turn_count(rest, tail_turns), tree
+        return slice_compacted_history(history, tail_turns=tail_turns, keep_split_turn=survival.split_turn), tree
 
     def _first_user_event_index(self, events: list[dict[str, Any]], *, start: int) -> int | None:
         """Index of the first non-slash user event at or after *start* (a turn's prompt)."""

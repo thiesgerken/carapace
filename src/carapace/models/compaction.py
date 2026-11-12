@@ -5,7 +5,10 @@ replaced by a single marked synthetic user message, and large tool returns are
 replaced by shorter summaries stamped on ``ToolReturnPart.metadata``. This module stores
 the human/debug-facing summary nodes so the UI can render the folded turns' margin rail.
 
-Originals are never stored here — they remain in the events transcript and git archive.
+Folds roll: each node's summary covers every turn folded so far, and the model history holds
+only the newest one. Earlier nodes stay so a rewind into the folded region can fall back to the
+summary that was current at that point. Originals are never stored here — they remain in the
+events transcript and git archive.
 """
 
 from __future__ import annotations
@@ -21,28 +24,35 @@ FOLD_MARKER = "⟦compacted⟧"
 
 
 class CompactionNode(BaseModel):
-    """One fold summary: a contiguous run of original turns condensed for the model."""
+    """One fold summary: everything folded up to this fold, condensed for the model."""
 
     id: str
     summary: str
+    # Originals behind the summary, including those behind the earlier summary it rolled up.
     orig_tokens: int = 0
     summary_tokens: int = 0
-    # First/last completed-turn indexes (in the pre-fold model history) this node covers.
-    source_turn_start: int = 0
-    source_turn_end: int = 0
     created_at: datetime | None = None
 
 
 class CompactionReport(BaseModel):
-    """Outcome of one `/compact` run, returned to the client."""
+    """Outcome of one compaction: a `/compact` run (returned to the client) or an automatic one (``auto``).
 
-    mode: Literal["all", "fold", "tools"]
+    Token counts are local estimates without thinking parts.
+    """
+
+    mode: Literal["all", "fold", "tools", "auto"]
     before_tokens: int = 0
     after_tokens: int = 0
     thinking_dropped: int = 0
     turns_folded: int = 0
+    # Model responses folded; a fold inside a running turn folds steps without starting a new turn.
+    steps_folded: int = 0
     tool_returns_compacted: int = 0
     message: str = ""
+
+    @property
+    def nothing_compacted(self) -> bool:
+        return not (self.thinking_dropped or self.steps_folded or self.turns_folded or self.tool_returns_compacted)
 
     @property
     def saved_tokens(self) -> int:

@@ -36,6 +36,7 @@ from pydantic_ai.providers.openai_codex import CredentialsRefreshError
 from pydantic_ai.usage import UsageLimits
 
 from ..agent.deps import Deps
+from ..agent.history_compaction import HistoryCompactor
 from ..codex_auth import CODEX_RECONNECT_MESSAGE, CodexNotConnectedError
 from ..llm import DisabledModelError
 from ..models.config import Config
@@ -138,9 +139,14 @@ class SessionTurnHost(Protocol):
         *,
         tool_call_callback: ToolCallCallback | None = None,
         tool_result_callback: Callable[[ToolResult], None] | None = None,
+        compact_history: HistoryCompactor | None = None,
     ) -> Deps: ...
 
     def _ensure_memory_snapshot(self, active: ActiveSession) -> None: ...
+
+    async def compact_during_run(
+        self, active: ActiveSession, messages: list[ModelMessage]
+    ) -> list[ModelMessage] | None: ...
 
     def _record_tool_call_event(
         self,
@@ -285,6 +291,13 @@ class SessionTurnMixin(SessionTurnHost):
             active._pending_sends.add(task)
             task.add_done_callback(active._pending_sends.discard)
 
+        async def _compact_history_cb(messages: list[ModelMessage]) -> list[ModelMessage] | None:
+            compacted = await self.compact_during_run(active, messages)
+            if compacted is not None:
+                # A turn that fails later saves this snapshot: the tree and events already hold the fold.
+                _set_latest_messages(compacted)
+            return compacted
+
         async def _assistant_text_cb(text: str) -> None:
             # Intermediate narration (text the model emitted before a tool call). Persist it as a
             # partial assistant event so reload renders it between the tool groups; the turn's final
@@ -307,6 +320,7 @@ class SessionTurnMixin(SessionTurnHost):
                     attachments=attachments,
                     tool_call_callback=_tool_call_cb,
                     tool_result_callback=_tool_result_cb,
+                    compact_history=_compact_history_cb,
                 )
 
                 async def _send_approval(req: ApprovalRequest) -> None:
@@ -432,6 +446,7 @@ class SessionTurnMixin(SessionTurnHost):
         attachments: list[Attachment] | None = None,
         tool_call_callback: ToolCallCallback,
         tool_result_callback: Callable[[ToolResult], None],
+        compact_history: HistoryCompactor,
     ) -> tuple[Deps, list[ModelMessage]]:
         fresh = self._session_mgr.resume_session(session_id)
         if fresh:
@@ -444,6 +459,7 @@ class SessionTurnMixin(SessionTurnHost):
             active,
             tool_call_callback=tool_call_callback,
             tool_result_callback=tool_result_callback,
+            compact_history=compact_history,
         )
         attachments = attachments or []
         # Persist/broadcast the original text + attachment metadata (not the hidden preamble),

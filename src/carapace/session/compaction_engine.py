@@ -1,8 +1,9 @@
-"""Engine mixin: orchestrate manual `/compact` over a session's model history.
+"""Engine mixin: compact a session's model history, by `/compact` or automatically inside a run.
 
-Runs the pure strategies from ``compaction`` with the configured compaction model, persists
-the rewritten history + summary tree, annotates the events transcript for the UI, and reports
-token savings. v1 is manual only — there is no automatic trigger.
+Runs the pure strategies from ``compaction`` with the configured compaction model, persists the
+summary tree, annotates the events transcript for the UI, and reports token savings. `/compact`
+also persists the rewritten history; inside a run the rewritten history is the run's own and is
+persisted with the turn.
 """
 
 from __future__ import annotations
@@ -11,13 +12,14 @@ import asyncio
 import uuid
 from collections.abc import Callable, Coroutine
 from contextlib import AbstractContextManager
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
 from loguru import logger
-from pydantic_ai.messages import ModelMessage
+from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, ToolReturnPart
 from pydantic_ai.settings import ModelSettings
 from pydantic_ai.usage import UsageLimits
 
@@ -28,16 +30,20 @@ from ..prompt_prefix import shared_prompt_prefix
 from ..usage import count_message_tokens, count_text_tokens
 from .compaction import (
     AppliedToolReturn,
+    FoldPlan,
     apply_fold,
     apply_thinking_drop,
     apply_tool_return_compaction,
     find_tool_return_candidates,
     fold_render_text,
-    make_fold_message,
+    last_request_input_tokens,
     plan_fold,
+    plan_step_fold,
     sentinel_fold_render_text,
     split_merged_requests,
+    strip_thinking,
     tool_return_compaction_region,
+    user_prompt_count,
 )
 from .compaction_summarizer import (
     summarize_fold,
@@ -46,7 +52,13 @@ from .compaction_summarizer import (
     summarize_tool_output,
 )
 from .manager import SessionManager
-from .transcript import completed_event_turns, completed_model_turn_end_indexes, rebuild_model_history_from_events
+from .transcript import (
+    completed_event_turns,
+    is_terminal_history_message,
+    is_turn_prompt_event,
+    is_turn_terminal_event,
+    rebuild_model_history_from_events,
+)
 from .types import ActiveSession
 
 if TYPE_CHECKING:
@@ -56,7 +68,15 @@ CompactionMode = Literal["all", "fold", "tools"]
 
 
 class CompactionError(RuntimeError):
-    """An agent compaction summary failed; the history stays as it was."""
+    """Agent compaction failed; the history stays as it was."""
+
+
+@dataclass(frozen=True, slots=True)
+class _Fold:
+    """A summarized fold, not yet persisted."""
+
+    plan: FoldPlan
+    summary: str
 
 
 class SessionCompactionMixin:
@@ -97,32 +117,93 @@ class SessionCompactionMixin:
         keep = keep_turns if keep_turns is not None else cfg.keep_turns
         model_name = self.agent_model_id_for_gauge(active)
 
-        history = self._session_mgr.load_history(session_id)
-        tree = self._session_mgr.load_compaction(session_id)
-        events = list(self._session_mgr.load_events(session_id))
-        before = count_message_tokens(history, model_name=model_name)
+        verbatim = cfg.verbatim_tool_turns if verbatim_tool_turns is None else max(0, verbatim_tool_turns)
 
+        history = self._session_mgr.load_history(session_id)
+        before = _tokens(history, model_name)
         report = CompactionReport(mode=mode, before_tokens=before, after_tokens=before)
+        fold: _Fold | None = None
+        applied: dict[str, AppliedToolReturn] = {}
 
         if mode == "all":
             history, report.thinking_dropped = apply_thinking_drop(history)
-
-        if mode in ("all", "fold"):
-            history = await self._do_fold(
-                active, history, tree, events, keep=keep, model_name=model_name, report=report
-            )
-
+        # Unlike the automatic ladder, `/compact` folds before it summarizes tool outputs: it runs
+        # every rung anyway, and this way it never pays for summaries the fold would discard.
+        if mode in ("all", "fold") and (plan := plan_fold(history, keep_turns=keep, model_name=model_name)):
+            fold = await self._summarize_fold(active, plan)
+            history = apply_fold(plan, fold.summary)
         if mode in ("all", "tools"):
-            history = await self._do_tool_returns(
-                active, history, events, model_name=model_name, report=report, verbatim_tool_turns=verbatim_tool_turns
+            applied = await self._summarize_tool_returns(active, history, verbatim=verbatim, model_name=model_name)
+            history = apply_tool_return_compaction(history, applied)
+
+        report.after_tokens = _tokens(history, model_name)
+        self._record_ladder(report, fold, applied)
+        if not report.nothing_compacted:
+            self._persist_compaction(active, fold=fold, applied=applied, model_name=model_name)
+            self._session_mgr.save_history(session_id, history)
+            await self._broadcast(active, "on_compaction", report)
+        logger.info(f"Compaction session={session_id} mode={mode} {report.message}")
+        return report
+
+    async def compact_during_run(
+        self, active: ActiveSession, messages: list[ModelMessage]
+    ) -> list[ModelMessage] | None:
+        """The run's history compacted down to the target, or None while it stays below the threshold.
+
+        Triggered by the provider-reported input tokens of the run's last request, against the agent
+        model's compaction threshold. The ladder (thinking-drop, then tool outputs outside the hot zone,
+        then a fold that may cut inside the running turn) stops once the local estimate is below the
+        target, half the threshold. The caller persists the returned history with the turn; the tree and
+        the event annotations are persisted here. Raises ``CompactionError`` when the history is above
+        the threshold and nothing can be compacted: the turn must not continue past it silently.
+        """
+        session_id = active.state.session_id
+        model_name = self.agent_model_id_for_gauge(active)
+        threshold = self.compaction_threshold_for_model_id(model_name)
+        if last_request_input_tokens(messages) <= threshold:
+            return None
+        target = threshold // 2
+        history = split_merged_requests(messages)
+        before = _tokens(history, model_name)
+        if before <= target:
+            # The last request was measured before an earlier compaction (e.g. a `/compact` between turns).
+            return None
+
+        report = CompactionReport(mode="auto", before_tokens=before, after_tokens=before)
+        fold: _Fold | None = None
+        history, report.thinking_dropped = apply_thinking_drop(history)
+        applied = await self._summarize_tool_returns(
+            active, history, verbatim=self._config.agent.compaction.verbatim_tool_turns, model_name=model_name
+        )
+        history = apply_tool_return_compaction(history, applied)
+        if _tokens(history, model_name) > target and (
+            plan := plan_step_fold(history, keep_tokens=target // 2, model_name=model_name)
+        ):
+            fold = await self._summarize_fold(active, plan)
+            history = apply_fold(plan, fold.summary)
+
+        report.after_tokens = _tokens(history, model_name)
+        self._record_ladder(report, fold, applied)
+        if fold is None and not applied:
+            raise CompactionError(
+                f"Compaction failed: the last request used {last_request_input_tokens(messages):,} input tokens "
+                f"(threshold {threshold:,}) and nothing is left to compact"
             )
+        self._persist_compaction(active, fold=fold, applied=applied, model_name=model_name)
+        await self._broadcast(active, "on_compaction", report)
+        logger.info(f"Compaction session={session_id} mode=auto threshold={threshold} {report.message}")
+        return history
 
-        report.after_tokens = count_message_tokens(history, model_name=model_name)
-
-        nothing = report.thinking_dropped == 0 and report.turns_folded == 0 and report.tool_returns_compacted == 0
+    def _record_ladder(
+        self, report: CompactionReport, fold: _Fold | None, applied: dict[str, AppliedToolReturn]
+    ) -> None:
+        if fold is not None:
+            report.turns_folded = user_prompt_count(fold.plan.foldable)
+            report.steps_folded = sum(isinstance(m, ModelResponse) for m in fold.plan.foldable)
+        report.tool_returns_compacted = len(applied)
         report.message = (
             "Nothing to compact."
-            if nothing
+            if report.nothing_compacted
             else (
                 f"Compacted {report.before_tokens:,}→{report.after_tokens:,} tokens "
                 f"(folded {report.turns_folded} turns, summarized {report.tool_returns_compacted} tool outputs"
@@ -130,19 +211,42 @@ class SessionCompactionMixin:
             )
         )
 
-        if not nothing:
-            # The rewritten history breaks the conversation cache anyway, so the next turn
-            # refreshes the frozen memory block at no extra cost.
-            active.state.memory = None
-            self._session_mgr.save_state(active.state)
-            self._session_mgr.save_history(session_id, history)
-            self._session_mgr.save_compaction(session_id, tree)
-            self._session_mgr.save_events(session_id, events)
-            self._session_mgr.save_usage(session_id, active.usage_tracker)
-            await self._broadcast(active, "on_compaction", report)
+    def _persist_compaction(
+        self,
+        active: ActiveSession,
+        *,
+        fold: _Fold | None,
+        applied: dict[str, AppliedToolReturn],
+        model_name: str,
+    ) -> None:
+        """Persist the tree and the event annotations of one compaction.
 
-        logger.info(f"Compaction session={session_id} mode={mode} {report.message}")
-        return report
+        Events are loaded only now, after every summary call, and written back without an await in
+        between: events appended while the summaries ran (inside a run, e.g. escalations) survive.
+        """
+        session_id = active.state.session_id
+        events = list(self._session_mgr.load_events(session_id))
+        tree = self._session_mgr.load_compaction(session_id)
+        _annotate_tool_result_events(events, applied)
+        if fold is not None:
+            # A fold rolls the previous summary up, so its node covers the originals behind both.
+            earlier_tokens = tree.nodes[-1].orig_tokens if fold.plan.lead_folds and tree.nodes else 0
+            node = CompactionNode(
+                id=uuid.uuid4().hex[:12],
+                summary=fold.summary,
+                orig_tokens=earlier_tokens + fold.plan.orig_tokens,
+                summary_tokens=count_text_tokens(fold.summary, model_name=model_name),
+                created_at=datetime.now(UTC),
+            )
+            tree.nodes.append(node)
+            _annotate_folded_events(events, fold.plan.foldable, node.id)
+        # The rewritten history breaks the conversation cache anyway, so the next turn
+        # refreshes the frozen memory block at no extra cost.
+        active.state.memory = None
+        self._session_mgr.save_state(active.state)
+        self._session_mgr.save_compaction(session_id, tree)
+        self._session_mgr.save_events(session_id, events)
+        self._session_mgr.save_usage(session_id, active.usage_tracker)
 
     async def run_uncompaction(self, active: ActiveSession) -> dict[str, Any]:
         """Debug aid: rebuild the uncompacted model history from events and drop all compaction state.
@@ -174,63 +278,27 @@ class SessionCompactionMixin:
         logger.info(f"Uncompaction session={session_id} {message}")
         return {"restored": True, "before_tokens": before, "after_tokens": after, "message": message}
 
-    async def _do_fold(
-        self,
-        active: ActiveSession,
-        history: list[Any],
-        tree: SessionCompaction,
-        events: list[dict[str, Any]],
-        *,
-        keep: int,
-        model_name: str,
-        report: CompactionReport,
-    ) -> list[Any]:
-        plan = plan_fold(history, keep_turns=keep, model_name=model_name)
-        if plan is None or plan.is_empty:
-            return history
-        summary = await self._summarize(active, partial(summarize_fold, fold_render_text(plan.foldable)))
-        folded_turns = len(completed_model_turn_end_indexes(plan.foldable))
-        node = CompactionNode(
-            id=uuid.uuid4().hex[:12],
-            summary=summary,
-            orig_tokens=plan.orig_tokens,
-            summary_tokens=count_text_tokens(summary, model_name=model_name),
-            source_turn_start=plan.source_turn_start,
-            source_turn_end=plan.source_turn_end,
-            created_at=datetime.now(UTC),
-        )
-        tree.nodes.append(node)
-        report.turns_folded = folded_turns
-        _annotate_folded_events(events, folded_turns, node.id)
-        return apply_fold(plan, summary)
+    async def _summarize_fold(self, active: ActiveSession, plan: FoldPlan) -> _Fold:
+        text = fold_render_text([*plan.lead_folds, *plan.foldable])
+        return _Fold(plan=plan, summary=await self._summarize(active, partial(summarize_fold, text)))
 
-    async def _do_tool_returns(
-        self,
-        active: ActiveSession,
-        history: list[Any],
-        events: list[dict[str, Any]],
-        *,
-        model_name: str,
-        report: CompactionReport,
-        verbatim_tool_turns: int | None = None,
-    ) -> list[Any]:
-        # The hot-zone size comes from the config unless the caller overrides it (e.g. `/compact tools N`).
-        cfg = self._config.agent.compaction
-        verbatim = cfg.verbatim_tool_turns if verbatim_tool_turns is None else max(0, verbatim_tool_turns)
-        eligible_indexes = tool_return_compaction_region(history, verbatim_turns=verbatim)
+    async def _summarize_tool_returns(
+        self, active: ActiveSession, history: list[ModelMessage], *, verbatim: int, model_name: str
+    ) -> dict[str, AppliedToolReturn]:
+        """Summaries of the large tool outputs outside the newest *verbatim* turns, by tool call id."""
         candidates = find_tool_return_candidates(
-            history, floor_tokens=cfg.tool_output_floor_tokens, model_name=model_name, within_indexes=eligible_indexes
+            history,
+            floor_tokens=self._config.agent.compaction.tool_output_floor_tokens,
+            model_name=model_name,
+            within_indexes=tool_return_compaction_region(history, verbatim_turns=verbatim),
         )
-        if not candidates:
-            return history
-
         summaries = await _gather_cache_warm(
             [
                 partial(self._summarize, active, partial(summarize_tool_output, c.tool_name, _text(c.content)))
                 for c in candidates
             ]
         )
-        applied = {
+        return {
             c.tool_call_id: AppliedToolReturn(
                 new_content=summary,
                 orig_tokens=c.tokens,
@@ -238,9 +306,6 @@ class SessionCompactionMixin:
             )
             for c, summary in zip(candidates, summaries, strict=True)
         }
-        report.tool_returns_compacted = len(applied)
-        _annotate_tool_result_events(events, applied)
-        return apply_tool_return_compaction(history, applied)
 
     async def _summarize(self, active: ActiveSession, call: Any) -> str:
         """Agent compaction summary, led by the agent's shared prompt prefix. Raises ``CompactionError``."""
@@ -278,29 +343,29 @@ class SessionCompactionMixin:
     ) -> list[ModelMessage] | None:
         """The compacted shadow conversation, or None while it stays below the threshold.
 
-        Same ladder and settings as the agent's `/compact`, with one sentinel evaluation as one turn.
-        Summaries lead with the sentinel's *system_prompt* (incl. SECURITY.md) so they keep what
-        matters for later verdicts. Every failure raises: the sentinel never evaluates uncompacted.
+        Triggered like the agent's automatic compaction: by the provider-reported input tokens of the
+        last evaluation, against the sentinel model's compaction threshold. Then the full ladder with the
+        agent's settings, one sentinel evaluation as one turn. Summaries lead with the sentinel's
+        *system_prompt* (incl. SECURITY.md) so they keep what matters for later verdicts. Every failure
+        raises: the sentinel never evaluates uncompacted.
         """
         active = self._active[session_id]
         cfg = self._config.agent.compaction
         model_name = self.sentinel_model_id(active)
-        before = count_message_tokens(messages, model_name=model_name)
         threshold = self.compaction_threshold_for_model_id(model_name)
-        if before < threshold:
+        if last_request_input_tokens(messages) <= threshold:
             return None
+        before = count_message_tokens(messages, model_name=model_name)
 
         compacted, thinking_dropped = apply_thinking_drop(split_merged_requests(messages))
         plan = plan_fold(compacted, keep_turns=cfg.keep_turns, model_name=model_name)
         if plan is not None:
-            # Unlike agent folds, the earlier summary is folded again together with the newly folded
-            # evaluations: one summary plus keep_turns evaluations is what bounds the conversation.
             summary = await self._run_summary_call(
                 active,
                 partial(summarize_sentinel_fold, sentinel_fold_render_text([*plan.lead_folds, *plan.foldable])),
                 prompt_prefix=system_prompt,
             )
-            compacted = [make_fold_message(summary), *plan.kept]
+            compacted = apply_fold(plan, summary)
 
         candidates = find_tool_return_candidates(
             compacted,
@@ -366,31 +431,37 @@ def _text(content: Any) -> str:
     return "" if content is None else str(content)
 
 
-def fold_survival_for_events(events: list[dict[str, Any]]) -> tuple[list[str], int]:
-    """Return ``(ordered surviving fold-node ids, count of folded event-turns)`` for *events*.
+def _tokens(messages: list[ModelMessage], model_name: str) -> int:
+    """Local token estimate without thinking: providers strip old thinking themselves, so counting it
+    would overstate both the history and what dropping it saves."""
+    return count_message_tokens(strip_thinking(messages), model_name=model_name)
 
-    Drives fold-aware reset/fork slicing: the ids appear oldest-first (matching the order of the
-    leading fold messages in the model history), and the count is how many completed event-turns
-    are represented by a fold rather than a verbatim turn.
-    """
+
+@dataclass(frozen=True, slots=True)
+class FoldSurvival:
+    """What of the folded history an event prefix keeps (drives fold-aware reset/fork slicing)."""
+
+    # Oldest first, so the last one is the newest surviving summary.
+    fold_ids: list[str]
+    # Completed event-turns a fold represents rather than verbatim history.
+    folded_turns: int
+    # The last folded turn is one a step fold cut in two: its tail is still verbatim history.
+    split_turn: bool
+
+
+def fold_survival_for_events(events: list[dict[str, Any]]) -> FoldSurvival:
     fold_ids: list[str] = []
     folded_turns = 0
+    split_turn = False
     for turn in completed_event_turns(events):
-        span = events[turn.start_event_index : turn.end_event_index + 1]
-        node_id = next(
-            (
-                e["compaction"]["folded_into"]
-                for e in span
-                if isinstance(e.get("compaction"), dict) and "folded_into" in e["compaction"]
-            ),
-            None,
-        )
-        if node_id is None:
+        span = [e for e in events[turn.start_event_index : turn.end_event_index + 1] if _annotatable(e)]
+        node_ids = [e["compaction"]["folded_into"] for e in span if _is_folded(e)]
+        if not node_ids:
             continue
         folded_turns += 1
-        if node_id not in fold_ids:
-            fold_ids.append(node_id)
-    return fold_ids, folded_turns
+        split_turn = len(node_ids) < len(span)
+        fold_ids += [node_id for node_id in dict.fromkeys(node_ids) if node_id not in fold_ids]
+    return FoldSurvival(fold_ids=fold_ids, folded_turns=folded_turns, split_turn=split_turn)
 
 
 def trim_compaction_tree(tree: SessionCompaction, surviving_fold_ids: list[str]) -> SessionCompaction:
@@ -399,24 +470,60 @@ def trim_compaction_tree(tree: SessionCompaction, surviving_fold_ids: list[str])
     return SessionCompaction(nodes=[n for n in tree.nodes if n.id in keep])
 
 
-def _annotate_folded_events(events: list[dict[str, Any]], count: int, node_id: str) -> None:
-    """Tag the oldest *count* not-yet-folded event-turns with the fold node id (for UI badges)."""
-    if count <= 0:
-        return
-    annotated = 0
-    for turn in completed_event_turns(events):
-        span = events[turn.start_event_index : turn.end_event_index + 1]
-        # Skip only turns already folded — a tool-output annotation must not block folding.
-        if any(isinstance(e.get("compaction"), dict) and "folded_into" in e["compaction"] for e in span):
+def _annotate_folded_events(events: list[dict[str, Any]], foldable: list[ModelMessage], node_id: str) -> None:
+    """Tag the events of the newly folded region with the fold node id (UI rail, rewind/fork survival).
+
+    The not-yet-folded events line up with the verbatim history in order, so everything up to the
+    region's last event belongs to it. Slash commands between turns are not part of any turn.
+    """
+    end = _fold_end_event_index(events, foldable)
+    for e in events[: end + 1]:
+        if _is_folded(e) or not _annotatable(e):
             continue
-        for e in span:
-            ann = e.get("compaction")
-            ann = dict(ann) if isinstance(ann, dict) else {}
-            ann["folded_into"] = node_id
-            e["compaction"] = ann
-        annotated += 1
-        if annotated >= count:
-            break
+        ann = e.get("compaction")
+        e["compaction"] = {**(ann if isinstance(ann, dict) else {}), "folded_into": node_id}
+
+
+def _fold_end_event_index(events: list[dict[str, Any]], foldable: list[ModelMessage]) -> int:
+    """Index of the last event the folded region covers: its last tool result, its last turn prompt, or,
+    when the region ends a turn, that turn's terminal event."""
+    unfolded = [i for i, e in enumerate(events) if not _is_folded(e)]
+    returned = {
+        p.tool_call_id
+        for m in foldable
+        if isinstance(m, ModelRequest)
+        for p in m.parts
+        if isinstance(p, ToolReturnPart)
+    }
+    end = max(
+        (
+            i
+            for i in unfolded
+            if events[i].get("role") == "tool_result"
+            and (events[i].get("model_tool_call_id") or events[i].get("tool_id")) in returned
+        ),
+        default=-1,
+    )
+    prompt_events = [i for i in unfolded if is_turn_prompt_event(events[i])]
+    if prompts := user_prompt_count(foldable):
+        if len(prompt_events) < prompts:
+            raise CompactionError(f"Compaction failed: {prompts} turns folded, but only {len(prompt_events)} in events")
+        end = max(end, prompt_events[prompts - 1])
+    if is_terminal_history_message(foldable[-1]):
+        start = max(end, unfolded[0] if unfolded else len(events))
+        end = next((i for i in range(start, len(events)) if is_turn_terminal_event(events[i])), -1)
+        if end < 0:
+            raise CompactionError("Compaction failed: the folded region ends a turn the events never end")
+    return end
+
+
+def _annotatable(event: dict[str, Any]) -> bool:
+    """Whether a fold covers *event*: slash commands, even those typed during a turn, belong to no turn."""
+    return event.get("role") != "command" and (event.get("role") != "user" or is_turn_prompt_event(event))
+
+
+def _is_folded(event: dict[str, Any]) -> bool:
+    return isinstance(ann := event.get("compaction"), dict) and "folded_into" in ann
 
 
 def _annotate_tool_result_events(events: list[dict[str, Any]], applied: dict[str, AppliedToolReturn]) -> None:

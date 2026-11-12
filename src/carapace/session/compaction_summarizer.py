@@ -28,6 +28,11 @@ For this call you are not talking to the user. You compress the older part of an
 conversation between the user and you ("the assistant") to save context, while keeping enough
 that you can continue seamlessly, as if you still remembered everything.
 
+The conversation may start with an earlier summary of even older history ("Earlier summary:").
+Your summary replaces it, so carry everything it keeps forward into your narrative, condensed where
+the newer material matters more, but never silently dropped. The material may also stop in the
+middle of the assistant's work on a request: then say what it was doing and where it stopped.
+
 Write a chronological narrative — a story of what happened, in past tense — NOT a bullet list and
 NOT just the final outcome. Walk through the conversation in order: what the user asked for, what
 the assistant did (commands run, tools used, files and resources touched, searches performed), what
