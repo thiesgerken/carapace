@@ -1,6 +1,30 @@
 # CHANGELOG
 
 
+## v0.177.1 (2026-11-12)
+
+
+### Other
+
+
+- Merge pull request #469 from thiesgerken/feat/autonomy-bar-threshold
+  ([`788b2a2`](https://github.com/thiesgerken/carapace/commit/788b2a24af81b90d7d6853522f48736d70a52a52))
+
+### 💄 UI/UX
+
+
+- 💄 style(chat): show the autonomy bar only above half of the limit
+  ([`788b2a2`](https://github.com/thiesgerken/carapace/commit/788b2a24af81b90d7d6853522f48736d70a52a52))
+
+- 💄 style(chat): show the autonomy bar only above half of the limit
+  ([`aeae2a2`](https://github.com/thiesgerken/carapace/commit/aeae2a2aba21d6048a96bd511bd18e8c3ee67da6))
+
+  The streak restarts with every user interaction, so a bar for one or two tool calls was noise. The chat input now shows the autonomy gauge only once it is over 50% full; /usage and the budget drawer still show it always.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aUyaxvsB8zAKUBRRhYg
+
 ## v0.177.0 (2026-11-12)
 
 
