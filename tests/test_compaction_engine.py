@@ -25,6 +25,7 @@ from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.usage import RequestUsage
 
 from carapace.config import build_config
+from carapace.models.config import AvailableModelEntry, Config
 from carapace.models.session import SessionState
 from carapace.session.compaction import (
     fold_summary_text,
@@ -1051,6 +1052,17 @@ def test_compaction_during_a_run_fails_when_nothing_is_left_to_compact(tmp_path:
     asyncio.run(_run())
 
 
+def _local_compaction_config(tmp_path: Path) -> Config:
+    """A config whose agent model compacts locally (no provider-side compaction)."""
+    config = build_config(tmp_path)
+    config.agent.available_models = [
+        *config.agent.available_models,
+        AvailableModelEntry(provider="openai-chat", name="local"),
+    ]
+    config.agent.model = "openai-chat:local"
+    return config
+
+
 def test_a_turn_continues_from_and_saves_the_history_compacted_during_it(tmp_path: Path, db_factory) -> None:
     requests: list[list[ModelMessage]] = []
 
@@ -1066,7 +1078,7 @@ def test_a_turn_continues_from_and_saves_the_history_compacted_during_it(tmp_pat
 
     async def _run() -> None:
         with _patch_sentinel():
-            engine = _make_engine(tmp_path, session_factory=db_factory)
+            engine = _make_engine(tmp_path, session_factory=db_factory, config=_local_compaction_config(tmp_path))
         engine._model_factory = lambda _name, *, user: _streaming_model(respond)
         engine.sandbox_mgr.file_read = AsyncMock(return_value="content")
         engine.compact_during_run = fold_after_three_steps  # type: ignore[method-assign]

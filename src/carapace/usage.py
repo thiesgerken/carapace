@@ -5,7 +5,7 @@ import json
 import secrets
 from contextlib import contextmanager
 from contextvars import ContextVar
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any, Literal, Protocol, TypedDict, assert_never
@@ -35,6 +35,7 @@ from pydantic_ai.messages import (
     ToolCallPart,
     ToolReturnPart,
     UserPromptPart,
+    post_compaction_window,
 )
 from pydantic_ai.models import ModelRequestContext
 from pydantic_ai.tools import AgentDepsT, RunContext, ToolDefinition
@@ -144,6 +145,37 @@ def provider_cost_usd_from_messages(messages: list[ModelMessage]) -> Decimal | N
         total += cost
         found = True
     return total if found else None
+
+
+def split_provider_compaction_usage(usage: RunUsage) -> tuple[RunUsage, RunUsage | None]:
+    """*usage* split into the turn's own share and what provider-side compaction spent inside it.
+
+    Anthropic reports compaction iterations separately, and pydantic-ai adds them back into the
+    request totals (keeping them in ``details`` as ``compaction_*``); carapace counts them under the
+    ``compaction`` category like its own summaries. Providers that report nothing stay whole.
+    """
+    details = usage.details
+    if not details.get("compaction_iterations"):
+        return usage, None
+    cache_write = details.get("compaction_cache_creation_input_tokens", 0)
+    cache_read = details.get("compaction_cache_read_input_tokens", 0)
+    one_hour = details.get("compaction_ephemeral_1h_input_tokens")
+    compaction = RunUsage(
+        input_tokens=details.get("compaction_input_tokens", 0) + cache_write + cache_read,
+        cache_write_tokens=cache_write,
+        cache_read_tokens=cache_read,
+        output_tokens=details.get("compaction_output_tokens", 0),
+        details={"ephemeral_1h_input_tokens": one_hour} if one_hour else {},
+    )
+    own = replace(
+        usage,
+        input_tokens=usage.input_tokens - compaction.input_tokens,
+        cache_write_tokens=usage.cache_write_tokens - cache_write,
+        cache_read_tokens=usage.cache_read_tokens - cache_read,
+        output_tokens=usage.output_tokens - compaction.output_tokens,
+        details={k: v for k, v in details.items() if not k.startswith("compaction_")},
+    )
+    return own, compaction
 
 
 @dataclass
@@ -875,7 +907,8 @@ def _request_llm_context(
         status="running",
         started_at=state.started_at,
         instructions=list(params.instruction_parts or []),
-        messages=list(request_context.messages),
+        # What the provider receives: the history before its latest compaction stays behind.
+        messages=post_compaction_window(request_context.messages),
         tool_definitions=[*params.function_tools, *params.output_tools],
     )
 
@@ -953,8 +986,9 @@ class LlmRequestLogCapability(AbstractCapability[AgentDepsT]):
         usage = response.usage
         details = {k: v for k, v in (usage.details or {}).items() if isinstance(v, int)}
         api_model_name = response.model_name or request_context.model.model_name
+        # The provider receives nothing before its latest compaction, though the history keeps it.
         shape = input_shape_ratios_from_messages(
-            request_context.messages,
+            post_compaction_window(request_context.messages),
             model_name=api_model_name,
         )
         completed_at = datetime.now(tz=UTC)

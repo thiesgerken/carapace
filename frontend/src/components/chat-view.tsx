@@ -930,6 +930,11 @@ export function projectHistoryToMessages(history: HistoryMessage[]): ChatMessage
       continue;
     }
 
+    if (entry.role === "compaction") {
+      messages.push({ kind: "provider_compaction", provider: entry.provider, summary: entry.summary });
+      continue;
+    }
+
     if (entry.role === "command") {
       messages.push({
         kind: "command",

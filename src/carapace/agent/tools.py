@@ -16,6 +16,7 @@ import httpx
 from loguru import logger
 from pydantic import Field
 from pydantic_ai import Agent, DeferredToolRequests, ModelRetry, RunContext, Tool, ToolDenied, ToolOutput
+from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.mcp import CallToolFunc, MCPToolset
 from pydantic_ai.messages import BinaryContent, ToolReturn
 from pydantic_ai.toolsets import CombinedToolset, FunctionToolset
@@ -46,7 +47,7 @@ from ..skills import SkillDocumentError, SkillRegistry
 from ..usage import LlmRequestLogCapability
 from .autonomy import AUTONOMY_LIMIT_METADATA_KEY, AutonomyLimitCapability
 from .deps import Deps, TaskDone, TaskFailed
-from .history_compaction import HistoryCompactionCapability
+from .history_compaction import HistoryCompactionCapability, ProviderCompactionMarkerCapability
 
 SEND_FILE_MAX_BYTES = 50 * 1024 * 1024
 
@@ -1068,6 +1069,14 @@ def build_session_info(deps: Deps) -> str:
     return f"# Session Info\nToday's date: {today:%A}, {today:%Y-%m-%d}\nSession ID: {deps.session_state.session_id}"
 
 
+def _compaction_capabilities(deps: Deps) -> list[AbstractCapability[Deps]]:
+    """Server-side compaction where the model's provider offers it, otherwise carapace's own in the run."""
+    if deps.provider_compaction is not None:
+        marker = [ProviderCompactionMarkerCapability(deps.append_session_events)] if deps.append_session_events else []
+        return [deps.provider_compaction.capability, *marker]
+    return [HistoryCompactionCapability(deps.compact_history)] if deps.compact_history else []
+
+
 def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | DeferredToolRequests]:
     system_prompt = build_system_prompt(deps)
     supports_vision = model_supports_vision(deps.config, deps.agent_model_id)
@@ -1090,7 +1099,7 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
         # date and session ID don't split the cached prefix.
         instructions=[system_prompt, lambda: build_session_info(deps)],
         capabilities=[
-            *([HistoryCompactionCapability(deps.compact_history)] if deps.compact_history else []),
+            *_compaction_capabilities(deps),
             LlmRequestLogCapability(source="agent", model_id=deps.agent_model_id),
             AutonomyLimitCapability(
                 streak=deps.autonomy,

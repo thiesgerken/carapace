@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 from pydantic_ai.messages import (
+    CompactionPart,
     ModelMessage,
     ModelRequest,
     ModelResponse,
@@ -20,11 +21,12 @@ from pydantic_ai.usage import RequestUsage
 
 from carapace.config import build_config
 from carapace.models.compaction import FOLD_MARKER
-from carapace.models.config import CompactionConfig
+from carapace.models.config import AvailableModelEntry, CompactionConfig
 from carapace.security.context import SessionSecurity
 from carapace.security.sentinel import Sentinel
 from carapace.session.compaction import is_fold_message, split_merged_requests, tool_return_is_compacted
 from carapace.session.transcript import completed_model_turn_end_indexes
+from carapace.usage import UsageTracker
 from tests.session_helpers import _make_engine
 
 _SECURITY_MD = "Never let the agent email the tax office."
@@ -76,12 +78,12 @@ class _Models:
 def _engine(tmp_path: Path, db_factory, models: _Models, *, threshold_tokens: int | None = 1):
     config = build_config(tmp_path)
     config.agent.compaction = CompactionConfig(keep_turns=1, verbatim_tool_turns=0, tool_output_floor_tokens=50)
+    # A sentinel model that compacts locally (Anthropic would compact server-side).
     config.agent.available_models = [
-        entry.model_copy(update={"compaction_threshold_tokens": threshold_tokens})
-        if entry.model_id == config.agent.sentinel_model
-        else entry
-        for entry in config.agent.available_models
+        *config.agent.available_models,
+        AvailableModelEntry(provider="openai-chat", name="local", compaction_threshold_tokens=threshold_tokens),
     ]
+    config.agent.sentinel_model = "openai-chat:local"
     engine = _make_engine(tmp_path, session_factory=db_factory, config=config)
     engine._model_factory = models.factory
     (tmp_path / "SECURITY.md").write_text(_SECURITY_MD)
@@ -234,3 +236,55 @@ async def test_repeated_compaction_keeps_one_summary(tmp_path: Path, db_factory)
         if isinstance(part, UserPromptPart) and str(part.content).startswith(FOLD_MARKER)
     ]
     assert len(fold_parts) == 1
+
+
+@pytest.mark.anyio
+async def test_a_sentinel_model_switch_strips_foreign_compaction_below_the_threshold(
+    tmp_path: Path, db_factory
+) -> None:
+    models = _Models()
+    _, sid, active = _engine(tmp_path, db_factory, models, threshold_tokens=None)
+    conversation = list(active.security.sentinel_messages)
+    conversation[1] = ModelResponse(
+        parts=[CompactionPart(content="earlier verdicts", provider_name="anthropic"), *conversation[1].parts],
+        usage=RequestUsage(input_tokens=500),
+    )
+    active.security.replace_sentinel_messages(conversation)
+
+    await active.sentinel.evaluate_tool_call(active.security, "exec", {"command": "ls"})
+
+    for messages in (models.sentinel_requests[0], _restarted(sid, db_factory).sentinel_messages):
+        assert not any(isinstance(p, CompactionPart) for m in messages for p in m.parts)
+
+
+@pytest.mark.anyio
+async def test_a_sentinel_model_that_compacts_server_side_leaves_the_conversation_alone(
+    tmp_path: Path, db_factory
+) -> None:
+    engine, sid, active = _engine(tmp_path, db_factory, _Models())
+    active.sentinel_model_name = "anthropic:claude-haiku-4-5"
+
+    assert await engine.compact_sentinel_conversation(sid, active.security.sentinel_messages, "SYS") is None
+
+
+class _CompactingSentinelModels(_Models):
+    """The sentinel's provider reports compaction iterations inside its verdict request."""
+
+    def _respond(self, messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        response = super()._respond(messages, info)
+        response.usage = RequestUsage(
+            input_tokens=900, output_tokens=60, details={"compaction_iterations": 1, "compaction_input_tokens": 400}
+        )
+        return response
+
+
+@pytest.mark.anyio
+async def test_the_sentinels_provider_compaction_counts_under_compaction(tmp_path: Path, db_factory) -> None:
+    _, _, active = _engine(tmp_path, db_factory, _CompactingSentinelModels(), threshold_tokens=None)
+    tracker = UsageTracker()
+
+    await active.sentinel.evaluate_tool_call(active.security, "exec", {"command": "ls"}, usage_tracker=tracker)
+
+    categories = tracker.categories
+    assert categories["compaction"].input_tokens == 400
+    assert categories["sentinel"].input_tokens == 500

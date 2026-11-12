@@ -26,7 +26,7 @@ from pydantic_ai.messages import (
     ThinkingPartDelta,
     ToolCallPart,
 )
-from pydantic_ai.usage import UsageLimits
+from pydantic_ai.usage import RunUsage, UsageLimits
 
 from ..security.context import (
     AgentResponseEntry,
@@ -35,7 +35,7 @@ from ..security.context import (
     SentinelVerdict,
     UserMessageEntry,
 )
-from ..usage import ProviderCostCapability
+from ..usage import ProviderCostCapability, split_provider_compaction_usage
 from ..ws_models import ApprovalRequest, FinalStatus
 from .autonomy import AUTONOMY_LIMIT_METADATA_KEY, resolve_user_approvals
 from .deps import Deps, TaskDone, TaskFailed
@@ -64,7 +64,6 @@ async def run_agent_turn(
     deps.security.append(UserMessageEntry(content=user_input))
 
     agent = create_agent(deps)
-    usage_model_key = deps.agent_model_id
     current_thinking_parts: list[str] = []
     # Text the model emits before a tool call is intermediate narration; we flush it as its own
     # assistant segment so it persists at its real position (between tool groups), not lumped into
@@ -126,7 +125,7 @@ async def run_agent_turn(
         capabilities=[provider_cost],
     )
     last_thinking = "".join(current_thinking_parts)
-    deps.usage_tracker.record(usage_model_key, "agent", result.usage, cost_usd=provider_cost.total_usd)
+    _record_usage(deps, result.usage, provider_cost)
     messages = result.all_messages()
     if on_messages_snapshot is not None:
         on_messages_snapshot(list(messages))
@@ -209,7 +208,7 @@ async def run_agent_turn(
             capabilities=[provider_cost],
         )
         last_thinking = "".join(current_thinking_parts)
-        deps.usage_tracker.record(usage_model_key, "agent", result.usage, cost_usd=provider_cost.total_usd)
+        _record_usage(deps, result.usage, provider_cost)
         messages = result.all_messages()
         if on_messages_snapshot is not None:
             on_messages_snapshot(list(messages))
@@ -232,3 +231,10 @@ async def run_agent_turn(
 
     output = f"Unexpected agent output type: {type(result.output).__name__}"
     return messages, output, last_thinking, None
+
+
+def _record_usage(deps: Deps, usage: RunUsage, provider_cost: ProviderCostCapability) -> None:
+    own, compaction = split_provider_compaction_usage(usage)
+    deps.usage_tracker.record(deps.agent_model_id, "agent", own, cost_usd=provider_cost.total_usd)
+    if compaction is not None:
+        deps.usage_tracker.record(deps.agent_model_id, "compaction", compaction)

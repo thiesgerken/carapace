@@ -10,18 +10,20 @@ from typing import Any
 
 from loguru import logger
 from pydantic_ai import Agent, ModelMessage, ModelRetry, RunContext, ToolOutput
+from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.models import infer_model
 from pydantic_ai.settings import ModelSettings
 from pydantic_ai.usage import UsageLimits
 
 from ..git.diff import touched_paths
-from ..llm import ModelFactory, SlotLimitedModel, with_prompt_cache
+from ..llm import ModelFactory, ProviderCompaction, SlotLimitedModel, with_prompt_cache
 from ..usage import (
     LlmRequestLogCapability,
     LlmSource,
     UsageTracker,
     fail_llm_context,
     provider_cost_usd_from_messages,
+    split_provider_compaction_usage,
 )
 from .context import (
     SENTINEL_VERDICT_TOOL,
@@ -250,6 +252,7 @@ class Sentinel:
         model_factory: ModelFactory | None = None,
         model_settings_resolver: Callable[[str], ModelSettings | None] | None = None,
         compactor: SentinelCompactor | None = None,
+        provider_compaction: Callable[[str], ProviderCompaction | None] | None = None,
     ) -> None:
         self._model = model
         # The session owner, whom the sentinel's model requests are made for.
@@ -265,6 +268,8 @@ class Sentinel:
         self._model_settings_resolver = model_settings_resolver
         # None only where the sentinel never evaluates a growing conversation (prompt previews, tests).
         self._compactor = compactor
+        # Server-side compaction for a sentinel model, looked up again whenever the model changes.
+        self._provider_compaction = provider_compaction
         self._agent = self._create_agent()
         self._skill_file_cache: dict[tuple[str, str], tuple[int, int, str]] = {}
         self._eval_skill_reads: int = 0
@@ -520,12 +525,12 @@ class Sentinel:
         session.record_sentinel_evaluation(result.all_messages(), synced_entries=synced_entries)
 
         if usage_tracker:
+            own, compaction = split_provider_compaction_usage(result.usage)
             usage_tracker.record(
-                self._model,
-                "sentinel",
-                result.usage,
-                cost_usd=provider_cost_usd_from_messages(result.new_messages()),
+                self._model, "sentinel", own, cost_usd=provider_cost_usd_from_messages(result.new_messages())
             )
+            if compaction is not None:
+                usage_tracker.record(self._model, "compaction", compaction)
 
         usage = result.usage
         output = self._normalize_verdict(result.output)
@@ -593,6 +598,10 @@ class Sentinel:
             )
             return result
 
+    def _compaction_capabilities(self) -> list[AbstractCapability[SentinelDeps]]:
+        provider = self._provider_compaction(self._model) if self._provider_compaction is not None else None
+        return [provider.capability] if provider is not None else []
+
     @staticmethod
     def _reject_unreadable_revise(ctx: RunContext[SentinelDeps], output: _SentinelOutput) -> _SentinelOutput:
         if output.decision == "revise" and not ctx.deps.can_revise:
@@ -628,7 +637,10 @@ class Sentinel:
             deps_type=SentinelDeps,
             output_type=ToolOutput(output_model, name=SENTINEL_VERDICT_TOOL),
             instructions=self._load_system_prompt,
-            capabilities=[LlmRequestLogCapability(source="sentinel", model_id=self._model)],
+            capabilities=[
+                *self._compaction_capabilities(),
+                LlmRequestLogCapability(source="sentinel", model_id=self._model),
+            ],
             # The shadow conversation only grows, so every evaluation reads the previous one from the cache.
             model_settings=with_prompt_cache(model_settings, conversation=True),
             retries={"tools": 1, "output": 2},

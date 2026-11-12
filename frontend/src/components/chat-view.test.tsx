@@ -96,3 +96,16 @@ test("turn-ending errors carry turn actions, other errors do not", () => {
   assert.equal(isTurnActionMessage({ kind: "error", detail: "budget", eventIndex: 1, turnTerminal: true }), true);
   assert.equal(isTurnActionMessage({ kind: "error", detail: "Agent is busy" }), false);
 });
+
+test("a provider compaction event renders as a marker with the provider's summary", () => {
+  const messages = projectHistoryToMessages([
+    { role: "user", content: "go", event_index: 0 },
+    { role: "compaction", content: "", provider: "anthropic", summary: "the user asked to go", event_index: 1 },
+    { role: "compaction", content: "", provider: "openai", event_index: 2 },
+  ]);
+
+  assert.deepEqual(messages.slice(1), [
+    { kind: "provider_compaction", provider: "anthropic", summary: "the user asked to go" },
+    { kind: "provider_compaction", provider: "openai", summary: undefined },
+  ]);
+});

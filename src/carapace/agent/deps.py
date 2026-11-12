@@ -10,6 +10,7 @@ from pydantic_ai.models import Model
 from pydantic_ai.usage import UsageLimits
 
 from ..git.store import GitStore
+from ..llm import ProviderCompaction
 from ..models.config import Config
 from ..models.credentials import CredentialRegistryProtocol
 from ..models.session import SessionState
@@ -67,4 +68,6 @@ class Deps(BaseModel):
     llm_usage_limits: Callable[[], UsageLimits | None] | None = None
     # Compacts the run's history before a model request, or returns None to keep it.
     compact_history: Callable[[list[ModelMessage]], Awaitable[list[ModelMessage] | None]] | None = None
+    # Set when the agent model compacts server-side; local compaction inside the run is then off.
+    provider_compaction: ProviderCompaction | None = None
     credential_registry: CredentialRegistryProtocol

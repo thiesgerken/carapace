@@ -15,7 +15,7 @@ from pydantic_ai.models import Model, infer_model
 from pydantic_ai.settings import ModelSettings
 from pydantic_ai.usage import UsageLimits
 
-from ..llm import ModelFactory
+from ..llm import ModelFactory, resolve_available_model_entry
 from ..memory.llm import ensure_fits_context, prompt_tokens
 from ..models.config import Config
 from ..prompt_prefix import join_prompt_sections
@@ -203,10 +203,32 @@ def _with_focus(tail: str, focus: str | None) -> str:
     return f"{tail}\n\nThe user asked this compaction to focus on: {focus}" if focus else tail
 
 
+def _fold_prompt(text: str, focus: str | None) -> str:
+    return f"<conversation>\n{text}\n</conversation>\n\n{_with_focus(_FOLD_TAIL, focus)}"
+
+
+def _sentinel_fold_prompt(text: str) -> str:
+    return f"<evaluations>\n{text}\n</evaluations>\n\n{_SENTINEL_FOLD_TAIL}"
+
+
+def fold_text_budget(
+    *, sentinel: bool, prompt_prefix: str, model: str, config: Config, focus: str | None = None
+) -> int | None:
+    """Tokens the rendered history may take in one fold request, or None when the model's window is unknown."""
+    max_input_tokens = resolve_available_model_entry(config, model).max_input_tokens
+    if max_input_tokens is None:
+        return None
+    system, empty_prompt = (
+        (SENTINEL_FOLD_INSTRUCTIONS, _sentinel_fold_prompt(""))
+        if sentinel
+        else (FOLD_INSTRUCTIONS, _fold_prompt("", focus))
+    )
+    return max_input_tokens - prompt_tokens(join_prompt_sections(prompt_prefix, system), empty_prompt, model)
+
+
 async def summarize_fold(text: str, *, focus: str | None = None, **kwargs: Any) -> str:
     """Summarize a folded run of turns."""
-    prompt = f"<conversation>\n{text}\n</conversation>\n\n{_with_focus(_FOLD_TAIL, focus)}"
-    return await _run_summary(FOLD_INSTRUCTIONS, prompt, compaction_target="agent", **kwargs)
+    return await _run_summary(FOLD_INSTRUCTIONS, _fold_prompt(text, focus), compaction_target="agent", **kwargs)
 
 
 async def summarize_tool_output(tool_name: str, text: str, *, focus: str | None = None, **kwargs: Any) -> str:
@@ -216,8 +238,9 @@ async def summarize_tool_output(tool_name: str, text: str, *, focus: str | None 
 
 async def summarize_sentinel_fold(text: str, **kwargs: Any) -> str:
     """Summarize folded sentinel evaluations."""
-    prompt = f"<evaluations>\n{text}\n</evaluations>\n\n{_SENTINEL_FOLD_TAIL}"
-    return await _run_summary(SENTINEL_FOLD_INSTRUCTIONS, prompt, compaction_target="sentinel", **kwargs)
+    return await _run_summary(
+        SENTINEL_FOLD_INSTRUCTIONS, _sentinel_fold_prompt(text), compaction_target="sentinel", **kwargs
+    )
 
 
 async def summarize_sentinel_tool_output(tool_name: str, text: str, **kwargs: Any) -> str:
