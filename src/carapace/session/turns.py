@@ -148,6 +148,10 @@ class SessionTurnHost(Protocol):
         self, active: ActiveSession, messages: list[ModelMessage]
     ) -> list[ModelMessage] | None: ...
 
+    async def history_for_agent_model(
+        self, active: ActiveSession, history: list[ModelMessage]
+    ) -> list[ModelMessage]: ...
+
     def _record_tool_call_event(
         self,
         session_id: str,
@@ -474,7 +478,7 @@ class SessionTurnMixin(SessionTurnHost):
             except Exception as exc:
                 logger.warning(f"Subscriber on_user_message failed: {exc}")
 
-        message_history = self._session_mgr.load_history(session_id)
+        message_history = await self.history_for_agent_model(active, self._session_mgr.load_history(session_id))
         logger.info(
             f"Turn start session={session_id} model={active.agent_model_name or self._config.agent.model} "
             + f"history_messages={len(message_history)} prompt={_truncate_for_log(user_input)}"

@@ -25,6 +25,7 @@ from dataclasses import dataclass, replace
 from typing import Any
 
 from pydantic_ai.messages import (
+    CompactionPart,
     ModelMessage,
     ModelRequest,
     ModelResponse,
@@ -402,6 +403,33 @@ def sentinel_fold_render_text(messages: list[ModelMessage]) -> str:
                 case _:
                     pass
     return "\n".join(lines)
+
+
+def strip_compaction_parts(messages: list[ModelMessage], *, keep_provider: str | None = None) -> list[ModelMessage]:
+    """*messages* without provider-side ``CompactionPart``s, except those *keep_provider* wrote.
+
+    Lossless: a provider compaction only shortens what is sent, the history keeps every original
+    message before it. A response that held nothing but the compaction part disappears.
+    """
+    out: list[ModelMessage] = []
+    for m in messages:
+        if not isinstance(m, ModelResponse):
+            out.append(m)
+            continue
+        parts = [p for p in m.parts if not isinstance(p, CompactionPart) or p.provider_name == keep_provider]
+        if parts:
+            out.append(m if len(parts) == len(m.parts) else replace(m, parts=parts))
+    return out
+
+
+def has_foreign_compaction(messages: list[ModelMessage], *, keep_provider: str | None) -> bool:
+    """Whether *messages* hold a ``CompactionPart`` that *keep_provider* would not read back."""
+    return any(
+        isinstance(p, CompactionPart) and p.provider_name != keep_provider
+        for m in messages
+        if isinstance(m, ModelResponse)
+        for p in m.parts
+    )
 
 
 def strip_thinking(messages: list[ModelMessage]) -> list[ModelMessage]:

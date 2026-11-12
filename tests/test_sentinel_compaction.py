@@ -20,7 +20,7 @@ from pydantic_ai.usage import RequestUsage
 
 from carapace.config import build_config
 from carapace.models.compaction import FOLD_MARKER
-from carapace.models.config import CompactionConfig
+from carapace.models.config import AvailableModelEntry, CompactionConfig
 from carapace.security.context import SessionSecurity
 from carapace.security.sentinel import Sentinel
 from carapace.session.compaction import is_fold_message, split_merged_requests, tool_return_is_compacted
@@ -76,12 +76,12 @@ class _Models:
 def _engine(tmp_path: Path, db_factory, models: _Models, *, threshold_tokens: int | None = 1):
     config = build_config(tmp_path)
     config.agent.compaction = CompactionConfig(keep_turns=1, verbatim_tool_turns=0, tool_output_floor_tokens=50)
+    # A sentinel model that compacts locally (Anthropic would compact server-side).
     config.agent.available_models = [
-        entry.model_copy(update={"compaction_threshold_tokens": threshold_tokens})
-        if entry.model_id == config.agent.sentinel_model
-        else entry
-        for entry in config.agent.available_models
+        *config.agent.available_models,
+        AvailableModelEntry(provider="openai-chat", name="local", compaction_threshold_tokens=threshold_tokens),
     ]
+    config.agent.sentinel_model = "openai-chat:local"
     engine = _make_engine(tmp_path, session_factory=db_factory, config=config)
     engine._model_factory = models.factory
     (tmp_path / "SECURITY.md").write_text(_SECURITY_MD)

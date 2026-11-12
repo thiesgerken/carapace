@@ -19,11 +19,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
 from loguru import logger
-from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, ToolReturnPart
+from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, ToolReturnPart, post_compaction_window
 from pydantic_ai.settings import ModelSettings
 from pydantic_ai.usage import UsageLimits
 
-from ..llm import with_prompt_cache
+from ..llm import ProviderCompaction, provider_compaction, with_prompt_cache
 from ..models.compaction import CompactionNode, CompactionReport, SessionCompaction
 from ..models.skills import SkillInfo
 from ..prompt_prefix import shared_prompt_prefix
@@ -36,6 +36,7 @@ from .compaction import (
     apply_tool_return_compaction,
     find_tool_return_candidates,
     fold_render_text,
+    has_foreign_compaction,
     last_request_input_tokens,
     make_fold_message,
     newest_measured_response,
@@ -43,11 +44,14 @@ from .compaction import (
     plan_step_fold,
     sentinel_fold_render_text,
     split_merged_requests,
+    strip_compaction_parts,
     strip_thinking,
     tool_return_compaction_region,
     user_prompt_count,
 )
 from .compaction_summarizer import (
+    FOLD_INSTRUCTIONS,
+    SENTINEL_FOLD_INSTRUCTIONS,
     summarize_fold,
     summarize_sentinel_fold,
     summarize_sentinel_tool_output,
@@ -64,7 +68,7 @@ from .transcript import (
 from .types import ActiveSession
 
 if TYPE_CHECKING:
-    from ..models.config import Config
+    from ..models.config import AvailableModelEntry, Config
 
 CompactionMode = Literal["all", "fold", "tools"]
 
@@ -99,6 +103,7 @@ class SessionCompactionMixin:
         def agent_model_id_for_gauge(self, active: ActiveSession) -> str: ...
         def sentinel_model_id(self, active: ActiveSession) -> str: ...
         def compaction_threshold_for_model_id(self, model_id: str) -> int: ...
+        def _model_entry(self, model_id: str) -> AvailableModelEntry | None: ...
         def llm_request_recording(
             self, active: ActiveSession, *, track_activity: bool = True
         ) -> AbstractContextManager[Any, bool | None]: ...
@@ -133,7 +138,8 @@ class SessionCompactionMixin:
         # every rung anyway, and this way it never pays for summaries the fold would discard.
         if mode in ("all", "fold") and (plan := plan_fold(history, keep_turns=keep, model_name=model_name)):
             fold = await self._summarize_fold(active, plan)
-            history = apply_fold(plan, fold.summary)
+            # The fold now covers what a provider compaction covered; the kept turns are originals.
+            history = strip_compaction_parts(apply_fold(plan, fold.summary))
         if mode in ("all", "tools"):
             applied = await self._summarize_tool_returns(active, history, verbatim=verbatim, model_name=model_name)
             history = apply_tool_return_compaction(history, applied)
@@ -180,14 +186,69 @@ class SessionCompactionMixin:
         # The provider counts what the local estimate cannot see: system prompt, tool definitions, its own
         # tokenizer. Carry that overhead into every target check, so a small window or a heavy prompt
         # cannot hide a history that is still too large.
-        overhead = measured.usage.input_tokens - count_message_tokens(
-            messages[: messages.index(measured)], model_name=model_name
+        overhead = measured.usage.input_tokens - _sent_tokens(messages[: messages.index(measured)], model_name)
+        history, report, fold, applied = await self._auto_ladder(
+            active, split_merged_requests(messages), model_name=model_name, threshold=threshold, overhead=overhead
         )
+        if report.nothing_compacted:
+            raise CompactionError(
+                f"Compaction failed: the last request used {measured.usage.input_tokens:,} input tokens "
+                f"(threshold {threshold:,}) and nothing is left to compact"
+            )
+        self._persist_compaction(active, fold=fold, applied=applied, model_name=model_name)
+        active.state.compacted_through = measured.timestamp
+        self._session_mgr.save_state(active.state)
+        await self._broadcast(active, "on_compaction", report)
+        logger.info(f"Compaction session={session_id} mode=auto threshold={threshold} {report.message}")
+        return history
 
-        def above_target(history: list[ModelMessage]) -> bool:
-            return count_message_tokens(history, model_name=model_name) + overhead > threshold // 2
+    async def history_for_agent_model(self, active: ActiveSession, history: list[ModelMessage]) -> list[ModelMessage]:
+        """*history* ready for the session's agent model, before a turn starts.
 
-        history = split_merged_requests(messages)
+        A provider reads back only its own ``CompactionPart``s, and only when it compacts server-side.
+        Any other part is stripped (lossless, the originals are still there) and the local ladder runs
+        once, regardless of the trigger: the newest measurement came from the compacted context, so it
+        would understate what the new model is about to receive. The result is persisted right away, so
+        a turn that fails early still matches the tree and the event annotations.
+        """
+        model_name = self.agent_model_id_for_gauge(active)
+        provider = self.agent_provider_compaction(active)
+        keep_provider = provider.provider_name if provider is not None else None
+        if not has_foreign_compaction(history, keep_provider=keep_provider):
+            return history
+        session_id = active.state.session_id
+        history, report, fold, applied = await self._auto_ladder(
+            active,
+            strip_compaction_parts(history, keep_provider=keep_provider),
+            model_name=model_name,
+            threshold=self.compaction_threshold_for_model_id(model_name),
+            overhead=0,
+        )
+        self._persist_compaction(active, fold=fold, applied=applied, model_name=model_name)
+        self._session_mgr.save_history(session_id, history)
+        if measured := newest_measured_response(history):
+            active.state.compacted_through = measured.timestamp
+            self._session_mgr.save_state(active.state)
+        logger.info(f"Compaction session={session_id} mode=provider-switch {report.message}")
+        return history
+
+    def agent_provider_compaction(self, active: ActiveSession) -> ProviderCompaction | None:
+        """Server-side compaction for the agent model; a model without a catalog row compacts locally."""
+        entry = self._model_entry(self.agent_model_id_for_gauge(active))
+        return provider_compaction(entry, instructions=FOLD_INSTRUCTIONS) if entry is not None else None
+
+    def sentinel_provider_compaction(self, model_id: str) -> ProviderCompaction | None:
+        entry = self._model_entry(model_id)
+        return provider_compaction(entry, instructions=SENTINEL_FOLD_INSTRUCTIONS) if entry is not None else None
+
+    async def _auto_ladder(
+        self, active: ActiveSession, history: list[ModelMessage], *, model_name: str, threshold: int, overhead: int
+    ) -> tuple[list[ModelMessage], CompactionReport, _Fold | None, dict[str, AppliedToolReturn]]:
+        """The automatic ladder down to the target (half the *threshold*), measuring what is sent plus *overhead*."""
+
+        def above_target(messages: list[ModelMessage]) -> bool:
+            return _sent_tokens(messages, model_name) + overhead > threshold // 2
+
         before = _tokens(history, model_name)
         report = CompactionReport(mode="auto", before_tokens=before, after_tokens=before)
         fold: _Fold | None = None
@@ -203,20 +264,9 @@ class SessionCompactionMixin:
         ):
             fold = await self._summarize_fold(active, plan)
             history = apply_fold(plan, fold.summary)
-
         report.after_tokens = _tokens(history, model_name)
         self._record_ladder(report, fold, applied)
-        if report.nothing_compacted:
-            raise CompactionError(
-                f"Compaction failed: the last request used {measured.usage.input_tokens:,} input tokens "
-                f"(threshold {threshold:,}) and nothing is left to compact"
-            )
-        self._persist_compaction(active, fold=fold, applied=applied, model_name=model_name)
-        active.state.compacted_through = measured.timestamp
-        self._session_mgr.save_state(active.state)
-        await self._broadcast(active, "on_compaction", report)
-        logger.info(f"Compaction session={session_id} mode=auto threshold={threshold} {report.message}")
-        return history
+        return history, report, fold, applied
 
     def _record_ladder(
         self, report: CompactionReport, fold: _Fold | None, applied: dict[str, AppliedToolReturn]
@@ -373,9 +423,15 @@ class SessionCompactionMixin:
         cfg = self._config.agent.compaction
         model_name = self.sentinel_model_id(active)
         threshold = self.compaction_threshold_for_model_id(model_name)
-        if last_request_input_tokens(messages) <= threshold:
+        provider = self.sentinel_provider_compaction(model_name)
+        keep_provider = provider.provider_name if provider is not None else None
+        # A model that compacts server-side needs the ladder only after a provider switch: the stripped
+        # conversation is the uncompacted one, and the old measurement would understate it.
+        switched = has_foreign_compaction(messages, keep_provider=keep_provider)
+        if not switched and (provider is not None or last_request_input_tokens(messages) <= threshold):
             return None
-        before = count_message_tokens(messages, model_name=model_name)
+        messages = strip_compaction_parts(messages, keep_provider=keep_provider)
+        before = _sent_tokens(messages, model_name)
 
         compacted, thinking_dropped = apply_thinking_drop(split_merged_requests(messages))
         plan = plan_fold(compacted, keep_turns=cfg.keep_turns, model_name=model_name)
@@ -416,10 +472,11 @@ class SessionCompactionMixin:
             },
         )
 
-        after = count_message_tokens(compacted, model_name=model_name)
+        after = _sent_tokens(compacted, model_name)
         logger.info(
             f"Sentinel compaction session={session_id} tokens={before}->{after} threshold={threshold} "
-            + f"folded={plan is not None} tool_returns={len(candidates)} thinking_dropped={thinking_dropped}"
+            + f"switched={switched} folded={plan is not None} tool_returns={len(candidates)} "
+            + f"thinking_dropped={thinking_dropped}"
         )
         return compacted
 
@@ -451,10 +508,15 @@ def _text(content: Any) -> str:
     return "" if content is None else str(content)
 
 
+def _sent_tokens(messages: list[ModelMessage], model_name: str) -> int:
+    """Local token estimate of what is actually sent: nothing before the latest provider compaction."""
+    return count_message_tokens(post_compaction_window(messages), model_name=model_name)
+
+
 def _tokens(messages: list[ModelMessage], model_name: str) -> int:
-    """Local token estimate without thinking: providers strip old thinking themselves, so counting it
-    would overstate both the history and what dropping it saves."""
-    return count_message_tokens(strip_thinking(messages), model_name=model_name)
+    """``_sent_tokens`` without thinking, for reports: providers strip old thinking themselves, so counting
+    it would overstate both the history and what dropping it saves."""
+    return _sent_tokens(strip_thinking(messages), model_name)
 
 
 @dataclass(frozen=True, slots=True)

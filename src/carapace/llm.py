@@ -6,14 +6,17 @@ import asyncio
 import inspect
 from collections.abc import AsyncGenerator, Callable
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from typing import Any, Literal, Protocol, cast
 
 from httpx2 import AsyncClient, HTTPStatusError, Timeout
 from pydantic_ai import RunContext
+from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.exceptions import UserError
 from pydantic_ai.messages import ModelMessage, ModelResponse
 from pydantic_ai.models import Model, ModelRequestParameters, StreamedResponse, infer_model
-from pydantic_ai.models.openai import OpenAIChatModel, OpenAIResponsesModel
+from pydantic_ai.models.anthropic import AnthropicCompaction
+from pydantic_ai.models.openai import OpenAIChatModel, OpenAICompaction, OpenAIResponsesModel
 from pydantic_ai.models.openai_codex import OpenAICodexModel
 from pydantic_ai.models.openrouter import OpenRouterModel
 from pydantic_ai.models.wrapper import WrapperModel
@@ -26,7 +29,7 @@ from pydantic_ai.retries import AsyncHTTPX2TenacityTransport, RetryConfig, wait_
 from pydantic_ai.settings import ModelSettings
 from tenacity import retry_if_exception_type, stop_after_attempt, wait_exponential
 
-from .models.config import CODEX_PROVIDER, Config, agent_available_model_entries
+from .models.config import CODEX_PROVIDER, AvailableModelEntry, Config, agent_available_model_entries
 
 ThinkingSetting = bool | Literal["minimal", "low", "medium", "high", "xhigh"]
 
@@ -200,6 +203,38 @@ def with_prompt_cache(settings: ModelSettings | None, *, conversation: bool) -> 
         "bedrock_cache_messages": conversation,
     }
     return cast(ModelSettings, {**(settings or {}), **cache})
+
+
+# Anthropic rejects a compaction trigger below this many input tokens.
+ANTHROPIC_MIN_COMPACTION_TOKENS = 50_000
+
+
+@dataclass(frozen=True, slots=True)
+class ProviderCompaction:
+    """Server-side compaction for one model: the capability that turns it on and the provider name it
+    stamps on its ``CompactionPart``s (which only that provider reads back)."""
+
+    capability: AbstractCapability[Any]
+    provider_name: str
+
+
+def provider_compaction(entry: AvailableModelEntry, *, instructions: str) -> ProviderCompaction | None:
+    """Server-side compaction for *entry*, at its compaction threshold, or None where carapace compacts locally.
+
+    *instructions* replace the provider's own summarization prompt where it takes one (Anthropic).
+    OpenAI's Responses API takes none. A custom ``base_url`` may be any server that speaks the Responses
+    API, so only OpenAI itself counts. The Codex backend is local until its support is verified.
+    """
+    match entry.provider:
+        case "anthropic":
+            threshold = max(entry.compaction_threshold, ANTHROPIC_MIN_COMPACTION_TOKENS)
+            return ProviderCompaction(
+                AnthropicCompaction(token_threshold=threshold, instructions=instructions), "anthropic"
+            )
+        case "openai-responses" if entry.base_url is None:
+            return ProviderCompaction(OpenAICompaction(token_threshold=entry.compaction_threshold), "openai")
+        case _:
+            return None
 
 
 class ModelFactory(Protocol):

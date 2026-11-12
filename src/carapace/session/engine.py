@@ -281,6 +281,7 @@ class SessionEngine(
             compactor=lambda messages, system_prompt: self.compact_sentinel_conversation(
                 session_id, messages, system_prompt
             ),
+            provider_compaction=self.sentinel_provider_compaction,
         )
         usage_tracker = self._session_mgr.load_usage(session_id)
         llm_log = self._session_mgr.load_llm_request_log(session_id)
@@ -535,6 +536,7 @@ class SessionEngine(
             assert_llm_budget_available=lambda: self._assert_llm_budget_available(active),
             llm_usage_limits=lambda: self._remaining_aux_usage_limits(active),
             compact_history=compact_history,
+            provider_compaction=self.agent_provider_compaction(active),
             sandbox=self._sandbox_mgr,
             activated_skills=[],
             credential_registry=self._session_credential_registry(session_id),
