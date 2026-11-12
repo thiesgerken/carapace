@@ -90,7 +90,7 @@ def assert_push_gated(container: str) -> None:
         text=True,
         check=False,
     )
-    assert push.returncode != 0 and "DENIED by sentinel: Session not found" in push.stderr, push.stderr
+    assert push.returncode != 0 and "Push rejected: Session not found" in push.stderr, push.stderr
     assert run(*execute, "-C", repo, "rev-parse", "HEAD") == before
 
 

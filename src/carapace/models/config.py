@@ -161,12 +161,12 @@ class AvailableModelEntry(ConfigModel):
             raise ValueError(
                 "thinking_budget_tokens is only supported for provider 'openai', 'openai-chat', or 'openai-responses'"
             )
-        if (
-            self.compaction_threshold_tokens is not None
-            and self.max_input_tokens is not None
-            and self.compaction_threshold_tokens >= self.max_input_tokens
-        ):
-            raise ValueError("compaction_threshold_tokens must be below max_input_tokens")
+        window = self.max_input_tokens or DEFAULT_CONTEXT_WINDOW_TOKENS
+        if self.compaction_threshold_tokens is not None and self.compaction_threshold_tokens >= window:
+            raise ValueError(
+                f"compaction_threshold_tokens must be below the context window ({window:,} tokens; "
+                + "set max_input_tokens for a larger one)"
+            )
         if self.api_key is not None and self.provider not in PROVIDERS_WITH_MODEL_API_KEYS:
             raise ValueError(
                 "api_key is only supported for provider 'openai', 'openai-chat', 'openai-responses', or 'openrouter'"

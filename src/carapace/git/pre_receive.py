@@ -87,7 +87,7 @@ def main() -> int:
             connection.close()
 
         if result["verdict"] != "allow":
-            print(f"DENIED by sentinel: {result['reason']}", file=sys.stderr)
+            print(f"Push rejected: {result['reason']}", file=sys.stderr)
             return 1
 
     if not evaluated:

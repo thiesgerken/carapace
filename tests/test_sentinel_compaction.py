@@ -157,7 +157,7 @@ async def test_fold_summary_runs_with_the_sentinel_prompt_and_keeps_decisions(tm
     instructions = _instructions(fold_request)
     assert instructions.startswith("You are the security gate")
     assert _SECURITY_MD in instructions
-    for fact in ("what the user approved and what the user denied", "deny, escalate", "Granted contexts"):
+    for fact in ("what the user approved and what the user denied", "revise, escalate, deny", "Granted contexts"):
         assert fact in instructions
     assert 'Sentinel verdict: {"decision":"deny","explanation":"reason 1"}' in str(fold_request[0].parts[0].content)
 

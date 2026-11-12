@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from pydantic_ai.models.test import TestModel
 
-from carapace.security.context import ApprovalEntry, SentinelVerdict, SessionSecurity
+from carapace.security.context import AgentResponseEntry, ApprovalEntry, SentinelVerdict, SessionSecurity, ToolCallEntry
 from carapace.security.sentinel import Sentinel, _format_entry
 
 
@@ -201,3 +201,17 @@ def test_user_decision_entry_names_the_approved_command() -> None:
     line = _format_entry(ApprovalEntry(tool="exec", args={"command": "git push"}, decision="approved"))
 
     assert line == "[user_decision]: user approved exec(command='git push')"
+
+
+def test_agent_messages_reach_the_sentinel_in_full() -> None:
+    text = "I found two bugs:\n1. the query\n2. the docs\nShall I fix both?"
+
+    assert _format_entry(AgentResponseEntry(text=text)) == f"[agent]: {text!r}"
+
+
+def test_history_shows_tool_call_args_in_full() -> None:
+    command = "git -C /workspace/knowledge commit -am 'fix moneta query' && git push && " + "echo done " * 20
+
+    line = _format_entry(ToolCallEntry(tool="exec", args={"command": command}, decision="allowed"))
+
+    assert line == f"[tool]: exec(command={command!r}) → allowed"

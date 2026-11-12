@@ -366,6 +366,44 @@ def _blocked_post(start: datetime) -> Transcript:
     return t
 
 
+def _change_request(start: datetime) -> Transcript:
+    t = Transcript(start)
+    t.user('The recipes skill says "flour" twice in the pancake ingredients. Please fix that.')
+    fix = t.call(
+        "str_replace",
+        {"path": "/workspace/skills/recipes/SKILL.md", "old_string": "- flour\n- flour", "new_string": "- flour"},
+    )
+    t.result(fix, "str_replace", "Replaced 1 occurrence in /workspace/skills/recipes/SKILL.md")
+    t.call(
+        "exec",
+        {
+            "command": 'git commit -am "Fix duplicate flour" && git push && rm -rf /workspace/skills/web/cache',
+            "title": "commit, push and clean up",
+        },
+        source="sentinel",
+        verdict="revise",
+        explanation="Committing and pushing the requested fix is fine, but deleting the web skill's cache was not "
+        "asked for. Run the commit and push on their own.",
+    )
+    push = t.run(
+        'git commit -am "Fix duplicate flour" && git push',
+        "[main 5be71d2] Fix duplicate flour\n 1 file changed, 1 deletion(-)\n"
+        "[stderr] To http://carapace:8322/git/knowledge\n   3f2a9c1..5be71d2  main -> main",
+        title="commit and push the fix",
+        source="sentinel",
+        explanation="Commits and pushes the fix the user asked for.",
+    )
+    t.call(
+        "git_push",
+        {"ref": "refs/heads/main", "decision": "allow"},
+        source="sentinel",
+        explanation="The push only removes the duplicate line.",
+        parent=push,
+    )
+    t.assistant("Fixed and pushed: the pancake ingredients list **flour** once now.")
+    return t
+
+
 def _pending_approval(start: datetime) -> Transcript:
     t = Transcript(start)
     t.user("Clean up backups older than 90 days on the NAS.")
@@ -681,6 +719,12 @@ def demo_sessions(now: datetime) -> list[DemoSession]:
             _blocked_post(now - timedelta(hours=3)),
             attributes=SessionAttributes(ask_mode=True),
             usage=_usage(2_500, 300),
+        ),
+        DemoSession(
+            "demo-change-request",
+            "🥞 Fixing The Pancake Ingredients",
+            _change_request(now - timedelta(hours=2)),
+            usage=_usage(4_100, 380),
         ),
         DemoSession(
             "demo-pending-approval",
