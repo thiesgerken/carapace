@@ -1,6 +1,42 @@
 # CHANGELOG
 
 
+## v0.181.1 (2026-11-12)
+
+
+### 💄 UI/UX
+
+
+- 💄Merge pull request #484 from thiesgerken/feat/compaction-ui
+  ([`715f663`](https://github.com/thiesgerken/carapace/commit/715f66325712ffab7e2494156abf12a2424a88a8))
+
+- 💄 feat(compaction): /compact [focus], Compact button and dry-run dialog
+  ([`715f663`](https://github.com/thiesgerken/carapace/commit/715f66325712ffab7e2494156abf12a2424a88a8))
+
+### ♻️ Refactoring
+
+
+- ♻️ refactor(compaction): one staleness rule for provider measurements
+  ([`16e9cd9`](https://github.com/thiesgerken/carapace/commit/16e9cd93b4de8aa30757f478daf2550ebc72d299))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix(compaction): provider-reported context in the dry run, review fixes
+  ([`06719b4`](https://github.com/thiesgerken/carapace/commit/06719b479fc5d2546a7ab891fb88963b4765faa8))
+
+  The dialog's context is now the last agent request's provider-reported input, the number the threshold is compared against; unmeasured or predating the last compaction, it says so. The preview test runs the compaction and compares. Stale mode docstrings and the TS CompactionReport mode are updated.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+### Other
+
+
+- Merge remote-tracking branch 'origin/main' into feat/compaction-ui
+  ([`3ab0a2e`](https://github.com/thiesgerken/carapace/commit/3ab0a2e597814d40d4e4635ef9611b5d7ce47fa4))
+
 ## v0.181.0 (2026-11-12)
 
 
@@ -96,10 +132,32 @@
 
   # Conflicts: #	docs/compaction.md
 
+- 📝 docs(compaction): rolling folds and automatic compaction; keep the memory block on in-run folds
+  ([`3a578ca`](https://github.com/thiesgerken/carapace/commit/3a578ca64b66dc561c7e6f22d1cd58140e50f42a))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+- Merge remote-tracking branch 'origin/feat/compaction-threshold' into feat/compaction-ui
+  ([`03f03c5`](https://github.com/thiesgerken/carapace/commit/03f03c5d952d19f06aa07198da17645a263def38))
+
+  # Conflicts: #	docs/compaction.md
+
 - Merge remote-tracking branch 'origin/main' into feat/compaction-threshold
   ([`16de39c`](https://github.com/thiesgerken/carapace/commit/16de39cc2409a5fff7f8a7d222cb027ae0e38775))
 
   # Conflicts: #	docs/compaction.md #	frontend/src/lib/api.ts #	src/carapace/models/config.py #	src/carapace/server/platform_settings.py
+
+### 💄 UI/UX
+
+
+- 💄 feat(compaction): /compact [focus], Compact button and dry-run dialog
+  ([`f7a5caa`](https://github.com/thiesgerken/carapace/commit/f7a5caa2d8aecfff55cc56af04545572babcf277))
+
+  /compact loses its fold/tools modes and numbers and takes an optional focus instead, appended to every summary request. The manual ladder is planned by the pure plan_ladder, which also backs a new dry-run endpoint (GET /api/sessions/{id}/compaction/preview). The chat's Usage card gets a Compact button and a dialog with that preview, a focus input and /uncompact under Debug.
+
+  Closes #477
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 
 ### ♻️ Refactoring
 
@@ -172,11 +230,6 @@
 
 - 🙈 chore: drop the regenerated frontend/AGENTS.md
   ([`c335922`](https://github.com/thiesgerken/carapace/commit/c33592206fbb09badf6d5f54e74fe260445c7000))
-
-  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
-
-- 📝 docs(compaction): rolling folds and automatic compaction; keep the memory block on in-run folds
-  ([`3a578ca`](https://github.com/thiesgerken/carapace/commit/3a578ca64b66dc561c7e6f22d1cd58140e50f42a))
 
   Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 
