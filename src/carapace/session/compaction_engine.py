@@ -141,6 +141,11 @@ class SessionCompactionMixin:
         if not report.nothing_compacted:
             self._persist_compaction(active, fold=fold, applied=applied, model_name=model_name)
             self._session_mgr.save_history(session_id, history)
+            # The rewritten history misses the conversation cache on the next turn anyway, so that turn
+            # refreshes the frozen memory block at no extra cost. Inside a run the miss happens right
+            # away, and a refresh on the next turn would cost a second one.
+            active.state.memory = None
+            self._session_mgr.save_state(active.state)
             await self._broadcast(active, "on_compaction", report)
         logger.info(f"Compaction session={session_id} mode={mode} {report.message}")
         return report
@@ -240,10 +245,6 @@ class SessionCompactionMixin:
             )
             tree.nodes.append(node)
             _annotate_folded_events(events, fold.plan.foldable, node.id)
-        # The rewritten history breaks the conversation cache anyway, so the next turn
-        # refreshes the frozen memory block at no extra cost.
-        active.state.memory = None
-        self._session_mgr.save_state(active.state)
         self._session_mgr.save_compaction(session_id, tree)
         self._session_mgr.save_events(session_id, events)
         self._session_mgr.save_usage(session_id, active.usage_tracker)

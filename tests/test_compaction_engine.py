@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncIterator
 from pathlib import Path
+from unittest.mock import AsyncMock
 
 import pytest
 from loguru import logger
@@ -26,6 +27,7 @@ from carapace.models.session import SessionState
 from carapace.session.compaction import (
     fold_summary_text,
     is_fold_message,
+    make_fold_message,
     split_lead_folds,
     tool_return_is_compacted,
 )
@@ -33,6 +35,7 @@ from carapace.session.compaction_engine import CompactionError
 from carapace.session.compaction_summarizer import summarize_tool_output
 from carapace.session.transcript import completed_model_turn_end_indexes
 from tests.session_helpers import _make_engine, _patch_sentinel
+from tests.test_autonomy_limit import _read_calls, _streaming_model
 
 
 def _turn(i: int, *, tool_output: str | None = None) -> list:
@@ -863,10 +866,13 @@ def test_compaction_during_a_run_folds_steps_of_the_running_turn(tmp_path: Path,
     async def _run() -> None:
         engine, sid, active = _threshold_engine(tmp_path, db_factory, threshold=2000)
         messages = _running_turn(engine, sid, 12, reported=2500)
+        engine._ensure_memory_snapshot(active)
+        memory = active.state.memory
 
         compacted = await engine.compact_during_run(active, messages)
 
         assert compacted is not None and is_fold_message(compacted[0])
+        assert active.state.memory == memory  # the run already missed the cache; no second miss next turn
         assert isinstance(compacted[1], ModelResponse)  # the cut lies inside the running turn
         kept_calls = {p.tool_call_id for m in compacted for p in m.parts if isinstance(p, ToolCallPart)}
         kept_returns = {p.tool_call_id for m in compacted for p in m.parts if isinstance(p, ToolReturnPart)}
@@ -927,5 +933,41 @@ def test_compaction_during_a_run_fails_when_nothing_is_left_to_compact(tmp_path:
 
         with pytest.raises(CompactionError, match="nothing is left to compact"):
             await engine.compact_during_run(active, huge_step)
+
+    asyncio.run(_run())
+
+
+def test_a_turn_continues_from_and_saves_the_history_compacted_during_it(tmp_path: Path, db_factory) -> None:
+    requests: list[list[ModelMessage]] = []
+
+    def respond(messages: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
+        requests.append(messages)
+        return _read_calls(f"c{len(requests)}") if len(requests) < 4 else ModelResponse(parts=[TextPart("done")])
+
+    async def fold_after_three_steps(_active, messages: list[ModelMessage]) -> list[ModelMessage] | None:
+        if len(requests) != 3:
+            return None
+        newest_step = max(i for i, m in enumerate(messages) if isinstance(m, ModelResponse))
+        return [make_fold_message("SUMMARY"), *messages[newest_step:]]
+
+    async def _run() -> None:
+        with _patch_sentinel():
+            engine = _make_engine(tmp_path, session_factory=db_factory)
+        engine._model_factory = lambda _name, *, user: _streaming_model(respond)
+        engine.sandbox_mgr.file_read = AsyncMock(return_value="content")
+        engine.compact_during_run = fold_after_three_steps  # type: ignore[method-assign]
+        sid = engine.session_mgr.create_session(user="thies").session_id
+        active = engine.get_or_activate(sid)
+
+        await engine.submit_message(sid, "go")
+        async with asyncio.timeout(5):
+            while active.agent_task is not None:
+                await asyncio.sleep(0.01)
+
+        assert is_fold_message(requests[3][0])
+        history = engine.session_mgr.load_history(sid)
+        assert fold_summary_text(history[0]) == "SUMMARY"
+        assert sum(is_fold_message(m) for m in history) == 1
+        assert isinstance(history[-1], ModelResponse) and history[-1].parts == [TextPart("done")]
 
     asyncio.run(_run())

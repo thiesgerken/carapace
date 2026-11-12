@@ -35,7 +35,7 @@ from ..security.context import (
     SentinelVerdict,
     UserMessageEntry,
 )
-from ..usage import provider_cost_usd_from_messages
+from ..usage import ProviderCostCapability
 from ..ws_models import ApprovalRequest, FinalStatus
 from .autonomy import AUTONOMY_LIMIT_METADATA_KEY, resolve_user_approvals
 from .deps import Deps, TaskDone, TaskFailed
@@ -111,20 +111,17 @@ async def run_agent_turn(
     current_thinking_parts.clear()
     current_text_parts.clear()
     usage_limits = get_usage_limits() if get_usage_limits is not None else None
+    provider_cost = ProviderCostCapability()
     result = await agent.run(
         user_input,
         deps=deps,
         message_history=message_history or None,
         event_stream_handler=_stream_handler,
         usage_limits=usage_limits,
+        capabilities=[provider_cost],
     )
     last_thinking = "".join(current_thinking_parts)
-    deps.usage_tracker.record(
-        usage_model_key,
-        "agent",
-        result.usage,
-        cost_usd=provider_cost_usd_from_messages(result.new_messages()),
-    )
+    deps.usage_tracker.record(usage_model_key, "agent", result.usage, cost_usd=provider_cost.total_usd)
     messages = result.all_messages()
     if on_messages_snapshot is not None:
         on_messages_snapshot(list(messages))
@@ -197,20 +194,17 @@ async def run_agent_turn(
         # it before the next run instead of dropping it.
         await _flush_text_segment()
         usage_limits = get_usage_limits() if get_usage_limits is not None else None
+        provider_cost = ProviderCostCapability()
         result = await agent.run(
             deps=deps,
             message_history=messages,
             deferred_tool_results=deferred_results,
             event_stream_handler=_stream_handler,
             usage_limits=usage_limits,
+            capabilities=[provider_cost],
         )
         last_thinking = "".join(current_thinking_parts)
-        deps.usage_tracker.record(
-            usage_model_key,
-            "agent",
-            result.usage,
-            cost_usd=provider_cost_usd_from_messages(result.new_messages()),
-        )
+        deps.usage_tracker.record(usage_model_key, "agent", result.usage, cost_usd=provider_cost.total_usd)
         messages = result.all_messages()
         if on_messages_snapshot is not None:
             on_messages_snapshot(list(messages))
