@@ -1,6 +1,43 @@
 # CHANGELOG
 
 
+## v0.178.1 (2026-11-12)
+
+
+### ♻️ Refactoring
+
+
+- ♻️Merge pull request #479 from thiesgerken/refactor/compaction-fold-input
+  ([`81cca48`](https://github.com/thiesgerken/carapace/commit/81cca48c6d8e9c10e9c890124d1fd2fde03d67bd))
+
+- ♻️ refactor(compaction): fold input with tool args, fail loudly, cheaper tool summaries
+  ([`81cca48`](https://github.com/thiesgerken/carapace/commit/81cca48c6d8e9c10e9c890124d1fd2fde03d67bd))
+
+- ♻️ refactor(compaction): fold input with tool args, fail loudly, cheaper tool summaries
+  ([`efd05b2`](https://github.com/thiesgerken/carapace/commit/efd05b2aac93590e15098f6b576aef7c4f91720f))
+
+  - Fold input renders tool calls with their arguments; arguments and tool
+    returns are cut head/tail so the region fits the compaction model, and an
+    input that still exceeds its max_input_tokens fails before sending.
+  - Agent compaction no longer swallows summary failures: /compact reports the
+    error and leaves the history untouched.
+  - Tool-output floor default 500 -> 4000 tokens; the first summary warms the
+    compaction model's prompt cache before the rest run concurrently.
+  - Drop the unused consolidation pass, CompactionNode.kind/children/method,
+    CompactionReport.consolidated and the unused truncate/drop methods.
+
+  Closes #473
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix(compaction): cancel sibling tool summaries on the first failure
+  ([`d31cfe6`](https://github.com/thiesgerken/carapace/commit/d31cfe63e9efda7ef3f5d4739cffbaf7cc25153d))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
 ## v0.178.0 (2026-11-12)
 
 

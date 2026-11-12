@@ -1,6 +1,6 @@
 {
   "name": "frontend",
-  "version": "0.178.0",
+  "version": "0.178.1",
   "private": true,
   "engines": {
     "npm": "^11.19.0"
