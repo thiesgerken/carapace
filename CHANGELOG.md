@@ -1,6 +1,60 @@
 # CHANGELOG
 
 
+## v0.179.0 (2026-11-12)
+
+
+### ✨ Features
+
+
+- ✨Merge pull request #480 from thiesgerken/feat/compaction-threshold
+  ([`e129e49`](https://github.com/thiesgerken/carapace/commit/e129e493fea9bcf3811fd4479832a1eba1ae5f44))
+
+- ✨ feat(compaction): per-model compaction threshold
+  ([`e129e49`](https://github.com/thiesgerken/carapace/commit/e129e493fea9bcf3811fd4479832a1eba1ae5f44))
+
+- ✨ feat(compaction): per-model compaction threshold
+  ([`73c4469`](https://github.com/thiesgerken/carapace/commit/73c44693dc8e88c5ec35767d83c29f6dd8bfd88a))
+
+  Every catalog row gets an optional compaction_threshold_tokens. Its effective threshold is the override, else min(60 % of max_input_tokens, 250k) with a 200k window assumed when unset. The sentinel compacts at the threshold of the sentinel model, which replaces sentinel_threshold_pct. Migration 0014 drops the stored key.
+
+  Closes #475
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+### Other
+
+
+- Merge remote-tracking branch 'origin/main' into feat/compaction-threshold
+  ([`16de39c`](https://github.com/thiesgerken/carapace/commit/16de39cc2409a5fff7f8a7d222cb027ae0e38775))
+
+  # Conflicts: #	docs/compaction.md #	frontend/src/lib/api.ts #	src/carapace/models/config.py #	src/carapace/server/platform_settings.py
+
+- 🙈 chore: drop the regenerated frontend/AGENTS.md
+  ([`c335922`](https://github.com/thiesgerken/carapace/commit/c33592206fbb09badf6d5f54e74fe260445c7000))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+- Merge pull request #481 from thiesgerken/feat/revise-explain-scope
+  ([`ff53e39`](https://github.com/thiesgerken/carapace/commit/ff53e398d96e19947fbfb31e4407bdd364ecdc7d))
+
+  💬 Let revise ask the agent why a step is still in scope
+
+- 💬 docs(sentinel): let revise ask the agent why a step is still in scope
+  ([`335a705`](https://github.com/thiesgerken/carapace/commit/335a7054bd05bc38df7c4c132aa521403eefd405))
+
+  A change request can also ask the agent to explain how a step follows from the user's request. On the retry the sentinel allows when the explanation ties the step to what the user said, and escalates (unattended: denies) when it rests on external content or doesn't connect to the user's words.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix(compaction): check the threshold against the assumed window too
+  ([`52fdedb`](https://github.com/thiesgerken/carapace/commit/52fdedb60c6fb17a0fd5f57c0dd8244f77bd4102))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
 ## v0.178.1 (2026-11-12)
 
 
