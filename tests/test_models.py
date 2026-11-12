@@ -244,6 +244,32 @@ def test_available_model_entry_mapping_with_max_input():
     assert e.max_input_tokens == 200_000
 
 
+@pytest.mark.parametrize(
+    ("data", "threshold"),
+    [
+        ({}, 120_000),  # 60 % of the assumed 200k window
+        ({"max_input_tokens": 128_000}, 76_800),
+        ({"max_input_tokens": 1_000_000}, 250_000),
+        ({"max_input_tokens": 1_000_000, "compaction_threshold_tokens": 400_000}, 400_000),
+    ],
+)
+def test_available_model_entry_compaction_threshold(data, threshold):
+    e = AvailableModelEntry.model_validate({"provider": "anthropic", "name": "m", **data})
+    assert e.compaction_threshold == threshold
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        {"max_input_tokens": 100_000, "compaction_threshold_tokens": 100_000},
+        {"compaction_threshold_tokens": 200_000},  # against the assumed 200k window
+    ],
+)
+def test_available_model_entry_rejects_threshold_at_context_window(data):
+    with pytest.raises(ValidationError, match="below the context window"):
+        AvailableModelEntry.model_validate({"provider": "anthropic", "name": "m", **data})
+
+
 def test_available_model_entry_rejects_string_without_colon():
     with pytest.raises(ValidationError):
         AvailableModelEntry.model_validate("no-colon-model-id")

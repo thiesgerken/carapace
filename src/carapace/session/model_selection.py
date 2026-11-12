@@ -10,7 +10,7 @@ from pydantic_ai.models import Model, infer_model
 from pydantic_ai.settings import ModelSettings
 
 from ..llm import DisabledModelError, ModelFactory, model_settings_for_config
-from ..models.config import AvailableModelEntry, Config, agent_available_model_entries
+from ..models.config import AvailableModelEntry, Config, agent_available_model_entries, default_compaction_threshold
 from ..models.session import SessionState
 from .manager import SessionManager
 from .types import ActiveSession
@@ -63,11 +63,16 @@ class SessionModelMixin(SessionModelHost):
         so lookups (max_input_tokens, vision) keep working for sessions that still reference them."""
         return [e for e in self.available_model_entries if e.enabled]
 
+    def _model_entry(self, model_id: str) -> AvailableModelEntry | None:
+        return next((e for e in self.available_model_entries if e.model_id == model_id), None)
+
     def _max_input_tokens_for_model_id(self, model_id: str) -> int | None:
-        for entry in self.available_model_entries:
-            if entry.model_id == model_id:
-                return entry.max_input_tokens
-        return None
+        entry = self._model_entry(model_id)
+        return entry.max_input_tokens if entry is not None else None
+
+    def compaction_threshold_for_model_id(self, model_id: str) -> int:
+        entry = self._model_entry(model_id)
+        return entry.compaction_threshold if entry is not None else default_compaction_threshold(None)
 
     def assert_models_enabled(self, active: ActiveSession) -> None:
         """Turn-level gate for the session's model overrides.

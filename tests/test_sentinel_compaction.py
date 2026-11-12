@@ -68,11 +68,15 @@ class _Models:
         return ModelResponse(parts=[TextPart("the user denied mailing the tax office")])
 
 
-def _engine(tmp_path: Path, db_factory, models: _Models, *, threshold_pct: int = 1):
+def _engine(tmp_path: Path, db_factory, models: _Models, *, threshold_tokens: int | None = 1):
     config = build_config(tmp_path)
-    config.agent.compaction = CompactionConfig(
-        keep_turns=1, verbatim_tool_turns=0, tool_output_floor_tokens=50, sentinel_threshold_pct=threshold_pct
-    )
+    config.agent.compaction = CompactionConfig(keep_turns=1, verbatim_tool_turns=0, tool_output_floor_tokens=50)
+    config.agent.available_models = [
+        entry.model_copy(update={"compaction_threshold_tokens": threshold_tokens})
+        if entry.model_id == config.agent.sentinel_model
+        else entry
+        for entry in config.agent.available_models
+    ]
     engine = _make_engine(tmp_path, session_factory=db_factory, config=config)
     engine._model_factory = models.factory
     (tmp_path / "SECURITY.md").write_text(_SECURITY_MD)
@@ -156,7 +160,7 @@ async def test_fold_summary_runs_with_the_sentinel_prompt_and_keeps_decisions(tm
 @pytest.mark.anyio
 async def test_conversation_below_threshold_is_left_alone(tmp_path: Path, db_factory) -> None:
     models = _Models()
-    _, sid, active = _engine(tmp_path, db_factory, models, threshold_pct=90)
+    _, sid, active = _engine(tmp_path, db_factory, models, threshold_tokens=None)
 
     await active.sentinel.evaluate_tool_call(active.security, "exec", {"command": "ls"})
 
