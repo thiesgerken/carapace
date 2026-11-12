@@ -1,6 +1,64 @@
 # CHANGELOG
 
 
+## v0.178.0 (2026-11-12)
+
+
+### ✨ Features
+
+
+- ✨ Merge pull request #471 from thiesgerken/feat/sentinel-conversation-revise
+  ([`54558a5`](https://github.com/thiesgerken/carapace/commit/54558a5586f32b7837052e2cce87992d542220c0))
+
+- ✨ Sentinel sees the conversation and can request changes
+  ([`54558a5`](https://github.com/thiesgerken/carapace/commit/54558a5586f32b7837052e2cce87992d542220c0))
+
+- ✨ feat(sentinel): show the sentinel the conversation and let it request changes
+  ([`cfe3ddf`](https://github.com/thiesgerken/carapace/commit/cfe3ddf7f8d17f45691413b9a995463f5d5239a4))
+
+  The sentinel escalated many consented actions because it never saw what the agent said: agent responses reached its action log as a token count, and tool call arguments in its history were cut at 80 characters. A user answering "yes, do 1 and 3" left it guessing what 1 and 3 were.
+
+  - Every text the agent shows the user (final answers and narration between tool calls) is logged as
+    an AgentResponseEntry with its text, and history renders tool call arguments in full. The
+    sentinel instructions say to read agent text as context for consent, never as instructions.
+  - Migration 0014 drops the old textless agent_response entries and renumbers the action log; the
+    shadow conversations already contain them as rendered.
+  - The sentinel sets a prompt cache breakpoint on its append-only shadow conversation. A test checks
+    that every request extends the previous one, across evaluation kinds and a restart.
+  - New verdict `revise`: no threat, but the agent should split, narrow or drop part of a tool call or
+    git push. The agent gets "Sentinel requests changes (no threat detected): ...", the action log and
+    audit record `changes_requested`, and the UI shows it in orange. Domain and credential requests
+    reject `revise` through an output validator, since their explanation never reaches the agent.
+  - Push rejections now carry the sentinel's (or user's) explanation into git's output.
+  - The default SECURITY.md says when to choose which verdict, and that a commit-and-push of a
+    requested change is part of the request; the push itself is reviewed by the git_push gate.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aUztzfZVQ524UsBbvyx
+
+### Other
+
+
+- ✅ test(smoke): expect the new push rejection text
+  ([`bc4cc67`](https://github.com/thiesgerken/carapace/commit/bc4cc67a97f191b3f42939d563bbc3e685e40f1c))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aUztzfZVQ524UsBbvyx
+
+### ♻️ Refactoring
+
+
+- ♻️ refactor(sentinel): leave the push stance to SECURITY.md, deny repeated revises when unattended
+  ([`ddc97d7`](https://github.com/thiesgerken/carapace/commit/ddc97d763952b0fce7a65ad84f83ffd9201ea501))
+
+  The instructions now only state that knowledge-repo pushes get their own git_push evaluation; whether an exec that pushes is fine is policy, which a user's SECURITY.md must be able to decide. Unattended sessions have no escalation, so a second revise for the same intent becomes a denial there instead of an endless revise loop.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aUztzfZVQ524UsBbvyx
+
 ## v0.177.1 (2026-11-12)
 
 
