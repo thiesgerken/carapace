@@ -60,8 +60,12 @@ function budgetGaugeCurrentAmount(gauge: BudgetGauge): number | null {
   return amount;
 }
 
-function visibleBudgetGauges(u: TurnUsage): BudgetGauge[] {
+/** The autonomy streak resets whenever the user steps in, so a short streak is routine and its bar only noise. */
+const AUTONOMY_BAR_MIN_FILL_PCT = 50;
+
+export function visibleBudgetGauges(u: TurnUsage): BudgetGauge[] {
   return budgetGauges(u).filter((gauge) => {
+    if (gauge.key === "autonomy") return gauge.fill_pct > AUTONOMY_BAR_MIN_FILL_PCT;
     const current = budgetGaugeCurrentAmount(gauge);
     return current !== null && current > 0;
   });
