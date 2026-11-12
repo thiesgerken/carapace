@@ -597,6 +597,36 @@ def test_first_tool_summary_warms_the_cache_before_the_rest_run_concurrently(tmp
     asyncio.run(_run())
 
 
+def test_a_failing_tool_summary_cancels_its_siblings(tmp_path: Path, db_factory) -> None:
+    calls: list[str] = []
+
+    async def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        calls.append("start")
+        if len(calls) == 2:
+            raise RuntimeError("provider down")
+        if len(calls) == 3:
+            await asyncio.sleep(0.1)
+            calls.append("sibling finished")
+        return ModelResponse(parts=[TextPart(content="short")])
+
+    async def _run() -> None:
+        with _patch_sentinel():
+            engine = _make_engine(tmp_path, session_factory=db_factory)
+        engine._model_factory = lambda _name, *, user: FunctionModel(respond)
+        engine._config.agent.compaction.verbatim_tool_turns = 1
+        sid = engine.session_mgr.create_session(user="thies").session_id
+        engine.get_or_activate(sid)
+        _seed(engine, sid, 4, tool_output="line\n" * 6000)
+
+        res = await engine.handle_slash_command(sid, "/compact tools 1")
+
+        assert res is not None and "provider down" in res["data"]["error"]
+        await asyncio.sleep(0.2)
+        assert "sibling finished" not in calls
+
+    asyncio.run(_run())
+
+
 def test_memory_block_is_frozen_per_session_until_compaction(tmp_path: Path, db_factory) -> None:
     async def _run() -> None:
         builds: list[tuple[str, str]] = []

@@ -86,11 +86,12 @@ the DB-backed platform settings (the `agent` scalar row), not a config file:
 
 The compaction model is a separate, configurable default model (a cheap/haiku-class model is a good
 default); leaving it on "Default" reuses the title model. Its usage is tracked under the
-`compaction` category, separate from the agent. The first tool-output summary runs alone so it writes
-the compaction model's prompt cache; the rest then run concurrently (reading that cache), bounded by
-the shared `agent.max_parallel_llm` limit. Each summary call costs at least the cached system prompt
-plus the output, which is why the floor is high: summarizing small outputs costs more than it saves. Code defaults live in `agent.compaction_model` and
-`agent.compaction` (`AgentConfig` / `CompactionConfig`).
+`compaction` category, separate from the agent. The first tool-output summary runs alone so it
+writes the compaction model's prompt cache; the rest then run concurrently (reading that cache),
+bounded by the shared `agent.max_parallel_llm` limit, and the first failure cancels the others. Each
+summary call costs at least the cached system prompt plus the output, which is why the floor is
+high: summarizing small outputs costs more than it saves. Code defaults live in
+`agent.compaction_model` and `agent.compaction` (`AgentConfig` / `CompactionConfig`).
 
 The platform default is just a default: each session can override the compaction model like the
 other roles with `/model compaction NAME` (and `/model NAME` switches all four roles at once, while

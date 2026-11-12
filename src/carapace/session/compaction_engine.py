@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from collections.abc import Awaitable, Callable
+from collections.abc import Callable, Coroutine
 from contextlib import AbstractContextManager
 from datetime import UTC, datetime
 from functools import partial
@@ -339,8 +339,8 @@ class SessionCompactionMixin:
         return compacted
 
 
-async def _gather_cache_warm(calls: list[Callable[[], Awaitable[str]]]) -> list[str]:
-    """Run the first summary alone, then the rest concurrently.
+async def _gather_cache_warm(calls: list[Callable[[], Coroutine[Any, Any, str]]]) -> list[str]:
+    """Run the first summary alone, then the rest concurrently; the first failure cancels the others.
 
     All summaries share one system prompt, so the first call writes the compaction model's prefix
     cache and the others read it instead of each paying their own cache write. Concurrency stays
@@ -349,7 +349,13 @@ async def _gather_cache_warm(calls: list[Callable[[], Awaitable[str]]]) -> list[
     if not calls:
         return []
     first = await calls[0]()
-    return [first, *await asyncio.gather(*(call() for call in calls[1:]))]
+    try:
+        async with asyncio.TaskGroup() as group:
+            tasks = [group.create_task(call()) for call in calls[1:]]
+    except ExceptionGroup as failed:
+        # Callers handle the call's own error (``CompactionError`` on the agent path), not a group.
+        raise failed.exceptions[0] from None
+    return [first, *(task.result() for task in tasks)]
 
 
 def _text(content: Any) -> str:
