@@ -839,7 +839,7 @@ export async function fetchSessionUsage(server: string, token: string, sessionId
 }
 
 export interface CompactionPreviewInfo {
-  context_tokens: number;
+  context_tokens: number | null;
   threshold_tokens: number;
   context_window_tokens: number;
   thinking_dropped: number;

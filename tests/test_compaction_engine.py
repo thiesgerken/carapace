@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator
+from dataclasses import replace
 from datetime import timedelta
 from pathlib import Path
 from unittest.mock import AsyncMock
@@ -375,8 +376,8 @@ def test_compact_tools_keeps_verbatim_hot_zone(tmp_path: Path, db_factory) -> No
     asyncio.run(_run())
 
 
-def test_compact_tools_verbatim_override(tmp_path: Path, db_factory) -> None:
-    """`/compact tools N` overrides the configured hot zone for that run."""
+def test_verbatim_tool_turns_sets_the_hot_zone(tmp_path: Path, db_factory) -> None:
+    """*Verbatim tool turns* decides which tool outputs `/compact` leaves alone."""
 
     async def _run() -> None:
         with _patch_sentinel():
@@ -430,25 +431,39 @@ def test_compact_focus_reaches_every_summary_request(tmp_path: Path, db_factory)
 
 
 def test_preview_matches_the_run_without_an_llm_call(tmp_path: Path, db_factory) -> None:
-    async def no_llm(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
-        raise AssertionError("the preview must not call a model")
+    summaries: list[str] = []
+
+    async def summarize(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        summaries.append("called")
+        return ModelResponse(parts=[TextPart(content="short")])
 
     async def _run() -> None:
         with _patch_sentinel():
             engine = _make_engine(tmp_path, session_factory=db_factory)
-        engine._model_factory = lambda _name, *, user: FunctionModel(no_llm)
+        engine._model_factory = lambda _name, *, user: FunctionModel(summarize)
         engine._config.agent.compaction.keep_turns = 3
         engine._config.agent.compaction.verbatim_tool_turns = 1
         sid = engine.session_mgr.create_session(user="thies").session_id
         active = engine.get_or_activate(sid)
         _seed(engine, sid, 6, tool_output="line\n" * 6000)
+        history = engine.session_mgr.load_history(sid)
+        history[-1] = replace(history[-1], usage=RequestUsage(input_tokens=50_000))
+        engine.session_mgr.save_history(sid, history)
 
         preview = engine.preview_compaction(active)
+        assert summaries == []
+        report = await engine.run_compaction(active)
 
-        assert preview.turns_folded == 3
-        assert [o.tool_name for o in preview.tool_outputs] == ["exec", "exec"]
+        assert preview.context_tokens == 50_000
         assert preview.threshold_tokens == 120_000 and preview.context_window_tokens == 200_000
-        assert 0 < preview.estimated_tokens_without_summaries < preview.context_tokens
+        assert (preview.thinking_dropped, preview.turns_folded, len(preview.tool_outputs)) == (
+            report.thinking_dropped,
+            report.turns_folded,
+            report.tool_returns_compacted,
+        )
+        assert report.turns_folded == 3 and report.tool_returns_compacted == 2
+        # The measurement predates the compaction now, so it no longer says how big the context is.
+        assert engine.preview_compaction(active).context_tokens is None
 
     asyncio.run(_run())
 
@@ -505,7 +520,7 @@ def test_compact_all_ladder_end_to_end(tmp_path: Path, db_factory) -> None:
 
 
 def test_fold_after_tools_still_badges_turns(tmp_path: Path, db_factory) -> None:
-    """`/compact tools` then `/compact fold`: folded turns must still get folded_into badges."""
+    """Tool outputs compacted first, turns folded later: folded turns must still get folded_into badges."""
 
     async def _run() -> None:
         with _patch_sentinel():

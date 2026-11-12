@@ -1339,6 +1339,7 @@
             "more": "Compaction details",
             "loading": "Planning…",
             "context": "Context",
+            "unmeasured": "measured with the next request",
             "threshold": "Compacts automatically at",
             "window": "Context window",
             "nothing": "Nothing to compact yet.",

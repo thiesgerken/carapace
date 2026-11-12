@@ -72,7 +72,9 @@ export function CompactionDialog({ server, token, sessionId, onClose, onCompact,
           <>
             <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-1.5 text-sm">
               <dt className="text-muted-foreground">{t("context")}</dt>
-              <dd className="tabular-nums">{tokens(outcome.preview.context_tokens)}</dd>
+              <dd className="tabular-nums">
+                {outcome.preview.context_tokens === null ? t("unmeasured") : tokens(outcome.preview.context_tokens)}
+              </dd>
               <dt className="text-muted-foreground">{t("threshold")}</dt>
               <dd className="tabular-nums">{tokens(outcome.preview.threshold_tokens)}</dd>
               <dt className="text-muted-foreground">{t("window")}</dt>

@@ -67,11 +67,13 @@ class CompactionPreviewToolOutput(BaseModel):
 class CompactionPreview(BaseModel):
     """Dry run of `/compact` from the pure planners: what it would compact, before any summary call.
 
-    Token counts are local estimates without thinking parts, like ``CompactionReport``. The summaries'
-    sizes are unknown until they are written, so the estimate leaves them out.
+    ``context_tokens`` is the provider-reported input of the last agent request, what the threshold is
+    compared against; None before the first measured request or when it predates the last compaction.
+    The other token counts are local estimates without thinking parts, like ``CompactionReport``. The
+    summaries' sizes are unknown until they are written, so the estimate leaves them out.
     """
 
-    context_tokens: int
+    context_tokens: int | None
     threshold_tokens: int
     context_window_tokens: int
     thinking_dropped: int

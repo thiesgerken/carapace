@@ -131,8 +131,11 @@ class SessionCompactionMixin:
         plan = self._plan_ladder(active, history, model_name)
         folded = apply_fold(plan.fold, "") if plan.fold is not None else plan.history
         candidate_tokens = sum(c.tokens for c in plan.tool_candidates)
+        measured = newest_measured_response(history)
+        compacted_through = active.state.compacted_through
+        stale = measured is None or (compacted_through is not None and measured.timestamp <= compacted_through)
         return CompactionPreview(
-            context_tokens=_tokens(history, model_name),
+            context_tokens=None if stale else measured.usage.input_tokens,
             threshold_tokens=self.compaction_threshold_for_model_id(model_name),
             context_window_tokens=self.agent_context_cap_for_gauge(active),
             thinking_dropped=plan.thinking_dropped,

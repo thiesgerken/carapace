@@ -493,7 +493,7 @@ def test_compaction_preview_of_an_empty_session(auth_headers, admin_auth_headers
 
     assert resp.status_code == 200
     body = resp.json()
-    assert body["context_tokens"] == 0 and body["turns_folded"] == 0 and body["tool_outputs"] == []
+    assert body["context_tokens"] is None and body["turns_folded"] == 0 and body["tool_outputs"] == []
     assert body["threshold_tokens"] < body["context_window_tokens"]
     assert TestClient(app).get(f"/api/sessions/{sid}/compaction/preview", headers=admin_auth_headers).status_code == 404
 

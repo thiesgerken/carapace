@@ -1339,6 +1339,7 @@
             "more": "Details zur Kompaktierung",
             "loading": "Wird geplant…",
             "context": "Kontext",
+            "unmeasured": "wird mit der nächsten Anfrage gemessen",
             "threshold": "Kompaktiert automatisch bei",
             "window": "Kontextfenster",
             "nothing": "Noch nichts zu kompaktieren.",
