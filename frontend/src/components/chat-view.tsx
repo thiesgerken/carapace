@@ -2646,7 +2646,19 @@ export function ChatView({
         ) : null}
       </section>
 
-      <ChatUsageSection state={usageState} open={usageOpen} onOpenChange={setUsageOpen} />
+      <ChatUsageSection
+        state={usageState}
+        open={usageOpen}
+        onOpenChange={setUsageOpen}
+        compaction={{
+          server,
+          token,
+          sessionId,
+          disabled: !connected || waiting || sessionArchived,
+          onCompact: (focus) => handleSend(focus ? `/compact ${focus}` : "/compact"),
+          onUncompact: () => handleSend("/uncompact"),
+        }}
+      />
 
       {session ? (
         <SessionBudgetSection

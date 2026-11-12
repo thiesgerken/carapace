@@ -11,6 +11,7 @@ from pydantic_ai.messages import ModelMessage
 
 from ..api_keys import Access, Scope
 from ..auth import UserIdentity
+from ..models.compaction import CompactionPreview
 from ..models.git import GitActionResult, GlobalGitStatus, SandboxGitStatus
 from ..models.session import SessionAttributes, SessionBudget, SessionJobRunContext, SessionState
 from ..sandbox.state import SessionSandboxSnapshot
@@ -609,6 +610,16 @@ async def get_session_usage(
     """The ``/usage`` breakdown, also while a turn runs: unlike slash commands it never waits for one."""
     _load_owned_state(session_id, user)
     return server._engine.usage_details(server._engine.get_or_activate(session_id))
+
+
+@router.get("/sessions/{session_id}/compaction/preview", response_model=CompactionPreview)
+async def get_compaction_preview(
+    session_id: str,
+    user: Annotated[UserIdentity, Depends(require(Scope.sessions, Access.read))],
+) -> CompactionPreview:
+    """Dry run of `/compact` (no LLM call), for the compaction dialog."""
+    _load_owned_state(session_id, user)
+    return server._engine.preview_compaction(server._engine.get_or_activate(session_id))
 
 
 # ----------------------------------------------------------------------

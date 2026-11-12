@@ -1332,6 +1332,29 @@
         },
         "usage": {
             "title": "Usage"
+        },
+        "compaction": {
+            "title": "Compact conversation",
+            "compact": "Compact",
+            "more": "Compaction details",
+            "loading": "Planning…",
+            "context": "Context",
+            "unmeasured": "measured with the next request",
+            "threshold": "Compacts automatically at",
+            "window": "Context window",
+            "nothing": "Nothing to compact yet.",
+            "plan": "Compacting would",
+            "thinking": "drop {count, plural, one {# thinking part} other {# thinking parts}}",
+            "fold": "fold {count, plural, one {# turn} other {# turns}} ({tokens} tokens) into the summary",
+            "toolOutput": "summarize one {tool} output ({tokens} tokens)",
+            "estimate": "About {tokens} tokens afterwards, plus the summaries.",
+            "focus": "Focus (optional)",
+            "focusPlaceholder": "What the summaries must keep, e.g. the migration details",
+            "debug": "Debug",
+            "uncompact": "Uncompact",
+            "uncompactHint": "Rebuild the full history and drop all compaction (/uncompact).",
+            "cancel": "Cancel",
+            "run": "Compact"
         }
     },
     "message": {

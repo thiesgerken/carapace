@@ -285,7 +285,7 @@ export interface CompactionAnnotation {
 }
 
 export interface CompactionReport {
-  mode: "all" | "fold" | "tools";
+  mode: "manual" | "auto";
   before_tokens: number;
   after_tokens: number;
   thinking_dropped: number;

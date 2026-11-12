@@ -23,7 +23,7 @@ from carapace.llm import ANTHROPIC_MIN_COMPACTION_TOKENS, provider_compaction
 from carapace.models.config import AvailableModelEntry
 from carapace.server.history import HistoryMessage
 from carapace.session.compaction import has_foreign_compaction, is_fold_message, strip_compaction_parts
-from carapace.usage import split_provider_compaction_usage
+from carapace.usage import count_message_tokens, split_provider_compaction_usage
 from tests.session_helpers import _make_engine, _patch_sentinel
 from tests.test_compaction_engine import _AgentAndSummarizer, _local_compaction_config, _seed, _turn
 
@@ -128,6 +128,7 @@ def test_manual_compact_drops_provider_compaction_after_folding(tmp_path: Path, 
         with _patch_sentinel():
             engine = _make_engine(tmp_path, session_factory=db_factory)
         engine._model_factory = models.factory
+        engine._config.agent.compaction.keep_turns = 3
         sid = engine.session_mgr.create_session(user="thies").session_id
         active = engine.get_or_activate(sid)
         _seed(engine, sid, 10)
@@ -135,7 +136,7 @@ def test_manual_compact_drops_provider_compaction_after_folding(tmp_path: Path, 
         history[-1] = _compacted("anthropic")  # inside the turns the fold keeps
         engine.session_mgr.save_history(sid, history)
 
-        report = await engine.run_compaction(active, mode="fold", keep_turns=3)
+        report = await engine.run_compaction(active)
 
         compacted = engine.session_mgr.load_history(sid)
         assert report.turns_folded == 7 and is_fold_message(compacted[0])
@@ -152,13 +153,13 @@ def test_reports_count_only_what_is_sent_after_a_provider_compaction(tmp_path: P
         sid = engine.session_mgr.create_session(user="thies").session_id
         active = engine.get_or_activate(sid)
         _seed(engine, sid, 10, tool_output="line\n" * 3000)
-        full = await engine.run_compaction(active, mode="tools", verbatim_tool_turns=99)
         history = engine.session_mgr.load_history(sid)
-        engine.session_mgr.save_history(sid, [*history, ModelRequest(parts=[UserPromptPart("q")]), _compacted("x")])
+        sent = [ModelRequest(parts=[UserPromptPart("q")]), _compacted("anthropic")]
+        engine.session_mgr.save_history(sid, [*history, *sent])
 
-        after_provider = await engine.run_compaction(active, mode="tools", verbatim_tool_turns=99)
+        report = await engine.run_compaction(active)
 
-        assert after_provider.before_tokens < full.before_tokens / 10
+        assert report.before_tokens < count_message_tokens(history) / 10
 
     asyncio.run(_run())
 
