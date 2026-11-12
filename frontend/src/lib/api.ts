@@ -838,6 +838,24 @@ export async function fetchSessionUsage(server: string, token: string, sessionId
   return res.json();
 }
 
+export interface CompactionPreviewInfo {
+  context_tokens: number | null;
+  threshold_tokens: number;
+  context_window_tokens: number;
+  thinking_dropped: number;
+  turns_folded: number;
+  fold_tokens: number;
+  tool_outputs: { tool_name: string; tokens: number }[];
+  estimated_tokens_without_summaries: number;
+}
+
+/** Dry run of `/compact` from the server's planners; no LLM call. */
+export async function fetchCompactionPreview(server: string, token: string, sessionId: string): Promise<CompactionPreviewInfo> {
+  const res = await fetch(`${server}/api/sessions/${sessionId}/compaction/preview`, { headers: headers(token) });
+  if (!res.ok) throw new Error(await readErrorMessage(res, "Failed to load the compaction preview"));
+  return res.json();
+}
+
 /** The latest LLM context of *role* in the session; null before the role's first request. */
 export async function fetchLlmContext(
   server: string,

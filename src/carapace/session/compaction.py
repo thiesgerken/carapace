@@ -329,6 +329,37 @@ def apply_fold(plan: FoldPlan, summary: str) -> list[ModelMessage]:
     return [make_fold_message(summary), *plan.kept]
 
 
+@dataclass(frozen=True, slots=True)
+class LadderPlan:
+    """What a manual compaction will do, decided without an LLM call.
+
+    ``history`` is the history after thinking-drop, the input the fold and tool summaries apply to.
+    The tool candidates are picked in the post-fold history, so the fold never discards a paid summary.
+    """
+
+    history: list[ModelMessage]
+    thinking_dropped: int
+    fold: FoldPlan | None
+    tool_candidates: list[ToolReturnCandidate]
+
+
+def plan_ladder(
+    messages: list[ModelMessage], *, keep_turns: int, verbatim_turns: int, floor_tokens: int, model_name: str | None
+) -> LadderPlan:
+    """Plan the manual ladder: thinking-drop, fold all but ``keep_turns`` turns, then large tool outputs."""
+    history, thinking_dropped = apply_thinking_drop(messages)
+    fold = plan_fold(history, keep_turns=keep_turns, model_name=model_name)
+    # The summary text does not change which tool returns qualify, so a placeholder stands in for it.
+    folded = apply_fold(fold, "") if fold is not None else history
+    candidates = find_tool_return_candidates(
+        folded,
+        floor_tokens=floor_tokens,
+        model_name=model_name,
+        within_indexes=tool_return_compaction_region(folded, verbatim_turns=verbatim_turns),
+    )
+    return LadderPlan(history=history, thinking_dropped=thinking_dropped, fold=fold, tool_candidates=candidates)
+
+
 def fold_render_text(messages: list[ModelMessage]) -> str:
     """Flatten an earlier fold plus a foldable region to plain text for the summarizer prompt.
 

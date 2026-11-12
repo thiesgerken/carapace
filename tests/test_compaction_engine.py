@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator
+from dataclasses import replace
 from datetime import timedelta
 from pathlib import Path
 from unittest.mock import AsyncMock
@@ -48,6 +49,16 @@ def _turn(i: int, *, tool_output: str | None = None) -> list:
         msgs.append(ModelRequest(parts=[ToolReturnPart(tool_name="exec", content=tool_output, tool_call_id=cid)]))
     msgs.append(ModelResponse(parts=[TextPart(content=f"answer {i}")]))
     return msgs
+
+
+async def _compact(engine, active, *, keep_turns: int | None = None, verbatim_tool_turns: int | None = None):
+    """`/compact` with the ladder's settings overridden for this test (the command no longer takes them)."""
+    cfg = engine.config.agent.compaction
+    if keep_turns is not None:
+        cfg.keep_turns = keep_turns
+    if verbatim_tool_turns is not None:
+        cfg.verbatim_tool_turns = verbatim_tool_turns
+    return await engine.run_compaction(active)
 
 
 def _seed(engine, sid: str, n: int, *, tool_output: str | None = None) -> None:
@@ -140,7 +151,7 @@ def test_reset_into_folded_region_collapses_to_lead_fold(tmp_path: Path, db_fact
         sid = engine.session_mgr.create_session(user="thies").session_id
         active = engine.get_or_activate(sid)
         _seed(engine, sid, 10)
-        await engine.run_compaction(active, mode="fold", keep_turns=3)  # folds turns 0-6
+        await _compact(engine, active, keep_turns=3)  # folds turns 0-6
 
         # Reset to turn 2 (assistant event index 5) — inside the folded region.
         assert await engine.reset_to_turn(sid, 5) is True
@@ -164,7 +175,7 @@ def test_compact_fold_collapses_old_turns(tmp_path: Path, db_factory) -> None:
         active = engine.get_or_activate(sid)
         _seed(engine, sid, 10)
 
-        report = await engine.run_compaction(active, mode="fold", keep_turns=3)
+        report = await _compact(engine, active, keep_turns=3)
 
         assert report.turns_folded == 7
         assert report.after_tokens < report.before_tokens
@@ -230,7 +241,7 @@ def test_uncompact_restores_history_from_events(tmp_path: Path, db_factory) -> N
         active = engine.get_or_activate(sid)
         _seed(engine, sid, 8, tool_output="x" * 4000)
 
-        await engine.run_compaction(active, mode="all", keep_turns=3)
+        await _compact(engine, active, keep_turns=3)
         compacted = engine.session_mgr.load_history(sid)
         lead, _rest = split_lead_folds(compacted)
         assert lead and engine.session_mgr.load_compaction(sid).nodes  # actually compacted
@@ -266,7 +277,7 @@ def test_reset_after_fold_keeps_history_in_sync(tmp_path: Path, db_factory) -> N
         sid = engine.session_mgr.create_session(user="thies").session_id
         active = engine.get_or_activate(sid)
         _seed(engine, sid, 10)
-        await engine.run_compaction(active, mode="fold", keep_turns=3)
+        await _compact(engine, active, keep_turns=3)
 
         # Reset to turn 8 (assistant event index 17): drops turn 9, keeps the fold + turns 7,8.
         assert await engine.reset_to_turn(sid, 17) is True
@@ -292,7 +303,7 @@ def test_fork_after_fold_carries_trimmed_tree(tmp_path: Path, db_factory) -> Non
         sid = engine.session_mgr.create_session(user="thies").session_id
         active = engine.get_or_activate(sid)
         _seed(engine, sid, 10)
-        await engine.run_compaction(active, mode="fold", keep_turns=3)
+        await _compact(engine, active, keep_turns=3)
 
         forked = engine.fork_session(sid, event_index=17, channel_type="cli")
         history = engine.session_mgr.load_history(forked.session_id)
@@ -314,7 +325,7 @@ def test_compact_tools_summarizes_large_returns(tmp_path: Path, db_factory) -> N
         active = engine.get_or_activate(sid)
         _seed(engine, sid, 3, tool_output="line\n" * 3000)
 
-        report = await engine.run_compaction(active, mode="tools")
+        report = await _compact(engine, active)
 
         assert report.tool_returns_compacted >= 1
         history = engine.session_mgr.load_history(sid)
@@ -330,7 +341,7 @@ def test_compact_tools_summarizes_large_returns(tmp_path: Path, db_factory) -> N
         events = list(engine.session_mgr.load_events(sid))
         assert any(e.get("compaction", {}).get("orig_tokens") for e in events)
         # idempotent: a second run compacts nothing new
-        report2 = await engine.run_compaction(active, mode="tools")
+        report2 = await _compact(engine, active)
         assert report2.tool_returns_compacted == 0
 
     asyncio.run(_run())
@@ -347,7 +358,7 @@ def test_compact_tools_keeps_verbatim_hot_zone(tmp_path: Path, db_factory) -> No
         active = engine.get_or_activate(sid)
         _seed(engine, sid, 5, tool_output="line\n" * 3000)
 
-        await engine.run_compaction(active, mode="tools")
+        await _compact(engine, active)
 
         history = engine.session_mgr.load_history(sid)
         compacted_ids = {
@@ -365,8 +376,8 @@ def test_compact_tools_keeps_verbatim_hot_zone(tmp_path: Path, db_factory) -> No
     asyncio.run(_run())
 
 
-def test_compact_tools_verbatim_override(tmp_path: Path, db_factory) -> None:
-    """`/compact tools N` overrides the configured hot zone for that run."""
+def test_verbatim_tool_turns_sets_the_hot_zone(tmp_path: Path, db_factory) -> None:
+    """*Verbatim tool turns* decides which tool outputs `/compact` leaves alone."""
 
     async def _run() -> None:
         with _patch_sentinel():
@@ -377,7 +388,7 @@ def test_compact_tools_verbatim_override(tmp_path: Path, db_factory) -> None:
         _seed(engine, sid, 5, tool_output="line\n" * 3000)
 
         # Override to 1: only the newest turn stays verbatim, so call-0..call-3 compact.
-        await engine.run_compaction(active, mode="tools", verbatim_tool_turns=1)
+        await _compact(engine, active, verbatim_tool_turns=1)
 
         compacted_ids = {
             p.tool_call_id
@@ -392,26 +403,67 @@ def test_compact_tools_verbatim_override(tmp_path: Path, db_factory) -> None:
     asyncio.run(_run())
 
 
-def test_compact_command_parsing(tmp_path: Path, db_factory) -> None:
+def test_compact_focus_reaches_every_summary_request(tmp_path: Path, db_factory) -> None:
+    prompts: list[str] = []
+
+    async def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        prompts.append(str(messages[-1].parts[-1].content))
+        return ModelResponse(parts=[TextPart(content="short")])
+
     async def _run() -> None:
         with _patch_sentinel():
             engine = _make_engine(tmp_path, session_factory=db_factory)
+        engine._model_factory = lambda _name, *, user: FunctionModel(respond)
+        engine._config.agent.compaction.keep_turns = 3
+        engine._config.agent.compaction.verbatim_tool_turns = 1
         sid = engine.session_mgr.create_session(user="thies").session_id
         engine.get_or_activate(sid)
-        _seed(engine, sid, 8)
+        _seed(engine, sid, 6, tool_output="line\n" * 6000)
 
-        res = await engine.handle_slash_command(sid, "/compact fold 2")
-        assert res is not None and res["command"] == "compact"
-        assert res["data"]["mode"] == "fold"
-        assert res["data"]["turns_folded"] == 6
+        res = await engine.handle_slash_command(sid, "/compact keep the migration details")
 
-        # `/compact tools N` is valid — N is the verbatim hot-zone size.
-        ok = await engine.handle_slash_command(sid, "/compact tools 5")
-        assert ok is not None and ok["command"] == "compact"
-        assert ok["data"]["mode"] == "tools" and "error" not in ok["data"]
+        assert res is not None and res["data"]["mode"] == "manual"
+        assert res["data"]["turns_folded"] == 3 and res["data"]["tool_returns_compacted"] == 2
+        assert len(prompts) == 3
+        assert all(p.endswith("focus on: keep the migration details") for p in prompts)
 
-        bad = await engine.handle_slash_command(sid, "/compact tools xyz")
-        assert "error" in bad["data"]
+    asyncio.run(_run())
+
+
+def test_preview_matches_the_run_without_an_llm_call(tmp_path: Path, db_factory) -> None:
+    summaries: list[str] = []
+
+    async def summarize(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        summaries.append("called")
+        return ModelResponse(parts=[TextPart(content="short")])
+
+    async def _run() -> None:
+        with _patch_sentinel():
+            engine = _make_engine(tmp_path, session_factory=db_factory)
+        engine._model_factory = lambda _name, *, user: FunctionModel(summarize)
+        engine._config.agent.compaction.keep_turns = 3
+        engine._config.agent.compaction.verbatim_tool_turns = 1
+        sid = engine.session_mgr.create_session(user="thies").session_id
+        active = engine.get_or_activate(sid)
+        _seed(engine, sid, 6, tool_output="line\n" * 6000)
+        history = engine.session_mgr.load_history(sid)
+        history[-1] = replace(history[-1], usage=RequestUsage(input_tokens=50_000))
+        engine.session_mgr.save_history(sid, history)
+
+        preview = engine.preview_compaction(active)
+        assert summaries == []
+        report = await engine.run_compaction(active)
+
+        assert preview.context_tokens == 50_000
+        assert preview.threshold_tokens == 120_000 and preview.context_window_tokens == 200_000
+        assert (preview.thinking_dropped, preview.turns_folded, len(preview.tool_outputs)) == (
+            report.thinking_dropped,
+            report.turns_folded,
+            report.tool_returns_compacted,
+        )
+        assert report.turns_folded == 3 and report.tool_returns_compacted == 2
+        # The measurement predates the compaction now, so it no longer says how big the context is.
+        assert engine.preview_compaction(active).context_tokens is None
 
     asyncio.run(_run())
 
@@ -451,7 +503,7 @@ def test_compact_all_ladder_end_to_end(tmp_path: Path, db_factory) -> None:
         engine.session_mgr.save_history(sid, history)
         engine.session_mgr.save_events(sid, events)
 
-        report = await engine.run_compaction(active, mode="all", keep_turns=3)
+        report = await _compact(engine, active, keep_turns=3)
 
         assert report.thinking_dropped > 0
         assert report.turns_folded == 7
@@ -460,7 +512,7 @@ def test_compact_all_ladder_end_to_end(tmp_path: Path, db_factory) -> None:
         # compaction LLM usage is attributed to its own category, not the agent
         assert "compaction" in active.usage_tracker.categories
         # idempotent second run
-        report2 = await engine.run_compaction(active, mode="all", keep_turns=3)
+        report2 = await _compact(engine, active, keep_turns=3)
         assert report2.turns_folded == 0
         assert report2.tool_returns_compacted == 0
 
@@ -468,7 +520,7 @@ def test_compact_all_ladder_end_to_end(tmp_path: Path, db_factory) -> None:
 
 
 def test_fold_after_tools_still_badges_turns(tmp_path: Path, db_factory) -> None:
-    """`/compact tools` then `/compact fold`: folded turns must still get folded_into badges."""
+    """Tool outputs compacted first, turns folded later: folded turns must still get folded_into badges."""
 
     async def _run() -> None:
         with _patch_sentinel():
@@ -477,10 +529,10 @@ def test_fold_after_tools_still_badges_turns(tmp_path: Path, db_factory) -> None
         active = engine.get_or_activate(sid)
         _seed(engine, sid, 10, tool_output="line\n" * 3000)
 
-        # Compact tools first — annotates tool_result events with the token savings.
-        await engine.run_compaction(active, mode="tools")
+        # Tool outputs first (keeping every turn) — annotates tool_result events with the token savings.
+        await _compact(engine, active, keep_turns=10)
         # Then fold the old turns.
-        report = await engine.run_compaction(active, mode="fold", keep_turns=3)
+        report = await _compact(engine, active, keep_turns=3)
 
         assert report.turns_folded == 7
         tree = engine.session_mgr.load_compaction(sid)
@@ -504,7 +556,7 @@ def test_compact_noop_when_short(tmp_path: Path, db_factory) -> None:
         sid = engine.session_mgr.create_session(user="thies").session_id
         active = engine.get_or_activate(sid)
         _seed(engine, sid, 2)
-        report = await engine.run_compaction(active, mode="all", keep_turns=6)
+        report = await _compact(engine, active, keep_turns=6)
         assert report.turns_folded == 0
         assert report.message == "Nothing to compact."
 
@@ -548,10 +600,11 @@ def test_failed_compact_reports_the_error_and_keeps_the_history(tmp_path: Path, 
         engine._model_factory = lambda _name, *, user: FunctionModel(provider_down)
         sid = engine.session_mgr.create_session(user="thies").session_id
         engine.get_or_activate(sid)
+        engine._config.agent.compaction.keep_turns = 3
         _seed(engine, sid, 10)
         before = engine.session_mgr.load_history(sid)
 
-        res = await engine.handle_slash_command(sid, "/compact fold 3")
+        res = await engine.handle_slash_command(sid, "/compact")
 
         assert res is not None and "provider down" in res["data"]["error"]
         assert engine.session_mgr.load_history(sid) == before
@@ -568,9 +621,10 @@ def test_fold_input_too_large_for_the_compaction_model_fails(tmp_path: Path, db_
             entry.max_input_tokens = 100
         sid = engine.session_mgr.create_session(user="thies").session_id
         engine.get_or_activate(sid)
+        engine._config.agent.compaction.keep_turns = 3
         _seed(engine, sid, 10)
 
-        res = await engine.handle_slash_command(sid, "/compact fold 3")
+        res = await engine.handle_slash_command(sid, "/compact")
 
         assert res is not None and "input too large" in res["data"]["error"]
         assert engine.session_mgr.load_compaction(sid).nodes == []
@@ -596,7 +650,7 @@ def test_first_tool_summary_warms_the_cache_before_the_rest_run_concurrently(tmp
         active = engine.get_or_activate(sid)
         _seed(engine, sid, 4, tool_output="line\n" * 6000)
 
-        report = await engine.run_compaction(active, mode="tools")
+        report = await _compact(engine, active)
 
         assert report.tool_returns_compacted == 3
         assert calls == ["start", "end", "start", "start", "end", "end"]
@@ -625,7 +679,7 @@ def test_a_failing_tool_summary_cancels_its_siblings(tmp_path: Path, db_factory)
         engine.get_or_activate(sid)
         _seed(engine, sid, 4, tool_output="line\n" * 6000)
 
-        res = await engine.handle_slash_command(sid, "/compact tools 1")
+        res = await engine.handle_slash_command(sid, "/compact")
 
         assert res is not None and "provider down" in res["data"]["error"]
         await asyncio.sleep(0.2)
@@ -654,7 +708,7 @@ def test_memory_block_is_frozen_per_session_until_compaction(tmp_path: Path, db_
         assert stored is not None and stored.memory is not None and stored.memory.text == "memory #1"
         assert builds == [("thies", sid)]
 
-        await engine.run_compaction(active, mode="fold", keep_turns=3)
+        await _compact(engine, active, keep_turns=3)
         engine._ensure_memory_snapshot(active)
 
         assert active.state.memory is not None and active.state.memory.text == "memory #2"
@@ -687,7 +741,7 @@ async def _fold_then_real_turn(tmp_path: Path, db_factory, models: _AgentAndSumm
     sid = engine.session_mgr.create_session(user="thies").session_id
     active = engine.get_or_activate(sid)
     _seed(engine, sid, 10)
-    await engine.run_compaction(active, mode="fold", keep_turns=3)
+    await _compact(engine, active, keep_turns=3)
     await engine.submit_message(sid, "question 10")
     async with asyncio.timeout(5):
         while active.agent_task is not None:
@@ -700,7 +754,7 @@ def test_repeated_compact_after_a_real_turn_rolls_the_fold_up(tmp_path: Path, db
         models = _AgentAndSummarizer()
         engine, sid, active = await _fold_then_real_turn(tmp_path, db_factory, models)
 
-        await engine.run_compaction(active, mode="fold", keep_turns=3)
+        await _compact(engine, active, keep_turns=3)
 
         assert len(models.summary_inputs) == 2
         assert "Earlier summary: summary 1\n" in models.summary_inputs[1]
@@ -766,7 +820,7 @@ def test_compact_cuts_merged_task_done_turns_at_the_output_tool_return(tmp_path:
             ],
         )
 
-        report = await engine.run_compaction(active, mode="fold", keep_turns=1)
+        report = await _compact(engine, active, keep_turns=1)
 
         assert report.turns_folded == 2
         lead, rest = split_lead_folds(engine.session_mgr.load_history(sid))
@@ -814,8 +868,8 @@ def test_reset_into_an_earlier_fold_falls_back_to_its_summary(tmp_path: Path, db
         sid = engine.session_mgr.create_session(user="thies").session_id
         active = engine.get_or_activate(sid)
         _seed(engine, sid, 10)
-        await engine.run_compaction(active, mode="fold", keep_turns=6)  # turns 0-3 → summary 1
-        await engine.run_compaction(active, mode="fold", keep_turns=3)  # summary 1 + turns 4-6 → summary 2
+        await _compact(engine, active, keep_turns=6)  # turns 0-3 → summary 1
+        await _compact(engine, active, keep_turns=3)  # summary 1 + turns 4-6 → summary 2
         events = list(engine.session_mgr.load_events(sid))
         answer_2 = next(i for i, e in enumerate(events) if e.get("content") == "answer 2")
 

@@ -198,14 +198,19 @@ async def _run_summary(
     return summary
 
 
-async def summarize_fold(text: str, **kwargs: Any) -> str:
+def _with_focus(tail: str, focus: str | None) -> str:
+    # In the prompt tail, not the system prompt: a per-run focus must not split the cached prefix.
+    return f"{tail}\n\nThe user asked this compaction to focus on: {focus}" if focus else tail
+
+
+async def summarize_fold(text: str, *, focus: str | None = None, **kwargs: Any) -> str:
     """Summarize a folded run of turns."""
-    prompt = f"<conversation>\n{text}\n</conversation>\n\n{_FOLD_TAIL}"
+    prompt = f"<conversation>\n{text}\n</conversation>\n\n{_with_focus(_FOLD_TAIL, focus)}"
     return await _run_summary(FOLD_INSTRUCTIONS, prompt, compaction_target="agent", **kwargs)
 
 
-async def summarize_tool_output(tool_name: str, text: str, **kwargs: Any) -> str:
-    prompt = f"Tool: {tool_name}\n<tool_output>\n{text}\n</tool_output>\n\n{_TOOL_TAIL}"
+async def summarize_tool_output(tool_name: str, text: str, *, focus: str | None = None, **kwargs: Any) -> str:
+    prompt = f"Tool: {tool_name}\n<tool_output>\n{text}\n</tool_output>\n\n{_with_focus(_TOOL_TAIL, focus)}"
     return await _run_summary(_TOOL_SYSTEM, prompt, compaction_target="agent", **kwargs)
 
 

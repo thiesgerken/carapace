@@ -486,6 +486,18 @@ def test_session_usage_matches_usage_command(auth_headers, admin_auth_headers):
     assert TestClient(app).get(f"/api/sessions/{sid}/usage", headers=admin_auth_headers).status_code == 404
 
 
+def test_compaction_preview_of_an_empty_session(auth_headers, admin_auth_headers):
+    sid = _create_session(auth_headers)
+
+    resp = TestClient(app).get(f"/api/sessions/{sid}/compaction/preview", headers=auth_headers)
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["context_tokens"] is None and body["turns_folded"] == 0 and body["tool_outputs"] == []
+    assert body["threshold_tokens"] < body["context_window_tokens"]
+    assert TestClient(app).get(f"/api/sessions/{sid}/compaction/preview", headers=admin_auth_headers).status_code == 404
+
+
 def test_pending_approvals_api_key_read_scope(auth_headers):
     sid = _create_session(auth_headers)
     headers = _api_key_headers("thies", [ApiKeyGrant(scope=Scope.sessions, access=Access.read)])
