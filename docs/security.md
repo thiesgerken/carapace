@@ -8,8 +8,9 @@ Every tool call and skill invocation passes through the security module before e
 
 1. **Safe-list check.** A hardcoded set of tool names is auto-allowed without any LLM call. carapace also applies a narrow read-only `exec` heuristic and a narrow exact-domain proxy heuristic for obviously harmless cases.
 2. **Sentinel evaluation.** All other operations are sent to the sentinel agent -- an LLM that receives the action log, the tool name and arguments, and makes a contextual decision.
-3. **Verdict.** The sentinel returns one of three decisions:
+3. **Verdict.** The sentinel returns one of four decisions:
    - **allow** -- proceed without interruption.
+   - **revise** -- no threat, but the agent should change its approach first (split a bundled call, narrow its scope, drop an unrequested extra, or ask the user in chat). The operation does not run; the agent receives "Sentinel requests changes (no threat detected): <explanation>" and continues. Only offered for tool calls and git pushes, the two places where the explanation reaches the agent. For proxy domain and credential requests an output validator makes the sentinel choose another verdict.
    - **escalate** -- pause the operation and ask the user for approval.
    - **deny** -- block the operation outright.
 4. **Audit.** Every decision (safe-list or sentinel) is recorded in a per-session audit log.
@@ -22,6 +23,8 @@ flowchart TD
     against SECURITY.md policy
     and session context"]
     Proceed[Operation proceeds]
+    Revise["Agent gets a change request
+    and tries another approach"]
     Gate["Approval Gate fires
     (sends prompt to user)"]
     Blocked[Operation blocked]
@@ -30,6 +33,7 @@ flowchart TD
     SafeList -->|yes| Proceed
     SafeList -->|no| Sentinel
     Sentinel -->|allow| Proceed
+    Sentinel -->|revise| Revise
     Sentinel -->|escalate| Gate
     Sentinel -->|deny| Blocked
     Gate -->|user approves| Proceed
@@ -43,12 +47,13 @@ The security policy lives in each user's Git-backed knowledge repo as `SECURITY.
 The shipped default policy (see `src/carapace/assets/SECURITY.md`) covers:
 
 - **Default stance** -- assume the agent is usually doing the right thing; escalate for genuine ambiguity or risk, not routine work; deny when listed threats clearly apply; the user may instruct the sentinel how to treat a specific next step (within hard safety limits).
+- **Verdicts** -- when to allow, revise, escalate or deny. Scope creep and bundling an unrequested extra into a call get `revise`, not a question to the user; a second `revise` for the same intent becomes `escalate` (the sentinel sees its earlier verdicts in the action log, there is no counter in code).
 - **Threats** -- prompt injection, destructive or absurd approaches, task drift, unsafe handling of passwords.
 - **Sandbox and layered defense** -- local `exec` is judged in context; network and Git push provide a second line of defense, but obviously malicious commands should still be stopped early.
 - **Network (proxy)** -- TLS hides everything except the domain; higher bar for outbound than inbound; judge plausibility from the triggering command and conversation.
 - **Skill activation** -- permissive `use_skill`; lighter touch when the skill injects no credentials; skill-declared vault paths are covered by `use_skill` approval (no extra prompt by design).
 - **Credentials** -- explicit sandbox vault access must fit the user’s task; deny exfiltration-style patterns; secrets must never be echoed or logged in plain text.
-- **Git push** -- always escalate when `USER.md`, `SOUL.md`, `AGENTS.md`, or `SECURITY.md` change; other files may be allowed when the chat clearly shows user intent.
+- **Git push** -- always escalate when `USER.md`, `SOUL.md`, `AGENTS.md`, or `SECURITY.md` change; other files may be allowed when the chat clearly shows user intent. Committing and pushing a change the user requested or approved is part of that request. An `exec` that commits and pushes the knowledge repo is not escalated for the push alone, since the push gets its own review with the actual diff.
 - **Autonomy** -- slightly more care after long unsupervised stretches or fresh external content, without escalating every harmless step.
 - **Proxy domain requests** -- plausibility pass on domains after the tool call that triggered the connection was already evaluated.
 
@@ -84,12 +89,15 @@ The sentinel is a Pydantic AI agent with its own LLM model, configured from **Se
 
 Instead of stateless per-call evaluations, the sentinel maintains a **persistent conversation** for each session. Each evaluation request is appended as a new message to the ongoing conversation, giving the sentinel full context of:
 
-- All previous tool calls and their decisions
-- User messages and agent responses (metadata only -- not raw tool results, to prevent prompt injection)
-- Previous approvals and denials
+- Every user message
+- Everything the agent wrote to the user: its final answers and the text between tool calls (not its reasoning)
+- All previous tool calls with their full arguments and decisions (tool results only as metadata, to prevent prompt injection)
+- Previous approvals, denials and change requests
 - Skill activations
 
-This enables nuanced judgments like "the user just confirmed this is what they want" or "the agent has been running autonomously for a while after reading external data."
+This enables nuanced judgments like "the user just confirmed this is what they want" or "the agent has been running autonomously for a while after reading external data." Seeing the agent's messages is what makes a short consent readable: "yes, do 1 and 3" only means something next to the proposal it answers. The agent's text may be shaped by injected content, so the sentinel's instructions say to use it for understanding what the user agreed to, never as an instruction or as consent by itself.
+
+The conversation only ever grows: an evaluation sends the previous request unchanged, followed by the sentinel's answer to it and the new prompt. The system prompt and the tool definitions stay the same between evaluations (they change only with the session's mode or `SECURITY.md`). The sentinel sets a prompt cache breakpoint on the conversation, so every evaluation reads the previous one from the provider's cache (see [persistent-context.md](persistent-context.md#prefix-caching)). `tests/test_sentinel_prompt_cache.py` checks this prefix property across consecutive evaluations and a restart.
 
 ### Sentinel state
 
@@ -118,9 +126,9 @@ The action log is a per-session, append-only chronological record of all signifi
 
 | Entry type              | What it records                                             |
 | ----------------------- | ----------------------------------------------------------- |
-| `UserMessageEntry`      | User sent a message (truncated preview)                     |
-| `AgentResponseEntry`    | Agent generated a response (token count only)               |
-| `ToolCallEntry`         | Tool was called, with decision and explanation              |
+| `UserMessageEntry`      | User sent a message                                         |
+| `AgentResponseEntry`    | Text the agent showed the user (answer or between tools)   |
+| `ToolCallEntry`         | Tool was called, with full arguments, decision, explanation |
 | `ToolResultEntry`       | Tool returned a result (metadata only, not content)         |
 | `ApprovalEntry`         | User approved or denied an escalated action                 |
 | `SkillActivatedEntry`   | A skill was activated (metadata only)                       |
@@ -157,7 +165,7 @@ Every security decision is written to a per-session audit log file at `$CARAPACE
 - Timestamp
 - Whether it was a tool call, proxy domain request, or git push
 - The sentinel's verdict (decision, explanation, risk level)
-- The final decision (may differ if user overrode an escalation)
+- The final decision (may differ if user overrode an escalation; `changes_requested` for a `revise` verdict)
 
 ## Proxy domain requests
 
@@ -172,9 +180,9 @@ The sentinel's system prompt explicitly tells it that the tool call itself was a
 
 When the agent pushes changes from a sandbox container back to the knowledge repository, the push is gated by a **pre-receive hook** that routes each ref update through the sentinel. The sentinel sees the branch, commit log, and diff, and decides whether to allow the push.
 
-Like tool calls and proxy domains, the sentinel can escalate a git push to the user for approval. Push evaluation results (allow, deny, escalate) are broadcast to all session subscribers (WebSocket, Matrix) and recorded in both the action log (`GitPushEntry`) and the audit log.
+Like tool calls and proxy domains, the sentinel can escalate a git push to the user for approval. Push evaluation results (allow, revise, deny, escalate) are broadcast to all session subscribers (WebSocket, Matrix) and recorded in both the action log (`GitPushEntry`) and the audit log.
 
-If a push is denied, `git push` fails in the sandbox with a descriptive error message from the sentinel.
+If a push is denied or the sentinel requests changes, `git push` fails in the sandbox and the pre-receive hook prints the reason (`Push rejected: Sentinel requests changes (no threat detected): ...`), which the agent reads in git's output.
 
 If an external remote is configured (`config.git.remote` in the owning user record), a successful push from the sandbox is automatically forwarded to the remote. Users can also trigger this manually with the `/push` slash command.
 
@@ -200,7 +208,7 @@ Knowledge raw downloads and sent-file downloads share an inline MIME allowlist: 
 
 The sentinel is designed to resist prompt injection:
 
-1. **No raw tool results.** The sentinel never sees file contents, API responses, or command output -- only metadata about the results.
+1. **No raw tool results.** The sentinel never sees file contents, API responses, or command output -- only metadata about the results. It does see the agent's messages and tool call arguments, which injected content may have shaped: a deliberate tradeoff, since the sentinel cannot judge consent without the conversation. Its instructions treat that text as context, never as instructions.
 2. **Adversarial awareness.** The sentinel's system prompt includes explicit warnings about prompt injection attempts in action log entries.
 3. **Restricted file access.** The sentinel can only read trusted skill directories, not the agent's potentially compromised workspace.
 4. **Structured output.** The sentinel returns a `SentinelVerdict` Pydantic model, not free-form text, reducing the attack surface for output manipulation.

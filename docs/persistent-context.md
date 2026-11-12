@@ -69,7 +69,7 @@ The sentinel and the titler stay out on purpose. The sentinel must judge the age
 - shared prefix, role instructions, and the memory block (agent) or `SECURITY.md` (sentinel)
 - the volatile tail (the agent's session info), or a user prompt with labelled placeholder material (memory tasks)
 
-`cacheable_until` is the index of the last section inside the cached prefix (null for the sentinel and the titler, which set no breakpoint). For the agent, `memory_budget_tokens` and `memory_used_tokens` show the budget and what the block uses. The agent is previewed as a fresh session with default attributes, so its memory block is what a session starting now would get. Compaction shows the fold instructions; tool-output compaction uses shorter ones.
+`cacheable_until` is the index of the last section inside the cached prefix (null for the titler, which sets no breakpoint). For the agent, `memory_budget_tokens` and `memory_used_tokens` show the budget and what the block uses. The agent is previewed as a fresh session with default attributes, so its memory block is what a session starting now would get. Compaction shows the fold instructions; tool-output compaction uses shorter ones.
 
 The preview builds each role's real agent with the function its real calls use (`create_agent()`, the sentinel's agent, `title_agent()`, `summary_agent()`, `structured_agent()`) and runs it against a model that only records the first request, so no provider is called. The tool definitions come straight from that request. The sections are the assembly pieces the instructions are joined from, and if they no longer add up to the recorded instructions, the endpoint fails (`PromptDriftError`) instead of showing a prompt the role does not send.
 
@@ -79,12 +79,13 @@ Prefix caching is a hard requirement. An agent session re-sends the shared prefi
 
 The order is built so that a prefix cache can hit: stable first, volatile last. Nothing per session or per call (the current date, the session ID, a role split) may come before the long shared text, and the tool definitions and instructions of a session should not change between requests.
 
-Some providers (OpenAI, Gemini) cache matching prompt prefixes on their own. Anthropic (direct or on Bedrock) caches only up to explicit breakpoints. The roles that lead with the shared prefix set those breakpoints through the Anthropic and Bedrock cache settings (`llm.with_prompt_cache()`), which other providers ignore. pydantic-ai's provider-agnostic `cache` setting is off limits: it also sends OpenAI's `prompt_cache_options`, which some backends (Codex) reject with a 400. The breakpoints:
+Some providers (OpenAI, Gemini) cache matching prompt prefixes on their own. Anthropic (direct or on Bedrock) caches only up to explicit breakpoints. The roles that lead with the shared prefix, and the sentinel, set those breakpoints through the Anthropic and Bedrock cache settings (`llm.with_prompt_cache()`), which other providers ignore. pydantic-ai's provider-agnostic `cache` setting is off limits: it also sends OpenAI's `prompt_cache_options`, which some backends (Codex) reject with a 400. The breakpoints:
 
 - **Agent turns**: after the tool definitions and after the stable instructions, plus the growing conversation, so every request of a turn reads the history written by the previous one. The date and session ID are a separate dynamic instruction behind the breakpoint, so they don't split the cached prefix.
+- **Sentinel**: after the tool definitions and on the growing shadow conversation. The shadow conversation is append-only, so each evaluation reads everything up to the previous one from the cache and only pays for the new action log entries, the request and its verdict. Its system prompt is the sentinel instructions, the session's mode blocks and `SECURITY.md`, all stable between evaluations. Compaction, a mode change or an edited `SECURITY.md` rewrites it once.
 - **Compaction and memory tasks**: the system prompt only. Their user prompt is a one-off and is never read back.
 
-The sentinel and the titler set no breakpoints.
+The titler sets no breakpoints.
 
 Each role's own prefix is what gets reused between its calls. Two roles share a cache entry only when they run on the same model, and providers that put tool definitions ahead of the system prompt (Anthropic does) keep the agent (with tools) and the tool-less roles apart. Anthropic only caches prompts above a model-specific minimum length, and an entry lives for 5 minutes after its last use.
 

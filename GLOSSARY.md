@@ -42,14 +42,15 @@ The role that talks to the user and calls tools.
 _Avoid_: Main agent, assistant
 
 **Sentinel**:
-The role that decides whether an agent action is allowed, denied or escalated to the user.
+The role that decides whether an agent action is allowed, sent back for changes, denied or
+escalated to the user.
 _Avoid_: Security agent, gatekeeper, guard
 
 ## Security
 
 **Action Log**:
 The append-only record of what happened in a session, as the sentinel is told about it: user
-messages, agent actions, sentinel verdicts and user decisions.
+messages, the agent's messages and actions, sentinel verdicts and user decisions.
 _Avoid_: Audit log (that is the separate record of final security decisions)
 
 **Shadow Conversation**:
@@ -59,6 +60,11 @@ _Avoid_: Sentinel history
 
 **Sentinel State**:
 Everything the sentinel knows about a session: its shadow conversation and the action log.
+
+**Change Request**:
+A sentinel verdict (`revise`) that finds no threat but sends a tool call or git push back to the
+agent to change its approach. Recorded as `changes_requested`.
+_Avoid_: Soft deny, revision
 
 **User Decision**:
 A user approving or denying an action that the sentinel escalated.
