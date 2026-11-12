@@ -1673,7 +1673,9 @@
         "providerTitle": "The model's provider replaced everything above with a summary in the model's context. Originals shown here",
         "providerOpaque": "The provider keeps this summary encrypted, so it cannot be shown.",
         "providerFailed": "Compaction by {provider} failed, compacted locally",
-        "providerFailedTitle": "The provider did not compact the context, so carapace compacted it with its own ladder. Details below"
+        "providerFailedTitle": "The provider did not compact the context, so carapace compacted it with its own ladder. Details below",
+        "providerRejected": "{provider} rejected compaction; this model compacts locally from now on",
+        "providerRejectedTitle": "The provider refused server-side compaction. That request failed, and carapace compacts this model itself from the next request on. Details below"
     },
     "promptPreview": {
         "role": "Role",

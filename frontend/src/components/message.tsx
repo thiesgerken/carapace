@@ -474,12 +474,16 @@ function ProviderCompactionMarker({
           message.failed ? "text-destructive hover:bg-destructive/10" : "text-muted-foreground/80 hover:bg-accent",
           "transition-colors",
         )}
-        title={message.failed ? t("providerFailedTitle") : t("providerTitle")}
+        title={message.rejected ? t("providerRejectedTitle") : message.failed ? t("providerFailedTitle") : t("providerTitle")}
         aria-expanded={open}
       >
         <Archive className={cn("h-3 w-3 shrink-0", message.failed ? "text-destructive" : "text-amber-600/70")} />
         <span className="font-medium">
-          {message.failed ? t("providerFailed", { provider }) : t("providerMarker", { provider })}
+          {message.rejected
+            ? t("providerRejected", { provider })
+            : message.failed
+              ? t("providerFailed", { provider })
+              : t("providerMarker", { provider })}
         </span>
         <ChevronRight className={cn("ml-auto h-3 w-3 shrink-0 transition-transform", open && "rotate-90")} />
       </button>

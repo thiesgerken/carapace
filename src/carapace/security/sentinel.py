@@ -614,7 +614,13 @@ class Sentinel:
         if on_rejected is None:
             return [provider.capability]
         model = self._model
-        return [provider.capability, ProviderCompactionRejectionCapability(lambda reason: on_rejected(model, reason))]
+
+        def rejected(reason: str) -> None:
+            on_rejected(model, reason)
+            # The agent carries the setting: rebuild it, so the next evaluation goes out without it.
+            self._agent = self._create_agent()
+
+        return [provider.capability, ProviderCompactionRejectionCapability(rejected)]
 
     @staticmethod
     def _reject_unreadable_revise(ctx: RunContext[SentinelDeps], output: _SentinelOutput) -> _SentinelOutput:

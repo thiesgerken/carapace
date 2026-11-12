@@ -216,6 +216,8 @@ class ProviderCompaction:
 
     capability: AbstractCapability[Any]
     provider_name: str
+    # The input size at which the provider was asked to compact (Anthropic's is clamped to its minimum).
+    threshold: int
 
 
 def provider_compaction(entry: AvailableModelEntry, *, instructions: str) -> ProviderCompaction | None:
@@ -230,12 +232,14 @@ def provider_compaction(entry: AvailableModelEntry, *, instructions: str) -> Pro
         case "anthropic":
             threshold = max(entry.compaction_threshold, ANTHROPIC_MIN_COMPACTION_TOKENS)
             return ProviderCompaction(
-                AnthropicCompaction(token_threshold=threshold, instructions=instructions), "anthropic"
+                AnthropicCompaction(token_threshold=threshold, instructions=instructions), "anthropic", threshold
             )
         case "openai-responses" if entry.base_url is None:
-            return ProviderCompaction(OpenAICompaction(token_threshold=entry.compaction_threshold), "openai")
+            threshold = entry.compaction_threshold
+            return ProviderCompaction(OpenAICompaction(token_threshold=threshold), "openai", threshold)
         case "openai-codex":
-            return ProviderCompaction(OpenAICompaction(token_threshold=entry.compaction_threshold), CODEX_PROVIDER)
+            threshold = entry.compaction_threshold
+            return ProviderCompaction(OpenAICompaction(token_threshold=threshold), CODEX_PROVIDER, threshold)
         case _:
             return None
 

@@ -931,7 +931,7 @@ export function projectHistoryToMessages(history: HistoryMessage[]): ChatMessage
     }
 
     if (entry.role === "compaction") {
-      messages.push({ kind: "provider_compaction", provider: entry.provider, summary: entry.summary, failed: entry.failed });
+      messages.push({ kind: "provider_compaction", provider: entry.provider, summary: entry.summary, failed: entry.failed, rejected: entry.rejected });
       continue;
     }
 

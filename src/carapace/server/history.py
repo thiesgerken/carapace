@@ -99,6 +99,8 @@ class HistoryMessage(BaseModel):
     summary: str | None = None
     # Set instead of a summary when the provider failed to compact: why, and that carapace compacted locally.
     failed: str | None = None
+    # With ``failed``: the provider refused the setting, so the model compacts locally from now on.
+    rejected: bool | None = None
 
     @model_validator(mode="after")
     def _contexts_from_args_when_missing(self) -> Self:

@@ -104,14 +104,17 @@ shapes) count only that sent part.
   summary so far, and ends with one summary. A single message too large even on its own fails loudly.
 - **Provider failures** are loud and fall back to carapace for that compaction, so a session keeps
   working when a provider changes its behaviour:
-  - *Skipped:* a request measured above the threshold whose response carries no compaction part means
-    the provider ignored the setting. carapace logs an error, marks a failed compaction in the
+  - *Skipped:* a request the provider was asked to compact (measured by that provider, above the
+    threshold it was sent, which for Anthropic is at least 50,000) whose response carries no compaction
+    part means the provider ignored the setting. carapace logs an error, marks a failed compaction in the
     transcript, and compacts this once with its own ladder, from the originals (provider parts
     stripped). The agent checks this before each request inside the run, the sentinel before each
     evaluation.
   - *Rejected:* a `400` that names `context_management` means the provider refuses the setting. That
-    request fails (the turn ends with the provider's error; **Continue** retries it), carapace logs an
-    error and marks a failed compaction, and the model compacts locally until the server restarts.
+    request fails (the turn ends with the provider's error; **Continue** retries it; a sentinel
+    evaluation fails like any other), carapace logs an error and marks it, and the model compacts locally
+    until the server restarts. A sentinel rebuilds its agent right away, so its next evaluation goes out
+    without the setting.
 - **`/uncompact`** also removes the provider's compaction (the history is rebuilt from the events) and
   its markers. A rewind into the middle of a turn rebuilds that turn without the compaction part and
   drops its marker too.
@@ -213,7 +216,8 @@ subtle marker plus an on-demand peek at what the model actually sees, never by h
 - **Provider compaction** shows as a marker at the point where the provider compacted ("Context
   compacted by anthropic"). It expands to the provider's summary, or says that the provider keeps it
   encrypted. The messages above it stay shown as they were. A failed provider compaction shows as a
-  red marker ("Compaction by openai-codex failed, compacted locally") that expands to the reason.
+  red marker ("Compaction by openai-codex failed, compacted locally", or for a refusal "openai-codex
+  rejected compaction; this model compacts locally from now on") that expands to the reason.
 - The [debug view](debug-view.md) shows the agent's latest request exactly as it went to the model,
   fold summaries, compacted tool returns and a provider's compaction part included (nothing before
   that part), and the latest compaction request itself.

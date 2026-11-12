@@ -103,11 +103,13 @@ test("a provider compaction event renders as a marker with the provider's summar
     { role: "compaction", content: "", provider: "anthropic", summary: "the user asked to go", event_index: 1 },
     { role: "compaction", content: "", provider: "openai", event_index: 2 },
     { role: "compaction", content: "", provider: "openai-codex", failed: "did not compact; compacting locally instead", event_index: 3 },
+    { role: "compaction", content: "", provider: "openai-codex", failed: "rejected compaction: Unknown parameter", rejected: true, event_index: 4 },
   ]);
 
   assert.deepEqual(messages.slice(1), [
-    { kind: "provider_compaction", provider: "anthropic", summary: "the user asked to go", failed: undefined },
-    { kind: "provider_compaction", provider: "openai", summary: undefined, failed: undefined },
-    { kind: "provider_compaction", provider: "openai-codex", summary: undefined, failed: "did not compact; compacting locally instead" },
+    { kind: "provider_compaction", provider: "anthropic", summary: "the user asked to go", failed: undefined, rejected: undefined },
+    { kind: "provider_compaction", provider: "openai", summary: undefined, failed: undefined, rejected: undefined },
+    { kind: "provider_compaction", provider: "openai-codex", summary: undefined, failed: "did not compact; compacting locally instead", rejected: undefined },
+    { kind: "provider_compaction", provider: "openai-codex", summary: undefined, failed: "rejected compaction: Unknown parameter", rejected: true },
   ]);
 });
