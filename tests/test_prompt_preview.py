@@ -95,15 +95,20 @@ def test_disabled_skill_is_excluded_from_prompt_preview(role: PromptRole, tmp_pa
     assert "Unique private coverage" in "\n".join(section.text for section in preview(role, tmp_path).sections)
 
 
-def test_sentinel_and_titler_set_no_cache_breakpoint(tmp_path: Path) -> None:
+def test_sentinel_caches_its_whole_prompt(tmp_path: Path) -> None:
     sentinel = preview(PromptRole.sentinel, tmp_path)
-    titler = preview(PromptRole.titler, tmp_path)
 
     assert keys(sentinel) == ["tools", "role_instructions", "security_md"]
     assert sentinel.sections[2].text == "Never push to main."
     assert '"name": "judge"' in tool_names(sentinel)
+    assert sentinel.cacheable_until == 2
+
+
+def test_titler_sets_no_cache_breakpoint(tmp_path: Path) -> None:
+    titler = preview(PromptRole.titler, tmp_path)
+
     assert keys(titler) == ["role_instructions"]
-    assert sentinel.cacheable_until is None and titler.cacheable_until is None
+    assert titler.cacheable_until is None
 
 
 @pytest.mark.parametrize("role", [PromptRole.session_extract, PromptRole.week_digest, PromptRole.month_digest])

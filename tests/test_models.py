@@ -258,11 +258,16 @@ def test_available_model_entry_compaction_threshold(data, threshold):
     assert e.compaction_threshold == threshold
 
 
-def test_available_model_entry_rejects_threshold_at_context_window():
-    with pytest.raises(ValidationError, match="below max_input_tokens"):
-        AvailableModelEntry.model_validate(
-            {"provider": "anthropic", "name": "m", "max_input_tokens": 100_000, "compaction_threshold_tokens": 100_000}
-        )
+@pytest.mark.parametrize(
+    "data",
+    [
+        {"max_input_tokens": 100_000, "compaction_threshold_tokens": 100_000},
+        {"compaction_threshold_tokens": 200_000},  # against the assumed 200k window
+    ],
+)
+def test_available_model_entry_rejects_threshold_at_context_window(data):
+    with pytest.raises(ValidationError, match="below the context window"):
+        AvailableModelEntry.model_validate({"provider": "anthropic", "name": "m", **data})
 
 
 def test_available_model_entry_rejects_string_without_colon():

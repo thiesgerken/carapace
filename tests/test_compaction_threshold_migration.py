@@ -19,7 +19,7 @@ def test_migration_drops_sentinel_threshold_pct_and_strips_model_thresholds_on_d
     cfg = _alembic_config(str(engine.url))
     with engine.begin() as conn:
         cfg.attributes["connection"] = conn
-        command.upgrade(cfg, "0013")
+        command.upgrade(cfg, "0014")
         conn.execute(
             insert(PlatformSettingRow),
             [
@@ -29,14 +29,14 @@ def test_migration_drops_sentinel_threshold_pct_and_strips_model_thresholds_on_d
                 }
             ],
         )
-        command.upgrade(cfg, "0014")
+        command.upgrade(cfg, "0015")
         upgraded = conn.scalar(select(PlatformSettingRow.data).where(PlatformSettingRow.key == "agent"))
 
         conn.execute(
             insert(_raw_models),
             [{"id": "anthropic:m", **_MODEL, "data": _MODEL | {"compaction_threshold_tokens": 90_000}}],
         )
-        command.downgrade(cfg, "0013")
+        command.downgrade(cfg, "0014")
         downgraded_model = conn.scalar(select(_raw_models.c.data))
     engine.dispose()
 

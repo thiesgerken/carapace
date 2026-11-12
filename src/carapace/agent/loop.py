@@ -78,7 +78,12 @@ async def run_agent_turn(
             return
         segment = "".join(current_text_parts)
         current_text_parts.clear()
-        if segment.strip() and on_assistant_text is not None:
+        if not segment.strip():
+            return
+        # Logged before the tool call it precedes is gated, so the sentinel reads what the agent told
+        # the user about it.
+        deps.security.append(AgentResponseEntry(text=segment))
+        if on_assistant_text is not None:
             await on_assistant_text(segment)
 
     async def _stream_handler(_ctx: Any, events: Any) -> None:
@@ -221,9 +226,8 @@ async def run_agent_turn(
         final_status = "warning"
 
     if output_text is not None:
-        last_usage = result.usage
-        token_count = (last_usage.output_tokens or 0) + (last_usage.input_tokens or 0)
-        deps.security.append(AgentResponseEntry(token_count=token_count))
+        if output_text.strip():
+            deps.security.append(AgentResponseEntry(text=output_text))
         return messages, output_text, last_thinking, final_status
 
     output = f"Unexpected agent output type: {type(result.output).__name__}"

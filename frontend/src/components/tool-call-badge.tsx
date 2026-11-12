@@ -20,6 +20,7 @@ import {
   Send,
   ShieldAlert,
   ShieldCheck,
+  ShieldEllipsis,
   SquareTerminal,
   UserCheck,
   UserX,
@@ -34,7 +35,7 @@ import {
   languageFromFilePath,
   splitReadToolResult,
 } from "@/lib/sandbox-read";
-import type { CompactionAnnotation, SentFile } from "@/lib/types";
+import type { ApprovalVerdict, CompactionAnnotation, SentFile } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { sentFileUrl } from "@/lib/api";
 import { artifactSnapshotTitle, artifactViewerHref, sentArtifactSlug } from "@/lib/artifacts";
@@ -59,7 +60,6 @@ interface ToolCallBadgeProps {
 }
 
 type ApprovalSource = "safe-list" | "sentinel" | "user" | "skill" | "bypass" | "autonomy" | "unknown";
-type ApprovalVerdict = "allow" | "deny" | "escalate";
 
 const TOOL_ICONS: Record<string, LucideIcon> = {
   exec: SquareTerminal,
@@ -433,6 +433,16 @@ function ApprovalBadge({
         >
           <Loader2 className="h-2.5 w-2.5 animate-spin" />
           {t("review")}
+        </span>
+      );
+    }
+    if (verdict === "revise") {
+      return (
+        <span
+          className="inline-flex shrink-0 items-center text-orange-600 dark:text-orange-400"
+          title={tooltip || undefined}
+        >
+          <ShieldEllipsis className="h-3 w-3" />
         </span>
       );
     }
@@ -899,6 +909,11 @@ export function ToolCallBadge({
                   <ShieldCheck className="inline h-3 w-3 -translate-y-px mr-1" />
                   {t("details.sentinelLabel")}
                 </span>{" "}
+              {verdict === "revise" && (
+                <span className="font-medium text-orange-600 dark:text-orange-400">
+                  {t("details.sentinelRequestsChanges")}{" "}
+                </span>
+              )}
               {sentinelExplanation}
             </div>
           )}

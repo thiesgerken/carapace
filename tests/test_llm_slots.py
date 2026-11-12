@@ -11,7 +11,7 @@ from pydantic_ai.models.test import TestModel
 
 from carapace.config import build_config
 from carapace.llm import SlotLimitedModel
-from carapace.security.sentinel import Sentinel
+from carapace.security.sentinel import Sentinel, SentinelDeps
 from tests.session_helpers import _FakeSubscriber, _make_engine, _patch_sentinel
 
 _PROMPT = [ModelRequest(parts=[UserPromptPart(content="hi")])]
@@ -102,7 +102,7 @@ def test_sentinel_requests_take_an_llm_slot(tmp_path: Path) -> None:
         )
 
         await slots.acquire()
-        run = asyncio.create_task(sentinel.agent.run("review", deps=tmp_path / "skills"))
+        run = asyncio.create_task(sentinel.agent.run("review", deps=SentinelDeps(tmp_path / "skills", can_revise=True)))
         await asyncio.sleep(0.01)
         assert not run.done()
 

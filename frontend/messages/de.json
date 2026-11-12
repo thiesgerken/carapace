@@ -1036,6 +1036,7 @@
             "activateSkillPromptSuffix": "Skill aktivieren.",
             "sentinelLabel": "Sentinel:",
             "sentinelReviewing": "Dieser Tool-Aufruf wird geprüft.",
+            "sentinelRequestsChanges": "Bittet um Änderungen:",
             "userLabel": "Benutzer:",
             "deniedByUser": "Vom Benutzer abgelehnt.",
             "contexts": "Kontext:",

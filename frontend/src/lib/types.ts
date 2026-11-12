@@ -206,6 +206,9 @@ export interface SentFile {
   size: number;
 }
 
+/** The verdict of the sentinel or the user on an action; `revise` sends it back to the agent for changes. */
+export type ApprovalVerdict = "allow" | "revise" | "deny" | "escalate";
+
 export interface HistoryMessage {
   role: string;
   content: string;
@@ -235,7 +238,7 @@ export interface HistoryMessage {
     | "bypass"
     | "autonomy"
     | "unknown";
-  approval_verdict?: "allow" | "deny" | "escalate";
+  approval_verdict?: ApprovalVerdict;
   approval_explanation?: string;
   result?: string;
   files?: SentFile[];
@@ -339,7 +342,7 @@ export interface ToolCallInfo {
     | "bypass"
     | "autonomy"
     | "unknown";
-  approval_verdict?: "allow" | "deny" | "escalate";
+  approval_verdict?: ApprovalVerdict;
   approval_explanation?: string;
   tool_id?: string;
   parent_tool_id?: string;
@@ -613,7 +616,7 @@ export type ChatMessage =
         | "bypass"
         | "autonomy"
         | "unknown";
-      approvalVerdict?: "allow" | "deny" | "escalate";
+      approvalVerdict?: ApprovalVerdict;
       approvalExplanation?: string;
       decisionMessage?: string;
       result?: string;
@@ -638,7 +641,7 @@ export type ChatMessage =
           | "bypass"
           | "autonomy"
           | "unknown";
-        approvalVerdict?: "allow" | "deny" | "escalate";
+        approvalVerdict?: ApprovalVerdict;
         approvalExplanation?: string;
         decisionMessage?: string;
         result?: string;
