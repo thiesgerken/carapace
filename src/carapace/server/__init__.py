@@ -822,7 +822,7 @@ async def evaluate_push(req: PushEvalRequest) -> dict[str, str]:
 
     with _engine.llm_request_recording(active):
         try:
-            allowed = await evaluate_push_with(
+            evaluation = await evaluate_push_with(
                 active.security,
                 active.sentinel,
                 req.ref,
@@ -838,9 +838,9 @@ async def evaluate_push(req: PushEvalRequest) -> dict[str, str]:
             return {"verdict": "deny", "reason": str(exc)}
         except UsageLimitExceeded as exc:
             return {"verdict": "deny", "reason": str(exc)}
-    if allowed:
+    if evaluation.allowed:
         return {"verdict": "allow"}
-    return {"verdict": "deny", "reason": "Denied by sentinel"}
+    return {"verdict": "deny", "reason": evaluation.rejection}
 
 
 router.include_router(sessions_router)

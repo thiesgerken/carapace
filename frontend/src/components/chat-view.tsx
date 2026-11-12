@@ -34,6 +34,7 @@ import {
   wsUrl,
 } from "@/lib/api";
 import type {
+  ApprovalVerdict,
   Attachment,
   ChatMessage,
   ClientMessage,
@@ -402,7 +403,7 @@ function isUserApprovedReplay(
     | "autonomy"
     | "unknown"
     | undefined,
-  approvalVerdict: "allow" | "deny" | "escalate" | undefined,
+  approvalVerdict: ApprovalVerdict | undefined,
 ): boolean {
   return (
     approvalSource === "user" &&
@@ -425,7 +426,7 @@ function isToolCallLoading(
     | "bypass"
     | "autonomy"
     | "unknown",
-  approvalVerdict?: "allow" | "deny" | "escalate",
+  approvalVerdict?: ApprovalVerdict,
 ): boolean {
   const isGitPush = tool === "git_push";
   if (

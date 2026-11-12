@@ -40,7 +40,7 @@ from .models.user import UserConfig
 from .prompt_prefix import shared_prompt_prefix
 from .sandbox.manager import SandboxManager
 from .security.context import SessionSecurity
-from .security.sentinel import SENTINEL_INSTRUCTIONS, Sentinel, load_security_md
+from .security.sentinel import SENTINEL_INSTRUCTIONS, Sentinel, SentinelDeps, load_security_md
 from .session.compaction_summarizer import FOLD_INSTRUCTIONS, summary_agent
 from .session.titler import TITLE_INSTRUCTIONS, title_agent
 from .usage import UsageTracker, count_text_tokens
@@ -158,15 +158,14 @@ async def _sentinel(inputs: PreviewInputs) -> PromptPreview:
     state = _fresh_session(inputs)
     sentinel = _sentinel_for(inputs, state)
     model = state.sentinel_model_name or inputs.config.agent.sentinel_model
-    request = await _record(sentinel.agent, deps=sentinel.skills_dir)
+    request = await _record(sentinel.agent, deps=SentinelDeps(sentinel.skills_dir, can_revise=True))
     sections = [
         *_tool_sections(request, model),
         _section("role_instructions", "Sentinel instructions", SENTINEL_INSTRUCTIONS, model),
         _section("security_md", "SECURITY.md", load_security_md(inputs.repo.knowledge_dir), model),
     ]
     _check_sections(request, sections)
-    # The sentinel sets no cache breakpoint (see persistent-context.md).
-    return _preview(PromptRole.sentinel, model, sections, cacheable_until=None)
+    return _preview(PromptRole.sentinel, model, sections, cacheable_until=len(sections) - 1)
 
 
 async def _titler(inputs: PreviewInputs) -> PromptPreview:

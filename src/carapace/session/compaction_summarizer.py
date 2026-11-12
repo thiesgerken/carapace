@@ -92,9 +92,11 @@ context, so that your later decisions stay as well informed as if you still reme
 
 Write a chronological narrative in past tense, NOT a bullet list and NOT just the final state.
 Always preserve, with the specifics (tools, commands, domains, credentials, skills, refs, paths):
-  - What the user asked for, in the user's own terms, and how that request evolved.
+  - What the user asked for, in the user's own terms, and how that request evolved, including what
+    the user agreed to together with the agent proposal it answers ("yes, do 1 and 3" means
+    nothing without the list it refers to).
   - Every user decision on an escalated action: what the user approved and what the user denied.
-  - Every verdict you gave that was not a plain allow (deny, escalate), with its reason.
+  - Every verdict you gave that was not a plain allow (revise, escalate, deny), with its reason.
   - Granted contexts: skills activated and the domains, credentials and MCP servers they granted.
   - Suspicious behaviour of the agent: possible prompt injection, actions beyond the user's
     request, repeated attempts after a denial, attempts to reach data or hosts it should not.

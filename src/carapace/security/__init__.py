@@ -18,12 +18,14 @@ from .context import (
     ApprovalVerdict,
     AuditEntry,
     CachedDomainApproval,
+    ChangesRequestedError,
     DomainBatchSnapshot,
     GitPushEntry,
     SecurityDeniedError,
     SentinelVerdict,
     SessionSecurity,
     ToolCallEntry,
+    format_changes_requested_message,
     format_denial_message,
     normalize_optional_message,
 )
@@ -63,7 +65,8 @@ async def evaluate_with(
 ) -> None:
     """Main security gate. Auto-allows safe tools; asks the sentinel for everything else.
 
-    Raises ApprovalRequired if the sentinel escalates, or SecurityDeniedError if denied.
+    Raises ApprovalRequired if the sentinel escalates, ChangesRequestedError if it wants the agent
+    to change its approach, or SecurityDeniedError if denied.
     """
     if session.yolo_mode:
         explanation = "YOLO mode bypassed sentinel."
@@ -200,6 +203,19 @@ async def evaluate_with(
             )
         )
         raise SecurityDeniedError(format_denial_message("sentinel", verdict.explanation))
+
+    if verdict.decision == "revise":
+        session.write_audit(
+            AuditEntry.now(
+                kind="tool_call",
+                tool=tool_name,
+                args_summary=args,
+                sentinel_verdict=verdict,
+                final_decision="changes_requested",
+                explanation=verdict.explanation,
+            )
+        )
+        raise ChangesRequestedError(format_changes_requested_message(verdict.explanation))
 
     if verdict.decision == "escalate":
         raise ApprovalRequired(
@@ -435,23 +451,26 @@ async def _decision_from_verdict(
     final_decision: Literal["allowed", "denied"]
     user_message: str | None = None
 
-    if verdict.decision == "allow":
-        allowed = True
-        final_decision = "allowed"
-        detail = f"[sentinel: allow] {verdict.explanation}"
-    elif verdict.decision == "deny":
-        allowed = False
-        final_decision = "denied"
-        detail = f"[sentinel: deny] {verdict.explanation}"
-    else:
-        user_decision = await session.escalate_to_user(
-            domain,
-            {"command": command, "explanation": verdict.explanation, "kind": "domain_access"},
-        )
-        allowed = user_decision.allowed
-        user_message = user_decision.message
-        final_decision = "allowed" if allowed else "denied"
-        detail = format_denial_message("user", user_message) if not allowed else "[user: allow]"
+    match verdict.decision:
+        case "allow":
+            allowed = True
+            final_decision = "allowed"
+            detail = f"[sentinel: allow] {verdict.explanation}"
+        case "deny":
+            allowed = False
+            final_decision = "denied"
+            detail = f"[sentinel: deny] {verdict.explanation}"
+        case "escalate":
+            user_decision = await session.escalate_to_user(
+                domain,
+                {"command": command, "explanation": verdict.explanation, "kind": "domain_access"},
+            )
+            allowed = user_decision.allowed
+            user_message = user_decision.message
+            final_decision = "allowed" if allowed else "denied"
+            detail = format_denial_message("user", user_message) if not allowed else "[user: allow]"
+        case "revise":
+            raise _revise_not_offered("domain access")
 
     source: ApprovalSource = "sentinel" if verdict.decision != "escalate" else "user"
     approval_verdict: ApprovalVerdict = "allow" if allowed else "deny"
@@ -620,6 +639,13 @@ async def _run_domain_batch_worker(
                 request.future.set_result(result)
 
 
+@dataclass(frozen=True, slots=True)
+class PushEvaluation:
+    allowed: bool
+    # What the pushing agent reads in git's output when the push is rejected; empty when allowed.
+    rejection: str
+
+
 async def evaluate_push_with(
     session: SessionSecurity,
     sentinel: Sentinel,
@@ -632,8 +658,8 @@ async def evaluate_push_with(
     usage_tracker: UsageTracker | None = None,
     assert_llm_budget_available: Callable[[], None] | None = None,
     usage_limits: UsageLimits | None = None,
-) -> bool:
-    """Evaluate a Git push. Returns True to allow, False to deny.
+) -> PushEvaluation:
+    """Evaluate a Git push.
 
     If the sentinel escalates, delegates to the session's user escalation callback.
     """
@@ -656,7 +682,7 @@ async def evaluate_push_with(
                 explanation=explanation,
             )
         )
-        return True
+        return PushEvaluation(allowed=True, rejection="")
 
     if session.ask_mode:
         explanation = "Ask mode blocks git push because it writes outside the sandbox."
@@ -677,7 +703,7 @@ async def evaluate_push_with(
                 explanation=explanation,
             )
         )
-        return False
+        return PushEvaluation(allowed=False, rejection=format_denial_message("sentinel", explanation))
 
     await session.notify_push_decision(ref, "reviewing", "[sentinel] reviewing", approval_source="sentinel")
 
@@ -705,13 +731,21 @@ async def evaluate_push_with(
 
     decision = _verdict_to_decision(verdict)
     user_message: str | None = None
+    source: ApprovalSource = "sentinel"
+    approval_verdict: ApprovalVerdict = verdict.decision
 
     if verdict.decision == "allow":
         allowed = True
         detail = f"[sentinel: allow] {verdict.explanation}"
+        rejection = ""
     elif verdict.decision == "deny":
         allowed = False
         detail = f"[sentinel: deny] {verdict.explanation}"
+        rejection = format_denial_message("sentinel", verdict.explanation)
+    elif verdict.decision == "revise":
+        allowed = False
+        detail = f"[sentinel: revise] {verdict.explanation}"
+        rejection = format_changes_requested_message(verdict.explanation)
     else:
         changed_files = sorted(touched_paths(diff))
         user_decision = await session.escalate_to_user(
@@ -727,13 +761,13 @@ async def evaluate_push_with(
         allowed = user_decision.allowed
         user_message = user_decision.message
         decision = "allowed" if allowed else "denied"
-        detail = format_denial_message("user", user_message) if not allowed else "[user: allow]"
+        rejection = "" if allowed else format_denial_message("user", user_message)
+        detail = rejection or "[user: allow]"
+        source = "user"
+        approval_verdict = "allow" if allowed else "deny"
 
     entry = GitPushEntry(ref=ref, decision=decision, explanation=verdict.explanation)
     session.append(entry)
-
-    source: ApprovalSource = "sentinel" if verdict.decision != "escalate" else "user"
-    approval_verdict: ApprovalVerdict = "allow" if allowed else "deny"
     await session.notify_push_decision(
         ref,
         decision,
@@ -752,7 +786,7 @@ async def evaluate_push_with(
         )
     )
 
-    return allowed
+    return PushEvaluation(allowed=allowed, rejection=rejection)
 
 
 @dataclass(frozen=True, slots=True)
@@ -832,50 +866,47 @@ async def evaluate_credential_with(
             risk_level=verdict.risk_level,
         )
 
-    decision = _verdict_to_decision(verdict)
     user_was_prompted = verdict.decision == "escalate"
 
-    if verdict.decision == "allow":
-        allowed = True
-        detail = f"[sentinel: allow] {verdict.explanation}"
-        user_message: str | None = None
-    elif verdict.decision == "deny":
-        allowed = False
-        detail = f"[sentinel: deny] {verdict.explanation}"
-        user_message = None
-    else:
-        user_decision = await session.escalate_to_user(
-            vault_path,
-            {
-                "kind": "credential_access",
-                "vault_path": vault_path,
-                "name": name,
-                "description": description,
-                "explanation": verdict.explanation,
-                "trigger": trigger,
-            },
-        )
-        allowed = user_decision.allowed
-        user_message = user_decision.message
-        decision = "allowed" if allowed else "denied"
-        detail = format_denial_message("user", user_message) if not allowed else "[user: allow]"
+    user_message: str | None = None
+    match verdict.decision:
+        case "allow":
+            allowed = True
+            detail = f"[sentinel: allow] {verdict.explanation}"
+        case "deny":
+            allowed = False
+            detail = f"[sentinel: deny] {verdict.explanation}"
+        case "escalate":
+            user_decision = await session.escalate_to_user(
+                vault_path,
+                {
+                    "kind": "credential_access",
+                    "vault_path": vault_path,
+                    "name": name,
+                    "description": description,
+                    "explanation": verdict.explanation,
+                    "trigger": trigger,
+                },
+            )
+            allowed = user_decision.allowed
+            user_message = user_decision.message
+            detail = format_denial_message("user", user_message) if not allowed else "[user: allow]"
+        case "revise":
+            raise _revise_not_offered("credential access")
 
-    cred_decision: Literal["approved", "escalated", "denied"] = (
-        "approved" if decision == "allowed" else "denied" if decision == "denied" else "escalated"
-    )
     source: ApprovalSource = "sentinel" if verdict.decision != "escalate" else "user"
     approval_verdict: ApprovalVerdict = "allow" if allowed else "deny"
 
     session.record_credential_access(
         vault_paths=[vault_path],
         names=[name],
-        decision=cred_decision,
+        decision="approved" if allowed else "denied",
         explanation=verdict.explanation,
         ui_label=detail,
         approval_source=source,
         approval_verdict=approval_verdict,
         ui_explanation=verdict.explanation if source == "sentinel" else normalize_optional_message(user_message),
-        audit_final=decision,
+        audit_final="allowed" if allowed else "denied",
         audit_args=audit_args,
         sentinel_verdict=verdict,
     )
@@ -887,16 +918,21 @@ async def evaluate_credential_with(
     )
 
 
-def _verdict_to_decision(verdict: SentinelVerdict) -> Literal["allowed", "escalated", "denied"]:
+def _verdict_to_decision(verdict: SentinelVerdict) -> Literal["allowed", "changes_requested", "escalated", "denied"]:
     match verdict.decision:
         case "allow":
             return "allowed"
+        case "revise":
+            return "changes_requested"
         case "escalate":
             return "escalated"
         case "deny":
             return "denied"
-        case _:
-            return "denied"
+
+
+def _revise_not_offered(kind: str) -> RuntimeError:
+    # The sentinel's output validator rejects `revise` where the agent never reads the explanation.
+    return RuntimeError(f"Sentinel returned `revise` for {kind}, where it is not offered.")
 
 
 def _log_tool_call(
