@@ -1743,23 +1743,24 @@ export function ChatView({
   const latestTerminalIndex = terminalIndices.length > 0 ? terminalIndices[terminalIndices.length - 1] : -1;
   const turnActionsDisabled = waiting || loadingHistory || status !== "connected" || turnActionBusyIndex !== null;
 
-  function showInspectorSection(selector: string): void {
+  function showInspectorSection(selector: string, block: ScrollLogicalPosition): void {
     if (!window.matchMedia("(min-width: 64rem)").matches) setMobileInspectorOpen(true);
     // The section renders in the desktop column and in the mobile sheet; scroll to the visible one once open.
     requestAnimationFrame(() => {
       const sections = Array.from(document.querySelectorAll<HTMLElement>(selector));
-      sections.find((section) => section.offsetParent !== null)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      sections.find((section) => section.offsetParent !== null)?.scrollIntoView({ block, behavior: "smooth" });
     });
   }
 
   function showMemorySection(): void {
     setMemoryOpen(true);
-    showInspectorSection("[data-memory-section]");
+    showInspectorSection("[data-memory-section]", "nearest");
   }
 
   function showUsageSection(): void {
     setUsageOpen(true);
-    showInspectorSection("[data-usage-section]");
+    // To the top: the breakdown loads after the scroll and grows downward.
+    showInspectorSection("[data-usage-section]", "start");
   }
 
   // Deep link (?event=<seq>) from memory fact sources and push notifications. Not every event
@@ -2634,6 +2635,8 @@ export function ChatView({
         ) : null}
       </section>
 
+      <ChatUsageSection state={usageState} open={usageOpen} onOpenChange={setUsageOpen} />
+
       {session ? (
         <SessionBudgetSection
           budget={session.budget}
@@ -2642,8 +2645,6 @@ export function ChatView({
           onSave={handleUpdateSessionBudget}
         />
       ) : null}
-
-      <ChatUsageSection state={usageState} open={usageOpen} onOpenChange={setUsageOpen} />
 
       {latestJobRun ? (
         <section className="rounded-2xl border border-border/70 bg-background/90 p-3 shadow-sm">
