@@ -65,6 +65,7 @@ from .compaction import make_fold_message, slice_compacted_history, split_lead_f
 from .compaction_engine import (
     SessionCompactionMixin,
     fold_survival_for_events,
+    history_for_folded_cut_turn,
     trim_compaction_tree,
 )
 from .manager import SessionManager
@@ -776,10 +777,9 @@ class SessionEngine(
 
         Cuts land on a user prompt, an assistant answer (final or intermediate ``partial``), or the
         error that ended a turn. A turn-terminal cut is a turn boundary and reuses the fold-aware
-        turn slice. A mid-turn cut
-        (partial assistant, or a user prompt to rewind to) keeps the compacted older turns verbatim
-        and rebuilds only the *cut turn* from its events — safe because the newest turn is never
-        folded or tool-compacted (compaction runs between turns).
+        turn slice. A mid-turn cut (partial assistant, or a user prompt to rewind to) keeps the
+        compacted older turns and rebuilds the *cut turn* from its events. When a step fold reached
+        into the cut turn, its folded part stays represented by the summary and only the rest is rebuilt.
         """
         events = self._truncate_incomplete_events(events)
         if not 0 <= cut_index < len(events):
@@ -801,8 +801,14 @@ class SessionEngine(
 
         completed = self._completed_event_turns(prefix)
         head_end = completed[-1].end_event_index + 1 if completed else 0
-        head_history, tree = self._compacted_history_and_tree_for_events(session_id, events[:head_end], history)
         turn_start = self._first_user_event_index(prefix, start=head_end)
+        if turn_start is not None and (
+            folded := history_for_folded_cut_turn(
+                self._session_mgr.load_compaction(session_id), events[:head_end], prefix[turn_start:]
+            )
+        ):
+            return prefix, *folded
+        head_history, tree = self._compacted_history_and_tree_for_events(session_id, events[:head_end], history)
         if turn_start is None:
             return prefix, head_history, tree
         tail_history = rebuild_model_history_from_events(prefix[turn_start : cut_index + 1])

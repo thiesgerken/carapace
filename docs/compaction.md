@@ -65,23 +65,28 @@ dropping it saves. The report still says how many thinking parts were dropped.
 ## Automatic compaction
 
 Before every model request of a run (a pydantic-ai capability), carapace checks the input tokens the
-provider reported for the run's previous request against the agent model's compaction threshold (see
-[Configuration](#configuration)). Above it, the history is compacted and the run continues from the
+provider reported for the newest measured request against the agent model's compaction threshold (see
+[Configuration](#configuration)). Responses carapace writes itself, such as the error that ended a
+failed turn, carry no measurement and are skipped, so **Continue** after a failure is checked too. Above it, the history is compacted and the run continues from the
 compacted history, without user interaction, so a single long autonomous turn with hundreds of tool
 calls never outgrows the context window.
 
-The ladder stops at the **target**, half the threshold (not configurable), checked with the local
-estimate between rungs:
+The ladder stops at the **target**, half the threshold (not configurable), checked between rungs.
+The check adds to the local estimate (thinking included) what the provider counted on top of it for
+the measured request (system prompt, tool definitions, tokenizer differences), so a small window or a
+large prompt cannot make a history look smaller than it is.
 
 1. Thinking-drop.
 2. Tool-return compaction outside the verbatim hot zone.
-3. Message-fold of everything but the newest steps that together fit half the target. A step is one
+3. Message-fold of everything but the newest steps that together fit half the target (by the local
+   estimate). A step is one
    model response plus its tool returns, so the cut may land inside the running turn; a tool call
    never loses its return, and the newest step always stays verbatim.
 
-A provider measurement taken before an earlier compaction (e.g. `/compact` between turns) is ignored
-when the history is already below the target. If the history is above the threshold and nothing is
-left to compact, the turn fails through the regular error path (the **Continue** action then
+A measurement taken before the session's last compaction (e.g. `/compact` between turns) describes
+a history that no longer exists and is ignored. The session state remembers the provider timestamp of
+the newest measured response at each compaction, so both sides of that comparison come from the
+provider's clock. If a fresh measurement is above the threshold and nothing is left to compact, the turn fails through the regular error path (the **Continue** action then
 applies). A failed summary fails the turn the same way: the agent never continues past the threshold
 uncompacted. The compacted history is saved with the turn, also when the turn fails later.
 

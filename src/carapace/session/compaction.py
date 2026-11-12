@@ -415,9 +415,18 @@ def user_prompt_count(messages: list[ModelMessage]) -> int:
     return sum(_has_user_prompt(m) and not is_fold_message(m) for m in messages)
 
 
+def newest_measured_response(messages: list[ModelMessage]) -> ModelResponse | None:
+    """The newest model response with provider-reported input tokens.
+
+    Responses carapace writes itself (the terminal message of a failed turn) carry no measurement, so
+    a **Continue** after a failure still sees the size of the request that failed.
+    """
+    return next((m for m in reversed(messages) if isinstance(m, ModelResponse) and m.usage.input_tokens), None)
+
+
 def last_request_input_tokens(messages: list[ModelMessage]) -> int:
-    """Provider-reported input tokens of the newest model response's request (0 if none reported)."""
-    response = next((m for m in reversed(messages) if isinstance(m, ModelResponse)), None)
+    """Provider-reported input tokens of the newest measured request (0 if none reported)."""
+    response = newest_measured_response(messages)
     return response.usage.input_tokens if response is not None else 0
 
 
