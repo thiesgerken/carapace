@@ -831,6 +831,13 @@ export async function fetchHistory(
   return res.json();
 }
 
+/** The `/usage` payload, also while a turn runs; shaped like that command's result data. */
+export async function fetchSessionUsage(server: string, token: string, sessionId: string): Promise<unknown> {
+  const res = await fetch(`${server}/api/sessions/${sessionId}/usage`, { headers: headers(token) });
+  if (!res.ok) throw new Error(await readErrorMessage(res, "Failed to load the session usage"));
+  return res.json();
+}
+
 /** The latest LLM context of *role* in the session; null before the role's first request. */
 export async function fetchLlmContext(
   server: string,

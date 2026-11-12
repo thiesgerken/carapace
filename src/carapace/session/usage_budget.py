@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any
 from pydantic_ai.exceptions import UsageLimitExceeded
 from pydantic_ai.usage import UsageLimits
 
-from ..models.config import Config
+from ..models.config import Config, is_subscription_model
 from ..models.session import SessionBudget
 from ..usage import (
     BudgetGauge,
@@ -254,6 +254,34 @@ class SessionUsageBudgetMixin:
         if current is not None and current.phase == state.phase and current.first_text_at == state.first_text_at:
             return
         await self._set_llm_request_state(active, state)
+
+    def usage_details_payload(self, active: ActiveSession) -> dict[str, Any]:
+        """The session's usage breakdown as ``/usage`` and the usage API show it.
+
+        Reads only in-memory state and takes no session lock, so it answers while a turn runs.
+        """
+        tracker = active.usage_tracker
+        total_cost = tracker.total_cost()
+        return {
+            "models": {k: v.model_dump() for k, v in tracker.models.items()},
+            "categories": {k: v.model_dump() for k, v in tracker.categories.items()},
+            "total_input": tracker.total_input,
+            "total_output": tracker.total_output,
+            "total_tool_calls": tracker.tool_calls,
+            # One number per model: subscription models show their list price, marked as such.
+            "model_costs": {
+                model_key: {"cost": str(cost.equivalent), "subscription": is_subscription_model(model_key)}
+                for model_key, cost in tracker.cost_by_model().items()
+            },
+            "category_costs": {
+                category: {"actual": str(cost.actual), "equivalent": str(cost.equivalent)}
+                for category, cost in tracker.cost_by_category().items()
+            },
+            "total_cost": {"actual": str(total_cost.actual), "equivalent": str(total_cost.equivalent)},
+            "budget_gauges": [g.model_dump(mode="json") for g in self._display_budget_gauges(active)],
+            "last_llm_agent": self._usage_last_llm_payload_row(active, "agent"),
+            "last_llm_sentinel": self._usage_last_llm_payload_row(active, "sentinel"),
+        }
 
     def _budget_command_payload(self, active: ActiveSession, *, message: str | None = None) -> dict[str, Any]:
         gauges = self._display_budget_gauges(active)

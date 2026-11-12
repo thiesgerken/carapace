@@ -601,6 +601,16 @@ async def get_pending_approvals(
     return PendingApprovalsResponse(approvals=approvals, escalations=escalations)
 
 
+@router.get("/sessions/{session_id}/usage")
+async def get_session_usage(
+    session_id: str,
+    user: Annotated[UserIdentity, Depends(require(Scope.sessions, Access.read))],
+) -> dict[str, Any]:
+    """The ``/usage`` breakdown, also while a turn runs: unlike slash commands it never waits for one."""
+    _load_owned_state(session_id, user)
+    return server._engine.usage_details_payload(server._engine.get_or_activate(session_id))
+
+
 # ----------------------------------------------------------------------
 # Sandbox git (B1: /workspace clone ↔ backend repo)
 # ----------------------------------------------------------------------

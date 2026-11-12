@@ -462,6 +462,21 @@ def test_pending_approvals_non_owner_404(auth_headers, admin_auth_headers):
     assert resp.status_code == 404
 
 
+def test_session_usage_matches_usage_command(auth_headers, admin_auth_headers):
+    sid = _create_session(auth_headers)
+    active = srv._engine.get_or_activate(sid)
+    active.usage_tracker.record_tool_call()
+
+    resp = TestClient(app).get(f"/api/sessions/{sid}/usage", headers=auth_headers)
+
+    assert resp.status_code == 200
+    assert resp.json()["total_tool_calls"] == 1
+    command = asyncio.run(srv._engine.handle_slash_command(sid, "/usage"))
+    assert command is not None
+    assert resp.json() == command["data"]
+    assert TestClient(app).get(f"/api/sessions/{sid}/usage", headers=admin_auth_headers).status_code == 404
+
+
 def test_pending_approvals_api_key_read_scope(auth_headers):
     sid = _create_session(auth_headers)
     headers = _api_key_headers("thies", [ApiKeyGrant(scope=Scope.sessions, access=Access.read)])

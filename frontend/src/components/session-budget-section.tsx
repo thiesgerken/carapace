@@ -5,7 +5,8 @@ import { useLocale, useTranslations } from "next-intl";
 import { useState, type KeyboardEvent } from "react";
 
 import { formatUsd } from "@/lib/memory";
-import type { SessionBudgetSettings } from "@/lib/types";
+import type { BudgetGauge, SessionBudgetSettings } from "@/lib/types";
+import { cn } from "@/lib/utils";
 
 export type SessionBudgetField = keyof SessionBudgetSettings;
 
@@ -17,6 +18,15 @@ const BUDGET_FIELDS: SessionBudgetField[] = [
   "tool_calls",
   "autonomous_tool_calls",
 ];
+
+const GAUGE_FIELDS: Record<BudgetGauge["key"], SessionBudgetField> = {
+  input: "input_tokens",
+  output: "output_tokens",
+  cost: "cost_usd",
+  equivalent_cost: "equivalent_cost_usd",
+  tool_calls: "tool_calls",
+  autonomy: "autonomous_tool_calls",
+};
 
 function rawLimit(budget: SessionBudgetSettings, field: SessionBudgetField): string {
   const value = budget[field];
@@ -32,17 +42,20 @@ function formatLimit(budget: SessionBudgetSettings, field: SessionBudgetField, l
 
 interface SessionBudgetSectionProps {
   budget: SessionBudgetSettings;
+  /** The live gauges from the turn usage: the current value shows next to its limit. */
+  gauges: BudgetGauge[];
   disabled: boolean;
   /** `null` clears the limit. The value is sent as typed, the server parses it like `/budget`. */
   onSave: (field: SessionBudgetField, value: string | null) => Promise<void>;
 }
 
-export function SessionBudgetSection({ budget, disabled, onSave }: SessionBudgetSectionProps) {
+export function SessionBudgetSection({ budget, gauges, disabled, onSave }: SessionBudgetSectionProps) {
   const t = useTranslations("chatView.budget");
   const locale = useLocale();
   const [editing, setEditing] = useState<{ field: SessionBudgetField; draft: string } | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const gaugeByField = new Map(gauges.map((gauge) => [GAUGE_FIELDS[gauge.key], gauge]));
 
   function startEditing(field: SessionBudgetField) {
     setError(null);
@@ -94,6 +107,7 @@ export function SessionBudgetSection({ budget, disabled, onSave }: SessionBudget
         {BUDGET_FIELDS.map((field) => {
           const label = t(`fields.${field}`);
           const limit = formatLimit(budget, field, locale);
+          const gauge = gaugeByField.get(field);
           return (
             <div key={field} className="contents">
               <dt
@@ -103,6 +117,14 @@ export function SessionBudgetSection({ budget, disabled, onSave }: SessionBudget
                 {label}
               </dt>
               <dd className="flex items-center justify-end gap-1.5">
+                {gauge ? (
+                  <span
+                    className={cn("tabular-nums", gauge.reached ? "text-destructive" : "text-muted-foreground")}
+                    title={gauge.unavailable_reason ?? undefined}
+                  >
+                    {gauge.current_value} /
+                  </span>
+                ) : null}
                 {editing?.field === field ? (
                   <>
                     {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" /> : null}

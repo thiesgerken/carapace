@@ -910,7 +910,7 @@
             "limit": "Kontextlimit: {tokens} Tokens.",
             "assumedLimit": "Angenommenes Kontextlimit: {tokens} Tokens.",
             "lastRequestTokens": "{tokens} API-Tokens (letzte Agent-Anfrage)",
-            "clickForUsage": "Klicken, um /usage an den Agenten zu senden und mehr Details zu sehen.",
+            "clickForUsage": "Klicken für die Verbrauchsdetails.",
             "tokensLabel": "{tokens} Tokens"
         },
         "budget": {
@@ -1328,6 +1328,9 @@
         "memory": {
             "title": "Gedächtnis",
             "openInMemory": "Im Gedächtnis öffnen"
+        },
+        "usage": {
+            "title": "Verbrauch"
         }
     },
     "message": {
@@ -1358,10 +1361,10 @@
         "actions": {
             "fork": "Sitzung von hier forken",
             "retry": "Zug erneut ausführen",
+            "continue": "Zug fortsetzen",
             "reset": "Unterhaltung zu diesem Zug zurücksetzen"
         },
         "finalStatus": {
-            "continue": "Zug fortsetzen",
             "status": {
                 "success": "Erfolg",
                 "warning": "Warnung"

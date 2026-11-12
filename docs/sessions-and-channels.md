@@ -134,7 +134,9 @@ Per session, limits change in two places, which share one parser (`parse_budget_
 - `/budget input N`, `/budget output N`, `/budget cost N`, `/budget equivalent_cost N`, `/budget tools N`, `/budget autonomy N`. `N` accepts `k`/`M` suffixes for counts; `0` clears a limit.
 - The **Budget** section of the session drawer in the web UI: click a limit, enter a value (same syntax), leave it empty for no limit. It sends `PATCH /api/sessions/{id}` with `{"budget": {"input_tokens": "100k"}}`; `null` clears a limit, omitted fields stay unchanged, and an invalid value is rejected with `400` before anything in the request is applied.
 
-Both paths broadcast a `status` message with the new `budget` to every connected WebSocket client, so the budget gauges and the drawer refresh in every tab. `GET`/`PATCH /api/sessions/{id}` return the current limits as `budget`.
+Both paths broadcast a `status` message with the new `budget` to every connected WebSocket client, so the budget gauges and the drawer refresh in every tab. `GET`/`PATCH /api/sessions/{id}` return the current limits as `budget`. The drawer's **Budget** section shows the current value of every gauge next to its limit.
+
+The **Usage** section of the drawer shows the `/usage` breakdown. Clicking a gauge under the input opens it. It loads `GET /api/sessions/{id}/usage` (the same payload as `/usage`), which reads in-memory state without the session lock, so unlike the slash command it answers while a turn runs. While open, it reloads when an LLM request starts or ends and on every usage update.
 
 ### Actual and equivalent cost
 
