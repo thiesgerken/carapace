@@ -1,6 +1,77 @@
 # CHANGELOG
 
 
+## v0.177.0 (2026-11-12)
+
+
+### Other
+
+
+- Merge pull request #470 from thiesgerken/feat/usage-panel-continue
+  ([`d2d980a`](https://github.com/thiesgerken/carapace/commit/d2d980ad261e0bc43cb5f122185f7e524bd2ab80))
+
+### ✨ Features
+
+
+- ✨ feat(chat): usage breakdown in the drawer, Continue after a budget stop
+  ([`d2d980a`](https://github.com/thiesgerken/carapace/commit/d2d980ad261e0bc43cb5f122185f7e524bd2ab80))
+
+- ✨ feat(chat): show the usage breakdown in the session drawer
+  ([`c3a72d2`](https://github.com/thiesgerken/carapace/commit/c3a72d2d723da16d28cb76b59174a30aaf60a10d))
+
+  The per-model and per-category breakdown was only reachable through `/usage`, which waits for the running turn and lands in the chat. The `/usage` payload builder moves to the usage mixin and backs a new `GET /api/sessions/{id}/usage`, which reads in-memory state without the session lock. The drawer gets a collapsible Usage section that renders it with the command result's tables; clicking a gauge under the input opens it, also mid-turn. While open it refetches on usage updates and LLM request boundaries. The Budget section shows each gauge's current value next to its limit.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aUz8F6tVqHNncQ7Sdot
+
+- ✨ feat(chat): continue a turn that stopped with its progress kept
+  ([`03fc657`](https://github.com/thiesgerken/carapace/commit/03fc6570cb4f10373c1ae8ff0e9ab11a030d29e2))
+
+  A cancelled turn or one stopped by a session budget keeps its tool calls and results in the history, but Retry rewound past them and reran the whole turn. Their error event and the live error now carry `resumable: true`, and the web UI offers Continue on that error row, which sends a plain "Continue." message on top of the kept history. Retry for other failures is unchanged.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aUz8F6tVqHNncQ7Sdot
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix(usage): keep the budget gauges current and type the usage payload
+  ([`d43e890`](https://github.com/thiesgerken/carapace/commit/d43e890dd44d1cffe38f3a562c817a7d2f0ef680))
+
+  A failed or cancelled turn ends with an error that carries no usage, so the gauges showed pre-turn values right when the user goes to raise the reached limit. The engine now broadcasts a `status` with the turn usage after finalizing a failed turn (shared `_broadcast_status`, also used by budget updates). While the Usage card is open, the Budget card shows the gauges it fetched, which move mid-turn.
+
+  The usage payload becomes `SessionUsageDetails` (the API's `response_model`); `/usage` sends its JSON dump.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aUz8F6tVqHNncQ7Sdot
+
+### ♻️ Refactoring
+
+
+- ♻️ refactor(chat): offer Continue on every turn-ending error
+  ([`355ed65`](https://github.com/thiesgerken/carapace/commit/355ed656f73afe5b353bbb547e789e2ec3a2cb7d))
+
+  Every failure path already keeps the turn's tool calls and results in the history, not just cancel and budget stops, so the `resumable` marker drew a line the data doesn't have. It is gone again (event field, WS field, subscriber parameter, demo seed); the latest turn's error row always offers Continue, and Retry stays on the turn's user prompt.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aUz8F6tVqHNncQ7Sdot
+
+### 💄 UI/UX
+
+
+- 💄 ui(chat): put the usage section above the budget and scroll it to the top
+  ([`164f6e6`](https://github.com/thiesgerken/carapace/commit/164f6e61d7f7e4f06d2e87d8c74bd7ddae8caff0))
+
+  The breakdown loads after the scroll, so a section at the end of the drawer opened with its tables below the fold.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+  Claude-Session: https://claude.ai/code/session_01Gv2aUz8F6tVqHNncQ7Sdot
+
 ## v0.176.1 (2026-11-11)
 
 
