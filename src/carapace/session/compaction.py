@@ -34,13 +34,17 @@ from pydantic_ai.messages import (
     UserPromptPart,
 )
 
-from ..models.compaction import FOLD_MARKER, CompactionMethod
+from ..models.compaction import FOLD_MARKER
 from ..security.context import SENTINEL_VERDICT_TOOL
 from ..usage import count_message_tokens, count_text_tokens
 from .transcript import completed_model_turn_end_indexes
 
 # Namespaced key stashed in ``ToolReturnPart.metadata`` to mark + describe a compacted output.
 _META_KEY = "carapace_compaction"
+
+
+def _tool_marker(tool_call_id: str) -> str:
+    return f'[tool output summarized to save context; full output: read_tool_output("{tool_call_id}")]\n'
 
 
 # --------------------------------------------------------------------------- thinking-drop
@@ -79,7 +83,7 @@ class ToolReturnCandidate:
     message_index: int
     part_index: int
     tool_name: str
-    tool_call_id: str | None
+    tool_call_id: str
     content: Any
     tokens: int
 
@@ -89,7 +93,6 @@ class AppliedToolReturn:
     """A produced replacement for one tool return (summary text + bookkeeping)."""
 
     new_content: str
-    method: CompactionMethod
     orig_tokens: int
     summary_tokens: int
 
@@ -183,7 +186,6 @@ def apply_tool_return_compaction(
                 meta = dict(part.metadata) if isinstance(part.metadata, dict) else {}
                 meta[_META_KEY] = {
                     "compacted": True,
-                    "method": rep.method,
                     "orig_tokens": rep.orig_tokens,
                     "summary_tokens": rep.summary_tokens,
                 }
@@ -191,7 +193,7 @@ def apply_tool_return_compaction(
                 new_parts.append(
                     ToolReturnPart(
                         tool_name=part.tool_name,
-                        content=_tool_marker(rep.method, part.tool_call_id) + rep.new_content,
+                        content=_tool_marker(part.tool_call_id) + rep.new_content,
                         tool_call_id=part.tool_call_id,
                         metadata=meta,
                         timestamp=part.timestamp,
@@ -204,14 +206,20 @@ def apply_tool_return_compaction(
     return out
 
 
-def truncate_tool_output(content: Any, *, head_lines: int = 12, tail_lines: int = 12) -> str:
-    """Deterministic (no-LLM) compaction: keep head + tail lines, elide the middle."""
+def truncate_tool_output(content: Any, *, head_lines: int = 12, tail_lines: int = 12, max_chars: int = 4000) -> str:
+    """Deterministic (no-LLM) cut: keep head + tail lines, then head + tail characters, elide the middle.
+
+    The character cap catches what the line cut cannot: minified JSON and other single-line dumps.
+    """
     text = _tool_content_text(content)
     lines = text.splitlines()
-    if len(lines) <= head_lines + tail_lines:
-        return text
-    elided = len(lines) - head_lines - tail_lines
-    return "\n".join([*lines[:head_lines], f"… [{elided} lines elided] …", *lines[-tail_lines:]])
+    if len(lines) > head_lines + tail_lines:
+        elided = len(lines) - head_lines - tail_lines
+        text = "\n".join([*lines[:head_lines], f"… [{elided} lines elided] …", *lines[-tail_lines:]])
+    if len(text) > max_chars:
+        half = max_chars // 2
+        text = f"{text[:half]}… [{len(text) - 2 * half} characters elided] …{text[-half:]}"
+    return text
 
 
 # -------------------------------------------------------------------------------- message-fold
@@ -306,21 +314,26 @@ def apply_fold(plan: FoldPlan, summary: str) -> list[ModelMessage]:
 
 
 def fold_render_text(messages: list[ModelMessage]) -> str:
-    """Flatten a foldable region to plain text for the summarizer prompt."""
+    """Flatten a foldable region to plain text for the summarizer prompt.
+
+    Tool calls keep their arguments (the paths, commands and URLs the summary must name). Arguments
+    and tool returns are cut head/tail, so a few huge outputs cannot push the region past the
+    compaction model's context window.
+    """
     lines: list[str] = []
     for msg in messages:
-        if isinstance(msg, ModelRequest):
-            for part in msg.parts:
-                if isinstance(part, UserPromptPart) and isinstance(part.content, str):
-                    lines.append(f"User: {part.content}")
-                elif isinstance(part, ToolReturnPart):
-                    lines.append(f"Tool[{part.tool_name}] result: {_tool_content_text(part.content)}")
-        elif isinstance(msg, ModelResponse):
-            for part in msg.parts:
-                if isinstance(part, TextPart):
-                    lines.append(f"Assistant: {part.content}")
-                elif isinstance(part, ToolCallPart | NativeToolCallPart):
-                    lines.append(f"Assistant called {getattr(part, 'tool_name', '?')}")
+        for part in msg.parts:
+            match part:
+                case UserPromptPart(content=str() as content):
+                    lines.append(f"User: {content}")
+                case ToolReturnPart(tool_name=tool_name):
+                    lines.append(f"Tool[{tool_name}] result: {truncate_tool_output(part.content)}")
+                case TextPart(content=content):
+                    lines.append(f"Assistant: {content}")
+                case ToolCallPart() | NativeToolCallPart():
+                    lines.append(f"Assistant called {part.tool_name}({truncate_tool_output(part.args_as_json_str())})")
+                case _:
+                    pass
     return "\n".join(lines)
 
 
@@ -348,7 +361,7 @@ def split_merged_requests(messages: list[ModelMessage]) -> list[ModelMessage]:
 def sentinel_fold_render_text(messages: list[ModelMessage]) -> str:
     """Flatten folded sentinel evaluations for the summarizer.
 
-    Unlike ``fold_render_text`` it keeps tool-call arguments: the verdict lives in them.
+    Unlike ``fold_render_text`` it never cuts tool-call arguments: the verdict lives in them.
     """
     lines: list[str] = []
     for msg in messages:
@@ -372,36 +385,12 @@ def sentinel_fold_render_text(messages: list[ModelMessage]) -> str:
     return "\n".join(lines)
 
 
-# ---------------------------------------------------------------------------------- consolidate
-
-
-def plan_consolidate(messages: list[ModelMessage]) -> tuple[list[ModelMessage], list[ModelMessage]] | None:
-    """Return ``(lead_folds, rest)`` when ≥2 lead fold messages exist and can be merged."""
-    lead_folds, rest = split_lead_folds(messages)
-    if len(lead_folds) < 2:
-        return None
-    return lead_folds, rest
-
-
 def fold_summary_text(fold: ModelMessage) -> str:
     content = fold.parts[0].content if isinstance(fold.parts[0], UserPromptPart) else ""
     return content.removeprefix(FOLD_MARKER).strip() if isinstance(content, str) else ""
 
 
-def consolidate_render_text(lead_folds: list[ModelMessage]) -> str:
-    return "\n\n".join(fold_summary_text(msg) for msg in lead_folds if is_fold_message(msg))
-
-
-def apply_consolidate(rest: list[ModelMessage], summary: str) -> list[ModelMessage]:
-    return [make_fold_message(summary), *rest]
-
-
 # ---------------------------------------------------------------------------------------- utils
-
-
-def _tool_marker(method: CompactionMethod, tool_call_id: str) -> str:
-    verb = {"truncate": "truncated", "summarize": "summarized", "drop": "dropped"}[method]
-    return f'[tool output {verb} to save context; full output: read_tool_output("{tool_call_id}")]\n'
 
 
 def _tool_content_text(content: Any) -> str:

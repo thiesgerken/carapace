@@ -3,8 +3,7 @@
 The model history (``SessionHistoryRow``) holds the compacted *cut*: folded turns are
 replaced by a single marked synthetic user message, and large tool returns are
 replaced by shorter summaries stamped on ``ToolReturnPart.metadata``. This module stores
-the human/debug-facing tree of summary nodes so the UI can render the folded turns' margin
-rail, and (later) consolidate adjacent summaries.
+the human/debug-facing summary nodes so the UI can render the folded turns' margin rail.
 
 Originals are never stored here — they remain in the events transcript and git archive.
 """
@@ -20,26 +19,17 @@ from pydantic import BaseModel, Field
 # detect (and never re-fold) a summary message in the model history without extra state.
 FOLD_MARKER = "⟦compacted⟧"
 
-CompactionMethod = Literal["truncate", "summarize", "drop"]
-
 
 class CompactionNode(BaseModel):
-    """One summary in the compaction tree.
-
-    ``fold`` nodes summarize a contiguous run of original turns. ``consolidate`` nodes
-    summarize earlier ``fold``/``consolidate`` nodes (their ids in ``children``).
-    """
+    """One fold summary: a contiguous run of original turns condensed for the model."""
 
     id: str
-    kind: Literal["fold", "consolidate"]
     summary: str
-    method: CompactionMethod = "summarize"
     orig_tokens: int = 0
     summary_tokens: int = 0
     # First/last completed-turn indexes (in the pre-fold model history) this node covers.
     source_turn_start: int = 0
     source_turn_end: int = 0
-    children: list[str] = Field(default_factory=list)
     created_at: datetime | None = None
 
 
@@ -52,7 +42,6 @@ class CompactionReport(BaseModel):
     thinking_dropped: int = 0
     turns_folded: int = 0
     tool_returns_compacted: int = 0
-    consolidated: bool = False
     message: str = ""
 
     @property

@@ -15,13 +15,12 @@ from pydantic_ai.messages import (
 from carapace.models.compaction import FOLD_MARKER
 from carapace.session.compaction import (
     AppliedToolReturn,
-    apply_consolidate,
     apply_fold,
     apply_thinking_drop,
     apply_tool_return_compaction,
     find_tool_return_candidates,
+    fold_render_text,
     is_fold_message,
-    plan_consolidate,
     plan_fold,
     split_lead_folds,
     tool_return_is_compacted,
@@ -98,7 +97,7 @@ def test_apply_tool_return_compaction_stamps_and_skips_recompaction():
     cands = find_tool_return_candidates(msgs, floor_tokens=100)
     applied = {
         cands[0].tool_call_id: AppliedToolReturn(
-            new_content="listed 5 pods", method="summarize", orig_tokens=cands[0].tokens, summary_tokens=4
+            new_content="listed 5 pods", orig_tokens=cands[0].tokens, summary_tokens=4
         )
     }
     out = apply_tool_return_compaction(msgs, applied)
@@ -116,6 +115,32 @@ def test_truncate_tool_output_elides_middle():
     assert out.startswith("0\n1\n2")
     assert out.endswith("97\n98\n99")
     assert "elided" in out
+
+
+def test_truncate_tool_output_caps_single_line_dumps():
+    out = truncate_tool_output("x" * 10_000 + "END", max_chars=100)
+    assert len(out) < 200
+    assert out.startswith("x" * 50)
+    assert out.endswith("END")
+    assert "characters elided" in out
+
+
+def test_fold_render_text_keeps_tool_args_and_cuts_large_returns():
+    huge = "\n".join(f"line {i}" for i in range(1000))
+    msgs = [
+        ModelRequest(parts=[UserPromptPart(content="list the pods")]),
+        ModelResponse(
+            parts=[ToolCallPart(tool_name="exec", args={"command": "kubectl get pods -A"}, tool_call_id="c1")]
+        ),
+        ModelRequest(parts=[ToolReturnPart(tool_name="exec", content=huge, tool_call_id="c1")]),
+        ModelResponse(parts=[TextPart(content="done")]),
+    ]
+    text = fold_render_text(msgs)
+    assert "User: list the pods" in text
+    assert 'Assistant called exec({"command":"kubectl get pods -A"})' in text
+    assert "line 0" in text and "line 999" in text
+    assert "line 500" not in text
+    assert "Assistant: done" in text
 
 
 # -------------------------------------------------------------------------------- message-fold
@@ -158,24 +183,3 @@ def test_second_fold_appends_block_and_does_not_refold():
     assert len(lead) == 2  # appended, not merged
     assert "SUM1" in lead[0].parts[0].content
     assert "SUM2" in lead[1].parts[0].content
-
-
-# ---------------------------------------------------------------------------------- consolidate
-
-
-def test_consolidate_merges_lead_folds():
-    msgs = _history(12)
-    h = apply_fold(plan_fold(msgs, keep_turns=3), "SUM1")
-    h = apply_fold(plan_fold(h + _history(6), keep_turns=3), "SUM2")
-    assert plan_consolidate(h) is not None
-    lead, rest = plan_consolidate(h)
-    assert len(lead) == 2
-    merged = apply_consolidate(rest, "MERGED")
-    lead2, _ = split_lead_folds(merged)
-    assert len(lead2) == 1
-    assert "MERGED" in lead2[0].parts[0].content
-
-
-def test_consolidate_none_with_single_fold():
-    h = apply_fold(plan_fold(_history(10), keep_turns=3), "SUM1")
-    assert plan_consolidate(h) is None

@@ -218,7 +218,7 @@ This map describes the Python modules under `src/carapace/`. It is meant as a na
 | `agent/__init__.py` | Re-exports agent creation and turn runner APIs.                                                                                        |
 | `agent/deps.py`     | Pydantic AI dependency model injected into agent tools.                                                                                |
 | `agent/loop.py`     | Channel-agnostic single-turn runner, streaming callbacks, and deferred tool approval retry loop.                                       |
-| `agent/tools.py`    | Agent construction, system prompt assembly, and registered tools (`list_skills`, `use_skill`, `read`, `write`, `str_replace`, `exec`). |
+| `agent/tools.py`    | Agent construction, system prompt assembly, and registered tools (`list_skills`, `use_skill`, `read`, `write`, `str_replace`, `exec`, `send_file`, `read_tool_output`). |
 
 ### Channels package
 

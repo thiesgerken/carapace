@@ -4283,12 +4283,10 @@ def test_history_annotations_carry_model_facing_text(auth_headers):
     ]
     history = apply_tool_return_compaction(
         history,
-        {"call-1": AppliedToolReturn(new_content="3 lines", method="summarize", orig_tokens=200, summary_tokens=3)},
+        {"call-1": AppliedToolReturn(new_content="3 lines", orig_tokens=200, summary_tokens=3)},
     )
     mgr.save_history(sid, history)
-    mgr.save_compaction(
-        sid, SessionCompaction(nodes=[CompactionNode(id="n1", kind="fold", summary="SUMMARY OF EARLY TURNS")])
-    )
+    mgr.save_compaction(sid, SessionCompaction(nodes=[CompactionNode(id="n1", summary="SUMMARY OF EARLY TURNS")]))
 
     # Events (what the UI renders): a folded user turn + a compacted tool_result.
     mgr.save_events(
