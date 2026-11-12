@@ -1,6 +1,35 @@
 # CHANGELOG
 
 
+## v0.180.0 (2026-11-12)
+
+
+### ✨ Features
+
+
+- ✨Merge pull request #482 from thiesgerken/feat/read-tool-output
+  ([`cd2292b`](https://github.com/thiesgerken/carapace/commit/cd2292bcb1ebf41c00847c16fad84049c20a1e32))
+
+- ✨ feat(compaction): read_tool_output recovers compacted tool outputs
+  ([`cd2292b`](https://github.com/thiesgerken/carapace/commit/cd2292bcb1ebf41c00847c16fad84049c20a1e32))
+
+- ✨ feat(compaction): read_tool_output recovers compacted tool outputs
+  ([`bd9194b`](https://github.com/thiesgerken/carapace/commit/bd9194b3d26c59c0428ac80d884d04139457b190))
+
+  Compacted tool outputs now point at read_tool_output("<id>"), a safe-listed agent tool that returns the original output from the session's events transcript instead of advising a re-run. A failed exec output spill now raises instead of silently returning the untruncated result.
+
+  Closes #474
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+### Other
+
+
+- Merge remote-tracking branch 'origin/main' into feat/read-tool-output
+  ([`01cf7d7`](https://github.com/thiesgerken/carapace/commit/01cf7d770fedd1d828ec93846b509dfca71cbd95))
+
+  # Conflicts: #	src/carapace/session/compaction.py
+
 ## v0.179.0 (2026-11-12)
 
 
