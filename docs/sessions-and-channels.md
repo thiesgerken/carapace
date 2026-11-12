@@ -119,7 +119,7 @@ Important behavior:
 The web UI also exposes turn-level controls on completed assistant turns:
 
 - **Retry latest turn** reruns the latest completed turn from its user prompt boundary
-- **Continue** replaces Retry on the error of a turn that stopped with its progress kept (cancelled, or a session budget reached). Its tool calls and results are already in the history, so instead of rerunning the turn it sends a plain "Continue." message. The error event and the live `error` message carry `resumable: true` for these turns; a `cancelled` turn always is
+- **Continue** replaces Retry on the error row of a failed or cancelled latest turn. A failed turn keeps its tool calls and results in the history, so instead of rerunning the turn it sends a plain "Continue." message. Retry on the turn's user prompt still reruns it from scratch
 - **Reset to turn** rewinds the session to an earlier completed turn boundary
 - **Fork** creates a new session from a chosen event boundary. The copy records its origin in `SessionState.forked_from`: the source session id and how many leading events it inherited. Resetting the copy to before that point lowers the count, since what follows is then the copy's own.
 

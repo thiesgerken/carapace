@@ -268,8 +268,6 @@ class ErrorMessage(BaseModel):
     type: Literal["error"] = "error"
     detail: str
     turn_terminal: bool = False
-    # The failed turn kept its progress in the history: continuing beats re-running it.
-    resumable: bool = False
 
 
 class Cancelled(BaseModel):

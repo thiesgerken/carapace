@@ -92,9 +92,10 @@ def test_submit_message_budget_exceeded_persists_history(tmp_path: Path, db_fact
         assert "timestamp" in events[-1]
         assert events[-1]["role"] == "error"
         assert events[-1]["content"] == _TOOL_CALL_BUDGET_MESSAGE
-        # The history keeps the turn's progress, so the UI offers Continue rather than Retry.
-        assert events[-1]["resumable"] is True
-        assert sub.error_events == [(_TOOL_CALL_BUDGET_MESSAGE, True, True)]
+        assert any("Session budget reached" in err for err in sub.errors)
+        assert any(
+            detail.startswith("Session budget reached") and turn_terminal for detail, turn_terminal in sub.error_events
+        )
 
     with _patch_sentinel():
         asyncio.run(_run())
@@ -133,7 +134,7 @@ def test_budget_blocked_turn_leaves_earlier_tool_calls_alone(tmp_path: Path, db_
         assert events[: len(earlier_turn)] == earlier_turn
         assert events[len(earlier_turn) :] == [
             {"role": "user", "content": "go on"},
-            {"role": "error", "content": _TOOL_CALL_BUDGET_MESSAGE, "resumable": True},
+            {"role": "error", "content": _TOOL_CALL_BUDGET_MESSAGE},
         ]
 
     with _patch_sentinel():
@@ -187,7 +188,7 @@ def test_submit_message_unexpected_output_marks_terminal_error(tmp_path: Path, d
         assert events[-1]["role"] == "assistant"
         assert events[-1]["content"] == unexpected
         assert sub.done_messages == []
-        assert sub.error_events == [(unexpected, True, False)]
+        assert sub.error_events == [(unexpected, True)]
 
     with _patch_sentinel():
         asyncio.run(_run())

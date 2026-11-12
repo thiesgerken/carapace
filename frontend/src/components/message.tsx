@@ -326,7 +326,7 @@ function MessageActions({
   canFork,
   canRetry,
   canReset,
-  resumable,
+  continueInsteadOfRetry,
   canContinue,
   disabled,
   onFork,
@@ -350,8 +350,8 @@ function MessageActions({
   canFork?: boolean;
   canRetry?: boolean;
   canReset?: boolean;
-  /** The turn kept its progress: Continue takes Retry's place. */
-  resumable?: boolean;
+  /** On a turn's error row, which resumes on the kept history rather than rerunning the turn. */
+  continueInsteadOfRetry?: boolean;
   canContinue?: boolean;
   disabled?: boolean;
   onFork?: () => void;
@@ -386,7 +386,7 @@ function MessageActions({
         disabled={disabled}
         onClick={canFork ? onFork : undefined}
       />
-      {resumable ? (
+      {continueInsteadOfRetry ? (
         <MessageActionButton
           label={t("actions.continue")}
           icon={<Play className="size-3.5" />}
@@ -820,7 +820,7 @@ export function Message({
             canFork={canFork}
             canRetry={canRetry}
             canReset={canReset}
-            resumable={message.resumable}
+            continueInsteadOfRetry
             canContinue={canContinue}
             disabled={actionDisabled}
             onFork={onFork}

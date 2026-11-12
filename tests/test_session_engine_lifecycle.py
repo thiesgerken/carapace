@@ -213,7 +213,7 @@ def test_submit_cancel_persists_interruption_marker(tmp_path: Path, db_factory):
         assert all("timestamp" in event for event in events[-2:])
         assert _without_timestamps(events[-2:]) == [
             {"role": "user", "content": "hello"},
-            {"role": "error", "content": "The previous turn was interrupted before completion.", "resumable": True},
+            {"role": "error", "content": "The previous turn was interrupted before completion."},
         ]
         assert sub.cancelled == 1
 
@@ -772,7 +772,7 @@ def test_reset_to_turn_rejects_unknown_target(tmp_path: Path, db_factory):
 
         assert reset_applied is False
         assert sub.errors == ["Unknown reset target"]
-        assert sub.error_events == [("Unknown reset target", False, False)]
+        assert sub.error_events == [("Unknown reset target", False)]
 
     with _patch_sentinel():
         asyncio.run(_run())
