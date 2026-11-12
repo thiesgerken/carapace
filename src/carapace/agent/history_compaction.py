@@ -9,14 +9,13 @@ from pydantic_ai import RunContext
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.models import ModelRequestContext
-
-from .deps import Deps
+from pydantic_ai.tools import AgentDepsT
 
 HistoryCompactor = Callable[[list[ModelMessage]], Awaitable[list[ModelMessage] | None]]
 
 
 @dataclass
-class HistoryCompactionCapability(AbstractCapability[Deps]):
+class HistoryCompactionCapability(AbstractCapability[AgentDepsT]):
     """Before each model request, lets *compact* replace the run's history (None keeps it).
 
     The replacement goes through ``ctx.messages``, so the rest of the run and the saved turn continue
@@ -28,7 +27,7 @@ class HistoryCompactionCapability(AbstractCapability[Deps]):
     compact: HistoryCompactor
 
     async def before_model_request(
-        self, ctx: RunContext[Deps], request_context: ModelRequestContext
+        self, ctx: RunContext[AgentDepsT], request_context: ModelRequestContext
     ) -> ModelRequestContext:
         compacted = await self.compact(list(ctx.messages))
         if compacted is None:

@@ -163,7 +163,7 @@ Common fields:
 Notes (both transports):
 
 - The declared servers are part of the `use_skill` approval, like domains and credentials. Every individual MCP tool call is still reviewed by the sentinel (shown as `mcp:<server>:<tool>`), with the usual escalate-to-user path.
-- Oversized text results are spilled to a file in the sandbox (same mechanism as `exec` output).
+- Oversized text results are spilled to a file in the sandbox (same mechanism as `exec` output). If that write fails, the call fails: the agent never gets a truncated preview whose full output is lost.
 - Server tools disappear when the session ends; there is no explicit deactivation, matching context grants.
 - **Prompt cache**: adding the server tools changes the agent's tool definitions, which invalidates the cached prompt, conversation included, on the next request. Each activation that adds MCP tools pays one full cache write of the session so far. This is a known, unwanted cost (see [persistent-context.md](persistent-context.md#known-breaks)); prefer `commands` aliases via `mcp2cli` for skills activated late in long sessions.
 - **Graceful degradation**: MCP servers are connected/enumerated at `use_skill` time. If a server fails (missing/expired credential, unreachable endpoint, refresh failure), the skill **still activates** — the `use_skill` result tells the agent that server is unavailable and why, and only its `<server>_*` tools are absent.

@@ -45,6 +45,8 @@ from .compaction import (
     find_tool_return_candidates,
     fold_render_text,
     last_request_input_tokens,
+    make_fold_message,
+    newest_measured_response,
     plan_fold,
     plan_ladder,
     plan_step_fold,
@@ -167,6 +169,13 @@ class SessionCompactionMixin:
         if not report.nothing_compacted:
             self._persist_compaction(active, fold=fold, applied=applied, model_name=model_name)
             self._session_mgr.save_history(session_id, history)
+            if measured := newest_measured_response(history):
+                active.state.compacted_through = measured.timestamp
+            # The rewritten history misses the conversation cache on the next turn anyway, so that turn
+            # refreshes the frozen memory block at no extra cost. Inside a run the miss happens right
+            # away, and a refresh on the next turn would cost a second one.
+            active.state.memory = None
+            self._session_mgr.save_state(active.state)
             await self._broadcast(active, "on_compaction", report)
         logger.info(f"Compaction session={session_id} mode=manual focus={bool(focus)} {report.message}")
         return report
@@ -176,46 +185,61 @@ class SessionCompactionMixin:
     ) -> list[ModelMessage] | None:
         """The run's history compacted down to the target, or None while it stays below the threshold.
 
-        Triggered by the provider-reported input tokens of the run's last request, against the agent
-        model's compaction threshold. The ladder (thinking-drop, then tool outputs outside the hot zone,
-        then a fold that may cut inside the running turn) stops once the local estimate is below the
-        target, half the threshold. The caller persists the returned history with the turn; the tree and
-        the event annotations are persisted here. Raises ``CompactionError`` when the history is above
-        the threshold and nothing can be compacted: the turn must not continue past it silently.
+        Triggered by the provider-reported input tokens of the run's last measured request, against the
+        agent model's compaction threshold, unless that measurement predates the last compaction. The
+        ladder (thinking-drop, then tool outputs outside the hot zone, then a fold that may cut inside the
+        running turn) stops once the history is below the target, half the threshold: the local estimate
+        plus what the provider counted on top of it for the measured request. The caller persists the
+        returned history with the turn; the tree and the event annotations are persisted here. Raises
+        ``CompactionError`` when the history is above the threshold and nothing can be compacted: the
+        turn must not continue past it silently.
         """
         session_id = active.state.session_id
         model_name = self.agent_model_id_for_gauge(active)
         threshold = self.compaction_threshold_for_model_id(model_name)
-        if last_request_input_tokens(messages) <= threshold:
+        measured = newest_measured_response(messages)
+        if measured is None or measured.usage.input_tokens <= threshold:
             return None
-        target = threshold // 2
+        if active.state.compacted_through is not None and measured.timestamp <= active.state.compacted_through:
+            return None  # measured before the last compaction (e.g. `/compact` between turns)
+
+        # The provider counts what the local estimate cannot see: system prompt, tool definitions, its own
+        # tokenizer. Carry that overhead into every target check, so a small window or a heavy prompt
+        # cannot hide a history that is still too large.
+        overhead = measured.usage.input_tokens - count_message_tokens(
+            messages[: messages.index(measured)], model_name=model_name
+        )
+
+        def above_target(history: list[ModelMessage]) -> bool:
+            return count_message_tokens(history, model_name=model_name) + overhead > threshold // 2
+
         history = split_merged_requests(messages)
         before = _tokens(history, model_name)
-        if before <= target:
-            # The last request was measured before an earlier compaction (e.g. a `/compact` between turns).
-            return None
-
         report = CompactionReport(mode="auto", before_tokens=before, after_tokens=before)
         fold: _Fold | None = None
+        applied: dict[str, AppliedToolReturn] = {}
         history, report.thinking_dropped = apply_thinking_drop(history)
-        applied = await self._summarize_tool_returns(
-            active, history, verbatim=self._config.agent.compaction.verbatim_tool_turns, model_name=model_name
-        )
-        history = apply_tool_return_compaction(history, applied)
-        if _tokens(history, model_name) > target and (
-            plan := plan_step_fold(history, keep_tokens=target // 2, model_name=model_name)
+        if above_target(history):
+            applied = await self._summarize_tool_returns(
+                active, history, verbatim=self._config.agent.compaction.verbatim_tool_turns, model_name=model_name
+            )
+            history = apply_tool_return_compaction(history, applied)
+        if above_target(history) and (
+            plan := plan_step_fold(history, keep_tokens=threshold // 4, model_name=model_name)
         ):
             fold = await self._summarize_fold(active, plan)
             history = apply_fold(plan, fold.summary)
 
         report.after_tokens = _tokens(history, model_name)
         self._record_ladder(report, fold, applied)
-        if fold is None and not applied:
+        if report.nothing_compacted:
             raise CompactionError(
-                f"Compaction failed: the last request used {last_request_input_tokens(messages):,} input tokens "
+                f"Compaction failed: the last request used {measured.usage.input_tokens:,} input tokens "
                 f"(threshold {threshold:,}) and nothing is left to compact"
             )
         self._persist_compaction(active, fold=fold, applied=applied, model_name=model_name)
+        active.state.compacted_through = measured.timestamp
+        self._session_mgr.save_state(active.state)
         await self._broadcast(active, "on_compaction", report)
         logger.info(f"Compaction session={session_id} mode=auto threshold={threshold} {report.message}")
         return history
@@ -266,10 +290,6 @@ class SessionCompactionMixin:
             )
             tree.nodes.append(node)
             _annotate_folded_events(events, fold.plan.foldable, node.id)
-        # The rewritten history breaks the conversation cache anyway, so the next turn
-        # refreshes the frozen memory block at no extra cost.
-        active.state.memory = None
-        self._session_mgr.save_state(active.state)
         self._session_mgr.save_compaction(session_id, tree)
         self._session_mgr.save_events(session_id, events)
         self._session_mgr.save_usage(session_id, active.usage_tracker)
@@ -500,6 +520,23 @@ def fold_survival_for_events(events: list[dict[str, Any]]) -> FoldSurvival:
         split_turn = len(node_ids) < len(span)
         fold_ids += [node_id for node_id in dict.fromkeys(node_ids) if node_id not in fold_ids]
     return FoldSurvival(fold_ids=fold_ids, folded_turns=folded_turns, split_turn=split_turn)
+
+
+def history_for_folded_cut_turn(
+    tree: SessionCompaction, head_events: list[dict[str, Any]], turn_events: list[dict[str, Any]]
+) -> tuple[list[ModelMessage], SessionCompaction] | None:
+    """History and tree for a cut inside a turn a step fold reached, or None when no fold reached it.
+
+    Every turn before it is folded too, so the history is the newest summary among the kept events'
+    folds, then the turn's events no fold reached, rebuilt up to the cut (none if the cut lies inside
+    the folded part). The kept events' annotations then all point at surviving nodes.
+    """
+    turn_folds = [e["compaction"]["folded_into"] for e in turn_events if _is_folded(e)]
+    if not turn_folds:
+        return None
+    kept = trim_compaction_tree(tree, [*fold_survival_for_events(head_events).fold_ids, *turn_folds])
+    unfolded = rebuild_model_history_from_events([e for e in turn_events if not _is_folded(e)])
+    return [make_fold_message(kept.nodes[-1].summary), *unfolded], kept
 
 
 def trim_compaction_tree(tree: SessionCompaction, surviving_fold_ids: list[str]) -> SessionCompaction:

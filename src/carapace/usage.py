@@ -146,6 +146,24 @@ def provider_cost_usd_from_messages(messages: list[ModelMessage]) -> Decimal | N
     return total if found else None
 
 
+@dataclass
+class ProviderCostCapability(AbstractCapability[Any]):
+    """Sums the provider-reported cost of every response of one run.
+
+    Counting responses as they arrive, not from the run's messages afterwards: compaction inside the
+    run may have folded some of them away by then.
+    """
+
+    total_usd: Decimal | None = None
+
+    async def after_model_request(
+        self, ctx: RunContext[Any], *, request_context: ModelRequestContext, response: ModelResponse
+    ) -> ModelResponse:
+        if (cost := provider_cost_usd_from_messages([response])) is not None:
+            self.total_usd = (self.total_usd or Decimal(0)) + cost
+        return response
+
+
 class RequestCost(BaseModel):
     """What a single model request cost, in the terms of CostSplit."""
 

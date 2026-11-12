@@ -10,8 +10,9 @@ conversation is different: its compaction overwrites the persisted conversation,
 action log, the audit log and the latest compaction request in the [debug view](debug-view.md)
 remain (see [Sentinel](#sentinel)).
 
-> The agent's model history is compacted **manually only**, with `/compact`. The sentinel's shadow
-> conversation is compacted **automatically** (see [Sentinel](#sentinel)).
+> The agent's model history is compacted **automatically** inside a run once it reaches the agent
+> model's compaction threshold (see [Automatic compaction](#automatic-compaction)), and on demand with
+> `/compact`. The sentinel's shadow conversation is compacted automatically too (see [Sentinel](#sentinel)).
 
 ## What gets compacted
 
@@ -21,15 +22,17 @@ Three strategies operate on different regions of the history:
 | --- | --- | --- |
 | Thinking-drop | All but the newest turn | Removes stale `thinking` parts (providers do not need them back). Free, no LLM call. |
 | Tool-return compaction | Kept turns, excluding the verbatim hot zone | Summarizes large tool outputs (e.g. log/`kubectl` dumps) in place. The tool call/return pairing is preserved; the part is marked so it is never compacted twice. |
-| Message-fold | Turns older than the keep-window `K` | Collapses whole turns (user + assistant + tool returns) into one summary block. |
+| Message-fold | `/compact`: turns older than the keep-window `K`. Automatic: everything but the newest steps | Collapses the older history (user + assistant + tool returns) and the previous summary into one summary block. |
 
 The newest `verbatim_tool_turns` completed turns form a **verbatim hot zone**: their tool outputs are
 never summarized, so the agent keeps exact fidelity on its most recent work. Tool-return compaction
 only touches outputs in kept turns *older* than that zone (and never inside a fold block). Set it to
 `0` to allow compacting every kept tool output, including the latest turn's.
 
-Folds are **append-only**: each `/compact` adds a new summary block rather than re-summarizing
-existing ones.
+Folds **roll**: the history holds at most one summary block. A new fold summarizes the previous
+summary together with the newly folded region, so the history stays bounded and every summary is
+written knowing what came before. The compaction tree keeps every earlier summary, so a rewind into
+the folded region falls back to the summary that was current at that point.
 
 The summarizer sees the folded turns as plain text: user prompts, assistant replies, every tool call
 with its arguments (paths, commands, URLs) and every tool result. Arguments and results are cut
@@ -44,8 +47,12 @@ so the agent's history is split back apart whenever it is loaded (and the sentin
 conversation before it is compacted).
 
 The model is always told that content was compacted: folded blocks become a clearly marked summary
-message, and compacted tool outputs are prefixed with a note that the full output can be obtained by
-re-running the tool.
+message, and compacted tool outputs are prefixed with a marker naming the way back,
+`read_tool_output("<tool call id>")`. That tool returns the original output from the session's events
+transcript, which compaction never rewrites, so the agent doesn't have to re-run a tool that may have
+side effects. The original is what the model saw before compaction, already capped at
+`tool_output_max_chars`. The tool is safe-listed (it only returns what this session's agent has
+seen) and its definition is static, so it doesn't affect the prefix cache.
 
 Summaries run as the agent itself: their system prompt leads with the agent's shared prefix
 (`AGENTS.md`, `SOUL.md`, `USER.md`, skill catalog), followed by the compaction instructions. See
@@ -54,6 +61,41 @@ Summaries run as the agent itself: their system prompt leads with the agent's sh
 Compaction fails loudly. A failed or empty summary, an exhausted session budget or an input that
 does not fit the compaction model aborts the whole `/compact` with a visible error, and the history
 stays exactly as it was. Nothing is skipped silently.
+
+Token counts in reports and in the automatic ladder are local estimates without `thinking` parts:
+providers strip old thinking themselves, so counting it would overstate both the history and what
+dropping it saves. The report still says how many thinking parts were dropped.
+
+## Automatic compaction
+
+Before every model request of a run (a pydantic-ai capability), carapace checks the input tokens the
+provider reported for the newest measured request against the agent model's compaction threshold (see
+[Configuration](#configuration)). Responses carapace writes itself, such as the error that ended a
+failed turn, carry no measurement and are skipped, so **Continue** after a failure is checked too. Above it, the history is compacted and the run continues from the
+compacted history, without user interaction, so a single long autonomous turn with hundreds of tool
+calls never outgrows the context window.
+
+The ladder stops at the **target**, half the threshold (not configurable), checked between rungs.
+The check adds to the local estimate (thinking included) what the provider counted on top of it for
+the measured request (system prompt, tool definitions, tokenizer differences), so a small window or a
+large prompt cannot make a history look smaller than it is.
+
+1. Thinking-drop.
+2. Tool-return compaction outside the verbatim hot zone.
+3. Message-fold of everything but the newest steps that together fit half the target (by the local
+   estimate). A step is one
+   model response plus its tool returns, so the cut may land inside the running turn; a tool call
+   never loses its return, and the newest step always stays verbatim.
+
+A measurement taken before the session's last compaction (e.g. `/compact` between turns) describes
+a history that no longer exists and is ignored. The session state remembers the provider timestamp of
+the newest measured response at each compaction, so both sides of that comparison come from the
+provider's clock. If a fresh measurement is above the threshold and nothing is left to compact, the turn fails through the regular error path (the **Continue** action then
+applies). A failed summary fails the turn the same way: the agent never continues past the threshold
+uncompacted. The compacted history is saved with the turn, also when the turn fails later.
+
+`/compact` runs every rung regardless of the target. It folds before it summarizes tool outputs, so
+it never pays for summaries the fold would discard.
 
 ## The `/compact` command
 
@@ -68,8 +110,8 @@ request (after the material, so it does not split the cached prompt prefix). The
 before/after and a breakdown of what was compacted.
 
 The same lives in the chat's **Usage** card: **Compact** runs `/compact`, and the "…" button opens a
-dialog with a dry run from the planners (no LLM call): current context against the agent model's
-compaction threshold and context window, the thinking parts, turns and tool outputs that would go,
+dialog with a dry run from the planners (no LLM call): the last request's provider-reported input
+tokens against the agent model's compaction threshold and context window, the thinking parts, turns and tool outputs that would go,
 and the estimated size afterwards without the summaries, whose size is unknown until they are
 written. It takes a focus and runs `/compact [focus]`; its collapsed *Debug* section runs
 `/uncompact`. The dry run is `GET /api/sessions/{id}/compaction/preview`.
@@ -82,7 +124,7 @@ the DB-backed platform settings (the `agent` scalar row), not a config file:
 | Setting | Where | Default | Meaning |
 | --- | --- | --- | --- |
 | Compaction | Default models | Default (title model) | Model used for fold/tool summaries (a first-level default model alongside agent/sentinel/title) |
-| Keep recent turns | Compaction | 8 | Completed turns kept verbatim; also the default `K` for `/compact` |
+| Keep recent turns | Compaction | 8 | Completed turns kept verbatim; the `K` that `/compact` keeps |
 | Verbatim tool turns | Compaction | 4 | Newest turns whose tool outputs are never summarized (`0` disables) |
 | Tool-output floor (tokens) | Compaction | 4000 | Tool outputs smaller than this are left alone |
 | Compaction threshold (tokens) | Each model row | `min(60 % × max input tokens, 250k)` | Context size at which a conversation on this model is compacted automatically. Max input tokens counts as 200k when unset. Must stay below that window |
@@ -114,8 +156,10 @@ subtle marker plus an on-demand peek at what the model actually sees, never by h
 - **Compacted tool rows** outside a fold show a `compacted` badge; expanding the row reveals a **"Model sees"**
   disclosure with the shortened tool output and token savings, alongside the full original output.
 - **Folded turns** stay inline and expanded, wrapped in a left **margin rail** with a header chip
-  (`N turns condensed for the model`). The chip expands to the model-facing summary text; the
-  original turns render normally inside the rail.
+  (`N turns condensed for the model`). The chip expands to the model-facing summary text, the newest
+  summary for every folded turn; the original turns render normally inside the rail. A turn that an
+  automatic fold cut in two is inside the rail up to the cut. Automatic compaction during a turn shows
+  up after the next reload of the transcript.
 - The [debug view](debug-view.md) shows the agent's latest request exactly as it went to the model,
   fold summaries and compacted tool returns included, and the latest compaction request itself.
 
@@ -135,15 +179,14 @@ fold node, `model_text` for a compacted tool return) so the main view needs no s
 The sentinel keeps its own shadow conversation (see [security.md](security.md#sentinel-state)). It is
 never reset and **not** affected by `/compact`; instead it is compacted automatically.
 
-- **When:** before each sentinel evaluation, once the conversation reaches the compaction threshold
-  of the sentinel model (see Configuration). The estimate counts the conversation only, not the
-  system prompt or the new evaluation request.
+- **When:** before each sentinel evaluation, once the provider-reported input tokens of the previous
+  evaluation exceed the compaction threshold of the sentinel model (see Configuration).
 - **What:** the same ladder and settings as `/compact`, with one evaluation (request, skill
   inspections, verdict) as one turn: thinking-drop, fold all but the newest *Keep recent turns*
   evaluations, then summarize large tool outputs (in practice `read_skill_file` returns) outside the
-  newest *Verbatim tool turns* evaluations. Unlike agent folds, the sentinel keeps a single summary:
-  each fold summarizes the earlier summary together with the newly folded evaluations, so the
-  conversation stays bounded by one summary plus *Keep recent turns* evaluations.
+  newest *Verbatim tool turns* evaluations. Like agent folds, sentinel folds roll, so the
+  conversation stays bounded by one summary plus *Keep recent turns* evaluations. There is no
+  target: every compaction runs the whole ladder.
 - **How:** summaries lead with the sentinel's own system prompt (including `SECURITY.md` and the
   session's ask/unattended mode), followed by compaction instructions that require keeping user
   decisions, what the user asked for and agreed to in chat (with the agent proposal it answers),
