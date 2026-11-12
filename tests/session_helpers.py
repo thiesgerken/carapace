@@ -51,7 +51,7 @@ class _FakeSubscriber(SessionSubscriber):
         self.token_chunks: list[str] = []
         self.thinking_chunks: list[str] = []
         self.errors: list[str] = []
-        self.error_events: list[tuple[str, bool]] = []
+        self.error_events: list[tuple[str, bool, bool]] = []
         self.cancelled: int = 0
         self.done_messages: list[tuple[str, TurnUsage]] = []
         self.title_updates: list[tuple[str, TurnUsage | None]] = []
@@ -94,9 +94,9 @@ class _FakeSubscriber(SessionSubscriber):
     ) -> None:
         self.done_messages.append((content, usage))
 
-    async def on_error(self, detail: str, *, turn_terminal: bool = False) -> None:
+    async def on_error(self, detail: str, *, turn_terminal: bool = False, resumable: bool = False) -> None:
         self.errors.append(detail)
-        self.error_events.append((detail, turn_terminal))
+        self.error_events.append((detail, turn_terminal, resumable))
 
     async def on_cancelled(self) -> None:
         self.cancelled += 1

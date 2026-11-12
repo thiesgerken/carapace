@@ -360,7 +360,7 @@ class SessionTurnMixin(SessionTurnHost):
                 terminal_message=str(exc),
                 save_progress=True,
             )
-            await self._broadcast(active, "on_error", str(exc), turn_terminal=True)
+            await self._broadcast(active, "on_error", str(exc), turn_terminal=True, resumable=True)
         except (DisabledModelError, CodexNotConnectedError) as exc:
             logger.info(f"Turn blocked by unusable model for {session_id}: {exc}")
             await self._finalize_failed_turn(
@@ -701,6 +701,7 @@ class SessionTurnMixin(SessionTurnHost):
             turn_event_start=turn_event_start,
             latest_messages=latest_messages,
             terminal_message=terminal_message,
+            resumable=save_progress,
         )
         if self._notification_router is not None and terminal_message and active.state.attributes.unattended:
             terminal_event_index = len(self._session_mgr.load_events(session_id)) - 1
@@ -748,6 +749,7 @@ class SessionTurnMixin(SessionTurnHost):
         turn_event_start: int,
         latest_messages: list[ModelMessage] | None = None,
         terminal_message: str | None = None,
+        resumable: bool = False,
     ) -> None:
         """Persist the user message to history even when the agent turn fails.
 
@@ -766,13 +768,16 @@ class SessionTurnMixin(SessionTurnHost):
 
         events = self._complete_cancelled_events(self._session_mgr.load_events(session_id), turn_event_start)
         if terminal_message:
-            events.append(
-                {
-                    "role": "error",
-                    "content": terminal_message,
-                    "timestamp": datetime.now(tz=UTC).isoformat(),
-                }
-            )
+            error_event: dict[str, Any] = {
+                "role": "error",
+                "content": terminal_message,
+                "timestamp": datetime.now(tz=UTC).isoformat(),
+            }
+            # The turn stopped on purpose (cancel, budget) with its tool calls in the history, so the
+            # UI offers to continue from there instead of re-running the whole turn.
+            if resumable:
+                error_event["resumable"] = True
+            events.append(error_event)
         self._session_mgr.save_events(session_id, events)
 
     def _complete_cancelled_model_history(self, messages: list[ModelMessage]) -> list[ModelMessage]:

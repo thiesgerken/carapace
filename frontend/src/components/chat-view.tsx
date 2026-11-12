@@ -85,6 +85,9 @@ interface ChatViewProps {
 
 const SANDBOX_STARTUP_TOOL_NAMES = new Set(["use_skill", "read", "write", "str_replace", "exec", "send_file"]);
 
+// Sent as a plain user message: the history already holds the stopped turn's tool calls, so the
+// agent picks up from there. English on purpose, every model follows it whatever the UI language.
+const CONTINUE_PROMPT = "Continue.";
 function sandboxStorageLabel(
   snapshot: SessionSandboxSnapshot | null,
   t: (key: string, values?: Record<string, string | number | Date>) => string,
@@ -942,6 +945,7 @@ export function projectHistoryToMessages(history: HistoryMessage[]): ChatMessage
         compaction: entry.compaction,
         turnTerminal: true,
       });
+        resumable: entry.resumable === true,
       continue;
     }
 
@@ -1608,16 +1612,13 @@ export function ChatView({
           setMessages((prev) => {
             const rollback = resetRollbackRef.current;
             resetRollbackRef.current = null;
-            if (rollback !== null) {
-              return [
-                ...rollback,
-                { kind: "error", detail: msg.detail, turnTerminal: msg.turn_terminal === true },
-              ];
-            }
-            return [
-              ...prev,
-              { kind: "error", detail: msg.detail, turnTerminal: msg.turn_terminal === true },
-            ];
+            const error: ChatMessage = {
+              kind: "error",
+              detail: msg.detail,
+              turnTerminal: msg.turn_terminal === true,
+              resumable: msg.resumable === true,
+            };
+            return [...(rollback ?? prev), error];
           });
           setLlmActivity(null);
           lastThinkingStartedAtRef.current = null;
@@ -1627,7 +1628,7 @@ export function ChatView({
           resetRollbackRef.current = null;
           setMessages((prev) => [
             ...prev,
-            { kind: "error", detail: msg.detail, turnTerminal: true },
+            { kind: "error", detail: msg.detail, turnTerminal: true, resumable: true },
           ]);
           setLlmActivity(null);
           lastThinkingStartedAtRef.current = null;
@@ -1855,6 +1856,11 @@ export function ChatView({
     }
     return undefined;
   }
+  function handleContinue() {
+    if (waiting || status !== "connected") return;
+    handleSend(CONTINUE_PROMPT);
+  }
+
 
   async function handleReset(messageIndex: number) {
     if (waiting || status !== "connected") return;
@@ -2862,7 +2868,10 @@ export function ChatView({
                   const canFork = actionable && inHistory;
                   // Resetting the very last bubble removes nothing — offer it only with a tail to drop.
                   const canReset = canFork && i < messages.length - 1;
-                  const canRetry = actionable && enclosingTerminal === latestTerminalIndex;
+                  const inLatestTurn = actionable && enclosingTerminal === latestTerminalIndex;
+                  // A turn that kept its progress continues from its error row instead of re-running.
+                  const canContinue = inLatestTurn && msg.kind === "error" && msg.resumable === true;
+                  const canRetry = inLatestTurn && !canContinue;
                   return (
                     <div key={i} data-event-index={anchorEventIndex(msg)} className="rounded-lg">
                       <Message
@@ -2892,6 +2901,7 @@ export function ChatView({
                       <ToolCallGroup
                         items={item.indices.map((j) => messages[j])}
                         inProgress={item.inProgress}
+                        canContinue={canContinue}
                       >
                         {item.indices.map((j) => renderMessage(j))}
                       </ToolCallGroup>
@@ -2899,6 +2909,7 @@ export function ChatView({
                   ),
                 );
               })()}
+                        onContinue={canContinue ? handleContinue : undefined}
               {waitingLabel && (
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />

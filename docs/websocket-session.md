@@ -80,7 +80,7 @@ Each message is one JSON object with a `type` field.
 | `credential_approval_request`    | Sentinel escalated **credential** access            | `request_id`, `vault_paths`, `names`, `descriptions`, optional `skill_name`, `explanation`       |
 | `done`                           | Agent turn finished                                 | `content` (final assistant text), optional `usage`, optional `final_status`                      |
 | `command_result`                 | Slash command or turn-control acknowledgement       | `command`, `data` (arbitrary)                                                                    |
-| `error`                          | Parse error, unknown command, busy agent, etc.      | `detail`                                                                                         |
+| `error`                          | Parse error, unknown command, busy agent, etc.      | `detail`, `turn_terminal` (ends the turn), `resumable` (the turn kept its progress, see below)  |
 | `cancelled`                      | Turn cancelled after `cancel`                       | `detail` (default explains cancellation)                                                         |
 | `session_title`                  | Title changed                                       | `title`                                                                                          |
 | `user_message`                   | Echo: user line from this client or another channel | `content`                                                                                        |

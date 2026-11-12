@@ -114,8 +114,11 @@ class Transcript:
             }
         )
 
-    def error(self, content: str) -> None:
-        self.events.append({"role": "error", "content": content, "timestamp": self._stamp(1)})
+    def error(self, content: str, *, resumable: bool) -> None:
+        event: dict[str, Any] = {"role": "error", "content": content, "timestamp": self._stamp(1)}
+        if resumable:
+            event["resumable"] = True
+        self.events.append(event)
 
     def call(
         self,
@@ -394,7 +397,7 @@ def _budget_stop(start: datetime, usage: UsageTracker, budget: SessionBudget) ->
     t.user("Now draft a reply for each of them.")
     error = usage_budget_exceeded_error(usage, budget)
     assert error is not None, "the demo usage must exceed the demo cost limit"
-    t.error(str(error))
+    t.error(str(error), resumable=True)
     return t
 
 

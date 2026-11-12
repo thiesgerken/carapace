@@ -221,6 +221,8 @@ export interface HistoryMessage {
     generation_ms?: number | null;
   };
   partial?: boolean;
+  /** On a turn-ending error: the turn kept its progress, so it can be continued. */
+  resumable?: boolean;
   reasoning_duration_ms?: number;
   reasoning_tokens?: number;
   tool?: string;
@@ -452,6 +454,7 @@ export interface ErrorMessage {
   type: "error";
   detail: string;
   turn_terminal?: boolean;
+  resumable?: boolean;
 }
 
 export interface Cancelled {
@@ -675,6 +678,8 @@ export type ChatMessage =
       eventIndex?: number;
       compaction?: CompactionAnnotation;
       turnTerminal?: boolean;
+      /** The turn stopped (cancel, budget) with its progress in the history: offer Continue, not Retry. */
+      resumable?: boolean;
     };
 
 // Memory (/api/memory). Mirrors src/carapace/memory/models.py.

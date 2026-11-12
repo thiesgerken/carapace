@@ -89,7 +89,18 @@ test("a failed turn's persisted error renders as a turn-terminal error after rel
     eventIndex: 1,
     compaction: undefined,
     turnTerminal: true,
+    resumable: false,
   });
+});
+
+test("a turn that kept its progress stays resumable after reload", () => {
+  const [, error] = projectHistoryToMessages([
+    { role: "user", content: "go on", event_index: 0 },
+    { role: "error", content: "The previous turn was interrupted before completion.", event_index: 1, resumable: true },
+  ]);
+
+  assert.equal(error.kind, "error");
+  assert.equal(error.kind === "error" && error.resumable, true);
 });
 
 test("turn-ending errors carry turn actions, other errors do not", () => {

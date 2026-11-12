@@ -1361,6 +1361,7 @@
             "reset": "Unterhaltung zu diesem Zug zurücksetzen"
         },
         "finalStatus": {
+            "continue": "Zug fortsetzen",
             "status": {
                 "success": "Erfolg",
                 "warning": "Warnung"

@@ -203,8 +203,8 @@ class WebSocketSubscriber:
     ) -> None:
         await self._safe_send(Done(content=content, thinking=thinking, usage=usage, final_status=final_status))
 
-    async def on_error(self, detail: str, *, turn_terminal: bool = False) -> None:
-        await self._safe_send(ErrorMessage(detail=detail, turn_terminal=turn_terminal))
+    async def on_error(self, detail: str, *, turn_terminal: bool = False, resumable: bool = False) -> None:
+        await self._safe_send(ErrorMessage(detail=detail, turn_terminal=turn_terminal, resumable=resumable))
 
     async def on_cancelled(self) -> None:
         await self._safe_send(Cancelled())

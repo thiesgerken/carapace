@@ -1361,6 +1361,7 @@
             "reset": "Reset conversation to after this turn"
         },
         "finalStatus": {
+            "continue": "Continue turn",
             "status": {
                 "success": "success",
                 "warning": "warning"
