@@ -1,6 +1,39 @@
 # CHANGELOG
 
 
+## v0.182.0 (2026-11-12)
+
+
+### ✨ Features
+
+
+- ✨Merge pull request #486 from thiesgerken/feat/compaction-provider-side
+  ([`d183563`](https://github.com/thiesgerken/carapace/commit/d1835630627249b2fe997be6b69be391751a540a))
+
+- ✨ feat(compaction): provider-side compaction for Anthropic and OpenAI Responses
+  ([`d183563`](https://github.com/thiesgerken/carapace/commit/d1835630627249b2fe997be6b69be391751a540a))
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix(compaction): one provider compaction marker per response, from the newest part
+  ([`87f3b07`](https://github.com/thiesgerken/carapace/commit/87f3b07026bd37ffdaf135c592e651364c17280d))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+- 🐛 fix(compaction): chunked rolling folds, sentinel usage split, provider markers on uncompact and rewinds
+  ([`5c5483f`](https://github.com/thiesgerken/carapace/commit/5c5483fc0a1c004db7c4dc4f351a76620a1d7c54))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+### Other
+
+
+- Merge remote-tracking branch 'origin/main' into feat/compaction-provider-side
+  ([`5a9253e`](https://github.com/thiesgerken/carapace/commit/5a9253efdfe7010249a45a0fda6b079a09ad32df))
+
+  # Conflicts: #	src/carapace/session/compaction_engine.py
+
 ## v0.181.1 (2026-11-12)
 
 
@@ -12,6 +45,15 @@
 
 - 💄 feat(compaction): /compact [focus], Compact button and dry-run dialog
   ([`715f663`](https://github.com/thiesgerken/carapace/commit/715f66325712ffab7e2494156abf12a2424a88a8))
+
+- 💄 feat(compaction): /compact [focus], Compact button and dry-run dialog
+  ([`f7a5caa`](https://github.com/thiesgerken/carapace/commit/f7a5caa2d8aecfff55cc56af04545572babcf277))
+
+  /compact loses its fold/tools modes and numbers and takes an optional focus instead, appended to every summary request. The manual ladder is planned by the pure plan_ladder, which also backs a new dry-run endpoint (GET /api/sessions/{id}/compaction/preview). The chat's Usage card gets a Compact button and a dialog with that preview, a focus input and /uncompact under Debug.
+
+  Closes #477
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 
 ### ♻️ Refactoring
 
@@ -37,6 +79,22 @@
 - Merge remote-tracking branch 'origin/main' into feat/compaction-ui
   ([`3ab0a2e`](https://github.com/thiesgerken/carapace/commit/3ab0a2e597814d40d4e4635ef9611b5d7ce47fa4))
 
+- Merge remote-tracking branch 'origin/feat/compaction-threshold' into feat/compaction-ui
+  ([`03f03c5`](https://github.com/thiesgerken/carapace/commit/03f03c5d952d19f06aa07198da17645a263def38))
+
+  # Conflicts: #	docs/compaction.md
+
+- Merge remote-tracking branch 'origin/main' into feat/compaction-provider-side
+  ([`4456d19`](https://github.com/thiesgerken/carapace/commit/4456d195920fc56a24a6d8acd6eee8eb255ed8ec))
+
+### ✨ Features
+
+
+- ✨ feat(compaction): provider switch, usage split, UI marker and docs for provider-side compaction
+  ([`ffbf1e5`](https://github.com/thiesgerken/carapace/commit/ffbf1e55071c3323cc3a6d3855e033223e891693))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
 ## v0.181.0 (2026-11-12)
 
 
@@ -48,6 +106,11 @@
 
 - ✨ feat(compaction): rolling folds and automatic compaction inside a run
   ([`4362018`](https://github.com/thiesgerken/carapace/commit/43620180d01d5533960671516e709414dbd54559))
+
+- ✨ feat(compaction): provider-side compaction for Anthropic and OpenAI Responses
+  ([`1ac0a6d`](https://github.com/thiesgerken/carapace/commit/1ac0a6dba8a844febf5af13cd726c971cd426a4a))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 
 ### Other
 
@@ -132,32 +195,10 @@
 
   # Conflicts: #	docs/compaction.md
 
-- 📝 docs(compaction): rolling folds and automatic compaction; keep the memory block on in-run folds
-  ([`3a578ca`](https://github.com/thiesgerken/carapace/commit/3a578ca64b66dc561c7e6f22d1cd58140e50f42a))
-
-  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
-
-- Merge remote-tracking branch 'origin/feat/compaction-threshold' into feat/compaction-ui
-  ([`03f03c5`](https://github.com/thiesgerken/carapace/commit/03f03c5d952d19f06aa07198da17645a263def38))
-
-  # Conflicts: #	docs/compaction.md
-
 - Merge remote-tracking branch 'origin/main' into feat/compaction-threshold
   ([`16de39c`](https://github.com/thiesgerken/carapace/commit/16de39cc2409a5fff7f8a7d222cb027ae0e38775))
 
   # Conflicts: #	docs/compaction.md #	frontend/src/lib/api.ts #	src/carapace/models/config.py #	src/carapace/server/platform_settings.py
-
-### 💄 UI/UX
-
-
-- 💄 feat(compaction): /compact [focus], Compact button and dry-run dialog
-  ([`f7a5caa`](https://github.com/thiesgerken/carapace/commit/f7a5caa2d8aecfff55cc56af04545572babcf277))
-
-  /compact loses its fold/tools modes and numbers and takes an optional focus instead, appended to every summary request. The manual ladder is planned by the pure plan_ladder, which also backs a new dry-run endpoint (GET /api/sessions/{id}/compaction/preview). The chat's Usage card gets a Compact button and a dialog with that preview, a focus input and /uncompact under Debug.
-
-  Closes #477
-
-  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 
 ### ♻️ Refactoring
 
@@ -230,6 +271,11 @@
 
 - 🙈 chore: drop the regenerated frontend/AGENTS.md
   ([`c335922`](https://github.com/thiesgerken/carapace/commit/c33592206fbb09badf6d5f54e74fe260445c7000))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+- 📝 docs(compaction): rolling folds and automatic compaction; keep the memory block on in-run folds
+  ([`3a578ca`](https://github.com/thiesgerken/carapace/commit/3a578ca64b66dc561c7e6f22d1cd58140e50f42a))
 
   Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 
