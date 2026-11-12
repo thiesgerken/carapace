@@ -35,7 +35,6 @@ function draftWithModel(model: PlatformDraft["models"][number]): PlatformDraft {
       keepTurns: "6",
       verbatimTurns: "2",
       toolFloor: "500",
-      sentinelThreshold: "50",
     },
     models: [model],
   };
@@ -48,6 +47,7 @@ test("buildPlatformSettingsPatch keeps default models the view does not edit", (
     name: "claude-haiku-4-5",
     id: "",
     maxInputTokens: "",
+    compactionThresholdTokens: "",
     thinking: "",
     thinkingBudgetTokens: "",
     baseUrl: "",
@@ -66,6 +66,29 @@ test("buildPlatformSettingsPatch keeps default models the view does not edit", (
   assert.equal(patch.default_models.memory_high, null);
 });
 
+test("buildPlatformSettingsPatch sends the compaction threshold, empty as null", () => {
+  const row = {
+    rowId: "model-1",
+    provider: "anthropic",
+    name: "claude-haiku-4-5",
+    id: "",
+    maxInputTokens: "200000",
+    compactionThresholdTokens: "90000",
+    thinking: "",
+    thinkingBudgetTokens: "",
+    baseUrl: "",
+    vision: false,
+    enabled: true,
+    apiKeySource: "none",
+    apiKeyValue: "",
+    apiKeyConfigured: false,
+    apiKeyConfiguredSource: "none",
+  } as const;
+
+  assert.equal(buildPlatformSettingsPatch(draftWithModel(row), translate).available_models[0].compaction_threshold_tokens, 90000);
+  assert.equal(buildPlatformSettingsPatch(draftWithModel({ ...row, compactionThresholdTokens: "" }), translate).available_models[0].compaction_threshold_tokens, null);
+});
+
 test("buildPlatformSettingsPatch omits OpenAI-only fields for other providers", () => {
   const patch = buildPlatformSettingsPatch(
     draftWithModel({
@@ -74,6 +97,7 @@ test("buildPlatformSettingsPatch omits OpenAI-only fields for other providers", 
       name: "claude-haiku-4-5",
       id: "",
       maxInputTokens: "",
+      compactionThresholdTokens: "",
       thinking: "",
       thinkingBudgetTokens: "128",
       baseUrl: "http://127.0.0.1:1234/v1",
@@ -102,6 +126,7 @@ test("buildPlatformSettingsPatch reuses configured raw OpenAI secrets", () => {
       name: "gpt-4o-mini",
       id: "local:test",
       maxInputTokens: "",
+      compactionThresholdTokens: "",
       thinking: "",
       thinkingBudgetTokens: "",
       baseUrl: "http://127.0.0.1:1234/v1",
@@ -126,6 +151,7 @@ test("buildPlatformSettingsPatch includes OpenRouter API key fields without base
       name: "anthropic/claude-sonnet-4.5",
       id: "openrouter:sonnet",
       maxInputTokens: "",
+      compactionThresholdTokens: "",
       thinking: "",
       thinkingBudgetTokens: "128",
       baseUrl: "https://openrouter.ai/api/v1",
@@ -154,6 +180,7 @@ test("buildPlatformSettingsPatch carries the vision flag", () => {
       name: "claude-sonnet-4-6",
       id: "",
       maxInputTokens: "",
+      compactionThresholdTokens: "",
       thinking: "",
       thinkingBudgetTokens: "",
       baseUrl: "",
@@ -178,6 +205,7 @@ test("sortModelDrafts orders complete rows by provider then model name while kee
       name: "gpt-4o-mini",
       id: "",
       maxInputTokens: "",
+      compactionThresholdTokens: "",
       thinking: "",
       thinkingBudgetTokens: "",
       baseUrl: "",
@@ -194,6 +222,7 @@ test("sortModelDrafts orders complete rows by provider then model name while kee
       name: "claude-sonnet-4-6",
       id: "",
       maxInputTokens: "",
+      compactionThresholdTokens: "",
       thinking: "",
       thinkingBudgetTokens: "",
       baseUrl: "",
@@ -210,6 +239,7 @@ test("sortModelDrafts orders complete rows by provider then model name while kee
       name: "",
       id: "",
       maxInputTokens: "",
+      compactionThresholdTokens: "",
       thinking: "",
       thinkingBudgetTokens: "",
       baseUrl: "",
@@ -226,6 +256,7 @@ test("sortModelDrafts orders complete rows by provider then model name while kee
       name: "claude-haiku-4-5",
       id: "",
       maxInputTokens: "",
+      compactionThresholdTokens: "",
       thinking: "",
       thinkingBudgetTokens: "",
       baseUrl: "",
@@ -256,6 +287,7 @@ test("ModelRow reopens incomplete rows after a manual collapse", async () => {
           name: "",
           id: "",
           maxInputTokens: "",
+          compactionThresholdTokens: "",
           thinking: "",
           thinkingBudgetTokens: "",
           baseUrl: "",

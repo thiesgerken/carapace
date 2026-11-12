@@ -73,7 +73,12 @@ the DB-backed platform settings (the `agent` scalar row), not a config file:
 | Keep recent turns | Compaction | 8 | Completed turns kept verbatim; also the default `K` for `/compact` |
 | Verbatim tool turns | Compaction | 4 | Newest turns whose tool outputs are never summarized (`0` disables) |
 | Tool-output floor (tokens) | Compaction | 500 | Tool outputs smaller than this are left alone |
-| Sentinel threshold (% of context) | Compaction | 50 | Share of the sentinel model's context window at which its shadow conversation is compacted (1 to 90) |
+| Compaction threshold (tokens) | Each model row | `min(60 % × max input tokens, 250k)` | Context size at which a conversation on this model is compacted automatically. Max input tokens counts as 200k when unset. Must stay below max input tokens |
+
+The threshold belongs to the model, not the role: the sentinel compacts at the threshold of the
+sentinel model. 60 % leaves room for the system prompt, the next request and the answer; the 250k
+cap keeps huge context windows from growing slow and expensive long before they fill. Leave the
+field empty unless a model needs something else (the placeholder shows the computed default).
 
 The compaction model is a separate, configurable default model (a cheap/haiku-class model is a good
 default); leaving it on "Default" reuses the title model. Its usage is tracked under the
@@ -115,10 +120,9 @@ fold node, `model_text` for a compacted tool return) so the main view needs no s
 The sentinel keeps its own shadow conversation (see [security.md](security.md#sentinel-state)). It is
 never reset and **not** affected by `/compact`; instead it is compacted automatically.
 
-- **When:** before each sentinel evaluation, once the conversation fills the sentinel threshold of
-  the sentinel model's context window (`max_input_tokens` from the model catalog, 200k if unset).
-  The estimate counts the conversation only, not the system prompt or the new evaluation request,
-  which is why the threshold is capped at 90%.
+- **When:** before each sentinel evaluation, once the conversation reaches the compaction threshold
+  of the sentinel model (see Configuration). The estimate counts the conversation only, not the
+  system prompt or the new evaluation request.
 - **What:** the same ladder and settings as `/compact`, with one evaluation (request, skill
   inspections, verdict) as one turn: thinking-drop, fold all but the newest *Keep recent turns*
   evaluations, then summarize large tool outputs (in practice `read_skill_file` returns) outside the

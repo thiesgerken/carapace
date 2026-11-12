@@ -1069,6 +1069,7 @@ export interface PlatformModelSecretInfo {
 }
 
 export interface PlatformModelEntryInfo extends AvailableModelInfo {
+  compaction_threshold_tokens?: number | null;
   thinking?: boolean | "minimal" | "low" | "medium" | "high" | "xhigh" | null;
   thinking_budget_tokens?: number | null;
   base_url?: string | null;
@@ -1216,7 +1217,6 @@ export interface PlatformCompactionSettings {
   keep_turns: number;
   verbatim_tool_turns: number;
   tool_output_floor_tokens: number;
-  sentinel_threshold_pct: number;
 }
 
 export interface PlatformDefaultModelsSettings {
@@ -1251,6 +1251,7 @@ export interface PlatformModelEntryPatchInput {
   name: string;
   id?: string | null;
   max_input_tokens?: number | null;
+  compaction_threshold_tokens?: number | null;
   thinking?: boolean | "minimal" | "low" | "medium" | "high" | "xhigh" | null;
   thinking_budget_tokens?: number | null;
   base_url?: string | null;
@@ -1467,6 +1468,7 @@ function decodePlatformModelEntry(raw: unknown): PlatformModelEntryInfo | null {
       : null;
   return {
     ...model,
+    compaction_threshold_tokens: readNumber(raw, "compaction_threshold_tokens") ?? null,
     thinking,
     thinking_budget_tokens: readNumber(raw, "thinking_budget_tokens") ?? null,
     base_url: readString(raw, "base_url") ?? null,
@@ -1514,7 +1516,6 @@ function decodeCompaction(raw: unknown): PlatformCompactionSettings {
     keep_turns: readNumber(r, "keep_turns") ?? 8,
     verbatim_tool_turns: readNumber(r, "verbatim_tool_turns") ?? 4,
     tool_output_floor_tokens: readNumber(r, "tool_output_floor_tokens") ?? 500,
-    sentinel_threshold_pct: readNumber(r, "sentinel_threshold_pct") ?? 50,
   };
 }
 

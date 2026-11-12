@@ -83,6 +83,20 @@ class AuthConfig(BaseSettings):
     cookie: JwtCookieConfig = JwtCookieConfig()
 
 
+# Context window assumed for catalog rows (or unknown models) without max_input_tokens.
+DEFAULT_CONTEXT_WINDOW_TOKENS = 200_000
+
+
+def default_compaction_threshold(max_input_tokens: int | None) -> int:
+    """Compact at 60 % of the context window: room for the system prompt, the next request and the
+    model's answer. Capped at 250k because huge windows get slow and expensive long before they fill.
+
+    The settings UI mirrors this formula for its placeholder (``defaultCompactionThreshold``).
+    """
+    window = max_input_tokens if max_input_tokens is not None else DEFAULT_CONTEXT_WINDOW_TOKENS
+    return min(window * 6 // 10, 250_000)
+
+
 class AvailableModelEntry(ConfigModel):
     """One row in ``agent.available_models``: shorthand ``provider:name`` string or a mapping."""
 
@@ -100,6 +114,11 @@ class AvailableModelEntry(ConfigModel):
         description="Stable id for this row (slash commands, API). Defaults to provider:name.",
     )
     max_input_tokens: int | None = None
+    compaction_threshold_tokens: int | None = Field(
+        default=None,
+        ge=1,
+        description="Context tokens that trigger automatic compaction (see default_compaction_threshold).",
+    )
     thinking: bool | Literal["minimal", "low", "medium", "high", "xhigh"] | None = Field(
         default=None,
         description="Enable model thinking/reasoning. true/false to toggle, or an effort level.",
@@ -142,6 +161,12 @@ class AvailableModelEntry(ConfigModel):
             raise ValueError(
                 "thinking_budget_tokens is only supported for provider 'openai', 'openai-chat', or 'openai-responses'"
             )
+        if (
+            self.compaction_threshold_tokens is not None
+            and self.max_input_tokens is not None
+            and self.compaction_threshold_tokens >= self.max_input_tokens
+        ):
+            raise ValueError("compaction_threshold_tokens must be below max_input_tokens")
         if self.api_key is not None and self.provider not in PROVIDERS_WITH_MODEL_API_KEYS:
             raise ValueError(
                 "api_key is only supported for provider 'openai', 'openai-chat', 'openai-responses', or 'openrouter'"
@@ -151,6 +176,12 @@ class AvailableModelEntry(ConfigModel):
     @property
     def model_id(self) -> str:
         return self.id if self.id is not None else f"{self.provider}:{self.name}"
+
+    @property
+    def compaction_threshold(self) -> int:
+        if self.compaction_threshold_tokens is not None:
+            return self.compaction_threshold_tokens
+        return default_compaction_threshold(self.max_input_tokens)
 
     @model_serializer(mode="wrap")
     def _serialize(self, handler: Callable[..., Any]) -> dict[str, Any]:
@@ -176,10 +207,6 @@ class CompactionConfig(ConfigModel):
     verbatim_tool_turns: int = Field(default=4, ge=0)
     # Tool returns below this token count are left alone (marker overhead would exceed the saving).
     tool_output_floor_tokens: int = Field(default=500, ge=1)
-    # The sentinel's shadow conversation is compacted before an evaluation once it fills this
-    # percentage of the sentinel model's context window. Capped below 100: the estimate leaves out
-    # the system prompt and the new evaluation request.
-    sentinel_threshold_pct: int = Field(default=50, ge=1, le=90)
 
 
 class AgentConfig(ConfigModel):
@@ -277,6 +304,8 @@ def model_entry_to_dict(entry: AvailableModelEntry) -> dict[str, Any]:
         data["id"] = entry.id
     if entry.max_input_tokens is not None:
         data["max_input_tokens"] = entry.max_input_tokens
+    if entry.compaction_threshold_tokens is not None:
+        data["compaction_threshold_tokens"] = entry.compaction_threshold_tokens
     if entry.thinking is not None:
         data["thinking"] = entry.thinking
     if entry.thinking_budget_tokens is not None:

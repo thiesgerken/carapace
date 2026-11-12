@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any
 from pydantic_ai.exceptions import UsageLimitExceeded
 from pydantic_ai.usage import UsageLimits
 
-from ..models.config import Config, is_subscription_model
+from ..models.config import DEFAULT_CONTEXT_WINDOW_TOKENS, Config, is_subscription_model
 from ..models.session import SessionBudget
 from ..usage import (
     BudgetGauge,
@@ -37,8 +37,6 @@ from ..usage import (
 from ..ws_models import TurnUsage, TurnUsageBreakdownPct
 from .manager import SessionManager
 from .types import ActiveSession
-
-_DEFAULT_CONTEXT_CAP_TOKENS = 200_000
 
 BUDGET_METRIC_FIELDS: dict[BudgetMetric, str] = {
     "input": "input_tokens",
@@ -133,9 +131,7 @@ class SessionUsageBudgetMixin:
         if row is None:
             return None
         mid = self.agent_model_id_for_gauge(active) if source == "agent" else self.sentinel_model_id(active)
-        cap = self._max_input_tokens_for_model_id(mid)
-        if cap is None:
-            cap = _DEFAULT_CONTEXT_CAP_TOKENS
+        cap = self._max_input_tokens_for_model_id(mid) or DEFAULT_CONTEXT_WINDOW_TOKENS
         cs = row["context_size"]
         pct = min(100.0, (100.0 * cs / cap)) if cap > 0 else 0.0
         return UsageContextRow(**row, context_cap_tokens=cap, context_used_pct=round(pct, 1))
@@ -150,13 +146,10 @@ class SessionUsageBudgetMixin:
 
     def agent_context_cap_for_gauge(self, active: ActiveSession) -> int:
         model_id = self.agent_model_id_for_gauge(active)
-        return self._max_input_tokens_for_model_id(model_id) or _DEFAULT_CONTEXT_CAP_TOKENS
+        return self._max_input_tokens_for_model_id(model_id) or DEFAULT_CONTEXT_WINDOW_TOKENS
 
     def sentinel_model_id(self, active: ActiveSession) -> str:
         return active.sentinel_model_name or self._config.agent.sentinel_model
-
-    def sentinel_context_cap(self, active: ActiveSession) -> int:
-        return self._max_input_tokens_for_model_id(self.sentinel_model_id(active)) or _DEFAULT_CONTEXT_CAP_TOKENS
 
     def _budget_gauges(self, active: ActiveSession) -> list[BudgetGauge]:
         """Gauges of the session totals, the budgets whose stop message lists the reached ones."""

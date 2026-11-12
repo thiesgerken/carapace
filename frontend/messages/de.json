@@ -579,7 +579,6 @@
             "defaultRequired": "{field}-Standardmodell ist erforderlich.",
             "defaultUnknown": "{field}-Standardmodell {id} ist nicht im Katalog.",
             "minInt": "{field} muss eine ganze Zahl ≥ {min} sein.",
-            "rangeInt": "{field} muss eine ganze Zahl von {min} bis {max} sein.",
             "defaultDisabled": "{field}-Standardmodell {id} ist deaktiviert."
         },
         "sections": {
@@ -603,6 +602,8 @@
             "name": "Name",
             "id": "ID",
             "maxInputTokens": "Max. Input-Tokens",
+            "compactionThresholdTokens": "Compaction-Schwelle (Tokens)",
+            "compactionThresholdTokensHint": "Kontextgröße, ab der die Konversation dieses Modells automatisch kompaktiert wird. Leer lassen für 60 % der max. Input-Tokens, höchstens 250k.",
             "thinking": "Thinking",
             "thinkingBudgetTokens": "Thinking-Budget-Tokens",
             "baseUrl": "Base URL",
@@ -622,6 +623,7 @@
             "selectModel": "Modell auswählen",
             "unlimited": "Unbegrenzt",
             "generatedId": "provider:name",
+            "compactionThresholdDefault": "Standard: {tokens}",
             "keepSecret": "Konfiguriertes Secret behalten",
             "memoryLowDefault": "Sentinel-Modell",
             "memoryHighDefault": "Agentenmodell"
@@ -659,9 +661,7 @@
             "modelDefault": "Standard (Titelmodell)",
             "keepTurns": "Letzte Runden behalten",
             "verbatimTurns": "Tool-Runden wörtlich behalten",
-            "toolFloor": "Tool-Ausgabe-Schwelle (Tokens)",
-            "sentinelThreshold": "Sentinel-Schwelle (% des Kontexts)",
-            "sentinelThresholdHint": "Vor einer Bewertung wird die Konversation des Sentinels automatisch kompaktiert, sobald sie diesen Anteil des Kontextfensters des Sentinel-Modells füllt (1 bis 90)."
+            "toolFloor": "Tool-Ausgabe-Schwelle (Tokens)"
         }
     },
     "home": {

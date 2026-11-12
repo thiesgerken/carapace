@@ -60,6 +60,7 @@ class PublicPlatformModelEntry(PlatformSettingsModel):
     provider: str
     name: str
     max_input_tokens: int | None = None
+    compaction_threshold_tokens: int | None = None
     thinking: bool | Literal["minimal", "low", "medium", "high", "xhigh"] | None = None
     thinking_budget_tokens: int | None = None
     base_url: str | None = None
@@ -74,7 +75,6 @@ class PlatformCompaction(PlatformSettingsModel):
     keep_turns: int = Field(default=8, ge=1)
     verbatim_tool_turns: int = Field(default=4, ge=0)
     tool_output_floor_tokens: int = Field(default=500, ge=1)
-    sentinel_threshold_pct: int = Field(default=50, ge=1, le=90)
 
 
 class PlatformSettingsPayload(PlatformSettingsModel):
@@ -108,6 +108,7 @@ class PlatformModelEntryPatch(PlatformSettingsModel):
     name: str
     id: str | None = None
     max_input_tokens: int | None = Field(default=None, ge=1)
+    compaction_threshold_tokens: int | None = Field(default=None, ge=1)
     thinking: bool | Literal["minimal", "low", "medium", "high", "xhigh"] | None = None
     thinking_budget_tokens: int | None = Field(default=None, ge=0)
     base_url: str | None = None
@@ -173,6 +174,7 @@ def _public_model_entry(entry: AvailableModelEntry) -> PublicPlatformModelEntry:
         provider=entry.provider,
         name=entry.name,
         max_input_tokens=entry.max_input_tokens,
+        compaction_threshold_tokens=entry.compaction_threshold_tokens,
         thinking=entry.thinking,
         thinking_budget_tokens=entry.thinking_budget_tokens,
         base_url=entry.base_url,
@@ -245,6 +247,7 @@ def _agent_config_from_patch(body: PlatformSettingsPatch, existing_agent: AgentC
                 name=patch.name,
                 id=patch.id,
                 max_input_tokens=patch.max_input_tokens,
+                compaction_threshold_tokens=patch.compaction_threshold_tokens,
                 thinking=patch.thinking,
                 thinking_budget_tokens=patch.thinking_budget_tokens if openai_compatible else None,
                 base_url=patch.base_url if openai_compatible else None,
