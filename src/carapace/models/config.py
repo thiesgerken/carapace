@@ -206,7 +206,7 @@ class CompactionConfig(ConfigModel):
     # summarized), so the agent keeps exact fidelity on its latest work. 0 disables the hot zone.
     verbatim_tool_turns: int = Field(default=4, ge=0)
     # Tool returns below this token count are left alone (marker overhead would exceed the saving).
-    tool_output_floor_tokens: int = Field(default=500, ge=1)
+    tool_output_floor_tokens: int = Field(default=4000, ge=1)
 
 
 class AgentConfig(ConfigModel):

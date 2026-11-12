@@ -182,7 +182,7 @@ def model_settings_for_config(
 
 
 def with_prompt_cache(settings: ModelSettings | None, *, conversation: bool) -> ModelSettings:
-    """*settings* plus prompt caching, for a role that leads with the shared prompt prefix.
+    """*settings* plus prompt caching, for a role whose prompt prefix repeats between its calls.
 
     Breakpoints go after the tool definitions and the static instructions, and with
     *conversation* also on the growing message history. One-off calls never reread their user

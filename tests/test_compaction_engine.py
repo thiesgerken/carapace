@@ -19,6 +19,7 @@ from pydantic_ai.messages import (
 )
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
+from carapace.config import build_config
 from carapace.models.compaction import FOLD_MARKER
 from carapace.models.session import SessionState
 from carapace.session.compaction import (
@@ -93,14 +94,12 @@ def test_tool_result_annotation_matches_provider_id() -> None:
         {"role": "tool_result", "tool": "exec", "tool_id": "call_legacy"},
     ]
     applied = {
-        "call_xyz__thought__z": AppliedToolReturn(
-            new_content="s", method="summarize", orig_tokens=100, summary_tokens=2
-        ),
-        "call_legacy": AppliedToolReturn(new_content="s", method="truncate", orig_tokens=80, summary_tokens=1),
+        "call_xyz__thought__z": AppliedToolReturn(new_content="s", orig_tokens=100, summary_tokens=2),
+        "call_legacy": AppliedToolReturn(new_content="s", orig_tokens=80, summary_tokens=1),
     }
     _annotate_tool_result_events(events, applied)
-    assert events[0]["compaction"]["method"] == "summarize"
-    assert events[1]["compaction"]["method"] == "truncate"
+    assert events[0]["compaction"]["orig_tokens"] == 100
+    assert events[1]["compaction"]["orig_tokens"] == 80
 
 
 def test_compaction_model_precedence(tmp_path: Path, db_factory) -> None:
@@ -168,7 +167,7 @@ def test_compact_fold_collapses_old_turns(tmp_path: Path, db_factory) -> None:
         assert len(completed_model_turn_end_indexes(rest)) == 3
         # tree persisted
         tree = engine.session_mgr.load_compaction(sid)
-        assert len(tree.nodes) == 1 and tree.nodes[0].kind == "fold"
+        assert len(tree.nodes) == 1
         # oldest events annotated with the fold node id
         events = list(engine.session_mgr.load_events(sid))
         assert any(e.get("compaction", {}).get("folded_into") == tree.nodes[0].id for e in events)
@@ -320,9 +319,9 @@ def test_compact_tools_summarizes_large_returns(tmp_path: Path, db_factory) -> N
             if isinstance(p, ToolReturnPart) and tool_return_is_compacted(p)
         ]
         assert compacted
-        # tool_result events annotated with method
+        # tool_result events annotated with the token savings
         events = list(engine.session_mgr.load_events(sid))
-        assert any(e.get("compaction", {}).get("method") == "summarize" for e in events)
+        assert any(e.get("compaction", {}).get("orig_tokens") for e in events)
         # idempotent: a second run compacts nothing new
         report2 = await engine.run_compaction(active, mode="tools")
         assert report2.tool_returns_compacted == 0
@@ -471,7 +470,7 @@ def test_fold_after_tools_still_badges_turns(tmp_path: Path, db_factory) -> None
         active = engine.get_or_activate(sid)
         _seed(engine, sid, 10, tool_output="line\n" * 3000)
 
-        # Compact tools first — annotates tool_result events with a method.
+        # Compact tools first — annotates tool_result events with the token savings.
         await engine.run_compaction(active, mode="tools")
         # Then fold the old turns.
         report = await engine.run_compaction(active, mode="fold", keep_turns=3)
@@ -484,7 +483,9 @@ def test_fold_after_tools_still_badges_turns(tmp_path: Path, db_factory) -> None
         # 7 folded turns, each with user + tool_call + tool_result + assistant events, get the badge.
         assert len(folded) >= 7
         # tool method annotations survived the merge where both apply.
-        assert any(e.get("compaction", {}).get("method") and e.get("compaction", {}).get("folded_into") for e in events)
+        assert any(
+            e.get("compaction", {}).get("orig_tokens") and e.get("compaction", {}).get("folded_into") for e in events
+        )
 
     asyncio.run(_run())
 
@@ -503,7 +504,7 @@ def test_compact_noop_when_short(tmp_path: Path, db_factory) -> None:
     asyncio.run(_run())
 
 
-def test_summaries_lead_with_the_agents_shared_prompt_prefix() -> None:
+def test_summaries_lead_with_the_agents_shared_prompt_prefix(tmp_path: Path) -> None:
     seen: list[str | None] = []
 
     def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
@@ -515,7 +516,8 @@ def test_summaries_lead_with_the_agents_shared_prompt_prefix() -> None:
             "exec",
             "long output",
             prompt_prefix="# AGENTS.md",
-            model="test:m",
+            model="anthropic:claude-haiku-4-5",
+            config=build_config(tmp_path),
             user="thies",
             usage_tracker=None,
             before_llm_call=None,
@@ -527,6 +529,102 @@ def test_summaries_lead_with_the_agents_shared_prompt_prefix() -> None:
     assert asyncio.run(_run()) == "short"
     [instructions] = seen
     assert instructions is not None and instructions.startswith("# AGENTS.md\n\n---\n\n# Compaction")
+
+
+def test_failed_compact_reports_the_error_and_keeps_the_history(tmp_path: Path, db_factory) -> None:
+    def provider_down(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        raise RuntimeError("provider down")
+
+    async def _run() -> None:
+        with _patch_sentinel():
+            engine = _make_engine(tmp_path, session_factory=db_factory)
+        engine._model_factory = lambda _name, *, user: FunctionModel(provider_down)
+        sid = engine.session_mgr.create_session(user="thies").session_id
+        engine.get_or_activate(sid)
+        _seed(engine, sid, 10)
+        before = engine.session_mgr.load_history(sid)
+
+        res = await engine.handle_slash_command(sid, "/compact fold 3")
+
+        assert res is not None and "provider down" in res["data"]["error"]
+        assert engine.session_mgr.load_history(sid) == before
+        assert engine.session_mgr.load_compaction(sid).nodes == []
+
+    asyncio.run(_run())
+
+
+def test_fold_input_too_large_for_the_compaction_model_fails(tmp_path: Path, db_factory) -> None:
+    async def _run() -> None:
+        with _patch_sentinel():
+            engine = _make_engine(tmp_path, session_factory=db_factory)
+        for entry in engine._config.agent.available_models:
+            entry.max_input_tokens = 100
+        sid = engine.session_mgr.create_session(user="thies").session_id
+        engine.get_or_activate(sid)
+        _seed(engine, sid, 10)
+
+        res = await engine.handle_slash_command(sid, "/compact fold 3")
+
+        assert res is not None and "input too large" in res["data"]["error"]
+        assert engine.session_mgr.load_compaction(sid).nodes == []
+
+    asyncio.run(_run())
+
+
+def test_first_tool_summary_warms_the_cache_before_the_rest_run_concurrently(tmp_path: Path, db_factory) -> None:
+    calls: list[str] = []
+
+    async def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        calls.append("start")
+        await asyncio.sleep(0.01)
+        calls.append("end")
+        return ModelResponse(parts=[TextPart(content="short")])
+
+    async def _run() -> None:
+        with _patch_sentinel():
+            engine = _make_engine(tmp_path, session_factory=db_factory)
+        engine._model_factory = lambda _name, *, user: FunctionModel(respond)
+        engine._config.agent.compaction.verbatim_tool_turns = 1
+        sid = engine.session_mgr.create_session(user="thies").session_id
+        active = engine.get_or_activate(sid)
+        _seed(engine, sid, 4, tool_output="line\n" * 6000)
+
+        report = await engine.run_compaction(active, mode="tools")
+
+        assert report.tool_returns_compacted == 3
+        assert calls == ["start", "end", "start", "start", "end", "end"]
+
+    asyncio.run(_run())
+
+
+def test_a_failing_tool_summary_cancels_its_siblings(tmp_path: Path, db_factory) -> None:
+    calls: list[str] = []
+
+    async def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        calls.append("start")
+        if len(calls) == 2:
+            raise RuntimeError("provider down")
+        if len(calls) == 3:
+            await asyncio.sleep(0.1)
+            calls.append("sibling finished")
+        return ModelResponse(parts=[TextPart(content="short")])
+
+    async def _run() -> None:
+        with _patch_sentinel():
+            engine = _make_engine(tmp_path, session_factory=db_factory)
+        engine._model_factory = lambda _name, *, user: FunctionModel(respond)
+        engine._config.agent.compaction.verbatim_tool_turns = 1
+        sid = engine.session_mgr.create_session(user="thies").session_id
+        engine.get_or_activate(sid)
+        _seed(engine, sid, 4, tool_output="line\n" * 6000)
+
+        res = await engine.handle_slash_command(sid, "/compact tools 1")
+
+        assert res is not None and "provider down" in res["data"]["error"]
+        await asyncio.sleep(0.2)
+        assert "sibling finished" not in calls
+
+    asyncio.run(_run())
 
 
 def test_memory_block_is_frozen_per_session_until_compaction(tmp_path: Path, db_factory) -> None:

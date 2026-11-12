@@ -93,7 +93,7 @@ async def test_run_agent_turn_decodes_unattended_structured_outputs(
     assert output_text == expected_text
     assert thinking == ""
     assert final_status == expected_status
-    assert isinstance(deps.security.action_log[-1], AgentResponseEntry)
+    assert deps.security.action_log[-1] == AgentResponseEntry(text=expected_text)
 
 
 @pytest.mark.anyio
@@ -137,3 +137,8 @@ async def test_run_agent_turn_flushes_intermediate_text_before_tool_calls(tmp_pa
 
     assert segments == ["Let me check the file. "]
     assert output_text == "All done."
+    # The sentinel reads both: the narration before the tool call and the final answer.
+    assert [entry.text for entry in deps.security.action_log if isinstance(entry, AgentResponseEntry)] == [
+        "Let me check the file. ",
+        "All done.",
+    ]

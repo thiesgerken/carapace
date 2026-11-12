@@ -29,8 +29,13 @@ only touches outputs in kept turns *older* than that zone (and never inside a fo
 `0` to allow compacting every kept tool output, including the latest turn's.
 
 Folds are **append-only**: each `/compact` adds a new summary block rather than re-summarizing
-existing ones, so summaries do not drift through repeated compaction. Adjacent blocks can later be
-merged by a consolidation pass when they themselves grow large (a "tree" of summaries).
+existing ones.
+
+The summarizer sees the folded turns as plain text: user prompts, assistant replies, every tool call
+with its arguments (paths, commands, URLs) and every tool result. Arguments and results are cut
+deterministically to their first and last lines (and characters, for single-line dumps), so a few
+huge outputs cannot crowd out the rest. If the rendered region still exceeds the compaction model's
+`max_input_tokens`, the fold fails with an `input too large` error instead of sending it.
 
 Every run of pydantic-ai merges consecutive requests and persists the merged history: a fold block
 absorbs the next turn's prompt, and an unattended turn's `task_done`/`task_failed` return absorbs the
@@ -45,6 +50,10 @@ re-running the tool.
 Summaries run as the agent itself: their system prompt leads with the agent's shared prefix
 (`AGENTS.md`, `SOUL.md`, `USER.md`, skill catalog), followed by the compaction instructions. See
 [system prompt loading](persistent-context.md#system-prompt-loading).
+
+Compaction fails loudly. A failed or empty summary, an exhausted session budget or an input that
+does not fit the compaction model aborts the whole `/compact` with a visible error, and the history
+stays exactly as it was. Nothing is skipped silently.
 
 ## The `/compact` command
 
@@ -72,7 +81,7 @@ the DB-backed platform settings (the `agent` scalar row), not a config file:
 | Compaction | Default models | Default (title model) | Model used for fold/tool summaries (a first-level default model alongside agent/sentinel/title) |
 | Keep recent turns | Compaction | 8 | Completed turns kept verbatim; also the default `K` for `/compact` |
 | Verbatim tool turns | Compaction | 4 | Newest turns whose tool outputs are never summarized (`0` disables) |
-| Tool-output floor (tokens) | Compaction | 500 | Tool outputs smaller than this are left alone |
+| Tool-output floor (tokens) | Compaction | 4000 | Tool outputs smaller than this are left alone |
 | Compaction threshold (tokens) | Each model row | `min(60 % × max input tokens, 250k)` | Context size at which a conversation on this model is compacted automatically. Max input tokens counts as 200k when unset. Must stay below that window |
 
 The threshold belongs to the model, not the role: the sentinel compacts at the threshold of the
@@ -82,9 +91,12 @@ field empty unless a model needs something else (the placeholder shows the compu
 
 The compaction model is a separate, configurable default model (a cheap/haiku-class model is a good
 default); leaving it on "Default" reuses the title model. Its usage is tracked under the
-`compaction` category, separate from the agent. Tool-output summaries run concurrently, bounded by
-the shared `agent.max_parallel_llm` limit. Code defaults live in `agent.compaction_model` and
-`agent.compaction` (`AgentConfig` / `CompactionConfig`).
+`compaction` category, separate from the agent. The first tool-output summary runs alone so it
+writes the compaction model's prompt cache; the rest then run concurrently (reading that cache),
+bounded by the shared `agent.max_parallel_llm` limit, and the first failure cancels the others. Each
+summary call costs at least the cached system prompt plus the output, which is why the floor is
+high: summarizing small outputs costs more than it saves. Code defaults live in
+`agent.compaction_model` and `agent.compaction` (`AgentConfig` / `CompactionConfig`).
 
 The platform default is just a default: each session can override the compaction model like the
 other roles with `/model compaction NAME` (and `/model NAME` switches all four roles at once, while
@@ -96,7 +108,7 @@ other roles with `/model compaction NAME` (and `/model NAME` switches all four r
 The main view always shows the **original, uncompacted** conversation — compaction is surfaced as a
 subtle marker plus an on-demand peek at what the model actually sees, never by hiding the originals.
 
-- **Compacted tool rows** show a `compacted` badge; expanding the row reveals a **"Model sees"**
+- **Compacted tool rows** outside a fold show a `compacted` badge; expanding the row reveals a **"Model sees"**
   disclosure with the shortened tool output and token savings, alongside the full original output.
 - **Folded turns** stay inline and expanded, wrapped in a left **margin rail** with a header chip
   (`N turns condensed for the model`). The chip expands to the model-facing summary text; the
@@ -111,7 +123,7 @@ fold node, `model_text` for a compacted tool return) so the main view needs no s
 
 - Model history (`session_history`) holds the compacted cut: a marked synthetic message per fold,
   and shortened `ToolReturnPart`s stamped with compaction metadata (the re-compaction guard).
-- The compaction tree (`session_compaction`) stores the summary nodes for the UI and consolidation.
+- The compaction tree (`session_compaction`) stores the fold summary nodes for the UI.
 - The events transcript retains the originals and carries per-event compaction annotations; the
   Git archive keeps the untouched history. Compaction is therefore inspectable and reversible.
 
@@ -131,7 +143,8 @@ never reset and **not** affected by `/compact`; instead it is compacted automati
   conversation stays bounded by one summary plus *Keep recent turns* evaluations.
 - **How:** summaries lead with the sentinel's own system prompt (including `SECURITY.md` and the
   session's ask/unattended mode), followed by compaction instructions that require keeping user
-  decisions, denials and escalations, granted contexts, suspicious agent behaviour and what inspected
+  decisions, what the user asked for and agreed to in chat (with the agent proposal it answers),
+  change requests, denials and escalations, granted contexts, suspicious agent behaviour and what inspected
   skill code does. Fold summaries are rendered with the verdicts' arguments, so the decisions reach
   the summarizer verbatim.
 - **Result:** the compacted conversation replaces the persisted one. The sentinel forgets which skill

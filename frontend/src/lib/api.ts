@@ -1515,7 +1515,7 @@ function decodeCompaction(raw: unknown): PlatformCompactionSettings {
   return {
     keep_turns: readNumber(r, "keep_turns") ?? 8,
     verbatim_tool_turns: readNumber(r, "verbatim_tool_turns") ?? 4,
-    tool_output_floor_tokens: readNumber(r, "tool_output_floor_tokens") ?? 500,
+    tool_output_floor_tokens: readNumber(r, "tool_output_floor_tokens") ?? 4000,
   };
 }
 

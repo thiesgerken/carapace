@@ -20,6 +20,7 @@ import {
   Send,
   ShieldAlert,
   ShieldCheck,
+  ShieldEllipsis,
   SquareTerminal,
   UserCheck,
   UserX,
@@ -34,7 +35,7 @@ import {
   languageFromFilePath,
   splitReadToolResult,
 } from "@/lib/sandbox-read";
-import type { CompactionAnnotation, SentFile } from "@/lib/types";
+import type { ApprovalVerdict, CompactionAnnotation, SentFile } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { sentFileUrl } from "@/lib/api";
 import { artifactSnapshotTitle, artifactViewerHref, sentArtifactSlug } from "@/lib/artifacts";
@@ -59,7 +60,6 @@ interface ToolCallBadgeProps {
 }
 
 type ApprovalSource = "safe-list" | "sentinel" | "user" | "skill" | "bypass" | "autonomy" | "unknown";
-type ApprovalVerdict = "allow" | "deny" | "escalate";
 
 const TOOL_ICONS: Record<string, LucideIcon> = {
   exec: SquareTerminal,
@@ -436,6 +436,16 @@ function ApprovalBadge({
         </span>
       );
     }
+    if (verdict === "revise") {
+      return (
+        <span
+          className="inline-flex shrink-0 items-center text-orange-600 dark:text-orange-400"
+          title={tooltip || undefined}
+        >
+          <ShieldEllipsis className="h-3 w-3" />
+        </span>
+      );
+    }
     const colorClass =
       verdict === "allow"
         ? "text-green-600 dark:text-green-400"
@@ -766,11 +776,11 @@ export function ToolCallBadge({
         );
       })()}
       {source && <ApprovalBadge source={source} verdict={verdict} tooltip={finalDecisionMessage || sentinelExplanation || undefined} />}
-      {compaction?.method && (
+      {/* A folded tool row is outside the model's context entirely; the fold rail tells that story. */}
+      {compaction?.orig_tokens != null && compaction.folded_into == null && (
         <span
           className="inline-flex items-center rounded bg-amber-500/15 p-0.5 text-amber-700 dark:text-amber-400"
           title={tc("toolTitle", {
-            method: tc(`methods.${compaction.method}`),
             orig: compaction.orig_tokens ?? 0,
             summary: compaction.summary_tokens ?? 0,
           })}
@@ -899,6 +909,11 @@ export function ToolCallBadge({
                   <ShieldCheck className="inline h-3 w-3 -translate-y-px mr-1" />
                   {t("details.sentinelLabel")}
                 </span>{" "}
+              {verdict === "revise" && (
+                <span className="font-medium text-orange-600 dark:text-orange-400">
+                  {t("details.sentinelRequestsChanges")}{" "}
+                </span>
+              )}
               {sentinelExplanation}
             </div>
           )}

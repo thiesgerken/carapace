@@ -174,7 +174,7 @@ class SessionCompactionRow(Base):
     session_id: Mapped[str] = mapped_column(
         String(256), ForeignKey("sessions.session_id", ondelete="CASCADE"), primary_key=True
     )
-    # Compaction summary tree (folded-turn summaries + consolidation nodes).
+    # Compaction summary tree (folded-turn summaries).
     tree: Mapped[SessionCompaction] = mapped_column(PydanticJson(SessionCompaction))
 
 

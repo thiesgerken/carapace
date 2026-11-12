@@ -314,7 +314,7 @@ def _user_approved(ctx: RunContext[Deps]) -> bool:
 async def _gate(ctx: RunContext[Deps], tool_name: str, args: dict[str, Any]) -> ToolDenied | None:
     """Delegate to the security module for tool call evaluation.
 
-    Returns ``ToolDenied`` when the sentinel denies the call (the caller must
+    Returns ``ToolDenied`` when the sentinel denies the call or requests changes (the caller must
     return it to pydantic-ai), or ``None`` when the call is allowed.
     """
     try:
@@ -328,7 +328,7 @@ async def _gate(ctx: RunContext[Deps], tool_name: str, args: dict[str, Any]) -> 
             usage_limits=ctx.deps.llm_usage_limits() if ctx.deps.llm_usage_limits is not None else None,
             tool_call_callback=ctx.deps.tool_call_callback,
         )
-    except security.SecurityDeniedError as exc:
+    except (security.SecurityDeniedError, security.ChangesRequestedError) as exc:
         return ToolDenied(str(exc))
     return None
 

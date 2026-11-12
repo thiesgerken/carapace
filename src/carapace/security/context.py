@@ -19,6 +19,10 @@ class SecurityDeniedError(Exception):
     """Raised when the sentinel denies a tool call."""
 
 
+class ChangesRequestedError(Exception):
+    """Raised when the sentinel wants the agent to change its approach to a tool call (no threat)."""
+
+
 @dataclass(frozen=True, slots=True)
 class UserEscalationDecision:
     allowed: bool
@@ -41,6 +45,10 @@ def format_denial_message(source: Literal["sentinel", "user"], message: str | No
     return f"{base} {normalized}"
 
 
+def format_changes_requested_message(explanation: str) -> str:
+    return f"Sentinel requests changes (no threat detected): {explanation}"
+
+
 # --- Action Log Entry Types ---
 
 
@@ -53,7 +61,7 @@ class ToolCallEntry(BaseModel):
     type: Literal["tool_call"] = "tool_call"
     tool: str
     args: dict[str, Any] = {}
-    decision: Literal["auto_allowed", "allowed", "escalated", "denied"] = "auto_allowed"
+    decision: Literal["auto_allowed", "allowed", "changes_requested", "escalated", "denied"] = "auto_allowed"
     explanation: str = ""
 
 
@@ -64,8 +72,10 @@ class ToolResultEntry(BaseModel):
 
 
 class AgentResponseEntry(BaseModel):
+    """Text the agent showed the user: its final answer, or what it wrote between tool calls."""
+
     type: Literal["agent_response"] = "agent_response"
-    token_count: int = 0
+    text: str
 
 
 class ApprovalEntry(BaseModel):
@@ -90,7 +100,7 @@ class UserVouchedEntry(BaseModel):
 class GitPushEntry(BaseModel):
     type: Literal["git_push"] = "git_push"
     ref: str
-    decision: Literal["allowed", "escalated", "denied"] = "allowed"
+    decision: Literal["allowed", "changes_requested", "escalated", "denied"] = "allowed"
     explanation: str = ""
 
 
@@ -142,19 +152,20 @@ SENTINEL_VERDICT_TOOL = "judge"
 
 
 class SentinelVerdict(BaseModel):
-    decision: Literal["allow", "escalate", "deny"]
+    decision: Literal["allow", "revise", "escalate", "deny"]
     explanation: str = ""
     risk_level: Literal["low", "medium", "high"] = "medium"
 
 
 class UnattendedSentinelVerdict(BaseModel):
-    decision: Literal["allow", "deny"]
+    decision: Literal["allow", "revise", "deny"]
     explanation: str = ""
     risk_level: Literal["low", "medium", "high"] = "medium"
 
 
 ApprovalSource = Literal["safe-list", "sentinel", "user", "skill", "bypass", "autonomy", "unknown"]
-ApprovalVerdict = Literal["allow", "deny", "escalate"]
+ApprovalVerdict = Literal["allow", "revise", "deny", "escalate"]
+type FinalDecision = Literal["auto_allowed", "allowed", "changes_requested", "escalated", "denied"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -193,7 +204,7 @@ class AuditEntry(BaseModel):
     args_summary: dict[str, Any] = {}
     domain: str | None = None
     sentinel_verdict: SentinelVerdict | None = None
-    final_decision: Literal["auto_allowed", "allowed", "escalated", "denied"]
+    final_decision: FinalDecision
     explanation: str | None = None
 
     @classmethod
@@ -201,7 +212,7 @@ class AuditEntry(BaseModel):
         cls,
         *,
         kind: Literal["tool_call", "proxy_domain", "git_push", "credential_access"],
-        final_decision: Literal["auto_allowed", "allowed", "escalated", "denied"],
+        final_decision: FinalDecision,
         tool: str | None = None,
         args_summary: dict[str, Any] | None = None,
         domain: str | None = None,

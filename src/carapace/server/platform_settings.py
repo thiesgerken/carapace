@@ -74,7 +74,7 @@ class PlatformCompaction(PlatformSettingsModel):
 
     keep_turns: int = Field(default=8, ge=1)
     verbatim_tool_turns: int = Field(default=4, ge=0)
-    tool_output_floor_tokens: int = Field(default=500, ge=1)
+    tool_output_floor_tokens: int = Field(default=4000, ge=1)
 
 
 class PlatformSettingsPayload(PlatformSettingsModel):

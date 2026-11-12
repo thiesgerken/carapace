@@ -206,6 +206,9 @@ export interface SentFile {
   size: number;
 }
 
+/** The verdict of the sentinel or the user on an action; `revise` sends it back to the agent for changes. */
+export type ApprovalVerdict = "allow" | "revise" | "deny" | "escalate";
+
 export interface HistoryMessage {
   role: string;
   content: string;
@@ -235,7 +238,7 @@ export interface HistoryMessage {
     | "bypass"
     | "autonomy"
     | "unknown";
-  approval_verdict?: "allow" | "deny" | "escalate";
+  approval_verdict?: ApprovalVerdict;
   approval_explanation?: string;
   result?: string;
   files?: SentFile[];
@@ -264,7 +267,7 @@ export interface HistoryMessage {
 /**
  * Compaction annotation attached to a history event:
  * - `{ folded_into, summary }` on a user/assistant/tool event folded into a summary node
- * - `{ method, orig_tokens, summary_tokens, model_text }` on a compacted tool_result
+ * - `{ orig_tokens, summary_tokens, model_text }` on a summarized tool_result
  *
  * `summary` / `model_text` carry the model-facing text so the main (uncompacted) view can show,
  * on demand, exactly what the model sees for a folded run or a shortened tool output.
@@ -272,7 +275,6 @@ export interface HistoryMessage {
 export interface CompactionAnnotation {
   folded_into?: string;
   summary?: string;
-  method?: "truncate" | "summarize" | "drop";
   orig_tokens?: number;
   summary_tokens?: number;
   model_text?: string;
@@ -285,7 +287,6 @@ export interface CompactionReport {
   thinking_dropped: number;
   turns_folded: number;
   tool_returns_compacted: number;
-  consolidated: boolean;
   message: string;
   error?: string;
 }
@@ -341,7 +342,7 @@ export interface ToolCallInfo {
     | "bypass"
     | "autonomy"
     | "unknown";
-  approval_verdict?: "allow" | "deny" | "escalate";
+  approval_verdict?: ApprovalVerdict;
   approval_explanation?: string;
   tool_id?: string;
   parent_tool_id?: string;
@@ -615,7 +616,7 @@ export type ChatMessage =
         | "bypass"
         | "autonomy"
         | "unknown";
-      approvalVerdict?: "allow" | "deny" | "escalate";
+      approvalVerdict?: ApprovalVerdict;
       approvalExplanation?: string;
       decisionMessage?: string;
       result?: string;
@@ -640,7 +641,7 @@ export type ChatMessage =
           | "bypass"
           | "autonomy"
           | "unknown";
-        approvalVerdict?: "allow" | "deny" | "escalate";
+        approvalVerdict?: ApprovalVerdict;
         approvalExplanation?: string;
         decisionMessage?: string;
         result?: string;
