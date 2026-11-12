@@ -1,6 +1,26 @@
 # CHANGELOG
 
 
+## v0.181.0 (2026-11-12)
+
+
+### ✨ Features
+
+
+- ✨Merge pull request #483 from thiesgerken/feat/compaction-rolling-folds
+  ([`4362018`](https://github.com/thiesgerken/carapace/commit/43620180d01d5533960671516e709414dbd54559))
+
+- ✨ feat(compaction): rolling folds and automatic compaction inside a run
+  ([`4362018`](https://github.com/thiesgerken/carapace/commit/43620180d01d5533960671516e709414dbd54559))
+
+### Other
+
+
+- Merge remote-tracking branch 'origin/main' into feat/compaction-rolling-folds
+  ([`506908e`](https://github.com/thiesgerken/carapace/commit/506908ef63be13bd5a9281b3630d8b1bb8cb88dc))
+
+  # Conflicts: #	src/carapace/session/compaction.py
+
 ## v0.180.0 (2026-11-12)
 
 
@@ -42,27 +62,8 @@
 - ✨ feat(compaction): per-model compaction threshold
   ([`e129e49`](https://github.com/thiesgerken/carapace/commit/e129e493fea9bcf3811fd4479832a1eba1ae5f44))
 
-- ✨ feat(compaction): per-model compaction threshold
-  ([`73c4469`](https://github.com/thiesgerken/carapace/commit/73c44693dc8e88c5ec35767d83c29f6dd8bfd88a))
-
-  Every catalog row gets an optional compaction_threshold_tokens. Its effective threshold is the override, else min(60 % of max_input_tokens, 250k) with a 200k window assumed when unset. The sentinel compacts at the threshold of the sentinel model, which replaces sentinel_threshold_pct. Migration 0014 drops the stored key.
-
-  Closes #475
-
-  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
-
 ### Other
 
-
-- Merge remote-tracking branch 'origin/main' into feat/compaction-threshold
-  ([`16de39c`](https://github.com/thiesgerken/carapace/commit/16de39cc2409a5fff7f8a7d222cb027ae0e38775))
-
-  # Conflicts: #	docs/compaction.md #	frontend/src/lib/api.ts #	src/carapace/models/config.py #	src/carapace/server/platform_settings.py
-
-- 🙈 chore: drop the regenerated frontend/AGENTS.md
-  ([`c335922`](https://github.com/thiesgerken/carapace/commit/c33592206fbb09badf6d5f54e74fe260445c7000))
-
-  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 
 - Merge pull request #481 from thiesgerken/feat/revise-explain-scope
   ([`ff53e39`](https://github.com/thiesgerken/carapace/commit/ff53e398d96e19947fbfb31e4407bdd364ecdc7d))
@@ -76,16 +77,29 @@
 
   Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 
+## v0.178.1 (2026-11-12)
+
+
 ### 🐛 Bug Fixes
 
 
-- 🐛 fix(compaction): check the threshold against the assumed window too
-  ([`52fdedb`](https://github.com/thiesgerken/carapace/commit/52fdedb60c6fb17a0fd5f57c0dd8244f77bd4102))
+- 🐛 fix(compaction): explicit staleness, provider-calibrated target, fold-aware mid-turn cuts
+  ([`7f4e155`](https://github.com/thiesgerken/carapace/commit/7f4e155e166ca0f3caf695da15d6ad9364645372))
 
   Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 
-## v0.178.1 (2026-11-12)
+### Other
 
+
+- Merge remote-tracking branch 'origin/feat/compaction-threshold' into feat/compaction-rolling-folds
+  ([`422445c`](https://github.com/thiesgerken/carapace/commit/422445c6b4022a70045a49547c2888ef4be6601d))
+
+  # Conflicts: #	docs/compaction.md
+
+- Merge remote-tracking branch 'origin/main' into feat/compaction-threshold
+  ([`16de39c`](https://github.com/thiesgerken/carapace/commit/16de39cc2409a5fff7f8a7d222cb027ae0e38775))
+
+  # Conflicts: #	docs/compaction.md #	frontend/src/lib/api.ts #	src/carapace/models/config.py #	src/carapace/server/platform_settings.py
 
 ### ♻️ Refactoring
 
@@ -95,31 +109,6 @@
 
 - ♻️ refactor(compaction): fold input with tool args, fail loudly, cheaper tool summaries
   ([`81cca48`](https://github.com/thiesgerken/carapace/commit/81cca48c6d8e9c10e9c890124d1fd2fde03d67bd))
-
-- ♻️ refactor(compaction): fold input with tool args, fail loudly, cheaper tool summaries
-  ([`efd05b2`](https://github.com/thiesgerken/carapace/commit/efd05b2aac93590e15098f6b576aef7c4f91720f))
-
-  - Fold input renders tool calls with their arguments; arguments and tool
-    returns are cut head/tail so the region fits the compaction model, and an
-    input that still exceeds its max_input_tokens fails before sending.
-  - Agent compaction no longer swallows summary failures: /compact reports the
-    error and leaves the history untouched.
-  - Tool-output floor default 500 -> 4000 tokens; the first summary warms the
-    compaction model's prompt cache before the rest run concurrently.
-  - Drop the unused consolidation pass, CompactionNode.kind/children/method,
-    CompactionReport.consolidated and the unused truncate/drop methods.
-
-  Closes #473
-
-  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
-
-### 🐛 Bug Fixes
-
-
-- 🐛 fix(compaction): cancel sibling tool summaries on the first failure
-  ([`d31cfe6`](https://github.com/thiesgerken/carapace/commit/d31cfe63e9efda7ef3f5d4739cffbaf7cc25153d))
-
-  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 
 ## v0.178.0 (2026-11-12)
 
@@ -157,6 +146,20 @@
 
   Claude-Session: https://claude.ai/code/session_01Gv2aUztzfZVQ524UsBbvyx
 
+- ✨ feat(compaction): rolling folds and automatic compaction inside a run
+  ([`26276b4`](https://github.com/thiesgerken/carapace/commit/26276b4d7f1cdf5f7aa57b349dd29a303a717b62))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+- ✨ feat(compaction): per-model compaction threshold
+  ([`73c4469`](https://github.com/thiesgerken/carapace/commit/73c44693dc8e88c5ec35767d83c29f6dd8bfd88a))
+
+  Every catalog row gets an optional compaction_threshold_tokens. Its effective threshold is the override, else min(60 % of max_input_tokens, 250k) with a 200k window assumed when unset. The sentinel compacts at the threshold of the sentinel model, which replaces sentinel_threshold_pct. Migration 0014 drops the stored key.
+
+  Closes #475
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
 ### Other
 
 
@@ -166,6 +169,21 @@
   Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 
   Claude-Session: https://claude.ai/code/session_01Gv2aUztzfZVQ524UsBbvyx
+
+- 🙈 chore: drop the regenerated frontend/AGENTS.md
+  ([`c335922`](https://github.com/thiesgerken/carapace/commit/c33592206fbb09badf6d5f54e74fe260445c7000))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+- 📝 docs(compaction): rolling folds and automatic compaction; keep the memory block on in-run folds
+  ([`3a578ca`](https://github.com/thiesgerken/carapace/commit/3a578ca64b66dc561c7e6f22d1cd58140e50f42a))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+- Merge remote-tracking branch 'origin/feat/compaction-threshold' into feat/compaction-rolling-folds
+  ([`d147961`](https://github.com/thiesgerken/carapace/commit/d1479611df9536a4dadd9009781394b36b36c02e))
+
+  # Conflicts: #	docs/compaction.md #	frontend/src/lib/api.ts #	src/carapace/models/config.py #	src/carapace/server/platform_settings.py
 
 ### ♻️ Refactoring
 
@@ -178,6 +196,36 @@
   Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 
   Claude-Session: https://claude.ai/code/session_01Gv2aUztzfZVQ524UsBbvyx
+
+- ♻️ refactor(compaction): fold input with tool args, fail loudly, cheaper tool summaries
+  ([`efd05b2`](https://github.com/thiesgerken/carapace/commit/efd05b2aac93590e15098f6b576aef7c4f91720f))
+
+  - Fold input renders tool calls with their arguments; arguments and tool
+    returns are cut head/tail so the region fits the compaction model, and an
+    input that still exceeds its max_input_tokens fails before sending.
+  - Agent compaction no longer swallows summary failures: /compact reports the
+    error and leaves the history untouched.
+  - Tool-output floor default 500 -> 4000 tokens; the first summary warms the
+    compaction model's prompt cache before the rest run concurrently.
+  - Drop the unused consolidation pass, CompactionNode.kind/children/method,
+    CompactionReport.consolidated and the unused truncate/drop methods.
+
+  Closes #473
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix(compaction): check the threshold against the assumed window too
+  ([`52fdedb`](https://github.com/thiesgerken/carapace/commit/52fdedb60c6fb17a0fd5f57c0dd8244f77bd4102))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+- 🐛 fix(compaction): cancel sibling tool summaries on the first failure
+  ([`d31cfe6`](https://github.com/thiesgerken/carapace/commit/d31cfe63e9efda7ef3f5d4739cffbaf7cc25153d))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 
 ## v0.177.1 (2026-11-12)
 
