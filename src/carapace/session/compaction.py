@@ -35,6 +35,7 @@ from pydantic_ai.messages import (
     ToolCallPart,
     ToolReturnPart,
     UserPromptPart,
+    post_compaction_window,
 )
 
 from ..models.compaction import FOLD_MARKER
@@ -350,13 +351,18 @@ def plan_ladder(
     """Plan the manual ladder: thinking-drop, fold all but ``keep_turns`` turns, then large tool outputs."""
     history, thinking_dropped = apply_thinking_drop(messages)
     fold = plan_fold(history, keep_turns=keep_turns, model_name=model_name)
-    # The summary text does not change which tool returns qualify, so a placeholder stands in for it.
-    folded = apply_fold(fold, "") if fold is not None else history
+    # The summary text does not change which tool returns qualify, so a placeholder stands in for it. A
+    # fold drops provider compaction parts (it covers what they covered), exactly as the run does.
+    folded = strip_compaction_parts(apply_fold(fold, "")) if fold is not None else history
+    # Without a fold, outputs before a provider's compaction are never sent: summarizing them is pure cost.
+    sent_from = len(folded) - len(post_compaction_window(folded))
     candidates = find_tool_return_candidates(
         folded,
         floor_tokens=floor_tokens,
         model_name=model_name,
-        within_indexes=tool_return_compaction_region(folded, verbatim_turns=verbatim_turns),
+        within_indexes={
+            i for i in tool_return_compaction_region(folded, verbatim_turns=verbatim_turns) if i >= sent_from
+        },
     )
     return LadderPlan(history=history, thinking_dropped=thinking_dropped, fold=fold, tool_candidates=candidates)
 

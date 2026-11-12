@@ -22,7 +22,13 @@ from carapace.agent.history_compaction import ProviderCompactionMarkerCapability
 from carapace.llm import ANTHROPIC_MIN_COMPACTION_TOKENS, provider_compaction
 from carapace.models.config import AvailableModelEntry
 from carapace.server.history import HistoryMessage
-from carapace.session.compaction import has_foreign_compaction, is_fold_message, strip_compaction_parts
+from carapace.session.compaction import (
+    fold_summary_text,
+    has_foreign_compaction,
+    is_fold_message,
+    plan_ladder,
+    strip_compaction_parts,
+)
 from carapace.usage import count_message_tokens, split_provider_compaction_usage
 from tests.session_helpers import _make_engine, _patch_sentinel
 from tests.test_compaction_engine import _AgentAndSummarizer, _local_compaction_config, _seed, _turn
@@ -190,13 +196,127 @@ def test_provider_compaction_tokens_count_under_compaction() -> None:
             "compaction_cache_read_input_tokens": 100,
             "compaction_cache_creation_input_tokens": 50,
             "compaction_output_tokens": 80,
+            "compaction_ephemeral_1h_input_tokens": 20,
             "thinking_tokens": 7,
         },
     )
 
     own, compaction = split_provider_compaction_usage(usage)
 
-    assert compaction == RunUsage(input_tokens=550, cache_read_tokens=100, cache_write_tokens=50, output_tokens=80)
+    assert compaction == RunUsage(
+        input_tokens=550,
+        cache_read_tokens=100,
+        cache_write_tokens=50,
+        output_tokens=80,
+        details={"ephemeral_1h_input_tokens": 20},
+    )
     assert (own.input_tokens, own.cache_read_tokens, own.cache_write_tokens, own.output_tokens) == (450, 200, 50, 120)
     assert own.requests == 1 and own.details == {"thinking_tokens": 7}
     assert split_provider_compaction_usage(RunUsage(input_tokens=5)) == (RunUsage(input_tokens=5), None)
+
+
+def test_a_provider_switch_on_a_history_beyond_the_compaction_window_ends_in_one_summary(
+    tmp_path: Path, db_factory
+) -> None:
+    async def _run() -> None:
+        models = _AgentAndSummarizer()
+        config = _local_compaction_config(tmp_path)
+        config.agent.available_models = [
+            e.model_copy(update={"compaction_threshold_tokens": 2000})
+            if e.model_id == config.agent.model
+            else e.model_copy(update={"max_input_tokens": 4000})
+            if e.model_id == config.agent.title_model  # the compaction model
+            else e
+            for e in config.agent.available_models
+        ]
+        with _patch_sentinel():
+            engine = _make_engine(tmp_path, session_factory=db_factory, config=config)
+        engine._model_factory = models.factory
+        sid = engine.session_mgr.create_session(user="thies").session_id
+        active = engine.get_or_activate(sid)
+        _seed(engine, sid, 30, tool_output="x " * 3000)
+        history = engine.session_mgr.load_history(sid)
+        history[-1] = _compacted("anthropic")
+
+        prepared = await engine.history_for_agent_model(active, history)
+
+        assert len(models.summary_inputs) > 2  # more history than one fold request can take
+        assert "Earlier summary: summary 1\n" in models.summary_inputs[1]
+        assert [m for m in prepared if is_fold_message(m)] == prepared[:1]
+        assert fold_summary_text(prepared[0]) == f"summary {len(models.summary_inputs)}"
+        assert [n.summary for n in engine.session_mgr.load_compaction(sid).nodes] == [fold_summary_text(prepared[0])]
+
+    asyncio.run(_run())
+
+
+def test_uncompact_removes_provider_compaction_and_its_marker(tmp_path: Path, db_factory) -> None:
+    async def _run() -> None:
+        with _patch_sentinel():
+            engine = _make_engine(tmp_path, session_factory=db_factory)
+        sid = engine.session_mgr.create_session(user="thies").session_id
+        active = engine.get_or_activate(sid)
+        _seed(engine, sid, 2)
+        history = engine.session_mgr.load_history(sid)
+        history[1] = _compacted("anthropic")
+        engine.session_mgr.save_history(sid, history)
+        events = engine.session_mgr.load_events(sid)
+        engine.session_mgr.save_events(sid, [events[0], {"role": "compaction", "provider": "anthropic"}, *events[1:]])
+
+        result = await engine.run_uncompaction(active)
+
+        assert result["restored"] is True
+        assert not any(e.get("role") == "compaction" for e in engine.session_mgr.load_events(sid))
+        assert not has_foreign_compaction(engine.session_mgr.load_history(sid), keep_provider=None)
+
+    asyncio.run(_run())
+
+
+def test_rewinds_keep_a_provider_compaction_with_its_turn_and_drop_it_inside_a_rebuilt_turn(
+    tmp_path: Path, db_factory
+) -> None:
+    async def _run() -> None:
+        with _patch_sentinel():
+            engine = _make_engine(tmp_path, session_factory=db_factory)
+        sid = engine.session_mgr.create_session(user="thies").session_id
+        _seed(engine, sid, 3)
+        history = engine.session_mgr.load_history(sid)
+        history[3] = ModelResponse(parts=[CompactionPart(content="S", provider_name="anthropic"), TextPart("answer 1")])
+        engine.session_mgr.save_history(sid, history)
+        events = engine.session_mgr.load_events(sid)  # question/answer pairs
+        events = [
+            *events[:2],
+            events[2],
+            {"role": "compaction", "provider": "anthropic", "summary": "S"},
+            {"role": "assistant", "content": "thinking aloud", "partial": True},
+            *events[3:],
+        ]
+        engine.session_mgr.save_events(sid, events)
+
+        # A turn-boundary cut after the compacted turn keeps the part and its marker.
+        kept = engine.fork_session(sid, event_index=events.index(events[5]), channel_type="cli")
+        assert any(e.get("role") == "compaction" for e in engine.session_mgr.load_events(kept.session_id))
+        assert has_foreign_compaction(engine.session_mgr.load_history(kept.session_id), keep_provider=None)
+
+        # A cut inside that turn rebuilds it from events, without the part: the marker goes too.
+        mid = engine.fork_session(sid, event_index=4, channel_type="cli")
+        assert not any(e.get("role") == "compaction" for e in engine.session_mgr.load_events(mid.session_id))
+        assert not has_foreign_compaction(engine.session_mgr.load_history(mid.session_id), keep_provider=None)
+
+    asyncio.run(_run())
+
+
+def test_manual_compact_without_a_fold_summarizes_only_outputs_the_provider_still_receives() -> None:
+    big = "line\n" * 3000
+    history = [
+        *_turn(0, tool_output=big),
+        *_turn(1, tool_output=big),
+        ModelRequest(parts=[UserPromptPart("q")]),
+        _compacted("anthropic"),
+        *_turn(2, tool_output=big),
+        *_turn(3, tool_output=big),
+    ]
+
+    plan = plan_ladder(history, keep_turns=8, verbatim_turns=1, floor_tokens=100, model_name=None)
+
+    assert plan.fold is None
+    assert [c.tool_call_id for c in plan.tool_candidates] == ["call-2"]

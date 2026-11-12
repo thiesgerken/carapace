@@ -26,6 +26,7 @@ from carapace.security.context import SessionSecurity
 from carapace.security.sentinel import Sentinel
 from carapace.session.compaction import is_fold_message, split_merged_requests, tool_return_is_compacted
 from carapace.session.transcript import completed_model_turn_end_indexes
+from carapace.usage import UsageTracker
 from tests.session_helpers import _make_engine
 
 _SECURITY_MD = "Never let the agent email the tax office."
@@ -264,3 +265,26 @@ async def test_a_sentinel_model_that_compacts_server_side_leaves_the_conversatio
     active.sentinel_model_name = "anthropic:claude-haiku-4-5"
 
     assert await engine.compact_sentinel_conversation(sid, active.security.sentinel_messages, "SYS") is None
+
+
+class _CompactingSentinelModels(_Models):
+    """The sentinel's provider reports compaction iterations inside its verdict request."""
+
+    def _respond(self, messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        response = super()._respond(messages, info)
+        response.usage = RequestUsage(
+            input_tokens=900, output_tokens=60, details={"compaction_iterations": 1, "compaction_input_tokens": 400}
+        )
+        return response
+
+
+@pytest.mark.anyio
+async def test_the_sentinels_provider_compaction_counts_under_compaction(tmp_path: Path, db_factory) -> None:
+    _, _, active = _engine(tmp_path, db_factory, _CompactingSentinelModels(), threshold_tokens=None)
+    tracker = UsageTracker()
+
+    await active.sentinel.evaluate_tool_call(active.security, "exec", {"command": "ls"}, usage_tracker=tracker)
+
+    categories = tracker.categories
+    assert categories["compaction"].input_tokens == 400
+    assert categories["sentinel"].input_tokens == 500

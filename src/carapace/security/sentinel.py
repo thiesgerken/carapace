@@ -23,6 +23,7 @@ from ..usage import (
     UsageTracker,
     fail_llm_context,
     provider_cost_usd_from_messages,
+    split_provider_compaction_usage,
 )
 from .context import (
     SENTINEL_VERDICT_TOOL,
@@ -524,12 +525,12 @@ class Sentinel:
         session.record_sentinel_evaluation(result.all_messages(), synced_entries=synced_entries)
 
         if usage_tracker:
+            own, compaction = split_provider_compaction_usage(result.usage)
             usage_tracker.record(
-                self._model,
-                "sentinel",
-                result.usage,
-                cost_usd=provider_cost_usd_from_messages(result.new_messages()),
+                self._model, "sentinel", own, cost_usd=provider_cost_usd_from_messages(result.new_messages())
             )
+            if compaction is not None:
+                usage_tracker.record(self._model, "compaction", compaction)
 
         usage = result.usage
         output = self._normalize_verdict(result.output)

@@ -159,11 +159,13 @@ def split_provider_compaction_usage(usage: RunUsage) -> tuple[RunUsage, RunUsage
         return usage, None
     cache_write = details.get("compaction_cache_creation_input_tokens", 0)
     cache_read = details.get("compaction_cache_read_input_tokens", 0)
+    one_hour = details.get("compaction_ephemeral_1h_input_tokens")
     compaction = RunUsage(
         input_tokens=details.get("compaction_input_tokens", 0) + cache_write + cache_read,
         cache_write_tokens=cache_write,
         cache_read_tokens=cache_read,
         output_tokens=details.get("compaction_output_tokens", 0),
+        details={"ephemeral_1h_input_tokens": one_hour} if one_hour else {},
     )
     own = replace(
         usage,

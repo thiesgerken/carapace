@@ -94,10 +94,17 @@ shapes) count only that sent part.
   the last measurement came from the compacted context. The sentinel does the same before an
   evaluation. Neither needs the events transcript.
 - **`/compact` on such a model** runs carapace's local ladder; after a fold, the provider's compaction
-  parts are dropped, since the fold now covers what they covered. The provider compacts again later
+  parts are dropped, since the fold now covers what they covered. Without a fold it summarizes only tool
+  outputs after the provider's latest compaction: the ones before it are never sent. The provider compacts again later
   on its own when needed.
 - **Usage:** what the provider reports for its compaction (Anthropic does) counts under the
-  `compaction` category, the rest of the request under `agent`.
+  `compaction` category, the rest of the request under `agent` or `sentinel`.
+- **Large histories:** after a long server-side session the stored history can exceed the compaction
+  model's window. A fold then summarizes it in slices, oldest first, each slice together with the
+  summary so far, and ends with one summary. A single message too large even on its own fails loudly.
+- **`/uncompact`** also removes the provider's compaction (the history is rebuilt from the events) and
+  its markers. A rewind into the middle of a turn rebuilds that turn without the compaction part and
+  drops its marker too.
 
 ## Automatic compaction
 

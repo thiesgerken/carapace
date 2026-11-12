@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from collections.abc import Callable, Coroutine
+from collections.abc import Awaitable, Callable, Coroutine
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -61,6 +61,7 @@ from .compaction import (
 from .compaction_summarizer import (
     FOLD_INSTRUCTIONS,
     SENTINEL_FOLD_INSTRUCTIONS,
+    fold_text_budget,
     summarize_fold,
     summarize_sentinel_fold,
     summarize_sentinel_tool_output,
@@ -346,22 +347,24 @@ class SessionCompactionMixin:
     async def run_uncompaction(self, active: ActiveSession) -> dict[str, Any]:
         """Debug aid: rebuild the uncompacted model history from events and drop all compaction state.
 
-        Reverses every fold and tool-output compaction by reconstructing the history from the
-        (complete, append-only) event transcript, then clears the compaction tree and per-event
-        annotations. Lossy only on thinking parts (never recorded as events; compaction drops them).
+        Reverses every fold, tool-output and provider compaction by reconstructing the history from the
+        (complete, append-only) event transcript, then clears the compaction tree, the per-event
+        annotations and the provider compaction markers (the rebuilt history holds no provider parts).
+        Lossy only on thinking parts (never recorded as events; compaction drops them).
         """
         session_id = active.state.session_id
         model_name = self.agent_model_id_for_gauge(active)
         events = list(self._session_mgr.load_events(session_id))
         tree = self._session_mgr.load_compaction(session_id)
 
-        had_annotations = any(isinstance(e.get("compaction"), dict) for e in events)
+        had_annotations = any(isinstance(e.get("compaction"), dict) or e.get("role") == "compaction" for e in events)
         if not tree.nodes and not had_annotations:
             return {"restored": False, "message": "Nothing to uncompact — this session is not compacted."}
 
-        before = count_message_tokens(self._session_mgr.load_history(session_id), model_name=model_name)
+        before = _sent_tokens(self._session_mgr.load_history(session_id), model_name)
         rebuilt = rebuild_model_history_from_events(events)
         after = count_message_tokens(rebuilt, model_name=model_name)
+        events = [e for e in events if e.get("role") != "compaction"]
         for e in events:
             e.pop("compaction", None)
 
@@ -374,8 +377,23 @@ class SessionCompactionMixin:
         return {"restored": True, "before_tokens": before, "after_tokens": after, "message": message}
 
     async def _summarize_fold(self, active: ActiveSession, plan: FoldPlan, *, focus: str | None = None) -> _Fold:
-        text = fold_render_text([*plan.lead_folds, *plan.foldable])
-        return _Fold(plan=plan, summary=await self._summarize(active, partial(summarize_fold, text, focus=focus)))
+        model = self._compaction_model(active)
+        budget = fold_text_budget(
+            sentinel=False,
+            prompt_prefix=self._agent_prompt_prefix(active),
+            model=model,
+            config=self._config,
+            focus=focus,
+        )
+        summary = await _rolling_summary(
+            plan.lead_folds,
+            plan.foldable,
+            render=fold_render_text,
+            budget=budget,
+            model_name=model,
+            summarize=lambda text: self._summarize(active, partial(summarize_fold, text, focus=focus)),
+        )
+        return _Fold(plan=plan, summary=summary)
 
     async def _summarize_tool_returns(
         self, active: ActiveSession, history: list[ModelMessage], *, verbatim: int, model_name: str
@@ -416,16 +434,18 @@ class SessionCompactionMixin:
 
     async def _summarize(self, active: ActiveSession, call: Any) -> str:
         """Agent compaction summary, led by the agent's shared prompt prefix. Raises ``CompactionError``."""
-        session_id = active.state.session_id
-        prompt_prefix = shared_prompt_prefix(
-            self._knowledge_dir_for_session(session_id), self._skill_catalog_for_session(session_id)
-        )
         try:
-            return await self._run_summary_call(active, call, prompt_prefix=prompt_prefix)
+            return await self._run_summary_call(active, call, prompt_prefix=self._agent_prompt_prefix(active))
         # Wrapped, not swallowed: provider, budget and size errors alike abort `/compact` with a visible
         # message instead of tearing down the caller's connection.
         except Exception as exc:
             raise CompactionError(f"Compaction failed: {exc}") from exc
+
+    def _agent_prompt_prefix(self, active: ActiveSession) -> str:
+        session_id = active.state.session_id
+        return shared_prompt_prefix(
+            self._knowledge_dir_for_session(session_id), self._skill_catalog_for_session(session_id)
+        )
 
     async def _run_summary_call(self, active: ActiveSession, call: Any, *, prompt_prefix: str) -> str:
         """Run one summarization under the shared LLM semaphore + request log + budget guard."""
@@ -473,10 +493,18 @@ class SessionCompactionMixin:
         compacted, thinking_dropped = apply_thinking_drop(split_merged_requests(messages))
         plan = plan_fold(compacted, keep_turns=cfg.keep_turns, model_name=model_name)
         if plan is not None:
-            summary = await self._run_summary_call(
-                active,
-                partial(summarize_sentinel_fold, sentinel_fold_render_text([*plan.lead_folds, *plan.foldable])),
-                prompt_prefix=system_prompt,
+            compaction_model = self._compaction_model(active)
+            summary = await _rolling_summary(
+                plan.lead_folds,
+                plan.foldable,
+                render=sentinel_fold_render_text,
+                budget=fold_text_budget(
+                    sentinel=True, prompt_prefix=system_prompt, model=compaction_model, config=self._config
+                ),
+                model_name=compaction_model,
+                summarize=lambda text: self._run_summary_call(
+                    active, partial(summarize_sentinel_fold, text), prompt_prefix=system_prompt
+                ),
             )
             compacted = apply_fold(plan, summary)
 
@@ -516,6 +544,50 @@ class SessionCompactionMixin:
             + f"thinking_dropped={thinking_dropped}"
         )
         return compacted
+
+
+async def _rolling_summary(
+    earlier: list[ModelMessage],
+    foldable: list[ModelMessage],
+    *,
+    render: Callable[[list[ModelMessage]], str],
+    budget: int | None,
+    model_name: str,
+    summarize: Callable[[str], Awaitable[str]],
+) -> str:
+    """One summary of *earlier* (a previous summary, if any) plus *foldable*, in slices that fit *budget*.
+
+    A history larger than the compaction model's window (a provider switch after a long server-side
+    session) is folded oldest slice first, each slice together with the summary so far, exactly like
+    rolling folds over time. A single message that does not fit even alone still goes out on its own,
+    and the fit check fails it loudly.
+    """
+    while True:
+        size = _slice_size(earlier, foldable, render=render, budget=budget, model_name=model_name)
+        summary = await summarize(render([*earlier, *foldable[:size]]))
+        foldable = foldable[size:]
+        if not foldable:
+            return summary
+        earlier = [make_fold_message(summary)]
+
+
+def _slice_size(
+    earlier: list[ModelMessage],
+    foldable: list[ModelMessage],
+    *,
+    render: Callable[[list[ModelMessage]], str],
+    budget: int | None,
+    model_name: str,
+) -> int:
+    if budget is None:
+        return len(foldable)
+    # ponytail: summing per-message counts misjudges the joined text slightly; 5 % headroom absorbs it.
+    used = count_text_tokens(render(earlier), model_name=model_name)
+    for size, message in enumerate(foldable):
+        used += count_text_tokens(render([message]), model_name=model_name) + 1
+        if used > budget * 0.95:
+            return max(1, size)
+    return len(foldable)
 
 
 async def _gather_cache_warm(calls: list[Callable[[], Coroutine[Any, Any, str]]]) -> list[str]:
