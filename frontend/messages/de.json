@@ -1645,12 +1645,7 @@
         "modelSummaryLabel": "Zusammenfassung im Modell-Kontext",
         "tokenDelta": "{from}→{to} Tok",
         "foldTitle": "Diese Runden sind im Modell-Kontext zu einer Zusammenfassung verdichtet — Originale hier angezeigt",
-        "toolTitle": "Tool-Ausgabe {method}, um Kontext zu sparen ({orig}→{summary} Tokens)",
-        "methods": {
-            "summarize": "zusammengefasst",
-            "truncate": "gekürzt",
-            "drop": "entfernt"
-        }
+        "toolTitle": "Tool-Ausgabe zusammengefasst, um Kontext zu sparen ({orig}→{summary} Tokens)"
     },
     "promptPreview": {
         "role": "Rolle",

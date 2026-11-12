@@ -1645,12 +1645,7 @@
         "modelSummaryLabel": "Summary in the model's context",
         "tokenDelta": "{from}→{to} tok",
         "foldTitle": "These turns are condensed to a summary in the model's context — originals shown here",
-        "toolTitle": "Tool output {method} to save context ({orig}→{summary} tokens)",
-        "methods": {
-            "summarize": "summarized",
-            "truncate": "truncated",
-            "drop": "dropped"
-        }
+        "toolTitle": "Tool output summarized to save context ({orig}→{summary} tokens)"
     },
     "promptPreview": {
         "role": "Role",
