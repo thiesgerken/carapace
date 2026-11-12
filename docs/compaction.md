@@ -73,7 +73,7 @@ the DB-backed platform settings (the `agent` scalar row), not a config file:
 | Keep recent turns | Compaction | 8 | Completed turns kept verbatim; also the default `K` for `/compact` |
 | Verbatim tool turns | Compaction | 4 | Newest turns whose tool outputs are never summarized (`0` disables) |
 | Tool-output floor (tokens) | Compaction | 500 | Tool outputs smaller than this are left alone |
-| Compaction threshold (tokens) | Each model row | `min(60 % × max input tokens, 250k)` | Context size at which a conversation on this model is compacted automatically. Max input tokens counts as 200k when unset. Must stay below max input tokens |
+| Compaction threshold (tokens) | Each model row | `min(60 % × max input tokens, 250k)` | Context size at which a conversation on this model is compacted automatically. Max input tokens counts as 200k when unset. Must stay below that window |
 
 The threshold belongs to the model, not the role: the sentinel compacts at the threshold of the
 sentinel model. 60 % leaves room for the system prompt, the next request and the answer; the 250k
