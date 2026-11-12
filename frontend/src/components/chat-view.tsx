@@ -1118,6 +1118,10 @@ export function ChatView({
   const llmRequestId = llmActivity?.request_id ?? null;
   const usageRefreshKey = useMemo(() => ({ usage, llmRequestId }), [usage, llmRequestId]);
   const usageState = useSessionUsage(server, token, sessionId, usageOpen, usageRefreshKey);
+  // The open usage card refetches mid-turn while turn usage only arrives at turn ends: show its
+  // newer gauges, so the Budget and Usage cards never disagree. Only while open, since a closed
+  // card's last fetch goes stale.
+  const budgetGauges = (usageOpen ? usageState.data?.budget_gauges : undefined) ?? usage?.budget_gauges ?? [];
   const lastThinkingStartedAtRef = useRef<string | null>(null);
   const queueRef = useRef<string | null>(null);
   const queuedAttachmentsRef = useRef<Attachment[]>([]);
@@ -2641,7 +2645,7 @@ export function ChatView({
       {session ? (
         <SessionBudgetSection
           budget={session.budget}
-          gauges={usage?.budget_gauges ?? []}
+          gauges={budgetGauges}
           disabled={deletingSession || sessionArchived}
           onSave={handleUpdateSessionBudget}
         />

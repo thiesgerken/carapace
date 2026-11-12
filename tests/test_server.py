@@ -19,6 +19,7 @@ from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, UserPromptPart
 from pydantic_ai.providers.openai_codex import OpenAICodexCredentials, OpenAICodexOAuthFlow
+from pydantic_ai.usage import RunUsage
 from sqlalchemy import select
 
 # We patch the server module globals directly for testing
@@ -466,11 +467,19 @@ def test_session_usage_matches_usage_command(auth_headers, admin_auth_headers):
     sid = _create_session(auth_headers)
     active = srv._engine.get_or_activate(sid)
     active.usage_tracker.record_tool_call()
+    active.usage_tracker.record(
+        "anthropic:claude-sonnet-4-6", "agent", RunUsage(input_tokens=1_000, output_tokens=100, requests=1)
+    )
 
     resp = TestClient(app).get(f"/api/sessions/{sid}/usage", headers=auth_headers)
 
     assert resp.status_code == 200
-    assert resp.json()["total_tool_calls"] == 1
+    body = resp.json()
+    assert body["total_tool_calls"] == 1
+    assert body["models"]["anthropic:claude-sonnet-4-6"]["input_tokens"] == 1_000
+    # USD amounts travel as decimal strings, as the frontend reads them.
+    assert isinstance(body["total_cost"]["actual"], str)
+    assert body["model_costs"]["anthropic:claude-sonnet-4-6"]["subscription"] is False
     command = asyncio.run(srv._engine.handle_slash_command(sid, "/usage"))
     assert command is not None
     assert resp.json() == command["data"]
