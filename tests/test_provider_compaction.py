@@ -13,6 +13,7 @@ from pydantic_ai.messages import (
     ModelResponse,
     TextPart,
     UserPromptPart,
+    post_compaction_window,
 )
 from pydantic_ai.models.anthropic import AnthropicCompaction
 from pydantic_ai.models.openai import OpenAICompaction
@@ -329,3 +330,28 @@ def test_manual_compact_without_a_fold_summarizes_only_outputs_the_provider_stil
 
     assert plan.fold is None
     assert [c.tool_call_id for c in plan.tool_candidates] == ["call-2"]
+
+
+def test_a_response_with_two_compaction_parts_counts_from_the_newest_and_shows_one_marker() -> None:
+    """OpenAI's Responses API can compact before and after its answer in one response."""
+    twice = ModelResponse(
+        parts=[
+            CompactionPart(content="FIRST", provider_name="openai"),
+            TextPart("answer " * 500),
+            CompactionPart(content="SECOND", provider_name="openai"),
+        ]
+    )
+    history: list[ModelMessage] = [*_turn(0, tool_output="x " * 3000), ModelRequest(parts=[UserPromptPart("q")]), twice]
+    events: list[dict] = []
+
+    asyncio.run(
+        ProviderCompactionMarkerCapability(events.extend).after_model_request(
+            None, request_context=None, response=twice
+        )
+    )  # type: ignore[arg-type]
+
+    assert post_compaction_window(history)[0].parts == [twice.parts[2]]
+    assert count_message_tokens(post_compaction_window(history)) < 50
+    assert events == [{"role": "compaction", "provider": "openai", "summary": "SECOND"}]
+    assert strip_compaction_parts(history)[-1].parts == [twice.parts[1]]
+    assert not has_foreign_compaction(history, keep_provider="openai")
