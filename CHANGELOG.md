@@ -1,6 +1,47 @@
 # CHANGELOG
 
 
+## v0.183.0 (2026-11-13)
+
+
+### ✨ Features
+
+
+- ✨Merge pull request #487 from thiesgerken/feat/codex-provider-compaction
+  ([`5d6ed21`](https://github.com/thiesgerken/carapace/commit/5d6ed219b19edf9c7bc4c2b05cd090e555269b5b))
+
+- ✨ feat(compaction): server-side compaction for openai-codex with a loud provider fallback
+  ([`5d6ed21`](https://github.com/thiesgerken/carapace/commit/5d6ed219b19edf9c7bc4c2b05cd090e555269b5b))
+
+- ✨ feat(compaction): every session shows that a rejected model compacts locally
+  ([`90f9d23`](https://github.com/thiesgerken/carapace/commit/90f9d235687ed44c0a468d89e2b964785ca596ae))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix(compaction): blame only skipped compactions the provider was asked for
+  ([`09c2b6e`](https://github.com/thiesgerken/carapace/commit/09c2b6e16c33c5169c4ca8f70e4cd3fec88a754a))
+
+  Review fixes: the skip check compares against the trigger actually sent (Anthropic's 50k minimum) and only a measurement of the same provider; a sentinel rebuilds its agent after a rejection, which is reported every time and worded as such in the UI; a skip test runs through the Codex mock.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+### 💄 UI/UX
+
+
+- 💄 ui(compaction): destructive colours for a failed provider compaction's details
+  ([`fa5c810`](https://github.com/thiesgerken/carapace/commit/fa5c810892797bd3c8c424d1686d5c310d1c7f3e))
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+### Other
+
+
+- Merge remote-tracking branch 'origin/main' into feat/codex-provider-compaction
+  ([`1262e43`](https://github.com/thiesgerken/carapace/commit/1262e43277962a7f6ab8768ce44cc64f17228ce8))
+
 ## v0.182.0 (2026-11-12)
 
 
@@ -12,6 +53,15 @@
 
 - ✨ feat(compaction): provider-side compaction for Anthropic and OpenAI Responses
   ([`d183563`](https://github.com/thiesgerken/carapace/commit/d1835630627249b2fe997be6b69be391751a540a))
+
+- ✨ feat(compaction): server-side compaction for openai-codex, loud provider fallback
+  ([`824467d`](https://github.com/thiesgerken/carapace/commit/824467dfadef1990090bb577d2133a2470fa0d61))
+
+  The Codex backend honours context_management (verified live in #485), so openai-codex models compact server-side like openai-responses. When a provider skips a compaction it was asked for, carapace reports a failed compaction and compacts locally once; when it rejects the setting, the model compacts locally until restart.
+
+  Closes #485
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 
 ### 🐛 Bug Fixes
 
