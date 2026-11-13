@@ -24,7 +24,12 @@ from pydantic_ai.toolsets.abstract import AbstractToolset
 
 from .. import security as security
 from ..credentials import CredentialBackendError
-from ..llm import model_settings_for_config, model_supports_vision, with_prompt_cache
+from ..llm import (
+    ProviderCompactionRejectionCapability,
+    model_settings_for_config,
+    model_supports_vision,
+    with_prompt_cache,
+)
 from ..models.credentials import CredentialMetadata
 from ..models.skills import (
     ContextGrant,
@@ -1070,11 +1075,23 @@ def build_session_info(deps: Deps) -> str:
 
 
 def _compaction_capabilities(deps: Deps) -> list[AbstractCapability[Deps]]:
-    """Server-side compaction where the model's provider offers it, otherwise carapace's own in the run."""
-    if deps.provider_compaction is not None:
-        marker = [ProviderCompactionMarkerCapability(deps.append_session_events)] if deps.append_session_events else []
-        return [deps.provider_compaction.capability, *marker]
-    return [HistoryCompactionCapability(deps.compact_history)] if deps.compact_history else []
+    """Server-side compaction where the model's provider offers it, otherwise carapace's own in the run.
+
+    With server-side compaction, *compact_history* still runs before each request: it steps in when the
+    provider skipped a compaction. A provider that rejects the setting switches the model to local.
+    """
+    local: list[AbstractCapability[Deps]] = (
+        [HistoryCompactionCapability(deps.compact_history)] if deps.compact_history else []
+    )
+    if deps.provider_compaction is None:
+        return local
+    marker = [ProviderCompactionMarkerCapability(deps.append_session_events)] if deps.append_session_events else []
+    rejection = (
+        [ProviderCompactionRejectionCapability(deps.reject_provider_compaction)]
+        if deps.reject_provider_compaction
+        else []
+    )
+    return [deps.provider_compaction.capability, *local, *rejection, *marker]
 
 
 def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | DeferredToolRequests]:

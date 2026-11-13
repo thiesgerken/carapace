@@ -1671,7 +1671,11 @@
         "toolTitle": "Tool-Ausgabe zusammengefasst, um Kontext zu sparen ({orig}→{summary} Tokens)",
         "providerMarker": "Kontext von {provider} verdichtet",
         "providerTitle": "Der Anbieter des Modells hat alles darüber im Modell-Kontext durch eine Zusammenfassung ersetzt. Originale hier angezeigt",
-        "providerOpaque": "Der Anbieter hält diese Zusammenfassung verschlüsselt, sie lässt sich nicht anzeigen."
+        "providerOpaque": "Der Anbieter hält diese Zusammenfassung verschlüsselt, sie lässt sich nicht anzeigen.",
+        "providerFailed": "Kompaktierung durch {provider} fehlgeschlagen, lokal kompaktiert",
+        "providerFailedTitle": "Der Provider hat den Kontext nicht kompaktiert, deshalb hat carapace ihn mit der eigenen Leiter kompaktiert. Details unten",
+        "providerRejected": "{provider} hat die Kompaktierung abgelehnt; dieses Modell kompaktiert ab jetzt lokal",
+        "providerRejectedTitle": "Der Provider hat die serverseitige Kompaktierung abgelehnt. Diese Anfrage ist fehlgeschlagen, ab der nächsten kompaktiert carapace dieses Modell selbst. Details unten"
     },
     "promptPreview": {
         "role": "Rolle",

@@ -77,11 +77,11 @@ independently (each by its own model): no extra model, no extra round trip.
 | --- | --- |
 | `anthropic` | Server-side (`context_management`) at the model's compaction threshold, raised to Anthropic's minimum of 50,000 tokens. The provider summarizes with carapace's own instructions: the fold instructions for the agent, the sentinel fold instructions for the sentinel. |
 | `openai-responses` (OpenAI itself, no custom `base_url`) | Server-side (`context_management`) at the model's compaction threshold. OpenAI takes no instructions. |
-| `openai-codex` | Local. The Codex backend answers `/responses/compact` with 404 (verified on 2026-11-12, after the Codex CLI moved to its own compaction protocol) and was never verified for `context_management`. Don't retry without new evidence. |
+| `openai-codex` | Server-side (`context_management`) at the model's compaction threshold, like `openai-responses`. The Codex CLI never uses this (it sends a `compaction_trigger` input item instead), but the Codex backend honours it (verified live on 2026-11-12, #485). `/responses/compact` answers 404 there. |
 | everything else (`openai`, `openai-chat`, `openrouter`, custom `base_url`s, …) | Local, see [Automatic compaction](#automatic-compaction). |
 
-For a model that compacts server-side, carapace's own automatic compaction inside the run is off. The
-provider returns a `CompactionPart` (Anthropic: a readable summary; OpenAI: encrypted) as part of a
+For a model that compacts server-side, carapace's own automatic compaction inside the run only watches
+the provider (see *Provider failures* below). The provider returns a `CompactionPart` (Anthropic: a readable summary; OpenAI: encrypted) as part of a
 response. It stays in the model history, and every later request sends only what comes after it. The
 history keeps every original message before it too, which is what makes the cases below lossless. The
 price: on such a model the stored history grows without bound, although only the part after the latest
@@ -102,6 +102,20 @@ shapes) count only that sent part.
 - **Large histories:** after a long server-side session the stored history can exceed the compaction
   model's window. A fold then summarizes it in slices, oldest first, each slice together with the
   summary so far, and ends with one summary. A single message too large even on its own fails loudly.
+- **Provider failures** are loud and fall back to carapace for that compaction, so a session keeps
+  working when a provider changes its behaviour:
+  - *Skipped:* a request the provider was asked to compact (measured by that provider, above the
+    threshold it was sent, which for Anthropic is at least 50,000) whose response carries no compaction
+    part means the provider ignored the setting. carapace logs an error, marks a failed compaction in the
+    transcript, and compacts this once with its own ladder, from the originals (provider parts
+    stripped). The agent checks this before each request inside the run, the sentinel before each
+    evaluation.
+  - *Rejected:* a `400` that names `context_management` means the provider refuses the setting. That
+    request fails (the turn ends with the provider's error; **Continue** retries it; a sentinel
+    evaluation fails like any other), carapace logs an error and marks it, and the model compacts locally
+    until the server restarts. A sentinel rebuilds its agent right away, so its next evaluation goes out
+    without the setting. The switch holds for every session on that model: each one shows it once in its
+    transcript, when its next turn or sentinel evaluation runs on that model.
 - **`/uncompact`** also removes the provider's compaction (the history is rebuilt from the events) and
   its markers. A rewind into the middle of a turn rebuilds that turn without the compaction part and
   drops its marker too.
@@ -202,7 +216,9 @@ subtle marker plus an on-demand peek at what the model actually sees, never by h
   up after the next reload of the transcript.
 - **Provider compaction** shows as a marker at the point where the provider compacted ("Context
   compacted by anthropic"). It expands to the provider's summary, or says that the provider keeps it
-  encrypted. The messages above it stay shown as they were.
+  encrypted. The messages above it stay shown as they were. A failed provider compaction shows as a
+  red marker ("Compaction by openai-codex failed, compacted locally", or for a refusal "openai-codex
+  rejected compaction; this model compacts locally from now on") that expands to the reason.
 - The [debug view](debug-view.md) shows the agent's latest request exactly as it went to the model,
   fold summaries, compacted tool returns and a provider's compaction part included (nothing before
   that part), and the latest compaction request itself.
@@ -216,7 +232,8 @@ fold node, `model_text` for a compacted tool return) so the main view needs no s
   and shortened `ToolReturnPart`s stamped with compaction metadata (the re-compaction guard).
 - The compaction tree (`session_compaction`) stores the fold summary nodes for the UI.
 - The events transcript retains the originals and carries per-event compaction annotations, plus a
-  `compaction` event (provider, readable summary if any) where a provider compacted. The Git archive
+  `compaction` event (provider, readable summary if any) where a provider compacted, or with `failed`
+  (the reason) where its compaction failed and carapace stepped in. The Git archive
   keeps the untouched history. Compaction is therefore inspectable and reversible.
 
 ## Sentinel
@@ -226,7 +243,7 @@ never reset and **not** affected by `/compact`; instead it is compacted automati
 
 - **When:** on a sentinel model that compacts server-side, the provider does it (see
   [Provider-side compaction](#provider-side-compaction)) and carapace steps in only after a provider
-  switch. Otherwise before each sentinel evaluation, once the provider-reported input tokens of the
+  switch or when the provider skipped a compaction. Otherwise before each sentinel evaluation, once the provider-reported input tokens of the
   previous evaluation exceed the compaction threshold of the sentinel model (see Configuration).
 - **What:** the same ladder and settings as `/compact`, with one evaluation (request, skill
   inspections, verdict) as one turn: thinking-drop, fold all but the newest *Keep recent turns*

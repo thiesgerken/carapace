@@ -63,12 +63,21 @@ def test_openai_responses_compacts_server_side_without_instructions() -> None:
     assert not provider.capability.stateless and provider.capability.token_threshold == 90_000
 
 
+def test_codex_compacts_server_side_like_openai() -> None:
+    # The Codex backend honours `context_management` (verified live in #485), though `/responses/compact` is 404.
+    entry = AvailableModelEntry(provider="openai-codex", name="gpt-6.1-sol", compaction_threshold_tokens=90_000)
+
+    provider = provider_compaction(entry, instructions="FOLD")
+
+    assert provider is not None and provider.provider_name == "openai-codex"
+    assert isinstance(provider.capability, OpenAICompaction)
+    assert not provider.capability.stateless and provider.capability.token_threshold == 90_000
+
+
 @pytest.mark.parametrize(
     "entry",
     [
         AvailableModelEntry(provider="openai-responses", name="gpt", base_url="http://llama.local/v1"),
-        # The Codex backend answers `/responses/compact` with 404 (verified 2026-11-12).
-        AvailableModelEntry(provider="openai-codex", name="gpt-5.5"),
         AvailableModelEntry(provider="openai-chat", name="gpt"),
         AvailableModelEntry(provider="openrouter", name="any/model"),
     ],

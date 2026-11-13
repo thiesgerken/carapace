@@ -16,7 +16,13 @@ from pydantic_ai.settings import ModelSettings
 from pydantic_ai.usage import UsageLimits
 
 from ..git.diff import touched_paths
-from ..llm import ModelFactory, ProviderCompaction, SlotLimitedModel, with_prompt_cache
+from ..llm import (
+    ModelFactory,
+    ProviderCompaction,
+    ProviderCompactionRejectionCapability,
+    SlotLimitedModel,
+    with_prompt_cache,
+)
 from ..usage import (
     LlmRequestLogCapability,
     LlmSource,
@@ -253,6 +259,7 @@ class Sentinel:
         model_settings_resolver: Callable[[str], ModelSettings | None] | None = None,
         compactor: SentinelCompactor | None = None,
         provider_compaction: Callable[[str], ProviderCompaction | None] | None = None,
+        on_provider_compaction_rejected: Callable[[str, str], None] | None = None,
     ) -> None:
         self._model = model
         # The session owner, whom the sentinel's model requests are made for.
@@ -270,6 +277,7 @@ class Sentinel:
         self._compactor = compactor
         # Server-side compaction for a sentinel model, looked up again whenever the model changes.
         self._provider_compaction = provider_compaction
+        self._on_provider_compaction_rejected = on_provider_compaction_rejected
         self._agent = self._create_agent()
         self._skill_file_cache: dict[tuple[str, str], tuple[int, int, str]] = {}
         self._eval_skill_reads: int = 0
@@ -600,7 +608,19 @@ class Sentinel:
 
     def _compaction_capabilities(self) -> list[AbstractCapability[SentinelDeps]]:
         provider = self._provider_compaction(self._model) if self._provider_compaction is not None else None
-        return [provider.capability] if provider is not None else []
+        if provider is None:
+            return []
+        on_rejected = self._on_provider_compaction_rejected
+        if on_rejected is None:
+            return [provider.capability]
+        model = self._model
+
+        def rejected(reason: str) -> None:
+            on_rejected(model, reason)
+            # The agent carries the setting: rebuild it, so the next evaluation goes out without it.
+            self._agent = self._create_agent()
+
+        return [provider.capability, ProviderCompactionRejectionCapability(rejected)]
 
     @staticmethod
     def _reject_unreadable_revise(ctx: RunContext[SentinelDeps], output: _SentinelOutput) -> _SentinelOutput:

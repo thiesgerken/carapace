@@ -482,6 +482,10 @@ def user_prompt_count(messages: list[ModelMessage]) -> int:
     return sum(_has_user_prompt(m) and not is_fold_message(m) for m in messages)
 
 
+def provider_compacted(response: ModelResponse) -> bool:
+    return any(isinstance(part, CompactionPart) for part in response.parts)
+
+
 def newest_measured_response(messages: list[ModelMessage]) -> ModelResponse | None:
     """The newest model response with provider-reported input tokens.
 

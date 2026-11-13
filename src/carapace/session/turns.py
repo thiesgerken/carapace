@@ -38,7 +38,7 @@ from pydantic_ai.usage import UsageLimits
 from ..agent.deps import Deps
 from ..agent.history_compaction import HistoryCompactor
 from ..codex_auth import CODEX_RECONNECT_MESSAGE, CodexNotConnectedError
-from ..llm import DisabledModelError
+from ..llm import DisabledModelError, ProviderCompaction
 from ..models.config import Config
 from ..models.tooling import ToolCallCallback, ToolResult
 from ..notifications.router import NotificationRouter, build_turn_outcome_notification_id
@@ -147,6 +147,12 @@ class SessionTurnHost(Protocol):
     async def compact_during_run(
         self, active: ActiveSession, messages: list[ModelMessage]
     ) -> list[ModelMessage] | None: ...
+
+    async def compact_after_provider_miss(
+        self, active: ActiveSession, messages: list[ModelMessage]
+    ) -> list[ModelMessage] | None: ...
+
+    def agent_provider_compaction(self, active: ActiveSession) -> ProviderCompaction | None: ...
 
     async def history_for_agent_model(
         self, active: ActiveSession, history: list[ModelMessage]
@@ -296,7 +302,10 @@ class SessionTurnMixin(SessionTurnHost):
             task.add_done_callback(active._pending_sends.discard)
 
         async def _compact_history_cb(messages: list[ModelMessage]) -> list[ModelMessage] | None:
-            compacted = await self.compact_during_run(active, messages)
+            # A model that compacts server-side needs carapace only when its provider skips a compaction.
+            server_side = self.agent_provider_compaction(active) is not None
+            compact = self.compact_after_provider_miss if server_side else self.compact_during_run
+            compacted = await compact(active, messages)
             if compacted is not None:
                 # A turn that fails later saves this snapshot: the tree and events already hold the fold.
                 _set_latest_messages(compacted)

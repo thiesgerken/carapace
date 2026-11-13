@@ -70,4 +70,6 @@ class Deps(BaseModel):
     compact_history: Callable[[list[ModelMessage]], Awaitable[list[ModelMessage] | None]] | None = None
     # Set when the agent model compacts server-side; local compaction inside the run is then off.
     provider_compaction: ProviderCompaction | None = None
+    # Called with the provider's error when it rejects server-side compaction itself.
+    reject_provider_compaction: Callable[[str], None] | None = None
     credential_registry: CredentialRegistryProtocol

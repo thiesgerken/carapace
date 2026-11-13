@@ -51,6 +51,7 @@ from .compaction import (
     plan_fold,
     plan_ladder,
     plan_step_fold,
+    provider_compacted,
     sentinel_fold_render_text,
     split_merged_requests,
     strip_compaction_parts,
@@ -99,6 +100,8 @@ class SessionCompactionMixin:
     _session_mgr: SessionManager
     _model_factory: Any
     _llm_semaphore: asyncio.Semaphore
+    # Models whose provider rejected server-side compaction; they compact locally until the next restart.
+    _provider_compaction_rejected: set[str]
 
     if TYPE_CHECKING:
 
@@ -238,6 +241,7 @@ class SessionCompactionMixin:
         a turn that fails early still matches the tree and the event annotations.
         """
         model_name = self.agent_model_id_for_gauge(active)
+        self._show_local_after_rejection(active, model_name)
         provider = self.agent_provider_compaction(active)
         keep_provider = provider.provider_name if provider is not None else None
         if not has_foreign_compaction(history, keep_provider=keep_provider):
@@ -260,12 +264,104 @@ class SessionCompactionMixin:
 
     def agent_provider_compaction(self, active: ActiveSession) -> ProviderCompaction | None:
         """Server-side compaction for the agent model; a model without a catalog row compacts locally."""
-        entry = self._model_entry(self.agent_model_id_for_gauge(active))
-        return provider_compaction(entry, instructions=FOLD_INSTRUCTIONS) if entry is not None else None
+        return self._provider_compaction(self.agent_model_id_for_gauge(active), instructions=FOLD_INSTRUCTIONS)
 
     def sentinel_provider_compaction(self, model_id: str) -> ProviderCompaction | None:
+        return self._provider_compaction(model_id, instructions=SENTINEL_FOLD_INSTRUCTIONS)
+
+    def _provider_compaction(self, model_id: str, *, instructions: str) -> ProviderCompaction | None:
         entry = self._model_entry(model_id)
-        return provider_compaction(entry, instructions=SENTINEL_FOLD_INSTRUCTIONS) if entry is not None else None
+        if entry is None or model_id in self._provider_compaction_rejected:
+            return None
+        return provider_compaction(entry, instructions=instructions)
+
+    def reject_provider_compaction(self, active: ActiveSession, model_id: str, reason: str) -> None:
+        """The provider of *model_id* refused server-side compaction: it compacts locally from now on.
+
+        Logged as an error and marked in the session's transcript, every time a request hits the refusal:
+        a sentinel built before the first one sends the setting once more. The request itself fails as
+        it is; the next one goes out without the setting.
+        """
+        entry = self._model_entry(model_id)
+        provider = provider_compaction(entry, instructions="") if entry is not None else None
+        if provider is None:
+            return
+        self._provider_compaction_rejected.add(model_id)
+        active.provider_compaction_rejections_shown.add(model_id)
+        self._report_provider_compaction_failure(
+            active, provider, f"{model_id} rejected compaction: {reason}", rejected=True
+        )
+
+    def _show_local_after_rejection(self, active: ActiveSession, model_id: str) -> None:
+        """Mark in this session's transcript, once, that *model_id* compacts locally since its provider
+        rejected server-side compaction (in this or another session): the switch is process-wide."""
+        if (
+            model_id not in self._provider_compaction_rejected
+            or model_id in active.provider_compaction_rejections_shown
+        ):
+            return
+        entry = self._model_entry(model_id)
+        provider = provider_compaction(entry, instructions="") if entry is not None else None
+        if provider is None:
+            return
+        active.provider_compaction_rejections_shown.add(model_id)
+        logger.info(f"Provider compaction off session={active.state.session_id} model={model_id}: rejected earlier")
+        event = {
+            "role": "compaction",
+            "provider": provider.provider_name,
+            "failed": f"{model_id} compacts locally: its provider rejected context_management",
+            "rejected": True,
+        }
+        self._session_mgr.append_events(active.state.session_id, [event])
+
+    def _report_provider_compaction_failure(
+        self, active: ActiveSession, provider: ProviderCompaction, reason: str, *, rejected: bool = False
+    ) -> None:
+        logger.error(
+            f"Provider compaction failed session={active.state.session_id} provider={provider.provider_name}: {reason}"
+        )
+        event: dict[str, Any] = {"role": "compaction", "provider": provider.provider_name, "failed": reason}
+        if rejected:
+            event["rejected"] = True
+        self._session_mgr.append_events(active.state.session_id, [event])
+
+    async def compact_after_provider_miss(
+        self, active: ActiveSession, messages: list[ModelMessage]
+    ) -> list[ModelMessage] | None:
+        """For an agent model that compacts server-side: None while its provider keeps up.
+
+        A fresh measurement over the threshold without a ``CompactionPart`` means the provider skipped
+        the compaction it was asked for. That is reported as a failed compaction, and this once the
+        local ladder compacts the originals (provider parts stripped, lossless) down to the target.
+        """
+        provider = self.agent_provider_compaction(active)
+        model_name = self.agent_model_id_for_gauge(active)
+        threshold = self.compaction_threshold_for_model_id(model_name)
+        measured = _fresh_measurement(active, messages)
+        if provider is None or measured is None or not _provider_skipped(provider, measured):
+            return None
+        reason = (
+            f"{model_name} did not compact a request of {measured.usage.input_tokens:,} input tokens "
+            f"(compaction requested at {provider.threshold:,}); compacting locally instead"
+        )
+        self._report_provider_compaction_failure(active, provider, reason)
+        # What the provider counted beyond the local estimate of what it was sent, as compact_during_run does.
+        overhead = measured.usage.input_tokens - _sent_tokens(messages[: messages.index(measured)], model_name)
+        history, report, fold, applied = await self._auto_ladder(
+            active,
+            strip_compaction_parts(split_merged_requests(messages)),
+            model_name=model_name,
+            threshold=threshold,
+            overhead=overhead,
+        )
+        if report.nothing_compacted:
+            raise CompactionError(f"Compaction failed: {reason}, but nothing is left to compact")
+        self._persist_compaction(active, fold=fold, applied=applied, model_name=model_name)
+        active.state.compacted_through = measured.timestamp
+        self._session_mgr.save_state(active.state)
+        await self._broadcast(active, "on_compaction", report)
+        logger.info(f"Compaction session={active.state.session_id} mode=provider-miss {report.message}")
+        return history
 
     async def _auto_ladder(
         self, active: ActiveSession, history: list[ModelMessage], *, model_name: str, threshold: int, overhead: int
@@ -480,12 +576,24 @@ class SessionCompactionMixin:
         cfg = self._config.agent.compaction
         model_name = self.sentinel_model_id(active)
         threshold = self.compaction_threshold_for_model_id(model_name)
+        self._show_local_after_rejection(active, model_name)
         provider = self.sentinel_provider_compaction(model_name)
         keep_provider = provider.provider_name if provider is not None else None
-        # A model that compacts server-side needs the ladder only after a provider switch: the stripped
-        # conversation is the uncompacted one, and the old measurement would understate it.
+        # A model that compacts server-side needs the ladder only after a provider switch (the stripped
+        # conversation is the uncompacted one, and the old measurement would understate it) or when its
+        # provider let the last evaluation go over the threshold without compacting.
         switched = has_foreign_compaction(messages, keep_provider=keep_provider)
-        if not switched and (provider is not None or last_request_input_tokens(messages) <= threshold):
+        measured = newest_measured_response(messages)
+        missed = provider is not None and measured is not None and _provider_skipped(provider, measured)
+        if missed and provider is not None and measured is not None:
+            self._report_provider_compaction_failure(
+                active,
+                provider,
+                f"sentinel model {model_name} did not compact a request of {measured.usage.input_tokens:,} input "
+                f"tokens (compaction requested at {provider.threshold:,}); compacting locally instead",
+            )
+            keep_provider = None
+        if not switched and not missed and (provider is not None or last_request_input_tokens(messages) <= threshold):
             return None
         messages = strip_compaction_parts(messages, keep_provider=keep_provider)
         before = _sent_tokens(messages, model_name)
@@ -620,6 +728,18 @@ def _text(content: Any) -> str:
 def _sent_tokens(messages: list[ModelMessage], model_name: str) -> int:
     """Local token estimate of what is actually sent: nothing before the latest provider compaction."""
     return count_message_tokens(post_compaction_window(messages), model_name=model_name)
+
+
+def _provider_skipped(provider: ProviderCompaction, measured: ModelResponse) -> bool:
+    """Whether *provider* was asked to compact *measured*'s request and didn't.
+
+    Only its own measurement counts: one from before a model switch was never sent with its setting.
+    """
+    return (
+        measured.provider_name == provider.provider_name
+        and measured.usage.input_tokens > provider.threshold
+        and not provider_compacted(measured)
+    )
 
 
 def _fresh_measurement(active: ActiveSession, messages: list[ModelMessage]) -> ModelResponse | None:

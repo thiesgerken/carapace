@@ -12,9 +12,9 @@ from typing import Any, Literal, Protocol, cast
 from httpx2 import AsyncClient, HTTPStatusError, Timeout
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import AbstractCapability
-from pydantic_ai.exceptions import UserError
+from pydantic_ai.exceptions import ModelHTTPError, UserError
 from pydantic_ai.messages import ModelMessage, ModelResponse
-from pydantic_ai.models import Model, ModelRequestParameters, StreamedResponse, infer_model
+from pydantic_ai.models import Model, ModelRequestContext, ModelRequestParameters, StreamedResponse, infer_model
 from pydantic_ai.models.anthropic import AnthropicCompaction
 from pydantic_ai.models.openai import OpenAIChatModel, OpenAICompaction, OpenAIResponsesModel
 from pydantic_ai.models.openai_codex import OpenAICodexModel
@@ -216,6 +216,8 @@ class ProviderCompaction:
 
     capability: AbstractCapability[Any]
     provider_name: str
+    # The input size at which the provider was asked to compact (Anthropic's is clamped to its minimum).
+    threshold: int
 
 
 def provider_compaction(entry: AvailableModelEntry, *, instructions: str) -> ProviderCompaction | None:
@@ -223,18 +225,47 @@ def provider_compaction(entry: AvailableModelEntry, *, instructions: str) -> Pro
 
     *instructions* replace the provider's own summarization prompt where it takes one (Anthropic).
     OpenAI's Responses API takes none. A custom ``base_url`` may be any server that speaks the Responses
-    API, so only OpenAI itself counts. The Codex backend is local until its support is verified.
+    API, so only OpenAI itself counts. The Codex backend honours ``context_management`` too, though the
+    Codex CLI never uses it (verified live in #485).
     """
     match entry.provider:
         case "anthropic":
             threshold = max(entry.compaction_threshold, ANTHROPIC_MIN_COMPACTION_TOKENS)
             return ProviderCompaction(
-                AnthropicCompaction(token_threshold=threshold, instructions=instructions), "anthropic"
+                AnthropicCompaction(token_threshold=threshold, instructions=instructions), "anthropic", threshold
             )
         case "openai-responses" if entry.base_url is None:
-            return ProviderCompaction(OpenAICompaction(token_threshold=entry.compaction_threshold), "openai")
+            threshold = entry.compaction_threshold
+            return ProviderCompaction(OpenAICompaction(token_threshold=threshold), "openai", threshold)
+        case "openai-codex":
+            threshold = entry.compaction_threshold
+            return ProviderCompaction(OpenAICompaction(token_threshold=threshold), CODEX_PROVIDER, threshold)
         case _:
             return None
+
+
+def rejects_provider_compaction(error: Exception) -> bool:
+    """Whether *error* is the provider refusing the server-side compaction setting itself."""
+    return isinstance(error, ModelHTTPError) and error.status_code == 400 and "context_management" in str(error.body)
+
+
+@dataclass
+class ProviderCompactionRejectionCapability(AbstractCapability[Any]):
+    """Reports a provider that rejects server-side compaction, then lets the request fail as it would.
+
+    *on_rejected* takes the provider's error message. It is meant to switch the model to carapace's own
+    compaction, so the failed request is the only one: a retry inside the run is not possible, since a
+    capability may send a request only once.
+    """
+
+    on_rejected: Callable[[str], None]
+
+    async def on_model_request_error(
+        self, ctx: RunContext[Any], *, request_context: ModelRequestContext, error: Exception
+    ) -> ModelResponse:
+        if rejects_provider_compaction(error):
+            self.on_rejected(str(error))
+        raise error
 
 
 class ModelFactory(Protocol):
