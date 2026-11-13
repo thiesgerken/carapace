@@ -241,6 +241,7 @@ class SessionCompactionMixin:
         a turn that fails early still matches the tree and the event annotations.
         """
         model_name = self.agent_model_id_for_gauge(active)
+        self._show_local_after_rejection(active, model_name)
         provider = self.agent_provider_compaction(active)
         keep_provider = provider.provider_name if provider is not None else None
         if not has_foreign_compaction(history, keep_provider=keep_provider):
@@ -286,9 +287,32 @@ class SessionCompactionMixin:
         if provider is None:
             return
         self._provider_compaction_rejected.add(model_id)
+        active.provider_compaction_rejections_shown.add(model_id)
         self._report_provider_compaction_failure(
             active, provider, f"{model_id} rejected compaction: {reason}", rejected=True
         )
+
+    def _show_local_after_rejection(self, active: ActiveSession, model_id: str) -> None:
+        """Mark in this session's transcript, once, that *model_id* compacts locally since its provider
+        rejected server-side compaction (in this or another session): the switch is process-wide."""
+        if (
+            model_id not in self._provider_compaction_rejected
+            or model_id in active.provider_compaction_rejections_shown
+        ):
+            return
+        entry = self._model_entry(model_id)
+        provider = provider_compaction(entry, instructions="") if entry is not None else None
+        if provider is None:
+            return
+        active.provider_compaction_rejections_shown.add(model_id)
+        logger.info(f"Provider compaction off session={active.state.session_id} model={model_id}: rejected earlier")
+        event = {
+            "role": "compaction",
+            "provider": provider.provider_name,
+            "failed": f"{model_id} compacts locally: its provider rejected context_management",
+            "rejected": True,
+        }
+        self._session_mgr.append_events(active.state.session_id, [event])
 
     def _report_provider_compaction_failure(
         self, active: ActiveSession, provider: ProviderCompaction, reason: str, *, rejected: bool = False
@@ -552,6 +576,7 @@ class SessionCompactionMixin:
         cfg = self._config.agent.compaction
         model_name = self.sentinel_model_id(active)
         threshold = self.compaction_threshold_for_model_id(model_name)
+        self._show_local_after_rejection(active, model_name)
         provider = self.sentinel_provider_compaction(model_name)
         keep_provider = provider.provider_name if provider is not None else None
         # A model that compacts server-side needs the ladder only after a provider switch (the stripped

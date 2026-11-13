@@ -346,3 +346,33 @@ async def test_a_sentinel_whose_provider_rejects_compaction_evaluates_without_it
 
     assert verdict.decision == "allow"
     assert settings_seen == [True, False] and len(reports) == 1
+
+
+def test_every_session_shows_once_that_a_rejected_model_compacts_locally(tmp_path: Path, db_factory) -> None:
+    async def _run() -> None:
+        with _patch_sentinel():
+            engine = _make_engine(tmp_path, session_factory=db_factory)
+        rejecting = engine.get_or_activate(engine.session_mgr.create_session(user="thies").session_id)
+        other = engine.get_or_activate(engine.session_mgr.create_session(user="thies").session_id)
+        agent_model = engine.agent_model_id_for_gauge(rejecting)
+        sentinel_model = engine.sentinel_model_id(rejecting)
+
+        engine.reject_provider_compaction(rejecting, agent_model, "Unknown parameter: 'context_management'")
+        for _ in range(2):
+            await engine.history_for_agent_model(rejecting, [])
+            await engine.history_for_agent_model(other, [])
+
+        # The rejecting session has its rejection marker, the other one its own notice, each exactly once.
+        [rejection] = _failed_compaction_events(engine, rejecting.state.session_id)
+        [notice] = _failed_compaction_events(engine, other.state.session_id)
+        assert "rejected compaction" in rejection["failed"]
+        assert notice["rejected"] is True and notice["failed"] == (
+            f"{agent_model} compacts locally: its provider rejected context_management"
+        )
+
+        # The sentinel's model gets its own notice where it is rejected.
+        engine.reject_provider_compaction(rejecting, sentinel_model, "Unknown parameter: 'context_management'")
+        assert await engine.compact_sentinel_conversation(other.state.session_id, [], "SECURITY") is None
+        assert len(_failed_compaction_events(engine, other.state.session_id)) == 2
+
+    asyncio.run(_run())

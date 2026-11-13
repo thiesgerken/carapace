@@ -114,7 +114,8 @@ shapes) count only that sent part.
     request fails (the turn ends with the provider's error; **Continue** retries it; a sentinel
     evaluation fails like any other), carapace logs an error and marks it, and the model compacts locally
     until the server restarts. A sentinel rebuilds its agent right away, so its next evaluation goes out
-    without the setting.
+    without the setting. The switch holds for every session on that model: each one shows it once in its
+    transcript, when its next turn or sentinel evaluation runs on that model.
 - **`/uncompact`** also removes the provider's compaction (the history is rebuilt from the events) and
   its markers. A rewind into the middle of a turn rebuilds that turn without the compaction part and
   drops its marker too.

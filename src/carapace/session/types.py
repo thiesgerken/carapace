@@ -137,6 +137,8 @@ class ActiveSession:
     sentinel_model_name: str | None = None
     title_model_name: str | None = None
     compaction_model_name: str | None = None
+    # Models whose switch to local compaction (their provider rejected it) this transcript already shows.
+    provider_compaction_rejections_shown: set[str] = field(default_factory=set)
     pending_approval_requests: list[dict[str, Any]] = field(default_factory=list)
     pending_escalations: list[dict[str, Any]] = field(default_factory=list)
     pending_notifications: dict[str, set[str]] = field(default_factory=dict)
