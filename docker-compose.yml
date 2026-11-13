@@ -78,7 +78,7 @@ services:
     #   - ./csp-img-src.conf:/etc/nginx/csp.d/img-src.conf:ro
 
   proxy:
-    image: traefik:v3.7@sha256:f4bb143d1135a579b630ed491e17ec50f6f7c9c6a30585ff3d385471d2a86f5a
+    image: traefik:v3.7@sha256:b7b1b31e6440de0b1f7c4e0f6cf0a0f3f004866761d30c025fe00c80daaf7d9c
     command:
       - "--providers.file.filename=/etc/traefik/dynamic.yml"
       - "--entrypoints.web.address=:80"
@@ -91,7 +91,7 @@ services:
       - ./docker/traefik-dynamic.yml:/etc/traefik/dynamic.yml:ro
 
   redis:
-    image: redis:8-alpine@sha256:71885d8cc6e42f2bc0aa2eb853bfc4be200b5108a46ac50e117ae1df0531fb80
+    image: redis:8-alpine@sha256:7958cfbb9d152f87dadfbc89f1b0b15938f0b81ff8982feb327476f4911935c3
     command: ["redis-server", "--save", "", "--appendonly", "no"]
     restart: unless-stopped
     healthcheck:
@@ -101,7 +101,7 @@ services:
       retries: 20
 
   postgres:
-    image: postgres:18-alpine@sha256:123b17998ccaf47e53b502e8c6a1e79afd8f579c6f3eec83c563da026f957395
+    image: postgres:18-alpine@sha256:1018733457011bf88d81db98cf43aac6d5150afc18787dbe204771fedf80ff95
     restart: unless-stopped
     environment:
       POSTGRES_DB: carapace
