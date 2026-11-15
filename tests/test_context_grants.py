@@ -1063,3 +1063,26 @@ class TestExecNotificationDedupe:
 
         await mgr._exec("s1", "echo", after_exec_credential_notify=after_notify)
         assert post_calls == ["dev/token"]
+
+
+class TestSandboxGitProxyBypass:
+    @pytest.mark.anyio
+    async def test_git_sync_leaves_activation_bypass_alone(self, tmp_path: Path, db_factory):
+        """A git status poll during skill activation must neither open nor close the proxy bypass."""
+        runtime = make_runtime_mock()
+        mgr = _sandbox_manager(runtime=runtime, data_dir=tmp_path, knowledge_dir=tmp_path, session_factory=db_factory)
+        sc = SessionContainer(container_id="c1", session_id="s1", ip_address="10.1.1.4", created_at=1.0, last_used=1.0)
+        bypass_during_git: list[bool] = []
+
+        async def fake_exec(*_args, **_kwargs) -> ExecResult:
+            bypass_during_git.append(mgr._exec_coordinator.is_domain_bypass("s1"))
+            return ExecResult(stdout="main\n", exit_code=0, output="main\n")
+
+        runtime.exec = AsyncMock(side_effect=fake_exec)
+
+        await mgr._git_in_workspace(sc, "rev-parse --abbrev-ref HEAD")
+        assert bypass_during_git == [False]
+
+        mgr._proxy_bypass_sessions.add("s1")  # in-flight activation
+        await mgr._git_in_workspace(sc, "rev-parse --abbrev-ref HEAD")
+        assert mgr._exec_coordinator.is_domain_bypass("s1")
