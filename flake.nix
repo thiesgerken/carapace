@@ -71,6 +71,17 @@
             inherit (backend) server tokenizerCache;
             inherit (frontend) frontend;
           };
+          # The version comes from the committed Chart.yaml, which the release commit bumps.
+          chart =
+            pkgs.runCommand "carapace-chart.tgz"
+              {
+                nativeBuildInputs = [ pkgs.kubernetes-helm ];
+                src = ./charts/carapace;
+              }
+              ''
+                helm package "$src" --destination .
+                mv carapace-*.tgz "$out"
+              '';
         in
         {
           inherit
@@ -79,6 +90,7 @@
             backend
             frontend
             images
+            chart
             ;
         }
       );
@@ -97,6 +109,7 @@
           {
             inherit (p.backend) server;
             inherit (p.frontend) frontend twemoji;
+            inherit (p) chart;
             default = p.backend.server;
           }
           // p.images
@@ -132,6 +145,7 @@
         // {
           inherit (p.backend) server;
           inherit (p.frontend) frontend;
+          inherit (p) chart;
           tools = project.${system}.tools.ci;
           release-tools = project.${system}.tools.release;
         }
