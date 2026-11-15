@@ -484,9 +484,10 @@ class SandboxManager:
             )
 
     async def _attach_or_start(self, session_id: str, *, force_skill_setup: bool) -> SessionContainer:
-        """Run the lifecycle and restore activated skills on a fresh runtime. Requires the startup lock."""
+        """Run the lifecycle and restore runtime-only state on a fresh runtime. Requires the startup lock."""
         sc, needs_runtime_setup = await self._session_lifecycle.ensure_session(session_id)
         if needs_runtime_setup or force_skill_setup:
+            await self._session_lifecycle.setup_git_identity(sc.container_id, session_id)
             await self._rerun_activated_skill_setup(session_id)
         return sc
 

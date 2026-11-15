@@ -273,8 +273,8 @@ class SandboxSessionLifecycle:
         """Return ``(container, needs_runtime_setup)``.
 
         ``needs_runtime_setup`` is True when the sandbox runtime was newly created or
-        resumed after being stopped. In those cases, skill setup must rerun because
-        runtime-only state like generated command shims is lost.
+        resumed after being stopped. In those cases, runtime-only state like the global
+        git identity and generated command shims is lost and must be restored.
 
         Not serialized here: callers go through ``SandboxManager``, which holds the
         per-session startup lock around this call and the skill setup rerun.
@@ -292,7 +292,6 @@ class SandboxSessionLifecycle:
                 await self._runtime.resume_sandbox(sandbox_name, self._base_image)
                 sc.last_used = time.time()
                 await self.wait_for_ready(sc.container_id, session_id)
-                await self.setup_git_identity(sc.container_id, session_id)
                 await self.log_assignment(
                     sc.container_id,
                     sandbox_id=sc.sandbox_id or sandbox_id,
@@ -335,7 +334,6 @@ class SandboxSessionLifecycle:
                     else:
                         await self._runtime.resume_sandbox(sandbox_name, self._base_image)
                         await self.wait_for_ready(existing_id, session_id)
-                        await self.setup_git_identity(existing_id, session_id)
                         logger.info(f"Resumed orphaned sandbox {sandbox_name} for session {session_id}")
                         needs_runtime_setup = True
                     ip = await self._runtime.get_ip(existing_id, self._network_name)
@@ -607,10 +605,8 @@ class SandboxSessionLifecycle:
                     f"Git clone failed in sandbox for {session_id} (exit {result.exit_code}): {result.output}"
                 )
 
-        # Always (re)apply identity and hook, even when the repo survived on the PVC:
-        # the identity lives on the ephemeral rootfs, and the hook may predate this
-        # scheme.
-        await self.setup_git_identity(container_id, session_id)
+        # Always (re)install the hook, even when the repo survived on the PVC: it may
+        # predate the current hook script.
         await self.install_commit_msg_hook(container_id, session_id)
 
     async def setup_proxy(self, container_id: str, session_id: str, env: dict[str, str]) -> None:
@@ -626,8 +622,8 @@ class SandboxSessionLifecycle:
 
         Global so every repo the agent clones (not just the knowledge repo) can be
         committed to. ``~/.gitconfig`` sits on the ephemeral rootfs and is lost when
-        the pod is recreated, so every path that brings up a fresh runtime (create,
-        claim, resume) must call this again.
+        the container restarts, so it must be reapplied whenever the runtime may be
+        fresh (see ``SandboxManager._attach_or_start``).
         """
         name_tpl = self._author_for_session(session_id).replace("%s", session_id)
         if "<" in name_tpl and name_tpl.endswith(">"):
@@ -641,7 +637,11 @@ class SandboxSessionLifecycle:
             f"git config --global user.name {shlex.quote(name_sh)} && "
             f"git config --global user.email {shlex.quote(email_sh)}"
         )
-        await self._runtime.exec(container_id, cmd, timeout=10)
+        result = await self._runtime.exec(container_id, cmd, timeout=10)
+        if result.exit_code != 0:
+            raise RuntimeError(
+                f"Git identity setup failed in sandbox for {session_id} (exit {result.exit_code}): {result.output}"
+            )
 
     async def install_commit_msg_hook(self, container_id: str, session_id: str) -> None:
         """Install a commit-msg hook that appends a session trailer to commits."""
