@@ -109,6 +109,8 @@ jobs:
           cleanup_auth() { rm -f "$REGISTRY_AUTH_FILE"; }
           trap cleanup_auth EXIT
           printf "%s" "$REGISTRY_TOKEN" | skopeo login --authfile "$REGISTRY_AUTH_FILE" --username "$REGISTRY_USER" --password-stdin ghcr.io
+          # publish-images.sh pushes every archive in dist/, so it gets the sandbox alone: Nix images
+          # tagged here would be foreign to Presswerk and stop the release. mkdir fails if dist exists.
           mkdir dist
           mv "$RUNNER_TEMP/verified/carapace-sandbox.tar.gz" dist/
           bash scripts/publish-images.sh "$(nix eval --raw .#presswerk.default.version)" latest
