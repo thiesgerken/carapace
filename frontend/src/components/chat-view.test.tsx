@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  appendEscalationCard,
   countSubmittedUserMessages,
   isTurnActionMessage,
   isUnattendedInputLocked,
@@ -112,4 +113,22 @@ test("a provider compaction event renders as a marker with the provider's summar
     { kind: "provider_compaction", provider: "openai-codex", summary: undefined, failed: "did not compact; compacting locally instead", rejected: undefined },
     { kind: "provider_compaction", provider: "openai-codex", summary: undefined, failed: "rejected compaction: Unknown parameter", rejected: true },
   ]);
+});
+
+test("appendEscalationCard skips a request that history already shows", () => {
+  const request = {
+    type: "approval_request" as const,
+    tool_call_id: "call-1",
+    tool: "exec",
+    args: {},
+    explanation: "",
+    risk_level: "",
+  };
+  const once = appendEscalationCard([], { kind: "approval", request });
+  assert.equal(once.length, 1);
+  assert.equal(appendEscalationCard(once, { kind: "approval", request }), once);
+  assert.equal(
+    appendEscalationCard(once, { kind: "approval", request: { ...request, tool_call_id: "call-2" } }).length,
+    2,
+  );
 });
