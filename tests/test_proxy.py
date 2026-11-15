@@ -384,12 +384,12 @@ async def test_exec_recreate_preserves_domains(tmp_path: Path, db_factory):
     runtime.exec = AsyncMock(
         side_effect=[
             _git_exists,  # knowledge repo probe after first create
-            _git_exists,  # setup_git_identity
             _git_exists,  # install_commit_msg_hook
+            _git_exists,  # setup_git_identity
             ContainerGoneError(),  # exec_command triggers recreate
             _git_exists,  # knowledge repo probe after recreate
-            _git_exists,  # setup_git_identity
             _git_exists,  # install_commit_msg_hook
+            _git_exists,  # setup_git_identity
             ExecResult(stdout="ok", exit_code=0, output="ok"),  # actual command retry
         ]
     )
@@ -410,7 +410,13 @@ async def test_exec_recreate_preserves_domains(tmp_path: Path, db_factory):
 async def test_exec_container_gone_recovery_reruns_skill_setup(tmp_path: Path, db_factory):
     runtime = make_runtime_mock()
     runtime.sandbox_exists = AsyncMock(return_value="container-1")
-    runtime.exec = AsyncMock(side_effect=[ContainerGoneError(), ExecResult(stdout="ok", exit_code=0, output="ok")])
+    runtime.exec = AsyncMock(
+        side_effect=[
+            ContainerGoneError(),
+            ExecResult(stdout="", exit_code=0, output=""),  # setup_git_identity
+            ExecResult(stdout="ok", exit_code=0, output="ok"),
+        ]
+    )
     mgr = _sandbox_manager(runtime=runtime, data_dir=tmp_path, knowledge_dir=tmp_path, session_factory=db_factory)
     _seed_session_row(db_factory, tmp_path, "sess-1")
     mgr._sessions["sess-1"] = SessionContainer(
@@ -426,8 +432,9 @@ async def test_exec_container_gone_recovery_reruns_skill_setup(tmp_path: Path, d
 
     assert result.output == "ok"
     # The runtime already restarted the container, so the lifecycle re-attaches
-    # without reporting a fresh runtime; recovery must restore the skills anyway.
+    # without reporting a fresh runtime; recovery must restore identity and skills anyway.
     runtime.create_sandbox.assert_not_awaited()
+    assert "git config --global user.name" in runtime.exec.await_args_list[1].args[1]
     mgr.rerun_skill_setup.assert_awaited_once_with("sess-1", ["email"])
 
 
@@ -441,8 +448,8 @@ async def test_activate_skill_registers_command_aliases_in_image_shim_dir(tmp_pa
     runtime.exec = AsyncMock(
         side_effect=[
             ExecResult(stdout="", exit_code=0, output=""),  # _clone_knowledge_repo probe after create
-            ExecResult(stdout="", exit_code=0, output=""),  # setup_git_identity
             ExecResult(stdout="", exit_code=0, output=""),  # install_commit_msg_hook
+            ExecResult(stdout="", exit_code=0, output=""),  # setup_git_identity
             ExecResult(exit_code=0, output="", stdout='{"protocol_version":1}'),
             ExecResult(stdout="", exit_code=0, output=""),  # command alias registration
         ]
@@ -892,16 +899,16 @@ async def test_exec_command_recreates_tunnels_before_retry(tmp_path: Path, db_fa
     runtime.exec = AsyncMock(
         side_effect=[
             _ok,  # clone probe (create)
-            _ok,  # setup_git_identity
             _ok,  # install_commit_msg_hook
+            _ok,  # setup_git_identity
             _ok,  # tunnel prep
             _ok,
             _ok,
             _ok,
             ContainerGoneError(),  # command exec triggers recreate
             _ok,  # clone probe (recreate)
-            _ok,  # setup_git_identity
             _ok,  # install_commit_msg_hook
+            _ok,  # setup_git_identity
             _ok,  # tunnel prep
             _ok,
             _ok,
@@ -938,8 +945,8 @@ async def test_exec_command_cleans_up_tunnels_after_command_failure(tmp_path: Pa
     runtime.exec = AsyncMock(
         side_effect=[
             ExecResult(stdout="", exit_code=0, output=""),  # clone probe
-            ExecResult(stdout="", exit_code=0, output=""),  # setup_git_identity
             ExecResult(stdout="", exit_code=0, output=""),  # install_commit_msg_hook
+            ExecResult(stdout="", exit_code=0, output=""),  # setup_git_identity
             ExecResult(stdout="", exit_code=0, output=""),  # tunnel prep
             ExecResult(stdout="", exit_code=0, output=""),
             ExecResult(stdout="", exit_code=0, output=""),

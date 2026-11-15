@@ -273,8 +273,8 @@ class SandboxSessionLifecycle:
         """Return ``(container, needs_runtime_setup)``.
 
         ``needs_runtime_setup`` is True when the sandbox runtime was newly created or
-        resumed after being stopped. In those cases, skill setup must rerun because
-        runtime-only state like generated command shims is lost.
+        resumed after being stopped. In those cases, runtime-only state like the global
+        git identity and generated command shims is lost and must be restored.
 
         Not serialized here: callers go through ``SandboxManager``, which holds the
         per-session startup lock around this call and the skill setup rerun.
@@ -605,10 +605,8 @@ class SandboxSessionLifecycle:
                     f"Git clone failed in sandbox for {session_id} (exit {result.exit_code}): {result.output}"
                 )
 
-        # Always (re)apply identity and hook: both are repo-local, living on the
-        # persistent /workspace PVC, but a fresh pod after suspend/resume may have
-        # raced ahead of the original clone or predate this repo-local scheme.
-        await self.setup_git_identity(container_id, session_id)
+        # Always (re)install the hook, even when the repo survived on the PVC: it may
+        # predate the current hook script.
         await self.install_commit_msg_hook(container_id, session_id)
 
     async def setup_proxy(self, container_id: str, session_id: str, env: dict[str, str]) -> None:
@@ -620,13 +618,12 @@ class SandboxSessionLifecycle:
             )
 
     async def setup_git_identity(self, container_id: str, session_id: str) -> None:
-        """Configure git user.name and user.email for the knowledge repo.
+        """Configure git user.name and user.email globally in the sandbox.
 
-        Written as repo-local config (``/workspace/.git/config``) rather than
-        ``--global``: only ``/workspace`` is on the persistent PVC, so a global
-        ``~/.gitconfig`` would be wiped whenever the pod is recreated (e.g. on
-        suspend/resume), leaving the agent's first commit to fail with an unknown
-        author. Repo-local config survives on the PVC.
+        Global so every repo the agent clones (not just the knowledge repo) can be
+        committed to. ``~/.gitconfig`` sits on the ephemeral rootfs and is lost when
+        the container restarts, so it must be reapplied whenever the runtime may be
+        fresh (see ``SandboxManager._attach_or_start``).
         """
         name_tpl = self._author_for_session(session_id).replace("%s", session_id)
         if "<" in name_tpl and name_tpl.endswith(">"):
@@ -637,11 +634,14 @@ class SandboxSessionLifecycle:
         name_sh = name.replace("%h", "$(hostname)")
         email_sh = email.replace("%h", "$(hostname)")
         cmd = (
-            "cd /workspace && "
-            f"git config user.name {shlex.quote(name_sh)} && "
-            f"git config user.email {shlex.quote(email_sh)}"
+            f"git config --global user.name {shlex.quote(name_sh)} && "
+            f"git config --global user.email {shlex.quote(email_sh)}"
         )
-        await self._runtime.exec(container_id, cmd, timeout=10)
+        result = await self._runtime.exec(container_id, cmd, timeout=10)
+        if result.exit_code != 0:
+            raise RuntimeError(
+                f"Git identity setup failed in sandbox for {session_id} (exit {result.exit_code}): {result.output}"
+            )
 
     async def install_commit_msg_hook(self, container_id: str, session_id: str) -> None:
         """Install a commit-msg hook that appends a session trailer to commits."""

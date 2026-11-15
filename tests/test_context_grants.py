@@ -393,6 +393,8 @@ class TestSandboxManagerCredentialCache:
 
         mgr._rerun_activated_skill_setup.assert_awaited_once_with("sess-1")
         runtime.resume_sandbox.assert_awaited_once_with("carapace-sandbox-sess-1", _BASE_IMAGE)
+        exec_cmds = [call.args[1] for call in runtime.exec.await_args_list]
+        assert any("git config --global user.name" in cmd for cmd in exec_cmds)
         runtime.write_stdout_log.assert_awaited_once()
         assert runtime.write_stdout_log.await_args.args[0] == "container-1"
         assert "event=resume" in runtime.write_stdout_log.await_args.args[1]
@@ -712,6 +714,22 @@ class TestSandboxManagerCredentialCache:
         runtime.claim_warm_sandbox.assert_awaited_once_with("carapace-sandbox-warm-1", "sess-1")
         runtime.create_sandbox.assert_not_awaited()
         mgr._rerun_activated_skill_setup.assert_awaited_once_with("sess-1")
+
+    @pytest.mark.anyio
+    async def test_refresh_git_identities_only_touches_owner_sandboxes(self, tmp_path: Path, db_factory):
+        runtime = make_runtime_mock()
+        runtime.is_running = AsyncMock(return_value=True)
+        mgr = _sandbox_manager(runtime=runtime, data_dir=tmp_path, knowledge_dir=tmp_path, session_factory=db_factory)
+        sessions = SessionManager(db_factory, tmp_path)
+        for session_id, user in [("sess-thies", "thies"), ("sess-ben", "ben")]:
+            sessions.save_meta(session_id, SessionMeta(user=user))
+            mgr._sessions[session_id] = SessionContainer(
+                container_id=f"container-{user}", session_id=session_id, created_at=1.0, last_used=1.0
+            )
+
+        await mgr.refresh_git_identities("thies")
+
+        assert [call.args[0] for call in runtime.exec.await_args_list] == ["container-thies"]
 
     @pytest.mark.anyio
     async def test_activate_skill_resume_reruns_setup_for_activated_skills(self, tmp_path: Path, db_factory):
