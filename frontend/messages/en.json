@@ -1760,7 +1760,6 @@
             "toolCall": "Tool call",
             "toolReturn": "Tool return",
             "toolRetry": "Tool retry",
-            "retryPrompt": "Retry prompt",
             "retryFeedback": "Retry feedback"
         },
         "timeline": {

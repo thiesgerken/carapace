@@ -1760,7 +1760,6 @@
             "toolCall": "Tool-Aufruf",
             "toolReturn": "Tool-Ergebnis",
             "toolRetry": "Tool-Wiederholung",
-            "retryPrompt": "Wiederholungs-Prompt",
             "retryFeedback": "Wiederholungs-Feedback"
         },
         "timeline": {

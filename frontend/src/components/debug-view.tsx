@@ -321,9 +321,6 @@ function PartCard({ part }: { part: LlmPart }) {
       return <Card label={`${t(part.outcome === "retried" ? "toolRetry" : "toolReturn")} · ${part.tool_name}`} badge={part.tool_call_id}><Content value={part.content} /></Card>;
     case "retry-feedback":
       return <Card label={t("retryFeedback")}><Content value={part.content} /></Card>;
-    // Request logs recorded before pydantic-ai 2.67 still carry the combined part.
-    case "retry-prompt":
-      return <Card label={t("retryPrompt")} badge={part.tool_call_id}><Content value={part.content} /></Card>;
     default:
       // Provider-specific parts (native tools, files, compaction) render as what they are.
       return <Card label={part.part_kind}><Json value={part} /></Card>;
