@@ -154,7 +154,7 @@ nix build .#ciBuilds.<system>.server-image
 
 On Apple Silicon, `nix flake check --system aarch64-linux` runs the Linux checks through the builder. A plain `nix flake check` also evaluates the native macOS development/tooling outputs.
 
-`ciBuilds.<host-system>` contains every mandatory check, runtime package/image, and CI/release tool profile. To realize them with the locked runner:
+`ciBuilds.<host-system>` contains every mandatory check, runtime package/image, the Helm chart archive, and the CI tool profile; `ciBuilds.x86_64-linux` also holds the Presswerk CLI the release jobs run. To realize them with the locked runner:
 
 ```sh
 nix build --inputs-from . nixpkgs#nix-fast-build --out-link result-build-tool
@@ -207,7 +207,15 @@ Failed Nix builds retain expanded log tails in CI. Locally, `nix log .#checks.<s
 
 [PR publication](../.github/workflows/publish-pr.yml) runs the trusted workflow from `main` after successful CI. It checks that the tested SHA still belongs to an open same-repository PR against `main`, then publishes those archives with Skopeo. It does not check out or execute PR code with registry write access. Chart previews use `<base>-pr.<number>` and `<base>-pr.<number>.g<sha>`.
 
-[Releases](../.github/workflows/release.yml) version with semantic-release, verify the resulting tag, publish the verified archives as `<version>` and `latest`, then publish the chart and GitHub release with the uv-built distribution. Semantic-release remains a tooling exception: its PyPI version is pinned, but its transitive dependencies are not locked by the flake.
+Releases are made by [Presswerk](https://presswerk.dev/) on every push to `main` that brings a release-worthy commit since the last release. The release is declared in the flake's `presswerk.default` output: the version files, the Gitmoji analyzer, the changelog, and the publishers (the three Nix images and the chart on GHCR, the GitHub Release). The CLI comes from the flake's pinned `presswerk` input.
+
+The [release workflow](../.github/workflows/release.yml) runs in two steps. The push run prepares a `🔖 Release vX.Y.Z` commit with the bumped version files and changelog, pushes it to `main` and dispatches the workflow with that commit as the candidate. The candidate run verifies exactly that commit with Nix verification, which pushes the Nix images and the chart to Cachix. The publish job then pushes the verified sandbox archive with Skopeo (as `<version>` and `latest`; it is a Dockerfile build, so Presswerk can't publish it), and `presswerk publish` fetches the rest from Cachix and pushes the tag, the images, the chart and the GitHub Release. Presswerk checks every destination before writing anything, so a failed or cancelled candidate run is safe to repeat:
+
+```sh
+gh workflow run release.yml --ref main -f candidate=<full SHA of the release commit>
+```
+
+A re-dispatched candidate builds the sandbox image again, so its `<version>` tag moves to the new build's digest; the Nix images are matched by store path and stay as they are. Until that candidate is published, the next push run fails because a release is pending. To see what the next release would contain, run `nix run --inputs-from . presswerk -- plan` on an up-to-date `main` (with `GITHUB_TOKEN="$(gh auth token)"`, since it checks the previous GitHub Release). See Presswerk's [recovery guide](https://presswerk.dev/guide/recovery/) for anything else.
 
 See the native builder's [known constraints](https://docs.determinate.systems/troubleshooting/native-linux-builder/) for shared-store filesystem and builder configuration issues.
 
