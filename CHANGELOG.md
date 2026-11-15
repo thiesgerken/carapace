@@ -1,6 +1,45 @@
 # CHANGELOG
 
 
+## v0.183.3 (2026-11-15)
+
+
+### Other
+
+
+- Merge pull request #491 from thiesgerken/fix/global-git-identity
+  ([`604080a`](https://github.com/thiesgerken/carapace/commit/604080a0d006283d067f6b082798021695ec137a))
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix: set sandbox git identity globally and reapply it on resume
+  ([`604080a`](https://github.com/thiesgerken/carapace/commit/604080a0d006283d067f6b082798021695ec137a))
+
+- 🐛 fix: scope git identity refresh to the owner whose config changed
+  ([`6594ffa`](https://github.com/thiesgerken/carapace/commit/6594ffaa7233bb135fd6b93ea804d5d238e21b80))
+
+  refresh_git_identities looped over every user's sandboxes, so with the identity exec now raising on failure, one broken sandbox of another user would fail (and roll back) an unrelated owner's git settings change.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+- 🐛 fix: set sandbox git identity globally and reapply it on resume
+  ([`0ddb012`](https://github.com/thiesgerken/carapace/commit/0ddb012f9f70b8c9ef891ee185c6017814fc72a4))
+
+  The identity was written repo-local to /workspace, so repos the agent clones elsewhere (e.g. /tmp/notes) had no author and commits failed. It was repo-local only because a plain suspend/resume never reapplied it. Write it with --global and reapply it in both resume paths, so create, claim and resume all leave a configured identity.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+### ♻️ Refactoring
+
+
+- ♻️ refactor: reapply git identity once in _attach_or_start
+  ([`4af897d`](https://github.com/thiesgerken/carapace/commit/4af897d3f03beda6aa326f71022ca85c28750ad9))
+
+  Apply the identity wherever skill setup reruns instead of in four lifecycle call sites. This also covers re-attaching to a pod the runtime restarted on its own, keeps a failed identity exec out of the resume try (where it would trigger a recreate), and fails loudly on a non-zero exit.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
 ## v0.183.2 (2026-11-15)
 
 
