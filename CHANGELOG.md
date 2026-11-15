@@ -1,6 +1,12 @@
 # CHANGELOG
 
 
+## v0.183.7 (2026-11-15)
+
+### 👷 Add or update CI build system
+
+- ci: drop the one-time v0.183.5 trust gate
+
 ## v0.183.6 (2026-11-15)
 
 ### 👷 Add or update CI build system
