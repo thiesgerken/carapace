@@ -1,6 +1,67 @@
 # CHANGELOG
 
 
+## v0.183.2 (2026-11-15)
+
+
+### Other
+
+
+- Merge pull request #423 from thiesgerken/renovate/lock-file-maintenance
+  ([`ce6d003`](https://github.com/thiesgerken/carapace/commit/ce6d003da58900a89e982e24cf3abf5d972084df))
+
+- Merge pull request #441 from thiesgerken/renovate/croniter-7.x
+  ([`42f5457`](https://github.com/thiesgerken/carapace/commit/42f5457fddb928a7cc129ab8c69679e82c51eb4e))
+
+- Merge pull request #467 from thiesgerken/renovate/all-routine-dependencies
+  ([`d6674b9`](https://github.com/thiesgerken/carapace/commit/d6674b90ae4c66ee6781a1add47516144ccd32ad))
+
+- Merge pull request #488 from thiesgerken/renovate/pnpm-12.x
+  ([`9b4f0ea`](https://github.com/thiesgerken/carapace/commit/9b4f0eaf4ea3f49ddfb3eead022eb18ceda958b3))
+
+- Merge pull request #490 from thiesgerken/sentinel-skill-relations
+  ([`23f0417`](https://github.com/thiesgerken/carapace/commit/23f0417d5c5b4a3b6fdf460548a2628b41943234))
+
+### ⬆️ Dependencies
+
+
+- ⬆️ chore: Lock file maintenance
+  ([`ce6d003`](https://github.com/thiesgerken/carapace/commit/ce6d003da58900a89e982e24cf3abf5d972084df))
+
+- ⬆️ chore: Lock file maintenance
+  ([`81f2c6e`](https://github.com/thiesgerken/carapace/commit/81f2c6e089f6208a8bd0df40d1c1ac2373dc607b))
+
+- ⬆️ chore: upgrade croniter to 7.0.0
+  ([`42f5457`](https://github.com/thiesgerken/carapace/commit/42f5457fddb928a7cc129ab8c69679e82c51eb4e))
+
+- ⬆️ chore: upgrade croniter to 7.0.0
+  ([`6af3513`](https://github.com/thiesgerken/carapace/commit/6af351399c3b5e4f6a8e8f2d613fadb2c7e82348))
+
+- ⬆️ chore: upgrade all routine dependency updates
+  ([`d6674b9`](https://github.com/thiesgerken/carapace/commit/d6674b90ae4c66ee6781a1add47516144ccd32ad))
+
+- ⬆️ chore: upgrade all routine dependency updates
+  ([`a1ae096`](https://github.com/thiesgerken/carapace/commit/a1ae096e78b05f76b64231980c49599092dceb95))
+
+- ⬆️ chore: upgrade pnpm to 12.20.0
+  ([`9b4f0ea`](https://github.com/thiesgerken/carapace/commit/9b4f0eaf4ea3f49ddfb3eead022eb18ceda958b3))
+
+- ⬆️ chore: upgrade pnpm to 12.20.0
+  ([`496e710`](https://github.com/thiesgerken/carapace/commit/496e7103fc9a5132dfb38af6466d98f1664bcfaa))
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix(sentinel): read active skills' SKILL.md before revising an out-of-scope step
+  ([`23f0417`](https://github.com/thiesgerken/carapace/commit/23f0417d5c5b4a3b6fdf460548a2628b41943234))
+
+- 🐛 fix(sentinel): read active skills' SKILL.md before revising an out-of-scope step
+  ([`ab2f978`](https://github.com/thiesgerken/carapace/commit/ab2f978e8ba3079e6cbbcf896642f03987047b26))
+
+  The sentinel's skill-reading tools were scoped to understanding what a skill script does, so it never checked how skills depend on each other. It sent back a `use_skill gitea` call as unnecessary while the active notes skill documents that its repo access comes from gitea. The instructions now tell it to read the SKILL.md of the active skills before it revises, escalates or denies a step that looks out of scope.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
 ## v0.183.1 (2026-11-15)
 
 
