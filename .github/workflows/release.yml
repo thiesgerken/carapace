@@ -102,6 +102,14 @@ jobs:
           REGISTRY_OWNER: ${{ github.repository_owner }}
         run: |
           set -euo pipefail
+          version=$(nix eval --raw .#presswerk.default.version)
+          # Presswerk refuses anything but a pending release commit only after this step, so check
+          # first: a wrong candidate SHA or a published release must not move sandbox:latest.
+          test "$(git log -1 --format=%s)" = "🔖 Release v$version"
+          if git ls-remote --exit-code --tags origin "refs/tags/v$version" >/dev/null; then
+            echo "v$version is already tagged, so its sandbox image is published"
+            exit 0
+          fi
           nix build .#ci-tools --out-link result-ci-tools
           export PATH="$PWD/result-ci-tools/bin:$PATH"
           export SSL_CERT_FILE="$PWD/result-ci-tools/etc/ssl/certs/ca-bundle.crt"
@@ -113,7 +121,7 @@ jobs:
           # tagged here would be foreign to Presswerk and stop the release. mkdir fails if dist exists.
           mkdir dist
           mv "$RUNNER_TEMP/verified/carapace-sandbox.tar.gz" dist/
-          bash scripts/publish-images.sh "$(nix eval --raw .#presswerk.default.version)" latest
+          bash scripts/publish-images.sh "$version" latest
       # Pushes the tag, the images, the chart and the GitHub Release; GITHUB_ACTOR is the registry user.
       # The tag is annotated, so it needs a tagger identity.
       - name: Publish the release
