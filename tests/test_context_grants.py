@@ -716,6 +716,22 @@ class TestSandboxManagerCredentialCache:
         mgr._rerun_activated_skill_setup.assert_awaited_once_with("sess-1")
 
     @pytest.mark.anyio
+    async def test_refresh_git_identities_only_touches_owner_sandboxes(self, tmp_path: Path, db_factory):
+        runtime = make_runtime_mock()
+        runtime.is_running = AsyncMock(return_value=True)
+        mgr = _sandbox_manager(runtime=runtime, data_dir=tmp_path, knowledge_dir=tmp_path, session_factory=db_factory)
+        sessions = SessionManager(db_factory, tmp_path)
+        for session_id, user in [("sess-thies", "thies"), ("sess-ben", "ben")]:
+            sessions.save_meta(session_id, SessionMeta(user=user))
+            mgr._sessions[session_id] = SessionContainer(
+                container_id=f"container-{user}", session_id=session_id, created_at=1.0, last_used=1.0
+            )
+
+        await mgr.refresh_git_identities("thies")
+
+        assert [call.args[0] for call in runtime.exec.await_args_list] == ["container-thies"]
+
+    @pytest.mark.anyio
     async def test_activate_skill_resume_reruns_setup_for_activated_skills(self, tmp_path: Path, db_factory):
         runtime = make_runtime_mock()
         runtime.is_running = AsyncMock(return_value=False)

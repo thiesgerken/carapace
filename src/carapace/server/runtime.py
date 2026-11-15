@@ -261,7 +261,7 @@ class KnowledgeGitRuntime:
                 else:
                     await git_store.remove_remote()
 
-                await self._sandbox_mgr.refresh_git_identities()
+                await self._sandbox_mgr.refresh_git_identities(owner)
             except Exception:
                 git_store.remote_branch = previous_branch
                 git_store.author_template = previous_author
@@ -272,7 +272,7 @@ class KnowledgeGitRuntime:
                         await git_store.restore_remote(previous_remote_url)
                     elif not previous_remote_configured:
                         await git_store.remove_remote()
-                    await self._sandbox_mgr.refresh_git_identities()
+                    await self._sandbox_mgr.refresh_git_identities(owner)
                 except Exception as rollback_exc:
                     logger.warning(f"Knowledge Git runtime rollback failed for user {owner}: {rollback_exc}")
                 raise

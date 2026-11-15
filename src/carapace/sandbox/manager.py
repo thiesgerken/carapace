@@ -353,8 +353,15 @@ class SandboxManager:
     def _git_author_for_session(self, session_id: str) -> str:
         return self._repo_for_session(session_id).git_store.author_template
 
-    async def refresh_git_identities(self) -> None:
+    async def refresh_git_identities(self, owner: str) -> None:
+        """Reapply the git identity in *owner*'s running sandboxes.
+
+        Scoped to one owner so a broken sandbox of another user can't fail this
+        owner's settings change.
+        """
         for session_id, session in self._sessions.items():
+            if session_owner(self._session_factory, session_id) != owner:
+                continue
             if not await self._runtime.is_running(session.container_id):
                 continue
             await self._session_lifecycle.setup_git_identity(session.container_id, session_id)

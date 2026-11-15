@@ -297,7 +297,7 @@ async def test_knowledge_git_runtime_applies_remote_and_updates_sandbox_identity
     assert git_store.author_template == "Thies <thies@example.test>"
     git_store.add_remote.assert_awaited_once_with("https://git.example.test/knowledge.git", "secret-token")
     git_store.pull_from_remote.assert_awaited_once()
-    sandbox_mgr.refresh_git_identities.assert_awaited_once()
+    sandbox_mgr.refresh_git_identities.assert_awaited_once_with("thies")
 
 
 @pytest.mark.anyio
@@ -346,7 +346,7 @@ async def test_knowledge_git_runtime_rolls_back_when_remote_pull_fails(tmp_path:
         call(previous.remote, previous.token),
     ]
     git_store.restore_remote.assert_not_awaited()
-    sandbox_mgr.refresh_git_identities.assert_awaited_once()
+    sandbox_mgr.refresh_git_identities.assert_awaited_once_with("thies")
 
 
 @pytest.mark.anyio
