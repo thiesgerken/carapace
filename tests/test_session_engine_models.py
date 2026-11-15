@@ -15,7 +15,6 @@ from pydantic_ai.exceptions import UsageLimitExceeded
 from pydantic_ai.messages import (
     ModelRequest,
     ModelResponse,
-    RetryPromptPart,
     TextPart,
     ToolCallPart,
     ToolReturnPart,
@@ -831,14 +830,16 @@ def test_truncate_incomplete_model_history_keeps_complete_pairs(tmp_path: Path, 
 
 
 def test_truncate_incomplete_model_history_retry_resolves_tool_call(tmp_path: Path, db_factory) -> None:
-    # A tool call answered by a RetryPromptPart (validation retry) is resolved, not pending —
+    # A tool call answered by a retried ToolReturnPart (validation retry) is resolved, not pending —
     # otherwise every later turn is stranded and the history collapses to the first turn.
     with _patch_sentinel():
         engine = _make_engine(tmp_path, session_factory=db_factory)
         messages = [
             ModelRequest(parts=[UserPromptPart(content="hello")]),
             ModelResponse(parts=[ToolCallPart(tool_name="cmd", args={}, tool_call_id="call-1")]),
-            ModelRequest(parts=[RetryPromptPart(content="bad args", tool_name="cmd", tool_call_id="call-1")]),
+            ModelRequest(
+                parts=[ToolReturnPart(tool_name="cmd", content="bad args", tool_call_id="call-1", outcome="retried")]
+            ),
             ModelResponse(parts=[TextPart(content="done")]),
             ModelRequest(parts=[UserPromptPart(content="again")]),
             ModelResponse(parts=[TextPart(content="ok")]),
