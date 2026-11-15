@@ -659,6 +659,10 @@ class SandboxManager:
     # These run via _exec_in_container directly — NOT the agent exec path —
     # so they never appear as agent tool calls ("without telling the agent").
     # The cloned origin URL embeds credentials, so plain git commands work.
+    # The origin is the sandbox API host, which is in NO_PROXY, so these need
+    # no proxy bypass. They run outside the exec lock: a bypass here would open
+    # the proxy to every process in the sandbox and end the bypass of an
+    # in-flight skill activation when it finishes.
     # ------------------------------------------------------------------
 
     async def _git_in_workspace(self, sc: SessionContainer, args: str, *, timeout: int = 30) -> ExecResult:
@@ -666,7 +670,6 @@ class SandboxManager:
             sc,
             f"git -C {self._KNOWLEDGE_WORKDIR} {args}",
             timeout=timeout,
-            bypass_proxy=True,
         )
 
     async def _running_container(self, session_id: str) -> SessionContainer | None:
