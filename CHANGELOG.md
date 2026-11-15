@@ -1,6 +1,73 @@
 # CHANGELOG
 
 
+## v0.183.4 (2026-11-15)
+
+
+### 🔒 Security
+
+
+- 🔒️Merge pull request #492 from thiesgerken/fix/git-sync-proxy-bypass
+  ([`22c1e37`](https://github.com/thiesgerken/carapace/commit/22c1e37ba82ebd2fdcd80aa037464d7316719abc))
+
+- 🔒️ fix: stop git sync helpers from toggling the proxy bypass
+  ([`22c1e37`](https://github.com/thiesgerken/carapace/commit/22c1e37ba82ebd2fdcd80aa037464d7316719abc))
+
+- 🔒️ fix: stop git sync helpers from toggling the proxy bypass
+  ([`8e63014`](https://github.com/thiesgerken/carapace/commit/8e630145d8fa230addca2e377f28a43ddf56e170))
+
+  The sandbox git status/pull/push helpers ran with bypass_proxy=True outside the exec lock. The bypass is a plain per-session set, so each helper call opened the proxy to every process in the sandbox while it ran, and its cleanup cleared the bypass of a concurrently running skill activation. A setup.sh download that followed a redirect then hit domain gating mid-activation.
+
+  The workspace origin is the sandbox API host, which is in NO_PROXY, so the helpers need no bypass at all.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+### 🐛 Bug Fixes
+
+
+- 🐛Merge pull request #494 from thiesgerken/fix/domain-approval-card-layout
+  ([`d9bb911`](https://github.com/thiesgerken/carapace/commit/d9bb911e74b11ab77c9aaa192fef87bae62578cf))
+
+- 🐛 fix: readable approval card titles in dark mode, wrap long domain commands
+  ([`d9bb911`](https://github.com/thiesgerken/carapace/commit/d9bb911e74b11ab77c9aaa192fef87bae62578cf))
+
+- 🐛 fix: readable approval card titles in dark mode, wrap long domain commands
+  ([`428d3ab`](https://github.com/thiesgerken/carapace/commit/428d3abd65d131274fc6ae3cf116d18df690063c))
+
+  --warning-foreground is only used as text on the regular background (approval card titles, the medium risk label), but its dark value was the same near-black as in light mode, so those labels vanished on the dark background. The domain access card also let long unbroken commands (e.g. the base64 skill activator request) overflow the card.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+- 🐛Merge pull request #496 from thiesgerken/fix/sentinel-revise
+  ([`218a929`](https://github.com/thiesgerken/carapace/commit/218a929201a2cd300536b10cbb584d2a1966754d))
+
+- 🐛 fix: adapt to pydantic-ai 2.67's retry part split
+  ([`218a929`](https://github.com/thiesgerken/carapace/commit/218a929201a2cd300536b10cbb584d2a1966754d))
+
+- 🐛 fix: count retry feedback in the token estimate
+  ([`6bd442a`](https://github.com/thiesgerken/carapace/commit/6bd442ab2cd8c4cff2ddc345a02ebfa1a7d6e677))
+
+  Since pydantic-ai 2.67, a retry that answers no tool call (failed output validation, ModelRetry from an output validator) is a RetryFeedbackPart, never the deprecated RetryPromptPart. The estimate still matched only the old part, so that feedback dropped out of the user bucket and of count_message_tokens.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+- 🐛 fix: expect the sentinel's revise retry as a retried tool return
+  ([`7ef020a`](https://github.com/thiesgerken/carapace/commit/7ef020a5381e3e0a75d7cf8d987d100aa6dad8ae))
+
+  pydantic-ai 2.67 (lock-file maintenance, #423) split the deprecated RetryPromptPart: a retry that answers a tool call is now a ToolReturnPart with outcome='retried'. The sentinel's verdict is an output tool call, so its "`revise` is not available here" retry arrives in that shape. The behavior is unchanged (the model still sees the message and picks another verdict), only the test's isinstance check was pinned to the old part.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+### ♻️ Refactoring
+
+
+- ♻️ refactor: drop the deprecated RetryPromptPart from history truncation
+  ([`4cd7a40`](https://github.com/thiesgerken/carapace/commit/4cd7a405a3a85f35d60fe1cc820875d861d57bc8))
+
+  pydantic-ai 2.67 never constructs RetryPromptPart, not even when it loads a history stored before the split: a retry that answers a tool call loads as a ToolReturnPart with outcome='retried', which the check already covers.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
 ## v0.183.3 (2026-11-15)
 
 
