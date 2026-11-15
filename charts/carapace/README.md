@@ -127,7 +127,7 @@ Three options:
 
 ## Configuration
 
-All images default to the chart's `appVersion` tag. Release charts use the semantic-release project version, and PR preview charts use `pr<PR number>`.
+All images default to the chart's `appVersion` tag. Release charts use the release version, and PR preview charts use `pr<PR number>`.
 
 ### Required configuration
 
