@@ -119,7 +119,7 @@ The sentinel has read-only access to **skill directories** via two tools:
 - `list_skill_files(skill_name)` -- list files in a skill directory.
 - `read_skill_file(skill_name, path)` -- read a specific skill file.
 
-This lets the sentinel inspect trusted skill code to understand what a tool invocation will actually do. Crucially, the sentinel **cannot** read the main agent's workspace -- files there may have been written by the agent and could contain prompt injection attempts.
+This lets the sentinel inspect trusted skill code to understand what a tool invocation will actually do, and how skills build on each other (e.g. a notes skill whose repo access comes from a gitea skill). Its instructions tell it to read the `SKILL.md` of the active skills before it revises, escalates or denies a step that looks out of scope. Crucially, the sentinel **cannot** read the main agent's workspace -- files there may have been written by the agent and could contain prompt injection attempts.
 
 ## Action log
 
