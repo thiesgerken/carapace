@@ -3,7 +3,15 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 from pydantic_ai import ModelMessage
-from pydantic_ai.messages import ModelRequest, ModelResponse, SystemPromptPart, TextPart, UserPromptPart
+from pydantic_ai.messages import (
+    ModelRequest,
+    ModelResponse,
+    RetryFeedbackPart,
+    RetryInfo,
+    SystemPromptPart,
+    TextPart,
+    UserPromptPart,
+)
 
 from carapace.usage import (
     InputShapeRatios,
@@ -75,6 +83,13 @@ def test_input_shape_ratios_splits_system_and_user() -> None:
     assert r is not None
     assert r.system > 0 and r.user > 0
     assert abs(r.system + r.user - 1.0) < 0.02
+
+
+def test_input_shape_ratios_counts_retry_feedback_as_user_input() -> None:
+    feedback = RetryFeedbackPart("Answer with a verdict.", retry=RetryInfo(cause="model_retry"))
+    r = input_shape_ratios_from_messages([ModelRequest(parts=[feedback])], model_name="gpt-4o")
+    assert r is not None
+    assert abs(r.user - 1.0) < 1e-6
 
 
 def test_input_shape_ratios_counts_first_model_request_instructions_only() -> None:
