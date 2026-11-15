@@ -28,7 +28,7 @@
   --accent-foreground: oklch(0.985 0.002 264.54);
   --destructive: oklch(0.577 0.245 27.33);
   --warning: oklch(0.769 0.189 70.08);
-  --warning-foreground: oklch(0.21 0.012 264.54);
+  --warning-foreground: oklch(0.985 0.002 264.54);
 }
 
 @theme inline {
