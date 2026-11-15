@@ -1759,7 +1759,8 @@
             "thinking": "Thinking",
             "toolCall": "Tool call",
             "toolReturn": "Tool return",
-            "retryPrompt": "Retry prompt"
+            "toolRetry": "Tool retry",
+            "retryFeedback": "Retry feedback"
         },
         "timeline": {
             "title": "Requests ({count})",

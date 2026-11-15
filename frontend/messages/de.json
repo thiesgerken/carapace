@@ -1759,7 +1759,8 @@
             "thinking": "Denken",
             "toolCall": "Tool-Aufruf",
             "toolReturn": "Tool-Ergebnis",
-            "retryPrompt": "Wiederholungs-Prompt"
+            "toolRetry": "Tool-Wiederholung",
+            "retryFeedback": "Wiederholungs-Feedback"
         },
         "timeline": {
             "title": "Anfragen ({count})",

@@ -123,9 +123,12 @@ def is_terminal_history_message(message: ModelMessage) -> bool:
     if not isinstance(message, ModelRequest):
         return False
     # Output tool returns end a turn: the unattended agent's task_done/task_failed and, in the
-    # sentinel's shadow conversation, the verdict that ends an evaluation.
+    # sentinel's shadow conversation, the verdict that ends an evaluation. A retried one sends the
+    # model back for another answer, so the turn goes on.
     return any(
-        isinstance(part, ToolReturnPart) and part.tool_name in {"task_done", "task_failed", SENTINEL_VERDICT_TOOL}
+        isinstance(part, ToolReturnPart)
+        and part.outcome == "success"
+        and part.tool_name in {"task_done", "task_failed", SENTINEL_VERDICT_TOOL}
         for part in message.parts
     )
 
@@ -226,6 +229,7 @@ def normalize_unattended_output_history(messages: list[ModelMessage]) -> list[Mo
                 and isinstance(next_message, ModelRequest)
                 and any(
                     isinstance(part, ToolReturnPart)
+                    and part.outcome == "success"
                     and part.tool_name == tool_call_parts[0].tool_name
                     and part.tool_call_id == tool_call_parts[0].tool_call_id
                     for part in next_message.parts

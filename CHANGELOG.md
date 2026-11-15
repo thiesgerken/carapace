@@ -1,6 +1,42 @@
 # CHANGELOG
 
 
+## v0.183.5 (2026-11-15)
+
+
+### Other
+
+
+- Merge pull request #498 from thiesgerken/fix/transcript-retried-returns
+  ([`5632a87`](https://github.com/thiesgerken/carapace/commit/5632a876f95ac1c4bb3a1ef7e8f238b191856ae1))
+
+- 🔥 chore: drop the debug view's dead retry-prompt card
+  ([`e7fca9a`](https://github.com/thiesgerken/carapace/commit/e7fca9aaec063f027fcc319d63c634745d0158c9))
+
+  Stored request logs are validated into LlmContext on load, and pydantic-ai 2.67 turns a stored retry-prompt part into a retried ToolReturnPart or a RetryFeedbackPart, so the API never serves that kind any more.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix: treat retried tool returns as retries in transcripts and the debug view
+  ([`5632a87`](https://github.com/thiesgerken/carapace/commit/5632a876f95ac1c4bb3a1ef7e8f238b191856ae1))
+
+- 🐛 fix: show retry feedback and retried tool returns in the debug view
+  ([`021a0e7`](https://github.com/thiesgerken/carapace/commit/021a0e7022d1972ff4bfe51522947be9865ec019))
+
+  Since pydantic-ai 2.67, retries without a tool call are retry-feedback parts, which fell through to the raw JSON card, and a retried tool return looked like a normal result.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+- 🐛 fix: don't treat retried output tool returns as finished turns
+  ([`c0c78f9`](https://github.com/thiesgerken/carapace/commit/c0c78f9842b82fe08e7220afc782d5488cdb2ec2))
+
+  Since pydantic-ai 2.67, a retry that answers a tool call is a ToolReturnPart with outcome='retried'. A sentinel verdict sent back with "`revise` is not available here", or a rejected task_done, therefore counted as a turn end, and an attended fork showed the rejected task output as an answer. Both now require outcome='success'.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
 ## v0.183.4 (2026-11-15)
 
 
