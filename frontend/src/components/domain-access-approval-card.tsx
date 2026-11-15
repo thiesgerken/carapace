@@ -39,12 +39,12 @@ export function DomainAccessApprovalCard({
       <div className="space-y-1.5">
         <div>
           <span className="text-muted-foreground">{t("domainLabel")} </span>
-          <span className="font-mono font-medium">{request.domain}</span>
+          <span className="font-mono font-medium break-words">{request.domain}</span>
         </div>
         {request.command && (
           <div>
             <span className="text-muted-foreground">{t("triggeredByLabel")} </span>
-            <span className="font-mono text-xs text-foreground/80">
+            <span className="font-mono text-xs text-foreground/80 break-words">
               {request.command}
             </span>
           </div>
