@@ -1,6 +1,32 @@
 # CHANGELOG
 
 
+## v0.183.6 (2026-11-15)
+
+### 👷 Add or update CI build system
+
+- ci: release with Presswerk's push run and candidate run
+- ci: keep package-lock.json at the merged 0.183.5
+- ci: declare the release with Presswerk
+- ci: package the Helm chart as a Nix derivation
+
+### 🐛 Fix a bug
+
+- fix: push the sandbox image only for a pending release commit
+
+### 🗑️ Deprecate code that needs to be cleaned up
+
+- chore: drop python-semantic-release and its release tools
+
+### 📝 Add or update documentation
+
+- docs: drop semantic-release from the chart README
+- docs: describe releasing with Presswerk
+
+### 💡 Add or update comments in source code
+
+- docs: say why the sandbox push gets a dist/ of its own
+
 ## v0.183.5 (2026-11-15)
 
 
