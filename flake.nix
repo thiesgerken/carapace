@@ -26,6 +26,9 @@
       inputs.uv2nix.follows = "uv2nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    # The CLI runs from this input (`nix run --inputs-from . presswerk`), so CLI and declaration
+    # schema always move together. Its own nixpkgs stays: that is the combination upstream tests.
+    presswerk.url = "github:jkuball/presswerk/v0.16.0";
   };
 
   outputs =
@@ -35,6 +38,7 @@
       pyproject-nix,
       uv2nix,
       pyproject-build-systems,
+      presswerk,
     }:
     let
       systems = [
@@ -150,6 +154,10 @@
           release-tools = project.${system}.tools.release;
         }
         // p.images
+        # The release jobs run there and substitute the CLI from our cache, not a third party's.
+        // nixpkgs.lib.optionalAttrs (system == "x86_64-linux") {
+          presswerk = presswerk.packages.${system}.default;
+        }
       );
       devShells = forSystems (
         system:
@@ -178,5 +186,104 @@
           };
         }
       );
+      presswerk.default = presswerk.lib.mkRelease {
+        sourceRoot = self.outPath;
+        versionFiles = {
+          toml.pyproject = {
+            path = "pyproject.toml";
+            key = "project.version";
+          };
+          json = {
+            frontend = {
+              path = "frontend/package.json";
+              key = "version";
+            };
+            frontend-lock = {
+              path = "frontend/package-lock.json";
+              key = "version";
+            };
+            frontend-lock-root = {
+              path = "frontend/package-lock.json";
+              key = ''packages."".version'';
+            };
+          };
+          regex = {
+            uv-lock = {
+              path = "uv.lock";
+              pattern = ''^name = "carapace"\nversion = "(?<version>[^"]+)"$'';
+            };
+            chart = {
+              path = "charts/carapace/Chart.yaml";
+              pattern = ''^version: (?<version>\S+)$'';
+            };
+            chart-app = {
+              path = "charts/carapace/Chart.yaml";
+              pattern = ''^appVersion: "(?<version>[^"]+)"$'';
+            };
+          };
+        };
+        analyzer.gitmoji = {
+          enable = true;
+          # Refactorings and CI changes ship in the images, so they release a patch like fixes do.
+          catalog.recycle.semver = "patch";
+          catalog.construction_worker.semver = "patch";
+        };
+        # The format python-semantic-release wrote, so the existing sections stay recognized.
+        changelog.heading = "## v{version} ({date})";
+        publishers =
+          let
+            # The packages are public, so `plan` and `prepare` check the previous release anonymously.
+            ghcr = {
+              public = true;
+              username.secret = "GITHUB_ACTOR";
+              password.secret = "GITHUB_TOKEN";
+            };
+            artifacts = self.packages.x86_64-linux;
+          in
+          {
+            # carapace-sandbox is a Dockerfile build, not a store path; the publish job pushes it.
+            oci-image =
+              nixpkgs.lib.mapAttrs
+                (
+                  name: image:
+                  ghcr
+                  // {
+                    repository = "ghcr.io/thiesgerken/${name}";
+                    platforms."linux/amd64" = image;
+                    aliases = [ "latest" ];
+                  }
+                )
+                {
+                  carapace = artifacts.server-image;
+                  carapace-frontend = artifacts.frontend-image;
+                  carapace-bitwarden-cli = artifacts.bitwarden-image;
+                };
+            oci-helm.carapace = ghcr // {
+              repository = "ghcr.io/thiesgerken/charts/carapace";
+              inherit (artifacts) chart;
+            };
+            github-release.default = {
+              repository = "thiesgerken/carapace";
+              body = ''
+                {{ notes }}
+
+                ## Docker Images
+
+                ```
+                docker pull ghcr.io/thiesgerken/carapace:{{ version }}
+                docker pull ghcr.io/thiesgerken/carapace-frontend:{{ version }}
+                docker pull ghcr.io/thiesgerken/carapace-sandbox:{{ version }}
+                docker pull ghcr.io/thiesgerken/carapace-bitwarden-cli:{{ version }}
+                ```
+
+                ## Helm Chart
+
+                ```
+                helm install carapace oci://ghcr.io/thiesgerken/charts/carapace --version {{ version }}
+                ```
+              '';
+            };
+          };
+      };
     };
 }
