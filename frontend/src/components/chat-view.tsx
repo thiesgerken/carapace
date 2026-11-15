@@ -1013,6 +1013,38 @@ export function projectHistoryToMessages(history: HistoryMessage[]): ChatMessage
   return groupFoldedMessages(groupChildToolCalls(messages));
 }
 
+type EscalationCard = Extract<
+  ChatMessage,
+  { kind: "approval" | "domain_access_approval" | "git_push_approval" | "credential_approval" }
+>;
+
+function isEscalationCard(message: ChatMessage): message is EscalationCard {
+  return (
+    message.kind === "approval"
+    || message.kind === "domain_access_approval"
+    || message.kind === "git_push_approval"
+    || message.kind === "credential_approval"
+  );
+}
+
+function escalationRequestId(card: EscalationCard): string {
+  return card.kind === "approval" ? card.request.tool_call_id : card.request.request_id;
+}
+
+// The server re-sends every pending escalation when a WebSocket subscribes, and the history
+// fetch on (re)opening a session already projects the same request into a card.
+export function appendEscalationCard(
+  messages: ChatMessage[],
+  card: EscalationCard,
+): ChatMessage[] {
+  const id = escalationRequestId(card);
+  const alreadyShown = messages.some(
+    (message) =>
+      isEscalationCard(message) && message.kind === card.kind && escalationRequestId(message) === id,
+  );
+  return alreadyShown ? messages : [...messages, card];
+}
+
 export function countSubmittedUserMessages(messages: ChatMessage[]): number {
   return messages.filter(
     (message) => message.kind === "user" && !message.content.startsWith("/"),
@@ -1563,28 +1595,25 @@ export function ChatView({
           break;
         case "approval_request":
           setWaiting(true);
-          setMessages((prev) => [...prev, { kind: "approval", request: msg }]);
+          setMessages((prev) => appendEscalationCard(prev, { kind: "approval", request: msg }));
           break;
         case "domain_access_approval_request":
           setWaiting(true);
-          setMessages((prev) => [
-            ...prev,
-            { kind: "domain_access_approval", request: msg },
-          ]);
+          setMessages((prev) =>
+            appendEscalationCard(prev, { kind: "domain_access_approval", request: msg }),
+          );
           break;
         case "git_push_approval_request":
           setWaiting(true);
-          setMessages((prev) => [
-            ...prev,
-            { kind: "git_push_approval", request: msg },
-          ]);
+          setMessages((prev) =>
+            appendEscalationCard(prev, { kind: "git_push_approval", request: msg }),
+          );
           break;
         case "credential_approval_request":
           setWaiting(true);
-          setMessages((prev) => [
-            ...prev,
-            { kind: "credential_approval", request: msg },
-          ]);
+          setMessages((prev) =>
+            appendEscalationCard(prev, { kind: "credential_approval", request: msg }),
+          );
           break;
         case "command_result":
           resetRollbackRef.current = null;
