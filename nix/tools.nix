@@ -23,19 +23,4 @@ in
       "/etc/ssl/certs"
     ];
   };
-  release = pkgs.buildEnv {
-    name = "carapace-release-tools";
-    paths = with pkgs; [
-      bash
-      coreutils
-      uv
-      python314
-      git
-      cacert
-    ];
-    pathsToLink = [
-      "/bin"
-      "/etc/ssl/certs"
-    ];
-  };
 }

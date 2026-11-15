@@ -69,54 +69,6 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/carapace"]
 
-[tool.semantic_release]
-version_toml = ["pyproject.toml:project.version"]
-version_variables = [
-    "frontend/package.json:version",
-    "charts/carapace/Chart.yaml:version",
-    "charts/carapace/Chart.yaml:appVersion",
-]
-allow_zero_version = true
-commit_parser = "emoji"
-build_command = """
-    pip install uv
-    uv lock --upgrade-package carapace
-    git add uv.lock
-    uv build
-"""
-
-[tool.semantic_release.commit_parser_options]
-major_tags = ["💥", ":boom:"]
-minor_tags = ["✨", ":sparkles:"]
-patch_tags = [
-    "🐛",
-    ":bug:",
-    "🚑",
-    ":ambulance:",
-    "♻️",
-    ":recycle:",
-    "⚡",
-    ":zap:",
-    "🔒",
-    ":lock:",
-    "🩹",
-    ":adhesive_bandage:",
-    "⬆️",
-    ":arrow_up:",
-    "🔧",
-    ":wrench:",
-    "💄",
-    ":lipstick:",
-    "🗑️",
-    ":wastebasket:",
-    "👷",
-    ":construction_worker:",
-]
-ignore_merge_commits = false
-
-[tool.semantic_release.changelog]
-template_dir = "templates"
-
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]

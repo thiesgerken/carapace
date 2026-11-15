@@ -107,7 +107,6 @@
         in
         {
           ci-tools = p.tools.ci;
-          release-tools = p.tools.release;
         }
         // nixpkgs.lib.optionalAttrs (builtins.elem system linuxSystems) (
           {
@@ -151,7 +150,6 @@
           inherit (p.frontend) frontend;
           inherit (p) chart;
           tools = project.${system}.tools.ci;
-          release-tools = project.${system}.tools.release;
         }
         // p.images
         # The release jobs run there and substitute the CLI from our cache, not a third party's.
