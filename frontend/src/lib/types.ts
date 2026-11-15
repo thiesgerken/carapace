@@ -1118,6 +1118,7 @@ export interface LlmPart {
   tool_name?: string;
   args?: unknown;
   tool_call_id?: string;
+  outcome?: string;
   [key: string]: unknown;
 }
 
