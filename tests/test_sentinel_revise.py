@@ -7,7 +7,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from pydantic_ai.messages import ModelMessage, ModelResponse, RetryPromptPart, ToolCallPart
+from pydantic_ai.messages import ModelMessage, ModelResponse, ToolCallPart, ToolReturnPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
 from carapace.security import evaluate_push_with, evaluate_with
@@ -100,8 +100,9 @@ async def test_sentinel_cannot_revise_requests_whose_explanation_never_reaches_t
 
     assert verdict.decision == "deny"
     retry = requests[1][-1].parts[0]
-    assert isinstance(retry, RetryPromptPart)
-    assert "`revise` is not available here" in retry.model_response()
+    assert isinstance(retry, ToolReturnPart)
+    assert retry.outcome == "retried"
+    assert "`revise` is not available here" in retry.model_response_str()
 
 
 @pytest.mark.asyncio
