@@ -1,26 +1,35 @@
 name: Release
 
+# Presswerk's push run / candidate run flow (https://presswerk.dev/guide/github-actions/). A push to
+# main prepares the release commit, pushes it and dispatches this workflow with it as the candidate.
+# The candidate run verifies exactly that commit and only then publishes it. Pushes made with
+# GITHUB_TOKEN start no workflow runs, hence the dispatch.
 on:
   push:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      candidate:
+        description: Full SHA of the release commit to verify and publish
+        type: string
+        required: true
 
 permissions:
   contents: read
 
+# One release at a time. A stale push run's push of its release commit is rejected (no force).
+concurrency: presswerk-release
+
 jobs:
-  version:
+  prepare:
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
-    concurrency: release
     permissions:
+      actions: write
       contents: write
-    outputs:
-      released: ${{ steps.release.outputs.released }}
-      version: ${{ steps.release.outputs.version }}
     steps:
-      # Releasing the current main tip lets an earlier run include back-to-back merges.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          ref: main
           fetch-depth: 0
       - uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
         with:
@@ -28,47 +37,52 @@ jobs:
       - uses: cachix/cachix-action@38b082610b782e7e93e209c35fd730d399dee866 # v17
         with:
           name: thiesgerken
-      - name: Realize pinned version tools once
-        run: |
-          time nix build .#release-tools --out-link result-release-tools --print-build-logs
-          echo "$PWD/result-release-tools/bin" >> "$GITHUB_PATH"
-          {
-            echo "SSL_CERT_FILE=$PWD/result-release-tools/etc/ssl/certs/ca-bundle.crt"
-            echo "UV_PYTHON=$PWD/result-release-tools/bin/python3.14"
-            echo "UV_PYTHON_DOWNLOADS=never"
-          } >> "$GITHUB_ENV"
-      # PSR 10.6.1 uses Actor.name_email_regex, which GitPython 3.1.60 removed.
-      - name: Semantic Release (version only)
-        id: release
+      - name: Prepare the release commit
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: >-
-          uv tool run
-          --from 'python-semantic-release==10.6.1'
-          --with 'gitpython<3.1.60'
-          semantic-release -v version --no-vcs-release
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          if test "$(git rev-parse origin/main)" != "$GITHUB_SHA"; then
+            echo "main moved on; the newer push run prepares"
+            exit 0
+          fi
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          # v0.183.5 was released by python-semantic-release, so it has no declaration to verify.
+          # It stays the previous release until the first Presswerk release commit bumps the version.
+          trust=()
+          if test "$(nix eval --raw .#presswerk.default.version)" = 0.183.5; then
+            trust=(--trust-predecessor v0.183.5=dec701d9fc02a3f145f6e541bac949440fea392f)
+          fi
+          nix run --inputs-from . presswerk -- prepare "${trust[@]}"
+          if test "$(git rev-parse HEAD)" != "$GITHUB_SHA"; then
+            git push origin HEAD:main
+            gh workflow run release.yml --ref main -f candidate="$(git rev-parse HEAD)"
+          fi
 
-  nix:
-    needs: version
-    if: needs.version.outputs.released == 'true'
+  # Pushes the Nix images and the chart to Cachix, where the publish job fetches them, and uploads
+  # the verified sandbox archive.
+  verify:
+    if: github.event_name == 'workflow_dispatch'
     uses: ./.github/workflows/nix-verify.yml
     with:
-      ref: v${{ needs.version.outputs.version }}
+      ref: ${{ inputs.candidate }}
     secrets:
       CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
 
-  images:
-    needs: [version, nix]
-    if: needs.version.outputs.released == 'true'
+  publish:
+    needs: verify
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
       packages: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          ref: v${{ needs.version.outputs.version }}
-          persist-credentials: false
+          ref: ${{ inputs.candidate }}
+          fetch-depth: 0
       - uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
         with:
           determinate: false
@@ -78,92 +92,42 @@ jobs:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: verified-x64-images
-          path: dist
-      - name: Prepare pinned publishing tools
-        run: |
-          time nix build .#ci-tools --out-link result-ci-tools --print-build-logs
-          echo "$PWD/result-ci-tools/bin" >> "$GITHUB_PATH"
-          echo "SSL_CERT_FILE=$PWD/result-ci-tools/etc/ssl/certs/ca-bundle.crt" >> "$GITHUB_ENV"
-      - name: Publish verified release images
+          path: ${{ runner.temp }}/verified
+      # The sandbox is a Dockerfile build, not a store path, so Presswerk can't publish it. It goes
+      # first, so a failed push leaves no tag behind.
+      - name: Push the verified sandbox image
         env:
-          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REGISTRY_TOKEN: ${{ github.token }}
           REGISTRY_USER: ${{ github.actor }}
           REGISTRY_OWNER: ${{ github.repository_owner }}
-          VERSION: ${{ needs.version.outputs.version }}
         run: |
           set -euo pipefail
+          version=$(nix eval --raw .#presswerk.default.version)
+          # Presswerk refuses anything but a pending release commit only after this step, so check
+          # first: a wrong candidate SHA or a published release must not move sandbox:latest.
+          test "$(git log -1 --format=%s)" = "🔖 Release v$version"
+          if git ls-remote --exit-code --tags origin "refs/tags/v$version" >/dev/null; then
+            echo "v$version is already tagged, so its sandbox image is published"
+            exit 0
+          fi
+          nix build .#ci-tools --out-link result-ci-tools
+          export PATH="$PWD/result-ci-tools/bin:$PATH"
+          export SSL_CERT_FILE="$PWD/result-ci-tools/etc/ssl/certs/ca-bundle.crt"
           export REGISTRY_AUTH_FILE="$RUNNER_TEMP/skopeo-auth.json"
           cleanup_auth() { rm -f "$REGISTRY_AUTH_FILE"; }
           trap cleanup_auth EXIT
           printf "%s" "$REGISTRY_TOKEN" | skopeo login --authfile "$REGISTRY_AUTH_FILE" --username "$REGISTRY_USER" --password-stdin ghcr.io
-          bash scripts/publish-images.sh "$VERSION" latest
-
-  publish:
-    needs: [version, images]
-    if: needs.version.outputs.released == 'true'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      packages: write
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          ref: v${{ needs.version.outputs.version }}
-      - uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
-        with:
-          determinate: false
-      - uses: cachix/cachix-action@38b082610b782e7e93e209c35fd730d399dee866 # v17
-        with:
-          name: thiesgerken
-      - name: Realize pinned publishing tools once
-        run: |
-          time nix build .#ci-tools --out-link result-ci-tools --print-build-logs
-          time nix build .#release-tools --out-link result-release-tools --print-build-logs
-          {
-            echo "$PWD/result-ci-tools/bin"
-            echo "$PWD/result-release-tools/bin"
-          } >> "$GITHUB_PATH"
-          {
-            echo "SSL_CERT_FILE=$PWD/result-ci-tools/etc/ssl/certs/ca-bundle.crt"
-            echo "UV_PYTHON=$PWD/result-release-tools/bin/python3.14"
-            echo "UV_PYTHON_DOWNLOADS=never"
-          } >> "$GITHUB_ENV"
-      - name: Build wheel
-        run: uv build
-      - name: Push Helm chart to GHCR
+          # publish-images.sh pushes every archive in dist/, so it gets the sandbox alone: Nix images
+          # tagged here would be foreign to Presswerk and stop the release. mkdir fails if dist exists.
+          mkdir dist
+          mv "$RUNNER_TEMP/verified/carapace-sandbox.tar.gz" dist/
+          bash scripts/publish-images.sh "$version" latest
+      # Pushes the tag, the images, the chart and the GitHub Release; GITHUB_ACTOR is the registry user.
+      # The tag is annotated, so it needs a tagger identity.
+      - name: Publish the release
         env:
-          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REGISTRY_USER: ${{ github.actor }}
-          REGISTRY_OWNER: ${{ github.repository_owner }}
-          VERSION: ${{ needs.version.outputs.version }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
-          printf "%s" "$REGISTRY_TOKEN" | helm registry login ghcr.io --username "$REGISTRY_USER" --password-stdin
-          helm package charts/carapace --version "$VERSION" --app-version "$VERSION"
-          helm push "carapace-${VERSION}.tgz" "oci://ghcr.io/${REGISTRY_OWNER}/charts"
-      - name: Create GitHub Release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION: ${{ needs.version.outputs.version }}
-          REGISTRY_OWNER: ${{ github.repository_owner }}
-        run: |
-          notes=$(awk '/^## v'"${VERSION}"'/{found=1; next} /^## v[0-9]/{if(found) exit} found' CHANGELOG.md)
-          notes="${notes}
-
-          ## Docker Images
-
-          \`\`\`
-          docker pull ghcr.io/${REGISTRY_OWNER}/carapace:${VERSION}
-          docker pull ghcr.io/${REGISTRY_OWNER}/carapace-frontend:${VERSION}
-          docker pull ghcr.io/${REGISTRY_OWNER}/carapace-sandbox:${VERSION}
-          docker pull ghcr.io/${REGISTRY_OWNER}/carapace-bitwarden-cli:${VERSION}
-          \`\`\`
-
-          ## Helm Chart
-
-          \`\`\`
-          helm install carapace oci://ghcr.io/${REGISTRY_OWNER}/charts/carapace --version ${VERSION}
-          \`\`\`"
-          gh release create "v${VERSION}" dist/* \
-            --repo "$GITHUB_REPOSITORY" \
-            --title "v${VERSION}" \
-            --notes "$notes"
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          nix run --inputs-from . presswerk -- publish HEAD
