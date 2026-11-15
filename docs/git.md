@@ -96,6 +96,8 @@ carapace Session <session-id> <session-id@carapace.local>
 
 This makes it easy to trace which session produced which commit in the repo history.
 
+The identity is set as global git config in the sandbox, so it also applies to other repos the agent clones. It is reapplied whenever the sandbox runtime starts fresh (create, warm-pool claim, resume), because `~/.gitconfig` does not survive pod recreation.
+
 ## Slash commands
 
 | Command   | Description                                                                                                                                                   |

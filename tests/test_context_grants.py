@@ -393,6 +393,8 @@ class TestSandboxManagerCredentialCache:
 
         mgr._rerun_activated_skill_setup.assert_awaited_once_with("sess-1")
         runtime.resume_sandbox.assert_awaited_once_with("carapace-sandbox-sess-1", _BASE_IMAGE)
+        exec_cmds = [call.args[1] for call in runtime.exec.await_args_list]
+        assert any("git config --global user.name" in cmd for cmd in exec_cmds)
         runtime.write_stdout_log.assert_awaited_once()
         assert runtime.write_stdout_log.await_args.args[0] == "container-1"
         assert "event=resume" in runtime.write_stdout_log.await_args.args[1]
