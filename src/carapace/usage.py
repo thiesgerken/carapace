@@ -27,7 +27,7 @@ from pydantic_ai.messages import (
     ModelResponsePart,
     NativeToolCallPart,
     NativeToolReturnPart,
-    RetryPromptPart,
+    RetryFeedbackPart,
     SpeechPart,
     SystemPromptPart,
     TextPart,
@@ -823,7 +823,7 @@ def _accumulate_request_part(part: ModelRequestPart, buckets: dict[str, str]) ->
         buckets["user"] += _user_prompt_blob(part.content) + "\n"
     elif isinstance(part, ToolReturnPart):
         buckets["tool_returns"] += f"{part.tool_name}\n{_tool_return_blob(part.content)}\n"
-    elif isinstance(part, RetryPromptPart):
+    elif isinstance(part, RetryFeedbackPart):
         buckets["user"] += part.model_response() + "\n"
 
 

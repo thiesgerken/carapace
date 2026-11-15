@@ -26,7 +26,6 @@ from pydantic_ai.messages import (
     ModelResponse,
     NativeToolCallPart,
     NativeToolReturnPart,
-    RetryPromptPart,
     TextPart,
     ToolCallPart,
     ToolReturnPart,
@@ -876,10 +875,10 @@ class SessionTurnMixin(SessionTurnHost):
                             pending_tool_calls.add(tool_call_id)
             elif isinstance(message, ModelRequest):
                 for part in message.parts:
-                    # A RetryPromptPart with a tool_call_id resolves the call too: the model got a
-                    # validation retry instead of a result, but the call is answered and the turn
-                    # continues. Treating it as pending strands every later turn (history collapses).
-                    if isinstance(part, ToolReturnPart | NativeToolReturnPart | RetryPromptPart):
+                    # A retried ToolReturnPart resolves the call too: the model got a validation
+                    # retry instead of a result, but the call is answered and the turn continues.
+                    # Treating it as pending strands every later turn (history collapses).
+                    if isinstance(part, ToolReturnPart | NativeToolReturnPart):
                         tool_call_id = getattr(part, "tool_call_id", None)
                         if isinstance(tool_call_id, str) and tool_call_id in pending_tool_calls:
                             pending_tool_calls.remove(tool_call_id)
