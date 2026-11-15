@@ -1,6 +1,28 @@
 # CHANGELOG
 
 
+## v0.183.1 (2026-11-15)
+
+
+### Other
+
+
+- Merge pull request #489 from thiesgerken/fix/duplicate-escalation-cards
+  ([`e7dc774`](https://github.com/thiesgerken/carapace/commit/e7dc774945efe480e3363c48f37feb5639a7fe73))
+
+### 🐛 Bug Fixes
+
+
+- 🐛 fix(frontend): show a pending escalation card only once after reopening a session
+  ([`e7dc774`](https://github.com/thiesgerken/carapace/commit/e7dc774945efe480e3363c48f37feb5639a7fe73))
+
+- 🐛 fix(frontend): show a pending escalation card only once after reopening a session
+  ([`8956de4`](https://github.com/thiesgerken/carapace/commit/8956de43a31b611640149a3b37f6d4135565199e))
+
+  Opening a session projects pending approvals from history into cards, and the server replays every pending approval/escalation when the WebSocket subscribes. The WS handlers appended a second card for the same request. They now skip a card whose kind and request id is already shown.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
 ## v0.183.0 (2026-11-13)
 
 
