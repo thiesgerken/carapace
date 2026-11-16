@@ -342,14 +342,16 @@ function spanText({ kind, name, attrs }: Span): { text: string; mono: boolean } 
   }
 }
 
-function useSpanFacts(): (row: TimelineRow) => Fact[] {
+/** The facts of a line's spans, in chain order. */
+function useLineFacts(): (chain: TimelineRow[]) => Fact[] {
   const t = useTranslations("debugView.turns.facts");
   const format = useFormatter();
-  return ({ span, start, end }) => {
+  const rowFacts = ({ span, start, end }: TimelineRow, chain: TimelineRow[]) => {
     const { attrs, llm } = span;
     const facts: Fact[] = [];
     if (typeof attrs.verdict === "string") facts.push({ text: attrs.verdict, tone: VERDICT_TONE[attrs.verdict] ?? "muted" });
-    if (attrs.denied === true) facts.push({ text: t("denied"), tone: "bad" });
+    // A sentinel's `deny` in the same line already says it.
+    if (attrs.denied === true && !chain.some((row) => row.span.attrs.verdict === "deny")) facts.push({ text: t("denied"), tone: "bad" });
     if (attrs.allowed === false) facts.push({ text: t("blocked"), tone: "bad" });
     if (typeof attrs.exit_code === "number" && attrs.exit_code !== 0) facts.push({ text: t("exitCode", { code: attrs.exit_code }), tone: "bad" });
     if (llm?.role === "agent" && llm.output_tokens > 0) {
@@ -365,6 +367,7 @@ function useSpanFacts(): (row: TimelineRow) => Fact[] {
     }
     return facts;
   };
+  return (chain) => chain.flatMap((row) => rowFacts(row, chain));
 }
 
 /**
@@ -373,7 +376,7 @@ function useSpanFacts(): (row: TimelineRow) => Fact[] {
  */
 function LineLabel({ line, open }: { line: WaterfallLine; open: boolean }) {
   const duration = useFormatDuration();
-  const spanFacts = useSpanFacts();
+  const lineFacts = useLineFacts();
   const head = line.chain[0];
   const named = line.chain.find((row) => row.span.kind !== "gate") ?? head;
   const Icon = KIND_ICON[named.span.kind] ?? Circle;
@@ -389,7 +392,7 @@ function LineLabel({ line, open }: { line: WaterfallLine; open: boolean }) {
         <Icon aria-hidden className={cn("h-3.5 w-3.5", CATEGORY_TEXT[spanCategory(named.span)])} />
       </span>
       <span className={cn("min-w-0 truncate", mono && "font-mono")}>{text}</span>
-      {line.chain.flatMap(spanFacts).map((fact, index) => (
+      {lineFacts(line.chain).map((fact, index) => (
         <span key={index} className={cn("shrink-0", FACT_CLASS[fact.tone])}>
           {fact.text}
         </span>

@@ -57,16 +57,17 @@ failed, budget-stopped or stopped one.
   is waiting for you. Instants that stop at the turn itself are not covered: time no span measured.
 - **Waterfall**: one row per span, drawn as a tree with guide lines, with its bar placed within the
   turn (on a phone the label sits above the bar). A chevron collapses or expands a row's children;
-  that state lasts as long as the view. Running spans grow until they end. Errors are red,
+  that state lasts while the turn is shown. Running spans grow until they end. Errors are red,
   interrupted spans grey, waits hatched. An LLM bar shows its phases: waiting for the first
   token, thinking, output; a phase without its timestamp collapses into its neighbour.
 - A row's icon names its kind (hover for the kind and name) in its summary category's color. Its
   text is what the span did: the command of an `exec`, operation and path of a `file`, the domain,
-  the tool or step name. Muted facts follow: the sentinel's verdict, a denied gate, a blocked
-  domain, a non-zero exit code, and for the agent's LLM requests the output tokens and tokens per
-  second of generation (from the first token on).
+  the tool or step name. Facts follow: the sentinel's verdict as a colored badge; a denied gate, a
+  blocked domain or a non-zero exit code in red; and, muted, the output tokens of the agent's LLM
+  requests and their tokens per second of generation (from the first token on).
 - A span whose only child covers at least three quarters of it merges with that child into one
-  row, and so on down: a gate, its sentinel call and the sentinel's LLM request become one
+  row, and so on down, once both have ended `ok`; running, failed and interrupted spans keep their
+  own rows. A gate, its sentinel call and the sentinel's LLM request become one
   `sentinel` row with the verdict. The row shows the head's duration and every member's bar. It is
   named by its first member that isn't a gate, since a gate's name is its tool's. The turn itself
   never merges.

@@ -156,3 +156,15 @@ test("the root never merges, and a collapsed chain hides what is below its last 
   assert.deepEqual(ids(["sandbox"]), ["turn", "compaction>llm", "sandbox"]);
   assert.deepEqual(ids(["turn"]), ["turn"]);
 });
+
+test("only spans that ended ok merge: running and failed ones keep their own lines", () => {
+  const spans = [
+    span("turn", null, "turn", 0, null),
+    span("gate", "turn", "gate", 0, null),
+    span("sentinel", "gate", "sentinel", 10, null),
+    span("exec", "turn", "exec", 0, 1000, { status: "error" }),
+    span("domain", "exec", "domain", 0, 1000),
+  ];
+  const lines = waterfallLines(timelineRows(spans, T0 + 1000), new Set());
+  assert.deepEqual(lines.map((line) => line.chain.map((row) => row.span.span_id)), [["turn"], ["gate"], ["sentinel"], ["exec"], ["domain"]]);
+});
