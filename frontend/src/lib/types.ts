@@ -472,11 +472,14 @@ export interface ErrorMessage {
   type: "error";
   detail: string;
   turn_terminal?: boolean;
+  /** Set on the error that ended a turn. */
+  turn_id?: string;
 }
 
 export interface Cancelled {
   type: "cancelled";
   detail: string;
+  turn_id: string;
 }
 
 export interface SessionTitleUpdate {
@@ -705,6 +708,8 @@ export type ChatMessage =
       eventIndex?: number;
       compaction?: CompactionAnnotation;
       turnTerminal?: boolean;
+      /** On the error that ended a turn with a timeline; links it to the debug view. */
+      turnId?: string;
     };
 
 // Memory (/api/memory). Mirrors src/carapace/memory/models.py.

@@ -905,6 +905,7 @@ export function Message({
             onRetry={onRetry}
             onReset={onReset}
             onContinue={onContinue}
+            debugHref={message.turnId && sessionId ? turnTimelineHref(sessionId, message.turnId) : undefined}
           />
         </div>
       );

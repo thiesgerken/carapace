@@ -213,7 +213,7 @@ def test_submit_cancel_persists_interruption_marker(tmp_path: Path, db_factory):
         assert all("timestamp" in event for event in events[-2:])
         assert _without_timestamps(events[-2:]) == [
             {"role": "user", "content": "hello", "turn_id": ANY},
-            {"role": "error", "content": "The previous turn was interrupted before completion."},
+            {"role": "error", "content": "The previous turn was interrupted before completion.", "turn_id": ANY},
         ]
         assert sub.cancelled == 1
 

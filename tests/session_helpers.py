@@ -97,11 +97,11 @@ class _FakeSubscriber(SessionSubscriber):
     ) -> None:
         self.done_messages.append((content, usage))
 
-    async def on_error(self, detail: str, *, turn_terminal: bool = False) -> None:
+    async def on_error(self, detail: str, *, turn_id: str | None = None) -> None:
         self.errors.append(detail)
-        self.error_events.append((detail, turn_terminal))
+        self.error_events.append((detail, turn_id is not None))
 
-    async def on_cancelled(self) -> None:
+    async def on_cancelled(self, *, turn_id: str) -> None:
         self.cancelled += 1
 
     async def on_approval_request(self, req: ApprovalRequest) -> None:

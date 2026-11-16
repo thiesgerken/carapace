@@ -39,8 +39,9 @@ whose request is running.
 ### Timeline tab
 
 `&tab=<role>` opens a role tab instead; `&turn=<turn_id>` picks the turn the timeline shows first.
-In the chat, the last bubble of a turn with a timeline has a debug icon in its footer that opens
-`&view=debug&tab=timeline&turn=<turn_id>`.
+In the chat, the bubble that ended a turn with a timeline has a debug icon in its footer that opens
+`&view=debug&tab=timeline&turn=<turn_id>`: the answer of a successful turn, or the error box of a
+failed, budget-stopped or stopped one.
 
 - **Turn**: a dropdown of the session's turns with timing, newest first (start time, the prompt's
   first characters, duration). It shows the newest turn by default and follows new turns live as
@@ -205,9 +206,11 @@ turn's LLM requests joined in as bars of their own. It only measures.
 ### Data model
 
 A **turn** is identified by `turn_id`, a short random hex id generated when the turn starts. The
-user event that started it carries the id (`turn_id` on the `user` event), as does the assistant
-event that ended it successfully (and so the history API's messages for both, and the WebSocket
-`done` message, which the chat uses to link the turn's last bubble to its timeline). So does every LLM
+user event that started it carries the id (`turn_id` on the `user` event), as does the event that
+ended it: the assistant event, or the terminal `error` event of a failed or stopped turn. The
+history API's messages carry it too, and so do the WebSocket messages that end a turn (`done`,
+`cancelled`, and the `error` with `turn_terminal`), which the chat uses to link the turn's last
+bubble to its timeline. So does every LLM
 request made during it (`turn_id` and `span_id` on `LlmRequestState` and `LlmRequestRecord`: the turn
 and the span the request started in). Turns from before timelines existed have no `turn_id` and no
 timeline.

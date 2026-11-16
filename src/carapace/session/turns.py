@@ -411,12 +411,13 @@ class SessionTurnMixin(SessionTurnHost):
                 active,
                 session_id,
                 agent_input,
+                turn_id=turn_id,
                 turn_event_start=turn_event_start,
                 latest_messages=latest_messages,
                 terminal_message="The previous turn was interrupted before completion.",
                 save_progress=True,
             )
-            await self._broadcast(active, "on_cancelled")
+            await self._broadcast(active, "on_cancelled", turn_id=turn_id)
             return "interrupted"
         except SessionBudgetExceededError as exc:
             logger.info(f"Session budget blocked LLM call for {session_id}: {exc}")
@@ -424,12 +425,13 @@ class SessionTurnMixin(SessionTurnHost):
                 active,
                 session_id,
                 agent_input,
+                turn_id=turn_id,
                 turn_event_start=turn_event_start,
                 latest_messages=latest_messages,
                 terminal_message=str(exc),
                 save_progress=True,
             )
-            await self._broadcast(active, "on_error", str(exc), turn_terminal=True)
+            await self._broadcast(active, "on_error", str(exc), turn_id=turn_id)
             return "error"
         except (DisabledModelError, CodexNotConnectedError) as exc:
             logger.info(f"Turn blocked by unusable model for {session_id}: {exc}")
@@ -437,11 +439,12 @@ class SessionTurnMixin(SessionTurnHost):
                 active,
                 session_id,
                 agent_input,
+                turn_id=turn_id,
                 turn_event_start=turn_event_start,
                 latest_messages=latest_messages,
                 terminal_message=str(exc),
             )
-            await self._broadcast(active, "on_error", str(exc), turn_terminal=True)
+            await self._broadcast(active, "on_error", str(exc), turn_id=turn_id)
             return "error"
         except CredentialsRefreshError as exc:
             logger.warning(f"ChatGPT subscription refresh failed for {session_id} (owner {active.owner}): {exc}")
@@ -449,11 +452,12 @@ class SessionTurnMixin(SessionTurnHost):
                 active,
                 session_id,
                 agent_input,
+                turn_id=turn_id,
                 turn_event_start=turn_event_start,
                 latest_messages=latest_messages,
                 terminal_message=CODEX_RECONNECT_MESSAGE,
             )
-            await self._broadcast(active, "on_error", CODEX_RECONNECT_MESSAGE, turn_terminal=True)
+            await self._broadcast(active, "on_error", CODEX_RECONNECT_MESSAGE, turn_id=turn_id)
             return "error"
         except UsageLimitExceeded as exc:
             sentinel_evals = active.security.sentinel_eval_count if active.security else 0
@@ -467,11 +471,12 @@ class SessionTurnMixin(SessionTurnHost):
                 active,
                 session_id,
                 agent_input,
+                turn_id=turn_id,
                 turn_event_start=turn_event_start,
                 latest_messages=latest_messages,
                 terminal_message=request_limit_message or "The previous turn failed before completion.",
             )
-            await self._broadcast(active, "on_error", request_limit_message or str(exc), turn_terminal=True)
+            await self._broadcast(active, "on_error", request_limit_message or str(exc), turn_id=turn_id)
             return "error"
         except Exception:
             logger.exception(f"Agent error session={session_id} prompt={_truncate_for_log(user_input)}")
@@ -479,11 +484,12 @@ class SessionTurnMixin(SessionTurnHost):
                 active,
                 session_id,
                 agent_input,
+                turn_id=turn_id,
                 turn_event_start=turn_event_start,
                 latest_messages=latest_messages,
                 terminal_message="The previous turn failed before completion.",
             )
-            await self._broadcast(active, "on_error", traceback.format_exc(), turn_terminal=True)
+            await self._broadcast(active, "on_error", traceback.format_exc(), turn_id=turn_id)
             return "error"
         finally:
             if active.security:
@@ -731,7 +737,7 @@ class SessionTurnMixin(SessionTurnHost):
                 active.pending_notifications[notif_id] = delivered.delivered_subscription_ids
 
         if output.startswith("Unexpected agent output type:"):
-            await self._broadcast(active, "on_error", output, turn_terminal=True)
+            await self._broadcast(active, "on_error", output, turn_id=turn_id)
         else:
             logger.info(
                 f"Turn done session={session_id} "
@@ -757,6 +763,7 @@ class SessionTurnMixin(SessionTurnHost):
         session_id: str,
         user_input: str,
         *,
+        turn_id: str,
         turn_event_start: int,
         latest_messages: list[ModelMessage] | None = None,
         terminal_message: str | None = None,
@@ -770,6 +777,7 @@ class SessionTurnMixin(SessionTurnHost):
         self._save_user_message_on_failure(
             session_id,
             user_input,
+            turn_id=turn_id,
             turn_event_start=turn_event_start,
             latest_messages=latest_messages,
             terminal_message=terminal_message,
@@ -820,6 +828,7 @@ class SessionTurnMixin(SessionTurnHost):
         session_id: str,
         user_input: str,
         *,
+        turn_id: str,
         turn_event_start: int,
         latest_messages: list[ModelMessage] | None = None,
         terminal_message: str | None = None,
@@ -845,6 +854,7 @@ class SessionTurnMixin(SessionTurnHost):
                 {
                     "role": "error",
                     "content": terminal_message,
+                    "turn_id": turn_id,
                     "timestamp": datetime.now(tz=UTC).isoformat(),
                 }
             )

@@ -91,6 +91,7 @@ test("a failed turn's persisted error renders as a turn-terminal error after rel
     eventIndex: 1,
     compaction: undefined,
     turnTerminal: true,
+    turnId: undefined,
   });
 });
 
@@ -132,6 +133,14 @@ test("appendEscalationCard skips a request that history already shows", () => {
     appendEscalationCard(once, { kind: "approval", request: { ...request, tool_call_id: "call-2" } }).length,
     2,
   );
+});
+
+test("a failed turn's error carries its turn id, like a successful turn's last bubble", () => {
+  const [, error] = projectHistoryToMessages([
+    { role: "user", content: "go on", event_index: 0, turn_id: "9c1e0a7f" },
+    { role: "error", content: "The previous turn was interrupted before completion.", event_index: 1, turn_id: "9c1e0a7f" },
+  ]);
+  assert.equal(error.kind === "error" ? error.turnId : null, "9c1e0a7f");
 });
 
 test("only the bubble that ended a turn carries its turn id", () => {

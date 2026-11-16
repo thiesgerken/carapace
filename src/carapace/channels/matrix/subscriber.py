@@ -162,14 +162,14 @@ class MatrixSubscriber:
         self._stream_last_len = 0
         self._stop_typing()
 
-    async def on_error(self, detail: str, *, turn_terminal: bool = False) -> None:
+    async def on_error(self, detail: str, *, turn_id: str | None = None) -> None:
         self._stream_buffer = ""
         self._stream_last_len = 0
         self._stream_event_id = None
         self._stop_typing()
         await self._channel._send_text(self._room_id, f"Error: {detail}")
 
-    async def on_cancelled(self) -> None:
+    async def on_cancelled(self, *, turn_id: str) -> None:
         self._stream_buffer = ""
         self._stream_last_len = 0
         self._stream_event_id = None
