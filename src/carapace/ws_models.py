@@ -257,6 +257,8 @@ class Done(BaseModel):
     thinking: str | None = None
     usage: TurnUsage | None = None
     final_status: FinalStatus | None = None
+    # Links the finished turn's last bubble to its timeline in the debug view.
+    turn_id: str
 
 
 class CommandResult(BaseModel):

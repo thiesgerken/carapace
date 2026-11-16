@@ -1386,7 +1386,8 @@
             "fork": "Fork session from here",
             "retry": "Retry turn",
             "continue": "Continue turn",
-            "reset": "Reset conversation to after this turn"
+            "reset": "Reset conversation to after this turn",
+            "timeline": "Show this turn's timeline"
         },
         "finalStatus": {
             "status": {

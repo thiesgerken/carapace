@@ -144,6 +144,7 @@ class MatrixSubscriber:
         content: str,
         usage: TurnUsage,
         *,
+        turn_id: str,
         thinking: str | None = None,
         final_status: str | None = None,
     ) -> None:

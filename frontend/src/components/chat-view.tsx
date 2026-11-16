@@ -988,6 +988,7 @@ export function projectHistoryToMessages(history: HistoryMessage[]): ChatMessage
       outputTokens: !isPartial ? entry.usage?.output_tokens : undefined,
       ttftMs: !isPartial ? (entry.usage?.ttft_ms ?? undefined) : undefined,
       generationMs: !isPartial ? (entry.usage?.generation_ms ?? undefined) : undefined,
+      turnId: entry.turn_id,
     });
   }
 
@@ -1431,13 +1432,13 @@ export function ChatView({
               if (updated[i].kind !== "streaming") continue;
               updated[i] =
                 finalWasStreamed && i === lastStreamIdx
-                  ? { kind: "assistant", content: msg.content, finalStatus: msg.final_status }
+                  ? { kind: "assistant", content: msg.content, finalStatus: msg.final_status, turnId: msg.turn_id }
                   : { kind: "assistant", content: (updated[i] as { content: string }).content, partial: true };
             }
             if (!finalWasStreamed) {
               // The backend always persists a final assistant event (even empty), so append it
               // unconditionally to keep the live transcript in step with the reloaded event log.
-              updated.push({ kind: "assistant", content: msg.content, finalStatus: msg.final_status });
+              updated.push({ kind: "assistant", content: msg.content, finalStatus: msg.final_status, turnId: msg.turn_id });
             }
             doneBaselineLen = updated.length;
             return updated;

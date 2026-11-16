@@ -61,6 +61,7 @@ class SessionSubscriber(Protocol):
         content: str,
         usage: TurnUsage,
         *,
+        turn_id: str,
         thinking: str | None = None,
         final_status: FinalStatus | None = None,
     ) -> None: ...

@@ -203,10 +203,13 @@ class WebSocketSubscriber:
         content: str,
         usage: TurnUsage,
         *,
+        turn_id: str,
         thinking: str | None = None,
         final_status: FinalStatus | None = None,
     ) -> None:
-        await self._safe_send(Done(content=content, thinking=thinking, usage=usage, final_status=final_status))
+        await self._safe_send(
+            Done(content=content, thinking=thinking, usage=usage, final_status=final_status, turn_id=turn_id)
+        )
 
     async def on_error(self, detail: str, *, turn_terminal: bool = False) -> None:
         await self._safe_send(ErrorMessage(detail=detail, turn_terminal=turn_terminal))

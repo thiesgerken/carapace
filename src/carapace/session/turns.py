@@ -398,6 +398,7 @@ class SessionTurnMixin(SessionTurnHost):
                     turn_result.thinking,
                     final_status=turn_result.final_status,
                     turn_record_start=turn_record_start,
+                    turn_id=turn_id,
                     turn_event_start=turn_event_start,
                 )
             return "ok"
@@ -689,6 +690,7 @@ class SessionTurnMixin(SessionTurnHost):
         final_status: FinalStatus | None = None,
         turn_record_start: int = 0,
         *,
+        turn_id: str,
         turn_event_start: int,
     ) -> None:
         self._close_turn_approvals(active, session_id)
@@ -701,7 +703,7 @@ class SessionTurnMixin(SessionTurnHost):
         # turn's TTFT, and generation time summed across requests (tool waits between them excluded,
         # so tok/s reflects decode speed, not tool latency). Live TurnUsage is broadcast, not stored.
         stats = aggregate_turn_generation(active.llm_request_log.records[turn_record_start:])
-        assistant_event: dict[str, Any] = {"role": "assistant", "content": output}
+        assistant_event: dict[str, Any] = {"role": "assistant", "content": output, "turn_id": turn_id}
         if final_status is not None:
             assistant_event["final_status"] = final_status
         if usage_payload.model or stats["input_tokens"] or stats["output_tokens"]:
@@ -745,6 +747,7 @@ class SessionTurnMixin(SessionTurnHost):
                 "on_done",
                 output,
                 usage_payload,
+                turn_id=turn_id,
                 thinking=thinking or None,
                 final_status=final_status,
             )

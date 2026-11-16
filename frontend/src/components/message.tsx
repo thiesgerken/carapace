@@ -1,6 +1,7 @@
 "use client";
 
-import { AlertTriangle, Archive, Brain, Check, ChevronRight, Copy, GitBranch, Info, Loader2, Paperclip, Play, RotateCcw, Undo2 } from "lucide-react";
+import { AlertTriangle, Archive, Brain, Bug, Check, ChevronRight, Copy, GitBranch, Info, Loader2, Paperclip, Play, RotateCcw, Undo2 } from "lucide-react";
+import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { useCallback, useEffect, useState } from "react";
 
@@ -344,6 +345,7 @@ function MessageActions({
   outputTokens,
   ttftMs,
   generationMs,
+  debugHref,
   className,
 }: {
   copyText?: string;
@@ -369,12 +371,14 @@ function MessageActions({
   outputTokens?: number;
   ttftMs?: number;
   generationMs?: number;
+  /** The turn's timeline in the debug view. */
+  debugHref?: string;
   className?: string;
 }) {
   const t = useTranslations("message");
   const hasCopy = typeof copyText === "string" && copyText.length > 0;
   const hasMeta = Boolean(timestamp) || turnIndex != null;
-  if (!hasCopy && !canFork && !canRetry && !canContinue && !canReset && !hasMeta) return null;
+  if (!hasCopy && !canFork && !canRetry && !canContinue && !canReset && !hasMeta && !debugHref) return null;
 
   // Controls first, then the meta pushed to the far end of the row (spacer between spans the width).
   return (
@@ -407,6 +411,16 @@ function MessageActions({
         disabled={disabled}
         onClick={canReset ? onReset : undefined}
       />
+      {debugHref ? (
+        <Link
+          href={debugHref}
+          aria-label={t("actions.timeline")}
+          title={t("actions.timeline")}
+          className="inline-flex items-center rounded-md border border-border/70 p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+        >
+          <Bug className="size-3.5" />
+        </Link>
+      ) : null}
       <TurnMeta
         timestamp={timestamp}
         turnIndex={turnIndex}
@@ -596,6 +610,11 @@ function CompactionSummaryBlock({
   );
 }
 
+/** The debug view's timeline tab, opened on *turnId*. */
+export function turnTimelineHref(sessionId: string, turnId: string): string {
+  return `/?session=${encodeURIComponent(sessionId)}&view=debug&tab=timeline&turn=${encodeURIComponent(turnId)}`;
+}
+
 interface MessageProps {
   message: ChatMessage;
   server?: string;
@@ -730,6 +749,7 @@ export function Message({
             outputTokens={message.outputTokens}
             ttftMs={message.ttftMs}
             generationMs={message.generationMs}
+            debugHref={message.turnId && sessionId ? turnTimelineHref(sessionId, message.turnId) : undefined}
           />
         </div>
       );

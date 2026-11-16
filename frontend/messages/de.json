@@ -1386,7 +1386,8 @@
             "fork": "Sitzung von hier forken",
             "retry": "Zug erneut ausführen",
             "continue": "Zug fortsetzen",
-            "reset": "Unterhaltung zu diesem Zug zurücksetzen"
+            "reset": "Unterhaltung zu diesem Zug zurücksetzen",
+            "timeline": "Zeitleiste dieses Zugs zeigen"
         },
         "finalStatus": {
             "status": {

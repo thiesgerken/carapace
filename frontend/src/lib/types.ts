@@ -216,6 +216,8 @@ export interface HistoryMessage {
   final_status?: "success" | "warning";
   event_index?: number;
   timestamp?: string;
+  /** On the user event that started a turn and the assistant event that ended it; older turns have none. */
+  turn_id?: string;
   usage?: {
     model?: string | null;
     input_tokens?: number;
@@ -457,6 +459,7 @@ export interface Done {
   thinking?: string;
   usage?: TurnUsage;
   final_status?: "success" | "warning";
+  turn_id: string;
 }
 
 export interface CommandResult {
@@ -593,6 +596,8 @@ export type ChatMessage =
       /** 1-based position of this assistant bubble within its turn, and the turn's total. */
       messageIndexInTurn?: number;
       turnMessageCount?: number;
+      /** Only on the bubble that ended a turn with a timeline; links it to the debug view. */
+      turnId?: string;
     }
   | {
       kind: "compaction_summary";
