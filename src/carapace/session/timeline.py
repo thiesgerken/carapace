@@ -126,16 +126,6 @@ def _llm_spans(turn_id: str, records: list[LlmRequestRecord], in_flight: list[Ll
     return spans
 
 
-def _requests_in_flight(active: ActiveSession | None) -> list[LlmRequestState]:
-    if active is None:
-        return []
-    requests = dict(active.llm_requests_in_flight)
-    # The tracked request's copy follows its phases (thinking, text) as they arrive.
-    if (tracked := active.llm_request_state) is not None and tracked.request_id in requests:
-        requests[tracked.request_id] = tracked
-    return list(requests.values())
-
-
 def turn_timeline(
     session_mgr: SessionManager, session_id: str, turn_id: str, active: ActiveSession | None
 ) -> TurnTimeline | None:
@@ -146,7 +136,7 @@ def turn_timeline(
         return None
     # An active session's log is current in memory: the request sink appends before it saves.
     records = (active.llm_request_log if active is not None else session_mgr.load_llm_request_log(session_id)).records
-    in_flight = _requests_in_flight(active)
+    in_flight = [state.model_copy() for state in active.llm_requests_in_flight.values()] if active is not None else []
     timeline = [TimelineSpan.model_validate(span.model_dump()) for span in spans]
     timeline += _llm_spans(turn_id, records, in_flight)
     return TurnTimeline(

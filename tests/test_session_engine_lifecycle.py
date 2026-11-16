@@ -14,7 +14,7 @@ from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, UserProm
 
 import carapace.usage as usage_mod
 from carapace.session.open_approvals import ORPHANED_APPROVAL_MESSAGE
-from carapace.usage import LlmRequestState, ModelUsage
+from carapace.usage import LlmContext, LlmRequestState, ModelUsage
 from carapace.ws_models import ApprovalRequest, EscalationResponse
 from tests.session_helpers import _FakeSubscriber, _make_engine, _patch_sentinel, _without_timestamps
 
@@ -247,7 +247,23 @@ def test_submit_cancel_persists_interrupted_llm_request_log(tmp_path: Path, db_f
             sink = usage_mod._llm_request_sink.get()
             assert sink is not None
             await sink.on_request_started(request_state)
-            await asyncio.sleep(999)
+            try:
+                await asyncio.sleep(999)
+            except asyncio.CancelledError:
+                # What LlmRequestLogCapability reports when a stop cancels its request.
+                await sink.on_context(
+                    LlmContext(
+                        request_id="req-1",
+                        role="agent",
+                        model_name="anthropic:claude-haiku-4-5",
+                        status="interrupted",
+                        started_at=started_at,
+                        instructions=[],
+                        messages=[],
+                        tool_definitions=[],
+                    )
+                )
+                raise
             return [], "unreachable", ""
 
         with patch("carapace.session.engine.run_agent_turn", new=_hanging_turn):

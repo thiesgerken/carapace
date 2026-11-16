@@ -125,7 +125,8 @@ def span(kind: str, name: str, /, **attrs: SpanAttr) -> Iterator[Span]:
         started.attrs["deferred"] = True
         trace.end(started, "ok")
         raise
-    except BaseException:
+    except BaseException as exc:
+        started.attrs["error"] = type(exc).__name__
         trace.end(started, "error")
         raise
     else:

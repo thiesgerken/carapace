@@ -50,7 +50,6 @@ from ..usage import (
     LlmRequestState,
     SessionBudgetExceededError,
     aggregate_turn_generation,
-    interrupted_request_record,
 )
 from ..ws_models import ApprovalRequest, ApprovalResponse, Attachment, FinalStatus, TurnUsage
 from .attachments import augment_prompt
@@ -763,8 +762,6 @@ class SessionTurnMixin(SessionTurnHost):
         self._close_turn_approvals(active, session_id)
         active.llm_request_thinking.clear()
         if save_progress:
-            if active.llm_request_state is not None:
-                active.llm_request_log.records.append(interrupted_request_record(active.llm_request_state))
             self._save_turn_progress(session_id, active)
         await self._clear_llm_request_state(active)
         self._save_user_message_on_failure(

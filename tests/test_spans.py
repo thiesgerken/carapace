@@ -168,7 +168,7 @@ def test_running_turn_is_read_live_and_a_stop_interrupts_it(tmp_path: Path, db_f
             (turn,) = session_turns(engine.session_mgr, sid, active)
             assert turn.status == "running" and turn.ended_at is None
             exec_span = next(s for s in active.turn_trace.spans.values() if s.kind == "exec")
-            # Two parallel sentinel requests; the tracked copy of the first carries its live phases.
+            # Two parallel sentinel requests; the registry holds their live states.
             parallel = [
                 LlmRequestState(
                     request_id=request_id,
@@ -180,7 +180,7 @@ def test_running_turn_is_read_live_and_a_stop_interrupts_it(tmp_path: Path, db_f
                 for request_id in ("r1", "r2")
             ]
             active.llm_requests_in_flight = {state.request_id: state for state in parallel}
-            active.llm_request_state = parallel[0].model_copy(update={"first_thinking_at": _now()})
+            parallel[0].first_thinking_at = _now()  # as a stream event stamps the live state
             live = turn_timeline(engine.session_mgr, sid, turn.turn_id, active)
             assert live is not None
             assert [(s.kind, s.status) for s in live.spans] == [
@@ -194,7 +194,6 @@ def test_running_turn_is_read_live_and_a_stop_interrupts_it(tmp_path: Path, db_f
             assert {s.parent_id for s in bars.values()} == {exec_span.span_id}
             assert bars["r1"].llm is not None and bars["r1"].llm.first_thinking_at is not None
             active.llm_requests_in_flight.clear()
-            active.llm_request_state = None
             await engine.submit_cancel(sid)
 
         flushed = turn_timeline(engine.session_mgr, sid, turn.turn_id, active)
@@ -311,7 +310,10 @@ async def test_credential_fetches_are_credential_spans() -> None:
             await registry.fetch_metadata("file/missing")
 
     fetched = [(s.name, s.status, s.attrs) for s in trace.spans.values() if s.kind == "credential"]
-    assert fetched == [("file/api-key", "ok", {"fetch": "password"}), ("file/missing", "error", {"fetch": "metadata"})]
+    assert fetched == [
+        ("file/api-key", "ok", {"fetch": "password"}),
+        ("file/missing", "error", {"fetch": "metadata", "error": "KeyError"}),
+    ]
 
 
 @pytest.mark.asyncio
@@ -329,3 +331,42 @@ async def test_requests_leave_the_in_flight_set_however_they_end(tmp_path: Path,
         with pytest.raises(RuntimeError):
             await Agent(ReplayStreamModel(_fail), capabilities=capabilities).run("fail")
     assert active.llm_requests_in_flight == {}
+
+
+def test_a_stop_records_parallel_requests_as_interrupted_bars(tmp_path: Path, db_factory) -> None:
+    async def _run() -> None:
+        engine, sid, _ = _engine(tmp_path, db_factory)
+        started = asyncio.Event()
+
+        async def _hang(_messages: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
+            started.set()
+            await asyncio.sleep(999)
+            raise AssertionError("unreachable")
+
+        logged = [LlmRequestLogCapability(source="sentinel", model_id="m")]
+        sentinel = Agent(ReplayStreamModel(_hang), capabilities=logged)
+
+        async def _parallel_turn(*_args: Any, **_kwargs: Any) -> Any:
+            with span("sentinel", "tool_call"):
+                await asyncio.gather(sentinel.run("a"), sentinel.run("b"))
+
+        with patch("carapace.session.engine.run_agent_turn", new=_parallel_turn):
+            await engine.submit_message(sid, "go")
+            await started.wait()
+            await asyncio.sleep(0)
+            active = engine.get_active(sid)
+            assert active is not None and len(active.llm_requests_in_flight) == 2
+            await engine.submit_cancel(sid)
+
+        assert active.llm_requests_in_flight == {}
+        (turn,) = session_turns(engine.session_mgr, sid, active)
+        timeline = turn_timeline(engine.session_mgr, sid, turn.turn_id, active)
+        assert timeline is not None
+        (evaluation,) = [s for s in timeline.spans if s.kind == "sentinel"]
+        bars = [s for s in timeline.spans if s.kind == "llm"]
+        assert [(s.status, s.parent_id) for s in bars] == [("interrupted", evaluation.span_id)] * 2
+        records = engine.session_mgr.load_llm_request_log(sid).records
+        assert [r.outcome for r in records] == ["interrupted", "interrupted"]
+
+    with _patch_sentinel():
+        asyncio.run(_run())

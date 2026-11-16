@@ -602,7 +602,13 @@ class SessionCompactionMixin:
             return None
         with span("compaction", "sentinel"):
             return await self._compact_sentinel(
-                active, messages, system_prompt, keep_provider=keep_provider, switched=switched
+                active,
+                messages,
+                system_prompt,
+                model_name=model_name,
+                threshold=threshold,
+                keep_provider=keep_provider,
+                switched=switched,
             )
 
     async def _compact_sentinel(
@@ -611,14 +617,13 @@ class SessionCompactionMixin:
         messages: list[ModelMessage],
         system_prompt: str,
         *,
+        model_name: str,
+        threshold: int,
         keep_provider: str | None,
         switched: bool,
     ) -> list[ModelMessage]:
         """The full ladder over the shadow conversation, once ``compact_sentinel_conversation`` decided to compact."""
-        session_id = active.state.session_id
         cfg = self._config.agent.compaction
-        model_name = self.sentinel_model_id(active)
-        threshold = self.compaction_threshold_for_model_id(model_name)
         messages = strip_compaction_parts(messages, keep_provider=keep_provider)
         before = _sent_tokens(messages, model_name)
 
@@ -671,7 +676,7 @@ class SessionCompactionMixin:
 
         after = _sent_tokens(compacted, model_name)
         logger.info(
-            f"Sentinel compaction session={session_id} tokens={before}->{after} threshold={threshold} "
+            f"Sentinel compaction session={active.state.session_id} tokens={before}->{after} threshold={threshold} "
             + f"switched={switched} folded={plan is not None} tool_returns={len(candidates)} "
             + f"thinking_dropped={thinking_dropped}"
         )
