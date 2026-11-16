@@ -26,11 +26,13 @@ from ..database.models import (
     SessionLlmContextRow,
     SessionLlmRequestRow,
     SessionRow,
+    SessionSpanRow,
     SessionUsageRow,
 )
 from ..models.compaction import SessionCompaction
 from ..models.session import SessionAttributes, SessionBudget, SessionState
 from ..sandbox.state import SessionSandboxSnapshot
+from ..spans import Span
 from ..usage import LlmContext, LlmRequestLog, LlmRequestState, LlmSource, UsageTracker
 from ..usernames import normalize_username
 from .compaction import split_merged_requests
@@ -130,6 +132,10 @@ def _state_columns(state: SessionState) -> dict[str, Any]:
         "favorite": state.attributes.favorite,
         "state": state,
     }
+
+
+def _span_from_row(row: SessionSpanRow) -> Span:
+    return Span.model_validate(row, from_attributes=True)
 
 
 class SessionManager:
@@ -434,6 +440,31 @@ class SessionManager:
     def save_llm_context(self, session_id: str, context: LlmContext) -> None:
         with self._session_factory.begin() as db:
             db.merge(SessionLlmContextRow(session_id=session_id, role=context.role, context=context))
+
+    # --- Timing spans of finished turns ---
+
+    def save_turn_spans(self, session_id: str, turn_id: str, spans: list[Span]) -> None:
+        with self._session_factory.begin() as db:
+            db.add_all(SessionSpanRow(session_id=session_id, turn_id=turn_id, **span.model_dump()) for span in spans)
+
+    def load_turn_spans(self, session_id: str, turn_id: str) -> list[Span]:
+        stmt = (
+            select(SessionSpanRow)
+            .where(SessionSpanRow.session_id == session_id, SessionSpanRow.turn_id == turn_id)
+            .order_by(SessionSpanRow.started_at)
+        )
+        with self._session_factory() as db:
+            return [_span_from_row(row) for row in db.scalars(stmt)]
+
+    def load_turn_roots(self, session_id: str) -> dict[str, Span]:
+        """The root ``turn`` span of every finished turn by turn id, oldest first."""
+        stmt = (
+            select(SessionSpanRow)
+            .where(SessionSpanRow.session_id == session_id, SessionSpanRow.parent_id.is_(None))
+            .order_by(SessionSpanRow.started_at)
+        )
+        with self._session_factory() as db:
+            return {row.turn_id: _span_from_row(row) for row in db.scalars(stmt)}
 
     # --- Compaction summary tree ---
 

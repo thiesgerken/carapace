@@ -20,6 +20,7 @@ from ..models.tooling import SentFileInfo, normalize_tool_call_args
 from ..security.context import ApprovalSource, ApprovalVerdict
 from ..session.compaction import tool_return_is_compacted
 from ..session.open_approvals import ApprovalDecisionSource
+from ..session.timeline import TurnSummary, TurnTimeline, session_turns, turn_timeline
 from ..usage import LlmContext, LlmRequestRecord
 from ..ws_models import Attachment, FinalStatus
 from .auth import require
@@ -211,6 +212,30 @@ async def list_llm_requests(
     _require_owned_session(session_id, user)
     records = server._engine.session_mgr.load_llm_request_log(session_id).records
     return [r for r in records if role is None or r.source == role]
+
+
+@router.get("/sessions/{session_id}/turns", response_model=list[TurnSummary])
+async def list_turns(
+    session_id: str,
+    user: Annotated[UserIdentity, Depends(require(Scope.history, Access.read))],
+) -> list[TurnSummary]:
+    """The session's turns that have a timeline, oldest first, the running one included."""
+    _require_owned_session(session_id, user)
+    return session_turns(server._engine.session_mgr, session_id, server._engine.get_active(session_id))
+
+
+@router.get("/sessions/{session_id}/turns/{turn_id}/timeline", response_model=TurnTimeline)
+async def get_turn_timeline(
+    session_id: str,
+    turn_id: str,
+    user: Annotated[UserIdentity, Depends(require(Scope.history, Access.read))],
+) -> TurnTimeline:
+    """One turn's spans with its LLM requests joined in, for the debug view's timeline tab."""
+    _require_owned_session(session_id, user)
+    timeline = turn_timeline(server._engine.session_mgr, session_id, turn_id, server._engine.get_active(session_id))
+    if timeline is None:
+        raise HTTPException(status_code=404, detail="Turn not found")
+    return timeline
 
 
 def _require_owned_session(session_id: str, user: UserIdentity) -> None:
