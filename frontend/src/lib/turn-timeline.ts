@@ -1,4 +1,4 @@
-import type { LlmPhases, Span } from "@/lib/types";
+import type { LlmPhases, LlmRequestRecord, Span } from "@/lib/types";
 
 /** Where a turn's time went. `llm*` are the agent's own requests; sentinel requests count as `sentinel`. */
 export const TIME_CATEGORIES = [
@@ -185,4 +185,16 @@ export function waterfallLines(rows: TimelineRow[], collapsed: ReadonlySet<strin
     });
   visit(children.get(null) ?? [], 0, []);
   return lines;
+}
+
+export type RequestGroup = { turnId: string | null; records: LlmRequestRecord[] };
+
+/**
+ * A role's requests (oldest first, as the API sends them) grouped by turn, newest first in and
+ * across groups. Requests outside a turn form one group, placed by its newest request.
+ */
+export function groupRequestsByTurn(records: LlmRequestRecord[]): RequestGroup[] {
+  const groups = new Map<string | null, LlmRequestRecord[]>();
+  for (const record of [...records].reverse()) groups.set(record.turn_id, [...(groups.get(record.turn_id) ?? []), record]);
+  return [...groups].map(([turnId, grouped]) => ({ turnId, records: grouped }));
 }

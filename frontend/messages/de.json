@@ -1721,6 +1721,7 @@
         },
         "hint": "Die letzte Anfrage jeder Agentenrolle, genau so, wie sie an das Modell ging. Aktualisiert sich live.",
         "tab": "Debug-Ansicht",
+        "requestTabs": "Anfragen:",
         "roles": {
             "agent": "Agent",
             "sentinel": "Sentinel",
@@ -1781,10 +1782,12 @@
                 "equivalentCost": "Äquivalent",
                 "duration": "Dauer",
                 "model": "Modell"
-            }
+            },
+            "outsideTurn": "Außerhalb eines Turns",
+            "showTurn": "Turn anzeigen"
         },
         "turns": {
-            "tab": "Zeitleiste",
+            "tab": "Turns",
             "hint": "Wohin die Zeit eines Zugs ging: jeder gemessene Schritt als Wasserfall. Folgt live dem neuesten Zug.",
             "turn": "Zug",
             "empty": "Noch kein Zug mit Zeitleiste. Züge von vor der Zeitmessung haben keine.",

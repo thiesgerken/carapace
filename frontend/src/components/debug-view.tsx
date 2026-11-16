@@ -12,11 +12,11 @@ import { TurnTimelineView } from "@/components/turn-timeline-view";
 import { useDebounced } from "@/hooks/use-debounced";
 import { useKeyedFetch } from "@/hooks/use-keyed-fetch";
 import { useWebSocket, useWebSocketTicket } from "@/hooks/use-websocket";
-import { fetchLlmContext, fetchLlmRequests, wsUrl } from "@/lib/api";
+import { fetchLlmContext, fetchLlmRequests, fetchTurns, wsUrl } from "@/lib/api";
 import { formatUsd } from "@/lib/memory";
 import { fencedCodeBlock } from "@/lib/sandbox-read";
 import {
-  DEBUG_TABS,
+  DEBUG_ROLES,
   type DebugRole,
   type DebugTab,
   type LlmContext,
@@ -27,7 +27,9 @@ import {
   type LlmPart,
   type LlmRequestRecord,
   type ServerMessage,
+  type TurnSummary,
 } from "@/lib/types";
+import { groupRequestsByTurn } from "@/lib/turn-timeline";
 import { cn } from "@/lib/utils";
 
 const STATUS_CLASS: Record<LlmContextStatus, string> = {
@@ -94,13 +96,23 @@ export function DebugView({
       <div className="mx-auto flex w-full max-w-5xl flex-col gap-4">
         <p className="text-sm text-muted-foreground">{t(tab === "timeline" ? "turns.hint" : "hint")}</p>
 
-        <div role="radiogroup" aria-label={t("tab")} className="flex flex-wrap gap-1.5">
-          {DEBUG_TABS.map((value) => (
-            <button key={value} type="button" role="radio" aria-checked={value === tab} onClick={() => setTab(value)} className={cn(pillClassName(value === tab), "inline-flex items-center gap-1.5")}>
-              {value === "timeline" ? t("turns.tab") : t(`roles.${value}`)}
-              {value !== "timeline" && notifications[value]?.status === "running" ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
-            </button>
-          ))}
+        {/* Two groups: the turns, then one request tab per role. On a phone the role group takes its own line. */}
+        <div role="radiogroup" aria-label={t("tab")} className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+          <button type="button" role="radio" aria-checked={tab === "timeline"} onClick={() => setTab("timeline")} className={pillClassName(tab === "timeline")}>
+            {t("turns.tab")}
+          </button>
+          <span aria-hidden className="hidden h-5 w-px bg-border sm:block" />
+          <div role="group" aria-labelledby="debug-request-tabs" className="flex basis-full flex-wrap items-center gap-1.5 sm:basis-auto">
+            <span id="debug-request-tabs" className="mr-0.5 text-xs text-muted-foreground">
+              {t("requestTabs")}
+            </span>
+            {DEBUG_ROLES.map((role) => (
+              <button key={role} type="button" role="radio" aria-checked={role === tab} onClick={() => setTab(role)} className={cn(pillClassName(role === tab), "inline-flex items-center gap-1.5")}>
+                {t(`roles.${role}`)}
+                {notifications[role]?.status === "running" ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+              </button>
+            ))}
+          </div>
         </div>
 
         {tab === "timeline" ? (
@@ -114,7 +126,18 @@ export function DebugView({
             onOpenRole={setTab}
           />
         ) : (
-          <RoleDebug key={tab} server={server} token={token} sessionId={sessionId} role={tab} revision={`${connected}:${notifications[tab] ? `${notifications[tab].requestId}:${notifications[tab].status}` : ""}`} />
+          <RoleDebug
+            key={tab}
+            server={server}
+            token={token}
+            sessionId={sessionId}
+            role={tab}
+            revision={`${connected}:${notifications[tab] ? `${notifications[tab].requestId}:${notifications[tab].status}` : ""}`}
+            onOpenTurn={(turnId) => {
+              setPickedTurn(turnId);
+              setTab("timeline");
+            }}
+          />
         )}
       </div>
       </div>
@@ -123,19 +146,44 @@ export function DebugView({
 }
 
 /** A role's request table and its latest context; *revision* changes on the role's notifications. */
-function RoleDebug({ server, token, sessionId, role, revision }: { server: string; token: string; sessionId: string; role: DebugRole; revision: string }) {
+function RoleDebug({
+  server,
+  token,
+  sessionId,
+  role,
+  revision,
+  onOpenTurn,
+}: {
+  server: string;
+  token: string;
+  sessionId: string;
+  role: DebugRole;
+  revision: string;
+  /** Null follows the newest turn. */
+  onOpenTurn: (turnId: string | null) => void;
+}) {
   const t = useTranslations("debugView");
   // The role's context and timeline from an older notification keep showing while the next ones load.
   const current = useRoleFetch(fetchLlmContext, server, token, sessionId, role, revision);
   const shown = current && "value" in current ? current.value : undefined;
   const timeline = useRoleFetch(fetchLlmRequests, server, token, sessionId, role, revision);
+  // Only the group headers need the turns, so a failed or pending list just leaves them without a prompt.
+  const loadTurns = useCallback(() => fetchTurns(server, token, sessionId), [server, token, sessionId]);
+  const turns = useKeyedFetch(revision, loadTurns);
+  const turnList = turns && "value" in turns ? turns.value : [];
 
   return (
     <>
       {timeline && "error" in timeline ? (
         <p className="text-sm text-destructive">{t("timeline.loadError", { error: timeline.error })}</p>
       ) : timeline?.value.length ? (
-        <RequestTimeline records={timeline.value} contextRequestId={shown?.request_id} />
+        <RequestTimeline
+          records={timeline.value}
+          turns={turnList}
+          contextRequestId={shown?.request_id}
+          // Like the turn picker: opening the newest turn keeps following new ones.
+          onOpenTurn={(turnId) => onOpenTurn(turnId === turnList.at(-1)?.turn_id ? null : turnId)}
+        />
       ) : null}
 
       {current && "error" in current ? (
@@ -212,8 +260,22 @@ const CONTEXT_ANCHOR = "llm-context";
 
 type TimelineColumn = { key: string; numeric?: boolean; cell: (record: LlmRequestRecord) => ReactNode };
 
-/** One row per recorded request of the role, newest first, so requests compare side by side without their contexts. */
-function RequestTimeline({ records, contextRequestId }: { records: LlmRequestRecord[]; contextRequestId: string | undefined }) {
+/**
+ * One row per recorded request of the role, newest first, so requests compare side by side without
+ * their contexts. Rows are grouped by turn, which shows per-turn patterns such as a turn's first
+ * request missing the cache.
+ */
+function RequestTimeline({
+  records,
+  turns,
+  contextRequestId,
+  onOpenTurn,
+}: {
+  records: LlmRequestRecord[];
+  turns: TurnSummary[];
+  contextRequestId: string | undefined;
+  onOpenTurn: (turnId: string) => void;
+}) {
   const t = useTranslations("debugView.timeline");
   const format = useFormatter();
   const locale = useLocale();
@@ -254,18 +316,43 @@ function RequestTimeline({ records, contextRequestId }: { records: LlmRequestRec
               ))}
             </tr>
           </thead>
-          <tbody className="tabular-nums">
-            {[...records].reverse().map((record, index) => (
-              <tr key={record.request_id ?? index} className={cn("border-t border-border/60", record.request_id !== null && record.request_id === contextRequestId && "bg-sky-500/10")}>
-                {columns.map((column) => (
-                  <td key={column.key} className={cn("px-2 py-1.5", column.numeric && "text-right")}>{column.cell(record)}</td>
-                ))}
+          {groupRequestsByTurn(records).map((group) => (
+            <tbody key={group.turnId ?? ""} className="tabular-nums">
+              <tr className="border-t border-border">
+                <th scope="rowgroup" colSpan={columns.length} className="bg-muted/40 px-2 py-1.5 text-left font-normal">
+                  <TurnHeader turnId={group.turnId} turn={turns.find((turn) => turn.turn_id === group.turnId)} onOpenTurn={onOpenTurn} />
+                </th>
               </tr>
-            ))}
-          </tbody>
+              {group.records.map((record, index) => (
+                <tr key={record.request_id ?? index} className={cn("border-t border-border/60", record.request_id !== null && record.request_id === contextRequestId && "bg-sky-500/10")}>
+                  {columns.map((column) => (
+                    <td key={column.key} className={cn("px-2 py-1.5", column.numeric && "text-right")}>{column.cell(record)}</td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          ))}
         </table>
       </div>
     </Collapsible>
+  );
+}
+
+/** A turn's start and prompt, linking to it in the Turns tab; a turn missing from the turn list (no timing recorded) shows its id only. */
+function TurnHeader({ turnId, turn, onOpenTurn }: { turnId: string | null; turn: TurnSummary | undefined; onOpenTurn: (turnId: string) => void }) {
+  const t = useTranslations("debugView.timeline");
+  const format = useFormatter();
+  if (turnId === null) return <span className="sticky left-2 text-muted-foreground">{t("outsideTurn")}</span>;
+  if (turn === undefined) return <span className="sticky left-2 font-mono text-muted-foreground">{turnId}</span>;
+  return (
+    // Sticky, so the header stays in view while the wide table scrolls sideways (on a phone).
+    <span className="sticky left-2 flex w-fit min-w-0 items-center gap-2">
+      <span className="text-muted-foreground">{format.dateTime(new Date(turn.started_at), { month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit", second: "2-digit" })}</span>
+      <span className="min-w-0 max-w-[8rem] truncate font-medium sm:max-w-[32rem]">{turn.prompt_preview}</span>
+      <button type="button" onClick={() => onOpenTurn(turnId)} className="underline underline-offset-2">
+        {t("showTurn")}
+      </button>
+    </span>
   );
 }
 

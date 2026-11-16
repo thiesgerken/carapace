@@ -6,15 +6,21 @@ what came back. Terms follow [GLOSSARY.md](../GLOSSARY.md).
 
 ## Using it
 
-The **Chat | Debug** switch in the session header opens `/?session=<ID>&view=debug`. The first tab,
-**Timeline**, opens by default and shows where a turn's time went (see [Timeline tab](#timeline-tab)). One tab per role
-follows; each shows the role's **Requests** table and its latest request:
+The **Chat | Debug** switch in the session header opens `/?session=<ID>&view=debug`. The tabs come
+in two groups: **Turns** opens by default and shows where a turn's time went (see
+[Turns tab](#turns-tab)). After it, under **Requests:**, comes one tab per role (on a phone that
+group takes its own line). Each role tab shows the role's **Requests** table and its latest request:
 
 - **Requests**: one row per recorded request of the role, newest first, so requests compare side by
   side: time, status, input, cache read, cache write, output and reasoning tokens, cache hits (cache
   read ÷ input), actual and equivalent cost, duration and model. `–` marks a value the record does
   not have. The row of the request shown below is highlighted, and its time links to it. Only the
   latest request keeps its context, so older rows have numbers only.
+- The rows are grouped by turn, newest first. A header row shows when the turn started and its
+  prompt, and links to the turn in the Turns tab. That shows per-turn patterns at a glance, such as
+  a turn's first request missing the cache. Requests outside a turn (the titler, records from
+  before requests were tagged with their turn) form one group, **Outside a turn**, placed by its
+  newest request. A turn without recorded timing shows its id only.
 - Below it, the latest request. On top: status, model, start time, and for compaction what was compacted. Completed requests add
   their usage and cost (see below). Failed and interrupted requests show their error here.
 - **Instructions** and the collapsed **tool definitions** with their JSON schemas.
@@ -36,9 +42,9 @@ its role sends a notification and after every (re)connect, so it follows a runni
 request. A spinner on a tab marks a role
 whose request is running.
 
-### Timeline tab
+### Turns tab
 
-`&tab=<role>` opens a role tab instead; `&turn=<turn_id>` picks the turn the timeline shows first.
+In the URL this tab is `&tab=timeline`, the default. `&tab=<role>` opens a role tab instead; `&turn=<turn_id>` picks the turn the timeline shows first.
 In the chat, the bubble that ended a turn with a timeline has a debug icon in its footer that opens
 `&view=debug&tab=timeline&turn=<turn_id>`: the answer of a successful turn, or the error box of a
 failed, budget-stopped or stopped one.
