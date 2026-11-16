@@ -1176,7 +1176,7 @@ export interface LlmRequestRecord {
   request_id: string | null;
   source: DebugRole | "memory";
   model_name: string | null;
-  outcome: "completed" | "interrupted";
+  outcome: "completed" | "interrupted" | "failed";
   input_tokens: number;
   output_tokens: number;
   cache_read_tokens: number | null;

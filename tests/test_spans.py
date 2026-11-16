@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -11,7 +12,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from pydantic_ai import Agent, ApprovalRequired, DeferredToolRequests
 from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart, ToolCallPart
-from pydantic_ai.models.function import AgentInfo
+from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.usage import RequestUsage
 
 from carapace.credentials.registry import SessionCredentialRegistry
@@ -335,7 +336,7 @@ async def test_requests_leave_the_in_flight_set_however_they_end(tmp_path: Path,
 
 def test_a_stop_records_parallel_requests_as_interrupted_bars(tmp_path: Path, db_factory) -> None:
     async def _run() -> None:
-        engine, sid, _ = _engine(tmp_path, db_factory)
+        engine, sid, sub = _engine(tmp_path, db_factory)
         started = asyncio.Event()
 
         async def _hang(_messages: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
@@ -367,6 +368,43 @@ def test_a_stop_records_parallel_requests_as_interrupted_bars(tmp_path: Path, db
         assert [(s.status, s.parent_id) for s in bars] == [("interrupted", evaluation.span_id)] * 2
         records = engine.session_mgr.load_llm_request_log(sid).records
         assert [r.outcome for r in records] == ["interrupted", "interrupted"]
+        await asyncio.sleep(0)
+        bar_ids = {bar.span_id for bar in bars}
+        assert {(span_id, status) for _, span_id, status in sub.span_updates if span_id in bar_ids} == {
+            (span_id, status) for span_id in bar_ids for status in ("running", "interrupted")
+        }
 
     with _patch_sentinel():
         asyncio.run(_run())
+
+
+async def _overloaded_mid_stream(_messages: list[ModelMessage], _info: AgentInfo) -> AsyncIterator[str]:
+    yield "Checking the"
+    raise RuntimeError("overloaded")
+
+
+def _refuse(_messages: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
+    raise RuntimeError("503 from the provider")
+
+
+@pytest.mark.parametrize(
+    "model",
+    [ReplayStreamModel(_refuse), FunctionModel(stream_function=_overloaded_mid_stream)],
+    ids=["when the stream opens", "mid-stream"],
+)
+@pytest.mark.asyncio
+async def test_a_failed_request_is_an_error_bar(tmp_path: Path, db_factory, model: FunctionModel) -> None:
+    engine, sid, sub = _engine(tmp_path, db_factory)
+    with _patch_sentinel():
+        active = engine.get_or_activate(sid)
+    trace, root, _ = _trace()
+    agent = Agent(model, capabilities=[LlmRequestLogCapability(source="agent", model_id="m")])
+
+    with engine.llm_request_recording(active), attach(trace, root.span_id), pytest.raises(RuntimeError):
+        await agent.run("go")
+
+    (record,) = active.llm_request_log.records
+    assert record.outcome == "failed"
+    assert engine.session_mgr.load_llm_request_log(sid).records == [record]
+    assert sub.span_updates[-1] == ("t1", record.request_id, "error")
+    assert active.llm_requests_in_flight == {}

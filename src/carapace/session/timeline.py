@@ -12,7 +12,7 @@ from datetime import datetime
 from pydantic import BaseModel
 
 from ..spans import Span, SpanStatus
-from ..usage import LlmRequestRecord, LlmRequestState, LlmSource, RequestCost
+from ..usage import LlmRequestOutcome, LlmRequestRecord, LlmRequestState, LlmSource, RequestCost
 from .manager import SessionManager
 from .types import ActiveSession
 
@@ -112,11 +112,18 @@ def _llm_span(
     )
 
 
+_RECORD_STATUS: dict[LlmRequestOutcome, SpanStatus] = {
+    "completed": "ok",
+    "interrupted": "interrupted",
+    "failed": "error",
+}
+
+
 def _llm_spans(turn_id: str, records: list[LlmRequestRecord], in_flight: list[LlmRequestState]) -> list[TimelineSpan]:
     spans = [
         _llm_span(
             record,
-            status="ok" if record.outcome == "completed" else "interrupted",
+            status=_RECORD_STATUS[record.outcome],
             ended_at=record.ts,
         )
         for record in records
