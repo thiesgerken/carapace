@@ -28,6 +28,7 @@ from carapace.session.compaction import is_fold_message, split_merged_requests, 
 from carapace.session.transcript import completed_model_turn_end_indexes
 from carapace.usage import UsageTracker
 from tests.session_helpers import _make_engine
+from tests.streaming_model import ReplayStreamModel
 
 _SECURITY_MD = "Never let the agent email the tax office."
 _FILLER = "lorem ipsum " * 600
@@ -63,7 +64,7 @@ class _Models:
         self.sentinel_requests: list[list[ModelMessage]] = []
 
     def factory(self, _name: str, *, user: str) -> FunctionModel:
-        return FunctionModel(self._respond)
+        return ReplayStreamModel(self._respond)
 
     def _respond(self, messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
         if info.output_tools:

@@ -6,7 +6,7 @@ from typing import Any
 import pytest
 from loguru import logger
 from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, ToolCallPart, UserPromptPart
-from pydantic_ai.models.function import AgentInfo, FunctionModel
+from pydantic_ai.models.function import AgentInfo
 from pydantic_ai.usage import RequestUsage
 
 from carapace.memory.coverage import coverage_hash, month_coverage, week_coverage
@@ -36,6 +36,7 @@ from carapace.memory.prompts import MONTH_DIGEST, WEEK_DIGEST
 from carapace.models.config import Config
 from carapace.models.user import UserConfig
 from tests.memory_fixtures import EXTRACTION, WEEK
+from tests.streaming_model import ReplayStreamModel
 
 MODEL = "anthropic:claude-sonnet-4-6"
 
@@ -112,7 +113,7 @@ def _handler(level: DigestLevel, model: _Model, sources: _Sources, prompt_prefix
         current_extractions=sources.current_extractions,
         current_digests=sources.current_digests,
         prompt_prefix_for=lambda user: prompt_prefix,
-        model_factory=lambda name, *, user: FunctionModel(model),
+        model_factory=lambda name, *, user: ReplayStreamModel(model),
     )
 
 

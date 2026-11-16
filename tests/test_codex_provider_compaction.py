@@ -14,7 +14,7 @@ import pytest
 from pydantic_ai import Agent
 from pydantic_ai.exceptions import ModelHTTPError
 from pydantic_ai.messages import CompactionPart, ModelResponse, ToolCallPart
-from pydantic_ai.models.function import AgentInfo, FunctionModel
+from pydantic_ai.models.function import AgentInfo
 from pydantic_ai.models.openai_codex import OpenAICodexModel
 from pydantic_ai.providers.openai_codex import OpenAICodexCredentials, OpenAICodexProvider
 from pydantic_ai.usage import RequestUsage
@@ -25,6 +25,7 @@ from carapace.security.context import SessionSecurity
 from carapace.security.sentinel import Sentinel
 from carapace.session.compaction import is_fold_message
 from tests.session_helpers import _make_engine, _patch_sentinel
+from tests.streaming_model import ReplayStreamModel
 from tests.test_compaction_engine import _AgentAndSummarizer, _seed
 
 _ENTRY = AvailableModelEntry(provider="openai-codex", name="gpt-6.1-sol", compaction_threshold_tokens=90_000)
@@ -334,7 +335,7 @@ async def test_a_sentinel_whose_provider_rejects_compaction_evaluates_without_it
         knowledge_dir=tmp_path,
         skills_dir=tmp_path / "skills",
         llm_slots=None,
-        model_factory=lambda _name, *, user: FunctionModel(judge),
+        model_factory=lambda _name, *, user: ReplayStreamModel(judge),
         provider_compaction=lambda model: None if model in rejected else provider_compaction(_ENTRY, instructions=""),
         on_provider_compaction_rejected=on_rejected,
     )
