@@ -75,6 +75,21 @@ test("overlapping siblings: the earliest started owns the overlap, and a wait wi
   assert.equal(byCategory.userWait, 500);
 });
 
+test("parallel branches: the main path follows the earliest started branch, however deep the other one is", () => {
+  const spans = [
+    span("turn", null, "turn", 0, 3000),
+    span("a", "turn", "tool", 0, 2000),
+    span("a.gate", "a", "gate", 0, 2000),
+    span("b", "turn", "tool", 500, 3000),
+    span("b.exec", "b", "exec", 500, 3000),
+    span("b.domain", "b.exec", "domain", 1000, 1500),
+  ];
+  const { byCategory } = summarizeTurn(timelineRows(spans, T0 + 3000), T0, T0 + 3000);
+  // While A runs, B's deeper domain check doesn't take the time; once A ends, B's exec owns it.
+  assert.equal(byCategory.sentinel, 2000);
+  assert.equal(byCategory.execFile, 1000);
+});
+
 test("running spans grow to now, and spans run in tree order with their depth", () => {
   const spans = [span("exec", "tool", "exec", 200, null), span("tool", "turn", "tool", 100, null), span("turn", null, "turn", 0, null)];
   const rows = timelineRows(spans, T0 + 1000);

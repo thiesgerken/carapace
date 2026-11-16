@@ -19,10 +19,10 @@ export type TimeCategory = (typeof TIME_CATEGORIES)[number];
 export type LlmPhase = "llmWaiting" | "llmThinking" | "llmOutput";
 export type Segment = { category: TimeCategory; start: number; end: number };
 
-/** A span with its tree position and its times in ms, a running span ending at *now*. */
-export type TimelineRow = { span: Span; depth: number; start: number; end: number };
+/** A span with its tree position (*parentId* resolved, see *timelineRows*) and its times in ms, a running span ending at *now*. */
+export type TimelineRow = { span: Span; parentId: string | null; depth: number; start: number; end: number };
 
-export type TurnSummary = {
+export type TimeBreakdown = {
   wallMs: number;
   userWaitMs: number;
   systemMs: number;
@@ -81,7 +81,7 @@ export function timelineRows(spans: Span[], turnEnd: number): TimelineRow[] {
   const visit = (parent: string | null, depth: number) => {
     for (const span of (children.get(parent) ?? []).sort((a, b) => Date.parse(a.started_at) - Date.parse(b.started_at))) {
       const start = Date.parse(span.started_at);
-      rows.push({ span, depth, start, end: Math.max(start, Math.min(span.ended_at ? Date.parse(span.ended_at) : turnEnd, turnEnd)) });
+      rows.push({ span, parentId: parent, depth, start, end: Math.max(start, Math.min(span.ended_at ? Date.parse(span.ended_at) : turnEnd, turnEnd)) });
       visit(span.span_id, depth + 1);
     }
   };
@@ -90,11 +90,12 @@ export function timelineRows(spans: Span[], turnEnd: number): TimelineRow[] {
 }
 
 /**
- * Attributes every instant of the turn to the deepest span active then, so parallel work never counts twice.
- * Ties between overlapping siblings go to the earliest started. Instants only the root covers are
- * "not covered", and instants inside a wait span are user wait, whatever else runs then.
+ * Attributes every instant of the turn to the sequential main path, so parallel work never counts twice:
+ * from the root, step into the earliest started active child, level by level; the instant belongs to
+ * where that stops. Instants that stop at the root are "not covered", and instants inside a wait span
+ * are user wait, whatever else runs then.
  */
-export function summarizeTurn(rows: TimelineRow[], turnStart: number, turnEnd: number): TurnSummary {
+export function summarizeTurn(rows: TimelineRow[], turnStart: number, turnEnd: number): TimeBreakdown {
   const byCategory = Object.fromEntries(TIME_CATEGORIES.map((category) => [category, 0])) as Record<TimeCategory, number>;
   const boundaries = [...new Set([turnStart, turnEnd, ...rows.flatMap((row) => [row.start, row.end])])]
     .filter((time) => time >= turnStart && time <= turnEnd)
@@ -108,8 +109,11 @@ export function summarizeTurn(rows: TimelineRow[], turnStart: number, turnEnd: n
       byCategory.userWait += end - start;
       continue;
     }
-    const owner = active.reduce<TimelineRow | null>((best, row) => (best === null || row.depth > best.depth || (row.depth === best.depth && row.start < best.start) ? row : best), null);
-    if (owner === null || owner.depth === 0) {
+    // Rows list siblings by start, so the first active child is the earliest started one.
+    const firstActiveChild = (parentId: string | null) => active.find((row) => row.parentId === parentId);
+    let owner = firstActiveChild(null);
+    for (let next = owner; next; next = firstActiveChild(next.span.span_id)) owner = next;
+    if (owner === undefined || owner.depth === 0) {
       byCategory.notCovered += end - start;
     } else if (owner.span.llm?.role === "agent") {
       for (const segment of llmSegments(owner.span.llm, owner.start, owner.end)) {
