@@ -1177,6 +1177,8 @@ export interface LlmRequestRecord {
   source: DebugRole | "memory";
   model_name: string | null;
   outcome: "completed" | "interrupted" | "failed";
+  /** Null outside a turn (e.g. the titler) and on records from before turns were tagged. */
+  turn_id: string | null;
   input_tokens: number;
   output_tokens: number;
   cache_read_tokens: number | null;

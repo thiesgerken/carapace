@@ -659,8 +659,8 @@
         "modelRow": "Modell {index}",
         "compaction": {
             "modelDefault": "Standard (Titelmodell)",
-            "keepTurns": "Letzte Runden behalten",
-            "verbatimTurns": "Tool-Runden wörtlich behalten",
+            "keepTurns": "Letzte Turns behalten",
+            "verbatimTurns": "Tool-Turns wörtlich behalten",
             "toolFloor": "Tool-Ausgabe-Schwelle (Tokens)"
         }
     },
@@ -803,7 +803,7 @@
         },
         "notifications": {
             "title": "Push-Benachrichtigungen",
-            "description": "Liefert Eskalationen und Zug-Ergebnisse an diesen Browser oder die installierte PWA.",
+            "description": "Liefert Eskalationen und Turn-Ergebnisse an diesen Browser oder die installierte PWA.",
             "status": {
                 "loading": "Benachrichtigungsunterstützung wird geprüft…",
                 "loadingShort": "Prüfung",
@@ -841,7 +841,7 @@
             "preferences": {
                 "label": "Benachrichtigungen senden für",
                 "escalation_pending": "Eskalationen, die Freigabe brauchen",
-                "attended_turn_completed": "Begleitete Sitzungen, wenn ein Zug endet",
+                "attended_turn_completed": "Begleitete Sitzungen, wenn ein Turn endet",
                 "unattended_turn_completed": "Unbeaufsichtigte Jobs mit erfolgreichem Abschluss",
                 "unattended_turn_failed": "Unbeaufsichtigte Jobs mit Fehler"
             },
@@ -1152,7 +1152,7 @@
             "title": "Compaction",
             "nothing": "Nichts für eine Compaction.",
             "saved": "{saved} Tokens gespart ({before}→{after}).",
-            "folded": "{count} Runden gefaltet",
+            "folded": "{count} Turns gefaltet",
             "tools": "{count} Tool-Ausgaben zusammengefasst",
             "thinking": "{count} Denk-Teile verworfen"
         }
@@ -1345,7 +1345,7 @@
             "nothing": "Noch nichts zu kompaktieren.",
             "plan": "Kompaktieren würde",
             "thinking": "{count, plural, one {# Thinking-Teil} other {# Thinking-Teile}} entfernen",
-            "fold": "{count, plural, one {# Runde} other {# Runden}} ({tokens} Tokens) in die Zusammenfassung falten",
+            "fold": "{count, plural, one {# Turn} other {# Turns}} ({tokens} Tokens) in die Zusammenfassung falten",
             "toolOutput": "eine Ausgabe von {tool} ({tokens} Tokens) zusammenfassen",
             "estimate": "Danach etwa {tokens} Tokens, plus die Zusammenfassungen.",
             "focus": "Fokus (optional)",
@@ -1384,10 +1384,10 @@
         },
         "actions": {
             "fork": "Sitzung von hier forken",
-            "retry": "Zug erneut ausführen",
-            "continue": "Zug fortsetzen",
-            "reset": "Unterhaltung zu diesem Zug zurücksetzen",
-            "timeline": "Zeitleiste dieses Zugs zeigen"
+            "retry": "Turn erneut ausführen",
+            "continue": "Turn fortsetzen",
+            "reset": "Unterhaltung zu diesem Turn zurücksetzen",
+            "timeline": "Zeitleiste dieses Turns zeigen"
         },
         "finalStatus": {
             "status": {
@@ -1398,7 +1398,7 @@
         }
     },
     "turnMeta": {
-        "turn": "Runde {n}",
+        "turn": "Turn {n}",
         "messageInTurn": "Nachricht {i} von {n}",
         "tools": "{count, plural, one {# Tool} other {# Tools}}",
         "tokens": "{in} rein, {out} raus",
@@ -1664,11 +1664,11 @@
         }
     },
     "compaction": {
-        "railHeader": "{count, plural, one {# Runde} other {# Runden}} für das Modell verdichtet",
+        "railHeader": "{count, plural, one {# Turn} other {# Turns}} für das Modell verdichtet",
         "modelSees": "Modell sieht",
         "modelSummaryLabel": "Zusammenfassung im Modell-Kontext",
         "tokenDelta": "{from}→{to} Tok",
-        "foldTitle": "Diese Runden sind im Modell-Kontext zu einer Zusammenfassung verdichtet — Originale hier angezeigt",
+        "foldTitle": "Diese Turns sind im Modell-Kontext zu einer Zusammenfassung verdichtet — Originale hier angezeigt",
         "toolTitle": "Tool-Ausgabe zusammengefasst, um Kontext zu sparen ({orig}→{summary} Tokens)",
         "providerMarker": "Kontext von {provider} verdichtet",
         "providerTitle": "Der Anbieter des Modells hat alles darüber im Modell-Kontext durch eine Zusammenfassung ersetzt. Originale hier angezeigt",
@@ -1721,6 +1721,7 @@
         },
         "hint": "Die letzte Anfrage jeder Agentenrolle, genau so, wie sie an das Modell ging. Aktualisiert sich live.",
         "tab": "Debug-Ansicht",
+        "requestTabs": "Anfragen:",
         "roles": {
             "agent": "Agent",
             "sentinel": "Sentinel",
@@ -1781,14 +1782,16 @@
                 "equivalentCost": "Äquivalent",
                 "duration": "Dauer",
                 "model": "Modell"
-            }
+            },
+            "outsideTurn": "Außerhalb eines Turns",
+            "showTurn": "Turn anzeigen"
         },
         "turns": {
-            "tab": "Zeitleiste",
-            "hint": "Wohin die Zeit eines Zugs ging: jeder gemessene Schritt als Wasserfall. Folgt live dem neuesten Zug.",
-            "turn": "Zug",
-            "empty": "Noch kein Zug mit Zeitleiste. Züge von vor der Zeitmessung haben keine.",
-            "loadError": "Die Züge konnten nicht geladen werden: {error}",
+            "tab": "Turns",
+            "hint": "Wohin die Zeit eines Turns ging: jeder gemessene Schritt als Wasserfall. Folgt live dem neuesten Turn.",
+            "turn": "Turn",
+            "empty": "Noch kein Turn mit Zeitleiste. Turns von vor der Zeitmessung haben keine.",
+            "loadError": "Die Turns konnten nicht geladen werden: {error}",
             "timelineError": "Die Zeitleiste konnte nicht geladen werden: {error}",
             "running": "läuft",
             "wall": "Gesamtdauer",
