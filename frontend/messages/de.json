@@ -1835,6 +1835,7 @@
                 "llmOutput": "Ausgabe",
                 "input": "Eingabe-Tokens",
                 "output": "Ausgabe-Tokens",
+                "outputRate": "Ausgabetempo",
                 "cacheRead": "Cache gelesen",
                 "cacheWrite": "Cache geschrieben",
                 "cost": "Kosten",
@@ -1846,8 +1847,8 @@
                 "denied": "abgelehnt",
                 "blocked": "blockiert",
                 "exitCode": "Exit {code}",
-                "output": "{tokens} Output-Token",
-                "outputRate": "{tokens} Output-Token · {rate} Token/s"
+                "output": "{tokens} Ausgabe-Tokens",
+                "rate": "{rate} Token/s"
             }
         }
     }

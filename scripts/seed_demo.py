@@ -110,11 +110,11 @@ class Transcript:
             {"role": "thinking", "content": content, "reasoning_duration_ms": duration_ms, "timestamp": self._stamp(1)}
         )
 
-    def assistant(self, content: str, *, turn_id: str | None = None) -> None:
+    def assistant(self, content: str, *, turn_id: str | None = None, seconds: int = 6) -> None:
         event: dict[str, Any] = {
             "role": "assistant",
             "content": content,
-            "timestamp": self._stamp(6),
+            "timestamp": self._stamp(seconds),
             "usage": {"model": DEMO_MODEL, "input_tokens": 6_400, "output_tokens": 420},
         }
         if turn_id is not None:
@@ -307,6 +307,8 @@ def _pancake_recipe(start: datetime) -> Transcript:
         "3. Let the batter rest for 5 minutes.\n4. Cook on a medium-hot pan until bubbles form, flip once.\n\n"
         "Enjoy!",
         turn_id=PANCAKE_TURN_ID,
+        # The answer's request thinks for over a minute, so the timeline shows a long LLM row.
+        seconds=80,
     )
     return t
 
@@ -581,12 +583,16 @@ def _pancake_contexts(prompt: datetime) -> list[LlmContext]:
                     )
                 ],
                 usage=RequestUsage(
-                    input_tokens=8_412, output_tokens=380, cache_read_tokens=6_900, details={"reasoning_tokens": 42}
+                    input_tokens=8_412,
+                    output_tokens=2_400,
+                    cache_read_tokens=6_900,
+                    details={"reasoning_tokens": 1_600},
                 ),
                 model_name=DEMO_MODEL,
                 provider_name="anthropic",
             ),
             tools=[_EXEC_TOOL, _USE_SKILL_TOOL],
+            seconds=78,
         ),
         _context(
             "sentinel",
@@ -726,7 +732,7 @@ def _pancake_turn(prompt: datetime, contexts: list[LlmContext]) -> tuple[list[Sp
         if c.response is not None and c.completed_at is not None
     }
 
-    root = span("demo-turn", None, "turn", "turn", 0, 27, prompt="I really need a pancake recipe")
+    root = span("demo-turn", None, "turn", "turn", 0, 101, prompt="I really need a pancake recipe")
     span("demo-prepare", root, "turn.prepare", "prepare", 0, 0.3)
     request(
         earlier(
@@ -815,7 +821,7 @@ def _pancake_turn(prompt: datetime, contexts: list[LlmContext]) -> tuple[list[Sp
         domain="recipes.example.org",
         allowed=True,
     )
-    request(context_records["agent"], root, 23.4, thinking=(23.4, 24.2), first_text=24.2)
+    request(context_records["agent"], root, 23.4, thinking=(23.4, 60.0), first_text=60.0)
 
     records += [context_records["titler"], context_records["compaction"]]
     return spans, sorted(records, key=lambda record: record.ts)
@@ -836,7 +842,7 @@ def demo_sessions(now: datetime) -> list[DemoSession]:
             "demo-pancake-recipe",
             "🥞 Classic Fluffy Pancake Recipe",
             pancake := _pancake_recipe(now - timedelta(hours=23)),
-            usage=_usage(21_000, 1_900),
+            usage=_usage(21_000, 4_300),
             sandbox=_sandbox("running", 59_000_000, now),
             llm_contexts=(
                 pancake_contexts := _pancake_contexts(
