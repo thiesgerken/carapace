@@ -173,6 +173,9 @@ def _streaming_model(respond: Callable[[list[ModelMessage], AgentInfo], ModelRes
     """The agent streams its requests, so replay each scripted response as one chunk per part."""
 
     async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
+        if not info.function_tools:  # the titler shares the model factory
+            yield "title"
+            return
         for index, part in enumerate(respond(messages, info).parts):
             if isinstance(part, TextPart):
                 yield part.content

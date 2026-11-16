@@ -12,7 +12,7 @@ from typing import Any
 
 import pytest
 from pydantic_ai.messages import ModelMessage, ModelMessagesTypeAdapter, ModelResponse, ToolCallPart
-from pydantic_ai.models.function import AgentInfo, FunctionModel
+from pydantic_ai.models.function import AgentInfo
 
 from carapace.security.context import (
     SENTINEL_VERDICT_TOOL,
@@ -26,6 +26,8 @@ from carapace.security.context import (
 )
 from carapace.security.sentinel import Sentinel
 from carapace.session.manager import SessionManager
+
+from .streaming_model import ReplayStreamModel
 
 
 @dataclass
@@ -66,7 +68,7 @@ def _sentinel(knowledge_dir: Path, model: _RecordingModel) -> Sentinel:
         knowledge_dir=knowledge_dir,
         skills_dir=knowledge_dir / "skills",
         llm_slots=None,
-        model_factory=lambda _name, *, user: FunctionModel(model),
+        model_factory=lambda _name, *, user: ReplayStreamModel(model),
     )
 
 

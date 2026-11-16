@@ -43,6 +43,8 @@ from carapace.prompt_prefix import shared_prompt_prefix
 from carapace.session import SessionManager
 from carapace.skills import SkillRegistry
 
+from .streaming_model import ReplayStreamModel
+
 NOW = datetime(2026, 10, 6, 10, tzinfo=UTC)  # Tuesday of W41: September and its weeks have ended
 LONG_AGO = datetime(2026, 9, 25, tzinfo=UTC)
 BILLED_INPUT_TOKENS = 2000
@@ -105,7 +107,7 @@ def _scripted_model(calls: list[str]) -> FunctionModel:
             provider_details={"cost": 0.01},
         )
 
-    return FunctionModel(respond)
+    return ReplayStreamModel(respond)
 
 
 class Pipeline:

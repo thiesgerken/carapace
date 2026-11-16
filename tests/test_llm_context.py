@@ -12,16 +12,17 @@ from unittest.mock import patch
 
 import pytest
 from pydantic_ai import Agent
-from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart, ToolCallPart, UserPromptPart
-from pydantic_ai.models.function import AgentInfo, DeltaToolCalls, FunctionModel
+from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart, ThinkingPart, ToolCallPart, UserPromptPart
+from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
 from pydantic_ai.usage import RequestUsage
 
-from carapace.security.context import SessionSecurity
+from carapace.security.context import SENTINEL_VERDICT_TOOL, SessionSecurity
 from carapace.security.sentinel import Sentinel
 from carapace.session.engine import SessionEngine
 from carapace.session.types import ActiveSession
 from carapace.usage import LlmRequestLogCapability, ModelUsage, RequestCost, price_for_usage
 from tests.session_helpers import _FakeSubscriber, _make_engine, _patch_sentinel
+from tests.streaming_model import ReplayStreamModel
 
 
 def _reply(_messages: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
@@ -54,7 +55,7 @@ def _agent(model: FunctionModel, model_id: str = "test:model") -> Agent[None, st
     return agent
 
 
-def _sentinel(tmp_path: Path, model: FunctionModel) -> Sentinel:
+def _sentinel(tmp_path: Path, model: FunctionModel, *, timeout: timedelta = timedelta(seconds=0.05)) -> Sentinel:
     (tmp_path / "skills").mkdir(exist_ok=True)
     return Sentinel(
         model="test:model",
@@ -62,7 +63,7 @@ def _sentinel(tmp_path: Path, model: FunctionModel) -> Sentinel:
         knowledge_dir=tmp_path,
         skills_dir=tmp_path / "skills",
         llm_slots=None,
-        timeout=timedelta(seconds=0.05),
+        timeout=timeout,
         model_factory=lambda _name, *, user: model,
     )
 
@@ -82,7 +83,7 @@ async def test_completed_request_persists_what_was_sent_and_the_response(tmp_pat
     engine, active, subscriber = _session(tmp_path, db_factory)
 
     with engine.llm_request_recording(active):
-        await _agent(FunctionModel(_reply)).run("ping")
+        await _agent(ReplayStreamModel(_reply)).run("ping")
 
     context = engine.session_mgr.load_llm_context(active.state.session_id, "agent")
     assert context is not None
@@ -107,7 +108,7 @@ async def test_request_record_keeps_cache_tokens(tmp_path: Path, db_factory) -> 
         return ModelResponse(parts=[TextPart("pong")], usage=usage)
 
     with engine.llm_request_recording(active):
-        await _agent(FunctionModel(reply)).run("ping")
+        await _agent(ReplayStreamModel(reply)).run("ping")
 
     [record] = engine.session_mgr.load_llm_request_log(active.state.session_id).records
     assert (record.input_tokens, record.cache_read_tokens, record.cache_write_tokens) == (1000, 800, 150)
@@ -118,7 +119,7 @@ async def test_failed_request_keeps_its_context_with_the_error(tmp_path: Path, d
     engine, active, _subscriber = _session(tmp_path, db_factory)
 
     with engine.llm_request_recording(active), pytest.raises(RuntimeError):
-        await _agent(FunctionModel(_fail)).run("ping")
+        await _agent(ReplayStreamModel(_fail)).run("ping")
 
     context = engine.session_mgr.load_llm_context(active.state.session_id, "agent")
     assert context is not None
@@ -129,7 +130,7 @@ async def test_failed_request_keeps_its_context_with_the_error(tmp_path: Path, d
 @pytest.mark.asyncio
 async def test_sentinel_timeout_marks_its_context_failed(tmp_path: Path, db_factory) -> None:
     engine, active, _subscriber = _session(tmp_path, db_factory)
-    sentinel = _sentinel(tmp_path, FunctionModel(_hang))
+    sentinel = _sentinel(tmp_path, ReplayStreamModel(_hang))
 
     with engine.llm_request_recording(active):
         verdict = await sentinel.evaluate_tool_call(SessionSecurity("s"), "exec", {"command": "echo hi"})
@@ -177,7 +178,7 @@ async def test_sentinel_timeout_between_requests_leaves_the_completed_context_al
     def _call_slow_tool(_messages: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
         return ModelResponse(parts=[ToolCallPart("slow_tool", {})])
 
-    sentinel = _sentinel(tmp_path, FunctionModel(_call_slow_tool))
+    sentinel = _sentinel(tmp_path, ReplayStreamModel(_call_slow_tool))
 
     @sentinel._agent.tool_plain
     async def slow_tool() -> str:
@@ -197,8 +198,8 @@ async def test_each_role_keeps_only_its_latest_context(tmp_path: Path, db_factor
     engine, active, subscriber = _session(tmp_path, db_factory)
 
     with engine.llm_request_recording(active):
-        await _agent(FunctionModel(_reply)).run("first")
-        await _agent(FunctionModel(_reply)).run("second")
+        await _agent(ReplayStreamModel(_reply)).run("first")
+        await _agent(ReplayStreamModel(_reply)).run("second")
 
     context = engine.session_mgr.load_llm_context(active.state.session_id, "agent")
     assert context is not None
@@ -233,7 +234,7 @@ async def test_completed_context_is_priced_with_the_carapace_model_id(
     engine, active, _subscriber = _session(tmp_path, db_factory)
 
     with engine.llm_request_recording(active):
-        await _agent(FunctionModel(_priced_reply, model_name="claude-sonnet-4-6-20260101"), model_id).run("ping")
+        await _agent(ReplayStreamModel(_priced_reply, model_name="claude-sonnet-4-6-20260101"), model_id).run("ping")
 
     context = engine.session_mgr.load_llm_context(active.state.session_id, "agent")
     assert context is not None
@@ -254,13 +255,55 @@ async def test_unpriced_or_failed_requests_carry_no_cost(tmp_path: Path, db_fact
     engine, active, _subscriber = _session(tmp_path, db_factory)
 
     with engine.llm_request_recording(active):
-        await _agent(FunctionModel(_reply)).run("ping")
+        await _agent(ReplayStreamModel(_reply)).run("ping")
     unpriced = engine.session_mgr.load_llm_context(active.state.session_id, "agent")
     with engine.llm_request_recording(active), pytest.raises(RuntimeError):
-        await _agent(FunctionModel(_fail), "anthropic:claude-sonnet-4-6").run("ping")
+        await _agent(ReplayStreamModel(_fail), "anthropic:claude-sonnet-4-6").run("ping")
     failed = engine.session_mgr.load_llm_context(active.state.session_id, "agent")
 
     assert unpriced is not None and unpriced.cost == RequestCost(
         cost_usd=None, equivalent_cost_usd=None, provider_cost_usd=None
     )
     assert failed is not None and failed.cost is None
+
+
+@pytest.mark.asyncio
+async def test_a_tool_call_response_records_when_its_first_token_arrived(tmp_path: Path, db_factory) -> None:
+    engine, active, _subscriber = _session(tmp_path, db_factory)
+
+    async def stream(messages: list[ModelMessage], _info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
+        if len(messages) == 1:
+            yield {0: DeltaToolCall(name="lookup", json_args='{"key": "a"}', tool_call_id="c1")}
+        else:
+            yield "done"
+
+    with engine.llm_request_recording(active):
+        await _agent(FunctionModel(stream_function=stream)).run("ping")
+
+    call, answer = engine.session_mgr.load_llm_request_log(active.state.session_id).records
+    assert call.started_at and call.first_token_at and call.completed_at
+    assert call.started_at <= call.first_token_at <= call.completed_at
+    assert call.first_text_at is None
+    assert answer.first_token_at is not None and answer.first_token_at == answer.first_text_at
+
+
+@pytest.mark.asyncio
+async def test_sentinel_streams_so_its_requests_record_their_phases(tmp_path: Path, db_factory) -> None:
+    engine, active, _subscriber = _session(tmp_path, db_factory)
+
+    def verdict(_messages: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
+        return ModelResponse(
+            parts=[
+                ThinkingPart("harmless"),
+                ToolCallPart(SENTINEL_VERDICT_TOOL, {"decision": "allow", "explanation": "x"}),
+            ]
+        )
+
+    sentinel = _sentinel(tmp_path, ReplayStreamModel(verdict), timeout=timedelta(seconds=5))
+    with engine.llm_request_recording(active):
+        await sentinel.evaluate_tool_call(SessionSecurity("s"), "exec", {"command": "echo hi"})
+
+    [record] = engine.session_mgr.load_llm_request_log(active.state.session_id).records
+    assert record.source == "sentinel"
+    assert record.first_token_at is not None and record.first_token_at == record.first_thinking_at
+    assert record.last_thinking_at is not None and record.first_text_at is None

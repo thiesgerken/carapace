@@ -7,7 +7,7 @@ from typing import Any
 import pytest
 from loguru import logger
 from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, ToolCallPart, UserPromptPart
-from pydantic_ai.models.function import AgentInfo, FunctionModel
+from pydantic_ai.models.function import AgentInfo
 from pydantic_ai.profiles.anthropic import ANTHROPIC_THINKING_BUDGET_MAP
 from pydantic_ai.usage import RequestUsage
 
@@ -31,6 +31,8 @@ from carapace.models.config import AgentConfig, AvailableModelEntry, Config
 from carapace.models.session import SessionState
 from carapace.models.user import UserConfig
 from carapace.usage import count_text_tokens
+
+from .streaming_model import ReplayStreamModel
 
 MODEL = "anthropic:claude-haiku-4-5"
 
@@ -117,7 +119,7 @@ def _handler(
         load_events=lambda session_id: events if session_id == "s1" else [],
         user_config_for=lambda user: UserConfig(timezone="Europe/Berlin"),
         prompt_prefix_for=lambda user: prompt_prefix,
-        model_factory=lambda name, *, user: FunctionModel(recorder),
+        model_factory=lambda name, *, user: ReplayStreamModel(recorder),
     )
 
 
@@ -209,7 +211,7 @@ async def test_rejected_output_fails_after_one_billed_call() -> None:
         load_events=lambda session_id: EVENTS,
         user_config_for=lambda user: UserConfig(),
         prompt_prefix_for=lambda user: "",
-        model_factory=lambda name, *, user: FunctionModel(respond),
+        model_factory=lambda name, *, user: ReplayStreamModel(respond),
     )
 
     with pytest.raises(TaskRunError) as failed:

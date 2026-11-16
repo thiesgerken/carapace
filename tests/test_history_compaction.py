@@ -7,11 +7,13 @@ from decimal import Decimal
 import pytest
 from pydantic_ai import Agent
 from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, TextPart, ToolCallPart
-from pydantic_ai.models.function import AgentInfo, FunctionModel
+from pydantic_ai.models.function import AgentInfo
 
 from carapace.agent.history_compaction import HistoryCompactionCapability
 from carapace.session.compaction import fold_summary_text, is_fold_message, make_fold_message
 from carapace.usage import ProviderCostCapability
+
+from .streaming_model import ReplayStreamModel
 
 
 @pytest.mark.anyio
@@ -31,7 +33,7 @@ async def test_compacted_history_reaches_the_request_and_the_rest_of_the_run() -
         newest_step = max(i for i, m in enumerate(messages) if isinstance(m, ModelResponse))
         return [make_fold_message("SUMMARY"), *messages[newest_step:]]
 
-    agent = Agent(FunctionModel(respond), capabilities=[HistoryCompactionCapability(compact)])
+    agent = Agent(ReplayStreamModel(respond), capabilities=[HistoryCompactionCapability(compact)])
 
     @agent.tool_plain
     def work(n: int) -> str:
