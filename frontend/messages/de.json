@@ -1836,6 +1836,15 @@
                 "cacheWrite": "Cache geschrieben",
                 "cost": "Kosten",
                 "openRole": "Im Tab {role} zeigen"
+            },
+            "collapse": "Einklappen",
+            "expand": "Ausklappen",
+            "facts": {
+                "denied": "abgelehnt",
+                "blocked": "blockiert",
+                "exitCode": "Exit {code}",
+                "output": "{tokens} Output-Token",
+                "outputRate": "{tokens} Output-Token · {rate} Token/s"
             }
         }
     }

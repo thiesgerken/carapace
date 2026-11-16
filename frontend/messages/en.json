@@ -1836,6 +1836,15 @@
                 "cacheWrite": "Cache write",
                 "cost": "Cost",
                 "openRole": "Show in the {role} tab"
+            },
+            "collapse": "Collapse",
+            "expand": "Expand",
+            "facts": {
+                "denied": "denied",
+                "blocked": "blocked",
+                "exitCode": "exit {code}",
+                "output": "{tokens} out",
+                "outputRate": "{tokens} out · {rate} tok/s"
             }
         }
     }

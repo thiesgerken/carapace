@@ -134,3 +134,55 @@ export function summarizeTurn(rows: TimelineRow[], turnStart: number, turnEnd: n
   const wallMs = Math.max(0, turnEnd - turnStart);
   return { wallMs, userWaitMs: byCategory.userWait, systemMs: wallMs - byCategory.userWait, byCategory };
 }
+
+/** An only child that covers at least this share of its parent tells nothing the parent doesn't: the gap is call overhead. */
+const CHAIN_COVER = 0.75;
+
+/** One line of the waterfall: a chain of spans shown as one (see *waterfallLines*), and its place in the drawn tree. */
+export type WaterfallLine = {
+  chain: TimelineRow[];
+  depth: number;
+  /** Whether the chain's last span has children; they follow unless it is collapsed. */
+  hasChildren: boolean;
+  /** Whether this is its parent's last line, so its tree guide ends here. */
+  last: boolean;
+  /** Per ancestor below the root, outermost first: whether its guide runs on past this line. */
+  rails: boolean[];
+};
+
+/**
+ * The waterfall's lines in tree order. A span whose only child covers nearly all of it merges with
+ * that child into one line (a gate, its sentinel call and the sentinel's LLM request take the same
+ * second), and so on down, as long as both have ended `ok`. The root never merges, since its
+ * children are the turn's steps. Lines
+ * below a collapsed span (keyed by the chain's last span) are left out.
+ */
+export function waterfallLines(rows: TimelineRow[], collapsed: ReadonlySet<string>): WaterfallLine[] {
+  const children = new Map<string | null, TimelineRow[]>();
+  for (const row of rows) children.set(row.parentId, [...(children.get(row.parentId) ?? []), row]);
+  const childrenOf = (row: TimelineRow) => children.get(row.span.span_id) ?? [];
+
+  const chainFrom = (head: TimelineRow) => {
+    const chain = [head];
+    for (let tail = head, next = childrenOf(tail); tail.parentId !== null && next.length === 1; tail = next[0], next = childrenOf(tail)) {
+      // Only settled spans merge: running ones would fold and split as they grow, and an error or
+      // interruption must keep its own red or grey bar instead of hiding behind its child's.
+      if (tail.span.status !== "ok" || next[0].span.status !== "ok") break;
+      if (next[0].end - next[0].start < CHAIN_COVER * (tail.end - tail.start)) break;
+      chain.push(next[0]);
+    }
+    return chain;
+  };
+
+  const lines: WaterfallLine[] = [];
+  const visit = (siblings: TimelineRow[], depth: number, rails: boolean[]) =>
+    siblings.forEach((head, index) => {
+      const chain = chainFrom(head);
+      const tail = chain[chain.length - 1];
+      const last = index === siblings.length - 1;
+      lines.push({ chain, depth, hasChildren: childrenOf(tail).length > 0, last, rails });
+      if (!collapsed.has(tail.span.span_id)) visit(childrenOf(tail), depth + 1, depth === 0 ? [] : [...rails, !last]);
+    });
+  visit(children.get(null) ?? [], 0, []);
+  return lines;
+}

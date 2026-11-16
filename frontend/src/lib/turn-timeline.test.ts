@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type { LlmPhases, Span } from "./types";
-import { llmSegments, summarizeTurn, timelineRows } from "./turn-timeline";
+import { llmSegments, summarizeTurn, timelineRows, waterfallLines } from "./turn-timeline";
 
 const T0 = Date.parse("2026-11-16T12:00:00Z");
 const at = (ms: number) => new Date(T0 + ms).toISOString();
@@ -115,4 +115,56 @@ test("LLM phases collapse when their timestamps are missing", () => {
   // Still thinking: thinking runs to the end.
   assert.deepEqual(phases({ first_token_at: at(100), first_thinking_at: at(100) }), [["llmWaiting", 100], ["llmThinking", 900]]);
   assert.deepEqual(phases({ first_token_at: at(100), first_thinking_at: at(100), last_thinking_at: at(700) }), [["llmWaiting", 100], ["llmThinking", 600], ["llmOutput", 300]]);
+});
+
+test("a span whose only child covers nearly all of it merges with that child into one line", () => {
+  const spans = [
+    span("turn", null, "turn", 0, 10_000),
+    span("tool", "turn", "tool", 0, 5000),
+    span("gate", "tool", "gate", 0, 1000),
+    span("sentinel", "gate", "sentinel", 10, 1000),
+    span("llm", "sentinel", "llm", 20, 990, { llm: llm({ role: "sentinel" }) }),
+    span("exec", "tool", "exec", 1000, 5000),
+    // Covers only half of the exec: a step of its own.
+    span("domain", "exec", "domain", 1000, 3000),
+    span("wait", "turn", "wait", 5000, 9500),
+  ];
+  const lines = waterfallLines(timelineRows(spans, T0 + 10_000), new Set());
+  assert.deepEqual(
+    lines.map((line) => [line.chain.map((row) => row.span.span_id), line.depth, line.hasChildren, line.last, line.rails]),
+    [
+      [["turn"], 0, true, true, []],
+      [["tool"], 1, true, false, []],
+      [["gate", "sentinel", "llm"], 2, false, false, [true]],
+      [["exec"], 2, true, true, [true]],
+      [["domain"], 3, false, true, [true, false]],
+      [["wait"], 1, false, true, []],
+    ],
+  );
+});
+
+test("the root never merges, and a collapsed chain hides what is below its last span", () => {
+  const spans = [
+    span("turn", null, "turn", 0, 1000),
+    span("compaction", "turn", "compaction", 0, 1000),
+    span("llm", "compaction", "llm", 0, 1000, { llm: llm({ role: "compaction" }) }),
+    span("sandbox", "turn", "sandbox", 0, 100),
+    span("resume", "sandbox", "sandbox", 0, 50),
+  ];
+  const ids = (collapsed: string[]) => waterfallLines(timelineRows(spans, T0 + 1000), new Set(collapsed)).map((line) => line.chain.map((row) => row.span.span_id).join(">"));
+  assert.deepEqual(ids([]), ["turn", "compaction>llm", "sandbox", "resume"]);
+  assert.deepEqual(ids(["sandbox"]), ["turn", "compaction>llm", "sandbox"]);
+  assert.deepEqual(ids(["turn"]), ["turn"]);
+});
+
+test("only spans that ended ok merge: running and failed ones keep their own lines", () => {
+  const spans = [
+    span("turn", null, "turn", 0, null),
+    span("gate", "turn", "gate", 0, null),
+    span("sentinel", "gate", "sentinel", 10, null),
+    span("exec", "turn", "exec", 0, 1000, { status: "error" }),
+    span("domain", "exec", "domain", 0, 1000),
+  ];
+  const lines = waterfallLines(timelineRows(spans, T0 + 1000), new Set());
+  assert.deepEqual(lines.map((line) => line.chain.map((row) => row.span.span_id)), [["turn"], ["gate"], ["sentinel"], ["exec"], ["domain"]]);
 });
