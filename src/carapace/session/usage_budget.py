@@ -332,6 +332,8 @@ class SessionUsageBudgetMixin:
                 active.llm_request_thinking.pop(state.request_id, None)
                 if track_activity:
                     await engine._set_llm_request_state(active, state)
+                if state.turn_id is not None:
+                    await engine._broadcast(active, "on_span", state.turn_id, state.request_id, "running")
 
             async def on_request_completed(self, record: LlmRequestRecord) -> None:
                 if track_activity:
@@ -355,6 +357,8 @@ class SessionUsageBudgetMixin:
                 engine._session_mgr.save_llm_request_log(session_id, active.llm_request_log)
                 if track_activity:
                     await engine._clear_llm_request_state(active)
+                if record.turn_id is not None and record.request_id is not None:
+                    await engine._broadcast(active, "on_span", record.turn_id, record.request_id, "ok")
 
             async def on_context(self, context: LlmContext) -> None:
                 await engine._save_llm_context(active, context)
