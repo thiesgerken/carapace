@@ -123,7 +123,7 @@ test("the debug view shows each role's latest context and refetches on WebSocket
       Array.from(view.container.querySelectorAll("tbody tr"), (row) => Array.from(row.querySelectorAll("td"), (cell) => cell.textContent)).filter((cells) => cells.length > 0);
     assert.deepEqual(Array.from(view.container.querySelectorAll('th[scope="rowgroup"]'), (header) => header.textContent), ["Outside a turn"]);
     // A record from before cache counts and costs were kept: its empty count columns go, the cost is unknown.
-    assert.deepEqual(rows(), [["11/9, 11:59:00 AM", "3 s", "8K", "300", "–"]]);
+    assert.deepEqual(rows(), [["11/9, 11:59:00 AM", "3 s", "8k", "300", "–"]]);
     assert.equal(view.container.querySelector('a[aria-current="page"]')?.getAttribute("href"), "/?session=s1&view=debug");
 
     contexts.agent = context({
@@ -158,7 +158,7 @@ test("the debug view shows each role's latest context and refetches on WebSocket
 
     assert.doesNotMatch(text(), /Status/, "a completed request needs no status");
     // Cache write is 0 or unknown in every row, so it goes; a subscription request shows its equivalent cost.
-    assert.deepEqual(rows()[0], ["11/9, 12:00:02 PM", "2.5 s", "12.3K", "32%", "4K", "20", "7", "≈ $0.043"]);
+    assert.deepEqual(rows()[0], ["11/9, 12:00:02 PM", "2.5 s", "12.3k", "32%", "4k", "20", "7", "≈ $0.043"]);
     assert.equal(rows().length, 2);
     assert.equal(view.container.querySelector("tbody a")?.getAttribute("href"), "#llm-context");
     assert.ok(view.container.querySelector("#llm-context"));

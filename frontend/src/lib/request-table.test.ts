@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { cacheHitRate, costShape, isEmptyColumn } from "./request-table";
+import { cacheHitRate, compactCount, costShape, isEmptyColumn } from "./request-table";
 import type { LlmRequestRecord } from "./types";
 
 const record = (overrides: Partial<LlmRequestRecord>) => ({ input_tokens: 1000, cache_read_tokens: null, reasoning_tokens: null, ...overrides }) as LlmRequestRecord;
@@ -26,4 +26,11 @@ test("cost reads as actual, subscription equivalent, or both", () => {
   assert.equal(costShape(cost("0.02", "0.02")), "actual");
   assert.equal(costShape(cost("0", "0.0054")), "subscription");
   assert.equal(costShape(cost("0.01", "0.0425")), "both");
+});
+
+test("counts compact to k and M in the locale's digits", () => {
+  const de = (value: number, maximumFractionDigits: number) => new Intl.NumberFormat("de", { maximumFractionDigits }).format(value);
+  assert.equal(compactCount(840, de), "840");
+  assert.equal(compactCount(8412, de), "8,4k");
+  assert.equal(compactCount(1_250_000, de), "1,3M");
 });

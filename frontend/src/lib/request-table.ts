@@ -20,3 +20,13 @@ export function costShape(cost: LlmRequestCost | null): "none" | "actual" | "sub
   if (actual === equivalent) return "actual";
   return actual === 0 ? "subscription" : "both";
 }
+
+/**
+ * A count as "12.3k" or "1.2M" in the locale's digits. German Intl compact notation leaves
+ * thousands unabbreviated, so the suffixes are fixed instead.
+ */
+export function compactCount(value: number, formatNumber: (value: number, maximumFractionDigits: number) => string): string {
+  if (Math.abs(value) >= 1_000_000) return `${formatNumber(value / 1_000_000, 1)}M`;
+  if (Math.abs(value) >= 1000) return `${formatNumber(value / 1000, 1)}k`;
+  return formatNumber(value, 0);
+}

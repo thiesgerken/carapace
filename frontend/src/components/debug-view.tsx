@@ -47,7 +47,7 @@ import {
   type ServerMessage,
   type TurnSummary,
 } from "@/lib/types";
-import { cacheHitRate, costShape, isEmptyColumn } from "@/lib/request-table";
+import { cacheHitRate, compactCount, costShape, isEmptyColumn } from "@/lib/request-table";
 import { groupRequestsByTurn, llmSegments } from "@/lib/turn-timeline";
 import { cn } from "@/lib/utils";
 
@@ -314,7 +314,7 @@ function RequestTimeline({
   const format = useFormatter();
   // Compact counts compare at a glance; the exact one is in the tooltip. Null is unknown: the record predates it.
   const count = (value: number | null) =>
-    value === null ? <span className="text-muted-foreground">–</span> : <span title={format.number(value)}>{format.number(value, { notation: "compact", maximumFractionDigits: 1 })}</span>;
+    value === null ? <span className="text-muted-foreground">–</span> : <span title={format.number(value)}>{compactCount(value, (n, maximumFractionDigits) => format.number(n, { maximumFractionDigits }))}</span>;
   const countColumn = (key: string, value: (record: LlmRequestRecord) => number | null): TimelineColumn[] =>
     isEmptyColumn(records, value) ? [] : [{ key, numeric: true, cell: (r) => count(value(r)) }];
   const columns: TimelineColumn[] = [
