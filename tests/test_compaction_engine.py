@@ -668,7 +668,13 @@ def test_a_failing_tool_summary_cancels_its_siblings(tmp_path: Path, db_factory)
         if len(calls) == 2:
             raise RuntimeError("provider down")
         if len(calls) == 3:
-            await asyncio.sleep(0.1)
+            # Long enough that only a cancellation ends it: a short sleep races the failing call's
+            # synchronous DB writes, which block the loop on a slow machine.
+            try:
+                await asyncio.sleep(30)
+            except asyncio.CancelledError:
+                calls.append("sibling cancelled")
+                raise
             calls.append("sibling finished")
         return ModelResponse(parts=[TextPart(content="short")])
 
@@ -684,8 +690,8 @@ def test_a_failing_tool_summary_cancels_its_siblings(tmp_path: Path, db_factory)
         res = await engine.handle_slash_command(sid, "/compact")
 
         assert res is not None and "provider down" in res["data"]["error"]
-        await asyncio.sleep(0.2)
-        assert "sibling finished" not in calls
+        # The task group waits for its cancelled tasks before it raises.
+        assert calls[-1] == "sibling cancelled"
 
     asyncio.run(_run())
 
