@@ -1786,11 +1786,10 @@
         "turns": {
             "tab": "Zeitleiste",
             "hint": "Wohin die Zeit eines Zugs ging: jeder gemessene Schritt als Wasserfall. Folgt live dem neuesten Zug.",
-            "turn": "Zug",
+            "turns": "Turns",
             "empty": "Noch kein Zug mit Zeitleiste. Züge von vor der Zeitmessung haben keine.",
             "loadError": "Die Züge konnten nicht geladen werden: {error}",
             "timelineError": "Die Zeitleiste konnte nicht geladen werden: {error}",
-            "running": "läuft",
             "wall": "Gesamtdauer",
             "system": "Systemzeit",
             "breakdown": "Wohin die Zeit ging",

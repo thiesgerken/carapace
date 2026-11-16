@@ -248,17 +248,19 @@ test("the timeline tab shows a turn's waterfall and summary, follows new turns a
     await settle();
 
     assert.equal(view.container.querySelector('[role="radio"][aria-checked="true"]')?.textContent, "Timeline");
-    assert.deepEqual(Array.from(view.container.querySelectorAll("option"), (option) => option.textContent), ["11/9, 12:00:00 PM · Check the backups · 4 s"]);
+    const turnRows = () => Array.from(view.container.querySelectorAll<HTMLButtonElement>('ol[aria-label="Turns"] button'));
+    assert.deepEqual(turnRows().map((row) => row.textContent), ["11/9, 12:00 PMCheck the backups4 s"]);
+    assert.equal(turnRows()[0].getAttribute("aria-current"), "true");
     assert.match(text(), /Wall time4 s/);
     assert.match(text(), /Agent LLM: first token1 s · 25%/);
     assert.match(text(), /Agent LLM: output2 s · 50%/);
     assert.match(text(), /Exec and files500 ms · 13%/);
     assert.match(text(), /Not covered500 ms · 13%/);
     // The label button of each line; the chevron is the other one.
-    const rows = () => Array.from(view.container.querySelectorAll("ol > li"), (line) => line.querySelector("button[title]")!);
+    const rows = () => Array.from(view.container.querySelectorAll("ol:not([aria-label]) > li"), (line) => line.querySelector("button[title]")!);
     assert.deepEqual(rows().map((row) => row.textContent), ["turn4 s", "agent request20 out · 10 tok/s3 s", "ls /backups500 ms"]);
     assert.deepEqual(rows().map((row) => row.querySelector('[role="img"]')?.getAttribute("aria-label")), ["turn", "llm", "exec"]);
-    const bar = (index: number) => view.container.querySelectorAll("ol > li")[index].querySelector<HTMLElement>("span.absolute[style*=left]")!;
+    const bar = (index: number) => view.container.querySelectorAll("ol:not([aria-label]) > li")[index].querySelector<HTMLElement>("span.absolute[style*=left]")!;
     assert.equal(bar(2).style.left, "75%");
     assert.equal(bar(2).style.width, "12.5%");
     assert.equal(bar(1).children.length, 2, "the LLM bar shows its waiting and output phases");
@@ -284,8 +286,16 @@ test("the timeline tab shows a turn's waterfall and summary, follows new turns a
     await runInAct(() => socket.onmessage?.({ data: JSON.stringify({ type: "span", turn_id: "t2", span_id: "root2", status: "running" }) }));
     await runInAct(() => new Promise((resolve) => setTimeout(resolve, 300)));
     await settle();
-    assert.equal(view.container.querySelector("select")?.value, "t2");
+    assert.deepEqual(turnRows().map((row) => [row.querySelector("time")?.textContent, row.getAttribute("aria-current")]), [["11/9, 12:01 PM", "true"], ["11/9, 12:00 PM", null]]);
+    const turnBar = (row: HTMLButtonElement) => row.querySelector<HTMLElement>("span[style*=width]")!.style.width;
+    assert.deepEqual(turnRows().map(turnBar), ["50%", "100%"], "bars scale to the longest turn");
     assert.deepEqual(rows().map((row) => row.textContent), ["turn2 s"]);
+
+    // Picking an older turn sticks.
+    await click(turnRows()[1]);
+    await settle();
+    assert.equal(turnRows()[1].getAttribute("aria-current"), "true");
+    assert.deepEqual(rows().map((row) => row.textContent)[0], "turn4 s");
 
 
     await view.unmount();

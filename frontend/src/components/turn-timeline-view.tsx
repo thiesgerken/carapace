@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import {
   Archive,
   Box,
@@ -173,7 +173,7 @@ export function TurnTimelineView({
 
   return (
     <div className="flex flex-col gap-4">
-      <TurnPicker turns={turnList} value={turnId} onChange={(value) => onPickTurn(value === newest ? null : value)} />
+      <TurnList turns={turnList} value={turnId} onChange={(value) => onPickTurn(value === newest ? null : value)} />
       {timeline && "error" in timeline ? (
         <p className="text-sm text-destructive">{t("timelineError", { error: timeline.error })}</p>
       ) : shown ? (
@@ -185,25 +185,57 @@ export function TurnTimelineView({
   );
 }
 
-function TurnPicker({ turns, value, onChange }: { turns: TurnSummary[]; value: string | null; onChange: (turnId: string) => void }) {
+/** The turns as rows with a duration bar scaled to the longest one; running turns grow live. */
+function TurnList({ turns, value, onChange }: { turns: TurnSummary[]; value: string | null; onChange: (turnId: string) => void }) {
   const t = useTranslations("debugView.turns");
   const format = useFormatter();
   const duration = useFormatDuration();
+  const now = useNow(turns.some((turn) => turn.ended_at === null));
+  const selected = useRef<HTMLButtonElement>(null);
+  // A deep-linked older turn may sit below the list's scroll fold.
+  useEffect(() => selected.current?.scrollIntoView?.({ block: "nearest" }), [value]);
+  const durations = new Map(turns.map((turn) => [turn.turn_id, Math.max(0, (turn.ended_at ? Date.parse(turn.ended_at) : now) - Date.parse(turn.started_at))]));
+  const longest = Math.max(...durations.values());
+
   return (
-    <label className="flex min-w-0 flex-col gap-1 text-xs font-medium text-muted-foreground">
-      {t("turn")}
-      <select value={value ?? ""} onChange={(event) => onChange(event.target.value)} className="w-full min-w-0 rounded-lg border border-border bg-background px-2 py-1.5 text-sm text-foreground">
-        {[...turns].reverse().map((turn) => (
-          <option key={turn.turn_id} value={turn.turn_id}>
-            {[
-              format.dateTime(new Date(turn.started_at), { month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit", second: "2-digit" }),
-              turn.prompt_preview,
-              turn.ended_at ? duration(Date.parse(turn.ended_at) - Date.parse(turn.started_at)) : t("running"),
-            ].join(" · ")}
-          </option>
-        ))}
-      </select>
-    </label>
+    <ol aria-label={t("turns")} className="flex max-h-48 flex-col overflow-y-auto rounded-2xl border border-border bg-muted/20 p-1">
+      {[...turns].reverse().map((turn) => {
+        const ms = durations.get(turn.turn_id)!;
+        const current = turn.turn_id === value;
+        const started = new Date(turn.started_at);
+        return (
+          <li key={turn.turn_id}>
+            <button
+              ref={current ? selected : undefined}
+              type="button"
+              aria-current={current ? "true" : undefined}
+              onClick={() => onChange(turn.turn_id)}
+              className={cn(
+                "grid w-full grid-cols-[auto_minmax(0,1fr)_3rem_4.5rem] items-center gap-2 rounded-md px-2 py-1 text-left text-xs hover:bg-accent/60 sm:grid-cols-[auto_minmax(0,1fr)_10rem_4.5rem] sm:gap-3",
+                current && "bg-accent font-medium",
+              )}
+            >
+              <time dateTime={turn.started_at} title={format.dateTime(started, { dateStyle: "medium", timeStyle: "medium" })} className="tabular-nums text-muted-foreground">
+                {format.dateTime(started, { month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit" })}
+              </time>
+              <span className="truncate" title={turn.prompt_preview}>
+                {turn.prompt_preview}
+              </span>
+              <span className="relative block h-2 rounded-sm bg-muted/50">
+                <span
+                  className={cn("absolute inset-y-0 left-0 min-w-[2px] rounded-sm", STATUS_BAR_CLASS[turn.status] ?? "bg-slate-400 dark:bg-slate-500", turn.status === "running" && "animate-pulse")}
+                  style={{ width: `${longest > 0 ? (ms / longest) * 100 : 0}%` }}
+                />
+              </span>
+              <span className="whitespace-nowrap text-right tabular-nums text-muted-foreground">
+                {turn.status === "ok" ? null : <span className="sr-only">{t(`statuses.${turn.status}`)} </span>}
+                {duration(ms)}
+              </span>
+            </button>
+          </li>
+        );
+      })}
+    </ol>
   );
 }
 
