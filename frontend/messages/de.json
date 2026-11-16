@@ -1844,7 +1844,7 @@
                 "denied": "abgelehnt",
                 "blocked": "blockiert",
                 "exitCode": "Exit {code}",
-                "output": "{tokens} Output-Token",
+                "output": "{tokens} Ausgabe-Tokens",
                 "rate": "{rate} Token/s"
             }
         }

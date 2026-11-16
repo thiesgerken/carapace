@@ -411,7 +411,7 @@ function LineLabel({ line, open }: { line: WaterfallLine; open: boolean }) {
         </span>
       ))}
       {line.chain.some(({ span }) => span.status === "running") ? <Loader2 className="h-3 w-3 shrink-0 animate-spin text-muted-foreground" /> : null}
-      {/* Wide enough for the longest duration ("1 min 18 s"), so it never pushes into the bar column. */}
+      {/* Wide enough for durations up to "99 min 59 s" (the formatter has no hour unit), so they never push into the bar column. */}
       <span className="ml-auto w-[4.5rem] shrink-0 whitespace-nowrap text-right tabular-nums text-muted-foreground">{duration(head.end - head.start)}</span>
     </button>
   );
