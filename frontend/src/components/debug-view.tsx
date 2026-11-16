@@ -37,7 +37,8 @@ const STATUS_CLASS: Record<LlmContextStatus, string> = {
   interrupted: "border-amber-500/40 bg-amber-500/10 text-amber-800 dark:text-amber-300",
 };
 
-const SPAN_REFETCH_DEBOUNCE_MS = 250;
+const TIMELINE_REFETCH_DEBOUNCE_MS = 250;
+const TIMELINE_REFETCH_MAX_WAIT_MS = 1000;
 
 type Notification = { requestId: string; status: LlmContextStatus };
 type RoleFetch<T> = (server: string, token: string, sessionId: string, role: DebugRole) => Promise<T>;
@@ -56,7 +57,7 @@ export function DebugView({
   token,
   sessionId,
   title,
-  initialTab = "agent",
+  initialTab = "timeline",
   initialTurn = null,
 }: {
   server: string;
@@ -72,11 +73,12 @@ export function DebugView({
   const [pickedTurn, setPickedTurn] = useState(initialTurn);
   const [notifications, setNotifications] = useState<Partial<Record<DebugRole, Notification>>>({});
   const [activityEnds, setActivityEnds] = useState(0);
-  const [spanEvents, setSpanEvents] = useState({ count: 0, turnId: "" });
+  const [timelineEvents, setTimelineEvents] = useState(0);
 
   const onMessage = useCallback((msg: ServerMessage) => {
     if (msg.type === "llm_activity" && !msg.activity) setActivityEnds((count) => count + 1);
-    if (msg.type === "span") setSpanEvents((current) => ({ count: current.count + 1, turnId: msg.turn_id }));
+    // Spans start and end; LLM activity also moves a running request through its phases.
+    if (msg.type === "span" || msg.type === "llm_activity") setTimelineEvents((count) => count + 1);
     if (msg.type !== "llm_context") return;
     setNotifications((current) => ({ ...current, [msg.role]: { requestId: msg.request_id, status: msg.status } }));
   }, []);
@@ -84,8 +86,8 @@ export function DebugView({
   const { status } = useWebSocket(ticket ? wsUrl(server, sessionId, token, undefined, ticket, true) : null, onMessage);
   // Notifications sent while the socket was down are lost, so every (re)connect refetches too.
   const connected = status === "connected";
-  // A busy turn sends a burst of span notifications; one refetch per burst is enough.
-  const spanRevision = useDebounced(`${connected}:${spanEvents.count}`, SPAN_REFETCH_DEBOUNCE_MS);
+  // A busy turn sends bursts of notifications: one refetch per burst, but at least one per second while it lasts.
+  const timelineRevision = useDebounced(`${connected}:${timelineEvents}`, TIMELINE_REFETCH_DEBOUNCE_MS, TIMELINE_REFETCH_MAX_WAIT_MS);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -110,8 +112,7 @@ export function DebugView({
             sessionId={sessionId}
             pickedTurn={pickedTurn}
             onPickTurn={setPickedTurn}
-            turnsRevision={`${connected}:${spanEvents.turnId}`}
-            spanRevision={spanRevision}
+            revision={timelineRevision}
             onOpenRole={setTab}
           />
         ) : (

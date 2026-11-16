@@ -88,7 +88,7 @@ test("the debug view shows each role's latest context and refetches on WebSocket
   try {
     const view = await renderReact(
       <NextIntlClientProvider locale="en" messages={messages} timeZone="UTC">
-        <DebugView server={SERVER} token="" sessionId="s1" title="🥞 Pancakes" />
+        <DebugView server={SERVER} token="" sessionId="s1" title="🥞 Pancakes" initialTab="agent" />
       </NextIntlClientProvider>,
     );
     const settle = () => runInAct(() => new Promise((resolve) => setTimeout(resolve, 0)));
@@ -237,7 +237,7 @@ test("the timeline tab shows a turn's waterfall and summary, follows new turns a
   try {
     const view = await renderReact(
       <NextIntlClientProvider locale="en" messages={messages} timeZone="UTC">
-        <DebugView server={SERVER} token="" sessionId="s1" title="🥞 Pancakes" initialTab="timeline" />
+        <DebugView server={SERVER} token="" sessionId="s1" title="🥞 Pancakes" />
       </NextIntlClientProvider>,
     );
     const settle = async () => {
@@ -275,10 +275,11 @@ test("the timeline tab shows a turn's waterfall and summary, follows new turns a
     await click(Array.from(view.container.querySelectorAll('[role="radio"]')).find((pill) => pill.textContent === "Timeline")!);
     await settle();
 
-    // A span of a new turn refetches the list, and the view follows the newest turn.
+    // A span of a new turn refetches the list once the burst settles, and the view follows the newest turn.
     turns.push(second);
     const socket = FakeWebSocket.instances.at(-1)!;
     await runInAct(() => socket.onmessage?.({ data: JSON.stringify({ type: "span", turn_id: "t2", span_id: "root2", status: "running" }) }));
+    await runInAct(() => new Promise((resolve) => setTimeout(resolve, 300)));
     await settle();
     assert.equal(view.container.querySelector("select")?.value, "t2");
     assert.deepEqual(rows().map((row) => row.textContent), ["turn2 s"]);

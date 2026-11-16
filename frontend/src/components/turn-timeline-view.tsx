@@ -7,7 +7,7 @@ import { Stat } from "@/components/debug-stat";
 import { useFormatCost } from "@/components/memory-ui";
 import { useKeyedFetch } from "@/hooks/use-keyed-fetch";
 import { fetchLlmContext, fetchTurns, fetchTurnTimeline } from "@/lib/api";
-import { llmSegments, spanCategory, summarizeTurn, TIME_CATEGORIES, timelineRows, type TimeCategory, type TimelineRow, type TurnSummary as TimeSummary } from "@/lib/turn-timeline";
+import { llmSegments, spanCategory, summarizeTurn, TIME_CATEGORIES, timelineRows, type TimeCategory, type TimelineRow, type TimeBreakdown } from "@/lib/turn-timeline";
 import type { DebugRole, Span, SpanStatus, TurnSummary } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -56,7 +56,7 @@ function useFormatDuration(): (ms: number) => string {
 
 /**
  * A turn's spans as a waterfall with a summary of where its time went. Follows the newest turn live
- * until another one is picked; *turnsRevision* and *spanRevision* change on the WebSocket notifications that make the list and the timeline stale.
+ * until another one is picked. *revision* changes on the WebSocket notifications that make the turn list and the timeline stale.
  */
 export function TurnTimelineView({
   server,
@@ -64,8 +64,7 @@ export function TurnTimelineView({
   sessionId,
   pickedTurn,
   onPickTurn,
-  turnsRevision,
-  spanRevision,
+  revision,
   onOpenRole,
 }: {
   server: string;
@@ -74,19 +73,18 @@ export function TurnTimelineView({
   /** Null follows the newest turn. */
   pickedTurn: string | null;
   onPickTurn: (turnId: string | null) => void;
-  turnsRevision: string;
-  spanRevision: string;
+  revision: string;
   onOpenRole: (role: DebugRole) => void;
 }) {
   const t = useTranslations("debugView.turns");
   const loadTurns = useCallback(() => fetchTurns(server, token, sessionId), [server, token, sessionId]);
-  const turns = useKeyedFetch(turnsRevision, loadTurns);
+  const turns = useKeyedFetch(revision, loadTurns);
   const turnList = turns && "value" in turns ? turns.value : null;
   const newest = turnList?.at(-1)?.turn_id ?? null;
   const turnId = pickedTurn ?? newest;
 
   const loadTimeline = useCallback(() => fetchTurnTimeline(server, token, sessionId, turnId!), [server, token, sessionId, turnId]);
-  const fetched = useKeyedFetch(turnId === null ? null : `${turnId}:${spanRevision}`, loadTimeline);
+  const fetched = useKeyedFetch(turnId === null ? null : `${turnId}:${revision}`, loadTimeline);
   const timeline = fetched?.key.startsWith(`${turnId}:`) ? fetched : null;
   const shown = timeline && "value" in timeline ? timeline.value : null;
 
@@ -94,11 +92,9 @@ export function TurnTimelineView({
   if (turnList === null) return <Loader2 className="mx-auto mt-8 h-5 w-5 animate-spin text-muted-foreground" />;
   if (turnList.length === 0) return <p className="text-sm text-muted-foreground">{t("empty")}</p>;
 
-  // The list is only refetched on a new turn; the shown timeline carries its turn's latest state.
-  const pickable = shown ? turnList.map((turn) => (turn.turn_id === shown.turn.turn_id ? shown.turn : turn)) : turnList;
   return (
     <div className="flex flex-col gap-4">
-      <TurnPicker turns={pickable} value={turnId} onChange={(value) => onPickTurn(value === newest ? null : value)} />
+      <TurnPicker turns={turnList} value={turnId} onChange={(value) => onPickTurn(value === newest ? null : value)} />
       {timeline && "error" in timeline ? (
         <p className="text-sm text-destructive">{t("timelineError", { error: timeline.error })}</p>
       ) : shown ? (
@@ -165,7 +161,7 @@ function Timeline({ turn, spans, server, token, sessionId, onOpenRole }: { turn:
   );
 }
 
-function Summary({ summary }: { summary: TimeSummary }) {
+function Summary({ summary }: { summary: TimeBreakdown }) {
   const t = useTranslations("debugView.turns");
   const duration = useFormatDuration();
   const format = useFormatter();

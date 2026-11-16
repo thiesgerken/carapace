@@ -7,7 +7,7 @@ what went to the model in its last request, and what came back. Terms follow
 ## Using it
 
 The **Chat | Debug** switch in the session header opens `/?session=<ID>&view=debug`. The first tab,
-**Timeline**, shows where a turn's time went (see [Timeline tab](#timeline-tab)). One tab per role
+**Timeline**, opens by default and shows where a turn's time went (see [Timeline tab](#timeline-tab)). One tab per role
 follows; each shows the role's request timeline and its latest request:
 
 - **Requests**: one row per recorded request of the role, newest first, so requests compare side by
@@ -38,8 +38,7 @@ whose request is running.
 
 ### Timeline tab
 
-`&tab=timeline` opens the tab directly (`&tab=<role>` opens a role tab); `&turn=<turn_id>` picks the
-turn it shows first.
+`&tab=<role>` opens a role tab instead; `&turn=<turn_id>` picks the turn the timeline shows first.
 
 - **Turn**: a dropdown of the session's turns with timing, newest first (start time, the prompt's
   first characters, duration). It shows the newest turn by default and follows new turns live as
@@ -48,10 +47,10 @@ turn it shows first.
   access, credential release). A stacked bar splits the wall time by category: the agent's LLM
   requests (until the first token, thinking, output), sentinel (gates, sentinel calls and their LLM
   requests, proxy domain checks), sandbox, skills, exec and files, credentials, other, and **not
-  covered**. Each instant of the turn counts once, for the deepest span running then: overlapping
-  siblings give it to the one that started first, and anything inside a `wait` span is waiting
-  for you. Instants that only the turn itself covers
-  are not covered: time no span measured.
+  covered**. Each instant of the turn counts once, for the sequential main path: starting at the
+  turn, it steps into the running child that started first, level by level, and the instant
+  belongs to where that stops, so parallel work never counts twice. Anything inside a `wait` span
+  is waiting for you. Instants that stop at the turn itself are not covered: time no span measured.
 - **Waterfall**: one row per span, indented by nesting, with its bar placed within the turn
   (on a phone the label sits above the bar). Running spans grow until they end. Errors are red,
   interrupted spans grey, waits hatched. An LLM bar shows its phases: waiting for the first
@@ -60,8 +59,10 @@ turn it shows first.
   An LLM span adds model, phase durations, tokens, cache and cost, and a link to its role's tab
   when it is that role's latest request.
 
-The tab refetches the shown timeline once a burst of `span` notifications settles (250 ms) and
-after every (re)connect, and the turn list when a notification names a new turn.
+The tab refetches the turn list and the shown timeline after every (re)connect and on `span` and
+`llm_activity` notifications: the latter move a running LLM request through its phases. A burst of
+notifications causes one refetch once it settles (250 ms), and at least one per second while it
+lasts.
 
 ## What is captured
 
