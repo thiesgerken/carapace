@@ -50,10 +50,7 @@ from ..usage import (
     last_record_for_source,
 )
 from ..usage import (
-    note_llm_request_text as _note_llm_request_text,
-)
-from ..usage import (
-    note_llm_request_thinking as _note_llm_request_thinking,
+    current_llm_request_state as _current_llm_request_state,
 )
 from ..ws_models import (
     ApprovalResponse,
@@ -94,12 +91,8 @@ def run_agent_turn(*args: Any, **kwargs: Any) -> Any:
     return _run_agent_turn(*args, **kwargs)
 
 
-def note_llm_request_text() -> LlmRequestState | None:
-    return _note_llm_request_text()
-
-
-def note_llm_request_thinking() -> LlmRequestState | None:
-    return _note_llm_request_thinking()
+def current_llm_request_state() -> LlmRequestState | None:
+    return _current_llm_request_state()
 
 
 def _user_prompts(events: list[dict[str, Any]]) -> list[str]:

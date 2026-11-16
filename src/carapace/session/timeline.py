@@ -99,7 +99,7 @@ def _llm_span(
             role=request.source,
             request_id=request.request_id,
             model_name=request.model_name,
-            first_token_at=None,
+            first_token_at=request.first_token_at,
             first_thinking_at=request.first_thinking_at,
             last_thinking_at=request.last_thinking_at,
             first_text_at=request.first_text_at,

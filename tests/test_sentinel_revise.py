@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from pydantic_ai.messages import ModelMessage, ModelResponse, ToolCallPart, ToolReturnPart
-from pydantic_ai.models.function import AgentInfo, FunctionModel
+from pydantic_ai.models.function import AgentInfo
 
 from carapace.security import evaluate_push_with, evaluate_with
 from carapace.security.context import (
@@ -20,6 +20,8 @@ from carapace.security.context import (
     ToolCallEntry,
 )
 from carapace.security.sentinel import Sentinel
+
+from .streaming_model import ReplayStreamModel
 
 _REVISE = SentinelVerdict(decision="revise", explanation="Split the commit from the cleanup.", risk_level="low")
 
@@ -87,7 +89,7 @@ def _sentinel(tmp_path: Path, decisions: list[str], *, unattended: bool = False)
         skills_dir=tmp_path / "skills",
         llm_slots=None,
         unattended=unattended,
-        model_factory=lambda _name, *, user: FunctionModel(respond),
+        model_factory=lambda _name, *, user: ReplayStreamModel(respond),
     )
     return sentinel, requests
 

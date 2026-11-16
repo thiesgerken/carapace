@@ -39,6 +39,7 @@ from carapace.session.compaction_summarizer import summarize_tool_output
 from carapace.session.transcript import completed_model_turn_end_indexes
 from carapace.usage import count_message_tokens
 from tests.session_helpers import _make_engine, _patch_sentinel
+from tests.streaming_model import ReplayStreamModel
 from tests.test_autonomy_limit import _read_calls, _streaming_model
 
 
@@ -414,7 +415,7 @@ def test_compact_focus_reaches_every_summary_request(tmp_path: Path, db_factory)
     async def _run() -> None:
         with _patch_sentinel():
             engine = _make_engine(tmp_path, session_factory=db_factory)
-        engine._model_factory = lambda _name, *, user: FunctionModel(respond)
+        engine._model_factory = lambda _name, *, user: ReplayStreamModel(respond)
         engine._config.agent.compaction.keep_turns = 3
         engine._config.agent.compaction.verbatim_tool_turns = 1
         sid = engine.session_mgr.create_session(user="thies").session_id
@@ -441,7 +442,7 @@ def test_preview_matches_the_run_without_an_llm_call(tmp_path: Path, db_factory)
     async def _run() -> None:
         with _patch_sentinel():
             engine = _make_engine(tmp_path, session_factory=db_factory)
-        engine._model_factory = lambda _name, *, user: FunctionModel(summarize)
+        engine._model_factory = lambda _name, *, user: ReplayStreamModel(summarize)
         engine._config.agent.compaction.keep_turns = 3
         engine._config.agent.compaction.verbatim_tool_turns = 1
         sid = engine.session_mgr.create_session(user="thies").session_id
@@ -581,7 +582,7 @@ def test_summaries_lead_with_the_agents_shared_prompt_prefix(tmp_path: Path) -> 
             user="thies",
             usage_tracker=None,
             before_llm_call=None,
-            model_factory=lambda _name, *, user: FunctionModel(respond),
+            model_factory=lambda _name, *, user: ReplayStreamModel(respond),
             model_settings=None,
             usage_limits=None,
         )
@@ -598,7 +599,7 @@ def test_failed_compact_reports_the_error_and_keeps_the_history(tmp_path: Path, 
     async def _run() -> None:
         with _patch_sentinel():
             engine = _make_engine(tmp_path, session_factory=db_factory)
-        engine._model_factory = lambda _name, *, user: FunctionModel(provider_down)
+        engine._model_factory = lambda _name, *, user: ReplayStreamModel(provider_down)
         sid = engine.session_mgr.create_session(user="thies").session_id
         engine.get_or_activate(sid)
         engine._config.agent.compaction.keep_turns = 3
@@ -645,7 +646,7 @@ def test_first_tool_summary_warms_the_cache_before_the_rest_run_concurrently(tmp
     async def _run() -> None:
         with _patch_sentinel():
             engine = _make_engine(tmp_path, session_factory=db_factory)
-        engine._model_factory = lambda _name, *, user: FunctionModel(respond)
+        engine._model_factory = lambda _name, *, user: ReplayStreamModel(respond)
         engine._config.agent.compaction.verbatim_tool_turns = 1
         sid = engine.session_mgr.create_session(user="thies").session_id
         active = engine.get_or_activate(sid)
@@ -674,7 +675,7 @@ def test_a_failing_tool_summary_cancels_its_siblings(tmp_path: Path, db_factory)
     async def _run() -> None:
         with _patch_sentinel():
             engine = _make_engine(tmp_path, session_factory=db_factory)
-        engine._model_factory = lambda _name, *, user: FunctionModel(respond)
+        engine._model_factory = lambda _name, *, user: ReplayStreamModel(respond)
         engine._config.agent.compaction.verbatim_tool_turns = 1
         sid = engine.session_mgr.create_session(user="thies").session_id
         engine.get_or_activate(sid)
@@ -718,20 +719,20 @@ def test_memory_block_is_frozen_per_session_until_compaction(tmp_path: Path, db_
 
 
 class _AgentAndSummarizer:
-    """The agent streams its answer; the compaction model is run without streaming and summarizes."""
+    """One model for both roles: the agent (which has tools) answers, the compaction model summarizes."""
 
     def __init__(self) -> None:
         self.summary_inputs: list[str] = []
 
     def factory(self, _name: str, *, user: str) -> FunctionModel:
-        return FunctionModel(self._summarize, stream_function=self._answer)
+        return FunctionModel(stream_function=self._respond)
 
-    def _summarize(self, messages: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
+    async def _respond(self, messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        if info.function_tools:
+            yield "answer 10"
+            return
         self.summary_inputs.append(str(messages[-1].parts[-1].content))
-        return ModelResponse(parts=[TextPart(f"summary {len(self.summary_inputs)}")])
-
-    async def _answer(self, _messages: list[ModelMessage], _info: AgentInfo) -> AsyncIterator[str]:
-        yield "answer 10"
+        yield f"summary {len(self.summary_inputs)}"
 
 
 async def _fold_then_real_turn(tmp_path: Path, db_factory, models: _AgentAndSummarizer):
