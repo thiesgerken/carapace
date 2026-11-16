@@ -50,12 +50,11 @@ class TurnTimeline(BaseModel):
 
 
 def _turn_summary(turn_id: str, root: Span) -> TurnSummary:
-    prompt = root.attrs.get("prompt", "")
     return TurnSummary(
         turn_id=turn_id,
         started_at=root.started_at,
         ended_at=root.ended_at,
-        prompt_preview=str(prompt),
+        prompt_preview=str(root.attrs["prompt"]),
         status=root.status,
     )
 
@@ -136,7 +135,8 @@ def turn_timeline(
     spans = running[1] if running is not None else session_mgr.load_turn_spans(session_id, turn_id)
     if not spans:
         return None
-    records = session_mgr.load_llm_request_log(session_id).records
+    # An active session's log is current in memory: the request sink appends before it saves.
+    records = (active.llm_request_log if active is not None else session_mgr.load_llm_request_log(session_id)).records
     in_flight = active.llm_request_state if active is not None else None
     timeline = [TimelineSpan.model_validate(span.model_dump()) for span in spans]
     timeline += _llm_spans(turn_id, records, in_flight)

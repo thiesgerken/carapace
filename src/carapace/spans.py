@@ -97,6 +97,9 @@ def span(kind: str, name: str, **attrs: SpanAttr) -> Iterator[Span]:
     """Time the block as a span under the current one; its status follows how the block exits.
 
     Outside a running turn the yielded span is recorded nowhere, so callers never need to check.
+    Event-loop thread only: ``asyncio.to_thread`` copies the contextvar into its worker, where a span
+    would mutate the trace off the loop and fail to broadcast. Wrap the ``await asyncio.to_thread(...)``,
+    never the function running inside it.
     """
     current = _current.get()
     if current is None or current[0].closed:

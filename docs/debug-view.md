@@ -202,7 +202,9 @@ with span("exec", "exec", command=command[:200]) as current:
 
 Its parent is the current span, carried in a contextvar, so spans nest the way the code calls. Its
 status follows how the block exits. Outside a running turn `span()` records nothing, so callers never
-check. Code in another task than the turn (the proxy) does not inherit the contextvar; it enters
+check. It works on the event-loop thread only: `asyncio.to_thread` copies the contextvar into its
+worker, where a span would change the trace off the loop. Wrap the `await asyncio.to_thread(...)`,
+never the function running inside it. Code in another task than the turn (the proxy) does not inherit the contextvar; it enters
 `attach(trace, parent_id)` with the session's `TurnTrace` to put its spans under an explicit parent.
 
 ### Storage
@@ -239,11 +241,12 @@ field, `null` except on `kind == "llm"` spans, which carry the request's phases 
 
 ### WebSocket
 
-The session WebSocket sends a notification whenever a span of the running turn starts or ends:
+The session WebSocket sends a notification whenever a span of the running turn starts or ends, LLM
+bars included (their `span_id` is the `request_id`):
 
 ```json
 {"type": "span", "turn_id": "9c1e0a7f", "span_id": "3f9c0a1b2d4e5f60", "status": "running"}
 ```
 
-Clients refetch the timeline, and the turn list on a `turn_id` they don't know yet. LLM bars change
-with the `llm_activity` and `llm_context` notifications.
+Clients refetch the timeline, and the turn list on a `turn_id` they don't know yet. An interrupted
+LLM request is recorded when its turn stops, so its bar's last change arrives with the root span's.

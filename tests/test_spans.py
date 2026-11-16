@@ -133,7 +133,7 @@ def test_turn_flushes_its_spans_and_joins_its_llm_requests(tmp_path: Path, db_fa
         assert (llm.kind, llm.parent_id, llm.status) == ("llm", tool.span_id, "ok")
         assert llm.llm is not None and (llm.llm.role, llm.llm.input_tokens) == ("agent", 100)
         assert {(span_id, status) for _, span_id, status in sub.span_updates} == {
-            (s.span_id, status) for s in (root, tool) for status in ("running", "ok")
+            (s.span_id, status) for s in (root, tool, llm) for status in ("running", "ok")
         }
         assert turn_timeline(engine.session_mgr, sid, "nope", active) is None
 

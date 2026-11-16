@@ -221,13 +221,15 @@ class SessionTurnMixin(SessionTurnHost):
         trace = TurnTrace(turn_id, on_change=partial(self._broadcast_span, active, turn_id))
         root = trace.start("turn", "turn", parent_id=None, attrs={"prompt": _truncate_for_log(user_input, 60)})
         active.turn_trace = trace
-        # Only a cancellation escapes the steps: they handle every other failure themselves.
-        status: SpanStatus = "interrupted"
+        status: SpanStatus = "error"
         try:
             with attach(trace, root.span_id):
                 status = await self._run_turn_steps(
                     active, user_input, turn_id=turn_id, origin=origin, attachments=attachments
                 )
+        except asyncio.CancelledError:
+            status = "interrupted"
+            raise
         finally:
             trace.end(root, status)
             self._session_mgr.save_turn_spans(session_id, turn_id, trace.close())
