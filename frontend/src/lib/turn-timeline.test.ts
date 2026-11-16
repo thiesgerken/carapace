@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type { LlmPhases, Span } from "./types";
-import { llmSegments, summarizeTurn, timelineRows, waterfallLines } from "./turn-timeline";
+import { llmSegments, outputRate, summarizeTurn, timelineRows, waterfallLines } from "./turn-timeline";
 
 const T0 = Date.parse("2026-11-16T12:00:00Z");
 const at = (ms: number) => new Date(T0 + ms).toISOString();
@@ -167,4 +167,11 @@ test("only spans that ended ok merge: running and failed ones keep their own lin
   ];
   const lines = waterfallLines(timelineRows(spans, T0 + 1000), new Set());
   assert.deepEqual(lines.map((line) => line.chain.map((row) => row.span.span_id)), [["turn"], ["gate"], ["sentinel"], ["exec"], ["domain"]]);
+});
+
+test("the output rate counts generation from the first token on, and needs output", () => {
+  assert.equal(outputRate(llm({ output_tokens: 300, first_token_at: at(1000) }), T0, T0 + 4000), 100);
+  assert.equal(outputRate(llm({ output_tokens: 0, first_token_at: at(1000) }), T0, T0 + 4000), null);
+  // Without a first token the whole request is waiting: no generation time to divide by.
+  assert.equal(outputRate(llm({ output_tokens: 300 }), T0, T0 + 4000), null);
 });
