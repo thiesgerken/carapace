@@ -51,8 +51,8 @@ failed, budget-stopped or stopped one.
 
 - **Turns**: a list of the session's turns with timing, newest first, one row each: start time,
   the prompt's first characters, a duration bar scaled to the longest turn in the list, and the
-  duration. Running turns grow live; failed and stopped ones take the red and grey of errors and
-  interruptions. The list scrolls on its own when it gets long. Clicking a row shows its turn. The
+  duration. Finished turns are blue, failed and stopped ones take the red and grey of errors and
+  interruptions, and running ones grow live. Past a few rows the list gets its own scrollbar. Clicking a row shows its turn. The
   newest turn is shown by default, and new turns are followed live as long as the newest one is
   picked. Turns from before timing was recorded have no timeline.
 - **Summary**: wall time, system time, and the time spent waiting for you (approvals, domain

@@ -254,7 +254,7 @@ test("the timeline tab shows a turn's waterfall and summary, follows new turns a
 
     assert.equal(view.container.querySelector('[role="radio"][aria-checked="true"]')?.textContent, "Turns");
     const turnRows = () => Array.from(view.container.querySelectorAll<HTMLButtonElement>('ol[aria-label="Turns"] button'));
-    assert.deepEqual(turnRows().map((row) => row.textContent), ["11/9, 12:00 PMCheck the backups4 s"]);
+    assert.deepEqual(turnRows().map((row) => row.textContent), ["11/9, 12:00:00 PMCheck the backups4 s"]);
     assert.equal(turnRows()[0].getAttribute("aria-current"), "true");
     assert.match(text(), /Wall time4 s/);
     assert.match(text(), /Agent LLM: first token1 s · 25%/);
@@ -297,7 +297,7 @@ test("the timeline tab shows a turn's waterfall and summary, follows new turns a
     await runInAct(() => socket.onmessage?.({ data: JSON.stringify({ type: "span", turn_id: "t2", span_id: "root2", status: "running" }) }));
     await runInAct(() => new Promise((resolve) => setTimeout(resolve, 300)));
     await settle();
-    assert.deepEqual(turnRows().map((row) => [row.querySelector("time")?.textContent, row.getAttribute("aria-current")]), [["11/9, 12:01 PM", "true"], ["11/9, 12:00 PM", null]]);
+    assert.deepEqual(turnRows().map((row) => [row.querySelector("time")?.textContent, row.getAttribute("aria-current")]), [["11/9, 12:01:00 PM", "true"], ["11/9, 12:00:00 PM", null]]);
     const turnBar = (row: HTMLButtonElement) => row.querySelector<HTMLElement>("span[style*=width]")!.style.width;
     assert.deepEqual(turnRows().map(turnBar), ["50%", "100%"], "bars scale to the longest turn");
     assert.deepEqual(rows().map((row) => row.textContent), ["turn2 s"]);

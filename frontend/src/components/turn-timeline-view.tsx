@@ -192,11 +192,16 @@ function TurnList({ turns, value, onChange }: { turns: TurnSummary[]; value: str
   const format = useFormatter();
   const duration = useFormatDuration();
   const now = useNow(turns.some((turn) => turn.ended_at === null));
+  const list = useRef<HTMLOListElement>(null);
   const selected = useRef<HTMLButtonElement>(null);
-  // A deep-linked older turn may sit below the list's scroll fold.
+  // A picked turn may sit outside the list's scroll window. Only the list scrolls: scrollIntoView
+  // would also move the page while someone reads the waterfall below.
   useEffect(() => {
-    // Not returned: Chrome's scrollIntoView returns a promise, which React would take for a cleanup.
-    void selected.current?.scrollIntoView?.({ block: "nearest" });
+    const [box, row] = [list.current, selected.current];
+    if (!box || !row) return;
+    if (row.offsetTop < box.scrollTop || row.offsetTop + row.offsetHeight > box.scrollTop + box.clientHeight) {
+      box.scrollTop = row.offsetTop - (box.clientHeight - row.offsetHeight) / 2;
+    }
   }, [value]);
   const durations = new Map(turns.map((turn) => [turn.turn_id, Math.max(0, (turn.ended_at ? Date.parse(turn.ended_at) : now) - Date.parse(turn.started_at))]));
   const longest = Math.max(...durations.values());
@@ -204,8 +209,9 @@ function TurnList({ turns, value, onChange }: { turns: TurnSummary[]; value: str
   // One grid for all rows (subgrid), so the columns line up whatever the start times' widths.
   return (
     <ol
+      ref={list}
       aria-label={t("turns")}
-      className="grid max-h-48 grid-cols-[auto_minmax(0,1fr)_3rem_4.5rem] content-start gap-x-2 overflow-y-auto rounded-2xl border border-border bg-muted/20 p-1 sm:grid-cols-[auto_minmax(0,1fr)_10rem_4.5rem] sm:gap-x-3"
+      className="relative grid max-h-48 grid-cols-[auto_minmax(0,1fr)_3rem_4.5rem] content-start gap-x-2 overflow-y-auto rounded-2xl border border-border bg-muted/20 p-1 sm:grid-cols-[auto_minmax(0,1fr)_10rem_4.5rem] sm:gap-x-3"
     >
       {[...turns].reverse().map((turn) => {
         const ms = durations.get(turn.turn_id)!;
@@ -224,14 +230,14 @@ function TurnList({ turns, value, onChange }: { turns: TurnSummary[]; value: str
               )}
             >
               <time dateTime={turn.started_at} title={format.dateTime(started, { dateStyle: "medium", timeStyle: "medium" })} className="tabular-nums text-muted-foreground">
-                {format.dateTime(started, { month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit" })}
+                {format.dateTime(started, { month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit", second: "2-digit" })}
               </time>
               <span className={cn("truncate", current && "font-medium")} title={turn.prompt_preview}>
                 {turn.prompt_preview}
               </span>
               <span className="relative block h-2 rounded-sm bg-muted/50">
                 <span
-                  className={cn("absolute inset-y-0 left-0 min-w-[2px] rounded-sm", STATUS_BAR_CLASS[turn.status] ?? "bg-slate-400 dark:bg-slate-500", turn.status === "running" && "animate-pulse")}
+                  className={cn("absolute inset-y-0 left-0 min-w-[2px] rounded-sm", STATUS_BAR_CLASS[turn.status] ?? "bg-sky-500 dark:bg-sky-400", turn.status === "running" && "animate-pulse")}
                   style={{ width: `${longest > 0 ? (ms / longest) * 100 : 0}%` }}
                 />
               </span>
