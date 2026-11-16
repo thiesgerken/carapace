@@ -1789,11 +1789,10 @@
         "turns": {
             "tab": "Turns",
             "hint": "Wohin die Zeit eines Turns ging: jeder gemessene Schritt als Wasserfall. Folgt live dem neuesten Turn.",
-            "turn": "Turn",
+            "turns": "Turns",
             "empty": "Noch kein Turn mit Zeitleiste. Turns von vor der Zeitmessung haben keine.",
             "loadError": "Die Turns konnten nicht geladen werden: {error}",
             "timelineError": "Die Zeitleiste konnte nicht geladen werden: {error}",
-            "running": "läuft",
             "wall": "Gesamtdauer",
             "system": "Systemzeit",
             "breakdown": "Wohin die Zeit ging",

@@ -1789,11 +1789,10 @@
         "turns": {
             "tab": "Turns",
             "hint": "Where a turn's time went: every timed step as a waterfall. Follows the newest turn live.",
-            "turn": "Turn",
+            "turns": "Turns",
             "empty": "No turn with a timeline yet. Turns from before timing was recorded have none.",
             "loadError": "Could not load the turns: {error}",
             "timelineError": "Could not load the timeline: {error}",
-            "running": "running",
             "wall": "Wall time",
             "system": "System time",
             "breakdown": "Where the time went",
