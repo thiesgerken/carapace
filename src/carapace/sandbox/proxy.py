@@ -350,9 +350,7 @@ class ProxyServer:
     # ------------------------------------------------------------------
 
     async def _authorize_domain(self, session_id: str, domain: str) -> bool:
-        # The domain comes from the sandbox unchecked: cap it like every other free-text attr.
-        name = domain[:200]
-        with self._attach_sandbox_call(session_id), span("domain", name, domain=name) as check:
+        with self._attach_sandbox_call(session_id), span("domain", domain, domain=domain) as check:
             allowed = await self._decide_domain(session_id, domain)
             check.attrs["allowed"] = allowed
         return allowed

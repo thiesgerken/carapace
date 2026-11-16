@@ -233,10 +233,13 @@ unusable models) and `interrupted` when the user stopped it.
 Code times a block with the `span()` context manager:
 
 ```python
-with span("exec", "exec", command=command[:200]) as current:
+with span("exec", "exec", command=command) as current:
     result = await run(command)
     current.attrs["exit_code"] = result.exit_code
 ```
+
+A span caps its name and every string attr it starts with at 200 characters (`SPAN_TEXT_MAX`), so
+callers pass values as they are, sandbox-controlled ones included.
 
 Its parent is the current span, carried in a contextvar, so spans nest the way the code calls. Its
 status follows how the block exits. Outside a running turn `span()` records nothing, so callers never
