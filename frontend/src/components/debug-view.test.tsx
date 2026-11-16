@@ -256,7 +256,8 @@ test("the timeline tab shows a turn's waterfall and summary, follows new turns a
     assert.match(text(), /Not covered500 ms · 13%/);
     // The label button of each line; the chevron is the other one.
     const rows = () => Array.from(view.container.querySelectorAll("ol > li"), (line) => line.querySelector("button[title]")!);
-    assert.deepEqual(rows().map((row) => row.textContent), ["turn4 s", "agent request20 out · 10 tok/s3 s", "ls /backups500 ms"]);
+    assert.deepEqual(rows().map((row) => row.textContent), ["turn4 s", "agent request3 s", "ls /backups500 ms"]);
+    assert.equal(rows()[1].getAttribute("title"), "llm · agent request\n20 output tokens · 10 tok/s", "the output stays off the row, in its tooltip");
     assert.deepEqual(rows().map((row) => row.querySelector('[role="img"]')?.getAttribute("aria-label")), ["turn", "llm", "exec"]);
     const bar = (index: number) => view.container.querySelectorAll("ol > li")[index].querySelector<HTMLElement>("span.absolute[style*=left]")!;
     assert.equal(bar(2).style.left, "75%");
@@ -270,6 +271,7 @@ test("the timeline tab shows a turn's waterfall and summary, follows new turns a
     await settle();
     assert.match(text(), /Input tokens12,345/);
     assert.match(text(), /Until first token1 s/);
+    assert.match(text(), /Output speed10 tok\/s/);
     const openRole = Array.from(view.container.querySelectorAll("button")).find((button) => button.textContent === "Show in the Agent tab");
     assert.ok(openRole, "the agent's latest request links to the agent tab");
     await click(openRole);

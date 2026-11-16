@@ -63,8 +63,9 @@ failed, budget-stopped or stopped one.
 - A row's icon names its kind (hover for the kind and name) in its summary category's color. Its
   text is what the span did: the command of an `exec`, operation and path of a `file`, the domain,
   the tool or step name. Facts follow: the sentinel's verdict as a colored badge; a denied gate, a
-  blocked domain or a non-zero exit code in red; and, muted, the output tokens of the agent's LLM
-  requests and their tokens per second of generation (from the first token on).
+  blocked domain or a non-zero exit code in red. An LLM request's output tokens and tokens per
+  second of generation (from the first token on) sit in the row's tooltip and its details, so the
+  name and a duration up to minutes keep their room.
 - A span whose only child covers at least three quarters of it merges with that child into one
   row, and so on down, once both have ended `ok`; running, failed and interrupted spans keep their
   own rows. A gate, its sentinel call and the sentinel's LLM request become one
@@ -72,7 +73,7 @@ failed, budget-stopped or stopped one.
   named by its first member that isn't a gate, since a gate's name is its tool's. The turn itself
   never merges.
 - Clicking a row opens its details, one block per merged span: start (relative to the turn),
-  duration, status and attributes. An LLM span adds model, phase durations, tokens, cache and
+  duration, status and attributes. An LLM span adds model, phase durations, tokens, output speed, cache and
   cost, and a link to its role's tab when it is that role's latest request.
 
 The tab refetches the turn list and the shown timeline after every (re)connect and on `span` and
