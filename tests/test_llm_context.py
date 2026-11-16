@@ -144,7 +144,7 @@ async def test_sentinel_timeout_marks_its_context_failed(tmp_path: Path, db_fact
 
 @pytest.mark.asyncio
 async def test_agent_error_mid_stream_marks_its_context_failed(tmp_path: Path, db_factory) -> None:
-    """Streamed, the request only sees a cancellation; the turn's error path supplies the error."""
+    """Streamed, the request only sees a cancellation; the run's error reaches it through ``on_run_error``."""
     engine, active, _subscriber = _session(tmp_path, db_factory)
 
     async def _streaming_turn(user_input: str, *_args: Any, **_kwargs: Any) -> None:

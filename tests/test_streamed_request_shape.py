@@ -69,8 +69,9 @@ class _RecordingModel(ReplayStreamModel):
 def _shape(messages: list[ModelMessage], info: AgentInfo) -> dict[str, Any]:
     return {
         "instructions": info.instructions,
-        "tools": [*info.function_tools, *info.output_tools],
         "model_settings": info.model_settings,
+        # Tools, output mode and native tools: everything besides the messages that reaches the provider.
+        "parameters": info.model_request_parameters,
         "messages": _without_volatile(ModelMessagesTypeAdapter.dump_python(messages, mode="json")),
     }
 
@@ -126,9 +127,14 @@ async def _sentinel(model: Model, tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("run_role", [_titler, _compaction, _sentinel], ids=["titler", "compaction", "sentinel"])
+@pytest.mark.parametrize(
+    ("run_role", "requests"), [(_titler, 1), (_compaction, 1), (_sentinel, 2)], ids=["titler", "compaction", "sentinel"]
+)
 async def test_streaming_sends_the_same_requests(
-    run_role: Callable[[Model, Path], Awaitable[None]], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    run_role: Callable[[Model, Path], Awaitable[None]],
+    requests: int,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     streamed = _RecordingModel()
     await run_role(streamed, tmp_path / "streamed")
@@ -138,5 +144,5 @@ async def test_streaming_sends_the_same_requests(
     unstreamed = _RecordingModel()
     await run_role(unstreamed, tmp_path / "unstreamed")
 
-    assert set(streamed.streamed) == {True} and set(unstreamed.streamed) == {False}
+    assert streamed.streamed == [True] * requests and unstreamed.streamed == [False] * requests
     assert streamed.requests == unstreamed.requests
