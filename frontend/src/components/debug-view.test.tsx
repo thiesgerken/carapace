@@ -4,7 +4,7 @@ import { NextIntlClientProvider } from "next-intl";
 
 import messages from "../../messages/en.json";
 import { click, installDom, renderReact, runInAct } from "../../test/react-test-utils";
-import type { DebugRole, LlmContext, LlmRequestRecord } from "@/lib/types";
+import type { DebugRole, LlmContext, LlmRequestRecord, Span, TurnSummary, TurnTimeline } from "@/lib/types";
 
 import { DebugView } from "./debug-view";
 
@@ -88,7 +88,7 @@ test("the debug view shows each role's latest context and refetches on WebSocket
   try {
     const view = await renderReact(
       <NextIntlClientProvider locale="en" messages={messages} timeZone="UTC">
-        <DebugView server={SERVER} token="" sessionId="s1" title="🥞 Pancakes" />
+        <DebugView server={SERVER} token="" sessionId="s1" title="🥞 Pancakes" initialTab="agent" />
       </NextIntlClientProvider>,
     );
     const settle = () => runInAct(() => new Promise((resolve) => setTimeout(resolve, 0)));
@@ -181,6 +181,109 @@ test("the debug view shows each role's latest context and refetches on WebSocket
     await click(pill("Titler"));
     await settle();
     assert.match(text(), /has not sent a request/);
+
+    await view.unmount();
+  } finally {
+    globalThis.fetch = originalFetch;
+    globalThis.WebSocket = originalWebSocket;
+    restore();
+  }
+});
+
+function turn(turn_id: string, startedAt: string, endedAt: string, prompt_preview: string): TurnSummary {
+  return { turn_id, started_at: startedAt, ended_at: endedAt, prompt_preview, status: "ok" };
+}
+
+function span(span_id: string, parent_id: string | null, kind: string, name: string, started_at: string, ended_at: string, extra: Partial<Span> = {}): Span {
+  return { span_id, parent_id, kind, name, started_at, ended_at, status: "ok", attrs: {}, llm: null, ...extra };
+}
+
+test("the timeline tab shows a turn's waterfall and summary, follows new turns and links LLM spans to their role", async () => {
+  const restore = installDom();
+  const originalFetch = globalThis.fetch;
+  const originalWebSocket = globalThis.WebSocket;
+  globalThis.WebSocket = FakeWebSocket as unknown as typeof WebSocket;
+  const first = turn("t1", "2026-11-09T12:00:00Z", "2026-11-09T12:00:04Z", "Check the backups");
+  const second = turn("t2", "2026-11-09T12:01:00Z", "2026-11-09T12:01:02Z", "And the logs");
+  const turns: TurnSummary[] = [first];
+  const timelines: Record<string, TurnTimeline> = {
+    t1: {
+      turn: first,
+      spans: [
+        span("root", null, "turn", "turn", "2026-11-09T12:00:00Z", "2026-11-09T12:00:04Z"),
+        span("llm", "root", "llm", "agent request", "2026-11-09T12:00:00Z", "2026-11-09T12:00:03Z", {
+          llm: {
+            role: "agent", request_id: "r1", model_name: "anthropic:sonnet",
+            first_token_at: "2026-11-09T12:00:01Z", first_thinking_at: null, last_thinking_at: null, first_text_at: "2026-11-09T12:00:01Z",
+            input_tokens: 12345, output_tokens: 20, cache_read_tokens: 4000, cache_write_tokens: 0, cost: null,
+          },
+        }),
+        span("exec", "root", "exec", "exec", "2026-11-09T12:00:03Z", "2026-11-09T12:00:03.500Z", { attrs: { command: "ls /backups", exit_code: 0 } }),
+      ],
+    },
+    t2: { turn: second, spans: [span("root2", null, "turn", "turn", "2026-11-09T12:01:00Z", "2026-11-09T12:01:02Z")] },
+  };
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = new URL(String(input));
+    if (url.pathname === "/api/auth/ws-ticket") return Response.json({ ticket: "ticket-1" });
+    if (url.pathname === "/api/sessions/s1/turns") return Response.json(turns);
+    if (url.pathname === "/api/sessions/s1/llm-requests") return Response.json([]);
+    if (url.pathname === "/api/sessions/s1/llm-contexts/agent") return Response.json(context({ status: "completed" }));
+    const turnId = url.pathname.match(/^\/api\/sessions\/s1\/turns\/(\w+)\/timeline$/)?.[1];
+    assert.ok(turnId, `unexpected request ${url.pathname}`);
+    return Response.json(timelines[turnId]);
+  }) as typeof fetch;
+
+  try {
+    const view = await renderReact(
+      <NextIntlClientProvider locale="en" messages={messages} timeZone="UTC">
+        <DebugView server={SERVER} token="" sessionId="s1" title="🥞 Pancakes" />
+      </NextIntlClientProvider>,
+    );
+    const settle = async () => {
+      for (let i = 0; i < 3; i++) await runInAct(() => new Promise((resolve) => setTimeout(resolve, 0)));
+    };
+    const text = () => view.container.textContent ?? "";
+    await settle();
+
+    assert.equal(view.container.querySelector('[role="radio"][aria-checked="true"]')?.textContent, "Timeline");
+    assert.deepEqual(Array.from(view.container.querySelectorAll("option"), (option) => option.textContent), ["11/9, 12:00:00 PM · Check the backups · 4 s"]);
+    assert.match(text(), /Wall time4 s/);
+    assert.match(text(), /Agent LLM: first token1 s · 25%/);
+    assert.match(text(), /Agent LLM: output2 s · 50%/);
+    assert.match(text(), /Exec and files500 ms · 13%/);
+    assert.match(text(), /Not covered500 ms · 13%/);
+    const rows = () => Array.from(view.container.querySelectorAll("ol > li > button"));
+    assert.deepEqual(rows().map((row) => row.textContent), ["turn4 s", "agent request3 s", "exec500 ms"]);
+    const bar = (index: number) => rows()[index].querySelector<HTMLElement>("span.absolute")!;
+    assert.equal(bar(2).style.left, "75%");
+    assert.equal(bar(2).style.width, "12.5%");
+    assert.equal(bar(1).children.length, 2, "the LLM bar shows its waiting and output phases");
+
+    await click(rows()[2]);
+    assert.match(text(), /commandls \/backups/);
+    assert.match(text(), /exit_code0/);
+    await click(rows()[1]);
+    await settle();
+    assert.match(text(), /Input tokens12,345/);
+    assert.match(text(), /Until first token1 s/);
+    const openRole = Array.from(view.container.querySelectorAll("button")).find((button) => button.textContent === "Show in the Agent tab");
+    assert.ok(openRole, "the agent's latest request links to the agent tab");
+    await click(openRole);
+    await settle();
+    assert.equal(view.container.querySelector('[role="radio"][aria-checked="true"]')?.textContent, "Agent");
+    await click(Array.from(view.container.querySelectorAll('[role="radio"]')).find((pill) => pill.textContent === "Timeline")!);
+    await settle();
+
+    // A span of a new turn refetches the list once the burst settles, and the view follows the newest turn.
+    turns.push(second);
+    const socket = FakeWebSocket.instances.at(-1)!;
+    await runInAct(() => socket.onmessage?.({ data: JSON.stringify({ type: "span", turn_id: "t2", span_id: "root2", status: "running" }) }));
+    await runInAct(() => new Promise((resolve) => setTimeout(resolve, 300)));
+    await settle();
+    assert.equal(view.container.querySelector("select")?.value, "t2");
+    assert.deepEqual(rows().map((row) => row.textContent), ["turn2 s"]);
+
 
     await view.unmount();
   } finally {

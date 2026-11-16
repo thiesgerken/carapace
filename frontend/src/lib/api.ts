@@ -40,6 +40,8 @@ import type {
   SessionListPage,
   SessionSandboxSnapshot,
   SessionSearchHit,
+  TurnSummary,
+  TurnTimeline,
 } from "./types";
 import { isRecord, readNumber, readString, readStringArray } from "./decoding";
 
@@ -877,6 +879,18 @@ export async function fetchLlmRequests(
   const res = await fetch(`${server}/api/sessions/${sessionId}/llm-requests?role=${role}`, { headers: headers(token) });
   if (!res.ok) throw new Error(await readErrorMessage(res, "Failed to load the LLM requests"));
   return (await res.json()) as LlmRequestRecord[];
+}
+
+export async function fetchTurns(server: string, token: string, sessionId: string): Promise<TurnSummary[]> {
+  const res = await fetch(`${server}/api/sessions/${sessionId}/turns`, { headers: headers(token) });
+  if (!res.ok) throw new Error(await readErrorMessage(res, "Failed to load the turns"));
+  return (await res.json()) as TurnSummary[];
+}
+
+export async function fetchTurnTimeline(server: string, token: string, sessionId: string, turnId: string): Promise<TurnTimeline> {
+  const res = await fetch(`${server}/api/sessions/${sessionId}/turns/${turnId}/timeline`, { headers: headers(token) });
+  if (!res.ok) throw new Error(await readErrorMessage(res, "Failed to load the turn timeline"));
+  return (await res.json()) as TurnTimeline;
 }
 
 export async function postInteractivePresence(
