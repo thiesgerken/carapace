@@ -10,7 +10,7 @@ instead of showing a prompt that is not the real one.
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
@@ -20,7 +20,7 @@ from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel
 from pydantic_ai import Agent
-from pydantic_ai.messages import ModelMessage, ModelResponse
+from pydantic_ai.messages import ModelMessage
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.tools import ToolDefinition
 
@@ -292,11 +292,13 @@ class _RequestRecordedError(Exception):
 
 
 def _recording_model() -> FunctionModel:
-    def respond(_messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+    # Every role's run streams (LlmRequestLogCapability), so only the stream function is ever called.
+    async def respond(_messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
         tools = [*info.function_tools, *info.output_tools]
         raise _RequestRecordedError(_Request(instructions=info.instructions or "", tools=tools))
+        yield ""  # an async generator, as FunctionModel's stream function must be
 
-    return FunctionModel(respond)
+    return FunctionModel(stream_function=respond)
 
 
 async def _record(agent: Agent[Any, Any], *, deps: Any = None) -> _Request:

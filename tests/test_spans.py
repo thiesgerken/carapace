@@ -11,7 +11,7 @@ from unittest.mock import patch
 import pytest
 from pydantic_ai import Agent
 from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart
-from pydantic_ai.models.function import AgentInfo, FunctionModel
+from pydantic_ai.models.function import AgentInfo
 from pydantic_ai.usage import RequestUsage
 
 from carapace.session.engine import SessionEngine
@@ -19,6 +19,7 @@ from carapace.session.timeline import session_turns, turn_timeline
 from carapace.spans import Span, TurnTrace, attach, current_span_ref, span
 from carapace.usage import LlmRequestLogCapability, LlmRequestState
 from tests.session_helpers import _FakeSubscriber, _make_engine, _patch_sentinel
+from tests.streaming_model import ReplayStreamModel
 
 
 def _trace() -> tuple[TurnTrace, Span, list[tuple[str, str]]]:
@@ -104,7 +105,9 @@ def _engine(tmp_path: Path, db_factory) -> tuple[SessionEngine, str, _FakeSubscr
 def test_turn_flushes_its_spans_and_joins_its_llm_requests(tmp_path: Path, db_factory) -> None:
     async def _run() -> None:
         engine, sid, sub = _engine(tmp_path, db_factory)
-        model = Agent(FunctionModel(_reply), capabilities=[LlmRequestLogCapability(source="agent", model_id="test:m")])
+        model = Agent(
+            ReplayStreamModel(_reply), capabilities=[LlmRequestLogCapability(source="agent", model_id="test:m")]
+        )
 
         async def _fake_turn(user_input: str, _deps: Any, history: list[Any], **_kwargs: Any) -> Any:
             with span("tool", "exec", command="ls"):
@@ -132,6 +135,7 @@ def test_turn_flushes_its_spans_and_joins_its_llm_requests(tmp_path: Path, db_fa
         assert (tool.kind, tool.parent_id, tool.status) == ("tool", root.span_id, "ok")
         assert (llm.kind, llm.parent_id, llm.status) == ("llm", tool.span_id, "ok")
         assert llm.llm is not None and (llm.llm.role, llm.llm.input_tokens) == ("agent", 100)
+        assert llm.llm.first_token_at is not None and llm.llm.first_token_at == llm.llm.first_text_at
         assert {(span_id, status) for _, span_id, status in sub.span_updates} == {
             (s.span_id, status) for s in (root, tool, llm) for status in ("running", "ok")
         }

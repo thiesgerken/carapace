@@ -568,7 +568,7 @@ def test_handle_token_chunk_promotes_activity_and_broadcasts(tmp_path: Path, db_
             phase="generating",
         )
 
-        with patch("carapace.session.engine.note_llm_request_text", return_value=llm_state):
+        with patch("carapace.session.engine.current_llm_request_state", return_value=llm_state):
             await engine._handle_token_chunk(active, "hello")
 
         assert subscriber.token_chunks == ["hello"]
@@ -605,7 +605,7 @@ def test_handle_thinking_token_chunk_updates_buffer_and_broadcasts(tmp_path: Pat
             phase="thinking",
         )
 
-        with patch("carapace.session.engine.note_llm_request_thinking", return_value=llm_state):
+        with patch("carapace.session.engine.current_llm_request_state", return_value=llm_state):
             await engine._handle_thinking_token_chunk(active, "ponder")
 
         assert subscriber.thinking_chunks == ["ponder"]
