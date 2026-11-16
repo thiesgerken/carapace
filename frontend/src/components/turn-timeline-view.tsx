@@ -197,11 +197,16 @@ function Summary({ summary }: { summary: TimeBreakdown }) {
   );
 }
 
+/** The kind leads, muted: names repeat across kinds (a tool, its gate and its sandbox call are all `exec`). */
 function SpanLabel({ row }: { row: TimelineRow }) {
   const duration = useFormatDuration();
+  const { kind, name } = row.span;
   return (
     <span className="flex min-w-0 items-center gap-1.5 text-xs" style={{ paddingLeft: `${row.depth * 0.75}rem` }}>
-      <span className="truncate" title={row.span.kind}>{row.span.name}</span>
+      <span className="truncate" title={name === kind ? kind : `${kind} · ${name}`}>
+        <span className="text-muted-foreground">{kind}</span>
+        {name === kind ? null : ` ${name}`}
+      </span>
       {row.span.status === "running" ? <Loader2 className="h-3 w-3 shrink-0 animate-spin text-muted-foreground" /> : null}
       <span className="ml-auto shrink-0 tabular-nums text-muted-foreground">{duration(row.end - row.start)}</span>
     </span>

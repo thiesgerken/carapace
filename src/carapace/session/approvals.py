@@ -172,7 +172,7 @@ class SessionApprovalMixin:
 
             # Wait from before the request is announced on, so an immediate answer is not missed.
             with (
-                span("wait", subject[:200], reason=_WAIT_REASONS[kind]),
+                span("wait", subject, reason=_WAIT_REASONS[kind]),
                 active.escalation_waiters.waiting(request_id) as answer,
             ):
                 await self._announce_escalation(active, session_id, request_id, notif_id, subject, kind, cmd, context)

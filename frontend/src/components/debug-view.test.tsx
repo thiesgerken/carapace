@@ -255,7 +255,7 @@ test("the timeline tab shows a turn's waterfall and summary, follows new turns a
     assert.match(text(), /Exec and files500 ms · 13%/);
     assert.match(text(), /Not covered500 ms · 13%/);
     const rows = () => Array.from(view.container.querySelectorAll("ol > li > button"));
-    assert.deepEqual(rows().map((row) => row.textContent), ["turn4 s", "agent request3 s", "exec500 ms"]);
+    assert.deepEqual(rows().map((row) => row.textContent), ["turn4 s", "llm agent request3 s", "exec500 ms"]);
     const bar = (index: number) => rows()[index].querySelector<HTMLElement>("span.absolute")!;
     assert.equal(bar(2).style.left, "75%");
     assert.equal(bar(2).style.width, "12.5%");

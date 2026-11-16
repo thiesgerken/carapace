@@ -52,6 +52,7 @@ src/carapace/          # main package
   models.py            # Pydantic models and dataclasses
   ws_models.py         # WebSocket message protocol models
   usage.py             # token usage tracking (ModelUsage, UsageTracker)
+  spans.py             # timing spans of a running turn (TurnTrace, span(), attach_sandbox_call)
   prompt_prefix.py     # shared system prompt prefix (AGENTS/SOUL/USER.md, skill catalog)
   prompt_preview.py    # what every LLM role sends, split into sections (GET /api/prompts/preview)
   skills.py            # skill registry
@@ -65,6 +66,7 @@ src/carapace/          # main package
     engine.py          # session lifecycle, slash commands, agent turn orchestration
     manager.py         # session persistence (load, save, list, delete)
     titler.py          # LLM-powered session title generation
+    timeline.py        # turn list and turn timeline read model (spans joined with LLM requests)
   git/
     __init__.py        # re-exports (GitHttpHandler, GitStore)
     http.py            # Git HTTP Smart Protocol handler (git http-backend CGI)

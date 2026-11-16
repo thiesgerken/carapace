@@ -17,6 +17,11 @@ _Avoid_: Event log, chat history
 The conversation as the agent receives it, which may be compacted.
 _Avoid_: Agent history, context
 
+**Turn**:
+One user message and everything the agent does to answer it, up to its final reply, failure or stop.
+Identified by a `turn_id`.
+_Avoid_: Round, exchange, run
+
 **Rewind**:
 Cutting a session back to an earlier turn, discarding the turns after it from transcript and model
 history. Side effects in the sandbox are not undone.
@@ -78,5 +83,16 @@ returns, and tool definitions, together with the model's response.
 _Avoid_: Prompt, history
 
 **Debug View**:
-The per-session view that shows the latest LLM context of every agent role, live.
+The per-session view that shows the timeline of each turn and the latest LLM context of every agent
+role, live.
 _Avoid_: Agent view, inspector
+
+**Span**:
+One timed step of a turn, such as a tool call, a sentinel evaluation, a sandbox start or a wait on
+the user. Spans nest; the root span is the turn itself.
+_Avoid_: Event, trace entry
+
+**Timeline**:
+The spans of one turn together with its LLM requests, shown as a waterfall of where the turn's time
+went.
+_Avoid_: Trace, request timeline, Gantt

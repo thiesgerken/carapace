@@ -1,14 +1,14 @@
 # Debug View
 
-The debug view shows, per session and live, the latest **LLM context** of every agent role: exactly
-what went to the model in its last request, and what came back. Terms follow
-[GLOSSARY.md](../GLOSSARY.md).
+The debug view shows, per session and live, where each turn's time went (the **timeline**) and the
+latest **LLM context** of every agent role: exactly what went to the model in its last request, and
+what came back. Terms follow [GLOSSARY.md](../GLOSSARY.md).
 
 ## Using it
 
 The **Chat | Debug** switch in the session header opens `/?session=<ID>&view=debug`. The first tab,
 **Timeline**, opens by default and shows where a turn's time went (see [Timeline tab](#timeline-tab)). One tab per role
-follows; each shows the role's request timeline and its latest request:
+follows; each shows the role's **Requests** table and its latest request:
 
 - **Requests**: one row per recorded request of the role, newest first, so requests compare side by
   side: time, status, input, cache read, cache write, output and reasoning tokens, cache hits (cache
@@ -55,7 +55,7 @@ failed, budget-stopped or stopped one.
   turn, it steps into the running child that started first, level by level, and the instant
   belongs to where that stops, so parallel work never counts twice. Anything inside a `wait` span
   is waiting for you. Instants that stop at the turn itself are not covered: time no span measured.
-- **Waterfall**: one row per span, indented by nesting, with its bar placed within the turn
+- **Waterfall**: one row per span, indented by nesting and labelled with its kind (muted) and name, the name left out when it repeats the kind, with its bar placed within the turn
   (on a phone the label sits above the bar). Running spans grow until they end. Errors are red,
   interrupted spans grey, waits hatched. An LLM bar shows its phases: waiting for the first
   token, thinking, output; a phase without its timestamp collapses into its neighbour.
@@ -166,12 +166,12 @@ The session WebSocket sends a notification on every status change, without the c
 
 Clients refetch the role's context over REST when they get one.
 
-`GET /api/sessions/{session_id}/llm-requests?role=<role>` returns the session's request timeline:
-one `LlmRequestRecord` per request, oldest first, from the `session_llm_requests` log that also
+`GET /api/sessions/{session_id}/llm-requests?role=<role>` returns the session's request log, which
+the **Requests** tables show: one `LlmRequestRecord` per request, oldest first, from the `session_llm_requests` log that also
 feeds the usage stats. `role` is optional and takes the same roles as the contexts. It needs the
 `history` read scope.
 
-A record keeps the numbers of a request, not its context, so the timeline grows by one small row
+A record keeps the numbers of a request, not its context, so the log grows by one small row
 per request instead of one full context. Its `outcome` is `completed`; `interrupted` for a request
 that was cancelled, e.g. because the turn stopped; or `failed` for one that a provider error or a
 sentinel timeout cut short. An unfinished request is recorded when its context turns `interrupted` or
@@ -236,17 +236,21 @@ unusable models) and `interrupted` when the user stopped it.
 Code times a block with the `span()` context manager:
 
 ```python
-with span("exec", "exec", command=command[:200]) as current:
+with span("exec", "exec", command=command) as current:
     result = await run(command)
     current.attrs["exit_code"] = result.exit_code
 ```
+
+A span caps its name and every string attr it starts with at 200 characters (`SPAN_TEXT_MAX`), so
+callers pass values as they are, sandbox-controlled ones included.
 
 Its parent is the current span, carried in a contextvar, so spans nest the way the code calls. Its
 status follows how the block exits. Outside a running turn `span()` records nothing, so callers never
 check. It works on the event-loop thread only: `asyncio.to_thread` copies the contextvar into its
 worker, where a span would change the trace off the loop. Wrap the `await asyncio.to_thread(...)`,
-never the function running inside it. Code in another task than the turn (the proxy) does not inherit the contextvar; it enters
-`attach(trace, parent_id)` with the session's `TurnTrace` to put its spans under an explicit parent.
+never the function running inside it. Code in another task than the turn does not inherit the
+contextvar: calls from inside the sandbox enter `attach_sandbox_call` (see
+[Sandbox spans](#sandbox-spans)). Only the turn runner calls `attach(trace, parent_id)` directly.
 
 ### Storage
 
@@ -335,4 +339,6 @@ bars included (their `span_id` is the `request_id`):
 ```
 
 Clients refetch the timeline, and the turn list on a `turn_id` they don't know yet. LLM bars notify
-like spans: `running` when the request starts, then `ok`, `interrupted` or `error`.
+like spans: `running` when their request starts, then `ok`, `interrupted` or `error` (a failed
+request) when it ends. A streamed request cut by a provider error first notifies `interrupted`, then
+`error` once the run reports the failure.
