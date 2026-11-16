@@ -3,21 +3,25 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
-from pydantic_ai import Agent
-from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart
+from pydantic_ai import Agent, ApprovalRequired, DeferredToolRequests
+from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart, ToolCallPart
 from pydantic_ai.models.function import AgentInfo
 from pydantic_ai.usage import RequestUsage
 
+from carapace.credentials.registry import SessionCredentialRegistry
+from carapace.security.context import SENTINEL_VERDICT_TOOL, SessionSecurity
+from carapace.security.sentinel import Sentinel
 from carapace.session.engine import SessionEngine
 from carapace.session.timeline import session_turns, turn_timeline
-from carapace.spans import Span, TurnTrace, attach, current_span_ref, span
+from carapace.spans import Span, ToolSpanCapability, TurnTrace, attach, current_span_ref, span
 from carapace.usage import LlmRequestLogCapability, LlmRequestState
+from carapace.ws_models import ApprovalResponse
 from tests.session_helpers import _FakeSubscriber, _make_engine, _patch_sentinel
 from tests.streaming_model import ReplayStreamModel
 
@@ -130,14 +134,15 @@ def test_turn_flushes_its_spans_and_joins_its_llm_requests(tmp_path: Path, db_fa
 
         timeline = turn_timeline(engine.session_mgr, sid, turn.turn_id, active)
         assert timeline is not None
-        root, tool, llm = timeline.spans
+        root, prepare, tool, llm = timeline.spans
         assert (root.kind, root.parent_id) == ("turn", None)
+        assert (prepare.kind, prepare.parent_id, prepare.status) == ("turn.prepare", root.span_id, "ok")
         assert (tool.kind, tool.parent_id, tool.status) == ("tool", root.span_id, "ok")
         assert (llm.kind, llm.parent_id, llm.status) == ("llm", tool.span_id, "ok")
         assert llm.llm is not None and (llm.llm.role, llm.llm.input_tokens) == ("agent", 100)
         assert llm.llm.first_token_at is not None and llm.llm.first_token_at == llm.llm.first_text_at
         assert {(span_id, status) for _, span_id, status in sub.span_updates} == {
-            (s.span_id, status) for s in (root, tool, llm) for status in ("running", "ok")
+            (s.span_id, status) for s in (root, prepare, tool, llm) for status in ("running", "ok")
         }
         assert turn_timeline(engine.session_mgr, sid, "nope", active) is None
 
@@ -163,19 +168,205 @@ def test_running_turn_is_read_live_and_a_stop_interrupts_it(tmp_path: Path, db_f
             (turn,) = session_turns(engine.session_mgr, sid, active)
             assert turn.status == "running" and turn.ended_at is None
             exec_span = next(s for s in active.turn_trace.spans.values() if s.kind == "exec")
-            active.llm_request_state = LlmRequestState(
-                request_id="r1", source="sentinel", turn_id=turn.turn_id, span_id=exec_span.span_id, started_at=_now()
-            )
+            # Two parallel sentinel requests; the registry holds their live states.
+            parallel = [
+                LlmRequestState(
+                    request_id=request_id,
+                    source="sentinel",
+                    turn_id=turn.turn_id,
+                    span_id=exec_span.span_id,
+                    started_at=_now(),
+                )
+                for request_id in ("r1", "r2")
+            ]
+            active.llm_requests_in_flight = {state.request_id: state for state in parallel}
+            parallel[0].first_thinking_at = _now()  # as a stream event stamps the live state
             live = turn_timeline(engine.session_mgr, sid, turn.turn_id, active)
             assert live is not None
-            assert [s.kind for s in live.spans] == ["turn", "exec", "llm"]
-            assert {s.status for s in live.spans} == {"running"}
-            assert live.spans[2].parent_id == exec_span.span_id
-            active.llm_request_state = None
+            assert [(s.kind, s.status) for s in live.spans] == [
+                ("turn", "running"),
+                ("turn.prepare", "ok"),
+                ("exec", "running"),
+                ("llm", "running"),
+                ("llm", "running"),
+            ]
+            bars = {s.span_id: s for s in live.spans if s.kind == "llm"}
+            assert {s.parent_id for s in bars.values()} == {exec_span.span_id}
+            assert bars["r1"].llm is not None and bars["r1"].llm.first_thinking_at is not None
+            active.llm_requests_in_flight.clear()
             await engine.submit_cancel(sid)
 
         flushed = turn_timeline(engine.session_mgr, sid, turn.turn_id, active)
-        assert flushed is not None and [s.status for s in flushed.spans] == ["interrupted", "interrupted"]
+        assert flushed is not None and [s.status for s in flushed.spans] == ["interrupted", "ok", "interrupted"]
+
+    with _patch_sentinel():
+        asyncio.run(_run())
+
+
+@pytest.mark.asyncio
+async def test_tool_calls_get_tool_spans_and_a_deferred_call_ends_ok() -> None:
+    trace, root, _ = _trace()
+
+    def _call_tools(messages: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
+        if len(messages) == 1:
+            return ModelResponse(parts=[ToolCallPart("lookup", {}), ToolCallPart("guarded", {})])
+        return ModelResponse(parts=[TextPart("done")])
+
+    agent = Agent(
+        ReplayStreamModel(_call_tools), output_type=[str, DeferredToolRequests], capabilities=[ToolSpanCapability()]
+    )
+
+    @agent.tool_plain
+    def lookup() -> str:
+        return "found"
+
+    @agent.tool_plain
+    def guarded() -> str:
+        raise ApprovalRequired
+
+    with attach(trace, root.span_id):
+        await agent.run("go")
+
+    tools = {s.name: s for s in trace.spans.values() if s.kind == "tool"}
+    assert {name: (s.parent_id, s.status) for name, s in tools.items()} == {
+        "lookup": (root.span_id, "ok"),
+        "guarded": (root.span_id, "ok"),
+    }
+    assert tools["guarded"].attrs == {"deferred": True}
+    assert tools["lookup"].attrs == {}
+
+
+@pytest.mark.asyncio
+async def test_sentinel_evaluation_parents_its_requests_and_skill_file_reads(tmp_path: Path, db_factory) -> None:
+    engine = _make_engine(tmp_path, session_factory=db_factory)
+    sid = engine.session_mgr.create_session(user="thies").session_id
+    with _patch_sentinel():
+        active = engine.get_or_activate(sid)
+    (tmp_path / "skills" / "demo").mkdir(parents=True)
+    (tmp_path / "skills" / "demo" / "SKILL.md").write_text("demo")
+
+    def _judge(messages: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
+        if len(messages) == 1:
+            return ModelResponse(parts=[ToolCallPart("read_skill_file", {"skill_name": "demo", "path": "SKILL.md"})])
+        return ModelResponse(parts=[ToolCallPart(SENTINEL_VERDICT_TOOL, {"decision": "allow", "explanation": "fine"})])
+
+    sentinel = Sentinel(
+        model="test:model",
+        user="thies",
+        knowledge_dir=tmp_path,
+        skills_dir=tmp_path / "skills",
+        llm_slots=None,
+        timeout=timedelta(seconds=5),
+        model_factory=lambda _name, *, user: ReplayStreamModel(_judge),
+    )
+    trace, root, _ = _trace()
+    with engine.llm_request_recording(active), attach(trace, root.span_id):
+        await sentinel.evaluate_tool_call(SessionSecurity(sid), "exec", {"command": "echo hi"})
+
+    (evaluation,) = [s for s in trace.spans.values() if s.kind == "sentinel"]
+    assert (evaluation.name, evaluation.parent_id, evaluation.status) == ("tool_call", root.span_id, "ok")
+    assert evaluation.attrs == {"subject": "exec(\"command='echo hi'\")", "verdict": "allow"}
+    (read,) = [s for s in trace.spans.values() if s.kind == "tool"]
+    assert (read.name, read.parent_id) == ("read_skill_file", evaluation.span_id)
+    requests = [r for r in active.llm_request_log.records if r.source == "sentinel"]
+    assert [r.span_id for r in requests] == [evaluation.span_id, evaluation.span_id]
+
+
+def test_approval_wait_is_a_wait_span(tmp_path: Path, db_factory) -> None:
+    async def _run() -> None:
+        engine, sid, _ = _engine(tmp_path, db_factory)
+
+        async def _asking_turn(_input: str, _deps: Any, history: list[Any], **kwargs: Any) -> Any:
+            await kwargs["collect_approvals"]({"call-1"})
+            return history, "ok", "", None
+
+        with patch("carapace.session.engine.run_agent_turn", new=_asking_turn):
+            await engine.submit_message(sid, "go")
+            active = engine.get_active(sid)
+            assert active is not None and active.agent_task is not None
+            await active.tool_approval_queue.put(ApprovalResponse(tool_call_id="call-1", approved=True))
+            await active.agent_task
+
+        (turn,) = session_turns(engine.session_mgr, sid, active)
+        timeline = turn_timeline(engine.session_mgr, sid, turn.turn_id, active)
+        assert timeline is not None
+        (wait,) = [s for s in timeline.spans if s.kind == "wait"]
+        assert (wait.name, wait.status, wait.attrs) == ("approval", "ok", {"reason": "approval", "calls": 1})
+
+    with _patch_sentinel():
+        asyncio.run(_run())
+
+
+@pytest.mark.asyncio
+async def test_credential_fetches_are_credential_spans() -> None:
+    vault = AsyncMock()
+    vault.fetch.return_value = "secret"
+    registry = SessionCredentialRegistry(session_id="s", resolve_registry=AsyncMock(return_value=vault))
+    trace, root, _ = _trace()
+    with attach(trace, root.span_id):
+        assert await registry.fetch("file/api-key") == "secret"
+        with pytest.raises(KeyError):
+            vault.fetch_metadata.side_effect = KeyError("file/missing")
+            await registry.fetch_metadata("file/missing")
+
+    fetched = [(s.name, s.status, s.attrs) for s in trace.spans.values() if s.kind == "credential"]
+    assert fetched == [
+        ("file/api-key", "ok", {"fetch": "password"}),
+        ("file/missing", "error", {"fetch": "metadata", "error": "KeyError"}),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_requests_leave_the_in_flight_set_however_they_end(tmp_path: Path, db_factory) -> None:
+    engine, sid, _ = _engine(tmp_path, db_factory)
+    with _patch_sentinel():
+        active = engine.get_or_activate(sid)
+
+    def _fail(_messages: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
+        raise RuntimeError("boom")
+
+    capabilities = [LlmRequestLogCapability(source="agent", model_id="test:m")]
+    with engine.llm_request_recording(active):
+        await Agent(ReplayStreamModel(_reply), capabilities=capabilities).run("ok")
+        with pytest.raises(RuntimeError):
+            await Agent(ReplayStreamModel(_fail), capabilities=capabilities).run("fail")
+    assert active.llm_requests_in_flight == {}
+
+
+def test_a_stop_records_parallel_requests_as_interrupted_bars(tmp_path: Path, db_factory) -> None:
+    async def _run() -> None:
+        engine, sid, _ = _engine(tmp_path, db_factory)
+        started = asyncio.Event()
+
+        async def _hang(_messages: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
+            started.set()
+            await asyncio.sleep(999)
+            raise AssertionError("unreachable")
+
+        logged = [LlmRequestLogCapability(source="sentinel", model_id="m")]
+        sentinel = Agent(ReplayStreamModel(_hang), capabilities=logged)
+
+        async def _parallel_turn(*_args: Any, **_kwargs: Any) -> Any:
+            with span("sentinel", "tool_call"):
+                await asyncio.gather(sentinel.run("a"), sentinel.run("b"))
+
+        with patch("carapace.session.engine.run_agent_turn", new=_parallel_turn):
+            await engine.submit_message(sid, "go")
+            await started.wait()
+            await asyncio.sleep(0)
+            active = engine.get_active(sid)
+            assert active is not None and len(active.llm_requests_in_flight) == 2
+            await engine.submit_cancel(sid)
+
+        assert active.llm_requests_in_flight == {}
+        (turn,) = session_turns(engine.session_mgr, sid, active)
+        timeline = turn_timeline(engine.session_mgr, sid, turn.turn_id, active)
+        assert timeline is not None
+        (evaluation,) = [s for s in timeline.spans if s.kind == "sentinel"]
+        bars = [s for s in timeline.spans if s.kind == "llm"]
+        assert [(s.status, s.parent_id) for s in bars] == [("interrupted", evaluation.span_id)] * 2
+        records = engine.session_mgr.load_llm_request_log(sid).records
+        assert [r.outcome for r in records] == ["interrupted", "interrupted"]
 
     with _patch_sentinel():
         asyncio.run(_run())

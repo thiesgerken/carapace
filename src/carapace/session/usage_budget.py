@@ -27,6 +27,7 @@ from ..usage import (
     agent_request_limit,
     autonomy_budget_gauge,
     gauge_breakdown_pct_dict,
+    interrupted_request_record,
     last_record_for_source,
     llm_request_sink_scope,
     usage_budget_exceeded_error,
@@ -329,6 +330,7 @@ class SessionUsageBudgetMixin:
 
         class Sink:
             async def on_request_started(self, state: LlmRequestState) -> None:
+                active.llm_requests_in_flight[state.request_id] = state
                 active.llm_request_thinking.pop(state.request_id, None)
                 if track_activity:
                     await engine._set_llm_request_state(active, state)
@@ -336,6 +338,7 @@ class SessionUsageBudgetMixin:
                     await engine._broadcast(active, "on_span", state.turn_id, state.request_id, "running")
 
             async def on_request_completed(self, record: LlmRequestRecord) -> None:
+                active.llm_requests_in_flight.pop(record.request_id or "", None)
                 if track_activity:
                     thinking_content = active.llm_request_thinking.pop(record.request_id or "", "")
                     if thinking_content:
@@ -361,6 +364,13 @@ class SessionUsageBudgetMixin:
                     await engine._broadcast(active, "on_span", record.turn_id, record.request_id, "ok")
 
             async def on_context(self, context: LlmContext) -> None:
+                # A failed or interrupted request ends here: it never reaches on_request_completed. An
+                # interrupted one (a stop, a sentinel timeout) keeps its numbers as an interrupted record.
+                if context.status != "running":
+                    ended = active.llm_requests_in_flight.pop(context.request_id, None)
+                    if ended is not None and context.status == "interrupted":
+                        active.llm_request_log.records.append(interrupted_request_record(ended))
+                        engine._session_mgr.save_llm_request_log(session_id, active.llm_request_log)
                 await engine._save_llm_context(active, context)
 
             async def on_context_failed(self, role: LlmSource, error: str) -> None:

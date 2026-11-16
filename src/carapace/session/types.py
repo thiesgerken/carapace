@@ -134,6 +134,9 @@ class ActiveSession:
     autonomy: AutonomyStreak = field(default_factory=AutonomyStreak)
     llm_request_log: LlmRequestLog = field(default_factory=LlmRequestLog)
     llm_request_state: LlmRequestState | None = None
+    # Every request in flight, untracked and parallel ones included (``llm_request_state`` holds only
+    # the latest tracked one): the timeline draws a running bar for each.
+    llm_requests_in_flight: dict[str, LlmRequestState] = field(default_factory=dict)
     llm_request_thinking: dict[str, str] = field(default_factory=dict)
     # Spans of the running turn; flushed to the database when it ends.
     turn_trace: TurnTrace | None = None

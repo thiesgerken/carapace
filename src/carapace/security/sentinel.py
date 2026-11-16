@@ -23,6 +23,7 @@ from ..llm import (
     SlotLimitedModel,
     with_prompt_cache,
 )
+from ..spans import ToolSpanCapability, span
 from ..usage import (
     LlmRequestLogCapability,
     LlmSource,
@@ -481,6 +482,32 @@ class Sentinel:
         assert_llm_budget_available: Callable[[], None] | None = None,
         usage_limits: UsageLimits | None = None,
     ) -> SentinelVerdict:
+        with span("sentinel", kind, subject=subject[:200]) as evaluation:
+            verdict = await self._evaluate(
+                session,
+                prompt,
+                kind=kind,
+                subject=subject,
+                can_revise=can_revise,
+                usage_tracker=usage_tracker,
+                assert_llm_budget_available=assert_llm_budget_available,
+                usage_limits=usage_limits,
+            )
+            evaluation.attrs["verdict"] = verdict.decision
+            return verdict
+
+    async def _evaluate(
+        self,
+        session: SessionSecurity,
+        prompt: str,
+        *,
+        kind: str,
+        subject: str,
+        can_revise: bool,
+        usage_tracker: UsageTracker | None,
+        assert_llm_budget_available: Callable[[], None] | None,
+        usage_limits: UsageLimits | None,
+    ) -> SentinelVerdict:
         eval_no = session.sentinel_eval_count + 1
         # Callers build the prompt under the lock right before this, with no await in between: the
         # prompt covers exactly the entries logged so far.
@@ -665,6 +692,7 @@ class Sentinel:
             capabilities=[
                 *self._compaction_capabilities(),
                 LlmRequestLogCapability(source="sentinel", model_id=self._model),
+                ToolSpanCapability(),
             ],
             # The shadow conversation only grows, so every evaluation reads the previous one from the cache.
             model_settings=with_prompt_cache(model_settings, conversation=True),

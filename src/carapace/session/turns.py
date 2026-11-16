@@ -44,13 +44,12 @@ from ..models.tooling import ToolCallCallback, ToolResult
 from ..notifications.router import NotificationRouter, build_turn_outcome_notification_id
 from ..sandbox.manager import SandboxManager
 from ..security.context import ApprovalSource, ApprovalVerdict, format_denial_message, normalize_optional_message
-from ..spans import Span, SpanStatus, TurnTrace, attach
+from ..spans import Span, SpanStatus, TurnTrace, attach, span
 from ..usage import (
     BudgetGauge,
     LlmRequestState,
     SessionBudgetExceededError,
     aggregate_turn_generation,
-    interrupted_request_record,
 )
 from ..ws_models import ApprovalRequest, ApprovalResponse, Attachment, FinalStatus, TurnUsage
 from .attachments import augment_prompt
@@ -360,17 +359,18 @@ class SessionTurnMixin(SessionTurnHost):
             async with active.lock:
                 if active.security:
                     active.security.clear_current_parent_tool()
-                deps, message_history = await self._prepare_turn_execution(
-                    active,
-                    session_id,
-                    user_input,
-                    turn_id=turn_id,
-                    origin=origin,
-                    attachments=attachments,
-                    tool_call_callback=_tool_call_cb,
-                    tool_result_callback=_tool_result_cb,
-                    compact_history=_compact_history_cb,
-                )
+                with span("turn.prepare", "prepare"):
+                    deps, message_history = await self._prepare_turn_execution(
+                        active,
+                        session_id,
+                        user_input,
+                        turn_id=turn_id,
+                        origin=origin,
+                        attachments=attachments,
+                        tool_call_callback=_tool_call_cb,
+                        tool_result_callback=_tool_result_cb,
+                        compact_history=_compact_history_cb,
+                    )
 
                 async def _send_approval(req: ApprovalRequest) -> None:
                     await self._send_approval_request(active, session_id, req)
@@ -378,7 +378,8 @@ class SessionTurnMixin(SessionTurnHost):
                 async def _collect_approvals(
                     pending: set[str],
                 ) -> dict[str, bool | ToolDenied]:
-                    return await self._collect_approval_results(active, session_id, pending)
+                    with span("wait", "approval", reason="approval", calls=len(pending)):
+                        return await self._collect_approval_results(active, session_id, pending)
 
                 turn_result = await self._execute_agent_turn(
                     active,
@@ -764,8 +765,6 @@ class SessionTurnMixin(SessionTurnHost):
         self._close_turn_approvals(active, session_id)
         active.llm_request_thinking.clear()
         if save_progress:
-            if active.llm_request_state is not None:
-                active.llm_request_log.records.append(interrupted_request_record(active.llm_request_state))
             self._save_turn_progress(session_id, active)
         await self._clear_llm_request_state(active)
         self._save_user_message_on_failure(
