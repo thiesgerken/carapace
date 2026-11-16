@@ -862,7 +862,7 @@ def test_finalize_successful_turn_dispatches_attended_notification(tmp_path: Pat
         active = engine.get_or_activate(sid)
         engine.session_mgr.append_events(sid, [{"role": "user", "content": "hello"}])
 
-        await engine._finalize_successful_turn(active, sid, [], "done", "thinking", turn_event_start=0)
+        await engine._finalize_successful_turn(active, sid, [], "done", "thinking", turn_id="t1", turn_event_start=0)
 
         engine._notification_router.dispatch_turn_outcome.assert_awaited_once_with(
             session_id=sid,
@@ -923,6 +923,7 @@ def test_finalize_failed_turn_dispatches_unattended_failure_notification(tmp_pat
             active,
             sid,
             "run",
+            turn_id="t1",
             turn_event_start=0,
             terminal_message="The previous turn failed before completion.",
         )

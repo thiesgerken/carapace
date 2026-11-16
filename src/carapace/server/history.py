@@ -90,6 +90,9 @@ class HistoryMessage(BaseModel):
     model_tool_call_id: str | None = None
     parent_tool_id: str | None = None
     exit_code: int | None = None
+    # On the user event that started a turn and the assistant event that ended it; turns from
+    # before timelines have none.
+    turn_id: str | None = None
     attachments: list[Attachment] | None = None
     files: list[SentFileInfo] | None = None
     # Compaction annotation: {folded_into: node_id} on folded events, or

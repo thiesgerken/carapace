@@ -213,7 +213,7 @@ def test_submit_cancel_persists_interruption_marker(tmp_path: Path, db_factory):
         assert all("timestamp" in event for event in events[-2:])
         assert _without_timestamps(events[-2:]) == [
             {"role": "user", "content": "hello", "turn_id": ANY},
-            {"role": "error", "content": "The previous turn was interrupted before completion."},
+            {"role": "error", "content": "The previous turn was interrupted before completion.", "turn_id": ANY},
         ]
         assert sub.cancelled == 1
 
@@ -624,7 +624,7 @@ def test_retry_latest_turn_rewinds_and_restarts(tmp_path: Path, db_factory):
             {"role": "user", "content": "first"},
             {"role": "assistant", "content": "first answer"},
             {"role": "user", "content": "second", "turn_id": ANY},
-            {"role": "assistant", "content": "retried answer"},
+            {"role": "assistant", "content": "retried answer", "turn_id": ANY},
         ]
 
         history = engine.session_mgr.load_history(sid)
@@ -683,7 +683,7 @@ def test_retry_latest_turn_after_failure_uses_terminal_marker_history(tmp_path: 
         events = engine.session_mgr.load_events(sid)
         assert _without_timestamps(events) == [
             {"role": "user", "content": "hello", "turn_id": ANY},
-            {"role": "assistant", "content": "recovered"},
+            {"role": "assistant", "content": "recovered", "turn_id": ANY},
         ]
 
     with _patch_sentinel():
