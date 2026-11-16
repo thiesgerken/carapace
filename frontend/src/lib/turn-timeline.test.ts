@@ -45,6 +45,7 @@ test("every instant of a turn goes to its deepest span, by category", () => {
   const summary = summarizeTurn(timelineRows(spans, T0 + 10_000), T0, T0 + 10_000);
 
   assert.deepEqual(summary.byCategory, {
+    preparation: 500,
     llmWaiting: 1000,
     llmThinking: 1000,
     llmOutput: 2000,
@@ -53,13 +54,23 @@ test("every instant of a turn goes to its deepest span, by category", () => {
     skill: 0,
     execFile: 1300,
     credential: 0,
-    other: 1000,
+    compaction: 0,
+    other: 500,
     notCovered: 1000,
     userWait: 1500,
   });
   assert.equal(summary.wallMs, 10_000);
   assert.equal(summary.userWaitMs, 1500);
   assert.equal(summary.systemMs, 8500);
+});
+
+test("compaction counts as compaction, its own LLM request included", () => {
+  const spans = [
+    span("turn", null, "turn", 0, 3000),
+    span("compaction", "turn", "compaction", 0, 3000),
+    span("llm", "compaction", "llm", 500, 2500, { llm: llm({ role: "compaction" }) }),
+  ];
+  assert.equal(summarizeTurn(timelineRows(spans, T0 + 3000), T0, T0 + 3000).byCategory.compaction, 3000);
 });
 
 test("overlapping siblings: the earliest started owns the overlap, and a wait wins over anything", () => {

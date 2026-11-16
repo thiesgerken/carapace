@@ -951,6 +951,7 @@ export function projectHistoryToMessages(history: HistoryMessage[]): ChatMessage
         eventIndex: typeof entry.event_index === "number" ? entry.event_index : undefined,
         compaction: entry.compaction,
         turnTerminal: true,
+        turnId: entry.turn_id,
       });
       continue;
     }
@@ -988,6 +989,7 @@ export function projectHistoryToMessages(history: HistoryMessage[]): ChatMessage
       outputTokens: !isPartial ? entry.usage?.output_tokens : undefined,
       ttftMs: !isPartial ? (entry.usage?.ttft_ms ?? undefined) : undefined,
       generationMs: !isPartial ? (entry.usage?.generation_ms ?? undefined) : undefined,
+      turnId: entry.turn_id,
     });
   }
 
@@ -1431,13 +1433,13 @@ export function ChatView({
               if (updated[i].kind !== "streaming") continue;
               updated[i] =
                 finalWasStreamed && i === lastStreamIdx
-                  ? { kind: "assistant", content: msg.content, finalStatus: msg.final_status }
+                  ? { kind: "assistant", content: msg.content, finalStatus: msg.final_status, turnId: msg.turn_id }
                   : { kind: "assistant", content: (updated[i] as { content: string }).content, partial: true };
             }
             if (!finalWasStreamed) {
               // The backend always persists a final assistant event (even empty), so append it
               // unconditionally to keep the live transcript in step with the reloaded event log.
-              updated.push({ kind: "assistant", content: msg.content, finalStatus: msg.final_status });
+              updated.push({ kind: "assistant", content: msg.content, finalStatus: msg.final_status, turnId: msg.turn_id });
             }
             doneBaselineLen = updated.length;
             return updated;
@@ -1660,12 +1662,12 @@ export function ChatView({
             if (rollback !== null) {
               return [
                 ...rollback,
-                { kind: "error", detail: msg.detail, turnTerminal: msg.turn_terminal === true },
+                { kind: "error", detail: msg.detail, turnTerminal: msg.turn_terminal === true, turnId: msg.turn_id },
               ];
             }
             return [
               ...prev,
-              { kind: "error", detail: msg.detail, turnTerminal: msg.turn_terminal === true },
+              { kind: "error", detail: msg.detail, turnTerminal: msg.turn_terminal === true, turnId: msg.turn_id },
             ];
           });
           setLlmActivity(null);
@@ -1676,7 +1678,7 @@ export function ChatView({
           resetRollbackRef.current = null;
           setMessages((prev) => [
             ...prev,
-            { kind: "error", detail: msg.detail, turnTerminal: true },
+            { kind: "error", detail: msg.detail, turnTerminal: true, turnId: msg.turn_id },
           ]);
           setLlmActivity(null);
           lastThinkingStartedAtRef.current = null;

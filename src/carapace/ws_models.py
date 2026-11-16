@@ -257,6 +257,8 @@ class Done(BaseModel):
     thinking: str | None = None
     usage: TurnUsage | None = None
     final_status: FinalStatus | None = None
+    # Links the finished turn's last bubble to its timeline in the debug view.
+    turn_id: str
 
 
 class CommandResult(BaseModel):
@@ -269,6 +271,8 @@ class ErrorMessage(BaseModel):
     type: Literal["error"] = "error"
     detail: str
     turn_terminal: bool = False
+    # Set on the error that ended a turn, linking it to its timeline in the debug view.
+    turn_id: str | None = None
 
 
 class Cancelled(BaseModel):
@@ -276,6 +280,7 @@ class Cancelled(BaseModel):
 
     type: Literal["cancelled"] = "cancelled"
     detail: str = "Agent cancelled."
+    turn_id: str
 
 
 class SessionTitleUpdate(BaseModel):

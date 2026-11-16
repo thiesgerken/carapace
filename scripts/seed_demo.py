@@ -58,10 +58,12 @@ from carapace.models.session import SessionAttributes, SessionBudget, SessionSta
 from carapace.models.user import MemoryBudget, UserConfig, UserDefaultModelsConfig, UserMemoryConfig
 from carapace.sandbox.snapshot import SessionSandboxSnapshot
 from carapace.session.manager import SessionManager, SessionMeta
+from carapace.spans import Span
 from carapace.usage import (
     LlmContext,
     LlmRequestLog,
     LlmRequestRecord,
+    LlmSource,
     UsageTracker,
     request_cost,
     usage_budget_exceeded_error,
@@ -71,6 +73,7 @@ DEMO_USER = "demo"
 DEMO_PASSWORD = "carapace-demo"
 DEMO_MODEL = "anthropic:claude-sonnet-4-6"
 DEMO_SUBSCRIPTION_MODEL = "openai-codex:gpt-5.5"
+PANCAKE_TURN_ID = "5eedf00d"
 # Memory runs on the subscription; an older extraction ran on the paid API model. Today's spend
 # sits close to the day limits, so the home page shows the budget notice.
 DEMO_MEMORY_BUDGET = MemoryBudget(
@@ -96,23 +99,27 @@ class Transcript:
         self.at += timedelta(seconds=seconds)
         return self.at.isoformat()
 
-    def user(self, content: str) -> None:
-        self.events.append({"role": "user", "content": content, "timestamp": self._stamp(20)})
+    def user(self, content: str, *, turn_id: str | None = None) -> None:
+        event: dict[str, Any] = {"role": "user", "content": content, "timestamp": self._stamp(20)}
+        if turn_id is not None:
+            event["turn_id"] = turn_id
+        self.events.append(event)
 
     def thinking(self, content: str, duration_ms: int) -> None:
         self.events.append(
             {"role": "thinking", "content": content, "reasoning_duration_ms": duration_ms, "timestamp": self._stamp(1)}
         )
 
-    def assistant(self, content: str) -> None:
-        self.events.append(
-            {
-                "role": "assistant",
-                "content": content,
-                "timestamp": self._stamp(6),
-                "usage": {"model": DEMO_MODEL, "input_tokens": 6_400, "output_tokens": 420},
-            }
-        )
+    def assistant(self, content: str, *, turn_id: str | None = None) -> None:
+        event: dict[str, Any] = {
+            "role": "assistant",
+            "content": content,
+            "timestamp": self._stamp(6),
+            "usage": {"model": DEMO_MODEL, "input_tokens": 6_400, "output_tokens": 420},
+        }
+        if turn_id is not None:
+            event["turn_id"] = turn_id
+        self.events.append(event)
 
     def error(self, content: str) -> None:
         self.events.append({"role": "error", "content": content, "timestamp": self._stamp(1)})
@@ -199,6 +206,7 @@ class DemoSession:
     sandbox: SessionSandboxSnapshot = field(default_factory=SessionSandboxSnapshot)
     llm_contexts: list[LlmContext] = field(default_factory=list)
     llm_requests: list[LlmRequestRecord] = field(default_factory=list)
+    turn_spans: dict[str, list[Span]] = field(default_factory=dict)
 
 
 def _usage(input_tokens: int, output_tokens: int) -> UsageTracker:
@@ -253,13 +261,13 @@ def _sandbox_tour(start: datetime) -> Transcript:
 
 def _pancake_recipe(start: datetime) -> Transcript:
     t = Transcript(start)
-    t.user("I really need a pancake recipe")
+    t.user("I really need a pancake recipe", turn_id=PANCAKE_TURN_ID)
     skill = t.call("use_skill", {"skill_name": "web"})
     t.result(skill, "use_skill", "Skill 'web' activated.")
-    search = t.run(
-        "web_search 'best fluffy pancake recipe'",
-        '[{"title": "Fluffy Pancakes", "url": "https://recipes.example.org/fluffy-pancakes"}]',
-        contexts=["web"],
+    # Access decisions happen while their exec runs, so they come before its result.
+    search = t.call(
+        "exec",
+        {"command": _SEARCH, "contexts": ["web"]},
         source="sentinel",
         explanation="Searching the web for a recipe is the requested, read-only action.",
     )
@@ -267,16 +275,14 @@ def _pancake_recipe(start: datetime) -> Transcript:
     t.call(
         "credential_access",
         {"vault_path": "demo/web-search-api-key", "name": "Search API Key"},
-        source="skill",
-        explanation="declared by skill web",
+        source="user",
+        explanation="released by the user",
         parent=search,
     )
-    fetch = t.run(
-        "web_fetch 'https://recipes.example.org/fluffy-pancakes'",
-        '{\n  "url": "https://recipes.example.org/fluffy-pancakes",\n  "status": 200,\n'
-        '  "contentType": "text/html",\n  "content": "# Fluffy Pancakes\\n\\nMix the dry ingredients, whisk in '
-        'milk, eggs and melted butter, rest the batter for five minutes..."\n}',
-        contexts=["web"],
+    t.result(search, "exec", '[{"title": "Fluffy Pancakes", "url": "https://recipes.example.org/fluffy-pancakes"}]')
+    fetch = t.call(
+        "exec",
+        {"command": _FETCH, "contexts": ["web"]},
         source="sentinel",
         explanation=(
             "The agent fetches a recipe page found in the search results to answer the user's request. "
@@ -284,6 +290,13 @@ def _pancake_recipe(start: datetime) -> Transcript:
         ),
     )
     t.domain("recipes.example.org", fetch, source="sentinel")
+    t.result(
+        fetch,
+        "exec",
+        '{\n  "url": "https://recipes.example.org/fluffy-pancakes",\n  "status": 200,\n'
+        '  "contentType": "text/html",\n  "content": "# Fluffy Pancakes\\n\\nMix the dry ingredients, whisk in '
+        'milk, eggs and melted butter, rest the batter for five minutes..."\n}',
+    )
     t.assistant(
         "Here is a highly rated recipe for **classic fluffy pancakes** (about 8 pancakes):\n\n"
         "| Ingredient | Amount |\n| --- | --- |\n| Flour | 200 g |\n| Sugar | 2 tbsp |\n"
@@ -292,7 +305,8 @@ def _pancake_recipe(start: datetime) -> Transcript:
         "1. Whisk the dry ingredients.\n"
         "2. Mix milk, eggs and butter, then fold into the dry mix. A few lumps are fine.\n"
         "3. Let the batter rest for 5 minutes.\n4. Cook on a medium-hot pan until bubbles form, flip once.\n\n"
-        "Enjoy!"
+        "Enjoy!",
+        turn_id=PANCAKE_TURN_ID,
     )
     return t
 
@@ -507,6 +521,7 @@ def _context(
     response: ModelResponse,
     *,
     tools: list[ToolDefinition] | None = None,
+    seconds: float = 4,
 ) -> LlmContext:
     return LlmContext(
         request_id=f"demo-{role}",
@@ -515,7 +530,7 @@ def _context(
         model_name=DEMO_MODEL,
         status="completed",
         started_at=at,
-        completed_at=at + timedelta(seconds=4),
+        completed_at=at + timedelta(seconds=seconds),
         instructions=[InstructionPart(instructions)],
         messages=messages,
         tool_definitions=tools or [],
@@ -524,13 +539,13 @@ def _context(
     )
 
 
-def _pancake_contexts(end: datetime) -> list[LlmContext]:
-    """One latest request per agent role, matching the pancake transcript."""
+def _pancake_contexts(prompt: datetime) -> list[LlmContext]:
+    """One latest request per agent role, matching the pancake transcript and its turn's timeline."""
     search_result = '[{"title": "Fluffy Pancakes", "url": "https://recipes.example.org/fluffy-pancakes"}]'
     return [
         _context(
             "agent",
-            end - timedelta(seconds=10),
+            prompt + timedelta(seconds=22.6),
             "You are carapace, a personal agent. Every tool call is reviewed by the sentinel.",
             [
                 ModelRequest(parts=[UserPromptPart("I really need a pancake recipe")]),
@@ -575,7 +590,7 @@ def _pancake_contexts(end: datetime) -> list[LlmContext]:
         ),
         _context(
             "sentinel",
-            end - timedelta(seconds=40),
+            prompt + timedelta(seconds=15.2),
             "You are the sentinel. Judge each agent action against SECURITY.md: allow, escalate or deny.",
             [
                 ModelRequest(
@@ -602,10 +617,11 @@ def _pancake_contexts(end: datetime) -> list[LlmContext]:
                 usage=RequestUsage(input_tokens=3_150, output_tokens=60),
                 model_name=DEMO_MODEL,
             ),
+            seconds=0.7,
         ),
         _context(
             "titler",
-            end - timedelta(minutes=2),
+            prompt + timedelta(seconds=28),
             "Write a short, specific session title with one leading emoji.",
             [ModelRequest(parts=[UserPromptPart("user: I really need a pancake recipe")])],
             ModelResponse(
@@ -616,7 +632,7 @@ def _pancake_contexts(end: datetime) -> list[LlmContext]:
         ),
         _context(
             "compaction",
-            end - timedelta(seconds=5),
+            prompt + timedelta(seconds=29),
             "Compress a single tool output to save context. Reply with ONLY the summary.",
             [ModelRequest(parts=[UserPromptPart(f"<tool_output>\n{search_result}\n</tool_output>")])],
             ModelResponse(
@@ -629,7 +645,7 @@ def _pancake_contexts(end: datetime) -> list[LlmContext]:
 
 
 def _request(
-    role: Literal["agent", "sentinel", "titler", "compaction"],
+    role: LlmSource,
     request_id: str,
     started_at: datetime,
     completed_at: datetime,
@@ -652,38 +668,137 @@ def _request(
     )
 
 
-def _pancake_requests(end: datetime, contexts: list[LlmContext]) -> list[LlmRequestRecord]:
-    """The request timeline: earlier requests whose cache grows turn by turn, then the latest per role."""
-    earlier = [
-        ("agent", 70, RequestUsage(input_tokens=5_120, output_tokens=46, cache_write_tokens=4_900)),
-        (
+def _pancake_turn(prompt: datetime, contexts: list[LlmContext]) -> tuple[list[Span], list[LlmRequestRecord]]:
+    """The pancake turn as the server records it, in seconds after the prompt, lined up with the transcript.
+
+    Its LLM requests are the session's request log: the latest agent and sentinel requests are the
+    role contexts; the titler and the tool-output compaction run outside the turn.
+    """
+    spans: list[Span] = []
+    records: list[LlmRequestRecord] = []
+
+    def at(seconds: float) -> datetime:
+        return prompt + timedelta(seconds=seconds)
+
+    def span(span_id: str, parent: str | None, kind: str, name: str, begin: float, end: float, **attrs: Any) -> str:
+        spans.append(
+            Span(
+                span_id=span_id,
+                parent_id=parent,
+                kind=kind,
+                name=name,
+                started_at=at(begin),
+                ended_at=at(end),
+                status="ok",
+                attrs=attrs,
+            )
+        )
+        return span_id
+
+    def request(
+        record: LlmRequestRecord,
+        parent: str,
+        first_token: float,
+        *,
+        thinking: tuple[float, float] | None = None,
+        first_text: float | None = None,
+    ) -> None:
+        records.append(
+            record.model_copy(
+                update={
+                    "turn_id": PANCAKE_TURN_ID,
+                    "span_id": parent,
+                    "first_token_at": at(first_token),
+                    "first_thinking_at": at(thinking[0]) if thinking else None,
+                    "last_thinking_at": at(thinking[1]) if thinking else None,
+                    "first_text_at": at(first_text) if first_text is not None else None,
+                }
+            )
+        )
+
+    def earlier(role: Literal["agent", "sentinel"], request_id: str, begin: float, end: float, usage: RequestUsage):
+        return _request(role, request_id, at(begin), at(end), usage)
+
+    context = {c.role: c for c in contexts}
+    context_records = {
+        role: _request(role, c.request_id, c.started_at, c.completed_at, c.response.usage)
+        for role, c in context.items()
+        if c.response is not None and c.completed_at is not None
+    }
+
+    root = span("demo-turn", None, "turn", "turn", 0, 27, prompt="I really need a pancake recipe")
+    span("demo-prepare", root, "turn.prepare", "prepare", 0, 0.3)
+    request(
+        earlier(
             "agent",
-            52,
+            "demo-agent-1",
+            0.3,
+            1.8,
+            RequestUsage(input_tokens=5_120, output_tokens=46, cache_write_tokens=4_900),
+        ),
+        root,
+        0.8,
+        thinking=(0.8, 1.3),
+    )
+    skill_tool = span("demo-tool-skill", root, "tool", "use_skill", 1.8, 5.0)
+    span("demo-gate-skill", skill_tool, "gate", "use_skill", 1.8, 1.9)
+    span("demo-skill", skill_tool, "skill", "web", 2.0, 4.9)
+    request(
+        earlier(
+            "agent",
+            "demo-agent-2",
+            5.0,
+            5.9,
             RequestUsage(input_tokens=5_890, output_tokens=58, cache_read_tokens=4_900, cache_write_tokens=760),
         ),
-        ("sentinel", 46, RequestUsage(input_tokens=2_380, output_tokens=55, cache_write_tokens=2_100)),
-        (
+        root,
+        5.6,
+    )
+    search = span("demo-tool-search", root, "tool", "exec", 5.9, 14.0)
+    search_gate = span("demo-gate-search", search, "gate", "exec", 5.9, 7.0)
+    search_review = span(
+        "demo-sentinel-search", search_gate, "sentinel", "tool_call", 5.95, 6.95, subject=_SEARCH, verdict="allow"
+    )
+    request(
+        earlier(
+            "sentinel",
+            "demo-sentinel-1",
+            6.0,
+            6.9,
+            RequestUsage(input_tokens=2_380, output_tokens=55, cache_write_tokens=2_100),
+        ),
+        search_review,
+        6.5,
+        first_text=6.5,
+    )
+    search_exec = span("demo-exec-search", search, "exec", "exec", 7.0, 14.0, command=_SEARCH, exit_code=0)
+    span("demo-sandbox", search_exec, "sandbox", "ensure", 7.0, 8.2)
+    span("demo-domain-search", search_exec, "domain", "search.example.org", 8.6, 9.0, domain="search.example.org")
+    span("demo-wait", search_exec, "wait", "demo/web-search-api-key", 9.1, 10.8, reason="credential")
+    span("demo-credential", search_exec, "credential", "demo/web-search-api-key", 10.8, 11.0, fetch="password")
+    request(
+        earlier(
             "agent",
-            41,
+            "demo-agent-3",
+            14.0,
+            15.1,
             RequestUsage(input_tokens=6_970, output_tokens=71, cache_read_tokens=5_660, cache_write_tokens=1_080),
         ),
-    ]
-    records = [
-        _request(
-            role,
-            f"demo-{role}-{seconds}",
-            end - timedelta(seconds=seconds + 3),
-            end - timedelta(seconds=seconds),
-            usage,
-        )
-        for role, seconds, usage in earlier
-    ]
-    for context in contexts:
-        assert context.response is not None and context.completed_at is not None
-        records.append(
-            _request(context.role, context.request_id, context.started_at, context.completed_at, context.response.usage)
-        )
-    return sorted(records, key=lambda record: record.ts)
+        root,
+        14.7,
+    )
+    fetch = span("demo-tool-fetch", root, "tool", "exec", 15.1, 21.0)
+    fetch_gate = span("demo-gate-fetch", fetch, "gate", "exec", 15.1, 16.0)
+    fetch_review = span(
+        "demo-sentinel-fetch", fetch_gate, "sentinel", "tool_call", 15.15, 15.95, subject=_FETCH, verdict="allow"
+    )
+    request(context_records["sentinel"], fetch_review, 15.6, first_text=15.6)
+    fetch_exec = span("demo-exec-fetch", fetch, "exec", "exec", 16.0, 21.0, command=_FETCH, exit_code=0)
+    span("demo-domain-fetch", fetch_exec, "domain", "recipes.example.org", 17.6, 18.0, domain="recipes.example.org")
+    request(context_records["agent"], root, 23.4, thinking=(23.4, 24.2), first_text=24.2)
+
+    records += [context_records["titler"], context_records["compaction"]]
+    return spans, sorted(records, key=lambda record: record.ts)
 
 
 def demo_sessions(now: datetime) -> list[DemoSession]:
@@ -703,8 +818,13 @@ def demo_sessions(now: datetime) -> list[DemoSession]:
             pancake := _pancake_recipe(now - timedelta(hours=23)),
             usage=_usage(21_000, 1_900),
             sandbox=_sandbox("running", 59_000_000, now),
-            llm_contexts=(pancake_contexts := _pancake_contexts(pancake.at)),
-            llm_requests=_pancake_requests(pancake.at, pancake_contexts),
+            llm_contexts=(
+                pancake_contexts := _pancake_contexts(
+                    pancake_prompt := datetime.fromisoformat(pancake.events[0]["timestamp"])
+                )
+            ),
+            llm_requests=(pancake_turn := _pancake_turn(pancake_prompt, pancake_contexts))[1],
+            turn_spans={PANCAKE_TURN_ID: pancake_turn[0]},
         ),
         DemoSession(
             "demo-recipe-skill",
@@ -908,6 +1028,8 @@ def seed(data_dir: Path, now: datetime) -> None:
         for context in demo.llm_contexts:
             session_mgr.save_llm_context(session_id, context)
         session_mgr.save_llm_request_log(session_id, LlmRequestLog(records=demo.llm_requests))
+        for turn_id, spans in demo.turn_spans.items():
+            session_mgr.save_turn_spans(session_id, turn_id, spans)
         print(f"{session_id}  {demo.title}")
     _seed_memory(session_factory, sessions, now)
 

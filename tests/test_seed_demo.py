@@ -48,6 +48,17 @@ def test_seeded_demo_sessions_load_like_real_sessions(tmp_path: Path, monkeypatc
         if events[-1]["role"] != "approval_request":
             assert completed_event_turns(events)
 
+    # The pancake turn's timeline joins the session's own requests: each once, nested in its span.
+    records = session_mgr.load_llm_request_log("demo-pancake-recipe").records
+    assert len({record.request_id for record in records}) == len(records)
+    spans = {
+        span.span_id: span for span in session_mgr.load_turn_spans("demo-pancake-recipe", seed_demo.PANCAKE_TURN_ID)
+    }
+    for record in records:
+        if record.turn_id is not None:
+            parent = spans[record.span_id]
+            assert parent.started_at <= record.started_at and parent.ended_at >= record.completed_at
+
     # The memory demo bills one extraction on a paid model and one on the subscription.
     spend = MemoryStore(session_factory).spend(seed_demo.DEMO_USER, now)
     assert spend.cost == CostSplit(actual=Decimal("0.0214"), equivalent=Decimal("0.0600"))

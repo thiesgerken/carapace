@@ -39,15 +39,19 @@ whose request is running.
 ### Timeline tab
 
 `&tab=<role>` opens a role tab instead; `&turn=<turn_id>` picks the turn the timeline shows first.
+In the chat, the bubble that ended a turn with a timeline has a debug icon in its footer that opens
+`&view=debug&tab=timeline&turn=<turn_id>`: the answer of a successful turn, or the error box of a
+failed, budget-stopped or stopped one.
 
 - **Turn**: a dropdown of the session's turns with timing, newest first (start time, the prompt's
   first characters, duration). It shows the newest turn by default and follows new turns live as
   long as the newest one is picked. Turns from before timing was recorded have no timeline.
 - **Summary**: wall time, system time, and the time spent waiting for you (approvals, domain
-  access, credential release). A stacked bar splits the wall time by category: the agent's LLM
-  requests (until the first token, thinking, output), sentinel (gates, sentinel calls and their LLM
-  requests, proxy domain checks), sandbox, skills, exec and files, credentials, other, and **not
-  covered**. Each instant of the turn counts once, for the sequential main path: starting at the
+  access, credential release). A stacked bar splits the wall time by category: preparation
+  (`turn.prepare`), the agent's LLM requests (until the first token, thinking, output), sentinel
+  (gates, sentinel calls and their LLM requests, proxy domain checks), sandbox, skills, exec and
+  files, credentials, compaction (with its LLM requests), other (e.g. a tool's own time outside its
+  gate and exec), and **not covered**. Each instant of the turn counts once, for the sequential main path: starting at the
   turn, it steps into the running child that started first, level by level, and the instant
   belongs to where that stops, so parallel work never counts twice. Anything inside a `wait` span
   is waiting for you. Instants that stop at the turn itself are not covered: time no span measured.
@@ -202,7 +206,11 @@ turn's LLM requests joined in as bars of their own. It only measures.
 ### Data model
 
 A **turn** is identified by `turn_id`, a short random hex id generated when the turn starts. The
-user event that started it carries the id (`turn_id` on the `user` event), and so does every LLM
+user event that started it carries the id (`turn_id` on the `user` event), as does the event that
+ended it: the assistant event, or the terminal `error` event of a failed or stopped turn. The
+history API's messages carry it too, and so do the WebSocket messages that end a turn (`done`,
+`cancelled`, and the `error` with `turn_terminal`), which the chat uses to link the turn's last
+bubble to its timeline. So does every LLM
 request made during it (`turn_id` and `span_id` on `LlmRequestState` and `LlmRequestRecord`: the turn
 and the span the request started in). Turns from before timelines existed have no `turn_id` and no
 timeline.
