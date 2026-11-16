@@ -2,6 +2,7 @@ import type { LlmPhases, Span } from "@/lib/types";
 
 /** Where a turn's time went. `llm*` are the agent's own requests; sentinel requests count as `sentinel`. */
 export const TIME_CATEGORIES = [
+  "preparation",
   "llmWaiting",
   "llmThinking",
   "llmOutput",
@@ -10,6 +11,7 @@ export const TIME_CATEGORIES = [
   "skill",
   "execFile",
   "credential",
+  "compaction",
   "other",
   "notCovered",
   "userWait",
@@ -29,7 +31,10 @@ export type TimeBreakdown = {
   byCategory: Record<TimeCategory, number>;
 };
 
+// Preparation and compaction get their own categories: both are prime suspects for a slow turn start.
 const KIND_CATEGORY: Record<string, TimeCategory> = {
+  "turn.prepare": "preparation",
+  compaction: "compaction",
   gate: "sentinel",
   sentinel: "sentinel",
   // Proxy domain checks are security gating that runs inside an exec.
@@ -42,9 +47,11 @@ const KIND_CATEGORY: Record<string, TimeCategory> = {
   wait: "userWait",
 };
 
+const LLM_ROLE_CATEGORY: Record<string, TimeCategory> = { agent: "llmOutput", sentinel: "sentinel", compaction: "compaction" };
+
 /** The category a span's own time counts as; agent LLM spans split further by phase (see *llmSegments*). */
 export function spanCategory(span: Span): TimeCategory {
-  if (span.kind === "llm") return span.llm?.role === "sentinel" ? "sentinel" : span.llm?.role === "agent" ? "llmOutput" : "other";
+  if (span.kind === "llm") return LLM_ROLE_CATEGORY[span.llm?.role ?? ""] ?? "other";
   return KIND_CATEGORY[span.kind] ?? "other";
 }
 

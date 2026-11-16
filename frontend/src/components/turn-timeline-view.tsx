@@ -12,6 +12,7 @@ import type { DebugRole, Span, SpanStatus, TurnSummary } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 const CATEGORY_CLASS: Record<TimeCategory, string> = {
+  preparation: "bg-yellow-300 dark:bg-yellow-200",
   llmWaiting: "bg-sky-300 dark:bg-sky-800",
   llmThinking: "bg-violet-400 dark:bg-violet-500",
   llmOutput: "bg-sky-600 dark:bg-sky-400",
@@ -20,6 +21,7 @@ const CATEGORY_CLASS: Record<TimeCategory, string> = {
   skill: "bg-lime-500 dark:bg-lime-400",
   execFile: "bg-pink-500 dark:bg-pink-400",
   credential: "bg-teal-500 dark:bg-teal-400",
+  compaction: "bg-orange-700 dark:bg-orange-600",
   other: "bg-slate-400 dark:bg-slate-500",
   notCovered: "bg-zinc-200 dark:bg-zinc-700",
   userWait: "bg-slate-400 dark:bg-slate-500",

@@ -1801,6 +1801,7 @@
                 "min": "{minutes} min {seconds} s"
             },
             "categories": {
+                "preparation": "Vorbereitung",
                 "llmWaiting": "Agent-LLM: erstes Token",
                 "llmThinking": "Agent-LLM: Denken",
                 "llmOutput": "Agent-LLM: Ausgabe",
@@ -1809,6 +1810,7 @@
                 "skill": "Skills",
                 "execFile": "Exec und Dateien",
                 "credential": "Zugangsdaten",
+                "compaction": "Compaction",
                 "other": "Sonstiges",
                 "notCovered": "Nicht erfasst",
                 "userWait": "Wartet auf dich"

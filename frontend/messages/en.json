@@ -1801,6 +1801,7 @@
                 "min": "{minutes} min {seconds} s"
             },
             "categories": {
+                "preparation": "Preparation",
                 "llmWaiting": "Agent LLM: first token",
                 "llmThinking": "Agent LLM: thinking",
                 "llmOutput": "Agent LLM: output",
@@ -1809,6 +1810,7 @@
                 "skill": "Skills",
                 "execFile": "Exec and files",
                 "credential": "Credentials",
+                "compaction": "Compaction",
                 "other": "Other",
                 "notCovered": "Not covered",
                 "userWait": "Waiting for you"
