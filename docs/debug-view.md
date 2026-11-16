@@ -169,13 +169,11 @@ feeds the usage stats. `role` is optional and takes the same roles as the contex
 
 A record keeps the numbers of a request, not its context, so the timeline grows by one small row
 per request instead of one full context. Its `outcome` is `completed`, or `interrupted` for a request
-cut short when the turn stopped. Token counts are provider-reported: input, output, cache read,
+that was cancelled: the turn stopped, or a sentinel timeout cut it short. It is recorded when its
+context turns `interrupted`, before that notification goes out. Token counts are provider-reported: input, output, cache read,
 cache write, and reasoning when the provider reports it. A completed record carries the same `cost`
 as its context (see [Usage and cost](#usage-and-cost)). Cache counts and the cost are `null` on
 records written before they were kept, and the cost on interrupted records.
-
-A stopped turn saves its interrupted record after the context's notification went out, so the view
-also refetches the timeline when the session's LLM activity ends.
 
 Failed requests leave no record, so the timeline has no row for them. Their error shows only in the
 role's LLM context, as long as it is the latest one.
@@ -218,7 +216,7 @@ whose `prompt` attr holds the first 60 characters of the user's prompt.
 | --- | --- |
 | `running` | the span has not ended yet |
 | `ok` | its block completed |
-| `error` | its block raised |
+| `error` | its block raised; attr `error` holds the exception type |
 | `interrupted` | it was cancelled, or still open when the turn ended |
 
 The root span ends `ok` when the turn completed, `error` when it failed (including budget stops and
@@ -238,6 +236,36 @@ check. It works on the event-loop thread only: `asyncio.to_thread` copies the co
 worker, where a span would change the trace off the loop. Wrap the `await asyncio.to_thread(...)`,
 never the function running inside it. Code in another task than the turn (the proxy) does not inherit the contextvar; it enters
 `attach(trace, parent_id)` with the session's `TurnTrace` to put its spans under an explicit parent.
+
+### Storage
+
+Spans of the running turn live in memory, on the `TurnTrace` of the session's `ActiveSession`. When
+the turn ends (success, failure or stop) the spans still open are closed as `interrupted` and all of
+them are written in one batch to the `session_spans` table. Measuring adds no database I/O to the
+measured path. A server crash loses the running turn's spans.
+
+LLM requests are not stored as spans: the timeline joins them from the `session_llm_requests` log
+and the requests in flight (`ActiveSession.llm_requests_in_flight`, which holds parallel and
+untracked requests too). Spans go away with their session. A fork starts without any, a rewind
+keeps them.
+
+### What is timed
+
+| Kind | Name | Covers | Attrs |
+| --- | --- | --- | --- |
+| `turn` | `turn` | the whole turn | `prompt` |
+| `turn.prepare` | `prepare` | resume, memory snapshot, history for the agent model (compaction after a model switch included) | |
+| `tool` | tool name | one tool call of the agent or the sentinel, gate and approval hold included (`ToolSpanCapability`) | `deferred` when it waits for approval |
+| `gate` | tool name | the security gate of a tool call: safe-list, sentinel | `denied` |
+| `sentinel` | evaluation kind | one sentinel evaluation, its compaction and requests included | `subject`, `verdict` |
+| `wait` | `approval`, or the escalation's subject | the user's answer: tool approvals, domain, credential and git push escalations | `reason` (`approval`, `domain`, `credential`), `calls` |
+| `credential` | vault path | one credential or metadata fetch | `fetch` |
+| `spill` | `spill` | saving oversized exec output to the sandbox | `chars` |
+| `compaction` | `agent` or `sentinel` | a compaction that runs during the turn (not the checks that skip it) | |
+
+A deferred tool call (`ApprovalRequired`) is control flow, not a failure: its spans end `ok` with
+`deferred: true`, and the call runs again as a new `tool` span once the user answered. A git push
+escalation waits with reason `approval`. The title is generated after the turn and has no spans.
 
 ### Sandbox spans
 
@@ -263,17 +291,6 @@ tell which of several parallel exec calls made it, so the newest one wins. Outsi
 they record nothing. A user decision pending in a domain check shows as a `wait` span under its
 `domain` span.
 
-### Storage
-
-Spans of the running turn live in memory, on the `TurnTrace` of the session's `ActiveSession`. When
-the turn ends (success, failure or stop) the spans still open are closed as `interrupted` and all of
-them are written in one batch to the `session_spans` table. Measuring adds no database I/O to the
-measured path. A server crash loses the running turn's spans.
-
-LLM requests are not stored as spans: the timeline joins them from the `session_llm_requests` log
-and the request in flight. Spans go away with their session. A fork starts without any, a rewind
-keeps them.
-
 ### API
 
 Both endpoints need the `history` read scope.
@@ -293,7 +310,7 @@ field, `null` except on `kind == "llm"` spans, which carry the request's phases 
 `role`, `request_id`, `model_name`, `first_token_at`, `first_thinking_at`, `last_thinking_at`,
 `first_text_at`, input, output, cache read and cache write tokens, and `cost`. An LLM span's
 `span_id` is its `request_id`, its `name` the role. Its status is `ok` for a completed request,
-`interrupted` for an interrupted one and `running` for the request in flight.
+`interrupted` for an interrupted one and `running` for each request in flight.
 
 ### WebSocket
 

@@ -1011,7 +1011,8 @@ class LlmRequestLogCapability(AbstractCapability[AgentDepsT]):
         )
         _current_llm_context.set(context)
         if sink is not None:
-            await sink.on_request_started(state.model_copy(deep=True))
+            # The live state: stream events keep stamping its phases while the request runs.
+            await sink.on_request_started(state)
             await sink.on_context(context)
         return request_context
 

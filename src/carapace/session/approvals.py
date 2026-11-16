@@ -22,6 +22,7 @@ from ..security.context import (
     normalize_optional_message,
 )
 from ..security.sentinel import Sentinel
+from ..spans import span
 from ..usage import SessionBudgetExceededError
 from ..ws_models import EscalationResponse
 from .manager import SessionManager
@@ -31,6 +32,10 @@ if TYPE_CHECKING:
     from contextlib import AbstractContextManager
 
     from pydantic_ai.usage import UsageLimits
+
+
+# A git push escalation is an approval like a tool call's; the timeline has no reason of its own for it.
+_WAIT_REASONS = {"domain_access": "domain", "credential_access": "credential", "git_push": "approval"}
 
 
 def _escalation_notification_body(subject: str, kind: str) -> str:
@@ -166,7 +171,10 @@ class SessionApprovalMixin:
                     active.escalation_waiters.release(old["request_id"])
 
             # Wait from before the request is announced on, so an immediate answer is not missed.
-            with active.escalation_waiters.waiting(request_id) as answer:
+            with (
+                span("wait", subject[:200], reason=_WAIT_REASONS[kind]),
+                active.escalation_waiters.waiting(request_id) as answer,
+            ):
                 await self._announce_escalation(active, session_id, request_id, notif_id, subject, kind, cmd, context)
                 response = await answer
             # An answer can resolve the future just before the turn closes the request (as denied)

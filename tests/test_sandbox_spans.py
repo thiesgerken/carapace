@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
@@ -27,7 +28,9 @@ from carapace.session.manager import SessionManager, SessionMeta
 from carapace.skills import SkillRegistry
 from carapace.spans import Span, TurnTrace, attach, attach_sandbox_call, current_span_ref, span
 from carapace.usage import UsageTracker
+from carapace.ws_models import EscalationResponse
 from tests.runtime_mocks import make_runtime_mock
+from tests.session_helpers import _make_engine, _patch_sentinel
 
 
 def _trace() -> tuple[TurnTrace, Span]:
@@ -78,6 +81,41 @@ async def test_the_proxys_domain_check_nests_under_the_exec_that_made_it() -> No
     assert checks["pypi.org"].attrs == {"domain": "pypi.org", "allowed": True}
     assert checks["evil.example"].attrs["allowed"] is False
     assert {s.status for s in checks.values()} == {"ok"}
+
+
+def test_a_domain_decision_waiting_on_the_user_is_a_wait_inside_the_domain_check(tmp_path: Path, db_factory) -> None:
+    async def _run() -> None:
+        engine = _make_engine(tmp_path, session_factory=db_factory)
+        sid = engine.session_mgr.create_session(user="thies").session_id
+        active = engine.get_or_activate(sid)
+        trace, root = _trace()
+        exec_span = trace.start("exec", "exec", parent_id=root.span_id, attrs={})
+        active.turn_trace = trace
+        escalate = engine._make_escalation_cb(active)
+
+        async def _ask_user(session_id: str, domain: str) -> bool:
+            return (await escalate(session_id, domain, {"kind": "domain_access", "command": "curl"})).allowed
+
+        proxy = ProxyServer(
+            verify_session_token=lambda _sid, _tok: True,
+            get_allowed_domains=lambda _sid: set(),
+            attach_sandbox_call=engine.attach_sandbox_call,
+            request_approval=_ask_user,
+        )
+        # Like the proxy's connection handler: its own task, outside the turn's context.
+        check = asyncio.create_task(proxy._authorize_domain(sid, "pypi.org"))
+        await asyncio.sleep(0.01)
+        (pending,) = active.pending_escalations
+        await engine.submit_approval(sid, EscalationResponse(request_id=pending["request_id"], decision="allow"))
+        assert await asyncio.wait_for(check, timeout=1)
+
+        domain = next(s for s in trace.spans.values() if s.kind == "domain")
+        wait = next(s for s in trace.spans.values() if s.kind == "wait")
+        assert (domain.parent_id, domain.attrs) == (exec_span.span_id, {"domain": "pypi.org", "allowed": True})
+        assert (wait.parent_id, wait.name, wait.attrs) == (domain.span_id, "pypi.org", {"reason": "domain"})
+
+    with _patch_sentinel():
+        asyncio.run(_run())
 
 
 def _deps(tmp_path: Path, sandbox: SandboxManager) -> Deps:
