@@ -327,7 +327,10 @@ function RequestTimeline({
     { key: "output", numeric: true, cell: (r) => count(r.output_tokens) },
     ...countColumn("reasoning", (r) => r.reasoning_tokens),
     { key: "cost", numeric: true, cell: (r) => <CostCell cost={r.cost} /> },
-    { key: "model", cell: (r) => <span className="font-mono text-muted-foreground">{r.model_name ?? "–"}</span> },
+    // One model in every row is the norm, and the latest request below names it.
+    ...(new Set(records.map((r) => r.model_name)).size > 1
+      ? [{ key: "model", cell: (r: LlmRequestRecord) => <span className="font-mono text-muted-foreground">{r.model_name ?? "–"}</span> }]
+      : []),
   ];
 
   return (

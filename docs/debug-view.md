@@ -23,6 +23,7 @@ group takes its own line). Each role tab shows the role's **Requests** table and
   - Cache hits show as a small meter. A miss (0 %) is the one in an accent color.
   - The cost is one cell: the actual cost, or `≈` the equivalent for a subscription request
     (nothing billed), or both when they differ otherwise.
+  - The model column shows only when the rows differ in model.
   - `–` marks a value the record does not have.
 
   The row of the request shown below is highlighted, and its time links to it. Only the latest
