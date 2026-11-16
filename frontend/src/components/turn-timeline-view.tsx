@@ -194,32 +194,39 @@ function TurnList({ turns, value, onChange }: { turns: TurnSummary[]; value: str
   const now = useNow(turns.some((turn) => turn.ended_at === null));
   const selected = useRef<HTMLButtonElement>(null);
   // A deep-linked older turn may sit below the list's scroll fold.
-  useEffect(() => selected.current?.scrollIntoView?.({ block: "nearest" }), [value]);
+  useEffect(() => {
+    // Not returned: Chrome's scrollIntoView returns a promise, which React would take for a cleanup.
+    void selected.current?.scrollIntoView?.({ block: "nearest" });
+  }, [value]);
   const durations = new Map(turns.map((turn) => [turn.turn_id, Math.max(0, (turn.ended_at ? Date.parse(turn.ended_at) : now) - Date.parse(turn.started_at))]));
   const longest = Math.max(...durations.values());
 
+  // One grid for all rows (subgrid), so the columns line up whatever the start times' widths.
   return (
-    <ol aria-label={t("turns")} className="flex max-h-48 flex-col overflow-y-auto rounded-2xl border border-border bg-muted/20 p-1">
+    <ol
+      aria-label={t("turns")}
+      className="grid max-h-48 grid-cols-[auto_minmax(0,1fr)_3rem_4.5rem] content-start gap-x-2 overflow-y-auto rounded-2xl border border-border bg-muted/20 p-1 sm:grid-cols-[auto_minmax(0,1fr)_10rem_4.5rem] sm:gap-x-3"
+    >
       {[...turns].reverse().map((turn) => {
         const ms = durations.get(turn.turn_id)!;
         const current = turn.turn_id === value;
         const started = new Date(turn.started_at);
         return (
-          <li key={turn.turn_id}>
+          <li key={turn.turn_id} className="col-span-full grid grid-cols-subgrid">
             <button
               ref={current ? selected : undefined}
               type="button"
               aria-current={current ? "true" : undefined}
               onClick={() => onChange(turn.turn_id)}
               className={cn(
-                "grid w-full grid-cols-[auto_minmax(0,1fr)_3rem_4.5rem] items-center gap-2 rounded-md px-2 py-1 text-left text-xs hover:bg-accent/60 sm:grid-cols-[auto_minmax(0,1fr)_10rem_4.5rem] sm:gap-3",
-                current && "bg-accent font-medium",
+                "col-span-full grid grid-cols-subgrid items-center rounded-md px-2 py-1 text-left text-xs hover:bg-accent/60",
+                current && "bg-accent",
               )}
             >
               <time dateTime={turn.started_at} title={format.dateTime(started, { dateStyle: "medium", timeStyle: "medium" })} className="tabular-nums text-muted-foreground">
                 {format.dateTime(started, { month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit" })}
               </time>
-              <span className="truncate" title={turn.prompt_preview}>
+              <span className={cn("truncate", current && "font-medium")} title={turn.prompt_preview}>
                 {turn.prompt_preview}
               </span>
               <span className="relative block h-2 rounded-sm bg-muted/50">
