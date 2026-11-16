@@ -72,11 +72,9 @@ export function DebugView({
   // Kept here so the picked turn survives a detour through a role tab.
   const [pickedTurn, setPickedTurn] = useState(initialTurn);
   const [notifications, setNotifications] = useState<Partial<Record<DebugRole, Notification>>>({});
-  const [activityEnds, setActivityEnds] = useState(0);
   const [timelineEvents, setTimelineEvents] = useState(0);
 
   const onMessage = useCallback((msg: ServerMessage) => {
-    if (msg.type === "llm_activity" && !msg.activity) setActivityEnds((count) => count + 1);
     // Spans start and end; LLM activity also moves a running request through its phases.
     if (msg.type === "span" || msg.type === "llm_activity") setTimelineEvents((count) => count + 1);
     if (msg.type !== "llm_context") return;
@@ -116,7 +114,7 @@ export function DebugView({
             onOpenRole={setTab}
           />
         ) : (
-          <RoleDebug key={tab} server={server} token={token} sessionId={sessionId} role={tab} revision={`${connected}:${notifications[tab] ? `${notifications[tab].requestId}:${notifications[tab].status}` : ""}`} activityEnds={activityEnds} />
+          <RoleDebug key={tab} server={server} token={token} sessionId={sessionId} role={tab} revision={`${connected}:${notifications[tab] ? `${notifications[tab].requestId}:${notifications[tab].status}` : ""}`} />
         )}
       </div>
       </div>
@@ -125,13 +123,12 @@ export function DebugView({
 }
 
 /** A role's request table and its latest context; *revision* changes on the role's notifications. */
-function RoleDebug({ server, token, sessionId, role, revision, activityEnds }: { server: string; token: string; sessionId: string; role: DebugRole; revision: string; activityEnds: number }) {
+function RoleDebug({ server, token, sessionId, role, revision }: { server: string; token: string; sessionId: string; role: DebugRole; revision: string }) {
   const t = useTranslations("debugView");
   // The role's context and timeline from an older notification keep showing while the next ones load.
   const current = useRoleFetch(fetchLlmContext, server, token, sessionId, role, revision);
   const shown = current && "value" in current ? current.value : undefined;
-  // A stopped turn saves its interrupted record after the context's notification went out; the activity ends after that.
-  const timeline = useRoleFetch(fetchLlmRequests, server, token, sessionId, role, `${revision}:${activityEnds}`);
+  const timeline = useRoleFetch(fetchLlmRequests, server, token, sessionId, role, revision);
 
   return (
     <>
