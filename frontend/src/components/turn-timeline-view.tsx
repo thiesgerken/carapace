@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import {
   Archive,
   Box,
@@ -174,7 +174,7 @@ export function TurnTimelineView({
 
   return (
     <div className="flex flex-col gap-4">
-      <TurnPicker turns={turnList} value={turnId} onChange={(value) => onPickTurn(value === newest ? null : value)} />
+      <TurnList turns={turnList} value={turnId} onChange={(value) => onPickTurn(value === newest ? null : value)} />
       {timeline && "error" in timeline ? (
         <p className="text-sm text-destructive">{t("timelineError", { error: timeline.error })}</p>
       ) : shown ? (
@@ -186,25 +186,70 @@ export function TurnTimelineView({
   );
 }
 
-function TurnPicker({ turns, value, onChange }: { turns: TurnSummary[]; value: string | null; onChange: (turnId: string) => void }) {
+/** The turns as rows with a duration bar scaled to the longest one; running turns grow live. */
+function TurnList({ turns, value, onChange }: { turns: TurnSummary[]; value: string | null; onChange: (turnId: string) => void }) {
   const t = useTranslations("debugView.turns");
   const format = useFormatter();
   const duration = useFormatDuration();
+  const now = useNow(turns.some((turn) => turn.ended_at === null));
+  const list = useRef<HTMLOListElement>(null);
+  const selected = useRef<HTMLButtonElement>(null);
+  // A picked turn may sit outside the list's scroll window. Only the list scrolls: scrollIntoView
+  // would also move the page while someone reads the waterfall below.
+  useEffect(() => {
+    const [box, row] = [list.current, selected.current];
+    if (!box || !row) return;
+    if (row.offsetTop < box.scrollTop || row.offsetTop + row.offsetHeight > box.scrollTop + box.clientHeight) {
+      box.scrollTop = row.offsetTop - (box.clientHeight - row.offsetHeight) / 2;
+    }
+  }, [value]);
+  const durations = new Map(turns.map((turn) => [turn.turn_id, Math.max(0, (turn.ended_at ? Date.parse(turn.ended_at) : now) - Date.parse(turn.started_at))]));
+  const longest = Math.max(...durations.values());
+
+  // One grid for all rows (subgrid), so the columns line up whatever the start times' widths.
   return (
-    <label className="flex min-w-0 flex-col gap-1 text-xs font-medium text-muted-foreground">
-      {t("turn")}
-      <select value={value ?? ""} onChange={(event) => onChange(event.target.value)} className="w-full min-w-0 rounded-lg border border-border bg-background px-2 py-1.5 text-sm text-foreground">
-        {[...turns].reverse().map((turn) => (
-          <option key={turn.turn_id} value={turn.turn_id}>
-            {[
-              format.dateTime(new Date(turn.started_at), { month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit", second: "2-digit" }),
-              turn.prompt_preview,
-              turn.ended_at ? duration(Date.parse(turn.ended_at) - Date.parse(turn.started_at)) : t("running"),
-            ].join(" · ")}
-          </option>
-        ))}
-      </select>
-    </label>
+    <ol
+      ref={list}
+      aria-label={t("turns")}
+      className="relative grid max-h-48 grid-cols-[auto_minmax(0,1fr)_3rem_4.5rem] content-start gap-x-2 overflow-y-auto rounded-2xl border border-border bg-muted/20 p-1 sm:grid-cols-[auto_minmax(0,1fr)_10rem_4.5rem] sm:gap-x-3"
+    >
+      {[...turns].reverse().map((turn) => {
+        const ms = durations.get(turn.turn_id)!;
+        const current = turn.turn_id === value;
+        const started = new Date(turn.started_at);
+        return (
+          <li key={turn.turn_id} className="col-span-full grid grid-cols-subgrid">
+            <button
+              ref={current ? selected : undefined}
+              type="button"
+              aria-current={current ? "true" : undefined}
+              onClick={() => onChange(turn.turn_id)}
+              className={cn(
+                "col-span-full grid grid-cols-subgrid items-center rounded-md px-2 py-1 text-left text-xs hover:bg-accent/60",
+                current && "bg-accent",
+              )}
+            >
+              <time dateTime={turn.started_at} title={format.dateTime(started, { dateStyle: "medium", timeStyle: "medium" })} className="tabular-nums text-muted-foreground">
+                {format.dateTime(started, { month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit", second: "2-digit" })}
+              </time>
+              <span className={cn("truncate", current && "font-medium")} title={turn.prompt_preview}>
+                {turn.prompt_preview}
+              </span>
+              <span className="relative block h-2 rounded-sm bg-muted/50">
+                <span
+                  className={cn("absolute inset-y-0 left-0 min-w-[2px] rounded-sm", STATUS_BAR_CLASS[turn.status] ?? "bg-sky-500 dark:bg-sky-400", turn.status === "running" && "animate-pulse")}
+                  style={{ width: `${longest > 0 ? (ms / longest) * 100 : 0}%` }}
+                />
+              </span>
+              <span className="whitespace-nowrap text-right tabular-nums text-muted-foreground">
+                {turn.status === "ok" ? null : <span className="sr-only">{t(`statuses.${turn.status}`)} </span>}
+                {duration(ms)}
+              </span>
+            </button>
+          </li>
+        );
+      })}
+    </ol>
   );
 }
 

@@ -67,9 +67,12 @@ In the chat, the bubble that ended a turn with a timeline has a debug icon in it
 `&view=debug&tab=timeline&turn=<turn_id>`: the answer of a successful turn, or the error box of a
 failed, budget-stopped or stopped one.
 
-- **Turn**: a dropdown of the session's turns with timing, newest first (start time, the prompt's
-  first characters, duration). It shows the newest turn by default and follows new turns live as
-  long as the newest one is picked. Turns from before timing was recorded have no timeline.
+- **Turns**: a list of the session's turns with timing, newest first, one row each: start time,
+  the prompt's first characters, a duration bar scaled to the longest turn in the list, and the
+  duration. Finished turns are blue, failed and stopped ones take the red and grey of errors and
+  interruptions, and running ones grow live. Past a few rows the list gets its own scrollbar. Clicking a row shows its turn. The
+  newest turn is shown by default, and new turns are followed live as long as the newest one is
+  picked. Turns from before timing was recorded have no timeline.
 - **Summary**: wall time, system time, and the time spent waiting for you (approvals, domain
   access, credential release). A stacked bar splits the wall time by category: preparation
   (`turn.prepare`), the agent's LLM requests (until the first token, thinking, output), sentinel
