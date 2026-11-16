@@ -61,6 +61,7 @@ from carapace.server import app, sandbox_app
 from carapace.server.runtime import KnowledgeGitRuntime, MatrixChannelHandle, MatrixChannelManager
 from carapace.session import SessionEngine, SessionManager, sent_files
 from carapace.session.archive import SessionArchiveResult, SessionArchiveService
+from carapace.spans import TurnTrace
 from carapace.usage import CostSplit, LlmRequestLog, LlmRequestRecord, LlmRequestState
 
 _TEST_TOKEN = "test-bearer-token-for-server-tests"
@@ -3663,6 +3664,13 @@ def _consume_status(ws):
     return msg
 
 
+def _receive_skipping_spans(ws):
+    """Next message that is not a span notification: those interleave with a turn's other messages."""
+    while (msg := ws.receive_json())["type"] == "span":
+        pass
+    return msg
+
+
 def test_ws_help_command(client, auth_headers):
     create_resp = client.post("/api/sessions", headers=auth_headers, json={"channel_type": "web"})
     sid = create_resp.json()["session_id"]
@@ -4014,10 +4022,10 @@ def test_ws_unknown_command_is_agent_message(client, auth_headers, monkeypatch):
     with client.websocket_connect(f"/api/chat/{sid}", headers=auth_headers) as ws:
         _consume_status(ws)
         ws.send_json({"type": "message", "content": "/tmp"})
-        msg = ws.receive_json()
+        msg = _receive_skipping_spans(ws)
         assert msg["type"] == "user_message"
         assert msg["content"] == "/tmp"
-        msg = ws.receive_json()
+        msg = _receive_skipping_spans(ws)
         assert msg["type"] == "done"
         assert msg["content"] == "treated as text"
 
@@ -4274,6 +4282,27 @@ def test_llm_requests_endpoint_lists_records_filtered_by_role(auth_headers):
         == 422
     )
     assert client.get("/api/sessions/nope/llm-requests", headers=auth_headers).status_code == 404
+
+
+def test_turn_timeline_api(auth_headers):
+    client = TestClient(app)
+    sid = client.post("/api/sessions", headers=auth_headers, json={"channel_type": "web"}).json()["session_id"]
+    trace = TurnTrace("abc123", on_change=lambda _s: None)
+    root = trace.start("turn", "turn", parent_id=None, attrs={"prompt": "hi"})
+    trace.end(root, "ok")
+    srv._engine.session_mgr.save_turn_spans(sid, trace.turn_id, trace.close())
+
+    turns = client.get(f"/api/sessions/{sid}/turns", headers=auth_headers)
+    assert turns.status_code == 200
+    assert [(t["turn_id"], t["prompt_preview"], t["status"]) for t in turns.json()] == [("abc123", "hi", "ok")]
+
+    timeline = client.get(f"/api/sessions/{sid}/turns/abc123/timeline", headers=auth_headers)
+    assert timeline.status_code == 200
+    assert timeline.json()["turn"]["turn_id"] == "abc123"
+    assert [(s["kind"], s["llm"]) for s in timeline.json()["spans"]] == [("turn", None)]
+
+    assert client.get(f"/api/sessions/{sid}/turns/nope/timeline", headers=auth_headers).status_code == 404
+    assert client.get("/api/sessions/nope/turns", headers=auth_headers).status_code == 404
 
 
 def test_history_annotations_carry_model_facing_text(auth_headers):

@@ -1719,7 +1719,7 @@
             "providerCost": "Laut Anbieter"
         },
         "hint": "Die letzte Anfrage jeder Agentenrolle, genau so, wie sie an das Modell ging. Aktualisiert sich live.",
-        "role": "Agentenrolle",
+        "tab": "Debug-Ansicht",
         "roles": {
             "agent": "Agent",
             "sentinel": "Sentinel",
@@ -1780,6 +1780,59 @@
                 "equivalentCost": "Äquivalent",
                 "duration": "Dauer",
                 "model": "Modell"
+            }
+        },
+        "turns": {
+            "tab": "Zeitleiste",
+            "hint": "Wohin die Zeit eines Zugs ging: jeder gemessene Schritt als Wasserfall. Folgt live dem neuesten Zug.",
+            "turn": "Zug",
+            "empty": "Noch kein Zug mit Zeitleiste. Züge von vor der Zeitmessung haben keine.",
+            "loadError": "Die Züge konnten nicht geladen werden: {error}",
+            "timelineError": "Die Zeitleiste konnte nicht geladen werden: {error}",
+            "running": "läuft",
+            "wall": "Gesamtdauer",
+            "system": "Systemzeit",
+            "breakdown": "Wohin die Zeit ging",
+            "offset": "+{value}",
+            "duration": {
+                "ms": "{value} ms",
+                "s": "{value} s",
+                "min": "{minutes} min {seconds} s"
+            },
+            "categories": {
+                "llmWaiting": "Agent-LLM: erstes Token",
+                "llmThinking": "Agent-LLM: Denken",
+                "llmOutput": "Agent-LLM: Ausgabe",
+                "sentinel": "Sentinel",
+                "sandbox": "Sandbox",
+                "skill": "Skills",
+                "execFile": "Exec und Dateien",
+                "credential": "Zugangsdaten",
+                "other": "Sonstiges",
+                "notCovered": "Nicht erfasst",
+                "userWait": "Wartet auf dich"
+            },
+            "statuses": {
+                "running": "Läuft",
+                "ok": "OK",
+                "error": "Fehler",
+                "interrupted": "Unterbrochen"
+            },
+            "detail": {
+                "kind": "Art",
+                "status": "Status",
+                "start": "Start",
+                "duration": "Dauer",
+                "model": "Modell",
+                "llmWaiting": "Bis zum ersten Token",
+                "llmThinking": "Denken",
+                "llmOutput": "Ausgabe",
+                "input": "Eingabe-Tokens",
+                "output": "Ausgabe-Tokens",
+                "cacheRead": "Cache gelesen",
+                "cacheWrite": "Cache geschrieben",
+                "cost": "Kosten",
+                "openRole": "Im Tab {role} zeigen"
             }
         }
     }

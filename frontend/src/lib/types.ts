@@ -336,6 +336,14 @@ export interface LlmContextUpdate {
   status: LlmContextStatus;
 }
 
+/** A turn's span started or ended; clients refetch its timeline, and the turn list on a new *turn_id*. */
+export interface SpanUpdate {
+  type: "span";
+  turn_id: string;
+  span_id: string;
+  status: SpanStatus;
+}
+
 export interface ToolCallInfo {
   type: "tool_call";
   tool: string;
@@ -504,6 +512,7 @@ export type ServerMessage =
   | SessionTitleUpdate
   | LlmActivityUpdate
   | LlmContextUpdate
+  | SpanUpdate
   | StatusUpdate
   | UserMessageNotification;
 
@@ -1107,6 +1116,9 @@ export interface MemoryFactListResponse {
 export const DEBUG_ROLES = ["agent", "sentinel", "titler", "compaction"] as const;
 export type DebugRole = (typeof DEBUG_ROLES)[number];
 export type LlmContextStatus = "running" | "completed" | "failed" | "interrupted";
+/** The debug view's tabs: the turn timeline, then one per role. */
+export const DEBUG_TABS = ["timeline", ...DEBUG_ROLES] as const;
+export type DebugTab = (typeof DEBUG_TABS)[number];
 
 /**
  * pydantic-ai's own serialization of messages and parts. Only the fields the formatted view reads are typed;
@@ -1192,6 +1204,51 @@ export interface LlmContext {
   response: LlmMessage | null;
   error: string | null;
   cost: LlmRequestCost | null;
+}
+
+export type SpanStatus = "running" | "ok" | "error" | "interrupted";
+
+/** One turn of a session; *status* is its root span's. */
+export interface TurnSummary {
+  turn_id: string;
+  started_at: string;
+  ended_at: string | null;
+  prompt_preview: string;
+  status: SpanStatus;
+}
+
+/** An LLM span's request: phase timestamps (null until reached, or unknown) and, once completed, usage and cost. */
+export interface LlmPhases {
+  role: DebugRole;
+  request_id: string;
+  model_name: string | null;
+  first_token_at: string | null;
+  first_thinking_at: string | null;
+  last_thinking_at: string | null;
+  first_text_at: string | null;
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_tokens: number | null;
+  cache_write_tokens: number | null;
+  cost: LlmRequestCost | null;
+}
+
+/** One timed step of a turn. The root has kind `turn` and no parent; unknown kinds are valid and count as "other". */
+export interface Span {
+  span_id: string;
+  parent_id: string | null;
+  kind: string;
+  name: string;
+  started_at: string;
+  ended_at: string | null;
+  status: SpanStatus;
+  attrs: Record<string, string | number | boolean>;
+  llm: LlmPhases | null;
+}
+
+export interface TurnTimeline {
+  turn: TurnSummary;
+  spans: Span[];
 }
 
 export const PROMPT_ROLES = ["agent", "sentinel", "titler", "compaction", "session_extract", "week_digest", "month_digest"] as const;

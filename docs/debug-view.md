@@ -6,8 +6,9 @@ what went to the model in its last request, and what came back. Terms follow
 
 ## Using it
 
-The **Chat | Debug** switch in the session header opens `/?session=<ID>&view=debug`. One tab per role
-shows its request timeline and its latest request:
+The **Chat | Debug** switch in the session header opens `/?session=<ID>&view=debug`. The first tab,
+**Timeline**, opens by default and shows where a turn's time went (see [Timeline tab](#timeline-tab)). One tab per role
+follows; each shows the role's request timeline and its latest request:
 
 - **Requests**: one row per recorded request of the role, newest first, so requests compare side by
   side: time, status, input, cache read, cache write, output and reasoning tokens, cache hits (cache
@@ -34,6 +35,34 @@ count as presence that suppresses approval notifications. It refetches the open 
 its role sends a notification and after every (re)connect, so it follows a running turn request by
 request. A spinner on a tab marks a role
 whose request is running.
+
+### Timeline tab
+
+`&tab=<role>` opens a role tab instead; `&turn=<turn_id>` picks the turn the timeline shows first.
+
+- **Turn**: a dropdown of the session's turns with timing, newest first (start time, the prompt's
+  first characters, duration). It shows the newest turn by default and follows new turns live as
+  long as the newest one is picked. Turns from before timing was recorded have no timeline.
+- **Summary**: wall time, system time, and the time spent waiting for you (approvals, domain
+  access, credential release). A stacked bar splits the wall time by category: the agent's LLM
+  requests (until the first token, thinking, output), sentinel (gates, sentinel calls and their LLM
+  requests, proxy domain checks), sandbox, skills, exec and files, credentials, other, and **not
+  covered**. Each instant of the turn counts once, for the sequential main path: starting at the
+  turn, it steps into the running child that started first, level by level, and the instant
+  belongs to where that stops, so parallel work never counts twice. Anything inside a `wait` span
+  is waiting for you. Instants that stop at the turn itself are not covered: time no span measured.
+- **Waterfall**: one row per span, indented by nesting, with its bar placed within the turn
+  (on a phone the label sits above the bar). Running spans grow until they end. Errors are red,
+  interrupted spans grey, waits hatched. An LLM bar shows its phases: waiting for the first
+  token, thinking, output; a phase without its timestamp collapses into its neighbour.
+- Clicking a row opens its details: start (relative to the turn), duration, status and attributes.
+  An LLM span adds model, phase durations, tokens, cache and cost, and a link to its role's tab
+  when it is that role's latest request.
+
+The tab refetches the turn list and the shown timeline after every (re)connect and on `span` and
+`llm_activity` notifications: the latter move a running LLM request through its phases. A burst of
+notifications causes one refetch once it settles (250 ms), and at least one per second while it
+lasts.
 
 ## What is captured
 
@@ -166,3 +195,90 @@ cost the provider reported itself, if it did. Pricing keys on the carapace model
 (`provider:model`) that `model_name` holds, not on the provider's API model name.
 
 Running, failed and interrupted requests have no response, so they show no usage and no cost.
+
+## Timeline
+
+The timeline shows where a turn's time went: one span per step of the turn, nested, with the
+turn's LLM requests joined in as bars of their own. It only measures.
+
+### Data model
+
+A **turn** is identified by `turn_id`, a short random hex id generated when the turn starts. The
+user event that started it carries the id (`turn_id` on the `user` event), and so does every LLM
+request made during it (`turn_id` and `span_id` on `LlmRequestState` and `LlmRequestRecord`: the turn
+and the span the request started in). Turns from before timelines existed have no `turn_id` and no
+timeline.
+
+A **span** (`Span` in `src/carapace/spans.py`) has the OpenTelemetry shape: `span_id`, `parent_id`,
+`kind`, `name`, `started_at`, `ended_at`, `status` and small `attrs` (strings, numbers, booleans;
+never full arguments or outputs). Every turn has one root span of kind `turn`, without a parent,
+whose `prompt` attr holds the first 60 characters of the user's prompt.
+
+| Status | Meaning |
+| --- | --- |
+| `running` | the span has not ended yet |
+| `ok` | its block completed |
+| `error` | its block raised |
+| `interrupted` | it was cancelled, or still open when the turn ended |
+
+The root span ends `ok` when the turn completed, `error` when it failed (including budget stops and
+unusable models) and `interrupted` when the user stopped it.
+
+Code times a block with the `span()` context manager:
+
+```python
+with span("exec", "exec", command=command[:200]) as current:
+    result = await run(command)
+    current.attrs["exit_code"] = result.exit_code
+```
+
+Its parent is the current span, carried in a contextvar, so spans nest the way the code calls. Its
+status follows how the block exits. Outside a running turn `span()` records nothing, so callers never
+check. It works on the event-loop thread only: `asyncio.to_thread` copies the contextvar into its
+worker, where a span would change the trace off the loop. Wrap the `await asyncio.to_thread(...)`,
+never the function running inside it. Code in another task than the turn (the proxy) does not inherit the contextvar; it enters
+`attach(trace, parent_id)` with the session's `TurnTrace` to put its spans under an explicit parent.
+
+### Storage
+
+Spans of the running turn live in memory, on the `TurnTrace` of the session's `ActiveSession`. When
+the turn ends (success, failure or stop) the spans still open are closed as `interrupted` and all of
+them are written in one batch to the `session_spans` table. Measuring adds no database I/O to the
+measured path. A server crash loses the running turn's spans.
+
+LLM requests are not stored as spans: the timeline joins them from the `session_llm_requests` log
+and the request in flight. Spans go away with their session. A fork starts without any, a rewind
+keeps them.
+
+### API
+
+Both endpoints need the `history` read scope.
+
+`GET /api/sessions/{session_id}/turns` returns every turn with a timeline, oldest first, the running
+one included:
+
+```json
+[{"turn_id": "9c1e0a7f", "started_at": "…", "ended_at": "…", "prompt_preview": "Why is the build red?", "status": "ok"}]
+```
+
+`status` is the root span's status, `prompt_preview` its `prompt` attr.
+
+`GET /api/sessions/{session_id}/turns/{turn_id}/timeline` returns `{"turn": TurnSummary, "spans":
+[Span]}`, the spans ordered by start, 404 for a turn without a timeline. Every span has an `llm`
+field, `null` except on `kind == "llm"` spans, which carry the request's phases and numbers:
+`role`, `request_id`, `model_name`, `first_token_at`, `first_thinking_at`, `last_thinking_at`,
+`first_text_at`, input, output, cache read and cache write tokens, and `cost`. An LLM span's
+`span_id` is its `request_id`, its `name` the role. Its status is `ok` for a completed request,
+`interrupted` for an interrupted one and `running` for the request in flight.
+
+### WebSocket
+
+The session WebSocket sends a notification whenever a span of the running turn starts or ends, LLM
+bars included (their `span_id` is the `request_id`):
+
+```json
+{"type": "span", "turn_id": "9c1e0a7f", "span_id": "3f9c0a1b2d4e5f60", "status": "running"}
+```
+
+Clients refetch the timeline, and the turn list on a `turn_id` they don't know yet. An interrupted
+LLM request is recorded when its turn stops, so its bar's last change arrives with the root span's.
