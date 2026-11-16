@@ -43,6 +43,7 @@ from pydantic_ai.usage import RequestUsage, RunUsage, UsageLimits
 
 from .models.config import is_subscription_model
 from .models.session import SessionBudget
+from .spans import current_span_ref
 
 
 class ModelUsage(BaseModel):
@@ -468,6 +469,9 @@ _current_llm_context: ContextVar[LlmContext | None] = ContextVar("current_llm_co
 class LlmRequestState(BaseModel):
     request_id: str
     source: LlmSource
+    # The turn and the span the request started in; None outside a turn.
+    turn_id: str | None = None
+    span_id: str | None = None
     model_name: str | None = None
     started_at: datetime
     phase: LlmRequestPhase = "processing_prompt"
@@ -566,6 +570,8 @@ class LlmRequestRecord(BaseModel):
     ts: datetime
     request_id: str | None = None
     source: LlmSource
+    turn_id: str | None = None
+    span_id: str | None = None
     model_name: str | None = None
     outcome: LlmRequestOutcome = "completed"
     input_tokens: int = 0
@@ -595,6 +601,8 @@ def interrupted_request_record(state: LlmRequestState, *, ts: datetime | None = 
         ts=when,
         request_id=state.request_id,
         source=state.source,
+        turn_id=state.turn_id,
+        span_id=state.span_id,
         model_name=state.model_name,
         outcome="interrupted",
         started_at=state.started_at,
@@ -958,9 +966,12 @@ class LlmRequestLogCapability(AbstractCapability[AgentDepsT]):
         request_context: ModelRequestContext,
     ) -> ModelRequestContext:
         sink = _llm_request_sink.get()
+        turn_id, span_id = current_span_ref() or (None, None)
         state = LlmRequestState(
             request_id=secrets.token_hex(8),
             source=self.source,
+            turn_id=turn_id,
+            span_id=span_id,
             model_name=self.model_id,
             started_at=datetime.now(tz=UTC),
         )
@@ -1004,6 +1015,8 @@ class LlmRequestLogCapability(AbstractCapability[AgentDepsT]):
             ts=completed_at,
             request_id=state.request_id,
             source=self.source,
+            turn_id=state.turn_id,
+            span_id=state.span_id,
             model_name=self.model_id,
             input_tokens=usage.input_tokens or 0,
             output_tokens=usage.output_tokens or 0,
