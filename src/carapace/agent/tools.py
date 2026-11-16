@@ -49,6 +49,7 @@ from ..security.context import (
     ToolResultEntry,
 )
 from ..skills import SkillDocumentError, SkillRegistry
+from ..spans import ToolSpanCapability, span
 from ..usage import LlmRequestLogCapability
 from .autonomy import AUTONOMY_LIMIT_METADATA_KEY, AutonomyLimitCapability
 from .deps import Deps, TaskDone, TaskFailed
@@ -324,19 +325,21 @@ async def _gate(ctx: RunContext[Deps], tool_name: str, args: dict[str, Any]) -> 
     Returns ``ToolDenied`` when the sentinel denies the call or requests changes (the caller must
     return it to pydantic-ai), or ``None`` when the call is allowed.
     """
-    try:
-        await security.evaluate_with(
-            ctx.deps.security,
-            ctx.deps.sentinel,
-            tool_name,
-            args,
-            usage_tracker=ctx.deps.usage_tracker,
-            assert_llm_budget_available=ctx.deps.assert_llm_budget_available,
-            usage_limits=ctx.deps.llm_usage_limits() if ctx.deps.llm_usage_limits is not None else None,
-            tool_call_callback=ctx.deps.tool_call_callback,
-        )
-    except (security.SecurityDeniedError, security.ChangesRequestedError) as exc:
-        return ToolDenied(str(exc))
+    with span("gate", tool_name) as gate:
+        try:
+            await security.evaluate_with(
+                ctx.deps.security,
+                ctx.deps.sentinel,
+                tool_name,
+                args,
+                usage_tracker=ctx.deps.usage_tracker,
+                assert_llm_budget_available=ctx.deps.assert_llm_budget_available,
+                usage_limits=ctx.deps.llm_usage_limits() if ctx.deps.llm_usage_limits is not None else None,
+                tool_call_callback=ctx.deps.tool_call_callback,
+            )
+        except (security.SecurityDeniedError, security.ChangesRequestedError) as exc:
+            gate.attrs["denied"] = True
+            return ToolDenied(str(exc))
     return None
 
 
@@ -411,7 +414,8 @@ async def _prepare_exec_tool_result(ctx: RunContext[Deps], result: str) -> str:
 
     session_id = ctx.deps.session_state.session_id
     spill_path = (_EXEC_OUTPUT_SPILL_ROOT / session_id / f"{secrets.token_hex(8)}.txt").as_posix()
-    write_result = await ctx.deps.sandbox.file_write(session_id, spill_path, result)
+    with span("spill", "spill", chars=len(result)):
+        write_result = await ctx.deps.sandbox.file_write(session_id, spill_path, result)
     if write_result.exit_code != 0:
         # A truncated preview without the spill file would lose the rest of the output.
         raise RuntimeError(
@@ -1118,6 +1122,8 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
         capabilities=[
             *_compaction_capabilities(deps),
             LlmRequestLogCapability(source="agent", model_id=deps.agent_model_id),
+            # Before the autonomy limit, so a call it holds back still shows as a (deferred) tool span.
+            ToolSpanCapability(),
             AutonomyLimitCapability(
                 streak=deps.autonomy,
                 session_state=deps.session_state,

@@ -112,7 +112,7 @@ def _llm_span(
     )
 
 
-def _llm_spans(turn_id: str, records: list[LlmRequestRecord], in_flight: LlmRequestState | None) -> list[TimelineSpan]:
+def _llm_spans(turn_id: str, records: list[LlmRequestRecord], in_flight: list[LlmRequestState]) -> list[TimelineSpan]:
     spans = [
         _llm_span(
             record,
@@ -122,8 +122,7 @@ def _llm_spans(turn_id: str, records: list[LlmRequestRecord], in_flight: LlmRequ
         for record in records
         if record.turn_id == turn_id
     ]
-    if in_flight is not None and in_flight.turn_id == turn_id:
-        spans.append(_llm_span(in_flight, status="running", ended_at=None))
+    spans += [_llm_span(state, status="running", ended_at=None) for state in in_flight if state.turn_id == turn_id]
     return spans
 
 
@@ -137,7 +136,7 @@ def turn_timeline(
         return None
     # An active session's log is current in memory: the request sink appends before it saves.
     records = (active.llm_request_log if active is not None else session_mgr.load_llm_request_log(session_id)).records
-    in_flight = active.llm_request_state if active is not None else None
+    in_flight = [state.model_copy() for state in active.llm_requests_in_flight.values()] if active is not None else []
     timeline = [TimelineSpan.model_validate(span.model_dump()) for span in spans]
     timeline += _llm_spans(turn_id, records, in_flight)
     return TurnTimeline(
