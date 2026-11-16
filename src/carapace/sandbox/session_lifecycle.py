@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import secrets
 import shlex
 import time
@@ -94,7 +95,8 @@ class SandboxSessionLifecycle:
         """Replenish the warm pool in the background without blocking session start."""
         if self._runtime.runtime_kind != "kubernetes":
             return
-        task = asyncio.create_task(self._refill_warm_pool())
+        # A fresh context: the refill outlives the turn that triggered it and must not record spans into it.
+        task = asyncio.create_task(self._refill_warm_pool(), context=contextvars.Context())
         self._warm_refill_tasks.add(task)
         task.add_done_callback(self._warm_refill_tasks.discard)
 
@@ -580,13 +582,15 @@ class SandboxSessionLifecycle:
 
     async def wait_for_ready(self, container_id: str, session_id: str) -> None:
         """Poll container logs until the ready marker appears."""
-        with span("sandbox", "wait_for_ready"):
+        with span("sandbox", "wait_for_ready") as wait:
             last_output = ""
             for _ in range(self._READY_TIMEOUT_SECONDS):
                 last_output = await self._runtime.logs(container_id, tail=10)
                 if self._READY_MARKER in last_output:
+                    wait.attrs["ready"] = True
                     return
                 await asyncio.sleep(1)
+            wait.attrs["ready"] = False
             logger.warning(
                 f"Sandbox for {session_id} did not become ready within {self._READY_TIMEOUT_SECONDS}s "
                 f"(container={container_id}); last log tail: {last_output!r}"

@@ -190,5 +190,41 @@ async def test_a_sandbox_start_records_its_steps_and_a_running_one_records_nothi
     assert ensure.parent_id == root.span_id
     for step in ("create", "wait_for_ready", "knowledge clone", "git identity"):
         assert steps[step].parent_id == ensure.span_id, step
+    assert steps["wait_for_ready"].attrs == {"ready": True}
     assert steps["hooks"].parent_id == steps["knowledge clone"].span_id
     assert {s.status for s in trace.spans.values() if s.kind == "sandbox"} == {"ok"}
+
+
+@pytest.mark.asyncio
+async def test_a_warm_pool_refill_scheduled_in_a_turn_records_nothing_in_it(tmp_path: Path, db_factory) -> None:
+    mgr = _manager(tmp_path, db_factory)
+    lifecycle = mgr._session_lifecycle
+    lifecycle._runtime.runtime_kind = "kubernetes"
+    seen: list[tuple[str, str] | None] = []
+
+    async def _refill(_size: int) -> int:
+        seen.append(current_span_ref())
+        return 0
+
+    lifecycle.ensure_warm_pool = _refill
+    trace, root = _trace()
+    with attach(trace, root.span_id):
+        lifecycle.schedule_warm_pool_refill()
+    await asyncio.gather(*lifecycle._warm_refill_tasks)
+
+    assert seen == [None]
+
+
+@pytest.mark.asyncio
+async def test_a_sandbox_controlled_domain_is_capped() -> None:
+    trace, _root = _trace()
+    proxy = ProxyServer(
+        verify_session_token=lambda _sid, _tok: True,
+        get_allowed_domains=lambda _sid: set(),
+        attach_sandbox_call=lambda _sid: attach_sandbox_call(trace),
+    )
+
+    await proxy._authorize_domain("s1", "a" * 5000)
+
+    (check,) = [s for s in trace.spans.values() if s.kind == "domain"]
+    assert check.name == check.attrs["domain"] == "a" * 200
