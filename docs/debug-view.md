@@ -49,8 +49,8 @@ turn it shows first.
   requests (until the first token, thinking, output), sentinel (gates, sentinel calls and their LLM
   requests, proxy domain checks), sandbox, skills, exec and files, credentials, other, and **not
   covered**. Each instant of the turn counts once, for the deepest span running then: overlapping
-  siblings give it to the one that started first, the titler runs beside the turn and is ignored,
-  and anything inside a `wait` span is waiting for you. Instants that only the turn itself covers
+  siblings give it to the one that started first, and anything inside a `wait` span is waiting
+  for you. Instants that only the turn itself covers
   are not covered: time no span measured.
 - **Waterfall**: one row per span, indented by nesting, with its bar placed within the turn
   (on a phone the label sits above the bar). Running spans grow until they end. Errors are red,

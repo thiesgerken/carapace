@@ -16,8 +16,8 @@ function llm(overrides: Partial<LlmPhases>): LlmPhases {
     first_thinking_at: null,
     last_thinking_at: null,
     first_text_at: null,
-    input_tokens: null,
-    output_tokens: null,
+    input_tokens: 0,
+    output_tokens: 0,
     cache_read_tokens: null,
     cache_write_tokens: null,
     cost: null,
@@ -40,9 +40,6 @@ test("every instant of a turn goes to its deepest span, by category", () => {
     span("wait", "tool", "wait", 5500, 7000, { attrs: { reason: "approval" } }),
     span("exec", "tool", "exec", 7000, 8500),
     span("domain", "exec", "domain", 7200, 7400),
-    // The titler runs beside the turn and must not take time from it.
-    span("titler", "turn", "titler", 0, 9500),
-    span("llm3", "titler", "llm", 100, 9400, { llm: llm({ role: "titler" }) }),
   ];
 
   const summary = summarizeTurn(timelineRows(spans, T0 + 10_000), T0, T0 + 10_000);

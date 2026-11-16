@@ -258,7 +258,7 @@ function SpanDetail({ row, turnStart, server, token, sessionId, onOpenRole }: { 
       ))}
       {llm ? (
         <div className="flex basis-full flex-wrap gap-x-8 gap-y-3 border-t border-border/60 pt-3">
-          <Stat label={t("detail.model")} value={<span className="font-mono">{llm.model_name}</span>} />
+          <Stat label={t("detail.model")} value={<span className="font-mono">{llm.model_name ?? "–"}</span>} />
           {LLM_PHASES.filter((phase) => phaseMs(phase) > 0).map((phase) => (
             <Stat key={phase} label={t(`detail.${phase}`)} value={<span className="tabular-nums">{duration(phaseMs(phase))}</span>} />
           ))}

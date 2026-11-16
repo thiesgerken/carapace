@@ -1221,13 +1221,13 @@ export interface TurnSummary {
 export interface LlmPhases {
   role: DebugRole;
   request_id: string;
-  model_name: string;
+  model_name: string | null;
   first_token_at: string | null;
   first_thinking_at: string | null;
   last_thinking_at: string | null;
   first_text_at: string | null;
-  input_tokens: number | null;
-  output_tokens: number | null;
+  input_tokens: number;
+  output_tokens: number;
   cache_read_tokens: number | null;
   cache_write_tokens: number | null;
   cost: LlmRequestCost | null;

@@ -91,25 +91,19 @@ export function timelineRows(spans: Span[], turnEnd: number): TimelineRow[] {
 
 /**
  * Attributes every instant of the turn to the deepest span active then, so parallel work never counts twice.
- * Titler spans run beside the turn and are ignored with everything below them; ties between overlapping
- * siblings go to the earliest started. Instants only the root covers are "not covered", and instants inside
- * a wait span are user wait, whatever else runs then.
+ * Ties between overlapping siblings go to the earliest started. Instants only the root covers are
+ * "not covered", and instants inside a wait span are user wait, whatever else runs then.
  */
 export function summarizeTurn(rows: TimelineRow[], turnStart: number, turnEnd: number): TurnSummary {
-  const titlerSubtrees = new Set<string>();
-  for (const { span } of rows) {
-    if (span.kind === "titler" || (span.parent_id !== null && titlerSubtrees.has(span.parent_id))) titlerSubtrees.add(span.span_id);
-  }
-  const counted = rows.filter(({ span }) => !titlerSubtrees.has(span.span_id));
   const byCategory = Object.fromEntries(TIME_CATEGORIES.map((category) => [category, 0])) as Record<TimeCategory, number>;
-  const boundaries = [...new Set([turnStart, turnEnd, ...counted.flatMap((row) => [row.start, row.end])])]
+  const boundaries = [...new Set([turnStart, turnEnd, ...rows.flatMap((row) => [row.start, row.end])])]
     .filter((time) => time >= turnStart && time <= turnEnd)
     .sort((a, b) => a - b);
 
   // ponytail: O(boundaries × spans), fine for a turn's few hundred spans; a sweep line if turns grow to thousands.
   for (let index = 0; index + 1 < boundaries.length; index++) {
     const [start, end] = [boundaries[index], boundaries[index + 1]];
-    const active = counted.filter((row) => row.start <= start && row.end >= end);
+    const active = rows.filter((row) => row.start <= start && row.end >= end);
     if (active.some(({ span }) => span.kind === "wait")) {
       byCategory.userWait += end - start;
       continue;
