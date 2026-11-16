@@ -58,6 +58,7 @@ from carapace.models.session import SessionAttributes, SessionBudget, SessionSta
 from carapace.models.user import MemoryBudget, UserConfig, UserDefaultModelsConfig, UserMemoryConfig
 from carapace.sandbox.snapshot import SessionSandboxSnapshot
 from carapace.session.manager import SessionManager, SessionMeta
+from carapace.spans import Span
 from carapace.usage import (
     LlmContext,
     LlmRequestLog,
@@ -71,6 +72,7 @@ DEMO_USER = "demo"
 DEMO_PASSWORD = "carapace-demo"
 DEMO_MODEL = "anthropic:claude-sonnet-4-6"
 DEMO_SUBSCRIPTION_MODEL = "openai-codex:gpt-5.5"
+PANCAKE_TURN_ID = "5eedf00d"
 # Memory runs on the subscription; an older extraction ran on the paid API model. Today's spend
 # sits close to the day limits, so the home page shows the budget notice.
 DEMO_MEMORY_BUDGET = MemoryBudget(
@@ -96,23 +98,27 @@ class Transcript:
         self.at += timedelta(seconds=seconds)
         return self.at.isoformat()
 
-    def user(self, content: str) -> None:
-        self.events.append({"role": "user", "content": content, "timestamp": self._stamp(20)})
+    def user(self, content: str, *, turn_id: str | None = None) -> None:
+        event: dict[str, Any] = {"role": "user", "content": content, "timestamp": self._stamp(20)}
+        if turn_id is not None:
+            event["turn_id"] = turn_id
+        self.events.append(event)
 
     def thinking(self, content: str, duration_ms: int) -> None:
         self.events.append(
             {"role": "thinking", "content": content, "reasoning_duration_ms": duration_ms, "timestamp": self._stamp(1)}
         )
 
-    def assistant(self, content: str) -> None:
-        self.events.append(
-            {
-                "role": "assistant",
-                "content": content,
-                "timestamp": self._stamp(6),
-                "usage": {"model": DEMO_MODEL, "input_tokens": 6_400, "output_tokens": 420},
-            }
-        )
+    def assistant(self, content: str, *, turn_id: str | None = None) -> None:
+        event: dict[str, Any] = {
+            "role": "assistant",
+            "content": content,
+            "timestamp": self._stamp(6),
+            "usage": {"model": DEMO_MODEL, "input_tokens": 6_400, "output_tokens": 420},
+        }
+        if turn_id is not None:
+            event["turn_id"] = turn_id
+        self.events.append(event)
 
     def error(self, content: str) -> None:
         self.events.append({"role": "error", "content": content, "timestamp": self._stamp(1)})
@@ -199,6 +205,7 @@ class DemoSession:
     sandbox: SessionSandboxSnapshot = field(default_factory=SessionSandboxSnapshot)
     llm_contexts: list[LlmContext] = field(default_factory=list)
     llm_requests: list[LlmRequestRecord] = field(default_factory=list)
+    turn_spans: dict[str, list[Span]] = field(default_factory=dict)
 
 
 def _usage(input_tokens: int, output_tokens: int) -> UsageTracker:
@@ -253,7 +260,7 @@ def _sandbox_tour(start: datetime) -> Transcript:
 
 def _pancake_recipe(start: datetime) -> Transcript:
     t = Transcript(start)
-    t.user("I really need a pancake recipe")
+    t.user("I really need a pancake recipe", turn_id=PANCAKE_TURN_ID)
     skill = t.call("use_skill", {"skill_name": "web"})
     t.result(skill, "use_skill", "Skill 'web' activated.")
     search = t.run(
@@ -292,7 +299,8 @@ def _pancake_recipe(start: datetime) -> Transcript:
         "1. Whisk the dry ingredients.\n"
         "2. Mix milk, eggs and butter, then fold into the dry mix. A few lumps are fine.\n"
         "3. Let the batter rest for 5 minutes.\n4. Cook on a medium-hot pan until bubbles form, flip once.\n\n"
-        "Enjoy!"
+        "Enjoy!",
+        turn_id=PANCAKE_TURN_ID,
     )
     return t
 
@@ -686,6 +694,156 @@ def _pancake_requests(end: datetime, contexts: list[LlmContext]) -> list[LlmRequ
     return sorted(records, key=lambda record: record.ts)
 
 
+def _turn_request(
+    role: Literal["agent", "sentinel"],
+    request_id: str,
+    parent_span: str,
+    started_at: datetime,
+    completed_at: datetime,
+    usage: RequestUsage,
+    *,
+    thinking: tuple[datetime, datetime] | None = None,
+    first_text_at: datetime | None = None,
+) -> LlmRequestRecord:
+    return _request(role, request_id, started_at, completed_at, usage).model_copy(
+        update={
+            "turn_id": PANCAKE_TURN_ID,
+            "span_id": parent_span,
+            "first_thinking_at": thinking[0] if thinking else None,
+            "last_thinking_at": thinking[1] if thinking else None,
+            "first_text_at": first_text_at,
+        }
+    )
+
+
+def _pancake_turn(start: datetime, end: datetime) -> tuple[list[Span], list[LlmRequestRecord]]:
+    """The pancake turn's timeline, in seconds after the prompt: what the debug view's Timeline tab shows."""
+    spans: list[Span] = []
+
+    def at(seconds: float) -> datetime:
+        return start + timedelta(seconds=seconds)
+
+    def span(
+        span_id: str, parent: str | None, kind: str, name: str, begin: float, until: datetime | float, **attrs: Any
+    ) -> str:
+        ended_at = until if isinstance(until, datetime) else at(until)
+        spans.append(
+            Span(
+                span_id=span_id,
+                parent_id=parent,
+                kind=kind,
+                name=name,
+                started_at=at(begin),
+                ended_at=ended_at,
+                status="ok",
+                attrs=attrs,
+            )
+        )
+        return span_id
+
+    root = span("demo-turn", None, "turn", "turn", 0, end, prompt="I really need a pancake recipe")
+    span("demo-prepare", root, "turn.prepare", "turn.prepare", 0, 0.3)
+    span("demo-sandbox", root, "sandbox", "ensure", 0.3, 1.5)
+    skill_tool = span("demo-tool-skill", root, "tool", "use_skill", 4.0, 5.2, tool="use_skill")
+    span("demo-skill", skill_tool, "skill", "web", 4.1, 4.9, skill="web")
+    search = span("demo-tool-search", root, "tool", "exec", 7.0, 13.0, tool="exec")
+    search_gate = span("demo-gate-search", search, "gate", "gate", 7.0, 9.6)
+    search_sentinel = span("demo-sentinel-search", search_gate, "sentinel", "sentinel", 7.05, 9.55, verdict="allow")
+    credential = span("demo-credential", search, "credential", "demo/web-search-api-key", 9.6, 11.2)
+    span("demo-wait", credential, "wait", "credential", 9.7, 11.1, reason="credential")
+    search_exec = span(
+        "demo-exec-search",
+        search,
+        "exec",
+        "web_search",
+        11.2,
+        13.0,
+        command="web_search 'best fluffy pancake recipe'",
+        exit_code=0,
+    )
+    span("demo-domain-search", search_exec, "domain", "search.example.org", 11.4, 11.6, domain="search.example.org")
+    fetch = span("demo-tool-fetch", root, "tool", "exec", 14.5, 21.5, tool="exec")
+    fetch_gate = span("demo-gate-fetch", fetch, "gate", "gate", 14.5, 17.0)
+    fetch_sentinel = span("demo-sentinel-fetch", fetch_gate, "sentinel", "sentinel", 14.55, 16.95, verdict="allow")
+    fetch_exec = span(
+        "demo-exec-fetch",
+        fetch,
+        "exec",
+        "web_fetch",
+        17.0,
+        21.4,
+        command="web_fetch 'https://recipes.example.org/fluffy-pancakes'",
+        exit_code=0,
+    )
+    span("demo-domain-fetch", fetch_exec, "domain", "recipes.example.org", 17.2, 18.9, domain="recipes.example.org")
+
+    records = [
+        _turn_request(
+            "agent",
+            "demo-turn-agent-1",
+            root,
+            at(1.5),
+            at(4.0),
+            RequestUsage(input_tokens=5_120, output_tokens=46, cache_write_tokens=4_900),
+            thinking=(at(2.6), at(3.3)),
+        ),
+        _turn_request(
+            "agent",
+            "demo-turn-agent-2",
+            root,
+            at(5.2),
+            at(7.0),
+            RequestUsage(input_tokens=5_890, output_tokens=58, cache_read_tokens=4_900, cache_write_tokens=760),
+        ),
+        _turn_request(
+            "sentinel",
+            "demo-turn-sentinel-1",
+            search_sentinel,
+            at(7.1),
+            at(9.5),
+            RequestUsage(input_tokens=2_380, output_tokens=55, cache_write_tokens=2_100),
+            first_text_at=at(8.4),
+        ),
+        _turn_request(
+            "agent",
+            "demo-turn-agent-3",
+            root,
+            at(13.0),
+            at(14.5),
+            RequestUsage(input_tokens=6_970, output_tokens=71, cache_read_tokens=5_660, cache_write_tokens=1_080),
+        ),
+        _turn_request(
+            "sentinel",
+            "demo-turn-sentinel-2",
+            fetch_sentinel,
+            at(14.6),
+            at(16.9),
+            RequestUsage(input_tokens=2_610, output_tokens=61, cache_read_tokens=2_100, cache_write_tokens=380),
+            first_text_at=at(15.9),
+        ),
+        _turn_request(
+            "agent",
+            "demo-turn-agent-4",
+            root,
+            at(21.8),
+            end - timedelta(seconds=0.2),
+            RequestUsage(input_tokens=7_840, output_tokens=402, cache_read_tokens=6_740, cache_write_tokens=900),
+            thinking=(at(23.0), at(24.1)),
+            first_text_at=at(24.1),
+        ),
+    ]
+    return spans, records
+
+
+def _pancake_turn_of(transcript: Transcript) -> tuple[list[Span], list[LlmRequestRecord]]:
+    prompt, answer = (
+        datetime.fromisoformat(event["timestamp"])
+        for event in transcript.events
+        if event.get("turn_id") == PANCAKE_TURN_ID
+    )
+    return _pancake_turn(prompt, answer)
+
+
 def demo_sessions(now: datetime) -> list[DemoSession]:
     budget_usage = _usage(180_000, 24_000)
     budget_stop_budget = SessionBudget(cost_usd=Decimal("0.75"))
@@ -704,7 +862,11 @@ def demo_sessions(now: datetime) -> list[DemoSession]:
             usage=_usage(21_000, 1_900),
             sandbox=_sandbox("running", 59_000_000, now),
             llm_contexts=(pancake_contexts := _pancake_contexts(pancake.at)),
-            llm_requests=_pancake_requests(pancake.at, pancake_contexts),
+            llm_requests=sorted(
+                _pancake_requests(pancake.at, pancake_contexts) + (pancake_turn := _pancake_turn_of(pancake))[1],
+                key=lambda record: record.ts,
+            ),
+            turn_spans={PANCAKE_TURN_ID: pancake_turn[0]},
         ),
         DemoSession(
             "demo-recipe-skill",
@@ -908,6 +1070,8 @@ def seed(data_dir: Path, now: datetime) -> None:
         for context in demo.llm_contexts:
             session_mgr.save_llm_context(session_id, context)
         session_mgr.save_llm_request_log(session_id, LlmRequestLog(records=demo.llm_requests))
+        for turn_id, spans in demo.turn_spans.items():
+            session_mgr.save_turn_spans(session_id, turn_id, spans)
         print(f"{session_id}  {demo.title}")
     _seed_memory(session_factory, sessions, now)
 
