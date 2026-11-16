@@ -110,12 +110,44 @@ then marked `failed` through `fail_llm_context(role, error)`:
   whichever request is running, and the sentinel's timeout handler marks that context failed with
   the timeout explanation: the sentinel's own, or the `compaction` slot (`compaction_target:
   sentinel`) when it hit during compaction.
-- **Agent errors mid-stream**: the agent streams, and pydantic-ai raises provider errors in the
-  stream consumer while it cancels the request; the turn's error path marks the agent's context
-  failed with that error.
+- **Errors of a streamed request**: every role streams (see [Request phases](#request-phases)), and
+  pydantic-ai raises provider errors in the stream consumer while it cancels the request. The
+  capability's `on_run_error` hook sees the run's actual error and marks the role's context failed
+  with it.
 
 `fail_llm_context` only changes a `running` or `interrupted` context. A `completed` one was not cut
 by the failure, e.g. when the sentinel times out while it reads a skill file between two requests.
+
+## Request phases
+
+Every request record (and the running request's state) carries the timestamps that split it into
+phases:
+
+| Timestamp | Set when |
+| --- | --- |
+| `started_at` | the request is sent |
+| `first_token_at` | the first streamed part of any kind arrives: thinking, text or a tool call (output tools included) |
+| `first_thinking_at`, `last_thinking_at` | the first and the latest thinking chunk with content arrive |
+| `first_text_at` | the first text chunk with content arrives |
+| `completed_at` | the response is complete |
+
+So a request waits for the model from `started_at` to `first_token_at` (queueing, network and
+prefill), thinks from `first_thinking_at` to `last_thinking_at`, and produces its output (text or a
+tool call) until `completed_at`. A response that is only a tool call has a `first_token_at` but no
+`first_text_at`. Records written before `first_token_at` was kept have it `null`.
+
+Reasoning that streams no visible content gets no thinking phase. OpenAI's encrypted reasoning
+(Codex models without reasoning summaries) sends nothing until the reasoning is done, so its
+reasoning time counts as waiting for the first token. Anthropic's redacted thinking arrives as one
+block, so its thinking phase is near zero.
+
+Only a streamed request shows when its parts arrive, so every role streams: the capability's
+`on_event` hook records the timestamps, and pydantic-ai streams every run of an agent with such a
+hook, with or without an `event_stream_handler`. Streaming changes nothing about the request itself
+(instructions, messages and tool definitions are the same), so prefix caching is unaffected.
+
+The usage footer's time to first token and decode rate still measure from `first_text_at`, i.e. to
+the first visible answer text.
 
 ## API
 

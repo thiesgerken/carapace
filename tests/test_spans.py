@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from pydantic_ai import Agent, ApprovalRequired, DeferredToolRequests
 from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart, ToolCallPart
-from pydantic_ai.models.function import AgentInfo, FunctionModel
+from pydantic_ai.models.function import AgentInfo
 from pydantic_ai.usage import RequestUsage
 
 from carapace.credentials.registry import SessionCredentialRegistry
@@ -23,6 +23,7 @@ from carapace.spans import Span, ToolSpanCapability, TurnTrace, attach, current_
 from carapace.usage import LlmRequestLogCapability, LlmRequestState
 from carapace.ws_models import ApprovalResponse
 from tests.session_helpers import _FakeSubscriber, _make_engine, _patch_sentinel
+from tests.streaming_model import ReplayStreamModel
 
 
 def _trace() -> tuple[TurnTrace, Span, list[tuple[str, str]]]:
@@ -108,7 +109,9 @@ def _engine(tmp_path: Path, db_factory) -> tuple[SessionEngine, str, _FakeSubscr
 def test_turn_flushes_its_spans_and_joins_its_llm_requests(tmp_path: Path, db_factory) -> None:
     async def _run() -> None:
         engine, sid, sub = _engine(tmp_path, db_factory)
-        model = Agent(FunctionModel(_reply), capabilities=[LlmRequestLogCapability(source="agent", model_id="test:m")])
+        model = Agent(
+            ReplayStreamModel(_reply), capabilities=[LlmRequestLogCapability(source="agent", model_id="test:m")]
+        )
 
         async def _fake_turn(user_input: str, _deps: Any, history: list[Any], **_kwargs: Any) -> Any:
             with span("tool", "exec", command="ls"):
@@ -137,6 +140,7 @@ def test_turn_flushes_its_spans_and_joins_its_llm_requests(tmp_path: Path, db_fa
         assert (tool.kind, tool.parent_id, tool.status) == ("tool", root.span_id, "ok")
         assert (llm.kind, llm.parent_id, llm.status) == ("llm", tool.span_id, "ok")
         assert llm.llm is not None and (llm.llm.role, llm.llm.input_tokens) == ("agent", 100)
+        assert llm.llm.first_token_at is not None and llm.llm.first_token_at == llm.llm.first_text_at
         assert {(span_id, status) for _, span_id, status in sub.span_updates} == {
             (s.span_id, status) for s in (root, prepare, tool, llm) for status in ("running", "ok")
         }
@@ -210,7 +214,7 @@ async def test_tool_calls_get_tool_spans_and_a_deferred_call_ends_ok() -> None:
         return ModelResponse(parts=[TextPart("done")])
 
     agent = Agent(
-        FunctionModel(_call_tools), output_type=[str, DeferredToolRequests], capabilities=[ToolSpanCapability()]
+        ReplayStreamModel(_call_tools), output_type=[str, DeferredToolRequests], capabilities=[ToolSpanCapability()]
     )
 
     @agent.tool_plain
@@ -254,7 +258,7 @@ async def test_sentinel_evaluation_parents_its_requests_and_skill_file_reads(tmp
         skills_dir=tmp_path / "skills",
         llm_slots=None,
         timeout=timedelta(seconds=5),
-        model_factory=lambda _name, *, user: FunctionModel(_judge),
+        model_factory=lambda _name, *, user: ReplayStreamModel(_judge),
     )
     trace, root, _ = _trace()
     with engine.llm_request_recording(active), attach(trace, root.span_id):
@@ -321,7 +325,7 @@ async def test_requests_leave_the_in_flight_set_however_they_end(tmp_path: Path,
 
     capabilities = [LlmRequestLogCapability(source="agent", model_id="test:m")]
     with engine.llm_request_recording(active):
-        await Agent(FunctionModel(_reply), capabilities=capabilities).run("ok")
+        await Agent(ReplayStreamModel(_reply), capabilities=capabilities).run("ok")
         with pytest.raises(RuntimeError):
-            await Agent(FunctionModel(_fail), capabilities=capabilities).run("fail")
+            await Agent(ReplayStreamModel(_fail), capabilities=capabilities).run("fail")
     assert active.llm_requests_in_flight == {}
