@@ -168,6 +168,27 @@ class SessionLlmContextRow(Base):
     context: Mapped[LlmContext] = mapped_column(PydanticJson(LlmContext))
 
 
+class SessionSpanRow(Base):
+    """One timing span of a finished turn (see docs/debug-view.md, "Timeline")."""
+
+    __tablename__ = "session_spans"
+
+    session_id: Mapped[str] = mapped_column(
+        String(256), ForeignKey("sessions.session_id", ondelete="CASCADE"), primary_key=True
+    )
+    span_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    turn_id: Mapped[str] = mapped_column(String(32))
+    parent_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    kind: Mapped[str] = mapped_column(String(32))
+    name: Mapped[str] = mapped_column(Text)
+    started_at: Mapped[datetime] = mapped_column(UtcDateTime)
+    ended_at: Mapped[datetime | None] = mapped_column(UtcDateTime, nullable=True)
+    status: Mapped[str] = mapped_column(String(16))
+    attrs: Mapped[dict[str, Any]] = mapped_column(JsonType)
+
+    __table_args__ = (Index("ix_session_spans_session_turn", "session_id", "turn_id"),)
+
+
 class SessionCompactionRow(Base):
     __tablename__ = "session_compaction"
 

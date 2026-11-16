@@ -10,6 +10,7 @@ from loguru import logger
 
 from ...models.session import SessionBudget
 from ...models.tooling import ToolResult
+from ...spans import SpanStatus
 from ...usage import LlmContextStatus, LlmRequestState, LlmSource
 from ...ws_models import ApprovalRequest, TurnUsage
 from .approval import (
@@ -123,6 +124,9 @@ class MatrixSubscriber:
         pass
 
     async def on_llm_context(self, role: LlmSource, request_id: str, status: LlmContextStatus) -> None:
+        pass
+
+    async def on_span(self, turn_id: str, span_id: str, status: SpanStatus) -> None:
         pass
 
     async def on_status(

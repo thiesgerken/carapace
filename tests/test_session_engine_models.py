@@ -7,7 +7,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 import pytest
 from pydantic_ai import ApprovalRequired
@@ -136,7 +136,7 @@ def test_budget_blocked_turn_leaves_earlier_tool_calls_alone(tmp_path: Path, db_
         events = _without_timestamps(engine.session_mgr.load_events(sid))
         assert events[: len(earlier_turn)] == earlier_turn
         assert events[len(earlier_turn) :] == [
-            {"role": "user", "content": "go on"},
+            {"role": "user", "content": "go on", "turn_id": ANY},
             {"role": "error", "content": _TOOL_CALL_BUDGET_MESSAGE},
         ]
 

@@ -7,7 +7,7 @@ import contextlib
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
-from unittest.mock import patch
+from unittest.mock import ANY, patch
 
 import pytest
 from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, UserPromptPart
@@ -212,7 +212,7 @@ def test_submit_cancel_persists_interruption_marker(tmp_path: Path, db_factory):
         events = engine.session_mgr.load_events(sid)
         assert all("timestamp" in event for event in events[-2:])
         assert _without_timestamps(events[-2:]) == [
-            {"role": "user", "content": "hello"},
+            {"role": "user", "content": "hello", "turn_id": ANY},
             {"role": "error", "content": "The previous turn was interrupted before completion."},
         ]
         assert sub.cancelled == 1
@@ -607,7 +607,7 @@ def test_retry_latest_turn_rewinds_and_restarts(tmp_path: Path, db_factory):
         assert _without_timestamps(events) == [
             {"role": "user", "content": "first"},
             {"role": "assistant", "content": "first answer"},
-            {"role": "user", "content": "second"},
+            {"role": "user", "content": "second", "turn_id": ANY},
             {"role": "assistant", "content": "retried answer"},
         ]
 
@@ -666,7 +666,7 @@ def test_retry_latest_turn_after_failure_uses_terminal_marker_history(tmp_path: 
 
         events = engine.session_mgr.load_events(sid)
         assert _without_timestamps(events) == [
-            {"role": "user", "content": "hello"},
+            {"role": "user", "content": "hello", "turn_id": ANY},
             {"role": "assistant", "content": "recovered"},
         ]
 

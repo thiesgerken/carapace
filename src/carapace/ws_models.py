@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from .models.session import SessionBudget
 from .models.tooling import SentFileInfo
 from .security.context import ApprovalSource, ApprovalVerdict
+from .spans import SpanStatus
 from .usage import BudgetGauge, LlmContextStatus, LlmRequestPhase, LlmSource
 
 FinalStatus = Literal["success", "warning"]
@@ -301,6 +302,15 @@ class LlmContextUpdate(BaseModel):
     status: LlmContextStatus
 
 
+class SpanUpdate(BaseModel):
+    """Server → Client: a timing span of the running turn started or ended. Clients fetch the timeline via REST."""
+
+    type: Literal["span"] = "span"
+    turn_id: str
+    span_id: str
+    status: SpanStatus
+
+
 class StatusUpdate(BaseModel):
     """Server → Client: session status on connect and after a budget change.
 
@@ -339,6 +349,7 @@ ServerEnvelope = (
     | SessionTitleUpdate
     | LlmActivityUpdate
     | LlmContextUpdate
+    | SpanUpdate
     | StatusUpdate
     | UserMessageNotification
 )
