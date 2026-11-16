@@ -1,19 +1,23 @@
 "use client";
 
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useState, type ReactNode } from "react";
 import { Braces, Loader2 } from "lucide-react";
 import { useFormatter, useLocale, useTranslations } from "next-intl";
 import { useFormatCost } from "@/components/memory-ui";
 import { MarkdownContent } from "@/components/markdown-content";
 import { pillClassName } from "@/components/prompt-preview-view";
+import { Stat } from "@/components/debug-stat";
 import { SessionHeader } from "@/components/session-header";
+import { TurnTimelineView } from "@/components/turn-timeline-view";
+import { useKeyedFetch } from "@/hooks/use-keyed-fetch";
 import { useWebSocket, useWebSocketTicket } from "@/hooks/use-websocket";
 import { fetchLlmContext, fetchLlmRequests, wsUrl } from "@/lib/api";
 import { formatUsd } from "@/lib/memory";
 import { fencedCodeBlock } from "@/lib/sandbox-read";
 import {
-  DEBUG_ROLES,
+  DEBUG_TABS,
   type DebugRole,
+  type DebugTab,
   type LlmContext,
   type LlmContextStatus,
   type LlmMessage,
@@ -33,50 +37,90 @@ const STATUS_CLASS: Record<LlmContextStatus, string> = {
 };
 
 type Notification = { requestId: string; status: LlmContextStatus };
-type Outcome<T> = { key: string; value: T } | { key: string; error: string };
 type RoleFetch<T> = (server: string, token: string, sessionId: string, role: DebugRole) => Promise<T>;
 
 /** What *fetchRole* returns for *role*, refetched whenever *revision* (the role's latest notification) changes. */
 function useRoleFetch<T>(fetchRole: RoleFetch<T>, server: string, token: string, sessionId: string, role: DebugRole, revision: string) {
-  const key = `${role}:${revision}`;
-  const [outcome, setOutcome] = useState<Outcome<T> | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    fetchRole(server, token, sessionId, role)
-      .then((value) => {
-        if (!cancelled) setOutcome({ key, value });
-      })
-      .catch((loadError: unknown) => {
-        if (!cancelled) setOutcome({ key, error: loadError instanceof Error ? loadError.message : String(loadError) });
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [fetchRole, server, token, sessionId, role, key]);
-
+  const load = useCallback(() => fetchRole(server, token, sessionId, role), [fetchRole, server, token, sessionId, role]);
+  const outcome = useKeyedFetch(`${role}:${revision}`, load);
   // A result for another role keeps showing while this one loads, so it is dropped here.
   return outcome?.key.startsWith(`${role}:`) ? outcome : null;
 }
 
-/** The latest LLM context of every agent role in a session, updated live over the session WebSocket. */
-export function DebugView({ server, token, sessionId, title }: { server: string; token: string; sessionId: string; title: string | null | undefined }) {
+/** The turn timeline and the latest LLM context of every agent role in a session, updated live over the session WebSocket. */
+export function DebugView({
+  server,
+  token,
+  sessionId,
+  title,
+  initialTab = "agent",
+  initialTurn = null,
+}: {
+  server: string;
+  token: string;
+  sessionId: string;
+  title: string | null | undefined;
+  initialTab?: DebugTab;
+  initialTurn?: string | null;
+}) {
   const t = useTranslations("debugView");
-  const [role, setRole] = useState<DebugRole>("agent");
+  const [tab, setTab] = useState<DebugTab>(initialTab);
+  // Kept here so the picked turn survives a detour through a role tab.
+  const [pickedTurn, setPickedTurn] = useState(initialTurn);
   const [notifications, setNotifications] = useState<Partial<Record<DebugRole, Notification>>>({});
   const [activityEnds, setActivityEnds] = useState(0);
+  const [spanEvents, setSpanEvents] = useState({ count: 0, turnId: "" });
 
   const onMessage = useCallback((msg: ServerMessage) => {
     if (msg.type === "llm_activity" && !msg.activity) setActivityEnds((count) => count + 1);
+    if (msg.type === "span") setSpanEvents((current) => ({ count: current.count + 1, turnId: msg.turn_id }));
     if (msg.type !== "llm_context") return;
     setNotifications((current) => ({ ...current, [msg.role]: { requestId: msg.request_id, status: msg.status } }));
   }, []);
   const ticket = useWebSocketTicket(server, token);
   const { status } = useWebSocket(ticket ? wsUrl(server, sessionId, token, undefined, ticket, true) : null, onMessage);
-
-  const latest = notifications[role];
   // Notifications sent while the socket was down are lost, so every (re)connect refetches too.
-  const revision = `${status === "connected"}:${latest ? `${latest.requestId}:${latest.status}` : ""}`;
+  const connected = status === "connected";
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <SessionHeader sessionId={sessionId} title={title} view="debug" />
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6">
+      <div className="mx-auto flex w-full max-w-5xl flex-col gap-4">
+        <p className="text-sm text-muted-foreground">{t(tab === "timeline" ? "turns.hint" : "hint")}</p>
+
+        <div role="radiogroup" aria-label={t("tab")} className="flex flex-wrap gap-1.5">
+          {DEBUG_TABS.map((value) => (
+            <button key={value} type="button" role="radio" aria-checked={value === tab} onClick={() => setTab(value)} className={cn(pillClassName(value === tab), "inline-flex items-center gap-1.5")}>
+              {value === "timeline" ? t("turns.tab") : t(`roles.${value}`)}
+              {value !== "timeline" && notifications[value]?.status === "running" ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+            </button>
+          ))}
+        </div>
+
+        {tab === "timeline" ? (
+          <TurnTimelineView
+            server={server}
+            token={token}
+            sessionId={sessionId}
+            pickedTurn={pickedTurn}
+            onPickTurn={setPickedTurn}
+            turnsRevision={`${connected}:${spanEvents.turnId}`}
+            spanRevision={`${connected}:${spanEvents.count}`}
+            onOpenRole={setTab}
+          />
+        ) : (
+          <RoleDebug key={tab} server={server} token={token} sessionId={sessionId} role={tab} revision={`${connected}:${notifications[tab] ? `${notifications[tab].requestId}:${notifications[tab].status}` : ""}`} activityEnds={activityEnds} />
+        )}
+      </div>
+      </div>
+    </div>
+  );
+}
+
+/** A role's request table and its latest context; *revision* changes on the role's notifications. */
+function RoleDebug({ server, token, sessionId, role, revision, activityEnds }: { server: string; token: string; sessionId: string; role: DebugRole; revision: string; activityEnds: number }) {
+  const t = useTranslations("debugView");
   // The role's context and timeline from an older notification keep showing while the next ones load.
   const current = useRoleFetch(fetchLlmContext, server, token, sessionId, role, revision);
   const shown = current && "value" in current ? current.value : undefined;
@@ -84,41 +128,25 @@ export function DebugView({ server, token, sessionId, title }: { server: string;
   const timeline = useRoleFetch(fetchLlmRequests, server, token, sessionId, role, `${revision}:${activityEnds}`);
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <SessionHeader sessionId={sessionId} title={title} view="debug" />
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6">
-      <div className="mx-auto flex w-full max-w-5xl flex-col gap-4">
-        <p className="text-sm text-muted-foreground">{t("hint")}</p>
+    <>
+      {timeline && "error" in timeline ? (
+        <p className="text-sm text-destructive">{t("timeline.loadError", { error: timeline.error })}</p>
+      ) : timeline?.value.length ? (
+        <RequestTimeline records={timeline.value} contextRequestId={shown?.request_id} />
+      ) : null}
 
-        <div role="radiogroup" aria-label={t("role")} className="flex flex-wrap gap-1.5">
-          {DEBUG_ROLES.map((value) => (
-            <button key={value} type="button" role="radio" aria-checked={value === role} onClick={() => setRole(value)} className={cn(pillClassName(value === role), "inline-flex items-center gap-1.5")}>
-              {t(`roles.${value}`)}
-              {notifications[value]?.status === "running" ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
-            </button>
-          ))}
+      {current && "error" in current ? (
+        <p className="text-sm text-destructive">{t("loadError", { error: current.error })}</p>
+      ) : shown === undefined ? (
+        <Loader2 className="mx-auto mt-8 h-5 w-5 animate-spin text-muted-foreground" />
+      ) : shown === null ? (
+        <p className="text-sm text-muted-foreground">{t("empty")}</p>
+      ) : (
+        <div id={CONTEXT_ANCHOR} className="scroll-mt-4">
+          <LlmContextView context={shown} />
         </div>
-
-        {timeline && "error" in timeline ? (
-          <p className="text-sm text-destructive">{t("timeline.loadError", { error: timeline.error })}</p>
-        ) : timeline?.value.length ? (
-          <RequestTimeline records={timeline.value} contextRequestId={shown?.request_id} />
-        ) : null}
-
-        {current && "error" in current ? (
-          <p className="text-sm text-destructive">{t("loadError", { error: current.error })}</p>
-        ) : shown === undefined ? (
-          <Loader2 className="mx-auto mt-8 h-5 w-5 animate-spin text-muted-foreground" />
-        ) : shown === null ? (
-          <p className="text-sm text-muted-foreground">{t("empty")}</p>
-        ) : (
-          <div id={CONTEXT_ANCHOR} className="scroll-mt-4">
-            <LlmContextView context={shown} />
-          </div>
-        )}
-      </div>
-      </div>
-    </div>
+      )}
+    </>
   );
 }
 
@@ -377,13 +405,4 @@ function Collapsible({ title, open = false, children }: { title: string; open?: 
 function StatusBadge({ status }: { status: LlmContextStatus }) {
   const t = useTranslations("debugView.statuses");
   return <span className={cn("inline-flex rounded-full border px-2 py-0.5 text-xs font-medium", STATUS_CLASS[status])}>{t(status)}</span>;
-}
-
-function Stat({ label, value }: { label: string; value: ReactNode }) {
-  return (
-    <div className="flex min-w-0 flex-col gap-0.5">
-      <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">{label}</span>
-      <span className="text-sm">{value}</span>
-    </div>
-  );
 }

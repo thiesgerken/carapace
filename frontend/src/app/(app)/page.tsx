@@ -9,7 +9,7 @@ import { ChatView } from "@/components/chat-view";
 import { DebugView } from "@/components/debug-view";
 import { HomeView } from "@/components/home-view";
 import type { NewSessionOptions } from "@/components/new-session-button";
-import type { SessionInfo } from "@/lib/types";
+import { DEBUG_TABS, type SessionInfo } from "@/lib/types";
 
 const MAX_DOCUMENT_TITLE_LENGTH = 30;
 
@@ -18,7 +18,8 @@ export default function ChatPage() {
   const shell = useAppShell();
   const { name: brand } = useBrand();
   const { activeSessionId, activeSession } = shell;
-  const view = useSearchParams().get("view");
+  const searchParams = useSearchParams();
+  const view = searchParams.get("view");
   // A session started from the home composer, waiting for its chat view to send the first message.
   const [pendingStart, setPendingStart] = useState<{ sessionId: string; content: string } | null>(null);
 
@@ -59,7 +60,8 @@ export default function ChatPage() {
   }, [activeSession, brand]);
 
   if (activeSessionId && view === "debug") {
-    return <DebugView key={activeSessionId} server={shell.server} token={shell.token} sessionId={activeSessionId} title={activeSession?.title} />;
+    const tab = DEBUG_TABS.find((value) => value === searchParams.get("tab"));
+    return <DebugView key={activeSessionId} server={shell.server} token={shell.token} sessionId={activeSessionId} title={activeSession?.title} initialTab={tab} initialTurn={searchParams.get("turn")} />;
   }
 
   if (activeSessionId) {
