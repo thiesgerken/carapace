@@ -52,6 +52,7 @@ function record(overrides: Partial<LlmRequestRecord>): LlmRequestRecord {
     source: "agent",
     model_name: "anthropic:sonnet",
     outcome: "completed",
+    turn_id: null,
     input_tokens: 8000,
     output_tokens: 300,
     cache_read_tokens: null,
@@ -80,6 +81,7 @@ test("the debug view shows each role's latest context and refetches on WebSocket
     const url = new URL(String(input));
     if (url.pathname === "/api/auth/ws-ticket") return Response.json({ ticket: "ticket-1" });
     if (url.pathname === "/api/sessions/s1/llm-requests") return Response.json(requests.filter((r) => r.source === url.searchParams.get("role")));
+    if (url.pathname === "/api/sessions/s1/turns") return Response.json([]);
     const role = url.pathname.match(/^\/api\/sessions\/s1\/llm-contexts\/(\w+)$/)?.[1] as DebugRole | undefined;
     assert.ok(role, `unexpected request ${url.pathname}`);
     return Response.json(contexts[role]);
@@ -111,7 +113,10 @@ test("the debug view shows each role's latest context and refetches on WebSocket
     assert.match(text(), /Waiting for the response/);
     assert.doesNotMatch(text(), /Output tokens|Cost\$/);
     assert.match(text(), /Requests \(1\)/);
-    const rows = () => Array.from(view.container.querySelectorAll("tbody tr"), (row) => Array.from(row.querySelectorAll("td"), (cell) => cell.textContent));
+    // Request rows only: each turn group opens with a header row of its own.
+    const rows = () =>
+      Array.from(view.container.querySelectorAll("tbody tr"), (row) => Array.from(row.querySelectorAll("td"), (cell) => cell.textContent)).filter((cells) => cells.length > 0);
+    assert.deepEqual(Array.from(view.container.querySelectorAll('th[scope="rowgroup"]'), (header) => header.textContent), ["Outside a turn"]);
     // A record from before cache counts and costs were kept shows them as unknown.
     assert.deepEqual(rows(), [["11/9, 11:59:00 AM", "Completed", "8,000", "–", "–", "300", "–", "–", "–", "–", "3 s", "anthropic:sonnet"]]);
     assert.equal(view.container.querySelector('a[aria-current="page"]')?.getAttribute("href"), "/?session=s1&view=debug");
@@ -228,7 +233,7 @@ test("the timeline tab shows a turn's waterfall and summary, follows new turns a
     const url = new URL(String(input));
     if (url.pathname === "/api/auth/ws-ticket") return Response.json({ ticket: "ticket-1" });
     if (url.pathname === "/api/sessions/s1/turns") return Response.json(turns);
-    if (url.pathname === "/api/sessions/s1/llm-requests") return Response.json([]);
+    if (url.pathname === "/api/sessions/s1/llm-requests") return Response.json([record({ request_id: "r1", turn_id: "t1", ts: "2026-11-09T12:00:03Z" })]);
     if (url.pathname === "/api/sessions/s1/llm-contexts/agent") return Response.json(context({ status: "completed" }));
     const turnId = url.pathname.match(/^\/api\/sessions\/s1\/turns\/(\w+)\/timeline$/)?.[1];
     assert.ok(turnId, `unexpected request ${url.pathname}`);
@@ -247,7 +252,7 @@ test("the timeline tab shows a turn's waterfall and summary, follows new turns a
     const text = () => view.container.textContent ?? "";
     await settle();
 
-    assert.equal(view.container.querySelector('[role="radio"][aria-checked="true"]')?.textContent, "Timeline");
+    assert.equal(view.container.querySelector('[role="radio"][aria-checked="true"]')?.textContent, "Turns");
     const turnRows = () => Array.from(view.container.querySelectorAll<HTMLButtonElement>('ol[aria-label="Turns"] button'));
     assert.deepEqual(turnRows().map((row) => row.textContent), ["11/9, 12:00 PMCheck the backups4 s"]);
     assert.equal(turnRows()[0].getAttribute("aria-current"), "true");
@@ -279,7 +284,11 @@ test("the timeline tab shows a turn's waterfall and summary, follows new turns a
     await click(openRole);
     await settle();
     assert.equal(view.container.querySelector('[role="radio"][aria-checked="true"]')?.textContent, "Agent");
-    await click(Array.from(view.container.querySelectorAll('[role="radio"]')).find((pill) => pill.textContent === "Timeline")!);
+    // The agent's requests sit under their turn, which links back to the Turns tab.
+    const turnHeaders = () => Array.from(view.container.querySelectorAll('th[scope="rowgroup"]'), (header) => header.textContent);
+    assert.deepEqual(turnHeaders(), ["11/9, 12:00:00 PMCheck the backupsShow turn"]);
+    const pill = (label: string) => Array.from(view.container.querySelectorAll('[role="radio"]')).find((radio) => radio.textContent === label)!;
+    await click(pill("Turns"));
     await settle();
 
     // A span of a new turn refetches the list once the burst settles, and the view follows the newest turn.
@@ -293,11 +302,21 @@ test("the timeline tab shows a turn's waterfall and summary, follows new turns a
     assert.deepEqual(turnRows().map(turnBar), ["50%", "100%"], "bars scale to the longest turn");
     assert.deepEqual(rows().map((row) => row.textContent), ["turn2 s"]);
 
-    // Picking an older turn sticks.
+    // Picking an older turn sticks; picking the newest follows new turns again.
     await click(turnRows()[1]);
     await settle();
     assert.equal(turnRows()[1].getAttribute("aria-current"), "true");
     assert.deepEqual(rows().map((row) => row.textContent)[0], "turn4 s");
+    await click(turnRows()[0]);
+    await settle();
+
+    // "Show turn" on an older turn's requests opens that turn, and the view stays on it.
+    await click(pill("Agent"));
+    await settle();
+    await click(Array.from(view.container.querySelectorAll("button")).find((button) => button.textContent === "Show turn")!);
+    await settle();
+    assert.equal(view.container.querySelector('[role="radio"][aria-checked="true"]')?.textContent, "Turns");
+    assert.deepEqual(turnRows().map((row) => row.getAttribute("aria-current")), [null, "true"]);
 
 
     await view.unmount();

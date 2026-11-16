@@ -1721,6 +1721,7 @@
         },
         "hint": "The latest request of each agent role, exactly as sent to the model. Updates live.",
         "tab": "Debug view",
+        "requestTabs": "Requests:",
         "roles": {
             "agent": "Agent",
             "sentinel": "Sentinel",
@@ -1781,10 +1782,12 @@
                 "equivalentCost": "Equivalent",
                 "duration": "Duration",
                 "model": "Model"
-            }
+            },
+            "outsideTurn": "Outside a turn",
+            "showTurn": "Show turn"
         },
         "turns": {
-            "tab": "Timeline",
+            "tab": "Turns",
             "hint": "Where a turn's time went: every timed step as a waterfall. Follows the newest turn live.",
             "turns": "Turns",
             "empty": "No turn with a timeline yet. Turns from before timing was recorded have none.",

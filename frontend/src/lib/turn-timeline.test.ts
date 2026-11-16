@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import type { LlmPhases, Span } from "./types";
-import { llmSegments, outputRate, summarizeTurn, timelineRows, waterfallLines } from "./turn-timeline";
+import type { LlmPhases, LlmRequestRecord, Span } from "./types";
+import { groupRequestsByTurn, llmSegments, outputRate, summarizeTurn, timelineRows, waterfallLines } from "./turn-timeline";
 
 const T0 = Date.parse("2026-11-16T12:00:00Z");
 const at = (ms: number) => new Date(T0 + ms).toISOString();
@@ -167,6 +167,20 @@ test("only spans that ended ok merge: running and failed ones keep their own lin
   ];
   const lines = waterfallLines(timelineRows(spans, T0 + 1000), new Set());
   assert.deepEqual(lines.map((line) => line.chain.map((row) => row.span.span_id)), [["turn"], ["gate"], ["sentinel"], ["exec"], ["domain"]]);
+});
+
+test("requests group by turn, newest first, and requests outside a turn group by their newest one", () => {
+  const request = (request_id: string, turn_id: string | null) => ({ request_id, turn_id }) as LlmRequestRecord;
+  // Oldest first, as the API sends them: a record from before turns were tagged, two turns with the titler in between.
+  const records = [request("old", null), request("a1", "t1"), request("a2", "t1"), request("title", null), request("b1", "t2")];
+  assert.deepEqual(
+    groupRequestsByTurn(records).map((group) => [group.turnId, group.records.map((record) => record.request_id)]),
+    [
+      ["t2", ["b1"]],
+      [null, ["title", "old"]],
+      ["t1", ["a2", "a1"]],
+    ],
+  );
 });
 
 test("the output rate counts generation from the first token on, and needs output", () => {
