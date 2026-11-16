@@ -55,7 +55,7 @@ failed, budget-stopped or stopped one.
   turn, it steps into the running child that started first, level by level, and the instant
   belongs to where that stops, so parallel work never counts twice. Anything inside a `wait` span
   is waiting for you. Instants that stop at the turn itself are not covered: time no span measured.
-- **Waterfall**: one row per span, indented by nesting, with its bar placed within the turn
+- **Waterfall**: one row per span, indented by nesting and labelled with its kind (muted) and name, the name left out when it repeats the kind, with its bar placed within the turn
   (on a phone the label sits above the bar). Running spans grow until they end. Errors are red,
   interrupted spans grey, waits hatched. An LLM bar shows its phases: waiting for the first
   token, thinking, output; a phase without its timestamp collapses into its neighbour.

@@ -742,7 +742,7 @@ def _pancake_turn(prompt: datetime, contexts: list[LlmContext]) -> tuple[list[Sp
     )
     skill_tool = span("demo-tool-skill", root, "tool", "use_skill", 1.8, 5.0)
     span("demo-gate-skill", skill_tool, "gate", "use_skill", 1.8, 1.9)
-    span("demo-skill", skill_tool, "skill", "web", 2.0, 4.9)
+    span("demo-skill", skill_tool, "skill", "activate", 2.0, 4.9, skill="web", exit_code=0)
     request(
         earlier(
             "agent",
@@ -772,8 +772,19 @@ def _pancake_turn(prompt: datetime, contexts: list[LlmContext]) -> tuple[list[Sp
         first_text=6.5,
     )
     search_exec = span("demo-exec-search", search, "exec", "exec", 7.0, 14.0, command=_SEARCH, exit_code=0)
-    span("demo-sandbox", search_exec, "sandbox", "ensure", 7.0, 8.2)
-    span("demo-domain-search", search_exec, "domain", "search.example.org", 8.6, 9.0, domain="search.example.org")
+    sandbox = span("demo-sandbox", search_exec, "sandbox", "ensure", 7.0, 8.2)
+    span("demo-sandbox-resume", sandbox, "sandbox", "resume", 7.0, 7.5)
+    span("demo-sandbox-ready", sandbox, "sandbox", "wait_for_ready", 7.5, 8.2, ready=True)
+    span(
+        "demo-domain-search",
+        search_exec,
+        "domain",
+        "search.example.org",
+        8.6,
+        9.0,
+        domain="search.example.org",
+        allowed=True,
+    )
     span("demo-wait", search_exec, "wait", "demo/web-search-api-key", 9.1, 10.8, reason="credential")
     span("demo-credential", search_exec, "credential", "demo/web-search-api-key", 10.8, 11.0, fetch="password")
     request(
@@ -794,7 +805,16 @@ def _pancake_turn(prompt: datetime, contexts: list[LlmContext]) -> tuple[list[Sp
     )
     request(context_records["sentinel"], fetch_review, 15.6, first_text=15.6)
     fetch_exec = span("demo-exec-fetch", fetch, "exec", "exec", 16.0, 21.0, command=_FETCH, exit_code=0)
-    span("demo-domain-fetch", fetch_exec, "domain", "recipes.example.org", 17.6, 18.0, domain="recipes.example.org")
+    span(
+        "demo-domain-fetch",
+        fetch_exec,
+        "domain",
+        "recipes.example.org",
+        17.6,
+        18.0,
+        domain="recipes.example.org",
+        allowed=True,
+    )
     request(context_records["agent"], root, 23.4, thinking=(23.4, 24.2), first_text=24.2)
 
     records += [context_records["titler"], context_records["compaction"]]
