@@ -12,10 +12,15 @@ import secrets
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
+from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
+from pydantic_ai import ApprovalRequired, CallDeferred
+from pydantic_ai.capabilities.abstract import AbstractCapability, ValidatedToolArgs, WrapToolExecuteHandler
+from pydantic_ai.messages import ToolCallPart
+from pydantic_ai.tools import AgentDepsT, RunContext, ToolDefinition
 
 SpanStatus = Literal["running", "ok", "error", "interrupted"]
 SpanAttr = str | int | float | bool
@@ -93,8 +98,11 @@ def attach(trace: TurnTrace, parent_id: str) -> Iterator[None]:
 
 
 @contextmanager
-def span(kind: str, name: str, **attrs: SpanAttr) -> Iterator[Span]:
+def span(kind: str, name: str, /, **attrs: SpanAttr) -> Iterator[Span]:
     """Time the block as a span under the current one; its status follows how the block exits.
+
+    A deferred tool call (approval required) is control flow, not a failure: it ends ``ok`` with
+    ``deferred: true``.
 
     Outside a running turn the yielded span is recorded nowhere, so callers never need to check.
     Event-loop thread only: ``asyncio.to_thread`` copies the contextvar into its worker, where a span
@@ -113,6 +121,10 @@ def span(kind: str, name: str, **attrs: SpanAttr) -> Iterator[Span]:
     except asyncio.CancelledError:
         trace.end(started, "interrupted")
         raise
+    except (ApprovalRequired, CallDeferred):
+        started.attrs["deferred"] = True
+        trace.end(started, "ok")
+        raise
     except BaseException:
         trace.end(started, "error")
         raise
@@ -128,3 +140,22 @@ def current_span_ref() -> tuple[str, str] | None:
     if current is None or current[0].closed:
         return None
     return current[0].turn_id, current[1]
+
+
+@dataclass
+class ToolSpanCapability(AbstractCapability[AgentDepsT]):
+    """A ``tool`` span around every function tool call of an agent; output tools are the answer, not a step."""
+
+    async def wrap_tool_execute(
+        self,
+        ctx: RunContext[AgentDepsT],
+        *,
+        call: ToolCallPart,
+        tool_def: ToolDefinition,
+        args: ValidatedToolArgs,
+        handler: WrapToolExecuteHandler,
+    ) -> Any:
+        if tool_def.kind != "function":
+            return await handler(args)
+        with span("tool", call.tool_name):
+            return await handler(args)

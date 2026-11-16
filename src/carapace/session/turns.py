@@ -44,7 +44,7 @@ from ..models.tooling import ToolCallCallback, ToolResult
 from ..notifications.router import NotificationRouter, build_turn_outcome_notification_id
 from ..sandbox.manager import SandboxManager
 from ..security.context import ApprovalSource, ApprovalVerdict, format_denial_message, normalize_optional_message
-from ..spans import Span, SpanStatus, TurnTrace, attach
+from ..spans import Span, SpanStatus, TurnTrace, attach, span
 from ..usage import (
     BudgetGauge,
     LlmRequestState,
@@ -361,17 +361,18 @@ class SessionTurnMixin(SessionTurnHost):
             async with active.lock:
                 if active.security:
                     active.security.clear_current_parent_tool()
-                deps, message_history = await self._prepare_turn_execution(
-                    active,
-                    session_id,
-                    user_input,
-                    turn_id=turn_id,
-                    origin=origin,
-                    attachments=attachments,
-                    tool_call_callback=_tool_call_cb,
-                    tool_result_callback=_tool_result_cb,
-                    compact_history=_compact_history_cb,
-                )
+                with span("turn.prepare", "prepare"):
+                    deps, message_history = await self._prepare_turn_execution(
+                        active,
+                        session_id,
+                        user_input,
+                        turn_id=turn_id,
+                        origin=origin,
+                        attachments=attachments,
+                        tool_call_callback=_tool_call_cb,
+                        tool_result_callback=_tool_result_cb,
+                        compact_history=_compact_history_cb,
+                    )
 
                 async def _send_approval(req: ApprovalRequest) -> None:
                     await self._send_approval_request(active, session_id, req)
@@ -379,7 +380,8 @@ class SessionTurnMixin(SessionTurnHost):
                 async def _collect_approvals(
                     pending: set[str],
                 ) -> dict[str, bool | ToolDenied]:
-                    return await self._collect_approval_results(active, session_id, pending)
+                    with span("wait", "approval", reason="approval", calls=len(pending)):
+                        return await self._collect_approval_results(active, session_id, pending)
 
                 turn_result = await self._execute_agent_turn(
                     active,

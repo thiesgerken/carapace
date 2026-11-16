@@ -329,6 +329,7 @@ class SessionUsageBudgetMixin:
 
         class Sink:
             async def on_request_started(self, state: LlmRequestState) -> None:
+                active.llm_requests_in_flight[state.request_id] = state
                 active.llm_request_thinking.pop(state.request_id, None)
                 if track_activity:
                     await engine._set_llm_request_state(active, state)
@@ -336,6 +337,7 @@ class SessionUsageBudgetMixin:
                     await engine._broadcast(active, "on_span", state.turn_id, state.request_id, "running")
 
             async def on_request_completed(self, record: LlmRequestRecord) -> None:
+                active.llm_requests_in_flight.pop(record.request_id or "", None)
                 if track_activity:
                     thinking_content = active.llm_request_thinking.pop(record.request_id or "", "")
                     if thinking_content:
@@ -361,6 +363,9 @@ class SessionUsageBudgetMixin:
                     await engine._broadcast(active, "on_span", record.turn_id, record.request_id, "ok")
 
             async def on_context(self, context: LlmContext) -> None:
+                # A failed or interrupted request ends here: it never reaches on_request_completed.
+                if context.status != "running":
+                    active.llm_requests_in_flight.pop(context.request_id, None)
                 await engine._save_llm_context(active, context)
 
             async def on_context_failed(self, role: LlmSource, error: str) -> None:

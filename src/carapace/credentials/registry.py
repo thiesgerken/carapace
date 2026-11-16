@@ -15,6 +15,7 @@ from ..models.credentials import (
     CredentialValueKind,
     FileCredentialBackendConfig,
 )
+from ..spans import span
 from .bitwarden import BitwardenBackend
 from .file import FileVaultBackend
 from .protocol import UnsupportedCredentialValueKindError, VaultBackend
@@ -116,14 +117,16 @@ class SessionCredentialRegistry:
         return await self._resolve_registry(self._session_id)
 
     async def fetch(self, vault_path: str, kind: CredentialValueKind = "password") -> str:
-        registry = await self._registry()
-        return await registry.fetch(vault_path) if kind == "password" else await registry.fetch(vault_path, kind)
+        with span("credential", vault_path, fetch=kind):
+            registry = await self._registry()
+            return await registry.fetch(vault_path) if kind == "password" else await registry.fetch(vault_path, kind)
 
     async def write(self, vault_path: str, value: str) -> None:
         await (await self._registry()).write(vault_path, value)
 
     async def fetch_metadata(self, vault_path: str) -> CredentialMetadata:
-        return await (await self._registry()).fetch_metadata(vault_path)
+        with span("credential", vault_path, fetch="metadata"):
+            return await (await self._registry()).fetch_metadata(vault_path)
 
     async def list(self, query: str = "") -> list[CredentialMetadata]:
         return await (await self._registry()).list(query)

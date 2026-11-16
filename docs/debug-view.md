@@ -186,8 +186,27 @@ them are written in one batch to the `session_spans` table. Measuring adds no da
 measured path. A server crash loses the running turn's spans.
 
 LLM requests are not stored as spans: the timeline joins them from the `session_llm_requests` log
-and the request in flight. Spans go away with their session. A fork starts without any, a rewind
+and the requests in flight (`ActiveSession.llm_requests_in_flight`, which holds parallel and
+untracked requests too). Spans go away with their session. A fork starts without any, a rewind
 keeps them.
+
+### What is timed
+
+| Kind | Name | Covers | Attrs |
+| --- | --- | --- | --- |
+| `turn` | `turn` | the whole turn | `prompt` |
+| `turn.prepare` | `prepare` | resume, memory snapshot, history for the agent model (compaction after a model switch included) | |
+| `tool` | tool name | one tool call of the agent or the sentinel, gate and approval hold included (`ToolSpanCapability`) | `deferred` when it waits for approval |
+| `gate` | tool name | the security gate of a tool call: safe-list, sentinel | `denied` |
+| `sentinel` | evaluation kind | one sentinel evaluation, its compaction and requests included | `subject`, `verdict` |
+| `wait` | `approval`, or the escalation's subject | the user's answer: tool approvals, domain, credential and git push escalations | `reason` (`approval`, `domain`, `credential`), `calls` |
+| `credential` | vault path | one credential or metadata fetch | `fetch` |
+| `spill` | `spill` | saving oversized exec output to the sandbox | `chars` |
+| `compaction` | `agent` or `sentinel` | a compaction that runs during the turn (not the checks that skip it) | |
+
+A deferred tool call (`ApprovalRequired`) is control flow, not a failure: its spans end `ok` with
+`deferred: true`, and the call runs again as a new `tool` span once the user answered. A git push
+escalation waits with reason `approval`. The title is generated after the turn and has no spans.
 
 ### API
 
@@ -208,7 +227,7 @@ field, `null` except on `kind == "llm"` spans, which carry the request's phases 
 `role`, `request_id`, `model_name`, `first_token_at`, `first_thinking_at`, `last_thinking_at`,
 `first_text_at`, input, output, cache read and cache write tokens, and `cost`. An LLM span's
 `span_id` is its `request_id`, its `name` the role. Its status is `ok` for a completed request,
-`interrupted` for an interrupted one and `running` for the request in flight.
+`interrupted` for an interrupted one and `running` for each request in flight.
 
 ### WebSocket
 
