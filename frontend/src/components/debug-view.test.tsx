@@ -6,7 +6,7 @@ import messages from "../../messages/en.json";
 import { click, installDom, renderReact, runInAct } from "../../test/react-test-utils";
 import type { DebugRole, LlmContext, LlmRequestRecord, Span, TurnSummary, TurnTimeline } from "@/lib/types";
 
-import { DebugView } from "./debug-view";
+import { DebugView, LlmContextView } from "./debug-view";
 
 const SERVER = "https://carapace.example.test";
 
@@ -60,7 +60,12 @@ function record(overrides: Partial<LlmRequestRecord>): LlmRequestRecord {
     reasoning_tokens: null,
     cost: null,
     started_at: "2026-11-09T11:58:57Z",
+    first_token_at: null,
+    first_thinking_at: null,
+    last_thinking_at: null,
+    first_text_at: null,
     completed_at: "2026-11-09T11:59:00Z",
+    input_shape: null,
     ...overrides,
   };
 }
@@ -117,8 +122,8 @@ test("the debug view shows each role's latest context and refetches on WebSocket
     const rows = () =>
       Array.from(view.container.querySelectorAll("tbody tr"), (row) => Array.from(row.querySelectorAll("td"), (cell) => cell.textContent)).filter((cells) => cells.length > 0);
     assert.deepEqual(Array.from(view.container.querySelectorAll('th[scope="rowgroup"]'), (header) => header.textContent), ["Outside a turn"]);
-    // A record from before cache counts and costs were kept shows them as unknown.
-    assert.deepEqual(rows(), [["11/9, 11:59:00 AM", "Completed", "8,000", "–", "–", "300", "–", "–", "–", "–", "3 s", "anthropic:sonnet"]]);
+    // A record from before cache counts and costs were kept: its empty count columns go, the cost is unknown.
+    assert.deepEqual(rows(), [["11/9, 11:59:00 AM", "3 s", "8k", "300", "–"]]);
     assert.equal(view.container.querySelector('a[aria-current="page"]')?.getAttribute("href"), "/?session=s1&view=debug");
 
     contexts.agent = context({
@@ -151,8 +156,9 @@ test("the debug view shows each role's latest context and refetches on WebSocket
     await runInAct(() => socket.onmessage?.({ data: JSON.stringify({ type: "llm_context", role: "agent", request_id: "r1", status: "completed" }) }));
     await settle();
 
-    assert.match(text(), /Completed/);
-    assert.deepEqual(rows()[0], ["11/9, 12:00:02 PM", "Completed", "12,345", "4,000", "0", "20", "7", "32%", "$0.00", "$0.043", "2.5 s", "anthropic:sonnet"]);
+    assert.doesNotMatch(text(), /Status/, "a completed request needs no status");
+    // Cache write is 0 or unknown in every row, so it goes; a subscription request shows its equivalent cost.
+    assert.deepEqual(rows()[0], ["11/9, 12:00:02 PM", "2.5 s", "12.3k", "32%", "4k", "20", "7", "≈ $0.043"]);
     assert.equal(rows().length, 2);
     assert.equal(view.container.querySelector("tbody a")?.getAttribute("href"), "#llm-context");
     assert.ok(view.container.querySelector("#llm-context"));
@@ -176,7 +182,9 @@ test("the debug view shows each role's latest context and refetches on WebSocket
     await runInAct(() => socket.onmessage?.({ data: JSON.stringify({ type: "llm_context", role: "agent", request_id: "r2", status: "interrupted" }) }));
     await settle();
     assert.equal(rows().length, 3);
-    assert.equal(rows()[0][1], "Interrupted");
+    // Completed requests carry no status marker, the exceptions do.
+    assert.ok(view.container.querySelector('tbody tr:nth-child(2) [aria-label="Interrupted"]'));
+    assert.equal(view.container.querySelectorAll('tbody [aria-label="Completed"]').length, 0);
 
     const pill = (label: string) => Array.from(view.container.querySelectorAll('[role="radio"]')).find((element) => element.textContent === label)!;
     await click(pill("Sentinel"));
@@ -323,6 +331,42 @@ test("the timeline tab shows a turn's waterfall and summary, follows new turns a
   } finally {
     globalThis.fetch = originalFetch;
     globalThis.WebSocket = originalWebSocket;
+    restore();
+  }
+});
+
+test("the latest request shows its duration with phases, its input composition, and long tool returns cut to a preview", async () => {
+  const restore = installDom();
+  try {
+    const output = Array.from({ length: 30 }, (_, index) => `line ${index + 1}`).join("\n");
+    const view = await renderReact(
+      <NextIntlClientProvider locale="en" messages={messages} timeZone="UTC">
+        <LlmContextView
+          context={context({
+            status: "completed",
+            completed_at: "2026-11-09T12:00:04Z",
+            messages: [{ kind: "request", parts: [{ part_kind: "tool-return", tool_name: "exec", content: output, tool_call_id: "call-0" }] }],
+          })}
+          record={record({
+            request_id: "r1",
+            started_at: "2026-11-09T12:00:00Z",
+            first_token_at: "2026-11-09T12:00:01Z",
+            completed_at: "2026-11-09T12:00:04Z",
+            input_shape: { system: 0.5, user: 0.1, assistant: 0, tool_calls: 0.1, tool_returns: 0.3, other: 0 },
+          })}
+        />
+      </NextIntlClientProvider>,
+    );
+    const text = () => view.container.textContent ?? "";
+    assert.match(text(), /Duration4 s/);
+    // Shares too small to see stay out of the legend.
+    assert.deepEqual(Array.from(view.container.querySelectorAll("li"), (item) => item.textContent), ["System50%", "User10%", "Tool calls10%", "Tool returns30%"]);
+    assert.match(text(), /line 12…/);
+    assert.doesNotMatch(text(), /line 13/);
+    await click(Array.from(view.container.querySelectorAll("button")).find((button) => button.textContent === "Show all 30 lines")!);
+    assert.match(text(), /line 30/);
+    await view.unmount();
+  } finally {
     restore();
   }
 });

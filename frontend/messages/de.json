@@ -1771,7 +1771,6 @@
             "seconds": "{seconds} s",
             "columns": {
                 "time": "Zeit",
-                "status": "Status",
                 "input": "Eingabe",
                 "cacheRead": "Cache gelesen",
                 "cacheWrite": "Cache geschrieben",
@@ -1779,12 +1778,13 @@
                 "reasoning": "Reasoning",
                 "cacheHitRate": "Cache-Treffer",
                 "cost": "Kosten",
-                "equivalentCost": "Äquivalent",
                 "duration": "Dauer",
                 "model": "Modell"
             },
             "outsideTurn": "Außerhalb eines Turns",
-            "showTurn": "Turn anzeigen"
+            "showTurn": "Turn anzeigen",
+            "cacheMiss": "Cache-Miss: nichts von der Eingabe kam aus dem Cache",
+            "subscription": "Abo: nichts berechnet, Listenpreis-Äquivalent"
         },
         "turns": {
             "tab": "Turns",
@@ -1849,6 +1849,18 @@
                 "output": "{tokens} Ausgabe-Tokens",
                 "rate": "{rate} Token/s"
             }
-        }
+        },
+        "duration": "Dauer",
+        "inputShape": "Nachrichtentext nach Art (geschätzt)",
+        "shape": {
+            "system": "System",
+            "user": "Nutzer",
+            "assistant": "Assistent",
+            "tool_calls": "Tool-Aufrufe",
+            "tool_returns": "Tool-Ergebnisse",
+            "other": "Sonstiges"
+        },
+        "showAllLines": "{count, plural, one {Ganze Zeile zeigen} other {Alle # Zeilen zeigen}}",
+        "showLess": "Weniger zeigen"
     }
 }

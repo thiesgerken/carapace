@@ -1,14 +1,30 @@
 "use client";
 
 import { useCallback, useState, type ReactNode } from "react";
-import { Braces, Loader2 } from "lucide-react";
+import {
+  ArrowDownLeft,
+  ArrowUpRight,
+  Bot,
+  Box,
+  Braces,
+  Brain,
+  CircleSlash,
+  CircleX,
+  CornerDownLeft,
+  Loader2,
+  RotateCcw,
+  ScrollText,
+  User,
+  Wrench,
+  type LucideIcon,
+} from "lucide-react";
 import { useFormatter, useLocale, useTranslations } from "next-intl";
 import { useFormatCost } from "@/components/memory-ui";
 import { MarkdownContent } from "@/components/markdown-content";
 import { pillClassName } from "@/components/prompt-preview-view";
 import { Stat } from "@/components/debug-stat";
 import { SessionHeader } from "@/components/session-header";
-import { TurnTimelineView } from "@/components/turn-timeline-view";
+import { CATEGORY_CLASS, TurnTimelineView } from "@/components/turn-timeline-view";
 import { useDebounced } from "@/hooks/use-debounced";
 import { useKeyedFetch } from "@/hooks/use-keyed-fetch";
 import { useWebSocket, useWebSocketTicket } from "@/hooks/use-websocket";
@@ -17,7 +33,9 @@ import { formatUsd } from "@/lib/memory";
 import { fencedCodeBlock } from "@/lib/sandbox-read";
 import {
   DEBUG_ROLES,
+  INPUT_SHAPE_KINDS,
   type DebugRole,
+  type InputShape,
   type DebugTab,
   type LlmContext,
   type LlmContextStatus,
@@ -29,7 +47,8 @@ import {
   type ServerMessage,
   type TurnSummary,
 } from "@/lib/types";
-import { groupRequestsByTurn } from "@/lib/turn-timeline";
+import { cacheHitRate, compactCount, costShape, isEmptyColumn } from "@/lib/request-table";
+import { groupRequestsByTurn, llmSegments } from "@/lib/turn-timeline";
 import { cn } from "@/lib/utils";
 
 const STATUS_CLASS: Record<LlmContextStatus, string> = {
@@ -192,27 +211,43 @@ function RoleDebug({
         <p className="text-sm text-muted-foreground">{t("empty")}</p>
       ) : (
         <div id={CONTEXT_ANCHOR} className="scroll-mt-4">
-          <LlmContextView context={shown} />
+          <LlmContextView context={shown} record={timeline && "value" in timeline ? timeline.value.find((r) => r.request_id === shown.request_id) : undefined} />
         </div>
       )}
     </>
   );
 }
 
-export function LlmContextView({ context }: { context: LlmContext }) {
+/** The latest request of a role; *record* is its row in the request log, with phases and input shape, once it is recorded. */
+export function LlmContextView({ context, record }: { context: LlmContext; record?: LlmRequestRecord }) {
   const t = useTranslations("debugView");
+  const tTimeline = useTranslations("debugView.timeline");
   const format = useFormatter();
+  const [start, end] = [Date.parse(context.started_at), context.completed_at ? Date.parse(context.completed_at) : null];
 
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-start gap-x-8 gap-y-3 rounded-2xl border border-border bg-background/88 p-4 shadow-sm">
-        <Stat label={t("status")} value={<StatusBadge status={context.status} />} />
+        {/* Completed is the norm; only the exceptions show a status. */}
+        {context.status === "completed" ? null : <Stat label={t("status")} value={<StatusBadge status={context.status} />} />}
         <Stat label={t("model")} value={<span className="font-mono">{context.model_name}</span>} />
         <Stat label={t("started")} value={format.dateTime(new Date(context.started_at), { dateStyle: "medium", timeStyle: "medium" })} />
+        {end === null ? null : (
+          <Stat
+            label={t("duration")}
+            value={
+              <span className="flex items-center gap-2">
+                <span className="tabular-nums">{tTimeline("seconds", { seconds: format.number((end - start) / 1000, { maximumFractionDigits: 1 }) })}</span>
+                {record ? <PhaseBar phases={record} start={start} end={end} className="w-24" /> : null}
+              </span>
+            }
+          />
+        )}
         {context.compaction_target ? (
           <Stat label={t("compacted")} value={t(`compactionTargets.${context.compaction_target}`)} />
         ) : null}
         {context.response?.usage ? <UsageStats usage={context.response.usage} cost={context.cost} /> : null}
+        {record?.input_shape ? <InputShapeBar shape={record.input_shape} /> : null}
       </div>
 
       {context.error ? (
@@ -261,7 +296,8 @@ type TimelineColumn = { key: string; numeric?: boolean; cell: (record: LlmReques
 /**
  * One row per recorded request of the role, newest first, so requests compare side by side without
  * their contexts. Rows are grouped by turn, which shows per-turn patterns such as a turn's first
- * request missing the cache.
+ * request missing the cache. The table stresses exceptions, not the norm: a completed request has
+ * no status marker, a cache miss stands out, and count columns that are empty in every row go.
  */
 function RequestTimeline({
   records,
@@ -276,31 +312,26 @@ function RequestTimeline({
 }) {
   const t = useTranslations("debugView.timeline");
   const format = useFormatter();
-  const locale = useLocale();
-  // Null counts and costs are unknown: the record predates them, or the model has no pricing.
-  const count = (value: number | null) => (value === null ? "–" : format.number(value));
-  const usd = (value: string | null | undefined) => (value == null ? "–" : formatUsd(value, locale));
+  // Compact counts compare at a glance; the exact one is in the tooltip. Null is unknown: the record predates it.
+  const count = (value: number | null) =>
+    value === null ? <span className="text-muted-foreground">–</span> : <span title={format.number(value)}>{compactCount(value, (n, maximumFractionDigits) => format.number(n, { maximumFractionDigits }))}</span>;
+  const countColumn = (key: string, value: (record: LlmRequestRecord) => number | null): TimelineColumn[] =>
+    isEmptyColumn(records, value) ? [] : [{ key, numeric: true, cell: (r) => count(value(r)) }];
   const columns: TimelineColumn[] = [
     { key: "time", cell: (r) => <Time record={r} linked={r.request_id !== null && r.request_id === contextRequestId} /> },
-    { key: "status", cell: (r) => <StatusBadge status={r.outcome} /> },
+    { key: "duration", cell: (r) => <RequestDuration record={r} /> },
     { key: "input", numeric: true, cell: (r) => count(r.input_tokens) },
-    { key: "cacheRead", numeric: true, cell: (r) => count(r.cache_read_tokens) },
-    { key: "cacheWrite", numeric: true, cell: (r) => count(r.cache_write_tokens) },
+    // Without any cache read (caching off, or prompts too short to cache) every row would be a 0 % "miss": a miss is only news among hits.
+    ...(isEmptyColumn(records, (r) => r.cache_read_tokens) ? [] : [{ key: "cacheHitRate", cell: (r: LlmRequestRecord) => <CacheMeter record={r} /> }]),
+    ...countColumn("cacheRead", (r) => r.cache_read_tokens),
+    ...countColumn("cacheWrite", (r) => r.cache_write_tokens),
     { key: "output", numeric: true, cell: (r) => count(r.output_tokens) },
-    { key: "reasoning", numeric: true, cell: (r) => count(r.reasoning_tokens) },
-    {
-      key: "cacheHitRate",
-      numeric: true,
-      cell: (r) => (r.cache_read_tokens === null || r.input_tokens === 0 ? "–" : format.number(r.cache_read_tokens / r.input_tokens, { style: "percent", maximumFractionDigits: 0 })),
-    },
-    { key: "cost", numeric: true, cell: (r) => usd(r.cost?.cost_usd) },
-    { key: "equivalentCost", numeric: true, cell: (r) => usd(r.cost?.equivalent_cost_usd) },
-    {
-      key: "duration",
-      numeric: true,
-      cell: (r) => (r.started_at && r.completed_at ? t("seconds", { seconds: format.number((Date.parse(r.completed_at) - Date.parse(r.started_at)) / 1000, { maximumFractionDigits: 1 }) }) : "–"),
-    },
-    { key: "model", cell: (r) => <span className="font-mono">{r.model_name ?? "–"}</span> },
+    ...countColumn("reasoning", (r) => r.reasoning_tokens),
+    { key: "cost", numeric: true, cell: (r) => <CostCell cost={r.cost} /> },
+    // One model in every row is the norm, and the latest request below names it.
+    ...(new Set(records.map((r) => r.model_name)).size > 1
+      ? [{ key: "model", cell: (r: LlmRequestRecord) => <span className="font-mono text-muted-foreground">{r.model_name ?? "–"}</span> }]
+      : []),
   ];
 
   return (
@@ -336,6 +367,70 @@ function RequestTimeline({
   );
 }
 
+/** The main column after the time: how long the request took, with its phases in the waterfall's colors. */
+function RequestDuration({ record }: { record: LlmRequestRecord }) {
+  const t = useTranslations("debugView.timeline");
+  const format = useFormatter();
+  if (!record.started_at || !record.completed_at) return <span className="text-muted-foreground">–</span>;
+  const [start, end] = [Date.parse(record.started_at), Date.parse(record.completed_at)];
+  return (
+    <span className="flex items-center gap-2">
+      <span className="w-12 text-right font-medium text-foreground">{t("seconds", { seconds: format.number((end - start) / 1000, { maximumFractionDigits: 1 }) })}</span>
+      <PhaseBar phases={record} start={start} end={end} className="w-16" />
+    </span>
+  );
+}
+
+/** An LLM request's phases (first token, thinking, output) as a thin bar. */
+function PhaseBar({ phases, start, end, className }: { phases: LlmRequestRecord; start: number; end: number; className?: string }) {
+  const segments = end > start ? llmSegments(phases, start, end) : [];
+  return (
+    <span aria-hidden className={cn("flex h-1.5 overflow-hidden rounded-full bg-muted", className)}>
+      {segments.map((segment) => (
+        <span key={segment.start} className={CATEGORY_CLASS[segment.category]} style={{ width: `${((segment.end - segment.start) / (end - start)) * 100}%` }} />
+      ))}
+    </span>
+  );
+}
+
+/** Hits are the norm and stay quiet; a miss, the thing to notice, gets the accent. */
+function CacheMeter({ record }: { record: LlmRequestRecord }) {
+  const t = useTranslations("debugView.timeline");
+  const format = useFormatter();
+  const rate = cacheHitRate(record);
+  if (rate === null) return <span className="text-muted-foreground">–</span>;
+  const miss = rate === 0;
+  return (
+    <span className="flex items-center gap-1.5" title={miss ? t("cacheMiss") : undefined}>
+      <span aria-hidden className={cn("h-1.5 w-10 overflow-hidden rounded-full", miss ? "bg-amber-500/30" : "bg-muted")}>
+        <span className="block h-full bg-muted-foreground/45" style={{ width: `${rate * 100}%` }} />
+      </span>
+      <span className={cn("w-9 text-right", miss ? "font-medium text-amber-700 dark:text-amber-300" : "text-muted-foreground")}>
+        {format.number(rate, { style: "percent", maximumFractionDigits: 0 })}
+      </span>
+    </span>
+  );
+}
+
+/** Actual and equivalent cost in one cell: a subscription request shows its equivalent, marked as such. */
+function CostCell({ cost }: { cost: LlmRequestCost | null }) {
+  const t = useTranslations("debugView.timeline");
+  const locale = useLocale();
+  const usd = (value: string | null) => formatUsd(value ?? 0, locale);
+  switch (costShape(cost)) {
+    case "none":
+      return <span className="text-muted-foreground">–</span>;
+    case "actual":
+      return usd(cost!.cost_usd);
+    case "subscription":
+      return (
+        <span className="text-muted-foreground" title={t("subscription")}>
+          ≈ {usd(cost!.equivalent_cost_usd)}
+        </span>
+      );
+  }
+}
+
 /** A turn's start and prompt, linking to it in the Turns tab; a turn missing from the turn list (no timing recorded) shows its id only. */
 function TurnHeader({ turnId, turn, onOpenTurn }: { turnId: string | null; turn: TurnSummary | undefined; onOpenTurn: (turnId: string) => void }) {
   const t = useTranslations("debugView.timeline");
@@ -361,10 +456,39 @@ function Time({ record, linked }: { record: LlmRequestRecord; linked: boolean })
   const date = new Date(record.ts);
   const short = format.dateTime(date, { month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit", second: "2-digit" });
   const full = format.dateTime(date, { dateStyle: "medium", timeStyle: "medium" });
-  return linked ? (
-    <a href={`#${CONTEXT_ANCHOR}`} title={`${full} · ${t("showContext")}`} className="underline underline-offset-2">{short}</a>
-  ) : (
-    <span title={full}>{short}</span>
+  return (
+    <span className="flex items-center gap-1.5">
+      {linked ? (
+        <a href={`#${CONTEXT_ANCHOR}`} title={`${full} · ${t("showContext")}`} className="underline underline-offset-2">{short}</a>
+      ) : (
+        <span title={full}>{short}</span>
+      )}
+      <StatusMark status={record.outcome} />
+    </span>
+  );
+}
+
+/** Completed is the norm and goes unmarked; the exceptions get a small icon. */
+function StatusMark({ status }: { status: LlmContextStatus }) {
+  const t = useTranslations("debugView.statuses");
+  switch (status) {
+    case "completed":
+      return null;
+    case "running":
+      return <StatusIcon icon={Loader2} label={t(status)} className="animate-spin text-sky-600 dark:text-sky-400" />;
+    case "failed":
+      return <StatusIcon icon={CircleX} label={t(status)} className="text-destructive" />;
+    case "interrupted":
+      return <StatusIcon icon={CircleSlash} label={t(status)} className="text-muted-foreground" />;
+  }
+}
+
+/** The status column is gone, so the icon names its status for the screen reader and in a tooltip. */
+function StatusIcon({ icon: Icon, label, className }: { icon: LucideIcon; label: string; className: string }) {
+  return (
+    <span role="img" aria-label={label} title={label} className="inline-flex">
+      <Icon aria-hidden className={cn("h-3.5 w-3.5", className)} />
+    </span>
   );
 }
 
@@ -396,14 +520,46 @@ function UsageStats({ usage, cost }: { usage: LlmRequestUsage; cost: LlmRequestC
   );
 }
 
+/** Estimated share of the message text per kind (tool definitions not included), in the colors of the message parts below. */
+function InputShapeBar({ shape }: { shape: InputShape }) {
+  const t = useTranslations("debugView");
+  const format = useFormatter();
+  const kinds = INPUT_SHAPE_KINDS.filter((kind) => shape[kind] >= 0.005);
+  const percent = (share: number) => format.number(share, { style: "percent", maximumFractionDigits: 0 });
+  return (
+    <div className="flex basis-full flex-col gap-2 border-t border-border/60 pt-3">
+      <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">{t("inputShape")}</span>
+      <div className="flex h-2 w-full overflow-hidden rounded-full" role="img" aria-label={kinds.map((kind) => `${t(`shape.${kind}`)} ${percent(shape[kind])}`).join(", ")}>
+        {kinds.map((kind) => (
+          <span key={kind} className={PART_TONE[SHAPE_TONE[kind]].bar} style={{ width: `${shape[kind] * 100}%` }} />
+        ))}
+      </div>
+      <ul className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
+        {kinds.map((kind) => (
+          <li key={kind} className="flex items-center gap-1.5">
+            <span className={cn("h-2 w-2 rounded-full", PART_TONE[SHAPE_TONE[kind]].bar)} />
+            {t(`shape.${kind}`)}
+            <span className="tabular-nums text-muted-foreground">{percent(shape[kind])}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function MessageCard({ message, label, highlight = false }: { message: LlmMessage; label: string; highlight?: boolean }) {
   const t = useTranslations("debugView");
   const [raw, setRaw] = useState(false);
+  // To the model or from it: the arrow says which way the message went.
+  const Direction = message.kind === "request" ? ArrowUpRight : ArrowDownLeft;
 
   return (
     <section className={cn("rounded-xl border bg-background p-3", highlight ? "border-[#236b86]/50 dark:border-sky-400/40" : "border-border")}>
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">{label}</span>
+      <div className="mb-2.5 flex items-center justify-between gap-2">
+        <span className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
+          <Direction aria-hidden className="h-3.5 w-3.5" />
+          {label}
+        </span>
         <button type="button" aria-pressed={raw} onClick={() => setRaw(!raw)} className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground">
           <Braces className="h-3.5 w-3.5" />
           {raw ? t("showFormatted") : t("showRaw")}
@@ -412,7 +568,7 @@ function MessageCard({ message, label, highlight = false }: { message: LlmMessag
       {raw ? (
         <Json value={message} />
       ) : (
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-3">
           {message.parts.map((part, index) => <PartCard key={index} part={part} />)}
         </div>
       )}
@@ -424,24 +580,51 @@ function PartCard({ part }: { part: LlmPart }) {
   const t = useTranslations("debugView.parts");
   switch (part.part_kind) {
     case "system-prompt":
-      return <Card label={t("systemPrompt")}><Content value={part.content} markdown /></Card>;
+      return <Card tone="system" label={t("systemPrompt")}><Content value={part.content} markdown /></Card>;
     case "user-prompt":
-      return <Card label={t("userPrompt")}><Content value={part.content} markdown /></Card>;
+      return <Card tone="user" label={t("userPrompt")}><Content value={part.content} markdown /></Card>;
     case "text":
-      return <Card label={t("text")}><Content value={part.content} markdown /></Card>;
+      return <Card tone="assistant" label={t("text")}><Content value={part.content} markdown /></Card>;
     case "thinking":
-      return <Card label={t("thinking")} muted><Content value={part.content} markdown /></Card>;
+      return <Card tone="thinking" label={t("thinking")} muted><Content value={part.content} markdown /></Card>;
     case "tool-call":
-      return <Card label={`${t("toolCall")} · ${part.tool_name}`} badge={part.tool_call_id}><Json value={parseArgs(part.args)} /></Card>;
+      return <Card tone="toolCall" label={`${t("toolCall")} · ${part.tool_name}`} badge={part.tool_call_id}><Json value={parseArgs(part.args)} /></Card>;
     case "tool-return":
-      return <Card label={`${t(part.outcome === "retried" ? "toolRetry" : "toolReturn")} · ${part.tool_name}`} badge={part.tool_call_id}><Content value={part.content} /></Card>;
+      return (
+        <Card tone={part.outcome === "retried" ? "retry" : "toolReturn"} label={`${t(part.outcome === "retried" ? "toolRetry" : "toolReturn")} · ${part.tool_name}`} badge={part.tool_call_id}>
+          <Content value={part.content} clamp />
+        </Card>
+      );
     case "retry-feedback":
-      return <Card label={t("retryFeedback")}><Content value={part.content} /></Card>;
+      return <Card tone="retry" label={t("retryFeedback")}><Content value={part.content} clamp /></Card>;
     default:
       // Provider-specific parts (native tools, files, compaction) render as what they are.
-      return <Card label={part.part_kind}><Json value={part} /></Card>;
+      return <Card tone="other" label={part.part_kind}><Json value={part} /></Card>;
   }
 }
+
+type PartTone = "system" | "user" | "assistant" | "thinking" | "toolCall" | "toolReturn" | "retry" | "other";
+
+// One icon and color per part kind; the message text bar paints its kinds with the same *bar* colors.
+const PART_TONE: Record<PartTone, { icon: LucideIcon; rail: string; text: string; bar: string }> = {
+  system: { icon: ScrollText, rail: "border-slate-400 dark:border-slate-500", text: "text-slate-500 dark:text-slate-400", bar: "bg-slate-400 dark:bg-slate-500" },
+  user: { icon: User, rail: "border-sky-500", text: "text-sky-600 dark:text-sky-400", bar: "bg-sky-500" },
+  assistant: { icon: Bot, rail: "border-emerald-500", text: "text-emerald-600 dark:text-emerald-400", bar: "bg-emerald-500" },
+  thinking: { icon: Brain, rail: "border-violet-400 dark:border-violet-500", text: "text-violet-500 dark:text-violet-400", bar: "bg-violet-400 dark:bg-violet-500" },
+  toolCall: { icon: Wrench, rail: "border-amber-500", text: "text-amber-600 dark:text-amber-400", bar: "bg-amber-500" },
+  toolReturn: { icon: CornerDownLeft, rail: "border-teal-500", text: "text-teal-600 dark:text-teal-400", bar: "bg-teal-500" },
+  retry: { icon: RotateCcw, rail: "border-orange-500", text: "text-orange-600 dark:text-orange-400", bar: "bg-orange-500" },
+  other: { icon: Box, rail: "border-zinc-300 dark:border-zinc-600", text: "text-muted-foreground", bar: "bg-zinc-300 dark:bg-zinc-600" },
+};
+
+const SHAPE_TONE: Record<(typeof INPUT_SHAPE_KINDS)[number], PartTone> = {
+  system: "system",
+  user: "user",
+  assistant: "assistant",
+  tool_calls: "toolCall",
+  tool_returns: "toolReturn",
+  other: "other",
+};
 
 /** pydantic-ai keeps tool call args either as a dict or as the model's raw JSON string. */
 function parseArgs(args: unknown): unknown {
@@ -454,13 +637,30 @@ function parseArgs(args: unknown): unknown {
 }
 
 /** Prose to and from the model renders as Markdown; tool output stays verbatim, Markdown would mangle it. */
-function Content({ value, markdown = false }: { value: unknown; markdown?: boolean }) {
+function Content({ value, markdown = false, clamp = false }: { value: unknown; markdown?: boolean; clamp?: boolean }) {
   if (typeof value !== "string") return <Json value={value} />;
-  return markdown ? <MarkdownContent content={value} /> : <Verbatim>{value}</Verbatim>;
+  return markdown ? <MarkdownContent content={value} /> : <Verbatim clamp={clamp}>{value}</Verbatim>;
 }
 
-function Verbatim({ children }: { children: string }) {
-  return <pre className="whitespace-pre-wrap break-words rounded-lg bg-muted/50 p-2 font-mono text-xs">{children}</pre>;
+// Long tool output buries the conversation around it, so it starts cut to a preview.
+const PREVIEW_LINES = 12;
+const PREVIEW_CHARS = 1500;
+
+function Verbatim({ children, clamp = false }: { children: string; clamp?: boolean }) {
+  const t = useTranslations("debugView");
+  const [expanded, setExpanded] = useState(false);
+  const preview = children.split("\n").slice(0, PREVIEW_LINES).join("\n").slice(0, PREVIEW_CHARS);
+  const long = clamp && preview !== children;
+  return (
+    <div className="flex flex-col items-start gap-1">
+      <pre className="w-full whitespace-pre-wrap break-words rounded-lg bg-muted/50 p-2 font-mono text-xs">{long && !expanded ? `${preview}…` : children}</pre>
+      {long ? (
+        <button type="button" onClick={() => setExpanded(!expanded)} className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground">
+          {expanded ? t("showLess") : t("showAllLines", { count: children.split("\n").length })}
+        </button>
+      ) : null}
+    </div>
+  );
 }
 
 /** A string is tool call args the model sent as invalid JSON: shown as sent, not highlighted as JSON. */
@@ -469,11 +669,16 @@ function Json({ value }: { value: unknown }) {
   return <MarkdownContent content={fencedCodeBlock("json", JSON.stringify(value, null, 2))} />;
 }
 
-function Card({ label, badge, muted = false, children }: { label: string; badge?: string; muted?: boolean; children: ReactNode }) {
+function Card({ label, badge, tone, muted = false, children }: { label: string; badge?: string; tone?: PartTone; muted?: boolean; children: ReactNode }) {
+  const style = tone ? PART_TONE[tone] : null;
+  const Icon = style?.icon;
   return (
-    <div className={cn("min-w-0 rounded-lg border border-border/70 p-2.5 text-sm", muted && "bg-muted/30 text-muted-foreground")}>
+    <div className={cn("min-w-0 text-sm", style ? cn("border-l-2 py-0.5 pl-3", style.rail) : "rounded-lg border border-border/70 p-2.5", muted && "text-muted-foreground")}>
       <div className="mb-1.5 flex min-w-0 items-center justify-between gap-2 text-xs font-medium">
-        <span className="truncate">{label}</span>
+        <span className="flex min-w-0 items-center gap-1.5">
+          {Icon ? <Icon aria-hidden className={cn("h-3.5 w-3.5 shrink-0", style.text)} /> : null}
+          <span className="truncate">{label}</span>
+        </span>
         {badge ? <span className="truncate font-mono text-[11px] text-muted-foreground">{badge}</span> : null}
       </div>
       {children}
@@ -485,7 +690,7 @@ function Collapsible({ title, open = false, children }: { title: string; open?: 
   return (
     <details open={open} className="group rounded-2xl border border-border bg-muted/20 p-3">
       <summary className="cursor-pointer text-sm font-medium">{title}</summary>
-      <div className="mt-3 flex flex-col gap-2">{children}</div>
+      <div className="mt-3 flex flex-col gap-3">{children}</div>
     </details>
   );
 }

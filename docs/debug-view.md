@@ -12,20 +12,40 @@ in two groups: **Turns** opens by default and shows where a turn's time went (se
 group takes its own line). Each role tab shows the role's **Requests** table and its latest request:
 
 - **Requests**: one row per recorded request of the role, newest first, so requests compare side by
-  side: time, status, input, cache read, cache write, output and reasoning tokens, cache hits (cache
-  read ÷ input), actual and equivalent cost, duration and model. `–` marks a value the record does
-  not have. The row of the request shown below is highlighted, and its time links to it. Only the
-  latest request keeps its context, so older rows have numbers only.
+  side: time, duration, input, cache hits (cache read ÷ input), cache read, cache write, output and
+  reasoning tokens, cost and model. The table stresses exceptions, not the norm:
+  - A completed request has no status marker. A failed one gets a red icon, and an interrupted one
+    a grey icon.
+  - The duration leads, with a bar of the request's phases in the waterfall's colors.
+  - Counts are compact (12.3k), with the exact number in the tooltip.
+  - A count column that is 0 or unknown in every row is left out. Cache hits go with the cache
+    reads: without any (caching off, or prompts too short to cache), every row would be a 0 % miss.
+  - Cache hits show as a small meter. A miss (0 %) is the one in an accent color, so it stands out
+    where caching otherwise works: a cold first request, or a broken prefix.
+  - The cost is one cell: the actual cost, or `≈` the equivalent for a subscription request
+    (nothing billed). The server prices a request at its list price or, on a subscription, at zero.
+  - The model column shows only when the rows differ in model.
+  - `–` marks a value the record does not have.
+
+  The row of the request shown below is highlighted, and its time links to it. Only the latest
+  request keeps its context, so older rows have numbers only.
 - The rows are grouped by turn, newest first. A header row shows when the turn started and its
   prompt, and links to the turn in the Turns tab. That shows per-turn patterns at a glance, such as
   a turn's first request missing the cache. Requests outside a turn (the titler, records from
   before requests were tagged with their turn) form one group, **Outside a turn**, placed by its
   newest request. A turn without recorded timing shows its id only.
-- Below it, the latest request. On top: status, model, start time, and for compaction what was compacted. Completed requests add
-  their usage and cost (see below). Failed and interrupted requests show their error here.
+- Below it, the latest request. On top: model, start time, duration with its phases, and for
+  compaction what was compacted. The status shows only when the request is not completed. Completed
+  requests add their usage and cost (see below), and **message text by kind**: the estimated share
+  (by tiktoken) of system, user, assistant, tool call and tool return text in the messages sent,
+  when the request log measured it. It leaves out tool definitions, so it does not split the input
+  token count. Failed and interrupted requests show their error here.
 - **Instructions** and the collapsed **tool definitions** with their JSON schemas.
 - **Messages**, formatted part by part: system, user, text, thinking, tool call (arguments as JSON),
   tool return, retry prompt. Any other part (provider-specific ones included) renders as its JSON.
+  Each kind has its own icon and color (the message text bar uses the same colors), and an arrow
+  marks whether the message went to the model or came from it. Tool returns and retry prompts
+  longer than 12 lines (or 1,500 characters) start as a preview that expands on request.
 - The **response**, or a spinner while the request is running.
 
 Instructions, tool descriptions, system and user prompts, text and thinking render as Markdown.

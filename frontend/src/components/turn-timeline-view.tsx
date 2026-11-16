@@ -89,7 +89,7 @@ const FACT_CLASS: Record<Fact["tone"], string> = {
 
 const VERDICT_TONE: Record<string, Fact["tone"]> = { allow: "good", revise: "warn", escalate: "warn", deny: "bad" };
 
-const CATEGORY_CLASS: Record<TimeCategory, string> = {
+export const CATEGORY_CLASS: Record<TimeCategory, string> = {
   preparation: "bg-yellow-300 dark:bg-yellow-200",
   llmWaiting: "bg-sky-300 dark:bg-sky-800",
   llmThinking: "bg-violet-400 dark:bg-violet-500",

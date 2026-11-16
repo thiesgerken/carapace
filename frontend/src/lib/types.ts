@@ -1186,8 +1186,17 @@ export interface LlmRequestRecord {
   reasoning_tokens: number | null;
   cost: LlmRequestCost | null;
   started_at: string | null;
+  first_token_at: string | null;
+  first_thinking_at: string | null;
+  last_thinking_at: string | null;
+  first_text_at: string | null;
   completed_at: string | null;
+  /** Estimated share of the input per message kind (sums to about 1), not billed tokens; null when not measured. */
+  input_shape: InputShape | null;
 }
+
+export const INPUT_SHAPE_KINDS = ["system", "user", "assistant", "tool_calls", "tool_returns", "other"] as const;
+export type InputShape = Record<(typeof INPUT_SHAPE_KINDS)[number], number>;
 
 export interface LlmInstructionPart {
   content: string;
