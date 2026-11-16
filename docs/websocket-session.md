@@ -78,7 +78,7 @@ Each message is one JSON object with a `type` field.
 | `domain_access_approval_request` | Sentinel escalated **proxy domain** access          | `request_id`, `domain`, `command`                                                                |
 | `git_push_approval_request`      | Sentinel escalated **git push**                     | `request_id`, `ref`, `explanation`, `changed_files`                                              |
 | `credential_approval_request`    | Sentinel escalated **credential** access            | `request_id`, `vault_paths`, `names`, `descriptions`, optional `skill_name`, `explanation`       |
-| `done`                           | Agent turn finished                                 | `content` (final assistant text), optional `usage`, optional `final_status`                      |
+| `done`                           | Agent turn finished                                 | `content` (final assistant text), `turn_id`, optional `usage`, optional `final_status`           |
 | `command_result`                 | Slash command or turn-control acknowledgement       | `command`, `data` (arbitrary)                                                                    |
 | `error`                          | Parse error, unknown command, busy agent, etc.      | `detail`                                                                                         |
 | `cancelled`                      | Turn cancelled after `cancel`                       | `detail` (default explains cancellation)                                                         |
