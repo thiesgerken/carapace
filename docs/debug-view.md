@@ -60,8 +60,8 @@ turn it shows first.
   An LLM span adds model, phase durations, tokens, cache and cost, and a link to its role's tab
   when it is that role's latest request.
 
-The tab refetches the shown timeline on every `span` notification and after every (re)connect,
-and the turn list when a notification names a new turn.
+The tab refetches the shown timeline once a burst of `span` notifications settles (250 ms) and
+after every (re)connect, and the turn list when a notification names a new turn.
 
 ## What is captured
 

@@ -9,6 +9,7 @@ import { pillClassName } from "@/components/prompt-preview-view";
 import { Stat } from "@/components/debug-stat";
 import { SessionHeader } from "@/components/session-header";
 import { TurnTimelineView } from "@/components/turn-timeline-view";
+import { useDebounced } from "@/hooks/use-debounced";
 import { useKeyedFetch } from "@/hooks/use-keyed-fetch";
 import { useWebSocket, useWebSocketTicket } from "@/hooks/use-websocket";
 import { fetchLlmContext, fetchLlmRequests, wsUrl } from "@/lib/api";
@@ -35,6 +36,8 @@ const STATUS_CLASS: Record<LlmContextStatus, string> = {
   failed: "border-destructive/40 bg-destructive/10 text-destructive",
   interrupted: "border-amber-500/40 bg-amber-500/10 text-amber-800 dark:text-amber-300",
 };
+
+const SPAN_REFETCH_DEBOUNCE_MS = 250;
 
 type Notification = { requestId: string; status: LlmContextStatus };
 type RoleFetch<T> = (server: string, token: string, sessionId: string, role: DebugRole) => Promise<T>;
@@ -81,6 +84,8 @@ export function DebugView({
   const { status } = useWebSocket(ticket ? wsUrl(server, sessionId, token, undefined, ticket, true) : null, onMessage);
   // Notifications sent while the socket was down are lost, so every (re)connect refetches too.
   const connected = status === "connected";
+  // A busy turn sends a burst of span notifications; one refetch per burst is enough.
+  const spanRevision = useDebounced(`${connected}:${spanEvents.count}`, SPAN_REFETCH_DEBOUNCE_MS);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -106,7 +111,7 @@ export function DebugView({
             pickedTurn={pickedTurn}
             onPickTurn={setPickedTurn}
             turnsRevision={`${connected}:${spanEvents.turnId}`}
-            spanRevision={`${connected}:${spanEvents.count}`}
+            spanRevision={spanRevision}
             onOpenRole={setTab}
           />
         ) : (
