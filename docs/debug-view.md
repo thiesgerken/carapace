@@ -55,13 +55,24 @@ failed, budget-stopped or stopped one.
   turn, it steps into the running child that started first, level by level, and the instant
   belongs to where that stops, so parallel work never counts twice. Anything inside a `wait` span
   is waiting for you. Instants that stop at the turn itself are not covered: time no span measured.
-- **Waterfall**: one row per span, indented by nesting and labelled with its kind (muted) and name, the name left out when it repeats the kind, with its bar placed within the turn
-  (on a phone the label sits above the bar). Running spans grow until they end. Errors are red,
+- **Waterfall**: one row per span, drawn as a tree with guide lines, with its bar placed within the
+  turn (on a phone the label sits above the bar). A chevron collapses or expands a row's children;
+  that state lasts as long as the view. Running spans grow until they end. Errors are red,
   interrupted spans grey, waits hatched. An LLM bar shows its phases: waiting for the first
   token, thinking, output; a phase without its timestamp collapses into its neighbour.
-- Clicking a row opens its details: start (relative to the turn), duration, status and attributes.
-  An LLM span adds model, phase durations, tokens, cache and cost, and a link to its role's tab
-  when it is that role's latest request.
+- A row's icon names its kind (hover for the kind and name) in its summary category's color. Its
+  text is what the span did: the command of an `exec`, operation and path of a `file`, the domain,
+  the tool or step name. Muted facts follow: the sentinel's verdict, a denied gate, a blocked
+  domain, a non-zero exit code, and for the agent's LLM requests the output tokens and tokens per
+  second of generation (from the first token on).
+- A span whose only child covers at least three quarters of it merges with that child into one
+  row, and so on down: a gate, its sentinel call and the sentinel's LLM request become one
+  `sentinel` row with the verdict. The row shows the head's duration and every member's bar. It is
+  named by its first member that isn't a gate, since a gate's name is its tool's. The turn itself
+  never merges.
+- Clicking a row opens its details, one block per merged span: start (relative to the turn),
+  duration, status and attributes. An LLM span adds model, phase durations, tokens, cache and
+  cost, and a link to its role's tab when it is that role's latest request.
 
 The tab refetches the turn list and the shown timeline after every (re)connect and on `span` and
 `llm_activity` notifications: the latter move a running LLM request through its phases. A burst of
