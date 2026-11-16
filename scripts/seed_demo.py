@@ -702,6 +702,7 @@ def _turn_request(
     completed_at: datetime,
     usage: RequestUsage,
     *,
+    first_token_at: datetime,
     thinking: tuple[datetime, datetime] | None = None,
     first_text_at: datetime | None = None,
 ) -> LlmRequestRecord:
@@ -709,6 +710,7 @@ def _turn_request(
         update={
             "turn_id": PANCAKE_TURN_ID,
             "span_id": parent_span,
+            "first_token_at": first_token_at,
             "first_thinking_at": thinking[0] if thinking else None,
             "last_thinking_at": thinking[1] if thinking else None,
             "first_text_at": first_text_at,
@@ -785,6 +787,7 @@ def _pancake_turn(start: datetime, end: datetime) -> tuple[list[Span], list[LlmR
             at(1.5),
             at(4.0),
             RequestUsage(input_tokens=5_120, output_tokens=46, cache_write_tokens=4_900),
+            first_token_at=at(2.6),
             thinking=(at(2.6), at(3.3)),
         ),
         _turn_request(
@@ -794,6 +797,7 @@ def _pancake_turn(start: datetime, end: datetime) -> tuple[list[Span], list[LlmR
             at(5.2),
             at(7.0),
             RequestUsage(input_tokens=5_890, output_tokens=58, cache_read_tokens=4_900, cache_write_tokens=760),
+            first_token_at=at(6.1),
         ),
         _turn_request(
             "sentinel",
@@ -802,6 +806,7 @@ def _pancake_turn(start: datetime, end: datetime) -> tuple[list[Span], list[LlmR
             at(7.1),
             at(9.5),
             RequestUsage(input_tokens=2_380, output_tokens=55, cache_write_tokens=2_100),
+            first_token_at=at(8.4),
             first_text_at=at(8.4),
         ),
         _turn_request(
@@ -811,6 +816,7 @@ def _pancake_turn(start: datetime, end: datetime) -> tuple[list[Span], list[LlmR
             at(13.0),
             at(14.5),
             RequestUsage(input_tokens=6_970, output_tokens=71, cache_read_tokens=5_660, cache_write_tokens=1_080),
+            first_token_at=at(13.8),
         ),
         _turn_request(
             "sentinel",
@@ -819,6 +825,7 @@ def _pancake_turn(start: datetime, end: datetime) -> tuple[list[Span], list[LlmR
             at(14.6),
             at(16.9),
             RequestUsage(input_tokens=2_610, output_tokens=61, cache_read_tokens=2_100, cache_write_tokens=380),
+            first_token_at=at(15.9),
             first_text_at=at(15.9),
         ),
         _turn_request(
@@ -828,6 +835,7 @@ def _pancake_turn(start: datetime, end: datetime) -> tuple[list[Span], list[LlmR
             at(21.8),
             end - timedelta(seconds=0.2),
             RequestUsage(input_tokens=7_840, output_tokens=402, cache_read_tokens=6_740, cache_write_tokens=900),
+            first_token_at=at(23.0),
             thinking=(at(23.0), at(24.1)),
             first_text_at=at(24.1),
         ),
