@@ -1851,7 +1851,7 @@
             }
         },
         "duration": "Dauer",
-        "inputShape": "Zusammensetzung der Eingabe (geschätzter Anteil)",
+        "inputShape": "Nachrichtentext nach Art (geschätzt)",
         "shape": {
             "system": "System",
             "user": "Nutzer",
@@ -1860,7 +1860,7 @@
             "tool_returns": "Tool-Ergebnisse",
             "other": "Sonstiges"
         },
-        "showAllLines": "Alle {count} Zeilen zeigen",
+        "showAllLines": "{count, plural, one {Ganze Zeile zeigen} other {Alle # Zeilen zeigen}}",
         "showLess": "Weniger zeigen"
     }
 }

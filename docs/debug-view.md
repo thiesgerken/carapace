@@ -18,11 +18,12 @@ group takes its own line). Each role tab shows the role's **Requests** table and
     a grey icon.
   - The duration leads, with a bar of the request's phases in the waterfall's colors.
   - Counts are compact (12.3k), with the exact number in the tooltip.
-  - A count column that is 0 or unknown in every row is left out. Cache hits go only when no row has
-    a cache count.
-  - Cache hits show as a small meter. A miss (0 %) is the one in an accent color.
+  - A count column that is 0 or unknown in every row is left out. Cache hits go with the cache
+    reads: without any (caching off, or prompts too short to cache), every row would be a 0 % miss.
+  - Cache hits show as a small meter. A miss (0 %) is the one in an accent color, so it stands out
+    where caching otherwise works: a cold first request, or a broken prefix.
   - The cost is one cell: the actual cost, or `≈` the equivalent for a subscription request
-    (nothing billed), or both when they differ otherwise.
+    (nothing billed). The server prices a request at its list price or, on a subscription, at zero.
   - The model column shows only when the rows differ in model.
   - `–` marks a value the record does not have.
 
@@ -35,13 +36,14 @@ group takes its own line). Each role tab shows the role's **Requests** table and
   newest request. A turn without recorded timing shows its id only.
 - Below it, the latest request. On top: model, start time, duration with its phases, and for
   compaction what was compacted. The status shows only when the request is not completed. Completed
-  requests add their usage and cost (see below), and the **input composition**: the estimated
-  share of system, user, assistant, tool call and tool return text in the input, when the request
-  log measured it. Failed and interrupted requests show their error here.
+  requests add their usage and cost (see below), and **message text by kind**: the estimated share
+  (by tiktoken) of system, user, assistant, tool call and tool return text in the messages sent,
+  when the request log measured it. It leaves out tool definitions, so it does not split the input
+  token count. Failed and interrupted requests show their error here.
 - **Instructions** and the collapsed **tool definitions** with their JSON schemas.
 - **Messages**, formatted part by part: system, user, text, thinking, tool call (arguments as JSON),
   tool return, retry prompt. Any other part (provider-specific ones included) renders as its JSON.
-  Each kind has its own icon and color (the input composition uses the same colors), and an arrow
+  Each kind has its own icon and color (the message text bar uses the same colors), and an arrow
   marks whether the message went to the model or came from it. Tool returns and retry prompts
   longer than 12 lines (or 1,500 characters) start as a preview that expands on request.
 - The **response**, or a spinner while the request is running.

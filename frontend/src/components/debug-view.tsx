@@ -321,7 +321,8 @@ function RequestTimeline({
     { key: "time", cell: (r) => <Time record={r} linked={r.request_id !== null && r.request_id === contextRequestId} /> },
     { key: "duration", cell: (r) => <RequestDuration record={r} /> },
     { key: "input", numeric: true, cell: (r) => count(r.input_tokens) },
-    ...(records.every((r) => r.cache_read_tokens === null) ? [] : [{ key: "cacheHitRate", cell: (r: LlmRequestRecord) => <CacheMeter record={r} /> }]),
+    // Without any cache read (caching off, or prompts too short to cache) every row would be a 0 % "miss": a miss is only news among hits.
+    ...(isEmptyColumn(records, (r) => r.cache_read_tokens) ? [] : [{ key: "cacheHitRate", cell: (r: LlmRequestRecord) => <CacheMeter record={r} /> }]),
     ...countColumn("cacheRead", (r) => r.cache_read_tokens),
     ...countColumn("cacheWrite", (r) => r.cache_write_tokens),
     { key: "output", numeric: true, cell: (r) => count(r.output_tokens) },
@@ -427,12 +428,6 @@ function CostCell({ cost }: { cost: LlmRequestCost | null }) {
           ≈ {usd(cost!.equivalent_cost_usd)}
         </span>
       );
-    case "both":
-      return (
-        <span>
-          {usd(cost!.cost_usd)} <span className="text-muted-foreground">(≈ {usd(cost!.equivalent_cost_usd)})</span>
-        </span>
-      );
   }
 }
 
@@ -480,12 +475,21 @@ function StatusMark({ status }: { status: LlmContextStatus }) {
     case "completed":
       return null;
     case "running":
-      return <Loader2 role="img" aria-label={t(status)} className="h-3.5 w-3.5 animate-spin text-sky-600 dark:text-sky-400" />;
+      return <StatusIcon icon={Loader2} label={t(status)} className="animate-spin text-sky-600 dark:text-sky-400" />;
     case "failed":
-      return <CircleX role="img" aria-label={t(status)} className="h-3.5 w-3.5 text-destructive" />;
+      return <StatusIcon icon={CircleX} label={t(status)} className="text-destructive" />;
     case "interrupted":
-      return <CircleSlash role="img" aria-label={t(status)} className="h-3.5 w-3.5 text-muted-foreground" />;
+      return <StatusIcon icon={CircleSlash} label={t(status)} className="text-muted-foreground" />;
   }
+}
+
+/** The status column is gone, so the icon names its status for the screen reader and in a tooltip. */
+function StatusIcon({ icon: Icon, label, className }: { icon: LucideIcon; label: string; className: string }) {
+  return (
+    <span role="img" aria-label={label} title={label} className="inline-flex">
+      <Icon aria-hidden className={cn("h-3.5 w-3.5", className)} />
+    </span>
+  );
 }
 
 const AUDIO_TOKENS = ["input_audio_tokens", "output_audio_tokens", "cache_audio_read_tokens"] as const;
@@ -516,7 +520,7 @@ function UsageStats({ usage, cost }: { usage: LlmRequestUsage; cost: LlmRequestC
   );
 }
 
-/** Estimated input share per message kind, in the colors of the message parts below. */
+/** Estimated share of the message text per kind (tool definitions not included), in the colors of the message parts below. */
 function InputShapeBar({ shape }: { shape: InputShape }) {
   const t = useTranslations("debugView");
   const format = useFormatter();
@@ -527,13 +531,13 @@ function InputShapeBar({ shape }: { shape: InputShape }) {
       <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">{t("inputShape")}</span>
       <div className="flex h-2 w-full overflow-hidden rounded-full" role="img" aria-label={kinds.map((kind) => `${t(`shape.${kind}`)} ${percent(shape[kind])}`).join(", ")}>
         {kinds.map((kind) => (
-          <span key={kind} className={SHAPE_CLASS[kind]} style={{ width: `${shape[kind] * 100}%` }} />
+          <span key={kind} className={PART_TONE[SHAPE_TONE[kind]].bar} style={{ width: `${shape[kind] * 100}%` }} />
         ))}
       </div>
       <ul className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
         {kinds.map((kind) => (
           <li key={kind} className="flex items-center gap-1.5">
-            <span className={cn("h-2 w-2 rounded-full", SHAPE_CLASS[kind])} />
+            <span className={cn("h-2 w-2 rounded-full", PART_TONE[SHAPE_TONE[kind]].bar)} />
             {t(`shape.${kind}`)}
             <span className="tabular-nums text-muted-foreground">{percent(shape[kind])}</span>
           </li>
@@ -601,25 +605,25 @@ function PartCard({ part }: { part: LlmPart }) {
 
 type PartTone = "system" | "user" | "assistant" | "thinking" | "toolCall" | "toolReturn" | "retry" | "other";
 
-// One icon and color per part kind; the input composition bar uses the same colors.
-const PART_TONE: Record<PartTone, { icon: LucideIcon; rail: string; text: string }> = {
-  system: { icon: ScrollText, rail: "border-slate-400 dark:border-slate-500", text: "text-slate-500 dark:text-slate-400" },
-  user: { icon: User, rail: "border-sky-500", text: "text-sky-600 dark:text-sky-400" },
-  assistant: { icon: Bot, rail: "border-emerald-500", text: "text-emerald-600 dark:text-emerald-400" },
-  thinking: { icon: Brain, rail: "border-violet-400 dark:border-violet-500", text: "text-violet-500 dark:text-violet-400" },
-  toolCall: { icon: Wrench, rail: "border-amber-500", text: "text-amber-600 dark:text-amber-400" },
-  toolReturn: { icon: CornerDownLeft, rail: "border-teal-500", text: "text-teal-600 dark:text-teal-400" },
-  retry: { icon: RotateCcw, rail: "border-orange-500", text: "text-orange-600 dark:text-orange-400" },
-  other: { icon: Box, rail: "border-zinc-300 dark:border-zinc-600", text: "text-muted-foreground" },
+// One icon and color per part kind; the message text bar paints its kinds with the same *bar* colors.
+const PART_TONE: Record<PartTone, { icon: LucideIcon; rail: string; text: string; bar: string }> = {
+  system: { icon: ScrollText, rail: "border-slate-400 dark:border-slate-500", text: "text-slate-500 dark:text-slate-400", bar: "bg-slate-400 dark:bg-slate-500" },
+  user: { icon: User, rail: "border-sky-500", text: "text-sky-600 dark:text-sky-400", bar: "bg-sky-500" },
+  assistant: { icon: Bot, rail: "border-emerald-500", text: "text-emerald-600 dark:text-emerald-400", bar: "bg-emerald-500" },
+  thinking: { icon: Brain, rail: "border-violet-400 dark:border-violet-500", text: "text-violet-500 dark:text-violet-400", bar: "bg-violet-400 dark:bg-violet-500" },
+  toolCall: { icon: Wrench, rail: "border-amber-500", text: "text-amber-600 dark:text-amber-400", bar: "bg-amber-500" },
+  toolReturn: { icon: CornerDownLeft, rail: "border-teal-500", text: "text-teal-600 dark:text-teal-400", bar: "bg-teal-500" },
+  retry: { icon: RotateCcw, rail: "border-orange-500", text: "text-orange-600 dark:text-orange-400", bar: "bg-orange-500" },
+  other: { icon: Box, rail: "border-zinc-300 dark:border-zinc-600", text: "text-muted-foreground", bar: "bg-zinc-300 dark:bg-zinc-600" },
 };
 
-const SHAPE_CLASS: Record<(typeof INPUT_SHAPE_KINDS)[number], string> = {
-  system: "bg-slate-400 dark:bg-slate-500",
-  user: "bg-sky-500",
-  assistant: "bg-emerald-500",
-  tool_calls: "bg-amber-500",
-  tool_returns: "bg-teal-500",
-  other: "bg-zinc-300 dark:bg-zinc-600",
+const SHAPE_TONE: Record<(typeof INPUT_SHAPE_KINDS)[number], PartTone> = {
+  system: "system",
+  user: "user",
+  assistant: "assistant",
+  tool_calls: "toolCall",
+  tool_returns: "toolReturn",
+  other: "other",
 };
 
 /** pydantic-ai keeps tool call args either as a dict or as the model's raw JSON string. */

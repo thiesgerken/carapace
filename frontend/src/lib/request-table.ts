@@ -11,14 +11,13 @@ export function cacheHitRate(record: LlmRequestRecord): number | null {
 }
 
 /**
- * How a request's cost reads in one cell: the actual cost when it is the list price, only the
- * equivalent when a subscription made the actual cost zero, both when they differ otherwise.
+ * How a request's cost reads in one cell: the actual cost, or only the equivalent when a
+ * subscription made the actual cost zero. The server prices nothing else: the actual cost is the
+ * list price or zero.
  */
-export function costShape(cost: LlmRequestCost | null): "none" | "actual" | "subscription" | "both" {
+export function costShape(cost: LlmRequestCost | null): "none" | "actual" | "subscription" {
   if (cost?.cost_usd == null || cost.equivalent_cost_usd == null) return "none";
-  const [actual, equivalent] = [Number(cost.cost_usd), Number(cost.equivalent_cost_usd)];
-  if (actual === equivalent) return "actual";
-  return actual === 0 ? "subscription" : "both";
+  return Number(cost.cost_usd) === 0 && Number(cost.equivalent_cost_usd) !== 0 ? "subscription" : "actual";
 }
 
 /**

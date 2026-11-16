@@ -1851,7 +1851,7 @@
             }
         },
         "duration": "Duration",
-        "inputShape": "Input composition (estimated share)",
+        "inputShape": "Message text by kind (estimated)",
         "shape": {
             "system": "System",
             "user": "User",
@@ -1860,7 +1860,7 @@
             "tool_returns": "Tool returns",
             "other": "Other"
         },
-        "showAllLines": "Show all {count} lines",
+        "showAllLines": "{count, plural, one {Show the whole line} other {Show all # lines}}",
         "showLess": "Show less"
     }
 }

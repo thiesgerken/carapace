@@ -10,6 +10,10 @@ test("a column is empty when every row is 0 or unknown", () => {
   const reasoning = (r: LlmRequestRecord) => r.reasoning_tokens;
   assert.equal(isEmptyColumn([record({ reasoning_tokens: 0 }), record({})], reasoning), true);
   assert.equal(isEmptyColumn([record({ reasoning_tokens: 0 }), record({ reasoning_tokens: 12 })], reasoning), false);
+  // New records count a request without caching as 0, not null: the hit-rate column goes with the cache reads.
+  const cacheRead = (r: LlmRequestRecord) => r.cache_read_tokens;
+  assert.equal(isEmptyColumn([record({ cache_read_tokens: 0 }), record({ cache_read_tokens: 0 })], cacheRead), true);
+  assert.equal(isEmptyColumn([record({ cache_read_tokens: 0 }), record({ cache_read_tokens: 900 })], cacheRead), false);
 });
 
 test("the cache hit rate needs a cache count and some input", () => {
@@ -19,13 +23,13 @@ test("the cache hit rate needs a cache count and some input", () => {
   assert.equal(cacheHitRate(record({ input_tokens: 0, cache_read_tokens: 0 })), null);
 });
 
-test("cost reads as actual, subscription equivalent, or both", () => {
+test("cost reads as actual or as the subscription's equivalent", () => {
   const cost = (cost_usd: string | null, equivalent_cost_usd: string | null) => ({ cost_usd, equivalent_cost_usd, provider_cost_usd: null });
   assert.equal(costShape(null), "none");
   assert.equal(costShape(cost(null, null)), "none");
   assert.equal(costShape(cost("0.02", "0.02")), "actual");
   assert.equal(costShape(cost("0", "0.0054")), "subscription");
-  assert.equal(costShape(cost("0.01", "0.0425")), "both");
+  assert.equal(costShape(cost("0", "0")), "actual");
 });
 
 test("counts compact to k and M in the locale's digits", () => {
