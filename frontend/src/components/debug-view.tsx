@@ -159,8 +159,7 @@ function RoleDebug({
   sessionId: string;
   role: DebugRole;
   revision: string;
-  /** Null follows the newest turn. */
-  onOpenTurn: (turnId: string | null) => void;
+  onOpenTurn: (turnId: string) => void;
 }) {
   const t = useTranslations("debugView");
   // The role's context and timeline from an older notification keep showing while the next ones load.
@@ -181,8 +180,7 @@ function RoleDebug({
           records={timeline.value}
           turns={turnList}
           contextRequestId={shown?.request_id}
-          // Like the turn picker: opening the newest turn keeps following new ones.
-          onOpenTurn={(turnId) => onOpenTurn(turnId === turnList.at(-1)?.turn_id ? null : turnId)}
+          onOpenTurn={onOpenTurn}
         />
       ) : null}
 

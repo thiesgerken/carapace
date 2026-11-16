@@ -283,8 +283,10 @@ test("the timeline tab shows a turn's waterfall and summary, follows new turns a
     await settle();
     assert.equal(view.container.querySelector('[role="radio"][aria-checked="true"]')?.textContent, "Agent");
     // The agent's requests sit under their turn, which links back to the Turns tab.
-    assert.deepEqual(Array.from(view.container.querySelectorAll('th[scope="rowgroup"]'), (header) => header.textContent), ["11/9, 12:00:00 PMCheck the backupsShow turn"]);
-    await click(Array.from(view.container.querySelectorAll("button")).find((button) => button.textContent === "Show turn")!);
+    const turnHeaders = () => Array.from(view.container.querySelectorAll('th[scope="rowgroup"]'), (header) => header.textContent);
+    assert.deepEqual(turnHeaders(), ["11/9, 12:00:00 PMCheck the backupsShow turn"]);
+    const pill = (label: string) => Array.from(view.container.querySelectorAll('[role="radio"]')).find((radio) => radio.textContent === label)!;
+    await click(pill("Turns"));
     await settle();
 
     // A span of a new turn refetches the list once the burst settles, and the view follows the newest turn.
@@ -295,6 +297,14 @@ test("the timeline tab shows a turn's waterfall and summary, follows new turns a
     await settle();
     assert.equal(view.container.querySelector("select")?.value, "t2");
     assert.deepEqual(rows().map((row) => row.textContent), ["turn2 s"]);
+
+    // "Show turn" on an older turn's requests opens that turn, and the view stays on it.
+    await click(pill("Agent"));
+    await settle();
+    await click(Array.from(view.container.querySelectorAll("button")).find((button) => button.textContent === "Show turn")!);
+    await settle();
+    assert.equal(view.container.querySelector('[role="radio"][aria-checked="true"]')?.textContent, "Turns");
+    assert.equal(view.container.querySelector("select")?.value, "t1");
 
 
     await view.unmount();
