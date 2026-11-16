@@ -75,6 +75,17 @@ export function llmSegments(llm: Pick<LlmPhases, "first_token_at" | "first_think
   return segments.filter((segment) => segment.end > segment.start);
 }
 
+/**
+ * Output tokens per second of generation, from the first token on: the wait before it is the
+ * provider's, not the model's speed. Null without output or generation time.
+ */
+export function outputRate(llm: LlmPhases, start: number, end: number): number | null {
+  const generatingMs = llmSegments(llm, start, end)
+    .filter((segment) => segment.category !== "llmWaiting")
+    .reduce((sum, segment) => sum + segment.end - segment.start, 0);
+  return llm.output_tokens > 0 && generatingMs > 0 ? llm.output_tokens / (generatingMs / 1000) : null;
+}
+
 /** The spans in tree order (children by start), each clipped to the turn and with its depth; the root has depth 0. */
 export function timelineRows(spans: Span[], turnEnd: number): TimelineRow[] {
   const children = new Map<string | null, Span[]>();

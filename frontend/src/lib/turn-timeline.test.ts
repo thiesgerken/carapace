@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type { LlmPhases, LlmRequestRecord, Span } from "./types";
-import { groupRequestsByTurn, llmSegments, summarizeTurn, timelineRows, waterfallLines } from "./turn-timeline";
+import { groupRequestsByTurn, llmSegments, outputRate, summarizeTurn, timelineRows, waterfallLines } from "./turn-timeline";
 
 const T0 = Date.parse("2026-11-16T12:00:00Z");
 const at = (ms: number) => new Date(T0 + ms).toISOString();
@@ -181,4 +181,11 @@ test("requests group by turn, newest first, and requests outside a turn group by
       ["t1", ["a2", "a1"]],
     ],
   );
+});
+
+test("the output rate counts generation from the first token on, and needs output", () => {
+  assert.equal(outputRate(llm({ output_tokens: 300, first_token_at: at(1000) }), T0, T0 + 4000), 100);
+  assert.equal(outputRate(llm({ output_tokens: 0, first_token_at: at(1000) }), T0, T0 + 4000), null);
+  // Without a first token the whole request is waiting: no generation time to divide by.
+  assert.equal(outputRate(llm({ output_tokens: 300 }), T0, T0 + 4000), null);
 });

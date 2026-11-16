@@ -269,7 +269,8 @@ test("the timeline tab shows a turn's waterfall and summary, follows new turns a
     assert.match(text(), /Not covered500 ms · 13%/);
     // The label button of each line; the chevron is the other one.
     const rows = () => Array.from(view.container.querySelectorAll("ol > li"), (line) => line.querySelector("button[title]")!);
-    assert.deepEqual(rows().map((row) => row.textContent), ["turn4 s", "agent request20 out · 10 tok/s3 s", "ls /backups500 ms"]);
+    assert.deepEqual(rows().map((row) => row.textContent), ["turn4 s", "agent request3 s", "ls /backups500 ms"]);
+    assert.equal(rows()[1].getAttribute("title"), "llm · agent request\n20 output tokens · 10 tok/s", "the output stays off the row, in its tooltip");
     assert.deepEqual(rows().map((row) => row.querySelector('[role="img"]')?.getAttribute("aria-label")), ["turn", "llm", "exec"]);
     const bar = (index: number) => view.container.querySelectorAll("ol > li")[index].querySelector<HTMLElement>("span.absolute[style*=left]")!;
     assert.equal(bar(2).style.left, "75%");
@@ -283,14 +284,17 @@ test("the timeline tab shows a turn's waterfall and summary, follows new turns a
     await settle();
     assert.match(text(), /Input tokens12,345/);
     assert.match(text(), /Until first token1 s/);
+    assert.match(text(), /Output speed10 tok\/s/);
     const openRole = Array.from(view.container.querySelectorAll("button")).find((button) => button.textContent === "Show in the Agent tab");
     assert.ok(openRole, "the agent's latest request links to the agent tab");
     await click(openRole);
     await settle();
     assert.equal(view.container.querySelector('[role="radio"][aria-checked="true"]')?.textContent, "Agent");
     // The agent's requests sit under their turn, which links back to the Turns tab.
-    assert.deepEqual(Array.from(view.container.querySelectorAll('th[scope="rowgroup"]'), (header) => header.textContent), ["11/9, 12:00:00 PMCheck the backupsShow turn"]);
-    await click(Array.from(view.container.querySelectorAll("button")).find((button) => button.textContent === "Show turn")!);
+    const turnHeaders = () => Array.from(view.container.querySelectorAll('th[scope="rowgroup"]'), (header) => header.textContent);
+    assert.deepEqual(turnHeaders(), ["11/9, 12:00:00 PMCheck the backupsShow turn"]);
+    const pill = (label: string) => Array.from(view.container.querySelectorAll('[role="radio"]')).find((radio) => radio.textContent === label)!;
+    await click(pill("Turns"));
     await settle();
 
     // A span of a new turn refetches the list once the burst settles, and the view follows the newest turn.
@@ -301,6 +305,14 @@ test("the timeline tab shows a turn's waterfall and summary, follows new turns a
     await settle();
     assert.equal(view.container.querySelector("select")?.value, "t2");
     assert.deepEqual(rows().map((row) => row.textContent), ["turn2 s"]);
+
+    // "Show turn" on an older turn's requests opens that turn, and the view stays on it.
+    await click(pill("Agent"));
+    await settle();
+    await click(Array.from(view.container.querySelectorAll("button")).find((button) => button.textContent === "Show turn")!);
+    await settle();
+    assert.equal(view.container.querySelector('[role="radio"][aria-checked="true"]')?.textContent, "Turns");
+    assert.equal(view.container.querySelector("select")?.value, "t1");
 
 
     await view.unmount();
