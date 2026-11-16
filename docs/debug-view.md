@@ -178,6 +178,30 @@ worker, where a span would change the trace off the loop. Wrap the `await asynci
 never the function running inside it. Code in another task than the turn (the proxy) does not inherit the contextvar; it enters
 `attach(trace, parent_id)` with the session's `TurnTrace` to put its spans under an explicit parent.
 
+### Sandbox spans
+
+| Kind | Name | Where | Attrs |
+| --- | --- | --- | --- |
+| `exec` | `exec` | the `exec` tool's sandbox call | `command` (≤ 200 chars), `exit_code` |
+| `exec` | `mcp:<server>` | a stdio MCP bridge call (list or tool call) | `skill`, `mode`, `tool`, `exit_code` |
+| `file` | `read`, `write`, `str_replace`, `send_file` | the file tools' sandbox calls | `path` (≤ 200 chars) |
+| `sandbox` | `ensure` | a sandbox start, resume or re-attach before a call can run | |
+| `sandbox` | `create`, `resume`, `warm claim`, `wait_for_ready`, `knowledge clone`, `hooks`, `proxy setup`, `git identity` | the steps of a start, under `ensure` | `claimed` on `warm claim` |
+| `skill` | `activate` | the sandbox skill activator, also when a restart reruns it | `skill`, `exit_code` |
+| `skill` | `mcp prewarm` | `use_skill` connecting the skill's MCP servers | `skill` |
+| `domain` | the domain | a proxy domain check | `domain`, `allowed` |
+
+A sandbox that is already running gets no `ensure` span, so the common case adds no row per call.
+The exec span's command is not the MCP bridge's: that one carries the tool arguments.
+
+Calls from inside the sandbox reach the server outside the turn's task: the proxy's domain checks,
+the sandbox API (credentials, git) and the pre-receive hook's push evaluation. They enter
+`attach_sandbox_call(trace)` (via `SessionEngine.attach_sandbox_call(session_id)`), which nests their
+spans under the session's newest running `exec` or `file` span, else under the turn. A call cannot
+tell which of several parallel exec calls made it, so the newest one wins. Outside a running turn
+they record nothing. A user decision pending in a domain check shows as a `wait` span under its
+`domain` span.
+
 ### Storage
 
 Spans of the running turn live in memory, on the `TurnTrace` of the session's `ActiveSession`. When

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import contextlib
 import subprocess
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
@@ -672,6 +673,9 @@ def _patch_lifespan_dependencies(tmp_path, monkeypatch, *, stub_model_factory: b
 
         def is_agent_running(self, _session_id: str) -> bool:
             return False
+
+        def attach_sandbox_call(self, _session_id: str) -> contextlib.AbstractContextManager[None]:
+            return contextlib.nullcontext()
 
         def close_orphaned_approval_requests(self) -> None:
             return None

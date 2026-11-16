@@ -68,6 +68,13 @@ class TurnTrace:
         span.ended_at = datetime.now(tz=UTC)
         self._on_change(span)
 
+    def sandbox_call_parent(self) -> str:
+        """The span a call from inside the sandbox nests under: the newest running exec or file span, else the root."""
+        spans = list(self.spans.values())
+        # ponytail: a call can't tell which of several parallel exec/file spans made it; the newest wins.
+        running = (s for s in reversed(spans) if s.status == "running" and s.kind in ("exec", "file"))
+        return next(running, next(s for s in spans if s.parent_id is None)).span_id
+
     def close(self) -> list[Span]:
         """End the spans still open as interrupted and return all spans for the flush."""
         for span in self.spans.values():
@@ -90,6 +97,19 @@ def attach(trace: TurnTrace, parent_id: str) -> Iterator[None]:
         yield
     finally:
         _current.reset(token)
+
+
+@contextmanager
+def attach_sandbox_call(trace: TurnTrace | None) -> Iterator[None]:
+    """Nest the spans of a call from inside the sandbox (proxy, sandbox API) in its session's running turn.
+
+    *trace* is the session's running turn, ``None`` outside one: then the block records no spans.
+    """
+    if trace is None or trace.closed:
+        yield
+        return
+    with attach(trace, trace.sandbox_call_parent()):
+        yield
 
 
 @contextmanager
