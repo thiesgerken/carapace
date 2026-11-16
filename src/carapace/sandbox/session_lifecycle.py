@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import secrets
 import shlex
 import time
@@ -15,6 +16,7 @@ from sqlalchemy.exc import IntegrityError
 from ..database.engine import SessionFactory
 from ..database.models import SandboxTokenRow
 from ..security.context import ApprovalSource, ApprovalVerdict
+from ..spans import span
 from .runtime import ContainerRuntime, DuplicateSandboxError, PoolSandbox, SandboxConfig
 from .state import load_sandbox_snapshot
 
@@ -93,7 +95,8 @@ class SandboxSessionLifecycle:
         """Replenish the warm pool in the background without blocking session start."""
         if self._runtime.runtime_kind != "kubernetes":
             return
-        task = asyncio.create_task(self._refill_warm_pool())
+        # A fresh context: the refill outlives the turn that triggered it and must not record spans into it.
+        task = asyncio.create_task(self._refill_warm_pool(), context=contextvars.Context())
         self._warm_refill_tasks.add(task)
         task.add_done_callback(self._warm_refill_tasks.discard)
 
@@ -289,7 +292,8 @@ class SandboxSessionLifecycle:
                 sc.last_used = time.time()
                 return sc, False
             try:
-                await self._runtime.resume_sandbox(sandbox_name, self._base_image)
+                with span("sandbox", "resume"):
+                    await self._runtime.resume_sandbox(sandbox_name, self._base_image)
                 sc.last_used = time.time()
                 await self.wait_for_ready(sc.container_id, session_id)
                 await self.log_assignment(
@@ -332,7 +336,8 @@ class SandboxSessionLifecycle:
                         logger.info(f"Re-attached to running sandbox {sandbox_name} for session {session_id}")
                         needs_runtime_setup = False
                     else:
-                        await self._runtime.resume_sandbox(sandbox_name, self._base_image)
+                        with span("sandbox", "resume"):
+                            await self._runtime.resume_sandbox(sandbox_name, self._base_image)
                         await self.wait_for_ready(existing_id, session_id)
                         logger.info(f"Resumed orphaned sandbox {sandbox_name} for session {session_id}")
                         needs_runtime_setup = True
@@ -391,7 +396,8 @@ class SandboxSessionLifecycle:
                 environment=env,
                 command=command,
             )
-            container_id = await self._runtime.create_sandbox(sandbox_config)
+            with span("sandbox", "create"):
+                container_id = await self._runtime.create_sandbox(sandbox_config)
             ip = await self._runtime.get_ip(container_id, self._network_name)
             await self.wait_for_ready(container_id, session_id)
             await self.log_assignment(
@@ -464,7 +470,12 @@ class SandboxSessionLifecycle:
         """Attach an existing warm sandbox to *session_id* when supported by the runtime."""
         if self._warm_pool_size <= 0 or self._runtime.runtime_kind != "kubernetes":
             return None
+        with span("sandbox", "warm claim") as claim:
+            sc = await self._claim_from_pool(session_id, env)
+            claim.attrs["claimed"] = sc is not None
+        return sc
 
+    async def _claim_from_pool(self, session_id: str, env: dict[str, str]) -> SessionContainer | None:
         async with self._warm_claim_lock:
             assigned = {sc.sandbox_id for sc in self._state.sessions.values() if sc.sandbox_id}
             pool = await self._runtime.list_pool_sandboxes()
@@ -571,16 +582,19 @@ class SandboxSessionLifecycle:
 
     async def wait_for_ready(self, container_id: str, session_id: str) -> None:
         """Poll container logs until the ready marker appears."""
-        last_output = ""
-        for _ in range(self._READY_TIMEOUT_SECONDS):
-            last_output = await self._runtime.logs(container_id, tail=10)
-            if self._READY_MARKER in last_output:
-                return
-            await asyncio.sleep(1)
-        logger.warning(
-            f"Sandbox for {session_id} did not become ready within {self._READY_TIMEOUT_SECONDS}s "
-            f"(container={container_id}); last log tail: {last_output!r}"
-        )
+        with span("sandbox", "wait_for_ready") as wait:
+            last_output = ""
+            for _ in range(self._READY_TIMEOUT_SECONDS):
+                last_output = await self._runtime.logs(container_id, tail=10)
+                if self._READY_MARKER in last_output:
+                    wait.attrs["ready"] = True
+                    return
+                await asyncio.sleep(1)
+            wait.attrs["ready"] = False
+            logger.warning(
+                f"Sandbox for {session_id} did not become ready within {self._READY_TIMEOUT_SECONDS}s "
+                f"(container={container_id}); last log tail: {last_output!r}"
+            )
 
     async def clone_knowledge_repo(
         self,
@@ -590,32 +604,34 @@ class SandboxSessionLifecycle:
         env: dict[str, str] | None = None,
     ) -> None:
         """Clone the knowledge repo into the sandbox if not already present."""
-        probe = await self._runtime.exec(container_id, "test -d /workspace/.git", timeout=5)
-        if probe.exit_code == 0:
-            logger.debug(f"Knowledge repo already present in sandbox for {session_id}")
-        else:
-            result = await self._runtime.exec(
-                container_id,
-                "git clone $GIT_REPO_URL /workspace",
-                timeout=60,
-                env=env,
-            )
-            if result.exit_code != 0:
-                raise RuntimeError(
-                    f"Git clone failed in sandbox for {session_id} (exit {result.exit_code}): {result.output}"
+        with span("sandbox", "knowledge clone"):
+            probe = await self._runtime.exec(container_id, "test -d /workspace/.git", timeout=5)
+            if probe.exit_code == 0:
+                logger.debug(f"Knowledge repo already present in sandbox for {session_id}")
+            else:
+                result = await self._runtime.exec(
+                    container_id,
+                    "git clone $GIT_REPO_URL /workspace",
+                    timeout=60,
+                    env=env,
                 )
+                if result.exit_code != 0:
+                    raise RuntimeError(
+                        f"Git clone failed in sandbox for {session_id} (exit {result.exit_code}): {result.output}"
+                    )
 
-        # Always (re)install the hook, even when the repo survived on the PVC: it may
-        # predate the current hook script.
-        await self.install_commit_msg_hook(container_id, session_id)
+            # Always (re)install the hook, even when the repo survived on the PVC: it may
+            # predate the current hook script.
+            await self.install_commit_msg_hook(container_id, session_id)
 
     async def setup_proxy(self, container_id: str, session_id: str, env: dict[str, str]) -> None:
         """Run sandbox proxy bootstrap so claimed warm sandboxes match cold-start behavior."""
-        result = await self._runtime.exec(container_id, "setup-proxy.sh", timeout=30, env=env)
-        if result.exit_code != 0:
-            raise RuntimeError(
-                f"Proxy setup failed in sandbox for {session_id} (exit {result.exit_code}): {result.output}"
-            )
+        with span("sandbox", "proxy setup"):
+            result = await self._runtime.exec(container_id, "setup-proxy.sh", timeout=30, env=env)
+            if result.exit_code != 0:
+                raise RuntimeError(
+                    f"Proxy setup failed in sandbox for {session_id} (exit {result.exit_code}): {result.output}"
+                )
 
     async def setup_git_identity(self, container_id: str, session_id: str) -> None:
         """Configure git user.name and user.email globally in the sandbox.
@@ -625,40 +641,42 @@ class SandboxSessionLifecycle:
         the container restarts, so it must be reapplied whenever the runtime may be
         fresh (see ``SandboxManager._attach_or_start``).
         """
-        name_tpl = self._author_for_session(session_id).replace("%s", session_id)
-        if "<" in name_tpl and name_tpl.endswith(">"):
-            name, _, email = name_tpl.rpartition("<")
-            name, email = name.strip(), email.rstrip(">").strip()
-        else:
-            name, email = name_tpl, f"{session_id}@carapace"
-        name_sh = name.replace("%h", "$(hostname)")
-        email_sh = email.replace("%h", "$(hostname)")
-        cmd = (
-            f"git config --global user.name {shlex.quote(name_sh)} && "
-            f"git config --global user.email {shlex.quote(email_sh)}"
-        )
-        result = await self._runtime.exec(container_id, cmd, timeout=10)
-        if result.exit_code != 0:
-            raise RuntimeError(
-                f"Git identity setup failed in sandbox for {session_id} (exit {result.exit_code}): {result.output}"
+        with span("sandbox", "git identity"):
+            name_tpl = self._author_for_session(session_id).replace("%s", session_id)
+            if "<" in name_tpl and name_tpl.endswith(">"):
+                name, _, email = name_tpl.rpartition("<")
+                name, email = name.strip(), email.rstrip(">").strip()
+            else:
+                name, email = name_tpl, f"{session_id}@carapace"
+            name_sh = name.replace("%h", "$(hostname)")
+            email_sh = email.replace("%h", "$(hostname)")
+            cmd = (
+                f"git config --global user.name {shlex.quote(name_sh)} && "
+                f"git config --global user.email {shlex.quote(email_sh)}"
             )
+            result = await self._runtime.exec(container_id, cmd, timeout=10)
+            if result.exit_code != 0:
+                raise RuntimeError(
+                    f"Git identity setup failed in sandbox for {session_id} (exit {result.exit_code}): {result.output}"
+                )
 
     async def install_commit_msg_hook(self, container_id: str, session_id: str) -> None:
         """Install a commit-msg hook that appends a session trailer to commits."""
-        key = self._COMMIT_TRAILER_KEY
-        hook = (
-            "#!/bin/sh\n"
-            f'if ! grep -q "^{key}:" "$1"; then\n'
-            f'  echo "" >> "$1"\n'
-            f'  echo "{key}: $CARAPACE_SESSION_ID" >> "$1"\n'
-            "fi\n"
-        )
-        cmd = (
-            "mkdir -p /workspace/.git/hooks && "
-            f"printf '%s' '{hook}' > /workspace/.git/hooks/commit-msg && "
-            "chmod +x /workspace/.git/hooks/commit-msg"
-        )
-        await self._runtime.exec(container_id, cmd, timeout=10)
+        with span("sandbox", "hooks"):
+            key = self._COMMIT_TRAILER_KEY
+            hook = (
+                "#!/bin/sh\n"
+                f'if ! grep -q "^{key}:" "$1"; then\n'
+                f'  echo "" >> "$1"\n'
+                f'  echo "{key}: $CARAPACE_SESSION_ID" >> "$1"\n'
+                "fi\n"
+            )
+            cmd = (
+                "mkdir -p /workspace/.git/hooks && "
+                f"printf '%s' '{hook}' > /workspace/.git/hooks/commit-msg && "
+                "chmod +x /workspace/.git/hooks/commit-msg"
+            )
+            await self._runtime.exec(container_id, cmd, timeout=10)
 
     def prepare_session_recreate(self, session_id: str) -> None:
         """Drop container reference while keeping all session state."""

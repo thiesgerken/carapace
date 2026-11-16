@@ -43,6 +43,7 @@ from ..sandbox.runtime import SkillActivationError, SkillActivationInputs, Skill
 from ..security.context import RewindEntry, SessionSecurity, copy_sentinel_state
 from ..security.sentinel import Sentinel
 from ..skills import SkillDocumentError, SkillRegistry
+from ..spans import attach_sandbox_call
 from ..usage import (
     LlmRequestLog,
     LlmRequestState,
@@ -433,6 +434,11 @@ class SessionEngine(
     def is_agent_running(self, session_id: str) -> bool:
         active = self._active.get(session_id)
         return active is not None and active.agent_task is not None and not active.agent_task.done()
+
+    def attach_sandbox_call(self, session_id: str) -> contextlib.AbstractContextManager[None]:
+        """Nest the spans of a call from inside *session_id*'s sandbox in the session's running turn."""
+        active = self._active.get(session_id)
+        return attach_sandbox_call(active.turn_trace if active is not None else None)
 
     def get_or_activate(self, session_id: str) -> ActiveSession:
         """Return (or load) the ``ActiveSession``."""

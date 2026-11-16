@@ -275,6 +275,32 @@ A deferred tool call (`ApprovalRequired`) is control flow, not a failure: its sp
 `deferred: true`, and the call runs again as a new `tool` span once the user answered. A git push
 escalation waits with reason `approval`. The title is generated after the turn and has no spans.
 
+### Sandbox spans
+
+| Kind | Name | Where | Attrs |
+| --- | --- | --- | --- |
+| `exec` | `exec` | the `exec` tool's sandbox call | `command` (≤ 200 chars), `exit_code` |
+| `exec` | `mcp:<server>` | a stdio MCP bridge call (list or tool call) | `skill`, `mode`, `tool`, `exit_code` |
+| `file` | `read`, `write`, `str_replace`, `send_file` | the file tools' sandbox calls | `path` (≤ 200 chars) |
+| `sandbox` | `ensure` | a sandbox start, resume or re-attach before a call can run | |
+| `sandbox` | `create`, `resume`, `warm claim`, `wait_for_ready`, `knowledge clone`, `hooks`, `proxy setup`, `git identity` | the steps of a start, under `ensure` | `claimed` on `warm claim`, `ready` on `wait_for_ready` |
+| `skill` | `activate` | the sandbox skill activator, also when a restart reruns it | `skill`, `exit_code` |
+| `skill` | `mcp prewarm` | `use_skill` connecting the skill's MCP servers | `skill` |
+| `domain` | the domain (≤ 200 chars) | a proxy domain check | `domain` (≤ 200 chars), `allowed` |
+
+A sandbox that is already running gets no `ensure` span, so the common case adds no row per call.
+Warm pool refills run in a fresh context, so the pool's own startups never land in the turn that
+triggered them.
+The exec span's command is not the MCP bridge's: that one carries the tool arguments.
+
+Calls from inside the sandbox reach the server outside the turn's task: the proxy's domain checks,
+the sandbox API (credentials, git) and the pre-receive hook's push evaluation. They enter
+`attach_sandbox_call(trace)` (via `SessionEngine.attach_sandbox_call(session_id)`), which nests their
+spans under the session's newest running `exec` or `file` span, else under the turn. A call cannot
+tell which of several parallel exec calls made it, so the newest one wins. Outside a running turn
+they record nothing. A user decision pending in a domain check shows as a `wait` span under its
+`domain` span.
+
 ### API
 
 Both endpoints need the `history` read scope.

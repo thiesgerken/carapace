@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import contextlib
 from pathlib import Path
 from typing import Any, cast
 from unittest.mock import AsyncMock
@@ -100,6 +101,7 @@ class TestProxyCheckDomain:
         return ProxyServer(
             verify_session_token=lambda sid, tok: True,
             get_allowed_domains=lambda sid: domains,
+            attach_sandbox_call=lambda sid: contextlib.nullcontext(),
         )
 
     def test_allowed_exact(self):
@@ -172,6 +174,7 @@ async def test_handle_http_supports_absolute_https_urls(monkeypatch: pytest.Monk
     proxy = ProxyServer(
         verify_session_token=lambda sid, tok: True,
         get_allowed_domains=lambda sid: {"paperless.gerken.haus"},
+        attach_sandbox_call=lambda sid: contextlib.nullcontext(),
     )
 
     class FakeReader:
@@ -1109,6 +1112,7 @@ async def test_proxy_start_stop():
     proxy = ProxyServer(
         verify_session_token=lambda sid, tok: False,
         get_allowed_domains=lambda sid: set(),
+        attach_sandbox_call=lambda sid: contextlib.nullcontext(),
         host="127.0.0.1",
         port=0,  # OS-assigned port
     )
