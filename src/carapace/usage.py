@@ -457,7 +457,8 @@ def usage_limits_for_remaining_budget(
 
 LlmSource = Literal["agent", "sentinel", "titler", "compaction", "memory"]
 LlmRequestPhase = Literal["processing_prompt", "thinking", "generating"]
-LlmRequestOutcome = Literal["completed", "interrupted"]
+LlmRequestOutcome = Literal["completed", "interrupted", "failed"]
+UnfinishedOutcome = Literal["interrupted", "failed"]
 LlmContextStatus = Literal["running", "completed", "failed", "interrupted"]
 CompactionTarget = Literal["agent", "sentinel"]
 
@@ -609,7 +610,10 @@ class LlmRequestLog(BaseModel):
     records: list[LlmRequestRecord] = Field(default_factory=list)
 
 
-def interrupted_request_record(state: LlmRequestState, *, ts: datetime | None = None) -> LlmRequestRecord:
+def unfinished_request_record(
+    state: LlmRequestState, outcome: UnfinishedOutcome, *, ts: datetime | None = None
+) -> LlmRequestRecord:
+    """The record of a request that ended without a response: only its timestamps, no usage or cost."""
     when = ts or datetime.now(tz=UTC)
     return LlmRequestRecord(
         ts=when,
@@ -618,7 +622,7 @@ def interrupted_request_record(state: LlmRequestState, *, ts: datetime | None = 
         turn_id=state.turn_id,
         span_id=state.span_id,
         model_name=state.model_name,
-        outcome="interrupted",
+        outcome=outcome,
         started_at=state.started_at,
         first_token_at=state.first_token_at,
         first_thinking_at=state.first_thinking_at,

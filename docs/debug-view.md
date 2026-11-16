@@ -172,16 +172,18 @@ feeds the usage stats. `role` is optional and takes the same roles as the contex
 `history` read scope.
 
 A record keeps the numbers of a request, not its context, so the log grows by one small row
-per request instead of one full context. Its `outcome` is `completed`, or `interrupted` for a request
-that was cancelled: the turn stopped, or a sentinel timeout cut it short. It is recorded when its
-context turns `interrupted`, before that notification goes out. Token counts are provider-reported: input, output, cache read,
+per request instead of one full context. Its `outcome` is `completed`; `interrupted` for a request
+that was cancelled, e.g. because the turn stopped; or `failed` for one that a provider error or a
+sentinel timeout cut short. An unfinished request is recorded when its context turns `interrupted` or
+`failed`, before that notification goes out. A streamed request learns of a provider error only as a
+cancellation, so its record turns from `interrupted` to `failed` when the run reports the error
+(`fail_llm_context`). Token counts are provider-reported: input, output, cache read,
 cache write, and reasoning when the provider reports it. A completed record carries the same `cost`
 as its context (see [Usage and cost](#usage-and-cost)). Cache counts and the cost are `null` on
-records written before they were kept, and the cost on interrupted records.
+records written before they were kept, and the cost on interrupted and failed records.
 
-Failed requests leave no record, so neither the **Requests** table nor the turn timeline has a row
-for them. Their error shows only in the
-role's LLM context, as long as it is the latest one.
+A failed record has no error message: the error shows only in the role's LLM context, as long as it is
+the latest one.
 
 ## Usage and cost
 
@@ -325,7 +327,7 @@ field, `null` except on `kind == "llm"` spans, which carry the request's phases 
 `role`, `request_id`, `model_name`, `first_token_at`, `first_thinking_at`, `last_thinking_at`,
 `first_text_at`, input, output, cache read and cache write tokens, and `cost`. An LLM span's
 `span_id` is its `request_id`, its `name` the role. Its status is `ok` for a completed request,
-`interrupted` for an interrupted one and `running` for each request in flight.
+`interrupted` for an interrupted one, `error` for a failed one and `running` for each request in flight.
 
 ### WebSocket
 
@@ -337,7 +339,6 @@ bars included (their `span_id` is the `request_id`):
 ```
 
 Clients refetch the timeline, and the turn list on a `turn_id` they don't know yet. LLM bars notify
-`running` when their request starts and `ok` when it completes. An interrupted request is recorded
-when its context turns `interrupted` (a stop, or a sentinel timeout mid-turn) but sends no `span`
-notification of its own: its bar updates with the next span change, at the latest the root span's
-end.
+like spans: `running` when their request starts, then `ok`, `interrupted` or `error` (a failed
+request) when it ends. A streamed request cut by a provider error first notifies `interrupted`, then
+`error` once the run reports the failure.
