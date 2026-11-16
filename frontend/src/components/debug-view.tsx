@@ -1,7 +1,23 @@
 "use client";
 
 import { useCallback, useState, type ReactNode } from "react";
-import { Braces, CircleSlash, CircleX, Loader2 } from "lucide-react";
+import {
+  ArrowDownLeft,
+  ArrowUpRight,
+  Bot,
+  Box,
+  Braces,
+  Brain,
+  CircleSlash,
+  CircleX,
+  CornerDownLeft,
+  Loader2,
+  RotateCcw,
+  ScrollText,
+  User,
+  Wrench,
+  type LucideIcon,
+} from "lucide-react";
 import { useFormatter, useLocale, useTranslations } from "next-intl";
 import { useFormatCost } from "@/components/memory-ui";
 import { MarkdownContent } from "@/components/markdown-content";
@@ -17,7 +33,9 @@ import { formatUsd } from "@/lib/memory";
 import { fencedCodeBlock } from "@/lib/sandbox-read";
 import {
   DEBUG_ROLES,
+  INPUT_SHAPE_KINDS,
   type DebugRole,
+  type InputShape,
   type DebugTab,
   type LlmContext,
   type LlmContextStatus,
@@ -193,27 +211,43 @@ function RoleDebug({
         <p className="text-sm text-muted-foreground">{t("empty")}</p>
       ) : (
         <div id={CONTEXT_ANCHOR} className="scroll-mt-4">
-          <LlmContextView context={shown} />
+          <LlmContextView context={shown} record={timeline && "value" in timeline ? timeline.value.find((r) => r.request_id === shown.request_id) : undefined} />
         </div>
       )}
     </>
   );
 }
 
-export function LlmContextView({ context }: { context: LlmContext }) {
+/** The latest request of a role; *record* is its row in the request log, with phases and input shape, once it is recorded. */
+export function LlmContextView({ context, record }: { context: LlmContext; record?: LlmRequestRecord }) {
   const t = useTranslations("debugView");
+  const tTimeline = useTranslations("debugView.timeline");
   const format = useFormatter();
+  const [start, end] = [Date.parse(context.started_at), context.completed_at ? Date.parse(context.completed_at) : null];
 
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-start gap-x-8 gap-y-3 rounded-2xl border border-border bg-background/88 p-4 shadow-sm">
-        <Stat label={t("status")} value={<StatusBadge status={context.status} />} />
+        {/* Completed is the norm; only the exceptions show a status. */}
+        {context.status === "completed" ? null : <Stat label={t("status")} value={<StatusBadge status={context.status} />} />}
         <Stat label={t("model")} value={<span className="font-mono">{context.model_name}</span>} />
         <Stat label={t("started")} value={format.dateTime(new Date(context.started_at), { dateStyle: "medium", timeStyle: "medium" })} />
+        {end === null ? null : (
+          <Stat
+            label={t("duration")}
+            value={
+              <span className="flex items-center gap-2">
+                <span className="tabular-nums">{tTimeline("seconds", { seconds: format.number((end - start) / 1000, { maximumFractionDigits: 1 }) })}</span>
+                {record ? <PhaseBar phases={record} start={start} end={end} className="w-24" /> : null}
+              </span>
+            }
+          />
+        )}
         {context.compaction_target ? (
           <Stat label={t("compacted")} value={t(`compactionTargets.${context.compaction_target}`)} />
         ) : null}
         {context.response?.usage ? <UsageStats usage={context.response.usage} cost={context.cost} /> : null}
+        {record?.input_shape ? <InputShapeBar shape={record.input_shape} /> : null}
       </div>
 
       {context.error ? (
@@ -479,14 +513,46 @@ function UsageStats({ usage, cost }: { usage: LlmRequestUsage; cost: LlmRequestC
   );
 }
 
+/** Estimated input share per message kind, in the colors of the message parts below. */
+function InputShapeBar({ shape }: { shape: InputShape }) {
+  const t = useTranslations("debugView");
+  const format = useFormatter();
+  const kinds = INPUT_SHAPE_KINDS.filter((kind) => shape[kind] >= 0.005);
+  const percent = (share: number) => format.number(share, { style: "percent", maximumFractionDigits: 0 });
+  return (
+    <div className="flex basis-full flex-col gap-2 border-t border-border/60 pt-3">
+      <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">{t("inputShape")}</span>
+      <div className="flex h-2 w-full overflow-hidden rounded-full" role="img" aria-label={kinds.map((kind) => `${t(`shape.${kind}`)} ${percent(shape[kind])}`).join(", ")}>
+        {kinds.map((kind) => (
+          <span key={kind} className={SHAPE_CLASS[kind]} style={{ width: `${shape[kind] * 100}%` }} />
+        ))}
+      </div>
+      <ul className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
+        {kinds.map((kind) => (
+          <li key={kind} className="flex items-center gap-1.5">
+            <span className={cn("h-2 w-2 rounded-full", SHAPE_CLASS[kind])} />
+            {t(`shape.${kind}`)}
+            <span className="tabular-nums text-muted-foreground">{percent(shape[kind])}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function MessageCard({ message, label, highlight = false }: { message: LlmMessage; label: string; highlight?: boolean }) {
   const t = useTranslations("debugView");
   const [raw, setRaw] = useState(false);
+  // To the model or from it: the arrow says which way the message went.
+  const Direction = message.kind === "request" ? ArrowUpRight : ArrowDownLeft;
 
   return (
     <section className={cn("rounded-xl border bg-background p-3", highlight ? "border-[#236b86]/50 dark:border-sky-400/40" : "border-border")}>
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">{label}</span>
+      <div className="mb-2.5 flex items-center justify-between gap-2">
+        <span className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
+          <Direction aria-hidden className="h-3.5 w-3.5" />
+          {label}
+        </span>
         <button type="button" aria-pressed={raw} onClick={() => setRaw(!raw)} className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground">
           <Braces className="h-3.5 w-3.5" />
           {raw ? t("showFormatted") : t("showRaw")}
@@ -495,7 +561,7 @@ function MessageCard({ message, label, highlight = false }: { message: LlmMessag
       {raw ? (
         <Json value={message} />
       ) : (
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-3">
           {message.parts.map((part, index) => <PartCard key={index} part={part} />)}
         </div>
       )}
@@ -507,24 +573,51 @@ function PartCard({ part }: { part: LlmPart }) {
   const t = useTranslations("debugView.parts");
   switch (part.part_kind) {
     case "system-prompt":
-      return <Card label={t("systemPrompt")}><Content value={part.content} markdown /></Card>;
+      return <Card tone="system" label={t("systemPrompt")}><Content value={part.content} markdown /></Card>;
     case "user-prompt":
-      return <Card label={t("userPrompt")}><Content value={part.content} markdown /></Card>;
+      return <Card tone="user" label={t("userPrompt")}><Content value={part.content} markdown /></Card>;
     case "text":
-      return <Card label={t("text")}><Content value={part.content} markdown /></Card>;
+      return <Card tone="assistant" label={t("text")}><Content value={part.content} markdown /></Card>;
     case "thinking":
-      return <Card label={t("thinking")} muted><Content value={part.content} markdown /></Card>;
+      return <Card tone="thinking" label={t("thinking")} muted><Content value={part.content} markdown /></Card>;
     case "tool-call":
-      return <Card label={`${t("toolCall")} · ${part.tool_name}`} badge={part.tool_call_id}><Json value={parseArgs(part.args)} /></Card>;
+      return <Card tone="toolCall" label={`${t("toolCall")} · ${part.tool_name}`} badge={part.tool_call_id}><Json value={parseArgs(part.args)} /></Card>;
     case "tool-return":
-      return <Card label={`${t(part.outcome === "retried" ? "toolRetry" : "toolReturn")} · ${part.tool_name}`} badge={part.tool_call_id}><Content value={part.content} /></Card>;
+      return (
+        <Card tone={part.outcome === "retried" ? "retry" : "toolReturn"} label={`${t(part.outcome === "retried" ? "toolRetry" : "toolReturn")} · ${part.tool_name}`} badge={part.tool_call_id}>
+          <Content value={part.content} clamp />
+        </Card>
+      );
     case "retry-feedback":
-      return <Card label={t("retryFeedback")}><Content value={part.content} /></Card>;
+      return <Card tone="retry" label={t("retryFeedback")}><Content value={part.content} clamp /></Card>;
     default:
       // Provider-specific parts (native tools, files, compaction) render as what they are.
-      return <Card label={part.part_kind}><Json value={part} /></Card>;
+      return <Card tone="other" label={part.part_kind}><Json value={part} /></Card>;
   }
 }
+
+type PartTone = "system" | "user" | "assistant" | "thinking" | "toolCall" | "toolReturn" | "retry" | "other";
+
+// One icon and color per part kind; the input composition bar uses the same colors.
+const PART_TONE: Record<PartTone, { icon: LucideIcon; rail: string; text: string }> = {
+  system: { icon: ScrollText, rail: "border-slate-400 dark:border-slate-500", text: "text-slate-500 dark:text-slate-400" },
+  user: { icon: User, rail: "border-sky-500", text: "text-sky-600 dark:text-sky-400" },
+  assistant: { icon: Bot, rail: "border-emerald-500", text: "text-emerald-600 dark:text-emerald-400" },
+  thinking: { icon: Brain, rail: "border-violet-400 dark:border-violet-500", text: "text-violet-500 dark:text-violet-400" },
+  toolCall: { icon: Wrench, rail: "border-amber-500", text: "text-amber-600 dark:text-amber-400" },
+  toolReturn: { icon: CornerDownLeft, rail: "border-teal-500", text: "text-teal-600 dark:text-teal-400" },
+  retry: { icon: RotateCcw, rail: "border-orange-500", text: "text-orange-600 dark:text-orange-400" },
+  other: { icon: Box, rail: "border-zinc-300 dark:border-zinc-600", text: "text-muted-foreground" },
+};
+
+const SHAPE_CLASS: Record<(typeof INPUT_SHAPE_KINDS)[number], string> = {
+  system: "bg-slate-400 dark:bg-slate-500",
+  user: "bg-sky-500",
+  assistant: "bg-emerald-500",
+  tool_calls: "bg-amber-500",
+  tool_returns: "bg-teal-500",
+  other: "bg-zinc-300 dark:bg-zinc-600",
+};
 
 /** pydantic-ai keeps tool call args either as a dict or as the model's raw JSON string. */
 function parseArgs(args: unknown): unknown {
@@ -537,13 +630,30 @@ function parseArgs(args: unknown): unknown {
 }
 
 /** Prose to and from the model renders as Markdown; tool output stays verbatim, Markdown would mangle it. */
-function Content({ value, markdown = false }: { value: unknown; markdown?: boolean }) {
+function Content({ value, markdown = false, clamp = false }: { value: unknown; markdown?: boolean; clamp?: boolean }) {
   if (typeof value !== "string") return <Json value={value} />;
-  return markdown ? <MarkdownContent content={value} /> : <Verbatim>{value}</Verbatim>;
+  return markdown ? <MarkdownContent content={value} /> : <Verbatim clamp={clamp}>{value}</Verbatim>;
 }
 
-function Verbatim({ children }: { children: string }) {
-  return <pre className="whitespace-pre-wrap break-words rounded-lg bg-muted/50 p-2 font-mono text-xs">{children}</pre>;
+// Long tool output buries the conversation around it, so it starts cut to a preview.
+const PREVIEW_LINES = 12;
+const PREVIEW_CHARS = 1500;
+
+function Verbatim({ children, clamp = false }: { children: string; clamp?: boolean }) {
+  const t = useTranslations("debugView");
+  const [expanded, setExpanded] = useState(false);
+  const preview = children.split("\n").slice(0, PREVIEW_LINES).join("\n").slice(0, PREVIEW_CHARS);
+  const long = clamp && preview !== children;
+  return (
+    <div className="flex flex-col items-start gap-1">
+      <pre className="w-full whitespace-pre-wrap break-words rounded-lg bg-muted/50 p-2 font-mono text-xs">{long && !expanded ? `${preview}…` : children}</pre>
+      {long ? (
+        <button type="button" onClick={() => setExpanded(!expanded)} className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground">
+          {expanded ? t("showLess") : t("showAllLines", { count: children.split("\n").length })}
+        </button>
+      ) : null}
+    </div>
+  );
 }
 
 /** A string is tool call args the model sent as invalid JSON: shown as sent, not highlighted as JSON. */
@@ -552,11 +662,16 @@ function Json({ value }: { value: unknown }) {
   return <MarkdownContent content={fencedCodeBlock("json", JSON.stringify(value, null, 2))} />;
 }
 
-function Card({ label, badge, muted = false, children }: { label: string; badge?: string; muted?: boolean; children: ReactNode }) {
+function Card({ label, badge, tone, muted = false, children }: { label: string; badge?: string; tone?: PartTone; muted?: boolean; children: ReactNode }) {
+  const style = tone ? PART_TONE[tone] : null;
+  const Icon = style?.icon;
   return (
-    <div className={cn("min-w-0 rounded-lg border border-border/70 p-2.5 text-sm", muted && "bg-muted/30 text-muted-foreground")}>
+    <div className={cn("min-w-0 text-sm", style ? cn("border-l-2 py-0.5 pl-3", style.rail) : "rounded-lg border border-border/70 p-2.5", muted && "text-muted-foreground")}>
       <div className="mb-1.5 flex min-w-0 items-center justify-between gap-2 text-xs font-medium">
-        <span className="truncate">{label}</span>
+        <span className="flex min-w-0 items-center gap-1.5">
+          {Icon ? <Icon aria-hidden className={cn("h-3.5 w-3.5 shrink-0", style.text)} /> : null}
+          <span className="truncate">{label}</span>
+        </span>
         {badge ? <span className="truncate font-mono text-[11px] text-muted-foreground">{badge}</span> : null}
       </div>
       {children}
@@ -568,7 +683,7 @@ function Collapsible({ title, open = false, children }: { title: string; open?: 
   return (
     <details open={open} className="group rounded-2xl border border-border bg-muted/20 p-3">
       <summary className="cursor-pointer text-sm font-medium">{title}</summary>
-      <div className="mt-3 flex flex-col gap-2">{children}</div>
+      <div className="mt-3 flex flex-col gap-3">{children}</div>
     </details>
   );
 }

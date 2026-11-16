@@ -6,7 +6,7 @@ import messages from "../../messages/en.json";
 import { click, installDom, renderReact, runInAct } from "../../test/react-test-utils";
 import type { DebugRole, LlmContext, LlmRequestRecord, Span, TurnSummary, TurnTimeline } from "@/lib/types";
 
-import { DebugView } from "./debug-view";
+import { DebugView, LlmContextView } from "./debug-view";
 
 const SERVER = "https://carapace.example.test";
 
@@ -156,7 +156,7 @@ test("the debug view shows each role's latest context and refetches on WebSocket
     await runInAct(() => socket.onmessage?.({ data: JSON.stringify({ type: "llm_context", role: "agent", request_id: "r1", status: "completed" }) }));
     await settle();
 
-    assert.match(text(), /Completed/);
+    assert.doesNotMatch(text(), /Status/, "a completed request needs no status");
     // Cache write is 0 or unknown in every row, so it goes; a subscription request shows its equivalent cost.
     assert.deepEqual(rows()[0], ["11/9, 12:00:02 PM", "2.5 s", "12.3K", "32%", "4K", "20", "7", "≈ $0.043", "anthropic:sonnet"]);
     assert.equal(rows().length, 2);
@@ -319,6 +319,42 @@ test("the timeline tab shows a turn's waterfall and summary, follows new turns a
   } finally {
     globalThis.fetch = originalFetch;
     globalThis.WebSocket = originalWebSocket;
+    restore();
+  }
+});
+
+test("the latest request shows its duration with phases, its input composition, and long tool returns cut to a preview", async () => {
+  const restore = installDom();
+  try {
+    const output = Array.from({ length: 30 }, (_, index) => `line ${index + 1}`).join("\n");
+    const view = await renderReact(
+      <NextIntlClientProvider locale="en" messages={messages} timeZone="UTC">
+        <LlmContextView
+          context={context({
+            status: "completed",
+            completed_at: "2026-11-09T12:00:04Z",
+            messages: [{ kind: "request", parts: [{ part_kind: "tool-return", tool_name: "exec", content: output, tool_call_id: "call-0" }] }],
+          })}
+          record={record({
+            request_id: "r1",
+            started_at: "2026-11-09T12:00:00Z",
+            first_token_at: "2026-11-09T12:00:01Z",
+            completed_at: "2026-11-09T12:00:04Z",
+            input_shape: { system: 0.5, user: 0.1, assistant: 0, tool_calls: 0.1, tool_returns: 0.3, other: 0 },
+          })}
+        />
+      </NextIntlClientProvider>,
+    );
+    const text = () => view.container.textContent ?? "";
+    assert.match(text(), /Duration4 s/);
+    // Shares too small to see stay out of the legend.
+    assert.deepEqual(Array.from(view.container.querySelectorAll("li"), (item) => item.textContent), ["System50%", "User10%", "Tool calls10%", "Tool returns30%"]);
+    assert.match(text(), /line 12…/);
+    assert.doesNotMatch(text(), /line 13/);
+    await click(Array.from(view.container.querySelectorAll("button")).find((button) => button.textContent === "Show all 30 lines")!);
+    assert.match(text(), /line 30/);
+    await view.unmount();
+  } finally {
     restore();
   }
 });

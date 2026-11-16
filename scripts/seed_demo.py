@@ -60,6 +60,7 @@ from carapace.sandbox.snapshot import SessionSandboxSnapshot
 from carapace.session.manager import SessionManager, SessionMeta
 from carapace.spans import Span
 from carapace.usage import (
+    InputShapeRatios,
     LlmContext,
     LlmRequestLog,
     LlmRequestRecord,
@@ -656,6 +657,7 @@ def _request(
     started_at: datetime,
     completed_at: datetime,
     usage: RequestUsage,
+    input_shape: InputShapeRatios | None = None,
 ) -> LlmRequestRecord:
     return LlmRequestRecord(
         ts=completed_at,
@@ -671,7 +673,15 @@ def _request(
         completed_at=completed_at,
         reasoning_tokens=usage.details.get("reasoning_tokens"),
         usage_details=dict(usage.details),
+        input_shape=input_shape,
     )
+
+
+# The server estimates these with tiktoken; fixed here so the seed stays offline and the pictures stable.
+_INPUT_SHAPES = {
+    "agent": InputShapeRatios(system=0.46, user=0.03, assistant=0.06, tool_calls=0.07, tool_returns=0.38),
+    "sentinel": InputShapeRatios(system=0.71, user=0.29),
+}
 
 
 def _pancake_turn(prompt: datetime, contexts: list[LlmContext]) -> tuple[list[Span], list[LlmRequestRecord]]:
@@ -727,7 +737,7 @@ def _pancake_turn(prompt: datetime, contexts: list[LlmContext]) -> tuple[list[Sp
 
     context = {c.role: c for c in contexts}
     context_records = {
-        role: _request(role, c.request_id, c.started_at, c.completed_at, c.response.usage)
+        role: _request(role, c.request_id, c.started_at, c.completed_at, c.response.usage, _INPUT_SHAPES.get(role))
         for role, c in context.items()
         if c.response is not None and c.completed_at is not None
     }
