@@ -1,14 +1,14 @@
 # Debug View
 
-The debug view shows, per session and live, the latest **LLM context** of every agent role: exactly
-what went to the model in its last request, and what came back. Terms follow
-[GLOSSARY.md](../GLOSSARY.md).
+The debug view shows, per session and live, where each turn's time went (the **timeline**) and the
+latest **LLM context** of every agent role: exactly what went to the model in its last request, and
+what came back. Terms follow [GLOSSARY.md](../GLOSSARY.md).
 
 ## Using it
 
 The **Chat | Debug** switch in the session header opens `/?session=<ID>&view=debug`. The first tab,
 **Timeline**, opens by default and shows where a turn's time went (see [Timeline tab](#timeline-tab)). One tab per role
-follows; each shows the role's request timeline and its latest request:
+follows; each shows the role's **Requests** table and its latest request:
 
 - **Requests**: one row per recorded request of the role, newest first, so requests compare side by
   side: time, status, input, cache read, cache write, output and reasoning tokens, cache hits (cache
@@ -166,12 +166,12 @@ The session WebSocket sends a notification on every status change, without the c
 
 Clients refetch the role's context over REST when they get one.
 
-`GET /api/sessions/{session_id}/llm-requests?role=<role>` returns the session's request timeline:
-one `LlmRequestRecord` per request, oldest first, from the `session_llm_requests` log that also
+`GET /api/sessions/{session_id}/llm-requests?role=<role>` returns the session's request log, which
+the **Requests** tables show: one `LlmRequestRecord` per request, oldest first, from the `session_llm_requests` log that also
 feeds the usage stats. `role` is optional and takes the same roles as the contexts. It needs the
 `history` read scope.
 
-A record keeps the numbers of a request, not its context, so the timeline grows by one small row
+A record keeps the numbers of a request, not its context, so the log grows by one small row
 per request instead of one full context. Its `outcome` is `completed`, or `interrupted` for a request
 that was cancelled: the turn stopped, or a sentinel timeout cut it short. It is recorded when its
 context turns `interrupted`, before that notification goes out. Token counts are provider-reported: input, output, cache read,
@@ -179,7 +179,8 @@ cache write, and reasoning when the provider reports it. A completed record carr
 as its context (see [Usage and cost](#usage-and-cost)). Cache counts and the cost are `null` on
 records written before they were kept, and the cost on interrupted records.
 
-Failed requests leave no record, so the timeline has no row for them. Their error shows only in the
+Failed requests leave no record, so neither the **Requests** table nor the turn timeline has a row
+for them. Their error shows only in the
 role's LLM context, as long as it is the latest one.
 
 ## Usage and cost
@@ -245,8 +246,9 @@ Its parent is the current span, carried in a contextvar, so spans nest the way t
 status follows how the block exits. Outside a running turn `span()` records nothing, so callers never
 check. It works on the event-loop thread only: `asyncio.to_thread` copies the contextvar into its
 worker, where a span would change the trace off the loop. Wrap the `await asyncio.to_thread(...)`,
-never the function running inside it. Code in another task than the turn (the proxy) does not inherit the contextvar; it enters
-`attach(trace, parent_id)` with the session's `TurnTrace` to put its spans under an explicit parent.
+never the function running inside it. Code in another task than the turn does not inherit the
+contextvar: calls from inside the sandbox enter `attach_sandbox_call` (see
+[Sandbox spans](#sandbox-spans)). Only the turn runner calls `attach(trace, parent_id)` directly.
 
 ### Storage
 
@@ -334,5 +336,8 @@ bars included (their `span_id` is the `request_id`):
 {"type": "span", "turn_id": "9c1e0a7f", "span_id": "3f9c0a1b2d4e5f60", "status": "running"}
 ```
 
-Clients refetch the timeline, and the turn list on a `turn_id` they don't know yet. An interrupted
-LLM request is recorded when its turn stops, so its bar's last change arrives with the root span's.
+Clients refetch the timeline, and the turn list on a `turn_id` they don't know yet. LLM bars notify
+`running` when their request starts and `ok` when it completes. An interrupted request is recorded
+when its context turns `interrupted` (a stop, or a sentinel timeout mid-turn) but sends no `span`
+notification of its own: its bar updates with the next span change, at the latest the root span's
+end.
