@@ -29,6 +29,7 @@ import { useKeyedFetch } from "@/hooks/use-keyed-fetch";
 import { fetchLlmContext, fetchTurns, fetchTurnTimeline } from "@/lib/api";
 import {
   llmSegments,
+  outputRate,
   spanCategory,
   summarizeTurn,
   TIME_CATEGORIES,
@@ -345,29 +346,40 @@ function spanText({ kind, name, attrs }: Span): { text: string; mono: boolean } 
 /** The facts of a line's spans, in chain order. */
 function useLineFacts(): (chain: TimelineRow[]) => Fact[] {
   const t = useTranslations("debugView.turns.facts");
-  const format = useFormatter();
-  const rowFacts = ({ span, start, end }: TimelineRow, chain: TimelineRow[]) => {
-    const { attrs, llm } = span;
+  const rowFacts = ({ span }: TimelineRow, chain: TimelineRow[]) => {
+    const { attrs } = span;
     const facts: Fact[] = [];
     if (typeof attrs.verdict === "string") facts.push({ text: attrs.verdict, tone: VERDICT_TONE[attrs.verdict] ?? "muted" });
     // A sentinel's `deny` in the same line already says it.
     if (attrs.denied === true && !chain.some((row) => row.span.attrs.verdict === "deny")) facts.push({ text: t("denied"), tone: "bad" });
     if (attrs.allowed === false) facts.push({ text: t("blocked"), tone: "bad" });
     if (typeof attrs.exit_code === "number" && attrs.exit_code !== 0) facts.push({ text: t("exitCode", { code: attrs.exit_code }), tone: "bad" });
-    if (llm?.role === "agent" && llm.output_tokens > 0) {
-      const tokens = format.number(llm.output_tokens, { notation: "compact" });
-      // Tokens per second of generation: the wait for the first token is the provider's, not the model's speed.
-      const generatingMs = llmSegments(llm, start, end)
-        .filter((segment) => segment.category !== "llmWaiting")
-        .reduce((sum, segment) => sum + segment.end - segment.start, 0);
-      facts.push({
-        text: generatingMs > 0 ? t("outputRate", { tokens, rate: format.number(llm.output_tokens / (generatingMs / 1000), { maximumFractionDigits: 0 }) }) : t("output", { tokens }),
-        tone: "muted",
-      });
-    }
     return facts;
   };
   return (chain) => chain.flatMap((row) => rowFacts(row, chain));
+}
+
+function useFormatRate(): (rate: number) => string {
+  const t = useTranslations("debugView.turns.facts");
+  const format = useFormatter();
+  return (rate) => t("rate", { rate: format.number(rate, { maximumFractionDigits: 0 }) });
+}
+
+/** The line's spans, and the output of its LLM requests: too long for the row next to a long duration. */
+function useLineTitle(): (chain: TimelineRow[]) => string {
+  const t = useTranslations("debugView.turns.facts");
+  const format = useFormatter();
+  const formatRate = useFormatRate();
+  return (chain) =>
+    [
+      chain.map(({ span }) => (span.name === span.kind ? span.kind : `${span.kind} · ${span.name}`)).join(" › "),
+      ...chain.flatMap(({ span: { llm }, start, end }) => {
+        if (!llm || llm.output_tokens === 0) return [];
+        const rate = outputRate(llm, start, end);
+        const tokens = t("output", { tokens: format.number(llm.output_tokens) });
+        return [rate === null ? tokens : `${tokens} · ${formatRate(rate)}`];
+      }),
+    ].join("\n");
 }
 
 /**
@@ -377,6 +389,7 @@ function useLineFacts(): (chain: TimelineRow[]) => Fact[] {
 function LineLabel({ line, open }: { line: WaterfallLine; open: boolean }) {
   const duration = useFormatDuration();
   const lineFacts = useLineFacts();
+  const lineTitle = useLineTitle();
   const head = line.chain[0];
   const named = line.chain.find((row) => row.span.kind !== "gate") ?? head;
   const Icon = KIND_ICON[named.span.kind] ?? Circle;
@@ -385,7 +398,7 @@ function LineLabel({ line, open }: { line: WaterfallLine; open: boolean }) {
     <button
       type="button"
       aria-expanded={open}
-      title={line.chain.map(({ span }) => (span.name === span.kind ? span.kind : `${span.kind} · ${span.name}`)).join(" › ")}
+      title={lineTitle(line.chain)}
       className="flex w-full min-w-0 items-center gap-1.5 text-left text-xs"
     >
       <span role="img" aria-label={named.span.kind} className="shrink-0">
@@ -398,7 +411,8 @@ function LineLabel({ line, open }: { line: WaterfallLine; open: boolean }) {
         </span>
       ))}
       {line.chain.some(({ span }) => span.status === "running") ? <Loader2 className="h-3 w-3 shrink-0 animate-spin text-muted-foreground" /> : null}
-      <span className="ml-auto shrink-0 pl-1 tabular-nums text-muted-foreground">{duration(head.end - head.start)}</span>
+      {/* Wide enough for durations up to "99 min 59 s" (the formatter has no hour unit), so they never push into the bar column. */}
+      <span className="ml-auto w-[4.5rem] shrink-0 whitespace-nowrap text-right tabular-nums text-muted-foreground">{duration(head.end - head.start)}</span>
     </button>
   );
 }
@@ -430,6 +444,7 @@ function SpanDetail({ row, turnStart, server, token, sessionId, onOpenRole }: { 
   const format = useFormatter();
   const formatCost = useFormatCost();
   const duration = useFormatDuration();
+  const formatRate = useFormatRate();
   const { span } = row;
   const llm = span.llm;
   const count = (value: number | null) => (value === null ? "–" : format.number(value));
@@ -438,6 +453,7 @@ function SpanDetail({ row, turnStart, server, token, sessionId, onOpenRole }: { 
   const context = useKeyedFetch(llm ? llm.request_id : null, loadContext);
   const isLatest = !!llm && !!context && "value" in context && context.value?.request_id === llm.request_id;
   const phases = llm ? llmSegments(llm, row.start, row.end) : [];
+  const rate = llm ? outputRate(llm, row.start, row.end) : null;
   const phaseMs = (category: TimeCategory) => phases.filter((phase) => phase.category === category).reduce((sum, phase) => sum + phase.end - phase.start, 0);
 
   return (
@@ -457,6 +473,7 @@ function SpanDetail({ row, turnStart, server, token, sessionId, onOpenRole }: { 
           ))}
           <Stat label={t("detail.input")} value={<span className="tabular-nums">{count(llm.input_tokens)}</span>} />
           <Stat label={t("detail.output")} value={<span className="tabular-nums">{count(llm.output_tokens)}</span>} />
+          {rate === null ? null : <Stat label={t("detail.outputRate")} value={<span className="tabular-nums">{formatRate(rate)}</span>} />}
           <Stat label={t("detail.cacheRead")} value={<span className="tabular-nums">{count(llm.cache_read_tokens)}</span>} />
           <Stat label={t("detail.cacheWrite")} value={<span className="tabular-nums">{count(llm.cache_write_tokens)}</span>} />
           <Stat label={t("detail.cost")} value={llm.cost ? (formatCost(llm.cost) ?? tUsage("unpriced")) : "–"} />
