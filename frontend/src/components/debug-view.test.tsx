@@ -60,7 +60,12 @@ function record(overrides: Partial<LlmRequestRecord>): LlmRequestRecord {
     reasoning_tokens: null,
     cost: null,
     started_at: "2026-11-09T11:58:57Z",
+    first_token_at: null,
+    first_thinking_at: null,
+    last_thinking_at: null,
+    first_text_at: null,
     completed_at: "2026-11-09T11:59:00Z",
+    input_shape: null,
     ...overrides,
   };
 }
@@ -117,8 +122,8 @@ test("the debug view shows each role's latest context and refetches on WebSocket
     const rows = () =>
       Array.from(view.container.querySelectorAll("tbody tr"), (row) => Array.from(row.querySelectorAll("td"), (cell) => cell.textContent)).filter((cells) => cells.length > 0);
     assert.deepEqual(Array.from(view.container.querySelectorAll('th[scope="rowgroup"]'), (header) => header.textContent), ["Outside a turn"]);
-    // A record from before cache counts and costs were kept shows them as unknown.
-    assert.deepEqual(rows(), [["11/9, 11:59:00 AM", "Completed", "8,000", "–", "–", "300", "–", "–", "–", "–", "3 s", "anthropic:sonnet"]]);
+    // A record from before cache counts and costs were kept: its empty count columns go, the cost is unknown.
+    assert.deepEqual(rows(), [["11/9, 11:59:00 AM", "3 s", "8K", "300", "–", "anthropic:sonnet"]]);
     assert.equal(view.container.querySelector('a[aria-current="page"]')?.getAttribute("href"), "/?session=s1&view=debug");
 
     contexts.agent = context({
@@ -152,7 +157,8 @@ test("the debug view shows each role's latest context and refetches on WebSocket
     await settle();
 
     assert.match(text(), /Completed/);
-    assert.deepEqual(rows()[0], ["11/9, 12:00:02 PM", "Completed", "12,345", "4,000", "0", "20", "7", "32%", "$0.00", "$0.043", "2.5 s", "anthropic:sonnet"]);
+    // Cache write is 0 or unknown in every row, so it goes; a subscription request shows its equivalent cost.
+    assert.deepEqual(rows()[0], ["11/9, 12:00:02 PM", "2.5 s", "12.3K", "32%", "4K", "20", "7", "≈ $0.043", "anthropic:sonnet"]);
     assert.equal(rows().length, 2);
     assert.equal(view.container.querySelector("tbody a")?.getAttribute("href"), "#llm-context");
     assert.ok(view.container.querySelector("#llm-context"));
@@ -176,7 +182,9 @@ test("the debug view shows each role's latest context and refetches on WebSocket
     await runInAct(() => socket.onmessage?.({ data: JSON.stringify({ type: "llm_context", role: "agent", request_id: "r2", status: "interrupted" }) }));
     await settle();
     assert.equal(rows().length, 3);
-    assert.equal(rows()[0][1], "Interrupted");
+    // Completed requests carry no status marker, the exceptions do.
+    assert.ok(view.container.querySelector('tbody tr:nth-child(2) [aria-label="Interrupted"]'));
+    assert.equal(view.container.querySelectorAll('tbody [aria-label="Completed"]').length, 0);
 
     const pill = (label: string) => Array.from(view.container.querySelectorAll('[role="radio"]')).find((element) => element.textContent === label)!;
     await click(pill("Sentinel"));

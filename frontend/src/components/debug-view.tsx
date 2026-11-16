@@ -1,14 +1,14 @@
 "use client";
 
 import { useCallback, useState, type ReactNode } from "react";
-import { Braces, Loader2 } from "lucide-react";
+import { Braces, CircleSlash, CircleX, Loader2 } from "lucide-react";
 import { useFormatter, useLocale, useTranslations } from "next-intl";
 import { useFormatCost } from "@/components/memory-ui";
 import { MarkdownContent } from "@/components/markdown-content";
 import { pillClassName } from "@/components/prompt-preview-view";
 import { Stat } from "@/components/debug-stat";
 import { SessionHeader } from "@/components/session-header";
-import { TurnTimelineView } from "@/components/turn-timeline-view";
+import { CATEGORY_CLASS, TurnTimelineView } from "@/components/turn-timeline-view";
 import { useDebounced } from "@/hooks/use-debounced";
 import { useKeyedFetch } from "@/hooks/use-keyed-fetch";
 import { useWebSocket, useWebSocketTicket } from "@/hooks/use-websocket";
@@ -29,7 +29,8 @@ import {
   type ServerMessage,
   type TurnSummary,
 } from "@/lib/types";
-import { groupRequestsByTurn } from "@/lib/turn-timeline";
+import { cacheHitRate, costShape, isEmptyColumn } from "@/lib/request-table";
+import { groupRequestsByTurn, llmSegments } from "@/lib/turn-timeline";
 import { cn } from "@/lib/utils";
 
 const STATUS_CLASS: Record<LlmContextStatus, string> = {
@@ -263,7 +264,8 @@ type TimelineColumn = { key: string; numeric?: boolean; cell: (record: LlmReques
 /**
  * One row per recorded request of the role, newest first, so requests compare side by side without
  * their contexts. Rows are grouped by turn, which shows per-turn patterns such as a turn's first
- * request missing the cache.
+ * request missing the cache. The table stresses exceptions, not the norm: a completed request has
+ * no status marker, a cache miss stands out, and count columns that are empty in every row go.
  */
 function RequestTimeline({
   records,
@@ -278,31 +280,22 @@ function RequestTimeline({
 }) {
   const t = useTranslations("debugView.timeline");
   const format = useFormatter();
-  const locale = useLocale();
-  // Null counts and costs are unknown: the record predates them, or the model has no pricing.
-  const count = (value: number | null) => (value === null ? "–" : format.number(value));
-  const usd = (value: string | null | undefined) => (value == null ? "–" : formatUsd(value, locale));
+  // Compact counts compare at a glance; the exact one is in the tooltip. Null is unknown: the record predates it.
+  const count = (value: number | null) =>
+    value === null ? <span className="text-muted-foreground">–</span> : <span title={format.number(value)}>{format.number(value, { notation: "compact", maximumFractionDigits: 1 })}</span>;
+  const countColumn = (key: string, value: (record: LlmRequestRecord) => number | null): TimelineColumn[] =>
+    isEmptyColumn(records, value) ? [] : [{ key, numeric: true, cell: (r) => count(value(r)) }];
   const columns: TimelineColumn[] = [
     { key: "time", cell: (r) => <Time record={r} linked={r.request_id !== null && r.request_id === contextRequestId} /> },
-    { key: "status", cell: (r) => <StatusBadge status={r.outcome} /> },
+    { key: "duration", cell: (r) => <RequestDuration record={r} /> },
     { key: "input", numeric: true, cell: (r) => count(r.input_tokens) },
-    { key: "cacheRead", numeric: true, cell: (r) => count(r.cache_read_tokens) },
-    { key: "cacheWrite", numeric: true, cell: (r) => count(r.cache_write_tokens) },
+    ...(records.every((r) => r.cache_read_tokens === null) ? [] : [{ key: "cacheHitRate", cell: (r: LlmRequestRecord) => <CacheMeter record={r} /> }]),
+    ...countColumn("cacheRead", (r) => r.cache_read_tokens),
+    ...countColumn("cacheWrite", (r) => r.cache_write_tokens),
     { key: "output", numeric: true, cell: (r) => count(r.output_tokens) },
-    { key: "reasoning", numeric: true, cell: (r) => count(r.reasoning_tokens) },
-    {
-      key: "cacheHitRate",
-      numeric: true,
-      cell: (r) => (r.cache_read_tokens === null || r.input_tokens === 0 ? "–" : format.number(r.cache_read_tokens / r.input_tokens, { style: "percent", maximumFractionDigits: 0 })),
-    },
-    { key: "cost", numeric: true, cell: (r) => usd(r.cost?.cost_usd) },
-    { key: "equivalentCost", numeric: true, cell: (r) => usd(r.cost?.equivalent_cost_usd) },
-    {
-      key: "duration",
-      numeric: true,
-      cell: (r) => (r.started_at && r.completed_at ? t("seconds", { seconds: format.number((Date.parse(r.completed_at) - Date.parse(r.started_at)) / 1000, { maximumFractionDigits: 1 }) }) : "–"),
-    },
-    { key: "model", cell: (r) => <span className="font-mono">{r.model_name ?? "–"}</span> },
+    ...countColumn("reasoning", (r) => r.reasoning_tokens),
+    { key: "cost", numeric: true, cell: (r) => <CostCell cost={r.cost} /> },
+    { key: "model", cell: (r) => <span className="font-mono text-muted-foreground">{r.model_name ?? "–"}</span> },
   ];
 
   return (
@@ -338,6 +331,76 @@ function RequestTimeline({
   );
 }
 
+/** The main column after the time: how long the request took, with its phases in the waterfall's colors. */
+function RequestDuration({ record }: { record: LlmRequestRecord }) {
+  const t = useTranslations("debugView.timeline");
+  const format = useFormatter();
+  if (!record.started_at || !record.completed_at) return <span className="text-muted-foreground">–</span>;
+  const [start, end] = [Date.parse(record.started_at), Date.parse(record.completed_at)];
+  return (
+    <span className="flex items-center gap-2">
+      <span className="w-12 text-right font-medium text-foreground">{t("seconds", { seconds: format.number((end - start) / 1000, { maximumFractionDigits: 1 }) })}</span>
+      <PhaseBar phases={record} start={start} end={end} className="w-16" />
+    </span>
+  );
+}
+
+/** An LLM request's phases (first token, thinking, output) as a thin bar. */
+function PhaseBar({ phases, start, end, className }: { phases: LlmRequestRecord; start: number; end: number; className?: string }) {
+  const segments = end > start ? llmSegments(phases, start, end) : [];
+  return (
+    <span aria-hidden className={cn("flex h-1.5 overflow-hidden rounded-full bg-muted", className)}>
+      {segments.map((segment) => (
+        <span key={segment.start} className={CATEGORY_CLASS[segment.category]} style={{ width: `${((segment.end - segment.start) / (end - start)) * 100}%` }} />
+      ))}
+    </span>
+  );
+}
+
+/** Hits are the norm and stay quiet; a miss, the thing to notice, gets the accent. */
+function CacheMeter({ record }: { record: LlmRequestRecord }) {
+  const t = useTranslations("debugView.timeline");
+  const format = useFormatter();
+  const rate = cacheHitRate(record);
+  if (rate === null) return <span className="text-muted-foreground">–</span>;
+  const miss = rate === 0;
+  return (
+    <span className="flex items-center gap-1.5" title={miss ? t("cacheMiss") : undefined}>
+      <span aria-hidden className={cn("h-1.5 w-10 overflow-hidden rounded-full", miss ? "bg-amber-500/30" : "bg-muted")}>
+        <span className="block h-full bg-muted-foreground/45" style={{ width: `${rate * 100}%` }} />
+      </span>
+      <span className={cn("w-9 text-right", miss ? "font-medium text-amber-700 dark:text-amber-300" : "text-muted-foreground")}>
+        {format.number(rate, { style: "percent", maximumFractionDigits: 0 })}
+      </span>
+    </span>
+  );
+}
+
+/** Actual and equivalent cost in one cell: a subscription request shows its equivalent, marked as such. */
+function CostCell({ cost }: { cost: LlmRequestCost | null }) {
+  const t = useTranslations("debugView.timeline");
+  const locale = useLocale();
+  const usd = (value: string | null) => formatUsd(value ?? 0, locale);
+  switch (costShape(cost)) {
+    case "none":
+      return <span className="text-muted-foreground">–</span>;
+    case "actual":
+      return usd(cost!.cost_usd);
+    case "subscription":
+      return (
+        <span className="text-muted-foreground" title={t("subscription")}>
+          ≈ {usd(cost!.equivalent_cost_usd)}
+        </span>
+      );
+    case "both":
+      return (
+        <span>
+          {usd(cost!.cost_usd)} <span className="text-muted-foreground">(≈ {usd(cost!.equivalent_cost_usd)})</span>
+        </span>
+      );
+  }
+}
+
 /** A turn's start and prompt, linking to it in the Turns tab; a turn missing from the turn list (no timing recorded) shows its id only. */
 function TurnHeader({ turnId, turn, onOpenTurn }: { turnId: string | null; turn: TurnSummary | undefined; onOpenTurn: (turnId: string) => void }) {
   const t = useTranslations("debugView.timeline");
@@ -363,11 +426,31 @@ function Time({ record, linked }: { record: LlmRequestRecord; linked: boolean })
   const date = new Date(record.ts);
   const short = format.dateTime(date, { month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit", second: "2-digit" });
   const full = format.dateTime(date, { dateStyle: "medium", timeStyle: "medium" });
-  return linked ? (
-    <a href={`#${CONTEXT_ANCHOR}`} title={`${full} · ${t("showContext")}`} className="underline underline-offset-2">{short}</a>
-  ) : (
-    <span title={full}>{short}</span>
+  return (
+    <span className="flex items-center gap-1.5">
+      {linked ? (
+        <a href={`#${CONTEXT_ANCHOR}`} title={`${full} · ${t("showContext")}`} className="underline underline-offset-2">{short}</a>
+      ) : (
+        <span title={full}>{short}</span>
+      )}
+      <StatusMark status={record.outcome} />
+    </span>
   );
+}
+
+/** Completed is the norm and goes unmarked; the exceptions get a small icon. */
+function StatusMark({ status }: { status: LlmContextStatus }) {
+  const t = useTranslations("debugView.statuses");
+  switch (status) {
+    case "completed":
+      return null;
+    case "running":
+      return <Loader2 role="img" aria-label={t(status)} className="h-3.5 w-3.5 animate-spin text-sky-600 dark:text-sky-400" />;
+    case "failed":
+      return <CircleX role="img" aria-label={t(status)} className="h-3.5 w-3.5 text-destructive" />;
+    case "interrupted":
+      return <CircleSlash role="img" aria-label={t(status)} className="h-3.5 w-3.5 text-muted-foreground" />;
+  }
 }
 
 const AUDIO_TOKENS = ["input_audio_tokens", "output_audio_tokens", "cache_audio_read_tokens"] as const;

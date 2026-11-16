@@ -59,7 +59,7 @@ export function spanCategory(span: Span): TimeCategory {
  * An LLM request's phases: waiting for the first token (prefill, network, queue), thinking, output.
  * A missing timestamp collapses its phase: without any token yet, the whole request is waiting.
  */
-export function llmSegments(llm: LlmPhases, start: number, end: number): Segment[] {
+export function llmSegments(llm: Pick<LlmPhases, "first_token_at" | "first_thinking_at" | "last_thinking_at" | "first_text_at">, start: number, end: number): Segment[] {
   const at = (iso: string | null) => (iso === null ? null : Math.min(Math.max(Date.parse(iso), start), end));
   const firstThinking = at(llm.first_thinking_at);
   const waitEnd = at(llm.first_token_at) ?? firstThinking ?? at(llm.first_text_at) ?? end;
