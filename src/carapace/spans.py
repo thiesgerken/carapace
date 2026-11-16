@@ -37,14 +37,19 @@ class Span(BaseModel):
     attrs: dict[str, SpanAttr] = Field(default_factory=dict)
 
 
+# Spans keep small attrs only (full arguments and outputs stay in the history), and some come
+# straight from the sandbox, like the proxy's domains.
+SPAN_TEXT_MAX = 200
+
+
 def _new_span(kind: str, name: str, parent_id: str | None, attrs: dict[str, SpanAttr]) -> Span:
     return Span(
         span_id=secrets.token_hex(8),
         parent_id=parent_id,
         kind=kind,
-        name=name,
+        name=name[:SPAN_TEXT_MAX],
         started_at=datetime.now(tz=UTC),
-        attrs=attrs,
+        attrs={key: value[:SPAN_TEXT_MAX] if isinstance(value, str) else value for key, value in attrs.items()},
     )
 
 

@@ -40,6 +40,14 @@ def test_span_outside_a_turn_is_recorded_nowhere() -> None:
     assert current_span_ref() is None
 
 
+def test_span_text_is_capped_and_other_attrs_kept() -> None:
+    trace, root, _ = _trace()
+    with attach(trace, root.span_id), span("exec", "n" * 500, command="c" * 500, exit_code=1, ok=True) as capped:
+        pass
+    assert capped.name == "n" * 200
+    assert capped.attrs == {"command": "c" * 200, "exit_code": 1, "ok": True}
+
+
 def test_spans_nest_and_end_with_how_their_block_exits() -> None:
     trace, root, changes = _trace()
     with attach(trace, root.span_id):

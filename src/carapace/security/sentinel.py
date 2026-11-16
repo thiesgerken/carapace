@@ -482,7 +482,7 @@ class Sentinel:
         assert_llm_budget_available: Callable[[], None] | None = None,
         usage_limits: UsageLimits | None = None,
     ) -> SentinelVerdict:
-        with span("sentinel", kind, subject=subject[:200]) as evaluation:
+        with span("sentinel", kind, subject=subject) as evaluation:
             verdict = await self._evaluate(
                 session,
                 prompt,

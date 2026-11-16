@@ -1336,7 +1336,7 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
         media_type = _image_media_type(path)
         if media_type is not None and not line_numbers_given and supports_vision:
             try:
-                with span("file", "read", path=path[:200]):
+                with span("file", "read", path=path):
                     data = await ctx.deps.sandbox.file_read_bytes(session_id, path)
             except Exception as exc:
                 _log_sandbox_tool_exception("read", session_id)
@@ -1347,7 +1347,7 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
 
         exit_code = 0
         try:
-            with span("file", "read", path=path[:200]):
+            with span("file", "read", path=path):
                 result = await ctx.deps.sandbox.file_read(session_id, path, offset=text_offset, limit=text_limit)
         except Exception as exc:
             _log_sandbox_tool_exception("read", session_id)
@@ -1407,7 +1407,7 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
         name = PurePosixPath(path).name or "file"
         file_id, dest = sent_files.reserve(ctx.deps.data_dir, session_id, name)
         try:
-            with span("file", "send_file", path=path[:200]):
+            with span("file", "send_file", path=path):
                 size = await ctx.deps.sandbox.download_tmp_file(session_id, path, dest, max_bytes=SEND_FILE_MAX_BYTES)
         except UploadTooLargeError:
             dest.unlink(missing_ok=True)
@@ -1434,7 +1434,7 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
         session_id = ctx.deps.session_state.session_id
         exit_code = 0
         try:
-            with span("file", "write", path=path[:200]):
+            with span("file", "write", path=path):
                 exec_result = await ctx.deps.sandbox.file_write(session_id, path, content)
             result = exec_result.output
             exit_code = exec_result.exit_code
@@ -1475,7 +1475,7 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
         session_id = ctx.deps.session_state.session_id
         exit_code = 0
         try:
-            with span("file", "str_replace", path=path[:200]):
+            with span("file", "str_replace", path=path):
                 exec_result = await ctx.deps.sandbox.file_str_replace(
                     session_id,
                     path,
@@ -1554,7 +1554,7 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
         notify = _notify_injected_creds_callback(ctx, inj.injected_creds)
 
         try:
-            with span("exec", "exec", command=command[:200]) as call:
+            with span("exec", "exec", command=command) as call:
                 exec_result = await ctx.deps.sandbox.exec_command(
                     session_id,
                     command,
