@@ -28,13 +28,15 @@ class ToolResult:
     tool_id: str | None = None
     # Provider tool-call id from the model history (``ctx.tool_call_id``). Distinct from ``tool_id``
     # (a carapace UUID), it is the only reliable link back to the model's ToolReturnPart — used to
-    # surface compaction annotations on the right tool row.
+    # surface compaction annotations on the right tool row, and the client's link to the streamed call.
     model_tool_call_id: str | None = None
     files: tuple[SentFileInfo, ...] = field(default_factory=tuple)
 
 
+# The last argument is the model's id for the call (``tool_call_id``), ``None`` for calls the model
+# did not make. Deps is a pydantic model, so this stays a Callable rather than a Protocol.
 type ToolCallCallback = Callable[
-    [str, dict[str, Any], str, ApprovalSource | None, ApprovalVerdict | None, str | None], None
+    [str, dict[str, Any], str, ApprovalSource | None, ApprovalVerdict | None, str | None, str | None], None
 ]
 
 

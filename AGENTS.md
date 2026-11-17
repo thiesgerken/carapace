@@ -61,6 +61,7 @@ src/carapace/          # main package
     __init__.py        # re-exports (create_agent, build_system_prompt, run_agent_turn)
     tools.py           # Pydantic AI agent definition and tools
     loop.py            # channel-agnostic agent turn runner
+    tool_stream.py     # streams tool calls to clients while the model writes them
   session/
     __init__.py        # re-exports (SessionEngine, SessionManager)
     engine.py          # session lifecycle, slash commands, agent turn orchestration

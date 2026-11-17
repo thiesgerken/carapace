@@ -45,6 +45,7 @@ async def test_revised_tool_call_tells_the_agent_what_to_change() -> None:
             "exec",
             {"command": "git push && rm -rf build"},
             tool_call_callback=lambda *args: shown.append(args),
+            tool_call_id="call_1",
         )
 
     assert str(raised.value) == "Sentinel requests changes (no threat detected): Split the commit from the cleanup."
@@ -54,8 +55,9 @@ async def test_revised_tool_call_tells_the_agent_what_to_change() -> None:
         decision="changes_requested",
         explanation="Split the commit from the cleanup.",
     )
-    _tool, _args, _detail, source, verdict, explanation = shown[-1]
+    _tool, _args, _detail, source, verdict, explanation, tool_call_id = shown[-1]
     assert (source, verdict, explanation) == ("sentinel", "revise", "Split the commit from the cleanup.")
+    assert tool_call_id == "call_1"
 
 
 @pytest.mark.anyio

@@ -336,6 +336,7 @@ async def _gate(ctx: RunContext[Deps], tool_name: str, args: dict[str, Any]) -> 
                 assert_llm_budget_available=ctx.deps.assert_llm_budget_available,
                 usage_limits=ctx.deps.llm_usage_limits() if ctx.deps.llm_usage_limits is not None else None,
                 tool_call_callback=ctx.deps.tool_call_callback,
+                tool_call_id=ctx.tool_call_id,
             )
         except (security.SecurityDeniedError, security.ChangesRequestedError) as exc:
             gate.attrs["denied"] = True
@@ -353,6 +354,7 @@ def _notify_approved_start(ctx: RunContext[Deps], tool_name: str, args: dict[str
             "user",
             "allow",
             "user approved",
+            ctx.tool_call_id,
         )
 
 
@@ -370,7 +372,7 @@ def _notify_result(
                 output=result,
                 exit_code=exit_code,
                 tool_id=ctx.deps.security.current_parent_tool_id,
-                model_tool_call_id=getattr(ctx, "tool_call_id", None),
+                model_tool_call_id=ctx.tool_call_id,
                 files=files,
             )
         )
@@ -1101,6 +1103,10 @@ def _compaction_capabilities(deps: Deps) -> list[AbstractCapability[Deps]]:
     return [deps.provider_compaction.capability, *local, *rejection, *marker]
 
 
+TASK_DONE_TOOL = "task_done"
+TASK_FAILED_TOOL = "task_failed"
+
+
 def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | DeferredToolRequests]:
     system_prompt = build_system_prompt(deps)
     supports_vision = model_supports_vision(deps.config, deps.agent_model_id)
@@ -1108,8 +1114,8 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
     output_type: list[Any]
     if deps.session_state.attributes.unattended:
         output_type = [
-            ToolOutput(TaskDone, name="task_done"),
-            ToolOutput(TaskFailed, name="task_failed"),
+            ToolOutput(TaskDone, name=TASK_DONE_TOOL),
+            ToolOutput(TaskFailed, name=TASK_FAILED_TOOL),
             DeferredToolRequests,
         ]
     else:
@@ -1323,6 +1329,7 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
                     "skill",
                     "deny",
                     "skill not activated",
+                    ctx.tool_call_id,
                 )
             return _emit_tool_result(ctx, "read", denied_message, exit_code=1)
 
@@ -1397,6 +1404,7 @@ def create_agent(deps: Deps) -> Agent[Deps, str | TaskDone | TaskFailed | Deferr
                     "skill",
                     "deny",
                     "skill not activated",
+                    ctx.tool_call_id,
                 )
             return _emit_tool_result(ctx, "send_file", denied_message, exit_code=1)
 
