@@ -368,6 +368,8 @@ export interface ToolCallInfo {
   approval_explanation?: string;
   tool_id?: string;
   parent_tool_id?: string;
+  /** The provider's id of a model-issued call: links it to the card its streamed args opened. */
+  tool_call_id?: string | null;
 }
 
 export interface ToolResultInfo {
@@ -376,7 +378,29 @@ export interface ToolResultInfo {
   result: string;
   exit_code?: number;
   tool_id?: string;
+  tool_call_id?: string | null;
   files?: SentFile[];
+}
+
+/** The model started a tool call; its args follow as `tool_call_delta`s. */
+export interface ToolCallStart {
+  type: "tool_call_start";
+  tool_call_id: string;
+  tool: string;
+}
+
+/** The next piece of a streaming call's raw JSON args, to append to the ones before. */
+export interface ToolCallDelta {
+  type: "tool_call_delta";
+  tool_call_id: string;
+  args_delta: string;
+}
+
+/** The model finished writing the call's args, or the request was cancelled or failed while it did (`aborted`). */
+export interface ToolCallEnd {
+  type: "tool_call_end";
+  tool_call_id: string;
+  aborted: boolean;
 }
 
 export interface ApprovalRequest {
@@ -511,6 +535,9 @@ export type ServerMessage =
   | ThinkingChunk
   | ToolCallInfo
   | ToolResultInfo
+  | ToolCallStart
+  | ToolCallDelta
+  | ToolCallEnd
   | ApprovalRequest
   | DomainAccessApprovalRequest
   | GitPushApprovalRequest
@@ -663,6 +690,14 @@ export type ChatMessage =
       parentToolId?: string;
       compaction?: CompactionAnnotation;
       eventIndex?: number;
+      /** The provider's id of a call the model is streaming; see `argsText`. */
+      toolCallId?: string;
+      /** The raw JSON args streamed so far. Set only on a streamed card, until its final tool_call replaces it. */
+      argsText?: string;
+      /** The model is still writing the args. */
+      argsStreaming?: boolean;
+      /** The streamed call never ran: the turn was cancelled, the model failed, or its args were rejected. */
+      notRun?: boolean;
       children?: Array<{
         kind: "tool_call";
         tool: string;

@@ -985,6 +985,8 @@
         "mismatchSr": "Frontend- und Backend-Versionen stimmen nicht überein."
     },
     "toolCallBadge": {
+        "notRun": "nicht ausgeführt",
+        "notRunTitle": "Das Modell hat diesen Aufruf geschrieben, er lief aber nie: Der Turn wurde abgebrochen, das Modell ist gescheitert oder der Aufruf wurde abgelehnt.",
         "approvalBadge": {
             "review": "Prüfung",
             "skill": "Skill",
@@ -1057,6 +1059,7 @@
     },
     "toolCallGroup": {
         "empty": "Tool-Aufrufe",
+        "notRun": "{count} nicht ausgeführt",
         "past": {
             "exec": "{count, plural, one {# Befehl ausgeführt} other {# Befehle ausgeführt}}",
             "read": "{count, plural, one {# Datei gelesen} other {# Dateien gelesen}}",

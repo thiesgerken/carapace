@@ -985,6 +985,8 @@
         "mismatchSr": "Frontend and backend versions do not match."
     },
     "toolCallBadge": {
+        "notRun": "not run",
+        "notRunTitle": "The model wrote this call, but it never ran: the turn was cancelled, the model failed, or the call was rejected.",
         "approvalBadge": {
             "review": "review",
             "skill": "skill",
@@ -1057,6 +1059,7 @@
     },
     "toolCallGroup": {
         "empty": "tool calls",
+        "notRun": "{count} not run",
         "past": {
             "exec": "{count, plural, one {ran # command} other {ran # commands}}",
             "read": "{count, plural, one {read # file} other {read # files}}",

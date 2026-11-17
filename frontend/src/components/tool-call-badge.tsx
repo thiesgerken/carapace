@@ -1,9 +1,10 @@
 "use client";
 
 import { useTranslations } from "next-intl";
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   Archive,
+  Ban,
   ChevronRight,
   ExternalLink,
   FileText,
@@ -58,6 +59,12 @@ interface ToolCallBadgeProps {
   childCalls?: ToolCallBadgeProps[];
   server?: string;
   sessionId?: string;
+  /** The raw JSON args while the model streams the call; `args` holds what parses of them so far. */
+  argsText?: string;
+  /** The model is still writing the args: the card shows them growing. */
+  argsStreaming?: boolean;
+  /** The streamed call never ran. */
+  notRun?: boolean;
 }
 
 type ApprovalSource = "safe-list" | "sentinel" | "user" | "skill" | "bypass" | "autonomy" | "unknown";
@@ -544,6 +551,9 @@ export function ToolCallBadge({
   childCalls,
   server,
   sessionId,
+  argsText,
+  argsStreaming,
+  notRun,
 }: ToolCallBadgeProps) {
   const t = useTranslations("toolCallBadge");
   const tc = useTranslations("compaction");
@@ -790,6 +800,12 @@ export function ToolCallBadge({
           <Archive className="h-2.5 w-2.5" />
         </span>
       )}
+      {notRun && (
+        <span className="inline-flex items-center gap-0.5 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground" title={t("notRunTitle")}>
+          <Ban className="h-2.5 w-2.5" />
+          {t("notRun")}
+        </span>
+      )}
       {loading && (
         <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
       )}
@@ -868,6 +884,8 @@ export function ToolCallBadge({
           </>
         )}
       </div>
+
+      {argsStreaming && !open && <StreamingArgs text={streamingPreview(tool, args, argsText ?? "")} />}
 
       {open && (
         <div className="tool-row-details ml-5 mt-1.5 rounded-lg border border-border/60 bg-muted/30 p-3 space-y-2 text-xs">
@@ -1231,5 +1249,39 @@ export function ToolCallBadge({
         </div>
       )}
     </div>
+  );
+}
+
+/** What a streaming call's args will mainly show once it is final: the command, or the file text. */
+function streamingPreview(tool: string, args: Record<string, unknown>, argsText: string): string {
+  switch (tool) {
+    case "exec":
+      return getExecCommand(args) && `$ ${getExecCommand(args)}`;
+    case "write":
+      return stringArg(args, "content");
+    case "str_replace":
+      return stringArg(args, "new_string");
+    default:
+      return argsText;
+  }
+}
+
+/**
+ * The args as the model writes them. Plain text, not the final card's highlighted Markdown, so a long
+ * file stays cheap to re-render on every delta; the box keeps the newest lines in view.
+ */
+function StreamingArgs({ text }: { text: string }) {
+  const ref = useRef<HTMLPreElement>(null);
+  useLayoutEffect(() => {
+    if (ref.current) ref.current.scrollTop = ref.current.scrollHeight;
+  }, [text]);
+  if (!text) return null;
+  return (
+    <pre
+      ref={ref}
+      className="ml-5 mt-1 max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-border/60 bg-muted/30 p-2 font-mono text-[11px] leading-4 text-foreground/75"
+    >
+      {text}
+    </pre>
   );
 }
